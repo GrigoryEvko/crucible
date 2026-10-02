@@ -106,7 +106,10 @@ PROBE_HEADER = "crucible_padded_list_probe.h"
 SEPARATOR = " | "
 HEADER_SUFFIXES = (".h", ".hpp")
 SOURCE_SUFFIXES = (".cpp", ".cc")
-PROBE_JOBS = 16
+# The probes that compile at the same time.  The tree has about 30 targets,
+# and a probe that ccache does not hold compiles for about 1.4 s, so all of
+# them start at once after an edit of a base header.
+PROBE_JOBS = 32
 # The fixed lists of the standard library.  The scan adds each class template of
 # include/ that holds a fixed list.
 STD_LIST_TEMPLATES = frozenset({"array", "inplace_vector"})
@@ -857,7 +860,7 @@ def parse_probe_output(output: str, target: Target, root: Path) -> tuple[list[Si
 def run_probes(root: Path, build_dir: Path, targets: list[Target], limit: int) -> ProbeResult:
     """Compile the probe of each target, and collect the padded lists.
 
-    Complexity: one compile for each target, sixteen at the same time.  ccache returns the result of
+    Complexity: one compile for each target, PROBE_JOBS at the same time.  ccache returns the result of
     an unchanged probe.
 
     Args:

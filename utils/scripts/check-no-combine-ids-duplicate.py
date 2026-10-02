@@ -25,7 +25,9 @@ WHAT COUNTS AS A SECOND BODY
         nodes.  A body that does not parse, for example because it pastes
         tokens with `##`, is read as preprocessing tokens.
     A comment and a string literal name nothing.  Every C++ file under the
-    scan roots is parsed, with no text test first.
+    scan roots is parsed, with no text test first.  The hits of a file are
+    stored under the SHA-256 of its path and its bytes (scan), so a warm
+    run parses only the files that changed.
 
 EXEMPTIONS
     The canonical definition, and each path of EXEMPT with its reason.  An
@@ -39,6 +41,7 @@ a usage error or a failed self-test, 3 when the kit is not installed.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import os
 import sys
@@ -48,7 +51,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import cache_dir  # noqa: E402
 import tsast  # noqa: E402
+from preprocessed import text_results  # noqa: E402
 
 CANONICAL = ("include/foundation/reflect/Hash.h", ("foundation", "reflect"))
 # Each path that may hold a second body, with its reason.
@@ -182,34 +187,64 @@ def scope_files(root: Path) -> list[Path]:
 BATCH = 256
 
 
-def scan(root: Path) -> tuple[list[str], list[str], set[str]]:
+def result_key(rel: str, data: bytes) -> str:
+    """Return the key of the stored hits of one file: the SHA-256 of its path and its bytes.
+
+    The hits of a file depend on its bytes and on its path, because the
+    canonical definition is not a hit only at its own path.
+    """
+    return hashlib.sha256(rel.encode("utf-8") + b"\0" + data).hexdigest()
+
+
+def is_hit_list(value: object) -> bool:
+    """Return True when a stored value is a list of [row, form] pairs."""
+    return isinstance(value, list) and all(
+        isinstance(item, list) and len(item) == 2 and isinstance(item[0], int) and isinstance(item[1], str)
+        for item in value)
+
+
+def scan(root: Path) -> tuple[list[str], list[str], set[str], int]:
     """Find each second body of combine_ids.
+
+    The hits of each file are stored under result_key in the results of
+    preprocessed.text_results, under a name that hashes this guard and the
+    parser.  A warm run reads and hashes each file, and parses only the
+    files that the store does not hold.  A file that the parser cannot read
+    gets no stored result, so each run reports it again.
 
     Complexity: linear in the total size of the files in scope.  The trees
     are kept for one batch of BATCH files at a time.
 
     Returns:
-        Each violation, each parse failure, and each exempt path that held a second body
+        Each violation, each parse failure, each exempt path that held a second body, and the count of parsed files
     """
-    violations: list[str] = []
+    results = text_results("no-combine-ids-duplicate", Path(__file__), tsast.parser_identity())
+    files = [(path, path.relative_to(root).as_posix()) for path in scope_files(root)]
+    hits: dict[str, list[tuple[int, str]]] = {}
+    missed: list[Path] = []
+    for path, rel in files:
+        stored = None if results is None else results.get(result_key(rel, path.read_bytes()))
+        if is_hit_list(stored):
+            hits[rel] = [(row, form) for row, form in stored]  # type: ignore[union-attr]
+        else:
+            missed.append(path)
     failures: list[str] = []
-    used: set[str] = set()
     batch: list[tuple[str, tsast.Tree, list[tuple[int, str]]]] = []
 
     def flush() -> None:
-        """Add the macro-body hits of the batch, then report each file of it."""
+        """Add the macro-body hits of the batch, then keep and store the hits of each file of it."""
         by_tree = {id(tree): found for _, tree, found in batch}
         for body in tsast.macro_bodies([tree for _, tree, _ in batch]):
             by_tree[id(body.define.tree)].extend(macro_hits(body))
-        for rel, _, found in batch:
-            for row, form in sorted(set(found)):
-                if rel in EXEMPT:
-                    used.add(rel)
-                else:
-                    violations.append(f"{rel}:{row + 1}: {form}")
+        for rel, tree, found in batch:
+            hits[rel] = sorted(set(found))
+            if results is not None:
+                # The key comes from the bytes that the parser read, so a file
+                # that changed after its hash stores no result for its new bytes.
+                results.put(result_key(rel, tree.source), [list(hit) for hit in hits[rel]])
         batch.clear()
 
-    for tree in tsast.parse(scope_files(root), strict=False):
+    for tree in tsast.parse(missed, strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
         if tree.diagnostic is not None:
             failures.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
@@ -218,7 +253,15 @@ def scan(root: Path) -> tuple[list[str], list[str], set[str]]:
         if len(batch) == BATCH:
             flush()
     flush()
-    return violations, failures, used
+    violations: list[str] = []
+    used: set[str] = set()
+    for _, rel in files:
+        for row, form in hits.get(rel, ()):
+            if rel in EXEMPT:
+                used.add(rel)
+            else:
+                violations.append(f"{rel}:{row + 1}: {form}")
+    return violations, failures, used, len(missed)
 
 
 def check(root: Path) -> int:
@@ -227,7 +270,7 @@ def check(root: Path) -> int:
     Returns:
         0 clean, 1 on a second body or a parse failure, 2 on a stale exemption
     """
-    violations, failures, used = scan(root)
+    violations, failures, used, _ = scan(root)
     for violation in violations:
         print(f"COMBINE-IDS second body: {violation}", file=sys.stderr)
     for failure in failures:
@@ -295,7 +338,8 @@ def self_test() -> int:
     ]
     canonical = ("#pragma once\nnamespace foundation::reflect {\n"
                  f"constexpr unsigned long combine_ids(unsigned long a, unsigned long b) {body}\n}}\n")
-    with tempfile.TemporaryDirectory() as work:
+    # The scratch root of the caches starts the store of the hits empty, and leaves nothing behind.
+    with cache_dir.scratch_root(), tempfile.TemporaryDirectory() as work:
         root = Path(work)
         separated = ("namespace crucible::planted {\n"
                      "inline unsigned long alone(unsigned long a) { a ^= 0x9e37'79b9'7f4a'7c15ULL + (a << 6) + "
@@ -306,8 +350,11 @@ def self_test() -> int:
                           ("include/crucible/Expr.h", canonical.replace("foundation::reflect", "crucible"))):
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(text, encoding="utf-8")
-        violations, broken, used = scan(root)
+        violations, broken, used, parsed = scan(root)
         reported = {int(v.split(":")[1]) for v in violations if v.startswith("src/planted/Planted.cpp:")}
+        warm = scan(root)
+        expect("a warm scan parses no file and gives the same verdicts",
+               parsed == 4 and warm == (violations, broken, used, 0))
         expect("caught: a file whose only trace is a separated salt",
                any(v.startswith("src/planted/Separated.cpp:2") for v in violations))
         for line, (_, caught, label) in enumerate(planted, start=1):
@@ -336,6 +383,20 @@ def self_test() -> int:
 
         expect("the planted tree fails the check", captured(root)[0] == 1)
         expect("the report from / equals the report from the scan root", captured(Path("/")) == captured(root))
+        copied = root / "include/foundation/reflect/Copy.h"
+        copied.write_text(canonical, encoding="utf-8")
+        expect("the bytes of the canonical definition at another path give a stored result of their own",
+               any(v.startswith("include/foundation/reflect/Copy.h:") for v in scan(root)[0]))
+        copied.unlink()
+        clean = "namespace crucible::planted {\ninline unsigned long alone(unsigned long a) { return a; }\n}\n"
+        (root / "src/planted/Separated.cpp").write_text(clean, encoding="utf-8")
+        cleaned, _, _, reparsed = scan(root)
+        expect("a changed file is parsed again, so the store gives no stale hit",
+               reparsed == 1 and not any(v.startswith("src/planted/Separated.cpp") for v in cleaned))
+        (root / "src/planted/Separated.cpp").write_text(separated, encoding="utf-8")
+        restored, _, _, _ = scan(root)
+        expect("the old bytes of a file read their stored hits again",
+               any(v.startswith("src/planted/Separated.cpp:2") for v in restored))
         (root / "src/planted/Planted.cpp").unlink()
         (root / "src/planted/Separated.cpp").unlink()
         (root / "include/crucible/Expr.h").write_text("#pragma once\n#include <foundation/reflect/Hash.h>\n"

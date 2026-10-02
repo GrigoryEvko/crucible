@@ -24,6 +24,11 @@ the contract rule and the opt-out regions apply to it, and the quarantine rule
 does not.  The test writes a source root with a build directory in its scratch
 directory, and compiles a unit of that root with each plugin.
 
+The two plugins build at the same time.  Then the parts of the test run at
+the same time: the findings, the base files, the malformed regions, the
+modes, the contract rule and the generated files.  Each part writes its own
+files, and main prints the verdicts of the parts in that order.
+
 usage: check_plugin.py --cxx CXX --contract-source CONTRACT.cpp --source QUARANTINE.cpp --admitted LIST
                        -- BUILD_FLAGS...
 
@@ -39,6 +44,8 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -183,17 +190,22 @@ class Finding:
 
 
 class Checker:
-    """Build each plugin one time, then compile fixtures with one of them."""
+    """Build each plugin one time, then compile fixtures with one of them.
+
+    The two plugins build at the same time.  compile is safe to call from
+    many threads, because each compile is its own process.
+    """
 
     def __init__(self, cxx: str, sources: dict[str, Path], flags: list[str], work: Path) -> None:
         self.cxx = cxx
         self.work = work
-        self.failures: list[str] = []
-        for name, source in sources.items():
-            built = subprocess.run([cxx, *flags, "-o", str(work / f"{name}.so"), str(source)], capture_output=True,
-                                   text=True)
-            if built.returncode != 0:
-                raise RuntimeError(f"the plugin {name} did not build:\n{built.stderr}")
+        with ThreadPoolExecutor(max_workers=len(sources)) as pool:
+            builds = {name: pool.submit(subprocess.run, [cxx, *flags, "-o", str(work / f"{name}.so"), str(source)],
+                                        capture_output=True, text=True)
+                      for name, source in sources.items()}
+        for name, build in builds.items():
+            if build.result().returncode != 0:
+                raise RuntimeError(f"the plugin {name} did not build:\n{build.result().stderr}")
 
     def compile(self, fixture: str, arguments: dict[str, str],
                 stage: tuple[str, ...] = ("-S", "-o", os.devnull),
@@ -204,11 +216,34 @@ class Checker:
         command += ["-fdiagnostics-color=never", *stage, str(HERE / fixture)]
         return subprocess.run(command, capture_output=True, text=True)
 
+
+class Section:
+    """The expectations of one part of the test, which runs at the same time as the other parts.
+
+    A part writes only its own files under the work directory, and it keeps
+    its verdict lines until main prints them in the order of the parts.
+    """
+
+    def __init__(self, checker: Checker) -> None:
+        self.work = checker.work
+        self.compile = checker.compile
+        self.lines: list[str] = []
+        self.failures: list[str] = []
+
     def expect(self, name: str, holds: bool, detail: str = "") -> None:
         """Record the verdict of one expectation."""
-        print(f"  {'ok  ' if holds else 'FAIL'} {name}")
+        self.lines.append(f"  {'ok  ' if holds else 'FAIL'} {name}")
         if not holds:
             self.failures.append(f"{name}{': ' + detail if detail else ''}")
+
+    def compile_all(self, calls: list[tuple[object, ...]]) -> list[subprocess.CompletedProcess[str]]:
+        """Run the compiles of ``calls``, each the positional arguments of compile, at the same time.
+
+        Return the results in the order of the calls.
+        """
+        with ThreadPoolExecutor(max_workers=len(calls)) as pool:
+            futures = [pool.submit(self.compile, *call) for call in calls]  # type: ignore[arg-type]
+            return [future.result() for future in futures]
 
 
 def read_reports(directory: Path) -> list[Finding]:
@@ -224,94 +259,124 @@ def read_reports(directory: Path) -> list[Finding]:
     return findings
 
 
-def run(checker: Checker, admitted: Path) -> None:
-    """Compile each fixture and judge each expectation."""
-    reports = checker.work / "reports"
-    arguments = {"root": str(HERE), "mode": "report", "admitted": str(HERE / "admitted.txt"), "out": str(reports)}
+def run(checker: Checker, admitted: Path) -> list[Section]:
+    """Run each part of the test at the same time, and return the parts in their order.
+
+    The parts write disjoint files under the work directory, so no part
+    reads what another part writes.
+    """
+    arguments = {"root": str(HERE), "mode": "report", "admitted": str(HERE / "admitted.txt"),
+                 "out": str(checker.work / "reports")}
+    parts: list[Callable[[Section], None]] = [
+        lambda section: run_findings(section, arguments),
+        lambda section: run_base_files(section, arguments),
+        run_pragma_errors,
+        lambda section: run_modes(section, arguments, admitted),
+        run_contract_rule,
+        run_generated_files,
+    ]
+    sections = [Section(checker) for _ in parts]
+    with ThreadPoolExecutor(max_workers=len(parts)) as pool:
+        for future in [pool.submit(part, section) for part, section in zip(parts, sections, strict=True)]:
+            future.result()
+    return sections
+
+
+def run_findings(section: Section, arguments: dict[str, str]) -> None:
+    """Compile the two fixtures in report mode, and judge each finding that must be present or absent."""
     for fixture in ("violations.cpp", "opt_out.cpp"):
-        compiled = checker.compile(fixture, arguments)
-        checker.expect(f"{fixture} compiles in report mode", compiled.returncode == 0, compiled.stderr[-2000:])
-    findings = read_reports(reports)
+        compiled = section.compile(fixture, arguments)
+        section.expect(f"{fixture} compiles in report mode", compiled.returncode == 0, compiled.stderr[-2000:])
+    findings = read_reports(Path(arguments["out"]))
 
     for kind, file, line, text in PRESENT:
         # A text that starts with '=' must be the whole entity.
         holds = any(f.kind == kind and f.file == file and f.line == line
                     and (f.entity == text[1:] if text.startswith("=") else text in f.entity) for f in findings)
-        checker.expect(f"{kind} at {file}:{line} ({text})", holds)
+        section.expect(f"{kind} at {file}:{line} ({text})", holds)
     for file, line, kind, text in ABSENT:
         hits = [f for f in findings
                 if f.file == file and (line is None or f.line == line) and (kind is None or f.kind == kind)
                 and (text is None or text in f.entity)]
         where = f"{file}:{line}" if line is not None else file
         what = kind or "finding"
-        checker.expect(f"no {what}{' of ' + text if text else ''} at {where}", not hits, "; ".join(map(str, hits)))
+        section.expect(f"no {what}{' of ' + text if text else ''} at {where}", not hits, "; ".join(map(str, hits)))
 
-    run_base_files(checker, arguments)
 
+def run_pragma_errors(section: Section) -> None:
+    """Compile each fixture of a malformed region with each plugin, and judge the error."""
     for fixture, text in PRAGMA_ERRORS:
-        compiled = checker.compile(fixture, {"root": str(HERE), "mode": "report"})
-        checker.expect(f"{fixture} is an error", compiled.returncode != 0 and text in compiled.stderr,
+        compiled = section.compile(fixture, {"root": str(HERE), "mode": "report"})
+        section.expect(f"{fixture} is an error", compiled.returncode != 0 and text in compiled.stderr,
                        compiled.stderr[-2000:])
-        compiled = checker.compile(fixture, {"root": str(HERE)}, plugin=CONTRACT_PLUGIN)
-        checker.expect(f"{fixture} is an error for the contract plugin",
+        compiled = section.compile(fixture, {"root": str(HERE)}, plugin=CONTRACT_PLUGIN)
+        section.expect(f"{fixture} is an error for the contract plugin",
                        compiled.returncode != 0 and text in compiled.stderr, compiled.stderr[-2000:])
 
-    noted = checker.compile("violations.cpp", {"root": str(HERE), "mode": "report"})
-    checker.expect("report mode without out= gives notes and succeeds",
+
+def run_modes(section: Section, arguments: dict[str, str], admitted: Path) -> None:
+    """Judge the report mode without out=, the error mode, -fsyntax-only, -E and the admitted lists."""
+    syntax_reports = section.work / "syntax-reports"
+    preprocessed_reports = section.work / "preprocessed-reports"
+    malformed = section.work / "malformed.txt"
+    malformed.write_text("std::move\n", encoding="utf-8")
+    noted, failed, opted, syntax, preprocessed, real, broken = section.compile_all([
+        ("violations.cpp", {"root": str(HERE), "mode": "report"}),
+        ("violations.cpp", {"root": str(HERE), "mode": "error"}),
+        ("opt_out.cpp", {"root": str(HERE), "mode": "error"}),
+        ("violations.cpp", {**arguments, "out": str(syntax_reports)}, ("-fsyntax-only",)),
+        ("violations.cpp", {**arguments, "out": str(preprocessed_reports)}, ("-E", "-o", os.devnull)),
+        ("opt_out.cpp", {"root": str(HERE), "admitted": str(admitted)}),
+        ("violations.cpp", {"root": str(HERE), "admitted": str(malformed)}),
+    ])
+    section.expect("report mode without out= gives notes and succeeds",
                    noted.returncode == 0 and "note: quarantine: raw_new_delete new" in noted.stderr,
                    noted.stderr[-2000:])
-    failed = checker.compile("violations.cpp", {"root": str(HERE), "mode": "error"})
-    checker.expect("error mode makes a finding an error",
+    section.expect("error mode makes a finding an error",
                    failed.returncode != 0 and "error: quarantine: c_library_call memcpy" in failed.stderr,
                    failed.stderr[-2000:])
-    opted = checker.compile("opt_out.cpp", {"root": str(HERE), "mode": "error"})
     opted_lines = {int(row.split(":")[1]) for row in opted.stderr.splitlines()
                    if "error: quarantine:" in row and row.startswith(str(HERE / "opt_out.cpp") + ":")}
-    checker.expect("error mode does not stop an opted-out finding",
+    section.expect("error mode does not stop an opted-out finding",
                    opted.returncode != 0 and opted_lines == {8, 14}, opted.stderr[-2000:])
 
-    syntax_reports = checker.work / "syntax-reports"
-    syntax = checker.compile("violations.cpp", {**arguments, "out": str(syntax_reports)}, ("-fsyntax-only",))
     syntax_findings = read_reports(syntax_reports) if syntax.returncode == 0 else []
-    checker.expect("-fsyntax-only reports the namespace walk too",
+    section.expect("-fsyntax-only reports the namespace walk too",
                    any(f.kind == "std_object" and f.line == 15 for f in syntax_findings), syntax.stderr[-2000:])
-    preprocessed_reports = checker.work / "preprocessed-reports"
-    preprocessed = checker.compile("violations.cpp", {**arguments, "out": str(preprocessed_reports)},
-                                   ("-E", "-o", os.devnull))
-    checker.expect("-E writes no report", preprocessed.returncode == 0 and not preprocessed_reports.exists(),
+    section.expect("-E writes no report", preprocessed.returncode == 0 and not preprocessed_reports.exists(),
                    preprocessed.stderr[-2000:])
 
-    real = checker.compile("opt_out.cpp", {"root": str(HERE), "admitted": str(admitted)})
-    checker.expect("the admitted list of the tree loads", real.returncode == 0, real.stderr[-2000:])
-    malformed = checker.work / "malformed.txt"
-    malformed.write_text("std::move\n", encoding="utf-8")
-    broken = checker.compile("violations.cpp", {"root": str(HERE), "admitted": str(malformed)})
-    checker.expect("an admitted entry without a reason is an error",
+    section.expect("the admitted list of the tree loads", real.returncode == 0, real.stderr[-2000:])
+    section.expect("an admitted entry without a reason is an error",
                    broken.returncode != 0 and "the reason is necessary" in broken.stderr, broken.stderr[-2000:])
 
-    run_contract_rule(checker)
-    run_generated_files(checker)
 
-
-def run_base_files(checker: Checker, arguments: dict[str, str]) -> None:
+def run_base_files(section: Section, arguments: dict[str, str]) -> None:
     """Compile each source file of the base with this directory as the root, and again with src/ as the root."""
+    calls: list[tuple[object, ...]] = []
     for fixture in BASE_FIXTURES:
         # The plugin makes the last directory of out= and not its parents.
         name = Path(fixture).stem
-        base_reports = checker.work / f"base-reports-{name}"
-        compiled = checker.compile(fixture, {**arguments, "out": str(base_reports)})
+        calls.append((fixture, {**arguments, "out": str(section.work / f"base-reports-{name}")}))
+        moved = {**arguments, "root": str(HERE / "src"), "out": str(section.work / f"moved-reports-{name}")}
+        calls.append((fixture, moved))
+    results = iter(section.compile_all(calls))
+    for fixture in BASE_FIXTURES:
+        name = Path(fixture).stem
+        base_reports = section.work / f"base-reports-{name}"
+        compiled = next(results)
         found = read_reports(base_reports)
-        checker.expect(f"{fixture} is base code: the unit reports no finding",
+        section.expect(f"{fixture} is base code: the unit reports no finding",
                        compiled.returncode == 0 and any(base_reports.glob("*.quarantine")) and not found,
                        compiled.stderr[-2000:] + "; ".join(map(str, found)))
-        moved_reports = checker.work / f"moved-reports-{name}"
-        moved = checker.compile(fixture, {**arguments, "root": str(HERE / "src"), "out": str(moved_reports)})
+        moved_reports = section.work / f"moved-reports-{name}"
+        moved = next(results)
         moved_found = read_reports(moved_reports)
         relative = Path(fixture).relative_to("src").as_posix()
         for line, kind, text in BASE_FINDINGS:
             holds = moved.returncode == 0 and any(f.file == relative and f.line == line and f.kind == kind
                                                   and text in f.entity for f in moved_found)
-            checker.expect(f"{kind} at {relative}:{line} with src/ as the root ({text})", holds,
+            section.expect(f"{kind} at {relative}:{line} with src/ as the root ({text})", holds,
                            moved.stderr[-2000:])
 
 
@@ -325,9 +390,9 @@ def contract_errors(stderr: str, root: Path = HERE) -> list[tuple[str, int, str]
     return sorted(errors)
 
 
-def run_generated_files(checker: Checker) -> None:
+def run_generated_files(section: Section) -> None:
     """Compile a unit that includes a generated header with each plugin, and compare what each plugin gives."""
-    tree = checker.work / "tree"
+    tree = section.work / "tree"
     build = tree / "build"
     build.mkdir(parents=True, exist_ok=True)
     (build / "Generated.h").write_text(GENERATED_HEADER, encoding="utf-8")
@@ -337,51 +402,51 @@ def run_generated_files(checker: Checker) -> None:
     unclosed = tree / "unclosed_unit.cpp"
     unclosed.write_text(UNCLOSED_GENERATED_UNIT, encoding="utf-8")
     places = {"root": str(tree), "build": str(build)}
-    generated_reports = checker.work / "generated-reports"
+    generated_reports = section.work / "generated-reports"
     runs = (
         ("the contract plugin", CONTRACT_PLUGIN, places),
         ("mode=error", PLUGIN, {**places, "mode": "error"}),
         ("mode=report", PLUGIN, {**places, "mode": "report", "out": str(generated_reports)}),
     )
     for name, plugin, arguments in runs:
-        compiled = checker.compile(str(unit), arguments, extra=("-fcontracts",), plugin=plugin)
+        compiled = section.compile(str(unit), arguments, extra=("-fcontracts",), plugin=plugin)
         found = contract_errors(compiled.stderr, tree)
-        checker.expect(f"{name}: a region of a generated file opts out its specifier, and the other one is an error",
+        section.expect(f"{name}: a region of a generated file opts out its specifier, and the other one is an error",
                        compiled.returncode != 0 and found == GENERATED_CONTRACT_ERRORS,
                        f"errors {found}; " + compiled.stderr[-2000:])
-        compiled = checker.compile(str(unclosed), arguments, plugin=plugin)
-        checker.expect(f"{name}: an unclosed region of a generated file is an error",
+        compiled = section.compile(str(unclosed), arguments, plugin=plugin)
+        section.expect(f"{name}: an unclosed region of a generated file is an error",
                        compiled.returncode != 0 and "region has no" in compiled.stderr, compiled.stderr[-2000:])
         # No out= here: a plugin that accepts the directory must not replace
         # the report of the unit.
-        missing = checker.compile(str(unit), {"root": str(tree), "build": str(tree / "missing")}, plugin=plugin)
-        checker.expect(f"{name}: a build directory that does not exist is an error",
+        missing = section.compile(str(unit), {"root": str(tree), "build": str(tree / "missing")}, plugin=plugin)
+        section.expect(f"{name}: a build directory that does not exist is an error",
                        missing.returncode != 0 and "does not exist" in missing.stderr, missing.stderr[-2000:])
     found = read_reports(generated_reports)
-    checker.expect("the region of the generated file turns the specifier on line 3 into opted_out",
+    section.expect("the region of the generated file turns the specifier on line 3 into opted_out",
                    any(f.kind == "opted_out" and f.file == "build/Generated.h" and f.line == 3
                        and f.entity == "contract_specifier pre" for f in found), "; ".join(map(str, found)))
-    checker.expect("a generated file is not quarantined",
+    section.expect("a generated file is not quarantined",
                    not any(f.file.startswith("build/") and f.kind != "opted_out" and f.kind != "contract_specifier"
                            for f in found), "; ".join(map(str, found)))
-    checker.expect("a place in a generated macro falls through to the unit that expands it",
+    section.expect("a place in a generated macro falls through to the unit that expands it",
                    any(f.kind == "raw_pointer_object" and f.file == "generated_unit.cpp" and f.line == 3
                        for f in found), "; ".join(map(str, found)))
 
 
-def run_contract_rule(checker: Checker) -> None:
+def run_contract_rule(section: Section) -> None:
     """Compile contracts.cpp with each plugin and in each mode, and compare the errors with CONTRACT_ERRORS."""
-    outside = checker.work / "outside"
+    outside = section.work / "outside"
     outside.mkdir(exist_ok=True)
     (outside / "Outside.h").write_text(OUTSIDE_HEADER, encoding="utf-8")
     (outside / "OutsideRegion.h").write_text(OUTSIDE_REGION_HEADER, encoding="utf-8")
     for plugin, arguments in ((CONTRACT_PLUGIN, {"root": str(HERE)}), (PLUGIN, {"root": str(HERE), "mode": "error"})):
-        compiled = checker.compile("region_outside_root.cpp", arguments, extra=("-I", str(outside)), plugin=plugin)
-        checker.expect(f"{plugin}: a region of a header outside the root is no error",
+        compiled = section.compile("region_outside_root.cpp", arguments, extra=("-I", str(outside)), plugin=plugin)
+        section.expect(f"{plugin}: a region of a header outside the root is no error",
                        compiled.returncode == 0 and "region" not in compiled.stderr, compiled.stderr[-2000:])
     extra = ("-fcontracts", "-I", str(outside))
     expected = sorted(CONTRACT_ERRORS)
-    contract_reports = checker.work / "contract-reports"
+    contract_reports = section.work / "contract-reports"
     runs = (
         ("the contract plugin", CONTRACT_PLUGIN, {"root": str(HERE)}, ("-S", "-o", os.devnull)),
         ("mode=error", PLUGIN, {"root": str(HERE), "mode": "error"}, ("-S", "-o", os.devnull)),
@@ -390,34 +455,34 @@ def run_contract_rule(checker: Checker) -> None:
         ("the contract plugin with -fsyntax-only", CONTRACT_PLUGIN, {"root": str(HERE)}, ("-fsyntax-only",)),
     )
     for name, plugin, arguments, stage in runs:
-        compiled = checker.compile("contracts.cpp", arguments, stage, extra, plugin)
+        compiled = section.compile("contracts.cpp", arguments, stage, extra, plugin)
         found = contract_errors(compiled.stderr)
         missing = sorted(set(expected) - set(found))
         unexpected = [error for error in found if error not in expected or found.count(error) > 1]
-        checker.expect(f"{name}: each contract specifier gives one error, and nothing else does",
+        section.expect(f"{name}: each contract specifier gives one error, and nothing else does",
                        compiled.returncode != 0 and not missing and not unexpected,
                        f"missing {missing}, unexpected {sorted(set(unexpected))}")
     opted = [f for f in read_reports(contract_reports)
              if f.kind == "opted_out" and f.file == "contracts.cpp" and f.line == 73]
-    checker.expect("the opt-out region turns the specifier on line 73 into opted_out",
+    section.expect("the opt-out region turns the specifier on line 73 into opted_out",
                    any(f.entity == "contract_specifier pre" for f in opted), "; ".join(map(str, opted)))
 
-    named = checker.compile("contracts.cpp", {"root": str(HERE)}, extra=extra, plugin=CONTRACT_PLUGIN)
-    checker.expect("the error names CRUCIBLE_PRE, CRUCIBLE_POST and the reasons",
+    named = section.compile("contracts.cpp", {"root": str(HERE)}, extra=extra, plugin=CONTRACT_PLUGIN)
+    section.expect("the error names CRUCIBLE_PRE, CRUCIBLE_POST and the reasons",
                    all(text in named.stderr for text in ("CRUCIBLE_PRE(condition)", "foundation/contracts/Pre.h",
                                                          "CRUCIBLE_POST(result, condition)",
                                                          "foundation/contracts/Post.h", "header unit",
                                                          "precompiled header", "constant evaluation")),
                    named.stderr[-2000:])
-    quiet = checker.compile("violations.cpp", {"root": str(HERE)}, plugin=CONTRACT_PLUGIN)
-    checker.expect("the contract plugin applies only the contract rule",
+    quiet = section.compile("violations.cpp", {"root": str(HERE)}, plugin=CONTRACT_PLUGIN)
+    section.expect("the contract plugin applies only the contract rule",
                    quiet.returncode == 0 and "quarantine:" not in quiet.stderr, quiet.stderr[-2000:])
-    foreign = checker.compile("violations.cpp", {"root": str(HERE), "mode": "report"}, plugin=CONTRACT_PLUGIN)
-    checker.expect("the contract plugin refuses an argument of the quarantine plugin",
+    foreign = section.compile("violations.cpp", {"root": str(HERE), "mode": "report"}, plugin=CONTRACT_PLUGIN)
+    section.expect("the contract plugin refuses an argument of the quarantine plugin",
                    foreign.returncode != 0 and "the arguments are root, build and stamp" in foreign.stderr,
                    foreign.stderr[-2000:])
-    unknown = checker.compile("violations.cpp", {"root": str(HERE), "mode": "contracts"})
-    checker.expect("an unknown mode is an error",
+    unknown = section.compile("violations.cpp", {"root": str(HERE), "mode": "contracts"})
+    section.expect("an unknown mode is an error",
                    unknown.returncode != 0 and "the modes are report and error" in unknown.stderr,
                    unknown.stderr[-2000:])
 
@@ -438,10 +503,13 @@ def main(argv: list[str]) -> int:
         except RuntimeError as error:
             print(f"check_plugin: {error}", file=sys.stderr)
             return 2
-        run(checker, args.admitted)
-    if checker.failures:
-        print(f"check_plugin: {len(checker.failures)} expectation(s) failed:", file=sys.stderr)
-        for failure in checker.failures:
+        sections = run(checker, args.admitted)
+    for section in sections:
+        print("\n".join(section.lines))
+    failures = [failure for section in sections for failure in section.failures]
+    if failures:
+        print(f"check_plugin: {len(failures)} expectation(s) failed:", file=sys.stderr)
+        for failure in failures:
             print(f"  {failure}", file=sys.stderr)
         return 1
     print("check_plugin: every expectation holds.")
