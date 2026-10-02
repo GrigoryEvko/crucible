@@ -39,11 +39,13 @@ THE FINDINGS
       the error to a warning.  Each raised count that stays above its count
       before the commit gives a warning on each run, which names the commit.
       No count rises in a change of the ledger format if no total of a kind
-      rises, in a file that git moved, in a new configuration, or in a
-      configuration other than the base that comes back to a count of its
-      history (utils/scripts/check-quarantine-ratchet.py, A CONFIGURATION
-      THAT ONLY CI BUILDS).  A change of the format starts a new history of
-      each count.
+      rises, in a file that git moved, or in a new configuration.  A count of
+      a configuration other than the base rises only with its difference
+      from the base, and not when it comes back to a count of its history.
+      Its raise is no error after a change of the plugin or the rule table
+      that did not write its rows (utils/scripts/check-quarantine-ratchet.py,
+      A CONFIGURATION THAT ONLY CI BUILDS).  A change of the format starts a
+      new history of each count.
     * A commit that raised a threshold, and whose body holds no measurement of
       the row, gives an error.  A row of the admission ledger that names the
       commit, the row and the column changes the error to a warning.
@@ -315,12 +317,13 @@ def read_history(root: Path) -> History:
 
 
 def read_changes(root: Path) -> dict[str, Change]:
-    """Read each path that each commit of the quarantine ledger changed, with the moves that git finds.
+    """Read each path that each commit of the quarantine ledger, the plugin or the rule table changed.
 
-    Complexity: linear in the size of the log.
+    The result keeps the order of `git log --topo-order`, the newest commit first, and it holds the moves that git
+    finds.  Complexity: linear in the size of the log.
     """
     log = git(root, "log", "--no-merges", "--full-history", "--topo-order", "--full-diff", "--find-renames",
-              "--name-status", f"--format={RECORD}%H", "--", QUARANTINE_LEDGER)
+              "--name-status", f"--format={RECORD}%H", "--", QUARANTINE_LEDGER, *QUARANTINE_MACHINERY)
     changes: dict[str, Change] = {}
     for record in log.split(RECORD)[1:]:
         lines = record.splitlines()
@@ -620,7 +623,8 @@ def ledger_rises(before: Any, after: Any, moves: dict[str, str], peaks: dict[Cou
     * A configuration that the old version does not have is new coverage, and no rise.
     * A file that git moved keeps the rows of its old path: no rise when the old path has no row after the commit
       and had at least the count before it.
-    * A count of a configuration other than the base that comes back to a value of its history, `peaks`, is no
+    * A count of a configuration other than the base rises only when its difference from the base rises, so a
+      raise of a base count is one rise.  Such a count that comes back to a value of its history, `peaks`, is no
       rise.  A CI leg or a later --write can write such a configuration after a commit that lowered the base rows.
 
     Complexity: O(r log r) for r counts.
@@ -640,7 +644,8 @@ def ledger_rises(before: Any, after: Any, moves: dict[str, str], peaks: dict[Cou
         if (source is not None and old == 0 and new_counts.get((name, source, kind), 0) == 0
                 and old_counts.get((name, source, kind), 0) >= new):
             continue
-        if name != after.base and new <= peaks.get(key, 0):
+        if name != after.base and (new <= peaks.get(key, 0) or after.deltas.get(name, {}).get((file, kind), 0)
+                                   <= before.deltas.get(name, {}).get((file, kind), 0)):
             continue
         rises.append(LedgerRise(name, file, kind, old, new))
     return rises
@@ -656,11 +661,14 @@ def evaluate_quarantine(history: History, admissions: list[Admission], used: set
 
     * A commit that raised a count and that changes neither the plugin nor the rule table gives an error, unless a
       row of the admission ledger with the row name quarantine-ledger names the commit.
+    * A configuration other than the base is stale after a commit of the plugin or the rule table that did not
+      write its rows.  A raise of a stale configuration is no error, and the commit that writes its rows makes it
+      current again.  A CI leg writes the rows of an aarch64 configuration only after the change of the plugin.
     * A raised count that stays above its value before the commit gives a warning on each run, which names the
       commit.  A change of the format starts a new history of each row.
     * A raise in the working tree gives a warning only.
 
-    Complexity: O(c * r) for c commits of the ledger and r counts.
+    Complexity: O(c * r) for c commits of the ledger, the plugin and the rule table, and r counts.
     """
     if QUARANTINE_LEDGER not in history.ledgers:
         return []
@@ -681,9 +689,14 @@ def evaluate_quarantine(history: History, admissions: list[Admission], used: set
     findings: list[check_report.Finding] = []
     peaks: dict[CountKey, int] = {}
     standing: list[tuple[Commit, LedgerRise]] = []
+    stale: set[str] = set()
+    known: set[str] = set()
     last_format = 0
-    for commit in reversed(history.commits):
-        if QUARANTINE_LEDGER not in commit.paths:
+    by_sha = {commit.sha: commit for commit in history.commits if QUARANTINE_LEDGER in commit.paths}
+    for sha, change in reversed(list(history.changes.items())):
+        commit = by_sha.get(sha)
+        if commit is None:
+            stale |= known if changes_machinery(change) else set()
             continue
         after = parse(history.at.get((commit.sha, QUARANTINE_LEDGER)), f"{commit.short}:{QUARANTINE_LEDGER}")
         before = parse(history.before.get((commit.sha, QUARANTINE_LEDGER)), f"{commit.short}^:{QUARANTINE_LEDGER}")
@@ -692,17 +705,22 @@ def evaluate_quarantine(history: History, admissions: list[Admission], used: set
         if before is None or before.format != after.format:
             peaks, standing = {}, []
         last_format = after.format
-        change = history.changes.get(commit.sha, Change(frozenset(), {}))
         rises = ledger_rises(before, after, change.moves, peaks) if before is not None else []
         for key, count in absolute_counts(after).items():
             peaks[key] = max(peaks.get(key, 0), count)
         standing += [(commit, rise) for rise in rises if rise.file != TOTAL]
-        if not rises or changes_machinery(change):
+        later = {name for name in after.configurations if name != after.base}
+        written = {name for name in later if before is None or after.deltas.get(name) != before.deltas.get(name)
+                   or after.configurations[name] != before.configurations.get(name)}
+        blocking = [rise for rise in rises if rise.configuration not in stale or rise.configuration == after.base]
+        stale = (stale - written) | (later - written if changes_machinery(change) else set())
+        known = later
+        if not blocking or changes_machinery(change):
             continue
-        shown = "; ".join(rise.text() for rise in rises[:SHOWN_RISES])
-        more = f"; and {len(rises) - SHOWN_RISES} more" if len(rises) > SHOWN_RISES else ""
-        said = (f"the commit {commit.short} ({commit.subject}) raised {len(rises)} counts of {QUARANTINE_LEDGER}, "
-                f"and it changes neither the plugin of utils/tools/quarantine/ nor the rule table "
+        shown = "; ".join(rise.text() for rise in blocking[:SHOWN_RISES])
+        more = f"; and {len(blocking) - SHOWN_RISES} more" if len(blocking) > SHOWN_RISES else ""
+        said = (f"the commit {commit.short} ({commit.subject}) raised {len(blocking)} counts of "
+                f"{QUARANTINE_LEDGER}, and it changes neither the plugin of utils/tools/quarantine/ nor the rule table "
                 f"utils/scripts/layer-rules.txt: {shown}{more}")
         admitted = next((item for item in admissions
                          if commit.sha.startswith(item.commit) and item.row == QUARANTINE_ROW), None)
@@ -905,6 +923,29 @@ def quarantine_cases(expect: Any, scratch: Path) -> None:
     expect("a raise in the working tree gives a warning only",
            any(WORKING_TREE in f.message and f.level == "warning" for f in found)
            and not any(WORKING_TREE in f.message for f in errors_of(found)))
+
+    late = Scratch(scratch / "quarantine-stale")
+    late.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 2}, {"arm": {"test/a.cpp": 1}}))
+    late.commit("Count two configurations", "The first counts.")
+    late.write("utils/tools/quarantine/quarantine.cpp", "// a new rule\n")
+    late.commit("Report a new kind in the plugin", "The base keeps its counts.")
+    late.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 2}, {"arm": {"test/a.cpp": 3}}))
+    caught_up = late.commit("Import the rows of the CI leg", "The leg sees the new kind.")
+    status, found, _ = late.run()
+    expect("a raise of a later configuration after a change of the plugin that did not write it is no error",
+           status == 0 and not errors_of(found) and any(caught_up[:9] in f.message for f in standing_of(found)))
+    late.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 2}, {"arm": {"test/a.cpp": 4}}))
+    again = late.commit("Import more rows", "The leg finds one more.")
+    status, found, _ = late.run()
+    expect("the next raise of that configuration is an error, because its rows are current again",
+           status == 1 and any(again[:9] in f.message for f in errors_of(found)))
+    late.write("utils/tools/quarantine/plugin_core.h", "// a second rule\n")
+    late.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 5}, {"arm": {"test/a.cpp": 4}}))
+    base_raise = late.commit("Report a second kind in the plugin", "The base finds three more.")
+    status, found, _ = late.run()
+    named = [f.message for f in standing_of(found) if base_raise[:9] in f.message]
+    expect("a raise of a base count is one rise, and not one more for each later configuration",
+           len(named) == 1 and "configuration default" in named[0])
 
     jump = Scratch(scratch / "quarantine-format")
     jump.write(QUARANTINE_LEDGER, "# a planted ledger\nconfiguration machine x86_64\ntest std_object 5\n")
