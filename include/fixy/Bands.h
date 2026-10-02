@@ -60,7 +60,9 @@
 #include <foundation/algebra/lattices/VendorLattice.h>
 #include <foundation/algebra/lattices/WaitLattice.h>
 
+#include <array>
 #include <concepts>
+#include <cstddef>
 #include <meta>
 #include <type_traits>
 #include <utility>
@@ -448,38 +450,40 @@ namespace detail {
 // never the payload.
 struct alias_probe {};
 
-// True when some alias template declared in Ns names Tier.
-template <std::meta::info Ns, auto Tier>
-[[nodiscard]] consteval bool some_alias_names_tier() noexcept {
+// Every enumerator of the enum reflected by EnumInfo has an alias in
+// Ns.  EnumInfo is dealiased by the caller, because the enum spellings
+// this header exports are using-declarations and a reflection of one
+// is not a reflection of the enum.
+//
+// The walk expands the members of Ns one time.  Each alias template that
+// gives a band of the enum marks each enumerator that holds its tier, in
+// a plain loop.  Then each enumerator must hold a mark.  Complexity: the
+// member count of Ns times the number of enumerators.
+template <std::meta::info Ns, std::meta::info EnumInfo>
+[[nodiscard]] consteval bool every_tier_has_an_alias() noexcept {
+    using Enum = [:EnumInfo:];
+    static constexpr auto tiers = std::define_static_array(std::meta::enumerators_of(EnumInfo));
     static constexpr auto members =
         std::define_static_array(std::meta::members_of(Ns, std::meta::access_context::unchecked()));
+    std::array<bool, tiers.size()> is_named{};
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : members) {
         if constexpr (std::meta::is_template(member) && std::meta::can_substitute(member, {^^alias_probe})) {
             using B = [:std::meta::substitute(member, {^^alias_probe}):];
-            if constexpr (IsBand<B> && std::same_as<band_tier_t<B>, decltype(Tier)>) {
-                if constexpr (band_tier_v<B> == Tier) return true;
+            if constexpr (IsBand<B> && std::same_as<band_tier_t<B>, Enum>) {
+                for (std::size_t index = 0; index < tiers.size(); ++index) {
+                    if (std::meta::extract<Enum>(std::meta::constant_of(tiers[index])) == band_tier_v<B>) {
+                        is_named[index] = true;
+                    }
+                }
             }
         }
     }
 #pragma GCC diagnostic pop
-    return false;
-}
-
-// Every enumerator of the enum reflected by EnumInfo has an alias in
-// Ns.  EnumInfo is dealiased by the caller, because the enum spellings
-// this header exports are using-declarations and a reflection of one
-// is not a reflection of the enum.
-template <std::meta::info Ns, std::meta::info EnumInfo>
-[[nodiscard]] consteval bool every_tier_has_an_alias() noexcept {
-    static constexpr auto tiers = std::define_static_array(std::meta::enumerators_of(EnumInfo));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : tiers) {
-        if constexpr (!some_alias_names_tier<Ns, ([:en:])>()) return false;
+    for (const bool tier_is_named : is_named) {
+        if (!tier_is_named) return false;
     }
-#pragma GCC diagnostic pop
     return true;
 }
 

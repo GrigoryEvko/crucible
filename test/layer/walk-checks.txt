@@ -16,7 +16,7 @@ crucible/CKernel.cpp | 0.4 | ::fixy::tags::admitted_retags
 crucible/DimHash.cpp | 0.0 | ::fixy::tags::admitted_retags
 crucible/Expr.cpp | 0.0 | ::fixy::tags::admitted_retags
 crucible/MetaLogSession.cpp | 0.2 | ::fixy::session::combinators
-crucible/Serialize.cpp | 2.3 | ::fixy::tags::admitted_retags
+crucible/Serialize.cpp | 2.4 | ::fixy::tags::admitted_retags
 crucible/SingletonInitGraph.cpp | 0.1 | unknown
 crucible/SwissTable.cpp | 0.1 | unknown
 crucible/SymbolTable.cpp | 0.1 | ::fixy::tags::admitted_retags
@@ -25,7 +25,7 @@ crucible/TraceRing.cpp | 0.1 | unknown
 crucible/Types.cpp | 0.2 | ::crucible
 crucible/canopy/Crdt.cpp | 0.2 | ::fixy::tags::admitted_retags
 crucible/canopy/Hlc.cpp | 0.0 | ::fixy::tags::admitted_retags
-crucible/canopy/Lifeguard.cpp | 0.3 | ::fixy::tags::admitted_retags
+crucible/canopy/Lifeguard.cpp | 0.4 | ::fixy::tags::admitted_retags
 crucible/cipher/CipherTierPromotion.cpp | 0.3 | ::fixy::session::combinators, unknown
 crucible/cipher/ComputationCache.cpp | 0.1 | ::foundation::effects::resource, ::foundation::permissions::permission_rows
 crucible/cipher/ComputationCacheFederation.cpp | 0.8 | ::fixy::session::combinators, ::fixy::tags::admitted_retags, ::foundation::effects::resource, ::foundation::permissions::permission_rows
@@ -33,14 +33,14 @@ crucible/cipher/FederationProtocol.cpp | 0.6 | ::fixy::session::combinators
 crucible/cntp/AfXdp.cpp | 0.4 | ::fixy::tags::admitted_retags
 crucible/cntp/Backpressure.cpp | 0.3 | ::fixy::tags::admitted_retags
 crucible/cntp/ConnectionPool.cpp | 0.6 | ::fixy::tags::admitted_retags
-crucible/cntp/GossipMulticast.cpp | 0.9 | ::fixy::tags::admitted_retags
+crucible/cntp/GossipMulticast.cpp | 1.0 | ::fixy::tags::admitted_retags
 crucible/cntp/IncastControl.cpp | 0.3 | ::fixy::tags::admitted_retags, unknown
 crucible/cntp/IncastControlRuntime.cpp | 0.3 | unknown
-crucible/cntp/MtlsTransport.cpp | 0.3 | ::fixy::tags::admitted_retags
+crucible/cntp/MtlsTransport.cpp | 0.4 | ::fixy::tags::admitted_retags
 crucible/cntp/OverlayMulticast.cpp | 0.4 | ::fixy::tags::admitted_retags
 crucible/cntp/PathSwap.cpp | 0.2 | ::fixy::tags::admitted_retags
 crucible/cntp/RoceConfig.cpp | 0.5 | ::fixy::tags::admitted_retags, unknown
-crucible/cntp/Tcam.cpp | 0.6 | ::fixy::tags::admitted_retags
+crucible/cntp/Tcam.cpp | 0.7 | ::fixy::tags::admitted_retags
 crucible/cntp/_wip/GpuDirect.cpp | 0.4 | ::fixy::tags::admitted_retags
 crucible/cntp/_wip/Sharp.cpp | 0.5 | ::fixy::tags::admitted_retags
 crucible/cntp/dataplane/TcEbpf.cpp | 0.9 | ::fixy::tags::admitted_retags
@@ -64,11 +64,11 @@ crucible/topology/Ptp.cpp | 0.5 | ::fixy::tags::admitted_retags
 crucible/topology/Telemetry.cpp | 0.6 | ::fixy::tags::admitted_retags
 crucible/warden/Quarantine.cpp | 0.6 | ::foundation::permissions::permission_rows
 fixy/Atom.cpp | 2.1 | unknown
-fixy/Bands.cpp | 3.9 | ::fixy::alloc_class, ::fixy::cipher_tier, ::fixy::det_safe, ::fixy::hot_path, ::fixy::numerical_tier, ::fixy::opaque_lifetime, ::fixy::residency_heat, ::fixy::scoped_fence, ::fixy::vendor, ::fixy::wait
+fixy/Bands.cpp | 1.6 | ::fixy::alloc_class, ::fixy::cipher_tier, ::fixy::det_safe, ::fixy::hot_path, ::fixy::numerical_tier, ::fixy::opaque_lifetime, ::fixy::residency_heat, ::fixy::scoped_fence, ::fixy::vendor, ::fixy::wait
 fixy/CanonicalOrder.cpp | 0.2 | ::fixy::tags::admitted_retags
 fixy/Collision.cpp | 13.1 | ::fixy::atom::detail, unknown
 fixy/Corpus.cpp | 1.8 | ::fixy::corpus, ::fixy::tags::secret_policy, unknown
-fixy/Fn.cpp | 6.9 | ::foundation::effects::resource, ::foundation::permissions::permission_rows, unknown
+fixy/Fn.cpp | 6.8 | ::foundation::effects::resource, ::foundation::permissions::permission_rows, unknown
 fixy/Machine.cpp | 0.0 | ::fixy::machine::admitted_transitions, unknown
 fixy/OwnedRegion.cpp | 0.5 | ::foundation::permissions::permission_rows
 fixy/Path.cpp | 0.0 | ::fixy::tags::admitted_retags
@@ -94,10 +94,10 @@ fixy/atoms/Session.cpp | 0.0 | ::fixy::atom::session, unknown
 fixy/atoms/Simd.cpp | 0.7 | ::fixy::atom::simd, unknown
 fixy/atoms/Stack.cpp | 0.1 | ::fixy::atom::stack, unknown
 fixy/atoms/Stdio.cpp | 0.1 | ::fixy::atom::stdio, unknown
-fixy/atoms/Sync.cpp | 0.3 | ::fixy::atom::sync, unknown
+fixy/atoms/Sync.cpp | 0.2 | ::fixy::atom::sync, unknown
 fixy/atoms/Syscall.cpp | 2.2 | ::fixy::atom::syscall, unknown
 fixy/concurrent/Endpoint.cpp | 0.4 | ::fixy::session::combinators, ::foundation::permissions::permission_rows, unknown
-fixy/concurrent/StageEndpointBridge.cpp | 0.6 | ::fixy::session::combinators, ::foundation::permissions::permission_rows, unknown
+fixy/concurrent/StageEndpointBridge.cpp | 0.7 | ::fixy::session::combinators, ::foundation::permissions::permission_rows, unknown
 fixy/handle/LazyEstablishedChannel.cpp | 0.2 | ::fixy::session::combinators
 fixy/os/CipherDurable.cpp | 0.1 | unknown
 fixy/os/Fs.cpp | 0.1 | unknown
@@ -109,7 +109,7 @@ fixy/session/Crash.cpp | 0.7 | ::fixy::session::combinators
 fixy/session/Delegate.cpp | 0.2 | ::fixy::session::combinators
 fixy/session/Network.cpp | 0.0 | ::fixy::session::combinators
 fixy/session/Protocol.cpp | 0.4 | ::fixy::session::combinators
-fixy/session/VigilMode.cpp | 0.4 | ::fixy::session::combinators
+fixy/session/VigilMode.cpp | 0.5 | ::fixy::session::combinators
 foundation/diag/Catalog.cpp | 3.9 | ::foundation::diag
 foundation/diag/Insights.cpp | 0.6 | ::foundation::diag
 foundation/effects/Capability.cpp | 0.2 | ::foundation::effects::cap

@@ -242,12 +242,12 @@ static_assert(every_tier_has_an_alias<^^::fixy::residency_heat, std::meta::deali
               "fixy/Bands.h: a ResidencyHeatTag enumerator has no alias in fixy::residency_heat.");
 
 // The walk answers no when an enumerator has no alias, which is what
-// keeps the assertions above from passing vacuously.  det_safe
-// holds no HotPathTier alias, so asking it about one is the shape of
-// the failure without planting a defect in the table.
-static_assert(!some_alias_names_tier<^^::fixy::det_safe, HotPathTier_v::Hot>(),
-              "fixy/Bands.h: the alias walk must answer no for a tier the namespace does not name, or "
-              "every_tier_has_an_alias proves nothing.");
+// keeps the assertions above from passing vacuously.  det_safe holds no
+// HotPathTier alias, so asking it about HotPathTier is the shape of the
+// failure without planting a defect in the table.
+static_assert(!every_tier_has_an_alias<^^::fixy::det_safe, std::meta::dealias(^^HotPathTier_v)>(),
+              "fixy/Bands.h: the alias walk must answer no for an enum whose tiers the namespace does not name, "
+              "or the assertions above prove nothing.");
 
 }  // namespace detail::bands_self_test
 
