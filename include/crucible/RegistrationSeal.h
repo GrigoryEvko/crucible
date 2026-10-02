@@ -33,7 +33,15 @@
 //
 // The seal waits while a writer holds the section, and a writer waits while
 // another writer holds it.  One registration is a bounded, short piece of
-// work, so both waits spin with the pause instruction.
+// work, so both waits spin with the pause instruction.  After each failed
+// compare-exchange, a wait spins a number of pauses that doubles up to a
+// limit.  A compare-exchange that fails still takes the cache line, so
+// waiters that retry at once delay the release store of the writer in the
+// section.  ThreadSanitizer also takes a read lock for each acquire
+// compare-exchange and a write lock for the release store, and its lock
+// admits readers first.  When each waiter has a CPU and retries at once,
+// the writer in the section never gets the write lock, and the section
+// never closes.
 
 #include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
@@ -72,11 +80,12 @@ public:
     // one time: a second call finds Sealed and returns.
     void seal() noexcept {
         Phase expected = Phase::Open;
+        std::uint32_t pause_count = 1;
         while (!phase_.compare_exchange_weak(expected, Phase::Sealed, std::memory_order_acq_rel,
                                              std::memory_order_acquire)) {
             if (expected == Phase::Sealed) return;
             expected = Phase::Open;
-            CRUCIBLE_SPIN_PAUSE;
+            back_off_(pause_count);
         }
     }
 
@@ -97,14 +106,26 @@ private:
         Sealed
     };
 
+    // The largest number of pauses that one wait spins between two
+    // compare-exchanges.
+    static constexpr std::uint32_t max_backoff_pauses_ = 1024;
+
+    // Spins `pause_count` pauses, then doubles the count up to the limit.
+    static void back_off_(std::uint32_t& pause_count) noexcept {
+        for (std::uint32_t pause = 0; pause < pause_count; ++pause)
+            CRUCIBLE_SPIN_PAUSE;
+        if (pause_count < max_backoff_pauses_) pause_count *= 2;
+    }
+
     // Takes the section.  Returns false when the table is sealed.
     [[nodiscard]] bool enter_writer_() noexcept {
         Phase expected = Phase::Open;
+        std::uint32_t pause_count = 1;
         while (!phase_.compare_exchange_weak(expected, Phase::Writing, std::memory_order_acquire,
                                              std::memory_order_acquire)) {
             if (expected == Phase::Sealed) return false;
             expected = Phase::Open;
-            CRUCIBLE_SPIN_PAUSE;
+            back_off_(pause_count);
         }
         return true;
     }
