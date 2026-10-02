@@ -4,7 +4,9 @@
 # A row:  COMMIT | ROW | COLUMN | REASON
 #
 # COMMIT is the hash of the commit that raised the threshold, with at least 9 characters.  ROW is the
-# check name of the row of utils/scripts/budgets.txt, and COLUMN is warn or error.  REASON gives the
+# check name of the row of utils/scripts/budgets.txt, and COLUMN is warn or error.  The row name
+# quarantine-ledger with the column error admits a commit that raised a count of
+# utils/scripts/quarantine-ledger.txt with no change of the plugin or the rule table.  REASON gives the
 # measurement that the commit body did not give.  A rise with a row gives a warning on each run.  A row
 # that names no such rise is an error.  The history cannot change.  A row stays while its row of the
 # budget table stays.

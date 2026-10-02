@@ -12,6 +12,8 @@ WHAT THE GUARD READS
       runs only `git rev-parse`, `git ls-files`, `git log` and `git cat-file`.
       A merge brings a change that a commit of the other side made, and the
       guard reads that commit.
+    * Each path that a commit of the quarantine ledger changed, and each file
+      that git reports as moved in it (`git log --full-diff --find-renames`).
     * The working-tree copy of each of these files.  It can hold an edit that
       no commit holds yet.
     * utils/scripts/budget-history-ledger.txt: the rises of the past whose
@@ -28,9 +30,20 @@ THE FINDINGS
       newest commit at the lowest count.  A ledger of a row with the unit %
       holds the baselines of a check against a baseline, which --write writes
       again.  It admits nothing, and the guard does not count its rows.  The
-      rows of utils/scripts/quarantine-ledger.txt are the counts of the files
-      that utils/scripts/check-quarantine-ratchet.py writes, and the guard does
-      not count them either.
+      rows of utils/scripts/quarantine-ledger.txt are counts, so the guard
+      reads that ledger as the next item says, and it does not count its rows.
+    * A commit that raised a count of the quarantine ledger, and that changes
+      neither the plugin of utils/tools/quarantine/ nor the rule table
+      utils/scripts/layer-rules.txt, gives an error.  A row of the admission
+      ledger with the row name quarantine-ledger and the column error changes
+      the error to a warning.  Each raised count that stays above its count
+      before the commit gives a warning on each run, which names the commit.
+      No count rises in a change of the ledger format if no total of a kind
+      rises, in a file that git moved, in a new configuration, or in a
+      configuration other than the base that comes back to a count of its
+      history (utils/scripts/check-quarantine-ratchet.py, A CONFIGURATION
+      THAT ONLY CI BUILDS).  A change of the format starts a new history of
+      each count.
     * A commit that raised a threshold, and whose body holds no measurement of
       the row, gives an error.  A row of the admission ledger that names the
       commit, the row and the column changes the error to a warning.
@@ -79,6 +92,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import importlib.util
 import io
 import math
 import os
@@ -87,6 +101,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass, field
+from typing import Any
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -101,6 +116,13 @@ LEDGER_GLOB = "utils/scripts/*-ledger.txt"
 LEDGER_SUFFIX = "-ledger.txt"
 ADMISSIONS = "utils/scripts/budget-history-ledger.txt"
 QUARANTINE_LEDGER = "utils/scripts/quarantine-ledger.txt"
+# The admission row name of a raise of the quarantine ledger.
+QUARANTINE_ROW = "quarantine-ledger"
+# A commit that changes one of these paths can change what the quarantine plugin reports.
+QUARANTINE_MACHINERY = ("utils/tools/quarantine/", "utils/scripts/layer-rules.txt")
+RATCHET = Path(__file__).resolve().parent / "check-quarantine-ratchet.py"
+TOTAL = "(the total of the kind)"
+SHOWN_RISES = 8
 COLUMNS = ("warn", "error")
 WORKING_TREE = "the working tree"
 NOT_APPLICABLE = 3
@@ -164,9 +186,20 @@ class Rise:
         return f"{self.where} ({self.subject}) from {number_text(self.old)} to {number_text(self.new)}"
 
 
+@dataclass(frozen=True, slots=True)
+class Change:
+    """The paths that one commit changed, and the old path of each file that it moved."""
+
+    paths: frozenset[str]
+    moves: dict[str, str]
+
+
 @dataclass(slots=True)
 class History:
-    """The states of the watched files: at each commit (newest first), at its parent, at HEAD and in the working tree."""
+    """The states of the watched files: at each commit (newest first), at its parent, at HEAD and in the working tree.
+
+    `changes` holds each path that a commit of the quarantine ledger changed.
+    """
 
     commits: list[Commit]
     at: dict[tuple[str, str], str | None]
@@ -174,6 +207,7 @@ class History:
     head: dict[str, str | None]
     working: dict[str, str | None]
     ledgers: list[str] = field(default_factory=list)
+    changes: dict[str, Change] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,7 +310,31 @@ def read_history(root: Path) -> History:
     for path in watched:
         file = root / path
         working[path] = file.read_text(encoding="utf-8", errors="replace") if file.is_file() else None
-    return History(commits, at, before, head, working, ledgers)
+    changes = read_changes(root) if QUARANTINE_LEDGER in ledgers else {}
+    return History(commits, at, before, head, working, ledgers, changes)
+
+
+def read_changes(root: Path) -> dict[str, Change]:
+    """Read each path that each commit of the quarantine ledger changed, with the moves that git finds.
+
+    Complexity: linear in the size of the log.
+    """
+    log = git(root, "log", "--no-merges", "--full-history", "--topo-order", "--full-diff", "--find-renames",
+              "--name-status", f"--format={RECORD}%H", "--", QUARANTINE_LEDGER)
+    changes: dict[str, Change] = {}
+    for record in log.split(RECORD)[1:]:
+        lines = record.splitlines()
+        paths: set[str] = set()
+        moves: dict[str, str] = {}
+        for line in lines[1:]:
+            cells = line.split("\t")
+            if len(cells) == 3 and cells[0].startswith("R"):
+                moves[cells[2]] = cells[1]
+                paths.update(cells[1:])
+            elif len(cells) >= 2:
+                paths.update(cells[1:])
+        changes[lines[0].strip()] = Change(frozenset(paths), moves)
+    return changes
 
 
 def parse_budgets(text: str | None) -> dict[str, Row]:
@@ -459,6 +517,7 @@ def evaluate(history: History, admissions: list[Admission]) -> list[check_report
                     f"the {column} threshold of {row_name} is {number_text(row.value(column))} {row.unit}, above its "
                     f"lowest committed value {number_text(lowest)}.  Raised: {raised}.  Lower it again when a "
                     f"measurement permits"))
+    findings.extend(evaluate_quarantine(history, admissions, used))
     for item in admissions:
         if item.line not in used:
             findings.append(check_report.Finding(
@@ -498,6 +557,183 @@ def evaluate_ledgers(history: History, budgets: dict[str, Row]) -> list[check_re
                 "warning", path, 0, CHECK,
                 f"the ledger holds {current} rows, more than its lowest committed count {number_text(lowest)}.  Rows "
                 f"added: {raised}.  Remove a row when its item is fixed"))
+    return findings
+
+
+# ── The quarantine ledger ──────────────────────────────────────────
+
+# The configuration, the file and the kind of one count of the quarantine ledger.
+CountKey = tuple[str, str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class LedgerRise:
+    """One count of the quarantine ledger that a commit raised: its configuration, file, kind and the two counts."""
+
+    configuration: str
+    file: str
+    kind: str
+    old: int
+    new: int
+
+    def text(self) -> str:
+        """Return the rise as words for a message."""
+        return f"{self.file} {self.kind} in {self.configuration} from {self.old} to {self.new}"
+
+
+def load_ratchet() -> Any:
+    """Load utils/scripts/check-quarantine-ratchet.py as a module, for its reader of the ledger.
+
+    Its Ledger objects have the type Any here, because the module loads at run time.
+    """
+    loaded = sys.modules.get("check_quarantine_ratchet")
+    if loaded is not None:
+        return loaded
+    spec = importlib.util.spec_from_file_location("check_quarantine_ratchet", RATCHET)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    # A dataclass of the module looks up its module in sys.modules.
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def absolute_counts(ledger: Any) -> dict[CountKey, int]:
+    """Return the count of each configuration, file and kind of a ledger: the base count plus the difference."""
+    return {(name, file, kind): count for name in ledger.configurations
+            for (file, kind), count in ledger.expected(name).items()}
+
+
+def kind_totals(ledger: Any) -> dict[str, int]:
+    """Return the sum of the base counts of each kind of a ledger."""
+    totals: dict[str, int] = {}
+    for (_file, kind), count in ledger.counts.items():
+        totals[kind] = totals.get(kind, 0) + count
+    return totals
+
+
+def ledger_rises(before: Any, after: Any, moves: dict[str, str], peaks: dict[CountKey, int]) -> list[LedgerRise]:
+    """Return each count that rose from one version of the quarantine ledger to the next.
+
+    * Two versions of different formats compare the total of each kind of the base, because their rows count
+      different things.
+    * A configuration that the old version does not have is new coverage, and no rise.
+    * A file that git moved keeps the rows of its old path: no rise when the old path has no row after the commit
+      and had at least the count before it.
+    * A count of a configuration other than the base that comes back to a value of its history, `peaks`, is no
+      rise.  A CI leg or a later --write can write such a configuration after a commit that lowered the base rows.
+
+    Complexity: O(r log r) for r counts.
+    """
+    if before.format != after.format:
+        old_totals, new_totals = kind_totals(before), kind_totals(after)
+        return [LedgerRise(after.base, TOTAL, kind, old_totals.get(kind, 0), count)
+                for kind, count in sorted(new_totals.items()) if count > old_totals.get(kind, 0)]
+    old_counts, new_counts = absolute_counts(before), absolute_counts(after)
+    rises: list[LedgerRise] = []
+    for key in sorted(new_counts):
+        name, file, kind = key
+        new, old = new_counts[key], old_counts.get(key, 0)
+        if new <= old or name not in before.configurations:
+            continue
+        source = moves.get(file)
+        if (source is not None and old == 0 and new_counts.get((name, source, kind), 0) == 0
+                and old_counts.get((name, source, kind), 0) >= new):
+            continue
+        if name != after.base and new <= peaks.get(key, 0):
+            continue
+        rises.append(LedgerRise(name, file, kind, old, new))
+    return rises
+
+
+def changes_machinery(change: Change) -> bool:
+    """Tell whether a commit changed the quarantine plugin or the rule table."""
+    return any(path == item or path.startswith(item) for path in change.paths for item in QUARANTINE_MACHINERY)
+
+
+def evaluate_quarantine(history: History, admissions: list[Admission], used: set[int]) -> list[check_report.Finding]:
+    """Read each raise of the quarantine ledger in the history and in the working tree.
+
+    * A commit that raised a count and that changes neither the plugin nor the rule table gives an error, unless a
+      row of the admission ledger with the row name quarantine-ledger names the commit.
+    * A raised count that stays above its value before the commit gives a warning on each run, which names the
+      commit.  A change of the format starts a new history of each row.
+    * A raise in the working tree gives a warning only.
+
+    Complexity: O(c * r) for c commits of the ledger and r counts.
+    """
+    if QUARANTINE_LEDGER not in history.ledgers:
+        return []
+    ratchet = load_ratchet()
+    parsed: dict[str, Any] = {}
+
+    def parse(text: str | None, where: str) -> Any:
+        """Read one version of the ledger, one time for each text, or None for no text or a malformed text."""
+        if text is None:
+            return None
+        if text not in parsed:
+            try:
+                parsed[text] = ratchet.parse_ledger(text, where)
+            except ratchet.LedgerError:
+                parsed[text] = None
+        return parsed[text]
+
+    findings: list[check_report.Finding] = []
+    peaks: dict[CountKey, int] = {}
+    standing: list[tuple[Commit, LedgerRise]] = []
+    last_format = 0
+    for commit in reversed(history.commits):
+        if QUARANTINE_LEDGER not in commit.paths:
+            continue
+        after = parse(history.at.get((commit.sha, QUARANTINE_LEDGER)), f"{commit.short}:{QUARANTINE_LEDGER}")
+        before = parse(history.before.get((commit.sha, QUARANTINE_LEDGER)), f"{commit.short}^:{QUARANTINE_LEDGER}")
+        if after is None:
+            continue
+        if before is None or before.format != after.format:
+            peaks, standing = {}, []
+        last_format = after.format
+        change = history.changes.get(commit.sha, Change(frozenset(), {}))
+        rises = ledger_rises(before, after, change.moves, peaks) if before is not None else []
+        for key, count in absolute_counts(after).items():
+            peaks[key] = max(peaks.get(key, 0), count)
+        standing += [(commit, rise) for rise in rises if rise.file != TOTAL]
+        if not rises or changes_machinery(change):
+            continue
+        shown = "; ".join(rise.text() for rise in rises[:SHOWN_RISES])
+        more = f"; and {len(rises) - SHOWN_RISES} more" if len(rises) > SHOWN_RISES else ""
+        said = (f"the commit {commit.short} ({commit.subject}) raised {len(rises)} counts of {QUARANTINE_LEDGER}, "
+                f"and it changes neither the plugin of utils/tools/quarantine/ nor the rule table "
+                f"utils/scripts/layer-rules.txt: {shown}{more}")
+        admitted = next((item for item in admissions
+                         if commit.sha.startswith(item.commit) and item.row == QUARANTINE_ROW), None)
+        if admitted is not None:
+            used.add(admitted.line)
+            findings.append(check_report.Finding("warning", ADMISSIONS, admitted.line, CHECK,
+                                                 f"{said}.  The row admits it: {admitted.reason}"))
+        else:
+            findings.append(check_report.Finding(
+                "error", QUARANTINE_LEDGER, 0, CHECK,
+                f"{said}.  A change can only lower a count.  Remove the new findings, or add a row to {ADMISSIONS} "
+                f"that gives the commit, {QUARANTINE_ROW}, error and the reason"))
+    current = parse(history.working.get(QUARANTINE_LEDGER), QUARANTINE_LEDGER)
+    if current is None or current.format != last_format:
+        return findings
+    counts = absolute_counts(current)
+    for commit, rise in standing:
+        value = counts.get((rise.configuration, rise.file, rise.kind), 0)
+        if value > rise.old:
+            findings.append(check_report.Finding(
+                "warning", QUARANTINE_LEDGER, current.line_of(rise.configuration, (rise.file, rise.kind)), CHECK,
+                f"{rise.file} {rise.kind} in the configuration {rise.configuration} has {value} findings, above "
+                f"{rise.old} before the commit {commit.short} ({commit.subject}) raised it to {rise.new}.  Lower it "
+                f"again"))
+    head = parse(history.head.get(QUARANTINE_LEDGER), f"HEAD:{QUARANTINE_LEDGER}")
+    if head is not None and head.format == current.format:
+        for rise in ledger_rises(head, current, {}, peaks):
+            findings.append(check_report.Finding(
+                "warning", QUARANTINE_LEDGER, current.line_of(rise.configuration, (rise.file, rise.kind)), CHECK,
+                f"{WORKING_TREE} (not committed) raises {rise.text()}.  The commit must change the plugin or the "
+                f"rule table, or lower the count again"))
     return findings
 
 
@@ -588,6 +824,96 @@ class Scratch:
         found = [parsed for line in output.getvalue().splitlines()
                  if (parsed := check_report.parse_line(line)) is not None]
         return status, found, output.getvalue()
+
+
+def quarantine_text(base: dict[str, int], deltas: dict[str, dict[str, int]] | None = None) -> str:
+    """Return a format 2 quarantine ledger with base counts of the kind std_object and the differences of more
+    configurations, each keyed by file."""
+    deltas = deltas or {}
+    lines = ["# a planted ledger", "format 2", "configuration default machine x86_64"]
+    lines += [f"configuration {name} machine aarch64" for name in deltas]
+    lines += [f"{file} std_object {count}" for file, count in sorted(base.items()) if count]
+    lines += [f"{name} {file} std_object {delta:+d}" for name, table in deltas.items()
+              for file, delta in sorted(table.items()) if delta]
+    return "\n".join(lines) + "\n"
+
+
+def quarantine_cases(expect: Any, scratch: Path) -> None:
+    """Plant raises of the quarantine ledger in a throwaway repository, and check each verdict."""
+
+    def errors_of(found: list[check_report.Finding]) -> list[check_report.Finding]:
+        return [f for f in found if f.level == "error" and f.path in (QUARANTINE_LEDGER, ADMISSIONS)]
+
+    def standing_of(found: list[check_report.Finding]) -> list[check_report.Finding]:
+        return [f for f in found if f.level == "warning" and f.path == QUARANTINE_LEDGER]
+
+    tree = Scratch(scratch / "quarantine")
+    tree.write(QUARANTINE_LEDGER, "# a planted ledger\nconfiguration machine x86_64\ntest std_object 5\n")
+    for name in ("test/a.cpp", "test/b.cpp"):
+        tree.write(name, f"// {name}\n")
+    tree.commit("Add the ledger of format 1", "The first counts.")
+    tree.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 3, "test/b.cpp": 2}))
+    tree.commit("Count each file", "The format changes, and each total stays.")
+    status, found, _ = tree.run()
+    expect("a change of the format with the same totals is no raise", not errors_of(found) and not standing_of(found))
+    tree.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 2, "test/b.cpp": 2}))
+    tree.commit("Lower a count", "One finding goes.")
+    tree.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 2, "test/b.cpp": 3}))
+    raised = tree.commit("Raise a count by hand", "A finding comes back.")
+    status, found, _ = tree.run()
+    expect("a raise with no change of the plugin or the rule table is an error that names the commit",
+           status == 1 and [f.message.split(":")[0] for f in errors_of(found)]
+           == [f"the commit {raised[:9]} (Raise a count by hand) raised 1 counts of {QUARANTINE_LEDGER}, and it "
+               f"changes neither the plugin of utils/tools/quarantine/ nor the rule table utils/scripts/layer-rules.txt"])
+    expect("the raised row gives a warning that names the commit",
+           [f.line for f in standing_of(found)] == [5] and raised[:9] in standing_of(found)[0].message
+           and "from 2" not in standing_of(found)[0].message and "above 2" in standing_of(found)[0].message)
+    tree.write(ADMISSIONS, f"# COMMIT | ROW | COLUMN | REASON\n{raised[:12]} | {QUARANTINE_ROW} | error | a "
+                           f"planted reason\n")
+    tree.commit("Admit the raise", "The row admits it.")
+    status, found, _ = tree.run()
+    expect("an admission row of quarantine-ledger changes the error to a warning",
+           status == 0 and not errors_of(found) and any(f.path == ADMISSIONS and "admits it" in f.message
+                                                        for f in found))
+    tree.write("utils/tools/quarantine/quarantine.cpp", "// a new rule\n")
+    tree.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 4, "test/b.cpp": 3}))
+    ruled = tree.commit("Report a new kind in the plugin", "The plugin finds more.")
+    status, found, _ = tree.run()
+    expect("a raise with a change of the plugin is no error, and its row gives a warning that names the commit",
+           status == 0 and not errors_of(found) and any(ruled[:9] in f.message for f in standing_of(found)))
+    subprocess.run(["git", "-C", str(tree.root), "mv", "test/b.cpp", "test/c.cpp"], check=True, capture_output=True)
+    tree.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 4, "test/c.cpp": 3}))
+    tree.commit("Move a file", "git moves the file, and its rows move with it.")
+    status, found, _ = tree.run()
+    expect("a git move of a file is no raise", status == 0 and not errors_of(found))
+    tree.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 4, "test/c.cpp": 3}, {"arm": {"test/c.cpp": 1}}))
+    tree.commit("Add the configuration of a CI leg", "The leg counts one more finding.")
+    tree.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 4, "test/c.cpp": 2}, {"arm": {"test/c.cpp": 1}}))
+    tree.commit("Lower a count of each build", "Only the base rows change.")
+    tree.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 4, "test/c.cpp": 2}, {"arm": {"test/c.cpp": 2}}))
+    tree.commit("Import the rows of the CI leg", "The leg had the finding in an arm of its own.")
+    status, found, _ = tree.run()
+    expect("a new configuration, and a later configuration that comes back to a count of its history, are no raise",
+           status == 0 and not errors_of(found))
+    tree.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 4, "test/c.cpp": 2}, {"arm": {"test/c.cpp": 3}}))
+    above = tree.commit("Import more rows", "The leg finds one more.")
+    status, found, _ = tree.run()
+    expect("a later configuration above each count of its history is an error",
+           status == 1 and any(above[:9] in f.message for f in errors_of(found)))
+    tree.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 5, "test/c.cpp": 2}, {"arm": {"test/c.cpp": 3}}))
+    status, found, _ = tree.run()
+    expect("a raise in the working tree gives a warning only",
+           any(WORKING_TREE in f.message and f.level == "warning" for f in found)
+           and not any(WORKING_TREE in f.message for f in errors_of(found)))
+
+    jump = Scratch(scratch / "quarantine-format")
+    jump.write(QUARANTINE_LEDGER, "# a planted ledger\nconfiguration machine x86_64\ntest std_object 5\n")
+    jump.commit("Add the ledger of format 1", "The first counts.")
+    jump.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 4, "test/b.cpp": 2}))
+    grown = jump.commit("Count each file", "The total grows.")
+    status, found, _ = jump.run()
+    expect("a change of the format that raises a total is an error",
+           status == 1 and any(grown[:9] in f.message and TOTAL in f.message for f in errors_of(found)))
 
 
 def self_test() -> int:
@@ -720,6 +1046,8 @@ def self_test() -> int:
         status, found, _ = tree.run()
         expect("a side commit with no body and no measured twin is an error",
                status == 1 and any(lone[:9] in f.message for f in found if f.level == "error"))
+
+        quarantine_cases(expect, Path(scratch_name))
 
         shallow = Path(scratch_name) / "shallow"
         subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{tree.root}", str(shallow)], check=True,

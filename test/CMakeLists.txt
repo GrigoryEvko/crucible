@@ -5657,8 +5657,10 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # of utils/scripts/budgets.txt and of each ledger.  A threshold above its
 # lowest committed value and a ledger above its lowest committed row count
 # give a warning that names the commits.  A rise of a threshold whose commits
-# give no measurement of the row is an error.  It exits 3 for a tree with no
-# whole history.
+# give no measurement of the row is an error.  A raise of a count of the
+# quarantine ledger gives a warning, and it is an error when its commit changes
+# neither the quarantine plugin nor the rule table.  It exits 3 for a tree with
+# no whole history.
 add_test(NAME budget_history
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-budget-history.py --root ${CMAKE_SOURCE_DIR}
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
