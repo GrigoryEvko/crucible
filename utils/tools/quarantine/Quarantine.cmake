@@ -173,11 +173,14 @@ if(CRUCIBLE_QUARANTINE STREQUAL "REPORT")
     message(STATUS "CRUCIBLE_QUARANTINE=REPORT: the compiler launcher (${CMAKE_CXX_COMPILER_LAUNCHER}) is not used")
   endif()
   set(CMAKE_CXX_COMPILER_LAUNCHER "")
-elseif(CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache")
-  # ccache hashes the plugin path and the paths of the plugin arguments as
-  # text, and each work tree has its own.  The stamp stays in the hash.
-  list(APPEND CMAKE_CXX_COMPILER_LAUNCHER
-    "ignore_options=-fplugin=* ${_crucible_quarantine_argument}-root=* ${_crucible_quarantine_argument}-build=* ${_crucible_quarantine_argument}-admitted=*")
+else()
+  crucible_launcher_is_ccache("${CMAKE_CXX_COMPILER_LAUNCHER}" _crucible_quarantine_launcher_is_ccache)
+  if(_crucible_quarantine_launcher_is_ccache)
+    # ccache hashes the plugin path and the paths of the plugin arguments as
+    # text, and each work tree has its own.  The stamp stays in the hash.
+    list(APPEND CMAKE_CXX_COMPILER_LAUNCHER
+      "ignore_options=-fplugin=* ${_crucible_quarantine_argument}-root=* ${_crucible_quarantine_argument}-build=* ${_crucible_quarantine_argument}-admitted=*")
+  endif()
 endif()
 foreach(_crucible_quarantine_flag IN LISTS _crucible_quarantine_flags)
   add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:${_crucible_quarantine_flag}>")

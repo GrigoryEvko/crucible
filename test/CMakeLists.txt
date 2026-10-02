@@ -371,6 +371,15 @@ add_test(NAME patched_gcc_probe_self_test
           -P ${CMAKE_SOURCE_DIR}/cmake/probes/self_test.cmake)
 set_tests_properties(patched_gcc_probe_self_test PROPERTIES LABELS "ci_guard")
 
+# The test of cmake/Ccache.cmake.  It configures a small project for each case:
+# CRUCIBLE_USE_CCACHE=OFF with ccache in the environment and in -D, a launcher
+# that is not ccache, and the ccache that PATH holds.
+add_test(NAME ccache_launcher_self_test
+  COMMAND ${CMAKE_COMMAND} -DCXX=${CRUCIBLE_REAL_CXX}
+          -DWORK=${CMAKE_CURRENT_BINARY_DIR}/ccache_launcher_self_test
+          -P ${CMAKE_SOURCE_DIR}/cmake/CcacheSelfTest.cmake)
+set_tests_properties(ccache_launcher_self_test PROPERTIES LABELS "ci_guard")
+
 # Every site that claims a lifetime bound carries the deleted overload
 # that enforces it.  CRUCIBLE_LIFETIMEBOUND expands to nothing on the
 # only compiler this tree builds with, so the claim is checked here

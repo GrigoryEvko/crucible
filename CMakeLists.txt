@@ -1,30 +1,9 @@
 cmake_minimum_required(VERSION 3.27)
 
-# ── ccache: default + always-used layer ─────────────────────────────
-#
-# Set BEFORE project() so the compiler-probe pass also runs through
-# ccache.  The reflection-and-contracts build pulls cc1plus per heavy
-# TU through 800 MB - 1 GB and several CPU-seconds.  ccache works
-# across build directories (hash_dir=false) and uses a tuned
-# sloppiness set in ~/.config/ccache/ccache.conf.  Hit rate on the
-# dev box: 78%+ over 648K calls at this commit.
-#
-# The compiler identity that ccache hashes is set after project(), in
-# the block that follows it.
-#
-# Honours pre-set CMAKE_CXX_COMPILER_LAUNCHER from env / -D; a user
-# can disable by passing -DCRUCIBLE_USE_CCACHE=OFF at configure.
-option(CRUCIBLE_USE_CCACHE "Use ccache as compiler launcher when available" ON)
-if(CRUCIBLE_USE_CCACHE AND NOT DEFINED CMAKE_CXX_COMPILER_LAUNCHER
-                       AND NOT DEFINED ENV{CMAKE_CXX_COMPILER_LAUNCHER})
-  find_program(CCACHE_EXECUTABLE ccache)
-  if(CCACHE_EXECUTABLE)
-    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_EXECUTABLE}"
-        CACHE STRING "Compiler launcher for CXX (ccache)")
-    set(CMAKE_C_COMPILER_LAUNCHER   "${CCACHE_EXECUTABLE}"
-        CACHE STRING "Compiler launcher for C (ccache)")
-  endif()
-endif()
+# The ccache launcher: cmake/Ccache.cmake.  The second half runs after the
+# probe of the compiler, because it hashes the compiler that ccache runs.
+include(cmake/Ccache.cmake)
+crucible_ccache_before_project()
 
 project(crucible LANGUAGES CXX)
 
@@ -46,68 +25,7 @@ if(NOT CRUCIBLE_GCC_PROBLEM STREQUAL "")
   message(FATAL_ERROR "${CRUCIBLE_GCC_PROBLEM}")
 endif()
 
-if(CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache")
-  # ccache with compiler_check=content hashes the driver binary only.
-  # A compiler fix that changes cc1plus and not the driver, as the
-  # fixes in utils/toolchain/gcc do, then returns objects that the unfixed
-  # cc1plus made.  So the launcher passes ccache a compiler identity:
-  # the SHA-256 of the driver and of the cc1plus that it runs.  The
-  # two binaries are configure dependencies.  A reinstall of the
-  # compiler makes the next build configure again, and the new
-  # identity makes every object compile again.
-  # The driver is the compiler that ccache runs, so a ccache link does not
-  # put the ccache binary in the identity.
-  #
-  # The launcher also sets base_dir to the source tree.  ccache writes each
-  # path under base_dir in a dependency file relative to the build
-  # directory, and a cache hit gives the dependency file of the build that
-  # stored the result.  A path under the source tree is then correct in each
-  # build directory that gets a hit.  A base_dir above the compiler, such as
-  # a home directory, also makes the headers of the compiler relative.  A
-  # hit in a build directory at a different depth then records headers that
-  # do not exist, and Ninja compiles the object again on each build.
-  # utils/scripts/check-reconfigure-noop.py finds such a dependency.
-  # ccache does not hash base_dir, so an entry that a launcher with another
-  # base_dir stored can still give such a dependency file.  The namespace
-  # keeps the entries of this launcher apart from those entries.
-  #
-  # The launcher also sets depend_mode to false, which is the ccache default
-  # and the mode of CI.  When the hashes of the included files give no hit,
-  # ccache then hashes the output of the preprocessor.  A change that keeps
-  # that output, such as a change of a comment on its own line, then gets a
-  # hit.  The output keeps the number of each line and the column of each
-  # token, so a change that moves code gets no hit.  The hit needs an entry
-  # for the same output, so the first change after a hit in the direct mode
-  # gets no hit.  A change of a comment in foundation/Platform.h rebuilt 844
-  # objects in 2.8 s and 171 CPU seconds in place of 29 s and 2,219 CPU
-  # seconds.  A change of code pays one more run of the preprocessor: 2,448
-  # CPU seconds in place of 2,387.
-  execute_process(
-      COMMAND "${CRUCIBLE_REAL_CXX}" -print-prog-name=cc1plus
-      OUTPUT_VARIABLE CRUCIBLE_CC1PLUS
-      OUTPUT_STRIP_TRAILING_WHITESPACE
-      RESULT_VARIABLE CRUCIBLE_CC1PLUS_STATUS)
-  if(NOT CRUCIBLE_CC1PLUS_STATUS EQUAL 0 OR NOT IS_ABSOLUTE "${CRUCIBLE_CC1PLUS}"
-     OR NOT EXISTS "${CRUCIBLE_CC1PLUS}")
-    message(FATAL_ERROR
-        "ccache: '${CRUCIBLE_REAL_CXX} -print-prog-name=cc1plus' did not "
-        "name an existing file (it gave '${CRUCIBLE_CC1PLUS}').  Without "
-        "that file ccache cannot tell one compiler build from another.  "
-        "Fix the compiler installation, or configure with "
-        "-DCRUCIBLE_USE_CCACHE=OFF.")
-  endif()
-  file(SHA256 "${CRUCIBLE_REAL_CXX}" CRUCIBLE_DRIVER_SHA256)
-  file(SHA256 "${CRUCIBLE_CC1PLUS}" CRUCIBLE_CC1PLUS_SHA256)
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-      "${CRUCIBLE_REAL_CXX}" "${CRUCIBLE_CC1PLUS}")
-  list(GET CMAKE_CXX_COMPILER_LAUNCHER 0 CRUCIBLE_CCACHE)
-  set(CMAKE_CXX_COMPILER_LAUNCHER "${CRUCIBLE_CCACHE}"
-      "compiler_check=string:${CRUCIBLE_DRIVER_SHA256}-${CRUCIBLE_CC1PLUS_SHA256}"
-      "base_dir=${CMAKE_SOURCE_DIR}" "namespace=source-base-dir" "depend_mode=false")
-  message(STATUS "ccache: ${CRUCIBLE_CCACHE} (compiler launcher enabled, cc1plus ${CRUCIBLE_CC1PLUS})")
-elseif(CRUCIBLE_USE_CCACHE)
-  message(STATUS "ccache: not found on PATH — proceeding without launcher")
-endif()
+crucible_ccache_after_project()
 
 # ═══════════════════════════════════════════════════════════════
 # Profile-guided optimization: CRUCIBLE_PGO = off | generate | use
