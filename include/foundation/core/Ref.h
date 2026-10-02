@@ -17,9 +17,16 @@
 //
 // get(), operator* and operator-> give a borrow of the object.  The
 // overloads for an rvalue are deleted, because a borrow of a temporary Box
-// dangles at the end of the full expression.
+// dangles at the end of the full expression.  consume() moves the object
+// out of a Box that the caller gives up, and frees the storage.
+//
+// C++ keeps a moved-from object alive, and no type can refuse its use.  So
+// each access tests for the object in each build, and a Box with no object
+// ends the process through fatal().  The test is one compare with a branch
+// to a cold call.  A loop that reads the object many times takes one
+// borrow with get() before the loop.
 
-#include <foundation/Platform.h>
+#include <foundation/core/Report.h>
 
 #include <concepts>
 #include <cstddef>
@@ -50,17 +57,6 @@ class Box;
 template <class T, class Marker, class... Args>
     requires CanMintBox<T, Marker, Args...>
 [[nodiscard]] Box<T> mint_box(Marker allocation, Args&&... args) noexcept;  // MINT-PATTERN-OK: allocating
-
-namespace detail {
-
-// The allocation failed.  The tree does not run where an exhausted memory
-// can recover, so the process ends with a report.
-[[noreturn]] CRUCIBLE_COLD inline void box_allocation_failed_() noexcept {
-    ::foundation::detail::fail_invariant("allocation", "mint_box could not allocate the storage of its object",
-                                         __builtin_FILE(), __builtin_LINE());
-}
-
-}  // namespace detail
 
 template <BoxPayload T>
 class [[nodiscard]] Box {
@@ -99,20 +95,38 @@ public:
 
     ~Box() { destroy_(); }
 
-    // A moved-from Box holds no object.  The use-after-move guard refuses
-    // a use of it, and a Debug build checks it here too.
+    // A moved-from or consumed Box holds no object.  The use-after-move
+    // guard refuses a use of it that it can see, and each build tests it
+    // here.
     [[nodiscard]] T& get() & noexcept {
-        CRUCIBLE_DEBUG_ASSERT(object_ != nullptr);
+        if (object_ == nullptr) [[unlikely]] {
+            fatal("a borrow of a Box that holds no object: the Box was moved from or consumed");
+        }
         return *object_;
     }
     [[nodiscard]] T const& get() const& noexcept {
-        CRUCIBLE_DEBUG_ASSERT(object_ != nullptr);
+        if (object_ == nullptr) [[unlikely]] {
+            fatal("a borrow of a Box that holds no object: the Box was moved from or consumed");
+        }
         return *object_;
     }
     [[nodiscard]] T& operator*() & noexcept { return get(); }
     [[nodiscard]] T const& operator*() const& noexcept { return get(); }
     [[nodiscard]] T* operator->() & noexcept { return &get(); }
     [[nodiscard]] T const* operator->() const& noexcept { return &get(); }
+
+    // Moves the object out, destroys the moved-from object, and frees the
+    // storage.  The Box then holds no object.
+    [[nodiscard]] T consume() && noexcept
+        requires std::is_nothrow_move_constructible_v<T>
+    {
+        if (object_ == nullptr) [[unlikely]] {
+            fatal("consume of a Box that holds no object: the Box was moved from or consumed");
+        }
+        T taken(static_cast<T&&>(*object_));
+        destroy_();
+        return taken;
+    }
 
     T& get() && = delete("a borrow of a temporary Box dangles at the end of the full expression");
     T const& get() const&& = delete("a borrow of a temporary Box dangles at the end of the full expression");
@@ -131,7 +145,8 @@ template <class T, class Marker, class... Args>
 [[nodiscard]] Box<T> mint_box(Marker /*allocation*/, Args&&... args) noexcept {  // MINT-PATTERN-OK: allocating
     void* const storage = ::operator new(sizeof(T), std::align_val_t{alignof(T)}, std::nothrow);
     if (storage == nullptr) [[unlikely]] {
-        detail::box_allocation_failed_();
+        // The tree does not run where an exhausted memory can recover.
+        fatal("mint_box could not allocate the storage of its object");
     }
     return Box<T>{::new(storage) T(static_cast<Args&&>(args)...)};
 }

@@ -1,7 +1,9 @@
-// Tests of foundation/core/Choice.h: Option, none, consume, expect and the
-// loop of zero or one turns.
+// Tests of foundation/core/Choice.h: Option, none, expect, value_or, match
+// and the loop of zero or one turns.
 
 #include <foundation/core/Choice.h>
+
+#include <foundation/Platform.h>
 
 #include "abort_probe.h"
 #include "philox_stream.h"
@@ -61,18 +63,18 @@ void test_empty_states() {
     CRUCIBLE_FATAL_INVARIANT(turns == 0);
 }
 
-void test_some_and_consume() {
+void test_some() {
     Option<int> holder = Option<int>::some(42);
     CRUCIBLE_FATAL_INVARIANT(holder.is_some() && !holder.is_none());
-    int const taken = static_cast<Option<int>&&>(holder).consume();
+    int const taken = static_cast<Option<int>&&>(holder).expect("the holder was built with a value");
     CRUCIBLE_FATAL_INVARIANT(taken == 42);
 }
 
-// The probe reads the Option after consume() on purpose: consume() leaves
+// The probe reads the Option after expect() on purpose: expect() leaves
 // the source empty.
-void test_consume_empties_the_source() {
+void test_expect_empties_the_source() {
     Option<int> holder = Option<int>::some(43);
-    CRUCIBLE_FATAL_INVARIANT(static_cast<Option<int>&&>(holder).consume() == 43);
+    CRUCIBLE_FATAL_INVARIANT(static_cast<Option<int>&&>(holder).expect("the holder was built with a value") == 43);
     CRUCIBLE_FATAL_INVARIANT(holder.is_none());
 }
 
@@ -81,11 +83,6 @@ void test_expect() {
     bool const empty_expect_aborts = ::foundation::test::aborts(
         [] { static_cast<void>(Option<int>{}.expect("the test option is empty on purpose")); });
     CRUCIBLE_FATAL_INVARIANT(empty_expect_aborts);
-}
-
-void test_consume_of_empty_aborts() {
-    bool const empty_consume_aborts = ::foundation::test::aborts([] { static_cast<void>(Option<int>{}.consume()); });
-    CRUCIBLE_FATAL_INVARIANT(empty_consume_aborts);
 }
 
 void test_loop() {
@@ -102,13 +99,24 @@ void test_loop() {
     for (int const value : Option<int>::some(3)) {
         temporary_sum += value;
     }
-    CRUCIBLE_FATAL_INVARIANT(static_cast<Option<int>&&>(holder).consume() == 2);
+    CRUCIBLE_FATAL_INVARIANT(static_cast<Option<int>&&>(holder).expect("the loop changed the value") == 2);
     CRUCIBLE_FATAL_INVARIANT(fixed_sum == 5);
     CRUCIBLE_FATAL_INVARIANT(temporary_sum == 3);
 }
 
-// The probe reads each owning Option after its move and after consume()
-// on purpose: each one leaves the source empty.
+// A read through the end cursor ends the process: a cursor never reads an
+// empty Option.
+void test_end_cursor_read_aborts() {
+    Option<int> holder = Option<int>::some(9);
+    bool const end_read_aborts = ::foundation::test::aborts([&holder] { static_cast<void>(*holder.end()); });
+    CRUCIBLE_FATAL_INVARIANT(end_read_aborts);
+    Option<int> empty{};
+    bool const empty_read_aborts = ::foundation::test::aborts([&empty] { static_cast<void>(*empty.begin()); });
+    CRUCIBLE_FATAL_INVARIANT(empty_read_aborts);
+}
+
+// The probe reads each owning Option after its move and after expect() on
+// purpose: each one leaves the source empty.
 void test_owning_payload() {
     {
         Option<CountedOwner> source = Option<CountedOwner>::some(CountedOwner{11});
@@ -121,7 +129,7 @@ void test_owning_payload() {
             seen_handle = owner.handle();
         }
         CRUCIBLE_FATAL_INVARIANT(seen_handle == 11);
-        CountedOwner const taken = static_cast<Option<CountedOwner>&&>(target).consume();
+        CountedOwner const taken = static_cast<Option<CountedOwner>&&>(target).expect("the target took the owner");
         CRUCIBLE_FATAL_INVARIANT(taken.handle() == 11 && target.is_none());
         CRUCIBLE_FATAL_INVARIANT(live_owners == 1);
     }
@@ -133,6 +141,52 @@ void test_owning_payload() {
     CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
 }
 
+void test_value_or() {
+    CRUCIBLE_FATAL_INVARIANT(Option<int>::some(4).value_or(9) == 4);
+    CRUCIBLE_FATAL_INVARIANT(Option<int>{}.value_or(9) == 9);
+    {
+        Option<CountedOwner> held = Option<CountedOwner>::some(CountedOwner{21});
+        CountedOwner const taken = static_cast<Option<CountedOwner>&&>(held).value_or(CountedOwner{22});
+        CRUCIBLE_FATAL_INVARIANT(taken.handle() == 21);
+        Option<CountedOwner> empty{};
+        CountedOwner const fallback = static_cast<Option<CountedOwner>&&>(empty).value_or(CountedOwner{23});
+        CRUCIBLE_FATAL_INVARIANT(fallback.handle() == 23);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
+}
+
+// The probe reads the source after the rvalue match on purpose: the match
+// moves the payload out first.
+void test_match() {
+    Option<int> const held = Option<int>::some(5);
+    Option<int> const empty{};
+    auto const doubled = [](int const& value) noexcept { return value * 2; };
+    auto const missing = [] noexcept { return -1; };
+    CRUCIBLE_FATAL_INVARIANT(held.match(doubled, missing) == 10);
+    CRUCIBLE_FATAL_INVARIANT(empty.match(doubled, missing) == -1);
+    CRUCIBLE_FATAL_INVARIANT(held.is_some());
+
+    int some_runs = 0;
+    int none_runs = 0;
+    held.match([&some_runs](int const&) noexcept { ++some_runs; }, [&none_runs] noexcept { ++none_runs; });
+    empty.match([&some_runs](int const&) noexcept { ++some_runs; }, [&none_runs] noexcept { ++none_runs; });
+    CRUCIBLE_FATAL_INVARIANT(some_runs == 1 && none_runs == 1);
+
+    {
+        Option<CountedOwner> source = Option<CountedOwner>::some(CountedOwner{31});
+        bool source_was_empty_in_arm = false;
+        int const handle = static_cast<Option<CountedOwner>&&>(source).match(
+            [&source, &source_was_empty_in_arm](CountedOwner&& owner) noexcept {
+                source_was_empty_in_arm = source.is_none();
+                CountedOwner const kept{static_cast<CountedOwner&&>(owner)};
+                return kept.handle();
+            },
+            [] noexcept { return 0; });
+        CRUCIBLE_FATAL_INVARIANT(handle == 31 && source_was_empty_in_arm && source.is_none());
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
+}
+
 void test_niche_payload() {
     static_assert(sizeof(Option<SlotNumber>) == sizeof(SlotNumber));
     Option<SlotNumber> empty_slot{};
@@ -140,16 +194,24 @@ void test_niche_payload() {
     Option<SlotNumber> const copied_slot = held_slot;
     CRUCIBLE_FATAL_INVARIANT(empty_slot.is_none());
     CRUCIBLE_FATAL_INVARIANT(held_slot.is_some() && copied_slot.is_some());
-    CRUCIBLE_FATAL_INVARIANT(static_cast<Option<SlotNumber>&&>(held_slot).consume().raw == 5);
+    CRUCIBLE_FATAL_INVARIANT(static_cast<Option<SlotNumber>&&>(held_slot).expect("the slot was built").raw == 5);
     for (SlotNumber const& slot : copied_slot) {
         CRUCIBLE_FATAL_INVARIANT(slot.raw == 5);
     }
 }
 
+// A payload equal to the empty value of its niche would read as no value,
+// so Option::some refuses it in each build.
+void test_niche_empty_value_aborts() {
+    bool const empty_value_aborts =
+        ::foundation::test::aborts([] { static_cast<void>(Option<SlotNumber>::some(SlotNumber{0xFFFFFFFFu})); });
+    CRUCIBLE_FATAL_INVARIANT(empty_value_aborts);
+}
+
 // The property: for each value and each choice of empty or full, the
 // Option agrees with a plain model of one flag and one value.  The loop
-// makes one turn exactly when the model holds a value, and consume and
-// expect give the value back.
+// makes one turn exactly when the model holds a value, and expect,
+// value_or and match give the value back.
 void test_agrees_with_plain_model() {
     ::foundation::test::PhiloxStream stream{0x5EEDC401CE000001u};
     for (int trial = 0; trial < 4096; ++trial) {
@@ -163,9 +225,11 @@ void test_agrees_with_plain_model() {
             ++turns;
         }
         CRUCIBLE_FATAL_INVARIANT(turns == (model_holds ? 1 : 0));
-        if (model_holds) {
-            CRUCIBLE_FATAL_INVARIANT(static_cast<Option<std::uint64_t>&&>(wide).consume() == model_value);
-        }
+        std::uint64_t const fallback = ~model_value;
+        std::uint64_t const matched = wide.match([](std::uint64_t const& value) noexcept { return value; },
+                                                 [fallback] noexcept { return fallback; });
+        CRUCIBLE_FATAL_INVARIANT(matched == (model_holds ? model_value : fallback));
+        CRUCIBLE_FATAL_INVARIANT(static_cast<Option<std::uint64_t>&&>(wide).value_or(fallback) == matched);
 
         std::uint32_t const raw_slot = static_cast<std::uint32_t>(stream.below(0xFFFFFFFFu));
         Option<SlotNumber> slot = model_holds ? Option<SlotNumber>::some(SlotNumber{raw_slot}) : Option<SlotNumber>{};
@@ -181,13 +245,16 @@ void test_agrees_with_plain_model() {
 
 int main() {
     test_empty_states();
-    test_some_and_consume();
-    test_consume_empties_the_source();
+    test_some();
+    test_expect_empties_the_source();
     test_expect();
-    test_consume_of_empty_aborts();
     test_loop();
+    test_end_cursor_read_aborts();
     test_owning_payload();
+    test_value_or();
+    test_match();
     test_niche_payload();
+    test_niche_empty_value_aborts();
     test_agrees_with_plain_model();
     return 0;
 }

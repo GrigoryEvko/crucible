@@ -35,7 +35,7 @@
 #include <foundation/Brand.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
-#include <foundation/contracts/Pre.h>
+#include <foundation/core/Choice.h>
 #include <foundation/core/Region.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
@@ -284,23 +284,23 @@ public:
     [[nodiscard]] bool is_mapped() const noexcept { return addr_ != MAP_FAILED && addr_ != nullptr; }
 
     // The bytes of the mapping as a View of T, with the count from the
-    // length of the mapping.  The call starts the lifetime of the elements
+    // length of the mapping, or no value when the length is not a whole
+    // number of elements.  The call starts the lifetime of the elements
     // over the bytes that the mapping holds, so each element has the value
-    // that its bytes give.  The length is a whole number of elements.  An
-    // empty region gives an empty View.
+    // that its bytes give.  An empty region gives an empty View.
     //
     // The View borrows the mapping and must not outlive it.  The overloads
     // for an rvalue are deleted, so no View of a temporary mapping exists.
     // A const mapping gives only a View of const elements.
     template <typename T>
         requires mmap::MappingViewElement<Prot, T>
-    [[nodiscard]] ::foundation::core::View<T> view() & noexcept {
+    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T>> view() & noexcept {
         return view_of_<T>();
     }
 
     template <typename T>
         requires mmap::MappingViewElement<Prot, T> && std::is_const_v<T>
-    [[nodiscard]] ::foundation::core::View<T> view() const& noexcept {
+    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T>> view() const& noexcept {
         return view_of_<T>();
     }
 
@@ -329,12 +329,13 @@ public:
 
 private:
     template <typename T>
-    [[nodiscard]] ::foundation::core::View<T> view_of_() const noexcept {
-        if (!is_mapped()) return ::foundation::core::View<T>{};
-        CRUCIBLE_PRE(len_ % sizeof(T) == 0);
+    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T>> view_of_() const noexcept {
+        using Result = ::foundation::core::Option<::foundation::core::View<T>>;
+        if (!is_mapped()) return Result::some(::foundation::core::View<T>{});
+        if (len_ % sizeof(T) != 0) return Result{::foundation::core::none};
         std::size_t const count = len_ / sizeof(T);
         T* const first = ::foundation::lifetime::start_as_array<std::remove_const_t<T>>(addr_, count).data();
-        return ::foundation::core::detail::view_over_<T>(first, count);
+        return Result::some(::foundation::core::detail::view_over_<T>(first, count));
     }
 
     void release_() noexcept {

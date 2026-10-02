@@ -8,6 +8,7 @@
 
 #include <fixy/Core.h>
 #include <fixy/os/Mmap.h>
+#include <foundation/Platform.h>
 
 #include "../foundation/abort_probe.h"
 #include "../foundation/philox_stream.h"
@@ -73,7 +74,7 @@ void test_view_of_a_mapping() {
     auto const owner = perm::mint_permission_root<ScratchRegion>();
     auto region = map_region(ctx, owner, page_bytes);
 
-    fixy::View<std::uint64_t> words = region.view<std::uint64_t>();
+    fixy::View<std::uint64_t> words = region.view<std::uint64_t>().expect("a page holds whole words");
     CRUCIBLE_FATAL_INVARIANT(words.size() == page_bytes / sizeof(std::uint64_t));
     std::uint64_t zero_count = 0;
     for (std::uint64_t const word : words) {
@@ -82,37 +83,37 @@ void test_view_of_a_mapping() {
     CRUCIBLE_FATAL_INVARIANT(zero_count == words.size());
 
     fixy::fill(words, std::uint64_t{0xABCD});
-    fixy::View<std::uint64_t const> read_back = region.view<std::uint64_t const>();
+    fixy::View<std::uint64_t const> read_back = region.view<std::uint64_t const>().expect("a page holds whole words");
     for (std::uint64_t const word : read_back) {
         CRUCIBLE_FATAL_INVARIANT(word == 0xABCD);
     }
 
     // A const mapping gives a View of const elements.
     auto const& fixed_region = region;
-    fixy::View<std::uint64_t const> fixed_words = fixed_region.view<std::uint64_t const>();
+    fixy::View<std::uint64_t const> fixed_words =
+        fixed_region.view<std::uint64_t const>().expect("a page holds whole words");
     CRUCIBLE_FATAL_INVARIANT(fixed_words.size() == words.size());
     CRUCIBLE_FATAL_INVARIANT(address_of_first(fixed_words) == address_of_first(words));
 
     // Three pages hold a whole number of records of 24 bytes.
     auto record_region = map_region(ctx, owner, 3 * page_bytes);
-    fixy::View<Record> records = record_region.view<Record>();
+    fixy::View<Record> records = record_region.view<Record>().expect("three pages hold whole records");
     CRUCIBLE_FATAL_INVARIANT(records.size() == 3 * page_bytes / sizeof(Record));
 }
 
-// One page does not hold a whole number of records of 24 bytes, and the
-// View of a partial element is a contract violation.
-void test_view_of_a_partial_element_aborts() {
+// One page does not hold a whole number of records of 24 bytes, so the
+// mapping gives no View of records.
+void test_view_of_a_partial_element_is_none() {
     IoBlockCtx const ctx{eff::testing::test()};
     auto const owner = perm::mint_permission_root<ScratchRegion>();
     auto region = map_region(ctx, owner, page_bytes);
-    bool const partial_view_aborts =
-        ::foundation::test::aborts([&region] { static_cast<void>(region.view<Record>()); });
-    CRUCIBLE_FATAL_INVARIANT(partial_view_aborts);
+    CRUCIBLE_FATAL_INVARIANT(region.view<Record>().is_none());
+    CRUCIBLE_FATAL_INVARIANT(region.view<std::uint64_t>().is_some());
 }
 
 void test_view_of_an_empty_mapping() {
     EmptyMapping empty_region{};
-    fixy::View<std::uint64_t> words = empty_region.view<std::uint64_t>();
+    fixy::View<std::uint64_t> words = empty_region.view<std::uint64_t>().expect("an empty mapping gives an empty View");
     CRUCIBLE_FATAL_INVARIANT(words.size() == 0);
     int turns = 0;
     for ([[maybe_unused]] std::uint64_t const word : words) {
@@ -125,7 +126,7 @@ void test_windows() {
     IoBlockCtx const ctx{eff::testing::test()};
     auto const owner = perm::mint_permission_root<ScratchRegion>();
     auto region = map_region(ctx, owner, page_bytes);
-    fixy::View<std::uint64_t> words = region.view<std::uint64_t>();
+    fixy::View<std::uint64_t> words = region.view<std::uint64_t>().expect("a page holds whole words");
     std::uint64_t position = 0;
     for (std::uint64_t& word : words) {
         word = position++;
@@ -164,8 +165,8 @@ void test_copy() {
     auto const source_owner = perm::mint_permission_root<ScratchRegion>();
     auto source_region = map_region(ctx, source_owner, page_bytes);
     auto target_region = map_region(ctx, source_owner, page_bytes);
-    fixy::View<std::uint64_t> source = source_region.view<std::uint64_t>();
-    fixy::View<std::uint64_t> target = target_region.view<std::uint64_t>();
+    fixy::View<std::uint64_t> source = source_region.view<std::uint64_t>().expect("a page holds whole words");
+    fixy::View<std::uint64_t> target = target_region.view<std::uint64_t>().expect("a page holds whole words");
     std::uint64_t position = 0;
     for (std::uint64_t& word : source) {
         word = position * 3 + 1;
@@ -195,11 +196,31 @@ void test_copy_of_unequal_counts_aborts() {
     IoBlockCtx const ctx{eff::testing::test()};
     auto const owner = perm::mint_permission_root<ScratchRegion>();
     auto region = map_region(ctx, owner, page_bytes);
-    fixy::View<std::uint64_t> words = region.view<std::uint64_t>();
+    fixy::View<std::uint64_t> words = region.view<std::uint64_t>().expect("a page holds whole words");
     bool const unequal_copy_aborts = ::foundation::test::aborts([&words] {
         fixy::copy(words.window(0, 3).expect("three words fit"), words.window(10, 4).expect("four words fit"));
     });
     CRUCIBLE_FATAL_INVARIANT(unequal_copy_aborts);
+}
+
+// A cursor never leaves its View: a read at the end and a step past the
+// end end the process in each build.
+void test_cursor_at_the_end_aborts() {
+    IoBlockCtx const ctx{eff::testing::test()};
+    auto const owner = perm::mint_permission_root<ScratchRegion>();
+    auto region = map_region(ctx, owner, page_bytes);
+    fixy::View<std::uint64_t> words = region.view<std::uint64_t>().expect("a page holds whole words");
+    fixy::View<std::uint64_t> pair = words.window(0, 2).expect("two words fit");
+    bool const end_read_aborts = ::foundation::test::aborts([&pair] { static_cast<void>(*pair.end()); });
+    bool const past_end_step_aborts = ::foundation::test::aborts([&pair] {
+        auto cursor = pair.begin();
+        ++cursor;
+        ++cursor;
+        ++cursor;
+    });
+    fixy::View<std::uint64_t> empty = words.window(0, 0).expect("an empty window fits");
+    bool const empty_read_aborts = ::foundation::test::aborts([&empty] { static_cast<void>(*empty.begin()); });
+    CRUCIBLE_FATAL_INVARIANT(end_read_aborts && past_end_step_aborts && empty_read_aborts);
 }
 
 // The property: for random windows of two pages, a window is present
@@ -210,8 +231,8 @@ void test_agrees_with_plain_model() {
     auto const owner = perm::mint_permission_root<ScratchRegion>();
     auto first_region = map_region(ctx, owner, page_bytes);
     auto second_region = map_region(ctx, owner, page_bytes);
-    fixy::View<std::uint64_t> first = first_region.view<std::uint64_t>();
-    fixy::View<std::uint64_t> second = second_region.view<std::uint64_t>();
+    fixy::View<std::uint64_t> first = first_region.view<std::uint64_t>().expect("a page holds whole words");
+    fixy::View<std::uint64_t> second = second_region.view<std::uint64_t>().expect("a page holds whole words");
     std::uint64_t const base = address_of_first(first);
     ::foundation::test::PhiloxStream stream{0x5EED0E610000D001u};
     for (std::uint64_t& word : first) {
@@ -239,11 +260,12 @@ void test_agrees_with_plain_model() {
 
 int main() {
     test_view_of_a_mapping();
-    test_view_of_a_partial_element_aborts();
+    test_view_of_a_partial_element_is_none();
     test_view_of_an_empty_mapping();
     test_windows();
     test_copy();
     test_copy_of_unequal_counts_aborts();
+    test_cursor_at_the_end_aborts();
     test_agrees_with_plain_model();
     return 0;
 }

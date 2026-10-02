@@ -311,7 +311,7 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_box` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 4 |
+| `mint_box` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 6 |
 
 ## include/foundation/diag/
 

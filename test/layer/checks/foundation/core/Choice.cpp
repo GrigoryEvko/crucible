@@ -52,7 +52,6 @@ static_assert(sizeof(Option<std::uint32_t>) == 8);
 static_assert(sizeof(Option<std::uint64_t>) == 16);
 static_assert(sizeof(Option<Owner>) == 8);
 static_assert(sizeof(OptionCursor<int>) == sizeof(void*));
-static_assert(sizeof(ExpectWhy) == 4 * sizeof(void*));
 
 // A niche or plain Option is trivially copyable, so the ABI gives it back
 // in registers.  An owning Option is move-only.
@@ -95,10 +94,25 @@ static_assert(BuildsFromEmptyList<Option<int>>);
 static_assert(Option<int>{}.is_none());
 static_assert(Option<int>{none}.is_none());
 static_assert(Option<int>::some(7).is_some());
-static_assert(Option<int>::some(7).consume() == 7);
 static_assert(Option<int>::some(9).expect("a constant nine") == 9);
-static_assert(Option<SlotNumber>::some(SlotNumber{3}).consume().raw == 3);
+static_assert(Option<SlotNumber>::some(SlotNumber{3}).expect("a constant slot").raw == 3);
 static_assert(Option<SlotNumber>{}.is_none());
+
+// No unwrap without a reason: the fatal unwrap is expect(), and a search
+// for `expect(` finds each one.
+template <class O>
+concept Consumes = requires(O option) { static_cast<O&&>(option).consume(); };
+static_assert(!Consumes<Option<int>>);
+static_assert(!Consumes<Option<Owner>>);
+
+// The niche refuses its empty value at a constant evaluation too: the
+// fatal exit is not a constant expression, so the build stops.  The probe
+// is a variable template and not a concept, because it gates nothing.
+template <std::uint32_t Raw>
+constexpr bool builds_slot =
+    requires { typename std::integral_constant<bool, Option<SlotNumber>::some(SlotNumber{Raw}).is_some()>; };
+static_assert(builds_slot<3>);
+static_assert(!builds_slot<0xFFFFFFFFu>);
 
 [[nodiscard]] consteval int loop_turns(Option<int> option) noexcept {
     int turns = 0;
@@ -113,16 +127,52 @@ static_assert(loop_turns(none) == 0);
 [[nodiscard]] consteval bool moved_owner_leaves_source_empty() noexcept {
     Option<Owner> source = Option<Owner>::some(Owner{4});
     Option<Owner> target{static_cast<Option<Owner>&&>(source)};
-    return source.is_none() && target.is_some() && static_cast<Option<Owner>&&>(target).consume().handle == 4;
+    return source.is_none() && target.is_some()
+        && static_cast<Option<Owner>&&>(target).expect("the target took the owner").handle == 4;
 }
 static_assert(moved_owner_leaves_source_empty());
 
-[[nodiscard]] consteval bool consume_leaves_source_empty() noexcept {
+[[nodiscard]] consteval bool expect_leaves_source_empty() noexcept {
     Option<int> source = Option<int>::some(1);
-    int const taken = static_cast<Option<int>&&>(source).consume();
+    int const taken = static_cast<Option<int>&&>(source).expect("the source was built with a value");
     return taken == 1 && source.is_none();
 }
-static_assert(consume_leaves_source_empty());
+static_assert(expect_leaves_source_empty());
+
+// value_or gives the payload or the fallback.
+static_assert(Option<int>::some(4).value_or(9) == 4);
+static_assert(Option<int>{}.value_or(9) == 9);
+static_assert(Option<SlotNumber>{}.value_or(SlotNumber{8}).raw == 8);
+
+// The total match: each arm gives the same type, and the empty arm runs
+// for an empty Option.
+static_assert(Option<int>::some(6).match([](int value) noexcept { return value * 2; }, [] noexcept { return -1; })
+              == 12);
+static_assert(Option<int>{}.match([](int value) noexcept { return value * 2; }, [] noexcept { return -1; }) == -1);
+
+[[nodiscard]] consteval bool borrowed_match_keeps_the_payload() noexcept {
+    Option<int> const holder = Option<int>::some(3);
+    int const seen = holder.match([](int const& value) noexcept { return value; }, [] noexcept { return 0; });
+    return seen == 3 && holder.is_some();
+}
+static_assert(borrowed_match_keeps_the_payload());
+
+[[nodiscard]] consteval bool moved_match_empties_the_source() noexcept {
+    Option<Owner> source = Option<Owner>::some(Owner{5});
+    int const seen = static_cast<Option<Owner>&&>(source).match([](Owner&& owner) noexcept { return owner.handle; },
+                                                                [] noexcept { return 0; });
+    return seen == 5 && source.is_none();
+}
+static_assert(moved_match_empties_the_source());
+
+// A match needs both arms, and the arms must give the same type.
+template <class O>
+concept MatchesWithOneArm = requires(O option) { static_cast<O&&>(option).match([](int) noexcept { return 0; }); };
+template <class O>
+concept MatchesWithTwoTypes =
+    requires(O option) { static_cast<O&&>(option).match([](int) noexcept { return 0; }, [] noexcept { return 0L; }); };
+static_assert(!MatchesWithOneArm<Option<int>>);
+static_assert(!MatchesWithTwoTypes<Option<int>>);
 
 }  // namespace detail::choice_checks
 

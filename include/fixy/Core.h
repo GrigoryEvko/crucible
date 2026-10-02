@@ -18,8 +18,14 @@
 #include <foundation/core/Choice.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
+#include <foundation/core/Report.h>
 
 namespace fixy {
+
+using ::foundation::core::fatal;
+using ::foundation::core::Fmt;
+using ::foundation::core::Site;
+using ::foundation::core::unreachable;
 
 using ::foundation::core::none;
 using ::foundation::core::NoValue;

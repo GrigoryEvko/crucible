@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The contract-violation handler for every binary that links foundation.
+// The contract-violation handler for every binary that links foundation,
+// and the cold report of fatal() and unreachable() of foundation/core.
 //
 // libstdc++exp.a also holds a weak handle_contract_violation.  An object file
 // with a contract check names the handler, so the linker takes this file from
@@ -21,6 +22,7 @@
 // report, and a report of it could block on the same descriptor or recurse.
 
 #include <foundation/Platform.h>
+#include <foundation/core/Report.h>
 
 #include <array>
 #include <cerrno>
@@ -176,3 +178,29 @@ void contract_failed_msg(char const* expr, char const* file, int line, char cons
 }
 
 }  // namespace foundation::detail
+
+// The cold arm of fatal() and unreachable().  The texts are constant
+// arrays that the consteval constructors of Fmt and Site checked, so each
+// one ends with a zero byte.
+namespace foundation::core::detail {
+
+[[noreturn, gnu::cold]]
+void report_fatal_(char const* text, char const* file, std::uint32_t line, char const* function) noexcept {
+    enter_report_or_abort();
+    {
+        stderr_report report;
+        report.append("foundation: fatal: ");
+        report.append_or(text, "(no text)");
+        report.append("\n  at ");
+        report.append_or(file, "(unknown file)");
+        report.append(":");
+        report.append_decimal(line);
+        report.append(" in ");
+        report.append_or(function, "(unknown function)");
+        report.append("\n");
+    }
+    ::foundation::detail::breakpoint_if_debugging();
+    std::abort();
+}
+
+}  // namespace foundation::core::detail

@@ -26,6 +26,6 @@ template <class T> [[gnu::noinline]] T&& rvalue() noexcept { std::abort(); }
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = foundation::core::ViewCursor<int>{forge::rvalue<int*>()};
+    [[maybe_unused]] auto forged = foundation::core::ViewCursor<int>{forge::rvalue<int*>(), forge::rvalue<int*>()};
     return 0;
 }

@@ -914,7 +914,7 @@ At the end of the migration, the families of §XXII replace these tables. The op
 | `std::bit_cast` (C++20) | A copy of the bits of a value into a different type. The result is undefined behavior when the bit pattern is no value of the destination type. For a `bool` from the byte 2, a constant evaluation gives `false`. At run time, `-O0` gives a value that is true in a condition and not equal to `true`, and `-O3` gives `true`. New code does not use `std::bit_cast` to make a `bool` or a value of an enumeration. A value from outside the program, such as the bytes of a file or of the wire, becomes a value of an enumeration only after a comparison with its enumerators. The Scalar family replaces `std::bit_cast` (§XXII). The admitted list keeps it until that change is on main |
 | `std::saturating_add` / `saturating_sub` / `saturating_mul` (C++26) | Saturation arithmetic at size-math sites. libstdc++ 16 declares these names in `<numeric>` and has no `std::add_sat`. Call sites use `foundation::sat::add_sat` / `sub_sat` / `mul_sat` (`include/foundation/Saturate.h`), which return the exact result and call the library only on overflow |
 | `std::breakpoint()` (C++26) | Hardware breakpoint for debug asserts. **libstdc++ 16 status:** the `<debugging>` header declares the symbol, and the library ships no definition — use the `foundation::detail::breakpoint*` stand-ins in `include/foundation/Platform.h` |
-| `std::unreachable()` (C++23) | Do not use it in new code. `-D_GLIBCXX_ASSERTIONS` (Debug, TSan and UBSan-strict) makes it a trap. Release, verify and PGO keep `__builtin_unreachable()`, and a call of it is undefined behavior. A switch that misses a case then traps in Debug and is undefined in Release. When a value outside the enumerators is possible, the `default` arm calls `CRUCIBLE_FATAL_INVARIANT(false)`. That call ends the process in each build. The uses in the tree stay until they move. The Report family replaces `std::unreachable()` (§XXII) |
+| `std::unreachable()` (C++23) | Do not use it in new code. `-D_GLIBCXX_ASSERTIONS` (Debug, TSan and UBSan-strict) makes it a trap. Release, verify and PGO keep `__builtin_unreachable()`, and a call of it is undefined behavior. A switch that misses a case then traps in Debug and is undefined in Release. When a value outside the enumerators is possible, the `default` arm calls `fixy::unreachable()` (`foundation::core::unreachable()` in the base, `include/foundation/core/Report.h`). That call ends the process in each build. The uses in the tree stay until they move. The Report family replaces `std::unreachable()` (§XXII) |
 | `std::countr_zero` / `popcount` (C++20) | Bit manipulation primitives |
 | `std::span` (C++20) | Pointer+count replacement |
 | `std::jthread` (C++20) | Auto-joining thread, no destructor-terminate |
@@ -1235,7 +1235,7 @@ switch (kind) {
     case Kind::A: ... return x;
     case Kind::B: ... return y;
     case Kind::C: ... return z;
-    default: CRUCIBLE_FATAL_INVARIANT(false);
+    default: fixy::unreachable();
 }
 ```
 
@@ -1302,7 +1302,7 @@ Rule: prefetch 8-16 iterations ahead; `locality = 0` for streaming reads (don't 
 2. `__builtin_expect_with_probability(x, v, p)` for explicit probabilities.
 3. **Predication**: replace `if (x < 0) x = 0` with `x = std::max(x, 0)` — compiler emits `cmov`.
 4. **Switch on small dense enum** — compiler generates jump table; one indirect branch.
-5. A switch that handles each enumerator also has a `default` arm (`-Werror=switch-default`). The arm ends the process in each build, and it does not call `std::unreachable()` (§IV).
+5. A switch that handles each enumerator also has a `default` arm (`-Werror=switch-default`). The arm calls `fixy::unreachable()`, which ends the process in each build, and it does not call `std::unreachable()` (§IV).
 6. **Branchless bit tricks** where appropriate: `x & -cond` for conditional zeroing.
 
 ### Vectorization

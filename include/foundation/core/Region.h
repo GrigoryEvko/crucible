@@ -32,9 +32,8 @@
 // the raw form.
 
 #include <foundation/ByteSeal.h>
-#include <foundation/Platform.h>
-#include <foundation/contracts/Pre.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Report.h>
 
 #include <concepts>
 #include <cstddef>
@@ -102,23 +101,35 @@ template <class T, std::size_t Extent>
 
 // The position of a loop over a View.  It comes only from begin() and
 // end() of a View, and the seal refuses std::bit_cast and a lifetime start
-// over bytes.  A loop compares a cursor with the end before it reads it,
-// so the count of the View is the only bound.
+// over bytes.  A cursor knows the end of its View.  A read or a step at the
+// end ends the process in each build, so a cursor never leaves its View.
+// A loop compares the cursor with the end before each read and each step,
+// and the optimizer removes the two checks there, so the count of the View
+// is the only bound of the loop.
 template <class Element>
 class ViewCursor {
     Element* at_ = nullptr;
+    Element* end_ = nullptr;
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
     template <class T, std::size_t Extent>
         requires ViewElement<T> && ViewExtent<T, Extent>
     friend class View;
 
-    constexpr explicit ViewCursor(Element* at) noexcept : at_{at} {}
+    constexpr ViewCursor(Element* at, Element* end) noexcept : at_{at}, end_{end} {}
 
 public:
-    [[nodiscard]] constexpr Element& operator*() const noexcept { return *at_; }
+    [[nodiscard]] constexpr Element& operator*() const noexcept {
+        if (at_ == end_) [[unlikely]] {
+            fatal("a read through the end cursor of a View");
+        }
+        return *at_;
+    }
 
     constexpr ViewCursor& operator++() noexcept {
+        if (at_ == end_) [[unlikely]] {
+            fatal("a step past the end cursor of a View");
+        }
         ++at_;
         return *this;
     }
@@ -174,17 +185,19 @@ public:
         if constexpr (Extent == dynamic_extent) count_.count = other.size();
     }
 
-    // The door holds each count at max_view_count or less, and the
-    // optimizer reads that bound: a window of the View is then never the
-    // empty value of an Option, with no check.
+    // The door checks each count against max_view_count in each build, and
+    // the optimizer reads that bound in each build: a window of the View is
+    // then never the empty value of an Option, with no check.
     [[nodiscard]] constexpr std::size_t size() const noexcept {
         std::size_t const count = count_.value();
-        CRUCIBLE_INVARIANT(count <= max_view_count(sizeof(T)));
+        [[assume(count <= max_view_count(sizeof(T)))]];
         return count;
     }
 
-    [[nodiscard]] constexpr ViewCursor<T> begin() const noexcept { return ViewCursor<T>{first_}; }
-    [[nodiscard]] constexpr ViewCursor<T> end() const noexcept { return ViewCursor<T>{first_ + size()}; }
+    [[nodiscard]] constexpr ViewCursor<T> begin() const noexcept { return ViewCursor<T>{first_, first_ + size()}; }
+    [[nodiscard]] constexpr ViewCursor<T> end() const noexcept {
+        return ViewCursor<T>{first_ + size(), first_ + size()};
+    }
 
     // The count elements from offset, or no value when they do not fit.
     // The result is an Option<View<T>>.  The return type is deduced, so the
@@ -194,6 +207,10 @@ public:
         if (offset > size() || count > size() - offset) [[unlikely]] {
             return Result{none};
         }
+        // The window fits, so its count is at most the count of this View,
+        // which its door bounds.  The optimizer then knows that the count
+        // is not the empty value of the niche, and the Option needs no test.
+        [[assume(count <= max_view_count(sizeof(T)))]];
         return Result::some(View<T>{first_ + offset, count});
     }
 
@@ -206,6 +223,11 @@ public:
         if (offset > size() || Window > size() - offset) [[unlikely]] {
             return Result{none};
         }
+        // The window fits and holds at least one element, so this View holds
+        // one, and its door gave it a pointer that is not null.  The
+        // optimizer then knows that the window is not the empty value of
+        // the niche, and the Option needs no test.
+        [[assume(first_ != nullptr)]];
         return Result::some(View<T, Window>{first_ + offset});
     }
 };
@@ -236,14 +258,20 @@ namespace detail {
 
 template <class T>
 [[nodiscard]] constexpr View<T> view_over_(T* first, std::size_t count) noexcept {
-    CRUCIBLE_PRE(count <= max_view_count(sizeof(T)));
-    CRUCIBLE_PRE(first != nullptr || count == 0);
+    if (count > max_view_count(sizeof(T))) [[unlikely]] {
+        fatal("view_over_ got a count past the largest count of a View");
+    }
+    if (first == nullptr && count != 0) [[unlikely]] {
+        fatal("view_over_ got a null pointer with a count");
+    }
     return View<T>{first, count};
 }
 
 template <std::size_t Extent, class T>
 [[nodiscard]] constexpr View<T, Extent> view_over_(T* first) noexcept {
-    CRUCIBLE_PRE(first != nullptr);
+    if (first == nullptr) [[unlikely]] {
+        fatal("view_over_ got a null pointer for a View of a fixed extent");
+    }
     return View<T, Extent>{first};
 }
 
@@ -261,7 +289,9 @@ template <class T, std::size_t Extent>
 template <class T, std::size_t Extent>
     requires RegionCopyElement<T>
 void copy(View<T, Extent> dst, std::type_identity_t<View<T const, Extent>> src) noexcept {
-    CRUCIBLE_PRE(dst.size() == src.size());
+    if (dst.size() != src.size()) [[unlikely]] {
+        fatal("copy got two Views with different counts");
+    }
     __builtin_memmove(detail::first_of_(dst), detail::first_of_(src), dst.size() * sizeof(T));
 }
 

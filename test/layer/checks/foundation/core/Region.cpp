@@ -25,7 +25,8 @@ struct NotCopyable {
 static_assert(sizeof(View<int>) == 2 * sizeof(void*));
 static_assert(sizeof(View<int, 16>) == sizeof(void*));
 static_assert(sizeof(View<Record, 65536>) == sizeof(void*));
-static_assert(sizeof(ViewCursor<int>) == sizeof(void*));
+// A cursor holds its place and the end of its View.
+static_assert(sizeof(ViewCursor<int>) == 2 * sizeof(void*));
 
 // An Option of a View has the size of the View: the niche marks the empty
 // state.
@@ -49,6 +50,7 @@ static_assert(!std::is_constructible_v<View<int, 4>, int*>);
 static_assert(!std::is_default_constructible_v<View<int, 4>>);
 static_assert(std::is_default_constructible_v<View<int>>);
 static_assert(!std::is_constructible_v<ViewCursor<int>, int*>);
+static_assert(!std::is_constructible_v<ViewCursor<int>, int*, int*>);
 
 // The conversions: a const added, a fixed extent dropped.  Never the other
 // way.
@@ -117,6 +119,21 @@ static_assert(single_view().window<1>(0).is_some());
 static_assert(single_view().window<1>(1).is_none());
 static_assert(sum_of(single_view().window<1>(0).expect("the fixed window fits")) == 7);
 static_assert(sum_of(View<int const>{}) == 0);
+
+// A cursor never leaves its View: a read at the end and a step past the
+// end call the fatal exit, which is not a constant expression.
+[[nodiscard]] consteval int read_after_steps(int steps) noexcept {
+    auto cursor = single_view().begin();
+    for (int step = 0; step < steps; ++step) {
+        ++cursor;
+    }
+    return *cursor;
+}
+template <int Steps>
+concept ReadsInside = requires { typename std::integral_constant<int, read_after_steps(Steps)>; };
+static_assert(ReadsInside<0>);
+static_assert(!ReadsInside<1>);
+static_assert(!ReadsInside<2>);
 
 }  // namespace detail::region_checks
 

@@ -1818,11 +1818,28 @@ foundation_neg_compile_test(neg_thread_local_ref_store_of_another_type
   "no matching function for call to .foundation::ThreadLocalRef<\\{anonymous\\}::CounterTag, \\{anonymous\\}::Counter>::store\\(\\{anonymous\\}::Label\\) const."
   "the expression .is_assignable_v<T&, U&&> \\[with T = <unnamed>::Counter; U = <unnamed>::Label\\]. evaluated to .false.")
 
+# ── The Report family: fatal and unreachable ─────────────────────────
+#
+# A text of a report is a string literal with no brace and no inner zero,
+# and it takes no argument.  fatal and unreachable end the process in each
+# build.
+foundation_test(test_core_report)
+
+foundation_neg_compile_test(neg_core_fmt_brace
+  "call to consteval function .foundation::core::Fmt<>\\(\"the queue holds \\{\\} items\", __builtin_FILE\\(\\), __builtin_LINE\\(\\), __builtin_FUNCTION\\(\\)\\). is not a constant expression"
+  ".__builtin_trap\\(\\). is not a constant expression")
+foundation_neg_compile_test(neg_core_fmt_arguments
+  "template constraint failure for .template<class ... Args>  requires  sizeof ... \\(Args ...\\) == 0 class foundation::core::Fmt."
+  "the expression .sizeof ... \\(Args ...\\) == 0 \\[with Args = \\{int\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_fatal_runtime_text
+  "could not convert .\\(const char\\*\\)\"the queue is full\". from .const char\\*. to .foundation::core::Fmt<>."
+  "In function .int main\\(\\).")
+
 # ── The Choice family ─────────────────────────────────────────────────
 #
 # An Option holds an object whose move does not throw.  The reason of
-# expect() is a constant text with an end.  A cursor of a temporary and a
-# copy of an owning Option are refused.
+# expect() is a text of a report.  A cursor of a temporary and a copy of an
+# owning Option are refused.
 foundation_test(test_core_choice)
 
 foundation_neg_compile_test(neg_core_option_reference_payload
@@ -1832,10 +1849,10 @@ foundation_neg_compile_test(neg_core_option_throwing_move_payload
   "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
   "the expression .is_nothrow_move_constructible_v<T> \\[with T = ThrowingMove\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_option_expect_runtime_reason
-  "cannot convert .const char\\*. to .foundation::core::ExpectWhy."
-  "initializing argument 1 of .constexpr T foundation::core::Option<T>::expect\\(foundation::core::ExpectWhy\\) && \\[with T = int\\].")
-foundation_neg_compile_test(neg_core_option_expect_reason_without_end
-  "call to consteval function .foundation::core::ExpectWhy\\(unterminated_reason, __builtin_FILE\\(\\), __builtin_LINE\\(\\), __builtin_FUNCTION\\(\\)\\). is not a constant expression"
+  "cannot convert .const char\\*. to .foundation::core::Fmt<>."
+  "initializing argument 1 of .constexpr T foundation::core::Option<T>::expect\\(foundation::core::Fmt<>\\) && \\[with T = int\\].")
+foundation_neg_compile_test(neg_core_option_expect_reason_with_zero
+  "call to consteval function .foundation::core::Fmt<>\\(\"the option.000 holds a value\", __builtin_FILE\\(\\), __builtin_LINE\\(\\), __builtin_FUNCTION\\(\\)\\). is not a constant expression"
   ".__builtin_trap\\(\\). is not a constant expression")
 foundation_neg_compile_test(neg_core_option_cursor_of_temporary
   "use of deleted function .void foundation::core::Option<T>::begin\\(\\) && \\[with T = int\\]."
@@ -1843,6 +1860,12 @@ foundation_neg_compile_test(neg_core_option_cursor_of_temporary
 foundation_neg_compile_test(neg_core_option_owning_copied
   "use of deleted function .foundation::core::Option<Owner>::Option\\(const foundation::core::Option<Owner>&\\)."
   "an owning Option is move-only: a copy would duplicate what the payload owns")
+foundation_neg_compile_test(neg_core_option_match_one_arm
+  "no matching function for call to .foundation::core::Option<int>::match\\(main\\(\\)::<lambda\\(int\\)>\\)."
+  "candidate expects 2 arguments, 1 provided")
+foundation_neg_compile_test(neg_core_option_match_arm_types
+  "no matching function for call to .foundation::core::Option<int>::match\\(main\\(\\)::<lambda\\(int\\)>, main\\(\\)::<lambda\\(\\)>\\)."
+  "the expression .is_same_v<_Tp, _Up> \\[with _Tp = int. _Up = long int\\]. evaluated to .false.")
 
 # ── The Ref family: Box ───────────────────────────────────────────────
 #
@@ -1866,23 +1889,35 @@ foundation_neg_compile_test(neg_core_box_copied
 foundation_neg_compile_test(neg_core_box_borrow_of_temporary
   "use of deleted function .T& foundation::core::Box<T>::get\\(\\) && \\[with T = int\\]."
   "a borrow of a temporary Box dangles at the end of the full expression")
+foundation_neg_compile_test(neg_core_box_consume_lvalue
+  "passing .foundation::core::Box<int>. as .this. argument discards qualifiers"
+  "in call to .T foundation::core::Box<T>::consume\\(\\) && requires  is_nothrow_move_constructible_v<T> \\[with T = int\\].")
+foundation_neg_compile_test(neg_core_box_consume_not_movable
+  "no matching function for call to .foundation::core::Box<Fixed>::consume\\(\\)."
+  "the expression .is_nothrow_move_constructible_v<T> \\[with T = Fixed\\]. evaluated to .false.")
 
 # ── The Atomic family ─────────────────────────────────────────────────
 #
-# An Atomic holds a lock-free integral or enum value, and each operation
-# names its memory order.  The test runs four threads, so the tsan preset
-# checks each order.
+# An Atomic holds a lock-free value with one bit pattern for each value,
+# and each operation names its memory order.  The test runs four threads,
+# so the tsan preset checks each order.
 foundation_test(test_core_atomic)
 
-foundation_neg_compile_test(neg_core_atomic_class_payload
+foundation_neg_compile_test(neg_core_atomic_padded_payload
   "template constraint failure for .template<class T>  requires  AtomicValue<T> class foundation::core::Atomic."
-  "required for the satisfaction of .AtomicValue<T>. .with T = Wrapped.")
+  "the expression .has_unique_object_representations_v<T> \\[with T = Padded\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_atomic_float_payload
+  "template constraint failure for .template<class T>  requires  AtomicValue<T> class foundation::core::Atomic."
+  "the expression .has_unique_object_representations_v<T> \\[with T = float\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_atomic_not_lock_free
   "template constraint failure for .template<class T>  requires  AtomicValue<T> class foundation::core::Atomic."
   "the expression .__atomic_always_lock_free\\(long unsigned int, const volatile void\\*\\)\\(sizeof \\(T\\), 0\\) \\[with T = WidePhase\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_atomic_fetch_add_enum
   "no matching function for call to .foundation::core::Atomic<Phase>::fetch_add_acq_rel\\(Phase\\)."
   "the expression .is_integral_v<_Tp> \\[with _Tp = Phase\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_atomic_fetch_or_signed
+  "no matching function for call to .foundation::core::Atomic<int>::fetch_or_acq_rel\\(int\\)."
+  "required for the satisfaction of .AtomicBits<T>. \\[with T = int\\]")
 foundation_neg_compile_test(neg_core_atomic_copied
   "use of deleted function .foundation::core::Atomic<int>::Atomic\\(const foundation::core::Atomic<int>&\\)."
   "Pinned<T>: stable address")

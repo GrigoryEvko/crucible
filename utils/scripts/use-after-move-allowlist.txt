@@ -15,13 +15,19 @@
 # Probe: a moved-from channel binding is unbound.
 test/fixy/test_channel_moved_from.cpp:binding_moves_its_pointer:first
 
-# Probe: consume() leaves an Option empty, and the move of an owning
-# Option leaves the source empty.
-test/foundation/test_core_choice.cpp:test_consume_empties_the_source:holder
+# Probe: expect() and the rvalue match() leave an Option empty, and the
+# move of an owning Option leaves the source empty.
+test/foundation/test_core_choice.cpp:test_expect_empties_the_source:holder
 test/foundation/test_core_choice.cpp:test_owning_payload:source
 test/foundation/test_core_choice.cpp:test_owning_payload:target
+test/foundation/test_core_choice.cpp:test_match:source
 test/layer/checks/foundation/core/Choice.cpp:moved_owner_leaves_source_empty:source
-test/layer/checks/foundation/core/Choice.cpp:consume_leaves_source_empty:source
+test/layer/checks/foundation/core/Choice.cpp:expect_leaves_source_empty:source
+test/layer/checks/foundation/core/Choice.cpp:moved_match_empties_the_source:source
+
+# Probe: consume() and a borrow of a moved-from Box abort.
+test/foundation/test_core_box.cpp:test_consume_of_moved_from_aborts:source
+test/foundation/test_core_box.cpp:test_borrow_of_moved_from_aborts:source
 
 # Probe: a use of a moved-from channel handle or binding aborts.  Each
 # death test reaches the handle through an opaque call.

@@ -1,10 +1,9 @@
-// The reason of expect() is a constant array of static storage.  A
-// pointer that the program calculates at run time can point at text that
-// has no end or no longer exists, so it does not convert to the reason.
+// The reason of expect() is a string literal, so a reader finds its end.  A
+// pointer carries no length and no proof of an end, so it does not convert
+// to the reason, also when it points at a literal.
 
 #include <foundation/core/Choice.h>
 
-int main(int argument_count, char** arguments) {
-    char const* reason = arguments[argument_count - 1];
-    return ::foundation::core::Option<int>::some(1).expect(reason);
+int main() {
+    return ::foundation::core::Option<int>::some(1).expect(static_cast<char const*>("the option holds a value"));
 }

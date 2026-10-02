@@ -3,9 +3,10 @@
 // The Choice family: a value that can be absent.
 //
 // Option<T> holds one T or no value.  The only roads to the payload are a
-// loop of zero or one turns, consume(), and expect().  The type has no
-// operator* and no operator->, so a read of an empty Option is not
-// possible through a dereference.  The whole type is [[nodiscard]].
+// loop of zero or one turns, the total match(), value_or(), and expect(),
+// the fatal unwrap with a reason.  The type has no operator* and no
+// operator->, so a read of an empty Option is not possible.  The whole
+// type is [[nodiscard]].
 //
 // The storage has three forms, and the payload type selects the form:
 //
@@ -21,16 +22,17 @@
 //
 // A move of a niche or plain Option is a copy of the bytes, so the source
 // keeps its value.  The payload owns nothing in those two forms, so two
-// copies of it are safe.  consume() and expect() empty the source in each
-// form.
+// copies of it are safe.  expect(), value_or() and the rvalue match()
+// empty the source in each form.
 //
 // The families of foundation/core use only the language, the compiler
 // builtins and the headers of the base allowance.  fixy/Core.h puts their
-// public names into namespace fixy.
+// public names into namespace fixy.  A check of a family does the same
+// work in each build and with each contract semantic, and it ends the
+// process through fatal() of the Report family.
 
 #include <foundation/ByteSeal.h>
-#include <foundation/Platform.h>
-#include <foundation/contracts/Pre.h>
+#include <foundation/core/Report.h>
 
 #include <concepts>
 #include <cstddef>
@@ -57,33 +59,6 @@ concept ChoicePayload =
 
 template <ChoicePayload T>
 class Option;
-
-// The reason of a fatal unwrap, and the place of the call.  The
-// constructor is consteval, so the reason is a constant array of static
-// storage, and the check of its last character makes sure that a reader
-// finds its end.  The default arguments read the place where the
-// conversion occurs, which is the call of expect().  Only the family
-// reads the fields, so no accessor gives out a pointer.
-class ExpectWhy final {
-public:
-    template <std::size_t Length>
-    consteval ExpectWhy(char const (&reason)[Length], char const* file = __builtin_FILE(), int line = __builtin_LINE(),
-                        char const* function = __builtin_FUNCTION()) noexcept
-        : reason_{reason}, file_{file}, function_{function}, line_{line} {
-        // A reason with no terminating zero, or an empty reason, is not a
-        // constant expression here, so the build stops at the call.
-        if (Length < 2 || reason[Length - 1] != '\0') __builtin_trap();
-    }
-
-private:
-    template <ChoicePayload T>
-    friend class Option;
-
-    char const* reason_;
-    char const* file_;
-    char const* function_;
-    int line_;
-};
 
 // The niche protocol.  A payload type T with an empty value that no valid
 // T holds can specialize niche<T> with two static members:
@@ -141,8 +116,12 @@ public:
     template <class U>
     constexpr OptionSlot(SomeTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
         : value_(static_cast<U&&>(value)) {
-        // A payload equal to the empty value would read as no value.
-        CRUCIBLE_PRE(!niche<T>::is_empty(value_));
+        // A payload equal to the empty value would read as no value.  A
+        // payload that cannot hold the empty value, such as a View that its
+        // door bounds, gives the optimizer what it needs to remove the check.
+        if (niche<T>::is_empty(value_)) [[unlikely]] {
+            fatal("Option::some got the empty value of the niche of its payload");
+        }
     }
 
     [[nodiscard]] constexpr bool holds_() const noexcept { return !niche<T>::is_empty(value_); }
@@ -241,7 +220,9 @@ public:
     // A loop reads the cursor only after a compare with the end, so the
     // optimizer removes this check there.
     [[nodiscard]] constexpr Element& operator*() const noexcept {
-        CRUCIBLE_PRE(at_ != nullptr);
+        if (at_ == nullptr) [[unlikely]] {
+            fatal("a read through the end cursor of an Option");
+        }
         return *at_;
     }
 
@@ -263,14 +244,6 @@ class [[nodiscard]] Option {
     constexpr Option(detail::SomeTag tag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
         : slot_{tag, static_cast<U&&>(value)} {}
 
-    // A cold arm, so that a passing expect() costs one branch.  The fields
-    // go in registers, so the caller builds no object on its stack, and the
-    // stack protector adds no canary to the hot path.
-    [[noreturn]] CRUCIBLE_COLD static void expect_failed_(char const* reason, char const* file, int line,
-                                                          char const* function) noexcept {
-        ::foundation::detail::contract_failed_msg("expect: the Option holds no value", file, line, function, reason);
-    }
-
 public:
     using value_type = T;
 
@@ -286,25 +259,54 @@ public:
     [[nodiscard]] constexpr bool is_some() const noexcept { return slot_.holds_(); }
     [[nodiscard]] constexpr bool is_none() const noexcept { return !slot_.holds_(); }
 
-    // Moves the payload out, and leaves this Option empty.  An empty
-    // Option is a contract violation here.  A caller that wants a reason
-    // in the report uses expect().
-    [[nodiscard]] constexpr T consume() && noexcept {
-        CRUCIBLE_PRE(slot_.holds_());
+    // The fatal unwrap at a boundary.  The reason tells why the Option
+    // holds a value there.  An empty Option gives the reason and the place
+    // of the call to fatal(), and the process ends.  The Option is empty
+    // after the call.  A passing expect() costs one branch.
+    [[nodiscard]] constexpr T expect(Fmt<> why) && noexcept {
+        if (!slot_.holds_()) [[unlikely]] {
+            fatal(why);
+        }
         T taken(static_cast<T&&>(slot_.payload_()));
         slot_.clear_();
         return taken;
     }
 
-    // The fatal unwrap at a boundary.  An empty Option writes the reason
-    // and the place of the call, and ends the process.
-    [[nodiscard]] constexpr T expect(ExpectWhy why) && noexcept {
-        if (!slot_.holds_()) [[unlikely]] {
-            expect_failed_(why.reason_, why.file_, why.line_, why.function_);
-        }
+    // The payload, or fallback when the Option is empty.  The Option is
+    // empty after the call.
+    [[nodiscard]] constexpr T value_or(T fallback) && noexcept {
+        if (!slot_.holds_()) return fallback;
         T taken(static_cast<T&&>(slot_.payload_()));
         slot_.clear_();
         return taken;
+    }
+
+    // The total match.  on_some gets the payload, or on_none runs, and
+    // the two arms give the same type.  A call with one arm does not
+    // compile, so no caller forgets the empty case.  The rvalue form moves
+    // the payload out first, so the Option is empty when on_some runs.
+    template <class OnSome, class OnNone>
+        requires std::is_invocable_v<OnSome, T&&> && std::is_invocable_v<OnNone>
+              && std::same_as<std::invoke_result_t<OnSome, T&&>, std::invoke_result_t<OnNone>>
+    constexpr std::invoke_result_t<OnNone> match(OnSome&& on_some,
+                                                 OnNone&& on_none) && noexcept(std::is_nothrow_invocable_v<OnSome, T&&>
+                                                                               && std::is_nothrow_invocable_v<OnNone>) {
+        if (!slot_.holds_()) return static_cast<OnNone&&>(on_none)();
+        T taken(static_cast<T&&>(slot_.payload_()));
+        slot_.clear_();
+        return static_cast<OnSome&&>(on_some)(static_cast<T&&>(taken));
+    }
+
+    // The total match of a borrow: on_some gets the payload as a const
+    // reference, and the Option keeps it.
+    template <class OnSome, class OnNone>
+        requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
+              && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
+    constexpr std::invoke_result_t<OnNone>
+    match(OnSome&& on_some, OnNone&& on_none) const& noexcept(std::is_nothrow_invocable_v<OnSome, T const&>
+                                                              && std::is_nothrow_invocable_v<OnNone>) {
+        if (!slot_.holds_()) return static_cast<OnNone&&>(on_none)();
+        return static_cast<OnSome&&>(on_some)(slot_.payload_());
     }
 
     // The loop `for (auto& value : option)` makes one turn when the Option

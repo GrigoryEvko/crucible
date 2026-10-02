@@ -18,5 +18,8 @@ static_assert(std::is_same_v<::fixy::CasOutcome<int>, ::foundation::core::CasOut
 static_assert(std::is_same_v<::fixy::Tally, ::foundation::core::Tally>);
 static_assert(std::is_same_v<::fixy::View<int, 4>, ::foundation::core::View<int, 4>>);
 static_assert(::fixy::dynamic_extent == ::foundation::core::dynamic_extent);
+static_assert(std::is_same_v<::fixy::Site, ::foundation::core::Site>);
+static_assert(std::is_same_v<::fixy::Fmt<>, ::foundation::core::Fmt<>>);
+static_assert(noexcept(::fixy::fatal("a text of a report")) && noexcept(::fixy::unreachable()));
 
 }  // namespace fixy::detail::core_checks
