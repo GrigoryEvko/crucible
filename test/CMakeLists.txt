@@ -5459,11 +5459,18 @@ add_test(NAME parse_cost_self_test
 add_test(NAME header_fanout
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-parse-cost.py --check header-fanout
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-set_tests_properties(parse_total parse_cost_self_test header_fanout PROPERTIES
+# instruction_total — the user instructions of the last real compile of each
+# object of all and each negative fixture, against the baseline of
+# utils/scripts/instruction-total-ledger.txt.  It gives warnings only, and it
+# exits 3 when one compile has no exact instruction count.
+add_test(NAME instruction_total
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-parse-cost.py --check instruction-total
+          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+set_tests_properties(parse_total parse_cost_self_test header_fanout instruction_total PROPERTIES
     LABELS "ci_guard" SKIP_RETURN_CODE 3)
 function(crucible_order_census_checks)
   get_property(_fixtures GLOBAL PROPERTY CRUCIBLE_NEG_FIXTURE_TESTS)
-  set_tests_properties(parse_total header_fanout DIRECTORY ${CMAKE_SOURCE_DIR}/test PROPERTIES
+  set_tests_properties(parse_total header_fanout instruction_total DIRECTORY ${CMAKE_SOURCE_DIR}/test PROPERTIES
       DEPENDS "${_fixtures}")
 endfunction()
 cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_checks)

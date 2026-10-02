@@ -1,0 +1,12 @@
+# utils/scripts/instruction-total-ledger.txt — the baseline of the user instructions of the compiles of
+# one build.  utils/scripts/check-parse-cost.py reads it, and --write writes the row of one build kind
+# again.
+#
+# A row:  total | KIND | OBJECT INSTRUCTIONS | FIXTURE INSTRUCTIONS | reason
+#   The sum, over each object of the target all and over each negative fixture, of the user
+#   instructions of its last real compile, at the last --write.
+#
+# A change of more than the threshold of the row instruction-total of utils/scripts/budgets.txt gives a
+# warning, never an error.  The count covers the template instantiation and the constant evaluation
+# that the bytes of utils/scripts/parse-total-ledger.txt do not see.
+total | x86_64-debug-asan | 11524907900089 | 9992663254870 | the measure of the Debug build of all and of each negative fixture on 2026-10-02

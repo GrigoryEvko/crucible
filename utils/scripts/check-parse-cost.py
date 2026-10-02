@@ -28,6 +28,20 @@ THE CHECKS
                     that includes more than its header counts those files
                     too.  This check gives warnings only.
 
+    instruction-total
+                    The sum, over each object of all and each fixture, of the
+                    user instructions of its last real compile: the count of
+                    the record of the build launcher (the cost block, or the
+                    last cost that a ccache hit keeps), and the count of the
+                    fixture record.  The count covers the template
+                    instantiation and the constant evaluation that the bytes
+                    do not see.  The check exits 3 when one compile has no
+                    count (the host gives no exact counter, or a ccache hit
+                    keeps no count of a real compile in this build
+                    directory), and it gives warnings only: for a change of
+                    more than the threshold of the row instruction-total
+                    against the total row of utils/scripts/instruction-total-ledger.txt.
+
 THE BASELINE
     utils/scripts/parse-total-ledger.txt holds the baseline of each build
     kind, which --write regenerates:
@@ -109,7 +123,9 @@ from repo_root import REPO_ROOT  # noqa: E402
 
 SCRIPTS = Path(__file__).resolve().parent
 # The ledger of each check.
-LEDGERS = {"parse-total": "parse-total-ledger.txt", "header-fanout": "header-fanout-ledger.txt"}
+LEDGERS = {"parse-total": "parse-total-ledger.txt", "header-fanout": "header-fanout-ledger.txt",
+           "instruction-total": "instruction-total-ledger.txt"}
+GIGA = 1e9
 CHECKS = tuple(LEDGERS)
 NOT_APPLICABLE = 3
 # The part of the path of an object of a sentinel of test/layer, which compiles one header alone.
@@ -471,6 +487,67 @@ def top_table(fans: list[Fan]) -> str:
     return "\n".join(lines)
 
 
+def count_text(count: int) -> str:
+    """Return a number of instructions in G (10^9)."""
+    return f"{count / GIGA:.1f} G"
+
+
+def instruction_total(census: build_census.Census) -> tuple[int, int]:
+    """Return the user instructions of the last real compile of the objects and of the fixtures.
+
+    Raises:
+        build_census.NotApplicable: If a unit has no instruction count
+    """
+    uncounted = [unit.item for unit in census.units if unit.cost.instructions is None]
+    if uncounted:
+        raise build_census.NotApplicable(
+            f"{len(uncounted)} of the {len(census.units)} compiles have no instruction count, because the host gives no "
+            f"exact counter, or a ccache hit keeps no count of a real compile in this build directory: "
+            f"{build_census.names_text(uncounted)}.  utils/scripts/cost_meter.py tells when a count exists")
+    objects = sum(unit.cost.instructions or 0 for unit in census.units if unit.kind == "object")
+    fixtures = sum(unit.cost.instructions or 0 for unit in census.units if unit.kind == "fixture")
+    return objects, fixtures
+
+
+def evaluate_instructions(census: build_census.Census, objects: int, fixtures: int, total: Total, ledger_shown: str,
+                          budget: check_report.Budget) -> list[check_report.Finding]:
+    """Compare the instruction total of a build with its baseline, and give a warning for a change over the threshold."""
+    count = objects + fixtures
+    change = (count - total.bytes) / total.bytes * 100.0
+    largest = sorted(census.units, key=lambda unit: -(unit.cost.instructions or 0))[:NAMED_FILES]
+    named = "; ".join(f"{unit.source} {count_text(unit.cost.instructions or 0)}" for unit in largest)
+    words = (f"the compiles of the build ran {count_text(count)} user instructions (objects {count_text(objects)}, "
+             f"fixtures {count_text(fixtures)})")
+    if change > budget.warn:
+        return [check_report.Finding(
+            "warning", ledger_shown, total.line, "instruction-total",
+            f"{words}, {change:.2f}% more than the baseline of {count_text(total.bytes)}, over the threshold "
+            f"{budget.warn:g}%.  Remove the cost, or write the baseline again with a reason: --write --reason TEXT.  "
+            f"The largest compiles: {named}")]
+    if change < -budget.warn:
+        return [check_report.Finding(
+            "warning", ledger_shown, total.line, "instruction-total",
+            f"{words}, {-change:.2f}% less than the baseline of {count_text(total.bytes)}.  Write the baseline again, "
+            f"so that it keeps no slack: --write")]
+    return []
+
+
+def write_totals(path: Path, ledger: Ledger, kind: str, objects: int, fixtures: int, reason: str | None) -> str:
+    """Write the total row of one kind again, and keep the total rows of the other kinds.
+
+    Returns:
+        The summary
+    """
+    old = ledger.totals.get(kind)
+    totals = dict(ledger.totals)
+    totals[kind] = Total(0, objects, fixtures, reason or (old.reason if old is not None else DEFAULT_REASON))
+    lines = list(ledger.header)
+    lines.extend(f"total | {each_kind} | {row.objects} | {row.fixtures} | {row.reason}"
+                 for each_kind, row in sorted(totals.items()))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return f"instruction-total: {path.name} holds the baseline {objects + fixtures} instructions of the kind {kind}"
+
+
 def run(check: str, build_dir: Path, root: Path, kind: str, ledger_path: Path, budgets_path: Path,
         warnings_dir: Path | None, write: bool = False, reason: str | None = None) -> int:
     """Run one check, or its --write, over one build.
@@ -494,12 +571,12 @@ def run(check: str, build_dir: Path, root: Path, kind: str, ledger_path: Path, b
     if budget is None:
         return fail(build_census.shown(budgets_path, root), f"{budgets_path.name} has no row {check}")
     try:
-        if check == "parse-total":
-            ledger: Ledger | FanLedger = read_ledger(ledger_path)
-            has_baseline = kind in ledger.totals  # type: ignore[union-attr]
-        else:
-            ledger = read_fanout_ledger(ledger_path)
+        if check == "header-fanout":
+            ledger: Ledger | FanLedger = read_fanout_ledger(ledger_path)
             has_baseline = kind in ledger.rows  # type: ignore[union-attr]
+        else:
+            ledger = read_ledger(ledger_path)
+            has_baseline = kind in ledger.totals  # type: ignore[union-attr]
     except LedgerError as problem:
         return fail(ledger_shown, str(problem))
     if not write and not has_baseline:
@@ -507,12 +584,26 @@ def run(check: str, build_dir: Path, root: Path, kind: str, ledger_path: Path, b
               f"The check does not apply")
         return NOT_APPLICABLE
     try:
-        census = build_census.read_census(build_dir, root)
+        census = build_census.read_census(build_dir, root, read_files=check != "instruction-total")
+        if check == "instruction-total":
+            objects, fixtures = instruction_total(census)
     except build_census.NotApplicable as problem:
         print(f"{check}: {problem}.  The check does not apply")
         return NOT_APPLICABLE
     except build_census.CensusError as problem:
         return fail(build_shown, str(problem))
+    if check == "instruction-total" and isinstance(ledger, Ledger):
+        if write:
+            print(write_totals(ledger_path, ledger, kind, objects, fixtures, reason))
+            return 0
+        total = ledger.totals[kind]
+        status = check_report.emit(evaluate_instructions(census, objects, fixtures, total, ledger_shown, budget),
+                                   check, warnings_dir)
+        print(f"instruction-total: {count_text(objects + fixtures)} user instructions in "
+              f"{sum(unit.kind == 'object' for unit in census.units)} objects and "
+              f"{sum(unit.kind == 'fixture' for unit in census.units)} fixtures, "
+              f"{(objects + fixtures - total.bytes) / total.bytes * 100.0:+.2f}% against the baseline of the kind {kind}")
+        return status
     if isinstance(ledger, FanLedger):
         fans = fanout(census, root)
         if write:
@@ -559,7 +650,8 @@ class Scratch:
 
     KIND = "x86_64-debug-asan"
     BUDGETS = ("parse-total | 2 | 5 | % | the growth of the total\n"
-               "header-fanout | 10 | 10 | % | the change of the product of a header\n")
+               "header-fanout | 10 | 10 | % | the change of the product of a header\n"
+               "instruction-total | 2 | 2 | % | the change of the instruction total\n")
     SENTINELS = "test/layer/CMakeFiles/layer_sentinel_fixy.dir"
 
     def __init__(self, root: Path) -> None:
@@ -572,6 +664,8 @@ class Scratch:
         self.ledger.write_text("# a planted ledger\n", encoding="utf-8")
         self.fan_ledger = root / "header-fanout-ledger.txt"
         self.fan_ledger.write_text("# a planted fan-out ledger\n", encoding="utf-8")
+        self.instruction_ledger = root / "instruction-total-ledger.txt"
+        self.instruction_ledger.write_text("# a planted instruction ledger\n", encoding="utf-8")
         self.budgets = root / "budgets.txt"
         self.budgets.write_text(self.BUDGETS, encoding="utf-8")
         for name, text in (("ninja.py", FAKE_NINJA), ("ctest.py", FAKE_CTEST)):
@@ -600,13 +694,19 @@ class Scratch:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"x" * size)
 
-    def add_object(self, name: str, files: list[str], state: str = "VALID", directory: str = "CMakeFiles") -> None:
-        """Plant one object of all with its dependency list, in a directory of the build."""
+    def add_object(self, name: str, files: list[str], state: str = "VALID", directory: str = "CMakeFiles",
+                   instructions: int | None = 2_000_000_000) -> None:
+        """Plant one object of all with its dependency list and its launcher record, in a directory of the build."""
         rel = f"{directory}/{name}.o"
         self.objects[name] = (rel, files)
         obj = self.build / rel
         obj.parent.mkdir(parents=True, exist_ok=True)
         obj.write_bytes(b"object")
+        cost: dict[str, object] = {"cpu_s": 1.5}
+        if instructions is not None:
+            cost["instructions"] = instructions
+        Path(f"{obj}.cost").write_text(json.dumps({"format": 1, "step": "compile", "result": "built", "cost": cost}),
+                                       encoding="utf-8")
         self.flush(state)
 
     def remove_object(self, name: str) -> None:
@@ -648,7 +748,8 @@ class Scratch:
             warnings_dir: Path | None = None, check: str = "parse-total") -> tuple[int, list[check_report.Finding], str]:
         """Run one check or its --write, and return its status, its findings and its output."""
         output = io.StringIO()
-        ledger = self.ledger if check == "parse-total" else self.fan_ledger
+        ledger = {"parse-total": self.ledger, "header-fanout": self.fan_ledger,
+                  "instruction-total": self.instruction_ledger}[check]
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
             status = run(check, self.build.resolve(), self.root.resolve(), kind, ledger, self.budgets, warnings_dir,
                          write, reason)
@@ -827,6 +928,38 @@ def self_test() -> int:
         (fan.build / "neg-compile" / "neg_one" / "neg_one.inputs").unlink()
         status, found, _ = fan_run()
         expect("header-fanout: a fixture with no record is an error", status == 1 and "neg_one" in found[0].message)
+
+        # instruction-total: two objects of 2 G and two fixtures of 5 G, a total of 14 G.
+        counted = Scratch(Path(scratch_name).resolve() / "counted")
+
+        def count_run(**options: object) -> tuple[int, list[check_report.Finding], str]:
+            return counted.run(check="instruction-total", **options)  # type: ignore[arg-type]
+
+        status, found, _ = count_run()
+        expect("instruction-total: a ledger with no row of the kind exits 3", status == NOT_APPLICABLE and not found)
+        status, _, output = count_run(write=True)
+        expect("instruction-total: --write writes the total row",
+               status == 0 and f"total | {Scratch.KIND} | 4000000000 | 10000000000 | {DEFAULT_REASON}"
+               in counted.instruction_ledger.read_text(encoding="utf-8"))
+        status, found, output = count_run()
+        expect("instruction-total: an unchanged build gives no finding", status == 0 and not found
+               and "14.0 G user instructions" in output)
+        counted.add_object("a", ["src/a.cpp", "include/Base.h"], instructions=4_000_000_000)
+        status, found, _ = count_run()
+        expect("instruction-total: a growth of 14% gives a warning, never an error, that names the largest compiles",
+               status == 0 and [f.level for f in found] == ["warning"] and "14.29% more" in found[0].message
+               and "src/a.cpp 4.0 G" in found[0].message)
+        with check_report.github_actions(True):
+            status, found, _ = count_run()
+            expect("instruction-total: on a CI runner, a growth gives a warning", status == 0 and found)
+        counted.add_object("a", ["src/a.cpp", "include/Base.h"], instructions=1_000_000_000)
+        status, found, _ = count_run()
+        expect("instruction-total: a fall of 7% gives a warning to write the baseline again",
+               status == 0 and [f.level for f in found] == ["warning"] and "Write the baseline again" in found[0].message)
+        counted.add_object("a", ["src/a.cpp", "include/Base.h"], instructions=None)
+        status, found, output = count_run()
+        expect("instruction-total: a compile with no count exits 3 and names it",
+               status == NOT_APPLICABLE and not found and "CMakeFiles/a.o" in output)
 
     if failures:
         print(f"check-parse-cost --self-test: FAILED, {len(failures)} case(s) did not hold")
