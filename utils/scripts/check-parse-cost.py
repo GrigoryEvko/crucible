@@ -12,10 +12,10 @@ THE CHECKS
                     the caches, and it does not depend on the load of the
                     host.
 
-    Each per-job budget can pass while the total grows: one more include in
-    a base header costs a little in each of thousands of compiles.  On 192
-    cores the wall time of a build is at least its total CPU divided by 192,
-    so the total is the budget of a snappy build.
+    Each per-job budget can pass while the total increases: one more include
+    in a base header costs a little in each of thousands of compiles.  On 192
+    cores the wall time of a build is at least its total CPU time divided by
+    192, so the total sets a limit on the wall time of the build.
 
     header-fanout   For each header of include/ that a sentinel of test/layer
                     compiles alone: the bytes that the header includes alone,
@@ -60,16 +60,16 @@ THE BASELINE
 
 THE LEVELS
     The row parse-total of utils/scripts/budgets.txt gives two thresholds in
-    percent of the baseline.  A total that grew by more than the warning
+    percent of the baseline.  A total that increased by more than the warning
     threshold gives a warning, and by more than the error threshold an error.
     A total that fell by more than the warning threshold is an error too,
     with the message to lower the baseline in the same commit, so the
-    baseline keeps no slack.  To accept a growth, raise the baseline in the
-    same commit: --write --reason TEXT.  --write refuses a growth over the
-    warning threshold with no reason.  Each finding names the files with the
-    largest change of their product: the bytes, the readers and the product
-    now, and the change from the baseline.  A file under the floor of the
-    baseline counts as zero there.
+    baseline does not stay above the total.  To accept a growth, raise the
+    baseline in the same commit: --write --reason TEXT.  --write refuses a
+    growth over the warning threshold with no reason.  Each finding names the
+    files with the largest change of their product: the bytes, the readers
+    and the product now, and the change from the baseline.  A file under the
+    floor of the baseline counts as zero there.
 
 THE FAN-OUT BASELINE
     utils/scripts/header-fanout-ledger.txt holds the 30 largest products of
@@ -78,12 +78,12 @@ THE FAN-OUT BASELINE
         header | KIND | HEADER | ALONE BYTES | READERS
 
     A header in the ten largest products of the build that was not in the ten
-    largest of the baseline gives a warning.  A header whose product grew by
-    more than the threshold of the row header-fanout of
+    largest of the baseline gives a warning.  A header whose product
+    increased by more than the threshold of the row header-fanout of
     utils/scripts/budgets.txt gives a warning.  A header whose product fell
     by more than that threshold, and a header of the baseline that has no
     sentinel in the build, give a warning to write the baseline again, so
-    that it keeps no slack.
+    that it does not stay above the product.
 
 NOT APPLICABLE
     A check exits 3, with the reason, when the census does not apply to the
@@ -307,7 +307,7 @@ def evaluate(measured: Measure, ledger: Ledger, ledger_shown: str, kind: str, bu
         return [check_report.Finding(
             "error", ledger_shown, total.line, "parse-total",
             f"{words}, {-growth:.2f}% less than the baseline of {size_text(baseline)}, more than the {budget.warn:g}% "
-            f"that the baseline can hold.  Lower the baseline in the same commit, so that it keeps no slack: {write}.  "
+            f"that the baseline can hold.  Lower the baseline in the same commit, so that it does not stay above the total: {write}.  "
             f"The largest changes: {changes}")]
     return []
 
@@ -322,7 +322,7 @@ def write_ledger(path: Path, ledger: Ledger, kind: str, measured: Measure, reaso
     old = ledger.totals.get(kind)
     if old is not None and not reason and measured.bytes > old.bytes * (1 + budget.warn / 100.0):
         growth = (measured.bytes - old.bytes) / old.bytes * 100.0
-        return False, (f"the total grew by {growth:.2f}% over the baseline of {size_text(old.bytes)}, more than the "
+        return False, (f"the total increased by {growth:.2f}% over the baseline of {size_text(old.bytes)}, more than the "
                        f"warning threshold {budget.warn:g}%.  Give the reason of the growth with --reason")
     new_reason = reason or (old.reason if old is not None else DEFAULT_REASON)
     totals = dict(ledger.totals)
@@ -451,13 +451,13 @@ def evaluate_fanout(fans: list[Fan], rows: dict[str, tuple[int, int, int]], ledg
         if change > budget.warn:
             findings.append(check_report.Finding(
                 "warning", fan.header, 0, "header-fanout",
-                f"the fan-out of the header grew by {change:.1f}%, over the threshold {budget.warn:g}%: {fan_text(fan)} "
+                f"the fan-out of the header increased by {change:.1f}%, over the threshold {budget.warn:g}%: {fan_text(fan)} "
                 f"({was}).  Remove an include from it, or write the baseline again when the cost stays: --write"))
         elif change < -budget.warn:
             findings.append(check_report.Finding(
                 "warning", ledger_shown, line, "header-fanout",
                 f"the fan-out of {header} fell by {-change:.1f}%, more than the threshold {budget.warn:g}%: "
-                f"{fan_text(fan)} ({was}).  Write the baseline again, so that it keeps no slack: --write"))
+                f"{fan_text(fan)} ({was}).  Write the baseline again, so that it does not stay above the product: --write"))
     return findings
 
 
@@ -528,7 +528,7 @@ def evaluate_instructions(census: build_census.Census, objects: int, fixtures: i
         return [check_report.Finding(
             "warning", ledger_shown, total.line, "instruction-total",
             f"{words}, {-change:.2f}% less than the baseline of {count_text(total.bytes)}.  Write the baseline again, "
-            f"so that it keeps no slack: --write")]
+            f"so that it does not stay above the total: --write")]
     return []
 
 
@@ -896,11 +896,12 @@ def self_test() -> int:
         fan.write("include/H00.h", 5000)
         status, found, _ = fan_run()
         entered = [f for f in found if "enters the top 10" in f.message]
-        grew = [f for f in found if "grew by" in f.message]
-        expect("header-fanout: a header that enters the top 10 warns at its path with its rank, and its growth warns",
+        increased = [f for f in found if "increased by" in f.message]
+        expect("header-fanout: a header that enters the top 10 warns at its path with its rank, and its larger "
+               "product warns",
                status == 0 and {f.level for f in found} == {"warning"} and len(entered) == 1
                and entered[0].path == "include/H00.h" and "at rank 1: 4.9 KB alone x 2 readers" in entered[0].message
-               and len(grew) == 1 and "grew by 4900.0%" in grew[0].message)
+               and len(increased) == 1 and "increased by 4900.0%" in increased[0].message)
         fan.write("include/H00.h", 100)
         fan.write("include/H11.h", 100)
         status, found, _ = fan_run()

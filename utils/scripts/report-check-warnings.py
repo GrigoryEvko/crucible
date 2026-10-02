@@ -9,7 +9,7 @@ workflow it also prints each one as an annotation.
 THE TIME TOTALS
     On 192 cores the wall time of a build is at least its total CPU time
     divided by 192, and many small steps that each pass every per-job budget
-    can make the total grow.  The script adds three totals and compares each
+    can increase the total.  The script adds three totals and compares each
     one with its row of utils/scripts/budgets.txt:
 
       total-compile-cpu   the CPU time of the last real compile of each object
