@@ -23,15 +23,16 @@ struct tag_base {
     ~tag_base() = default;
 };
 
-// The text of one field of a tag: a std::string_view whose length comes
-// from the type of its string literal.  A std::string_view built from a
-// pointer counts the characters one at a time in a constant evaluation.
-// Each translation unit that includes this header would do that count
-// again for each field of each tag, and the fields hold about 100,000
-// characters.  The length of the array type costs nothing.
+// The text of one field of a tag: a std::string_view over its string
+// literal.  A std::string_view built from a pointer counts the characters
+// one at a time in a constant evaluation.  Each translation unit that
+// includes this header would do that count again for each field of each
+// tag, and the fields hold about 100,000 characters.  GCC folds
+// __builtin_strlen of a string literal to a constant in one step.  The
+// constructor is not a template, so the fields of different lengths share
+// one instantiation.
 struct tag_text_literal : std::string_view {
-    template <std::size_t N>
-    consteval tag_text_literal(const char (&literal)[N]) noexcept : std::string_view{literal, N - 1} {}
+    consteval tag_text_literal(const char (&literal)[]) noexcept : std::string_view{literal, __builtin_strlen(literal)} {}
 };
 
 // Error and Fatal behave identically at compile time. They differ in
@@ -1563,41 +1564,11 @@ template <class Unused = void>
     return tags;
 }
 
-[[nodiscard]] consteval bool every_category_names_a_tag() noexcept {
-    for (const auto tag : catalog_tags()) {
-        if (tag == ^^void) return false;
-    }
-    return true;
-}
-
-// True when some Category enumerator spells `identifier`.
-[[nodiscard]] consteval bool category_names_(std::string_view identifier) noexcept {
-    for (const auto en : std::meta::enumerators_of(^^Category)) {
-        if (std::meta::identifier_of(en) == identifier) return true;
-    }
-    return false;
-}
-
-// The walk above runs from the enum to the tags. This one runs the other
-// way, over the tag classes declared directly in foundation::diag. A tag
-// written above the enum and then forgotten in it reaches no Category,
-// so tag_of_t and category_of_v never name it and the three accessors
-// never answer with its text. Nothing said so before this check.
-//
-// The check file of this header calls the two walks.  It includes this
-// header and no other, so the walk reads the namespace after every
-// shipped tag and after the enum. A user extension declared in a later
-// header is a different thing: the Category enum is closed, and such a
-// tag is meant to have no enumerator.
-[[nodiscard]] consteval bool every_tag_names_a_category() noexcept {
-    for (const auto m : std::meta::members_of(^^::foundation::diag, std::meta::access_context::unchecked())) {
-        if (!std::meta::is_type(m) || std::meta::is_type_alias(m) || !std::meta::is_class_type(m)) continue;
-        if (m == ^^tag_base || !std::meta::is_base_of_type(^^tag_base, m)) continue;
-        if (!std::meta::has_identifier(m)) continue;
-        if (!category_names_(std::meta::identifier_of(m))) return false;
-    }
-    return true;
-}
+// The two checks that each enumerator names a tag and that each tag names
+// an enumerator are in the check file of this header.  GCC evaluates a
+// call with constant arguments in the body of a function that is not a
+// template.  In this header, such a check would walk the catalog in each
+// includer, also in an includer that reads no tag.
 
 // The tuple of the tag types at the enumerators' positions, derived from
 // the enum. tag_of_t<C> and category_of_v<Tag> index it.

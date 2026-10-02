@@ -6,6 +6,42 @@ namespace foundation::diag {
 
 namespace detail {
 
+[[nodiscard]] consteval bool every_category_names_a_tag() noexcept {
+    for (const auto tag : catalog_tags()) {
+        if (tag == ^^void) return false;
+    }
+    return true;
+}
+
+// True when some Category enumerator spells `identifier`.
+[[nodiscard]] consteval bool category_names_(std::string_view identifier) noexcept {
+    for (const auto en : std::meta::enumerators_of(^^Category)) {
+        if (std::meta::identifier_of(en) == identifier) return true;
+    }
+    return false;
+}
+
+// The walk of catalog_tags runs from the enum to the tags.  This one runs
+// the other way, over the tag classes declared directly in
+// foundation::diag.  A tag written above the enum and then forgotten in
+// it reaches no Category, so tag_of_t and category_of_v never name it and
+// the three accessors never answer with its text.
+//
+// This file includes the header and no other, so the walk reads the
+// namespace after every shipped tag and after the enum.  A user extension
+// declared in a later header is a different thing: the Category enum is
+// closed, and such a tag is meant to have no enumerator.  A namespace has
+// no access control, so the current context reads each of its members.
+[[nodiscard]] consteval bool every_tag_names_a_category() noexcept {
+    for (const auto m : std::meta::members_of(^^::foundation::diag, std::meta::access_context::current())) {
+        if (!std::meta::is_type(m) || std::meta::is_type_alias(m) || !std::meta::is_class_type(m)) continue;
+        if (m == ^^tag_base || !std::meta::is_base_of_type(^^tag_base, m)) continue;
+        if (!std::meta::has_identifier(m)) continue;
+        if (!category_names_(std::meta::identifier_of(m))) return false;
+    }
+    return true;
+}
+
 static_assert(every_category_names_a_tag(), "A Category enumerator names no tag: no class derived from "
                                             "tag_base with that identifier is declared in foundation::diag. "
                                             "Declare the tag struct above the enum, spelled exactly as the "
