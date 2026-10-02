@@ -4,6 +4,8 @@
 
 namespace crucible {
 
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(CKernelEntry);
+
 static_assert(::fixy::no_scoped_view_field_check<CKernelTable>());
 
 static_assert(sizeof(CKernelTableSingleton) == sizeof(CKernelTable*));

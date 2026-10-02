@@ -45,8 +45,6 @@ struct CKernelEntry {
     uint8_t pad[7]{};
 };
 
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(CKernelEntry);
-
 namespace ckernel_state {
 struct Mutable {};
 struct Sealed {};

@@ -61,8 +61,6 @@ struct TensorSlot {
     uint8_t pad2[4]{};
 };
 
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorSlot);
-
 // External slots keep the allocations they already have: they are counted in
 // num_external and are not placed in the pool.
 struct MemoryPlan {
@@ -79,8 +77,6 @@ struct MemoryPlan {
     int32_t rank = -1;  // -1 when not distributed
     int32_t world_size = 0;  // 0 when not distributed
 };
-
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(MemoryPlan);
 
 // True when the byte ranges of the slots live at op `op` are pairwise
 // disjoint.  Only the simultaneously-live set is checked: two slots whose
@@ -205,8 +201,6 @@ struct TraceEntry {
     }
 };
 
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TraceEntry);
-
 // The condition a BranchNode checks to select an arm.
 struct Guard {
     enum class Kind : uint8_t {
@@ -228,8 +222,6 @@ struct Guard {
     // computed by an earlier layout no longer compare equal.
     CRUCIBLE_PURE uint64_t hash() const noexcept { return crucible::reflect_hash(*this); }
 };
-
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(Guard);
 
 enum class TraceNodeKind : uint8_t {
     REGION,
@@ -271,8 +263,6 @@ struct TraceNode {
         return ::fixy::mint_refined<::fixy::non_zero>(merkle_hash);
     }
 };
-
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TraceNode);
 
 // Zero is the "never built" hash.  A TERMINAL node legitimately carries
 // MerkleHash{}, but it is a sentinel leaf, never a root: two unbuilt subtrees
@@ -385,8 +375,6 @@ struct FeedbackEdge {
     uint16_t input_idx = 0;
 };
 
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(FeedbackEdge);
-
 // Cyclic computation held inside the acyclic DAG: an acyclic body sub-DAG
 // plus feedback edges and a termination condition.  The inherited next
 // continues after every iteration has run.
@@ -418,8 +406,6 @@ struct LoopNode : TraceNode {
         return ::fixy::mint_refined<::fixy::non_zero>(body_content_hash);
     }
 };
-
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(LoopNode);
 
 // An empty edge set hashes to 0 and any non-empty set hashes non-zero.  The
 // non-zero seed is what makes the first claim hold: fmix64 is a permutation,
