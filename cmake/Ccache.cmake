@@ -14,6 +14,25 @@
 # CMAKE_CXX_COMPILER_LAUNCHER into the cache, after the first macro, so the
 # second macro removes a ccache launcher.  Only a launcher whose program is
 # named ccache is ccache.  sccache and other launchers get no ccache option.
+#
+# crucible_relocatable_objects() keeps the build root and the source root out
+# of the paths in the debug information of each object.  ccache with base_dir
+# passes each path under the source root as a path from the build root.  With
+# hash_dir=false, a hit from a different build root gives an object that names
+# that build root as its compile directory, so the objects of two build roots
+# are not the same.  -fdebug-prefix-map changes the source root to its path
+# from the build root, and the build root to ".".  GCC uses the last map that
+# matches a path, so the build root, which can be inside the source root, comes
+# last.  Then two build roots at the same place in one source tree give the
+# same object, when the two compiles both use ccache or both do not.  A
+# debugger that starts in the build root finds each source file.
+#
+# The maps do not use -ffile-prefix-map, which also sets -fmacro-prefix-map.
+# That map changes __FILE__ and the file name of a source location, and a
+# reflection check compares that name with the path of a header
+# (utils/scripts/check-padded-lists.py).  GCC applies no map to the options in
+# the producer string of the debug information, and the plugin options of the
+# tree name the two roots (utils/tools/quarantine/Quarantine.cmake).
 
 # Set OUT_VAR to TRUE when the first item of LAUNCHER is a program named ccache.
 function(crucible_launcher_is_ccache launcher out_var)
@@ -122,4 +141,19 @@ macro(crucible_ccache_after_project)
   elseif(CRUCIBLE_USE_CCACHE)
     message(STATUS "ccache: not found on PATH — proceeding without launcher")
   endif()
+endmacro()
+
+# Call this macro before the first target of the directory.
+macro(crucible_relocatable_objects)
+  # file(RELATIVE_PATH) gives "../" for the parent directory.  GCC keeps the
+  # separator after the old prefix, so a new prefix with a separator at its
+  # end gives "..//", which a compile through ccache does not give.
+  file(RELATIVE_PATH _crucible_source_from_build "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DIR}")
+  string(REGEX REPLACE "/+$" "" _crucible_source_from_build "${_crucible_source_from_build}")
+  if(_crucible_source_from_build STREQUAL "")
+    set(_crucible_source_from_build ".")
+  endif()
+  add_compile_options(
+    "$<$<COMPILE_LANGUAGE:CXX>:-fdebug-prefix-map=${CMAKE_SOURCE_DIR}=${_crucible_source_from_build}>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-fdebug-prefix-map=${CMAKE_BINARY_DIR}=.>")
 endmacro()

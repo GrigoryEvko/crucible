@@ -26,6 +26,7 @@ if(NOT CRUCIBLE_GCC_PROBLEM STREQUAL "")
 endif()
 
 crucible_ccache_after_project()
+crucible_relocatable_objects()
 
 # ═══════════════════════════════════════════════════════════════
 # Profile-guided optimization: CRUCIBLE_PGO = off | generate | use
