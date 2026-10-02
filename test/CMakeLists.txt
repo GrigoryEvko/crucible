@@ -366,13 +366,16 @@ set_tests_properties(patched_gcc_probe_self_test PROPERTIES LABELS "ci_guard")
 # The tests of cmake/Ccache.cmake.  Each one configures a small project.  The
 # launcher case tries CRUCIBLE_USE_CCACHE=OFF with ccache in the environment
 # and in -D, a launcher that is not ccache, and the ccache that PATH holds.
-# The relocation case builds one object in three build roots.  A ccache hit
-# from a different build root must give the same object, and no object can
-# name its build root.
-foreach(ccache_case launcher relocation)
+# The two relocation cases build one object with the plugin options of the
+# tree, which name the source root and the build root.  A ccache hit from a
+# different build root must give the object of a compile in the build root,
+# and no object can name its build root, with ccache or without it.  Each
+# relocation case takes a copy of the plugin of this build.
+foreach(ccache_case launcher relocation plain_relocation)
   add_test(NAME ccache_${ccache_case}_self_test
     COMMAND ${CMAKE_COMMAND} -DCXX=${CRUCIBLE_REAL_CXX} -DCASE=${ccache_case}
             -DWORK=${CMAKE_CURRENT_BINARY_DIR}/ccache_${ccache_case}_self_test
+            -DPLUGIN_DIR=${CMAKE_BINARY_DIR}/quarantine
             -P ${CMAKE_SOURCE_DIR}/cmake/CcacheSelfTest.cmake)
   set_tests_properties(ccache_${ccache_case}_self_test PROPERTIES LABELS "ci_guard")
 endforeach()

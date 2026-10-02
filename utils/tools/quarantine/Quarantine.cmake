@@ -97,16 +97,27 @@ if(NOT EXISTS "${_crucible_quarantine_gcc_plugin_dir}/include/gcc-plugin.h")
 endif()
 
 # A plugin must match the cc1plus that loads it, so the compiler is part of
-# the key that decides whether a plugin is current.
+# the key that decides whether a plugin is current.  When ccache is the
+# launcher, cmake/Ccache.cmake hashed the same driver and the same cc1plus in
+# this configure run, and a hash of the 400 MB cc1plus costs about one second.
 execute_process(
   COMMAND "${CRUCIBLE_REAL_CXX}" -print-prog-name=cc1plus
   OUTPUT_VARIABLE _crucible_quarantine_cc1plus
   OUTPUT_STRIP_TRAILING_WHITESPACE)
 set(_crucible_quarantine_out "${CMAKE_BINARY_DIR}/quarantine")
-file(SHA256 "${CRUCIBLE_REAL_CXX}" _crucible_quarantine_driver_hash)
+if(DEFINED CRUCIBLE_DRIVER_SHA256 AND NOT DEFINED CACHE{CRUCIBLE_DRIVER_SHA256})
+  set(_crucible_quarantine_driver_hash "${CRUCIBLE_DRIVER_SHA256}")
+else()
+  file(SHA256 "${CRUCIBLE_REAL_CXX}" _crucible_quarantine_driver_hash)
+endif()
 set(_crucible_quarantine_compiler_key "${_crucible_quarantine_driver_hash} ${CRUCIBLE_QUARANTINE_PLUGIN_FLAGS}")
 if(EXISTS "${_crucible_quarantine_cc1plus}")
-  file(SHA256 "${_crucible_quarantine_cc1plus}" _crucible_quarantine_cc1plus_hash)
+  if(DEFINED CRUCIBLE_CC1PLUS_SHA256 AND NOT DEFINED CACHE{CRUCIBLE_CC1PLUS_SHA256}
+     AND CRUCIBLE_CC1PLUS STREQUAL _crucible_quarantine_cc1plus)
+    set(_crucible_quarantine_cc1plus_hash "${CRUCIBLE_CC1PLUS_SHA256}")
+  else()
+    file(SHA256 "${_crucible_quarantine_cc1plus}" _crucible_quarantine_cc1plus_hash)
+  endif()
   string(APPEND _crucible_quarantine_compiler_key " ${_crucible_quarantine_cc1plus_hash}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_crucible_quarantine_cc1plus}")
 endif()

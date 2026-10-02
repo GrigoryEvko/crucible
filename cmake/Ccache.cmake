@@ -30,9 +30,18 @@
 # The maps do not use -ffile-prefix-map, which also sets -fmacro-prefix-map.
 # That map changes __FILE__ and the file name of a source location, and a
 # reflection check compares that name with the path of a header
-# (utils/scripts/check-padded-lists.py).  GCC applies no map to the options in
-# the producer string of the debug information, and the plugin options of the
-# tree name the two roots (utils/tools/quarantine/Quarantine.cmake).
+# (utils/scripts/check-padded-lists.py).
+#
+# The producer string of the debug information records the options of the
+# compile, and GCC applies no map to them.  The plugin options of the tree name
+# the two roots (utils/tools/quarantine/Quarantine.cmake), and the PGO presets
+# name a profile directory under the source root.  So the macro also gives
+# -gno-record-gcc-switches, and the producer string holds only the language
+# and the version of the compiler.  Each other option that names a path is
+# then out of the object too.  An object then does not tell the options of its
+# compile, for example the -march, the -O level and the hardening flags, to
+# readelf, to gdb (info source) or to a tool that audits the hardening flags.
+# compile_commands.json and the build log still hold each option.
 
 # Set OUT_VAR to TRUE when the first item of LAUNCHER is a program named ccache.
 function(crucible_launcher_is_ccache launcher out_var)
@@ -155,5 +164,6 @@ macro(crucible_relocatable_objects)
   endif()
   add_compile_options(
     "$<$<COMPILE_LANGUAGE:CXX>:-fdebug-prefix-map=${CMAKE_SOURCE_DIR}=${_crucible_source_from_build}>"
-    "$<$<COMPILE_LANGUAGE:CXX>:-fdebug-prefix-map=${CMAKE_BINARY_DIR}=.>")
+    "$<$<COMPILE_LANGUAGE:CXX>:-fdebug-prefix-map=${CMAKE_BINARY_DIR}=.>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-gno-record-gcc-switches>")
 endmacro()
