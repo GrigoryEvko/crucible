@@ -6,7 +6,10 @@
 #   The sum, over each object of the target all and over each negative fixture, of the user
 #   instructions of its last real compile, at the last --write.
 #
-# A change of more than the threshold of the row instruction-total of utils/scripts/budgets.txt gives a
-# warning, never an error.  The count covers the template instantiation and the constant evaluation
-# that the bytes of utils/scripts/parse-total-ledger.txt do not see.
-total | x86_64-debug-asan | 11791451366112 | 9834739916180 | the measure of the Debug build of all and of each negative fixture on 2026-10-02
+# A growth over the warning threshold of the row instruction-total of utils/scripts/budgets.txt gives a
+# warning, and over its error threshold an error.  A fall of more than the warning threshold is an error
+# too.  The count covers the template instantiation and the constant evaluation that the bytes of
+# utils/scripts/parse-total-ledger.txt do not see.  To accept a growth, raise the baseline in the same
+# commit with a reason:
+#   python3 utils/scripts/check-parse-cost.py --check instruction-total --build-dir build --write --reason TEXT
+total | x86_64-debug-asan | 9553998204930 | 8625579563039 | the measure of the Debug build of all and of each negative fixture at 751d38a23 on 2026-10-02.  The total fell 15.9 % from the first baseline, with the compile-time work of the same day

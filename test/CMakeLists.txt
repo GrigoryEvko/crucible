@@ -5581,8 +5581,8 @@ add_test(NAME header_fanout
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 # instruction_total — the user instructions of the last real compile of each
 # object of all and each negative fixture, against the baseline of
-# utils/scripts/instruction-total-ledger.txt.  It gives warnings only, and it
-# exits 3 when one compile has no exact instruction count.
+# utils/scripts/instruction-total-ledger.txt, at the levels of the row
+# instruction-total.  It exits 3 when one compile has no exact instruction count.
 add_test(NAME instruction_total
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-parse-cost.py --check instruction-total
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})

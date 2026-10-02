@@ -38,9 +38,11 @@ THE CHECKS
                     do not see.  The check exits 3 when one compile has no
                     count (the host gives no exact counter, or a ccache hit
                     keeps no count of a real compile in this build
-                    directory), and it gives warnings only: for a change of
-                    more than the threshold of the row instruction-total
-                    against the total row of utils/scripts/instruction-total-ledger.txt.
+                    directory).  It compares the sum with the total row of
+                    utils/scripts/instruction-total-ledger.txt, at the levels
+                    of the row instruction-total.  The count does not change
+                    with the load of the host: two clean builds of one tree
+                    differ by less than 0.01 % in the sum.
 
 THE BASELINE
     utils/scripts/parse-total-ledger.txt holds the baseline of each build
@@ -59,17 +61,19 @@ THE BASELINE
     (build_census.file_key).
 
 THE LEVELS
-    The row parse-total of utils/scripts/budgets.txt gives two thresholds in
-    percent of the baseline.  A total that increased by more than the warning
-    threshold gives a warning, and by more than the error threshold an error.
-    A total that fell by more than the warning threshold is an error too,
-    with the message to lower the baseline in the same commit, so the
-    baseline does not stay above the total.  To accept a growth, raise the
-    baseline in the same commit: --write --reason TEXT.  --write refuses a
-    growth over the warning threshold with no reason.  Each finding names the
-    files with the largest change of their product: the bytes, the readers
-    and the product now, and the change from the baseline.  A file under the
-    floor of the baseline counts as zero there.
+    The rows parse-total and instruction-total of utils/scripts/budgets.txt
+    give two thresholds in percent of the baseline.  A total that increased
+    by more than the warning threshold gives a warning, and by more than the
+    error threshold an error.  A total that fell by more than the warning
+    threshold is an error too, with the message to lower the baseline in the
+    same commit, so the baseline does not stay above the total.  To accept a
+    growth, raise the baseline in the same commit: --write --reason TEXT.
+    --write refuses a growth over the warning threshold with no reason.  Each
+    finding of parse-total names the files with the largest change of their
+    product: the bytes, the readers and the product now, and the change from
+    the baseline.  A file under the floor of the baseline counts as zero
+    there.  Each finding of a growth of instruction-total names the largest
+    compiles.
 
 THE FAN-OUT BASELINE
     utils/scripts/header-fanout-ledger.txt holds the 30 largest products of
@@ -510,42 +514,58 @@ def instruction_total(census: build_census.Census) -> tuple[int, int]:
 
 
 def evaluate_instructions(census: build_census.Census, objects: int, fixtures: int, total: Total, ledger_shown: str,
-                          budget: check_report.Budget) -> list[check_report.Finding]:
-    """Compare the instruction total of a build with its baseline, and give a warning for a change over the threshold."""
+                          budget: check_report.Budget, build_shown: str) -> list[check_report.Finding]:
+    """Compare the instruction total of a build with the baseline of its kind.
+
+    Complexity: O(n log n) for n units, because of the sort of the largest compiles.
+
+    Returns:
+        The findings: an error or a warning for a growth, an error for a fall
+    """
     count = objects + fixtures
     change = (count - total.bytes) / total.bytes * 100.0
-    largest = sorted(census.units, key=lambda unit: -(unit.cost.instructions or 0))[:NAMED_FILES]
-    named = "; ".join(f"{unit.source} {count_text(unit.cost.instructions or 0)}" for unit in largest)
     words = (f"the compiles of the build ran {count_text(count)} user instructions (objects {count_text(objects)}, "
              f"fixtures {count_text(fixtures)})")
-    if change > budget.warn:
+    write = f"python3 utils/scripts/check-parse-cost.py --check instruction-total --build-dir {build_shown} --write"
+    level = check_report.classify(change, budget)
+    if level is not None:
+        limit = budget.error if level == "error" else budget.warn
+        largest = sorted(census.units, key=lambda unit: -(unit.cost.instructions or 0))[:NAMED_FILES]
+        named = "; ".join(f"{unit.source} {count_text(unit.cost.instructions or 0)}" for unit in largest)
         return [check_report.Finding(
-            "warning", ledger_shown, total.line, "instruction-total",
-            f"{words}, {change:.2f}% more than the baseline of {count_text(total.bytes)}, over the threshold "
-            f"{budget.warn:g}%.  Remove the cost, or write the baseline again with a reason: --write --reason TEXT.  "
-            f"The largest compiles: {named}")]
+            level, ledger_shown, total.line, "instruction-total",
+            f"{words}, {change:.2f}% more than the baseline of {count_text(total.bytes)}, over the {level} threshold "
+            f"{limit:g}%.  Remove the cost, or raise the baseline in the same commit with a reason: {write} --reason "
+            f"TEXT.  The largest compiles: {named}")]
     if change < -budget.warn:
         return [check_report.Finding(
-            "warning", ledger_shown, total.line, "instruction-total",
-            f"{words}, {-change:.2f}% less than the baseline of {count_text(total.bytes)}.  Write the baseline again, "
-            f"so that it does not stay above the total: --write")]
+            "error", ledger_shown, total.line, "instruction-total",
+            f"{words}, {-change:.2f}% less than the baseline of {count_text(total.bytes)}, more than the "
+            f"{budget.warn:g}% that the baseline can hold.  Lower the baseline in the same commit, so that it does not "
+            f"stay above the total: {write}")]
     return []
 
 
-def write_totals(path: Path, ledger: Ledger, kind: str, objects: int, fixtures: int, reason: str | None) -> str:
+def write_totals(path: Path, ledger: Ledger, kind: str, objects: int, fixtures: int, reason: str | None,
+                 budget: check_report.Budget) -> tuple[bool, str]:
     """Write the total row of one kind again, and keep the total rows of the other kinds.
 
     Returns:
-        The summary
+        True and a summary, or False and the reason that the write refuses
     """
     old = ledger.totals.get(kind)
+    if old is not None and not reason and objects + fixtures > old.bytes * (1 + budget.warn / 100.0):
+        growth = (objects + fixtures - old.bytes) / old.bytes * 100.0
+        return False, (f"the total increased by {growth:.2f}% over the baseline of {count_text(old.bytes)}, more than "
+                       f"the warning threshold {budget.warn:g}%.  Give the reason of the growth with --reason")
     totals = dict(ledger.totals)
     totals[kind] = Total(0, objects, fixtures, reason or (old.reason if old is not None else DEFAULT_REASON))
     lines = list(ledger.header)
     lines.extend(f"total | {each_kind} | {row.objects} | {row.fixtures} | {row.reason}"
                  for each_kind, row in sorted(totals.items()))
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return f"instruction-total: {path.name} holds the baseline {objects + fixtures} instructions of the kind {kind}"
+    return True, (f"instruction-total: {path.name} holds the baseline {objects + fixtures} instructions of the kind "
+                  f"{kind}")
 
 
 def run(check: str, build_dir: Path, root: Path, kind: str, ledger_path: Path, budgets_path: Path,
@@ -594,11 +614,12 @@ def run(check: str, build_dir: Path, root: Path, kind: str, ledger_path: Path, b
         return fail(build_shown, str(problem))
     if check == "instruction-total" and isinstance(ledger, Ledger):
         if write:
-            print(write_totals(ledger_path, ledger, kind, objects, fixtures, reason))
-            return 0
+            is_written, summary = write_totals(ledger_path, ledger, kind, objects, fixtures, reason, budget)
+            print(summary, file=sys.stderr if not is_written else sys.stdout)
+            return 0 if is_written else 1
         total = ledger.totals[kind]
-        status = check_report.emit(evaluate_instructions(census, objects, fixtures, total, ledger_shown, budget),
-                                   check, warnings_dir)
+        status = check_report.emit(evaluate_instructions(census, objects, fixtures, total, ledger_shown, budget,
+                                                         build_shown), check, warnings_dir)
         print(f"instruction-total: {count_text(objects + fixtures)} user instructions in "
               f"{sum(unit.kind == 'object' for unit in census.units)} objects and "
               f"{sum(unit.kind == 'fixture' for unit in census.units)} fixtures, "
@@ -651,7 +672,7 @@ class Scratch:
     KIND = "x86_64-debug-asan"
     BUDGETS = ("parse-total | 2 | 5 | % | the growth of the total\n"
                "header-fanout | 10 | 10 | % | the change of the product of a header\n"
-               "instruction-total | 2 | 2 | % | the change of the instruction total\n")
+               "instruction-total | 2 | 5 | % | the growth of the instruction total\n")
     SENTINELS = "test/layer/CMakeFiles/layer_sentinel_fixy.dir"
 
     def __init__(self, root: Path) -> None:
@@ -945,18 +966,40 @@ def self_test() -> int:
         status, found, output = count_run()
         expect("instruction-total: an unchanged build gives no finding", status == 0 and not found
                and "14.0 G user instructions" in output)
-        counted.add_object("a", ["src/a.cpp", "include/Base.h"], instructions=4_000_000_000)
+        counted.add_object("a", ["src/a.cpp", "include/Base.h"], instructions=2_420_000_000)
         status, found, _ = count_run()
-        expect("instruction-total: a growth of 14% gives a warning, never an error, that names the largest compiles",
-               status == 0 and [f.level for f in found] == ["warning"] and "14.29% more" in found[0].message
-               and "src/a.cpp 4.0 G" in found[0].message)
+        expect("instruction-total: a growth of 3% gives a warning at the total row that names the largest compiles",
+               status == 0 and [f.level for f in found] == ["warning"] and found[0].line == 2
+               and "3.00% more" in found[0].message and "src/a.cpp 2.4 G" in found[0].message)
+        counted.add_object("a", ["src/a.cpp", "include/Base.h"], instructions=2_840_000_000)
+        warnings_dir = counted.root / "warnings"
+        status, found, _ = count_run(warnings_dir=warnings_dir)
+        expect("instruction-total: a growth of 6% gives an error that tells how to raise the baseline, and no "
+               "warnings file",
+               status == 1 and [f.level for f in found] == ["error"] and "6.00% more" in found[0].message
+               and "--reason TEXT" in found[0].message
+               and not (warnings_dir / "instruction-total.txt").exists())
         with check_report.github_actions(True):
             status, found, _ = count_run()
-            expect("instruction-total: on a CI runner, a growth gives a warning", status == 0 and found)
-        counted.add_object("a", ["src/a.cpp", "include/Base.h"], instructions=1_000_000_000)
+            expect("instruction-total: on a CI runner, a growth error stays an error", status == 1)
+        status, _, output = count_run(write=True)
+        expect("instruction-total: --write refuses a growth over the warning threshold with no reason",
+               status == 1 and "Give the reason" in output)
+        status, _, _ = count_run(write=True, reason="a planted reason")
+        status_after, found, _ = count_run()
+        expect("instruction-total: --write with a reason raises the baseline, and the build then passes",
+               status == 0 and status_after == 0 and not found
+               and "| a planted reason" in counted.instruction_ledger.read_text(encoding="utf-8"))
+        counted.add_object("a", ["src/a.cpp", "include/Base.h"], instructions=2_000_000_000)
         status, found, _ = count_run()
-        expect("instruction-total: a fall of 7% gives a warning to write the baseline again",
-               status == 0 and [f.level for f in found] == ["warning"] and "Write the baseline again" in found[0].message)
+        expect("instruction-total: a fall of more than 2% is an error that asks to lower the baseline",
+               status == 1 and [f.level for f in found] == ["error"] and "5.66% less" in found[0].message
+               and "Lower the baseline" in found[0].message)
+        status, _, _ = count_run(write=True)
+        status_after, found, _ = count_run()
+        expect("instruction-total: --write lowers the baseline with no reason, and keeps the last reason",
+               status == 0 and status_after == 0 and not found
+               and "| a planted reason" in counted.instruction_ledger.read_text(encoding="utf-8"))
         counted.add_object("a", ["src/a.cpp", "include/Base.h"], instructions=None)
         status, found, output = count_run()
         expect("instruction-total: a compile with no count exits 3 and names it",
