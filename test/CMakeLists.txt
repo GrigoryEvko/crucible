@@ -5515,6 +5515,16 @@ add_test(NAME compile_cost_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-compile-cost.py --self-test)
 set_tests_properties(compile_cost_self_test PROPERTIES LABELS "ci_guard")
 
+# build_order — no compile of this build waits for a link or an archive
+# through an order-only input (utils/scripts/check-build-order.py).  Each
+# compile behind such an input starts only after the link or the archive.
+add_test(NAME build_order
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-build-order.py --check build-order
+          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+add_test(NAME build_order_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-build-order.py --self-test)
+set_tests_properties(build_order build_order_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
+
 # parse_total — the sum, over each object of the target all and each negative
 # fixture, of the bytes that its compile reads, against the baseline of the
 # build kind in utils/scripts/parse-total-ledger.txt (the row parse-total of

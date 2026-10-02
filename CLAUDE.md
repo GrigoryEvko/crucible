@@ -2426,6 +2426,7 @@ Each translation unit that includes a header compiles that header again, and eac
 | `constexpr-ops` | The operations of one constant evaluation in a translation unit or a fixture | None | 33,554,432 | The limit flag of each compile | Build, test run |
 | `padded-list` | The elements of a fixed list whose element type has a padding bit | Each ledger row | More than 63 | The test `padded_lists` | Test run |
 | Unity build and precompiled header | A unity build or a precompiled header in the tree | None | Each one | The test `no_unity_pch` | Test run |
+| Order-only wait | A compile that waits for a link or an archive through an order-only input | None | Each one | The test `build_order` | Test run |
 | Re-configure | The compiles after a second configure | None | One compile | `utils/scripts/check-reconfigure-noop.py` | CI build job |
 | `test-time` | The wall time of one test | 5 s | 30 s. A warning only in a TSan build | The test launcher, and `utils/scripts/check-test-time.py` for a script test | Test run, CI build job |
 | `test-memory` | The peak memory of one executable test | 0.5 GB | 1.5 GB | The test launcher | Test run |

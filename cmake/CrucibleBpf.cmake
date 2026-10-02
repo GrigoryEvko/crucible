@@ -199,6 +199,13 @@ function(crucible_bpf_program name source)
   # Without the flag, clang drops each such member and gives a warning.
   # -Wno-microsoft-anon-tag stops the warning that the flag itself gives.
   # -Werror makes each other warning stop the build.
+  #
+  # The two commands read only the files that their DEPENDS name, so each
+  # command takes DEPENDS_EXPLICIT_ONLY.  Without it, the Ninja generator
+  # makes each command wait for each library that its target links, also
+  # libfoundation.a.  Each object of a target that links crucible waits for
+  # these commands.  In an edit build, each such compile then starts after
+  # the archive of foundation, approximately 2 s after the start.
   add_custom_command(
     OUTPUT  ${_BPF_OBJ}
     COMMAND ${CLANG_BPF_COMPILER}
@@ -214,6 +221,7 @@ function(crucible_bpf_program name source)
             -c ${_BPF_SRC}
             -o ${_BPF_OBJ}
     DEPENDS ${_BPF_SRC}
+    DEPENDS_EXPLICIT_ONLY
     IMPLICIT_DEPENDS CXX ${_BPF_SRC}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     VERBATIM
@@ -230,6 +238,7 @@ function(crucible_bpf_program name source)
     COMMAND ${CMAKE_COMMAND} -E rename ${_BPF_EMBED_C}.tmp ${_BPF_EMBED_C}
     COMMAND ${CMAKE_COMMAND} -E remove -f ${_BPF_EMBED_STAGED}
     DEPENDS ${_BPF_OBJ}
+    DEPENDS_EXPLICIT_ONLY
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     VERBATIM
     COMMENT "Embedding BPF bytecode for ${name}")
