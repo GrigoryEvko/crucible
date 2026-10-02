@@ -34,8 +34,14 @@ THE LEDGER
 THE CONFIGURATION
     A configuration is the build kind and the target tier of
     utils/scripts/build_target.py, and each cache variable of CONFIGURATION.
+    The tier also holds the native tier of an object whose target adds a
+    native flag to its own compile, as each bench target adds -march=native.
+    The units of test/layer/admitted_flag_matrix compile with the release
+    flags, so the tier of each x86_64 build holds the native tier of its host.
     A different configuration compiles other objects or other preprocessor
-    arms, so its counts are different.  The name of a configuration is its
+    arms, so its counts are different: a bench object on a host with
+    AVX512BW compiles the AVX-512 arm of include/crucible/SwissTable.h, and
+    on a host with no AVX512BW it compiles the AVX2 arm.  The name of a configuration is its
     build kind, with -bench when CRUCIBLE_BENCH is on and -fuzz when
     CRUCIBLE_FUZZ is on, for example x86_64-debug-asan or
     x86_64-debug-asan-bench-fuzz.
@@ -77,7 +83,9 @@ WRITE THE LEDGER
     * --add-configuration writes the configuration of the build under its
       name, in place of the keys and rows of a configuration with the same
       name that is not the base.  The first configuration of an empty ledger
-      is the base.
+      is the base.  A change of the keys of the base generates the ledger
+      again: keep its head, remove its rows, and run --write
+      --add-configuration in the build of each configuration, the base first.
 
 A CONFIGURATION THAT ONLY CI BUILDS
     No aarch64 compiler is on the build host, so only a CI leg can count an
@@ -86,7 +94,10 @@ A CONFIGURATION THAT ONLY CI BUILDS
     failure and when the ledger does not hold the configuration.  --import
     LOG puts those rows into the ledger in place of the old rows of the
     configuration.  Import the log of the commit that you merge, because a
-    difference row is relative to the base rows of that commit.
+    difference row is relative to the base rows of that commit.  Import only
+    a configuration that no build of the host counts.  The name of a
+    configuration does not hold its tier, so the rows of an x86_64 CI runner
+    of another tier replace the rows that the local build counts.
 
 NOT APPLICABLE
     The check exits 3, with the reason, when the build has no build kind,
@@ -349,8 +360,11 @@ class ConfigurationError(ValueError):
     """The build has no build kind, or its compiler does not print its target."""
 
 
-def build_configuration(build_dir: Path) -> tuple[str, dict[str, str]]:
+def build_configuration(build_dir: Path, commands: Iterable[str]) -> tuple[str, dict[str, str]]:
     """Return the name and the configuration of a build: the build kind, the tier and each name of CONFIGURATION.
+
+    The tier holds the native tier of each native flag of the compile commands of the objects, so a bench target
+    with its own -march=native gives the configuration the tier of the host.
 
     Raises:
         ConfigurationError: If the build has no build-kind.txt, or the compiler does not print its target
@@ -360,7 +374,7 @@ def build_configuration(build_dir: Path) -> tuple[str, dict[str, str]]:
         raise ConfigurationError(f"{build_dir} has no build-kind.txt, which cmake/BuildLauncher.cmake writes")
     entries = cache_entries(build_dir)
     try:
-        tier = build_target.build_tier(build_dir, entries.get("CMAKE_CXX_COMPILER", ("FILEPATH", ""))[1])
+        tier = build_target.build_tier(build_dir, entries.get("CMAKE_CXX_COMPILER", ("FILEPATH", ""))[1], commands)
     except build_target.TierError as problem:
         raise ConfigurationError(str(problem)) from None
     configuration = {KIND_KEY: kind, TIER_KEY: tier}
@@ -389,8 +403,8 @@ def held_line(ledger: Ledger, name: str, configuration: dict[str, str]) -> str:
 # ── The findings of the build ──────────────────────────────────────
 
 
-def plugin_objects(build_dir: Path, root: Path) -> list[tuple[Path, str]]:
-    """Return each object of all whose compile loads the quarantine plugin, with the stamp of its command.
+def plugin_objects(build_dir: Path, root: Path) -> list[tuple[Path, str, str]]:
+    """Return each object of all whose compile loads the quarantine plugin, with the stamp and the compile command.
 
     Raises:
         build_census.NotApplicable: If the build made only some targets, or its generator is not Ninja
@@ -399,25 +413,25 @@ def plugin_objects(build_dir: Path, root: Path) -> list[tuple[Path, str]]:
     ninja, _ = build_census.tools_of(build_dir)
     objects = {str(path) for path, _ in build_census.objects_of_all(build_dir, ninja, root)}
     rows = json.loads((build_dir / "compile_commands.json").read_text(encoding="utf-8"))
-    found: list[tuple[Path, str]] = []
+    found: list[tuple[Path, str, str]] = []
     for row in rows:
         output = os.path.normpath(os.path.join(row["directory"], row.get("output", "")))
         command = row.get("command") or " ".join(row.get("arguments", []))
         stamp = STAMP.search(command)
         if output in objects and stamp is not None:
-            found.append((Path(output), stamp[1]))
+            found.append((Path(output), stamp[1], command))
     return sorted(found)
 
 
-def read_census(objects: list[tuple[Path, str]], build_dir: Path) -> Census:
+def read_census(objects: list[tuple[Path, str, str]], build_dir: Path) -> Census:
     """Read the section of each object, and check its stamp against the stamp of its command.
 
     Complexity: linear in the number of sections and finding lines of the objects.
     """
     census = Census(objects=len(objects))
 
-    def read_one(item: tuple[Path, str]) -> tuple[Path, str, quarantine_sections.Section | None, str]:
-        path, stamp = item
+    def read_one(item: tuple[Path, str, str]) -> tuple[Path, str, quarantine_sections.Section | None, str]:
+        path, stamp, _command = item
         try:
             data = quarantine_sections.read_section(path)
             return path, stamp, None if data is None else quarantine_sections.parse_section(data, str(path)), ""
@@ -583,11 +597,6 @@ def run(build_dir: Path, root: Path, ledger_path: Path, rules_path: Path, warnin
         print(f"{CHECK}: {build_shown} has no build-kind.txt.  The check does not apply")
         return NOT_APPLICABLE
     try:
-        name, configuration = build_configuration(build_dir)
-    except ConfigurationError as problem:
-        return check_report.emit([check_report.Finding("error", build_shown, 0, CHECK, str(problem))], CHECK,
-                                 warnings_dir)
-    try:
         objects = plugin_objects(build_dir, root)
     except build_census.NotApplicable as problem:
         print(f"{CHECK}: {problem}.  The check does not apply")
@@ -598,6 +607,11 @@ def run(build_dir: Path, root: Path, ledger_path: Path, rules_path: Path, warnin
     if not objects:
         print(f"{CHECK}: no compile of the target all loads the quarantine plugin.  The check does not apply")
         return NOT_APPLICABLE
+    try:
+        name, configuration = build_configuration(build_dir, (command for _, _, command in objects))
+    except ConfigurationError as problem:
+        return check_report.emit([check_report.Finding("error", build_shown, 0, CHECK, str(problem))], CHECK,
+                                 warnings_dir)
     census = read_census(objects, build_dir)
     rows = directory_rows(table)
     counts = count_findings(census.findings)
@@ -765,8 +779,8 @@ def add_refusal(ledger: Ledger, held: str | None, name: str) -> str:
         return f"the ledger holds the configuration {name} of the build.  Write its rows with --write"
     if name == ledger.base:
         return (f"the build has other keys than the base configuration {name}.  A change of the base keys "
-                f"generates the ledger again: an empty ledger, then --add-configuration in the build of each "
-                f"configuration, the base first")
+                f"generates the ledger again: keep its head, remove its rows, then run --write "
+                f"--add-configuration in the build of each configuration, the base first")
     return ""
 
 
@@ -859,6 +873,8 @@ class Scratch:
         self.ninja = ninja
         self.configure(BASE_NAME, "Debug")
         self.objects: dict[str, tuple[list[str], str, bool]] = {}
+        # The flags that the target of an object adds to its compile, as each bench target adds -march=native.
+        self.flags: dict[str, str] = {}
         header = "quarantine: std_object include/crucible/Vigil.h:10:5 std::vector (std::vector<int>)"
         self.add("a", [header, "quarantine: c_library_call test/fixy/test_a.cpp:4:3 memcpy",
                        "quarantine: std_object test/fixy/test_b.cpp:6:5 std::span (std::span<int>)",
@@ -867,13 +883,13 @@ class Scratch:
                        "quarantine: upward_include include/fixy/session/Handle.h:3:0 include/crucible/X.h"])
         self.add("c", ["quarantine: std_entity test/test_arena.cpp:2:1 std::swap"])
 
-    def configure(self, kind: str, build_type: str, flags: str = "") -> None:
+    def configure(self, kind: str, build_type: str, flags: str = "", extra: str = "") -> None:
         """Write the build kind and the CMakeCache.txt of one configuration of the scratch build."""
         (self.build / "build-kind.txt").write_text(f"{kind}\n", encoding="utf-8")
         (self.build / "CMakeCache.txt").write_text(
             f"CMAKE_GENERATOR:INTERNAL=Ninja\nCMAKE_MAKE_PROGRAM:FILEPATH={self.ninja}\n"
             f"CMAKE_CXX_COMPILER:FILEPATH={self.compiler}\nCMAKE_BUILD_TYPE:STRING={build_type}\n"
-            f"CMAKE_CXX_FLAGS:STRING={flags}\n", encoding="utf-8")
+            f"CMAKE_CXX_FLAGS:STRING={flags}\n{extra}", encoding="utf-8")
 
     def git(self, *arguments: str) -> None:
         """Run one git command in the scratch repository."""
@@ -894,7 +910,8 @@ class Scratch:
                                                 if has_section else [])
             (self.build / f"{name}.o").write_bytes(quarantine_sections.planted_object(sections))
             rows.append({"directory": str(self.build), "file": str(self.root / f"{name}.cpp"), "output": f"{name}.o",
-                         "command": f"g++ -fplugin=q.so {PLUGIN_ARGUMENT}stamp={STAMP_VALUE} -c {name}.cpp"})
+                         "command": f"g++ {self.flags.get(name, '')} -fplugin=q.so {PLUGIN_ARGUMENT}stamp="
+                                    f"{STAMP_VALUE} -c {name}.cpp"})
         (self.build / "compile_commands.json").write_text(json.dumps(rows), encoding="utf-8")
         (self.build / "inputs.txt").write_text("".join(f"{name}.o\n" for name in self.objects), encoding="utf-8")
 
@@ -1107,6 +1124,27 @@ def self_test() -> int:
         expect("a failure of the base prints no rows, because --write writes the base", status == 1
                and ROW_MARK not in text, text)
         del scratch.objects["g"]
+        scratch.flush()
+
+        # A bench target adds -march=native to its own compiles, so its arms depend on the host.
+        bench_name = f"{BASE_NAME}-bench"
+        scratch.configure(BASE_NAME, "Debug", extra="CRUCIBLE_BENCH:BOOL=ON\n")
+        scratch.flags["h"] = "-O3 -march=native"
+        scratch.add("h", ["quarantine: compiler_builtin include/crucible/Vigil.h:40:7 __builtin_ia32_vpcmpb512"])
+        status, _, _ = scratch.run(write=True, add_configuration=True)
+        bench_tier = read_ledger(scratch.ledger).configurations.get(bench_name, {}).get(TIER_KEY, "")
+        expect("a compile with its own native flag adds the native tier of the host to the tier",
+               status == 0 and bench_tier.startswith("x86-64-") and "+znver5-" in bench_tier, bench_tier)
+        (scratch.compiler.parent / "native.txt").write_text("znver3\n", encoding="utf-8")
+        scratch.add("h", [])
+        status, _, text = scratch.run()
+        expect("a host of another tier, with other arms in the bench compile, skips with one line and does not fail "
+               "on a count", status == NOT_APPLICABLE and f"holds no rows of {bench_name} on the tier x86-64-" in text
+               and "+znver3-" in text and f"{bench_name} on {bench_tier}" in text, text)
+        (scratch.compiler.parent / "native.txt").write_text("znver5\n", encoding="utf-8")
+        del scratch.objects["h"]
+        del scratch.flags["h"]
+        scratch.configure(BASE_NAME, "Debug")
         scratch.flush()
 
         scratch.add("f", ["quarantine: std_entity test/test_f.cpp:1:1 std::swap"], stamp="ffff")

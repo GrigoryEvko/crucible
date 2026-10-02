@@ -20,9 +20,13 @@ THE TARGET TIER
       * DIGEST is the first 8 hexadecimal digits of the SHA-256 of the
         values of the -march=, -mcpu= and -mtune= lines and of each target
         option that the compiler prints as [enabled].
-    A build that names no native target has the same tier on each host.  A
-    -march=native build on another processor has another tier, and its
-    preprocessor arms can be different.
+    A target can add a native flag to its own compiles, as each bench target
+    does with -march=native.  So a check can give the compile commands of its
+    objects, and the tier then adds "+" and the tier of each native flag of
+    those commands that is not the tier of the build flags.  A build that
+    names no native target has the same tier on each host.  A build with a
+    native flag on another processor has another tier, and its preprocessor
+    arms can be different.
 
 A BUILD THAT THE LEDGER DOES NOT HOLD
     A check prints one line with not_held(): the kind or the configuration,
@@ -43,6 +47,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -53,6 +58,7 @@ import cost_meter  # noqa: E402
 
 NOT_APPLICABLE = 3
 TARGET_OPTIONS = ("-march=", "-mcpu=")
+NATIVE_FLAGS = frozenset({"-march=native", "-mcpu=native"})
 TIER_LINE = re.compile(r"\s*-m(arch|cpu|tune)=\s*(\S*)\s*")
 DEFAULT_NAME = "default"
 
@@ -109,13 +115,18 @@ def target_tier(compiler: str, flags: list[str]) -> str:
     return tier_of(done.stdout)
 
 
-def build_tier(build_dir: Path, compiler: str) -> str:
-    """Return the tier of a build: the tier that its compiler gives for its target flags.
+def build_tier(build_dir: Path, compiler: str, commands: Iterable[str] = ()) -> str:
+    """Return the tier of a build: the tier of its target flags, and the tier of each native flag of the commands.
+
+    Complexity: linear in the size of the commands, and one compiler run for each distinct tier.
 
     Raises:
         TierError: If the compiler does not print its target
     """
-    return target_tier(compiler, target_flags(build_dir))
+    base = target_tier(compiler, target_flags(build_dir))
+    natives = sorted({word for command in commands for word in command.split() if word in NATIVE_FLAGS})
+    extra = sorted({tier for tier in (target_tier(compiler, [flag]) for flag in natives) if tier != base})
+    return "+".join([base, *extra])
 
 
 def not_held(check: str, what: str, tier: str, held: Iterable[tuple[str, str]], detail: str = "") -> str:
@@ -196,6 +207,25 @@ def self_test() -> int:
         expect("a compiler that cannot run is a TierError", False)
     except TierError:
         expect("a compiler that cannot run is a TierError", True)
+    with tempfile.TemporaryDirectory(prefix="build-target-") as scratch_text:
+        scratch = Path(scratch_text)
+        compiler = scratch / "g++"
+        compiler.write_text(f"#!{sys.executable}\nimport sys\n"
+                            f"print({X86_HELP!r}.replace('x86-64', 'znver5' if '-march=native' in sys.argv "
+                            f"else 'x86-64'))\n", encoding="utf-8")
+        compiler.chmod(0o755)
+        (scratch / "CMakeCache.txt").write_text("CMAKE_BUILD_TYPE:STRING=Debug\nCMAKE_CXX_FLAGS:STRING=\n",
+                                                encoding="utf-8")
+        plain_tier = build_tier(scratch, str(compiler), ["g++ -O1 -c a.cpp"])
+        bench_tier = build_tier(scratch, str(compiler), ["g++ -O1 -c a.cpp", "g++ -O3 -march=native -c bench.cpp"])
+        expect("a compile with its own native flag adds the native tier to the tier",
+               plain_tier.startswith("x86-64-") and "+" not in plain_tier
+               and bench_tier.startswith(f"{plain_tier}+znver5-"), (plain_tier, bench_tier))
+        (scratch / "CMakeCache.txt").write_text(
+            "CMAKE_BUILD_TYPE:STRING=Release\nCMAKE_CXX_FLAGS:STRING=-march=native\n", encoding="utf-8")
+        release_tier = build_tier(scratch, str(compiler), ["g++ -O3 -march=native -c bench.cpp"])
+        expect("a native flag of the build flags adds no second tier", release_tier.startswith("znver5-")
+               and "+" not in release_tier, release_tier)
     log = ("build+test aarch64 / default\tQuarantine ratchet\t2026-10-02T21:00:00Z check-row: kind | a | b\n"
            "noise\ncheck-row: k | lib.a | allow | abi | __cxa_guard_acquire | x\n")
     expect("rows_in_log reads each row after its prefix",
