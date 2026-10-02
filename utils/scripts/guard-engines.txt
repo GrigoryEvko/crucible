@@ -70,6 +70,7 @@ utils/scripts/check-parse-cost.py | json,text | the census of utils/scripts/buil
 utils/scripts/check-permission-storage.py | tsast |
 utils/scripts/check-process-wide-state.py | tsast,text | the roster utils/scripts/process-wide-roster.txt
 utils/scripts/check-proof-routes.py | tsast,preprocessor,json,text | the witness roster, the allowlist rows and the proof names of test_forgeable_proofs
+utils/scripts/check-quarantine-ratchet.py | json,text | the census of utils/scripts/build_census.py, the sections of quarantine_sections.py, the ledger rows, the rule table and CMakeCache.txt
 utils/scripts/check-reconfigure-noop.py | text | CMakeCache.txt, the ninja log, the dependency log of Ninja and the symbolic links of the build directory
 utils/scripts/check-refined-pre-subsumption.py | tsast |
 utils/scripts/check-row-contains-discipline.py | tsast |

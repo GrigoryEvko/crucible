@@ -549,6 +549,23 @@ jobs:
         if: ${{ matrix.run_tests }}
         run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }}
 
+      # The ratchet of the quarantine: the findings of each directory and kind
+      # can only decrease (utils/scripts/check-quarantine-ratchet.py and
+      # utils/scripts/quarantine-ledger.txt).  The ledger counts the x86_64
+      # build of the default preset, so only that leg runs the step.  The test
+      # quarantine_ratchet runs the check too, and this step prints the counts.
+      # The check exits 3 when the compiles do not load the quarantine plugin.
+      # The step "Check warnings" annotates the warnings of the test, so this
+      # step prints its findings as plain lines.
+      - name: Quarantine ratchet
+        if: ${{ matrix.arch == 'x86_64' && matrix.preset == 'default' }}
+        env:
+          GITHUB_ACTIONS: "false"
+        run: |
+          status=0
+          python3 utils/scripts/check-quarantine-ratchet.py --build-dir build || status=$?
+          if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then exit "$status"; fi
+
       # A compile-time check that passes with warnings writes them to
       # <build>/check-warnings (utils/scripts/check_report.py), because ctest
       # shows no output of a test that passes.  This step prints each warning

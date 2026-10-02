@@ -2446,6 +2446,7 @@ Each translation unit that includes a header compiles that header again, and eac
 | Test timeout | The wall time of one test | None | The timeout of the test preset stops the test | ctest | Test run |
 | `cache-size` | The size of one cache under the root of `utils/scripts/cache_dir.py`, from a sample of its files, as a multiple of its row of `LIMITS` | 1 | 2 | The test `cache_size` | Test run |
 | Raised threshold, grown ledger | A threshold of the budget table above its lowest committed value, and a ledger above its lowest committed row count, from the git history | Each one, with the commits that raised it | A rise whose commits give no measurement of the row, unless `utils/scripts/budget-history-ledger.txt` admits it | The test `budget_history` | Test run |
+| Quarantine findings | The distinct findings of the quarantine plugin in each directory and kind, from the sections of the objects of `all` (§XXII "The ratchet") | Each directory of `utils/scripts/quarantine-ledger.txt` | A count above or below its ledger row | The test `quarantine_ratchet` | Test run, CI build job |
 | `fixture-cpu` | The user CPU time of one cold fixture compile | 5 s | 15 s. A warning only when the compile has an instruction count | The fixture driver | Test run |
 | `fixture-instructions` | The user instructions of one cold fixture compile | 28 G | 45 G | The fixture driver | Test run |
 | `parse-total` | The bytes that the compiles of the objects of `all` and of the fixtures read, against the baseline | A growth over 2 % | A growth over 5 %, or a fall over 2 % | The test `parse_total` | Test run, after the fixtures |
@@ -3028,11 +3029,13 @@ To get the findings of a change, configure a second build directory with `-DCRUC
 
 The `enforce` rows of the rule table give each quarantined directory a mode, `report` or `error`. A file that no `enforce` row holds has the mode `report`. In a `REPORT` build, a finding in a file with the mode `error` is a compile error. At this time, each `enforce` row has the mode `report`. A directory changes to `error` when it has no finding outside the opt-out ledger.
 
-### The ratchet (R11, planned)
+### The ratchet (R11)
 
-The finding count of each quarantined directory can only decrease. A ledger will hold the finding count of each quarantined directory and each kind. The plugin writes the findings of a translation unit into the section `.crucible.quarantine` of its object, and ccache keeps the findings with the object.
+The finding count of each directory and each kind can only decrease. The plugin writes the findings of a translation unit into the section `.crucible.quarantine` of its object, and ccache keeps the findings with the object. `utils/scripts/check-quarantine-ratchet.py` (the test `quarantine_ratchet`) reads the section of each object of the target `all`, and it counts each distinct finding one time. A finding of the kind `opted_out` does not count.
 
-A `ci_guard` test will compare each count with its row. A count above its row will fail. A count below its row will also fail, until the same commit writes the ledger again. A CI job will run the test on each push.
+`utils/scripts/quarantine-ledger.txt` holds the count of each directory and kind. The directory of a file is the longest directory row of the rule table that holds the file, and the first directory under that row, for example `test/fixy` or `include/crucible/cntp`. A count above its row fails the test. A count below its row also fails, until the same commit writes the ledger again with `--write`. `--write` refuses a count above its row, and `--write --raise` is only for a change of the plugin or the rule table. `--list DIRECTORY KIND` prints the findings of a row.
+
+The ledger counts the build of the default preset on x86_64, and its `configuration` rows give that build. The test does not apply to a build of another configuration, or to a build whose compiles do not load the quarantine plugin. The step "Quarantine ratchet" of the CI build job runs the check in the x86_64 leg of the default preset.
 
 ### Hot path and compile time (R12 to R17)
 

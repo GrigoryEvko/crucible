@@ -5635,7 +5635,19 @@ set_tests_properties(budget_history PROPERTIES SKIP_RETURN_CODE 3)
 # object.  The self-test plants objects with and without the section.
 add_test(NAME quarantine_sections_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/quarantine_sections.py --self-test)
-set_tests_properties(quarantine_sections_self_test PROPERTIES LABELS "ci_guard")
+# quarantine_ratchet — utils/scripts/check-quarantine-ratchet.py counts the
+# distinct findings of the sections of the objects of all in each directory and
+# kind, against utils/scripts/quarantine-ledger.txt.  A count above or below its
+# row fails.  It exits 3 for a build whose compiles do not load the quarantine
+# plugin, for a build of another configuration than the ledger, and for a build
+# that made only some targets.
+add_test(NAME quarantine_ratchet
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-quarantine-ratchet.py --build-dir ${CMAKE_BINARY_DIR}
+          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+add_test(NAME quarantine_ratchet_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-quarantine-ratchet.py --self-test)
+set_tests_properties(quarantine_sections_self_test quarantine_ratchet quarantine_ratchet_self_test PROPERTIES
+    LABELS "ci_guard" SKIP_RETURN_CODE 3)
 
 # affected_tests_self_test — utils/scripts/run-affected-tests.py builds a tree
 # and runs only the tests whose inputs changed since their last pass.  It is
