@@ -35,7 +35,9 @@ The result store
 Without the store, CTest compiles each fixture again on each run, and these
 compiles are most of the cost of the run.  The driver keeps the exit code and
 the combined output of each compile in a store in `~/.cache/crucible/neg/`.
-CRUCIBLE_NEG_CACHE_DIR sets a different directory.  When the store holds a
+The store is the "neg" cache of utils/scripts/cache_dir.py, so
+CRUCIBLE_CACHE_DIR moves it with every other cache, and the value "off" turns
+it off.  When the store holds a
 correct entry for the compile, the driver uses the stored exit code and output,
 and it does not compile.  Then it does the same checks as after a compile: the
 removal of the caret display, the regexes and the independence report.  The
@@ -1685,9 +1687,14 @@ def open_store() -> tuple[ResultStore | None, str]:
     """Return the result store, or None and the reason when the store is off."""
     if os.environ.get("CRUCIBLE_NEG_CACHE") == "0":
         return None, "the store is off"
-    configured = os.environ.get("CRUCIBLE_NEG_CACHE_DIR")
-    root = Path(configured) if configured else Path.home() / ".cache" / "crucible" / "neg"
+    if str(_SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(_SCRIPTS))
+    import cache_dir
+
     try:
+        root = cache_dir.cache_root("neg")
+        if root is None:
+            return None, f"{cache_dir.ROOT_VARIABLE} turns every cache off"
         (root / "entries").mkdir(parents=True, exist_ok=True)
         (root / "memo").mkdir(parents=True, exist_ok=True)
     except OSError as error:

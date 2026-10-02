@@ -80,7 +80,8 @@ class StoreTest:
         self.root = root.resolve()
         self.cxx = cxx
         self.build = self.root / "build"
-        self.store = self.build / "store"
+        self.caches = self.build / "caches"
+        self.store = self.caches / "neg"
         self.failures: list[str] = []
         self.skipped = ""
         for name, text in FILES.items():
@@ -115,7 +116,7 @@ class StoreTest:
         # verdict is the same on a CI runner and on the build host.
         env = {name: value for name, value in os.environ.items()
                if not name.startswith("CRUCIBLE_NEG_") and name != "GITHUB_ACTIONS"}
-        env["CRUCIBLE_NEG_CACHE_DIR"] = str(self.store)
+        env["CRUCIBLE_CACHE_DIR"] = str(self.caches)
         env.update(environment)
         options = ["--warnings-dir", str(warnings_dir)] if warnings_dir is not None else []
         proc = subprocess.run(
@@ -408,11 +409,15 @@ class StoreTest:
                     f"a compiler that changes during the compile stores no result: {changed[0]} {changed[3]}")
 
     def check_store_off(self) -> None:
-        """With CRUCIBLE_NEG_CACHE=0, the driver compiles and writes no entry."""
+        """With CRUCIBLE_NEG_CACHE=0 or CRUCIBLE_CACHE_DIR=off, the driver compiles and writes no entry."""
         off = self.run("neg_convert", *CONVERT, CRUCIBLE_NEG_CACHE="0")
         self.expect(off[0] == 0 and off[3] == ["compiled (the store is off)"],
                     f"CRUCIBLE_NEG_CACHE=0 compiles: {off[3]}")
         self.expect(self.entry_files() == [], "a run with the store off writes no entry")
+        every = self.run("neg_convert", *CONVERT, CRUCIBLE_CACHE_DIR="off")
+        self.expect(every[0] == 0 and every[3] == ["compiled (CRUCIBLE_CACHE_DIR turns every cache off)"],
+                    f"CRUCIBLE_CACHE_DIR=off compiles: {every[3]}")
+        self.expect(self.entry_files() == [], "a run with every cache off writes no entry")
 
     def check_stored_output_is_evaluated(self) -> None:
         """A damaged entry is a miss, and a changed entry fails as a fresh compile does."""

@@ -6,7 +6,8 @@ THE ROOT
     when it is set, else $XDG_CACHE_HOME/crucible, else ~/.cache/crucible.
     The value "off" turns every cache off.  The root is outside each checkout
     and each build directory, so every guard, every build directory and every
-    work tree uses what one of them calculated.
+    work tree uses what one of them calculated.  The result store of the
+    negative fixtures, in test/neg_compile_driver.py, is the cache "neg".
 
 THE TOOLS
     The pinned tools (the tree-sitter kit and ast-grep) live in the tools
