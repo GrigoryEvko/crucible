@@ -11,7 +11,8 @@ the host cannot give the condition of each check of the part.
 With `--part K/N`, the test runs only the checks whose position modulo N is K.
 CTest runs each part as one test, so the parts run at the same time.  Part 0
 also checks the parse of a dependency file, of a search list and of a list of
-the loader, the ELF interpreter, the search roots and the compile environment.
+the loader, the ELF interpreter, the search roots, the compile environment,
+and the CPU budget of a compile with no user time.
 
 The store refuses a result while an input of the compile is less than one
 second old.  Each check waits for that period after it makes its tree, and
@@ -25,6 +26,8 @@ driver starts more than one second after the change.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import re
@@ -501,7 +504,7 @@ class StoreTest:
         entry = self.entry_path(quiet[3])
         stored = self.newest_result(entry)
         self.expect(quiet[0] == 0 and finding(quiet[1], "warning") is None and stored is not None
-                    and stored["user_s"] > 0 and stored["instructions"] is None,
+                    and stored["user_s"] + stored["system_s"] > 0 and stored["instructions"] is None,
                     f"a compile under the budget gives no finding and stores its CPU time and no count: "
                     f"{quiet[0]} {quiet[3]}")
         budget(0, 2000)
@@ -1031,6 +1034,41 @@ def check_parsers(failures: list[str]) -> None:
             failures.append("the warnings file of a fixture has the name that check_report.write_warnings gives it")
     check_roots(failures)
     check_entry_format(failures)
+    check_kernel_time(failures)
+
+
+def check_kernel_time(failures: list[str]) -> None:
+    """Check that the CPU budget reads the user and the system time, so a compile with no user time still counts.
+
+    The kernel divides the exact CPU time of a process between the user time
+    and the system time from the samples of the timer tick.  A process of a
+    few milliseconds whose samples all fall in the kernel gets a user time of
+    0 s: `dd if=/dev/zero of=/dev/null bs=1M count=400` gave 0 s of user time
+    in 42 of 50 runs on the build host.  The steps of check_cpu_budget plant a
+    threshold of 0 s, so such a compile failed them under load.
+    """
+    def budget(warn: float, error: float) -> store.CostBudget:
+        """Return a budget whose row fixture-cpu has the two thresholds, and whose count row is quiet."""
+        return store.CostBudget({
+            "fixture-cpu": store.BudgetRow("fixture-cpu", warn, error, {}, "fixture-cpu-ledger.txt"),
+            "fixture-instructions": store.BudgetRow("fixture-instructions", 1000.0, 2000.0, {},
+                                                    "fixture-instructions-ledger.txt"),
+        }, {})
+
+    kernel_only = store.CompileResult(1, "", 0.0, 0.004, None)
+    source = Path("/w/neg/neg_kernel.cpp")
+    with contextlib.redirect_stdout(io.StringIO()) as printed:
+        status = store.report_cost("neg_kernel", source, kernel_only, False, budget(0.0, 2000.0), None)
+    line = next((text for text in printed.getvalue().splitlines() if ": warning: [fixture-cpu] " in text), None)
+    if status != 0 or line is None or "0.00 s of user time and 0.00 s of system time" not in line:
+        failures.append(f"a compile with 0 s of user time and 4 ms of system time warns over a threshold of 0 s: "
+                        f"{status} {line}")
+    with contextlib.redirect_stdout(io.StringIO()) as printed:
+        status = store.report_cost("neg_kernel", source, kernel_only, False, budget(0.0, 0.0), None)
+    if status != 1 or ": error: [fixture-cpu] " not in printed.getvalue():
+        failures.append(f"a compile with 0 s of user time fails an error threshold of 0 s: {status}")
+    if not budget(0.0, 0.0).is_over_error("neg_kernel", kernel_only):
+        failures.append("the store measures a compile with 0 s of user time again over an error threshold of 0 s")
 
 
 def check_roots(failures: list[str]) -> None:

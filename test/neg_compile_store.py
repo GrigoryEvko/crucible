@@ -242,9 +242,13 @@ CPU time that its waited children gain during the call is the time of the
 compiler driver, cc1plus and the assembler.  It also counts the user
 instructions of the compile, when the host gives an exact count
 (utils/scripts/cost_meter.py, THE INSTRUCTION COUNT).  The CPU budget applies to
-the user time.  The finding gives the two times.  The entry of the store keeps
-the times and the count, and a result from the store gives the cost of the
-compile that made it.
+the sum of the user time and the system time.  The kernel measures the CPU
+time of a process exactly, and it divides that time between the user time and
+the system time from the samples of the timer tick.  A compile of a few
+milliseconds whose samples all fall in the kernel gets a user time of 0 s.
+The finding gives the two times.  The entry of the store keeps the times and
+the count, and a result from the store gives the cost of the compile that
+made it.
 
 The rows fixture-cpu and fixture-instructions of utils/scripts/budgets.txt give
 the thresholds.  A measure above the warning threshold of a row prints a warning
@@ -495,7 +499,8 @@ class CompileResult:
     """The exit code, the combined standard output and error, the cost and the inputs of one compile.
 
     `user_s` and `system_s` are the user and the system CPU time of the
-    compile in seconds.  `instructions` is the exact count of its user
+    compile in seconds, and `cpu_s` is their sum, which the budget reads.
+    `instructions` is the exact count of its user
     instructions, or None when the host gives no exact count.  `inputs` is
     each file that the compile read, by absolute path, or None when the driver
     does not know them.  A result from the store gives the cost and the inputs
@@ -513,6 +518,11 @@ class CompileResult:
         self.system_s = system_s
         self.instructions = instructions
         self.inputs = inputs
+
+    @property
+    def cpu_s(self) -> float:
+        """Return the user and the system CPU time of the compile, whose sum the kernel measures exactly."""
+        return self.user_s + self.system_s
 
     def with_inputs(self, inputs: tuple[str, ...] | None) -> CompileResult:
         """Return the same result with the inputs `inputs`."""
@@ -2260,7 +2270,7 @@ class CostBudget:
             row = self.rows[_INSTRUCTIONS_CHECK]
             return result.instructions / _GIGA > row.error and fixture_name not in row.ledger
         row = self.rows[_CPU_CHECK]
-        return result.user_s > row.error and fixture_name not in row.ledger
+        return result.cpu_s > row.error and fixture_name not in row.ledger
 
     @staticmethod
     def excess_text(result: CompileResult) -> str:
@@ -2429,7 +2439,7 @@ def report_cost(fixture_name: str, source: Path, result: CompileResult, is_store
     has_count = result.instructions is not None
     verdicts: dict[str, str] = {}
     if _CPU_CHECK in budget.rows:
-        verdicts[_CPU_CHECK] = _row_verdict(budget.rows[_CPU_CHECK], fixture_name, result.user_s, not has_count)
+        verdicts[_CPU_CHECK] = _row_verdict(budget.rows[_CPU_CHECK], fixture_name, result.cpu_s, not has_count)
     if _INSTRUCTIONS_CHECK in budget.rows and result.instructions is not None:
         verdicts[_INSTRUCTIONS_CHECK] = _row_verdict(budget.rows[_INSTRUCTIONS_CHECK], fixture_name,
                                                      result.instructions / _GIGA, True)
@@ -2447,8 +2457,8 @@ def report_cost(fixture_name: str, source: Path, result: CompileResult, is_store
     for check, problem in budget.problems.items():
         findings[check].append(report.Finding("error", place, 0, check, f"{problem}."))
     if _CPU_CHECK in verdicts:
-        text = (f"{measured} of the fixture {fixture_name} took {result.user_s:.2f} s of user CPU time (and "
-                f"{result.system_s:.2f} s of system time)")
+        text = (f"{measured} of the fixture {fixture_name} took {result.cpu_s:.2f} s of CPU time ({result.user_s:.2f} s "
+                f"of user time and {result.system_s:.2f} s of system time)")
         findings[_CPU_CHECK] += _judge_row(report, budget.rows[_CPU_CHECK], verdicts[_CPU_CHECK], fixture_name,
                                            place, text, "s")
     if _INSTRUCTIONS_CHECK in verdicts and result.instructions is not None:
