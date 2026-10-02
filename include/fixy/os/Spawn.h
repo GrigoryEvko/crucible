@@ -58,6 +58,7 @@
 #include <fixy/Throws.h>
 #include <fixy/atoms/Ctrl.h>
 #include <fixy/concurrent/ParallelismRule.h>
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
@@ -68,7 +69,7 @@
 #include <array>
 #include <cstddef>
 #include <meta>
-#include <thread>
+#include <span>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -262,9 +263,10 @@ template <std::size_t N>
 
 // The fan-out of mint_parallel_for: one thread for each of `threads`
 // workers, and each worker mutates the tuple elements whose index is its
-// own modulo `threads`.  Each shard then has exactly one thread.  The
-// array of jthreads joins in its destructor, so every body has returned
-// before the member does and the tuple is whole again for recombine.
+// own modulo `threads`.  Each shard then has exactly one thread.  The door
+// of fixy/os/ThreadTasks.h starts the threads and joins every one before it
+// returns, so every body has returned before the member does and the tuple
+// is whole again for recombine.
 //
 // Starting threads is the work of the mint, so only the mint may reach it.
 // The member is private and static, the mint is the only friend, and the
@@ -280,16 +282,39 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
                                                                   ::fixy::OwnedRegion<T, Whole, Brand>&& region,
                                                                   Body body) noexcept;
 
+    // What one worker reads.  The frames live in the frame of run_shards_,
+    // which waits in the door until every worker has joined.
+    template <typename Shards, typename Body>
+    struct worker_frame_ {
+        Shards* shards = nullptr;
+        Body const* body = nullptr;
+        std::size_t worker = 0;
+        std::size_t threads = 1;
+    };
+
+    // Runs on the thread of one worker.  The worker copies the body, so each
+    // thread calls a body of its own, and runs each shard whose index is its
+    // own modulo the thread count.
+    template <typename Shards, typename Body, std::size_t... Is>
+    static void run_worker_(void* frame) noexcept {
+        worker_frame_<Shards, Body> const& source = *static_cast<worker_frame_<Shards, Body>*>(frame);
+        Body body = *source.body;
+        ((Is % source.threads == source.worker ? static_cast<void>(body(std::get<Is>(*source.shards)))
+                                               : static_cast<void>(0)),
+         ...);
+    }
+
     template <typename Ctx, typename Shards, typename Body, std::size_t... Is>
         requires eff::CtxOwnsCapability<Ctx, eff::Effect::Bg>
-    static void run_shards_(Ctx const&, Shards& shards, Body body, std::size_t threads,
+    static void run_shards_(Ctx const&, Shards& shards, Body const& body, std::size_t threads,
                             std::index_sequence<Is...>) noexcept {
-        std::array<std::jthread, sizeof...(Is)> workers{};
+        std::array<worker_frame_<Shards, Body>, sizeof...(Is)> frames{};
+        std::array<detail::thread_task, sizeof...(Is)> tasks{};
         for (std::size_t worker = 0; worker < threads; ++worker) {
-            workers[worker] = std::jthread{[&shards, body, worker, threads](std::stop_token) mutable noexcept {
-                ((Is % threads == worker ? static_cast<void>(body(std::get<Is>(shards))) : static_cast<void>(0)), ...);
-            }};
+            frames[worker] = worker_frame_<Shards, Body>{&shards, &body, worker, threads};
+            tasks[worker] = detail::thread_task{&frames[worker], &run_worker_<Shards, Body, Is...>};
         }
+        detail::run_thread_tasks(std::span<const detail::thread_task>{tasks.data(), threads});
     }
 };
 

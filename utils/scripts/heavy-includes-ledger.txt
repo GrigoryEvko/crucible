@@ -68,4 +68,3 @@ keep | include/crucible/perf/bpf/common.h | <bpf/bpf_tracing.h> | a BPF C header
 keep | include/crucible/topology/bpf/common.h | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
 keep | include/crucible/warden/bpf/common.h | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
 keep | include/fixy/Path.h | <filesystem> | the path type is a Tagged over std::filesystem::path, so this header is the one owner of <filesystem> in fixy
-keep | include/fixy/os/Spawn.h | <thread> | the door that starts threads. mint_spawn and mint_parallel_for run their workers on std::jthread

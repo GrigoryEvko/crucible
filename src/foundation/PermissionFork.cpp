@@ -8,9 +8,10 @@
 
 namespace foundation::permissions::detail {
 
-// The threads of the spawning arm of the fork.  This file is the one
-// place that compiles <thread> for the fork, so a translation unit that
-// includes PermissionFork.h does not compile it.
+// The threads of the spawning arm of the fork, and of the door of
+// fixy/os/ThreadTasks.h.  This file is the one place that compiles <thread>
+// for the two, so a translation unit that includes PermissionFork.h or
+// ThreadTasks.h does not compile it.
 void run_fork_tasks(std::span<const fork_task> tasks) noexcept {
     // A jthread constructor is not noexcept, because the thread creation
     // under it can fail on resource exhaustion.  Without the catch, that

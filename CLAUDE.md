@@ -2453,11 +2453,14 @@ These library types make the axioms from §II true at compile time. They are in 
 
 Every header is self-contained. Two cold bodies are in the library `foundation`, so
 that an includer does not compile them: the abort of `Permission.h` in
-`src/foundation/Permission.cpp`, and the thread start of `PermissionFork.h` in
-`src/foundation/PermissionFork.cpp`. Two cold bodies are in the library `fixy`: the
-sysfs probe of `fixy/concurrent/Topology.h` in `src/fixy/concurrent/Topology.cpp`,
-and the door of `fixy/os/ThreadTasks.h` in `src/fixy/os/ThreadTasks.cpp`, which
-starts the stage threads of `fixy/concurrent/Pipeline.h`.
+`src/foundation/Permission.cpp`, and the thread start of
+`foundation/permissions/ForkTasks.h` in `src/foundation/PermissionFork.cpp`. Two
+cold bodies are in the library `fixy`: the sysfs probe of
+`fixy/concurrent/Topology.h` in `src/fixy/concurrent/Topology.cpp`, and the door
+of `fixy/os/ThreadTasks.h` in `src/fixy/os/ThreadTasks.cpp`. The door starts the
+stage threads of `fixy/concurrent/Pipeline.h` and the workers of
+`fixy/os/Spawn.h`, and it calls the thread start of `ForkTasks.h`, so the tree
+has one copy of that body.
 The other headers are header-only. The dependency rule is the layer
 rule, and `utils/scripts/check-layer-boundary.py` enforces it: `foundation` names only
 `foundation` and `std`, `fixy` names `foundation`, `fixy` and `std`, `crucible`

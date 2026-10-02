@@ -50,6 +50,7 @@
 #include <foundation/Platform.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/permissions/ForkTasks.h>
 #include <foundation/permissions/Permission.h>
 
 #include <array>
@@ -57,7 +58,6 @@
 #include <cstdint>
 #include <meta>
 #include <new>
-#include <span>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -223,19 +223,6 @@ consteval void permission_fork_check_() noexcept {
 template <bool Spawn, typename Ctx, typename Parent, typename... Children>
 concept CtxFitsPermissionForkArm = (Spawn && CtxFitsPermissionFork<Ctx, Parent, Children...>)
                                 || (!Spawn && CtxFitsPermissionForkInline<Ctx, Parent, Children...>);
-
-// One body of the spawning arm: the address of its frame, and the function
-// that runs the body from that frame.  The frame lives in the frame of the
-// fork, which waits until every thread has joined.
-struct fork_task {
-    void* frame = nullptr;
-    void (*run)(void* frame) noexcept = nullptr;
-};
-
-// Starts one thread for each task, runs the task on its thread, and joins
-// every thread before it returns.  A failure to start a thread ends the
-// process.  The body is in src/foundation/PermissionFork.cpp.
-void run_fork_tasks(std::span<const fork_task> tasks) noexcept;
 
 }  // namespace detail
 
