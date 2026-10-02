@@ -17,6 +17,7 @@
 
 #include <foundation/reflect/EnumName.h>
 
+#include <concepts>
 #include <cstdint>
 #include <meta>
 #include <string_view>
@@ -52,8 +53,18 @@ inline constexpr std::size_t modality_kind_count = 5;
 // A kind is a modality when an enumerator holds it.  The test reads the
 // enumerators by reflection, so a new enumerator is admitted the moment
 // it is declared, and a value cast from a byte outside the enum is not.
+// The answer is a function at namespace scope that is not a template, so
+// no translation unit can specialize it to admit a kind that the enum
+// does not name.  It compares values and builds no name.
+[[nodiscard]] consteval bool is_modality_kind(ModalityKind kind) {
+    for (const std::meta::info enumerator : std::meta::enumerators_of(^^ModalityKind)) {
+        if (std::meta::extract<ModalityKind>(std::meta::constant_of(enumerator)) == kind) return true;
+    }
+    return false;
+}
+
 template <ModalityKind K>
-concept IsModality = !::foundation::reflect::enumerator_name(K).empty();
+concept IsModality = is_modality_kind(K);
 
 template <ModalityKind K>
 concept ComonadModality = (K == ModalityKind::Comonad);
@@ -87,9 +98,11 @@ inline constexpr bool has_grade_only_v =
 // This stays consteval, although the helper it calls is constexpr.  The
 // three Graded forwarders declare themselves consteval and call it, and
 // widening the signature here would say something this header does not
-// mean to say.
-[[nodiscard]] consteval std::string_view modality_name(ModalityKind K) noexcept {
-    return ::foundation::reflect::enum_name(K);
+// mean to say.  It is a template on the one type ModalityKind, so that
+// only a unit that asks for a name pays for the walk of enum_name.
+template <std::same_as<ModalityKind> Kind>
+[[nodiscard]] consteval std::string_view modality_name(Kind kind) noexcept {
+    return ::foundation::reflect::enum_name(kind);
 }
 
 namespace modality {

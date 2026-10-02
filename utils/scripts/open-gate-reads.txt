@@ -134,4 +134,3 @@ foundation::reflect::any_component_satisfies | 1
 foundation::reflect::arity_v | 2
 foundation::reflect::bits_to_string | 1
 foundation::reflect::detail::identity_verdict_of | 1
-foundation::reflect::enumerator_name | 1

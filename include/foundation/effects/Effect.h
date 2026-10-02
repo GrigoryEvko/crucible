@@ -73,7 +73,13 @@ inline constexpr std::size_t effect_count = 6;
 //
 // constexpr rather than consteval so the runtime smoke test can call
 // this with a non-constant argument.  Consteval contexts still fold it.
-[[nodiscard]] constexpr std::string_view effect_name(Effect e) noexcept { return ::foundation::reflect::enum_name(e); }
+// It is a template on the one type Effect, so that only a unit that asks
+// for a name pays for the walk of enum_name.  A function that is not a
+// template makes each includer walk the enumerators where it is defined.
+template <std::same_as<Effect> E>
+[[nodiscard]] constexpr std::string_view effect_name(E e) noexcept {
+    return ::foundation::reflect::enum_name(e);
+}
 
 // The gate reads the catalog through reflection so that a new atom
 // satisfies it without an edit here.  A hand-written disjunction would
