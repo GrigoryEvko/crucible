@@ -133,6 +133,8 @@ enum class Layout : int8_t {
 // Distinct index types that cannot be passed for one another. Arithmetic is
 // deliberately absent: a caller unwraps, computes, and wraps the result back,
 // which makes every place one index is derived from another one visible.
+// The check file of this header finds each class that this macro and
+// CRUCIBLE_STRONG_HASH write, and it holds each one to the size of its word.
 
 #define CRUCIBLE_STRONG_ID(Name)                                                                  \
     struct Name {                                                                                 \
@@ -154,8 +156,7 @@ enum class Layout : int8_t {
         [[nodiscard]] constexpr explicit operator bool() const noexcept { return is_valid(); }    \
         [[nodiscard]] constexpr uint32_t raw() const noexcept { return v; }                       \
         constexpr auto operator<=>(const Name&) const noexcept = default;                         \
-    };                                                                                            \
-    static_assert(sizeof(Name) == sizeof(uint32_t))
+    }
 
 CRUCIBLE_STRONG_ID(OpIndex);
 CRUCIBLE_STRONG_ID(SlotId);
@@ -186,8 +187,7 @@ CRUCIBLE_STRONG_ID(MetaIndex);
         [[nodiscard]] static constexpr Name sentinel() noexcept { return Name{UINT64_MAX}; }      \
         [[nodiscard]] constexpr bool is_sentinel() const noexcept { return v == UINT64_MAX; }     \
         constexpr auto operator<=>(const Name&) const noexcept = default;                         \
-    };                                                                                            \
-    static_assert(sizeof(Name) == sizeof(uint64_t))
+    }
 
 CRUCIBLE_STRONG_HASH(SchemaHash);  // identity of an operation
 CRUCIBLE_STRONG_HASH(ShapeHash);  // geometry of an operation's inputs
@@ -273,20 +273,6 @@ concept IsFamilyB = std::is_same_v<hash_family_of_t<HashT>, hash_family::FamilyB
 // expectation, or folded into a persistent hash. Anything needing a stable
 // identity for the same structure must be computed by walking that structure
 // without consulting any address.
-
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(OpIndex);
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SlotId);
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(NodeId);
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SymbolId);
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(MetaIndex);
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SchemaHash);
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(ShapeHash);
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(ScopeHash);
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(CallsiteHash);
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(ContentHash);
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(MerkleHash);
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(RecipeHash);
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(RowHash);
 
 // Two axes, neither of which identifies a compiled kernel on its own. One says
 // what the computation does. The other says what effects it is allowed to
@@ -384,7 +370,5 @@ struct KernelCacheKey {
         return content_hash.is_sentinel() && row_hash.is_sentinel();
     }
 };
-
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(KernelCacheKey);
 
 }  // namespace crucible

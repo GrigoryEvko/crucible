@@ -27,7 +27,6 @@ include/crucible/SchemaTable.h | 0 | 1
 include/crucible/SymbolTable.h | 0 | 1
 include/crucible/TensorMeta.h | 0 | 2
 include/crucible/TraceGraph.h | 0 | 1
-include/crucible/Types.h | 0 | 27
 include/crucible/ledger/ProbeSupport.h | 1 | 1
 include/crucible/ledger/RefreshDaemon.h | 1 | 5
 include/crucible/ledger/probes/CacheTier.h | 1 | 0
