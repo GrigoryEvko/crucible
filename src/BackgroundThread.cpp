@@ -178,28 +178,57 @@ BackgroundThread::BgBuildWork* BackgroundThread::make_commit_work(uint32_t count
     return work;
 }
 
+// The ring grows to the next power of two, and the oldest held op moves to
+// slot zero.  The detect stage drops each op that no future work can hold,
+// so the count stays at most half of the history of the detector, K ops more
+// and the op that the detect stage adds before it drops.
+void BackgroundThread::PendingOps::grow_() {
+    const uint64_t new_capacity = mask_ == 0 ? MIN_CAPACITY : (mask_ + 1) * 2;
+    CRUCIBLE_FATAL_INVARIANT(new_capacity <= IterationDetector::HISTORY_MAX_CAPACITY);
+    auto entries = ::foundation::AlignedBuffer<TraceRing::Entry>::allocate_value_initialized(new_capacity);
+    auto meta_starts = ::foundation::AlignedBuffer<MetaIndex>::allocate_value_initialized(new_capacity);
+    auto scope_hashes = ::foundation::AlignedBuffer<ScopeHash>::allocate_value_initialized(new_capacity);
+    auto callsite_hashes = ::foundation::AlignedBuffer<CallsiteHash>::allocate_value_initialized(new_capacity);
+    for (uint64_t index = 0; index < count_; ++index) {
+        entries[index] = entry(index);
+        meta_starts[index] = meta_start(index);
+        scope_hashes[index] = scope_hash(index);
+        callsite_hashes[index] = callsite_hash(index);
+    }
+    entries_ = std::move(entries);
+    meta_starts_ = std::move(meta_starts);
+    scope_hashes_ = std::move(scope_hashes);
+    callsite_hashes_ = std::move(callsite_hashes);
+    mask_ = new_capacity - 1;
+    head_ = 0;
+}
+
+void BackgroundThread::PendingOps::push(TraceRing::Entry const& entry, MetaIndex meta_start, ScopeHash scope_hash,
+                                        CallsiteHash callsite_hash) {
+    if (mask_ == 0 || count_ == mask_ + 1) [[unlikely]]
+        grow_();
+    const uint64_t slot = (head_ + count_) & mask_;
+    entries_[slot] = entry;
+    meta_starts_[slot] = meta_start;
+    scope_hashes_[slot] = scope_hash;
+    callsite_hashes_[slot] = callsite_hash;
+    ++count_;
+}
+
+void BackgroundThread::drop_unclaimable_ops_() noexcept {
+    const uint64_t first_held = detector.pos_ - pending_ops_.size();
+    const uint64_t oldest_claimable = detector.oldest_claimable();
+    if (oldest_claimable > first_held) pending_ops_.drop_oldest(oldest_claimable - first_held);
+}
+
 BackgroundThread::BgBuildWork* BackgroundThread::prepare_iteration_build_work() {
-    uint32_t total = static_cast<uint32_t>(current_trace.size());
+    uint32_t total = static_cast<uint32_t>(pending_ops_.size());
     const uint32_t iter_len = detector.last_completed_len;
 
     const uint32_t warmup =
         ::foundation::sat::sub_sat(::foundation::sat::sub_sat(total, IterationDetector::K), iter_len);
-    if (warmup > 0) [[unlikely]] {
-        auto shift = [warmup](auto& vec) {
-            const auto n = vec.size();
-            if (warmup < n) {
-                std::memmove(vec.data(), vec.data() + warmup, (n - warmup) * sizeof(vec[0]));
-                vec.resize(n - warmup);
-            } else {
-                vec.clear();
-            }
-        };
-        shift(current_trace);
-        shift(current_meta_starts);
-        shift(current_scope_hashes);
-        shift(current_callsite_hashes);
-        total = ::foundation::sat::sub_sat(total, warmup);
-    }
+    pending_ops_.drop_oldest(warmup);
+    total = ::foundation::sat::sub_sat(total, warmup);
 
     const uint32_t completed_len = ::foundation::sat::sub_sat(total, IterationDetector::K);
     last_iteration_length = completed_len;
@@ -210,25 +239,20 @@ BackgroundThread::BgBuildWork* BackgroundThread::prepare_iteration_build_work() 
         work = new BgBuildWork{};
         work->completed_len = completed_len;
         work->epoch = reset_epoch.get();
-        work->trace.assign(current_trace.begin(), current_trace.begin() + completed_len);
-        work->meta_starts.assign(current_meta_starts.begin(), current_meta_starts.begin() + completed_len);
-        work->scope_hashes.assign(current_scope_hashes.begin(), current_scope_hashes.begin() + completed_len);
-        work->callsite_hashes.assign(current_callsite_hashes.begin(), current_callsite_hashes.begin() + completed_len);
+        work->trace = ::foundation::AlignedBuffer<TraceRing::Entry>::allocate_value_initialized(completed_len);
+        work->meta_starts = ::foundation::AlignedBuffer<MetaIndex>::allocate_value_initialized(completed_len);
+        work->scope_hashes = ::foundation::AlignedBuffer<ScopeHash>::allocate_value_initialized(completed_len);
+        work->callsite_hashes = ::foundation::AlignedBuffer<CallsiteHash>::allocate_value_initialized(completed_len);
+        for (uint32_t index = 0; index < completed_len; ++index) {
+            work->trace[index] = pending_ops_.entry(index);
+            work->meta_starts[index] = pending_ops_.meta_start(index);
+            work->scope_hashes[index] = pending_ops_.scope_hash(index);
+            work->callsite_hashes[index] = pending_ops_.callsite_hash(index);
+        }
     }
 
-    auto retain_tail = [](auto& vec) {
-        constexpr uint32_t K = IterationDetector::K;
-        const auto n = vec.size();
-        if (n > K) {
-            std::memmove(vec.data(), vec.data() + n - K, K * sizeof(vec[0]));
-            vec.resize(K);
-        }
-    };
-    retain_tail(current_trace);
-    retain_tail(current_meta_starts);
-    retain_tail(current_scope_hashes);
-    retain_tail(current_callsite_hashes);
-
+    // The last K ops begin the next iteration, and the ring keeps them.
+    pending_ops_.drop_oldest(completed_len);
     return work;
 }
 
@@ -336,10 +360,7 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
 
         auto do_reset = [&]() noexcept {
             owner->detector.restart_after_divergence();
-            owner->current_trace.clear();
-            owner->current_meta_starts.clear();
-            owner->current_scope_hashes.clear();
-            owner->current_callsite_hashes.clear();
+            owner->pending_ops_.clear();
             // Everything already handed downstream was cut from
             // pre-divergence entries.  The bump is what the build and
             // publish stages compare against to drop it.  It happens
@@ -350,13 +371,14 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
 
         (void)owner->reset_requested.check_and_run(do_reset);
 
+        // The channel gives the batch as an owning pointer.  The stage reads
+        // the ops through this reference.
+        BgTraceBatch const& ops = *batch;
+
         for (uint32_t i = 0; i < batch->count; ++i) {
             (void)owner->reset_requested.check_and_run(do_reset);
 
-            owner->current_trace.push_back(batch->entries[i]);
-            owner->current_meta_starts.push_back(batch->meta_starts[i]);
-            owner->current_scope_hashes.push_back(batch->scope_hashes[i]);
-            owner->current_callsite_hashes.push_back(batch->callsite_hashes[i]);
+            owner->pending_ops_.push(ops.entries[i], ops.meta_starts[i], ops.scope_hashes[i], ops.callsite_hashes[i]);
 
             if (owner->detector.check(batch->entries[i].schema_hash, batch->entries[i].shape_hash)) {
                 if (auto work = std::unique_ptr<BgBuildWork>(owner->prepare_iteration_build_work())) {
@@ -364,6 +386,7 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
                     work.release();
                 }
             }
+            owner->drop_unclaimable_ops_();
         }
 
         auto commit = std::unique_ptr<BgBuildWork>(owner->make_commit_work(batch->count));
@@ -526,7 +549,6 @@ void BackgroundThread::start(TraceRing* ring_ptr, MetaLog* meta_log_ptr, int32_t
     rank = rank_;
     world_size = world_size_;
     device_capability = ::fixy::mint_tagged<::fixy::tags::source::Meridian>(device_cap);
-    reserve_iteration_buffers_();
     stop_requested.reset_in_quiescent_context(::fixy::handle::OneShotFlag::QuiescenceProof{});
     // The lambda is the entry of the pipeline thread, so it takes the
     // background context of that thread from the door.

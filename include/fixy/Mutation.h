@@ -479,6 +479,15 @@ public:
         CRUCIBLE_PRE(std::cmp_less(inner_.get(), Max));
         inner_.advance(static_cast<T>(inner_.get() + T{1}));
     }
+
+    // The only way to move the value backward. The caller must ensure
+    // nothing else observes or advances it across this call. The type
+    // system cannot prove quiescence.  No other thread reads the counter
+    // during the call.  The value stays at most Max, as at construction.
+    constexpr void reset_under_quiescence(T value = T{}) noexcept(std::is_nothrow_move_constructible_v<T>) {
+        CRUCIBLE_PRE(std::cmp_less_equal(value, Max));
+        inner_.reset_under_quiescence(std::move(value));
+    }
 };
 
 template <typename T, auto Max, typename Cmp>

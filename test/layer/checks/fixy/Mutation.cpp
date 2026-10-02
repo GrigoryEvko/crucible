@@ -29,6 +29,16 @@ static_assert(!std::is_trivially_copyable_v<BoundedMonotonic<std::uint32_t, 1024
                   && !::foundation::lifetime::ImplicitLifetimeThroughout<BoundedMonotonic<std::uint32_t, 1024U>>,
               "std::bit_cast and std::start_lifetime_as must not build a counter above its bound");
 
+// A constant evaluation moves a bounded counter back inside its bound, and the
+// counter advances again from there.
+consteval uint32_t bounded_counter_after_reset() {
+    auto counter = mint_bounded_monotonic<uint32_t, 8U>(8U);
+    counter.reset_under_quiescence(3U);
+    counter.bump();
+    return counter.get();
+}
+static_assert(bounded_counter_after_reset() == 4U);
+
 static_assert(sizeof(WriteOnceNonNull<int*>) == sizeof(int*));
 static_assert(sizeof(WriteOnceNonNull<void*>) == sizeof(void*));
 

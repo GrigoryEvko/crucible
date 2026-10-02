@@ -135,9 +135,9 @@ int main() {
             });
         }(),
 
-        // 4. Match advance — K consecutive hits + 10 randoms to fall
-        // back to match_pos_=0. Isolates the match-advance hot path
-        // (increment match_pos_, write expected_hash_).
+        // 4. Repeated windows: the K ops of an earlier window, then 10
+        // random ops.  The window that ends at the last of the K ops has
+        // earlier copies, so the search tests candidates on that op.
         [&] {
             IterationDetector d;
             warmup_detector(d);

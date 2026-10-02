@@ -38,16 +38,6 @@
 # Inline suppression (preferred for new code): `// NO-RESERVE-OK:
 # <reason>` on the call line exempts that single line directly.
 #
-# ── BackgroundThread.h ──────────────────────────────────────────────
-# current_trace and its parallel vectors reserve
-# kInitialTraceCapacity at iteration start.  Migration target:
-# length-coupled SoA newtype where the SoA backing storage is
-# arena-owned or inplace_vector<T, kInitialTraceCapacity>.
-include/crucible/BackgroundThread.h:current_trace.reserve(kInitialTraceCapacity);
-include/crucible/BackgroundThread.h:current_meta_starts.reserve(kInitialTraceCapacity);
-include/crucible/BackgroundThread.h:current_scope_hashes.reserve(kInitialTraceCapacity);
-include/crucible/BackgroundThread.h:current_callsite_hashes.reserve(kInitialTraceCapacity);
-#
 # ── bench/ COVERAGE EXTENSION — NOT pre-approved ────────────────────
 #
 # The entries below were NOT reviewed and NOT granted a waiver.  They

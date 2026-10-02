@@ -42,6 +42,22 @@ static_assert(AlignedBuffer<unsigned char, huge_page_bytes>::allocation_bytes(1)
 static_assert(aligned_allocation_bytes<64>(16, 16, 8) == 192, "16 prefix bytes and 16 slots of 8 bytes round to 192");
 static_assert(aligned_allocation_bytes<16>(0, 0, 8) == 0);
 
+// A constant evaluation builds an empty buffer, resets it and destroys it.  A
+// class with an empty buffer member is then a literal type too.
+struct HoldsEmptyBuffer {
+    AlignedBuffer<unsigned long long> buffer;
+    int marker = 7;
+};
+
+consteval int empty_buffer_lives_in_a_constant_evaluation() {
+    AlignedBuffer<int> buffer{};
+    buffer.reset();
+    HoldsEmptyBuffer holder{};
+    holder.buffer.reset();
+    return holder.marker;
+}
+static_assert(empty_buffer_lives_in_a_constant_evaluation() == 7);
+
 // A size that wraps is not a constant expression: the abort is not constexpr.
 template <std::size_t Prefix, std::size_t Count, std::size_t ElementBytes>
 concept has_constant_size = requires {

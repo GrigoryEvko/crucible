@@ -67,6 +67,7 @@
 #include <fixy/Stale.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/AlignedBuffer.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/effects/Capability.h>
 #include <foundation/effects/Computation.h>
@@ -121,6 +122,7 @@ inline constexpr std::meta::info transparent_payload_families[] = {
     ^^::fixy::AppendOnly,
     ^^::fixy::WriteOnce,
     ^^::fixy::FixedArray,
+    ^^::foundation::AlignedBuffer,  // the elements; the alignment holds no row
     ^^std::vector,  // the elements; the allocator holds no row
 };
 

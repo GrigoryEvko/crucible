@@ -201,7 +201,73 @@ struct BackgroundThread {
 
     IterationDetector detector;
 
-    // The four vectors run in parallel, one element per recorded op.
+    // The ops that the detect stage holds, from the oldest op that a future
+    // iteration can hold to the newest op.  It is a ring of four parallel
+    // arrays that grows by doubling.  The detect stage drops each op that
+    // IterationDetector::oldest_claimable() passes, so the ring holds at
+    // most half of the history of the detector and K ops more, and it never
+    // grows past IterationDetector::HISTORY_MAX_CAPACITY ops.  At that
+    // capacity it takes 44 MiB.
+    class PendingOps {
+    public:
+        // Adds the newest op.  Complexity: O(1), and O(n) when the ring
+        // grows.
+        void push(TraceRing::Entry const& entry, MetaIndex meta_start, ScopeHash scope_hash,
+                  CallsiteHash callsite_hash);
+
+        // Drops the count oldest ops.  A count past size() drops each op.
+        void drop_oldest(uint64_t count) noexcept {
+            const uint64_t dropped = count < count_ ? count : count_;
+            head_ += dropped;
+            count_ -= dropped;
+        }
+
+        void clear() noexcept { drop_oldest(count_); }
+
+        [[nodiscard]] uint64_t size() const noexcept { return count_; }
+
+        // The op at index, counted from the oldest held op.
+        [[nodiscard]] TraceRing::Entry const& entry(uint64_t index) const noexcept {
+            return entries_[(head_ + index) & mask_];
+        }
+        [[nodiscard]] MetaIndex meta_start(uint64_t index) const noexcept {
+            return meta_starts_[(head_ + index) & mask_];
+        }
+        [[nodiscard]] ScopeHash scope_hash(uint64_t index) const noexcept {
+            return scope_hashes_[(head_ + index) & mask_];
+        }
+        [[nodiscard]] CallsiteHash callsite_hash(uint64_t index) const noexcept {
+            return callsite_hashes_[(head_ + index) & mask_];
+        }
+
+    private:
+        static constexpr uint64_t MIN_CAPACITY = uint64_t{1} << 12;
+
+        void grow_();
+
+        ::foundation::AlignedBuffer<TraceRing::Entry> entries_;
+        ::foundation::AlignedBuffer<MetaIndex> meta_starts_;
+        ::foundation::AlignedBuffer<ScopeHash> scope_hashes_;
+        ::foundation::AlignedBuffer<CallsiteHash> callsite_hashes_;
+        // The capacity minus one, zero before the first push.
+        uint64_t mask_ = 0;
+        // The slot of the oldest held op, before the mask.
+        uint64_t head_ = 0;
+        uint64_t count_ = 0;
+    };
+
+private:
+    // The ops that the detect stage holds.  The detect stage owns it.
+    PendingOps pending_ops_;
+
+public:
+    // Read the count only after a flush, when the detect stage waits for
+    // ops.
+    [[nodiscard]] uint64_t pending_op_count() const noexcept { return pending_ops_.size(); }
+
+    // The four vectors run in parallel, one element per op, and hold a trace
+    // that build_trace() reads.  A bench fills them.  The pipeline does not
+    // use them: the detect stage holds its ops in a PendingOps.
     // current_meta_starts holds MetaIndex::none() for an op with no tensor
     // arguments.
     std::vector<TraceRing::Entry> current_trace;
@@ -455,10 +521,15 @@ public:
         // The reset epoch this work was cut under.  Meaningless on a
         // commit-only marker, which is never dropped.
         uint32_t epoch = 0;
-        std::vector<TraceRing::Entry> trace;
-        std::vector<MetaIndex> meta_starts;
-        std::vector<ScopeHash> scope_hashes;
-        std::vector<CallsiteHash> callsite_hashes;
+        // The ops of the iteration, completed_len of each, and each value
+        // initialized before the copy.  completed_len is at most
+        // IterationDetector::MAX_PERIOD, so the four buffers take at most
+        // 88 bytes for each op, 22 MiB together.  A commit-only marker holds
+        // none.
+        ::foundation::AlignedBuffer<TraceRing::Entry> trace;
+        ::foundation::AlignedBuffer<MetaIndex> meta_starts;
+        ::foundation::AlignedBuffer<ScopeHash> scope_hashes;
+        ::foundation::AlignedBuffer<CallsiteHash> callsite_hashes;
     };
 
     struct BgPipelineDone {};
@@ -506,27 +577,21 @@ public:
         uint32_t epoch = 0;
     };
 
-    // Gives each trace vector room for two batches.  start() calls it
-    // before the pipeline thread starts.  The body stays here, where the
-    // reserve ban of utils/scripts/check-banned-calls.py reads it.
-    void reserve_iteration_buffers_() {
-        constexpr uint32_t kInitialTraceCapacity = BATCH_SIZE * 2;
-        current_trace.reserve(kInitialTraceCapacity);
-        current_meta_starts.reserve(kInitialTraceCapacity);
-        current_scope_hashes.reserve(kInitialTraceCapacity);
-        current_callsite_hashes.reserve(kInitialTraceCapacity);
-    }
-
     // Makes a commit marker: a work item that carries only the count of
     // entries that one batch consumed.
     [[nodiscard]] BgBuildWork* make_commit_work(uint32_t count);
 
     // The detect stage calls this at each iteration boundary that the
-    // detector reports.  It removes the warmup ops before the iteration,
-    // copies the completed iteration into a work item, and keeps the last K
-    // ops for the next signature.  It returns null when the iteration is
+    // detector reports.  It drops the held ops before the iteration, copies
+    // the completed iteration into a work item, and keeps the last K ops,
+    // which begin the next iteration.  It returns null when the iteration is
     // empty or no metadata log is set.
     [[nodiscard]] BgBuildWork* prepare_iteration_build_work();
+
+    // The detect stage calls this after each op.  It drops the held ops
+    // before IterationDetector::oldest_claimable(), because no future work
+    // can hold them.
+    void drop_unclaimable_ops_() noexcept;
 
     // Releases a graph the publish stage will not publish.  The arena holds
     // the graph itself and never gives storage back, but the metadata log is

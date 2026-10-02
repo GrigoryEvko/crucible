@@ -240,7 +240,7 @@ In the plan, shadow handles are mode-agnostic: training and inference produce id
 
 Each node carries: schema/shape/scope/callsite hashes, TensorMeta arrays, scalar args, grad/inference flags. Built in single pass, O(V+E) via counting sort. ~50-100μs for 1000 ops.
 
-**IterationDetector:** a signature of K=5 keys, where each key mixes the schema hash and the shape hash of one op. A signature match proposes a period P. The detector accepts P only when the P ops before the match equal the P ops before those. Handles warmup.
+**IterationDetector:** each key mixes the schema hash and the shape hash of one op, and the window of an op is the K=5 keys that end at it. A table of window fingerprints gives the earlier copies of each window, so a period can start at any op. An earlier copy proposes a period P. The detector accepts P only when the P ops before the window equal the P ops before those. The history is a ring of at most 2^19 ops, so P is at most `MAX_PERIOD` (262,141 ops). A longer period gets no boundary.
 
 **LoopNodes for cyclic computation:** wraps acyclic body with feedback edges + termination (Repeat(N) | Until(ε)). `LoopNode` and `make_loop` are in `include/crucible/MerkleDag.h`. No production code builds a LoopNode at this time, so the uses that follow are planned:
 - **Compiled recurrence:** RNN as one body × 1000 reps, no Python per timestep

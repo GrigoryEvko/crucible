@@ -213,6 +213,8 @@ crucible_test(test_trace_graph)
 crucible_test(test_trace_loader)
 crucible_test(test_schema_table)
 crucible_test(test_iteration_detector)
+crucible_test(test_iteration_detector_window)
+crucible_test(test_vigil_unrepeated_prefix)
 crucible_test(test_arena)
 crucible_test(test_trace_ring)
 crucible_test(test_merkle_dag)
@@ -2351,21 +2353,20 @@ crucible_neg_compile_test(neg_element_bytes_above_max
   "contract predicate is false in constant expression"
   "crucible/Types.h:[0-9]+:[0-9]+: error: contract predicate")
 
-# IterationDetector::match_pos_ is the fixy Refined<bounded_above<
-# MATCH_POS_MAX = K-1 = 4>, uint8_t>, and mint_refined<kMatchPosBound> is
-# its one door.  Minting a value above 4 in a constant evaluation fails the
-# door's precondition.  Two fixtures cover distinct forbidden values:
-#   * _above_max — boundary edge (5 = K = smallest forbidden), catches
-#     off-by-one drift in MATCH_POS_MAX.
-#   * _uint8_max — wide miss (255 = uint8_t max), catches a wider
-#     intermediate truncated to uint8_t before the mint.
+# IterationDetector::Period is the fixy Refined<in_range<K, MAX_PERIOD>,
+# uint32_t>, and mint_refined<kPeriodBound> is its one door.  A length out
+# of the range fails the precondition of the door in a constant evaluation.
+# Two fixtures, one for each end of the range:
+#   * _above_max: MAX_PERIOD + 1, a square that the largest ring of the
+#     history cannot hold.
+#   * _below_k: K - 1, a period shorter than the window.
 # Each pins the door, the predicate and the refused value.
-crucible_neg_compile_test(neg_iter_det_match_pos_above_max
+crucible_neg_compile_test(neg_iter_det_period_above_max
   "__builtin_trap.*is not a constant expression"
-  "mint_refined<BoundedAbove<4>\\(\\), unsigned char>\\(5\\)")
-crucible_neg_compile_test(neg_iter_det_match_pos_uint8_max
+  "mint_refined<InRange<5, 262141>\\(\\), unsigned int>\\(\\(\\(\\(unsigned int\\)crucible::IterationDetector::MAX_PERIOD\\) \\+ 1\\)\\)")
+crucible_neg_compile_test(neg_iter_det_period_below_k
   "__builtin_trap.*is not a constant expression"
-  "mint_refined<BoundedAbove<4>\\(\\), unsigned char>\\(255\\)")
+  "mint_refined<InRange<5, 262141>\\(\\), unsigned int>\\(\\(\\(\\(unsigned int\\)crucible::IterationDetector::K\\) - 1\\)\\)")
 
 # CallSiteTable::Lineno is fixy::NonNegative<int32_t>, and the checked
 # mint is its only door.  The two fixtures give the mint -1, the largest

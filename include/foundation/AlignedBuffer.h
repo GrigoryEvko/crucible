@@ -170,9 +170,12 @@ public:
         return *this;
     }
 
-    ~AlignedBuffer() noexcept { reset(); }
+    // The destructor and reset() are constexpr, so a class with an empty
+    // buffer member stays a literal type.  No constant evaluation allocates,
+    // because allocate() is not constexpr, so it never reaches the free.
+    constexpr ~AlignedBuffer() noexcept { reset(); }
 
-    void reset() noexcept {
+    constexpr void reset() noexcept {
         if (data_ != nullptr) {
             std::free(data_);
             data_ = nullptr;

@@ -291,6 +291,14 @@ int check_bounded_monotonic() {
     if (cnt.try_advance(1U)) return 56;  // backwards
     if (!cnt.try_advance(4U)) return 57;
     if (cnt.get() != 4U) return 58;
+
+    // The back door moves the value backward, inside the bound.
+    counter.reset_under_quiescence(4U);
+    if (counter.get() != 4U) return 59;
+    counter.reset_under_quiescence();
+    if (counter.get() != 0U) return 49;
+    counter.advance(10U);
+    if (counter.get() != 10U) return 199;
     return 0;
 }
 
@@ -648,6 +656,9 @@ int check_contracts_abort() {
 
     std::uint32_t over = 9U;
     if (!aborts([&] { (void)::fixy::mint_bounded_monotonic<std::uint32_t, 8U>(over); })) return 167;
+    // A reset over the bound aborts and leaves the counter where it was.
+    if (!aborts([&] { bounded.reset_under_quiescence(over); })) return 200;
+    if (bounded.get() != 8U) return 201;
 
     WriteOnce<int> once = ::fixy::mint_write_once<int>();
     if (!aborts([&] { (void)once.get(); })) return 168;

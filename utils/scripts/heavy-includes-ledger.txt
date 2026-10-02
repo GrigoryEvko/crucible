@@ -16,7 +16,6 @@
 include/crucible/BackgroundThread.h | <memory>
 include/crucible/CKernel.h | <memory>
 include/crucible/Cipher.h | <filesystem>
-include/crucible/IterationDetector.h | <memory>
 include/crucible/SchemaTable.h | <memory>
 include/crucible/Serialize.h | <memory>
 include/crucible/SwissTable.h | <arm_neon.h>

@@ -3,8 +3,9 @@
 // The detector's two phases as types, so a caller can carry proof of which
 // one a detector is in rather than re-testing.
 //
-// The phases are exclusive and exhaustive: the signature is either still
-// being collected or complete, and reset() returns a detector to the first.
+// The phases are exclusive and exhaustive: the window of the newest op holds
+// fewer than K keys or exactly K keys, and reset() returns a detector to the
+// first.
 //
 // The tags live here rather than beside the detector itself because the view
 // machinery they need pulls in reflection and several containers, while the
@@ -22,12 +23,12 @@ namespace crucible {
 // own phases the same way without colliding.
 namespace iter_det_state {
 
-// Still collecting the signature. A fresh detector and one just reset are
-// both in this phase.
+// Fewer than K ops since the last restart, so no window is complete.  A
+// fresh detector and one just reset are both in this phase.
 struct Building {};
 
-// The signature is complete and the matcher is running. Only a reset returns
-// a detector from here to the other phase.
+// The window of the newest op is complete, and the search runs.  Only a
+// reset returns a detector from here to the other phase.
 struct Steady {};
 
 }  // namespace iter_det_state

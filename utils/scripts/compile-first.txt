@@ -24,6 +24,7 @@ test_cipher
 test_cipher_commit_lifetime
 test_cipher_publish_tier
 test_cipher_record_event
+test_cipher_wait
 test_cntp_connection_pool
 test_cntp_fec
 test_cntp_fountain
@@ -84,6 +85,7 @@ test_storage_nbytes_simd
 test_topology
 test_trace_loader
 test_trace_ring
+test_trace_ring_pop_batch
 test_versioned_budgeted_attacks
 test_vigil
 test_vigil_dispatch
