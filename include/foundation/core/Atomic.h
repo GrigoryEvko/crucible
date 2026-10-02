@@ -11,7 +11,8 @@
 //   load_acquire()                 the value, with acquire order
 //   store_release(v)               stores v, with release order
 //   exchange_acq_rel(v)            stores v, and gives the value before
-//   cas_acq_rel(e, d)              stores d if the cell holds e, strong
+//   cas_acq_rel(e, d)              stores d if the cell holds e, strong, and
+//                                  gives a Result with the value it read
 //   fetch_add_acq_rel(d)           adds d, for an integer
 //   fetch_sub_acq_rel(d)           subtracts d, for an integer
 //   fetch_or_acq_rel(b)            sets the bits b, for an unsigned integer
@@ -42,6 +43,7 @@
 // load.  A value of a Tally orders no other data.
 
 #include <foundation/Pinned.h>
+#include <foundation/core/Choice.h>
 
 #include <concepts>
 #include <cstdint>
@@ -68,12 +70,11 @@ concept AtomicCount = AtomicValue<T> && std::integral<T> && !std::same_as<T, boo
 template <class T>
 concept AtomicBits = AtomicCount<T> && std::unsigned_integral<T>;
 
-// The result of a compare-and-swap: the value that the cell held before
-// the operation, and whether the operation stored the desired value.
+// The error of a compare-and-swap that stored nothing: the value that the
+// cell held, which was not the expected value.
 template <class T>
-struct CasOutcome {
+struct CasRefusal final {
     T observed;
-    bool is_swapped;
 };
 
 namespace detail {
@@ -131,12 +132,15 @@ public:
     }
 
     // A strong compare-and-swap: it fails only when the cell holds a value
-    // other than expected.  A failure reads the cell with acquire order.
-    [[nodiscard]] CasOutcome<T> cas_acq_rel(T expected, T desired) noexcept {
+    // other than expected.  A failure reads the cell with acquire order, and
+    // its error holds the value that it read.
+    [[nodiscard]] Result<Unit, CasRefusal<T>> cas_acq_rel(T expected, T desired) noexcept {
         storage_type observed = to_storage_(expected);
-        bool const is_swapped = __atomic_compare_exchange_n(&value_, &observed, to_storage_(desired), false,
-                                                            __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
-        return CasOutcome<T>{from_storage_(observed), is_swapped};
+        if (__atomic_compare_exchange_n(&value_, &observed, to_storage_(desired), false, __ATOMIC_ACQ_REL,
+                                        __ATOMIC_ACQUIRE)) {
+            return Unit{};
+        }
+        return err(CasRefusal<T>{from_storage_(observed)});
     }
 
     // Unsigned arithmetic wraps, and signed arithmetic of an atomic

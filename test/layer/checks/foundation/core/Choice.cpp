@@ -174,6 +174,88 @@ concept MatchesWithTwoTypes =
 static_assert(!MatchesWithOneArm<Option<int>>);
 static_assert(!MatchesWithTwoTypes<Option<int>>);
 
+// ── Result ────────────────────────────────────────────────────────────
+
+enum class Code : std::uint8_t {
+    full,
+    closed
+};
+
+struct WideError {
+    std::uint64_t first = 0;
+    std::uint64_t second = 0;
+};
+
+struct TooWideError {
+    std::uint64_t first = 0;
+    std::uint64_t second = 0;
+    std::uint64_t third = 0;
+};
+
+struct CountedError {
+    int count = 0;
+    CountedError() = default;
+    CountedError(CountedError const& other) noexcept : count{other.count + 1} {}
+};
+
+// The error gate: a scoped enum, or a trivially copyable class of at most
+// 16 bytes.
+static_assert(ErrorValue<Code> && ErrorValue<WideError> && ErrorValue<Unit>);
+static_assert(!ErrorValue<int>);
+static_assert(!ErrorValue<bool>);
+static_assert(!ErrorValue<TooWideError>);
+static_assert(!ErrorValue<CountedError>);
+static_assert(!ErrorValue<Code const>);
+
+// The layout: the value or the error, and one flag.  A Result of trivially
+// copyable parts is trivially copyable, so the ABI gives a small one back
+// in registers.
+static_assert(sizeof(Result<Unit, Code>) == 2);
+static_assert(sizeof(Result<std::uint32_t, Code>) == 8);
+static_assert(sizeof(Result<std::uint64_t, WideError>) == 24);
+static_assert(std::is_trivially_copyable_v<Result<std::uint64_t, Code>>);
+static_assert(!std::is_trivially_copyable_v<Result<Owner, Code>>);
+static_assert(std::is_nothrow_move_constructible_v<Result<Owner, Code>>);
+static_assert(!std::is_copy_constructible_v<Result<Owner, Code>>);
+
+// A value and an Err convert, and nothing else does.  A Result of an Err
+// would make the two conversions meet, so it is refused.
+static_assert(std::is_convertible_v<int, Result<int, Code>>);
+static_assert(std::is_convertible_v<Err<Code>, Result<int, Code>>);
+static_assert(!std::is_convertible_v<Code, Result<int, Code>>);
+static_assert(!std::is_convertible_v<Result<int, Code>, bool>);
+template <class T, class E>
+concept FormsResult = requires { typename Result<T, E>; };
+static_assert(FormsResult<int, Code>);
+static_assert(!FormsResult<Err<Code>, Code>);
+static_assert(!FormsResult<int, int>);
+
+// The roads in a constant evaluation.
+[[nodiscard]] consteval Result<int, Code> checked_half(int value) noexcept {
+    if (value % 2 != 0) return err(Code::closed);
+    return value / 2;
+}
+static_assert(checked_half(8).is_ok() && checked_half(7).is_err());
+static_assert(checked_half(8).expect("an even value has a half") == 4);
+static_assert(checked_half(7).value_or(-1) == -1);
+static_assert(checked_half(7).err().expect("an odd value is refused") == Code::closed);
+static_assert(checked_half(8).ok().expect("an even value has a half") == 4);
+static_assert(checked_half(6).match([](int value) noexcept { return value; }, [](Code) noexcept { return -1; }) == 3);
+
+// The error of an expect() is not a constant expression, so the build
+// stops.  The probe is a variable template and not a concept, because it
+// gates nothing.
+template <int Value>
+constexpr bool expects_half = requires { typename std::integral_constant<int, checked_half(Value).expect("even")>; };
+static_assert(expects_half<4>);
+static_assert(!expects_half<5>);
+
+// A match of a Result needs both arms.
+template <class R>
+constexpr bool matches_with_one_arm =
+    requires(R result) { static_cast<R&&>(result).match([](int) noexcept { return 0; }); };
+static_assert(!matches_with_one_arm<Result<int, Code>>);
+
 }  // namespace detail::choice_checks
 
 }  // namespace foundation::core

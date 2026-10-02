@@ -17,8 +17,10 @@
 //   window(o, c)      the c elements from o, or no value when they do not
 //                     fit: the one explicit branch of the family
 //   window<N>(o)      the same, as a View of the fixed extent N
-//   copy(dst, src)    the elements of src into dst, which has the same
-//                     count by its type or by contract
+//   copy(dst, src)    the elements of src into dst.  Two Views of one
+//                     fixed extent cannot fail.  Two Views of a dynamic
+//                     extent give a Result, with LengthMismatch when their
+//                     counts differ
 //   fill(dst, value)  value into each element of dst
 //
 // A View<T> converts to a View<T const>, and a View<T, N> converts to a
@@ -282,17 +284,30 @@ template <class T, std::size_t Extent>
 
 }  // namespace detail
 
-// Copies the elements of src into dst.  The two have the same count: by
-// the type for a fixed extent, and by contract for a dynamic one.  The
-// copy is a memmove, so two views of one run can overlap.  The cost is
-// the memmove of the raw form.
+// The error of a copy between two Views of a dynamic extent whose counts
+// differ.
+struct LengthMismatch final {};
+
+// Copies the elements of src into dst, two Views of one fixed extent.  The
+// type gives the two the same count, so the copy cannot fail.  The copy is
+// a memmove, so two views of one run can overlap.  The cost is the memmove
+// of the raw form.
 template <class T, std::size_t Extent>
-    requires RegionCopyElement<T>
+    requires RegionCopyElement<T> && (Extent != dynamic_extent)
 void copy(View<T, Extent> dst, std::type_identity_t<View<T const, Extent>> src) noexcept {
-    if (dst.size() != src.size()) [[unlikely]] {
-        fatal("copy got two Views with different counts");
-    }
+    __builtin_memmove(detail::first_of_(dst), detail::first_of_(src), Extent * sizeof(T));
+}
+
+// Copies the elements of src into dst, two Views of a dynamic extent.  The
+// counts can differ, so the copy gives a Result: LengthMismatch when they
+// differ, and the copy then writes nothing.  A window of the count of src
+// has that count, so the optimizer removes the test of a copy into it.
+template <class T>
+    requires RegionCopyElement<T>
+[[nodiscard]] Result<Unit, LengthMismatch> copy(View<T> dst, std::type_identity_t<View<T const>> src) noexcept {
+    if (dst.size() != src.size()) return err(LengthMismatch{});
     __builtin_memmove(detail::first_of_(dst), detail::first_of_(src), dst.size() * sizeof(T));
+    return Unit{};
 }
 
 // Writes value into each element of dst.

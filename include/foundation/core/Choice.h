@@ -1,6 +1,14 @@
 #pragma once
 
-// The Choice family: a value that can be absent.
+// The Choice family: a value that can be absent, and the result of an
+// operation that can fail.
+//
+// Result<T, E> holds one T or one error E.  A partial operation of the
+// base gives a Result, and its caller handles the error with the same
+// roads as for an Option: match(), ok(), err(), value_or() and expect().
+// An error is a value: a scoped enum, or a trivially copyable class of at
+// most 16 bytes, so an error never allocates.  Err<E> marks an error, so
+// `return err(Code::full);` and `return value;` both convert to the Result.
 //
 // Option<T> holds one T or no value.  The only roads to the payload are a
 // loop of zero or one turns, the total match(), value_or(), and expect(),
@@ -328,6 +336,190 @@ public:
     void end() && = delete("a cursor of a temporary Option points into an object that the full expression ends");
     void begin() const&& = delete("a cursor of a temporary Option points into an object that the full expression ends");
     void end() const&& = delete("a cursor of a temporary Option points into an object that the full expression ends");
+};
+
+// The value of a Result of an operation that gives no value.
+struct Unit final {
+    [[nodiscard]] friend constexpr bool operator==(Unit, Unit) noexcept = default;
+};
+
+// An error: a scoped enum, or a trivially copyable class of at most 16
+// bytes.  A plain integer is refused, because its meaning is not in its
+// type, and a class that owns memory is refused, because an error never
+// allocates.
+template <class E>
+concept ErrorValue = !std::is_const_v<E> && !std::is_volatile_v<E>
+                  && (std::is_scoped_enum_v<E>
+                      || (std::is_class_v<E> && std::is_trivially_copyable_v<E> && std::is_trivially_destructible_v<E>
+                          && sizeof(E) <= 16));
+
+// The mark of an error, so that an error and a value of the same type
+// never meet in one conversion.
+template <ErrorValue E>
+struct Err final {
+    E error;
+};
+
+[[nodiscard]] constexpr auto err(ErrorValue auto error) noexcept { return Err<decltype(error)>{error}; }
+
+namespace detail {
+
+struct OkTag final {
+    explicit constexpr OkTag() noexcept = default;
+};
+
+struct ErrTag final {
+    explicit constexpr ErrTag() noexcept = default;
+};
+
+template <class T, class E, bool IsTrivial = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>>
+class ResultSlot;
+
+// The special members are implicit, and each one is trivial, because each
+// member of the union is trivially copyable.
+template <class T, class E>
+class ResultSlot<T, E, true> {
+    union {
+        T stored_value_;
+        E stored_error_;
+    };
+    bool holds_value_;
+
+public:
+    template <class U>
+    constexpr ResultSlot(OkTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
+        : stored_value_(static_cast<U&&>(value)), holds_value_{true} {}
+    constexpr ResultSlot(ErrTag, E error) noexcept : stored_error_(error), holds_value_{false} {}
+
+    [[nodiscard]] constexpr bool holds_() const noexcept { return holds_value_; }
+    [[nodiscard]] constexpr T& value_() noexcept { return stored_value_; }
+    [[nodiscard]] constexpr T const& value_() const noexcept { return stored_value_; }
+    [[nodiscard]] constexpr E error_() const noexcept { return stored_error_; }
+};
+
+// A value that owns something.  The Result is move-only, and a move moves
+// the value or copies the error.
+template <class T, class E>
+class ResultSlot<T, E, false> {
+    union {
+        T stored_value_;
+        E stored_error_;
+    };
+    bool holds_value_;
+
+public:
+    template <class U>
+    constexpr ResultSlot(OkTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
+        : stored_value_(static_cast<U&&>(value)), holds_value_{true} {}
+    constexpr ResultSlot(ErrTag, E error) noexcept : stored_error_(error), holds_value_{false} {}
+
+    constexpr ResultSlot(ResultSlot&& other) noexcept : holds_value_{other.holds_value_} {
+        if (holds_value_) {
+            ::new(static_cast<void*>(&stored_value_)) T(static_cast<T&&>(other.stored_value_));
+        } else {
+            ::new(static_cast<void*>(&stored_error_)) E(other.stored_error_);
+        }
+    }
+
+    ResultSlot(ResultSlot const&) = delete("an owning Result is move-only: a copy would duplicate what the value owns");
+    ResultSlot& operator=(ResultSlot const&) = delete("an owning Result is move-only");
+    ResultSlot& operator=(ResultSlot&&) = delete("an owning Result is not assignable: build a new Result instead");
+
+    constexpr ~ResultSlot() {
+        if (holds_value_) stored_value_.~T();
+    }
+
+    [[nodiscard]] constexpr bool holds_() const noexcept { return holds_value_; }
+    [[nodiscard]] constexpr T& value_() noexcept { return stored_value_; }
+    [[nodiscard]] constexpr T const& value_() const noexcept { return stored_value_; }
+    [[nodiscard]] constexpr E error_() const noexcept { return stored_error_; }
+};
+
+}  // namespace detail
+
+// One value or one error.  The constructors take a value or an Err, so
+// `return value;` and `return err(code);` give a Result.  A Result of a
+// value that owns something gives the value out once: after expect(),
+// value_or(), ok() or the rvalue match(), the Result holds the moved-from
+// value, and the use-after-move guard refuses a second use.
+template <ChoicePayload T, ErrorValue E>
+    requires(!std::same_as<T, Err<E>>)
+class [[nodiscard]] Result {
+    detail::ResultSlot<T, E> slot_;
+
+public:
+    using value_type = T;
+    using error_type = E;
+
+    constexpr Result(T value) noexcept : slot_{detail::OkTag{}, static_cast<T&&>(value)} {}
+    constexpr Result(Err<E> error) noexcept : slot_{detail::ErrTag{}, error.error} {}
+
+    [[nodiscard]] constexpr bool is_ok() const noexcept { return slot_.holds_(); }
+    [[nodiscard]] constexpr bool is_err() const noexcept { return !slot_.holds_(); }
+
+    // The value as an Option, which is empty for an error.
+    [[nodiscard]] constexpr Option<T> ok() && noexcept {
+        if (!slot_.holds_()) return Option<T>{none};
+        return Option<T>::some(static_cast<T&&>(slot_.value_()));
+    }
+
+    // The error as an Option, which is empty for a value.
+    [[nodiscard]] constexpr Option<E> err() const& noexcept {
+        if (slot_.holds_()) return Option<E>{none};
+        return Option<E>::some(slot_.error_());
+    }
+
+    // The value, or fallback for an error.
+    [[nodiscard]] constexpr T value_or(T fallback) && noexcept {
+        if (!slot_.holds_()) return fallback;
+        return static_cast<T&&>(slot_.value_());
+    }
+
+    // The fatal unwrap at a boundary.  The reason tells why the operation
+    // cannot fail there.  An error gives the reason and the place of the
+    // call to fatal(), and the process ends.  A Result of Unit gives no
+    // value, so its expect() gives void and the caller discards nothing.
+    [[nodiscard]] constexpr T expect(Fmt<> why) && noexcept
+        requires(!std::same_as<T, Unit>)
+    {
+        if (!slot_.holds_()) [[unlikely]] {
+            fatal(why);
+        }
+        return static_cast<T&&>(slot_.value_());
+    }
+
+    constexpr void expect(Fmt<> why) && noexcept
+        requires std::same_as<T, Unit>
+    {
+        if (!slot_.holds_()) [[unlikely]] {
+            fatal(why);
+        }
+    }
+
+    // The total match: on_ok gets the value, or on_err gets the error, and
+    // the two arms give the same type.  A call with one arm does not
+    // compile, so no caller forgets the error.
+    template <class OnOk, class OnErr>
+        requires std::is_invocable_v<OnOk, T&&> && std::is_invocable_v<OnErr, E>
+              && std::same_as<std::invoke_result_t<OnOk, T&&>, std::invoke_result_t<OnErr, E>>
+    constexpr std::invoke_result_t<OnErr, E>
+    match(OnOk&& on_ok,
+          OnErr&& on_err) && noexcept(std::is_nothrow_invocable_v<OnOk, T&&> && std::is_nothrow_invocable_v<OnErr, E>) {
+        if (!slot_.holds_()) return static_cast<OnErr&&>(on_err)(slot_.error_());
+        return static_cast<OnOk&&>(on_ok)(static_cast<T&&>(slot_.value_()));
+    }
+
+    // The total match of a borrow: on_ok gets the value as a const
+    // reference, and the Result keeps it.
+    template <class OnOk, class OnErr>
+        requires std::is_invocable_v<OnOk, T const&> && std::is_invocable_v<OnErr, E>
+              && std::same_as<std::invoke_result_t<OnOk, T const&>, std::invoke_result_t<OnErr, E>>
+    constexpr std::invoke_result_t<OnErr, E>
+    match(OnOk&& on_ok, OnErr&& on_err) const& noexcept(std::is_nothrow_invocable_v<OnOk, T const&>
+                                                        && std::is_nothrow_invocable_v<OnErr, E>) {
+        if (!slot_.holds_()) return static_cast<OnErr&&>(on_err)(slot_.error_());
+        return static_cast<OnOk&&>(on_ok)(slot_.value_());
+    }
 };
 
 }  // namespace foundation::core

@@ -241,6 +241,93 @@ void test_agrees_with_plain_model() {
     }
 }
 
+// The error of the Result tests.
+enum class Refusal : std::uint8_t {
+    full,
+    closed
+};
+
+using ::foundation::core::err;
+using ::foundation::core::Result;
+using ::foundation::core::Unit;
+
+[[nodiscard]] Result<int, Refusal> half_of(int value) noexcept {
+    if (value % 2 != 0) return err(Refusal::closed);
+    return value / 2;
+}
+
+void test_result_roads() {
+    Result<int, Refusal> const even = half_of(8);
+    Result<int, Refusal> const odd = half_of(7);
+    CRUCIBLE_FATAL_INVARIANT(even.is_ok() && !even.is_err());
+    CRUCIBLE_FATAL_INVARIANT(odd.is_err() && !odd.is_ok());
+    CRUCIBLE_FATAL_INVARIANT(even.err().is_none());
+    CRUCIBLE_FATAL_INVARIANT(odd.err().expect("an odd value is refused") == Refusal::closed);
+    CRUCIBLE_FATAL_INVARIANT(half_of(8).ok().expect("an even value has a half") == 4);
+    CRUCIBLE_FATAL_INVARIANT(half_of(7).ok().is_none());
+    CRUCIBLE_FATAL_INVARIANT(half_of(8).value_or(-1) == 4);
+    CRUCIBLE_FATAL_INVARIANT(half_of(7).value_or(-1) == -1);
+    CRUCIBLE_FATAL_INVARIANT(half_of(8).expect("an even value has a half") == 4);
+
+    auto const doubled = [](int const& value) noexcept { return value * 2; };
+    auto const coded = [](Refusal refusal) noexcept { return refusal == Refusal::closed ? -2 : -3; };
+    CRUCIBLE_FATAL_INVARIANT(even.match(doubled, coded) == 8);
+    CRUCIBLE_FATAL_INVARIANT(odd.match(doubled, coded) == -2);
+    CRUCIBLE_FATAL_INVARIANT(half_of(6).match([](int&& value) noexcept { return value; }, coded) == 3);
+
+    bool const error_expect_aborts =
+        ::foundation::test::aborts([] { static_cast<void>(half_of(7).expect("the test value is odd on purpose")); });
+    CRUCIBLE_FATAL_INVARIANT(error_expect_aborts);
+}
+
+// A Result of Unit gives no value, so its expect() gives void.
+void test_result_of_unit() {
+    auto const close_when = [](bool is_open) noexcept -> Result<Unit, Refusal> {
+        if (!is_open) return err(Refusal::closed);
+        return Unit{};
+    };
+    close_when(true).expect("an open door closes");
+    CRUCIBLE_FATAL_INVARIANT(close_when(false).is_err());
+    bool const unit_expect_aborts =
+        ::foundation::test::aborts([&close_when] { close_when(false).expect("the test door is closed on purpose"); });
+    CRUCIBLE_FATAL_INVARIANT(unit_expect_aborts);
+}
+
+// A Result of a value that owns something moves the value once, and
+// destroys each value one time.
+void test_result_owning_value() {
+    {
+        Result<CountedOwner, Refusal> held{CountedOwner{41}};
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 1 && held.is_ok());
+        Result<CountedOwner, Refusal> moved{static_cast<Result<CountedOwner, Refusal>&&>(held)};
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 2);
+        CountedOwner const taken =
+            static_cast<Result<CountedOwner, Refusal>&&>(moved).expect("the Result was built with a value");
+        CRUCIBLE_FATAL_INVARIANT(taken.handle() == 41);
+        Result<CountedOwner, Refusal> refused{err(Refusal::full)};
+        CRUCIBLE_FATAL_INVARIANT(refused.is_err() && live_owners == 3);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
+}
+
+// The property: half_of agrees with a plain model for random values, on
+// each road to the value and to the error.
+void test_result_agrees_with_plain_model() {
+    ::foundation::test::PhiloxStream stream{0x5EEDC401CE000002u};
+    for (int trial = 0; trial < 4096; ++trial) {
+        int const value = static_cast<int>(stream.below(1u << 20));
+        bool const model_is_even = value % 2 == 0;
+        Result<int, Refusal> const outcome = half_of(value);
+        CRUCIBLE_FATAL_INVARIANT(outcome.is_ok() == model_is_even);
+        int const matched =
+            outcome.match([](int const& half) noexcept { return half; }, [](Refusal) noexcept { return -1; });
+        CRUCIBLE_FATAL_INVARIANT(matched == (model_is_even ? value / 2 : -1));
+        CRUCIBLE_FATAL_INVARIANT(half_of(value).value_or(-1) == matched);
+        CRUCIBLE_FATAL_INVARIANT(half_of(value).ok().is_some() == model_is_even);
+        CRUCIBLE_FATAL_INVARIANT(outcome.err().is_some() == !model_is_even);
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -256,5 +343,9 @@ int main() {
     test_niche_payload();
     test_niche_empty_value_aborts();
     test_agrees_with_plain_model();
+    test_result_roads();
+    test_result_of_unit();
+    test_result_owning_value();
+    test_result_agrees_with_plain_model();
     return 0;
 }

@@ -173,13 +173,13 @@ void test_copy() {
         ++position;
     }
 
-    fixy::copy(target, source);
+    CRUCIBLE_FATAL_INVARIANT(fixy::copy(target, source).is_ok());
     CRUCIBLE_FATAL_INVARIANT(hold_same_values<std::uint64_t>(target, source));
 
     // Two windows of one run can overlap: the copy moves the elements.
     fixy::View<std::uint64_t> head = source.window(0, 100).expect("the head fits");
     fixy::View<std::uint64_t> shifted = source.window(1, 100).expect("the shifted run fits");
-    fixy::copy(shifted, head);
+    fixy::copy(shifted, head).expect("the two windows have the same count");
     std::uint64_t index = 0;
     for (std::uint64_t const word : source.window(1, 100).expect("the shifted run fits")) {
         CRUCIBLE_FATAL_INVARIANT(word == index * 3 + 1);
@@ -192,15 +192,24 @@ void test_copy() {
     CRUCIBLE_FATAL_INVARIANT(hold_same_values<std::uint64_t>(fixed_target, fixed_source));
 }
 
-void test_copy_of_unequal_counts_aborts() {
+// A copy between two Views of different counts gives LengthMismatch and
+// writes nothing.
+void test_copy_of_unequal_counts_is_an_error() {
     IoBlockCtx const ctx{eff::testing::test()};
     auto const owner = perm::mint_permission_root<ScratchRegion>();
     auto region = map_region(ctx, owner, page_bytes);
     fixy::View<std::uint64_t> words = region.view<std::uint64_t>().expect("a page holds whole words");
-    bool const unequal_copy_aborts = ::foundation::test::aborts([&words] {
+    std::uint64_t position = 0;
+    for (std::uint64_t& word : words) {
+        word = position++;
+    }
+    auto const outcome =
         fixy::copy(words.window(0, 3).expect("three words fit"), words.window(10, 4).expect("four words fit"));
-    });
-    CRUCIBLE_FATAL_INVARIANT(unequal_copy_aborts);
+    CRUCIBLE_FATAL_INVARIANT(outcome.is_err() && outcome.err().is_some());
+    std::uint64_t expected = 0;
+    for (std::uint64_t const word : words.window(0, 3).expect("three words fit")) {
+        CRUCIBLE_FATAL_INVARIANT(word == expected++);
+    }
 }
 
 // A cursor never leaves its View: a read at the end and a step past the
@@ -250,7 +259,7 @@ void test_agrees_with_plain_model() {
                 CRUCIBLE_FATAL_INVARIANT(address_of_first(run) == base + offset * sizeof(std::uint64_t));
             }
             fixy::View<std::uint64_t> target = second.window(0, count).expect("the target holds the run");
-            fixy::copy(target, run);
+            fixy::copy(target, run).expect("the target has the count of the run");
             CRUCIBLE_FATAL_INVARIANT(hold_same_values<std::uint64_t>(target, run));
         }
     }
@@ -264,7 +273,7 @@ int main() {
     test_view_of_an_empty_mapping();
     test_windows();
     test_copy();
-    test_copy_of_unequal_counts_aborts();
+    test_copy_of_unequal_counts_is_an_error();
     test_cursor_at_the_end_aborts();
     test_agrees_with_plain_model();
     return 0;

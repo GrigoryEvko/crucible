@@ -1839,7 +1839,8 @@ foundation_neg_compile_test(neg_core_fatal_runtime_text
 #
 # An Option holds an object whose move does not throw.  The reason of
 # expect() is a text of a report.  A cursor of a temporary and a copy of an
-# owning Option are refused.
+# owning Option are refused.  The error of a Result is a scoped enum or a
+# small trivially copyable class, and a Result of an Err is refused.
 foundation_test(test_core_choice)
 
 foundation_neg_compile_test(neg_core_option_reference_payload
@@ -1860,6 +1861,15 @@ foundation_neg_compile_test(neg_core_option_cursor_of_temporary
 foundation_neg_compile_test(neg_core_option_owning_copied
   "use of deleted function .foundation::core::Option<Owner>::Option\\(const foundation::core::Option<Owner>&\\)."
   "an owning Option is move-only: a copy would duplicate what the payload owns")
+foundation_neg_compile_test(neg_core_result_integer_error
+  "template constraint failure for .template<class T, class E>  requires \\(ChoicePayload<T>\\) && \\(ErrorValue<E>\\)"
+  "class foundation::core::Result \\[with T = int. E = int\\]")
+foundation_neg_compile_test(neg_core_result_owning_error
+  "template constraint failure for .template<class T, class E>  requires \\(ChoicePayload<T>\\) && \\(ErrorValue<E>\\)"
+  "class foundation::core::Result \\[with T = int. E = CountedError\\]")
+foundation_neg_compile_test(neg_core_result_err_payload
+  "template constraint failure for .template<class T, class E>  requires \\(ChoicePayload<T>\\) && \\(ErrorValue<E>\\)"
+  "the expression .!\\(same_as<T, foundation::core::Err<E> >\\) \\[with T = foundation::core::Err<Code>. E = Code\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_option_match_one_arm
   "no matching function for call to .foundation::core::Option<int>::match\\(main\\(\\)::<lambda\\(int\\)>\\)."
   "candidate expects 2 arguments, 1 provided")
@@ -1941,7 +1951,7 @@ foundation_neg_compile_test(neg_core_view_mutable_from_const
   "conversion from .View<const int>. to non-scalar type .View<int>. requested"
   "In function .void write_through\\(foundation::core::View<const int>\\).")
 foundation_neg_compile_test(neg_core_copy_extent_mismatch
-  "could not convert .source. from .View<\\[...\\],8>. to .View<\\[...\\],4>."
+  "no matching function for call to .copy\\(foundation::core::View<int, 4>&, foundation::core::View<const int, 8>&\\)."
   "In function .void copy_four_from_eight\\(foundation::core::View<int, 4>, foundation::core::View<const int, 8>\\).")
 foundation_neg_compile_test(neg_core_copy_into_const
   "no matching function for call to .copy\\(foundation::core::View<const int>&, foundation::core::View<const int>&\\)."
@@ -1949,6 +1959,9 @@ foundation_neg_compile_test(neg_core_copy_into_const
 foundation_neg_compile_test(neg_core_copy_not_byte_copyable
   "no matching function for call to .copy\\(foundation::core::View<Counted>&, foundation::core::View<const Counted>&\\)."
   "the expression .is_trivially_copyable_v<T> \\[with T = Counted\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_copy_result_discarded
+  "ignoring return value of .foundation::core::Result<foundation::core::Unit, foundation::core::LengthMismatch> foundation::core::copy"
+  "declared with attribute .nodiscard.")
 foundation_neg_compile_test(neg_core_fill_const
   "no matching function for call to .fill\\(foundation::core::View<const int>&, int\\)."
   "required for the satisfaction of .RegionCopyElement<T>. .with T = const int.")

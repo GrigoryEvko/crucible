@@ -14,7 +14,10 @@ static_assert(::fixy::Option<int>{::fixy::none}.is_none());
 static_assert(std::is_same_v<::fixy::Box<int>, ::foundation::core::Box<int>>);
 static_assert(std::is_same_v<::fixy::Atomic<int>, ::foundation::core::Atomic<int>>);
 static_assert(std::is_same_v<::fixy::CacheLine<int>, ::foundation::core::CacheLine<int>>);
-static_assert(std::is_same_v<::fixy::CasOutcome<int>, ::foundation::core::CasOutcome<int>>);
+static_assert(std::is_same_v<::fixy::CasRefusal<int>, ::foundation::core::CasRefusal<int>>);
+static_assert(std::is_same_v<::fixy::Result<::fixy::Unit, ::fixy::LengthMismatch>,
+                             ::foundation::core::Result<::foundation::core::Unit, ::foundation::core::LengthMismatch>>);
+static_assert(std::is_same_v<decltype(::fixy::err(::fixy::LengthMismatch{})), ::fixy::Err<::fixy::LengthMismatch>>);
 static_assert(std::is_same_v<::fixy::Tally, ::foundation::core::Tally>);
 static_assert(std::is_same_v<::fixy::View<int, 4>, ::foundation::core::View<int, 4>>);
 static_assert(::fixy::dynamic_extent == ::foundation::core::dynamic_extent);

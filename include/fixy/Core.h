@@ -31,17 +31,23 @@ using ::foundation::core::none;
 using ::foundation::core::NoValue;
 using ::foundation::core::Option;
 
+using ::foundation::core::Err;
+using ::foundation::core::err;
+using ::foundation::core::Result;
+using ::foundation::core::Unit;
+
 using ::foundation::core::Box;
 using ::foundation::core::mint_box;
 
 using ::foundation::core::Atomic;
 using ::foundation::core::CacheLine;
-using ::foundation::core::CasOutcome;
+using ::foundation::core::CasRefusal;
 using ::foundation::core::Tally;
 
 using ::foundation::core::copy;
 using ::foundation::core::dynamic_extent;
 using ::foundation::core::fill;
+using ::foundation::core::LengthMismatch;
 using ::foundation::core::View;
 
 }  // namespace fixy

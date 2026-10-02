@@ -64,6 +64,16 @@ enum class Phase : std::uint8_t {
 
 constexpr std::uint64_t steps_per_worker = 20000;
 
+// The value that a compare-and-swap read: the value of its refusal, or the
+// expected value of a swap that stored.
+template <class T>
+[[nodiscard]] T
+observed_by(::foundation::core::Result<::foundation::core::Unit, ::foundation::core::CasRefusal<T>> const& outcome,
+            T expected) noexcept {
+    return outcome.match([expected](::foundation::core::Unit) noexcept { return expected; },
+                         [](::foundation::core::CasRefusal<T> refusal) noexcept { return refusal.observed; });
+}
+
 // Runs the same body on four threads at the same time, and returns after
 // each thread joins.
 template <class Body>
@@ -90,9 +100,9 @@ void test_single_thread_operations() {
     CRUCIBLE_FATAL_INVARIANT(counter.load_acquire() == 12);
 
     auto const swapped = counter.cas_acq_rel(12, 20);
-    CRUCIBLE_FATAL_INVARIANT(swapped.is_swapped && swapped.observed == 12);
+    CRUCIBLE_FATAL_INVARIANT(swapped.is_ok() && swapped.err().is_none());
     auto const refused = counter.cas_acq_rel(12, 30);
-    CRUCIBLE_FATAL_INVARIANT(!refused.is_swapped && refused.observed == 20);
+    CRUCIBLE_FATAL_INVARIANT(refused.is_err() && observed_by(refused, std::uint64_t{12}) == 20);
     CRUCIBLE_FATAL_INVARIANT(counter.load_acquire() == 20);
 
     Atomic<std::uint8_t> small{255};
@@ -104,15 +114,15 @@ void test_single_thread_operations() {
     CRUCIBLE_FATAL_INVARIANT(signed_cell.load_acquire() == 2);
 
     Atomic<Phase> phase{Phase::idle};
-    CRUCIBLE_FATAL_INVARIANT(phase.cas_acq_rel(Phase::idle, Phase::busy).is_swapped);
+    CRUCIBLE_FATAL_INVARIANT(phase.cas_acq_rel(Phase::idle, Phase::busy).is_ok());
     CRUCIBLE_FATAL_INVARIANT(phase.load_acquire() == Phase::busy);
     phase.store_release(Phase::done);
     CRUCIBLE_FATAL_INVARIANT(phase.load_acquire() == Phase::done);
 
     Atomic<bool> flag{};
     CRUCIBLE_FATAL_INVARIANT(!flag.load_acquire());
-    CRUCIBLE_FATAL_INVARIANT(flag.cas_acq_rel(false, true).is_swapped);
-    CRUCIBLE_FATAL_INVARIANT(!flag.cas_acq_rel(false, true).is_swapped);
+    CRUCIBLE_FATAL_INVARIANT(flag.cas_acq_rel(false, true).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(flag.cas_acq_rel(false, true).is_err());
 
     Tally refusals{};
     refusals.add(2);
@@ -172,9 +182,9 @@ void test_class_value() {
     CRUCIBLE_FATAL_INVARIANT(same_pair(cell.exchange_acq_rel(Pair{3, 4}), Pair{1, 2}));
 
     auto const refused = cell.cas_acq_rel(Pair{3, 5}, Pair{7, 7});
-    CRUCIBLE_FATAL_INVARIANT(!refused.is_swapped && same_pair(refused.observed, Pair{3, 4}));
+    CRUCIBLE_FATAL_INVARIANT(refused.is_err() && same_pair(observed_by(refused, Pair{3, 5}), Pair{3, 4}));
     auto const swapped = cell.cas_acq_rel(Pair{3, 4}, Pair{8, 9});
-    CRUCIBLE_FATAL_INVARIANT(swapped.is_swapped && same_pair(swapped.observed, Pair{3, 4}));
+    CRUCIBLE_FATAL_INVARIANT(swapped.is_ok() && same_pair(cell.load_acquire(), Pair{8, 9}));
 
     cell.store_release(Pair{10, 11});
     CRUCIBLE_FATAL_INVARIANT(same_pair(cell.load_acquire(), Pair{10, 11}));
@@ -209,9 +219,9 @@ void test_agrees_with_plain_model() {
             case 2: {
                 std::uint64_t const expected = (operand & 1u) != 0 ? model : operand;
                 auto const outcome = cell.cas_acq_rel(expected, operand ^ 0x5555u);
-                CRUCIBLE_FATAL_INVARIANT(outcome.observed == model);
-                CRUCIBLE_FATAL_INVARIANT(outcome.is_swapped == (expected == model));
-                if (outcome.is_swapped) model = operand ^ 0x5555u;
+                CRUCIBLE_FATAL_INVARIANT(observed_by(outcome, expected) == model);
+                CRUCIBLE_FATAL_INVARIANT(outcome.is_ok() == (expected == model));
+                if (outcome.is_ok()) model = operand ^ 0x5555u;
                 break;
             }
             case 3:
@@ -290,8 +300,8 @@ void test_cas_under_contention() {
             std::uint64_t seen = counter.load_acquire();
             for (;;) {
                 auto const outcome = counter.cas_acq_rel(seen, seen + 1);
-                if (outcome.is_swapped) break;
-                seen = outcome.observed;
+                if (outcome.is_ok()) break;
+                seen = observed_by(outcome, seen);
             }
         }
     });

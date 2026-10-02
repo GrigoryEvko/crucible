@@ -49,7 +49,10 @@ static_assert(sizeof(Atomic<WidePhase>) == 8 && alignof(Atomic<WidePhase>) == 8)
 static_assert(sizeof(Atomic<Pair>) == 8 && alignof(Atomic<Pair>) == 8);
 static_assert(sizeof(Atomic<Wrapped>) == 4 && alignof(Atomic<Wrapped>) == 4);
 static_assert(sizeof(Tally) == 8 && alignof(Tally) == 8);
-static_assert(sizeof(CasOutcome<std::uint64_t>) == 16);
+// The result of a compare-and-swap is the read value and one flag, so the
+// ABI gives it back in two registers.
+static_assert(sizeof(Result<Unit, CasRefusal<std::uint64_t>>) == 16);
+static_assert(std::is_trivially_copyable_v<Result<Unit, CasRefusal<std::uint64_t>>>);
 
 // One cache line for a small cell, and whole lines for a larger one.
 static_assert(sizeof(CacheLine<Atomic<std::uint64_t>>) == 64 && alignof(CacheLine<Atomic<std::uint64_t>>) == 64);
