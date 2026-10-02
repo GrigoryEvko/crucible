@@ -85,6 +85,7 @@ utils/scripts/check-witness-roster.py | tsast,json,compiler,text | the witness r
 utils/scripts/check_report.py | text | the budget table utils/scripts/budgets.txt and the warnings files of the checks
 utils/scripts/cost_meter.py | compiler,text | the ccache stats log of a compile, the records, the budget table and the ledger rows
 utils/scripts/decide_catalog.py | tsast |
+utils/scripts/edit-loop-gauge.py | tsast,git,json,text | the exit status and the logs of the configure, the build and ctest of its copy, /proc/meminfo and the budget table
 utils/scripts/gen-aten-op-table.py | tsast,python-ast,text | native_functions.yaml through a YAML parser, and each schema string through torchgen
 utils/scripts/gen-mint-inventory.py | tsast,text | misc/mint-inventory.md and the HS14 floor allowlist
 utils/scripts/install-ast-grep.sh | text,json | the release checksum, the version line and the matches of its fixture

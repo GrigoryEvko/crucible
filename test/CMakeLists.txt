@@ -5610,6 +5610,14 @@ add_test(NAME affected_tests_self_test
 add_test(NAME loop_history_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/loop_history.py --self-test)
 set_tests_properties(affected_tests_self_test loop_history_self_test PROPERTIES LABELS "ci_guard")
+# edit_loop_gauge_self_test — utils/scripts/edit-loop-gauge.py measures the
+# build and the full test run after one code edit of a base header, in a
+# clone of the tree, against the rows edit-build-* and edit-test-* of
+# utils/scripts/budgets.txt.  The measurement takes minutes, so the owner runs
+# it before each stage gate, and only its self-test is a test.
+add_test(NAME edit_loop_gauge_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/edit-loop-gauge.py --self-test)
+set_tests_properties(edit_loop_gauge_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
 
 # vessel_acceptance is the acceptance gate of the PyTorch vessel under
 # vessel/torch.  utils/scripts/check-vessel-acceptance.py builds the vessel targets
