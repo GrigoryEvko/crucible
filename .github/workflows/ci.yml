@@ -569,10 +569,11 @@ jobs:
       # native tier.  Only CI builds aarch64, so after a failed check an aarch64
       # leg prints the rows of its configuration.  `--import LOG` puts them
       # into the ledger, and an aarch64 leg also fails with exit 3.  The step
-      # "Check warnings" annotates the warnings of the test quarantine_ratchet,
-      # so this step prints its findings as plain lines.
+      # runs after a failed test step too, so the log still holds the rows.
+      # The step "Check warnings" annotates the warnings of the test
+      # quarantine_ratchet, so this step prints its findings as plain lines.
       - name: Quarantine ratchet
-        if: ${{ matrix.preset == 'default' || matrix.preset == 'release' }}
+        if: ${{ !cancelled() && (matrix.preset == 'default' || matrix.preset == 'release') }}
         env:
           GITHUB_ACTIONS: "false"
           RATCHET_BUILD: ${{ matrix.preset == 'default' && 'build' || format('build-{0}', matrix.preset) }}
@@ -908,6 +909,7 @@ jobs:
         run: ctest --preset default -j 3 -L fuzz_property
       # The configuration bench-fuzz of the quarantine ledger (see build job).
       - name: Quarantine ratchet
+        if: ${{ !cancelled() }}
         env:
           GITHUB_ACTIONS: "false"
         run: python3 utils/scripts/check-quarantine-ratchet.py --build-dir build
