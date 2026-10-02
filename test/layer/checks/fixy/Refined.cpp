@@ -186,6 +186,30 @@ namespace detail::refined_self_test {
 }
 static_assert(every_bound_type_is_exact());
 
+// read_bound gives the sign and the magnitude of an exact integer bound,
+// also at the most negative value of the widest type, and no exact
+// integer for a bound of another type.
+template <auto Bound>
+struct bound_holder {};
+
+[[nodiscard]] consteval refined::exact_bound bound_read_of(std::meta::info holder) {
+    return refined::read_bound(std::meta::template_arguments_of(holder)[0]);
+}
+
+inline constexpr refined::widest_signed most_negative_bound =
+    -static_cast<refined::widest_signed>(refined::widest_unsigned{1} << 126) * 2;
+
+static_assert(bound_read_of(^^bound_holder<-1>).is_exact_integer && bound_read_of(^^bound_holder<-1>).is_negative
+              && bound_read_of(^^bound_holder<-1>).magnitude == 1);
+static_assert(bound_read_of(^^bound_holder<9u>).is_exact_integer && !bound_read_of(^^bound_holder<9u>).is_negative
+              && bound_read_of(^^bound_holder<9u>).magnitude == 9);
+static_assert(bound_read_of(^^bound_holder<most_negative_bound>).is_negative
+              && bound_read_of(^^bound_holder<most_negative_bound>).magnitude == (refined::widest_unsigned{1} << 127));
+static_assert(!bound_read_of(^^bound_holder<'a'>).is_exact_integer && !bound_read_of(^^bound_holder<true>).is_exact_integer
+              && !bound_read_of(^^bound_holder<1.5>).is_exact_integer);
+static_assert(!PredicateImplies<bounded_above<1.5>, bounded_above<2.5>>,
+              "a bound that is not an exact integer defines its predicate on no value type, so no step reads it");
+
 // fixy/Refined.h holds the walk over the atomic edges and its rosters of
 // sample values.
 static_assert(refined_edge_walk::every_edge_holds());

@@ -962,25 +962,27 @@ inline constexpr std::meta::info exact_integer_types[] = {
     ^^signed char,   ^^short,          ^^int,          ^^long,          ^^long long,          ^^widest_signed,
     ^^unsigned char, ^^unsigned short, ^^unsigned int, ^^unsigned long, ^^unsigned long long, ^^widest_unsigned};
 
+// The sign and the magnitude of one bound of an exact integer type.  Only
+// a query that reads a bound instantiates it, one time for each value.
+template <auto Bound>
+inline constexpr exact_bound exact_bound_of{
+    .is_exact_integer = true,
+    .is_negative = std::cmp_less(Bound, 0),
+    .magnitude = std::cmp_less(Bound, 0) ? widest_unsigned{0} - static_cast<widest_unsigned>(Bound)
+                                         : static_cast<widest_unsigned>(Bound)};
+
 // Reads a bound of a predicate.  A bound whose type is not in
-// exact_integer_types reads as no exact integer.  Complexity: O(1).
+// exact_integer_types reads as no exact integer.  The loop compares
+// reflections and splices no type, so an includer that reads no bound
+// evaluates nothing.  Complexity: O(1).
 [[nodiscard]] consteval exact_bound read_bound(std::meta::info argument) {
     const std::meta::info type = std::meta::dealias(std::meta::remove_cvref(std::meta::type_of(argument)));
-    exact_bound bound{};
-    // -Wshadow fires on the expansion-statement induction variable.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr std::meta::info candidate : exact_integer_types) {
+    for (const std::meta::info candidate : exact_integer_types) {
         if (type == std::meta::dealias(candidate)) {
-            using Integer = typename[:candidate:];
-            const Integer value = std::meta::extract<Integer>(argument);
-            const bool is_negative = std::cmp_less(value, 0);
-            const widest_unsigned as_unsigned = static_cast<widest_unsigned>(value);
-            bound = exact_bound{true, is_negative, is_negative ? widest_unsigned{0} - as_unsigned : as_unsigned};
+            return std::meta::extract<exact_bound>(std::meta::substitute(^^exact_bound_of, {argument}));
         }
     }
-#pragma GCC diagnostic pop
-    return bound;
+    return {};
 }
 
 // lower ≤ upper for two bounds of predicates.  The bounds compare by

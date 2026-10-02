@@ -19,7 +19,6 @@
 #   One item that stays in its header, because its result depends on the translation unit that
 #   includes the header.  The kind is namespace, static_assert, function static_assert or eager
 #   evaluation.  The key is the one that --list prints.  The reason is mandatory.
-eager evaluation | include/fixy/Refined.h | 1
 eager evaluation | include/fixy/atoms/Syscall.h | 2
 
 keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||!std::is_trivially_destructible_v<Affine<int>> | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads
