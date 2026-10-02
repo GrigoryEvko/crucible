@@ -2012,4 +2012,31 @@ inline void emit_reports(std::span<const Report> reports, bool json, FILE* out =
     emit_reports_json(reports, json, out);
 }
 
+// ── Setup checks ───────────────────────────────────────────────────
+//
+// Each preset that builds the benches (bench, pgo-generate and pgo)
+// defines NDEBUG, so assert checks nothing in a bench.
+// CRUCIBLE_BENCH_CHECK checks in each build.  A failed check prints its
+// file, its line and its condition to stderr, and then it aborts.
+//
+// Put each check outside the timed body.  The body can count the results
+// that are not the expected ones, and a check after the measurement reads
+// the count.
+namespace detail {
+
+[[noreturn, gnu::cold, gnu::noinline]] inline void check_failed(const char* file, int line,
+                                                                const char* condition) noexcept {
+    std::fprintf(stderr, "%s:%d: bench check failed: %s\n", file, line, condition);
+    std::fflush(stderr);
+    std::abort();
+}
+
+}  // namespace detail
+
 }  // namespace bench
+
+#define CRUCIBLE_BENCH_CHECK(cond)                                    \
+    do {                                                              \
+        if (!(cond)) [[unlikely]]                                     \
+            ::bench::detail::check_failed(__FILE__, __LINE__, #cond); \
+    } while (0)

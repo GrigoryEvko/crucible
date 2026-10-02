@@ -22,7 +22,6 @@
 #include <crucible/Vigil.h>
 
 #include <bit>
-#include <cassert>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -120,30 +119,37 @@ void wait_region_published(Vigil& vigil) {
         CRUCIBLE_SPIN_PAUSE;
 }
 
-void align_and_activate(Vigil& vigil, uint32_t iter) {
+// Aligns the published region with K ops, then dispatches the rest of the
+// iteration in COMPILED mode.  Returns the number of results that are not
+// the expected ones.  A timed body adds the count up, and a check after the
+// measurement reads it.
+[[nodiscard]] uint32_t align_and_activate(Vigil& vigil, uint32_t iter) {
+    uint32_t unexpected_results = 0;
     for (uint32_t i = 0; i < K; i++) {
         auto d = make_op(iter, i);
-        [[maybe_unused]] auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-        assert(r.action == DispatchResult::Action::RECORD);
+        const auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        unexpected_results += static_cast<uint32_t>(r.action != DispatchResult::Action::RECORD);
     }
-    assert(vigil.context().is_compiled());
+    unexpected_results += static_cast<uint32_t>(!vigil.context().is_compiled());
 
     for (uint32_t i = K; i < NUM_OPS; i++) {
         auto d = make_op(iter, i);
-        [[maybe_unused]] auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-        assert(r.action == DispatchResult::Action::COMPILED);
+        const auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        unexpected_results += static_cast<uint32_t>(r.action != DispatchResult::Action::COMPILED);
     }
+    return unexpected_results;
 }
 
 // Build a Vigil in COMPILED mode ready for benchmarking. On return the
 // engine is at position 0 and the next dispatch_op is the first MATCH.
-void setup_compiled_vigil(Vigil& vigil) {
+// Returns the count of align_and_activate.
+[[nodiscard]] uint32_t setup_compiled_vigil(Vigil& vigil) {
     feed_record(vigil, 0);
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
     vigil.flush();
     wait_region_published(vigil);
-    align_and_activate(vigil, 3);
+    return align_and_activate(vigil, 3);
 }
 
 // ── Reusable BenchRegion for isolated engine/context/region-cache runs ──
@@ -301,7 +307,7 @@ int main() {
 
     reports.push_back([&] {
         Vigil vigil;
-        setup_compiled_vigil(vigil);
+        CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         return bench::run("Vigil::is_compiled() [true]", [&] {
             bench::do_not_optimize(&vigil);
             bench::do_not_optimize(vigil.context().is_compiled());
@@ -416,7 +422,7 @@ int main() {
 
     reports.push_back([&] {
         Vigil vigil;
-        setup_compiled_vigil(vigil);
+        CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         OpData ops[NUM_OPS];
         for (uint32_t i = 0; i < NUM_OPS; i++)
             ops[i] = make_op(10, i);
@@ -432,7 +438,7 @@ int main() {
 
     reports.push_back([&] {
         Vigil vigil;
-        setup_compiled_vigil(vigil);
+        CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         OpData ops[NUM_OPS];
         for (uint32_t i = 0; i < NUM_OPS; i++)
             ops[i] = make_op(10, i);
@@ -452,7 +458,7 @@ int main() {
 
     reports.push_back([&] {
         Vigil vigil;
-        setup_compiled_vigil(vigil);
+        CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         OpData ops[NUM_OPS];
         for (uint32_t i = 0; i < NUM_OPS; i++)
             ops[i] = make_op(10, i);
@@ -474,7 +480,7 @@ int main() {
 
     reports.push_back([&] {
         Vigil vigil;
-        setup_compiled_vigil(vigil);
+        CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         OpData ops[NUM_OPS];
         for (uint32_t i = 0; i < NUM_OPS; i++)
             ops[i] = make_op(10, i);
@@ -496,16 +502,21 @@ int main() {
     // is built inside the body every sample. The Report thus measures
     // *end-to-end* cost (setup + advance + divergence), not divergence
     // alone — label makes that explicit.
+    //
+    // The body counts the results that are not the expected ones, and the
+    // check after the measurement reads the count, so no check runs in the
+    // timed body.
     reports.push_back([&] {
         bench::Run r{"divergence [end-to-end: setup + dispatch]"};
         if (const int c = bench::env_core(); c >= 0) (void)r.core(c);
-        return r.samples(100).warmup(2).batch(1).measure([&] {
+        uint32_t unexpected_results = 0;
+        auto report = r.samples(100).warmup(2).batch(1).measure([&] {
             Vigil vigil;
-            setup_compiled_vigil(vigil);
+            unexpected_results += setup_compiled_vigil(vigil);
             for (uint32_t i = 0; i < 3; i++) {
                 auto d = make_op(10, i);
-                [[maybe_unused]] auto rr = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-                assert(rr.action == DispatchResult::Action::COMPILED);
+                const auto rr = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+                unexpected_results += static_cast<uint32_t>(rr.action != DispatchResult::Action::COMPILED);
             }
             TraceRing::Entry bad{};
             bad.schema_hash = SchemaHash{0xBAD};
@@ -518,9 +529,11 @@ int main() {
             };
             auto rr = vigil.dispatch_op(certify_synthetic_entry(bad), bad_metas, 2);
             bench::do_not_optimize(rr);
-            assert(rr.action == DispatchResult::Action::RECORD);
-            assert(rr.status == ReplayStatus::DIVERGED);
+            unexpected_results += static_cast<uint32_t>(rr.action != DispatchResult::Action::RECORD);
+            unexpected_results += static_cast<uint32_t>(rr.status != ReplayStatus::DIVERGED);
         });
+        CRUCIBLE_BENCH_CHECK(unexpected_results == 0);
+        return report;
     }());
 
     reports.push_back([&] {

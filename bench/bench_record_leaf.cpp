@@ -48,7 +48,6 @@
 #include <fixy/os/Sched.h>
 
 #include <bit>
-#include <cassert>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>

@@ -1183,6 +1183,10 @@ crucible_test(test_mimic_semaphore)
 # the crucible target defines CRUCIBLE_HAVE_BPF, and a host without the
 # capabilities only prints a warning.
 crucible_test(test_bench_harness)
+# A failed CRUCIBLE_BENCH_CHECK aborts under NDEBUG, which each preset that
+# builds the benches defines.  The source file defines NDEBUG itself.
+crucible_test(test_bench_check)
+target_include_directories(test_bench_check PRIVATE ${CMAKE_SOURCE_DIR}/bench)
 # Exercises the crucible::warden module — bounds-enforcement policy rails
 # (SCHED_FIFO/RR priority clamp, mlock, CPU-pin helpers). Header-only,
 # no special capabilities required at test time (the smoke checks the
