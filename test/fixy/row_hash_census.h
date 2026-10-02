@@ -856,6 +856,11 @@ inline constexpr StatedZero kZeros[] = {
      "the position of a loop over an Option: it lives inside the loop, and it is never a value in a signature"},
     {^^::foundation::core::Box,
      "an owned allocation of one object: it holds storage and makes no claim about what the object holds"},
+    {^^::foundation::core::Atomic,
+     "a cell that two threads share: its value is process state, and the cell is never a kernel signature argument"},
+    {^^::foundation::core::CasOutcome, kPayload},
+    {^^::foundation::core::CacheLine, "a layout wrapper: it aligns its cell and makes no claim about the cell"},
+    {^^::foundation::core::Tally, kDescriptor},
 
     {^^fa::is_graded_specialization, kMetafunction},
     {^^fa::graded_modality, kMetafunction},

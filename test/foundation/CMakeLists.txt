@@ -1867,6 +1867,29 @@ foundation_neg_compile_test(neg_core_box_borrow_of_temporary
   "use of deleted function .T& foundation::core::Box<T>::get\\(\\) && \\[with T = int\\]."
   "a borrow of a temporary Box dangles at the end of the full expression")
 
+# ── The Atomic family ─────────────────────────────────────────────────
+#
+# An Atomic holds a lock-free integral or enum value, and each operation
+# names its memory order.  The test runs four threads, so the tsan preset
+# checks each order.
+foundation_test(test_core_atomic)
+
+foundation_neg_compile_test(neg_core_atomic_class_payload
+  "template constraint failure for .template<class T>  requires  AtomicValue<T> class foundation::core::Atomic."
+  "required for the satisfaction of .AtomicValue<T>. .with T = Wrapped.")
+foundation_neg_compile_test(neg_core_atomic_not_lock_free
+  "template constraint failure for .template<class T>  requires  AtomicValue<T> class foundation::core::Atomic."
+  "the expression .__atomic_always_lock_free\\(long unsigned int, const volatile void\\*\\)\\(sizeof \\(T\\), 0\\) \\[with T = WidePhase\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_atomic_fetch_add_enum
+  "no matching function for call to .foundation::core::Atomic<Phase>::fetch_add_acq_rel\\(Phase\\)."
+  "the expression .is_integral_v<_Tp> \\[with _Tp = Phase\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_atomic_copied
+  "use of deleted function .foundation::core::Atomic<int>::Atomic\\(const foundation::core::Atomic<int>&\\)."
+  "Pinned<T>: stable address")
+foundation_neg_compile_test(neg_core_cache_line_borrow_of_temporary
+  "use of deleted function .T& foundation::core::CacheLine<T>::get\\(\\) && \\[with T = int\\]."
+  "a borrow of a temporary CacheLine dangles at the end of the full expression")
+
 # ── Hard errors in a body ─────────────────────────────────────────────
 #
 # Neither template has a constraint.  The refusal is an error in the body

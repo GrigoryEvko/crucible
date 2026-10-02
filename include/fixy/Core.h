@@ -14,6 +14,7 @@
 // foundation::core.  A specialization through a using-declaration is not
 // valid C++.
 
+#include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Ref.h>
 
@@ -25,5 +26,10 @@ using ::foundation::core::Option;
 
 using ::foundation::core::Box;
 using ::foundation::core::mint_box;
+
+using ::foundation::core::Atomic;
+using ::foundation::core::CacheLine;
+using ::foundation::core::CasOutcome;
+using ::foundation::core::Tally;
 
 }  // namespace fixy
