@@ -129,6 +129,33 @@ THE HEADERS THAT CANNOT COMPILE ALONE
     compiles alone gets its sentinel back, so the list can only become
     shorter.
 
+THE FIX MODE
+    --fix HEADER... does the repairs that keep their meaning, on the parse
+    tree, and refuses each other item with the reason:
+      * A self-test namespace and a namespace-scope static_assert move to
+        the check file, with the comments above them, in the same
+        enclosing namespaces.  A namespace whose whole body moves goes too,
+        and its own comment moves with its first item.
+      * A function static_assert moves to namespace scope in the check
+        file when its condition names nothing that the function or its
+        classes declare, and no class holds a base class.
+      * A function with a walk moves to the check file when no file but
+        the check file names it.  A function or a function template that
+        only moved code reads moves with it.  The fix puts a definition
+        before the first text of the check file that names it.
+      * A namespace variable whose initializer is
+        std::meta::enumerators_of(^^E).size(), for an enum E of the same
+        header with no preprocessor directive in its body, gets the count
+        as its literal.  The check file derives the count and pins the
+        literal to it.
+    A check that the check file states already, in the same namespace,
+    does not move again.  A header with a row in
+    test/layer/crucible-not-standalone.txt has no check file, so --into
+    FILE names the file that receives its checks, and that file must
+    include the header.  --dry-run prints each change and writes nothing.
+    Read each change before you commit it, then write the ledger again
+    with --write and the walk list with check-walk-units.py --write.
+
 WHAT THE GUARD CANNOT SEE
     A macro body has no scope until the macro expands, so the guard counts
     the checks of a macro at each invocation and not at its #define.  A
@@ -150,21 +177,25 @@ Usage
     check-header-checks.py --write                 write the count rows of the ledger again from the tree
     check-header-checks.py --standalone BUILD_DIR  compile each listed header alone and refuse one that compiles
     check-header-checks.py --self-test             plant each kind of item in a scratch tree and examine each verdict
+    check-header-checks.py --fix HEADER... [--into FILE] [--dry-run]
+                                                   move the checks of each header and make each count a literal
 
 Exit 0 with no error, 1 on an error finding (a new item, a stale or
 malformed row, a bad check file, a parse failure or a missing include
-directory), 1 when a listed header compiles alone, 2 on a missing compile
-command, a usage error or a failed self-test, 3 when the kit is not
-installed.
+directory), 1 when a listed header compiles alone, 1 when --fix refuses an
+item, 2 on a missing compile command, a usage error or a failed self-test,
+3 when the kit is not installed.
 """
 
 from __future__ import annotations
 
 import argparse
 import contextlib
+import difflib
 import io
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -1197,6 +1228,813 @@ def list_checks(root: Path, ledger_path: Path) -> int:
     return 1 if found.failures else 0
 
 
+@dataclass(frozen=True)
+class Placement:
+    """One piece of text that the fix puts in the destination file.
+
+    target is the namespace path that the text stands in.  A definition goes
+    before the first text of the destination that names it, and a check goes
+    at the end.  condition is the spelling of the condition of a
+    static_assert, with no white space, or "" for other text.  name is the
+    name that a definition defines.  is_adjacent is True when the text
+    followed the text before it in the header with no blank line between.
+    """
+
+    target: tuple[str, ...]
+    text: str
+    is_definition: bool
+    condition: str = ""
+    name: str = ""
+    is_adjacent: bool = False
+
+
+@dataclass
+class FixPlan:
+    """What the fix does to one header.
+
+    cuts holds (start, end, replacement) in the bytes of the header.  done
+    and refused hold one line for each item.
+    """
+
+    header: str
+    destination: str
+    cuts: list[tuple[int, int, str]] = field(default_factory=list)
+    placements: list[Placement] = field(default_factory=list)
+    done: list[str] = field(default_factory=list)
+    refused: list[str] = field(default_factory=list)
+
+
+# The leaves that can name a declaration.
+NAME_LEAVES = ("identifier", "field_identifier", "type_identifier", "namespace_identifier")
+# The widest piece of the message of a pin, so that each line of the pin
+# stays inside the 120 columns of .clang-format.
+MESSAGE_WIDTH = 100
+PREPROCESSOR_ARMS = frozenset({"preproc_if", "preproc_ifdef", "preproc_else", "preproc_elif", "preproc_elifdef"})
+
+
+def line_starts(data: bytes) -> list[int]:
+    """Return the byte offset of the start of each line of a file.
+
+    Complexity: linear in the size of the file.
+    """
+    starts = [0]
+    position = data.find(b"\n")
+    while position != -1:
+        starts.append(position + 1)
+        position = data.find(b"\n", position + 1)
+    return starts
+
+
+def offset_of(starts: list[int], point: tuple[int, int]) -> int:
+    """Return the byte offset of a (row, byte column) point."""
+    return starts[point[0]] + point[1]
+
+
+def leading_comments(node: tsast.Node) -> tsast.Node:
+    """Return the first comment of the run of comments directly above a node, or the node itself.
+
+    A comment belongs to the node when no blank line separates them, and
+    when it does not end a line of other code.
+
+    Args:
+        node: A child of a namespace body or of the translation unit
+    """
+    owner = node.parent
+    if owner is None:
+        return node
+    siblings = owner.children
+    index = siblings.index(node)
+    first = node
+    while index > 0:
+        above = siblings[index - 1]
+        if above.type != "comment" or above.end[0] + 1 < first.start[0]:
+            break
+        if index > 1 and siblings[index - 2].end[0] == above.start[0]:
+            break
+        first = above
+        index -= 1
+    return first
+
+
+def whole_lines(data: bytes, starts: list[int], first: tsast.Node, last: tsast.Node) -> tuple[int, int] | str:
+    """Return the byte range of the lines that hold the nodes from first to last.
+
+    A comment after the last node on its line belongs to the range.
+
+    Args:
+        data: The bytes of the file
+        starts: The line starts of the file
+        first: The first node of the range
+        last: The last node of the range
+
+    Returns:
+        (start, end), or the reason why the nodes do not stand on lines of their own
+    """
+    low = offset_of(starts, first.start)
+    line_low = starts[first.start[0]]
+    if data[line_low:low].strip():
+        return "it shares its first line with other code"
+    high = offset_of(starts, last.end)
+    newline = data.find(b"\n", high)
+    line_high = len(data) if newline == -1 else newline + 1
+    rest = data[high:line_high].strip()
+    if rest and not rest.startswith(b"//"):
+        return "it shares its last line with other code"
+    return line_low, line_high
+
+
+def placement_obstacle(node: tsast.Node) -> str:
+    """Return why the enclosing scopes of a node cannot stand in the destination, or "".
+
+    Args:
+        node: The node that moves
+    """
+    owner = node.parent
+    while owner is not None:
+        if owner.type in PREPROCESSOR_ARMS:
+            return f"it stands in an arm of the preprocessor conditional at line {owner.line}, so the move must " \
+                   f"keep the condition"
+        if owner.type == "linkage_specification":
+            return f"it stands in the linkage specification at line {owner.line}"
+        owner = owner.parent
+    path = tsast.namespace_path(node)
+    if "" in path:
+        return "it stands in an anonymous namespace, which no other file can open"
+    if path != tsast.namespace_path(node, skip_inline=True):
+        return "it stands in an inline namespace"
+    return ""
+
+
+def compact(text: str) -> str:
+    """Return a spelling with no white space, for the comparison of two conditions."""
+    return "".join(text.split())
+
+
+def names_used(node: tsast.Node) -> set[str]:
+    """Return each name that an expression looks up from its own scope.
+
+    The name after a scope and the name of a member are left out, because
+    they resolve through what comes before them.
+    """
+    used: set[str] = set()
+    for leaf in node.descendants(*NAME_LEAVES):
+        owner = leaf.parent
+        if owner is not None and owner.type == "qualified_identifier" and leaf.field == "name":
+            continue
+        if leaf.type == "field_identifier":
+            continue
+        used.add(tsast.spelled(leaf))
+    return used
+
+
+def names_declared(scope: tsast.Node) -> set[str]:
+    """Return each name that a function or a class declares, at any depth.
+
+    The set is larger than the exact set of declarations, so a move that it
+    admits is safe.
+    """
+    declared: set[str] = set()
+    for name, _parameter in tsast.parameters(scope) if scope.type == "function_definition" else []:
+        declared.add(name)
+    for node in scope.descendants("init_declarator", "declaration", "field_declaration", "parameter_declaration",
+                                  "optional_parameter_declaration", "alias_declaration", "type_definition",
+                                  "class_specifier", "struct_specifier", "union_specifier", "enum_specifier",
+                                  "enumerator", "function_definition", "using_declaration",
+                                  "structured_binding_declarator", "template_parameter_list"):
+        for part in ("declarator", "name"):
+            child = node.child_by_field(part)
+            name = None if child is None else tsast.leaf_name(child)
+            if name:
+                declared.add(name)
+        if node.type in ("structured_binding_declarator", "using_declaration", "template_parameter_list"):
+            declared.update(tsast.spelled(leaf) for leaf in node.descendants(*NAME_LEAVES))
+    return declared
+
+
+def mentions(root: Path, name: str) -> list[tuple[str, int, str]]:
+    """Return each place of the tree that names a declaration, outside each comment.
+
+    A C++ file counts an identifier of that name and a macro body that
+    holds the name.  Any other tracked file counts each occurrence of the
+    word, because a script or a fixture can pin it.
+
+    Complexity: linear in the total size of the tracked files.
+
+    Args:
+        root: The repository root
+        name: The name
+
+    Returns:
+        (repo-relative path, line, kind) for each place, where kind is
+        "code" for a C++ file and "text" for any other file
+    """
+    pattern = re.compile(rb"\b" + re.escape(name.encode("utf-8")) + rb"\b")
+    found: list[tuple[str, int, str]] = []
+    sources: list[Path] = []
+    for rel in tsast.tracked_files(root):
+        path = root / rel
+        try:
+            data = path.read_bytes()
+        except OSError:
+            continue
+        match = pattern.search(data)
+        if match is None:
+            continue
+        if tsast.is_in_cpp_scope(rel):
+            sources.append(path)
+        else:
+            found.append((rel, data.count(b"\n", 0, match.start()) + 1, "text"))
+    for tree in tsast.parse(sources, strict=False):
+        rel = Path(tree.path).relative_to(root).as_posix() if Path(tree.path).is_absolute() else str(tree.path)
+        for leaf in tree.root.descendants_named(frozenset({name}), *NAME_LEAVES):
+            found.append((rel, leaf.line, "code"))
+        for body in tree.find("preproc_arg"):
+            if any(token.kind == "identifier" and token.text == name
+                   for token in tsast.pp_tokens(tree.slice(body.start, body.end), body.start[0])):
+                found.append((rel, body.line, "code"))
+    return found
+
+
+def enumerator_count(tree: tsast.Tree, value: tsast.Node) -> tuple[int, str] | str:
+    """Return the count that `std::meta::enumerators_of(^^E).size()` gives, read from the enum in the same header.
+
+    Args:
+        tree: The parse tree of the header
+        value: The initializer
+
+    Returns:
+        (count, the spelling of E), or the reason why the initializer is not that count
+    """
+    shape = "the initializer is not std::meta::enumerators_of(^^E).size() over an enum of this header"
+    callee = value.child_by_field("function") if value.type == "call_expression" else None
+    arguments = value.child_by_field("arguments") if value.type == "call_expression" else None
+    if callee is None or callee.type != "field_expression" or arguments is None \
+            or tsast.non_comment_children(arguments):
+        return shape
+    field_name = callee.child_by_field("field")
+    inner = callee.child_by_field("argument")
+    if field_name is None or tsast.spelled(field_name) != "size" or inner is None or inner.type != "call_expression":
+        return shape
+    function = inner.child_by_field("function")
+    parts = None if function is None else tsast.qualified_parts(function)
+    listed = inner.child_by_field("arguments")
+    operands = [] if listed is None else tsast.non_comment_children(listed)
+    if parts is None or parts[1] not in (("std", "meta", "enumerators_of"), ("enumerators_of",)) \
+            or len(operands) != 1 or operands[0].type != "reflect_expression":
+        return shape
+    named = [leaf for leaf in operands[0].descendants("type_identifier", "identifier", "qualified_identifier")
+             if leaf.parent is not None and leaf.parent.type == "type_descriptor"]
+    wanted = None if len(named) != 1 else tsast.qualified_parts(named[0])
+    if wanted is None:
+        return shape
+    enums = []
+    for enum in tree.find("enum_specifier"):
+        name = enum.child_by_field("name")
+        body = enum.child_by_field("body")
+        if name is None or body is None:
+            continue
+        full = (*tsast.namespace_path(enum), tsast.spelled(name))
+        if full[len(full) - len(wanted[1]):] == wanted[1]:
+            enums.append(body)
+    if len(enums) != 1:
+        return f"{shape}: the header defines {len(enums)} enum(s) of the name {'::'.join(wanted[1])}"
+    arms = [child.line for child in enums[0].children if child.type.startswith("preproc")]
+    if arms:
+        return f"the enum holds a preprocessor directive at line {arms[0]}, so its count depends on the build"
+    count = sum(1 for child in enums[0].children if child.type == "enumerator")
+    return count, tsast.spelled(named[0])
+
+
+def item_node(tree: tsast.Tree, sites: dict[tuple[int, str], tsast.Node], item: Check) -> tsast.Node | None:
+    """Return the node of one item, or None when the parse tree holds no such node.
+
+    Args:
+        tree: The parse tree of the header
+        sites: The eager sites of the header, by (line, key)
+        item: The item
+    """
+    if item.kind == NAMESPACE:
+        for candidate in tree.find("namespace_definition"):
+            name = candidate.child_by_field("name")
+            parts = None if name is None else tsast.qualified_parts(name)
+            if candidate.line == item.row and parts is not None \
+                    and "::".join((*tsast.namespace_path(candidate), *parts[1])) == item.key:
+                return candidate
+        return None
+    if item.kind in (ASSERT, FUNCTION_ASSERT):
+        for candidate in tree.find("static_assert_declaration"):
+            condition = candidate.child_by_field("condition")
+            if candidate.line == item.row and condition is not None and tsast.spelled(condition) == item.key:
+                return candidate
+        return None
+    return sites.get((item.row, item.key))
+
+
+def outermost_function(node: tsast.Node) -> tsast.Node | None:
+    """Return the outermost function definition or lambda that holds a node, or None."""
+    outer = node.ancestor_of_type(*FUNCTION_BODIES)
+    while outer is not None:
+        further = outer.ancestor_of_type(*FUNCTION_BODIES)
+        if further is None:
+            return outer
+        outer = further
+    return None
+
+
+def hoist_obstacle(node: tsast.Node, function: tsast.Node) -> str:
+    """Return why the condition of a function static_assert can change meaning at namespace scope, or "".
+
+    The condition keeps its meaning when it names nothing that the function
+    or one of its classes declares, and when no class holds a base class,
+    whose members the parse tree cannot see.
+
+    Args:
+        node: The static_assert_declaration
+        function: The function that holds it
+    """
+    scopes = [function]
+    holder = function.ancestor_of_type(*CLASS_SPECIFIERS)
+    while holder is not None:
+        if holder.children_of_type("base_class_clause"):
+            return "a class with a base class holds the function, so a name of the condition can be a member of the base"
+        scopes.append(holder)
+        holder = holder.ancestor_of_type(*CLASS_SPECIFIERS)
+    condition = node.child_by_field("condition")
+    clash = sorted(names_used(condition) & set().union(*(names_declared(scope) for scope in scopes)))
+    if clash:
+        return f"the function or its class declares {', '.join(clash)}, which the condition names"
+    return ""
+
+
+def count_literal(tree: tsast.Tree, starts: list[int], node: tsast.Node, destination: str,
+                  plan: FixPlan) -> str:
+    """Write a namespace count of enumerators as a literal, and pin the literal in the destination.
+
+    Args:
+        tree: The parse tree of the header
+        starts: The line starts of the header
+        node: The declarator of the eager variable
+        destination: The destination, repo-relative
+        plan: The plan that receives the cut and the pin
+
+    Returns:
+        "" when the plan takes the rewrite, or the reason why the variable is not such a count
+    """
+    if node.type in ("alias_declaration", "type_definition"):
+        return "an alias splices the walk"
+    holder = node.parent
+    value = holder.child_by_field("value") if holder is not None and holder.type == "init_declarator" else None
+    if value is None or node.field != "declarator":
+        return "it is not a namespace variable with an initializer"
+    counted = enumerator_count(tree, value)
+    if isinstance(counted, str):
+        return counted
+    count, spelled_enum = counted
+    name = tsast.leaf_name(node) or tsast.spelled(node)
+    plan.cuts.append((offset_of(starts, value.start), offset_of(starts, value.end), str(count)))
+    condition = f"{name} == std::meta::enumerators_of(^^{spelled_enum}).size()"
+    message = (f"{name} is a literal count of the enumerators of {spelled_enum}, so that no includer of the "
+               f"header walks the enum.  Write the new count in its initializer.")
+    pieces = [""]
+    for word in message.split(" "):
+        if pieces[-1] and len(pieces[-1]) + len(word) + 1 > MESSAGE_WIDTH:
+            pieces.append("")
+        pieces[-1] += word + " "
+    literal = "\n              ".join(f'"{piece}"' for piece in [*pieces[:-1], pieces[-1].rstrip()])
+    plan.placements.append(Placement(tsast.namespace_path(node), f"static_assert({condition},\n"
+                                     f"              {literal});\n", False, compact(condition)))
+    plan.done.append(f"{plan.header}:{node.line}: the initializer of {name} is the literal {count}, and "
+                     f"{destination} derives it")
+    return ""
+
+
+def moved_helpers(root: Path, tree: tsast.Tree, starts: list[int],
+                  moved: list[tuple[tsast.Node, tsast.Node, Placement]], header: str,
+                  destination: str) -> list[tuple[tsast.Node, str]]:
+    """Return each function or function template of the header that only moved definitions and the destination read.
+
+    A moved definition takes such a helper with it, so the header keeps no
+    definition that only the destination reads.  The search reaches a fixed
+    point, so a helper of a helper moves too.
+
+    Complexity: one read of the tracked files for each name that a moved
+    definition holds and the header defines.
+
+    Args:
+        root: The repository root
+        tree: The parse tree of the header
+        starts: The line starts of the header
+        moved: The nodes that move, as (first node, last node, placement)
+        header: The header, repo-relative
+        destination: The destination, repo-relative
+
+    Returns:
+        (node, name) for each helper, in source order
+    """
+    candidates: dict[str, tsast.Node] = {}
+    twice: set[str] = set()
+    for function in tree.find("function_definition"):
+        holder = function.parent if function.parent is not None and function.parent.type == "template_declaration" \
+            else function
+        body = function.child_by_field("body")
+        name = None if body is None else tsast.enclosing_function(body)
+        if name is None or len(name) != 1 or not is_at_eager_scope(holder) or placement_obstacle(holder):
+            continue
+        if name[0] in candidates:
+            twice.add(name[0])
+        candidates[name[0]] = holder
+    spans = [whole_lines(tree.source, starts, first, last) for first, last, _placement in moved]
+    spans = [span for span in spans if not isinstance(span, str)]
+    nodes = [last for _first, last, _placement in moved]
+    found: list[tuple[tsast.Node, str]] = []
+    checked: set[str] = set()
+    grew = True
+    while grew:
+        grew = False
+        inside = {tsast.spelled(leaf) for node in nodes for leaf in node.descendants(*NAME_LEAVES)}
+        for name in sorted(inside & set(candidates) - checked - twice):
+            checked.add(name)
+            node = candidates[name]
+            span = whole_lines(tree.source, starts, leading_comments(node), node)
+            if isinstance(span, str) or any(low <= span[0] < high for low, high in spans):
+                continue
+            readers = [(path, line) for path, line, kind in mentions(root, name)
+                       if path != destination and not (kind == "text" and path.endswith(".md"))]
+            if all(path == header and any(low <= starts[line - 1] < high for low, high in (*spans, span))
+                   for path, line in readers):
+                found.append((node, name))
+                spans.append(span)
+                nodes.append(node)
+                grew = True
+    return sorted(found, key=lambda entry: entry[0].start)
+
+
+def plan_fix(root: Path, header: str, items: list[Check], destination: str) -> FixPlan:
+    """Decide what the fix does to the items of one header.
+
+    A self-test namespace and a namespace-scope static_assert move.  A
+    function static_assert moves when its condition means the same at
+    namespace scope.  A walk in a function moves with its function when no
+    file but the destination names the function.  A namespace count of the
+    enumerators of an enum becomes a literal, and the destination derives
+    it.  The fix refuses each other item, with the reason.
+
+    Complexity: linear in the size of the header, plus one read of the
+    tracked files for each function that moves.
+
+    Args:
+        root: The repository root
+        header: The header, repo-relative
+        items: The items of the header that no keep row names
+        destination: The file that receives the checks, repo-relative
+
+    Returns:
+        The plan
+    """
+    plan = FixPlan(header, destination)
+    tree = next(iter(tsast.parse([root / header])))
+    data = tree.source
+    starts = line_starts(data)
+    sites = {(node.line, key): node for node, key, _query in eager_sites(tree)}
+    # (first node, last node, the placement without its text)
+    moved: list[tuple[tsast.Node, tsast.Node, Placement]] = []
+    walks: dict[int, tuple[tsast.Node, list[Check]]] = {}
+
+    def refuse(item: Check, reason: str) -> None:
+        """Record one item that the fix leaves in the header."""
+        plan.refused.append(f"{header}:{item.row}: {item.kind} {item.key}: {reason}")
+
+    nodes = {item: item_node(tree, sites, item) for item in items}
+    for item, node in nodes.items():
+        function = None if node is None else outermost_function(node)
+        if item.kind == EAGER and function is not None and function.type == "function_definition":
+            walks.setdefault(function.index, (function, []))
+    for item, node in nodes.items():
+        if item.via:
+            refuse(item, f"the macro {item.via} writes it, so move the invocation by hand")
+            continue
+        if node is None:
+            refuse(item, "the fix cannot find the item in the parse tree")
+            continue
+        obstacle = placement_obstacle(node)
+        if obstacle:
+            refuse(item, obstacle)
+            continue
+        function = outermost_function(node)
+        if item.kind in (NAMESPACE, ASSERT):
+            condition = node.child_by_field("condition")
+            moved.append((leading_comments(node), node, Placement(
+                tsast.namespace_path(node), "", False, compact(tsast.spelled(condition)) if condition else "")))
+        elif function is not None and function.index in walks:
+            walks[function.index][1].append(item)
+        elif item.kind == EAGER and function is None:
+            reason = count_literal(tree, starts, node, destination, plan)
+            if reason:
+                refuse(item, f"{reason}.  Make it lazy by hand")
+        elif function is None or function.type != "function_definition":
+            refuse(item, "a lambda that no function holds encloses it")
+        else:
+            obstacle = hoist_obstacle(node, node.ancestor_of_type("function_definition"))
+            if obstacle:
+                refuse(item, obstacle)
+                continue
+            moved.append((node, node, Placement(tsast.namespace_path(function), "", False,
+                                                compact(tsast.spelled(node.child_by_field("condition"))))))
+
+    for function, owned in walks.values():
+        body = function.child_by_field("body")
+        name = () if body is None else tsast.enclosing_function(body) or ()
+        same_name = [other for other in tree.find("function_definition", "declaration")
+                     if len(name) == 1 and tsast.leaf_name(other.child_by_field("declarator") or other) == name[0]]
+        reason = placement_obstacle(function)
+        if not reason and function.ancestor_of_type(*CLASS_SPECIFIERS) is not None:
+            reason = "it is in a member function, so move the walk by hand"
+        if not reason and (len(name) != 1 or len(same_name) != 1):
+            reason = "the header declares the function more than one time, or the fix cannot read its name"
+        first = leading_comments(function)
+        span = whole_lines(data, starts, first, function)
+        if not reason and isinstance(span, str):
+            reason = f"the function {span}"
+        if not reason:
+            outside = [(path, line) for path, line, kind in mentions(root, name[0])
+                       if not (path == header and span[0] <= starts[line - 1] < span[1]) and path != destination
+                       and not (kind == "text" and path.endswith(".md"))]
+            if outside:
+                shown = ", ".join(f"{path}:{line}" for path, line in outside[:4])
+                reason = f"the function {name[0]} has readers outside {destination}: {shown}.  Make it lazy by hand"
+        if reason:
+            for item in owned:
+                refuse(item, reason)
+            continue
+        moved.append((first, function, Placement(tsast.namespace_path(function), "", True, name=name[0])))
+        plan.done.extend(f"{header}:{item.row}: {item.kind} {item.key}: the function {name[0]} moves to "
+                         f"{destination}" for item in owned)
+
+    for helper, name in moved_helpers(root, tree, starts, moved, header, destination):
+        moved.append((leading_comments(helper), helper, Placement(tsast.namespace_path(helper), "", True, name=name)))
+        plan.done.append(f"{header}:{helper.line}: the helper {name} moves to {destination}, because only moved "
+                         f"code reads it")
+    moved.sort(key=lambda entry: entry[0].start)
+
+    # (span, index of its placement) for each moved node
+    spans: list[tuple[tuple[int, int], int]] = []
+    previous: tuple[int, tuple[str, ...], bool] = (-1, (), False)
+    for first, last, placement in moved:
+        span = whole_lines(data, starts, first, last)
+        if isinstance(span, str):
+            plan.refused.append(f"{header}:{last.line}: the item {span}")
+            continue
+        text = data[span[0]:span[1]].decode("utf-8")
+        if last.type == "static_assert_declaration" and last.ancestor_of_type(*FUNCTION_BODIES) is not None:
+            indent = len(text) - len(text.lstrip(" "))
+            text = "\n".join(line[indent:] if line.startswith(" " * indent) else line for line in text.split("\n"))
+        is_adjacent = previous == (span[0], placement.target, placement.is_definition)
+        previous = (span[1], placement.target, placement.is_definition)
+        spans.append((span, len(plan.placements)))
+        plan.placements.append(Placement(placement.target, text if text.endswith("\n") else text + "\n",
+                                         placement.is_definition, placement.condition, placement.name, is_adjacent))
+        if not placement.is_definition:
+            plan.done.append(f"{header}:{last.line}: the check moves to {destination}")
+
+    # A namespace whose whole body moves goes too.  Its own leading comment
+    # moves with the first item that leaves it.
+    covered = [span for span, _index in spans]
+    for space in reversed(list(tree.find("namespace_definition"))):
+        body = space.child_by_field("body")
+        kids = [] if body is None else body.children
+        if not kids or not all(any(low <= offset_of(starts, kid.start) and offset_of(starts, kid.end) <= high
+                                   for low, high in covered) for kid in kids):
+            continue
+        first = leading_comments(space)
+        span = whole_lines(data, starts, first, space)
+        if isinstance(span, str):
+            continue
+        covered.append(span)
+        inner = [(placed, index) for placed, index in spans if span[0] <= placed[0] < span[1]]
+        if first is not space and inner:
+            comment = data[span[0]:starts[space.start[0]]].decode("utf-8")
+            index = min(inner)[1]
+            kept = plan.placements[index]
+            plan.placements[index] = Placement(kept.target, comment + kept.text, kept.is_definition,
+                                               kept.condition, kept.name, kept.is_adjacent)
+    plan.cuts.extend((low, high, "") for low, high in covered)
+    return plan
+
+
+def apply_cuts(data: bytes, cuts: list[tuple[int, int, str]]) -> bytes:
+    """Apply the cuts of a plan to the bytes of a header.
+
+    The cuts that remove whole lines merge when they overlap or touch, and a
+    blank line that the removal leaves beside another blank line goes too.
+
+    Args:
+        data: The bytes of the header
+        cuts: (start, end, replacement) in those bytes
+
+    Returns:
+        The new bytes
+    """
+    merged: list[list] = []
+    for low, high, text in sorted(cuts):
+        if merged and not text and not merged[-1][2] and low <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], high)
+            continue
+        merged.append([low, high, text])
+    out = data
+    for low, high, text in reversed(merged):
+        if not text:
+            before_blank = low == 0 or out[:low].endswith(b"\n\n")
+            while before_blank and out[high:high + 1] == b"\n":
+                high += 1
+        out = out[:low] + text.encode("utf-8") + out[high:]
+    return out
+
+
+def wrap(path: tuple[str, ...], body: str) -> str:
+    """Return a body in the namespace blocks of a path."""
+    if not path:
+        return body
+    name = "::".join(path)
+    return f"namespace {name} {{\n\n{body}\n}}  // namespace {name}\n"
+
+
+def place(root: Path, destination: str, header: str, placements: list[Placement]) -> tuple[str, list[str]]:
+    """Return the new text of the destination, and one line for each check that it already states.
+
+    A definition goes into the first namespace block that it fits, before
+    each text that names it, and otherwise after the includes.  A check goes
+    at the end of the last namespace block that it fits, and otherwise at the
+    end of the file.  A check whose condition the destination already states
+    in the same namespace is dropped.
+
+    Args:
+        root: The repository root
+        destination: The destination, repo-relative
+        header: The header, relative to include/
+        placements: The text to place, in source order
+
+    Returns:
+        The text, and the dropped duplicates
+    """
+    path = root / destination
+    # (namespace path, the start of the line after its `{`, the start of the line of its `}`)
+    blocks: list[tuple[tuple[str, ...], int, int]] = []
+    stated: set[tuple[tuple[str, ...], str]] = set()
+    readers: dict[str, int] = {}
+    include_end = 0
+    # The start of a top-level main, before which a check that fits no block goes, or -1.
+    main_start = -1
+    if path.is_file():
+        tree = next(iter(tsast.parse([path])))
+        text = tree.source.decode("utf-8")
+        source = tree.source
+        starts = line_starts(source)
+        for space in tree.find("namespace_definition"):
+            body = space.child_by_field("body")
+            if body is None or "" in tsast.namespace_path(body) or body.start[0] + 1 >= len(starts):
+                continue
+            opened = starts[body.start[0] + 1]
+            closed = starts[body.end[0]]
+            if source[offset_of(starts, body.start) + 1:opened].strip() \
+                    or source[closed:offset_of(starts, body.end)].strip() != b"}":
+                continue
+            blocks.append((tsast.namespace_path(body), opened, closed))
+        for check_node in tree.find("static_assert_declaration"):
+            condition = check_node.child_by_field("condition")
+            if condition is not None:
+                stated.add((tsast.namespace_path(check_node), compact(tsast.spelled(condition))))
+        names = frozenset(placement.name for placement in placements if placement.name)
+        for leaf in tree.root.descendants_named(names, *NAME_LEAVES) if names else []:
+            readers.setdefault(tsast.spelled(leaf), offset_of(starts, leaf.start))
+        for include in tree.root.children_of_type("preproc_include"):
+            include_end = offset_of(starts, include.end)
+            include_end = include_end if tree.source[include_end - 1:include_end] == b"\n" else include_end + 1
+        for function in tree.root.children_of_type("function_definition"):
+            body = function.child_by_field("body")
+            if body is not None and tsast.enclosing_function(body) == ("main",):
+                main_start = starts[leading_comments(function).start[0]]
+    else:
+        text = f"// The compile-time checks of {header}.\n\n#include <{header}>\n"
+        include_end = len(text.encode("utf-8"))
+    data = text.encode("utf-8")
+    dropped: list[str] = []
+    # (position, 0 for a definition and 1 for a check, order, text)
+    insertions: list[tuple[int, int, int, str]] = []
+    groups: dict[tuple[bool, tuple[str, ...]], list[Placement]] = {}
+    for placement in placements:
+        key = (placement.target, placement.condition)
+        if placement.condition and key in stated:
+            dropped.append(f"the destination states the check {placement.condition} already")
+            continue
+        if placement.condition:
+            stated.add(key)
+        groups.setdefault((placement.is_definition, placement.target), []).append(placement)
+    for order, ((is_definition, target), group) in enumerate(groups.items()):
+        body = ""
+        for placement in group:
+            body += ("" if not body or placement.is_adjacent else "\n") + placement.text
+        fits = [block for block in blocks if block[0] == target[:len(block[0])]]
+        if is_definition:
+            first_reader = min((readers[placement.name] for placement in group if placement.name in readers),
+                               default=len(data))
+            fits = sorted((block for block in fits if block[1] <= first_reader), key=lambda b: (-len(b[0]), b[1]))
+            at, outer = (fits[0][1], fits[0][0]) if fits else (include_end, ())
+            tail = "" if data[at:at + 1] == b"\n" else "\n"
+            insertions.append((at, 0, order, "\n" + wrap(target[len(outer):], body) + tail))
+            continue
+        fits = sorted((block for block in fits if main_start < 0 or block[2] < main_start),
+                      key=lambda b: (len(b[0]), b[2]))
+        if fits:
+            at, outer = fits[-1][2], fits[-1][0]
+            lead = "" if data[:at].endswith(b"\n\n") else "\n"
+            insertions.append((at, 1, order, lead + wrap(target[len(outer):], body) + "\n"))
+        elif main_start >= 0:
+            lead = "" if data[:main_start].endswith(b"\n\n") else "\n"
+            insertions.append((main_start, 1, order, lead + wrap(target, body) + "\n"))
+        else:
+            lead = "\n" if data.endswith(b"\n") else "\n\n"
+            insertions.append((len(data), 1, order, lead + wrap(target, body)))
+    for position, _rank, _order, inserted in sorted(insertions, reverse=True):
+        data = data[:position] + inserted.encode("utf-8") + data[position:]
+    return data.decode("utf-8"), dropped
+
+
+def fix(root: Path, ledger_path: Path, headers: list[str], into: str | None, dry_run: bool) -> int:
+    """Move the checks of each header to its check file, and make each count a literal.
+
+    Args:
+        root: The repository root
+        ledger_path: The ledger file
+        headers: The headers, repo-relative or relative to include/
+        into: The destination for one header that has no check file, or None
+        dry_run: When true, print the changes and write nothing
+
+    Returns:
+        0 when each item is handled, 1 when the fix refuses an item, 2 on a usage error
+    """
+    found = scan(root)
+    keeps = read_ledger(ledger_path).keeps
+    checks, _stale = apply_keeps(found.checks, keeps)
+    listed = {row for row, _line in read_not_standalone(root)[0]}
+    if into is not None and len(headers) != 1:
+        print("check-header-checks: --into takes exactly one header.", file=sys.stderr)
+        return 2
+    status = 0
+    for given in headers:
+        header = given if given.startswith(f"{INCLUDE}/") else f"{INCLUDE}/{given}"
+        if header not in found.headers:
+            print(f"check-header-checks: {header} is not a header under {INCLUDE}/.", file=sys.stderr)
+            return 2
+        inner = Path(header).relative_to(INCLUDE).as_posix()
+        failures = [message for path, message in found.failures if path == header]
+        if failures:
+            print(f"{header}: {failures[0]}", file=sys.stderr)
+            status = 1
+            continue
+        destination = into if into is not None else check_file_of(header)
+        if into is None and inner in listed:
+            print(f"{header}: the header has a row in {NOT_STANDALONE}, so it has no check file.  Name the file "
+                  f"that receives its checks with --into, for example the test of the header.", file=sys.stderr)
+            status = 1
+            continue
+        if into is not None and not any(
+                include.child_by_field("path") is not None
+                and tsast.prose_text(include.child_by_field("path")).strip()[1:-1].strip() == inner
+                for tree in tsast.parse([root / into]) for include in tree.find("preproc_include")):
+            print(f"{into}: the file does not include <{inner}>, so it cannot receive the checks of that header.",
+                  file=sys.stderr)
+            return 2
+        items = [item for item in checks if item.path == header]
+        plan = plan_fix(root, header, list(dict.fromkeys(items)), destination)
+        header_bytes = (root / header).read_bytes()
+        new_header = apply_cuts(header_bytes, plan.cuts)
+        old_destination = (root / destination).read_text(encoding="utf-8") if (root / destination).is_file() else ""
+        new_destination, dropped = place(root, destination, inner, plan.placements) if plan.placements \
+            else (old_destination, [])
+        for line in plan.done:
+            print(f"done     {line}")
+        for line in dropped:
+            print(f"dropped  {header}: {line}")
+        for line in plan.refused:
+            print(f"REFUSED  {line}")
+        status = status or (1 if plan.refused else 0)
+        changes = [(header, header_bytes.decode("utf-8"), new_header.decode("utf-8")),
+                   (destination, old_destination, new_destination)]
+        for rel, before, after in changes:
+            if before == after:
+                continue
+            if dry_run:
+                sys.stdout.writelines(difflib.unified_diff(before.splitlines(keepends=True),
+                                                           after.splitlines(keepends=True), f"a/{rel}", f"b/{rel}"))
+            else:
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (root / rel).write_text(after, encoding="utf-8")
+    if not dry_run:
+        print(f"check-header-checks: write the ledger again with python3 {SCRIPT} --write, and the walk list with "
+              f"python3 utils/scripts/check-walk-units.py --write.", file=sys.stderr)
+    return status
+
+
 def read_not_standalone(root: Path) -> tuple[list[tuple[str, int]], list[str]]:
     """Read the list of the crucible headers that cannot compile alone.
 
@@ -1454,6 +2292,221 @@ PLANTED: list[tuple[str, str | None, str]] = [
      "a self-test namespace that holds a macro that writes static_asserts"),
     ("}  // namespace foundation", None, ""),
 ]
+
+
+# The planted header of the cases of --fix.  The function in the namespace
+# detail is read only by the check file, so it moves.  The function that the
+# header reads stays.
+FIX_HEADER = """#pragma once
+#include <meta>
+namespace foundation {
+
+enum class Shade : unsigned char {
+    Red,
+    Green,
+    Blue,
+};
+
+enum class Mode : unsigned char {
+    Plain,
+#if defined(FIXED_WIDE)
+    Wide,
+#endif
+};
+
+inline constexpr unsigned shade_count = std::meta::enumerators_of(^^Shade).size();
+inline constexpr unsigned mode_count = std::meta::enumerators_of(^^Mode).size();
+
+// The rule that the moved check states.
+static_assert(sizeof(int) == 4);
+static_assert(sizeof(short) == 2);
+
+template <class Kind>
+consteval unsigned shared_size_() noexcept { return 3; }
+
+// The namespace of the witness.
+namespace detail {
+
+template <class Kind>
+consteval bool is_kind_read_() noexcept { return sizeof(Kind) == 1; }
+
+// The witness, which only the check file reads.
+consteval bool every_shade_read_() noexcept {
+    static constexpr auto shades = std::define_static_array(std::meta::enumerators_of(^^Shade));
+    template for (constexpr auto shade : shades) { (void)shade; }
+    return is_kind_read_<Shade>() && shared_size_<Shade>() == 3;
+}
+
+}  // namespace detail
+
+namespace fixed_detail::self_test {
+static_assert(shade_count == 3);
+}  // namespace fixed_detail::self_test
+
+struct Holder {
+    static int act(int width) {
+        static_assert(sizeof(Shade) == 1);
+        static_assert(sizeof(width) == 4);
+        return width;
+    }
+};
+
+consteval bool read_by_header_() noexcept {
+    static constexpr auto shades = std::define_static_array(std::meta::enumerators_of(^^Shade));
+    return shades.size() == shared_size_<Shade>();
+}
+inline constexpr bool header_reads = read_by_header_();
+
+#if defined(FIXED_ARM)
+static_assert(sizeof(long) == 8);
+#endif
+
+#define FIXED_CHECK static_assert(sizeof(char) == 1)
+FIXED_CHECK;
+
+}  // namespace foundation
+"""
+FIX_CHECK_FILE = """// The compile-time checks of foundation/Fixed.h.
+
+#include <foundation/Fixed.h>
+
+namespace foundation {
+
+static_assert(detail::every_shade_read_());
+static_assert(sizeof(Shade) == 1, "one byte");
+
+}  // namespace foundation
+"""
+FIX_WITNESS = """// The witness, which only the check file reads.
+consteval bool every_shade_read_() noexcept {
+    static constexpr auto shades = std::define_static_array(std::meta::enumerators_of(^^Shade));
+    template for (constexpr auto shade : shades) { (void)shade; }
+    return is_kind_read_<Shade>() && shared_size_<Shade>() == 3;
+}
+"""
+FIX_HELPER = """template <class Kind>
+consteval bool is_kind_read_() noexcept { return sizeof(Kind) == 1; }
+"""
+
+
+def fix_self_test(expect) -> None:
+    """Run the cases of --fix in a scratch tree of their own.
+
+    Args:
+        expect: The recorder of the self-test, expect(name, holds, negative)
+    """
+    with tempfile.TemporaryDirectory() as work:
+        root = Path(work)
+        files = {
+            "include/foundation/Fixed.h": FIX_HEADER,
+            f"{CHECKS}/foundation/Fixed.cpp": FIX_CHECK_FILE,
+            "include/fixy/Lone.h": "#pragma once\nnamespace fixy::inner {\nstatic_assert(sizeof(char) == 1);\n}\n",
+            "include/crucible/Probe.h": "#pragma once\nnamespace crucible {\nnamespace probe_detail::self_test {\n"
+                                        "static_assert(sizeof(short) == 2);\n}\n}\n",
+            NOT_STANDALONE: "crucible/Probe.h | it includes a header that is not on the include path\n",
+            "include/fixy/Walked.h": "#pragma once\n#include <meta>\nnamespace fixy {\nenum class Tone { Low };\n"
+                                     "consteval bool walk_tones_() {\n    static constexpr auto tones = "
+                                     "std::define_static_array(std::meta::enumerators_of(^^Tone));\n"
+                                     "    return tones.size() == 1;\n}\n}\n",
+            "include/fixy/Caller.h": "#pragma once\n#define FIXY_CALL_WALK ::fixy::walk_tones_()\n",
+            "test/test_probe.cpp": "#include <crucible/Probe.h>\n\nint main() { return 0; }\n",
+            "test/test_other.cpp": "int main() { return 0; }\n",
+        }
+        for rel, text in files.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding="utf-8")
+        ledger = root / LEDGER
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+
+        def run(*arguments: str) -> tuple[int, str]:
+            """Run --fix in the scratch tree and keep its report."""
+            buffer = io.StringIO()
+            headers = [argument for argument in arguments if not argument.startswith("--")]
+            into = next((argument.removeprefix("--into=") for argument in arguments
+                         if argument.startswith("--into=")), None)
+            with contextlib.redirect_stderr(buffer), contextlib.redirect_stdout(buffer):
+                code = fix(root, ledger, headers, into, "--dry-run" in arguments)
+            return code, buffer.getvalue()
+
+        def read(rel: str) -> str:
+            """Return the text of one file of the scratch tree."""
+            return (root / rel).read_text(encoding="utf-8")
+
+        code, report = run("include/foundation/Fixed.h", "--dry-run")
+        expect("--dry-run writes nothing and prints each change",
+               read("include/foundation/Fixed.h") == FIX_HEADER and read(f"{CHECKS}/foundation/Fixed.cpp")
+               == FIX_CHECK_FILE and "+++ b/test/layer/checks/foundation/Fixed.cpp" in report, True)
+        code, report = run("foundation/Fixed.h")
+        header = read("include/foundation/Fixed.h")
+        checks = read(f"{CHECKS}/foundation/Fixed.cpp")
+        expect("the fix refuses an item and still handles the others", code == 1 and "REFUSED" in report)
+        expect("a count of the enumerators of an enum of the header becomes its literal, and the check file "
+               "derives it",
+               "inline constexpr unsigned shade_count = 3;" in header
+               and "static_assert(shade_count == std::meta::enumerators_of(^^Shade).size()," in checks)
+        expect("a count over an enum with a preprocessor directive is refused",
+               "std::meta::enumerators_of(^^Mode).size()" in header and "directive at line" in report, True)
+        expect("a moved function keeps its text and its comment, and stands before its first reader",
+               FIX_WITNESS in checks and checks.index(FIX_WITNESS) < checks.index("detail::every_shade_read_()"))
+        expect("a helper that only the moved function reads moves before it, and a helper that the header reads stays",
+               FIX_HELPER in checks and checks.index(FIX_HELPER) < checks.index(FIX_WITNESS)
+               and "is_kind_read_" not in header and "consteval unsigned shared_size_()" in header
+               and "consteval unsigned shared_size_()" not in checks)
+        expect("a namespace that holds only moved items goes, and its comment moves with the first item",
+               "namespace detail" not in header and "// The namespace of the witness.\n" + FIX_HELPER in checks
+               and "every_shade_read_" not in header)
+        expect("a namespace-scope check and a self-test namespace move with their comments, in their namespaces, "
+               "and two adjacent checks stay adjacent",
+               "// The rule that the moved check states.\nstatic_assert(sizeof(int) == 4);\n"
+               "static_assert(sizeof(short) == 2);\n" in checks
+               and "namespace fixed_detail::self_test {" in checks and "self_test" not in header
+               and "sizeof(int) == 4" not in header)
+        expect("a function static_assert whose names resolve at namespace scope leaves the function, and a check "
+               "that the check file states already is dropped",
+               "sizeof(Shade) == 1);" not in header and checks.count("sizeof(Shade) == 1") == 1
+               and "states the check sizeof(Shade)==1 already" in report)
+        expect("a function static_assert that names a parameter is refused",
+               "static_assert(sizeof(width) == 4);" in header and "declares width" in report, True)
+        expect("a function that the header reads is refused, with the reader",
+               "consteval bool read_by_header_()" in header and "include/foundation/Fixed.h:" in report
+               and "readers outside" in report, True)
+        expect("a check in an arm of a preprocessor conditional is refused",
+               "static_assert(sizeof(long) == 8);" in header and "preprocessor conditional" in report, True)
+        expect("a check that a macro writes is refused", "FIXED_CHECK;" in header and "the macro FIXED_CHECK" in report,
+               True)
+        rescan = scan(root)
+        expect("the check file is well formed after the fix", not rescan.bad_check_files and not rescan.failures)
+        left = sorted(item.key for item in rescan.checks if item.path == "include/foundation/Fixed.h")
+        expect("the header holds only the refused items after the fix",
+               left == sorted(["FIXED_CHECK", "foundation::mode_count", "foundation::read_by_header_::shades",
+                               "sizeof(long)==8", "sizeof(width)==4"]))
+        expect("a second run changes nothing",
+               run("include/foundation/Fixed.h")[0] == 1 and read("include/foundation/Fixed.h") == header
+               and read(f"{CHECKS}/foundation/Fixed.cpp") == checks, True)
+        code, report = run("include/fixy/Walked.h")
+        expect("a function that a macro body of another header names is refused, with the macro",
+               code == 1 and "include/fixy/Caller.h:2" in report and "walk_tones_" in read("include/fixy/Walked.h"),
+               True)
+        code, report = run("include/fixy/Lone.h")
+        lone = read(f"{CHECKS}/fixy/Lone.cpp") if (root / CHECKS / "fixy/Lone.cpp").is_file() else ""
+        expect("a header with no check file gets one, which includes the header first",
+               code == 0 and lone.startswith("// The compile-time checks of fixy/Lone.h.\n\n#include <fixy/Lone.h>\n")
+               and "namespace fixy::inner {\n\nstatic_assert(sizeof(char) == 1);" in lone
+               and "static_assert" not in read("include/fixy/Lone.h"))
+        code, report = run("include/crucible/Probe.h")
+        expect("a header that cannot compile alone needs --into",
+               code == 1 and "--into" in report and "self_test" in read("include/crucible/Probe.h"), True)
+        code, report = run("include/crucible/Probe.h", "--into=test/test_other.cpp")
+        expect("--into refuses a file that does not include the header",
+               code == 2 and "self_test" in read("include/crucible/Probe.h"), True)
+        code, report = run("include/crucible/Probe.h", "--into=test/test_probe.cpp")
+        probe_test = read("test/test_probe.cpp")
+        expect("--into moves the checks into the named file, before its main",
+               code == 0 and "self_test" not in read("include/crucible/Probe.h")
+               and 0 <= probe_test.find("namespace probe_detail::self_test {") < probe_test.find("int main()"))
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            agrees = write(root, ledger) == 0 and check(root, ledger) == 0
+        expect("--write and the check agree with the tree after the fix", agrees)
 
 
 def self_test() -> int:
@@ -1756,6 +2809,7 @@ def self_test() -> int:
             (build / "compile_commands.json").write_text("[]", encoding="utf-8")
             expect("a compile database with no crucible sentinel fails",
                    captured(lambda: standalone(root, build))[0] == 2, True)
+    fix_self_test(expect)
     if failures:
         print(f"check-header-checks --self-test: FAILED — {len(failures)} case(s) did not hold")
         return 2
@@ -1779,16 +2833,26 @@ def main(argv: list[str]) -> int:
     modes.add_argument("--standalone", metavar="BUILD_DIR", type=Path,
                        help="compile each listed header alone and refuse one that compiles")
     modes.add_argument("--self-test", action="store_true", help="plant each kind of item and examine each verdict")
+    modes.add_argument("--fix", metavar="HEADER", nargs="+",
+                       help="move the checks of each header to its check file, and make each count a literal")
+    parser.add_argument("--into", metavar="FILE", help="with --fix: the file that receives the checks of a header "
+                                                       "that has no check file")
+    parser.add_argument("--dry-run", action="store_true", help="with --fix: print the changes and write nothing")
     check_report.add_arguments(parser)
     try:
         options = parser.parse_args(argv)
     except SystemExit as stop:
         return 0 if stop.code == 0 else 2
+    if (options.into is not None or options.dry_run) and not options.fix:
+        print("check-header-checks: --into and --dry-run take --fix.", file=sys.stderr)
+        return 2
     root = tsast.REPO_ROOT
     ledger = root / LEDGER
     try:
         if options.self_test:
             return self_test()
+        if options.fix:
+            return fix(root, ledger, options.fix, options.into, options.dry_run)
         if options.write:
             return write(root, ledger)
         if options.list:
