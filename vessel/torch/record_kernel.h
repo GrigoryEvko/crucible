@@ -36,6 +36,7 @@
 //      readings of one argument list must name the same positions. Measured
 //      over all 3110 operators of the fork: zero disagreements.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Fn.h>
 #include <fixy/Role.h>
@@ -142,11 +143,15 @@ struct ScalarArgs {
 // Fills all 168 bytes of crucible::TensorMeta from an at::Tensor. Shared with
 // the boxed fallback: a trace whose entries were filled by two spellings of
 // this would have a content hash that depends on which path recorded it.
+//
+// The result is false when the element type, the device or the layout of the
+// tensor names no crucible enumerator.  Each such field then holds its
+// default, and the caller records nothing for the operation.
 // =====================================================================
 
-inline void fill_meta(crucible::TensorMeta& meta, const at::Tensor& tensor) {
+[[nodiscard]] inline bool fill_meta(crucible::TensorMeta& meta, const at::Tensor& tensor) {
     meta = {};  // zero-init (InitSafe -- NSDMI defaults)
-    if (!tensor.defined()) return;
+    if (!tensor.defined()) return true;
 
     // -- Core fields --------------------------------------------------
 
@@ -181,19 +186,19 @@ inline void fill_meta(crucible::TensorMeta& meta, const at::Tensor& tensor) {
         meta.data_ptr = ::crucible::external_data_ptr(tensor.data_ptr());
     }
 
-    // c10 and crucible enums mirror ordinals by design (Types.h documents the
-    // invariant), so bit_cast carries them. A
-    // static_cast<crucible::X>(static_cast<int8_t>(c10_value)) would be a
-    // double narrowing that silently truncated any future c10 value escaping
-    // int8_t range while looking like an ordinary conversion. bit_cast is bit
-    // reinterpretation and a size mismatch is a compile error.
+    // A c10 enumeration enters the meta only through its decoder in
+    // vessel_api_typed.h, which takes the c10 ordinal as an int8_t.  The
+    // decoder compares the ordinal with the enumerators that crucible names,
+    // and gives no value for each other ordinal.  The asserts below make the
+    // ordinal exact: each c10 enumeration has the underlying type int8_t, so
+    // std::to_underlying narrows nothing.
     //
     // Every mirrored ordinal is checked one by one. A single sampled ordinal
     // witnesses one lane of the invariant, not the invariant, and the per-type
     // message names the type that drifted.
-    static_assert(sizeof(c10::ScalarType) == sizeof(crucible::ScalarType));
-    static_assert(sizeof(c10::DeviceType) == sizeof(crucible::DeviceType));
-    static_assert(sizeof(c10::Layout) == sizeof(crucible::Layout));
+    static_assert(std::is_same_v<std::underlying_type_t<c10::ScalarType>, int8_t>);
+    static_assert(std::is_same_v<std::underlying_type_t<c10::DeviceType>, int8_t>);
+    static_assert(std::is_same_v<std::underlying_type_t<c10::Layout>, int8_t>);
 
 #define CRUCIBLE_MIRROR_SCALAR(name)                                                                             \
     static_assert(static_cast<int8_t>(c10::ScalarType::name) == static_cast<int8_t>(crucible::ScalarType::name), \
@@ -217,7 +222,7 @@ inline void fill_meta(crucible::TensorMeta& meta, const at::Tensor& tensor) {
     CRUCIBLE_MIRROR_SCALAR(Float8_e4m3fnuz);
 #undef CRUCIBLE_MIRROR_SCALAR
 
-    // Undefined is the one deliberate divergence and must not be bit_cast. c10
+    // Undefined is the one deliberate divergence of the element types. c10
     // appends it after the last scalar type, at a large positive ordinal;
     // Crucible uses -1 so that "no dtype" sorts outside the value range. The
     // asserts below pin the divergence and the property that makes the
@@ -229,25 +234,54 @@ inline void fill_meta(crucible::TensorMeta& meta, const at::Tensor& tensor) {
                   "c10 scalar ordinals must stay non-negative for the sentinel to be disjoint");
     static_assert(static_cast<int16_t>(c10::ScalarType::Undefined)
                       != static_cast<int16_t>(crucible::ScalarType::Undefined),
-                  "if c10 ever adopts -1 for Undefined, drop the explicit map below and bit_cast it");
+                  "if c10 ever adopts -1 for Undefined, drop the explicit map below");
 
-    static_assert(static_cast<int8_t>(c10::DeviceType::CUDA) == static_cast<int8_t>(crucible::DeviceType::CUDA),
-                  "c10::DeviceType::CUDA ordinal drifted from crucible mirror");
-    static_assert(static_cast<int8_t>(c10::Layout::Strided) == static_cast<int8_t>(crucible::Layout::Strided),
-                  "c10::Layout::Strided ordinal drifted from crucible mirror");
+#define CRUCIBLE_MIRROR_DEVICE(name)                                                                             \
+    static_assert(static_cast<int8_t>(c10::DeviceType::name) == static_cast<int8_t>(crucible::DeviceType::name), \
+                  "c10::DeviceType::" #name " ordinal drifted from the crucible mirror")
+    CRUCIBLE_MIRROR_DEVICE(CPU);
+    CRUCIBLE_MIRROR_DEVICE(CUDA);
+    CRUCIBLE_MIRROR_DEVICE(MKLDNN);
+    CRUCIBLE_MIRROR_DEVICE(HIP);
+    CRUCIBLE_MIRROR_DEVICE(XLA);
+    CRUCIBLE_MIRROR_DEVICE(MPS);
+    CRUCIBLE_MIRROR_DEVICE(Meta);
+    CRUCIBLE_MIRROR_DEVICE(PrivateUse1);
+#undef CRUCIBLE_MIRROR_DEVICE
+
+    // crucible::Layout does not mirror c10 from SparseCsc on.  C10Layout holds
+    // the c10 ordinals, and decode_c10_layout maps them by name.
+#define CRUCIBLE_MIRROR_LAYOUT(name)                                                              \
+    static_assert(static_cast<int8_t>(c10::Layout::name) == static_cast<int8_t>(C10Layout::name), \
+                  "c10::Layout::" #name " ordinal drifted from C10Layout")
+    CRUCIBLE_MIRROR_LAYOUT(Strided);
+    CRUCIBLE_MIRROR_LAYOUT(Sparse);
+    CRUCIBLE_MIRROR_LAYOUT(SparseCsr);
+    CRUCIBLE_MIRROR_LAYOUT(Mkldnn);
+    CRUCIBLE_MIRROR_LAYOUT(SparseCsc);
+    CRUCIBLE_MIRROR_LAYOUT(SparseBsr);
+    CRUCIBLE_MIRROR_LAYOUT(SparseBsc);
+    CRUCIBLE_MIRROR_LAYOUT(Jagged);
+#undef CRUCIBLE_MIRROR_LAYOUT
 
     // A dtype c10 names and Crucible does not — a quantized type, a narrow
-    // integer width, a newer FP8 variant — bit_casts to an ordinal no
-    // crucible enumerator matches. The enum has a fixed underlying type, so
-    // the value is well defined rather than UB and round-trips through the
-    // trace unchanged. Widening the mirror is a Types.h change.
+    // integer width, a newer FP8 variant — gives no value, and so do a device
+    // and a layout that crucible does not name. Widening a mirror is a
+    // Types.h change.
     const auto scalar_type = tensor.scalar_type();
-    meta.dtype = (scalar_type == c10::ScalarType::Undefined) ? crucible::ScalarType::Undefined
-                                                             : std::bit_cast<crucible::ScalarType>(scalar_type);
-    meta.device_type = std::bit_cast<crucible::DeviceType>(tensor.device().type());
+    ::fixy::Option<crucible::ScalarType> dtype =
+        scalar_type == c10::ScalarType::Undefined
+            ? ::fixy::Option<crucible::ScalarType>::some(crucible::ScalarType::Undefined)
+            : decode_c10_scalar_type(std::to_underlying(scalar_type));
+    ::fixy::Option<crucible::DeviceType> device_type =
+        decode_c10_device_type(std::to_underlying(tensor.device().type()));
+    ::fixy::Option<crucible::Layout> layout = decode_c10_layout(std::to_underlying(tensor.layout()));
+    const bool is_each_enumeration_named = dtype.is_some() && device_type.is_some() && layout.is_some();
+    meta.dtype = std::move(dtype).value_or(crucible::ScalarType::Undefined);
+    meta.device_type = std::move(device_type).value_or(crucible::DeviceType::CPU);
     // c10::DeviceIndex is already int8_t (c10/core/Device.h).
     meta.device_idx = tensor.device().has_index() ? tensor.device().index() : int8_t{-1};
-    meta.layout = std::bit_cast<crucible::Layout>(tensor.layout());
+    meta.layout = std::move(layout).value_or(crucible::Layout::Strided);
 
     // -- Extended fields (autograd + storage) --------------------------
 
@@ -301,6 +335,7 @@ inline void fill_meta(crucible::TensorMeta& meta, const at::Tensor& tensor) {
     static_assert(std::is_same_v<decltype(impl->version_counter().current_version()), uint32_t>,
                   "c10 version counter width drifted — re-check the TensorMeta.version narrowing");
     meta.version = impl->version_counter().current_version();
+    return is_each_enumeration_named;
 }
 
 // =====================================================================
@@ -738,10 +773,13 @@ struct Recording {
     std::array<crucible::TensorMeta, Capacity> metas{};
     MetaCount counts{};
     ScalarArgs scalars{};
+    // False when an enumeration of a recorded tensor names no crucible
+    // enumerator.  append_trace_entry then records nothing.
+    bool is_each_enumeration_named = true;
 
     void add_input(const at::Tensor& tensor) {
         if (tensor.defined() && counts.inputs < Capacity) {
-            fill_meta(metas[counts.inputs], tensor);
+            if (!fill_meta(metas[counts.inputs], tensor)) is_each_enumeration_named = false;
             counts.inputs++;
         }
     }
@@ -750,7 +788,7 @@ struct Recording {
     // append and every reader of it expect.
     void add_output(const at::Tensor& tensor) {
         if (tensor.defined() && counts.total() < Capacity) {
-            fill_meta(metas[counts.total()], tensor);
+            if (!fill_meta(metas[counts.total()], tensor)) is_each_enumeration_named = false;
             counts.outputs++;
         }
     }
@@ -969,6 +1007,13 @@ template <bool IsMutable, bool IsForeach, uint32_t Capacity>
 void append_trace_entry(const Recording<Capacity>& recording, crucible::SchemaHash schema_hash,
                         crucible::ShapeHash shape_hash, c10::DispatchKeySet dispatch_keys, crucible::Vigil* vigil,
                         crucible::ScopeHash scope_hash) {
+    // A tensor whose element type, device or layout names no crucible
+    // enumerator has no meta, so the operation stays out of the ring, as an
+    // operation that the trust ladder refuses.  This is the enumerator part of
+    // the ladder on this path.
+    if (!recording.is_each_enumeration_named) [[unlikely]]
+        return;
+
     crucible::TraceRing::Entry entry{};
     entry.schema_hash = schema_hash;
     entry.shape_hash = shape_hash;
@@ -983,9 +1028,11 @@ void append_trace_entry(const Recording<Capacity>& recording, crucible::SchemaHa
     // a compile-time ceiling on this path, and RecordKernel asserts that
     // entry_is_well_formed accepts the entry built at that ceiling. The rank
     // clamp in fill_meta asserts the same for metas_are_well_formed. The
-    // runtime walk could therefore reject nothing here. The boxed fallback and
-    // the C ABI build entries from data with no compile-time bound, and they
-    // keep the runtime walk through mint_validated_entry.
+    // enumerators of each meta came through the decoders, and the check at
+    // the start of this function refused each other meta. The runtime walk
+    // could therefore reject nothing here. The boxed fallback and the C ABI
+    // build entries from data with no compile-time bound, and they keep the
+    // runtime walk through mint_validated_entry.
     //
     // The schema hash is the one input that is an argument rather than a
     // constant. Its only caller passes RecordKernel::kSchemaHash, which the

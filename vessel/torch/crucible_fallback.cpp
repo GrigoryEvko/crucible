@@ -262,6 +262,9 @@ struct SchemaInfo {
 struct ExtractionResult {
     MetaCount counts;
     ScalarArgs scalars;
+    // False when an enumeration of a tensor names no crucible enumerator
+    // (fill_meta).  The fallback then records nothing.
+    bool is_each_enumeration_named = true;
 };
 
 [[nodiscard]] static ExtractionResult extract_inputs(const torch::jit::Stack& stack, size_t args_begin, size_t num_args,
@@ -274,7 +277,7 @@ struct ExtractionResult {
         if (iv.isTensor()) {
             const auto& t = iv.toTensor();
             if (t.defined() && r.counts.inputs < MAX_INLINE_METAS) {
-                fill_meta(metas[r.counts.inputs], t);
+                if (!fill_meta(metas[r.counts.inputs], t)) r.is_each_enumeration_named = false;
                 r.counts.inputs++;
             }
         } else if (iv.isTensorList()) {
@@ -285,7 +288,7 @@ struct ExtractionResult {
             for (const auto ref : iv.toTensorList()) {
                 const at::Tensor t = ref;
                 if (t.defined() && r.counts.inputs < MAX_INLINE_METAS) {
-                    fill_meta(metas[r.counts.inputs], t);
+                    if (!fill_meta(metas[r.counts.inputs], t)) r.is_each_enumeration_named = false;
                     r.counts.inputs++;
                 }
             }
@@ -296,7 +299,7 @@ struct ExtractionResult {
             for (const auto ref : iv.toOptionalTensorList()) {
                 const auto opt = static_cast<std::optional<at::Tensor>>(ref);
                 if (opt.has_value() && opt->defined() && r.counts.inputs < MAX_INLINE_METAS) {
-                    fill_meta(metas[r.counts.inputs], *opt);
+                    if (!fill_meta(metas[r.counts.inputs], *opt)) r.is_each_enumeration_named = false;
                     r.counts.inputs++;
                 }
             }
@@ -319,9 +322,10 @@ struct ExtractionResult {
 }
 
 static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, crucible::TensorMeta* metas,
-                            MetaCount& counts) {
+                            ExtractionResult& extracted) {
     if (num_returns == 0 || stack.size() < num_returns) return;
     const auto rets_begin = stack.size() - num_returns;
+    MetaCount& counts = extracted.counts;
 
     for (size_t i = 0; i < num_returns; i++) {
         const auto& iv = stack[rets_begin + i];
@@ -329,7 +333,7 @@ static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, 
         if (iv.isTensor()) {
             const auto& t = iv.toTensor();
             if (t.defined() && counts.total() < MAX_INLINE_METAS) {
-                fill_meta(metas[counts.total()], t);
+                if (!fill_meta(metas[counts.total()], t)) extracted.is_each_enumeration_named = false;
                 counts.outputs++;
             }
         } else if (iv.isTensorList()) {
@@ -337,7 +341,7 @@ static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, 
             for (const auto ref : iv.toTensorList()) {
                 const at::Tensor t = ref;
                 if (t.defined() && counts.total() < MAX_INLINE_METAS) {
-                    fill_meta(metas[counts.total()], t);
+                    if (!fill_meta(metas[counts.total()], t)) extracted.is_each_enumeration_named = false;
                     counts.outputs++;
                 }
             }
@@ -439,7 +443,9 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     const auto args_begin = stack->size() - num_args;
 
     crucible::TensorMeta inline_metas[MAX_INLINE_METAS]{};
-    auto [counts, scalars] = extract_inputs(*stack, args_begin, num_args, inline_metas);
+    ExtractionResult extracted = extract_inputs(*stack, args_begin, num_args, inline_metas);
+    MetaCount& counts = extracted.counts;
+    ScalarArgs const& scalars = extracted.scalars;
 
     // -- Compute hashes + mutability -----------------------------------
     const auto [schema_hash, is_mutable, is_foreach] = get_schema_info(*vigil, op, schema);
@@ -449,7 +455,13 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     op.redispatchBoxed(dispatch_keys & AFTER_CRUCIBLE_KEYSET, stack);
 
     // -- Extract output tensor metadata -------------------------------
-    extract_outputs(*stack, schema.returns().size(), inline_metas, counts);
+    extract_outputs(*stack, schema.returns().size(), inline_metas, extracted);
+
+    // A tensor whose element type, device or layout names no crucible
+    // enumerator has no meta, so the operation stays out of the ring.  It
+    // already ran eagerly above.
+    if (!extracted.is_each_enumeration_named) [[unlikely]]
+        return;
 
     // -- Build TraceRing::Entry ---------------------------------------
     crucible::TraceRing::Entry entry{};

@@ -24,6 +24,10 @@
 //   TypedSchemaName           := SchemaTable::LookupName
 //   schema_name_typed(hash)   : SchemaHash               -> TypedSchemaName
 //
+//   decode_c10_scalar_type(o) : int8_t                   -> Option<ScalarType>
+//   decode_c10_device_type(o) : int8_t                   -> Option<DeviceType>
+//   decode_c10_layout(o)      : int8_t                   -> Option<Layout>
+//
 // ── ABI invariant ──────────────────────────────────────────────────
 //
 // CrucibleMeta is layout-compatible with crucible::TensorMeta by
@@ -57,6 +61,7 @@
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
 #include <crucible/Types.h>
+#include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/Platform.h>
@@ -294,6 +299,12 @@ static_assert(std::is_trivially_copy_constructible_v<TypedSchemaName>);
 // every per-dimension loop in the recording pipeline read out of
 // bounds.
 //
+// Each enumeration of a meta must also name an enumerator.  A meta of the
+// C ABI holds the bytes that a foreign caller wrote, and an element type
+// that no enumerator names reaches element_size in the background
+// pipeline, which ends the process.  The decoders below keep such a value
+// out of a meta that a recording kernel fills.
+//
 // A count of zero is well formed whatever the pointer is, and the
 // pointer is deliberately not required to be null there.  An operation
 // carrying no tensors is ordinary, and two of the three adapters reach
@@ -303,17 +314,89 @@ static_assert(std::is_trivially_copy_constructible_v<TypedSchemaName>);
 // assert_plausible_meta_array is where that rule is checked, on the one
 // path that promises it.
 //
-// Cost is one byte compare per meta.  A typical operation carries two
-// to eight metas, and the dispatch that reached here is orders of
-// magnitude larger.
+// Cost is one byte compare and three enumerator tests per meta.  A
+// typical operation carries two to eight metas, and the dispatch that
+// reached here is orders of magnitude larger.
 [[nodiscard]] CRUCIBLE_HOT constexpr bool metas_are_well_formed(const crucible::TensorMeta* metas,
                                                                 uint32_t n_metas) noexcept {
     if (n_metas == 0) return true;
     if (metas == nullptr) return false;
     for (uint32_t i = 0; i < n_metas; ++i) {
         if (metas[i].ndim > crucible::kMaxTensorNDim) return false;
+        if (!crucible::valid_scalar_type(metas[i].dtype) || !crucible::valid_device_type(metas[i].device_type)
+            || !crucible::valid_layout(metas[i].layout))
+            return false;
     }
     return true;
+}
+
+// ── The enumerations of a foreign tensor ───────────────────────────
+//
+// A tensor of the foreign runtime gives its element type, its device and
+// its layout as c10 enumerations, and each one enters a TensorMeta only
+// through a decoder below.  A decoder compares the c10 ordinal with the c10
+// ordinals of the enumerators that crucible names.  It gives no value for
+// each other ordinal: a quantized type, a narrow integer, a new device,
+// the MKL-DNN layout or the jagged layout.  The recording paths then leave
+// the ring alone, as for each other operation that the trust ladder
+// refuses.
+//
+// crucible::ScalarType and crucible::DeviceType give each enumerator the
+// ordinal of c10, and record_kernel.h asserts each one.  crucible::Layout
+// numbers its enumerators from SparseCsc on in a different way than c10, so
+// the layout decoder maps the ordinals of C10Layout by name.
+// record_kernel.h asserts each enumerator of C10Layout against c10::Layout.
+
+// The ordinals of c10::Layout.
+enum class C10Layout : int8_t {
+    Strided = 0,
+    Sparse = 1,
+    SparseCsr = 2,
+    Mkldnn = 3,
+    SparseCsc = 4,
+    SparseBsr = 5,
+    SparseBsc = 6,
+    Jagged = 7,
+};
+
+// The crucible element type of a c10 element type, or no value.  The c10
+// undefined type has an ordinal that names no crucible enumerator, and the
+// caller maps it before the call.
+[[nodiscard]] CRUCIBLE_HOT constexpr ::fixy::Option<crucible::ScalarType>
+decode_c10_scalar_type(int8_t ordinal) noexcept {
+    if (ordinal < 0 || !crucible::valid_scalar_type(ordinal)) return ::fixy::none;
+    return ::fixy::Option<crucible::ScalarType>::some(static_cast<crucible::ScalarType>(ordinal));
+}
+
+// The crucible device type of a c10 device type, or no value.
+[[nodiscard]] CRUCIBLE_HOT constexpr ::fixy::Option<crucible::DeviceType>
+decode_c10_device_type(int8_t ordinal) noexcept {
+    if (!crucible::valid_device_type(ordinal)) return ::fixy::none;
+    return ::fixy::Option<crucible::DeviceType>::some(static_cast<crucible::DeviceType>(ordinal));
+}
+
+// The crucible layout of a c10 layout, or no value.  The map goes by the
+// name of each layout, because the ordinals differ from SparseCsc on.
+[[nodiscard]] CRUCIBLE_HOT constexpr ::fixy::Option<crucible::Layout> decode_c10_layout(int8_t ordinal) noexcept {
+    using Decoded = ::fixy::Option<crucible::Layout>;
+    switch (static_cast<C10Layout>(ordinal)) {
+        case C10Layout::Strided:
+            return Decoded::some(crucible::Layout::Strided);
+        case C10Layout::Sparse:
+            return Decoded::some(crucible::Layout::Sparse);
+        case C10Layout::SparseCsr:
+            return Decoded::some(crucible::Layout::SparseCsr);
+        case C10Layout::SparseCsc:
+            return Decoded::some(crucible::Layout::SparseCsc);
+        case C10Layout::SparseBsr:
+            return Decoded::some(crucible::Layout::SparseBsr);
+        case C10Layout::SparseBsc:
+            return Decoded::some(crucible::Layout::SparseBsc);
+        case C10Layout::Mkldnn:
+        case C10Layout::Jagged:
+        default:
+            return ::fixy::none;
+    }
 }
 
 // The tag a recording entry point accepts.  TraceRing owns the pointer

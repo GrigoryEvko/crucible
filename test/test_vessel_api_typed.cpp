@@ -274,6 +274,77 @@ void test_handle_distinct_pointers() {
     EXPECT(ta.value() != tb.value(), "distinct inputs must yield distinct typed handle values");
 }
 
+// A meta of the C ABI holds the bytes that a foreign caller wrote.  The
+// ladder accepts it only when its element type, device and layout each name
+// a crucible enumerator.  An element type that names none reaches
+// element_size in the background pipeline, which ends the process.
+void test_ladder_refuses_unnamed_enumerations() {
+    crucible::TensorMeta named{};
+    named.ndim = 1;
+    named.dtype = crucible::ScalarType::Float;
+    named.device_type = crucible::DeviceType::CUDA;
+    named.layout = crucible::Layout::SparseBsc;
+    EXPECT(crucible::vessel::metas_are_well_formed(&named, 1), "a meta with named enumerations is well formed");
+
+    crucible::TensorMeta narrow_integer = named;
+    narrow_integer.dtype = static_cast<crucible::ScalarType>(27);
+    EXPECT(!crucible::vessel::metas_are_well_formed(&narrow_integer, 1),
+           "the c10 ordinal of uint16 names no crucible element type");
+
+    crucible::TensorMeta quantized = named;
+    quantized.dtype = static_cast<crucible::ScalarType>(12);
+    EXPECT(!crucible::vessel::metas_are_well_formed(&quantized, 1),
+           "the c10 ordinal of qint8 names no crucible element type");
+
+    crucible::TensorMeta new_device = named;
+    new_device.device_type = static_cast<crucible::DeviceType>(12);
+    EXPECT(!crucible::vessel::metas_are_well_formed(&new_device, 1),
+           "the c10 ordinal of the XPU device names no crucible device");
+
+    crucible::TensorMeta jagged = named;
+    jagged.layout = static_cast<crucible::Layout>(7);
+    EXPECT(!crucible::vessel::metas_are_well_formed(&jagged, 1), "the ordinal 7 names no crucible layout");
+}
+
+// Each decoder gives the crucible enumerator of the same name, and no value
+// for an ordinal that crucible does not name.  The layouts of c10 and of
+// crucible have different ordinals from SparseCsc on, so the layout decoder
+// maps by name.
+void test_c10_decoders_map_by_name() {
+    using crucible::vessel::decode_c10_device_type;
+    using crucible::vessel::decode_c10_layout;
+    using crucible::vessel::decode_c10_scalar_type;
+
+    EXPECT(decode_c10_scalar_type(int8_t{6}).value_or(crucible::ScalarType::Undefined) == crucible::ScalarType::Float,
+           "the c10 ordinal of float decodes to Float");
+    EXPECT(decode_c10_scalar_type(int8_t{15}).value_or(crucible::ScalarType::Undefined)
+               == crucible::ScalarType::BFloat16,
+           "the c10 ordinal of bfloat16 decodes to BFloat16");
+    EXPECT(decode_c10_scalar_type(int8_t{12}).is_none(), "the c10 ordinal of qint8 decodes to no value");
+    EXPECT(decode_c10_scalar_type(int8_t{27}).is_none(), "the c10 ordinal of uint16 decodes to no value");
+    EXPECT(decode_c10_scalar_type(int8_t{-1}).is_none(), "a negative ordinal decodes to no value");
+
+    EXPECT(decode_c10_device_type(int8_t{1}).value_or(crucible::DeviceType::CPU) == crucible::DeviceType::CUDA,
+           "the c10 ordinal of CUDA decodes to CUDA");
+    EXPECT(decode_c10_device_type(int8_t{20}).value_or(crucible::DeviceType::CPU) == crucible::DeviceType::PrivateUse1,
+           "the c10 ordinal of PrivateUse1 decodes to PrivateUse1");
+    EXPECT(decode_c10_device_type(int8_t{12}).is_none(), "the c10 ordinal of XPU decodes to no value");
+
+    EXPECT(decode_c10_layout(int8_t{0}).value_or(crucible::Layout::Sparse) == crucible::Layout::Strided,
+           "the c10 ordinal of Strided decodes to Strided");
+    EXPECT(decode_c10_layout(int8_t{2}).value_or(crucible::Layout::Strided) == crucible::Layout::SparseCsr,
+           "the c10 ordinal of SparseCsr decodes to SparseCsr");
+    EXPECT(decode_c10_layout(int8_t{4}).value_or(crucible::Layout::Strided) == crucible::Layout::SparseCsc,
+           "the c10 ordinal of SparseCsc decodes to SparseCsc");
+    EXPECT(decode_c10_layout(int8_t{5}).value_or(crucible::Layout::Strided) == crucible::Layout::SparseBsr,
+           "the c10 ordinal of SparseBsr decodes to SparseBsr");
+    EXPECT(decode_c10_layout(int8_t{6}).value_or(crucible::Layout::Strided) == crucible::Layout::SparseBsc,
+           "the c10 ordinal of SparseBsc decodes to SparseBsc");
+    EXPECT(decode_c10_layout(int8_t{3}).is_none(), "the c10 ordinal of Mkldnn decodes to no value");
+    EXPECT(decode_c10_layout(int8_t{7}).is_none(), "the c10 ordinal of Jagged decodes to no value");
+    EXPECT(decode_c10_layout(int8_t{-1}).is_none(), "a negative ordinal decodes to no value");
+}
+
 }  // namespace
 
 int main() {
@@ -284,6 +355,8 @@ int main() {
     test_schema_name_typed();
     test_abi_version_constant();
     test_handle_distinct_pointers();
+    test_ladder_refuses_unnamed_enumerations();
+    test_c10_decoders_map_by_name();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "test_vessel_api_typed: FAIL (%d)\n", g_failures);
