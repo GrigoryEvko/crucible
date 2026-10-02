@@ -11,6 +11,14 @@
 // reports the second violation blocks on the full pipe too, or it recurses
 // through the lock of the stream and the heap.  So the child must end by
 // SIGABRT before the parent gives up on it.
+//
+// The timer ticks every 20 ms.  A tick before the child calls its first
+// violation raises nothing.  A child that waits for a CPU gets its tick
+// later, never earlier.  A tick can still land after that call and before
+// the handler marks the thread.  Then the violation of the tick reports
+// first, and it blocks inside the signal handler.  The handler runs with
+// SA_NODEFER, so the next tick still arrives, and its violation is the
+// second one on the thread.
 
 #include <foundation/contracts/Pre.h>
 
@@ -22,6 +30,7 @@
 #include <string_view>
 
 #include <fcntl.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -31,15 +40,22 @@ namespace {
 // A volatile condition, so the compiler cannot fold the clause to false.
 volatile bool g_condition_holds = false;
 
+// The child sets this immediately before its first violation.
+volatile std::sig_atomic_t g_first_violation_started = 0;
+
 [[gnu::noinline]] void violate_a_clause() noexcept { contract_assert(g_condition_holds); }
 
 [[gnu::noinline]] void violate_with_a_note() noexcept {
     CRUCIBLE_PRE_MSG(g_condition_holds, "the note of the message form");
 }
 
-void violate_a_clause_in_a_signal(int /*signal*/) { violate_a_clause(); }
+void violate_a_clause_in_a_signal(int /*signal*/) {
+    if (g_first_violation_started != 0) violate_a_clause();
+}
 
-void violate_with_a_note_in_a_signal(int /*signal*/) { violate_with_a_note(); }
+void violate_with_a_note_in_a_signal(int /*signal*/) {
+    if (g_first_violation_started != 0) violate_with_a_note();
+}
 
 struct ChildResult {
     bool ended_by_sigabrt = false;
@@ -131,8 +147,8 @@ template <typename Body>
                  "a violated message form is reported with its note", result);
 }
 
-// The first violation blocks in its report, and the timer raises the second
-// one in a signal handler on the same thread.
+// The first violation blocks in its report, and a tick of the timer raises
+// the second one in a signal handler on the same thread.
 template <void (*First)() noexcept, void (*Second)(int)>
 [[nodiscard]] bool second_violation_aborts_at_once(const char* what) {
     const ChildResult result = run_in_child([] {
@@ -140,9 +156,11 @@ template <void (*First)() noexcept, void (*Second)(int)>
         struct sigaction action{};
         action.sa_handler = Second;
         sigemptyset(&action.sa_mask);
-        action.sa_flags = 0;
+        action.sa_flags = SA_NODEFER;
         if (::sigaction(SIGALRM, &action, nullptr) != 0) ::_exit(92);
-        ::alarm(1);
+        const ::itimerval every_20_ms{{0, 20000}, {0, 20000}};
+        if (::setitimer(ITIMER_REAL, &every_20_ms, nullptr) != 0) ::_exit(93);
+        g_first_violation_started = 1;
         First();
     });
     return holds(result.ended_by_sigabrt, what, result);
