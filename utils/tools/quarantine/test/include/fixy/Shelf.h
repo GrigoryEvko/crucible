@@ -1,6 +1,6 @@
-// A stand-in for a header of the substrate.  The plugin test treats the
-// directory that holds include/fixy/ as the source root, so this header is
-// substrate code, and its uses of the library are not findings.
+// A stand-in for a header of the base.  The plugin test treats the directory
+// that holds include/fixy/ as the source root, so this header is base code,
+// and its uses of the library are not findings.
 
 #pragma once
 
@@ -27,7 +27,7 @@ struct Shelf {
 
 inline void clear_bytes(char* bytes, unsigned count) { std::memset(bytes, 0, count); }
 
-// The compiler copies a default argument into each call.  The substrate spells
+// The compiler copies a default argument into each call.  The base spells
 // these two, so a call of them in a quarantined file names nothing.  The copy
 // of an immediate invocation has the location of the call.
 inline unsigned long limit_of(const char* text, unsigned long limit = std::strlen(std::strerror(0))) {

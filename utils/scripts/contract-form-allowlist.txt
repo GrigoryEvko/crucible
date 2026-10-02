@@ -9,4 +9,4 @@ test/foundation/neg/neg_contract_specifier_post.cpp | a negative fixture of the 
 test/foundation/neg/neg_contract_specifier_pre.cpp | a negative fixture of the contract rule of the plugin
 test/foundation/neg/neg_contract_specifier_template_member.cpp | a negative fixture of the contract rule of the plugin
 utils/tools/quarantine/test/contracts.cpp | the test of the plugin holds each form of the specifier
-utils/tools/quarantine/test/include/fixy/Contracted.h | the test of the plugin holds a specifier in substrate code
+utils/tools/quarantine/test/include/fixy/Contracted.h | the test of the plugin holds a specifier in base code

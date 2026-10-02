@@ -8,15 +8,30 @@
 // ERROR.  A change of quarantine.cpp therefore does not change the plugin of a
 // build where CRUCIBLE_QUARANTINE is OFF, and its objects do not compile again.
 //
+// THE FILES
+//     Each file has one class, from its real path:
+//         base         include/foundation/, include/fixy/, src/foundation/
+//                      and src/fixy/ (rule R1 of
+//                      misc/01_10_2026_quarantine.md)
+//         generated    a file of the build directory, which the build writes
+//         quarantined  each other file under the source root
+//         outside      a system header, a file outside the source root, or a
+//                      scratch buffer
+//     The contract rule and the opt-out regions apply to each file under the
+//     source root: a base, a generated and a quarantined file.  The quarantine
+//     rule applies to a quarantined file only.  A place of the quarantine rule
+//     falls through a generated file to the point where its macro expands, as
+//     it falls through a system header.  Each plugin takes the build directory
+//     as build=PATH, so the two plugins give each file the same class.
+//
 // THE CONTRACT RULE
 //     A P2900 contract specifier (`pre` or `post` on a function declaration)
 //     is not permitted, and CRUCIBLE_PRE and CRUCIBLE_POST of
 //     foundation/contracts/ replace it.  GCC 16 does not keep the specifier of
 //     a template in a header unit or a precompiled header, and a constant
 //     evaluation can ignore the specifier (CLAUDE.md section XII).  The rule
-//     applies to each file under the source root, also to include/foundation/,
-//     include/fixy/ and the build directory.  Each specifier that no region
-//     opts out is an error.
+//     applies to each file under the source root, of each class.  Each
+//     specifier that no region opts out is an error.
 //
 //     PLUGIN_FINISH_DECL     each declaration outside a template, also a
 //                            local one.
@@ -67,18 +82,41 @@ namespace crucible_plugin {
 
 // ── The files, the places and the findings ──────────────────────────────
 
-// Where a location is spelled, as the source root sees it.
+// The class of a file, as THE FILES above gives it.
 enum class FileClass : std::uint8_t {
-    outside,  // a system header, a generated file, a scratch buffer
-    substrate,  // include/foundation/ or include/fixy/
-    quarantined,  // every other file under the root
+    outside,
+    generated,
+    base,
+    quarantined,
 };
+
+// The directories of the base, relative to the source root.
+inline constexpr const char* kBaseDirectories[] = {"include/foundation/", "include/fixy/", "src/foundation/",
+                                                   "src/fixy/"};
 
 struct FileEntry {
     FileClass file_class = FileClass::outside;
-    bool is_under_root = false;  // also true for a file of the build directory
-    std::string relative;  // empty when the file is not under the root
+    std::string relative;  // empty when the file is outside the root
 };
+
+// The files that can own a place.
+enum class Scope : std::uint8_t {
+    quarantine,  // a base or a quarantined file: the place of a finding of the quarantine rule
+    tree,  // each file under the root: the place of a pragma of an opt-out region
+};
+
+inline bool owns_place(FileClass file_class, Scope scope) {
+    switch (file_class) {
+        case FileClass::base:
+        case FileClass::quarantined:
+            return true;
+        case FileClass::generated:
+            return scope == Scope::tree;
+        case FileClass::outside:
+            return false;
+    }
+    return false;
+}
 
 struct Place {
     FileClass file_class = FileClass::outside;
@@ -153,23 +191,26 @@ inline const FileEntry& classify_file(const char* file) {
     FileEntry entry;
     std::string resolved = file != nullptr ? real_path(file) : std::string{};
     if (!resolved.empty() && has_prefix(resolved, core.root + "/")) {
-        entry.is_under_root = true;
         entry.relative = resolved.substr(core.root.size() + 1);
-        if (core.build.empty() || !has_prefix(resolved, core.build + "/")) {
-            bool is_substrate =
-                has_prefix(entry.relative, "include/foundation/") || has_prefix(entry.relative, "include/fixy/");
-            entry.file_class = is_substrate ? FileClass::substrate : FileClass::quarantined;
+        if (!core.build.empty() && has_prefix(resolved, core.build + "/")) {
+            entry.file_class = FileClass::generated;
+        } else {
+            bool is_base = false;
+            for (const char* directory : kBaseDirectories) {
+                is_base = is_base || has_prefix(entry.relative, directory);
+            }
+            entry.file_class = is_base ? FileClass::base : FileClass::quarantined;
         }
     }
     return core.files.emplace(file, std::move(entry)).first->second;
 }
 
-// The place of a location is its spelling location.  When the spelling is
-// outside the source root, as in the body of a macro of a system header, the
-// place is the expansion point of that macro, one level at a time.  A macro of
-// fixy therefore owns what it spells, and a quarantined file owns each system
-// macro that it uses.
-inline Place place_of(location_t location) {
+// The place of a location is its spelling location.  When the file that
+// spells it owns no place in SCOPE, as a system header owns none, the place is
+// the expansion point of that macro, one level at a time.  A macro of fixy
+// therefore owns what it spells, and a quarantined file owns each system macro
+// that it uses.  A generated file owns a place only in the scope of the tree.
+inline Place place_of(location_t location, Scope scope) {
     Place place;
     if (location == UNKNOWN_LOCATION || location <= BUILTINS_LOCATION) {
         return place;
@@ -180,7 +221,7 @@ inline Place place_of(location_t location) {
         expanded_location where = expand_location(spelled);
         if (where.file != nullptr) {
             const FileEntry& entry = classify_file(where.file);
-            if (entry.file_class != FileClass::outside) {
+            if (owns_place(entry.file_class, scope)) {
                 place.file_class = entry.file_class;
                 place.file = &entry;
                 place.line = where.line;
@@ -213,7 +254,7 @@ inline void record_contract(bool is_precondition, location_t location) {
         return;
     }
     const FileEntry& entry = classify_file(where.file);
-    if (!entry.is_under_root) {
+    if (entry.file_class == FileClass::outside) {
         return;
     }
     std::string key = std::string(kContractKind) + ' ' + entry.relative + ':' + std::to_string(where.line) + ':'
@@ -411,8 +452,9 @@ inline void handle_begin_pragma(cpp_reader*) {
                  kBeginPragma, kBeginPragma);
         return;
     }
-    // A pragma of a file outside the source root opens no region.
-    Place place = place_of(location);
+    // A pragma of a file outside the source root opens no region.  A pragma
+    // of a generated file opens one, because the contract rule applies there.
+    Place place = place_of(location, Scope::tree);
     if (place.file == nullptr) {
         return;
     }
@@ -443,7 +485,7 @@ inline void handle_end_pragma(cpp_reader*) {
     }
     // A pragma of a file outside the source root closes nothing, as the begin
     // pragma of such a file opens nothing.
-    Place place = place_of(location);
+    Place place = place_of(location, Scope::tree);
     if (place.file == nullptr) {
         return;
     }
@@ -499,6 +541,19 @@ inline bool set_root(const std::string& root_argument) {
     if (core.root.empty()) {
         error("quarantine: give the source root with %<-fplugin-arg-%s-root=PATH%>; the path must exist",
               core.plugin_name.c_str());
+        return false;
+    }
+    return true;
+}
+
+// Records the build directory, whose files are generated.  A plugin with no
+// build directory gives no file the generated class.  Returns false, after an
+// error, when the path does not exist.
+inline bool set_build(const std::string& build_argument) {
+    core.build = real_path(build_argument.c_str());
+    if (core.build.empty()) {
+        error("quarantine: the build directory %qs of %<-fplugin-arg-%s-build=PATH%> does not exist",
+              build_argument.c_str(), core.plugin_name.c_str());
         return false;
     }
     return true;

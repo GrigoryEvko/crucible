@@ -1,14 +1,15 @@
 // The quarantine plugin of GCC.
 //
-// Every source file outside include/foundation/ and include/fixy/ is
-// quarantined.  In a quarantined file, each object must have a type that fixy
-// or foundation gives, and the code must not name a library entity that is
-// not admitted.  The plugin reads the C++ trees of the translation unit and
-// records each place that breaks the rule.  The location rule decides what it
-// checks, and the target does not: a use is a finding only when its spelling
-// location is in a quarantined file.  A use inside a fixy or foundation
-// header, and a fixy template that a crucible type instantiates, is not a
-// finding.
+// Every file under the source root outside the base and the build directory is
+// quarantined (THE FILES in plugin_core.h).  The base is include/foundation/,
+// include/fixy/, src/foundation/ and src/fixy/.  In a quarantined file, each
+// object must have a type that fixy or foundation gives, and the code must not
+// name a library entity that is not admitted.  The plugin reads the C++ trees
+// of the translation unit and records each place that breaks the rule.  The
+// location rule decides what it checks, and the target does not: a use is a
+// finding only when its spelling location is in a quarantined file.  A use
+// inside a base file, and a fixy template that a crucible type instantiates,
+// is not a finding.
 //
 // The plugin also applies the contract rule of the tree, from plugin_core.h,
 // in each mode: each P2900 contract specifier that no region opts out is an
@@ -51,7 +52,7 @@
 //
 // THE ARGUMENTS (-fplugin-arg-crucible_quarantine-NAME=VALUE)
 //     root=PATH      the source root (necessary)
-//     build=PATH     a build directory under the root, which is not source
+//     build=PATH     a build directory under the root, whose files are generated
 //     admitted=PATH  the list of admitted standard library entities
 //     mode=report    each finding is a note, or a line of the report file
 //     mode=error     each finding that no region opts out is an error
@@ -166,7 +167,9 @@ bool has_suffix(const std::string& text, const std::string& suffix) {
     return text.size() >= suffix.size() && text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
-bool is_quarantined(location_t location) { return place_of(location).file_class == FileClass::quarantined; }
+bool is_quarantined(location_t location) {
+    return place_of(location, Scope::quarantine).file_class == FileClass::quarantined;
+}
 
 // A declaration that a macro expansion makes can hold tokens that a
 // quarantined file spells, even when the name token is spelled elsewhere.
@@ -177,7 +180,7 @@ bool is_worth_a_walk(location_t location) {
 }
 
 void record(Kind kind, location_t location, const std::string& entity) {
-    Place place = place_of(location);
+    Place place = place_of(location, Scope::quarantine);
     if (place.file_class != FileClass::quarantined) {
         return;
     }
@@ -1482,7 +1485,9 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
         if (key == "root") {
             root_argument = value;
         } else if (key == "build") {
-            core.build = real_path(value.c_str());
+            if (!set_build(value)) {
+                return 1;
+            }
         } else if (key == "admitted") {
             admitted_argument = value;
         } else if (key == "out") {

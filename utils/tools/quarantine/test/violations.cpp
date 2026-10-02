@@ -58,7 +58,7 @@ void pattern_only(T value) {
     }
 }
 
-void use_the_substrate() {
+void use_the_base() {
     fixy::Shelf<Local> shelf;
     shelf.fill(Local{});
     char bytes[8] = {};

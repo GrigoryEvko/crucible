@@ -2,11 +2,15 @@
 #
 # contract.cpp builds the contract plugin, crucible_contract.so.  It holds the
 # contract rule of the tree: a P2900 contract specifier is a compile error in
-# each file under the source root.  quarantine.cpp builds the quarantine
-# plugin, crucible_quarantine.so.  Every source file outside
-# include/foundation/ and include/fixy/ is quarantined, and the head of
-# quarantine.cpp says what the plugin reports.  The quarantine plugin applies
-# the contract rule too.  plugin_core.h holds the part that the two share.
+# each file under the source root, also in a generated file of the build
+# directory.  quarantine.cpp builds the quarantine plugin,
+# crucible_quarantine.so.  Every source file outside the base
+# (include/foundation/, include/fixy/, src/foundation/ and src/fixy/) and the
+# build directory is quarantined, and the head of quarantine.cpp says what the
+# plugin reports.  The quarantine plugin applies the contract rule too.
+# plugin_core.h holds the part that the two share, and its section THE FILES
+# gives the class of each file.  Each plugin takes the build directory, so
+# the two plugins give each file the same class.
 # CMake builds the plugin of the build at configure time with the compiler of
 # the build, and loads it into every C++ compile of the tree:
 #
@@ -145,12 +149,12 @@ set(_crucible_quarantine_argument "-fplugin-arg-${_crucible_quarantine_name}")
 
 set(_crucible_quarantine_flags
   "-fplugin=${CRUCIBLE_QUARANTINE_PLUGIN}"
-  "${_crucible_quarantine_argument}-root=${CMAKE_SOURCE_DIR}")
+  "${_crucible_quarantine_argument}-root=${CMAKE_SOURCE_DIR}"
+  "${_crucible_quarantine_argument}-build=${CMAKE_BINARY_DIR}")
 set(_crucible_quarantine_stamp_input "${_crucible_quarantine_key}")
 if(NOT CRUCIBLE_QUARANTINE STREQUAL "OFF")
   string(TOLOWER "${CRUCIBLE_QUARANTINE}" _crucible_quarantine_mode)
   list(APPEND _crucible_quarantine_flags
-    "${_crucible_quarantine_argument}-build=${CMAKE_BINARY_DIR}"
     "${_crucible_quarantine_argument}-admitted=${CRUCIBLE_QUARANTINE_ADMITTED}"
     "${_crucible_quarantine_argument}-mode=${_crucible_quarantine_mode}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CRUCIBLE_QUARANTINE_ADMITTED}")

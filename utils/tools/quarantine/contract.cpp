@@ -9,6 +9,7 @@
 //
 // THE ARGUMENTS (-fplugin-arg-crucible_contract-NAME=VALUE)
 //     root=PATH      the source root (necessary)
+//     build=PATH     a build directory under the root, whose files are generated
 //     stamp=TEXT     ignored; a new value makes the build system compile again
 
 #include "plugin_core.h"
@@ -68,8 +69,12 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
         std::string value = plugin_info->argv[index].value != nullptr ? plugin_info->argv[index].value : "";
         if (key == "root") {
             root_argument = value;
+        } else if (key == "build") {
+            if (!set_build(value)) {
+                return 1;
+            }
         } else if (key != "stamp") {
-            error("quarantine: unknown argument %qs; the arguments are root and stamp", key.c_str());
+            error("quarantine: unknown argument %qs; the arguments are root, build and stamp", key.c_str());
             return 1;
         }
     }

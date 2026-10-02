@@ -5,18 +5,24 @@ The test builds the contract plugin and the quarantine plugin from their
 sources with the flags that CMake gives, compiles each fixture of this
 directory with a plugin loaded, and compares what the plugin reports with the
 expectations below.  This directory is the source root of the test:
-include/fixy/Shelf.h is substrate code, and each other fixture is quarantined.
+include/fixy/, src/foundation/ and src/fixy/ hold base code, and each other
+fixture is quarantined.
 
 Each class of finding has an expectation that fails when the quarantine plugin
-loses the check of that class.  The substrate rule, the admitted list and the
+loses the check of that class.  The base rule, the admitted list and the
 opt-out region each have an expectation that fails when the plugin loses that
 rule.
 
 contracts.cpp holds each form of a P2900 contract specifier that the contract
-rule rejects, also in substrate code.  The test compiles it with the contract
+rule rejects, also in base code.  The test compiles it with the contract
 plugin and with the quarantine plugin in each mode, and compares the errors
 with CONTRACT_ERRORS.  A form that a plugin stops seeing, a second error for
 one specifier and an error outside the list each fail the test.
+
+A generated file of the build directory follows one rule in the two plugins:
+the contract rule and the opt-out regions apply to it, and the quarantine rule
+does not.  The test writes a source root with a build directory in its scratch
+directory, and compiles a unit of that root with each plugin.
 
 usage: check_plugin.py --cxx CXX --contract-source CONTRACT.cpp --source QUARANTINE.cpp --admitted LIST
                        -- BUILD_FLAGS...
@@ -83,16 +89,16 @@ ABSENT = (
     ("violations.cpp", 55, None, None),  # a dependent member names nothing
     ("violations.cpp", 56, None, None),  # std::is_trivially_copyable_v is admitted
     ("violations.cpp", 62, None, None),  # a fixy type with a payload of a local type
-    ("violations.cpp", 63, None, None),  # the body of fill is substrate code
-    ("violations.cpp", 65, None, None),  # the body of clear_bytes is substrate code
+    ("violations.cpp", 63, None, None),  # the body of fill is base code
+    ("violations.cpp", 65, None, None),  # the body of clear_bytes is base code
     ("violations.cpp", 79, None, None),  # the instantiation of the template with a std::vector names nothing
     ("violations.cpp", 80, None, None),  # a dependent member names nothing, in the instantiation too
-    ("violations.cpp", 85, None, None),  # the substrate spells the default argument
+    ("violations.cpp", 85, None, None),  # the base spells the default argument
     ("violations.cpp", 87, None, None),  # the copy of an immediate default has the location of the call
     ("violations.cpp", 89, "std_entity", None),  # the compiler calls the conversion function
     ("violations.cpp", 95, None, "memory_order"),  # a constexpr variable of an enumeration is a named constant
     ("violations.cpp", 97, None, None),  # the immediate default of a template has the location of the call
-    ("include/fixy/Shelf.h", None, None, None),  # substrate code
+    ("include/fixy/Shelf.h", None, None, None),  # base code
     ("opt_out.cpp", 11, "raw_pointer_object", None),  # the region opts it out
     ("opt_out.cpp", 11, "c_library_call", None),  # the region opts it out
 )
@@ -108,7 +114,7 @@ PRAGMA_ERRORS = (
 # The specifier on line 73 is in an opt-out region.  Outside.h is outside the
 # root, and the test writes it in its scratch directory.
 CONTRACT_ERRORS = (
-    ("include/fixy/Contracted.h", 9, "pre"),  # a template in substrate code
+    ("include/fixy/Contracted.h", 9, "pre"),  # a template in base code
     ("contracts.cpp", 12, "pre"),  # a declaration
     ("contracts.cpp", 13, "post"),  # a definition
     ("contracts.cpp", 14, "pre"),  # two specifiers on one declaration
@@ -137,6 +143,33 @@ OUTSIDE_HEADER = "#pragma once\nint outside_pre(int value) pre(value > 0);\n"
 # of such a header agree: each one does nothing.
 OUTSIDE_REGION_HEADER = ("#pragma once\n#pragma crucible I_KNOW_WHAT_IM_DOING(\"a header outside the root\")\n"
                          "inline int outside_region_value() { return 1; }\n#pragma crucible END_I_KNOW_WHAT_IM_DOING\n")
+
+# The source files of the base, and the findings of each when src/ is the
+# root and the file is quarantined: (line, kind, a text in the entity).
+BASE_FIXTURES = ("src/foundation/Floor.cpp", "src/fixy/Door.cpp")
+BASE_FINDINGS = (
+    (11, "std_object", "std::vector"),
+    (12, "c_array_object", "char [8]"),
+    (14, "raw_pointer_object", "char*"),
+    (14, "c_library_call", "memset"),
+)
+
+# A source root in the scratch directory, with a build directory.  The
+# generated header opts out the specifier on line 3, and the specifier on line
+# 5 stays an error.  The pointer on line 6 is no finding, because a generated
+# file is not quarantined.  The macro on line 7 spells a pointer, and the
+# place of that finding falls through to the unit that expands the macro.
+GENERATED_HEADER = ("#pragma once\n"
+                    "#pragma crucible I_KNOW_WHAT_IM_DOING(\"a generated header that the test needs\")\n"
+                    "int generated_opted(int value) pre(value > 0);\n"
+                    "#pragma crucible END_I_KNOW_WHAT_IM_DOING\n"
+                    "int generated_plain(int value) pre(value > 0);\n"
+                    "inline char* generated_pointer = nullptr;\n"
+                    "#define GENERATED_POINTER char* generated_expanded_pointer = nullptr\n")
+GENERATED_UNIT = "#include \"build/Generated.h\"\n\nGENERATED_POINTER;\n"
+GENERATED_CONTRACT_ERRORS = [("build/Generated.h", 5, "pre")]
+UNCLOSED_GENERATED_HEADER = "#pragma once\n#pragma crucible I_KNOW_WHAT_IM_DOING(\"a generated region with no end\")\n"
+UNCLOSED_GENERATED_UNIT = "#include \"build/Unclosed.h\"\n"
 
 
 @dataclass(frozen=True)
@@ -213,6 +246,8 @@ def run(checker: Checker, admitted: Path) -> None:
         what = kind or "finding"
         checker.expect(f"no {what}{' of ' + text if text else ''} at {where}", not hits, "; ".join(map(str, hits)))
 
+    run_base_files(checker, arguments)
+
     for fixture, text in PRAGMA_ERRORS:
         compiled = checker.compile(fixture, {"root": str(HERE), "mode": "report"})
         checker.expect(f"{fixture} is an error", compiled.returncode != 0 and text in compiled.stderr,
@@ -255,16 +290,83 @@ def run(checker: Checker, admitted: Path) -> None:
                    broken.returncode != 0 and "the reason is necessary" in broken.stderr, broken.stderr[-2000:])
 
     run_contract_rule(checker)
+    run_generated_files(checker)
 
 
-def contract_errors(stderr: str) -> list[tuple[str, int, str]]:
-    """Return each error of the contract rule in STDERR, with the path relative to this directory."""
+def run_base_files(checker: Checker, arguments: dict[str, str]) -> None:
+    """Compile each source file of the base with this directory as the root, and again with src/ as the root."""
+    for fixture in BASE_FIXTURES:
+        # The plugin makes the last directory of out= and not its parents.
+        name = Path(fixture).stem
+        base_reports = checker.work / f"base-reports-{name}"
+        compiled = checker.compile(fixture, {**arguments, "out": str(base_reports)})
+        found = read_reports(base_reports)
+        checker.expect(f"{fixture} is base code: the unit reports no finding",
+                       compiled.returncode == 0 and any(base_reports.glob("*.quarantine")) and not found,
+                       compiled.stderr[-2000:] + "; ".join(map(str, found)))
+        moved_reports = checker.work / f"moved-reports-{name}"
+        moved = checker.compile(fixture, {**arguments, "root": str(HERE / "src"), "out": str(moved_reports)})
+        moved_found = read_reports(moved_reports)
+        relative = Path(fixture).relative_to("src").as_posix()
+        for line, kind, text in BASE_FINDINGS:
+            holds = moved.returncode == 0 and any(f.file == relative and f.line == line and f.kind == kind
+                                                  and text in f.entity for f in moved_found)
+            checker.expect(f"{kind} at {relative}:{line} with src/ as the root ({text})", holds,
+                           moved.stderr[-2000:])
+
+
+def contract_errors(stderr: str, root: Path = HERE) -> list[tuple[str, int, str]]:
+    """Return each error of the contract rule in STDERR, with the path relative to ROOT."""
     errors: list[tuple[str, int, str]] = []
     for match in CONTRACT_ERROR.finditer(stderr):
         path = Path(match["path"])
-        relative = path.relative_to(HERE).as_posix() if path.is_relative_to(HERE) else path.as_posix()
+        relative = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
         errors.append((relative, int(match["line"]), match["specifier"]))
     return sorted(errors)
+
+
+def run_generated_files(checker: Checker) -> None:
+    """Compile a unit that includes a generated header with each plugin, and compare what each plugin gives."""
+    tree = checker.work / "tree"
+    build = tree / "build"
+    build.mkdir(parents=True, exist_ok=True)
+    (build / "Generated.h").write_text(GENERATED_HEADER, encoding="utf-8")
+    (build / "Unclosed.h").write_text(UNCLOSED_GENERATED_HEADER, encoding="utf-8")
+    unit = tree / "generated_unit.cpp"
+    unit.write_text(GENERATED_UNIT, encoding="utf-8")
+    unclosed = tree / "unclosed_unit.cpp"
+    unclosed.write_text(UNCLOSED_GENERATED_UNIT, encoding="utf-8")
+    places = {"root": str(tree), "build": str(build)}
+    generated_reports = checker.work / "generated-reports"
+    runs = (
+        ("the contract plugin", CONTRACT_PLUGIN, places),
+        ("mode=error", PLUGIN, {**places, "mode": "error"}),
+        ("mode=report", PLUGIN, {**places, "mode": "report", "out": str(generated_reports)}),
+    )
+    for name, plugin, arguments in runs:
+        compiled = checker.compile(str(unit), arguments, extra=("-fcontracts",), plugin=plugin)
+        found = contract_errors(compiled.stderr, tree)
+        checker.expect(f"{name}: a region of a generated file opts out its specifier, and the other one is an error",
+                       compiled.returncode != 0 and found == GENERATED_CONTRACT_ERRORS,
+                       f"errors {found}; " + compiled.stderr[-2000:])
+        compiled = checker.compile(str(unclosed), arguments, plugin=plugin)
+        checker.expect(f"{name}: an unclosed region of a generated file is an error",
+                       compiled.returncode != 0 and "region has no" in compiled.stderr, compiled.stderr[-2000:])
+        # No out= here: a plugin that accepts the directory must not replace
+        # the report of the unit.
+        missing = checker.compile(str(unit), {"root": str(tree), "build": str(tree / "missing")}, plugin=plugin)
+        checker.expect(f"{name}: a build directory that does not exist is an error",
+                       missing.returncode != 0 and "does not exist" in missing.stderr, missing.stderr[-2000:])
+    found = read_reports(generated_reports)
+    checker.expect("the region of the generated file turns the specifier on line 3 into opted_out",
+                   any(f.kind == "opted_out" and f.file == "build/Generated.h" and f.line == 3
+                       and f.entity == "contract_specifier pre" for f in found), "; ".join(map(str, found)))
+    checker.expect("a generated file is not quarantined",
+                   not any(f.file.startswith("build/") and f.kind != "opted_out" and f.kind != "contract_specifier"
+                           for f in found), "; ".join(map(str, found)))
+    checker.expect("a place in a generated macro falls through to the unit that expands it",
+                   any(f.kind == "raw_pointer_object" and f.file == "generated_unit.cpp" and f.line == 3
+                       for f in found), "; ".join(map(str, found)))
 
 
 def run_contract_rule(checker: Checker) -> None:
@@ -312,7 +414,7 @@ def run_contract_rule(checker: Checker) -> None:
                    quiet.returncode == 0 and "quarantine:" not in quiet.stderr, quiet.stderr[-2000:])
     foreign = checker.compile("violations.cpp", {"root": str(HERE), "mode": "report"}, plugin=CONTRACT_PLUGIN)
     checker.expect("the contract plugin refuses an argument of the quarantine plugin",
-                   foreign.returncode != 0 and "the arguments are root and stamp" in foreign.stderr,
+                   foreign.returncode != 0 and "the arguments are root, build and stamp" in foreign.stderr,
                    foreign.stderr[-2000:])
     unknown = checker.compile("violations.cpp", {"root": str(HERE), "mode": "contracts"})
     checker.expect("an unknown mode is an error",
