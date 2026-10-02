@@ -5291,6 +5291,11 @@ endif()
 #                    utils/scripts/header-checks-ledger.txt holds the items
 #                    that remain.  Each item of the ledger gives a warning,
 #                    and the counts can only decrease.
+#   walk_units     — test/layer/walk-checks.txt lists each check file whose
+#                    checks can call members_of on the reflection of a
+#                    namespace that a header opens, and no other file.  The
+#                    walk units of test/layer compile each listed file after
+#                    each header that can add to such a namespace.
 add_test(NAME layer_boundary_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-layer-boundary.py --self-test)
 add_test(NAME layer_boundary
@@ -5311,6 +5316,14 @@ add_test(NAME header_checks
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-header-checks.py
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 set_tests_properties(header_checks header_checks_self_test PROPERTIES
+    LABELS "ci_guard;substrate"
+    SKIP_RETURN_CODE 3)
+add_test(NAME walk_units_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-walk-units.py --self-test)
+add_test(NAME walk_units
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-walk-units.py
+          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+set_tests_properties(walk_units walk_units_self_test PROPERTIES
     LABELS "ci_guard;substrate"
     SKIP_RETURN_CODE 3)
 

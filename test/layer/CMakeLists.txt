@@ -160,7 +160,7 @@ foreach(_check IN LISTS _check_files)
   endif()
 endforeach()
 
-# The headers that the walk unit at the foot of this file includes: each
+# The headers that each walk unit at the foot of this file includes: each
 # foundation and fixy header, and each crucible header that can add a
 # member to a namespace of foundation or fixy.  A header adds such a member
 # only through a definition of that namespace, which the header writes or
@@ -210,7 +210,6 @@ endif()
 add_custom_target(layer_alone)
 
 set(_walk_header_lines "")
-set(_walk_crucible_headers "")
 foreach(_layer foundation fixy crucible)
   if(_layer STREQUAL "crucible")
     set(_root "${_layer_include}")
@@ -252,7 +251,6 @@ foreach(_layer foundation fixy crucible)
       string(REGEX REPLACE "[][;]" " " _text "${_text}")
       if(_text MATCHES "${_opens_layer_namespace}")
         string(APPEND _walk_header_lines "#include <${_header}>\n")
-        list(APPEND _walk_crucible_headers "${_header}")
       endif()
     else()
       string(APPEND _walk_header_lines "#include <${_header}>\n")
@@ -303,44 +301,48 @@ endforeach()
 # only its header and the includes of that header, so a walk in it does not
 # see a member that another header adds to the namespace that it walks.
 # walks_across_headers.cpp includes each header of walk_headers.h, and then
-# each check file of walk_checks.h.  The list holds each check file whose
-# walk can read such a namespace, with no hand edit:
-#   - each check file of a foundation or fixy header, because these layers
-#     declare the walks and the namespaces that other headers add to
-#   - the check file of each crucible header that walk_headers.h includes
-#   - each crucible check file that holds a reflection operator, because a
-#     check file passes a namespace or a relation to a walk as a reflection.
-# A crucible check file that reaches a walk with no reflection operator of
-# its own does not join.  A configure run reads the text, so a crucible
-# check file that gets its first reflection operator joins at the next
-# configure run, as a header that opens a namespace does above.  The list
-# compiles in units of
-# _walk_checks_per_unit check files, so that no unit is a long job.  On
-# 2026-10-02, walk_headers.h alone took 2.6 s of CPU time, the check file of
-# fixy/Collision.h added 5.3 s, and most check files added less than 1 s.
-# Each build compiles the units, so a refused member stops the build.
-# file(CONFIGURE) rewrites a list only when its text changes.
+# each check file of walk_checks.h.  walk-checks.txt lists each check file
+# whose checks can call members_of on the reflection of a namespace that a
+# header opens, one row `<layer>/<path>.cpp | namespaces` each.
+# utils/scripts/check-walk-units.py writes the list from the parse tree, and
+# the test walk_units fails when the list and the tree disagree.  The list
+# compiles in units of _walk_checks_per_unit check files.  On 2026-10-02,
+# walk_headers.h alone took 3.2 s of CPU time, the check file of
+# fixy/Collision.h added 5.3 s, and most check files added less than 0.2 s.
+# For the 105 check files of the list, units of 16 took 32.3 s of CPU time
+# together, and the longest unit took 9.7 s.  Units of 12 took 39.5 s, with
+# a longest unit of 8.9 s.  Each build compiles the units, so a refused
+# member stops the build.  file(CONFIGURE) rewrites a list only when its text
+# changes.
 file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/walk_headers/walk_headers.h"
      CONTENT "#pragma once\n${_walk_header_lines}" @ONLY)
-set(_walk_checks_per_unit 8)
+set(_walk_checks_per_unit 16)
+set(_walk_list "${CMAKE_CURRENT_SOURCE_DIR}/walk-checks.txt")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_walk_list}")
+file(STRINGS "${_walk_list}" _walk_rows ENCODING UTF-8)
 set(_walk_checks "")
-foreach(_check IN LISTS _check_files)
-  string(REGEX REPLACE "\\.cpp$" ".h" _header "${_check}")
-  if(_check MATCHES "^(foundation|fixy)/" OR _header IN_LIST _walk_crucible_headers)
-    list(APPEND _walk_checks "${_check}")
+foreach(_row IN LISTS _walk_rows)
+  string(STRIP "${_row}" _row)
+  if(_row STREQUAL "" OR _row MATCHES "^#")
     continue()
   endif()
-  file(READ "${_layer_checks}/${_check}" _text)
-  string(FIND "${_text}" "^^" _reflection_at)
-  if(NOT _reflection_at EQUAL -1)
-    list(APPEND _walk_checks "${_check}")
+  string(FIND "${_row}" " | " _cut)
+  if(_cut EQUAL -1)
+    message(FATAL_ERROR "test/layer/walk-checks.txt: the row `${_row}` has no ` | `.  Write the list again: python3 "
+                        "utils/scripts/check-walk-units.py --write")
   endif()
+  string(SUBSTRING "${_row}" 0 ${_cut} _check)
+  if(NOT _check IN_LIST _check_files)
+    message(FATAL_ERROR "test/layer/walk-checks.txt: ${_check} is not a check file under test/layer/checks.  Write "
+                        "the list again: python3 utils/scripts/check-walk-units.py --write")
+  endif()
+  list(APPEND _walk_checks "${_check}")
 endforeach()
 list(SORT _walk_checks)
 list(LENGTH _walk_checks _walk_count)
 if(_walk_count EQUAL 0)
-  message(FATAL_ERROR "test/layer: no check file joins the walk units, so the walks run with no header in view.  "
-                      "A foundation or fixy check file always joins, so the glob of test/layer/checks is wrong.")
+  message(FATAL_ERROR "test/layer/walk-checks.txt lists no check file, so the walks of the check files run with no "
+                      "header in view.  Write the list again: python3 utils/scripts/check-walk-units.py --write")
 endif()
 math(EXPR _walk_last_unit "(${_walk_count} - 1) / ${_walk_checks_per_unit}")
 foreach(_unit RANGE ${_walk_last_unit})

@@ -105,6 +105,7 @@ if [ "$MODE" = refresh ]; then
     state_before=$(tree_state_)
     run_ 'mint inventory'            python3 utils/scripts/gen-mint-inventory.py --write
     run_ 'witness roster fixtures'   python3 utils/scripts/check-witness-roster.py --gen
+    run_ 'walk units'                python3 utils/scripts/check-walk-units.py --write
     state_after=$(tree_state_)
 fi
 
@@ -115,6 +116,7 @@ printf 'refresh-derived: checking\n' >&2
 run_ 'allowlist keys and prose'      bash utils/scripts/check-allowlist-keys.sh
 run_ 'mint inventory'                python3 utils/scripts/gen-mint-inventory.py --check
 run_ 'witness roster'                python3 utils/scripts/check-witness-roster.py --check
+run_ 'walk units'                    python3 utils/scripts/check-walk-units.py
 
 # ── What the refresh rewrote ─────────────────────────────────────────
 if [ "$MODE" = refresh ]; then
