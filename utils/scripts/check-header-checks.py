@@ -23,7 +23,7 @@ THE CHECK FILE
     one-line sentinel of its header, against the include root of its
     layer, in each build.
 
-THE FOUR KINDS
+THE SIX KINDS
     The guard reads the parse tree of the pinned tree-sitter kit
     (utils/scripts/tsast.py) for each header under include/ and each file
     under test/layer/checks/.
@@ -70,6 +70,31 @@ THE FOUR KINDS
         instantiation and reflection queries.  A const variable counts
         only when the object itself is const: `const char* p` does not
         count, and `const char* const p` does.
+      * eager instantiation.  A call of std::define_static_array or
+        std::define_static_string outside each template context, or in a
+        template context when no argument has a type that depends on a
+        template parameter.  GCC resolves such a call where the header
+        stands, and it instantiates the function there, in each includer.
+        The first instantiation of define_static_array costs about 68 M
+        instructions in a unit, and that of define_static_string about
+        19 M.  An argument depends on a template parameter when a type in
+        it names one: a template argument, the type of a cast or of a
+        braced initializer, or the declared type of a variable or a
+        parameter that the argument names.  A template parameter, and a
+        local that a template parameter gives its type or its value, is
+        such a name.  foundation/reflect/Anchor.h gives the type that
+        makes a list or a text depend on a template parameter.
+      * eager fold.  A call in the body of a consteval function that is
+        not in a template context, when each argument is constant: a
+        literal, a reflection `^^X`, a name that the function does not
+        declare, or a call of such arguments.  GCC evaluates such a call
+        when it reads the body, in each includer, and no operation limit
+        reports the cost.  The guard counts a reflection query with one
+        argument or more, and a call with no argument of a function
+        outside std that the header does not declare without constexpr
+        or consteval.  A call in a static_assert, in an expansion
+        statement or in the initializer of a constexpr local belongs to
+        the kinds above, and only the outermost constant call counts.
     A template context is an enclosing template declaration with
     parameters, an enclosing generic lambda (a lambda with a template
     parameter list or a parameter of a placeholder type), an enclosing
@@ -101,15 +126,21 @@ THE LEDGER
           row is an error too: regenerate the ledger with --write in the
           same commit.  A header with no item of a kind has no row of that
           kind.
+      eager instantiation | path | count
+      eager fold | path | count
+          The same, for the two kinds of a call.
       keep | path | kind | key | reason
           One item that stays in its header, because its result depends on
-          the translation unit that includes the header.  The kind is one
-          of the four kinds.  The key of a namespace is its full name, the
-          key of a static_assert is the spelling of its condition, and the
-          key of an eager evaluation is the qualified name of what it
-          defines, all as --list prints them.  A keep row that names no
-          item is an error, and a keep row with no reason is an error.  A
-          reason does not contain ` | `.
+          the translation unit that includes the header, or because a
+          template in its place would let a translation unit specialize a
+          verdict.  The kind is one of the six kinds.  The key of a
+          namespace is its full name, the key of a static_assert is the
+          spelling of its condition, the key of an eager evaluation is the
+          qualified name of what it defines, and the key of a call is the
+          qualified name of its scope and the spelling of the call, all as
+          --list prints them.  A keep row that names no item is an error,
+          and a keep row with no reason is an error.  A reason does not
+          contain ` | `.
 
 THE REPORT
     Each finding is one line in the format of utils/scripts/check_report.py,
@@ -148,6 +179,11 @@ THE FIX MODE
         header with no preprocessor directive in its body, gets the count
         as its literal.  The check file derives the count and pins the
         literal to it.
+      * An eager instantiation or an eager fold in a function that moves
+        with a walk moves too.  Each other one is refused, with its repair.
+        The fix does not move a function for such an item alone, because
+        a walk over a namespace can read a function that no file names,
+        such as a rule of a relation.
     A check that the check file states already, in the same namespace,
     does not move again.  A header with a row in
     test/layer/crucible-not-standalone.txt has no check file, so --into
@@ -166,7 +202,18 @@ WHAT THE GUARD CANNOT SEE
     tell a cheap call from an expensive one, and it cannot see an eager
     instantiation, for example a non-template function that reads a
     variable template, or a plain call into a function that walks
-    reflection.  The build gives the exact form for the operations of a
+    reflection.  A function that is not a template and calls a template
+    with a concrete argument instantiates that template where the function
+    stands, so a name function of one enum that calls enum_name
+    instantiates the walk over the enum in each includer.  The kinds of a
+    call read one call, and they do not follow such a chain.  The eager
+    fold reads the body of a consteval function only.  A reflection query
+    in a constexpr function that is not a template is an immediate
+    invocation, which GCC also evaluates where the header stands, and the
+    guard does not count it.  The
+    dependence of an argument is read from its syntax, so a member of a
+    class template that names no template parameter in its type reads as
+    not dependent.  The build gives the exact form for the operations of a
     constant evaluation: test/layer compiles each header alone at a low
     -fconstexpr-ops-limit, and the test header_constexpr_ops holds the list
     of the higher limits.
@@ -223,9 +270,24 @@ NAMESPACE = "namespace"
 ASSERT = "static_assert"
 FUNCTION_ASSERT = "function static_assert"
 EAGER = "eager evaluation"
-KINDS = (NAMESPACE, ASSERT, FUNCTION_ASSERT, EAGER)
+INSTANCE = "eager instantiation"
+FOLD = "eager fold"
+KINDS = (NAMESPACE, ASSERT, FUNCTION_ASSERT, EAGER, INSTANCE, FOLD)
 # The kinds that have a count row of their own, `kind | path | count`.
-ROW_KINDS = (FUNCTION_ASSERT, EAGER)
+ROW_KINDS = (FUNCTION_ASSERT, EAGER, INSTANCE, FOLD)
+# The two functions of std whose first instantiation in a unit is expensive.
+STATIC_DEFINERS = frozenset({"define_static_array", "define_static_string"})
+# The node types of the parameters of a template parameter list.  The first
+# four declare a type, a template or a pack of types.
+TYPE_PARAMETERS = ("type_parameter_declaration", "variadic_type_parameter_declaration",
+                   "optional_type_parameter_declaration", "template_template_parameter_declaration")
+VALUE_PARAMETERS = ("parameter_declaration", "optional_parameter_declaration", "variadic_parameter_declaration")
+LITERALS = frozenset({"number_literal", "string_literal", "char_literal", "raw_string_literal", "concatenated_string",
+                      "true", "false", "nullptr", "user_defined_literal"})
+CASTS = frozenset({"static_cast", "const_cast", "reinterpret_cast", "dynamic_cast"})
+# The operators between the operands of an expression, which are no operands.
+OPERATOR_TOKENS = frozenset({"+", "-", "*", "/", "%", "!", "~", "&&", "||", "==", "!=", "<", ">", "<=", ">=", "&", "|",
+                             "^", "<<", ">>", "?", ":", ",", "(", ")", "{", "}", "<=>"})
 SEPARATOR = " | "
 # The node types whose body is namespace scope.  A static_assert with an
 # ancestor of any other type sits in a class, a function, a lambda or a
@@ -264,18 +326,25 @@ LEDGER_HEADER = (
     "# header, which one translation unit compiles one time: test/layer/checks/<layer>/<path>.cpp for\n"
     "# include/<layer>/<path>.h.  The first line of code of a check file includes its header.  A\n"
     "# reflection walk outside each template is lazy: a variable template, or a member of a template.\n"
+    "# The argument of a call of std::define_static_array or std::define_static_string has a type that\n"
+    "# depends on a template parameter (foundation/reflect/Anchor.h).  A consteval function that is not a\n"
+    "# template calls no reflection query with constant arguments.\n"
     "#\n"
     "# A count row:  path | self-test namespaces | namespace-scope static_asserts\n"
     "#               function static_assert | path | count\n"
     "#               eager evaluation | path | count\n"
+    "#               eager instantiation | path | count\n"
+    "#               eager fold | path | count\n"
     "#   Each item of a row gives a warning on each run.  The counts can only decrease.  A header with no\n"
     "#   item of a kind has no row of that kind.  When you move a check or make an evaluation lazy, run\n"
     "#   python3 utils/scripts/check-header-checks.py --write in the same commit.\n"
     "#\n"
     "# A keep row:   keep | path | kind | key | reason\n"
     "#   One item that stays in its header, because its result depends on the translation unit that\n"
-    "#   includes the header.  The kind is namespace, static_assert, function static_assert or eager\n"
-    "#   evaluation.  The key is the one that --list prints.  The reason is mandatory.\n"
+    "#   includes the header, or because a template in its place would let a translation unit specialize\n"
+    "#   a verdict.  The kind is namespace, static_assert, function static_assert, eager evaluation,\n"
+    "#   eager instantiation or eager fold.  The key is the one that --list prints.  The reason is\n"
+    "#   mandatory.\n"
 )
 
 
@@ -663,6 +732,416 @@ def eager_sites(tree: tsast.Tree) -> list[tuple[tsast.Node, str, str]]:
     return sites
 
 
+def static_definer(call: tsast.Node) -> str:
+    """Return the name of std::define_static_array or std::define_static_string when a call calls one, or "".
+
+    Args:
+        call: A call_expression
+
+    Returns:
+        The qualified name, also for a call with no qualifier through
+        argument-dependent lookup
+    """
+    callee = call.child_by_field("function")
+    parts = None if callee is None else tsast.qualified_parts(callee)
+    if parts is None or not parts[1] or parts[1][-1] not in STATIC_DEFINERS or parts[1][:-1] not in ((), ("std",)):
+        return ""
+    return f"std::{parts[1][-1]}"
+
+
+@dataclass
+class Dependence:
+    """The names at one point of a header whose meaning depends on a template parameter.
+
+    names holds each name whose value or type depends on one, and typed
+    holds each name whose type depends on one.
+    """
+
+    names: set[str] = field(default_factory=set)
+    typed: set[str] = field(default_factory=set)
+
+
+def parameter_name(parameter: tsast.Node) -> str:
+    """Return the name that a template parameter or a function parameter declares, or "" for no name."""
+    for field_name in ("name", "declarator"):
+        named = parameter.child_by_field(field_name)
+        text = None if named is None else tsast.leaf_name(named)
+        if text:
+            return text
+    if parameter.type in TYPE_PARAMETERS:
+        identifiers = parameter.children_of_type("type_identifier", "identifier")
+        if identifiers:
+            return tsast.spelled(identifiers[-1])
+    return ""
+
+
+def refers_to(node: tsast.Node | None, names: set[str]) -> bool:
+    """Say whether a node, or a name below it, is one of the names.
+
+    A member name after `.` or `->` is a field_identifier, which the walk
+    does not read.  A template parameter in front of `::` reads as a
+    namespace_identifier, which the walk reads.  Complexity: linear in the
+    size of the subtree.
+    """
+    if node is None or not names:
+        return False
+    leaves = ("identifier", "type_identifier", "namespace_identifier")
+    if node.type in leaves and tsast.spelled(node) in names:
+        return True
+    return any(tsast.spelled(leaf) in names for leaf in node.descendants(*leaves))
+
+
+def add_parameters(parameters: tsast.Node | None, dependence: Dependence) -> None:
+    """Add the names of a template parameter list to a dependence.
+
+    A type parameter has a dependent type, and so does a value parameter of
+    a placeholder type.  Each other value parameter has a dependent value.
+    """
+    if parameters is None:
+        return
+    for parameter in tsast.non_comment_children(parameters):
+        name = parameter_name(parameter)
+        if not name:
+            continue
+        dependence.names.add(name)
+        if parameter.type in TYPE_PARAMETERS or (
+                parameter.type in VALUE_PARAMETERS and is_placeholder(parameter.child_by_field("type"))):
+            dependence.typed.add(name)
+
+
+def is_placeholder(written: tsast.Node | None) -> bool:
+    """Say whether a written type is a placeholder, such as `auto`."""
+    return written is not None and written.type == "placeholder_type_specifier"
+
+
+def declared_items(declaration: tsast.Node) -> list[tuple[str, tsast.Node | None]]:
+    """Return (name, initializer) for each declarator of a declaration."""
+    items: list[tuple[str, tsast.Node | None]] = []
+    for child in declaration.children:
+        if child.field != "declarator":
+            continue
+        if child.type == "init_declarator":
+            target = child.child_by_field("declarator")
+            items.append((tsast.leaf_name(target) or "" if target is not None else "", child.child_by_field("value")))
+        else:
+            items.append((tsast.leaf_name(child) or "", None))
+    return [(name, value) for name, value in items if name]
+
+
+def dependence_at(node: tsast.Node) -> Dependence:
+    """Return the names whose meaning depends on a template parameter, in scope at a node.
+
+    The template parameters of each enclosing template declaration and
+    generic lambda count, and so does each parameter of a placeholder type.
+    Then each member alias and static data member of an enclosing class
+    counts when its type or its initializer names a counted name.  Then
+    each parameter, local and alias of an enclosing function or lambda that
+    comes before the node counts in the same way, in source order.
+
+    Complexity: linear in the size of the enclosing classes and functions,
+    times the depth of the node.
+    """
+    dependence = Dependence()
+    scopes: list[tsast.Node] = []
+    classes: list[tsast.Node] = []
+    owner = node.parent
+    while owner is not None:
+        if owner.type == "template_declaration":
+            add_parameters(owner.child_by_field("parameters"), dependence)
+        elif owner.type in FUNCTION_BODIES:
+            if owner.type == "lambda_expression":
+                add_parameters(owner.child_by_field("template_parameters"), dependence)
+            scopes.append(owner)
+        elif owner.type in CLASS_SPECIFIERS:
+            classes.append(owner)
+        owner = owner.parent
+    for holder in reversed(classes):
+        body = holder.child_by_field("body")
+        for member in [] if body is None else body.children:
+            if member.type == "alias_declaration" or member.type == "type_definition":
+                named = member.child_by_field("name") if member.type == "alias_declaration" \
+                    else member.child_by_field("declarator")
+                name = "" if named is None else tsast.leaf_name(named) or ""
+                if name and refers_to(member.child_by_field("type"), dependence.names):
+                    dependence.names.add(name)
+                    dependence.typed.add(name)
+            elif member.type == "field_declaration":
+                written = member.child_by_field("type")
+                declared = member.child_by_field("declarator")
+                name = "" if declared is None else tsast.leaf_name(declared) or ""
+                value = member.child_by_field("default_value")
+                is_typed = is_type_dependent(value, dependence) if is_placeholder(written) \
+                    else refers_to(written, dependence.names)
+                if name and (is_typed or refers_to(value, dependence.names)):
+                    dependence.names.add(name)
+                if name and is_typed:
+                    dependence.typed.add(name)
+    for scope in reversed(scopes):
+        for name, parameter in tsast.parameters(scope) if scope.type == "function_definition" else []:
+            if name and (is_placeholder(parameter.child_by_field("type"))
+                         or refers_to(parameter.child_by_field("type"), dependence.names)):
+                dependence.names.add(name)
+                dependence.typed.add(name)
+        declarator = scope.child_by_field("declarator") if scope.type == "lambda_expression" else None
+        listed = None if declarator is None else declarator.child_by_field("parameters")
+        for parameter in [] if listed is None else listed.children_of_type(*PARAMETER_TYPES):
+            name = parameter_name(parameter)
+            if name and (is_placeholder(parameter.child_by_field("type"))
+                         or refers_to(parameter.child_by_field("type"), dependence.names)):
+                dependence.names.add(name)
+                dependence.typed.add(name)
+        body = scope.child_by_field("body")
+        if body is None:
+            continue
+        for item in body.descendants("declaration", "alias_declaration", "type_definition", "for_range_loop",
+                                     "expansion_statement"):
+            if item.start >= node.start:
+                break
+            if item.type in ("alias_declaration", "type_definition"):
+                written = item.child_by_field("type")
+                named = item.child_by_field("name") if item.type == "alias_declaration" \
+                    else item.child_by_field("declarator")
+                name = "" if named is None else tsast.leaf_name(named) or ""
+                if name and refers_to(written, dependence.names):
+                    dependence.names.add(name)
+                    dependence.typed.add(name)
+            elif item.type in ("for_range_loop", "expansion_statement"):
+                declared = next((child for child in item.children if child.field in ("declarator", "left")), None)
+                name = "" if declared is None else tsast.leaf_name(declared) or ""
+                ranged = item.child_by_field("right")
+                if name and refers_to(ranged, dependence.names):
+                    dependence.names.add(name)
+                    if is_type_dependent(ranged, dependence):
+                        dependence.typed.add(name)
+            else:
+                written = item.child_by_field("type")
+                for name, value in declared_items(item):
+                    is_typed = is_type_dependent(value, dependence) if is_placeholder(written) \
+                        else refers_to(written, dependence.names)
+                    if is_typed or refers_to(value, dependence.names):
+                        dependence.names.add(name)
+                    if is_typed:
+                        dependence.typed.add(name)
+    return dependence
+
+
+def is_type_dependent(node: tsast.Node | None, dependence: Dependence) -> bool:
+    """Say whether the type of an expression depends on a template parameter, by its syntax.
+
+    A reflection `^^X` has the type std::meta::info, so the template
+    parameter that it names makes its value dependent and not its type.  A
+    call depends when its callee names a dependent name in a template
+    argument list, when its object or its callee has a dependent type, or
+    when an argument does.  A cast or a braced initializer depends when its
+    type names a dependent name.
+
+    Complexity: linear in the size of the subtree.
+    """
+    if node is None:
+        return False
+    kind = node.type
+    if kind in LITERALS or kind in ("reflect_expression", "lambda_expression", "sizeof_expression",
+                                    "alignof_expression", "noexcept_expression", "requires_expression", "this"):
+        return False
+    if kind == "identifier":
+        return refers_to(node, dependence.typed)
+    if kind == "qualified_identifier":
+        return refers_to(node, dependence.typed) or any(
+            refers_to(arguments, dependence.names) for arguments in node.descendants("template_argument_list"))
+    if kind == "call_expression":
+        callee = node.child_by_field("function")
+        if callee is not None and callee.type == "field_expression":
+            if is_type_dependent(callee.child_by_field("argument"), dependence):
+                return True
+        elif callee is not None and (any(refers_to(arguments, dependence.names)
+                                         for arguments in callee.descendants("template_argument_list"))
+                                     or is_type_dependent(callee, dependence)):
+            return True
+        arguments = node.child_by_field("arguments")
+        return arguments is not None and any(is_type_dependent(argument, dependence)
+                                             for argument in tsast.non_comment_children(arguments))
+    if kind == "template_function":
+        return any(refers_to(arguments, dependence.names) for arguments in node.descendants("template_argument_list"))
+    if kind in ("compound_literal_expression", "cast_expression"):
+        return refers_to(node.child_by_field("type"), dependence.names)
+    if kind in ("field_expression", "subscript_expression"):
+        return is_type_dependent(node.child_by_field("argument"), dependence)
+    return any(is_type_dependent(child, dependence) for child in tsast.non_comment_children(node))
+
+
+def instance_sites(tree: tsast.Tree) -> list[tuple[tsast.Node, str, str]]:
+    """Return each call of a static definer that GCC instantiates where the header stands, with its key and why.
+
+    Complexity: linear in the number of calls, times the size of the
+    functions that enclose each definer call.
+
+    Args:
+        tree: The parse tree of a header
+
+    Returns:
+        (the call, the key, the reason) for each site, in source order
+    """
+    sites: list[tuple[tsast.Node, str, str]] = []
+    for call in tree.find("call_expression"):
+        name = static_definer(call)
+        if not name:
+            continue
+        if not is_in_template_context(call):
+            reason = "a call outside each template"
+        else:
+            dependence = dependence_at(call)
+            arguments = call.child_by_field("arguments")
+            listed = [] if arguments is None else tsast.non_comment_children(arguments)
+            if any(is_type_dependent(argument, dependence) for argument in listed):
+                continue
+            reason = "no argument has a type that depends on a template parameter"
+        sites.append((call, "::".join((*owner_parts(call), tsast.spelled(call))), reason))
+    return sites
+
+
+def has_consteval(function: tsast.Node) -> bool:
+    """Say whether a function definition has the consteval specifier."""
+    return any(not child.children and tsast.spelled(child) == "consteval" for child in function.children)
+
+
+def constant_functions(tree: tsast.Tree) -> tuple[set[str], set[str]]:
+    """Return the names that the header declares as constexpr or consteval functions, and as other functions.
+
+    A name of the second set and not of the first names a function that no
+    constant evaluation can call, such as the stub that a refusal calls to
+    stop a constant evaluation.
+    """
+    constant: set[str] = set()
+    plain: set[str] = set()
+    for node in tree.find("function_definition", "declaration", "field_declaration"):
+        declarator = node.child_by_field("declarator")
+        if declarator is None or next(iter([declarator] if declarator.type == "function_declarator" else
+                                           declarator.descendants("function_declarator")), None) is None:
+            continue
+        name = tsast.leaf_name(declarator)
+        if not name:
+            continue
+        words = {tsast.spelled(child) for child in node.children if not child.children}
+        (constant if words & {"constexpr", "consteval"} else plain).add(name)
+    return constant, plain
+
+
+def is_constant(node: tsast.Node, declared: set[str]) -> bool:
+    """Say whether an expression is constant by its syntax.
+
+    Literals, reflections, names that the function does not declare, and calls of them are constant.
+    """
+    kind = node.type
+    if kind in LITERALS or kind in ("reflect_expression", "sizeof_expression", "alignof_expression"):
+        return True
+    if kind == "identifier":
+        return tsast.spelled(node) not in declared
+    if kind == "qualified_identifier":
+        return True
+    if kind == "call_expression":
+        return named_call(node, declared) is not None
+    if kind in ("parenthesized_expression", "binary_expression", "unary_expression", "conditional_expression",
+                "initializer_list", "compound_literal_expression"):
+        return all(is_constant(child, declared) for child in tsast.non_comment_children(node)
+                   if child.field != "type")
+    return False
+
+
+def named_call(call: tsast.Node, declared: set[str]) -> tuple[str, ...] | None:
+    """Return the name parts of a call of a named function whose arguments are all constant, or None.
+
+    A cast, a member call and a call through a local name are no such call.
+    """
+    callee = call.child_by_field("function")
+    if callee is None or callee.type not in ("identifier", "qualified_identifier", "template_function"):
+        return None
+    parts = tsast.qualified_parts(callee)
+    if parts is None or not parts[1] or parts[1][-1] in CASTS:
+        return None
+    if len(parts[1]) == 1 and not parts[0] and parts[1][0] in declared:
+        return None
+    arguments = call.child_by_field("arguments")
+    if arguments is None or not all(is_constant(argument, declared)
+                                    for argument in tsast.non_comment_children(arguments)):
+        return None
+    return parts[1]
+
+
+def fold_sites(tree: tsast.Tree) -> list[tuple[tsast.Node, str, str]]:
+    """Return each call that GCC evaluates where the header stands, in a consteval function that is not a template.
+
+    Complexity: linear in the size of the consteval functions of the header.
+
+    Args:
+        tree: The parse tree of a header
+
+    Returns:
+        (the call, the key, the reason) for each site, in source order
+    """
+    constant, plain = constant_functions(tree)
+    stubs = plain - constant
+    sites: list[tuple[tsast.Node, str, str]] = []
+    for function in tree.find("function_definition"):
+        if not has_consteval(function) or is_in_template_context(function):
+            continue
+        body = function.child_by_field("body")
+        if body is None:
+            continue
+        declared = names_declared(function)
+        for loop in function.descendants("for_range_loop", "expansion_statement"):
+            for child in loop.children:
+                if child.field in ("declarator", "left"):
+                    declared.update(tsast.spelled(leaf) for leaf in [child, *child.descendants("identifier")]
+                                    if leaf.type == "identifier")
+        holder = function.ancestor_of_type(*CLASS_SPECIFIERS)
+        while holder is not None:
+            declared |= names_declared(holder)
+            holder = holder.ancestor_of_type(*CLASS_SPECIFIERS)
+        for call in body.descendants("call_expression"):
+            parts = named_call(call, declared)
+            if parts is None or not is_folded(call, body) or is_inside_constant_call(call, body, declared) \
+                    or is_in_template_context(call):
+                continue
+            arguments = call.child_by_field("arguments")
+            has_arguments = arguments is not None and bool(tsast.non_comment_children(arguments))
+            if has_arguments and (reflection_function(call) or takes_reflection(call)):
+                reason = "a reflection query with constant arguments"
+            elif not has_arguments and parts[0] != "std" and parts[-1] not in stubs:
+                reason = "a call with no argument"
+            else:
+                continue
+            sites.append((call, "::".join((*owner_parts(call), tsast.spelled(call))), reason))
+    return sites
+
+
+def is_folded(call: tsast.Node, body: tsast.Node) -> bool:
+    """Say whether GCC folds a call where it reads the body, and no other kind counts it.
+
+    A call in an unevaluated operand is not evaluated.  A call in a
+    static_assert, in an expansion statement or in the initializer of a
+    constexpr or constinit local belongs to another kind.
+    """
+    owner = call.parent
+    while owner is not None and owner != body:
+        if owner.type in UNEVALUATED - {"lambda_expression"} or owner.type in ("static_assert_declaration",
+                                                                               "expansion_statement"):
+            return False
+        if owner.type == "declaration" and has_qualifier(owner, "constexpr", "constinit"):
+            return False
+        owner = owner.parent
+    return True
+
+
+def is_inside_constant_call(call: tsast.Node, body: tsast.Node, declared: set[str]) -> bool:
+    """Say whether a constant call is an argument of a larger constant call, which counts in its place."""
+    owner = call.parent
+    while owner is not None and owner != body and owner.type in (
+            "argument_list", "parenthesized_expression", "binary_expression", "unary_expression",
+            "conditional_expression", "initializer_list"):
+        owner = owner.parent
+    return owner is not None and owner.type == "call_expression" and named_call(owner, declared) is not None
+
+
 def tests_literal_true(texts: list[str]) -> bool:
     """Say whether the tokens of a static_assert, from its keyword on, test the literal `true` and nothing else."""
     return len(texts) >= 4 and texts[1] == "(" and texts[2] == "true" and texts[3] in (",", ")")
@@ -887,9 +1366,10 @@ def header_checks(tree: tsast.Tree, rel: str, macros: dict[str, MacroChecks]) ->
         key = tsast.spelled(site).removesuffix(";")
         checks.extend([Check(rel, site.line, NAMESPACE, key, name)] * made.namespaces)
         checks.extend([Check(rel, site.line, ASSERT, key, name)] * made.asserts)
-    for site, key, query in eager_sites(tree):
-        if not any(is_self_test_segment(segment) for segment in tsast.namespace_path(site)):
-            checks.append(Check(rel, site.line, EAGER, key, detail=query))
+    for kind, found in ((EAGER, eager_sites(tree)), (INSTANCE, instance_sites(tree)), (FOLD, fold_sites(tree))):
+        for site, key, query in found:
+            if not any(is_self_test_segment(segment) for segment in tsast.namespace_path(site)):
+                checks.append(Check(rel, site.line, kind, key, detail=query))
     checks.sort(key=lambda check: (check.row, KINDS.index(check.kind)))
     return checks, unread
 
@@ -1101,6 +1581,14 @@ def describe(check: Check, count: int = 1) -> str:
     if check.kind == FUNCTION_ASSERT:
         return (f"the static_assert({check.key}) in the body of a function that is not a template runs again in each "
                 f"translation unit that includes this header.  Move it to {target}, or make the function a template")
+    if check.kind == INSTANCE:
+        return (f"the call {check.key} instantiates its function in each translation unit that includes this header "
+                f"({check.detail}).  Give the argument a type that depends on a template parameter of the enclosing "
+                f"template, with foundation/reflect/Anchor.h, or move the call into a template")
+    if check.kind == FOLD:
+        return (f"the call {check.key} runs in each translation unit that includes this header, because the "
+                f"enclosing consteval function is not a template ({check.detail}).  Make the function a template "
+                f"that its callers name with a dependent argument, or move it to {target}")
     query = f" ({check.detail})" if check.detail else ""
     return (f"the reflection walk of {check.key}{query} runs again in each translation unit that includes this "
             f"header.  Make it a variable template or a member of a template, or move it to {target}")
@@ -1695,7 +2183,8 @@ def plan_fix(root: Path, header: str, items: list[Check], destination: str) -> F
     tree = next(iter(tsast.parse([root / header])))
     data = tree.source
     starts = line_starts(data)
-    sites = {(node.line, key): node for node, key, _query in eager_sites(tree)}
+    sites = {(node.line, key): node for found in (eager_sites(tree), instance_sites(tree), fold_sites(tree))
+             for node, key, _query in found}
     # (first node, last node, the placement without its text)
     moved: list[tuple[tsast.Node, tsast.Node, Placement]] = []
     walks: dict[int, tuple[tsast.Node, list[Check]]] = {}
@@ -1721,6 +2210,12 @@ def plan_fix(root: Path, header: str, items: list[Check], destination: str) -> F
             refuse(item, obstacle)
             continue
         function = outermost_function(node)
+        if item.kind in (INSTANCE, FOLD) and (function is None or function.index not in walks):
+            refuse(item, "give the argument a type that depends on a template parameter of the enclosing template "
+                         "(foundation/reflect/Anchor.h), or make the function a template that its callers name with "
+                         "a dependent argument, by hand" if item.kind == INSTANCE else
+                   "make the function a template that its callers name with a dependent argument, by hand")
+            continue
         if item.kind in (NAMESPACE, ASSERT):
             condition = node.child_by_field("condition")
             moved.append((leading_comments(node), node, Placement(
@@ -2266,6 +2761,47 @@ PLANTED: list[tuple[str, str | None, str]] = [
      "an expansion statement in a generic lambda"),
     ("inline void runtime_local() { const auto value = std::meta::members_of(^^Holder, ctx).size(); (void)value; }",
      None, "a const local of a function, which needs no constant evaluation"),
+    ("inline void plant_text() { std::string text; (void)std::define_static_string(text); }", INSTANCE,
+     "a call of define_static_string outside each template"),
+    ("template <class T> consteval auto plant_list() { return std::define_static_array("
+     "std::meta::enumerators_of(^^T)); }", INSTANCE, "a call of define_static_array in a template, whose argument names T only in a reflection"),
+    ("template <class T> consteval auto plant_string() { std::string text; return std::define_static_string(text); }",
+     INSTANCE, "a call of define_static_string in a template, on a local of a type that names no parameter"),
+    ("template <class T> consteval auto plant_anchored() { return std::define_static_array(static_cast<anchored_t<^^T, "
+     "std::vector<std::meta::info>>>(std::meta::enumerators_of(^^T))); }", None,
+     "a call whose argument is cast to a type that names T"),
+    ("template <class T> consteval auto plant_span(std::span<const T> values) { return "
+     "std::define_static_array(values); }", None, "a call on a parameter whose type names T"),
+    ("template <class T> consteval auto plant_called() { return std::define_static_string(text_of<T>()); }", None,
+     "a call on a call whose template argument names T"),
+    ("template <class T> consteval auto plant_local() { anchored_t<^^T, std::string> text; return "
+     "std::define_static_string(text); }", None, "a call on a local whose type names T"),
+    ("template <class T> consteval auto plant_value() { constexpr std::meta::info bare = ^^T; return "
+     "std::define_static_array(static_cast<anchored_t<bare, std::vector<std::meta::info>>>(std::meta::members_of(bare, "
+     "ctx))); }", None, "a call whose cast names a local that T gives its value"),
+    ("template <class... Ts> consteval auto plant_pack() { using list = anchored_t<std::meta::reflect_constant("
+     "sizeof...(Ts)), std::vector<std::meta::info>>; return std::define_static_array(list{^^Ts...}); }", None,
+     "a call on a braced initializer of a local alias that names the pack"),
+    ("template <class T> struct PlantMember { using item_type = T; static constexpr auto item = ^^item_type; static "
+     "constexpr auto list = std::define_static_array(static_cast<anchored_t<item, std::vector<std::meta::info>>>("
+     "std::meta::members_of(item, ctx))); };", None,
+     "a call in a class template whose cast names a static member that T gives its value"),
+    ("consteval std::size_t plant_fold() { return std::meta::members_of(^^Holder, ctx).size(); }", FOLD,
+     "a reflection query with constant arguments in a consteval function"),
+    ("consteval bool plant_every(); consteval bool plant_fold_call() { return plant_every(); }", FOLD,
+     "a call with no argument of a consteval function"),
+    ("consteval int plant_loop() { int total = 0; for (auto member : std::meta::members_of(^^Holder, ctx)) total += "
+     "member == ^^int; return total; }", FOLD, "a reflection query in the range of a loop"),
+    ("void plant_stub() noexcept; consteval bool plant_error(std::meta::info type) { if (type == ^^void) plant_stub(); "
+     "return std::meta::is_type(type); }", None, "a call of a stub and a reflection query of a parameter"),
+    ("template <class T> consteval std::size_t plant_lazy_fold() { return std::meta::members_of(^^Holder, "
+     "ctx).size(); }", None, "a reflection query with constant arguments in a consteval function template"),
+    ("consteval int plant_current() { return use(std::meta::access_context::current()); }", None,
+     "a plain call whose argument is a call of std with no argument"),
+    ("constexpr std::size_t plant_constexpr() { return std::meta::members_of(^^Holder, ctx).size(); }", None,
+     "a reflection query in a constexpr function that is not consteval"),
+    ("consteval bool plant_asserted() { static_assert(std::meta::members_of(^^Holder, ctx).size() > 0); return true; }",
+     FUNCTION_ASSERT, "a reflection query in a static_assert of a consteval function"),
     ("}  // namespace foundation", None, ""),
     ('static_assert(7 == 7, "global scope");', ASSERT, "a static_assert at global scope"),
     ("#define PLANTED_CHECK static_assert(8 == 8)", None, "a static_assert in a macro body"),
@@ -2479,7 +3015,11 @@ def fix_self_test(expect) -> None:
         left = sorted(item.key for item in rescan.checks if item.path == "include/foundation/Fixed.h")
         expect("the header holds only the refused items after the fix",
                left == sorted(["FIXED_CHECK", "foundation::mode_count", "foundation::read_by_header_::shades",
-                               "sizeof(long)==8", "sizeof(width)==4"]))
+                               "foundation::read_by_header_::shared_size_<Shade>()",
+                               "foundation::read_by_header_::std::define_static_array("
+                               "std::meta::enumerators_of(^^Shade))", "sizeof(long)==8", "sizeof(width)==4"]))
+        expect("a call in a function that the header reads is refused, with its repair",
+               "shared_size_<Shade>()" in report and "eager fold" in report and "eager instantiation" in report, True)
         expect("a second run changes nothing",
                run("include/foundation/Fixed.h")[0] == 1 and read("include/foundation/Fixed.h") == header
                and read(f"{CHECKS}/foundation/Fixed.cpp") == checks, True)
@@ -2532,8 +3072,10 @@ def self_test() -> int:
     keep_row = "keep | include/crucible/Kept.h | static_assert | sizeof(long)==8 | the planted reason"
     eager_keep_row = "keep | include/crucible/Kept.h | eager evaluation | crucible::kept_value | the planted reason"
     planted_rows = ("include/foundation/Planted.h | 5 | 9\n"
-                    "function static_assert | include/foundation/Planted.h | 5\n"
-                    "eager evaluation | include/foundation/Planted.h | 13\n")
+                    "function static_assert | include/foundation/Planted.h | 6\n"
+                    "eager evaluation | include/foundation/Planted.h | 13\n"
+                    "eager instantiation | include/foundation/Planted.h | 5\n"
+                    "eager fold | include/foundation/Planted.h | 3\n")
     matching = "include/crucible/Kept.h | 0 | 1\n" + planted_rows + keep_row + "\n" + eager_keep_row + "\n"
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
@@ -2582,7 +3124,27 @@ def self_test() -> int:
                    "foundation::bound", "foundation::table_size", "foundation::fixed_name",
                    "foundation::Counted::count", "foundation::Spliced", "foundation::local_walk::members",
                    "foundation::expand::template for(items)", "foundation::lazy", "foundation::looped",
-                   "foundation::called_walk", "foundation::expand_locals::template for(items)"})
+                   "foundation::called_walk", "foundation::expand_locals::template for(items)",
+                   "foundation::std::define_static_array(enumerators_of(^^Kind))",
+                   "foundation::local_walk::std::define_static_array(std::meta::members_of(^^Holder,ctx))",
+                   "foundation::plant_text::std::define_static_string(text)",
+                   "foundation::plant_list::std::define_static_array(std::meta::enumerators_of(^^T))",
+                   "foundation::plant_string::std::define_static_string(text)",
+                   "foundation::plant_fold::std::meta::members_of(^^Holder,ctx)",
+                   "foundation::plant_fold_call::plant_every()",
+                   "foundation::plant_loop::std::meta::members_of(^^Holder,ctx)",
+                   "std::meta::members_of(^^Holder,ctx).size()>0"})
+        asserted = next(line for line, (text, _, _) in enumerate(PLANTED, start=1) if "plant_asserted" in text)
+        expect("a reflection query in a static_assert of a consteval function counts as a function static_assert "
+               "and not as an eager fold", (asserted, FOLD) not in rows and (asserted, FUNCTION_ASSERT) in rows, True)
+        reasons = {item.key: item.detail for item in found.checks if item.kind in (INSTANCE, FOLD)}
+        expect("each call names why it counts",
+               reasons.get("foundation::plant_text::std::define_static_string(text)") == "a call outside each template"
+               and reasons.get("foundation::plant_list::std::define_static_array(std::meta::enumerators_of(^^T))")
+               == "no argument has a type that depends on a template parameter"
+               and reasons.get("foundation::plant_fold::std::meta::members_of(^^Holder,ctx)")
+               == "a reflection query with constant arguments"
+               and reasons.get("foundation::plant_fold_call::plant_every()") == "a call with no argument")
         queries = {item.key: item.detail for item in found.checks if item.kind == EAGER}
         expect("each eager evaluation names its reflection query",
                queries.get("foundation::walked") == "a call of std::meta::members_of"
@@ -2624,7 +3186,11 @@ def self_test() -> int:
                 ("inline void clean_body() { static_assert(sizeof(int) == 4); }", "a function static_assert",
                  FUNCTION_ASSERT),
                 ("inline constexpr auto clean_eager = std::meta::members_of(^^Clean, ctx).size();",
-                 "a reflection walk", EAGER)):
+                 "a reflection walk", EAGER),
+                ("inline void clean_text() { std::string text; (void)std::define_static_string(text); }",
+                 "a static string outside a template", INSTANCE),
+                ("consteval std::size_t clean_fold() { return std::meta::members_of(^^Clean, ctx).size(); }",
+                 "a reflection query with constant arguments in a consteval function", FOLD)):
             (root / "include/fixy/Clean.h").write_text(clean_planted + planted_line + "\n", encoding="utf-8")
             code, report = verdict()
             expect(f"{label} planted in a clean header is an error",
@@ -2633,9 +3199,14 @@ def self_test() -> int:
         (root / "include/fixy/Clean.h").write_text(clean_planted + "template <class T> inline void clean_body() "
                                                    "{ static_assert(sizeof(T) > 0); }\ntemplate <class T> inline "
                                                    "constexpr auto clean_eager = std::meta::members_of(^^T, ctx)"
-                                                   ".size();\n", encoding="utf-8")
+                                                   ".size();\ntemplate <class T> consteval auto clean_text() { "
+                                                   "anchored_t<^^T, std::string> text; return "
+                                                   "std::define_static_string(text); }\ntemplate <class T> consteval "
+                                                   "std::size_t clean_fold() { return std::meta::members_of(^^Clean, "
+                                                   "ctx).size(); }\n", encoding="utf-8")
         code, report = verdict()
-        expect("the same function static_assert and reflection walk in templates are no finding",
+        expect("the same function static_assert, reflection walk, static string and reflection query in templates "
+               "are no finding",
                code == 0 and "include/fixy/Clean.h" not in report, True)
         (root / "include/fixy/Clean.h").write_text(clean_planted + "inline constexpr Color clean_red = "
                                                    "Color::hex(0xff0000);\ninline constexpr int clean_count = "
@@ -2651,8 +3222,10 @@ def self_test() -> int:
         (root / "include/fixy/Clean.h").write_text(clean_planted, encoding="utf-8")
         for row, label in (("include/foundation/Planted.h | 5 | 8", "static_assert"),
                            ("include/foundation/Planted.h | 4 | 9", "self-test namespace"),
-                           ("function static_assert | include/foundation/Planted.h | 4", "function static_assert"),
-                           ("eager evaluation | include/foundation/Planted.h | 12", "eager evaluation")):
+                           ("function static_assert | include/foundation/Planted.h | 5", "function static_assert"),
+                           ("eager evaluation | include/foundation/Planted.h | 12", "eager evaluation"),
+                           ("eager instantiation | include/foundation/Planted.h | 4", "eager instantiation"),
+                           ("eager fold | include/foundation/Planted.h | 2", "eager fold")):
             first = row.split(SEPARATOR)[0]
             original = next(text for text in planted_rows.splitlines() if text.split(SEPARATOR)[0] == first)
             ledger.write_text(matching.replace(original, row), encoding="utf-8")
@@ -2660,8 +3233,10 @@ def self_test() -> int:
             expect(f"one more {label} than the row permits is an error",
                    code == 1 and ": error: [header-checks]" in report and "include/foundation/Planted.h:" in report)
         for row, label in (("include/foundation/Planted.h | 5 | 10", "static_assert"),
-                           ("function static_assert | include/foundation/Planted.h | 6", "function static_assert"),
-                           ("eager evaluation | include/foundation/Planted.h | 14", "eager evaluation")):
+                           ("function static_assert | include/foundation/Planted.h | 7", "function static_assert"),
+                           ("eager evaluation | include/foundation/Planted.h | 14", "eager evaluation"),
+                           ("eager instantiation | include/foundation/Planted.h | 6", "eager instantiation"),
+                           ("eager fold | include/foundation/Planted.h | 4", "eager fold")):
             first = row.split(SEPARATOR)[0]
             original = next(text for text in planted_rows.splitlines() if text.split(SEPARATOR)[0] == first)
             ledger.write_text(matching.replace(original, row), encoding="utf-8")
