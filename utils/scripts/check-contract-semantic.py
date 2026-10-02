@@ -232,7 +232,7 @@ def self_test() -> int:
         late = {"directory": "/b", "file": "/r/test/late.cpp",
                 "command": f"g++ {ignore_flag} {define} {observe_flag} -c /r/test/late.cpp"}
         warnings_dir = Path(work) / "warnings"
-        with contextlib.redirect_stdout(io.StringIO()) as printed:
+        with check_report.github_actions(False), contextlib.redirect_stdout(io.StringIO()) as printed:
             status = check_report.emit(run([late]), CHECK, warnings_dir)
         lines = printed.getvalue().splitlines()
         expect("an error gives exit status 1, the line format, and no warnings file",

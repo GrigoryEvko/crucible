@@ -135,12 +135,17 @@ set_property(TEST neg_platform_apple_aarch64 APPEND PROPERTY ENVIRONMENT
   "CRUCIBLE_NEG_EXTRA_FLAGS=-U__x86_64__ -D__aarch64__ -D__APPLE__")
 # The floor also reads the interference sizes that GCC gives the target, and
 # a --param option sets each of them.  The first regex names the static
-# assertion of the header, and the second names its rule.
-foundation_neg_compile_test(neg_platform_destructive_interference_size
-  "Platform\\.h:[0-9]+:[0-9]+: error: static assertion failed"
-  "the tree separates two shared atomics by 64 bytes")
-set_property(TEST neg_platform_destructive_interference_size APPEND PROPERTY ENVIRONMENT
-  "CRUCIBLE_NEG_EXTRA_FLAGS=--param=destructive-interference-size=128")
+# assertion of the header, and the second names its rule.  The destructive
+# check applies only on x86_64, because GCC gives most aarch64 targets a
+# destructive size of 256 that names no cache line.  So the fixture of that
+# check exists only on x86_64.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  foundation_neg_compile_test(neg_platform_destructive_interference_size
+    "Platform\\.h:[0-9]+:[0-9]+: error: static assertion failed"
+    "the tree separates two shared atomics by 64 bytes")
+  set_property(TEST neg_platform_destructive_interference_size APPEND PROPERTY ENVIRONMENT
+    "CRUCIBLE_NEG_EXTRA_FLAGS=--param=destructive-interference-size=128")
+endif()
 foundation_neg_compile_test(neg_platform_longer_cache_line
   "Platform\\.h:[0-9]+:[0-9]+: error: static assertion failed"
   "the tree assumes 64-byte cache lines, and GCC gives a longer line")

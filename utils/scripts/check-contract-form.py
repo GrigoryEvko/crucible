@@ -590,7 +590,7 @@ def self_test() -> int:
 
         (root / "include/planted/Forms.h").write_text(FORMS, encoding="utf-8")
         warnings_dir = root / "warnings"
-        with contextlib.redirect_stdout(io.StringIO()) as printed:
+        with check_report.github_actions(False), contextlib.redirect_stdout(io.StringIO()) as printed:
             status = check_report.emit(evaluate(root), CHECK, warnings_dir)
         lines = printed.getvalue().splitlines()
         expect("an error gives exit status 1, the line format, and no warnings file",
