@@ -5323,7 +5323,13 @@ set_tests_properties(header_checks header_checks_self_test PROPERTIES
 # quantity.  The top of this file sets CRUCIBLE_CHECK_WARNINGS_DIR.
 add_test(NAME check_report_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check_report.py --self-test)
-set_tests_properties(check_report_self_test PROPERTIES LABELS "ci_guard")
+# report-check-warnings.py also adds the time totals of the build: the CPU time
+# of the objects of all, of the fixtures and of the executable tests, against
+# the rows total-compile-cpu, total-fixture-cpu and total-test-cpu.  A total
+# gives a warning only.  The CI step "Check warnings" runs it after the tests.
+add_test(NAME report_check_warnings_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/report-check-warnings.py --self-test)
+set_tests_properties(check_report_self_test report_check_warnings_self_test PROPERTIES LABELS "ci_guard")
 
 # heavy_includes — a header under include/ includes no heavy standard header.
 # A header is heavy when its compile time alone is more than the time of

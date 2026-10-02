@@ -554,7 +554,8 @@ jobs:
       # A compile-time check that passes with warnings writes them to
       # <build>/check-warnings (utils/scripts/check_report.py), because ctest
       # shows no output of a test that passes.  This step prints each warning
-      # as an annotation of the run.  It fails only on a malformed warnings file.
+      # as an annotation of the run, and the time totals of the build, which
+      # give warnings only.  It fails only on a malformed warnings file.
       - name: Check warnings
         if: always()
         run: >

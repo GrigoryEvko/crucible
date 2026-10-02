@@ -90,7 +90,7 @@ utils/scripts/preprocessed.py | kit |
 utils/scripts/refresh-derived.sh | git |
 utils/scripts/repo_root.py | none |
 utils/scripts/repo_root.sh | none |
-utils/scripts/report-check-warnings.py | text | the warnings files of the checks
+utils/scripts/report-check-warnings.py | json,text | the warnings files of the checks, the records of the test launcher, the census of utils/scripts/build_census.py and the budget table
 utils/scripts/run-affected-tests.py | json,text | the test list of ctest --show-only=json-v1, the JUnit report of ctest, CMakeCache.txt and the section headers and data sections of each ELF file of a test
 utils/scripts/session-oracle.sh | git,text | the switch list that opam prints
 utils/scripts/test-launcher.py | text | the budget table, the build kind, the ledger rows of test-time and test-memory, the variable CRUCIBLE_TEST_CORES, and the records and warnings files that it writes

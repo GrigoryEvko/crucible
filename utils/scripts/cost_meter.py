@@ -108,7 +108,8 @@ CARRIED_KEYS = ('"cost": ', '"last_cost": ')
 KB_PER_GB = 1024 * 1024
 # The rows of utils/scripts/budgets.txt whose value is a time.  The self-test
 # of utils/scripts/check_report.py holds this set equal to the rows of unit s.
-TIME_ROWS = frozenset({"compile-cpu", "link-time", "test-time", "fixture-cpu"})
+TIME_ROWS = frozenset({"compile-cpu", "link-time", "test-time", "fixture-cpu", "total-compile-cpu", "total-fixture-cpu",
+                       "total-test-cpu"})
 GITHUB_ACTIONS_ENV = "GITHUB_ACTIONS"
 CI_DEMOTION = ("The check demoted this time error to a warning on a CI runner (GITHUB_ACTIONS is true): the time "
                "thresholds apply to the build host, and a CI runner is slower")
