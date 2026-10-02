@@ -122,6 +122,9 @@ Why these inputs are sufficient
    it.  A memo keeps the hash of the names under a root, with the inode and the
    two change times of each directory under the root and the target of each
    link.  The memo gives the hash while each one is the same.
+   CRUCIBLE_NEG_NOW_NS gives the driver a time earlier than the clock, for the
+   tests of the driver.  An earlier time only makes the driver refuse more
+   results.
 
 A new file in a root changes the key of each compile that searches that root,
 also when no lookup names the new file.  A new header in `include/` then
@@ -530,6 +533,21 @@ _LISTING_LIMIT = 200_000
 _driver_digest_value: str | None = None
 
 
+def _now_ns() -> int:
+    """Return the time of the clock, in nanoseconds since the epoch.
+
+    CRUCIBLE_NEG_NOW_NS gives an earlier time, for the tests of the driver.  The
+    function then returns the earlier of that time and the clock.  Each use of
+    the time compares it with the time of a file, and an earlier time only makes
+    the driver refuse more results, write fewer memos and remove fewer temporary
+    files.  So the variable cannot make the store take a result that the clock
+    makes it refuse.
+    """
+    now = time.time_ns()
+    text = os.environ.get("CRUCIBLE_NEG_NOW_NS", "")
+    return min(now, int(text)) if text.isdigit() else now
+
+
 def _driver_digest() -> str:
     """Return the hash of the bytes of this file."""
     global _driver_digest_value
@@ -588,7 +606,7 @@ def file_digest(path: str, memo_dir: Path) -> str:
             hasher.update(chunk)
     digest = hasher.hexdigest()[:32]
     after = os.stat(path)
-    if _stat_fields(after) == fields and after.st_ctime_ns < time.time_ns() - _SETTLE_NS:
+    if _stat_fields(after) == fields and after.st_ctime_ns < _now_ns() - _SETTLE_NS:
         try:
             _write_atomic(memo, json.dumps({"stat": fields, "digest": digest}).encode("ascii"))
         except OSError:
@@ -911,7 +929,7 @@ def shared_objects(program: str, interpreter: str, directory: Path, env: Mapping
         pass
     loader_env = {name: value for name, value in env.items() if name != "LD_DEBUG_OUTPUT"}
     loader_env["LD_DEBUG"] = "libs"
-    started_ns = time.time_ns()
+    started_ns = _now_ns()
     proc = subprocess.run([interpreter, "--list", program], cwd=directory, env=loader_env, capture_output=True,
                           text=True, errors="surrogateescape", check=False)
     parsed = parse_loader_list(proc.stdout, proc.stderr, directory) if proc.returncode == 0 else None
@@ -1206,7 +1224,7 @@ def tree_listing(root: str, memo_dir: Path) -> tuple[Listing | None, str]:
             return Listing(*recorded["listing"]), ""
     except (OSError, ValueError, KeyError, TypeError):
         pass
-    started_ns = time.time_ns()
+    started_ns = _now_ns()
     try:
         walked = _walk(root)
     except OSError as error:
@@ -1432,7 +1450,7 @@ class ResultStore:
         of entries.
         """
         files: list[tuple[int, int, Path]] = []
-        expired_ns = time.time_ns() - 3600 * 1_000_000_000
+        expired_ns = _now_ns() - 3600 * 1_000_000_000
         try:
             buckets = list(self.entries.iterdir())
         except OSError:
@@ -1749,7 +1767,7 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
             return stored, True
     _note(fixture_name, f"compiled ({reason})")
     depfile.unlink(missing_ok=True)
-    started_ns = time.time_ns()
+    started_ns = _now_ns()
     result = run_compile(argv, directory, env)
     dependencies: list[str] | None = None
     missing: list[str] = []
