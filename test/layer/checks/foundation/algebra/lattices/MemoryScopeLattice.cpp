@@ -2,6 +2,10 @@
 
 #include <foundation/algebra/lattices/MemoryScopeLattice.h>
 
+#include <cstdint>
+#include <meta>
+#include <utility>
+
 namespace foundation::algebra::lattices {
 
 namespace detail::memory_scope_lattice_self_test {
@@ -36,6 +40,27 @@ static_assert(!mem_scope_same_trunk(MemoryScope::System, MemoryScope::Cta));
 // A value outside the enum holds no chain, although its high nibble is the
 // nibble of the accelerator chain.
 static_assert(!mem_scope_is_accel(static_cast<MemoryScope>(0x14)) && !mem_scope_is_arm(static_cast<MemoryScope>(0x22)));
+
+// The switch of mem_scope_chain names each enumerator by hand.  This walk
+// reads the enumerators by reflection and requires the chain of each to be
+// its high nibble, so an enumerator that the switch omits fails here and
+// does not fall to the default.
+[[nodiscard]] consteval bool each_enumerator_holds_its_nibble_chain() noexcept {
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^MemoryScope));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto scope : enumerators) {
+        constexpr MemoryScope value = [:scope:];
+        const auto nibble = static_cast<std::uint8_t>(std::to_underlying(value) >> 4);
+        const std::uint8_t expected = nibble == 1 || nibble == 2 ? nibble : std::uint8_t{0};
+        if (detail::mem_scope_chain(value) != expected) return false;
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+static_assert(each_enumerator_holds_its_nibble_chain(),
+              "mem_scope_chain must name each enumerator of MemoryScope.  An enumerator that its switch omits "
+              "takes the default and holds no chain.  Add a case for it.");
 
 // The partial-order axioms at every triple, and leq, join and meet in
 // agreement at every pair, walked by reflection over the enumerators.

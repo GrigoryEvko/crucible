@@ -21,7 +21,6 @@
 #   evaluation.  The key is the one that --list prints.  The reason is mandatory.
 eager evaluation | include/fixy/Refined.h | 1
 eager evaluation | include/fixy/atoms/Syscall.h | 2
-eager evaluation | include/foundation/algebra/lattices/MemoryScopeLattice.h | 2
 
 keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||!std::is_trivially_destructible_v<Affine<int>> | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads
 keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||!std::is_trivially_destructible_v<Linear<int>> | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads

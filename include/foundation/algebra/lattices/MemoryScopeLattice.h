@@ -19,7 +19,6 @@
 #include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
-#include <meta>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -50,20 +49,27 @@ namespace detail {
 // The chain that holds x: the high nibble of its value, 1 for the
 // accelerator scopes and 2 for the host domains.  Thread, System and a
 // value outside the enum hold no chain, and the answer is 0 for them.
+//
+// The switch names each enumerator, so a value outside the enum takes the
+// default.  The function reads no reflection, so an includer evaluates
+// nothing.  The check file of this header walks the enumerators by
+// reflection and refuses an enumerator that the switch does not name.
 [[nodiscard]] constexpr std::uint8_t mem_scope_chain(MemoryScope x) noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^MemoryScope));
-    // `template for` unrolls into successive scopes that each declare the
-    // induction variable, and -Wshadow fires on the body.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto scope : enumerators) {
-        if (x == [:scope:]) {
+    switch (x) {
+        case MemoryScope::Thread:
+        case MemoryScope::Warp:
+        case MemoryScope::Cta:
+        case MemoryScope::Cluster:
+        case MemoryScope::Gpu:
+        case MemoryScope::Inner:
+        case MemoryScope::Outer:
+        case MemoryScope::System: {
             const auto nibble = static_cast<std::uint8_t>(std::to_underlying(x) >> 4);
             return nibble == 1 || nibble == 2 ? nibble : std::uint8_t{0};
         }
+        default:
+            return 0;
     }
-#pragma GCC diagnostic pop
-    return 0;
 }
 
 }  // namespace detail
