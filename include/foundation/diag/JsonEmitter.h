@@ -249,11 +249,16 @@ template <JsonSink S>
 }
 
 // The one writer of a record, for the count and for the output.
-template <JsonSink S>
+//
+// Each function of this header that reads the catalog is a template with
+// the parameter Unused, and each catalog call names that parameter.  So
+// only a translation unit that calls the function builds the tables of the
+// catalog (CLAUDE.md §XV "Compile time", rule 2).
+template <JsonSink S, class Unused = void>
 [[nodiscard]] bool write_json_record(S& sink, JsonDiagnosticRecord const& rec) noexcept {
-    const std::string_view code = rec.error_code.empty() ? name_of(rec.category) : rec.error_code;
-    const std::string_view goal = rec.goal.empty() ? description_of(rec.category) : rec.goal;
-    const std::string_view suggestion = rec.suggestion.empty() ? remediation_of(rec.category) : rec.suggestion;
+    const std::string_view code = rec.error_code.empty() ? name_of<Unused>(rec.category) : rec.error_code;
+    const std::string_view goal = rec.goal.empty() ? description_of<Unused>(rec.category) : rec.goal;
+    const std::string_view suggestion = rec.suggestion.empty() ? remediation_of<Unused>(rec.category) : rec.suggestion;
 
     if (!sink.append("{\"format_version\":")) return false;
     if (!append_json_uint(sink, static_cast<unsigned long>(CRUCIBLE_DIAG_FORMAT_VERSION))) return false;
@@ -333,17 +338,18 @@ template <JsonSink S>
     return pos;
 }
 
-[[nodiscard]] inline JsonDiagnosticRecord record_from_violation(Category cat, std::string_view context,
-                                                                std::string_view detail) noexcept {
+template <class Unused = void>
+[[nodiscard]] JsonDiagnosticRecord record_from_violation(Category cat, std::string_view context,
+                                                         std::string_view detail) noexcept {
     const SourcePosition source = parse_source_position(context);
     return JsonDiagnosticRecord{
         .category = cat,
         .source = source,
-        .error_code = name_of(cat),
-        .goal = description_of(cat),
+        .error_code = name_of<Unused>(cat),
+        .goal = description_of<Unused>(cat),
         .have = source.function.empty() ? context : source.function,
         .gap = detail,
-        .suggestion = remediation_of(cat),
+        .suggestion = remediation_of<Unused>(cat),
         .related_snippet = {},
     };
 }
@@ -352,27 +358,30 @@ template <JsonSink S>
 // record past json_record_max_bytes, so an over-long record leaves the
 // stream untouched.  The second writes the record under the lock of the
 // stream.  Complexity: linear in the length of the record, twice.
-[[nodiscard]] inline bool emit_json_record(FILE* out, JsonDiagnosticRecord const& rec) noexcept {
+template <class Unused = void>
+[[nodiscard]] bool emit_json_record(FILE* out, JsonDiagnosticRecord const& rec) noexcept {
     if (out == nullptr) return false;
     detail::counting_json_sink counter;
-    if (!detail::write_json_record(counter, rec)) return false;
+    if (!detail::write_json_record<detail::counting_json_sink, Unused>(counter, rec)) return false;
     ::flockfile(out);
     detail::file_json_sink sink{out};
-    const bool written = detail::write_json_record(sink, rec) && sink.flush();
+    const bool written = detail::write_json_record<detail::file_json_sink, Unused>(sink, rec) && sink.flush();
     ::funlockfile(out);
     return written;
 }
 
-[[nodiscard]] inline bool emit_json_violation(FILE* out, Category cat, std::string_view context,
-                                              std::string_view detail) noexcept {
-    return emit_json_record(out, record_from_violation(cat, context, detail));
+template <class Unused = void>
+[[nodiscard]] bool emit_json_violation(FILE* out, Category cat, std::string_view context,
+                                       std::string_view detail) noexcept {
+    return emit_json_record<Unused>(out, record_from_violation<Unused>(cat, context, detail));
 }
 
-[[nodiscard]] inline bool emit_legacy_text_violation(FILE* out, Category cat, std::string_view fn,
-                                                     std::string_view detail) noexcept {
+template <class Unused = void>
+[[nodiscard]] bool emit_legacy_text_violation(FILE* out, Category cat, std::string_view fn,
+                                              std::string_view detail) noexcept {
     if (out == nullptr) return false;
     constexpr int max_field_chars = 4096;
-    const std::string_view cat_name = name_of(cat);
+    const std::string_view cat_name = name_of<Unused>(cat);
     const int cat_n = cat_name.size() > max_field_chars ? max_field_chars : static_cast<int>(cat_name.size());
     const int fn_n = fn.size() > max_field_chars ? max_field_chars : static_cast<int>(fn.size());
     const int dt_n = detail.size() > max_field_chars ? max_field_chars : static_cast<int>(detail.size());
