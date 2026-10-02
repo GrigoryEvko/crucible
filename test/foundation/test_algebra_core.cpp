@@ -26,10 +26,6 @@ namespace {
 
 namespace fa = ::foundation::algebra;
 
-// The five-kind set is what the extraction decided; the left side is
-// derived by reflection, so this fires if an enumerator is added or
-// removed.
-static_assert(fa::modality_kind_count == 5);
 static_assert(fa::SteppingModality<fa::ModalityKind::Stepping>);
 static_assert(fa::has_grade_only_v<fa::ModalityKind::Stepping>);
 

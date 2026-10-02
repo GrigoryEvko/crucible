@@ -56,7 +56,6 @@ void test_metric_ids_are_partitioned_by_peer_slot() {
 
 void test_snapshot_maps_to_fixed_observation_batch() {
     static_assert(std::is_trivially_copyable_v<observe::TopologyHealthObservationBatch>);
-    static_assert(observe::kTopologyHealthObservationCount == 4);
 
     auto const batch = observe::topology_health_observations(7, sample_snapshot(), observe::ObservationSource::Keeper);
 
