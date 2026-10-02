@@ -47,9 +47,9 @@
 //   ..._hand.cpp                  the controls, the accepted and refused
 //                                 types, the interleaved sessions and the
 //                                 ledger
-//   ..._generated.cpp             the generated families, and the family
-//                                 of three roles
-//   ..._four_roles.cpp            the family of four roles
+//   ..._generated.cpp             the generated families
+//   ..._three_roles_<k>.cpp       half k of the family of three roles
+//   ..._four_roles_<k>.cpp        half k of the family of four roles
 //   ..._two_roles_<k>.cpp         part k of the family of two roles
 //   ..._grid_<k>.cpp              part k of the cells of the merge grid.
 //                                 Part 0 also runs the grid

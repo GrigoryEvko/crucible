@@ -3,17 +3,16 @@
 // A fixed-seed generator builds global types over four roles and three
 // labels.  Each type that the gates accept must give a live context at
 // each capacity.  Most generated types are refused, and the counts are
-// printed.  This file runs the families and holds the family of three
-// roles.  The family of four roles is in
-// test_session_global_attack_four_roles.cpp, and the parts of the family
-// of two roles are in test_session_global_attack_two_roles_<k>.cpp.
+// printed.  This file runs the families.  The halves of the families of
+// three and of four roles are in test_session_global_attack_three_roles_<k>.cpp
+// and test_session_global_attack_four_roles_<k>.cpp, and the parts of the
+// family of two roles are in test_session_global_attack_two_roles_<k>.cpp.
 
 #include "session_global_attack.h"
 
 #include <cstdio>
 #include <string>
 #include <string_view>
-#include <utility>
 
 namespace test_session_global_attack {
 
@@ -36,12 +35,13 @@ void report_family(std::string_view family, const FamilyCounts& counts) {
 
 void run_generated() {
     std::printf("generated global types (fixed seeds)\n");
-    constexpr std::string_view three_roles_family = "three roles, depth 4";
     FamilyCounts three_roles;
-    check_family<3, 4, 1000, false>(three_roles, three_roles_family, std::make_index_sequence<48>{});
+    check_three_roles_half_0(three_roles);
+    check_three_roles_half_1(three_roles);
     report_family(three_roles_family, three_roles);
     FamilyCounts four_roles;
-    check_four_roles(four_roles);
+    check_four_roles_half_0(four_roles);
+    check_four_roles_half_1(four_roles);
     report_family(four_roles_family, four_roles);
     FamilyCounts two_roles;
     check_two_roles_part_0(two_roles);

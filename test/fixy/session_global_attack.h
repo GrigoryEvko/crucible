@@ -775,9 +775,25 @@ void check_family(FamilyCounts& counts, std::string_view family, std::index_sequ
     (check_generated<generated_t<Base + Index, Depth, RoleCount>, FullAssociation>(counts, family, Base + Index), ...);
 }
 
-// The family of four roles at depth 4 is in a source file of its own.
+// The families of three roles and of four roles at depth 4 check 48 seeds
+// each.  Two source files hold the two halves of each family: half k
+// checks the seeds from Base + 24k to Base + 24k + 23.
+inline constexpr std::string_view three_roles_family = "three roles, depth 4";
 inline constexpr std::string_view four_roles_family = "four roles, depth 4";
-void check_four_roles(FamilyCounts& counts);
+inline constexpr std::uint64_t three_roles_base = 1000;
+inline constexpr std::uint64_t four_roles_base = 5000;
+inline constexpr std::size_t depth_four_half = 24;
+
+template <std::size_t RoleCount, std::uint64_t Base, std::size_t Half>
+void check_depth_four_half(FamilyCounts& counts, std::string_view family) {
+    check_family<RoleCount, 4, Base + Half * depth_four_half, false>(counts, family,
+                                                                     std::make_index_sequence<depth_four_half>{});
+}
+
+void check_three_roles_half_0(FamilyCounts& counts);
+void check_three_roles_half_1(FamilyCounts& counts);
+void check_four_roles_half_0(FamilyCounts& counts);
+void check_four_roles_half_1(FamilyCounts& counts);
 
 // The family of two roles at depth 6 checks all five rewrites of each
 // live type of its 24 seeds.  Seven source files hold its parts: part k

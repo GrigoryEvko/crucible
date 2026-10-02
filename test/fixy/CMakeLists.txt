@@ -2842,8 +2842,10 @@ fixy_neg_compile_test(neg_sess_checkpoint_handle_friend_specialized
 #
 # EventLog.h decodes bytes only through a check of every control byte,
 # and Recording.h writes each step of a plain, crash-watched or
-# checkpoint session.  The test corrupts records one byte at a time.
-fixy_test(test_session_recording)
+# checkpoint session.  The test corrupts records one byte at a time.  The
+# recorder outside a crash transport and a checkpoint session is in a
+# source file of its own.
+fixy_test(test_session_recording test_session_recording.cpp test_session_recording_decorators.cpp)
 
 # HS14 for mint_recorded_session: a value that is no handle, a handle
 # that already has a recorder, and a log that dies before the recorder
@@ -2964,8 +2966,9 @@ fixy_test(test_session_crash_attack test_session_crash_attack.cpp test_session_c
 # group, so that no translation unit compiles all of them.
 fixy_test(test_session_global_types)
 fixy_test(test_session_global_attack test_session_global_attack.cpp test_session_global_attack_hand.cpp
-  test_session_global_attack_generated.cpp test_session_global_attack_four_roles.cpp
-  test_session_global_attack_two_roles_0.cpp test_session_global_attack_two_roles_1.cpp
+  test_session_global_attack_generated.cpp test_session_global_attack_three_roles_0.cpp
+  test_session_global_attack_three_roles_1.cpp test_session_global_attack_four_roles_0.cpp
+  test_session_global_attack_four_roles_1.cpp test_session_global_attack_two_roles_0.cpp test_session_global_attack_two_roles_1.cpp
   test_session_global_attack_two_roles_2.cpp test_session_global_attack_two_roles_3.cpp
   test_session_global_attack_two_roles_4.cpp test_session_global_attack_two_roles_5.cpp
   test_session_global_attack_two_roles_6.cpp test_session_global_attack_grid_0.cpp

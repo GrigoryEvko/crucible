@@ -51,7 +51,7 @@ test/fixy/test_session_node_members.cpp ::fixy::session::detail x5 — walks the
 test/fixy/test_session_node_members.cpp ::fixy::session::global::detail x2 — walks the node reader of the global types
 test/fixy/test_session_ownership_attacks.cpp ::fixy::session::detail x2 — reads the payload refusal of the ownership check
 test/fixy/test_session_payload_seal.cpp ::fixy::session::detail x8 — specializes each gate and cache cell of the payload walk to show that no verdict changes
-test/fixy/test_session_recording.cpp ::foundation::effects::detail x1 — builds a background context from its witness
+test/fixy/session_recording.h ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_rollback.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_subtype_reason.cpp ::fixy::session::detail x1 — pins the bound of the async subtype search
 test/fixy/test_session_wire_word.cpp ::foundation::effects::detail x1 — builds a background context from its witness
