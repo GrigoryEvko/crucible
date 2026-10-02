@@ -156,7 +156,7 @@
 //
 // The plugin cannot see what the front end keeps as no tree, or as a tree with
 // no source location: a use in an unevaluated operand, a dependent member of a
-// template, a using-declaration and a default argument that no call uses.  The
+// template and a using-declaration.  The
 // front end folds the initializer of a variable while it parses, when a call
 // of a constexpr function in it gives a constant.  Such a call is no finding.
 // The libstdc++ assertions of the Debug, TSan and UBSan-strict presets stop
@@ -295,11 +295,15 @@ struct LibraryClasses {
     tree refused = NULL_TREE;
     tree pending = NULL_TREE;
     const AdmitRow* pending_row = nullptr;
+    // The refused class sits in a function type, which makes no object, so
+    // the declaration names the class and holds no object of it.
+    bool is_refused_name = false;
 
     // Keeps the first refused and the first pending class of the two.
     void add(const LibraryClasses& other) {
         if (refused == NULL_TREE) {
             refused = other.refused;
+            is_refused_name = other.is_refused_name;
         }
         if (pending == NULL_TREE) {
             pending = other.pending;
@@ -927,18 +931,35 @@ LibraryClasses library_class_in_template_arguments(tree class_type, int depth, c
     return found;
 }
 
+// The library classes that the function type TYPE names: in its return type
+// and in each parameter type, also the class of a member function.  A
+// function type makes no object, so a refused class of it is a name of the
+// declaration and no object.
+LibraryClasses library_class_in_function_type(tree type, int depth, const FileEntry* language) {
+    LibraryClasses found = library_class_in(TREE_TYPE(type), depth + 1, Use::other, language);
+    for (tree parameter = TYPE_ARG_TYPES(type); parameter != NULL_TREE && parameter != void_list_node;
+         parameter = TREE_CHAIN(parameter)) {
+        found.add(library_class_in(TREE_VALUE(parameter), depth + 1, Use::parameter, language));
+    }
+    found.is_refused_name = found.refused != NULL_TREE;
+    return found;
+}
+
 // The first class or enumeration of the standard library or of a C header
 // that TYPE holds, and that no admit row admits, and the first one that a row
 // with `until` admits.  The walk looks through typedefs, pointers, references,
-// arrays, template arguments and the enclosing class, and stops at a library
-// class or enumeration.  So a typedef of fixy that names std::memory_order
-// gives an object of a library type.  A function type is not read: a callback
-// that takes a std::string is not an object of that type.  USE applies to the
-// class at the outer level, through pointers and references.  A template
-// argument and an enclosing class are other uses.  LANGUAGE names the file of
-// the language of the declaration, or is null.  The caches keep the answer of
-// each type for each use, and of a file of the language apart.  A type nested
-// deeper than kTypeDepth is refused, so the bound hides no library class.
+// arrays, function types, template arguments and the enclosing class, and
+// stops at a library class or enumeration that no row admits.  So a typedef of
+// fixy that names std::memory_order gives an object of a library type.  A
+// class that a function type names is a name and not an object: a callback
+// that takes a std::string holds no std::string.  A row admits a library class
+// and not its template arguments, so std::initializer_list<std::string> holds
+// a refused std::string.  USE applies to the class at the outer level, through
+// pointers and references.  A template argument and an enclosing class are
+// other uses.  LANGUAGE names the file of the language of the declaration, or
+// is null.  The caches keep the answer of each type for each use, and of a
+// file of the language apart.  A type nested deeper than kTypeDepth is
+// refused, so the bound hides no library class.
 LibraryClasses library_class_in(tree type, int depth, Use use, const FileEntry* language) {
     LibraryClasses found;
     if (type == NULL_TREE || type == error_mark_node) {
@@ -951,10 +972,10 @@ LibraryClasses library_class_in(tree type, int depth, Use use, const FileEntry* 
     switch (TREE_CODE(type)) {
         case POINTER_TYPE:
         case REFERENCE_TYPE:
-            if (FUNC_OR_METHOD_TYPE_P(TREE_TYPE(type))) {
-                return found;
-            }
             return library_class_in(TREE_TYPE(type), depth + 1, use, language);
+        case FUNCTION_TYPE:
+        case METHOD_TYPE:
+            return library_class_in_function_type(type, depth, language);
         case ARRAY_TYPE:
             return library_class_in(TREE_TYPE(type), depth + 1, use, language);
         case TYPENAME_TYPE:
@@ -969,7 +990,7 @@ LibraryClasses library_class_in(tree type, int depth, Use use, const FileEntry* 
             return found;
     }
     if (TYPE_PTRMEMFUNC_P(type)) {
-        return found;
+        return library_class_in(TYPE_PTRMEMFUNC_FN_TYPE(type), depth + 1, use, language);
     }
     tree main_type = TYPE_MAIN_VARIANT(type);
     std::unordered_map<tree, LibraryClasses>& cache = language == nullptr
@@ -985,9 +1006,14 @@ LibraryClasses library_class_in(tree type, int depth, Use use, const FileEntry* 
             const AdmitRow* row = admitting_row(decl, use, NULL_TREE, language);
             if (row == nullptr) {
                 found.refused = main_type;
-            } else if (!row->pending_kind.empty()) {
-                found.pending = main_type;
-                found.pending_row = row;
+            } else {
+                if (!row->pending_kind.empty()) {
+                    found.pending = main_type;
+                    found.pending_row = row;
+                }
+                if (CLASS_TYPE_P(main_type) && CLASSTYPE_TEMPLATE_INFO(main_type) != NULL_TREE) {
+                    found.add(library_class_in_template_arguments(main_type, depth, language));
+                }
             }
         } else {
             if (CLASS_TYPE_P(main_type) && CLASSTYPE_TEMPLATE_INFO(main_type) != NULL_TREE) {
@@ -1093,8 +1119,16 @@ void check_object(tree decl, Role role) {
     Use use = role == Role::parameter ? Use::parameter : Use::other;
     LibraryClasses classes = library_class_in(type, 0, use, language);
     if (tree found = classes.refused) {
-        Kind kind = library_of(TYPE_MAIN_DECL(found)) == Library::c_library ? Kind::c_library_object : Kind::std_object;
-        record_declared(kind, location, qualified_name(found) + " (" + type_text(type) + ")", language);
+        // A class of a function type is a name: std_entity for a class of the
+        // standard library, and nothing for a struct of the C library, whose
+        // objects get their findings where the code declares them.
+        if (!classes.is_refused_name) {
+            Kind kind =
+                library_of(TYPE_MAIN_DECL(found)) == Library::c_library ? Kind::c_library_object : Kind::std_object;
+            record_declared(kind, location, qualified_name(found) + " (" + type_text(type) + ")", language);
+        } else if (is_standard_class(found)) {
+            record_declared(Kind::std_entity, location, qualified_name(found), language);
+        }
     } else if (tree named = library_type_name_in(type, 0, language)) {
         record_standard_use(named, location, qualified_name(named), use, NULL_TREE, language);
     }
@@ -1815,13 +1849,26 @@ void walk_root(tree* root, location_t location, bool is_pattern) {
     walk_expression(root, walk);
 }
 
-void check_signature(tree function) {
+// The return type, each parameter and each default argument of FUNCTION.  A
+// default argument that a quarantined file spells is a use there, also when no
+// call uses it.  A call copies a default with its own place, so the place of
+// a finding stays the same.  IS_PATTERN is true for a template pattern.
+void check_signature(tree function, bool is_pattern) {
     if (!DECL_CONSTRUCTOR_P(function) && !DECL_DESTRUCTOR_P(function)) {
         check_object(function, Role::return_value);
     }
     for (tree parameter = DECL_ARGUMENTS(function); parameter != NULL_TREE; parameter = DECL_CHAIN(parameter)) {
         if (!DECL_ARTIFICIAL(parameter)) {
             check_object(parameter, Role::parameter);
+        }
+    }
+    location_t location = DECL_SOURCE_LOCATION(function);
+    if (!is_quarantined(location)) {
+        return;
+    }
+    for (tree type = TYPE_ARG_TYPES(TREE_TYPE(function)); type != NULL_TREE; type = TREE_CHAIN(type)) {
+        if (TREE_PURPOSE(type) != NULL_TREE && TREE_CODE(TREE_PURPOSE(type)) != DEFERRED_PARSE) {
+            walk_root(&TREE_PURPOSE(type), location, is_pattern);
         }
     }
 }
@@ -1859,7 +1906,7 @@ void walk_body(tree function, bool is_pattern) {
     if (DECL_ARTIFICIAL(function) && !LAMBDA_FUNCTION_P(function)) {
         return;
     }
-    check_signature(function);
+    check_signature(function, is_pattern);
     if (DECL_LANG_SPECIFIC(function) != nullptr && DECL_DEFAULTED_FN(function)) {
         return;
     }
@@ -1888,7 +1935,7 @@ void check_member_function(tree function, bool is_pattern) {
     if (is_pattern) {
         walk_body(function, true);
     } else if (is_worth_a_walk(DECL_SOURCE_LOCATION(function))) {
-        check_signature(function);
+        check_signature(function, false);
     }
 }
 
@@ -1996,6 +2043,11 @@ void check_template_defaults(tree template_decl) {
             record_standard_use(named, location, qualified_name(named), Use::other, NULL_TREE, language);
         }
         record_pending_class(classes, location);
+        // The default of a non-type parameter is an expression, such as
+        // &std::strlen, and the walk of a body reads it.
+        if (!TYPE_P(default_argument) && TREE_CODE(default_argument) != TEMPLATE_DECL && is_quarantined(location)) {
+            walk_root(&TREE_PURPOSE(parameter), location, true);
+        }
     }
 }
 

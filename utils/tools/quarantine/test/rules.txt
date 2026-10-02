@@ -51,6 +51,7 @@ quarantine region_wrapper.cpp
 quarantine reopened_std.cpp
 quarantine system_marked.cpp
 quarantine struct_tree.cpp
+quarantine type_walks.cpp
 quarantine unclosed_region.cpp
 quarantine violations.cpp
 quarantine fixy/

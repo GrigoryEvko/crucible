@@ -186,6 +186,13 @@ PRESENT = (
     ("opted_out", "opt_out.cpp", 11, "c_library_call memset"),
     ("raw_pointer_object", "opt_out.cpp", 14, "char*"),
     ("c_library_call", "opt_out.cpp", 14, "memset"),
+    ("std_object", "type_walks.cpp", 10, "std::basic_string (std::type_identity<"),
+    ("std_entity", "type_walks.cpp", 12, "=std::basic_string"),
+    ("std_entity", "type_walks.cpp", 13, "=std::vector"),
+    ("c_library_call", "type_walks.cpp", 15, "=strlen"),
+    ("c_library_call", "type_walks.cpp", 17, "=strlen"),
+    ("raw_function_pointer", "type_walks.cpp", 20, "std::string"),
+    ("std_entity", "type_walks.cpp", 20, "=std::basic_string"),
 )
 
 # (fixture, line or None for each line, kind or None for each kind, a text in
@@ -414,8 +421,8 @@ def run(checker: Checker, rules: Path) -> list[Section]:
 
 
 def run_findings(section: Section, arguments: dict[str, str]) -> None:
-    """Compile the two fixtures in report mode, and judge each finding that must be present or absent."""
-    for fixture in ("violations.cpp", "opt_out.cpp"):
+    """Compile the three fixtures in report mode, and judge each finding that must be present or absent."""
+    for fixture in ("violations.cpp", "opt_out.cpp", "type_walks.cpp"):
         compiled = section.compile(fixture, arguments)
         section.expect(f"{fixture} compiles in report mode", compiled.returncode == 0, compiled.stderr[-2000:])
     findings = read_reports(Path(arguments["out"]))

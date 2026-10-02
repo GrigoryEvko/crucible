@@ -103,7 +103,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-asan-bench-fuzz TORCH_DIR unset
 bench/bench_harness.h c_array_object 16
-bench/bench_harness.h c_library_call 128
+bench/bench_harness.h c_library_call 135
 bench/bench_harness.h c_library_object 15
 bench/bench_harness.h compiler_builtin 5
 bench/bench_harness.h door_header 1
@@ -204,7 +204,7 @@ include/crucible/RecipePool.h raw_pointer_object 4
 include/crucible/RecipeRegistry.h raw_pointer_object 5
 include/crucible/RecipeRegistry.h std_entity 7
 include/crucible/RecipeRegistry.h std_object 22
-include/crucible/Reflect.h c_library_call 13
+include/crucible/Reflect.h c_library_call 14
 include/crucible/Reflect.h c_library_object 4
 include/crucible/Reflect.h raw_pointer_object 4
 include/crucible/Reflect.h replace_pending:std::bit_cast 6
@@ -370,6 +370,7 @@ include/crucible/cog/Calibrate.h std_object 16
 include/crucible/cog/CogIdentity.h c_array_object 1
 include/crucible/cog/CogIdentity.h raw_pointer_object 1
 include/crucible/cog/CogIdentity.h std_object 5
+include/crucible/cog/FitsCog.h std_entity 2
 include/crucible/cog/NicConfig.h std_entity 6
 include/crucible/cog/NicConfig.h std_object 23
 include/crucible/cog/NicOffloadAudit.h std_object 3
@@ -400,7 +401,7 @@ include/crucible/ledger/HostFingerprint.h std_object 33
 include/crucible/ledger/Ledger.h c_array_object 1
 include/crucible/ledger/Ledger.h raw_function_pointer 2
 include/crucible/ledger/Ledger.h raw_pointer_object 3
-include/crucible/ledger/Ledger.h std_entity 49
+include/crucible/ledger/Ledger.h std_entity 53
 include/crucible/ledger/Ledger.h std_object 11
 include/crucible/ledger/LedgerStore.h c_library_call 5
 include/crucible/ledger/LedgerStore.h raw_pointer_object 3
@@ -767,7 +768,7 @@ src/Cipher.cpp c_library_call 30
 src/Cipher.cpp raw_pointer_object 11
 src/Cipher.cpp replace_pending:<limits> 3
 src/Cipher.cpp std_entity 204
-src/Cipher.cpp std_object 71
+src/Cipher.cpp std_object 72
 src/Vigil.cpp raw_pointer_object 6
 src/Vigil.cpp std_entity 23
 src/canopy/Lifeguard.cpp std_object 1
@@ -925,7 +926,7 @@ test/fixy/session_crash_attack.h raw_function_pointer 1
 test/fixy/session_crash_attack.h raw_pointer_object 4
 test/fixy/session_crash_attack.h std_entity 15
 test/fixy/session_crash_attack.h std_object 5
-test/fixy/session_global_attack.h std_entity 39
+test/fixy/session_global_attack.h std_entity 42
 test/fixy/session_global_attack.h std_object 46
 test/fixy/session_recording.h c_library_call 2
 test/fixy/session_recording.h raw_pointer_object 3
@@ -1004,7 +1005,7 @@ test/fixy/test_endpoint.cpp c_library_call 4
 test/fixy/test_endpoint.cpp raw_pointer_object 2
 test/fixy/test_endpoint.cpp std_entity 65
 test/fixy/test_endpoint.cpp std_object 31
-test/fixy/test_federation.cpp std_entity 48
+test/fixy/test_federation.cpp std_entity 49
 test/fixy/test_federation.cpp std_object 19
 test/fixy/test_fixed_array.cpp replace_pending:std::bit_cast 1
 test/fixy/test_fixed_array.cpp std_entity 8
@@ -1350,7 +1351,7 @@ test/foundation/producer_claim_owner.cpp raw_new_delete 2
 test/foundation/producer_claim_owner.cpp raw_pointer_object 1
 test/foundation/test_algebra_core.cpp c_library_call 2
 test/foundation/test_algebra_core.cpp raw_function_pointer 1
-test/foundation/test_algebra_core.cpp replace_pending:std::source_location 3
+test/foundation/test_algebra_core.cpp replace_pending:std::source_location 4
 test/foundation/test_algebra_core.cpp std_entity 3
 test/foundation/test_algebra_core.cpp std_object 2
 test/foundation/test_aligned_buffer.cpp raw_pointer_object 1
@@ -1389,7 +1390,7 @@ test/foundation/test_diag.cpp c_library_call 35
 test/foundation/test_diag.cpp c_library_object 14
 test/foundation/test_diag.cpp raw_function_pointer 12
 test/foundation/test_diag.cpp raw_pointer_object 15
-test/foundation/test_diag.cpp std_entity 122
+test/foundation/test_diag.cpp std_entity 134
 test/foundation/test_diag.cpp std_object 47
 test/foundation/test_effects_core.cpp std_entity 7
 test/foundation/test_effects_core.cpp std_object 9
@@ -1415,7 +1416,7 @@ test/foundation/test_lattices_bands.cpp std_object 9
 test/foundation/test_lattices_core.cpp c_library_call 3
 test/foundation/test_lattices_core.cpp replace_pending:<limits> 5
 test/foundation/test_lattices_core.cpp replace_pending:std::bit_cast 2
-test/foundation/test_lattices_core.cpp replace_pending:std::source_location 3
+test/foundation/test_lattices_core.cpp replace_pending:std::source_location 4
 test/foundation/test_lattices_counters.cpp c_library_call 4
 test/foundation/test_lattices_counters.cpp raw_pointer_object 2
 test/foundation/test_lattices_counters.cpp replace_pending:<limits> 1
@@ -1714,8 +1715,8 @@ test/session_oracle/generated_fixy_wire_36.cpp std_object 37
 test/session_oracle/wire_driver.h c_library_call 13
 test/session_oracle/wire_driver.h raw_function_pointer 3
 test/session_oracle/wire_driver.h raw_pointer_object 8
-test/session_oracle/wire_driver.h std_entity 24
-test/session_oracle/wire_driver.h std_object 14
+test/session_oracle/wire_driver.h std_entity 25
+test/session_oracle/wire_driver.h std_object 15
 test/test_abort_probe.h c_array_object 1
 test/test_abort_probe.h c_library_call 8
 test/test_abort_probe.h c_library_object 4
@@ -1827,7 +1828,7 @@ test/test_cntp_gpu_direct.cpp std_entity 71
 test/test_cntp_gpu_direct.cpp std_object 26
 test/test_cntp_incast_control.cpp c_library_call 2
 test/test_cntp_incast_control.cpp door_header 1
-test/test_cntp_incast_control.cpp std_entity 58
+test/test_cntp_incast_control.cpp std_entity 59
 test/test_cntp_incast_control.cpp std_object 24
 test/test_cntp_integrity.cpp std_entity 29
 test/test_cntp_integrity.cpp std_object 14
@@ -2202,7 +2203,7 @@ test/test_storage_nbytes_simd.cpp replace_pending:std::bit_cast 3
 test/test_storage_nbytes_simd.cpp std_entity 10
 test/test_storage_nbytes_simd.cpp std_object 9
 test/test_stub_discipline.cpp raw_function_pointer 1
-test/test_stub_discipline.cpp std_entity 14
+test/test_stub_discipline.cpp std_entity 16
 test/test_stub_discipline.cpp std_object 7
 test/test_swim.cpp std_entity 15
 test/test_swim.cpp std_object 7
@@ -2502,8 +2503,8 @@ x86_64-debug-asan-bench-fuzz bench/bench_philox.cpp c_library_call +9
 x86_64-debug-asan-bench-fuzz bench/bench_philox.cpp std_entity +6
 x86_64-debug-asan-bench-fuzz bench/bench_philox.cpp std_object +9
 x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp c_library_call +5
-x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +17
-x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_object +7
+x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +19
+x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_object +9
 x86_64-debug-asan-bench-fuzz bench/bench_pool_allocator.cpp c_array_object +5
 x86_64-debug-asan-bench-fuzz bench/bench_pool_allocator.cpp c_library_call +18
 x86_64-debug-asan-bench-fuzz bench/bench_pool_allocator.cpp raw_pointer_object +5
@@ -2637,7 +2638,7 @@ x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_arena_alloc_invariants.cpp 
 x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_boundary_harnesses.cpp c_array_object +2
 x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_boundary_harnesses.cpp raw_function_pointer +2
 x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_boundary_harnesses.cpp raw_pointer_object +2
-x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_boundary_harnesses.cpp std_entity +22
+x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_boundary_harnesses.cpp std_entity +24
 x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_boundary_harnesses.cpp std_object +3
 x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_callsite_table_dedup.cpp c_array_object +1
 x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_callsite_table_dedup.cpp raw_pointer_object +1
@@ -2766,6 +2767,7 @@ x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_vector_clock.cpp std_entity
 x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_vector_clock.cpp std_object +5
 x86_64-debug-asan-bench-fuzz test/fuzz/property/property_runner.h c_library_call +11
 x86_64-debug-asan-bench-fuzz test/fuzz/property/property_runner.h raw_pointer_object +2
+x86_64-debug-asan-bench-fuzz test/fuzz/property/property_runner.h replace_pending:<limits> +1
 x86_64-debug-asan-bench-fuzz test/fuzz/property/property_runner.h std_entity +9
 x86_64-debug-asan-bench-fuzz test/fuzz/property/property_runner.h std_object +3
 x86_64-debug-asan-bench-fuzz test/fuzz/property/random_input.h c_array_object +2
