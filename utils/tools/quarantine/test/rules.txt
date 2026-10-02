@@ -22,6 +22,7 @@ admit std::bit_cast until Scalar plain-result | a copy of the bits into a type t
 admit std::source_location until Report | the place of a call
 admit std::unreachable until Report | a hint to the optimizer
 
+quarantine allocation.cpp
 quarantine contracts.cpp
 quarantine deep_nesting.cpp
 quarantine end_without_region.cpp
@@ -39,6 +40,7 @@ quarantine low_includes_high.cpp
 quarantine meta_info.cpp
 quarantine nonclass.cpp
 quarantine opt_out.cpp
+quarantine outside_user.cpp
 quarantine own_region_macro.cpp
 quarantine pending.cpp
 quarantine plant_std.cpp

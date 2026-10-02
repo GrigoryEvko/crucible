@@ -50,7 +50,9 @@
 //     raw_pointer_object    a variable, data member or parameter of type T*
 //     raw_function_pointer  the same, for a pointer to a function or to a member
 //     c_array_object        a variable or data member of type T[N]
-//     raw_new_delete        a new-expression or a delete-expression
+//     raw_new_delete        a new-expression or a delete-expression, and a
+//                           declaration of an allocation function that is not
+//                           deleted, such as a replacement of operator new
 //     c_library_call        a use of a function or a variable of a system header
 //                           in the global namespace, such as memcpy or optind,
 //                           and a call of a builtin that has a function of the C
@@ -1339,6 +1341,20 @@ void check_foreign_declaration(tree decl) {
     }
 }
 
+// A declaration of an allocation function in a quarantined file, such as a
+// replacement of the global operator new.  Each new-expression of the program
+// can then call it, so it is a raw_new_delete.  A deleted allocation function
+// allocates nothing.
+void check_allocation_function(tree decl) {
+    if (TREE_CODE(decl) != FUNCTION_DECL || DECL_ARTIFICIAL(decl)
+        || !(DECL_IS_OPERATOR_NEW_P(decl) || DECL_IS_OPERATOR_DELETE_P(decl))
+        || (DECL_LANG_SPECIFIC(decl) != nullptr && DECL_DELETED_FN(decl))) {
+        return;
+    }
+    record(Kind::raw_new_delete, DECL_SOURCE_LOCATION(decl),
+           std::string("declaration of ") + (DECL_IS_OPERATOR_NEW_P(decl) ? "operator new" : "operator delete"));
+}
+
 // DECL, a function definition or any declaration, when it defines a function
 // or a variable of C language linkage.  PLUGIN_FINISH_DECL also sees a
 // function that the code only declares, so a function counts only from
@@ -1981,6 +1997,7 @@ void walk_class(tree type, bool is_pattern) {
             case FUNCTION_DECL:
                 check_member_function(member, is_pattern);
                 check_foreign_declaration(member);
+                check_allocation_function(member);
                 break;
             case TYPE_DECL:
                 if (DECL_SELF_REFERENCE_P(member)) {
@@ -2170,6 +2187,7 @@ void walk_namespace_member(tree decl) {
             if (!has_lang_template_info(decl) || DECL_TEMPLATE_SPECIALIZATION(decl)) {
                 check_member_function(decl, false);
                 check_foreign_declaration(decl);
+                check_allocation_function(decl);
             }
             break;
         case VAR_DECL:

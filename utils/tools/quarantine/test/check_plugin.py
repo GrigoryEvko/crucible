@@ -736,6 +736,8 @@ LIBRARY_NAMES = (
     ("foreign_symbols.cpp", (), 15, "c_library_call", "foreign_copy (asm label memcpy)"),
     ("foreign_symbols.cpp", (), 16, "c_library_call", "foreign_exit (attribute weakref)"),
     ("foreign_symbols.cpp", (), 22, "inline_asm", "asm register held"),
+    ("allocation.cpp", (), 8, "raw_new_delete", "declaration of operator new"),
+    ("allocation.cpp", (), 12, "raw_new_delete", "declaration of operator delete"),
 )
 # (fixture, line): no finding of any kind there.
 LIBRARY_NAMES_ABSENT = (
@@ -756,6 +758,7 @@ LIBRARY_KINDS_ABSENT = (
     ("pending.cpp", (), 13, "replace_pending:std::bit_cast"),  # a refused use is no pending use
     ("pending.cpp", (), 22, "replace_pending:std::bit_cast"),  # a dependent result fails closed
     ("pending.cpp", (), 41, "std_entity"),  # a pointer to a dependent type holds no bool
+    ("allocation.cpp", (), 11, "raw_new_delete"),  # a deleted allocation function allocates nothing
 )
 
 
@@ -910,17 +913,25 @@ KNOWN_GAPS = (
     ("language_gap_user.cpp", HERE / "language.txt", "include/fixy/high/LanguageGap.h", 11,
      "the rule of the language reads each declaration type and each include, and not a call.  An extension needs "
      "a decision of the owner: the language files name std::nothrow and the std::vector of std::meta"),
+    ("outside_user.cpp", TEST_RULES, "outside_user.cpp", 9,
+     "a header outside the root that is not a system header is no library, so its class is no library class"),
+    ("outside_user.cpp", TEST_RULES, "outside_user.cpp", 10,
+     "a header outside the root that is not a system header is no library, so its function is no library call"),
 )
+OUTSIDE_LIBRARY_HEADER = "#pragma once\nstruct OutsideType {\n    int value = 0;\n};\ninline int outside_value() { return 1; }\n"
 
 
 def run_known_gaps(section: Section) -> None:
     """Compile each fixture of KNOWN_GAPS in report mode, and judge that each pinned line has no finding."""
+    outside = section.work / "outside-library"
+    outside.mkdir(exist_ok=True)
+    (outside / "OutsideLibrary.h").write_text(OUTSIDE_LIBRARY_HEADER, encoding="utf-8")
     fixtures = sorted({(fixture, table) for fixture, table, _, _, _ in KNOWN_GAPS})
     calls: list[tuple[object, ...]] = []
     for index, (fixture, table) in enumerate(fixtures):
         arguments = {"root": str(HERE), "mode": "report", "rules": str(table),
                      "out": str(section.work / f"gaps-{index}")}
-        calls.append((fixture, arguments))
+        calls.append((fixture, arguments, ("-S", "-o", os.devnull), ("-I", str(outside))))
     findings: dict[str, list[Finding]] = {}
     for index, ((fixture, _), compiled) in enumerate(zip(fixtures, section.compile_all(calls), strict=True)):
         section.expect(f"{fixture} compiles in report mode", compiled.returncode == 0, compiled.stderr[-2000:])
