@@ -185,11 +185,13 @@ function(crucible_bpf_program name source)
   set(_BPF_EMBED_STAGED "${_BPF_EMBED_DIR}/${name}_bpf_bytecode")
   set(_BPF_EMBED_C      "${CMAKE_CURRENT_BINARY_DIR}/${name}_bpf_bytecode.c")
 
-  # Compile BPF program: clang -target bpf, with -O2 (verifier
-  # requires optimised code for larger programs) and BTF debug info
-  # (-g) for CO-RE field relocations.  -fdebug-prefix-map scrubs the
-  # absolute build path from .debug_str so the generated .o (and the
-  # embedded byte array) are reproducible across checkouts.
+  # The compile uses clang with `-target bpf`.  It uses -O2, because the
+  # verifier rejects a large program that has no optimization.  It uses -g,
+  # because the CO-RE field relocations read the BTF debug information.
+  # -fdebug-prefix-map removes the absolute build path from .debug_str.  The
+  # same command gives the same object in each checkout.  A different command
+  # can give a different object: for sched_tp_btf and cntp_dp_fq_budget,
+  # another flag list or another output path changes the .BTF section.
   #
   # -MD -MF writes the depfile of the compile, and DEPFILE gives that file to
   # the generator.  The depfile names each header that the compile reads,
