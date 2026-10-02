@@ -168,7 +168,7 @@ static_assert(std::is_default_constructible_v<CaptureLessLambdaType>);
 static_assert(IsRefinementPredicate<CaptureLessLambdaType>, "a closure has the shape of a predicate");
 static_assert(!IsAtom<refined_with<CaptureLessLambdaType>>,
               "The name of a closure type is not a function of the type, so the atom has no key.");
-static_assert(atom_refusal_v<refined_with<CaptureLessLambdaType>> == atom_refusal::no_stable_identity);
+static_assert(atom_refusal_of_(^^refined_with<CaptureLessLambdaType>) == atom_refusal::no_stable_identity);
 static_assert(!IsAtom<from_source<decltype([] {})>>, "the identity read covers every parametric atom");
 static_assert(!IsAtom<protocol<decltype([] {})>>);
 static_assert(IsAtom<refined_with<atom_axis_witness_predicate>>);
@@ -216,13 +216,13 @@ static_assert(!IsAtom<int>);
 struct shaped_outside_the_catalog final : atom_of<Axis::Usage> {};
 static_assert(detail::HasAtomShape<shaped_outside_the_catalog>);
 static_assert(!IsAtom<shaped_outside_the_catalog>);
-static_assert(atom_refusal_v<shaped_outside_the_catalog> == atom_refusal::outside_the_catalog);
+static_assert(atom_refusal_of_(^^shaped_outside_the_catalog) == atom_refusal::outside_the_catalog);
 
 // The core namespace and each family carry one seal, in this file for
 // the core.  A shipped atom passes each of the four reads.
-static_assert(atom_refusal_v<affine> == atom_refusal::none);
-static_assert(atom_refusal_v<with_io> == atom_refusal::none, "an alias is read through to the atom it names");
-static_assert(atom_refusal_v<declassify<::fixy::tags::secret_policy::AuditedLogging>> == atom_refusal::none);
+static_assert(atom_refusal_of_(^^affine) == atom_refusal::none);
+static_assert(atom_refusal_of_(^^with_io) == atom_refusal::none, "an alias is read through to the atom it names");
+static_assert(atom_refusal_of_(^^declassify<::fixy::tags::secret_policy::AuditedLogging>) == atom_refusal::none);
 static_assert(same_file_(^^affine, ^^::fixy::atom::atom_namespace_seal));
 static_assert(is_admitted_atom_namespace_(^^::fixy::atom) && is_admitted_atom_namespace_(^^::fixy::atom::sync));
 static_assert(!is_admitted_atom_namespace_(^^::fixy::atom::detail), "detail holds rosters and probes, not atoms");

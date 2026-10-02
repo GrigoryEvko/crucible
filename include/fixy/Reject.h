@@ -210,7 +210,7 @@ template <class G>
             "names an axis, is declared in the closed catalog, and has a name that is its identity.";
     if constexpr (::fixy::atom::detail::HasAtomShape<G>) {
         text += "  It has the shape, and it is refused because ";
-        text += ::fixy::atom::detail::atom_refusal_text_(::fixy::atom::detail::atom_refusal_v<G>);
+        text += ::fixy::atom::detail::atom_refusal_text_(::fixy::atom::detail::atom_refusal_of_(^^G));
         text += '.';
     }
     return text;

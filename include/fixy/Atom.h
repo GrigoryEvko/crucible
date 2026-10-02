@@ -168,11 +168,11 @@ enum class atom_refusal : std::uint8_t {
     return lhs_file == rhs_file;
 }
 
-// The refusal for a type that already has the shape.  The caller reads
-// the identity of the type, because the identity walk is a concept over
-// the type and not a query over its reflection.  Complexity: linear in
-// the members of the owning namespace.
-[[nodiscard]] consteval atom_refusal atom_refusal_of_(std::meta::info type, bool has_stable_identity) {
+// The refusal for a type that already has the shape.  The function is
+// not a template, so no translation unit can specialize a verdict in
+// front of it.  Complexity: linear in the members of the owning
+// namespace, plus the identity walk of the type.
+[[nodiscard]] consteval atom_refusal atom_refusal_of_(std::meta::info type) {
     const std::meta::info owner = atom_owner_(type);
     if (!is_admitted_atom_namespace_(owner)) return atom_refusal::outside_the_catalog;
     std::meta::info seal{};
@@ -186,7 +186,7 @@ enum class atom_refusal : std::uint8_t {
     if (seals == 0) return atom_refusal::namespace_unsealed;
     if (seals > 1) return atom_refusal::namespace_sealed_twice;
     if (!same_file_(std::meta::dealias(type), seal)) return atom_refusal::declared_outside_its_seal;
-    if (!has_stable_identity) return atom_refusal::no_stable_identity;
+    if (!::foundation::reflect::has_stable_identity(type)) return atom_refusal::no_stable_identity;
     return atom_refusal::none;
 }
 
@@ -222,17 +222,16 @@ concept HasAtomShape =
         { G::axis } -> std::convertible_to<Axis>;
     };
 
-// The answer for one type, computed once at the first query.  The
-// namespace, the file and the identity are facts of the declaration.  A
-// second seal that a translation unit adds later refuses each atom first
-// asked about after it.
-template <class G>
-inline constexpr atom_refusal atom_refusal_v = atom_refusal_of_(^^G, ::foundation::reflect::HasStableIdentity<G>);
-
 }  // namespace detail
 
+// The gate calls the refusal function itself.  A concept has no
+// specialization, so no translation unit can put a different verdict in
+// front of the four reads.  The namespace, the file and the identity are
+// facts of the declaration.  GCC keeps the first satisfaction of the gate
+// for each atom, so a second seal that a translation unit adds later
+// refuses each atom first asked about after it.
 template <class G>
-concept IsAtom = detail::HasAtomShape<G> && detail::atom_refusal_v<G> == detail::atom_refusal::none;
+concept IsAtom = detail::HasAtomShape<G> && detail::atom_refusal_of_(^^G) == detail::atom_refusal::none;
 
 // Each concept below is the minimum structural bar a parametric atom's
 // parameter must clear.  A parameter that fails one makes the atom

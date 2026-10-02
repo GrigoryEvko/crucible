@@ -4692,10 +4692,16 @@ crucible_neg_compile_test(neg_computation_cache_in_row_non_function_nttp
 # unit.
 crucible_neg_compile_test(neg_computation_cache_closure_invoker
   "computation_cache_key: the function, its signature or an argument type has no stable identity"
-  "HasStableKeyIdentity")
+  "required for the satisfaction of .HasStableFunctionIdentity<FnPtr>. .with FnPtr = &closure_key::")
 crucible_neg_compile_test(neg_computation_cache_closure_argument
   "computation_cache_key: the function, its signature or an argument type has no stable identity"
   "HasStableKeyIdentity")
+# The gate of the key reads the identity of the function through a
+# concept, so a translation unit cannot put a verdict of a stable identity
+# in front of the walk for the static invoker of a closure.
+crucible_neg_compile_test(neg_computation_cache_forged_function_identity
+  "computation_cache_key: the function, its signature or an argument type has no stable identity"
+  "required for the satisfaction of .HasStableFunctionIdentity<FnPtr>. .with FnPtr = &closure_key::")
 
 # Every Cipher operation that reaches the store takes a context whose row
 # admits IO and Block: open, mint_open_view, record_event and

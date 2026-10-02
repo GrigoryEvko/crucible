@@ -57,10 +57,12 @@ concept IsCacheableFunction =
 // and a closure prints a name that depends on its translation unit.  So
 // a function reached through a closure's static invoker, or a signature
 // or an argument type that names a closure or an unnamed class, has no
-// key.  foundation/reflect/Hash.h reads the structure of each type.
+// key.  foundation/reflect/Hash.h reads the structure of each type.  Each
+// clause is a concept, so no translation unit can specialize a verdict
+// in front of the walk.
 template <auto FnPtr, typename... Args>
 concept HasStableKeyIdentity =
-    IsCacheableFunction<FnPtr> && ::foundation::reflect::function_has_stable_identity_v<FnPtr>
+    IsCacheableFunction<FnPtr> && ::foundation::reflect::HasStableFunctionIdentity<FnPtr>
     && ::foundation::reflect::HasStableIdentity<std::remove_pointer_t<decltype(FnPtr)>>
     && (::foundation::reflect::HasStableIdentity<Args> && ...);
 

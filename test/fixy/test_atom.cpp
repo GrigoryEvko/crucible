@@ -223,9 +223,9 @@ using respecialized = fa::stdio::write<user_code::private_stream>;
 static_assert(fad::HasAtomShape<forged_usage> && !fa::IsAtom<forged_usage>);
 static_assert(fad::HasAtomShape<planted_flow> && !fa::IsAtom<planted_flow>);
 static_assert(fad::HasAtomShape<respecialized> && !fa::IsAtom<respecialized>);
-static_assert(fad::atom_refusal_v<forged_usage> == fad::atom_refusal::outside_the_catalog);
-static_assert(fad::atom_refusal_v<planted_flow> == fad::atom_refusal::declared_outside_its_seal);
-static_assert(fad::atom_refusal_v<respecialized> == fad::atom_refusal::declared_outside_its_seal);
+static_assert(fad::atom_refusal_of_(^^forged_usage) == fad::atom_refusal::outside_the_catalog);
+static_assert(fad::atom_refusal_of_(^^planted_flow) == fad::atom_refusal::declared_outside_its_seal);
+static_assert(fad::atom_refusal_of_(^^respecialized) == fad::atom_refusal::declared_outside_its_seal);
 
 // The same template, specialized nowhere, is still an atom: the refusal
 // is of the specialization, not of the family.
@@ -234,8 +234,8 @@ static_assert(fa::IsAtom<fa::stdio::write<fa::stdio::streams::Stderr>>);
 // The refusal of each type, read at runtime through the text the
 // diagnostic prints.
 [[nodiscard]] bool every_forgery_is_refused_at_runtime() noexcept {
-    constexpr std::string_view outside = fad::atom_refusal_text_(fad::atom_refusal_v<forged_usage>);
-    constexpr std::string_view planted = fad::atom_refusal_text_(fad::atom_refusal_v<planted_flow>);
+    constexpr std::string_view outside = fad::atom_refusal_text_(fad::atom_refusal_of_(^^forged_usage));
+    constexpr std::string_view planted = fad::atom_refusal_text_(fad::atom_refusal_of_(^^planted_flow));
     volatile bool shipped_is_atom = fa::IsAtom<fa::affine>;
     return outside.contains("fixy::atom") && planted.contains("file") && shipped_is_atom;
 }

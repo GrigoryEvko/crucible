@@ -271,8 +271,13 @@ static_assert(identity_of_type(^^decltype(identity_test::local_of_named())).faul
 static_assert(identity_of_type(^^decltype(identity_test::local_of_named())).culprit
               == std::meta::dealias(^^decltype(identity_test::local_of_named())));
 
-static_assert(function_has_stable_identity_v<&identity_test::named_function>);
-static_assert(!function_has_stable_identity_v<identity_test::closure_invoker>);
+static_assert(HasStableFunctionIdentity<&identity_test::named_function>);
+static_assert(!HasStableFunctionIdentity<identity_test::closure_invoker>);
+static_assert(!HasStableFunctionIdentity<&identity_test::internal_function>);
+static_assert(!HasStableFunctionIdentity<0>, "a value that is not a pointer to a function names no function");
+static_assert(has_stable_function_identity(^^identity_test::named_function));
+static_assert(!has_stable_function_identity(^^identity_test::internal_function));
+static_assert(has_stable_identity(^^identity_test::Named) && !has_stable_identity(^^identity_test::Internal));
 
 // The verdict names the part that has no identity, not the whole type,
 // and the kind of fault that part has.

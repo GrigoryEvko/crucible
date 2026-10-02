@@ -553,21 +553,30 @@ consteval void append_value_type(std::string& suffix, std::meta::info type) {
 
 }  // namespace detail
 
-// True when the printed name of T is a path of declared names from the
-// global namespace, so that every translation unit prints it the same
-// and no other type prints it.  Every id below requires it.  The concept
-// calls the walk itself.  A concept has no specialization, so no
+// True when the printed name of a type is a path of declared names from
+// the global namespace, so that every translation unit prints it the
+// same and no other type prints it.  Every id below requires it.  The
+// door is a function that is not a template, and the gate below is a
+// concept.  No translation unit can specialize either one, so no
 // translation unit can put a different verdict in front of the walk.
-template <typename T>
-concept HasStableIdentity = detail::identity_of_type(^^T).fault == detail::identity_fault::none;
+[[nodiscard]] consteval bool has_stable_identity(std::meta::info type) {
+    return detail::identity_of_type(type).fault == detail::identity_fault::none;
+}
 
-// The same question for a function that a pointer names.  A pointer to
-// the static invoker of a closure, or to a function with internal
-// linkage, has no stable identity.
+template <typename T>
+concept HasStableIdentity = has_stable_identity(^^T);
+
+// The same question for a function.  The static invoker of a closure,
+// and a function with internal linkage, have no stable identity.
+[[nodiscard]] consteval bool has_stable_function_identity(std::meta::info function) {
+    return detail::identity_of_function(function, nullptr).fault == detail::identity_fault::none;
+}
+
+// The same question for the function that a pointer names.
 template <auto FnPtr>
-    requires std::is_pointer_v<decltype(FnPtr)> && std::is_function_v<std::remove_pointer_t<decltype(FnPtr)>>
-inline constexpr bool function_has_stable_identity_v =
-    detail::identity_of_function(std::meta::reflect_function(*FnPtr), nullptr).fault == detail::identity_fault::none;
+concept HasStableFunctionIdentity =
+    std::is_pointer_v<decltype(FnPtr)> && std::is_function_v<std::remove_pointer_t<decltype(FnPtr)>>
+    && has_stable_function_identity(std::meta::reflect_function(*FnPtr));
 
 namespace detail {
 
@@ -667,7 +676,7 @@ namespace detail {
 
 template <auto FnPtr>
 [[nodiscard]] consteval std::uint64_t checked_function_name_hash() {
-    static_assert(function_has_stable_identity_v<FnPtr>,
+    static_assert(HasStableFunctionIdentity<FnPtr>,
                   "stable_function_name_id: the function has no stable identity.  A static invoker of a closure "
                   "or a function with internal linkage prints a name that differs between translation units.  "
                   "Name a function with external linkage.");

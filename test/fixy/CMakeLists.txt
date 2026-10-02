@@ -924,7 +924,7 @@ fixy_neg_compile_test(neg_atom_forged_in_user_namespace
   "fixy::fn<int, user_code::forged_usage>::tier2_atoms_ok_.+ evaluates to false")
 fixy_neg_compile_test(neg_atom_forged_in_spoof_namespace
   "static assertion failed"
-  ".atom_refusal_v<G>. == fixy::atom::detail::atom_refusal::none \\[with G = user_code::fixy::atom::forged_effect\\]. evaluated to .false.")
+  "atom_refusal_of_\\(.*\\(\\^\\^ G\\) == fixy::atom::detail::atom_refusal::none \\[with G = user_code::fixy::atom::forged_effect\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_atom_planted_in_family
   "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 2\\]: every entry in the pack must be an atom of the closed catalog"
   "fixy::fn<int, fixy::atom::sync::planted_wait>::tier2_atoms_ok_.+ evaluates to false")
@@ -939,6 +939,11 @@ fixy_neg_compile_test(neg_atom_specialized_outside_its_header
 fixy_neg_compile_test(neg_atom_refined_with_closure_predicate
   "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 2\\]: every entry in the pack must be an atom of the closed catalog"
   "The type fixy::atom::refined_with<<lambda\\(int\\)> > appears in a fixy::fn pack but is not an atom"
+  "refused because an argument names a closure type, an unnamed class or an entity with internal linkage")
+# IsAtom calls the refusal function itself, so a translation unit cannot
+# put a verdict of no refusal in front of the reads for a closure atom.
+fixy_neg_compile_test(neg_atom_verdict_forged
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 2\\]: every entry in the pack must be an atom of the closed catalog"
   "refused because an argument names a closure type, an unnamed class or an entity with internal linkage")
 fixy_neg_compile_test(neg_atom_from_source_internal_linkage
   "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 2\\]: every entry in the pack must be an atom of the closed catalog"
