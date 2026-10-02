@@ -54,11 +54,20 @@
 //     c_library_call        a use of a function or a variable of a system header
 //                           in the global namespace, such as memcpy or optind,
 //                           and a call of a builtin that has a function of the C
-//                           library behind it, such as __builtin_memcpy
+//                           library behind it, such as __builtin_memcpy.  A use
+//                           of a foreign symbol of the tree is one too: a
+//                           function or a variable that a file of the root
+//                           declares with an asm label or the attribute
+//                           weakref, or with C language linkage when the unit
+//                           does not define it
+//     foreign_symbol        the declaration of such a foreign symbol in a
+//                           quarantined file, such as extern "C" void abort()
+//                           or a function with __asm__("memcpy")
 //     compiler_builtin      a call of each other builtin of GCC that the source
 //                           spells, such as __builtin_trap or __atomic_load_n,
 //                           __builtin_bit_cast and va_arg
-//     inline_asm            an asm statement
+//     inline_asm            an asm statement, and a variable in a register
+//                           that an asm label names
 //     assert_expansion      an expansion of the macro assert of a system header.
 //                           libcpp reports the expansion, so the finding is the
 //                           same with and without NDEBUG.  A token that the
@@ -92,6 +101,10 @@
 //                            and the bodies of template patterns.  The contract
 //                            rule has its own walk.
 //     PLUGIN_FINISH          the report, if the unit did not reach its end.
+//     PLUGIN_FINISH_DECL and PLUGIN_FINISH_PARSE_FUNCTION
+//                            each definition of a function or a variable of C
+//                            language linkage, so the report knows which
+//                            foreign symbols the unit defines.
 //     PLUGIN_INCLUDE_FILE    each file that the preprocessor enters.  The file
 //                            that an #include directive enters is the target
 //                            of that directive.
@@ -169,6 +182,7 @@
 #include <unistd.h>
 
 #include "plugin_core.h"
+#include "attribs.h"
 #include "diagnostic.h"
 #include "diagnostics/file-cache.h"
 #include "incpath.h"
@@ -196,6 +210,7 @@ enum class Kind : std::uint8_t {
     c_array_object,
     raw_new_delete,
     c_library_call,
+    foreign_symbol,
     compiler_builtin,
     inline_asm,
     assert_expansion,
@@ -222,6 +237,8 @@ const char* kind_name(Kind kind) {
             return "raw_new_delete";
         case Kind::c_library_call:
             return "c_library_call";
+        case Kind::foreign_symbol:
+            return "foreign_symbol";
         case Kind::compiler_builtin:
             return "compiler_builtin";
         case Kind::inline_asm:
@@ -292,6 +309,15 @@ struct LibraryClasses {
     [[nodiscard]] bool is_full() const { return refused != NULL_TREE && pending != NULL_TREE; }
 };
 
+// A use of a function or a variable of C language linkage that a file of the
+// root declares, at a place in a quarantined file.  The DECL_UID names the
+// declaration, because a garbage collection can free a tree before the report.
+struct ForeignUse {
+    unsigned uid = 0;
+    Place place;
+    std::string entity;
+};
+
 using IncludeCallback = void (*)(cpp_reader*, location_t, const unsigned char*, const char*, int, const cpp_token**);
 using MacroCallback = void (*)(cpp_reader*, location_t, cpp_hashnode*);
 using FileChangeCallback = void (*)(cpp_reader*, const line_map_ordinary*);
@@ -317,6 +343,13 @@ struct State {
     // The include rules.
     IncludeCallback previous_include = nullptr;
     PendingInclude pending;
+
+    // The foreign symbols: the DECL_UID of each function and variable of C
+    // language linkage that the unit defines, and each use in a quarantined
+    // file of such a symbol that a file of the root declares.  The report
+    // judges each use when it knows each definition of the unit.
+    std::unordered_set<unsigned> defined_c_symbols;
+    std::vector<ForeignUse> foreign_uses;
 
     // The provenance: the callback of the front end, the start of the main
     // file, and the location of the last #include directive, which the entry
@@ -425,8 +458,9 @@ bool is_inside_system_assert(location_t location) {
 }
 
 bool is_name_kind(Kind kind) {
-    return kind == Kind::std_entity || kind == Kind::c_library_call || kind == Kind::compiler_builtin
-        || kind == Kind::layer_header || kind == Kind::door_header || kind == Kind::upward_include;
+    return kind == Kind::std_entity || kind == Kind::c_library_call || kind == Kind::foreign_symbol
+        || kind == Kind::compiler_builtin || kind == Kind::layer_header || kind == Kind::door_header
+        || kind == Kind::upward_include;
 }
 
 void add_finding(Kind kind, const Place& place, const std::string& entity) {
@@ -1194,6 +1228,96 @@ bool check_builtin_use(tree function, location_t location) {
     return true;
 }
 
+// ── The foreign symbols ─────────────────────────────────────────────────
+
+// The binding of DECL to a foreign symbol that the declaration spells: an asm
+// label or the attribute weakref, or "" when it spells none.  The front end
+// gives a user assembler name a leading '*'.  A variable in a register is no
+// symbol, and the source spells no artificial declaration.
+std::string foreign_binding_of(tree decl) {
+    if (DECL_ARTIFICIAL(decl) || (VAR_P(decl) && DECL_HARD_REGISTER(decl))) {
+        return {};
+    }
+    if (DECL_ASSEMBLER_NAME_SET_P(decl)) {
+        tree name = DECL_ASSEMBLER_NAME_RAW(decl);
+        if (name != NULL_TREE && IDENTIFIER_POINTER(name)[0] == '*') {
+            return std::string("asm label ") + (IDENTIFIER_POINTER(name) + 1);
+        }
+    }
+    if (lookup_attribute("weakref", DECL_ATTRIBUTES(decl)) != NULL_TREE) {
+        return "attribute weakref";
+    }
+    return {};
+}
+
+// True when DECL is a function or a variable of a namespace with C language
+// linkage that the source declares.  The front end declares some library
+// functions itself, such as __cxa_guard_acquire for a static local, and marks
+// each one artificial.
+bool has_c_linkage(tree decl) {
+    return (TREE_CODE(decl) == FUNCTION_DECL || VAR_P(decl)) && !DECL_ARTIFICIAL(decl)
+        && DECL_LANG_SPECIFIC(decl) != nullptr && DECL_NAMESPACE_SCOPE_P(decl) && DECL_EXTERN_C_P(decl);
+}
+
+// A use of DECL, a function or a variable that no library declares.  A
+// foreign symbol of the tree is a use of the C library: the code reaches a
+// symbol that no file of the root defines.  A symbol of C language linkage
+// counts only when the unit does not define it, so the report judges the use.
+// Returns true when it made a finding or keeps a use for the report.
+bool check_foreign_use(tree decl, location_t location) {
+    std::string binding = foreign_binding_of(decl);
+    if (!binding.empty()) {
+        record(Kind::c_library_call, location, qualified_name(decl) + " (" + binding + ")");
+        return true;
+    }
+    if (!has_c_linkage(decl) || is_inside_system_assert(location)) {
+        return false;
+    }
+    Place place = place_of(location, Scope::quarantine);
+    if (place.file_class != FileClass::quarantined) {
+        return false;
+    }
+    state.foreign_uses.push_back(ForeignUse{DECL_UID(decl), place, qualified_name(decl) + " (C linkage)"});
+    return true;
+}
+
+// The declaration DECL of a foreign symbol in a quarantined file: an asm
+// label, the attribute weakref, or C language linkage with no definition in
+// the unit.  The walk of declarations runs after the last definition of the
+// unit.  A variable in a register that an asm label names is inline_asm.
+void check_foreign_declaration(tree decl) {
+    location_t location = DECL_SOURCE_LOCATION(decl);
+    if (!is_quarantined(location)) {
+        return;
+    }
+    if (VAR_P(decl) && DECL_HARD_REGISTER(decl)) {
+        record(Kind::inline_asm, location, "asm register " + simple_name(decl));
+        return;
+    }
+    std::string binding = foreign_binding_of(decl);
+    if (binding.empty() && has_c_linkage(decl) && state.defined_c_symbols.count(DECL_UID(decl)) == 0) {
+        binding = "C linkage";
+    }
+    if (!binding.empty()) {
+        record(Kind::foreign_symbol, location, qualified_name(decl) + " (" + binding + ")");
+    }
+}
+
+// DECL, a function definition or any declaration, when it defines a function
+// or a variable of C language linkage.  PLUGIN_FINISH_DECL also sees a
+// function that the code only declares, so a function counts only from
+// PLUGIN_FINISH_PARSE_FUNCTION, which IS_FUNCTION_DEFINITION marks.
+void note_c_definition(tree decl, bool is_function_definition) {
+    if (decl == NULL_TREE) {
+        return;
+    }
+    bool is_definition =
+        is_function_definition ? TREE_CODE(decl) == FUNCTION_DECL : VAR_P(decl) && !DECL_EXTERNAL(decl);
+    if (is_definition && has_c_linkage(decl)) {
+        state.defined_c_symbols.insert(DECL_UID(decl));
+    }
+}
+
 // One function that the code names.  EXPLICIT_ARGUMENTS are the explicit
 // template arguments of a template-id that names it, or null.  Returns true
 // when it made a finding.
@@ -1230,7 +1354,7 @@ bool check_function_use(tree function, location_t location, tree explicit_argume
             record(Kind::c_library_call, location, qualified_name(function));
             return true;
         case Library::none:
-            return false;
+            return check_foreign_use(function, location);
     }
     return false;
 }
@@ -1304,6 +1428,7 @@ void check_variable_use(tree variable, location_t location) {
             record(Kind::c_library_call, location, qualified_name(variable));
             break;
         case Library::none:
+            check_foreign_use(variable, location);
             break;
     }
 }
@@ -1391,6 +1516,7 @@ void check_local_decl(tree decl, BodyWalk& walk) {
         bool is_artificial = DECL_ARTIFICIAL(decl) && !DECL_DECOMPOSITION_P(decl);
         if (!is_binding && !is_proxy && !is_artificial) {
             check_object(decl, Role::variable);
+            check_foreign_declaration(decl);
         }
         // A template keeps the initializer of a local in DECL_INITIAL, and
         // cp_walk_tree does not reach it outside template processing.
@@ -1800,10 +1926,12 @@ void walk_class(tree type, bool is_pattern) {
                 break;
             case VAR_DECL:
                 check_object(member, Role::variable);
+                check_foreign_declaration(member);
                 walk_initializer(member, is_pattern);
                 break;
             case FUNCTION_DECL:
                 check_member_function(member, is_pattern);
+                check_foreign_declaration(member);
                 break;
             case TYPE_DECL:
                 if (DECL_SELF_REFERENCE_P(member)) {
@@ -1987,11 +2115,13 @@ void walk_namespace_member(tree decl) {
             // A friend that a class template injects is an instantiation.
             if (!has_lang_template_info(decl) || DECL_TEMPLATE_SPECIALIZATION(decl)) {
                 check_member_function(decl, false);
+                check_foreign_declaration(decl);
             }
             break;
         case VAR_DECL:
             if (!has_lang_template_info(decl) && !DECL_ARTIFICIAL(decl)) {
                 check_object(decl, Role::variable);
+                check_foreign_declaration(decl);
                 walk_initializer(decl, false);
             }
             break;
@@ -2129,6 +2259,12 @@ void report(bool can_add_dependencies) {
     }
     core.was_reported = true;
     finish_pending_include(nullptr);
+    // Each use of a symbol of C language linkage that the unit did not define.
+    for (const ForeignUse& use : state.foreign_uses) {
+        if (state.defined_c_symbols.count(use.uid) == 0) {
+            add_finding(Kind::c_library_call, use.place, use.entity);
+        }
+    }
     report_open_regions();
     report_unclassified();
     if (can_add_dependencies) {
@@ -2443,6 +2579,13 @@ void on_pre_genericize(void* gcc_data, void*) {
     walk_body(function, false);
 }
 
+// Each definition of a function or a variable of C language linkage, for the
+// foreign symbols.  PLUGIN_FINISH_DECL sees each variable definition, and
+// PLUGIN_FINISH_PARSE_FUNCTION sees each function definition.
+void on_finish_variable(void* gcc_data, void*) { note_c_definition(static_cast<tree>(gcc_data), false); }
+
+void on_finish_function(void* gcc_data, void*) { note_c_definition(static_cast<tree>(gcc_data), true); }
+
 void walk_declarations() {
     walk_contract_namespace(global_namespace);
     walk_namespace(global_namespace);
@@ -2544,6 +2687,8 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     register_callback(plugin_info->base_name, PLUGIN_START_UNIT, on_start_unit, nullptr);
     register_contract_rule(plugin_info->base_name);
     register_callback(plugin_info->base_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize, nullptr);
+    register_callback(plugin_info->base_name, PLUGIN_FINISH_DECL, on_finish_variable, nullptr);
+    register_callback(plugin_info->base_name, PLUGIN_FINISH_PARSE_FUNCTION, on_finish_function, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_FINISH_UNIT, on_finish_unit, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_FINISH, on_finish, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_GGC_START, on_collection, nullptr);

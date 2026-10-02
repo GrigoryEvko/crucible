@@ -719,6 +719,15 @@ LIBRARY_NAMES = (
     ("pending.cpp", (), 33, "replace_pending:<limits>", "std::numeric_limits::max"),
     ("pending.cpp", (), 36, "replace_pending:std::unreachable", "std::unreachable"),
     ("pending.cpp", (), 41, "replace_pending:std::bit_cast", "std::bit_cast"),
+    ("foreign_symbols.cpp", (), 7, "foreign_symbol", "abort (C linkage)"),
+    ("foreign_symbols.cpp", (), 8, "foreign_symbol", "write (C linkage)"),
+    ("foreign_symbols.cpp", (), 9, "foreign_symbol", "foreign_copy (asm label memcpy)"),
+    ("foreign_symbols.cpp", (), 10, "foreign_symbol", "foreign_exit (attribute weakref)"),
+    ("foreign_symbols.cpp", (), 13, "c_library_call", "abort (C linkage)"),
+    ("foreign_symbols.cpp", (), 14, "c_library_call", "write (C linkage)"),
+    ("foreign_symbols.cpp", (), 15, "c_library_call", "foreign_copy (asm label memcpy)"),
+    ("foreign_symbols.cpp", (), 16, "c_library_call", "foreign_exit (attribute weakref)"),
+    ("foreign_symbols.cpp", (), 22, "inline_asm", "asm register held"),
 )
 # (fixture, line): no finding of any kind there.
 LIBRARY_NAMES_ABSENT = (
@@ -727,6 +736,9 @@ LIBRARY_NAMES_ABSENT = (
     ("nonclass.cpp", 23),  # the entry std::tuple_size admits std::tuple_size<T>::value
     ("header_exact.cpp", 7),  # <type_traits> admits std::is_same
     ("gaps.cpp", 29),  # the front end calls the atomic load of the guard of the static local
+    ("foreign_symbols.cpp", 11),  # the unit defines the function of C language linkage later
+    ("foreign_symbols.cpp", 17),  # a call before the definition of the unit
+    ("foreign_symbols.cpp", 19),  # the definition
 )
 # (fixture, extra flags, line, kind): no finding of that kind there.
 LIBRARY_KINDS_ABSENT = (
