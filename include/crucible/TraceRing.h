@@ -283,15 +283,21 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         const uint64_t h = head.get();
         const uint64_t t = consumer_tail_;
 
+        // Each clamp is an assignment and a conditional assignment.  GCC 16
+        // at -O1 with -fsanitize=bounds-strict does not keep the bound
+        // count <= max_count of a conditional expression.  Then it reports a
+        // write past the caller's buffer in the second copy below, which no
+        // input can reach.
         const uint32_t available = static_cast<uint32_t>(h - t);
-        const uint32_t count = max_count < available ? max_count : available;
+        uint32_t count = available;
+        if (max_count < count) count = max_count;
         if (count == 0) [[unlikely]]
             return 0;
 
         // A run that wraps the end of the ring splits into at most two.
         const uint32_t start = static_cast<uint32_t>(t) & MASK;
-        const uint32_t room_to_end = CAPACITY - start;
-        const uint32_t first = room_to_end < count ? room_to_end : count;
+        uint32_t first = CAPACITY - start;
+        if (count < first) first = count;
         const uint32_t second = count - first;
 
         std::memcpy(out, &entries[start], first * sizeof(Entry));
@@ -363,15 +369,17 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         const uint64_t h = head.get();
         const uint64_t t = consumer_tail_;
 
+        // The clamps have the form of the clamps of drain, for the same reason.
         const uint32_t available = static_cast<uint32_t>(h - t);
-        const uint32_t count = max_count < available ? max_count : available;
+        uint32_t count = available;
+        if (max_count < count) count = max_count;
         if (count == 0) [[unlikely]]
             return 0;
 
         // A run that wraps the end of the ring splits into at most two.
         const uint32_t start = static_cast<uint32_t>(t) & MASK;
-        const uint32_t room_to_end = CAPACITY - start;
-        const uint32_t first = room_to_end < count ? room_to_end : count;
+        uint32_t first = CAPACITY - start;
+        if (count < first) first = count;
         const uint32_t second = count - first;
 
         std::memcpy(out_entries, &entries[start], first * sizeof(Entry));
