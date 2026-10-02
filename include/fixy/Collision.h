@@ -206,20 +206,36 @@ namespace detail {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
 
-template <Axis A>
-[[nodiscard]] consteval bool axis_has_an_atom_() noexcept {
-    bool found = false;
-    static constexpr auto members = ::fixy::atom::detail::roster_members_v<all_atom_roster>;
+// The axis of each member of a roster, in the order of the members.  The
+// walk expands once for each member, and each question about an axis
+// reads this table, so a question instantiates no template for each
+// member.
+template <class Roster>
+[[nodiscard]] consteval auto roster_axes_() noexcept {
+    static constexpr auto members = ::fixy::atom::detail::roster_members_v<Roster>;
+    std::array<Axis, members.size()> axes{};
+    Axis* const axis = axes.data();
+    std::size_t place = 0;
     template for (constexpr auto entry : members) {
         using Candidate = [:entry:];
-        if constexpr (Candidate::axis == A) {
-            found = true;
-        }
+        axis[place++] = Candidate::axis;
     }
-    return found;
+    return axes;
 }
 
 #pragma GCC diagnostic pop
+
+template <class Roster>
+inline constexpr auto roster_axes_v = roster_axes_<Roster>();
+
+// The population is a template parameter, so only a call reads its table.
+template <Axis A, class Population = all_atom_roster>
+[[nodiscard]] consteval bool axis_has_an_atom_() noexcept {
+    for (const Axis axis : roster_axes_v<Population>) {
+        if (axis == A) return true;
+    }
+    return false;
+}
 
 }  // namespace detail
 
@@ -657,30 +673,40 @@ template <class = void>
 
 namespace detail {
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-
-template <class Atom>
-[[nodiscard]] consteval bool atom_is_joined_() noexcept {
-    bool joined = false;
-    template for (constexpr auto member : ::fixy::atom::detail::roster_members_v<all_atom_roster>) {
-        using Candidate = [:member:];
-        if constexpr (std::is_same_v<Atom, Candidate>) joined = true;
-    }
-    return joined;
+// The members of a roster, each dealiased, so two spellings of one atom
+// give one reflection.
+template <class Roster>
+[[nodiscard]] consteval std::vector<std::meta::info> dealiased_roster_members_() {
+    std::vector<std::meta::info> types = std::meta::template_arguments_of(std::meta::dealias(^^Roster));
+    std::meta::info* const type = types.data();
+    for (std::size_t place = 0; place < types.size(); ++place)
+        type[place] = std::meta::dealias(type[place]);
+    return types;
 }
 
 template <class Roster>
-[[nodiscard]] consteval bool every_atom_joined_() noexcept {
-    bool all_joined = true;
-    template for (constexpr auto member : ::fixy::atom::detail::roster_members_v<Roster>) {
-        using Atom = [:member:];
-        all_joined = all_joined && atom_is_joined_<Atom>();
-    }
-    return all_joined;
-}
+inline constexpr auto dealiased_roster_members_v = std::define_static_array(dealiased_roster_members_<Roster>());
 
-#pragma GCC diagnostic pop
+// True when each member of the roster is in the population, the joined
+// population unless a caller names another.  The loops compare
+// reflections, so the walk instantiates one function for each roster and
+// none for each atom.  The population is a template parameter, so only a
+// call reads its table.  Complexity: the roster size times the
+// population, in plain compares of reflections.
+template <class Roster, class Population = all_atom_roster>
+[[nodiscard]] consteval bool every_atom_joined_() noexcept {
+    for (const std::meta::info member : dealiased_roster_members_v<Roster>) {
+        bool is_held = false;
+        for (const std::meta::info joined : dealiased_roster_members_v<Population>) {
+            if (joined == member) {
+                is_held = true;
+                break;
+            }
+        }
+        if (!is_held) return false;
+    }
+    return true;
+}
 
 }  // namespace detail
 
