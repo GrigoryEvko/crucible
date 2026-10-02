@@ -3,6 +3,7 @@
 #include <crucible/PoolAllocator.h>
 #include <crucible/ReplayEngine.h>
 #include <crucible/Types.h>
+#include <fixy/Core.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <fixy/ScopedView.h>
@@ -15,7 +16,6 @@
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
-#include <utility>
 
 namespace crucible {
 
@@ -249,7 +249,7 @@ private:
                 diverged_count_.bump();
                 return ReplayStatus::DIVERGED;
             default:
-                std::unreachable();
+                ::fixy::unreachable();
         }
     }
 

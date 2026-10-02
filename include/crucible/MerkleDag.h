@@ -11,6 +11,7 @@
 #include <crucible/Types.h>
 #include <fixy/Bands.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <fixy/Saturated.h>
@@ -620,7 +621,7 @@ private:
         case TraceNodeKind::TERMINAL:
             return MerkleHash{};
         default:
-            std::unreachable();
+            ::fixy::unreachable();
     }
 
     if (node->next) merkle_hash_state = detail::fmix64(merkle_hash_state ^ node->next->merkle_hash.raw());
@@ -821,7 +822,7 @@ inline void recompute_merkle(TraceNode* node) {
             case TraceNodeKind::TERMINAL:
                 break;  // not a stop condition here: the walk follows next
             default:
-                std::unreachable();
+                ::fixy::unreachable();
         }
         node = node->next;
     }
@@ -962,7 +963,7 @@ template <typename GuardEval, typename RegionExec>
                 return true;
 
             default:
-                std::unreachable();
+                ::fixy::unreachable();
         }
     }
     return true;
@@ -1066,7 +1067,7 @@ struct DagDiff {
             case TraceNodeKind::TERMINAL:
                 break;
             default:
-                std::unreachable();
+                ::fixy::unreachable();
         }
         node = node->next;
     }

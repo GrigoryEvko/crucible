@@ -12,6 +12,7 @@
 #include <crucible/CKernel.h>
 #include <crucible/Expr.h>
 #include <fixy/Bits.h>
+#include <fixy/Core.h>
 #include <fixy/Mutation.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
@@ -863,7 +864,7 @@ private:
             case NodeKind::NOP:
                 return false;
             default:
-                std::unreachable();
+                ::fixy::unreachable();
         }
     }
 

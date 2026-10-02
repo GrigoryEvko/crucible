@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
@@ -8,7 +9,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <utility>
 
 namespace crucible {
 
@@ -102,7 +102,7 @@ CRUCIBLE_CONST constexpr ElementBytes element_size(ScalarType const t) noexcept 
             case ScalarType::Undefined:
                 return ElementBytes{0};
             default:
-                std::unreachable();
+                ::fixy::unreachable();
         }
     }();
     CRUCIBLE_POST(result, t == ScalarType::Undefined || !result.is_zero());

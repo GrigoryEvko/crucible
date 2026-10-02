@@ -7,6 +7,7 @@
 #include <crucible/Ops.h>
 #include <crucible/Types.h>
 #include <fixy/Bits.h>
+#include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/Platform.h>
@@ -18,7 +19,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <utility>
 #include <vector>
 
 namespace crucible {
@@ -88,7 +88,7 @@ public:
                 e.range_upper = bitcast_double(std::numeric_limits<double>::infinity());
                 break;
             default:
-                std::unreachable();
+                ::fixy::unreachable();
         }
 
         entries_.push_back(e);

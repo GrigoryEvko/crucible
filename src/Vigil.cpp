@@ -11,6 +11,7 @@
 #include <crucible/Cipher.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/DeadlineWatchdog.h>
+#include <fixy/Core.h>
 
 #include <filesystem>
 #include <memory>
@@ -122,9 +123,9 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
                 wd_insufficient_count_.fetch_add(1, std::memory_order_release);
                 break;
             default:
-                // The verdict enum has exactly the three values handled
-                // above, so this arm is deleted in release.
-                std::unreachable();
+                // The verdict enum has exactly the three values above.  A
+                // different value ends the process in each build.
+                ::fixy::unreachable();
         }
     }
 }

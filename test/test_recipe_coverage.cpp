@@ -22,6 +22,7 @@
 #include <crucible/RecipeRegistry.h>
 #include <crucible/Types.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
 #include <array>
@@ -29,7 +30,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
-#include <utility>
 
 namespace {
 
@@ -98,8 +98,8 @@ enum class RecipeRelevance : uint8_t {
             return false;
         default:
             // The arms above are exhaustive, so reaching here means the enum value
-            // is corrupt. Saying so lets the optimizer drop this branch entirely.
-            std::unreachable();
+            // is corrupt. The call ends the process in each build.
+            ::fixy::unreachable();
     }
 }
 
@@ -503,7 +503,7 @@ int main() {
                     ++sync;
                     break;
                 default:
-                    std::unreachable();
+                    ::fixy::unreachable();
             }
         }
 

@@ -40,6 +40,7 @@
 
 #include "property_runner.h"
 
+#include <fixy/Core.h>
 #include <foundation/algebra/lattices/FractionalLattice.h>
 
 #include <array>
@@ -121,7 +122,7 @@ int main(int argc, char** argv) {
                     spec.b = gen_small(rng);
                     break;
                 default:
-                    std::unreachable();
+                    ::fixy::unreachable();
             }
             return spec;
         },

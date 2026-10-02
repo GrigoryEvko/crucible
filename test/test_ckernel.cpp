@@ -4,6 +4,7 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include "padding_bytes.h"
+#include "test_abort_probe.h"
 #include "test_assert.h"
 #include <cstdio>
 #include <cstring>
@@ -30,6 +31,15 @@ using ExtHash = ::fixy::Tagged<crucible::SchemaHash, ::fixy::tags::source::Exter
 // A mutable view asks for the context of a Vigil's producer claim.  These
 // tests use no Vigil, so they take that context from the test door.
 static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
+
+// NUM_KERNELS is the count of the kernel ids, and it names no kernel.  Its
+// arm in ckernel_name is the unreachable point, which ends the process in
+// each build.
+static void expect_name_of_the_count_ends_the_process() {
+    bool const ends_the_process = ::crucible::test::aborts(
+        [] { CRUCIBLE_FATAL_INVARIANT(crucible::ckernel_name(crucible::CKernelId::NUM_KERNELS) != nullptr); });
+    CRUCIBLE_FATAL_INVARIANT(ends_the_process);
+}
 
 int main() {
     using namespace crucible;
@@ -209,6 +219,8 @@ int main() {
     // A table holds 256 entries, and each padding byte of an entry costs one
     // store at each initialization of an automatic table (padding_bytes.h).
     crucible::test::expect_no_padding_byte<^^CKernelEntry>();
+
+    expect_name_of_the_count_ends_the_process();
 
     std::printf("test_ckernel: all tests passed\n");
     return 0;

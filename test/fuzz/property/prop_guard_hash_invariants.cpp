@@ -63,6 +63,7 @@
 
 #include <crucible/MerkleDag.h>
 #include <crucible/Types.h>
+#include <fixy/Core.h>
 
 #include <cstdint>
 #include <cstring>
@@ -209,7 +210,7 @@ int main(int argc, char** argv) {
                     p.perturbed = perturb_dim_index(p.base);
                     break;
                 default:
-                    std::unreachable();
+                    ::fixy::unreachable();
             }
             return p;
         },

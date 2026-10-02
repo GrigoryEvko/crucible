@@ -16,6 +16,7 @@
 
 #include "property_runner.h"
 
+#include <fixy/Core.h>
 #include <foundation/contracts/Decide.h>
 
 #include <algorithm>
@@ -110,7 +111,7 @@ int main(int argc, char** argv) {
                     break;
                 }
                 default:
-                    std::unreachable();  // pick returns an enumerator of Mode
+                    ::fixy::unreachable();  // pick returns an enumerator of Mode
             }
             return spec;
         },
@@ -132,7 +133,7 @@ int main(int argc, char** argv) {
                 case Mode::Random:
                     break;  // the oracle decides
                 default:
-                    std::unreachable();
+                    ::fixy::unreachable();
             }
             return true;
         });

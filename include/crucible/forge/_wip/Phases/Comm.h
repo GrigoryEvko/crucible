@@ -3,6 +3,7 @@
 #include <crucible/cog/FitsCog.h>
 #include <crucible/forge/Ir001/Comm.h>
 #include <crucible/forge/recipes/Network.h>
+#include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/effects/Concurrent.h>
@@ -126,7 +127,7 @@ struct CommFusionShape {
         case CommFusionPattern::PrefetchReceive:
             return {.requires_point_to_point_comm = true};
         default:
-            std::unreachable();
+            ::fixy::unreachable();
     }
 }
 

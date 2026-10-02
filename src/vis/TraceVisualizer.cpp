@@ -4,6 +4,7 @@
 
 #include <crucible/MerkleDag.h>
 #include <crucible/vis/SugiyamaLayout.h>
+#include <fixy/Core.h>
 
 #include <algorithm>
 #include <cmath>
@@ -202,7 +203,7 @@ struct MerkleDagViewState {
                 case TraceNodeKind::TERMINAL:
                     break;
                 default:
-                    std::unreachable();
+                    ::fixy::unreachable();
             }
         }
 

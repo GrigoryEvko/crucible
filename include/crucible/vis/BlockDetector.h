@@ -6,12 +6,12 @@
 // The detection and the string helpers are in src/vis/BlockDetector.cpp.
 
 #include <crucible/Types.h>
+#include <fixy/Core.h>
 
 #include <cstdint>
 #include <span>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 namespace crucible {
@@ -65,7 +65,7 @@ enum class OpFamily : uint8_t {
         case OpFamily::OTHER:
             return "other";
         default:
-            std::unreachable();
+            ::fixy::unreachable();
     }
 }
 
@@ -96,7 +96,7 @@ enum class BlockKind : uint8_t {
         case BlockKind::LOOP:
             return "Loop";
         default:
-            std::unreachable();
+            ::fixy::unreachable();
     }
 }
 
@@ -117,7 +117,7 @@ enum class BlockKind : uint8_t {
         case BlockKind::LOOP:
             return "@";
         default:
-            std::unreachable();
+            ::fixy::unreachable();
     }
 }
 

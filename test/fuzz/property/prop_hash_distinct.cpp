@@ -26,6 +26,7 @@
 #include "random_input.h"
 
 #include <crucible/NumericalRecipe.h>
+#include <fixy/Core.h>
 
 int main(int argc, char** argv) {
     using namespace crucible;
@@ -74,7 +75,7 @@ int main(int argc, char** argv) {
                     p.b.flags = p.a.flags ^ decltype(p.a.flags){RecipeFlags::FLUSH_TO_ZERO};
                     break;
                 default:
-                    std::unreachable();
+                    ::fixy::unreachable();
             }
             return p;
         },

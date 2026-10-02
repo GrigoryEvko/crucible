@@ -38,11 +38,11 @@
 //     and test/fixy/test_fp_polynomial.cpp calls each function once at
 //     runtime so the non-constant path is exercised too.
 //
-//  3. The two unreachable switch arms are std::unreachable().  The
-//     quadrant is masked to two bits, so the four arms are exhaustive,
-//     and a default value is a value no input can produce.  A zero for an
-//     impossible quadrant turns a future reduction bug into a silently
-//     wrong sine rather than a crash.
+//  3. The two unreachable switch arms call fixy::unreachable(), which ends
+//     the process in each build.  The quadrant is masked to two bits, so
+//     the four arms are exhaustive, and a default value is a value no
+//     input can produce.  A zero for an impossible quadrant turns a future
+//     reduction bug into a silently wrong sine rather than a crash.
 //
 //  4. Every value pin compares bit patterns, never floats.  A float
 //     equality compare is a build error in this tree, and the bit pattern
@@ -54,6 +54,7 @@
 //     behaviour past about 3.4e9 and for an infinity or a NaN.  The angle
 //     domain is one turn, where the answer is accurate.
 
+#include <fixy/Core.h>
 #include <foundation/contracts/Pre.h>
 
 #include <array>
@@ -232,7 +233,7 @@ struct ReduceResult {
         case 3:
             return -cosine;
         default:
-            std::unreachable();
+            ::fixy::unreachable();
     }
 }
 
@@ -252,7 +253,7 @@ struct ReduceResult {
         case 3:
             return sine;
         default:
-            std::unreachable();
+            ::fixy::unreachable();
     }
 }
 

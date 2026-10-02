@@ -1,6 +1,8 @@
+#include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <foundation/contracts/Decide.h>
 
+#include "test_abort_probe.h"
 #include "test_assert.h"
 
 #include <bit>
@@ -142,6 +144,19 @@ static void test_noexcept_ctors_propagate() {
     std::printf("  test_noexcept:                  PASSED\n");
 }
 
+// Each value of the underlying type that no enumerator names reaches the
+// default arm of element_size, and the arm ends the process in each build.
+// Each enumerator gives its size.  The predicate of the deserializer gate is
+// the oracle for the enumerators.
+static void expect_element_size_ends_the_process_outside_the_enumerators() {
+    for (int raw = -128; raw <= 127; ++raw) {
+        ScalarType const type = static_cast<ScalarType>(static_cast<int8_t>(raw));
+        bool const ends_the_process =
+            ::crucible::test::aborts([type] { CRUCIBLE_FATAL_INVARIANT(element_size(type).raw() <= 16); });
+        CRUCIBLE_FATAL_INVARIANT(ends_the_process == !valid_scalar_type(raw));
+    }
+}
+
 static void test_scalar_type_element_sizes() {
     // element_size returns a strong type, so a bare integer literal does not
     // compare against it. The expected sizes are written as ElementBytes.
@@ -157,6 +172,7 @@ static void test_scalar_type_element_sizes() {
     assert(element_size(ScalarType::ComplexDouble) == ElementBytes{16});
     assert(element_size(ScalarType::Float8_e4m3fn) == ElementBytes{1});
     assert(element_size(ScalarType::Undefined).is_zero());
+    expect_element_size_ends_the_process_outside_the_enumerators();
     std::printf("  test_element_size:              PASSED\n");
 }
 

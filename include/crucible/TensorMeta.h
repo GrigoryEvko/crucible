@@ -164,8 +164,8 @@ using ValidNDim = ::fixy::Refined<::fixy::bounded_above<kMaxTensorNDim>, uint8_t
 
 // ScalarType is sparse: many int8_t values are not enumerators. A consumer
 // that switches over every enumerator and marks the remainder unreachable
-// turns an unchecked byte from a file into undefined behaviour, so a
-// deserialized dtype passes through this predicate first. It fails closed.
+// ends the process for an unchecked byte from a file, so a deserialized
+// dtype passes through this predicate first. It fails closed.
 //
 // Each predicate here is a named class. A refinement folds the name of its
 // predicate into its row hash, and a closure type has no stable name.

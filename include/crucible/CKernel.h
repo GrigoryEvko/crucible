@@ -7,6 +7,7 @@
 #include <crucible/ForegroundCtx.h>
 #include <crucible/RegistrationSeal.h>
 #include <crucible/Types.h>
+#include <fixy/Core.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <fixy/ScopedView.h>
@@ -588,7 +589,7 @@ inline void publish_static_ckernel_table(const StaticCKernelTable& table CRUCIBL
             return "COMM_BARRIER";
 
         case CKernelId::NUM_KERNELS:
-            std::unreachable();
+            ::fixy::unreachable();
         default:
             return "<unknown>";
     }

@@ -40,10 +40,10 @@
 
 #include <crucible/IterationDetector.h>
 #include <crucible/Types.h>
+#include <fixy/Core.h>
 
 #include <array>
 #include <cstdint>
-#include <utility>
 
 namespace {
 
@@ -112,7 +112,7 @@ int main(int argc, char** argv) {
                     break;
                 }
                 default:
-                    std::unreachable();  // pick returns an enumerator of Mode
+                    ::fixy::unreachable();  // pick returns an enumerator of Mode
             }
             return spec;
         },

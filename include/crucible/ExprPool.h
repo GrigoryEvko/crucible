@@ -5,6 +5,7 @@
 #include <crucible/Ops.h>
 #include <crucible/SwissTable.h>
 #include <fixy/Bands.h>
+#include <fixy/Core.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
@@ -204,17 +205,17 @@ namespace detail {
         case Op::SYMBOL:
         case Op::BOOL_TRUE:
         case Op::BOOL_FALSE:
-            std::unreachable();
+            ::fixy::unreachable();
 
         // The enum sentinel, never a real op.
         case Op::NUM_OPS:
-            std::unreachable();
+            ::fixy::unreachable();
 
         // Required by -Werror=switch-default even though every enumerator is
         // handled.  Reaching it means the op was read from out-of-range
         // memory.  A newly added op still trips -Werror=switch first.
         default:
-            std::unreachable();
+            ::fixy::unreachable();
     }
 }
 
@@ -949,11 +950,11 @@ private:
             case Op::SYMBOL:
             case Op::BOOL_TRUE:
             case Op::BOOL_FALSE:
-                std::unreachable();
+                ::fixy::unreachable();
 
             // The enum sentinel, never a real op.
             case Op::NUM_OPS:
-                std::unreachable();
+                ::fixy::unreachable();
 
             // These have no canonical simplifier and share the generic
             // intern path.  They are listed rather than folded into the
@@ -998,7 +999,7 @@ private:
             // handled.  Reaching it means the op was read from out-of-range
             // memory.
             default:
-                std::unreachable();
+                ::fixy::unreachable();
         }
         uint16_t f = detail::composite_flags(op, args.data(), static_cast<uint8_t>(args.size()));
         return intern_node(a, op, args.data(), static_cast<uint8_t>(args.size()), f, SymbolId{}, 0);

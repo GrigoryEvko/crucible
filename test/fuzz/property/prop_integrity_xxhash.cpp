@@ -52,12 +52,12 @@
 #include "property_runner.h"
 
 #include <crucible/cntp/Integrity.h>
+#include <fixy/Core.h>
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
-#include <utility>
 
 namespace {
 
@@ -96,7 +96,7 @@ struct Spec {
         case LenMode::Random:
             return rng.next_below(kMaxLen + 1u);  // [0, 256]
         default:
-            std::unreachable();
+            ::fixy::unreachable();
     }
 }
 

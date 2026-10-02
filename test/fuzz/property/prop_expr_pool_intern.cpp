@@ -62,6 +62,7 @@
 #include <crucible/Ops.h>
 #include <crucible/SymbolTable.h>
 #include <crucible/Types.h>
+#include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
 #include <algorithm>
@@ -197,7 +198,7 @@ struct Resolved {
                 break;
             }
             default:
-                std::unreachable();
+                ::fixy::unreachable();
         }
     }
     return p;
@@ -224,7 +225,7 @@ struct Resolved {
             return al == bl && ar == br;
         }
         default:
-            std::unreachable();
+            ::fixy::unreachable();
     }
 }
 
@@ -289,7 +290,7 @@ struct Resolved {
                 break;
             }
             default:
-                std::unreachable();
+                ::fixy::unreachable();
         }
 
         // P0: never null.
@@ -358,7 +359,7 @@ struct Resolved {
             case Kind::Composite:
                 continue;  // see comment above
             default:
-                std::unreachable();
+                ::fixy::unreachable();
         }
         if (e != ptrs[ui]) return false;
     }

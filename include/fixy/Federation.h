@@ -19,6 +19,7 @@
 // definition anywhere else in the tree, and each member name must be
 // distinctive.
 
+#include <fixy/Core.h>
 #include <fixy/SipHash.h>
 #include <fixy/Secret.h>
 #include <foundation/Brand.h>
@@ -362,7 +363,7 @@ private:
             case NonceVerdict::Fresh:
                 break;
             default:
-                std::unreachable();
+                ::fixy::unreachable();
         }
         ::fixy::federation::HandshakeMessage const message =
             ::fixy::federation::handshake_message(handshake.org_id, handshake.peer_key_fingerprint, handshake.nonce);

@@ -42,6 +42,7 @@
 
 #include "property_runner.h"
 
+#include <fixy/Core.h>
 #include <foundation/contracts/Decide.h>
 
 #include <bit>
@@ -123,7 +124,7 @@ template <typename T>
                     break;
                 }
                 default:
-                    std::unreachable();  // pick returns an enumerator of Mode
+                    ::fixy::unreachable();  // pick returns an enumerator of Mode
             }
             return spec;
         },
@@ -144,7 +145,7 @@ template <typename T>
                 case Mode::Random:
                     break;  // oracle is ground truth
                 default:
-                    std::unreachable();
+                    ::fixy::unreachable();
             }
             return true;
         });

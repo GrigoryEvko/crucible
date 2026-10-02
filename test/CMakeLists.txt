@@ -2916,9 +2916,9 @@ crucible_neg_compile_test(neg_tensor_meta_ndim_uint8_max
 
 # read_meta dtype gate (sibling of the ndim and kernel_id gates) — ScalarType
 # dtype byte typed gate at the read_meta()
-# deserialize boundary.  ScalarType is a SPARSE int8_t enum; a corrupt or
-# version-skewed Cipher byte outside the enumerator set reached
-# element_size()'s `default: std::unreachable()` as UB.  ValidScalarType is
+# deserialize boundary.  ScalarType is a SPARSE int8_t enum; without the gate,
+# a corrupt or version-skewed Cipher byte outside the enumerator set reaches
+# the default arm of element_size(), which ends the process.  ValidScalarType is
 # ::fixy::Refined<valid_scalar_type, int8_t>; its checked mint refuses an
 # invalid byte.
 # Two fixtures per HS14, distinct mismatch classes:
@@ -4641,7 +4641,7 @@ crucible_neg_compile_test(neg_forge_comm_phase_strict_compress
   "no matching function for call to .accepts_compress_before_send<StrictRecipe>\\(\\)."
   "required for the satisfaction of .CommFusionRecipeAllowed<Recipe, crucible::forge::_wip::phases::comm::CommFusionPattern::CompressBeforeSend>. .with Recipe = StrictRecipe.")
 crucible_neg_compile_test(neg_forge_comm_phase_unknown_pattern
-  "call to non-.constexpr. function .void std::unreachable\\(\\)."
+  "call to non-.constexpr. function .void foundation::core::unreachable\\(Site\\)."
   "in .constexpr. expansion of .crucible::forge::_wip::phases::comm::comm_fusion_shape\\(\\(\\(crucible::forge::_wip::phases::comm::CommFusionPattern\\)kUnlistedPattern\\)\\).")
 crucible_neg_compile_test(neg_forge_comm_phase_wrong_lane
   "could not convert .fused. from .Tagged<\\[\\.\\.\\.\\],ForgePhase<'D'>>."

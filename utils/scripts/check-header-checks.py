@@ -92,7 +92,10 @@ THE SIX KINDS
         reports the cost.  The guard counts a reflection query with one
         argument or more, and a call with no argument of a function
         outside std that the header does not declare without constexpr
-        or consteval.  A call in a static_assert, in an expansion
+        or consteval.  A call of a fatal exit of the Report family through
+        fixy or foundation::core does not count, when
+        include/foundation/core/Report.h declares the exit without
+        constexpr or consteval.  A call in a static_assert, in an expansion
         statement or in the initializer of a constexpr local belongs to
         the kinds above, and only the outermost constant call counts.
     A template context is an enclosing template declaration with
@@ -285,6 +288,10 @@ VALUE_PARAMETERS = ("parameter_declaration", "optional_parameter_declaration", "
 LITERALS = frozenset({"number_literal", "string_literal", "char_literal", "raw_string_literal", "concatenated_string",
                       "true", "false", "nullptr", "user_defined_literal"})
 CASTS = frozenset({"static_cast", "const_cast", "reinterpret_cast", "dynamic_cast"})
+# The header of the fatal exits of the Report family, and the qualifiers of a
+# call of an exit.  include/fixy/Core.h names each exit in namespace fixy.
+REPORT_HEADER = "include/foundation/core/Report.h"
+REPORT_QUALIFIERS = frozenset({("fixy",), ("foundation", "core")})
 # The operators between the operands of an expression, which are no operands.
 OPERATOR_TOKENS = frozenset({"+", "-", "*", "/", "%", "!", "~", "&&", "||", "==", "!=", "<", ">", "<=", ">=", "&", "|",
                              "^", "<<", ">>", "?", ":", ",", "(", ")", "{", "}", "<=>"})
@@ -1067,13 +1074,36 @@ def named_call(call: tsast.Node, declared: set[str]) -> tuple[str, ...] | None:
     return parts[1]
 
 
-def fold_sites(tree: tsast.Tree) -> list[tuple[tsast.Node, str, str]]:
+def report_exits(tree: tsast.Tree | None) -> frozenset[str]:
+    """Return the names of the functions that the Report header declares without constexpr or consteval.
+
+    No constant evaluation can call such a function, so a call of one folds
+    nothing.  With no tree, the set is empty, and each call of an exit counts.
+
+    Args:
+        tree: The parse tree of include/foundation/core/Report.h, or None
+    """
+    if tree is None:
+        return frozenset()
+    constant, plain = constant_functions(tree)
+    return frozenset(plain - constant)
+
+
+def report_exits_of(root: Path) -> frozenset[str]:
+    """Return report_exits of the Report header of a tree, or the empty set when the tree has no such header."""
+    path = root / REPORT_HEADER
+    return report_exits(next(iter(tsast.parse([path])), None) if path.is_file() else None)
+
+
+def fold_sites(tree: tsast.Tree, exits: frozenset[str]) -> list[tuple[tsast.Node, str, str]]:
     """Return each call that GCC evaluates where the header stands, in a consteval function that is not a template.
 
     Complexity: linear in the size of the consteval functions of the header.
 
     Args:
         tree: The parse tree of a header
+        exits: The fatal exits of the Report family (report_exits).  A call
+            of one through fixy or foundation::core is the call of a stub
 
     Returns:
         (the call, the key, the reason) for each site, in source order
@@ -1104,9 +1134,10 @@ def fold_sites(tree: tsast.Tree) -> list[tuple[tsast.Node, str, str]]:
                 continue
             arguments = call.child_by_field("arguments")
             has_arguments = arguments is not None and bool(tsast.non_comment_children(arguments))
+            is_exit = tuple(parts[:-1]) in REPORT_QUALIFIERS and parts[-1] in exits
             if has_arguments and (reflection_function(call) or takes_reflection(call)):
                 reason = "a reflection query with constant arguments"
-            elif not has_arguments and parts[0] != "std" and parts[-1] not in stubs:
+            elif not has_arguments and parts[0] != "std" and parts[-1] not in stubs and not is_exit:
                 reason = "a call with no argument"
             else:
                 continue
@@ -1317,7 +1348,8 @@ def header_of_check(root: Path, check_file: str) -> str | None:
     return None
 
 
-def header_checks(tree: tsast.Tree, rel: str, macros: dict[str, MacroChecks]) -> tuple[list[Check], list[str]]:
+def header_checks(tree: tsast.Tree, rel: str, macros: dict[str, MacroChecks],
+                  exits: frozenset[str]) -> tuple[list[Check], list[str]]:
     """Return each item of compile-time work that one header does in each includer.
 
     Complexity: linear in the number of nodes of the file, times the depth of each candidate.
@@ -1326,6 +1358,7 @@ def header_checks(tree: tsast.Tree, rel: str, macros: dict[str, MacroChecks]) ->
         tree: The parse tree of the header
         rel: The header, relative to the repository root
         macros: The checks of each macro of the headers that writes one
+        exits: The fatal exits of the Report family (report_exits)
 
     Returns:
         The items in source order, and one message for each namespace whose
@@ -1366,7 +1399,8 @@ def header_checks(tree: tsast.Tree, rel: str, macros: dict[str, MacroChecks]) ->
         key = tsast.spelled(site).removesuffix(";")
         checks.extend([Check(rel, site.line, NAMESPACE, key, name)] * made.namespaces)
         checks.extend([Check(rel, site.line, ASSERT, key, name)] * made.asserts)
-    for kind, found in ((EAGER, eager_sites(tree)), (INSTANCE, instance_sites(tree)), (FOLD, fold_sites(tree))):
+    for kind, found in ((EAGER, eager_sites(tree)), (INSTANCE, instance_sites(tree)),
+                        (FOLD, fold_sites(tree, exits))):
         for site, key, query in found:
             if not any(is_self_test_segment(segment) for segment in tsast.namespace_path(site)):
                 checks.append(Check(rel, site.line, kind, key, detail=query))
@@ -1421,9 +1455,11 @@ def scan(root: Path) -> Scan:
             continue
         trees.append(tree)
     macros = macro_table(trees)
+    exits = report_exits(next((tree for tree in trees
+                               if Path(tree.path).relative_to(root).as_posix() == REPORT_HEADER), None))
     for tree in trees:
         rel = Path(tree.path).relative_to(root).as_posix()
-        found, unread = header_checks(tree, rel, macros)
+        found, unread = header_checks(tree, rel, macros, exits)
         checks.extend(found)
         failures.extend((rel, message) for message in unread)
 
@@ -2183,7 +2219,8 @@ def plan_fix(root: Path, header: str, items: list[Check], destination: str) -> F
     tree = next(iter(tsast.parse([root / header])))
     data = tree.source
     starts = line_starts(data)
-    sites = {(node.line, key): node for found in (eager_sites(tree), instance_sites(tree), fold_sites(tree))
+    sites = {(node.line, key): node
+             for found in (eager_sites(tree), instance_sites(tree), fold_sites(tree, report_exits_of(root)))
              for node, key, _query in found}
     # (first node, last node, the placement without its text)
     moved: list[tuple[tsast.Node, tsast.Node, Placement]] = []
@@ -3214,6 +3251,36 @@ def self_test() -> int:
         code, report = verdict()
         expect("a cheap constexpr constant and a plain call, planted in a clean header, are no finding",
                code == 0 and "include/fixy/Clean.h" not in report, True)
+        report_header = root / REPORT_HEADER
+        report_header.parent.mkdir(parents=True, exist_ok=True)
+        stub_report = "#pragma once\nnamespace foundation::core { void unreachable() noexcept; }\n"
+        (root / "include/fixy/Clean.h").write_text(
+            clean_planted + "consteval int clean_exit(int value) { if (value < 0) ::fixy::unreachable(); if (value > 9) "
+            "::foundation::core::unreachable(); return value; }\n", encoding="utf-8")
+        report_header.write_text(stub_report, encoding="utf-8")
+        code, report = verdict()
+        expect("a call of a fatal exit of the Report family with no argument, through fixy and through "
+               "foundation::core, in a consteval function, is no finding",
+               code == 0 and "include/fixy/Clean.h" not in report, True)
+        report_header.write_text(stub_report.replace("void unreachable() noexcept;",
+                                                     "constexpr void unreachable() noexcept {}"), encoding="utf-8")
+        code, report = verdict()
+        expect("the same call is an error when the Report header declares the exit constexpr",
+               code == 1 and "include/fixy/Clean.h:3: error: [header-checks]" in report
+               and "a call with no argument" in report)
+        report_header.unlink()
+        code, report = verdict()
+        expect("the same call is an error when the tree has no Report header",
+               code == 1 and "include/fixy/Clean.h:3: error: [header-checks]" in report)
+        report_header.write_text(stub_report, encoding="utf-8")
+        (root / "include/fixy/Clean.h").write_text(
+            clean_planted + "consteval bool clean_other() { return ::fixy::planted_verdict(); }\n", encoding="utf-8")
+        code, report = verdict()
+        expect("a call with no argument of a fixy function that is no fatal exit is an error",
+               code == 1 and "include/fixy/Clean.h:3: error: [header-checks]" in report
+               and "a call with no argument" in report)
+        report_header.unlink()
+        (root / "include/fixy/Clean.h").write_text(clean_planted, encoding="utf-8")
         (root / "include/fixy/Clean.h").write_text(clean_planted + "PLANTED_PAIR(Clean);\n", encoding="utf-8")
         code, report = verdict()
         expect("a macro that writes static_asserts, planted in a clean header, is an error",
