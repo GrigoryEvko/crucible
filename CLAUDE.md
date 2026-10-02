@@ -31,7 +31,7 @@ Python describes. Crucible executes. The 492,000 lines of framework overhead bet
 
 Crucible has no proof-assistant source of truth. Correctness is won by three complementary disciplines: **contracts-enforced invariants** (P2900R14), **linear / refined / session-typed wrappers** over every resource, and **measurement** (Mimic MAP-Elites + calibrated simulators + cross-vendor CI — §L2, §L15). The first two disciplines operate at this time. The measurement discipline is planned, because no compute backend exists. No SMT-proven optimal kernels; no proved-allocators-theorem. What we have instead:
 
-**Eight safety axioms.** InitSafe, TypeSafe, NullSafe, MemSafe, BorrowSafe, ThreadSafe, LeakSafe, DetSafe. Every struct, every function, every edit audits all eight. Contracts (`CRUCIBLE_PRE`/`CRUCIBLE_POST`/`contract_assert` in the function body, §XII), erroneous behavior for uninit reads (P2795R5), reflection-driven hashing (P2996), strong IDs, `std::bit_cast`, saturation arithmetic. Detail catalog in §II of the Code Guide below.
+**Eight safety axioms.** InitSafe, TypeSafe, NullSafe, MemSafe, BorrowSafe, ThreadSafe, LeakSafe, DetSafe. Every struct, every function, every edit audits all eight. Contracts (`CRUCIBLE_PRE`/`CRUCIBLE_POST`/`contract_assert` in the function body, §XII), erroneous behavior for uninit reads (P2795R5), reflection-driven hashing (P2996), strong IDs, `std::bit_cast` (with the limits of §IV), saturation arithmetic. Detail catalog in §II of the Code Guide below.
 
 **Safety wrappers.** The value-level wrappers are in `include/fixy/`, in namespace `fixy`. One algebraic substrate unifies them: `Graded<Modality, Lattice, T>` in `include/foundation/algebra/Graded.h`, in namespace `foundation::algebra`. The design is in `misc/25_04_2026.md` §2. Every Graded-backed wrapper exposes a uniform diagnostic surface (`graded_type`, `lattice_type`, `value_type`, `modality`, `value_type_name()`, `lattice_name()`), and most wrappers get it from `fixy::graded_facade` in `include/fixy/GradedFacade.h`. The `GradedWrapper` concept in `include/foundation/algebra/GradedTrait.h` enforces the contract structurally. Adversarial cheat-detection harness at `test/fixy/test_cheat_probe.cpp` (56 cheats, 2 of them admitted and documented).
 
@@ -688,7 +688,7 @@ struct TensorSlot {
 - IDs: `OpIndex`, `SlotId`, `NodeId`, `SymbolId`, `MetaIndex`, `KernelId` (all `CRUCIBLE_STRONG_ID(Name, Word)` → `explicit(Word)`, `.raw()`, `.none()`, `<=>`, no arithmetic). `MetaIndex` has a `uint64_t` word: it counts metadata records, and 32 bits wrap in hours. Each other ID has a `uint32_t` word.
 - Hashes: `SchemaHash`, `ShapeHash`, `ContentHash` (all `CRUCIBLE_STRONG_HASH(Name)`).
 - Enums: `enum class` with explicit underlying type. Convert via `std::to_underlying()` only.
-- Bit reinterpretation: `std::bit_cast<T>()` only. `reinterpret_cast` is BANNED.
+- Bit reinterpretation: `std::bit_cast<T>()` only, with the limits of §IV. `reinterpret_cast` is BANNED.
 - Arithmetic: `foundation::sat::add_sat` / `sub_sat` / `mul_sat` (`include/foundation/Saturate.h`) for all size/offset math. libstdc++ 16 spells the standard forms `std::saturating_add` / `saturating_sub` / `saturating_mul`. It has no `std::add_sat`.
 - Casts: C-style cast is a compile error. `const_cast` is BANNED.
 
@@ -825,6 +825,8 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 
 ## III. C++26 Language Features — Opt Matrix
 
+At the end of the migration, the families of §XXII replace each row of these tables that names a std type or a std function. A quarantined file uses only the std names of the admitted list (§XXII).
+
 ### Opt IN
 
 | Feature | Paper | Usage |
@@ -883,7 +885,7 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 | `memory_order::consume` | P3475R2 deprecated; `-Werror=deprecated-declarations` | Compilers promote to acquire anyway |
 | VLAs (`int arr[n]`) | `-Werror=vla` | Stack UB |
 | C-style casts | `-Werror=old-style-cast` | Silent UB conversions |
-| `reinterpret_cast` | AST guard `utils/scripts/check-banned-calls.py`, with a content-keyed allowlist in `utils/scripts/no-reinterpret-allowlist.txt`. A stale allowlist entry fails CI at exit 2 | Use `std::bit_cast<T>` for value reinterpretation; `std::start_lifetime_as<T>` for arena type-punning; `<simd>` first-class intrinsic interop for SIMD |
+| `reinterpret_cast` | AST guard `utils/scripts/check-banned-calls.py`, with a content-keyed allowlist in `utils/scripts/no-reinterpret-allowlist.txt`. A stale allowlist entry fails CI at exit 2 | Use `std::bit_cast<T>` for value reinterpretation, with the limits of §IV. Use `std::start_lifetime_as<T>` for arena type-punning, and `<simd>` first-class intrinsic interop for SIMD |
 | `const_cast` | `-Werror=cast-qual` | Casting away const is almost always wrong |
 | Static downcast (`static_cast<Derived*>`) | N/A — no inheritance in data types | We have no `virtual` |
 | Implicit narrowing | `-Werror=conversion -Werror=sign-conversion` | Silent truncation |
@@ -896,6 +898,8 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 
 ## IV. Library Types — Opt Matrix
 
+At the end of the migration, the families of §XXII replace these tables. The opt-in rows apply to the base only, because a quarantined file uses only the std names of the admitted list (§XXII).
+
 ### Opt IN
 
 | Type | Purpose |
@@ -907,10 +911,10 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 | `std::flat_map` / `std::flat_set` (C++23) | Sorted vector container, cache-friendly |
 | `std::move_only_function` (C++23) | Move-only callable |
 | `std::start_lifetime_as` (C++23) | Arena type punning correctness |
-| `std::bit_cast` (C++20) | The ONLY type-pun primitive allowed |
+| `std::bit_cast` (C++20) | A copy of the bits of a value into a different type. The result is undefined behavior when the bit pattern is no value of the destination type. For a `bool` from the byte 2, a constant evaluation gives `false`. At run time, `-O0` gives a value that is true in a condition and not equal to `true`, and `-O3` gives `true`. New code does not use `std::bit_cast` to make a `bool` or a value of an enumeration. A value from outside the program, such as the bytes of a file or of the wire, becomes a value of an enumeration only after a comparison with its enumerators. The Scalar family replaces `std::bit_cast` (§XXII). The admitted list keeps it until that change is on main |
 | `std::saturating_add` / `saturating_sub` / `saturating_mul` (C++26) | Saturation arithmetic at size-math sites. libstdc++ 16 declares these names in `<numeric>` and has no `std::add_sat`. Call sites use `foundation::sat::add_sat` / `sub_sat` / `mul_sat` (`include/foundation/Saturate.h`), which return the exact result and call the library only on overflow |
 | `std::breakpoint()` (C++26) | Hardware breakpoint for debug asserts. **libstdc++ 16 status:** the `<debugging>` header declares the symbol, and the library ships no definition — use the `foundation::detail::breakpoint*` stand-ins in `include/foundation/Platform.h` |
-| `std::unreachable()` (C++23) | After exhaustive switch to eliminate default branch |
+| `std::unreachable()` (C++23) | Do not use it in new code. `-D_GLIBCXX_ASSERTIONS` (Debug, TSan and UBSan-strict) makes it a trap. Release, verify and PGO keep `__builtin_unreachable()`, and a call of it is undefined behavior. A switch that misses a case then traps in Debug and is undefined in Release. When a value outside the enumerators is possible, the `default` arm calls `CRUCIBLE_FATAL_INVARIANT(false)`. That call ends the process in each build. The uses in the tree stay until they move. The Report family replaces `std::unreachable()` (§XXII) |
 | `std::countr_zero` / `popcount` (C++20) | Bit manipulation primitives |
 | `std::span` (C++20) | Pointer+count replacement |
 | `std::jthread` (C++20) | Auto-joining thread, no destructor-terminate |
@@ -924,7 +928,7 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 | `std::atomic_signed_lock_free` / `std::atomic_unsigned_lock_free` (C++20 P1135R6) | Type aliases to the widest integer atomic that is always-lock-free on the target. **libstdc++ 16.0.1 status:** shipped. FTM `__cpp_lib_atomic_lock_free_type_aliases = 201907L`. Use for counters where portability of the lock-free guarantee matters more than exact width |
 | `<debugging>` — `breakpoint_if_debugging`, `is_debugger_present` (C++26) | Pause when debugger attached, continue otherwise; tighten `CRUCIBLE_INVARIANT`. **libstdc++ 16 status:** header declares but symbols absent from libstdc++.so — use the `foundation::detail::*` stand-ins in `include/foundation/Platform.h` |
 | `std::latch` / `std::barrier` / `std::counting_semaphore` (C++20) | Pool throttling, one-shot init, fan-in waits — replace bespoke atomic+spin where ≥100 ns latency is acceptable |
-| `std::source_location` (C++20) | Replace `__FILE__`/`__LINE__` in trace/assert/contract-violation paths |
+| `std::source_location` (C++20) | Call-site capture. `file_name()` holds the path of the compile command, an absolute path of the checkout, because the build gives no `-ffile-prefix-map`. A text from it is different in two checkouts. The Report family replaces it with `Site`, which `__builtin_FILE`, `__builtin_LINE` and `__builtin_FUNCTION` give (§XXII). `Site` needs a prefix map for the same reason |
 | `std::is_sufficiently_aligned`, `std::aligned_accessor` (C++26) | Typed alternatives to `__builtin_assume_aligned`. **libstdc++ 16.0.1 status:** shipped (`__cpp_lib_is_sufficiently_aligned`/`aligned_accessor = 202411`) |
 | `std::philox_engine` (C++26) | Standard counter-based RNG; cross-reference Crucible's `Philox.h` for bit-equivalence. **libstdc++ 16.0.1 status:** shipped (`__cpp_lib_philox_engine = 202406`) |
 | `std::is_layout_compatible_with`, `std::is_pointer_interconvertible_with_class` (C++20) | Semantic companion to `static_assert(sizeof(T) == N)` for layout-strict structs |
@@ -1223,13 +1227,14 @@ p = static_cast<decltype(p)>(__builtin_assume_aligned(p, 64));
 // Likely/unlikely
 if (cache_hit) [[likely]] { ... } else [[unlikely]] { ... }
 
-// After exhaustive switch
+// A switch that handles each enumerator. -Werror=switch-default makes the
+// default arm necessary, and the arm ends the process in each build (§IV).
 switch (kind) {
     case Kind::A: ... return x;
     case Kind::B: ... return y;
     case Kind::C: ... return z;
+    default: CRUCIBLE_FATAL_INVARIANT(false);
 }
-std::unreachable();  // removes default branch, optimizer assumes switch is exhaustive
 ```
 
 Use `__restrict__` on non-aliasing pointer params in inner loops — unlocks auto-vectorization:
@@ -1295,7 +1300,7 @@ Rule: prefetch 8-16 iterations ahead; `locality = 0` for streaming reads (don't 
 2. `__builtin_expect_with_probability(x, v, p)` for explicit probabilities.
 3. **Predication**: replace `if (x < 0) x = 0` with `x = std::max(x, 0)` — compiler emits `cmov`.
 4. **Switch on small dense enum** — compiler generates jump table; one indirect branch.
-5. `std::unreachable()` after exhaustive switch — eliminates default entirely.
+5. A switch that handles each enumerator also has a `default` arm (`-Werror=switch-default`). The arm ends the process in each build, and it does not call `std::unreachable()` (§IV).
 6. **Branchless bit tricks** where appropriate: `x & -cond` for conditional zeroing.
 
 ### Vectorization
@@ -1990,6 +1995,9 @@ and execution resumes, but this project's `handle_contract_violation`
 `std::abort()`. A Release binary therefore checks and dies. The handler is weak,
 so a program that wants true log-and-continue overrides it with a returning
 definition — that is a production failure-policy decision, not a build flag.
+Only `src/foundation/ContractHandler.cpp` can use the name
+`std::contracts::contract_violation` (the audit table of §XXII). An override of
+the weak handler in a different file needs a base door first.
 
 ```cmake
 # CMakeLists.txt SECTION 6 — Release default, INTERFACE on the crucible_dialect target,
@@ -2368,7 +2376,7 @@ Under `BITEXACT_STRICT`, the same IR + same seed produces byte-identical output 
 - Philox4x32 is platform-independent (counter-based, bit-exact spec)
 - Memory plan offsets are content-addressed (no alloc-order dependency)
 - Canonical reduction topology (a UUID-sorted binary tree, planned: no reduction code exists at this time)
-- `std::bit_cast` for serialization — no endian-dependent `reinterpret_cast`
+- `std::bit_cast` for serialization, with the limits of §IV — no endian-dependent `reinterpret_cast`
 
 The CI test for this property, `cross_vendor_step_invariant`, is planned. It cannot be built until two compute backends exist (§XIII). When it exists, a new platform must pass this test before shipping.
 
@@ -2582,7 +2590,7 @@ Rules for code review and grep-guards:
 
 - `declassify<` without a `secret_policy::*` policy tag → reject.
 - `const_cast` → reject (banned per §III).
-- `reinterpret_cast` → reject; use `std::bit_cast`.
+- `reinterpret_cast` → reject. Use `std::bit_cast` with the limits of §IV.
 - `std::chrono::system_clock` → reject (use `steady_clock` or `rdtsc`).
 - A new public API taking raw `int`, `size_t`, `void*`, or `T*` without a wrapper → questioned on review; almost always rewritten.
 - A new resource-carrying type without `Linear<>` → questioned; must have justification.
@@ -2927,6 +2935,106 @@ A handle of an SPSC or MPSC channel goes into a session through `mint_substrate_
 ### Anti-pattern: the runtime registry
 
 Do NOT replace mint with a runtime registry / factory function table / virtual dispatch. The mint pattern is **compile-time-resolved** — every call site has the full type information visible to the optimizer. A runtime registry would defeat EBO collapse, branch prediction, inlining, and the whole zero-runtime-cost claim of the substrate.
+
+---
+
+## XXII. The Quarantine
+
+The quarantine rules move the code outside the base to the types of the base. `misc/01_10_2026_quarantine.md` (the plan) gives the migration. R1 to R17 are the rule ids of the plan.
+
+This section states each rule one time. The other sections refer to it. Some rules apply at this time, and the other rules are planned. The text says "planned" for each part that is not on main.
+
+### The base and the quarantined tree (R1)
+
+The base is `include/foundation`, `include/fixy`, `src/foundation` and `src/fixy`. Each other C++ file of the repository is quarantined. `utils/scripts/layer-rules.txt` (the rule table) gives the layers, the doors, the admitted names and the quarantined directories in rows. Its `layer` rows give the base files, and its `quarantine` rows give the quarantined directories. The longest path of a row decides the class of a file. The quarantine plugin gives an error for a file under the source root that no `layer` row and no `quarantine` row holds.
+
+### The rule for each new line (R6)
+
+In a quarantined file, each line that you write or change holds only objects of base types. The quarantine plugin gives a finding for each of these items in a quarantined file:
+- An object of a std type
+- A std name that no `admit` row of the rule table holds
+- A call of a C library function, and an object of a C library struct or union
+- A raw object pointer, a raw function pointer and a C array
+- A new-expression and a delete-expression
+- An expansion of `assert`.
+
+The plugin examines each use at its spelling location. A base template that a quarantined file instantiates gives no finding. The lines that a change does not touch can stay as they are. A new quarantined file has no finding.
+
+### Callers of a changed API
+
+This rule applies to a quarantined caller that changes only because a base API changed. In that caller, change only the lines that the API change makes necessary. Such a line can keep a std type or a std name that no base type replaces at this time. The finding count of the file must not increase. The report of the change lists each such line.
+
+Such a line adds no std object, raw pointer or C array. Each part of a line that you replace, and each line of new logic, has no finding.
+
+### The opt-out region (R7)
+
+R6 does not apply in an opt-out region. A region is permitted only for one of these reason classes (plan §16):
+
+| Reason class | Where |
+|---|---|
+| `ABI:` | A boundary of a foreign ABI, such as the PyTorch dispatcher, `LLVMFuzzerTestOneInput` and `main(int, char**)` |
+| `C-HEADER:` | A header that a C compiler also compiles, such as a BPF event struct |
+| `PROBE:` | A test of a raw behavior, such as an attack test |
+| `ORACLE:` | A differential test against the standard library |
+| `MEASURE:` | A bench measurement that must use raw timing, such as an `asm volatile` fence |
+
+The reason text starts with its class. A region includes only the smallest span that its reason makes necessary. A region does not replace a missing primitive (R8).
+
+At this time, `#pragma crucible I_KNOW_WHAT_IM_DOING("reason")` opens a region, and `#pragma crucible END_I_KNOW_WHAT_IM_DOING` closes it. In the plan, the macros `CRUCIBLE_I_KNOW_WHAT_IM_DOING("reason")` and `CRUCIBLE_END_I_KNOW_WHAT_IM_DOING` replace the pragma. Each region then gets a row of an opt-out ledger. The number of rows can only decrease.
+
+### Extend the base (R8, R9)
+
+When a quarantined line must use a primitive that the base does not have, the base gets the primitive. One owner changes `include/foundation/core/` and `include/fixy/Core.h`. Send that owner the operation and its call site.
+
+The owner adds the primitive to `include/foundation/core/`, and `include/fixy/Core.h` gives its name in namespace `fixy` through a using-declaration. The primitive is part of one of the eight families of plan §11: Choice, Record, Region, Ref, Atomic, Scalar, Report and Os. It uses the shared verbs of plan §11.1, and it gets only the operations that the tree calls. Do not write a std type, a std function, a raw pointer or a C array in its place.
+
+### Clean cuts (R10)
+
+Each change moves each producer and each consumer of an API at one time. It keeps no shim, no alias of an old name and no old path.
+
+### The layers and the include policy (R2, R3)
+
+The `layer` rows of the rule table give the layers of the base, from F0 floor to X5 session, each with a rank. The plan adds the layer X6 channels (plan §12). A base file can include a header of its own layer and of each layer with a lower rank. It cannot include a header of a higher layer, or a file outside the base.
+
+The `allow` rows give the headers outside the source root that each layer can include. A layer also gets the `allow` rows of each lower layer. The rows of F0 floor are the allowance of R2. Of `<utility>`, the base uses only the casts, `declval` and the index sequences. The audit can make the allowance shorter. Only the owner can make it longer.
+
+When a builtin gives a function, the base uses the builtin and not a header (R3, and rule 4 of §XV "Compile time"). A new header becomes part of an allowance only if the five conditions of plan §12 hold. The plan removes each other std header from the base. After that, no layer includes `<thread>`, `<chrono>`, `<filesystem>`, `<fstream>`, `<sstream>`, `<iostream>`, `<functional>`, `<memory>`, `<ranges>`, `<algorithm>`, `<set>`, `<map>`, `<unordered_map>`, `<mutex>`, `<any>`, `<variant>`, `<expected>`, `<optional>`, `<system_error>`, `<charconv>`, `<format>`, `<regex>`, `<cmath>`, `<source_location>` or a third-party header.
+
+In a `REPORT` build, the plugin gives a finding for each include that does not obey a rule of this subsection or of R4. `utils/scripts/check-layer-boundary.py` reads the same table, and it puts the layers together into the three layers of §XVI.
+
+### The doors (R4, R5)
+
+Only `include/fixy/os` and `src/fixy/os` can include a system header, a Linux UAPI header or a glibc header. Each such header has one owner file, its door. A `door` row of the rule table names the door of a header, and only that file can include the header. No system type is part of a public signature of a door. glibc stays the process runtime: startup, thread-local storage, thread start, `malloc` and `dlopen`. The plan moves each other system header of the base to its door.
+
+Under R5, no object of `libcrucible.a` uses a libstdc++ symbol outside a short allowlist. The same rule applies to each binary other than the vessel library. A link guard for R5 is planned.
+
+### The admitted list and its audit
+
+The `admit` rows of the rule table (the admitted list) give the std names that a quarantined file can use. `utils/scripts/quarantine-admitted-audit.txt` (the audit table) gives one row for each `admit` row and for each candidate of plan appendix A. Each row has one of four verdicts:
+- KEEP: the name passes the five checks of plan §8.2 (flags, predictability, safe use, use and cost)
+- KEEP-RESTRICTED: the name passes with a limit that the plugin must apply. The row gives the limit
+- REPLACE: a family replaces the name. The row gives the family. The admitted list keeps the name until that change is on main
+- DROP: the name has no use, or no safe use.
+
+The owner approved each verdict on 2026-10-02. `test/layer/admitted_flag_matrix.cpp` holds a `static_assert` for each property of each name. The build compiles it under each flag set. `utils/scripts/check-admitted-audit.py` makes sure that the list, the table and the matrix agree. Read the verdict of a name in the table. This guide does not copy the table.
+
+### The plugin modes and the enforce rows
+
+§V gives the three values of `CRUCIBLE_QUARANTINE`: `OFF`, `REPORT` and `ERROR`. `OFF` is the default. No preset sets a different value. An `OFF` build loads the contract plugin, which does not read the rule table.
+
+To get the findings of a change, configure a second build directory with `-DCRUCIBLE_QUARANTINE=REPORT`. Build the targets that compile the changed files, before and after the change. Then compare the files in `quarantine/report/` of that build directory. A `REPORT` build uses no compiler launcher, because a cache hit gives no report.
+
+The `enforce` rows of the rule table give each quarantined directory a mode, `report` or `error`. A file that no `enforce` row holds has the mode `report`. In a `REPORT` build, a finding in a file with the mode `error` is a compile error. At this time, each `enforce` row has the mode `report`. A directory changes to `error` when it has no finding outside the opt-out ledger.
+
+### The ratchet (R11, planned)
+
+The finding count of each quarantined directory can only decrease. A ledger will hold the finding count of each quarantined directory and each kind. The plugin will write the findings of a translation unit into the section `.crucible.quarantine` of its object. ccache then keeps the findings with the object.
+
+A `ci_guard` test will compare each count with its row. A count above its row will fail. A count below its row will also fail, until the same commit writes the ledger again. A CI job will run the test on each push.
+
+### Hot path and compile time (R12 to R17)
+
+A family operation on the hot path compiles to the same instructions as the code that it replaces (R12). The proof of a safe access comes from a type, such as an index type, a fixed extent or a memory order in the operation name. It does not come from a branch at each access. Rules 1 to 5 of §XV "Compile time" are R13 to R17.
 
 ---
 

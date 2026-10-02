@@ -568,7 +568,7 @@ Add a section on the quarantine: rules R1 to R12, the layers, the door rule, the
 ### 8.7 The S1 gate
 
 - The rule table is on main, and the plugin and the layer guard read it.
-- The owner approved the audit verdicts.
+- The owner approved the audit verdicts. Met: the owner approved each verdict on 2026-10-02.
 - The ratchet runs in CI and fails on a plant.
 - The pragma macro works with the plugin on and off.
 - CLAUDE.md has the quarantine section.
