@@ -494,7 +494,7 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="check-reconfigure-noop.py", description=__doc__.split("\n", 1)[0])
     check_report.add_arguments(parser)
     parser.add_argument("build_dir", nargs="?", type=Path, help="the configured Ninja build directory")
-    parser.add_argument("--jobs", type=int, default=8, help="the parallel jobs of each build (default 8)")
+    parser.add_argument("--jobs", type=int, default=96, help="the parallel jobs of each build (default 96)")
     parser.add_argument("--self-test", action="store_true", help="plant each defect in a scratch project")
     parser.add_argument("--cmake", default=shutil.which("cmake") or "cmake", help="the cmake of the self-test")
     parser.add_argument("--ninja", default=shutil.which("ninja") or "ninja", help="the ninja of the self-test")

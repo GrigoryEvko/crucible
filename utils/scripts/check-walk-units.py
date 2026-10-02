@@ -208,7 +208,7 @@ WEIGHT_FORM = re.compile(r"[0-9]+\.[0-9]")
 UNIT_OUTPUT = "/layer_walks_across_headers_"
 UNIT_INCLUDE = re.compile(r"-I(.*/test/layer/walk_units/[0-9]+)")
 # The default number of measure compiles at one time.
-MEASURE_JOBS = 8
+MEASURE_JOBS = 96
 # The functions that walk the members of a namespace.  Only members_of takes
 # a namespace.  The other member queries of std::meta take a class.
 WALKS = frozenset({"members_of"})

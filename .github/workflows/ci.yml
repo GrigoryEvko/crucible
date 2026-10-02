@@ -508,7 +508,7 @@ jobs:
       - name: Reset ccache stats
         run: ccache -z
 
-      # -jN overrides the preset's jobs:192. 4 vCPU / 16 GB runners; sanitizer
+      # -jN overrides the preset's jobs:96. 4 vCPU / 16 GB runners; sanitizer
       # and -fanalyzer TUs are memory-heavy, so jobs is tuned per preset. The
       # analyzer preset is restricted to the `crucible` library target —
       # -fanalyzer over the full ~1000-TU test tree would blow the wall-clock

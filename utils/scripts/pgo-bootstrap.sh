@@ -12,7 +12,7 @@
 #
 # Environment:
 #   CRUCIBLE_PGO_DIR            The profile root.  The preset value is <tree>/pgo
-#   CRUCIBLE_PGO_JOBS           Build parallelism.  The preset value is nproc
+#   CRUCIBLE_PGO_JOBS           Build parallelism.  The preset value is 96
 #   CRUCIBLE_PGO_BENCH_TIMEOUT  Seconds for each bench.  The preset value is 900
 #   CRUCIBLE_PGO_SKIP           An extended regex of bench names to skip
 #
@@ -27,7 +27,7 @@ set -euo pipefail
 . "$(dirname -- "${BASH_SOURCE[0]}")/repo_root.sh"
 cd "$REPO_ROOT"
 
-jobs="${CRUCIBLE_PGO_JOBS:-$(nproc)}"
+jobs="${CRUCIBLE_PGO_JOBS:-96}"
 bench_timeout="${CRUCIBLE_PGO_BENCH_TIMEOUT:-900}"
 skip_regex="${CRUCIBLE_PGO_SKIP:-}"
 build_dir="$REPO_ROOT/build-pgo-generate"

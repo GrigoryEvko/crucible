@@ -12,7 +12,7 @@
 # the most time, from the ctest log.
 #
 # usage: utils/scripts/build-gauge.sh [option]...
-#   --jobs N          The build and test parallelism (48 without the option)
+#   --jobs N          The build and test parallelism (96 without the option)
 #   --preset NAME     The configure preset (default without the option)
 #   --build-dir DIR   The build directory (<tree>/build-gauge without the option)
 #   --target NAME     Build NAME and not `all`.  Give it again for more targets
@@ -58,7 +58,7 @@ usage() {
     done <"${BASH_SOURCE[0]}"
 }
 
-jobs=48
+jobs=96
 preset=default
 build_dir="$REPO_ROOT/build-gauge"
 targets=()

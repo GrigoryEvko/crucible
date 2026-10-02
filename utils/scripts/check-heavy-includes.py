@@ -109,7 +109,7 @@ UNMEASURED = "unmeasured"
 REFERENCE = "<meta>"
 # The runs of each measurement.  The median of three is the rule of the gauge.
 MEASURE_RUNS = 3
-MEASURE_JOBS = 16
+MEASURE_JOBS = 96
 
 TABLE_HEADER = (
     "# utils/scripts/header-costs.txt — the measured cost of each standard and system header.\n"

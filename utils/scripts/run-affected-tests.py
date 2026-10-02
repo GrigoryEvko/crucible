@@ -1008,7 +1008,7 @@ def main(arguments: list[str]) -> int:
     ctest_arguments = arguments[separator + 1:]
     parser = argparse.ArgumentParser(description="Build, then run each test whose inputs changed.")
     parser.add_argument("build_dir", type=Path, nargs="?")
-    parser.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1)
+    parser.add_argument("-j", "--jobs", type=int, default=96)
     parser.add_argument("--no-build", action="store_true")
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--plan", action="store_true")
