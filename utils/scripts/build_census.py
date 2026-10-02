@@ -9,7 +9,7 @@ A UNIT
       * A negative fixture: a test of `ctest --show-only=json-v1` whose
         command runs test/neg_compile_driver.py.  The driver writes the
         record build/neg-compile/NAME/NAME.inputs after each run
-        (test/neg_compile_driver.py, The record of a run).
+        (test/neg_compile_store.py, The record of a run).
 
 THE FILES OF A UNIT
     The files of an object come from the ninja dependency log (`ninja -t

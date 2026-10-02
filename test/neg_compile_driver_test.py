@@ -38,9 +38,9 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import neg_compile_driver as driver  # noqa: E402
+import neg_compile_store as store  # noqa: E402
 
-DRIVER = Path(driver.__file__).resolve()
+DRIVER = Path(__file__).resolve().with_name("neg_compile_driver.py")
 SIZE = ("static assertion failed", "the size of A is one")
 CONVERT = ("conversion from", "non-scalar type")
 PROBE = ("undeclared_name", "was not declared")
@@ -155,8 +155,8 @@ class StoreTest:
     @staticmethod
     def results_of(entry: Path | None) -> list[dict[str, object]]:
         """Return the results of the entry at `entry`, newest first, or no result when it is not a correct entry."""
-        decoded = driver.decode_entry(entry.read_bytes()) if entry is not None and entry.is_file() else None
-        return driver.unpack_results(decoded) if decoded is not None else []
+        decoded = store.decode_entry(entry.read_bytes()) if entry is not None and entry.is_file() else None
+        return store.unpack_results(decoded) if decoded is not None else []
 
     def newest_result(self, entry: Path | None) -> dict[str, object] | None:
         """Return the newest result of the entry at `entry`, or None."""
@@ -170,7 +170,7 @@ class StoreTest:
     @staticmethod
     def settle() -> None:
         """Wait until each file of the tree is older than the settle period of the store."""
-        time.sleep(driver._SETTLE_NS / 1e9 + 0.2)
+        time.sleep(store._SETTLE_NS / 1e9 + 0.2)
 
     @staticmethod
     def started_at(path: Path) -> dict[str, str]:
@@ -344,12 +344,12 @@ class StoreTest:
         """A shared object of cc1plus in a directory of LD_LIBRARY_PATH changes the key of the compile."""
         cc1plus = subprocess.run([self.cxx, "-print-prog-name=cc1plus"], text=True, capture_output=True,
                                  check=False).stdout.strip()
-        interpreter = driver.elf_interpreter(cc1plus) if os.path.isfile(cc1plus) else None
+        interpreter = store.elf_interpreter(cc1plus) if os.path.isfile(cc1plus) else None
         if interpreter is None:
             self.skip(f"cc1plus ({cc1plus}) has no program interpreter")
             return
         listed = subprocess.run([interpreter, "--list", cc1plus], text=True, capture_output=True, check=False)
-        parsed = driver.parse_loader_list(listed.stdout, "", self.root)
+        parsed = store.parse_loader_list(listed.stdout, "", self.root)
         system = [path for path in (parsed[0] if parsed else []) if path.startswith(("/lib", "/usr/lib"))
                   and not os.path.basename(path).startswith("ld-linux")]
         if not system:
@@ -444,18 +444,18 @@ class StoreTest:
         damaged = self.run("neg_convert", *CONVERT)
         self.expect(damaged[0] == 0 and self.has(damaged[3], "compiled (the entry is damaged)"),
                     f"a damaged entry is a miss: {damaged[3]}")
-        planted = driver.decode_entry(entry.read_bytes())
+        planted = store.decode_entry(entry.read_bytes())
         self.expect(planted is not None, "the compile after a damaged entry stores a correct entry")
         if planted is None:
             return
         planted["results"][0]["output"] = "planted output\n"
-        entry.write_bytes(driver.encode_entry(planted))
+        entry.write_bytes(store.encode_entry(planted))
         replaced = self.run("neg_convert", *CONVERT)
         self.expect(replaced[0] == 1 and "expected diagnostic not found for neg_convert" in replaced[2]
                     and replaced[1] == "planted output\n",
                     f"the regexes apply to the stored output: {replaced[0]} {replaced[3]}")
         planted["results"][0]["returncode"] = 0
-        entry.write_bytes(driver.encode_entry(planted))
+        entry.write_bytes(store.encode_entry(planted))
         compiled = self.run("neg_convert", *CONVERT)
         self.expect(compiled[0] == 1 and "compiled successfully" in compiled[2],
                     f"a stored exit code 0 fails the fixture: {compiled[0]}")
@@ -549,7 +549,7 @@ class StoreTest:
 
     def check_instruction_budget(self) -> None:
         """With an instruction count, the row fixture-instructions holds the error level, and the CPU time warns only."""
-        if driver._cost_meter_module().open_instruction_counter() is None:
+        if store._cost_meter_module().open_instruction_counter() is None:
             self.skip("the host gives no exact instruction counter (utils/scripts/cost_meter.py)")
             return
         table = self.root / "budgets.txt"
@@ -676,7 +676,7 @@ class StoreTest:
 
     def check_command_memo(self) -> None:
         """The driver keeps the command of a fixture, and uses it only while the compile database is the same."""
-        memo = self.build / "neg-compile" / "neg_size" / f"neg_size{driver._COMMAND_SUFFIX}"
+        memo = self.build / "neg-compile" / "neg_size" / f"neg_size{store._COMMAND_SUFFIX}"
         database = self.build / "compile_commands.json"
         fresh = self.run("neg_size", *SIZE, **self.started_at(database))
         self.expect(fresh[0] == 0 and not memo.exists(),
@@ -701,6 +701,86 @@ class StoreTest:
         self.expect(rewritten[0] == 0 and self.has(rewritten[3], "the result comes from the store"),
                     f"a rewritten compile database replaces the kept command: {rewritten[0]} {rewritten[3]}")
 
+    def check_driver_answers(self) -> None:
+        """A new assembler on a path that the compiler driver searches gives a new key, also after a memo of the answers.
+
+        COMPILER_PATH puts an empty directory first in the program search of
+        the driver.  The first run keeps the answers of the driver in a memo,
+        and a new program `as` in that directory changes the answer for the
+        assembler.
+        """
+        programs = self.root / "programs"
+        programs.mkdir()
+        env = {"COMPILER_PATH": str(programs)}
+        stored = self.run("neg_convert", *CONVERT, **env)
+        memos = sorted((self.store / "memo").glob("answers-*.json"))
+        self.expect(stored[0] == 0 and self.has(stored[3], "stored") and len(memos) == 1,
+                    f"the first run stores and keeps the answers of the driver: {stored[3]} {memos}")
+        again = self.run("neg_convert", *CONVERT, **env)
+        self.expect(self.has(again[3], "the result comes from the store"),
+                    f"the answers of the memo give the same key: {again[3]}")
+        assembler = programs / "as"
+        assembler.write_text('#!/bin/sh\nexec as "$@"\n')
+        assembler.chmod(0o755)
+        planted = self.run("neg_convert", *CONVERT, **env)
+        self.expect(planted[0] == 0 and self.has(planted[3], "compiled (no entry)"),
+                    f"a new assembler in COMPILER_PATH gives a new key: {planted[3]}")
+
+    def check_digest_memo(self) -> None:
+        """The digest memo of a fixture gives a kept hash only while the stat fields of the file are the same.
+
+        An edit that keeps the size of a header changes its change time, so
+        the driver reads the header again.
+        """
+        header = self.root / "include/a/A.h"
+        memo = self.build / "neg-compile" / "neg_size" / f"neg_size{store._DIGESTS_SUFFIX}"
+        self.run("neg_size", *SIZE)
+        second = self.run("neg_size", *SIZE)
+        try:
+            kept = json.loads(memo.read_text())["files"]
+        except (OSError, ValueError, KeyError):
+            kept = {}
+        self.expect(self.has(second[3], "the result comes from the store") and str(header) in kept,
+                    f"a result from the store keeps the hash of each dependency: {second[3]} {sorted(kept)}")
+        text = header.read_text()
+        same_size = text.replace("int field;", "char fiel;")
+        self.expect(len(same_size) == len(text), "the edit keeps the size of the header")
+        header.write_text(same_size)
+        edited = self.run("neg_size", *SIZE)
+        self.expect(edited[0] == 1 and "compiled successfully" in edited[2]
+                    and self.has(edited[3], f"compiled (a dependency changed: {header})"),
+                    f"an edit of a header that keeps its size compiles the fixture again: {edited[0]} {edited[3]}")
+
+    def check_budget_memo(self) -> None:
+        """The budget memo gives the rows only while the table and the two ledgers have the same stat fields."""
+        table = self.root / "budgets.txt"
+        cpu_ledger = self.root / "fixture-cpu-ledger.txt"
+        count_ledger = self.root / "fixture-instructions-ledger.txt"
+        cpu_ledger.write_text("# no row\n")
+        count_ledger.write_text("# no row\n")
+        env = {"CRUCIBLE_NEG_BUDGETS": str(table), "CRUCIBLE_NEG_CPU_LEDGER": str(cpu_ledger),
+               "CRUCIBLE_NEG_INSTRUCTIONS_LEDGER": str(count_ledger)}
+
+        def budget(warn: float) -> None:
+            """Write a budget table whose two rows have the warning threshold `warn` and a high error threshold."""
+            table.write_text(f"fixture-cpu | {warn} | 2000 | s | the CPU time of one fixture compile\n"
+                             f"fixture-instructions | {warn} | 2000 | G | the instructions of one compile\n")
+
+        def warning(text: str) -> str | None:
+            """Return the first warning line of a fixture budget in a standard output, or None."""
+            return next((line for line in text.splitlines() if ": warning: [fixture-" in line), None)
+
+        budget(1000)
+        self.settle()
+        quiet = self.run("neg_convert", *CONVERT, **env)
+        memos = sorted((self.store / "memo").glob("budget-*.json"))
+        self.expect(quiet[0] == 0 and warning(quiet[1]) is None and len(memos) == 1,
+                    f"a run under the budget gives no warning and keeps the settled budget: {quiet[0]} {memos}")
+        budget(0)
+        warned = self.run("neg_convert", *CONVERT, **env)
+        self.expect(warned[0] == 0 and warning(warned[1]) is not None,
+                    f"a new budget table replaces the kept budget: {warned[0]} {warned[3]}")
+
     def check_eviction(self) -> None:
         """A write into a bucket above its share removes the entries of that bucket unused for the longest time.
 
@@ -715,7 +795,7 @@ class StoreTest:
         if entry is None or not entry.is_file():
             return
         entry.unlink()
-        share = (1 << 20) // driver._BUCKETS
+        share = (1 << 20) // store._BUCKETS
         unused = []
         for index in range(4):
             path = entry.parent / f"{index:064x}"
@@ -759,6 +839,9 @@ CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_inputs_record,
     StoreTest.check_command_memo,
     StoreTest.check_several_results,
+    StoreTest.check_driver_answers,
+    StoreTest.check_digest_memo,
+    StoreTest.check_budget_memo,
 )
 
 SEARCH_LIST = """\
@@ -790,40 +873,49 @@ LOADER_DEBUG = """\
 
 def check_parsers(failures: list[str]) -> None:
     """Check the parsers and the pure functions of the store on planted input."""
-    parsed = driver.parse_dependency_file("out.o: a\\ b.h c.h \\\n d$$.h\\#e.h\n")
+    parsed = store.parse_dependency_file("out.o: a\\ b.h c.h \\\n d$$.h\\#e.h\n")
     if parsed != ["a b.h", "c.h", "d$.h#e.h"]:
         failures.append(f"the dependency file parse gives {parsed}")
-    if driver.parse_dependency_file("out.o: a.h\nb.h: c.h\n") is not None:
+    if store.parse_dependency_file("out.o: a.h\nb.h: c.h\n") is not None:
         failures.append("a dependency file with two rules is refused")
-    named = driver.parse_search_list(SEARCH_LIST)
+    named = store.parse_search_list(SEARCH_LIST)
     expected_named = ["/opt/gcc/x86_64/include", "/opt/inc/./", "/work/quote", "/work/include", "/opt/gcc/include/c++",
                       "/Library/Frameworks"]
     if named != expected_named:
         failures.append(f"the search list parse gives {named}")
-    if driver.parse_search_list(SEARCH_LIST.replace("End of search list.\n", "")) is not None:
+    if store.parse_search_list(SEARCH_LIST.replace("End of search list.\n", "")) is not None:
         failures.append("a search list with no end line is refused")
-    loader = driver.parse_loader_list(LOADER_OUTPUT, LOADER_DEBUG, Path("/work"))
+    loader = store.parse_loader_list(LOADER_OUTPUT, LOADER_DEBUG, Path("/work"))
     expected_loader = (["/lib64/libz.so.1", "/lib64/ld-linux-x86-64.so.2"],
                        ["/opt/lib/libz.so.1", "/work/glibc-hwcaps/x86-64-v3/libz.so.1", "/lib64/libz.so.1"],
                        ["/etc/ld.so.cache"])
     if loader != expected_loader:
         failures.append(f"the loader list parse gives {loader}")
-    if driver.parse_loader_list("\tlibq.so.1 => not found\n", "", Path("/work")) is not None:
+    if store.parse_loader_list("\tlibq.so.1 => not found\n", "", Path("/work")) is not None:
         failures.append("a loader list with an object that the loader does not find is refused")
-    interpreter = driver.elf_interpreter(os.path.realpath(sys.executable))
+    interpreter = store.elf_interpreter(os.path.realpath(sys.executable))
     if interpreter is None or not os.path.isfile(interpreter):
         failures.append(f"the interpreter of {sys.executable} is {interpreter}")
-    if driver.elf_interpreter(str(DRIVER)) is not None:
+    if store.elf_interpreter(str(DRIVER)) is not None:
         failures.append("a file that is not ELF has no interpreter")
-    roots, probes = driver.search_roots(["/s/sub"], ["/n/x.cpp", "/s/sub/../b/B.h"], ["/abs/m.h", "../m.h", "m.h"])
+    roots, probes = store.search_roots(["/s/sub"], ["/n/x.cpp", "/s/sub/../b/B.h"], ["/abs/m.h", "../m.h", "m.h"])
     expected_probes = [path for reach in ("/s/sub/../b/B.h", "/n/../b/B.h", "/s/sub/../b/../b/B.h", "/s/sub/../m.h",
                                           "/n/../m.h", "/s/sub/../b/../m.h", "/abs/m.h")
                        for path in (reach, reach + ".gch")]
     if roots != ["/s/sub", "/n", "/s/sub/../b"] or probes != expected_probes:
         failures.append(f"the search roots are {roots} and the probes are {probes}")
-    env = driver.compile_environment({"LC_ALL": "de_DE.UTF-8", "LANG": "en_US.UTF-8", "LANGUAGE": "de"})
+    env = store.compile_environment({"LC_ALL": "de_DE.UTF-8", "LANG": "en_US.UTF-8", "LANGUAGE": "de"})
     if env != {"LC_CTYPE": "de_DE.UTF-8", "LANG": "en_US.UTF-8", "LANGUAGE": "de", "LC_MESSAGES": "C"}:
         failures.append(f"the compile environment is {env}")
+    report = store._report_module()
+    if store._FIXTURE_NAME.pattern != report.WRITER_KEY.pattern:
+        failures.append(f"the fixture name pattern {store._FIXTURE_NAME.pattern} is not WRITER_KEY of check_report.py")
+    with tempfile.TemporaryDirectory(prefix="neg-warnings-") as scratch:
+        warnings_dir = Path(scratch)
+        report.write_warnings(warnings_dir, "fixture-cpu", [report.Finding("warning", "x.cpp", 0, "fixture-cpu", "m")],
+                              "neg_one")
+        if not store._warnings_file(warnings_dir, "fixture-cpu", "neg_one").is_file():
+            failures.append("the warnings file of a fixture has the name that check_report.write_warnings gives it")
     check_entry_format(failures)
 
 
@@ -836,25 +928,25 @@ def planted_result(digest: str, output: str = "planted output\n") -> dict[str, o
 
 def check_entry_format(failures: list[str]) -> None:
     """Check the packed entry, its decode and the merge of a new result on planted results."""
-    count = driver._RESULTS_PER_ENTRY
+    count = store._RESULTS_PER_ENTRY
     results = [planted_result(f"{index:032x}") for index in range(count)]
-    entry = driver.pack_entry(results)
-    if entry["paths"] != ["/w/a.h", "/w/b.h"] or driver.unpack_results(entry) != results:
+    entry = store.pack_entry(results)
+    if entry["paths"] != ["/w/a.h", "/w/b.h"] or store.unpack_results(entry) != results:
         failures.append(f"an entry keeps each path one time and gives its results back: {entry['paths']}")
-    if driver.decode_entry(driver.encode_entry(entry)) != entry:
+    if store.decode_entry(store.encode_entry(entry)) != entry:
         failures.append("a packed entry decodes")
-    too_many = driver.pack_entry([*results, planted_result("f" * 32)])
-    if driver.decode_entry(driver.encode_entry(too_many)) is not None:
+    too_many = store.pack_entry([*results, planted_result("f" * 32)])
+    if store.decode_entry(store.encode_entry(too_many)) is not None:
         failures.append(f"an entry with more than {count} results is refused")
-    outside = driver.pack_entry(results[:1])
+    outside = store.pack_entry(results[:1])
     outside["results"][0]["dependencies"][0][0] = 2
-    if driver.decode_entry(driver.encode_entry(outside)) is not None:
+    if store.decode_entry(store.encode_entry(outside)) is not None:
         failures.append("a dependency index outside the path list is refused")
     newest = planted_result("e" * 32, "newest output\n")
-    if driver.merge_results(newest, results) != [newest, *results[: count - 1]]:
+    if store.merge_results(newest, results) != [newest, *results[: count - 1]]:
         failures.append("a new result goes first, and the oldest result goes from a full entry")
     same = planted_result(f"{1:032x}", "the same inputs\n")
-    if driver.merge_results(same, results[:3]) != [same, results[0], results[2]]:
+    if store.merge_results(same, results[:3]) != [same, results[0], results[2]]:
         failures.append("a new result replaces the earlier result with the same inputs")
 
 

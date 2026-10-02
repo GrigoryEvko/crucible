@@ -7,7 +7,7 @@ THE ROOT
     The value "off" turns every cache off.  The root is outside each checkout
     and each build directory, so every guard, every build directory and every
     work tree uses what one of them calculated.  The result store of the
-    negative fixtures, in test/neg_compile_driver.py, is the cache "neg".
+    negative fixtures, in test/neg_compile_store.py, is the cache "neg".
 
 THE TOOLS
     The pinned tools (the tree-sitter kit and ast-grep) live in the tools
@@ -33,6 +33,9 @@ THE BOUND
 
 Complexity: an eviction lists each entry one time, O(n log n) for n entries
 because of the sort.  A lookup is one open of one file.
+
+The driver of each negative fixture imports this module on each run, so the
+module imports at load time only what cache_root() uses.
 """
 
 from __future__ import annotations
@@ -40,11 +43,8 @@ from __future__ import annotations
 import contextlib
 import fcntl
 import os
-import tempfile
-import threading
 import time
 from collections.abc import Iterator
-from dataclasses import dataclass
 from pathlib import Path
 
 # The environment variable that moves the root, or turns each cache off with "off".
@@ -57,13 +57,16 @@ EVICT_INTERVAL = 86400.0
 MAX_AGE = 14 * 86400.0
 
 
-@dataclass(frozen=True)
 class Entry:
     """One file of a cache, with its size and the time of its last use."""
 
-    path: Path
-    size: int
-    used: float
+    __slots__ = ("path", "size", "used")
+
+    def __init__(self, path: Path, size: int, used: float) -> None:
+        """Hold the path of the file, its size in bytes and the time of its last use."""
+        self.path = path
+        self.size = size
+        self.used = used
 
 
 def cache_root(name: str) -> Path | None:
@@ -95,6 +98,8 @@ def scratch_root() -> Iterator[Path]:
     Yields:
         The scratch root
     """
+    import tempfile
+
     saved = os.environ.get(ROOT_VARIABLE)
     with tempfile.TemporaryDirectory(prefix="crucible-cache-") as scratch:
         os.environ[ROOT_VARIABLE] = scratch
@@ -114,6 +119,8 @@ def write_atomic(target: Path, data: bytes) -> None:
         target: The path of the entry
         data: The contents
     """
+    import threading
+
     target.parent.mkdir(parents=True, exist_ok=True)
     staging = target.with_name(f".{target.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     staging.write_bytes(data)
