@@ -21,7 +21,6 @@ include/crucible/SchemaTable.h | <memory>
 include/crucible/Serialize.h | <memory>
 include/crucible/SwissTable.h | <arm_neon.h>
 include/crucible/TraceLoader.h | <memory>
-include/crucible/Transaction.h | <memory>
 include/crucible/Vigil.h | <memory>
 include/crucible/cntp/CongestionControl.h | <filesystem>
 include/crucible/cntp/Fec.h | <arm_neon.h>

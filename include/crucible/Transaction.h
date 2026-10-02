@@ -25,7 +25,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <memory>
+#include <new>
 #include <optional>
 #include <system_error>
 #include <type_traits>
@@ -179,9 +179,10 @@ public:
         Transaction* tx = &ring_.claim();
         // Recycling ends the life of the old transaction and starts a new
         // one in the slot.  An assignment would write step_id backward, and
-        // its Monotonic refuses an assignment.
-        std::destroy_at(tx);
-        std::construct_at(tx);
+        // its Monotonic refuses an assignment.  The value initialization
+        // also sets each padding byte to zero.
+        tx->~Transaction();
+        ::new(static_cast<void*>(tx)) Transaction();
         // Set rather than assigned, so a later edit cannot reintroduce a write
         // that goes backwards.
         tx->step_id.advance(step_id);
