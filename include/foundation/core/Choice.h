@@ -138,29 +138,65 @@ public:
     constexpr void clear_() noexcept { value_ = niche<T>::empty(); }
 };
 
-// The special members are implicit, and each one is trivial, because each
-// member of the union is trivially copyable.
+// The payload and the flag of a plain Option, in one of two orders.  The
+// x86-64 System V ABI gives an Option of at most 16 bytes back in two
+// registers.  For a payload of four bytes, a flag after the payload is bit
+// 32 of the first register, and a test of it needs a shift first.  A flag
+// before the payload is in the low byte, which one test reads.  For a
+// payload of one or two bytes, the flag after the payload is in the low 32
+// bits already, and that order is shorter.  The two orders give one size.
+template <class T, bool IsFlagFirst = sizeof(T) == 4>
+struct PlainOptionCells;
+
 template <class T>
-class OptionSlot<T, OptionForm::plain> {
+struct PlainOptionCells<T, false> {
     union {
         NoPayload empty_;
         T value_;
     };
     bool is_engaged_ = false;
 
-public:
-    constexpr OptionSlot() noexcept : empty_{} {}
+    constexpr PlainOptionCells() noexcept : empty_{} {}
 
     template <class U>
-    constexpr OptionSlot(SomeTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
+    constexpr PlainOptionCells(SomeTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
         : value_(static_cast<U&&>(value)), is_engaged_{true} {}
+};
 
-    [[nodiscard]] constexpr bool holds_() const noexcept { return is_engaged_; }
-    [[nodiscard]] constexpr T& payload_() noexcept { return value_; }
-    [[nodiscard]] constexpr T const& payload_() const noexcept { return value_; }
+template <class T>
+struct PlainOptionCells<T, true> {
+    bool is_engaged_ = false;
+    union {
+        NoPayload empty_;
+        T value_;
+    };
+
+    constexpr PlainOptionCells() noexcept : empty_{} {}
+
+    template <class U>
+    constexpr PlainOptionCells(SomeTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
+        : is_engaged_{true}, value_(static_cast<U&&>(value)) {}
+};
+
+// The special members are implicit, and each one is trivial, because each
+// member of the union is trivially copyable.
+template <class T>
+class OptionSlot<T, OptionForm::plain> {
+    PlainOptionCells<T> cells_;
+
+public:
+    constexpr OptionSlot() noexcept = default;
+
+    template <class U>
+    constexpr OptionSlot(SomeTag tag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
+        : cells_{tag, static_cast<U&&>(value)} {}
+
+    [[nodiscard]] constexpr bool holds_() const noexcept { return cells_.is_engaged_; }
+    [[nodiscard]] constexpr T& payload_() noexcept { return cells_.value_; }
+    [[nodiscard]] constexpr T const& payload_() const noexcept { return cells_.value_; }
     constexpr void clear_() noexcept {
-        empty_ = NoPayload{};
-        is_engaged_ = false;
+        cells_.empty_ = NoPayload{};
+        cells_.is_engaged_ = false;
     }
 };
 

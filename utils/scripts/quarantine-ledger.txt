@@ -1700,8 +1700,6 @@ test/test_arena.cpp std_entity 1
 test/test_arena_alloc_class.cpp c_library_call 13
 test/test_arena_alloc_class.cpp raw_pointer_object 11
 test/test_arena_alloc_class.cpp replace_pending:std::bit_cast 5
-test/test_assert.h c_library_call 5
-test/test_assert.h raw_pointer_object 2
 test/test_assert.h std_entity 4
 test/test_asymmetric_failure.cpp c_library_call 7
 test/test_asymmetric_failure.cpp std_entity 1

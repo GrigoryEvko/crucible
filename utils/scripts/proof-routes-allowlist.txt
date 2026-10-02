@@ -16,8 +16,9 @@ test/layer/checks/fixy/SelfContained.cpp:union:EitherValue
 # an empty marker or the payload, and the union of a Result holds the value
 # or the error.  Each one builds a member only from a value that the caller
 # gives, and it reads only the member that its flag names, so the union
-# builds no object from bytes.
-include/foundation/core/Choice.h:union:<anonymous> x4
+# builds no object from bytes.  A plain Option has two unions, one for each
+# order of its flag and its payload.
+include/foundation/core/Choice.h:union:<anonymous> x5
 
 # Unions of scalars in the stable-id tests.  GCC prints a union value
 # without its active member, so the stable id refuses a union value.  These

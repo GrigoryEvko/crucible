@@ -17,9 +17,12 @@
 #
 # The observe semantic keeps the checks of CRUCIBLE_PRE, as in a Release
 # library, and a check references the violation handler.  Because of this,
-# each binary compiles the handler source of foundation with its own flags.
-# The handler calls only functions of the C library, so it needs no
-# archive of the toolchain.
+# each binary compiles the handler source of foundation with its own flags,
+# and the formatter that the handler writes with.  These sources call only
+# functions of the C library, so they need no archive of the toolchain.
+set(CRUCIBLE_CT_HANDLER_SOURCES
+  ${CMAKE_SOURCE_DIR}/src/foundation/ContractHandler.cpp
+  ${CMAKE_SOURCE_DIR}/src/foundation/core/Report.cpp)
 
 find_program(CRUCIBLE_VALGRIND valgrind)
 find_path(CRUCIBLE_VALGRIND_INCLUDE valgrind/memcheck.h HINTS $ENV{HOME}/.local/include)
@@ -50,7 +53,7 @@ set_tests_properties(check_ct_disassembly check_ct_disassembly_self_test
 # depends on the host and its load.  Build it on request with
 # `cmake --build <dir> --target ct_dudect` and run it on an isolated core.
 # It builds with the Release optimization for this host.
-add_executable(ct_dudect EXCLUDE_FROM_ALL dudect.cpp ${CMAKE_SOURCE_DIR}/src/foundation/ContractHandler.cpp)
+add_executable(ct_dudect EXCLUDE_FROM_ALL dudect.cpp ${CRUCIBLE_CT_HANDLER_SOURCES})
 target_include_directories(ct_dudect PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_compile_options(ct_dudect PRIVATE
   -O3 -march=native -DNDEBUG -fno-sanitize=all
@@ -85,7 +88,7 @@ set(CRUCIBLE_CT_TAINT_FLAGS
 # runs with no DEBUGINFOD_URLS, and the harness refuses a run that has one.
 function(ct_taint_test source opt)
   set(name ${source}_${opt})
-  add_executable(${name} ${source}.cpp ${CMAKE_SOURCE_DIR}/src/foundation/ContractHandler.cpp)
+  add_executable(${name} ${source}.cpp ${CRUCIBLE_CT_HANDLER_SOURCES})
   target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/include ${CRUCIBLE_VALGRIND_INCLUDE})
   target_compile_options(${name} PRIVATE -${opt} ${CRUCIBLE_CT_TAINT_FLAGS})
   target_link_options(${name} PRIVATE -fno-sanitize=all)

@@ -873,6 +873,12 @@ inline constexpr StatedZero kZeros[] = {
      "a borrow of a run of elements: it owns nothing and makes no claim about what the elements hold"},
     {^^::foundation::core::ViewCursor,
      "the position of a loop over a View: it lives inside the loop, and it is never a value in a signature"},
+    {^^::foundation::core::TextView,
+     "a borrow of a run of characters: it owns nothing and makes no claim about what the characters hold"},
+    {^^::foundation::core::FixedText,
+     "an owned buffer of characters: it holds storage and makes no claim about what the characters hold"},
+    {^^::foundation::core::Truncated,
+     "the error of a format() whose text needs more than its buffer: it holds nothing"},
 
     {^^fa::is_graded_specialization, kMetafunction},
     {^^fa::graded_modality, kMetafunction},

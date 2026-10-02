@@ -1,6 +1,6 @@
 // Tests of foundation/core/Report.h: fatal and unreachable end the process
-// in each build, and a switch that handles each enumerator reaches
-// unreachable only for a value outside the enumerators.
+// in each build, a report returns, and a switch that handles each
+// enumerator reaches unreachable only for a value outside the enumerators.
 
 #include <foundation/core/Report.h>
 
@@ -44,6 +44,23 @@ void test_unreachable_ends_the_process() {
     CRUCIBLE_FATAL_INVARIANT(unreachable_aborts);
 }
 
+// A fatal exit with arguments ends the process too.  test/harness/
+// check_output.py reads the text of a fatal exit.
+void test_fatal_with_arguments_ends_the_process() {
+    bool const fatal_aborts = ::foundation::test::aborts([] {
+        ::foundation::core::fatal("the test stops at {} of {} on purpose, {}", 3, -4,
+                                  ::foundation::core::TextView{"with a text"});
+    });
+    CRUCIBLE_FATAL_INVARIANT(fatal_aborts);
+}
+
+// A report returns, and a report with no argument writes its escapes as
+// one brace each.
+void test_report_returns() {
+    ::foundation::core::report(::foundation::core::Sink::Out, "test_core_report: a report of {} and {}\n", 7, false);
+    ::foundation::core::report(::foundation::core::Sink::Out, "test_core_report: {{a brace pair}}\n");
+}
+
 // Each enumerator takes its arm.  A value of the underlying type outside
 // the enumerators reaches the default arm, and the process ends.
 void test_switch_reaches_unreachable_only_outside_the_enumerators() {
@@ -62,6 +79,8 @@ void test_switch_reaches_unreachable_only_outside_the_enumerators() {
 int main() {
     test_fatal_ends_the_process();
     test_unreachable_ends_the_process();
+    test_fatal_with_arguments_ends_the_process();
+    test_report_returns();
     test_switch_reaches_unreachable_only_outside_the_enumerators();
     return 0;
 }

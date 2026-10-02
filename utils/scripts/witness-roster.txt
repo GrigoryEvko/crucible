@@ -125,6 +125,9 @@ foundation::core::Box<int> | foundation/core/Ref.h | foundation::core::Box<int>{
 # only from the View.
 foundation::core::View<int> | foundation/core/Region.h | foundation::core::View<int>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()} | private | closed
 foundation::core::ViewCursor<int> | foundation/core/Region.h | foundation::core::ViewCursor<int>{forge::rvalue<int*>(), forge::rvalue<int*>()} | private | closed
+# A TextView comes only from a literal or from an owner of the base layer,
+# so no pointer and no count that a caller holds become a TextView.
+foundation::core::TextView | foundation/core/Text.h | foundation::core::TextView{forge::rvalue<char const*>(), forge::rvalue<unsigned long>()} | private | closed
 
 # -- The graded substrate --------------------------------------------
 # A grade that nothing derives is paired with a value only through a key,

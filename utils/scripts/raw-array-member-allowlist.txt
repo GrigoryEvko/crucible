@@ -2,6 +2,8 @@
 #
 # One line per member: `path name reason`.  An entry whose member is gone
 # fails the gate, so this list only shrinks.  Each entry here is a member in a
-# file that another change owns at the time of writing.  The change that moves
-# the member to std::array or fixy::FixedArray deletes its line in the same
-# commit.
+# file that another change owns at the time of writing, or the storage of a
+# primitive of include/foundation/core that no lower type can hold.  The
+# change that moves the member to std::array or fixy::FixedArray deletes its
+# line in the same commit.
+include/foundation/core/Text.h bytes_ the buffer of FixedText: foundation/core has no fixed array below it, std::array is outside the header allowance of the base, and the count of the buffer never reads past it

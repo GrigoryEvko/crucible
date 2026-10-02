@@ -146,6 +146,25 @@ function(crucible_test name)
   crucible_dump_asm(${name})
 endfunction()
 
+# ── The output of the test harness ───────────────────────────────────
+#
+# test_assert.h gives the assert macro and the pass line of the tests.  The
+# two probes of test/harness/ show what they write.  probe_report ends by
+# SIGABRT on purpose, so ctest runs neither probe as a test of its own:
+# test/harness/check_output.py runs the two and reads their outputs.
+foreach(_harness_probe probe_report probe_fatal_twice)
+  add_executable(harness_${_harness_probe} harness/${_harness_probe}.cpp)
+  target_link_libraries(harness_${_harness_probe} PRIVATE foundation)
+  target_compile_options(harness_${_harness_probe} PRIVATE -UNDEBUG)
+  if(CRUCIBLE_SAN_COMPILE_FLAGS)
+    target_compile_options(harness_${_harness_probe} PRIVATE ${CRUCIBLE_SAN_COMPILE_FLAGS})
+    target_link_options(harness_${_harness_probe} PRIVATE ${CRUCIBLE_SAN_LINK_FLAGS})
+  endif()
+endforeach()
+add_test(NAME harness_output
+  COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/harness/check_output.py
+          $<TARGET_FILE:harness_probe_report> $<TARGET_FILE:harness_probe_fatal_twice>)
+
 # A regression test for the constant-evaluator defect that the patch
 # series in utils/toolchain/gcc fixes: memchr, strchr, strrchr and strstr from
 # an offset pointer.  A compiler without the fix cannot compile it.

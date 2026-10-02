@@ -1822,22 +1822,55 @@ foundation_neg_compile_test(neg_thread_local_ref_store_of_another_type
   "no matching function for call to .foundation::ThreadLocalRef<\\{anonymous\\}::CounterTag, \\{anonymous\\}::Counter>::store\\(\\{anonymous\\}::Label\\) const."
   "the expression .is_assignable_v<T&, U&&> \\[with T = <unnamed>::Counter; U = <unnamed>::Label\\]. evaluated to .false.")
 
-# ── The Report family: fatal and unreachable ─────────────────────────
+# ── The Report family: texts, reports and the fatal exit ─────────────
 #
-# A text of a report is a string literal with no brace and no inner zero,
-# and it takes no argument.  fatal and unreachable end the process in each
-# build.
+# A text of a report is a string literal with one placeholder `{}` for each
+# argument, and with `{{` and `}}` for a brace.  An argument is an integer,
+# a bool or a TextView.  fatal and unreachable end the process in each
+# build.  format() writes into a FixedText and gives a Result, and it
+# refuses a temporary FixedText.
 foundation_test(test_core_report)
+foundation_test(test_core_text)
 
-foundation_neg_compile_test(neg_core_fmt_brace
+foundation_neg_compile_test(neg_core_fmt_more_placeholders_than_arguments
   "call to consteval function .foundation::core::Fmt<>\\(\"the queue holds \\{\\} items\", __builtin_FILE\\(\\), __builtin_LINE\\(\\), __builtin_FUNCTION\\(\\)\\). is not a constant expression"
-  ".__builtin_trap\\(\\). is not a constant expression")
-foundation_neg_compile_test(neg_core_fmt_arguments
-  "template constraint failure for .template<class ... Args>  requires  sizeof ... \\(Args ...\\) == 0 class foundation::core::Fmt."
-  "the expression .sizeof ... \\(Args ...\\) == 0 \\[with Args = \\{int\\}\\]. evaluated to .false.")
+  "call to non-.constexpr. function .void foundation::core::detail::fmt_text_has_more_placeholders_than_arguments\\(\\).")
+foundation_neg_compile_test(neg_core_fmt_fewer_placeholders_than_arguments
+  "call to consteval function .foundation::core::Fmt<int>\\(\"the queue is full\", __builtin_FILE\\(\\), __builtin_LINE\\(\\), __builtin_FUNCTION\\(\\)\\). is not a constant expression"
+  "call to non-.constexpr. function .void foundation::core::detail::fmt_text_has_fewer_placeholders_than_arguments\\(\\).")
+foundation_neg_compile_test(neg_core_fmt_lone_brace
+  "call to consteval function .foundation::core::Fmt<>\\(\"the set \\{ a, b.012\", __builtin_FILE\\(\\), __builtin_LINE\\(\\), __builtin_FUNCTION\\(\\)\\). is not a constant expression"
+  "call to non-.constexpr. function .void foundation::core::detail::fmt_text_holds_a_brace_that_is_no_placeholder_and_no_escape\\(\\).")
+foundation_neg_compile_test(neg_core_fmt_brace_spec
+  "call to consteval function .foundation::core::Fmt<int>\\(\"the mask is \\{:x\\}\", __builtin_FILE\\(\\), __builtin_LINE\\(\\), __builtin_FUNCTION\\(\\)\\). is not a constant expression"
+  "call to non-.constexpr. function .void foundation::core::detail::fmt_text_holds_a_brace_that_is_no_placeholder_and_no_escape\\(\\).")
+foundation_neg_compile_test(neg_core_fmt_argument_floating
+  "template constraint failure for .template<class ... Args>  requires \\(Formattable<Args> && ...\\) class foundation::core::Fmt."
+  "the expression .\\(Formattable<Args> && ...\\) \\[with Args = \\{double\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_fmt_argument_pointer
+  "template constraint failure for .template<class ... Args>  requires \\(Formattable<Args> && ...\\) class foundation::core::Fmt."
+  "the expression .\\(Formattable<Args> && ...\\) \\[with Args = \\{int\\*\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_fatal_runtime_text
-  "could not convert .\\(const char\\*\\)\"the queue is full\". from .const char\\*. to .foundation::core::Fmt<>."
-  "In function .int main\\(\\).")
+  "no matching function for call to .fatal\\(const char\\*\\)."
+  "no known conversion for argument 1 from .const char\\*. to .foundation::core::Fmt<>.")
+foundation_neg_compile_test(neg_core_text_view_no_terminating_zero
+  "in .constexpr. expansion of .*foundation::core::TextView::TextView<3>\\(letters\\)."
+  "call to non-.constexpr. function .void foundation::core::detail::text_literal_has_no_terminating_zero\\(\\).")
+foundation_neg_compile_test(neg_core_text_view_from_pointer
+  "no matching function for call to .foundation::core::TextView::TextView\\(<brace-enclosed initializer list>\\)."
+  "mismatched types .const char \\[Length\\]. and .const char\\*.")
+foundation_neg_compile_test(neg_core_format_temporary_text
+  "use of deleted function .void foundation::core::format\\(FixedText<Capacity>&&, const Fmt<typename std::type_identity<[A-Za-z]+>::type ...>&, Args ...\\) \\[with long unsigned int Capacity = 16. Args = \\{int\\}\\]"
+  "format\\(\\) gives a view of its FixedText, and a temporary FixedText ends with the full expression")
+foundation_neg_compile_test(neg_core_format_result_dropped
+  "ignoring return value of .foundation::core::Result<foundation::core::TextView, foundation::core::Truncated> foundation::core::format\\("
+  "declared with attribute .nodiscard.")
+foundation_neg_compile_test(neg_core_fixed_text_view_of_temporary
+  "use of deleted function .foundation::core::TextView foundation::core::FixedText<Capacity>::view\\(\\) const && \\[with long unsigned int Capacity = 8\\]."
+  "a view of a temporary FixedText points into an object that the full expression ends")
+foundation_neg_compile_test(neg_core_fixed_text_zero_capacity
+  "template constraint failure for .template<long unsigned int Capacity>  requires  Capacity > 0 && Capacity <= static_cast<std::size_t>\\(9223372036854775807\\) class foundation::core::FixedText."
+  "the expression .Capacity > 0 \\[with Capacity = 0\\]. evaluated to .false.")
 
 # ── The Choice family ─────────────────────────────────────────────────
 #
@@ -1858,7 +1891,7 @@ foundation_neg_compile_test(neg_core_option_expect_runtime_reason
   "initializing argument 1 of .constexpr T foundation::core::Option<T>::expect\\(foundation::core::Fmt<>\\) && \\[with T = int\\].")
 foundation_neg_compile_test(neg_core_option_expect_reason_with_zero
   "call to consteval function .foundation::core::Fmt<>\\(\"the option.000 holds a value\", __builtin_FILE\\(\\), __builtin_LINE\\(\\), __builtin_FUNCTION\\(\\)\\). is not a constant expression"
-  ".__builtin_trap\\(\\). is not a constant expression")
+  "call to non-.constexpr. function .void foundation::core::detail::fmt_text_holds_a_zero_byte_before_its_end\\(\\).")
 foundation_neg_compile_test(neg_core_option_cursor_of_temporary
   "use of deleted function .void foundation::core::Option<T>::begin\\(\\) && \\[with T = int\\]."
   "a cursor of a temporary Option points into an object that the full expression ends")

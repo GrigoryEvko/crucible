@@ -16,16 +16,26 @@
 
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Format.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
+#include <foundation/core/Text.h>
 
 namespace fixy {
 
 using ::foundation::core::fatal;
 using ::foundation::core::Fmt;
+using ::foundation::core::format;
+using ::foundation::core::Formattable;
+using ::foundation::core::report;
+using ::foundation::core::Sink;
 using ::foundation::core::Site;
+using ::foundation::core::Truncated;
 using ::foundation::core::unreachable;
+
+using ::foundation::core::FixedText;
+using ::foundation::core::TextView;
 
 using ::foundation::core::none;
 using ::foundation::core::NoValue;
