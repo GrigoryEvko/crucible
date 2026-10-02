@@ -168,7 +168,9 @@ struct CRUCIBLE_OWNER PoolAllocator {
         CRUCIBLE_POST(0, ::foundation::decide::implies(num_slots_ > 0u, ptr_table_ != nullptr));
     }
 
-    [[gnu::cold]]
+    // The destructor calls this on each path, so it has no cold attribute.
+    // A cold callee there makes GCC compile each function that owns a pool
+    // as an unlikely function.
     void destroy() noexcept {
         if (pool_) crucible::warden::unregister_hot_region(pool_);
         std::free(pool_);

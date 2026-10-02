@@ -22,8 +22,6 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/generated_sources.cmake)
 function(session_oracle_test name link)
   add_executable(${name} ${ARGN})
   target_link_libraries(${name} PRIVATE ${link})
-  set_source_files_properties(${ARGN} PROPERTIES
-    COMPILE_OPTIONS "$<$<CONFIG:Release>:-Wno-alloc-size-larger-than>")
   target_compile_options(${name} PRIVATE -UNDEBUG)
   if(CRUCIBLE_SAN_COMPILE_FLAGS)
     target_compile_options(${name} PRIVATE ${CRUCIBLE_SAN_COMPILE_FLAGS})

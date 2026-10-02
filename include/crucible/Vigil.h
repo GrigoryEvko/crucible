@@ -146,12 +146,17 @@ public:
         return ::fixy::mint_refined<::fixy::bounded_above<ALIGNMENT_POS_MAX>>(pos);
     }
 
+    // The constructors, the destructor and flush have no cold attribute.  A
+    // call to a cold function on each path makes GCC compile the caller as
+    // an unlikely function.  A hot dispatch loop in that caller then
+    // compiles for size.
+
     // No persistence, no distributed context.
-    [[gnu::cold]] Vigil() : Vigil(Config{}) {}
+    Vigil() : Vigil(Config{}) {}
 
     // The constructor runs at process startup, so it opens the init door one
     // time and hands that one context to every startup step below.
-    [[gnu::cold]] explicit Vigil(Config cfg)
+    explicit Vigil(Config cfg)
         : Vigil(std::move(cfg), ::fixy::InitLoadCtx{::foundation::effects::host::InitOwner::mint_init_context()}) {}
 
 private:
@@ -164,13 +169,13 @@ private:
     // The transaction log reads the monotonic clock, and the program load
     // of the watchdog waits in the kernel for the verifier, so both take the
     // startup load context.
-    [[gnu::cold]] Vigil(Config cfg, ::fixy::InitLoadCtx const& startup);
+    Vigil(Config cfg, ::fixy::InitLoadCtx const& startup);
 
 public:
     // src/Vigil.cpp defines it.  The destruction order of the members is
     // the reverse of their declaration order, and bg_ joins the background
     // thread first.
-    [[gnu::cold]] ~Vigil();
+    ~Vigil();
 
     Vigil(const Vigil&) = delete("Vigil owns the runtime organism; not copyable");
     Vigil& operator=(const Vigil&) = delete("Vigil owns the runtime organism; not copyable");
@@ -358,7 +363,7 @@ public:
     // the produced and processed counters is what closes that window, and
     // the release-acquire pairing on the processed counter is what makes
     // every background side effect visible on return.
-    [[gnu::cold]] void flush() {
+    void flush() {
         const uint64_t target_produced = ring_->total_produced();
         while (bg_.total_processed.load_acquire() < target_produced) {
             CRUCIBLE_SPIN_PAUSE;

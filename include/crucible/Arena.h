@@ -186,7 +186,9 @@ private:
         return ptr;
     }
 
-    [[gnu::cold]]
+    // The constructor calls this on each path, so it has no cold attribute.
+    // A cold callee there makes GCC compile each function that makes an
+    // arena as an unlikely function.  alloc_slow_ keeps the slow path cold.
     void alloc_new_block_(size_t nbytes) {
         CRUCIBLE_PRE(::foundation::decide::positive(nbytes));
         auto* p = static_cast<char*>(std::malloc(nbytes));

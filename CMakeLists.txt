@@ -371,27 +371,22 @@ set_target_properties(fixy PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # fixy, and libfixy.a follows libcrucible.a on a consumer's link line.
 target_link_libraries(crucible PUBLIC fixy)
 
-# -Walloc-size-larger-than and libstdc++: the list that could not hold.
+# -Walloc-size-larger-than and libstdc++.
 #
-# Several libstdc++ helpers carry a sentinel branch that allocates
-# max_size() bytes and throws.  `std::string::_M_create` is the one this
-# tree meets most: `if (capacity > max_size()) __throw_length_error()`.
-# At -O1 and above the optimizer inlines the helper, constant-propagates
-# PTRDIFF_MAX into the allocator call, cannot prove the branch dead, and
-# `-Walloc-size-larger-than=1073741824` fires on a path that never
-# executes.  `std::stacktrace_entry::_Info::_S_set` does the same.
+# Several libstdc++ helpers have a branch that allocates max_size() + 1
+# bytes, which is PTRDIFF_MAX.  `std::string::_M_create` is the one that
+# this tree meets most.  At -O1 and above, the optimizer inlines the
+# helper and puts the constant into the allocator call.  It cannot prove
+# that the branch is dead, so each limit below PTRDIFF_MAX gives a warning
+# on a path that never executes.  The translation units that get the
+# warning change with the -O level, -march and the profile, so a list of
+# them cannot stay correct.
 #
-# This was a list of the three translation units that happened to inline
-# it.  Which TU inlines a library helper is an optimizer decision, so the
-# list was keyed on the optimizer: -O level, -march, and now the profile.
-# Building with -fprofile-use added two entries it did not have
-# (utils/tools/crucible_hwprobe.cpp and vessel/torch/vessel_api.cpp, through
-# read_small_file, read_trimmed_ and select_hot_cpu), and the next
-# collection would move them again.  A list that has to be re-derived
-# whenever the optimizer changes its mind is not a list, so it is gone.
-#
-# The rule that replaced it is in the CRUCIBLE_WERROR block below:
-# the warning stays on and stays visible, and it is not an error.
+# The limit is PTRDIFF_MAX, the GCC default, and the warning is an error.
+# A size larger than PTRDIFF_MAX comes from a negative value or from an
+# overflow, and no object can be that large.  A size from 1 GiB to
+# PTRDIFF_MAX gives no diagnostic.  The arena, HS10 and the saturating
+# size arithmetic hold the allocation discipline of the tree.
 
 # Control-flow integrity is ISA-specific: x86 = CET (-fcf-protection),
 # aarch64 = BTI+PAC (-mbranch-protection). -fcf-protection=full is a hard
@@ -1066,38 +1061,9 @@ target_compile_options(crucible_dialect INTERFACE
 if(CRUCIBLE_WERROR)
   # Gated on target property so bench/ can opt out cleanly (benches
   # legitimately ignore some [[nodiscard]] returns — they're measuring,
-  # not enforcing).  Library + tests keep full -Werror.
-  # -Wno-error=tsan: GCC rejects std::atomic_thread_fence under
-  # -fsanitize=thread (TSan can't model fences).  Our SPSC rings use
-  # a relaxed-load + acquire-fence fast path; pattern is sound per the
-  # C++ model.  Warning remains visible; just not an error.
-  #
-  # -Wno-error=suggest-attribute=cold: GCC 16's heuristic flags test
-  # main() functions as cold under TSan instrumentation.  The code
-  # guide lists -Wsuggest-* as suggestions, not errors.
-  #
-  # -Wno-error=alloc-size-larger-than: every instance this tree has ever
-  # seen is a libstdc++ sentinel branch — `_M_create`'s length-error
-  # path, `_S_set`'s stacktrace string — inlined at -O1+ with PTRDIFF_MAX
-  # constant-propagated into the allocator call, on a path that never
-  # runs.  The diagnostic points into bits/new_allocator.h, not into our
-  # source.  The block near the top of this file says why the per-TU
-  # suppression list this replaces could not be kept correct.
-  #
-  # What this gives up, stated: an allocation of more than 1 GiB in our
-  # own code warns and no longer stops the build.  It is still reported,
-  # at our own source location and with our own value rather than
-  # PTRDIFF_MAX, so it stays greppable in a build log.  The tree's real
-  # allocation discipline is elsewhere — the arena bump allocator, HS10's
-  # no-allocation-on-the-hot-path rule, and std::*_sat at every size-math
-  # site — and none of it depends on this warning being fatal.
+  # not enforcing).  Library + tests keep full -Werror, with no exception.
   target_compile_options(crucible_dialect INTERFACE
-    $<$<NOT:$<BOOL:$<TARGET_PROPERTY:CRUCIBLE_NO_WERROR>>>:-Werror
-      -Wno-error=tsan
-      -Wno-error=suggest-attribute=cold
-      # The trailing `=` is part of the option name.  GCC rejects
-      # `-Wno-error=alloc-size-larger-than` outright.
-      -Wno-error=alloc-size-larger-than=>)
+    $<$<NOT:$<BOOL:$<TARGET_PROPERTY:CRUCIBLE_NO_WERROR>>>:-Werror>)
 endif()
 
 # ═══════════════════════════════════════════════════════════════
@@ -1223,7 +1189,9 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     -Wunused-const-variable=2           # 187  unused static const
 
     # ── 3.12  Overflow / safety (5) ──────────────────────────
-    -Walloc-size-larger-than=1073741824 # 188  alloc > 1GB
+    # The limit is PTRDIFF_MAX, the GCC default.  The block on this flag
+    # before the hardening flags tells why a lower limit gives warnings.
+    -Walloc-size-larger-than=9223372036854775807 # 188  alloc > PTRDIFF_MAX
     -Wstrict-flex-arrays                # 189  flex array discipline
     -Wpacked-not-aligned                # 191  packed+aligned conflict
     # -Wabi-tag dropped: Cipher owns std::string which carries the cxx11
@@ -1491,10 +1459,16 @@ elseif(CRUCIBLE_UBSAN_STRICT)
   set(_crucible_sanitizers
     undefined,float-cast-overflow,float-divide-by-zero,bounds-strict)
 endif()
+# Under ThreadSanitizer, -Wno-tsan stops the warning on each call of
+# std::atomic_thread_fence.  GCC cannot instrument a fence, so the warning
+# says that ThreadSanitizer does not model it.  It names no defect.  Each
+# fence of the tree is necessary for the memory model, so no site can
+# remove the warning.
 if(_crucible_sanitizers)
   target_compile_options(crucible_dialect INTERFACE
     -fsanitize=${_crucible_sanitizers}
     $<$<NOT:$<BOOL:${CRUCIBLE_TSAN}>>:-fno-sanitize-recover=all>
+    $<$<BOOL:${CRUCIBLE_TSAN}>:-Wno-tsan>
     -fno-omit-frame-pointer)
   target_link_options(crucible_dialect INTERFACE
     -fsanitize=${_crucible_sanitizers})

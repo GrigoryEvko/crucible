@@ -12,8 +12,6 @@ function(foundation_test name)
   endif()
   add_executable(${name} ${_sources})
   target_link_libraries(${name} PRIVATE foundation)
-  set_source_files_properties(${_sources} PROPERTIES
-    COMPILE_OPTIONS "$<$<CONFIG:Release>:-Wno-alloc-size-larger-than>")
   # Assertions stay armed in every configuration; see crucible_test.
   target_compile_options(${name} PRIVATE -UNDEBUG)
   if(CRUCIBLE_SAN_COMPILE_FLAGS)

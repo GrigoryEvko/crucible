@@ -1166,7 +1166,8 @@ All UB-adjacent and lifetime-adjacent warnings are hard errors.
 
 Non-error warnings (informational, not yet hard):
 - `-Wpadded` (off). A class can have a padding byte, except the element type of a large fixed list, which `utils/scripts/check-padded-lists.py` rejects (§XV "Compile time")
-- `-Wsuggest-*` (off — suggestions, not errors)
+
+The `-Wsuggest-*` flags of sections 1.8 and 3.10 of `CMakeLists.txt` are on, and `-Werror` makes each one an error. GCC suggests the `cold` attribute for a function that calls a cold function on each path. So a constructor, a destructor or another function on the normal path of a hot caller has no `cold` attribute.
 
 ---
 

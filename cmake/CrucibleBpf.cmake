@@ -193,6 +193,12 @@ function(crucible_bpf_program name source)
   # every header (common.h, vmlinux.h, plus any new file added under
   # include/crucible/perf/bpf/) automatically — saves a brittle
   # manual list per program.
+  #
+  # The kernel compiles with -fms-extensions, so vmlinux.h has members such
+  # as `struct ns_tree;` that put the fields of a named struct in place.
+  # Without the flag, clang drops each such member and gives a warning.
+  # -Wno-microsoft-anon-tag stops the warning that the flag itself gives.
+  # -Werror makes each other warning stop the build.
   add_custom_command(
     OUTPUT  ${_BPF_OBJ}
     COMMAND ${CLANG_BPF_COMPILER}
@@ -203,7 +209,8 @@ function(crucible_bpf_program name source)
             -I${_BPF_COMMON_DIR}
             -O2 -g
             -fdebug-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=.
-            -Wall -Wno-unused-function -Wno-address-of-packed-member
+            -fms-extensions -Wno-microsoft-anon-tag
+            -Wall -Werror -Wno-unused-function -Wno-address-of-packed-member
             -c ${_BPF_SRC}
             -o ${_BPF_OBJ}
     DEPENDS ${_BPF_SRC}
