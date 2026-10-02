@@ -1,0 +1,10 @@
+# utils/scripts/budget-history-ledger.txt — the rises of a budget threshold whose commits give no measurement.
+# utils/scripts/check-budget-history.py reads it.
+#
+# A row:  COMMIT | ROW | COLUMN | REASON
+#
+# COMMIT is the hash of the commit that raised the threshold, with at least 9 characters.  ROW is the
+# check name of the row of utils/scripts/budgets.txt, and COLUMN is warn or error.  REASON gives the
+# measurement that the commit body did not give.  A rise with a row gives a warning on each run.  A row
+# that names no such rise is an error.  The history cannot change.  A row stays while its row of the
+# budget table stays.

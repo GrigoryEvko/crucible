@@ -5595,6 +5595,20 @@ function(crucible_order_census_checks)
 endfunction()
 cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_checks)
 
+# budget_history — utils/scripts/check-budget-history.py reads the git history
+# of utils/scripts/budgets.txt and of each ledger.  A threshold above its
+# lowest committed value and a ledger above its lowest committed row count
+# give a warning that names the commits.  A rise of a threshold whose commits
+# give no measurement of the row is an error.  It exits 3 for a tree with no
+# whole history.
+add_test(NAME budget_history
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-budget-history.py --root ${CMAKE_SOURCE_DIR}
+          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+add_test(NAME budget_history_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-budget-history.py --self-test)
+set_tests_properties(budget_history budget_history_self_test PROPERTIES LABELS "ci_guard")
+set_tests_properties(budget_history PROPERTIES SKIP_RETURN_CODE 3)
+
 # affected_tests_self_test — utils/scripts/run-affected-tests.py builds a tree
 # and runs only the tests whose inputs changed since their last pass.  It is
 # the test command of the inner loop (CLAUDE.md §XV).  CI and the checks before
