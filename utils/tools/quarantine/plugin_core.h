@@ -53,9 +53,13 @@
 //     tracked file, and it finds these specifiers too.
 //
 // THE OPT-OUT REGION
-//     #pragma crucible I_KNOW_WHAT_IM_DOING("reason") opens a region, and
-//     #pragma crucible END_I_KNOW_WHAT_IM_DOING closes it.  A finding inside a
-//     region is reported as opted_out and is not an error.
+//     CRUCIBLE_I_KNOW_WHAT_IM_DOING("CLASS: reason") of foundation/Quarantine.h
+//     opens a region, and CRUCIBLE_END_I_KNOW_WHAT_IM_DOING closes it.  The
+//     macros expand to #pragma quarantine I_KNOW_WHAT_IM_DOING("CLASS: reason")
+//     and #pragma quarantine END_I_KNOW_WHAT_IM_DOING.  The plugin refuses such a
+//     pragma of a file under the root that the macros do not make, and a
+//     reason that does not start with its class.  A finding inside a region is
+//     reported as opted_out and is not an error.
 //
 // quarantine.cpp includes this header after the standard headers that the
 // plugin uses, because the headers of GCC rename some functions of the C
@@ -195,9 +199,10 @@ struct Region {
     int begin_line = 0;
     int end_line = 0;  // zero while the region is open
     location_t begin = UNKNOWN_LOCATION;
+    std::string reason;
 };
 
-// The state of one translation unit that the two rules share.
+// The state of one translation unit.
 struct CoreState {
     std::string plugin_name;
     std::string root;  // the real path of the source root, without a final '/'
@@ -538,8 +543,9 @@ inline void report_contract(const Finding& finding) {
     inform(finding.spelling,
            "GCC 16 does not keep the contract specifier of a template in a header unit or in a precompiled "
            "header, and a constant evaluation can ignore the specifier (CLAUDE.md section XII)");
-    inform(finding.spelling, "a test of the specifier itself puts it in a %<#pragma crucible %s(\"reason\")%> region",
-           "I_KNOW_WHAT_IM_DOING");
+    inform(finding.spelling,
+           "a test of the specifier itself puts it in a %<CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"PROBE: reason\")%> region "
+           "of %<foundation/Quarantine.h%>");
 }
 
 inline void on_finish_decl(void* gcc_data, void*) { check_contracts(static_cast<tree>(gcc_data)); }
@@ -550,16 +556,78 @@ inline void on_finish_parse_function(void* gcc_data, void*) { check_contracts(st
 
 inline constexpr char kBeginPragma[] = "I_KNOW_WHAT_IM_DOING";
 inline constexpr char kEndPragma[] = "END_I_KNOW_WHAT_IM_DOING";
+inline constexpr char kBeginMacro[] = "CRUCIBLE_I_KNOW_WHAT_IM_DOING";
+inline constexpr char kEndMacro[] = "CRUCIBLE_END_I_KNOW_WHAT_IM_DOING";
+// The classes of the reason of a region (CLAUDE.md section XXII, R7).
+inline constexpr const char* kReasonClasses[] = {"ABI: ", "C-HEADER: ", "PROBE: ", "ORACLE: ", "MEASURE: "};
+
+// The expansion point of the macro MACRO that made the pragma at LOCATION,
+// or UNKNOWN_LOCATION when no such macro made it, or when a quarantined file
+// defines the macro.  The front end gives each token of a _Pragma the location
+// of the _Pragma operator, so the maps of the macro expansion lead to the
+// macro.  Complexity: O(depth of the macro expansion).
+inline location_t region_macro_expansion(location_t location, const char* macro) {
+    location_t current = location;
+    for (int depth = 0; depth < 64 && linemap_location_from_macro_expansion_p(line_table, current); ++depth) {
+        const line_map* map = linemap_lookup(line_table, current);
+        const line_map_macro* macro_map = linemap_check_macro(map);
+        cpp_hashnode* node = MACRO_MAP_MACRO(macro_map);
+        if (node != nullptr && cpp_user_macro_p(node)
+            && std::strcmp(reinterpret_cast<const char*>(NODE_NAME(node)), macro) == 0) {
+            expanded_location definition = expand_location(cpp_macro_definition_location(node));
+            if (definition.file == nullptr) {
+                return UNKNOWN_LOCATION;
+            }
+            FileClass file_class = classify_file(definition.file).file_class;
+            bool is_trusted = file_class != FileClass::quarantined && file_class != FileClass::unclassified;
+            return is_trusted ? macro_map->get_expansion_point_location() : UNKNOWN_LOCATION;
+        }
+        current = linemap_unwind_toward_expansion(line_table, current, &map);
+    }
+    return UNKNOWN_LOCATION;
+}
+
+// The place of a region pragma at LOCATION: the place where the file uses
+// MACRO.  A pragma of a file outside the source root gives no place and no
+// error.  A pragma of a file under the root that MACRO does not make is an
+// error, which the function reports.  Returns a place with no file when
+// the pragma opens or closes nothing.
+inline Place region_place(location_t location, const char* macro, const char* pragma) {
+    Place place = place_of(location, Scope::tree);
+    if (place.file == nullptr) {
+        return place;
+    }
+    location_t expansion = region_macro_expansion(location, macro);
+    if (expansion == UNKNOWN_LOCATION) {
+        error_at(location,
+                 "%<#pragma quarantine %s%> comes only from the macro %qs of %<foundation/Quarantine.h%>; use the "
+                 "macro, which the plugin knows, and not the pragma",
+                 pragma, macro);
+        return Place{};
+    }
+    return place_of(expansion, Scope::tree);
+}
+
+inline bool has_reason_class(const std::string& reason) {
+    for (const char* reason_class : kReasonClasses) {
+        if (has_prefix(reason, reason_class)) {
+            return true;
+        }
+    }
+    return false;
+}
 
 inline void handle_begin_pragma(cpp_reader*) {
     tree value = NULL_TREE;
     location_t open_location = UNKNOWN_LOCATION;
     location_t token_location = UNKNOWN_LOCATION;
     bool has_reason = false;
+    std::string reason;
     if (pragma_lex(&value, &open_location) == CPP_OPEN_PAREN) {
         cpp_ttype token = pragma_lex(&value, &token_location);
         if (token == CPP_STRING && value != NULL_TREE && TREE_CODE(value) == STRING_CST
             && TREE_STRING_LENGTH(value) > 1) {
+            reason.assign(TREE_STRING_POINTER(value), static_cast<std::size_t>(TREE_STRING_LENGTH(value) - 1));
             has_reason = pragma_lex(&value, &token_location) == CPP_CLOSE_PAREN
                       && pragma_lex(&value, &token_location) == CPP_EOF;
         }
@@ -567,29 +635,35 @@ inline void handle_begin_pragma(cpp_reader*) {
     location_t location = open_location != UNKNOWN_LOCATION ? open_location : input_location;
     if (!has_reason) {
         error_at(location,
-                 "%<#pragma crucible %s%> takes one string that gives the reason: "
-                 "write %<#pragma crucible %s(\"reason\")%>",
-                 kBeginPragma, kBeginPragma);
+                 "%qs takes one string that gives the reason: write "
+                 "%<CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"CLASS: reason\")%>",
+                 kBeginMacro);
         return;
     }
     // A pragma of a file outside the source root opens no region.  A pragma
     // of a generated file opens one, because the contract rule applies there.
-    Place place = place_of(location, Scope::tree);
+    Place place = region_place(location, kBeginMacro, kBeginPragma);
     if (place.file == nullptr) {
         return;
     }
-    if (!core.regions.empty() && core.regions.back().end_line == 0) {
+    if (!has_reason_class(reason)) {
         error_at(location,
-                 "a %<#pragma crucible %s%> region is open at line %d; close it with %<#pragma crucible %s%> "
-                 "before you open a new region",
-                 kBeginPragma, core.regions.back().begin_line, kEndPragma);
+                 "the reason of a region starts with its class: %<ABI:%>, %<C-HEADER:%>, %<PROBE:%>, %<ORACLE:%> "
+                 "or %<MEASURE:%> (CLAUDE.md section XXII); the reason is %qs",
+                 reason.c_str());
+        return;
+    }
+    if (!core.regions.empty() && core.regions.back().end_line == 0) {
+        error_at(location, "a %qs region is open at line %d; close it with %qs before you open a new region",
+                 kBeginMacro, core.regions.back().begin_line, kEndMacro);
         return;
     }
     Region region;
     region.file = place.file;
     region.begin_line = place.line;
     region.begin = location;
-    core.regions.push_back(region);
+    region.reason = std::move(reason);
+    core.regions.push_back(std::move(region));
 }
 
 inline void handle_end_pragma(cpp_reader*) {
@@ -600,36 +674,32 @@ inline void handle_end_pragma(cpp_reader*) {
         location = input_location;
     }
     if (token != CPP_EOF) {
-        error_at(location, "%<#pragma crucible %s%> takes no argument", kEndPragma);
+        error_at(location, "%qs takes no argument", kEndMacro);
         return;
     }
     // A pragma of a file outside the source root closes nothing, as the begin
     // pragma of such a file opens nothing.
-    Place place = place_of(location, Scope::tree);
+    Place place = region_place(location, kEndMacro, kEndPragma);
     if (place.file == nullptr) {
         return;
     }
     if (core.regions.empty() || core.regions.back().end_line != 0) {
-        error_at(location,
-                 "%<#pragma crucible %s%> has no open region; open one with "
-                 "%<#pragma crucible %s(\"reason\")%>",
-                 kEndPragma, kBeginPragma);
+        error_at(location, "%qs has no open region; open one with %<CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"CLASS: reason\")%>",
+                 kEndMacro);
         return;
     }
     Region& region = core.regions.back();
     if (place.file != region.file) {
-        error_at(location,
-                 "%<#pragma crucible %s%> closes a region that another file opened; "
-                 "close each region in the file that opens it",
-                 kEndPragma);
+        error_at(location, "%qs closes a region that another file opened; close each region in the file that opens it",
+                 kEndMacro);
         return;
     }
     region.end_line = place.line;
 }
 
 inline void register_pragmas(void*, void*) {
-    c_register_pragma("crucible", kBeginPragma, handle_begin_pragma);
-    c_register_pragma("crucible", kEndPragma, handle_end_pragma);
+    c_register_pragma("quarantine", kBeginPragma, handle_begin_pragma);
+    c_register_pragma("quarantine", kEndPragma, handle_end_pragma);
 }
 
 inline bool is_opted_out(const Finding& finding) {
@@ -646,8 +716,7 @@ inline bool is_opted_out(const Finding& finding) {
 inline void report_open_regions() {
     for (const Region& region : core.regions) {
         if (region.end_line == 0) {
-            error_at(region.begin, "this %<#pragma crucible %s%> region has no %<#pragma crucible %s%>", kBeginPragma,
-                     kEndPragma);
+            error_at(region.begin, "this %qs region has no %qs", kBeginMacro, kEndMacro);
         }
     }
 }

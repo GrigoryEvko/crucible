@@ -5649,6 +5649,18 @@ add_test(NAME quarantine_ratchet_self_test
 set_tests_properties(quarantine_sections_self_test quarantine_ratchet quarantine_ratchet_self_test PROPERTIES
     LABELS "ci_guard" SKIP_RETURN_CODE 3)
 
+# quarantine_regions — utils/scripts/check-quarantine-regions.py reads each
+# opt-out region of the tracked C++ files through the parse tree, against
+# utils/scripts/quarantine-region-ledger.txt.  A region with no row and a row
+# with no region fail.  It exits 3 when the kit of the parse tree is missing.
+add_test(NAME quarantine_regions
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-quarantine-regions.py
+          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+add_test(NAME quarantine_regions_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-quarantine-regions.py --self-test)
+set_tests_properties(quarantine_regions quarantine_regions_self_test PROPERTIES
+    LABELS "ci_guard" SKIP_RETURN_CODE 3)
+
 # affected_tests_self_test — utils/scripts/run-affected-tests.py builds a tree
 # and runs only the tests whose inputs changed since their last pass.  It is
 # the test command of the inner loop (CLAUDE.md §XV).  CI and the checks before

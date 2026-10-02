@@ -39,6 +39,9 @@ HEAD_PREFIX = "# crucible-quarantine "
 FORMAT = 1
 LINE_PREFIX = "quarantine: "
 OPTED_OUT = "opted_out"
+# A line of this kind is an opt-out region with its reason, and no finding.
+REGION = "region"
+NOT_FINDINGS = frozenset((OPTED_OUT, REGION))
 
 ELF_MAGIC = b"\x7fELF"
 ELF_CLASS_64 = 2

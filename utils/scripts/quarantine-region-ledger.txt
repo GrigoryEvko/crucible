@@ -1,0 +1,16 @@
+# The ledger of the opt-out regions of the quarantine.
+#
+# One row for each region that CRUCIBLE_I_KNOW_WHAT_IM_DOING("CLASS: reason")
+# of include/foundation/Quarantine.h opens in a tracked C++ file:
+# "FILE | REASON".  Two regions of one file with one reason are two equal rows.
+# utils/scripts/check-quarantine-regions.py (the test quarantine_regions) fails
+# for a region with no row and for a row with no region.  The number of rows can
+# only fall: the commit that removes a region writes the ledger again with
+# --write, and only a region of a reason class of CLAUDE.md section XXII gets a
+# new row, with --write --admit.
+
+utils/tools/quarantine/test/contracts.cpp | PROBE: the test needs the specifier
+utils/tools/quarantine/test/opt_out.cpp | PROBE: the test needs a raw buffer
+utils/tools/quarantine/test/own_region_macro.cpp | PROBE: an own macro
+utils/tools/quarantine/test/reason_without_class.cpp | a reason with no class
+utils/tools/quarantine/test/unclosed_region.cpp | PROBE: a region that nothing closes

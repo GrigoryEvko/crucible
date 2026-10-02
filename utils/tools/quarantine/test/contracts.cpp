@@ -68,9 +68,9 @@ int asserted(int value) {
     contract_assert(value > 0);
     return value;
 }
-
-#pragma crucible I_KNOW_WHAT_IM_DOING("the test needs the specifier")
+#include <foundation/Quarantine.h>
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test needs the specifier")
 int opted(int value) pre(value > 0);
-#pragma crucible END_I_KNOW_WHAT_IM_DOING
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 }  // namespace probe

@@ -179,7 +179,10 @@ string(SHA256 _crucible_quarantine_stamp
   "${_crucible_quarantine_key} ${_crucible_quarantine_mode} ${_crucible_quarantine_facts_hash}")
 string(SUBSTRING "${_crucible_quarantine_stamp}" 0 16 _crucible_quarantine_stamp)
 set(_crucible_quarantine_argument "-fplugin-arg-crucible_quarantine")
+# CRUCIBLE_QUARANTINE_ACTIVE makes the region macros of
+# include/foundation/Quarantine.h expand to the pragmas of the plugin.
 set(_crucible_quarantine_flags
+  "-DCRUCIBLE_QUARANTINE_ACTIVE"
   "-fplugin=${CRUCIBLE_QUARANTINE_PLUGIN}"
   "${_crucible_quarantine_argument}-root=${CMAKE_SOURCE_DIR}"
   "${_crucible_quarantine_argument}-build=${CMAKE_BINARY_DIR}"

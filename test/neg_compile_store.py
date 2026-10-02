@@ -566,18 +566,22 @@ def _strip_dependency_flags(argv: list[str]) -> list[str]:
 
 
 def _strip_plugin_flags(argv: list[str]) -> list[str]:
-    """Return `argv` without the options that load a GCC plugin or give it an argument.
+    """Return `argv` without the options that load a GCC plugin, give it an argument or tell the code of it.
 
     A fixture tests a compile-time rejection of the language or of the base,
     and the quarantine plugin of the build reports a finding in each fixture.
     So a fixture compiles with no plugin, unless its test sets
     CRUCIBLE_NEG_KEEP_PLUGIN=1: the fixtures of the contract rule test the
-    plugin itself.  The key of a stored result then holds no plugin, so a
-    change of the plugin compiles no other fixture again.
+    plugin itself.  CRUCIBLE_QUARANTINE_ACTIVE goes too, because the region
+    macros of foundation/Quarantine.h expand to a pragma that only the plugin
+    knows.  The key of a stored result then holds no plugin, so a change of
+    the plugin compiles no other fixture again.
     """
     if os.environ.get("CRUCIBLE_NEG_KEEP_PLUGIN", "") == "1":
         return argv
-    return [arg for arg in argv if not arg.startswith(("-fplugin=", "-fplugin-arg-"))]
+    return [arg for arg in argv
+            if not arg.startswith(("-fplugin=", "-fplugin-arg-"))
+            and arg != "-DCRUCIBLE_QUARANTINE_ACTIVE" and not arg.startswith("-DCRUCIBLE_QUARANTINE_ACTIVE=")]
 
 
 def compile_argv(command: list[str], output: Path, depfile: Path) -> list[str]:

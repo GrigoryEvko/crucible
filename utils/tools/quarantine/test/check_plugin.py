@@ -81,6 +81,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# The repository.  Its include/foundation/Quarantine.h gives the macros of a
+# region, from a file outside the source root of the test.
+REPO = HERE.parents[3]
 TEST_RULES = HERE / "rules.txt"
 PLUGIN = "crucible_quarantine"
 
@@ -191,6 +194,9 @@ PRAGMA_ERRORS = (
     ("unclosed_region.cpp", "region has no"),
     ("region_without_reason.cpp", "takes one string that gives the reason"),
     ("end_without_region.cpp", "has no open region"),
+    ("raw_pragma.cpp", "comes only from the macro"),
+    ("own_region_macro.cpp", "comes only from the macro"),
+    ("reason_without_class.cpp", "starts with its class"),
 )
 
 # (file, line, specifier): each error of the contract rule for contracts.cpp.
@@ -224,8 +230,8 @@ CONTRACT_ERROR = re.compile(r"^(?P<path>.+?):(?P<line>\d+):\d+: error: the .(?P<
 OUTSIDE_HEADER = "#pragma once\nint outside_pre(int value) pre(value > 0);\n"
 # A region that a header outside the root opens and closes.  The two pragmas
 # of such a header agree: each one does nothing.
-OUTSIDE_REGION_HEADER = ("#pragma once\n#pragma crucible I_KNOW_WHAT_IM_DOING(\"a header outside the root\")\n"
-                         "inline int outside_region_value() { return 1; }\n#pragma crucible END_I_KNOW_WHAT_IM_DOING\n")
+OUTSIDE_REGION_HEADER = ("#pragma once\n#pragma quarantine I_KNOW_WHAT_IM_DOING(\"a header outside the root\")\n"
+                         "inline int outside_region_value() { return 1; }\n#pragma quarantine END_I_KNOW_WHAT_IM_DOING\n")
 
 # The source files of the base, and the findings of each when src/ is the
 # root and the file is quarantined: (line, kind, a text in the entity).
@@ -242,16 +248,17 @@ BASE_FINDINGS = (
 # 5 stays an error.  The pointer on line 6 is no finding, because a generated
 # file is not quarantined.  The macro on line 7 spells a pointer, and the
 # place of that finding falls through to the unit that expands the macro.
-GENERATED_HEADER = ("#pragma once\n"
-                    "#pragma crucible I_KNOW_WHAT_IM_DOING(\"a generated header that the test needs\")\n"
+GENERATED_HEADER = ("#include <foundation/Quarantine.h>\n"
+                    "CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"PROBE: a generated header that the test needs\")\n"
                     "int generated_opted(int value) pre(value > 0);\n"
-                    "#pragma crucible END_I_KNOW_WHAT_IM_DOING\n"
+                    "CRUCIBLE_END_I_KNOW_WHAT_IM_DOING\n"
                     "int generated_plain(int value) pre(value > 0);\n"
                     "inline char* generated_pointer = nullptr;\n"
                     "#define GENERATED_POINTER char* generated_expanded_pointer = nullptr\n")
 GENERATED_UNIT = "#include \"build/Generated.h\"\n\nGENERATED_POINTER;\n"
 GENERATED_CONTRACT_ERRORS = [("build/Generated.h", 5, "pre")]
-UNCLOSED_GENERATED_HEADER = "#pragma once\n#pragma crucible I_KNOW_WHAT_IM_DOING(\"a generated region with no end\")\n"
+UNCLOSED_GENERATED_HEADER = ("#include <foundation/Quarantine.h>\n"
+                             "CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"PROBE: a generated region with no end\")\n")
 UNCLOSED_GENERATED_UNIT = "#include \"build/Unclosed.h\"\n"
 
 
@@ -290,8 +297,8 @@ class Checker:
         LAUNCHER goes in front of the compiler, as a compiler cache does, and
         ENV is the environment of the compile.
         """
-        command = [*launcher, self.cxx, "-std=c++26", "-I", str(HERE / "include"), *extra,
-                   f"-fplugin={self.plugin}"]
+        command = [*launcher, self.cxx, "-std=c++26", "-I", str(HERE / "include"), "-I", str(REPO / "include"),
+                   "-DCRUCIBLE_QUARANTINE_ACTIVE", *extra, f"-fplugin={self.plugin}"]
         command += [f"-fplugin-arg-{PLUGIN}-{key}={value}" for key, value in arguments.items()]
         command += ["-fdiagnostics-color=never", *stage, str(HERE / fixture)]
         return subprocess.run(command, capture_output=True, text=True, env=env)
@@ -395,11 +402,24 @@ def run_findings(section: Section, arguments: dict[str, str]) -> None:
 
 
 def run_pragma_errors(section: Section) -> None:
-    """Compile each fixture of a malformed region, and judge the error."""
+    """Compile each fixture of a malformed region, and judge the error.
+
+    The region macros also compile with no plugin: they expand to nothing
+    when CRUCIBLE_QUARANTINE_ACTIVE is not defined.  With the define and no
+    plugin, GCC warns about the unknown pragma, so the define never goes
+    without the plugin.
+    """
     for fixture, text in PRAGMA_ERRORS:
         compiled = section.compile(fixture, {"root": str(HERE), "mode": "report", "rules": str(TEST_RULES)})
         section.expect(f"{fixture} is an error", compiled.returncode != 0 and text in compiled.stderr,
                        compiled.stderr[-2000:])
+    plain = [section.cxx, "-std=c++26", "-I", str(HERE / "include"), "-I", str(REPO / "include"), "-Wall", "-Werror",
+             "-fdiagnostics-color=never", "-fsyntax-only", str(HERE / "opt_out.cpp")]
+    without = subprocess.run(plain, capture_output=True, text=True)
+    section.expect("the region macros compile with no plugin", without.returncode == 0, without.stderr[-2000:])
+    leaked = subprocess.run([*plain, "-DCRUCIBLE_QUARANTINE_ACTIVE"], capture_output=True, text=True)
+    section.expect("CRUCIBLE_QUARANTINE_ACTIVE with no plugin fails on the unknown pragma",
+                   leaked.returncode != 0 and "pragma" in leaked.stderr, leaked.stderr[-2000:])
 
 
 def run_modes(section: Section, arguments: dict[str, str], rules: Path) -> None:
@@ -518,8 +538,12 @@ def run_generated_files(section: Section) -> None:
                    any(f.kind == "opted_out" and f.file == "build/Generated.h" and f.line == 3
                        and f.entity == "contract_specifier pre" for f in found), "; ".join(map(str, found)))
     section.expect("a generated file is not quarantined",
-                   not any(f.file.startswith("build/") and f.kind != "opted_out" and f.kind != "contract_specifier"
+                   not any(f.file.startswith("build/") and f.kind not in ("opted_out", "contract_specifier", "region")
                            for f in found), "; ".join(map(str, found)))
+    section.expect("the report holds the region of the generated file with its reason",
+                   any(f.kind == "region" and f.file == "build/Generated.h" and f.line == 2
+                       and f.entity == "PROBE: a generated header that the test needs" for f in found),
+                   "; ".join(map(str, found)))
     section.expect("a place in a generated macro falls through to the unit that expands it",
                    any(f.kind == "raw_pointer_object" and f.file == "generated_unit.cpp" and f.line == 3
                        for f in found), "; ".join(map(str, found)))
@@ -905,8 +929,9 @@ DEPENDENCY_TREE = {
     "app/Clean.h": "#pragma once\ninline int clean_value = 1;\n",
     "app/finding.cpp": "#include \"Header.h\"\n#include \"Clean.h\"\n#include \"fresh.h\"\n"
                        "int* finding_pointer = nullptr;\n",
-    "app/opted.cpp": "#pragma crucible I_KNOW_WHAT_IM_DOING(\"a test of the dependencies of the plugin\")\n"
-                     "int* opted_pointer = nullptr;\n#pragma crucible END_I_KNOW_WHAT_IM_DOING\n",
+    "app/opted.cpp": "#include <foundation/Quarantine.h>\n"
+                     "CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"PROBE: a test of the dependencies of the plugin\")\n"
+                     "int* opted_pointer = nullptr;\nCRUCIBLE_END_I_KNOW_WHAT_IM_DOING\n",
 }
 
 

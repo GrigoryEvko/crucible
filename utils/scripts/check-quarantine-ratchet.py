@@ -9,8 +9,9 @@ THE FINDINGS
     objects_of_all) whose compile loads the quarantine plugin.  A finding is
     one distinct finding line.  The same line from two objects, as a finding
     of a header that two units include, counts one time.  A finding of the
-    kind opted_out is not counted, because the ledger of the opt-out regions
-    holds each region.
+    kind opted_out is not counted, and a line of the kind region is no
+    finding: utils/scripts/check-quarantine-regions.py and its ledger hold
+    each opt-out region.
 
 THE DIRECTORY OF A FINDING
     The directory rows of the rule table utils/scripts/layer-rules.txt are
@@ -270,7 +271,8 @@ def read_census(objects: list[tuple[Path, str]], build_dir: Path) -> Census:
                 f"has the stamp {stamp!r}.  The compiler cache gave the findings of another plugin or rule table: "
                 f"its key must hold the stamp argument"))
         else:
-            census.findings.update(item for item in section.findings if item.kind != quarantine_sections.OPTED_OUT)
+            census.findings.update(item for item in section.findings
+                                   if item.kind not in quarantine_sections.NOT_FINDINGS)
     return census
 
 

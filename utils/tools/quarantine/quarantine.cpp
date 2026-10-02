@@ -57,7 +57,10 @@
 //     contract_specifier    a `pre` or a `post` contract specifier (the contract
 //                           rule, in each file under the root and in each mode)
 //     opted_out             one of the kinds above, inside a region that
-//                           #pragma crucible I_KNOW_WHAT_IM_DOING("reason") opens
+//                           CRUCIBLE_I_KNOW_WHAT_IM_DOING("CLASS: reason") opens
+//     region                no finding: each region of a file under the root,
+//                           with its reason, for the ledger of the regions
+//                           (utils/scripts/check-quarantine-regions.py)
 //
 // THE HOOKS
 //     PLUGIN_PRE_GENERICIZE  the body of each function that is not a template:
@@ -1862,12 +1865,17 @@ void report(bool can_add_dependencies) {
                      kind.c_str(), entity.c_str());
         } else if (is_error && !is_out) {
             error_at(finding.spelling,
-                     "quarantine: %s %s; use a type or an entity of fixy or foundation, or put the code in a "
-                     "%<#pragma crucible %s(\"reason\")%> region",
-                     kind.c_str(), entity.c_str(), kBeginPragma);
+                     "quarantine: %s %s; use a type or an entity of fixy or foundation.  A region of %qs is "
+                     "only for a reason class of CLAUDE.md section XXII",
+                     kind.c_str(), entity.c_str(), kBeginMacro);
         } else if (!is_error && state.out_dir.empty() && !has_section) {
             inform(finding.spelling, "quarantine: %s %s", kind.c_str(), entity.c_str());
         }
+    }
+    // Each region, for the ledger of the regions.  A region is no finding.
+    for (const Region& region : core.regions) {
+        std::string place = region.file->relative + ":" + std::to_string(region.begin_line) + ":1";
+        lines.push_back("quarantine: region " + place + " " + region.reason);
     }
     if (has_section) {
         write_section(lines);

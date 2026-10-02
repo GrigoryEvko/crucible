@@ -63,7 +63,7 @@
 #   row and no quarantine row holds.  A file that no enforce row holds has
 #   report mode.
 
-layer F0_floor 0 include/foundation/Platform.h include/foundation/Pinned.h
+layer F0_floor 0 include/foundation/Platform.h include/foundation/Pinned.h include/foundation/Quarantine.h
 layer F0_core 1 include/foundation/reflect/ include/foundation/contracts/ include/foundation/Brand.h include/foundation/Lifetime.h include/foundation/ByteSeal.h include/foundation/diag/FailClosed.h include/foundation/NoObject.h
 layer F0_primitives 2 include/foundation/core/ include/foundation/Simd.h include/foundation/Saturate.h include/foundation/AlignedBuffer.h include/foundation/SwissTableBuffer.h include/foundation/ThreadLocalRef.h include/foundation/ChannelBinding.h
 layer F1_algebra 3 include/foundation/ src/foundation/

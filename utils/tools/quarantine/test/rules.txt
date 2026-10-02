@@ -29,7 +29,10 @@ quarantine low_includes_high.cpp
 quarantine meta_info.cpp
 quarantine nonclass.cpp
 quarantine opt_out.cpp
+quarantine own_region_macro.cpp
 quarantine plant_std.cpp
+quarantine raw_pragma.cpp
+quarantine reason_without_class.cpp
 quarantine region_outside_root.cpp
 quarantine region_without_reason.cpp
 quarantine unclosed_region.cpp
