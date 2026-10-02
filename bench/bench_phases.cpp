@@ -28,6 +28,7 @@
 // slightly from the fused loop, but the relative ratios are accurate.
 
 #include "bench_harness.h"
+#include "bench_trace.h"
 
 #include <crucible/Arena.h>
 #include <crucible/BackgroundThread.h>
@@ -106,18 +107,6 @@ void check_ops_without_metas(const TraceEntry* ops, const MetaIndex* meta_data, 
 bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const LoadedTrace& trace) {
     const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
 
-    auto repopulate = [&]() {
-        meta_log.reset();
-        uint32_t cursor = 0;
-        for (uint32_t i = 0; i < trace.num_ops; i++) {
-            const uint16_t n = static_cast<uint16_t>(trace.entries[i].num_inputs + trace.entries[i].num_outputs);
-            if (n > 0 && cursor + n <= trace.num_metas) {
-                (void)meta_log.try_append(&trace.metas[cursor], n);
-                cursor += n;
-            }
-        }
-    };
-
     char label[64];
     std::snprintf(label, sizeof(label), "build_trace (full pipeline, %u ops)", trace.num_ops);
 
@@ -130,7 +119,7 @@ bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const Lo
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
         new(&bg.arena) Arena{arena_bytes};
-        repopulate();
+        bench::refill_meta_log(meta_log, trace);
         auto built = bg.build_trace(A, trace.num_ops);
         bench::do_not_optimize(built);
     });
@@ -149,18 +138,6 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
     const double nspc = bench::Timer::ns_per_cycle();
 
-    auto repopulate = [&]() {
-        meta_log.reset();
-        uint32_t cursor = 0;
-        for (uint32_t i = 0; i < trace.num_ops; i++) {
-            const uint16_t n = static_cast<uint16_t>(trace.entries[i].num_inputs + trace.entries[i].num_outputs);
-            if (n > 0 && cursor + n <= trace.num_metas) {
-                (void)meta_log.try_append(&trace.metas[cursor], n);
-                cursor += n;
-            }
-        }
-    };
-
     // Warmup: 5 full pipeline runs to hit the cache.
     for (uint32_t w = 0; w < 5; w++) {
         bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
@@ -169,7 +146,7 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
         new(&bg.arena) Arena{arena_bytes};
-        repopulate();
+        bench::refill_meta_log(meta_log, trace);
         auto built = bg.build_trace(A, trace.num_ops);
         bench::do_not_optimize(built);
     }
@@ -185,7 +162,7 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
         new(&bg.arena) Arena{arena_bytes};
-        repopulate();
+        bench::refill_meta_log(meta_log, trace);
 
         const uint64_t t0 = bench::rdtsc_start();
         auto built = bg.build_trace(A, trace.num_ops);
@@ -212,7 +189,7 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
         new(&bg.arena) Arena{arena_bytes};
-        repopulate();
+        bench::refill_meta_log(meta_log, trace);
         auto* ref = *bg.build_trace(A, trace.num_ops);
 
         const uint32_t num_ops = ref->num_ops.get_assuming_set();
@@ -283,18 +260,6 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     (void)trace_total_inputs;
     (void)trace_total_outputs;
 
-    auto repopulate = [&]() {
-        meta_log.reset();
-        uint32_t cursor = 0;
-        for (uint32_t i = 0; i < trace.num_ops; i++) {
-            const uint16_t n = static_cast<uint16_t>(trace.entries[i].num_inputs + trace.entries[i].num_outputs);
-            if (n > 0 && cursor + n <= trace.num_metas) {
-                (void)meta_log.try_append(&trace.metas[cursor], n);
-                cursor += n;
-            }
-        }
-    };
-
     // One build_trace to prime scratch buffers and reference ops.
     bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
     bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
@@ -302,7 +267,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
     bg.arena.~Arena();
     new(&bg.arena) Arena{arena_bytes};
-    repopulate();
+    bench::refill_meta_log(meta_log, trace);
     auto ref = bg.build_trace(A, count);
     (void)ref;
 
@@ -383,7 +348,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     double ns_p1b = 0;
     {
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
-        repopulate();
+        bench::refill_meta_log(meta_log, trace);
         uint32_t max_meta_end = 0, first_meta = UINT32_MAX;
         for (uint32_t i = 0; i < count; i++) {
             const MetaIndex ms = bg.current_meta_starts[i];
@@ -418,7 +383,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
         new(&bg.arena) Arena{arena_bytes};
-        repopulate();
+        bench::refill_meta_log(meta_log, trace);
 
         const TraceRing::Entry* trace_data = bg.current_trace.data();
         const MetaIndex* meta_data = bg.current_meta_starts.data();
@@ -520,7 +485,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
         new(&bg.arena) Arena{arena_bytes};
-        repopulate();
+        bench::refill_meta_log(meta_log, trace);
         auto* ref_graph = *bg.build_trace(A, count);
         TraceEntry* ref_ops = ref_graph->ops;
 
@@ -567,7 +532,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
         new(&bg.arena) Arena{arena_bytes};
-        repopulate();
+        bench::refill_meta_log(meta_log, trace);
         auto* ref_graph = *bg.build_trace(A, count);
         TraceEntry* ref_ops = ref_graph->ops;
 
@@ -618,7 +583,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
         new(&bg.arena) Arena{arena_bytes};
-        repopulate();
+        bench::refill_meta_log(meta_log, trace);
         auto* ref_graph = *bg.build_trace(A, count);
         TraceEntry* ref_ops = ref_graph->ops;
 
@@ -661,7 +626,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
         new(&bg.arena) Arena{arena_bytes};
-        repopulate();
+        bench::refill_meta_log(meta_log, trace);
         auto* ref_graph = *bg.build_trace(A, count);
         const uint32_t num_slots = ref_graph->num_slots.get_assuming_set();
 

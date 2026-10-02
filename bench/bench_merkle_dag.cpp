@@ -31,6 +31,7 @@
 #include <fixy/Ctx.h>
 
 #include "bench_harness.h"
+#include "bench_trace.h"
 
 using namespace crucible;
 
@@ -375,20 +376,6 @@ int main(int argc, char* argv[]) {
 
             MetaLog meta_log;
             meta_log.reset();
-            auto repopulate = [&] {
-                meta_log.reset();
-                uint32_t cursor = 0;
-                for (uint32_t op_index = 0; op_index < trace->num_ops; op_index++) {
-                    const uint16_t n = static_cast<uint16_t>(trace->entries[op_index].num_inputs
-                                                             + trace->entries[op_index].num_outputs);
-                    if (n > 0 && cursor + n <= trace->num_metas) {
-                        // build_trace reads the metas at the indices in current_meta_starts, so this
-                        // call does not use the returned index.
-                        (void)meta_log.try_append(&trace->metas[cursor], n);
-                        cursor += n;
-                    }
-                }
-            };
 
             BackgroundThread bg;
             bg.meta_log.set(&meta_log);
@@ -403,7 +390,7 @@ int main(int argc, char* argv[]) {
                 bg.current_callsite_hashes.assign(trace->callsite_hashes.begin(), trace->callsite_hashes.end());
                 bg.arena.~Arena();
                 new(&bg.arena) Arena{arena_bytes};
-                repopulate();
+                bench::refill_meta_log(meta_log, *trace);
                 auto built = bg.build_trace(test.alloc, trace->num_ops);
                 bench::do_not_optimize(built);
             });
