@@ -25,5 +25,6 @@ static_assert(std::is_trivially_copyable_v<TensorDimArray>);
 static_assert(std::is_standard_layout_v<TensorDimArray>);
 
 static_assert(sizeof(TensorMeta) == 168, "TensorMeta layout check");
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorMeta);
 
 }  // namespace crucible

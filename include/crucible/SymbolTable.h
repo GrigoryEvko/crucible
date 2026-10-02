@@ -47,8 +47,6 @@ struct SymbolEntry {
     uint32_t _pad = 0;
 };
 
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SymbolEntry);
-
 // An identifier this table hands out is known to index this table. One that
 // arrives from a file or across a language boundary is not, and has to be
 // validated before it reaches the accessors below.

@@ -9,7 +9,9 @@ static_assert(std::is_standard_layout_v<InstIndex>);
 
 static_assert(sizeof(Inst) == 8, "Inst must be 8 bytes");
 static_assert(offsetof(Inst, operands) == 2, "Inst's operands start after the op byte and the dtype byte");
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Inst);
 
 static_assert(sizeof(GraphNode) == 64, "GraphNode must be 64 bytes");
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(GraphNode);
 
 }  // namespace crucible

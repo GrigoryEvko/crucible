@@ -128,8 +128,6 @@ struct TensorMeta {
     GradFnHash grad_fn_hash{};  // 0 means no grad_fn
 };
 
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorMeta);
-
 [[nodiscard]] inline constexpr ExternalDataPtr external_data_ptr(void* ptr) noexcept {
     return ::fixy::mint_tagged<::fixy::tags::source::External>(ptr);
 }

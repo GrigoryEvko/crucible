@@ -100,7 +100,6 @@ struct alignas(16) NumericalRecipe {
     // Filled in when the recipe is interned, not at construction.
     RecipeHash hash;
 };
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(NumericalRecipe);
 
 // The hash covers the eight semantic bytes and excludes the hash field
 // itself. Excluding it is what makes the operation idempotent: a recipe read

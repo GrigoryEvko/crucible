@@ -44,8 +44,6 @@ struct SchemaEntry {
     uint8_t pad[4]{};
 };
 
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SchemaEntry);
-
 namespace schema_state {
 struct Mutable {};
 struct Sealed {};

@@ -203,8 +203,6 @@ struct Inst {
     std::array<InstIndex, 3> operands{};
 };
 
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Inst);
-
 // A kernel body as a flat array of SSA instructions, directly emittable as
 // device source.  For C = relu(A + B):
 //   [0] LOAD  buf0, idx
@@ -315,8 +313,6 @@ struct GraphNode {
         return static_cast<ExternInfo*>(body);
     }
 };
-
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(GraphNode);
 
 // Every allocation comes from the arena and dies with the Graph.  Nodes sit
 // in a flat array indexed by id, so nodes_[id] is that node.

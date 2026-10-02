@@ -20,13 +20,7 @@
 #   includes the header.  The kind is namespace, static_assert, function static_assert or eager
 #   evaluation.  The key is the one that --list prints.  The reason is mandatory.
 include/crucible/CKernel.h | 0 | 1
-include/crucible/Graph.h | 0 | 2
 include/crucible/MerkleDag.h | 0 | 10
-include/crucible/NumericalRecipe.h | 0 | 1
-include/crucible/SchemaTable.h | 0 | 1
-include/crucible/SymbolTable.h | 0 | 1
-include/crucible/TensorMeta.h | 0 | 2
-include/crucible/TraceGraph.h | 0 | 1
 include/crucible/ledger/ProbeSupport.h | 1 | 1
 include/crucible/ledger/RefreshDaemon.h | 1 | 5
 include/crucible/ledger/probes/CacheTier.h | 1 | 0

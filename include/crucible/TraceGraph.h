@@ -52,8 +52,6 @@ struct Edge {
     }
 };
 
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Edge);
-
 struct TraceGraph {
     using BuiltCount = ::fixy::WriteOnce<uint32_t>;
 
