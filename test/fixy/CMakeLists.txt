@@ -2948,8 +2948,10 @@ fixy_neg_compile_test(neg_sess_branch_read_waits_in_secret
 # Legal code that tries to defeat the crash transport, the checkpoint
 # session and the event log.  Each runtime attack runs in a child under
 # a watchdog, and the attacks that succeed are pinned on a ledger that
-# can only shrink.
-fixy_test(test_session_crash_attack)
+# can only shrink.  The attacks are in several source files, by subject,
+# so that no translation unit compiles all of them.
+fixy_test(test_session_crash_attack test_session_crash_attack.cpp test_session_crash_attack_detection.cpp
+  test_session_crash_attack_fabrication.cpp test_session_crash_attack_cells.cpp)
 
 # ── Global types, projection and liveness ─────────────────────────────
 #

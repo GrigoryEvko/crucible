@@ -36,7 +36,7 @@ test/foundation/test_host_owner_attacks.cpp ::foundation::effects::detail x4 —
 # background context from its witness to drive a session.
 test/fixy/test_session_async_channel.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_bridges.cpp ::foundation::effects::detail x1 — builds a background context from its witness
-test/fixy/test_session_crash_attack.cpp ::foundation::effects::detail x1 — builds a background context from its witness
+test/fixy/session_crash_attack.h ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_crash_stop.cpp ::fixy::session::detail x5 — walks the crash projection helpers
 test/fixy/test_session_crash_stop.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_entry.cpp ::foundation::effects::detail x1 — builds a background context from its witness
