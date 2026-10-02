@@ -79,6 +79,14 @@ WRITE THE LEDGER
       configuration of the ledger has it.  The first configuration of an
       empty ledger is the base.
 
+A CONFIGURATION THAT ONLY CI BUILDS
+    No aarch64 compiler is on the build host, so only a CI leg can count an
+    aarch64 configuration.  The leg runs --rows NAME after a failed check,
+    and the log then holds each row of the configuration with the prefix
+    "quarantine-row: ".  --import LOG puts those rows into the ledger in place
+    of the old rows of NAME.  Import the log of the commit that you merge,
+    because a difference row is relative to the base rows of that commit.
+
 NOT APPLICABLE
     The check exits 3, with the reason, when the build made only some targets
     or its generator is not Ninja, when no compile of the target all loads the
@@ -89,6 +97,8 @@ Usage
     check-quarantine-ratchet.py --build-dir DIR [--warnings-dir DIR]
     check-quarantine-ratchet.py --build-dir DIR --write [--raise] [--add-configuration NAME]
     check-quarantine-ratchet.py --build-dir DIR --list [FILE|DIRECTORY [KIND]]
+    check-quarantine-ratchet.py --build-dir DIR --rows NAME
+    check-quarantine-ratchet.py --import LOG
     check-quarantine-ratchet.py --self-test
 
 Exit 0 with no finding or with warnings only, 1 with an error, 2 on a usage error
@@ -144,6 +154,7 @@ PLUGIN_ARGUMENT = "-fplugin-arg-crucible_quarantine-"
 STAMP = re.compile(re.escape(PLUGIN_ARGUMENT) + r"stamp=(\S*)")
 CMAKE_FALSE = {"", "0", "OFF", "NO", "FALSE", "N", "IGNORE", "NOTFOUND"}
 NAME_PATTERN = re.compile(r"[a-z][a-z0-9_.-]*")
+ROW_MARK = "quarantine-row: "
 DELTA_PATTERN = re.compile(r"[+-][1-9][0-9]*")
 READERS = 16
 
@@ -576,6 +587,7 @@ class Request:
     allow_raise: bool = False
     add_name: str | None = None
     listed: list[str] | None = None
+    rows_name: str | None = None
 
 
 def run(build_dir: Path, root: Path, ledger_path: Path, rules_path: Path, warnings_dir: Path | None,
@@ -599,7 +611,7 @@ def run(build_dir: Path, root: Path, ledger_path: Path, rules_path: Path, warnin
             f"{FORMAT}.  Generate it again with --write --add-configuration")], CHECK, warnings_dir)
     configuration = build_configuration(build_dir)
     name = matching_configuration(ledger, configuration)
-    if name is None and request.add_name is None and request.listed is None:
+    if name is None and request.add_name is None and request.listed is None and request.rows_name is None:
         print(f"{CHECK}: no configuration of the ledger is the configuration of the build "
               f"({nearest_difference(ledger, configuration)}).  The check does not apply")
         return NOT_APPLICABLE
@@ -619,6 +631,8 @@ def run(build_dir: Path, root: Path, ledger_path: Path, rules_path: Path, warnin
     counts = count_findings(census.findings)
     if request.listed is not None:
         return list_findings(census, request.listed)
+    if request.rows_name is not None:
+        return print_rows(ledger, name, configuration, counts, census, request.rows_name)
     if request.write:
         return write_ledger(root, ledger_path, ledger, name, configuration, counts, census, request, warnings_dir)
     assert name is not None
@@ -639,6 +653,76 @@ def list_findings(census: Census, listed: list[str]) -> int:
     for item in selected:
         print(item.text())
     print(f"{CHECK}: {len(selected)} findings")
+    return 0
+
+
+def print_rows(ledger: Ledger, name: str | None, configuration: dict[str, str], counts: Counter[Key],
+               census: Census, rows_name: str) -> int:
+    """Print the rows of a configuration that is not the base, as --import reads them from a log.
+
+    Each row has the prefix ROW_MARK, so a log line with another prefix in front still gives the row.
+
+    Returns:
+        0 when the rows are printed, 1 when an object has a problem, 2 when the name does not fit
+    """
+    if census.problems:
+        print(f"{CHECK}: no rows, because an object has a problem: {census.problems[0].message}", file=sys.stderr)
+        return 1
+    if rows_name == ledger.base or not NAME_PATTERN.fullmatch(rows_name) or rows_name == CONFIGURATION_ROW:
+        print(f"{CHECK}: {rows_name!r} is the base or not a lowercase word.  Write the base with --write",
+              file=sys.stderr)
+        return 2
+    if name is not None and name != rows_name:
+        print(f"{CHECK}: the build has the configuration {name} of the ledger, not {rows_name}", file=sys.stderr)
+        return 2
+    lines = [f"{CONFIGURATION_ROW} {rows_name} {key} {value}" for key, value in configuration.items()]
+    lines += [f"{rows_name} {file} {kind} {counts.get((file, kind), 0) - ledger.counts.get((file, kind), 0):+d}"
+              for file, kind in sorted(set(counts) | set(ledger.counts))
+              if counts.get((file, kind), 0) != ledger.counts.get((file, kind), 0)]
+    for line in lines:
+        print(f"{ROW_MARK}{line}")
+    print(f"{CHECK}: the rows of the configuration {rows_name}.  Import them from the log with "
+          f"`python3 utils/scripts/check-quarantine-ratchet.py --import LOG`")
+    return 0
+
+
+def import_rows(ledger_path: Path, source: Path) -> int:
+    """Put the rows of one configuration that print_rows printed into the ledger, in place of its old rows.
+
+    Returns:
+        0 when the ledger is written, 1 when the rows or the ledger do not have the format
+    """
+    try:
+        ledger = read_ledger(ledger_path)
+        rows = [line.split(ROW_MARK, 1)[1].split() for line in
+                source.read_text(encoding="utf-8", errors="replace").splitlines() if ROW_MARK in line]
+        names = {words[1] if words[0] == CONFIGURATION_ROW else words[0] for words in rows if words}
+        if len(names) != 1:
+            raise LedgerError(f"{source}: the rows name {len(names)} configurations, and an import takes one")
+        name = names.pop()
+        if name == ledger.base:
+            raise LedgerError(f"{source}: the rows are of the base configuration {name}.  Write it with --write")
+        keys: dict[str, str] = {}
+        deltas: dict[Key, int] = {}
+        for words in rows:
+            if words[0] == CONFIGURATION_ROW and len(words) == 4:
+                if keys.setdefault(words[2], words[3]) != words[3]:
+                    raise LedgerError(f"{source}: the key {words[2]} has two values")
+            elif len(words) == 4 and DELTA_PATTERN.fullmatch(words[3]):
+                if deltas.setdefault((words[1], words[2]), int(words[3])) != int(words[3]):
+                    raise LedgerError(f"{source}: the file {words[1]} and the kind {words[2]} have two values")
+            else:
+                raise LedgerError(f"{source}: the row {' '.join(words)!r} is not a row of a configuration")
+        ledger.configurations[name] = keys
+        ledger.deltas[name] = deltas
+        text = ledger_text(ledger)
+        parse_ledger(text, str(source))
+    except (OSError, LedgerError) as problem:
+        print(f"{CHECK}: the ledger is not written: {problem}", file=sys.stderr)
+        return 1
+    ledger_path.write_text(text, encoding="utf-8")
+    print(f"{CHECK}: imported the configuration {name}: {len(keys)} keys and {len(deltas)} difference rows, to "
+          f"{ledger_path}")
     return 0
 
 
@@ -820,9 +904,10 @@ class Scratch:
         (self.build / "inputs.txt").write_text("".join(f"{name}.o\n" for name in self.objects), encoding="utf-8")
 
     def run(self, write: bool = False, allow_raise: bool = False, add_name: str | None = None,
-            listed: list[str] | None = None) -> tuple[int, list[check_report.Finding], str]:
+            listed: list[str] | None = None, rows_name: str | None = None) -> tuple[int, list[check_report.Finding],
+                                                                                    str]:
         """Run the check on the scratch build, and return the status, the findings and the printed text."""
-        request = Request(write, allow_raise, add_name, listed)
+        request = Request(write, allow_raise, add_name, listed, rows_name)
         with contextlib.redirect_stdout(io.StringIO()) as printed, contextlib.redirect_stderr(io.StringIO()) as said:
             status = run(self.build, self.root, self.ledger, self.rules, None, request)
         text = printed.getvalue() + said.getvalue()
@@ -995,6 +1080,30 @@ def self_test() -> int:
         scratch.add("e", ["quarantine: compiler_builtin include/crucible/Vigil.h:30:7 __builtin_ia32_pause"])
         expect("the second configuration still passes after the base rows fell", scratch.run()[0] == 0,
                scratch.run()[2])
+
+        # A configuration that only CI builds: its rows go through a log.
+        (scratch.build / "CMakeCache.txt").write_text(scratch.cache.replace("Debug", "MinSizeRel"),
+                                                      encoding="utf-8")
+        status, _, text = scratch.run(rows_name="ci-leg")
+        expect("--rows prints the configuration and the differences of a build that no configuration has",
+               status == 0 and f"{ROW_MARK}configuration ci-leg CMAKE_BUILD_TYPE MinSizeRel" in text
+               and f"{ROW_MARK}ci-leg include/crucible/Vigil.h compiler_builtin +1" in text, text)
+        log = scratch.root / "ci.log"
+        log.write_text("".join(f"build+test aarch64\tQuarantine ratchet\t2026-10-02T21:00:00Z {line}\n"
+                               for line in text.splitlines()), encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            status = import_rows(scratch.ledger, log)
+        expect("--import puts the rows of a log into the ledger, and the build then passes",
+               status == 0 and "ci-leg" in read_ledger(scratch.ledger).configurations and scratch.run()[0] == 0,
+               scratch.run()[2])
+        log.write_text(log.read_text() + f"x\t{ROW_MARK}ci-leg include/crucible/Vigil.h compiler_builtin +3\n",
+                       encoding="utf-8")
+        before_import = scratch.ledger.read_text()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            status = import_rows(scratch.ledger, log)
+        expect("--import refuses two values for one row", status == 1 and scratch.ledger.read_text() == before_import)
+        status, _, _ = scratch.run(rows_name="default")
+        expect("--rows refuses the base configuration", status == 2)
         (scratch.build / "CMakeCache.txt").write_text(scratch.cache, encoding="utf-8")
         del scratch.objects["e"]
         scratch.flush()
@@ -1055,19 +1164,26 @@ def main(argv: list[str]) -> int:
                         help="with --write, add the configuration of the build with this name")
     parser.add_argument("--list", dest="listed", nargs="*", metavar="WORD",
                         help="print the findings of FILE or DIRECTORY, and of KIND")
+    parser.add_argument("--rows", dest="rows_name", metavar="NAME",
+                        help="print the rows of the build as the configuration NAME, for --import")
+    parser.add_argument("--import", dest="import_path", type=Path, metavar="LOG",
+                        help="put the rows that --rows printed into the ledger, from a file such as a CI log")
     parser.add_argument("--self-test", action="store_true", help="run the self-test")
     check_report.add_arguments(parser)
     args = parser.parse_args(argv)
     if args.self_test:
         return self_test()
+    root = args.root.resolve()
+    if args.import_path is not None:
+        return import_rows(root / LEDGER, args.import_path)
     if (args.build_dir is None or (args.listed is not None and len(args.listed) > 2)
-            or ((args.allow_raise or args.add_name is not None) and not args.write)):
+            or ((args.allow_raise or args.add_name is not None) and not args.write)
+            or (args.rows_name is not None and (args.write or args.listed is not None))):
         parser.print_usage(sys.stderr)
         return 2
     throwaway_repo.isolate()
-    root = args.root.resolve()
     return run(args.build_dir.resolve(), root, root / LEDGER, root / RULES, args.warnings_dir,
-               Request(args.write, args.allow_raise, args.add_name, args.listed))
+               Request(args.write, args.allow_raise, args.add_name, args.listed, args.rows_name))
 
 
 if __name__ == "__main__":
