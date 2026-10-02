@@ -987,30 +987,35 @@ throw arriving through an instantiated library header is also visible. Adding th
 flags is the wrong repair; the opt-out table in §III says why for each.
 
 ```
--std=c++26                           strict C++26, no GNU dialect drift
+-std=c++26                           C++26, with no GNU dialect
 -fcontracts                          P2900 contracts
 -freflection                         P2996 reflection
--fno-strict-overflow                 don't optimize assuming signed overflow impossible
--fno-delete-null-pointer-checks      don't optimize away null checks
--fno-math-errno                      math functions don't set errno (faster, vec-friendly)
--ffp-contract=on                     FMA within a statement (safe for BITEXACT)
--ftrivial-auto-var-init=zero         P2795R5 — zero-init stack, kills InitSafe class
+-fno-strict-overflow                 signed overflow wraps (not in the ubsan-strict preset)
+-fno-delete-null-pointer-checks      the optimizer keeps each null check
+-ftrivial-auto-var-init=zero         P2795R5: zero fill of each uninitialized stack variable
 -fstack-protector-strong             stack canaries
--fstack-clash-protection             stack clash mitigation (~0.1% cost)
--fcf-protection=full                 Intel CET / ARM BTI+PAC
--fno-omit-frame-pointer              readable traces (<1% cost)
+-fstack-clash-protection             stack clash guard pages
+-fcf-protection=full                 Intel CET (aarch64: -mbranch-protection=standard)
+-fno-omit-frame-pointer              readable traces
 -fno-plt                             direct calls
--fno-semantic-interposition          allow cross-TU inlining
--fvisibility=hidden                  hidden symbols = more inlining
--fvisibility-inlines-hidden          same for inline
--ffunction-sections                  one function per section (for --gc-sections)
--fdata-sections                      one var per section
+-fno-semantic-interposition          inlining across translation units
+-fvisibility=hidden                  hidden symbols
+-fvisibility-inlines-hidden          hidden inline functions
+-ffunction-sections                  one function in each section
+-fdata-sections                      one variable in each section
 -fno-common                          no tentative definitions
--fstrict-flex-arrays=3               strict flex array rules
--fsized-deallocation                 sized `delete` overloads
+-fstrict-flex-arrays=3               strict rules for flexible arrays
+-fsized-deallocation                 sized `delete`
+-fstrict-enums                       the optimizer uses the range of each enum
+-fconstexpr-ops-limit=33554432       the error threshold of the row constexpr-ops (§XV)
 -D_FORTIFY_SOURCE=3                  glibc bounds checks
--D_GLIBCXX_ASSERTIONS                libstdc++ cheap asserts (release-safe)
 ```
+
+`cmake/FpStrict.cmake` gives each target the FP floor: `-fno-fast-math`,
+`-ffp-contract=off`, `-fno-associative-math`, `-fno-reciprocal-math`,
+`-fno-finite-math-only`, `-fsignaling-nans`, `-frounding-math` and
+`-ftrapping-math`. With `-ffp-contract=off`, GCC contracts no multiply and add
+into an FMA, also in one statement. No build takes `-fno-math-errno`.
 
 Each build type other than Debug also takes `-fharden-compares` and
 `-fharden-conditional-branches` (`CMakeLists.txt` section 3.13). No build takes
@@ -1053,45 +1058,47 @@ the build directories of two work trees share the cache.
 
 ```
 Common flags +
--Og -g                                debuggable but fortify/analyzer friendly
--fcontract-evaluation-semantic=enforce   check + terminate
--fsanitize=address                    ASan + LeakSan
--fsanitize=undefined,bounds-strict    UBSan + strict bounds
--fsanitize=shift-exponent,pointer-overflow  extra UBSan
--fno-sanitize-recover=all             abort on first violation
--D_GLIBCXX_DEBUG                      heavy container checks
+-O1 -g                                section 0 of CMakeLists.txt. The wrappers inline at -O1, not at -Og
+-D_GLIBCXX_ASSERTIONS=1               libstdc++ bounds checks (section 3.15)
+-D_GLIBCXX_SANITIZE_VECTOR=1          ASan annotations of the vector capacity (section 3.15)
 ```
+
+A Debug build gives no contract semantic flag, so the GCC default `enforce`
+applies. The `default` preset puts `-fsanitize=address` and
+`-fno-sanitize-recover=all` on each target, and
+`-fsanitize=undefined,bounds-strict` on each test executable. The `tsan` preset
+puts `-fsanitize=thread` and `-Wno-tsan` on each target. The `ubsan-strict`
+preset puts `-fsanitize=undefined,float-cast-overflow,float-divide-by-zero,bounds-strict`
+on each target, and it removes `-fno-strict-overflow`. No build sets
+`-D_GLIBCXX_DEBUG`, because that macro changes the layout of each container.
 
 ### Release preset
 
-The `release` preset in CMakePresets.json sets `-O1 -march=native -DNDEBUG -g`,
-but CMake appends `CMAKE_CXX_FLAGS_RELEASE` (`-O3 -DNDEBUG`) after it and GCC
-takes the last `-O`, so every Release TU compiles at `-O3`. The common flags
-and `-fcontract-evaluation-semantic=observe` apply. PGO is wired through
-`CRUCIBLE_PGO` (§VIII). `-mtune=native`, `-flto=auto` and the Graphite passes
-are not wired. Read the preset and a compile line, not this block, when you
-need to know what a Release binary was built with.
+The `release` preset sets `CMAKE_CXX_FLAGS` to `-O1 -march=native -DNDEBUG -g`.
+CMake appends `CMAKE_CXX_FLAGS_RELEASE` (`-O3 -DNDEBUG`) after it, and GCC uses
+the last `-O`, so each Release TU compiles at `-O3`. The `pgo` and `pgo-release`
+presets add the profile flags of `CRUCIBLE_PGO` (§VIII).
 
 ```
 Common flags +
--O3
--march=native -mtune=native
+-O1 ... -O3                           GCC uses the last level, -O3
+-march=native
 -DNDEBUG
--g                                    keep frame info for profiling
--flto=auto                            whole-program LTO, ~10-20% typical win
+-g                                    frame information for profiling
+-fharden-compares                     section 3.13 of CMakeLists.txt
+-fharden-conditional-branches         section 3.13 of CMakeLists.txt
 -fcontract-evaluation-semantic=observe  the Release default. It does the check
                                       and reports a violation. The handler
                                       aborts, so a violation ends the process.
                                       §XII names the TUs outside this policy.
--ftree-vectorize                      on by default at -O3
--fvect-cost-model=unlimited           aggressive auto-vec
--mprefer-vector-width=512             AVX-512 where HW supports
--fipa-pta                             interprocedural pointer analysis
--fgraphite-identity                   polyhedral loop framework
--floop-nest-optimize                  Graphite loop optimizer
--fno-trapping-math                    assume FP doesn't trap (vec-friendly)
-+ PGO artifacts from bench workload
 ```
+
+No build sets `-mtune=native`, `-flto=auto`, `-fvect-cost-model=unlimited`,
+`-mprefer-vector-width=512`, `-fipa-pta`, `-fgraphite-identity` or
+`-floop-nest-optimize`. No build sets `-fno-trapping-math`, because the FP
+floor sets `-ftrapping-math`. A Release build has no `-D_GLIBCXX_ASSERTIONS`.
+That macro adds a bounds check to each `operator[]` of `std::array`,
+`std::span` and `std::vector`, also on the hot path.
 
 ### Verify preset
 
