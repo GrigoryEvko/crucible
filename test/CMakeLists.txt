@@ -5630,6 +5630,13 @@ add_test(NAME budget_history_self_test
 set_tests_properties(budget_history budget_history_self_test PROPERTIES LABELS "ci_guard")
 set_tests_properties(budget_history PROPERTIES SKIP_RETURN_CODE 3)
 
+# quarantine_sections_self_test — utils/scripts/quarantine_sections.py reads the
+# findings of the quarantine plugin from the section .crucible.quarantine of an
+# object.  The self-test plants objects with and without the section.
+add_test(NAME quarantine_sections_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/quarantine_sections.py --self-test)
+set_tests_properties(quarantine_sections_self_test PROPERTIES LABELS "ci_guard")
+
 # affected_tests_self_test — utils/scripts/run-affected-tests.py builds a tree
 # and runs only the tests whose inputs changed since their last pass.  It is
 # the test command of the inner loop (CLAUDE.md §XV).  CI and the checks before

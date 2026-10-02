@@ -3024,13 +3024,13 @@ The owner approved each verdict on 2026-10-02. `test/layer/admitted_flag_matrix.
 
 §V gives the three values of `CRUCIBLE_QUARANTINE`: `OFF`, `REPORT` and `ERROR`. `OFF` is the default. No preset sets a different value. An `OFF` build loads the contract plugin, which does not read the rule table.
 
-To get the findings of a change, configure a second build directory with `-DCRUCIBLE_QUARANTINE=REPORT`. Build the targets that compile the changed files, before and after the change. Then compare the files in `quarantine/report/` of that build directory. A `REPORT` build uses no compiler launcher, because a cache hit gives no report.
+To get the findings of a change, configure a second build directory with `-DCRUCIBLE_QUARANTINE=REPORT`. Build the targets that compile the changed files, before and after the change. Then compare the output of `python3 utils/scripts/quarantine_sections.py OBJECT...` for their objects. Each object holds the findings of its unit in the section `.crucible.quarantine`, so a `REPORT` build uses ccache, and a cache hit gives the findings too.
 
 The `enforce` rows of the rule table give each quarantined directory a mode, `report` or `error`. A file that no `enforce` row holds has the mode `report`. In a `REPORT` build, a finding in a file with the mode `error` is a compile error. At this time, each `enforce` row has the mode `report`. A directory changes to `error` when it has no finding outside the opt-out ledger.
 
 ### The ratchet (R11, planned)
 
-The finding count of each quarantined directory can only decrease. A ledger will hold the finding count of each quarantined directory and each kind. The plugin will write the findings of a translation unit into the section `.crucible.quarantine` of its object. ccache then keeps the findings with the object.
+The finding count of each quarantined directory can only decrease. A ledger will hold the finding count of each quarantined directory and each kind. The plugin writes the findings of a translation unit into the section `.crucible.quarantine` of its object, and ccache keeps the findings with the object.
 
 A `ci_guard` test will compare each count with its row. A count above its row will fail. A count below its row will also fail, until the same commit writes the ledger again. A CI job will run the test on each push.
 

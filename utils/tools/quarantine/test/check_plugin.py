@@ -27,6 +27,15 @@ plugin and with the quarantine plugin in each mode, and compares the errors
 with CONTRACT_ERRORS.  A form that a plugin stops seeing, a second error for
 one specifier and an error outside the list each fail the test.
 
+A unit that writes an object holds its findings in the section
+.crucible.quarantine of the object.  The test compares the section with the
+report file of out= for the same compile.  Through ccache, a cache hit must
+give the section of a real compile.  A changed rule table with a new stamp
+must miss and give the new findings.  The negative controls show that the
+stamp alone carries the table into the key of the cache, and that a key
+without the stamp gives a section whose stamp is not the stamp of the
+command, which utils/scripts/check-quarantine-ratchet.py refuses.
+
 A generated file of the build directory follows one rule in the two plugins:
 the contract rule and the opt-out regions apply to it, and the quarantine rule
 does not.  The test writes a source root with a build directory in its scratch
@@ -34,8 +43,8 @@ directory, and compiles a unit of that root with each plugin.
 
 The two plugins build at the same time.  Then the parts of the test run at
 the same time: the findings, the base files, the malformed regions, the
-modes, the contract rule, the generated files, the include rules and the
-readers of the table.  Each part writes its own files, and main prints the
+modes, the contract rule, the generated files, the include rules, the
+readers of the table and the section.  Each part writes its own files, and main prints the
 verdicts of the parts in that order.
 
 usage: check_plugin.py --cxx CXX --contract-source CONTRACT.cpp --source QUARANTINE.cpp --rules TABLE
@@ -50,6 +59,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -65,6 +75,7 @@ CONTRACT_PLUGIN = "crucible_contract"
 
 sys.path.insert(0, str(HERE.parents[2] / "scripts"))
 import layer_rules  # noqa: E402
+import quarantine_sections  # noqa: E402
 
 # (the macro of the plant, the planted file, the kind, a text in the entity)
 PLANTS = (
@@ -262,12 +273,18 @@ class Checker:
 
     def compile(self, fixture: str, arguments: dict[str, str],
                 stage: tuple[str, ...] = ("-S", "-o", os.devnull),
-                extra: tuple[str, ...] = (), plugin: str = PLUGIN) -> subprocess.CompletedProcess[str]:
-        """Compile one fixture with one plugin, the given plugin arguments, stage flags and extra flags."""
-        command = [self.cxx, "-std=c++26", "-I", str(HERE / "include"), *extra, f"-fplugin={self.work / plugin}.so"]
+                extra: tuple[str, ...] = (), plugin: str = PLUGIN, launcher: tuple[str, ...] = (),
+                env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+        """Compile one fixture with one plugin, the given plugin arguments, stage flags and extra flags.
+
+        LAUNCHER goes in front of the compiler, as a compiler cache does, and
+        ENV is the environment of the compile.
+        """
+        command = [*launcher, self.cxx, "-std=c++26", "-I", str(HERE / "include"), *extra,
+                   f"-fplugin={self.work / plugin}.so"]
         command += [f"-fplugin-arg-{plugin}-{key}={value}" for key, value in arguments.items()]
         command += ["-fdiagnostics-color=never", *stage, str(HERE / fixture)]
-        return subprocess.run(command, capture_output=True, text=True)
+        return subprocess.run(command, capture_output=True, text=True, env=env)
 
 
 class Section:
@@ -331,6 +348,7 @@ def run(checker: Checker, rules: Path) -> list[Section]:
         run_library_names,
         run_restrictions,
         run_table_readers,
+        run_section,
     ]
     sections = [Section(checker) for _ in parts]
     with ThreadPoolExecutor(max_workers=len(parts)) as pool:
@@ -381,7 +399,7 @@ def run_modes(section: Section, arguments: dict[str, str], rules: Path) -> None:
     preprocessed_reports = section.work / "preprocessed-reports"
     test_rules = {"rules": str(TEST_RULES)}
     noted, failed, opted, syntax, preprocessed, real, missing = section.compile_all([
-        ("violations.cpp", {"root": str(HERE), "mode": "report", **test_rules}),
+        ("violations.cpp", {"root": str(HERE), "mode": "report", **test_rules}, ("-fsyntax-only",)),
         ("violations.cpp", {"root": str(HERE), "mode": "error", **test_rules}),
         ("opt_out.cpp", {"root": str(HERE), "mode": "error", **test_rules}),
         ("violations.cpp", {**arguments, "out": str(syntax_reports)}, ("-fsyntax-only",)),
@@ -389,7 +407,7 @@ def run_modes(section: Section, arguments: dict[str, str], rules: Path) -> None:
         ("opt_out.cpp", {"root": str(rules.parents[2]), "rules": str(rules)}),
         ("violations.cpp", {"root": str(HERE), "mode": "report"}),
     ])
-    section.expect("report mode without out= gives notes and succeeds",
+    section.expect("report mode without out= and with no object gives notes and succeeds",
                    noted.returncode == 0 and "note: quarantine: raw_new_delete new" in noted.stderr,
                    noted.stderr[-2000:])
     section.expect("error mode makes a finding an error",
@@ -723,6 +741,116 @@ def run_table_readers(section: Section) -> None:
             section.expect(f"layer_rules.py reads {name}", False, str(failure))
         if is_read:
             section.expect(f"layer_rules.py reads {name}", True)
+
+
+# The stamps of the section part, and the planted row of its second table.
+SECTION_STAMP = "5ec7105ec7105ec7"
+SECTION_NEW_STAMP = "0afe0afe0afe0afe"
+SECTION_ADMIT_ROW = "admit std::swap | a planted row of the cache cases\n"
+SECTION_SWAP = re.compile(r"quarantine: std_entity violations\.cpp:44:\d+ std::swap")
+
+
+def section_of(path: Path) -> tuple[str, list[str]] | None:
+    """Return the stamp and the finding lines of the section of one object, or None when it has no section."""
+    data = quarantine_sections.read_section(path) if path.is_file() else None
+    if data is None:
+        return None
+    read = quarantine_sections.parse_section(data, str(path))
+    return read.stamp, [finding.text() for finding in read.findings]
+
+
+def ccache_hits(environment: dict[str, str]) -> int:
+    """Return the hits that the statistics of the cache of ENVIRONMENT count."""
+    printed = subprocess.run(["ccache", "--print-stats"], capture_output=True, text=True, env=environment).stdout
+    counts = dict(line.split("\t", 1) for line in printed.splitlines() if "\t" in line)
+    return sum(int(counts.get(name, "0")) for name in ("direct_cache_hit", "preprocessed_cache_hit"))
+
+
+def run_section(section: Section) -> None:
+    """Compile with -c, and judge the section of each object, also through ccache.
+
+    The compiles with no cache run at the same time.  The cases through ccache
+    make two chains, each with a cache of its own in the work directory and
+    the ignore_options of utils/tools/quarantine/Quarantine.cmake.  The two
+    chains run at the same time as the other compiles.
+    """
+    work = section.work / "section"
+    work.mkdir(exist_ok=True)
+    reports = work / "reports"
+    table = {"root": str(HERE), "mode": "report", "rules": str(TEST_RULES)}
+    stamped = {**table, "stamp": SECTION_STAMP}
+    swap_table = work / "admit-swap.txt"
+    swap_table.write_text(TEST_RULES.read_text(encoding="utf-8") + SECTION_ADMIT_ROW, encoding="utf-8")
+    swapped = {**table, "rules": str(swap_table), "stamp": SECTION_NEW_STAMP}
+    ignored = f"-fplugin=* -fplugin-arg-{PLUGIN}-root=* -fplugin-arg-{PLUGIN}-build=* -fplugin-arg-{PLUGIN}-rules=*"
+    launcher = ("ccache", f"ignore_options={ignored}")
+    blind = ("ccache", f"ignore_options={ignored} -fplugin-arg-{PLUGIN}-stamp=*")
+
+    def chain(name: str, steps: list[tuple[str, dict[str, str], tuple[str, ...]]]) -> list[tuple[int, object]]:
+        """Compile each step through ccache, in order, and return its hits and its exit status and section."""
+        (work / f"{name}.conf").write_text("", encoding="utf-8")
+        environment = {**os.environ, "CCACHE_DIR": str(work / name), "CCACHE_CONFIGPATH": str(work / f"{name}.conf")}
+        results: list[tuple[int, object]] = []
+        for output, arguments, used in steps:
+            before = ccache_hits(environment)
+            result = section.compile("violations.cpp", arguments, ("-c", "-o", str(work / f"{output}.o")),
+                                     launcher=used, env=environment)
+            results.append((ccache_hits(environment) - before, (result.returncode, section_of(work / f"{output}.o"))))
+        return results
+
+    has_ccache = shutil.which("ccache") is not None
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        plain = pool.submit(section.compile_all, [
+            ("violations.cpp", {**stamped, "out": str(reports)}, ("-c", "-o", str(work / "out.o"))),
+            ("violations.cpp", stamped, ("-c", "-o", str(work / "quiet.o"))),
+            ("opt_out.cpp", stamped, ("-c", "-o", str(work / "opted.o"))),
+            ("violations.cpp", stamped, ("-fsyntax-only", "-o", str(work / "syntax.o"))),
+            ("violations.cpp", swapped, ("-c", "-o", str(work / "real-swap.o"))),
+        ])
+        chains = [pool.submit(chain, "ccache", [("stored", stamped, launcher), ("hit", stamped, launcher),
+                                                ("new", swapped, launcher),
+                                                ("stale", {**swapped, "stamp": SECTION_STAMP}, launcher)]),
+                  pool.submit(chain, "ccache-blind", [("blind-stored", stamped, blind),
+                                                      ("blind", {**table, "stamp": "b1b1b1b1b1b1b1b1"}, blind)])
+                  ] if has_ccache else []
+        compiled, quiet, opted, syntax, real_swap = plain.result()
+        keyed_results, unkeyed_results = [future.result() for future in chains] if chains else ([], [])
+
+    found = section_of(work / "out.o")
+    report = [row for path in sorted(reports.glob("*.quarantine"))
+              for row in path.read_text(encoding="utf-8").splitlines() if row.startswith("quarantine: ")]
+    section.expect("the section of the object holds the stamp and the lines of the report file",
+                   compiled.returncode == 0 and found is not None and found[0] == SECTION_STAMP
+                   and found[1] == report and len(report) > 10, compiled.stderr[-2000:] + f"; {found}")
+    section.expect("a unit that writes an object gives no note, and its section holds the findings",
+                   quiet.returncode == 0 and "note: quarantine:" not in quiet.stderr
+                   and section_of(work / "quiet.o") == found, quiet.stderr[-2000:])
+    opted_found = section_of(work / "opted.o")
+    section.expect("the section holds an opted_out finding",
+                   opted.returncode == 0 and opted_found is not None
+                   and any(line.startswith("quarantine: opted_out opt_out.cpp:11:") for line in opted_found[1]),
+                   opted.stderr[-2000:])
+    section.expect("-fsyntax-only writes no object", syntax.returncode == 0 and not (work / "syntax.o").exists(),
+                   syntax.stderr[-2000:])
+    if not has_ccache:
+        section.lines.append("  skip the cases through ccache: no ccache on PATH")
+        return
+    (stored_hits, stored), (hit_hits, hit), (new_hits, new), (stale_hits, stale) = keyed_results
+    section.expect("a hit of the cache gives the section of a real compile",
+                   found is not None and stored_hits == 0 and hit_hits == 1 and stored == hit == (0, found),
+                   f"{stored_hits} {hit_hits}")
+    swap_found = section_of(work / "real-swap.o")
+    has_swap = [found is not None and any(SECTION_SWAP.fullmatch(line) for line in found[1]),
+                swap_found is not None and any(SECTION_SWAP.fullmatch(line) for line in swap_found[1])]
+    section.expect("a changed rule table with a new stamp misses, and gives the findings of a real compile",
+                   real_swap.returncode == 0 and has_swap == [True, False] and new_hits == 0
+                   and new == (0, swap_found), f"{has_swap} {new_hits}")
+    section.expect("negative control: a changed table with the old stamp hits, and gives the old findings",
+                   found is not None and stale_hits == 1 and stale == (0, found), f"{stale_hits} {stale}")
+    _, (blind_hits, blind_found) = unkeyed_results
+    section.expect("negative control: a key without the stamp gives a section with the stamp of another command",
+                   found is not None and blind_hits == 1 and blind_found == (0, found),
+                   f"{blind_hits} {blind_found}")
 
 
 def main(argv: list[str]) -> int:

@@ -99,6 +99,7 @@ utils/scripts/mintmodel.py | tsast |
 utils/scripts/ninja_files.py | text | build.ninja and the ninja log of a build directory
 utils/scripts/pgo-bootstrap.sh | cmake-api,git |
 utils/scripts/preprocessed.py | kit |
+utils/scripts/quarantine_sections.py | text | the section headers, the section names and the section .crucible.quarantine of an ELF object
 utils/scripts/refresh-derived.sh | git |
 utils/scripts/repo_root.py | none |
 utils/scripts/repo_root.sh | none |

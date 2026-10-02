@@ -76,12 +76,25 @@
 //     root=PATH      the source root (necessary)
 //     build=PATH     a build directory under the root, whose files are generated
 //     rules=PATH     the rule table (necessary)
-//     mode=report    each finding is a note, or a line of the report file.
-//                    A finding in a file whose enforce mode is error, and that
+//     mode=report    each finding is a line of the section of the object, a
+//                    line of the report file of out=, or else a note.  A
+//                    finding in a file whose enforce mode is error, and that
 //                    no region opts out, is an error
 //     mode=error     each finding that no region opts out is an error
-//     out=DIR        write the report of the unit to a file in DIR, not as notes
-//     stamp=TEXT     ignored; a new value makes the build system compile again
+//     out=DIR        also write the report of the unit to a file in DIR
+//     stamp=TEXT     the head line of the section holds it; a new value makes
+//                    the build system compile again
+//
+// THE SECTION
+//     A unit that writes an object puts the report into the section
+//     .crucible.quarantine of the object, in each mode, with the head line
+//     "# crucible-quarantine 1 stamp=TEXT" and then one line for each finding.
+//     So a compiler cache stores the report with the object.  The flag "e"
+//     (SHF_EXCLUDE) keeps the section out of each executable and each shared
+//     library that the linker writes.  utils/scripts/quarantine_sections.py
+//     reads the section.  The plugin writes the directives at
+//     PLUGIN_FINISH_UNIT, which runs before the end of the assembler output.
+//     A unit that writes no object (-fsyntax-only, -E) has no section.
 //
 // The plugin cannot see what the front end keeps as no tree, or as a tree with
 // no source location: a use in an unevaluated operand, a dependent member of a
@@ -107,6 +120,7 @@
 #include <unistd.h>
 
 #include "plugin_core.h"
+#include "output.h"
 #include "tree-iterator.h"
 
 int plugin_is_GPL_compatible;
@@ -198,6 +212,7 @@ using IncludeCallback = void (*)(cpp_reader*, location_t, const unsigned char*, 
 // regions.
 struct State {
     std::string out_dir;
+    std::string stamp;
     bool is_error_mode = false;
 
     // The admit row of each name entry, and of each header entry by its name.
@@ -1558,6 +1573,38 @@ void write_report_file(const std::vector<std::string>& lines) {
     }
 }
 
+// True while the assembler output of an object is open: at PLUGIN_FINISH_UNIT
+// of a unit that is not -fsyntax-only.  At PLUGIN_FINISH the output is closed.
+bool writes_section() { return asm_out_file != nullptr && !flag_syntax_only; }
+
+// Writes the report into the section of the object (THE SECTION above).  An
+// .ascii string escapes '"', '\' and each byte that is not printable ASCII.
+void write_section(const std::vector<std::string>& lines) {
+    std::string text = "\t.pushsection\t.crucible.quarantine,\"e\",%progbits\n";
+    auto append_line = [&text](const std::string& line) {
+        text += "\t.ascii\t\"";
+        for (unsigned char byte : line) {
+            if (byte == '"' || byte == '\\') {
+                text += '\\';
+                text += static_cast<char>(byte);
+            } else if (byte < 0x20 || byte >= 0x7f) {
+                char escaped[8];
+                snprintf(escaped, sizeof escaped, "\\%03o", static_cast<unsigned>(byte));
+                text += escaped;
+            } else {
+                text += static_cast<char>(byte);
+            }
+        }
+        text += "\\n\"\n";
+    };
+    append_line("# crucible-quarantine 1 stamp=" + state.stamp);
+    for (const std::string& line : lines) {
+        append_line(line);
+    }
+    text += "\t.popsection\n";
+    fwrite(text.data(), 1, text.size(), asm_out_file);
+}
+
 void report() {
     if (core.was_reported) {
         return;
@@ -1566,6 +1613,7 @@ void report() {
     finish_pending_include(nullptr);
     report_open_regions();
     report_unclassified();
+    bool has_section = writes_section();
     // An admit row with `unless MACRO` refuses each unit that defines MACRO.
     for (const AdmitRow& admit : core.table.admits) {
         const std::string& macro = admit.unless_macro;
@@ -1598,9 +1646,12 @@ void report() {
                      "quarantine: %s %s; use a type or an entity of fixy or foundation, or put the code in a "
                      "%<#pragma crucible %s(\"reason\")%> region",
                      kind.c_str(), entity.c_str(), kBeginPragma);
-        } else if (!is_error && state.out_dir.empty()) {
+        } else if (!is_error && state.out_dir.empty() && !has_section) {
             inform(finding.spelling, "quarantine: %s %s", kind.c_str(), entity.c_str());
         }
+    }
+    if (has_section) {
+        write_section(lines);
     }
     if (!state.out_dir.empty()) {
         write_report_file(lines);
@@ -1817,7 +1868,9 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
                 return 1;
             }
             state.is_error_mode = value == "error";
-        } else if (key != "stamp") {
+        } else if (key == "stamp") {
+            state.stamp = value;
+        } else {
             error("quarantine: unknown argument %qs; the arguments are root, build, rules, mode, out and stamp",
                   key.c_str());
             return 1;

@@ -18,11 +18,14 @@
 #           writes no file, so the compiler launcher stays: a cache hit gives
 #           an object that the same source and the same plugin made, and that
 #           compile passed the rule.
-#   REPORT  Each compile loads the quarantine plugin, and each translation
-#           unit writes its findings to one file in
-#           ${CMAKE_BINARY_DIR}/quarantine/report/.  A finding never stops the
-#           build.  The compiler launcher is not used, because a cache hit
-#           skips the compile and its report.
+#   REPORT  Each compile loads the quarantine plugin, and each object holds
+#           the findings of its unit in the section .crucible.quarantine
+#           (the head comment of quarantine.cpp, THE SECTION).  A finding in
+#           a path with the enforce mode report does not stop the build.  The
+#           compiler launcher stays: a cache hit gives an object with the
+#           section of the same source, plugin and rule table, because the
+#           stamp holds the plugin and the rule table.
+#           utils/scripts/quarantine_sections.py reads the section.
 #   ERROR   Each compile loads the quarantine plugin.  Each finding that no
 #           opt-out region covers is a compile error.
 #
@@ -183,22 +186,12 @@ string(SHA256 _crucible_quarantine_stamp "${_crucible_quarantine_stamp_input}")
 string(SUBSTRING "${_crucible_quarantine_stamp}" 0 16 _crucible_quarantine_stamp)
 list(APPEND _crucible_quarantine_flags "${_crucible_quarantine_argument}-stamp=${_crucible_quarantine_stamp}")
 
-if(CRUCIBLE_QUARANTINE STREQUAL "REPORT")
-  set(CRUCIBLE_QUARANTINE_REPORT_DIR "${_crucible_quarantine_out}/report")
-  file(MAKE_DIRECTORY "${CRUCIBLE_QUARANTINE_REPORT_DIR}")
-  list(APPEND _crucible_quarantine_flags "${_crucible_quarantine_argument}-out=${CRUCIBLE_QUARANTINE_REPORT_DIR}")
-  if(CMAKE_CXX_COMPILER_LAUNCHER)
-    message(STATUS "CRUCIBLE_QUARANTINE=REPORT: the compiler launcher (${CMAKE_CXX_COMPILER_LAUNCHER}) is not used")
-  endif()
-  set(CMAKE_CXX_COMPILER_LAUNCHER "")
-else()
-  crucible_launcher_is_ccache("${CMAKE_CXX_COMPILER_LAUNCHER}" _crucible_quarantine_launcher_is_ccache)
-  if(_crucible_quarantine_launcher_is_ccache)
-    # ccache hashes the plugin path and the paths of the plugin arguments as
-    # text, and each work tree has its own.  The stamp stays in the hash.
-    list(APPEND CMAKE_CXX_COMPILER_LAUNCHER
-      "ignore_options=-fplugin=* ${_crucible_quarantine_argument}-root=* ${_crucible_quarantine_argument}-build=* ${_crucible_quarantine_argument}-rules=*")
-  endif()
+crucible_launcher_is_ccache("${CMAKE_CXX_COMPILER_LAUNCHER}" _crucible_quarantine_launcher_is_ccache)
+if(_crucible_quarantine_launcher_is_ccache)
+  # ccache hashes the plugin path and the paths of the plugin arguments as
+  # text, and each work tree has its own.  The stamp stays in the hash.
+  list(APPEND CMAKE_CXX_COMPILER_LAUNCHER
+    "ignore_options=-fplugin=* ${_crucible_quarantine_argument}-root=* ${_crucible_quarantine_argument}-build=* ${_crucible_quarantine_argument}-rules=*")
 endif()
 foreach(_crucible_quarantine_flag IN LISTS _crucible_quarantine_flags)
   add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:${_crucible_quarantine_flag}>")
