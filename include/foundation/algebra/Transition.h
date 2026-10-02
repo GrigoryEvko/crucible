@@ -235,11 +235,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <meta>
+#include <new>
 #include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
-#include <vector>
+#include <vector>  // also std::allocator, which <memory> declares too, and <memory> is a heavy header
 
 namespace foundation::algebra::transition {
 
@@ -345,9 +346,128 @@ struct static_run {
 };
 
 template <class T>
-[[nodiscard]] consteval static_run<T> to_static_run(const std::vector<T>& values) {
+[[nodiscard]] consteval static_run<T> to_static_run(std::span<const T> values) {
     const std::span<const T> stored = std::define_static_array(values);
     return static_run<T>{stored.data(), stored.size()};
+}
+
+namespace detail {
+
+// Storage for `count` elements in a constant evaluation.  An element whose
+// default constructor does nothing is alive at once, because an array new
+// of such a type initializes nothing and costs almost nothing.  Each
+// other element needs a constructor call before its first read.
+// release_storage_ ends the storage, and not the elements.
+template <class T>
+[[nodiscard]] consteval T* acquire_storage_(std::size_t count) {
+    if constexpr (std::is_trivially_default_constructible_v<T>) {
+        return new T[count];
+    } else {
+        return std::allocator<T>{}.allocate(count);
+    }
+}
+
+template <class T>
+constexpr void release_storage_(T* items, std::size_t count) {
+    if (items == nullptr) return;
+    if constexpr (std::is_trivially_default_constructible_v<T>) {
+        delete[] items;
+    } else {
+        std::allocator<T>{}.deallocate(items, count);
+    }
+}
+
+}  // namespace detail
+
+// A stack for a constant evaluation, whose storage never becomes smaller.
+// `items` points to `capacity` elements of storage.  The first `top`
+// elements are the stack, and the first `made` elements are alive.  A pop
+// lowers `top` and keeps the storage.
+//
+// The costs of this GCC 16 build set the form.  In a constant evaluation,
+// one push_back with one pop_back of a vector costs about 455,000
+// instructions, a read through operator[] about 30,000, and a read through
+// a pointer about 10,000.  A vector of N elements also costs N element
+// initializations when it is made, about 90,000 instructions for each
+// std::size_t and about 300,000 for each graph_node below.  So a loop over
+// a stack changes no vector.  A stack starts the life of an element only
+// once, when it first reaches the element, and only when the default
+// constructor of the type does something.  The storage becomes two times
+// larger when it is full, so the count of its changes is logarithmic in
+// the highest top.
+//
+// A copy or a move would keep `items` on the storage of the first stack,
+// so a stack has neither.  The stack ends its storage and not its
+// elements, so an element must be trivially destructible.
+template <class T>
+struct stack {
+    static_assert(std::is_trivially_destructible_v<T>, "a stack ends its storage and not its elements");
+
+    T* items = nullptr;
+    std::size_t top = 0;
+    std::size_t made = 0;
+    std::size_t capacity = 0;
+
+    constexpr stack() = default;
+    stack(const stack&) = delete("items points into the storage of this stack");
+    stack& operator=(const stack&) = delete("items points into the storage of this stack");
+    constexpr ~stack() { detail::release_storage_(items, capacity); }
+};
+
+namespace detail {
+
+// Gives the stack storage for `count` more elements, and keeps the
+// elements under the top.  The elements above the top end.
+template <class T>
+consteval void grow(stack<T>& pile, std::size_t count) {
+    if (pile.top + count <= pile.capacity) return;
+    const std::size_t grown_capacity = 2 * (pile.top + count) + 14;
+    T* const grown = acquire_storage_<T>(grown_capacity);
+    if constexpr (std::is_trivially_default_constructible_v<T>) {
+        for (std::size_t index = 0; index < pile.top; ++index)
+            grown[index] = pile.items[index];
+        pile.made = grown_capacity;
+    } else {
+        for (std::size_t index = 0; index < pile.top; ++index)
+            ::new (static_cast<void*>(grown + index)) T(pile.items[index]);
+        pile.made = pile.top;
+    }
+    release_storage_(pile.items, pile.capacity);
+    pile.items = grown;
+    pile.capacity = grown_capacity;
+}
+
+}  // namespace detail
+
+// Gives the stack space for `count` more elements, each alive, so the
+// caller can write them through `items`.  An element whose default
+// constructor does nothing has no value until the caller writes it.  A
+// pointer or a reference into the stack is not valid after this call.
+template <class T>
+consteval void make_room(stack<T>& pile, std::size_t count) {
+    detail::grow(pile, count);
+    for (; pile.made < pile.top + count; ++pile.made)
+        ::new (static_cast<void*>(pile.items + pile.made)) T();
+}
+
+// `value` must not be an element of the stack, because the stack can move
+// its elements first.
+template <class T>
+consteval void push(stack<T>& pile, const T& value) {
+    detail::grow(pile, 1);
+    if (pile.top < pile.made) {
+        pile.items[pile.top] = value;
+    } else {
+        ::new (static_cast<void*>(pile.items + pile.top)) T(value);
+        pile.made = pile.top + 1;
+    }
+    ++pile.top;
+}
+
+// The live elements of a stack, in static storage.
+template <class T>
+[[nodiscard]] consteval static_run<T> to_static_run(const stack<T>& pile) {
+    return to_static_run(std::span<const T>{pile.items, pile.top});
 }
 
 // ── The registry ──────────────────────────────────────────────────────
@@ -732,48 +852,51 @@ namespace detail {
     const bool has_arguments = std::meta::has_template_arguments(result.type);
     std::vector<std::meta::info> arguments;
     if (has_arguments) arguments = std::meta::template_arguments_of(result.type);
+    const std::meta::info* const argument = arguments.data();
+    const std::size_t count = arguments.size();
     switch (result.entry.kind) {
         case shape_kind::terminal:
         case shape_kind::back:
             result.is_malformed = has_arguments;
             break;
         case shape_kind::step:
-            result.is_malformed =
-                arguments.size() != 2 || !std::meta::is_type(arguments[0]) || !std::meta::is_type(arguments[1]);
+            result.is_malformed = count != 2 || !std::meta::is_type(argument[0]) || !std::meta::is_type(argument[1]);
             if (!result.is_malformed) {
-                result.payload = std::meta::dealias(arguments[0]);
-                result.next = std::meta::dealias(arguments[1]);
+                result.payload = std::meta::dealias(argument[0]);
+                result.next = std::meta::dealias(argument[1]);
             }
             break;
         case shape_kind::binder:
         case shape_kind::marker:
-            result.is_malformed = arguments.size() != 1 || !std::meta::is_type(arguments[0]);
-            if (!result.is_malformed) result.next = std::meta::dealias(arguments[0]);
+            result.is_malformed = count != 1 || !std::meta::is_type(argument[0]);
+            if (!result.is_malformed) result.next = std::meta::dealias(argument[0]);
             break;
         case shape_kind::wrapper:
-            result.is_malformed =
-                arguments.size() != 2 || std::meta::is_type(arguments[0]) || !std::meta::is_type(arguments[1]);
+            result.is_malformed = count != 2 || std::meta::is_type(argument[0]) || !std::meta::is_type(argument[1]);
             if (!result.is_malformed) {
-                result.value = arguments[0];
-                result.next = std::meta::dealias(arguments[1]);
+                result.value = argument[0];
+                result.next = std::meta::dealias(argument[1]);
             }
             break;
         case shape_kind::choice: {
             std::size_t first = 0;
-            if (!arguments.empty() && result.entry.annotation != std::meta::info{} && std::meta::is_type(arguments[0])
-                && shape_of(arguments[0]) == result.entry.annotation) {
-                result.annotation = std::meta::dealias(arguments[0]);
+            if (count != 0 && result.entry.annotation != std::meta::info{} && std::meta::is_type(argument[0])
+                && shape_of(argument[0]) == result.entry.annotation) {
+                result.annotation = std::meta::dealias(argument[0]);
                 first = 1;
             }
-            std::vector<std::meta::info> branches;
-            for (std::size_t index = first; index < arguments.size(); ++index) {
-                if (!std::meta::is_type(arguments[index])) {
+            stack<std::meta::info> branches{};
+            make_room(branches, count - first);
+            std::meta::info* const branch = branches.items;
+            std::size_t made = 0;
+            for (std::size_t index = first; index < count; ++index) {
+                if (!std::meta::is_type(argument[index])) {
                     result.is_malformed = true;
                     break;
                 }
-                branches.push_back(std::meta::dealias(arguments[index]));
+                branch[made++] = std::meta::dealias(argument[index]);
             }
-            result.branches = to_static_run(branches);
+            result.branches = to_static_run(std::span<const std::meta::info>{branch, made});
             break;
         }
         default:
@@ -1169,13 +1292,15 @@ namespace detail {
 // breaks, or none.  Complexity: O(b²) for b branches, from the pairwise
 // uniqueness rule.
 [[nodiscard]] consteval choice_fault fault_of_choice(std::meta::info registry, const node& choice) {
-    std::vector<branch_head> heads;
-    for (const std::meta::info branch : choice.branches)
-        heads.push_back(detail::head_of_branch(registry, branch));
+    const std::size_t count = choice.branches.size();
+    stack<branch_head> head_storage{};
+    for (std::size_t place = 0; place < count; ++place)
+        push(head_storage, detail::head_of_branch(registry, choice.branches.data[place]));
+    const branch_head* const heads = head_storage.items;
     bool has_label = false;
     bool non_label_seen = false;
-    for (const branch_head& head : heads) {
-        if (head.is_label) {
+    for (std::size_t place = 0; place < count; ++place) {
+        if (heads[place].is_label) {
             has_label = true;
             if (non_label_seen) return choice_fault::label_after_non_label;
         } else {
@@ -1186,17 +1311,19 @@ namespace detail {
     if (!has_label) return choice_fault::no_label_branch;
     std::size_t keyed = 0;
     std::size_t labels = 0;
-    for (const branch_head& head : heads) {
-        if (!head.is_label) continue;
+    for (std::size_t place = 0; place < count; ++place) {
+        if (!heads[place].is_label) continue;
         ++labels;
-        if (head.label_key != std::meta::info{}) ++keyed;
+        if (heads[place].label_key != std::meta::info{}) ++keyed;
     }
     if (keyed != 0 && keyed != labels) return choice_fault::mixed_label_keys;
-    for (const branch_head& head : heads) {
-        if (keyed != 0 && head.is_label && !head.is_at_root) return choice_fault::keyed_label_below_root;
+    for (std::size_t place = 0; place < count; ++place) {
+        if (keyed != 0 && heads[place].is_label && !heads[place].is_at_root) {
+            return choice_fault::keyed_label_below_root;
+        }
     }
-    for (std::size_t first = 0; first < heads.size(); ++first) {
-        for (std::size_t second = first + 1; second < heads.size(); ++second) {
+    for (std::size_t first = 0; first < count; ++first) {
+        for (std::size_t second = first + 1; second < count; ++second) {
             const branch_head& left = heads[first];
             const branch_head& right = heads[second];
             if (!left.is_label && !right.is_label && left.payload == right.payload) {
@@ -1988,28 +2115,39 @@ struct built_node {
     std::size_t index = npos;
 };
 
-// `built` lists each node that the build made, so an occurrence of a
-// subtree that the graph holds reads its node.
-struct type_graph {
-    std::vector<graph_node> nodes{};
-    std::vector<std::size_t> children{};
-    std::vector<std::size_t> sorted_labels{};
-    std::meta::info unregistered{};
-    std::vector<built_node> built{};
-};
-
 namespace detail {
 
-consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, std::meta::info type,
-                                   std::vector<std::size_t>& binders, bool is_branch);
+// The state of one build.  `built` lists each node that the build made,
+// so an occurrence of a subtree that the graph holds reads its node.
+// `binders` holds the binders above the node that the build is at, the
+// nearest one on top.  `scratch` holds the branches of each choice that
+// the build is in, one region for each choice.
+struct type_graph {
+    stack<graph_node> nodes{};
+    stack<std::size_t> children{};
+    stack<std::size_t> sorted_labels{};
+    std::meta::info unregistered{};
+    stack<built_node> built{};
+    stack<std::size_t> binders{};
+    stack<std::size_t> scratch{};
+};
+
+consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, std::meta::info type, bool is_branch);
+
+// The nearest binder above the node that the build is at, or npos.
+[[nodiscard]] consteval std::size_t nearest_binder(const type_graph& graph) {
+    return graph.binders.top == 0 ? npos : graph.binders.items[graph.binders.top - 1];
+}
 
 // The node that the graph holds for this identity, or npos.  Complexity:
 // linear in the nodes of the graph.  A protocol has few distinct
 // subtrees, and each compare is one compare of a reflection.
 [[nodiscard]] consteval std::size_t find_built(const type_graph& graph, std::meta::info type, bool is_branch,
                                                std::size_t scope) {
-    for (const built_node& made : graph.built) {
-        if (made.type == type && made.is_branch == is_branch && made.scope == scope) return made.index;
+    const built_node* const made = graph.built.items;
+    for (std::size_t place = 0; place < graph.built.top; ++place) {
+        const built_node& entry = made[place];
+        if (entry.type == type && entry.is_branch == is_branch && entry.scope == scope) return entry.index;
     }
     return npos;
 }
@@ -2037,121 +2175,136 @@ consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, 
 
 // A keyed step outside a choice, as the choice of one branch that it
 // stands for.  The branch is the step itself, read as a branch.
-consteval std::size_t add_keyed_step(std::meta::info registry, type_graph& graph, const node& step,
-                                     std::vector<std::size_t>& binders) {
+consteval std::size_t add_keyed_step(std::meta::info registry, type_graph& graph, const node& step) {
     const combinator choice = lookup_combinator(registry, step.entry.keyed_choice).entry;
-    const std::size_t here = graph.nodes.size();
-    graph.nodes.push_back(graph_node{});
-    graph.nodes[here].type = step.type;
-    graph.nodes[here].entry = choice;
-    graph.nodes[here].annotation = keyed_step_note(registry, graph, step, choice);
+    const std::size_t here = graph.nodes.top;
+    push(graph.nodes, graph_node{});
+    graph_node made{};
+    made.type = step.type;
+    made.entry = choice;
+    made.annotation = keyed_step_note(registry, graph, step, choice);
     const branch_head head = head_of_branch(registry, step.type);
-    graph.nodes[here].is_label = head.is_label;
-    graph.nodes[here].head_payload = head.payload;
-    graph.nodes[here].label_key = head.label_key;
-    graph.nodes[here].label_word = head.label_word;
-    const std::size_t branch = add_to_graph(registry, graph, step.type, binders, true);
-    graph.nodes[here].first_child = graph.children.size();
-    graph.nodes[here].child_count = 1;
-    graph.children.push_back(branch);
-    graph.nodes[here].is_keyed = true;
-    graph.nodes[here].first_label = graph.sorted_labels.size();
-    graph.nodes[here].label_count = 1;
-    graph.sorted_labels.push_back(branch);
+    made.is_label = head.is_label;
+    made.head_payload = head.payload;
+    made.label_key = head.label_key;
+    made.label_word = head.label_word;
+    const std::size_t branch = add_to_graph(registry, graph, step.type, true);
+    made.first_child = graph.children.top;
+    made.child_count = 1;
+    push(graph.children, branch);
+    made.is_keyed = true;
+    made.first_label = graph.sorted_labels.top;
+    made.label_count = 1;
+    push(graph.sorted_labels, branch);
+    graph.nodes.items[here] = made;
     return here;
+}
+
+// The children of a choice, from region [base, base + count) of the
+// scratch stack.  A keyed choice also lists its label branches in the
+// order of their label words, by an insertion sort, because a choice has
+// few branches.  Complexity: quadratic in the label branches of the choice.
+consteval void add_choice_children(type_graph& graph, graph_node& made, std::size_t base, std::size_t count,
+                                   bool is_keyed) {
+    made.first_child = graph.children.top;
+    made.child_count = count;
+    make_room(graph.children, count);
+    make_room(graph.scratch, count);
+    std::size_t* const scratch = graph.scratch.items;
+    const graph_node* const nodes = graph.nodes.items;
+    for (std::size_t k = 0; k < count; ++k)
+        graph.children.items[graph.children.top + k] = scratch[base + k];
+    graph.children.top += count;
+    if (!is_keyed) return;
+    const std::size_t first = base + count;
+    std::size_t end = first;
+    for (std::size_t k = 0; k < count; ++k) {
+        if (nodes[scratch[base + k]].is_label) scratch[end++] = scratch[base + k];
+    }
+    for (std::size_t outer = first + 1; outer < end; ++outer) {
+        for (std::size_t inner = outer; inner > first; --inner) {
+            if (nodes[scratch[inner - 1]].label_word <= nodes[scratch[inner]].label_word) break;
+            const std::size_t moved = scratch[inner - 1];
+            scratch[inner - 1] = scratch[inner];
+            scratch[inner] = moved;
+        }
+    }
+    made.is_keyed = true;
+    made.first_label = graph.sorted_labels.top;
+    made.label_count = end - first;
+    make_room(graph.sorted_labels, end - first);
+    for (std::size_t place = first; place < end; ++place)
+        graph.sorted_labels.items[graph.sorted_labels.top++] = scratch[place];
 }
 
 // `is_branch` is true for a branch of a choice, where a keyed step is the
 // branch itself and not a choice of its own.  An occurrence whose identity
 // the graph holds reads that node, and the build does not enter it again.
-consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, std::meta::info type,
-                                   std::vector<std::size_t>& binders, bool is_branch) {
+// The node takes its place before its children, and the build writes it
+// there when its children are made.
+consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, std::meta::info type, bool is_branch) {
     const node view = decompose(registry, type);
-    const std::size_t scope = binders.empty() || !has_open_back(registry, view.type) ? npos : binders.back();
+    const std::size_t scope = graph.binders.top == 0 || !has_open_back(registry, view.type) ? npos
+                                                                                          : nearest_binder(graph);
     const std::size_t shared = find_built(graph, view.type, is_branch, scope);
     if (shared != npos) return shared;
-    graph.built.push_back(built_node{view.type, is_branch, scope, graph.nodes.size()});
+    push(graph.built, built_node{view.type, is_branch, scope, graph.nodes.top});
     if (!is_branch && view.is_registered && view.entry.keyed_choice != std::meta::info{}
         && is_keyed_step(registry, view)) {
-        return add_keyed_step(registry, graph, view, binders);
+        return add_keyed_step(registry, graph, view);
     }
-    const std::size_t here = graph.nodes.size();
-    graph.nodes.push_back(graph_node{});
+    const std::size_t here = graph.nodes.top;
+    push(graph.nodes, graph_node{});
+    graph_node made{};
+    made.type = view.type;
     if (!view.is_registered) {
         if (graph.unregistered == std::meta::info{}) graph.unregistered = view.type;
-        graph.nodes[here].type = view.type;
+        graph.nodes.items[here] = made;
         return here;
     }
-    graph.nodes[here].type = view.type;
-    graph.nodes[here].entry = view.entry;
-    graph.nodes[here].payload = view.payload;
-    graph.nodes[here].value = view.value;
-    graph.nodes[here].annotation = view.annotation;
+    made.entry = view.entry;
+    made.payload = view.payload;
+    made.value = view.value;
+    made.annotation = view.annotation;
     const branch_head head = head_of_branch(registry, view.type);
-    graph.nodes[here].is_label = head.is_label;
-    graph.nodes[here].head_payload = head.payload;
-    graph.nodes[here].label_key = head.label_key;
-    graph.nodes[here].label_word = head.label_word;
+    made.is_label = head.is_label;
+    made.head_payload = head.payload;
+    made.label_key = head.label_key;
+    made.label_word = head.label_word;
     if (view.entry.kind == shape_kind::step) {
         const payload_lookup rule = lookup_payload_rule(registry, view.payload);
-        graph.nodes[here].has_restricted_payload = rule.is_found && (!rule.entry.is_label || !rule.entry.is_sendable);
+        made.has_restricted_payload = rule.is_found && (!rule.entry.is_label || !rule.entry.is_sendable);
     }
     switch (view.entry.kind) {
         case shape_kind::terminal:
             break;
         case shape_kind::back:
-            graph.nodes[here].next = binders.empty() ? npos : binders.back();
+            made.next = nearest_binder(graph);
             break;
         case shape_kind::step:
         case shape_kind::wrapper:
-        case shape_kind::marker: {
-            const std::size_t below = add_to_graph(registry, graph, view.next, binders, false);
-            graph.nodes[here].next = below;
+        case shape_kind::marker:
+            made.next = add_to_graph(registry, graph, view.next, false);
             break;
-        }
-        case shape_kind::binder: {
-            binders.push_back(here);
-            const std::size_t below = add_to_graph(registry, graph, view.next, binders, false);
-            binders.pop_back();
-            graph.nodes[here].next = below;
+        case shape_kind::binder:
+            push(graph.binders, here);
+            made.next = add_to_graph(registry, graph, view.next, false);
+            --graph.binders.top;
             break;
-        }
         case shape_kind::choice: {
-            std::vector<std::size_t> own;
+            const std::size_t base = graph.scratch.top;
             for (const std::meta::info branch : view.branches) {
-                own.push_back(add_to_graph(registry, graph, branch, binders, true));
+                const std::size_t child = add_to_graph(registry, graph, branch, true);
+                push(graph.scratch, child);
             }
-            graph.nodes[here].first_child = graph.children.size();
-            graph.nodes[here].child_count = own.size();
-            for (const std::size_t index : own)
-                graph.children.push_back(index);
-            if (is_keyed_choice(registry, view)) {
-                // The label branches in the order of their label words, by
-                // an insertion sort, because a choice has few branches.
-                // Complexity: quadratic in the label branches of the choice.
-                std::vector<std::size_t> labels;
-                for (const std::size_t index : own) {
-                    if (graph.nodes[index].is_label) labels.push_back(index);
-                }
-                for (std::size_t outer = 1; outer < labels.size(); ++outer) {
-                    for (std::size_t inner = outer; inner > 0; --inner) {
-                        if (graph.nodes[labels[inner - 1]].label_word <= graph.nodes[labels[inner]].label_word) break;
-                        const std::size_t moved = labels[inner - 1];
-                        labels[inner - 1] = labels[inner];
-                        labels[inner] = moved;
-                    }
-                }
-                graph.nodes[here].is_keyed = true;
-                graph.nodes[here].first_label = graph.sorted_labels.size();
-                graph.nodes[here].label_count = labels.size();
-                for (const std::size_t index : labels)
-                    graph.sorted_labels.push_back(index);
-            }
+            add_choice_children(graph, made, base, graph.scratch.top - base, is_keyed_choice(registry, view));
+            graph.scratch.top = base;
             break;
         }
         default:
             break;
     }
+    graph.nodes.items[here] = made;
     return here;
 }
 
@@ -2163,10 +2316,12 @@ consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, 
 // node that an earlier parent made.  Complexity: O(N²) at worst for N
 // nodes.
 consteval void mark_can_end(type_graph& graph) {
+    graph_node* const nodes = graph.nodes.items;
+    const std::size_t* const children = graph.children.items;
     for (bool is_changed = true; is_changed;) {
         is_changed = false;
-        for (std::size_t index = graph.nodes.size(); index-- > 0;) {
-            graph_node& current = graph.nodes[index];
+        for (std::size_t index = graph.nodes.top; index-- > 0;) {
+            graph_node& current = nodes[index];
             if (current.can_end) continue;
             bool reaches = false;
             switch (current.entry.kind) {
@@ -2178,11 +2333,11 @@ consteval void mark_can_end(type_graph& graph) {
                 case shape_kind::binder:
                 case shape_kind::back:
                 case shape_kind::marker:
-                    reaches = current.next != npos && graph.nodes[current.next].can_end;
+                    reaches = current.next != npos && nodes[current.next].can_end;
                     break;
                 case shape_kind::choice:
                     for (std::size_t k = 0; k < current.child_count && !reaches; ++k) {
-                        reaches = graph.nodes[graph.children[current.first_child + k]].can_end;
+                        reaches = nodes[children[current.first_child + k]].can_end;
                     }
                     break;
                 default:
@@ -2198,14 +2353,6 @@ consteval void mark_can_end(type_graph& graph) {
 
 }  // namespace detail
 
-[[nodiscard]] consteval type_graph build_graph(std::meta::info registry, std::meta::info type) {
-    type_graph graph{};
-    std::vector<std::size_t> binders;
-    detail::add_to_graph(registry, graph, type, binders, false);
-    detail::mark_can_end(graph);
-    return graph;
-}
-
 // A graph in static storage.  The graph of one protocol is built once
 // per translation unit, and each relation that reads it shares it.
 struct graph_view {
@@ -2215,13 +2362,18 @@ struct graph_view {
     std::meta::info unregistered{};
 };
 
-[[nodiscard]] consteval graph_view freeze(const type_graph& graph) {
+// The build keeps its runs on stacks, which cannot leave the function, so
+// it gives the graph in static storage.
+[[nodiscard]] consteval graph_view build_graph(std::meta::info registry, std::meta::info type) {
+    detail::type_graph graph{};
+    detail::add_to_graph(registry, graph, type, false);
+    detail::mark_can_end(graph);
     return graph_view{to_static_run(graph.nodes), to_static_run(graph.children), to_static_run(graph.sorted_labels),
                       graph.unregistered};
 }
 
 template <std::meta::info Registry, std::meta::info Type>
-inline constexpr graph_view graph_v = freeze(build_graph(Registry, Type));
+inline constexpr graph_view graph_v = build_graph(Registry, Type);
 
 [[nodiscard]] consteval graph_view graph_of(std::meta::info registry, std::meta::info type) {
     return std::meta::extract<graph_view>(std::meta::substitute(
@@ -2232,11 +2384,12 @@ inline constexpr graph_view graph_v = freeze(build_graph(Registry, Type));
 // its body and follows each back node to its binder.  A spine that does
 // not stop has an unguarded back node, and the answer is npos.
 [[nodiscard]] consteval std::size_t settle(const graph_view& graph, std::size_t index) {
-    for (std::size_t budget = graph.nodes.size() + 1; budget > 0; --budget) {
+    const graph_node* const nodes = graph.nodes.data;
+    for (std::size_t budget = graph.nodes.length + 1; budget > 0; --budget) {
         if (index == npos) return npos;
-        const shape_kind kind = graph.nodes[index].entry.kind;
+        const shape_kind kind = nodes[index].entry.kind;
         if (kind != shape_kind::binder && kind != shape_kind::back) return index;
-        index = graph.nodes[index].next;
+        index = nodes[index].next;
     }
     return npos;
 }
@@ -2390,42 +2543,59 @@ namespace detail {
     return false;
 }
 
-// The branches of one choice node, as graph indices: the label branches
-// in their order, and the branches that are no label.
-struct split_branches {
-    std::vector<std::size_t> labels{};
-    std::vector<std::size_t> non_labels{};
+// An edge of the product, from one pair key to another.
+struct product_edge {
+    std::size_t from = npos;
+    std::size_t to = npos;
 };
 
-[[nodiscard]] consteval split_branches split_of(const graph_view& graph, const graph_node& choice) {
-    split_branches result{};
+// The mark bit of one pair key in an array of 64-bit words.
+[[nodiscard]] consteval bool is_marked(const std::uint64_t* marks, std::size_t key) {
+    return ((marks[key / 64] >> (key % 64)) & std::uint64_t{1}) != 0;
+}
+
+consteval void set_mark(std::uint64_t* marks, std::size_t key, bool is_set) {
+    const std::uint64_t bit = std::uint64_t{1} << (key % 64);
+    marks[key / 64] = is_set ? (marks[key / 64] | bit) : (marks[key / 64] & ~bit);
+}
+
+// The branches of one choice node, as graph indices on a scratch stack:
+// the label branches in their order from place `labels`, then the
+// branches that are no label in their order from place `non_labels`, up
+// to place `end`.
+struct split_branches {
+    std::size_t labels = 0;
+    std::size_t non_labels = 0;
+    std::size_t end = 0;
+};
+
+[[nodiscard]] consteval split_branches split_onto(stack<std::size_t>& scratch, const graph_view& graph,
+                                                  const graph_node& choice) {
+    make_room(scratch, choice.child_count);
+    std::size_t* const items = scratch.items;
+    split_branches result{scratch.top, scratch.top, scratch.top};
     for (std::size_t k = 0; k < choice.child_count; ++k) {
-        const std::size_t child = graph.children[choice.first_child + k];
-        if (graph.nodes[child].is_label) {
-            result.labels.push_back(child);
-        } else {
-            result.non_labels.push_back(child);
-        }
+        const std::size_t child = graph.children.data[choice.first_child + k];
+        if (graph.nodes.data[child].is_label) items[result.end++] = child;
     }
+    result.non_labels = result.end;
+    for (std::size_t k = 0; k < choice.child_count; ++k) {
+        const std::size_t child = graph.children.data[choice.first_child + k];
+        if (!graph.nodes.data[child].is_label) items[result.end++] = child;
+    }
+    scratch.top = result.end;
     return result;
 }
 
-// The branch among `candidates` whose head receives `payload`, or npos.
-// Complexity: linear in the candidates.
-[[nodiscard]] consteval std::size_t partner_of(const graph_view& graph, const std::vector<std::size_t>& candidates,
-                                               std::meta::info payload) {
-    for (const std::size_t candidate : candidates) {
-        if (graph.nodes[candidate].head_payload == payload) return candidate;
+// The branch among places [first, end) of `candidates` whose head receives
+// `payload`, or npos.  Complexity: linear in the candidates.
+[[nodiscard]] consteval std::size_t partner_of(const graph_view& graph, const std::size_t* candidates,
+                                               std::size_t first, std::size_t end, std::meta::info payload) {
+    for (std::size_t place = first; place < end; ++place) {
+        if (graph.nodes.data[candidates[place]].head_payload == payload) return candidates[place];
     }
     return npos;
 }
-
-// The label pairs of two keyed choices, as graph indices, sub then super
-// for each pair, or the reason the labels do not refine.
-struct label_pairing {
-    mismatch reason = mismatch::none;
-    std::vector<std::size_t> pairs{};
-};
 
 // True when two label branches of one keyed choice have one label word,
 // with one key or with two.  The run of the choice is in the order of the
@@ -2433,64 +2603,59 @@ struct label_pairing {
 // Complexity: linear in the label branches of the choice.
 [[nodiscard]] consteval bool repeats_a_label_word(const graph_view& graph, const graph_node& choice) {
     for (std::size_t rank = 1; rank < choice.label_count; ++rank) {
-        const std::size_t earlier = graph.sorted_labels[choice.first_label + rank - 1];
-        const std::size_t later = graph.sorted_labels[choice.first_label + rank];
-        if (graph.nodes[earlier].label_word == graph.nodes[later].label_word) return true;
+        const std::size_t earlier = graph.sorted_labels.data[choice.first_label + rank - 1];
+        const std::size_t later = graph.sorted_labels.data[choice.first_label + rank];
+        if (graph.nodes.data[earlier].label_word == graph.nodes.data[later].label_word) return true;
     }
     return false;
 }
 
 // Pairs the label branches of two keyed choices by label, in one merge of
-// the two runs that the graphs sorted by label word.  An output choice of
-// the subtype sends only labels that the supertype sends, and an input
-// choice of the supertype receives only labels that the subtype receives.
-// Two branches with one word pair only when their keys are equal too.  A
-// choice that repeats a label word is not well-formed, and the merge
-// refuses it also when the layer above did not check well-formedness.
-// Complexity: linear in the label branches of the two choices.
-[[nodiscard]] consteval label_pairing pair_by_label(const graph_view& sub_graph, const graph_node& sub,
-                                                    const graph_view& super_graph, const graph_node& super,
-                                                    bool is_output) {
-    label_pairing result{};
-    if (repeats_a_label_word(sub_graph, sub) || repeats_a_label_word(super_graph, super)) {
-        result.reason = mismatch::ill_formed;
-        return result;
-    }
+// the two runs that the graphs sorted by label word, and pushes each pair
+// onto `pending`, sub then super.  An output choice of the subtype sends
+// only labels that the supertype sends, and an input choice of the
+// supertype receives only labels that the subtype receives.  Two branches
+// with one word pair only when their keys are equal too.  A choice that
+// repeats a label word is not well-formed, and the merge refuses it also
+// when the layer above did not check well-formedness.  Returns the reason
+// the labels do not refine, or none.  The caller stops at a reason, so the
+// pairs that a refused merge pushed are never read.  Complexity: linear in
+// the label branches of the two choices.
+[[nodiscard]] consteval mismatch pair_by_label(const graph_view& sub_graph, const graph_node& sub,
+                                               const graph_view& super_graph, const graph_node& super, bool is_output,
+                                               stack<std::size_t>& pending) {
+    if (repeats_a_label_word(sub_graph, sub) || repeats_a_label_word(super_graph, super)) return mismatch::ill_formed;
+    make_room(pending, 2 * (sub.label_count < super.label_count ? sub.label_count : super.label_count));
+    std::size_t* const items = pending.items;
     std::size_t sub_rank = 0;
     std::size_t super_rank = 0;
     while (sub_rank < sub.label_count || super_rank < super.label_count) {
         const bool has_sub = sub_rank < sub.label_count;
         const bool has_super = super_rank < super.label_count;
-        const std::size_t sub_index = has_sub ? sub_graph.sorted_labels[sub.first_label + sub_rank] : npos;
-        const std::size_t super_index = has_super ? super_graph.sorted_labels[super.first_label + super_rank] : npos;
-        const std::uint64_t sub_word = has_sub ? sub_graph.nodes[sub_index].label_word : 0;
-        const std::uint64_t super_word = has_super ? super_graph.nodes[super_index].label_word : 0;
+        const std::size_t sub_index = has_sub ? sub_graph.sorted_labels.data[sub.first_label + sub_rank] : npos;
+        const std::size_t super_index =
+            has_super ? super_graph.sorted_labels.data[super.first_label + super_rank] : npos;
+        const std::uint64_t sub_word = has_sub ? sub_graph.nodes.data[sub_index].label_word : 0;
+        const std::uint64_t super_word = has_super ? super_graph.nodes.data[super_index].label_word : 0;
         if (has_sub && has_super && sub_word == super_word) {
-            if (sub_graph.nodes[sub_index].label_key != super_graph.nodes[super_index].label_key) {
-                result.reason = mismatch::label_word_clash;
-                return result;
+            if (sub_graph.nodes.data[sub_index].label_key != super_graph.nodes.data[super_index].label_key) {
+                return mismatch::label_word_clash;
             }
-            result.pairs.push_back(sub_index);
-            result.pairs.push_back(super_index);
+            items[pending.top++] = sub_index;
+            items[pending.top++] = super_index;
             ++sub_rank;
             ++super_rank;
         } else if (has_sub && (!has_super || sub_word < super_word)) {
             // A label of the subtype that the supertype does not have.
-            if (is_output) {
-                result.reason = mismatch::label_set;
-                return result;
-            }
+            if (is_output) return mismatch::label_set;
             ++sub_rank;
         } else {
             // A label of the supertype that the subtype does not have.
-            if (!is_output) {
-                result.reason = mismatch::label_set;
-                return result;
-            }
+            if (!is_output) return mismatch::label_set;
             ++super_rank;
         }
     }
-    return result;
+    return mismatch::none;
 }
 
 [[nodiscard]] consteval bool payload_in_order(std::meta::info axioms, const graph_node& sub, const graph_node& super) {
@@ -2518,28 +2683,38 @@ struct label_pairing {
     if (left.unregistered != std::meta::info{}) return {false, mismatch::unregistered, left.unregistered, {}};
     if (right.unregistered != std::meta::info{}) return {false, mismatch::unregistered, {}, right.unregistered};
     const std::size_t width = right.nodes.size();
-    std::vector<std::uint8_t> visited(left.nodes.size() * width, 0);
+    const graph_node* const sub_nodes = left.nodes.data;
+    const graph_node* const super_nodes = right.nodes.data;
+    // One mark bit for each pair, at the pair key sub * width + super.
+    // During the walk a mark is set for a visited pair, and after the walk
+    // it is set for a pair that can end.
+    const std::size_t mark_word_count = (left.nodes.size() * width + 63) / 64;
+    stack<std::uint64_t> mark_words{};
+    make_room(mark_words, mark_word_count);
+    std::uint64_t* const marks = mark_words.items;
+    for (std::size_t word = 0; word < mark_word_count; ++word)
+        marks[word] = 0;
     // The visited pairs in the order of the walk, and the edges of the
-    // product between them, each as a pair key sub * width + super.
-    std::vector<std::size_t> order;
-    std::vector<std::size_t> edge_from;
-    std::vector<std::size_t> edge_to;
-    std::vector<std::size_t> pending{0, 0};
-    while (!pending.empty()) {
-        const std::size_t super_index = settle(right, pending.back());
-        pending.pop_back();
-        const std::size_t sub_index = settle(left, pending.back());
-        pending.pop_back();
+    // product between them, each as a pair key.
+    stack<std::size_t> order{};
+    stack<detail::product_edge> edges{};
+    stack<std::size_t> pending{};
+    stack<std::size_t> scratch{};
+    push(pending, std::size_t{0});
+    push(pending, std::size_t{0});
+    while (pending.top != 0) {
+        const std::size_t super_index = settle(right, pending.items[pending.top - 1]);
+        const std::size_t sub_index = settle(left, pending.items[pending.top - 2]);
+        pending.top -= 2;
         if (sub_index == npos || super_index == npos) return {false, mismatch::unguarded, sub, super};
         const std::size_t key = sub_index * width + super_index;
-        std::uint8_t& seen = visited[key];
-        if (seen != 0) continue;
-        seen = 1;
-        order.push_back(key);
-        const graph_node& a = left.nodes[sub_index];
-        const graph_node& b = right.nodes[super_index];
+        if (detail::is_marked(marks, key)) continue;
+        detail::set_mark(marks, key, true);
+        push(order, key);
+        const graph_node& a = sub_nodes[sub_index];
+        const graph_node& b = super_nodes[super_index];
         if (a.entry.shape != b.entry.shape) return {false, mismatch::shape, a.type, b.type};
-        const std::size_t before = pending.size();
+        const std::size_t before = pending.top;
         switch (a.entry.kind) {
             case shape_kind::terminal:
             case shape_kind::back:
@@ -2552,58 +2727,63 @@ struct label_pairing {
                     }
                     return {false, mismatch::payload, a.payload, b.payload};
                 }
-                pending.push_back(a.next);
-                pending.push_back(b.next);
+                push(pending, a.next);
+                push(pending, b.next);
                 break;
             case shape_kind::wrapper:
                 if (!detail::value_in_order(a, b)) return {false, mismatch::value, a.type, b.type};
-                pending.push_back(a.next);
-                pending.push_back(b.next);
+                push(pending, a.next);
+                push(pending, b.next);
                 break;
             case shape_kind::marker:
-                pending.push_back(a.next);
-                pending.push_back(b.next);
+                push(pending, a.next);
+                push(pending, b.next);
                 break;
             case shape_kind::choice: {
                 if (a.annotation != b.annotation) return {false, mismatch::annotation, a.type, b.type};
-                const detail::split_branches own = detail::split_of(left, a);
-                const detail::split_branches other = detail::split_of(right, b);
-                if (!other.non_labels.empty() && other.labels.empty()) {
+                const detail::split_branches own = detail::split_onto(scratch, left, a);
+                const detail::split_branches other = detail::split_onto(scratch, right, b);
+                const std::size_t* const split = scratch.items;
+                const std::size_t own_labels = own.non_labels - own.labels;
+                const std::size_t other_labels = other.non_labels - other.labels;
+                if (other.end != other.non_labels && other_labels == 0) {
                     return {false, mismatch::pure_non_label_choice, a.type, b.type};
                 }
                 // A choice with no label branch is not well-formed.  The
                 // layer refuses it first, and the relation refuses it too,
                 // so a layer that skips the check stays sound.
-                if (own.labels.empty() || other.labels.empty()) return {false, mismatch::ill_formed, a.type, b.type};
+                if (own_labels == 0 || other_labels == 0) return {false, mismatch::ill_formed, a.type, b.type};
                 const bool is_output = a.entry.direction == polarity::output;
                 if (a.is_keyed != b.is_keyed) return {false, mismatch::label_discipline, a.type, b.type};
                 if (a.is_keyed) {
-                    const detail::label_pairing pairing = detail::pair_by_label(left, a, right, b, is_output);
-                    if (pairing.reason != mismatch::none) return {false, pairing.reason, a.type, b.type};
-                    for (const std::size_t index : pairing.pairs)
-                        pending.push_back(index);
+                    const mismatch reason = detail::pair_by_label(left, a, right, b, is_output, pending);
+                    if (reason != mismatch::none) return {false, reason, a.type, b.type};
                 } else {
-                    const bool count_is_wrong =
-                        is_output ? own.labels.size() > other.labels.size() : own.labels.size() < other.labels.size();
+                    const bool count_is_wrong = is_output ? own_labels > other_labels : own_labels < other_labels;
                     if (count_is_wrong) return {false, mismatch::branch_count, a.type, b.type};
-                    const std::size_t shared =
-                        own.labels.size() < other.labels.size() ? own.labels.size() : other.labels.size();
+                    const std::size_t shared = own_labels < other_labels ? own_labels : other_labels;
+                    make_room(pending, 2 * shared);
                     for (std::size_t k = 0; k < shared; ++k) {
-                        pending.push_back(own.labels[k]);
-                        pending.push_back(other.labels[k]);
+                        pending.items[pending.top++] = split[own.labels + k];
+                        pending.items[pending.top++] = split[other.labels + k];
                     }
                 }
-                for (const std::size_t mine : own.non_labels) {
-                    if (detail::partner_of(right, other.non_labels, left.nodes[mine].head_payload) == npos) {
+                for (std::size_t place = own.non_labels; place < own.end; ++place) {
+                    const std::meta::info payload = sub_nodes[split[place]].head_payload;
+                    if (detail::partner_of(right, split, other.non_labels, other.end, payload) == npos) {
                         return {false, mismatch::non_label_branch, a.type, b.type};
                     }
                 }
-                for (const std::size_t theirs : other.non_labels) {
-                    const std::size_t mine = detail::partner_of(left, own.non_labels, right.nodes[theirs].head_payload);
+                make_room(pending, 2 * (other.end - other.non_labels));
+                for (std::size_t place = other.non_labels; place < other.end; ++place) {
+                    const std::size_t theirs = split[place];
+                    const std::meta::info payload = super_nodes[theirs].head_payload;
+                    const std::size_t mine = detail::partner_of(left, split, own.non_labels, own.end, payload);
                     if (mine == npos) return {false, mismatch::missing_non_label_branch, a.type, b.type};
-                    pending.push_back(mine);
-                    pending.push_back(theirs);
+                    pending.items[pending.top++] = mine;
+                    pending.items[pending.top++] = theirs;
                 }
+                scratch.top = 0;
                 break;
             }
             default:
@@ -2611,46 +2791,52 @@ struct label_pairing {
         }
         // Each child pair is an edge of the product.  A child that does
         // not settle stops the walk when it is popped.
-        for (std::size_t k = before; k + 1 < pending.size(); k += 2) {
-            const std::size_t child_sub = settle(left, pending[k]);
-            const std::size_t child_super = settle(right, pending[k + 1]);
+        make_room(edges, (pending.top - before) / 2);
+        for (std::size_t k = before; k + 1 < pending.top; k += 2) {
+            const std::size_t child_sub = settle(left, pending.items[k]);
+            const std::size_t child_super = settle(right, pending.items[k + 1]);
             if (child_sub == npos || child_super == npos) continue;
-            edge_from.push_back(key);
-            edge_to.push_back(child_sub * width + child_super);
+            edges.items[edges.top++] = detail::product_edge{key, child_sub * width + child_super};
         }
         // Pairs are pushed in order and popped from the back, so the
         // walk reaches the last child first.  The pushed block is
         // reversed pair by pair to keep the first child first, which
         // makes the reported mismatch the leftmost one.
-        for (std::size_t low = before, high = pending.size(); low + 2 < high; low += 2, high -= 2) {
-            const std::size_t first_sub = pending[low];
-            const std::size_t first_super = pending[low + 1];
-            pending[low] = pending[high - 2];
-            pending[low + 1] = pending[high - 1];
-            pending[high - 2] = first_sub;
-            pending[high - 1] = first_super;
+        std::size_t* const block = pending.items;
+        for (std::size_t low = before, high = pending.top; low + 2 < high; low += 2, high -= 2) {
+            const std::size_t first_sub = block[low];
+            const std::size_t first_super = block[low + 1];
+            block[low] = block[high - 2];
+            block[low + 1] = block[high - 1];
+            block[high - 2] = first_sub;
+            block[high - 1] = first_super;
         }
     }
     // Exit preservation.  A pair of terminals can end, and a pair with an
     // edge to a pair that can end can end.  The edges are recorded in the
     // order of the walk, so a pass from the last edge back settles every
     // edge of the tree, and each further pass settles one more loop-back.
-    std::vector<std::uint8_t> pair_can_end(visited.size(), 0);
-    for (const std::size_t key : order) {
-        if (left.nodes[key / width].entry.kind == shape_kind::terminal) pair_can_end[key] = 1;
+    // Only a visited pair has its mark set here, so a clear mark for each
+    // visited pair that is not a pair of terminals clears the marks.
+    const std::size_t* const visited = order.items;
+    for (std::size_t place = 0; place < order.top; ++place) {
+        const std::size_t key = visited[place];
+        detail::set_mark(marks, key, sub_nodes[key / width].entry.kind == shape_kind::terminal);
     }
+    const detail::product_edge* const links = edges.items;
     for (bool is_changed = true; is_changed;) {
         is_changed = false;
-        for (std::size_t edge = edge_from.size(); edge-- > 0;) {
-            if (pair_can_end[edge_from[edge]] != 0 || pair_can_end[edge_to[edge]] == 0) continue;
-            pair_can_end[edge_from[edge]] = 1;
+        for (std::size_t edge = edges.top; edge-- > 0;) {
+            if (detail::is_marked(marks, links[edge].from) || !detail::is_marked(marks, links[edge].to)) continue;
+            detail::set_mark(marks, links[edge].from, true);
             is_changed = true;
         }
     }
-    for (const std::size_t key : order) {
-        const graph_node& a = left.nodes[key / width];
-        const graph_node& b = right.nodes[key % width];
-        if (b.can_end && pair_can_end[key] == 0) return {false, mismatch::loses_termination, a.type, b.type};
+    for (std::size_t place = 0; place < order.top; ++place) {
+        const std::size_t key = visited[place];
+        const graph_node& a = sub_nodes[key / width];
+        const graph_node& b = super_nodes[key % width];
+        if (b.can_end && !detail::is_marked(marks, key)) return {false, mismatch::loses_termination, a.type, b.type};
     }
     return {true, mismatch::none, {}, {}};
 }

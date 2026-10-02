@@ -754,39 +754,11 @@ struct payload_answer {
     bool holds = false;
 };
 
-// A stack whose storage never becomes smaller.  `items` points into
-// `storage`, and `top` counts the live elements.  A pop lowers `top` and
-// keeps the storage.  In a constant evaluation, a change of a vector
-// costs approximately 40 times a read through a pointer.  A step of the
-// search changes no vector.  Only make_room changes a vector, when the
-// storage is full, and it makes the storage two times larger.  The count
-// of these changes is logarithmic in the highest top.
-template <class T>
-struct stack {
-    std::vector<T> storage{};
-    T* items = nullptr;
-    std::size_t top = 0;
-};
-
-// Gives the stack space for `count` more elements.  A pointer or a
-// reference into the stack is not valid after this call.
-template <class T>
-consteval void make_room(stack<T>& pile, std::size_t count) {
-    if (pile.top + count <= pile.storage.size()) return;
-    std::vector<T> grown(2 * (pile.top + count) + 14);
-    T* const target = grown.data();
-    for (std::size_t index = 0; index < pile.top; ++index)
-        target[index] = pile.items[index];
-    pile.storage = std::move(grown);
-    pile.items = pile.storage.data();
-}
-
-template <class T>
-consteval void push(stack<T>& pile, const T& value) {
-    make_room(pile, 1);
-    pile.items[pile.top] = value;
-    ++pile.top;
-}
+// A step of the search changes no vector: each run of the search is a
+// stack of foundation/algebra/Transition.h.
+using ::foundation::algebra::transition::make_room;
+using ::foundation::algebra::transition::push;
+using ::foundation::algebra::transition::stack;
 
 // The fuel of one direction of the search.  A search that has no fuel
 // left has not proven the pair, and the pair is refused.  Each step
@@ -830,7 +802,7 @@ struct search {
     std::meta::info axioms{};
     std::size_t capacity = 0;
     std::size_t fuel = search_fuel;
-    std::vector<std::size_t> node_moves{};
+    stack<std::size_t> node_moves{};
     std::size_t* node_items = nullptr;
     stack<action> actions{};
     stack<move> moves{};
@@ -1243,8 +1215,9 @@ consteval bool prove(search& state, prefix sub_prefix, std::size_t sub_index, st
 // the product.  Complexity: O(C·E) at worst for C configurations and E
 // edges, one pass per level of loop-back.
 [[nodiscard]] consteval bool keeps_exits(const search& state) {
-    std::vector<std::uint8_t> reaches_end(state.configurations.top);
-    std::uint8_t* const can_end = reaches_end.data();
+    stack<std::uint8_t> reaches_end{};
+    make_room(reaches_end, state.configurations.top);
+    std::uint8_t* const can_end = reaches_end.items;
     for (std::size_t config = 0; config < state.configurations.top; ++config)
         can_end[config] = state.configurations.items[config].is_end ? 1 : 0;
     for (bool is_changed = true; is_changed;) {
@@ -1297,9 +1270,11 @@ consteval bool prove(search& state, prefix sub_prefix, std::size_t sub_index, st
     if (is_outside_the_check(state.sub, sub_top) || is_outside_the_check(state.super, super_top)) {
         return false;
     }
-    state.node_moves = std::vector<std::size_t>(2 * (state.sub.nodes.size() + state.super.nodes.size()),
-                                                ::foundation::algebra::transition::npos);
-    state.node_items = state.node_moves.data();
+    const std::size_t slot_count = 2 * (state.sub.nodes.size() + state.super.nodes.size());
+    make_room(state.node_moves, slot_count);
+    state.node_items = state.node_moves.items;
+    for (std::size_t slot = 0; slot < slot_count; ++slot)
+        state.node_items[slot] = ::foundation::algebra::transition::npos;
     if (!prove(state, prefix{}, sub_top, capacity + 1, prefix{}, super_top, capacity + 1,
                ::foundation::algebra::transition::npos)) {
         return false;
