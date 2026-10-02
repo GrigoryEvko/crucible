@@ -569,7 +569,7 @@ Add a section on the quarantine: rules R1 to R12, the layers, the door rule, the
 
 - The rule table is on main, and the plugin and the layer guard read it.
 - The owner approved the audit verdicts. Met: the owner approved each verdict on 2026-10-02.
-- The ratchet runs in CI and fails on a plant.
+- The ratchet runs in each local test run (the test `quarantine_ratchet`) and fails on a plant. CI is not part of a gate: on 2026-10-03, the owner made the local guard run the only gate, with a sync to GitHub about once a day.
 - The pragma macro works with the plugin on and off.
 - CLAUDE.md has the quarantine section.
 
