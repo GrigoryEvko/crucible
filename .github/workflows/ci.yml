@@ -515,10 +515,12 @@ jobs:
 
       # Each header with a check file compiles alone at the operation limit of
       # a header alone (test/layer/CMakeLists.txt).  The target is outside
-      # `all`, because it adds about 4 s of wall time to a clean build.
+      # `all`, because it adds about 4 s of wall time to a clean build.  The
+      # release leg builds it too, because -march=native compiles the SIMD
+      # arms of a header, and the Debug build does not compile them.
       - name: Build the headers alone at the operation limit
-        if: ${{ matrix.preset == 'default' }}
-        run: cmake --build --preset default -j ${{ matrix.jobs }} --target layer_alone
+        if: ${{ matrix.preset == 'default' || matrix.preset == 'release' }}
+        run: cmake --build --preset ${{ matrix.preset }} -j ${{ matrix.jobs }} --target layer_alone
 
       - name: ccache stats
         run: ccache -s

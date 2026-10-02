@@ -115,7 +115,10 @@ template <class Field>
 // unit that instantiates a codec then evaluates the tables, and a function
 // that is not a template must not read them.  The initializer depends on
 // the parameter, because GCC evaluates a call that does not depend on it
-// where the template stands.
+// where the template stands.  For the same reason, a template that has the
+// parameter names it in each call of mul, of inv and of a template of this
+// file that reads them.  A call without it can make each includer evaluate
+// the tables, as a call of make_nibble_tables without it did.
 template <class Field = void>
 inline constexpr GfTables gf = make_gf_tables<Field>();
 
@@ -208,8 +211,8 @@ template <class Field = void>
 [[nodiscard]] inline NibbleTables make_nibble_tables(std::uint8_t coeff) noexcept {
     NibbleTables tables{};
     for (std::uint8_t i = 0; i < 16; ++i) {
-        const auto lo = mul(coeff, i);
-        const auto hi = mul(coeff, static_cast<std::uint8_t>(i << 4U));
+        const auto lo = mul<Field>(coeff, i);
+        const auto hi = mul<Field>(coeff, static_cast<std::uint8_t>(i << 4U));
         tables.lo[i] = lo;
         tables.hi[i] = hi;
         tables.lo[static_cast<std::size_t>(i) + 16U] = lo;
@@ -297,7 +300,7 @@ CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst, std::byte const* src, std::uint8_
         return;
     }
 
-    const auto tables = make_nibble_tables(coeff);
+    const auto tables = make_nibble_tables<Field>(coeff);
     const Avx2Register lo_table =
         load_aligned_avx2(lifetime::start_as_array<const Avx2Register>(tables.lo.data(), 1).data());
     const Avx2Register hi_table =
@@ -315,7 +318,7 @@ CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst, std::byte const* src, std::uint8_
         store_unaligned_avx2(lifetime::start_as_array<Avx2Register>(dst + i, 1).data(), xor_avx2(old, prod));
     }
     for (; i < len; ++i) {
-        dst[i] ^= static_cast<std::byte>(mul(static_cast<std::uint8_t>(src[i]), coeff));
+        dst[i] ^= static_cast<std::byte>(mul<Field>(static_cast<std::uint8_t>(src[i]), coeff));
     }
 }
 #elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
@@ -344,7 +347,7 @@ CRUCIBLE_HOT void mul_xor_neon(std::byte* dst, std::byte const* src, std::uint8_
         return;
     }
 
-    const auto tables = make_nibble_tables(coeff);
+    const auto tables = make_nibble_tables<Field>(coeff);
     const auto lo_table = vld1q_u8(tables.lo.data());
     const auto hi_table = vld1q_u8(tables.hi.data());
     const auto mask = vdupq_n_u8(0x0f);
@@ -360,7 +363,7 @@ CRUCIBLE_HOT void mul_xor_neon(std::byte* dst, std::byte const* src, std::uint8_
         vst1q_u8(lifetime::start_as_array<std::uint8_t>(dst + i, stride_bytes).data(), veorq_u8(old, prod));
     }
     for (; i < len; ++i) {
-        dst[i] ^= static_cast<std::byte>(mul(static_cast<std::uint8_t>(src[i]), coeff));
+        dst[i] ^= static_cast<std::byte>(mul<Field>(static_cast<std::uint8_t>(src[i]), coeff));
     }
 }
 #endif
@@ -377,16 +380,16 @@ CRUCIBLE_HOT void mul_xor(std::byte* dst, std::byte const* src, std::uint8_t coe
         return;
     }
 #if defined(__AVX2__)
-    mul_xor_avx2(dst, src, coeff, len);
+    mul_xor_avx2<Field>(dst, src, coeff, len);
 #elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
-    mul_xor_neon(dst, src, coeff, len);
+    mul_xor_neon<Field>(dst, src, coeff, len);
 #else
     if (coeff == 1) {
         xor_bytes_scalar(dst, src, len);
         return;
     }
     for (std::size_t i = 0; i < len; ++i) {
-        dst[i] ^= static_cast<std::byte>(mul(static_cast<std::uint8_t>(src[i]), coeff));
+        dst[i] ^= static_cast<std::byte>(mul<Field>(static_cast<std::uint8_t>(src[i]), coeff));
     }
 #endif
 }
