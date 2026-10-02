@@ -414,11 +414,34 @@ All numbers come from `build-gauge.sh` on the same host as the baseline:
 - The tail: no build job takes more than 15 s in the ninja log of a clean Debug build at `-j64`. No fixture (cold) and no test takes more than 10 s.
 - The clean Debug build of `all` takes at most 60 s wall at `-j192` (or at the highest job count that the memory check allows, with the job count stated).
 - `ctest` of the full Debug suite takes at most 60 s wall at `-j192` with a cold fixture store. A second run on an unchanged tree compiles no fixture.
-- The total CPU is not a target (owner, 2026-10-01). Only the longest single job counts.
+- The total CPU counts too, because the wall time of a step at 192 jobs is at least its total CPU divided by 192. The budget table of CLAUDE.md §XV holds the warning thresholds of the totals.
 - The header-checks guard is in error mode with an empty ledger, apart from reasoned rows.
 - The full suite passes in the Debug, Release, TSan and UBSan-strict presets, with identical results for every determinism test.
 
-**Decision point DP1.** If the gate misses a target, the owner decides whether the modules spike runs.
+**Decision point DP1.** If the gate misses a target, the owner decides whether the modules spike runs. The owner decided on 2026-10-01: the spike ran, and header units and precompiled headers change results with GCC 16 (`misc/gcc16-modules-pch-defects.md`). The tree tries them again with GCC 17.
+
+**The measurement of 2026-10-02** (commit c78ee01d3, Debug preset, 192 jobs). The host had 376 usable threads and a load of 12 to 20 from a virtual machine and monitoring tools. It had 156 GB of available memory, and another user held a pool of 96 GB of huge pages.
+
+| Case | Build | Tests | Sum |
+|---|---|---|---|
+| Clean build, no ccache, cold fixture store (median of 3) | 21.3 s, 2,320 CPU-s | fixtures 18.3 s, 2,566 CPU-s; other tests 8.9 s | 48.5 s |
+| A code edit of `foundation/Platform.h` in a warm build directory (median of 3) | 19.3 s, 872 compiles, about 3,500 CPU-s | 30.1 s, about 5,460 CPU-s | 49.4 s |
+| No edit (median of 3) | 0.18 s | 14.0 s, about 930 CPU-s | 14.2 s |
+
+After the edit, each test group alone:
+- The fixtures take 20.1 s and 3,602 CPU-s. With the result store off, they take 14.9 s and 2,642 CPU-s. So on a run where each lookup misses, the store adds about 960 CPU-s and 5 s.
+- The guard scripts take 13.1 s and 1,518 CPU-s. The fill of the preprocessed store and the four guards that wait for it make a chain of about 14 s.
+- The other tests take 2.3 s.
+
+With ccache off, the edit build takes 18.2 s and 3,213 CPU-s, so ccache adds 10 % to 18 % on that path. System time is 15 % to 25 % of each run. The cause is the host memory settings, which the owner has not decided yet.
+
+The state of each criterion:
+- Tail: the slowest compile job takes 11 s to 14 s at 192 jobs, the slowest cold fixture 9.5 s, and the slowest test 7 s to 9 s. Not measured at 64 jobs.
+- Clean build: 21.3 s. Met.
+- Full test run with a cold fixture store: 27.2 s. A second run compiles no fixture. Met.
+- Header-checks ledger: 22 debt rows remain (15 eager evaluations, 2 checks in function bodies, 5 rows in the ledger-probe headers). Not met.
+- The four presets: each full suite passes. Two defects that the measurement found are fixed: the seal livelock under ThreadSanitizer (772a45908) and a false array-bounds error in the UBSan-strict build (c78ee01d3). Met.
+- The owner's target of 15 s for the edit build and 15 s for its tests: not met (19.3 s and 30.1 s). Both steps are bound by their total CPU. The levers are the store cost on a full miss, the guard chain after a base-header edit, the fixture compile CPU, the build CPU and the system time.
 
 ---
 
