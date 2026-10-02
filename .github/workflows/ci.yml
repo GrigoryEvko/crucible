@@ -22,7 +22,9 @@
 # patched-gcc job, which is the upstream commit in utils/toolchain/gcc/BASE plus the
 # patches in utils/toolchain/gcc/patches.  Local development builds the same compiler
 # with the same script.  cmake/Toolchain-gcc16.cmake refuses a compiler without
-# each fix, so no job can compile with the stock g++ of the container.
+# each fix, so no job can compile with the stock g++ of the container.  Each job
+# that configures or tests runs the CMake and the ctest that
+# utils/toolchain/cmake/requirements.txt pins (.github/actions/pinned-cmake).
 #
 # Caching (public repo, free cache): ccache wraps the compiler — objects restored
 # per (arch,preset) across runs, split restore/save so even a failed run banks
@@ -120,6 +122,11 @@ jobs:
         run: |
           bash utils/scripts/install-ast-grep.sh --self-test
           bash utils/scripts/install-ast-grep.sh
+
+      # The self-tests of check-no-ffast-math.py and check-ci-guard-labels.py
+      # configure a scratch project.
+      - name: Install the pinned CMake and ctest
+        uses: ./.github/actions/pinned-cmake
 
       # Non-blocking for now, matching the aarch64 and vessel-dispatch
       # convention: flip `continue-on-error` off once a run confirms the
@@ -416,13 +423,14 @@ jobs:
       # last library it needs.  The patched GCC carries its own sanitizer
       # runtimes and libstdc++.  gmp-devel gives gmp.h, which the GCC plugin
       # headers include when the configure step builds the contract plugin.
-      # curl, tar and coreutils serve utils/scripts/install-tree-sitter.sh: it
-      # downloads one release asset, checks its SHA256 and unpacks it. The
-      # fedora:44 base carries none of the three reliably, and weak deps are off.
+      # curl, tar and coreutils serve utils/scripts/install-tree-sitter.sh and
+      # utils/scripts/install-cmake.sh: each downloads one file, checks its
+      # SHA256 and unpacks it. The fedora:44 base carries none of the three
+      # reliably, and weak deps are off.  CMake comes from the pin, not dnf.
       - name: Install toolchain + BPF stack + ccache
         run: >
           dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
-          gcc-c++ isl gmp-devel cmake ninja-build git ripgrep ccache diffutils
+          gcc-c++ isl gmp-devel ninja-build git ripgrep ccache diffutils
           clang llvm xxd bpftool libbpf-devel
           curl tar coreutils
 
@@ -481,6 +489,9 @@ jobs:
       # with the pinned ast-grep.
       - name: Install the pinned ast-grep
         run: bash utils/scripts/install-ast-grep.sh
+
+      - name: Install the pinned CMake and ctest
+        uses: ./.github/actions/pinned-cmake
 
       # The committed vmlinux.h is an x86_64 BTF dump; on aarch64 the BPF
       # programs need the matching arm64 layout. Regenerate it from the runner
@@ -629,9 +640,9 @@ jobs:
       - name: Install toolchain + BPF stack + ccache + pip
         run: >
           dnf install -y --setopt=install_weak_deps=False
-          gcc-c++ isl gmp-devel cmake ninja-build git ripgrep ccache diffutils patch
+          gcc-c++ isl gmp-devel ninja-build git ripgrep ccache diffutils patch
           clang llvm xxd bpftool libbpf-devel
-          python3 python3-pip
+          python3 python3-pip curl
 
       - name: Restore the patched GCC
         uses: actions/cache/restore@v4
@@ -655,6 +666,9 @@ jobs:
       # The user of the container does not own the checkout (see build job).
       - name: Mark the checkout as safe for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install the pinned CMake and ctest
+        uses: ./.github/actions/pinned-cmake
 
       # CPU wheel only: the CUDA wheels are several GB and the runner shares
       # ~14 GB with the container. The wheel ships the full C++ header tree at
@@ -772,8 +786,8 @@ jobs:
       - name: Install toolchain + BPF stack + ccache
         run: >
           dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
-          gcc-c++ isl gmp-devel cmake ninja-build git ripgrep ccache diffutils
-          clang llvm xxd bpftool libbpf-devel
+          gcc-c++ isl gmp-devel ninja-build git ripgrep ccache diffutils
+          clang llvm xxd bpftool libbpf-devel curl
       - name: Restore the patched GCC
         uses: actions/cache/restore@v4
         with:
@@ -795,6 +809,8 @@ jobs:
       # The user of the container does not own the checkout (see build job).
       - name: Mark the checkout as safe for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Install the pinned CMake and ctest
+        uses: ./.github/actions/pinned-cmake
       - name: Configure (bench, ccache)
         run: >
           cmake --preset bench
@@ -841,8 +857,8 @@ jobs:
       - name: Install toolchain + BPF stack + ccache
         run: >
           dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
-          gcc-c++ isl gmp-devel cmake ninja-build git ripgrep ccache diffutils
-          clang llvm xxd bpftool libbpf-devel
+          gcc-c++ isl gmp-devel ninja-build git ripgrep ccache diffutils
+          clang llvm xxd bpftool libbpf-devel curl
       - name: Restore the patched GCC
         uses: actions/cache/restore@v4
         with:
@@ -864,6 +880,8 @@ jobs:
       # The user of the container does not own the checkout (see build job).
       - name: Mark the checkout as safe for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Install the pinned CMake and ctest
+        uses: ./.github/actions/pinned-cmake
       - name: Configure (default + CRUCIBLE_FUZZ, ccache)
         run: >
           cmake --preset default

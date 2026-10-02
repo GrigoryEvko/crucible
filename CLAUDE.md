@@ -618,6 +618,8 @@ Design intent: **the lowest foreground recording and shadow-dispatch latency the
 
 `cmake/Toolchain-gcc16.cmake` finds the patched compiler `g++-16p`. `utils/toolchain/gcc/build.sh` builds it from GCC 16.2.1 and the patches in `utils/toolchain/gcc/patches/`. The `libstdc++ 16.0.1 status` notes in §IV are probes of libstdc++ 16.0.1, and this guide does not repeat each probe for 16.2.1.
 
+`utils/toolchain/cmake/requirements.txt` pins one version of CMake and ctest. No other file gives that version. The configure step rejects a CMake of another version (`cmake/CMakePin.cmake`), and its message gives the two install commands. The test `cmake_pin` rejects a ctest of another version that runs the tests (`utils/scripts/cmake_pin.py`). Each CI job that configures or tests installs the pinned version with `utils/scripts/install-cmake.sh`.
+
 **GCC 16 is the only supported compiler.** Crucible's safety axioms structurally depend on features that exist only there:
 
 - **Contracts (P2900R14)** — the InitSafe / NullSafe / TypeSafe / MemSafe enforcement mechanism. GCC 16 exclusive.

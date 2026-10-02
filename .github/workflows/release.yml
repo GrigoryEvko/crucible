@@ -126,11 +126,12 @@ jobs:
       # Static-link toolchain: glibc-static backs `-static`, and the patched
       # GCC carries its own libstdc++.a.  gcc-c++ and isl supply the tools and
       # the libraries that the patched GCC runs on.  gh uploads the assets.
-      # No BPF stack, no sanitizers (release build only).
+      # No BPF stack, no sanitizers (release build only).  The dnf cmake is
+      # only for a tag that pins no CMake (see the step after the checkout).
       - name: Install toolchain + static libs + gh
         run: >
           dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
-          gcc-c++ isl cmake ninja-build git ccache gh
+          gcc-c++ isl cmake ninja-build git ccache gh curl
           glibc-static
 
       - name: Restore the patched GCC
@@ -159,6 +160,13 @@ jobs:
 
       - name: Mark workspace safe (root in container)
         run: git config --global --add safe.directory '*'
+
+      # The CMake and the ctest that the tag pins come first in PATH.  A tag
+      # from before the pin has no pin file, and it configures with the dnf
+      # cmake.
+      - name: Install the pinned CMake and ctest
+        if: ${{ hashFiles('utils/toolchain/cmake/requirements.txt') != '' }}
+        uses: ./.github/actions/pinned-cmake
 
       # Portable static configure. ccache launchers compose with the gcc16
       # toolchain shim. BPF off => no libbpf dep; examples off => fewer TUs.

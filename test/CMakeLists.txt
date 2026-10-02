@@ -386,6 +386,27 @@ add_test(NAME patched_gcc_probe_self_test
           -P ${CMAKE_SOURCE_DIR}/cmake/probes/self_test.cmake)
 set_tests_properties(patched_gcc_probe_self_test PROPERTIES LABELS "ci_guard")
 
+# The tree configures, builds and tests only with the CMake and the ctest that
+# utils/toolchain/cmake/requirements.txt pins.  cmake_pin rejects a ctest of
+# another version that runs the tests, and a cmake or a ctest of another
+# version in CMakeCache.txt (utils/scripts/cmake_pin.py).  The configure
+# self-test plants each kind of pin against cmake/CMakePin.cmake, and a
+# configure of a scratch project with a pin of another version must stop.
+# The install self-test plants each kind of install against
+# utils/scripts/install-cmake.sh.
+add_test(NAME cmake_pin
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/cmake_pin.py --check --build-dir ${CMAKE_BINARY_DIR})
+add_test(NAME cmake_pin_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/cmake_pin.py --self-test
+          --cmake ${CMAKE_COMMAND} --ctest ${CMAKE_CTEST_COMMAND} --make-program ${CMAKE_MAKE_PROGRAM})
+add_test(NAME cmake_pin_configure_self_test
+  COMMAND ${CMAKE_COMMAND} -DWORK=${CMAKE_CURRENT_BINARY_DIR}/cmake_pin_configure_self_test
+          -DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM} -P ${CMAKE_SOURCE_DIR}/cmake/CMakePinSelfTest.cmake)
+add_test(NAME install_cmake_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/install-cmake.sh --self-test)
+set_tests_properties(cmake_pin cmake_pin_self_test cmake_pin_configure_self_test install_cmake_self_test
+  PROPERTIES LABELS "ci_guard")
+
 # The tests of cmake/Ccache.cmake.  Each one configures a small project.  The
 # launcher case tries CRUCIBLE_USE_CCACHE=OFF with ccache in the environment
 # and in -D, a launcher that is not ccache, and the ccache that PATH holds.

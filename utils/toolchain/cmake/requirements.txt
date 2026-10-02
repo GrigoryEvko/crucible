@@ -1,0 +1,17 @@
+# The one version of CMake and ctest that configures, builds and tests this
+# tree.  This file is the only place that gives the version.
+#
+# Each requirement is the manylinux wheel of CMake on PyPI for one machine,
+# with the SHA256 of that wheel.  pip installs the requirement of the host:
+#   python3 -m pip install --require-hashes -r utils/toolchain/cmake/requirements.txt
+# utils/scripts/install-cmake.sh installs the same wheel with no pip.  Each CI
+# job that configures or tests runs that script.  The configure step rejects a
+# CMake of another version (cmake/CMakePin.cmake).  The test cmake_pin rejects
+# a ctest of another version (utils/scripts/cmake_pin.py).
+#
+# To change the version, write the new version and the SHA256 of each wheel
+# from https://pypi.org/project/cmake/ on the two lines.
+cmake==4.4.2 ; platform_machine == "x86_64" \
+    --hash=sha256:27b024e903ef985b37183d754a5c61230b56b41fe0971cd44b71b80c787ec594
+cmake==4.4.2 ; platform_machine == "aarch64" \
+    --hash=sha256:fc9d9f95dc9a542db99ca96cba1c275adeeb497ff2e134c780a9677b8578bd05

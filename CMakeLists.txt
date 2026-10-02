@@ -1,5 +1,17 @@
 cmake_minimum_required(VERSION 3.27)
 
+# The tree configures, builds and tests only with the CMake and the ctest that
+# utils/toolchain/cmake/requirements.txt pins.  A configure with a CMake of
+# another version stops here, before CMake tests the compiler.  A change of
+# the pin makes the next build configure again (cmake/CMakePin.cmake).
+include(cmake/CMakePin.cmake)
+set(CRUCIBLE_CMAKE_PIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/utils/toolchain/cmake/requirements.txt")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CRUCIBLE_CMAKE_PIN_FILE}")
+crucible_cmake_pin_problem("${CRUCIBLE_CMAKE_PIN_FILE}" "${CMAKE_VERSION}" CRUCIBLE_CMAKE_PIN_PROBLEM)
+if(NOT CRUCIBLE_CMAKE_PIN_PROBLEM STREQUAL "")
+  message(FATAL_ERROR "${CRUCIBLE_CMAKE_PIN_PROBLEM}")
+endif()
+
 # The time of the configure.  The deferred call runs after the last line of
 # this file, before CMake writes build.ninja.  It writes the start and the end
 # of the configure to configure-time.txt, and the time of build.ninja gives
