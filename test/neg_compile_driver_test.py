@@ -1150,6 +1150,9 @@ def main(arguments: list[str]) -> int:
     if not cxx or shutil.which(cxx) is None:
         print("neg_compile_driver_test.py --cxx COMPILER: the compiler cannot run", file=sys.stderr)
         return 3
+    # A time error becomes a warning when GITHUB_ACTIONS is true (cost_meter.ci_verdict).  The checks in this
+    # process expect the levels of the build host.  Remove the variable, as run() does for each run of the driver.
+    os.environ.pop("GITHUB_ACTIONS", None)
     failures: list[str] = []
     skips: list[str] = []
     if index == 0:
