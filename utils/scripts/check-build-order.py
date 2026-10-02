@@ -1,40 +1,93 @@
 #!/usr/bin/env python3
-"""check-build-order — no compile of the build waits for a link or an archive through an order-only input.
+"""check-build-order — the order in which Ninja starts the compiles of an edit build.
 
 Ninja starts an edge only when each input of the edge is ready, also each
-order-only input.  CMake gives each compile an order-only input, a phony edge
-that leads to the custom commands of the target and of the targets that it
-links, because such a command can write a header.  The Ninja generator also
-gives a custom command an order-only input on each library that its target
-links, unless the command takes DEPENDS_EXPLICIT_ONLY.  Each compile behind
-such a command then waits for the link or the archive of that library.  With
-such an input on the BPF commands of cmake/CrucibleBpf.cmake, approximately
-1000 compiles wait for the archive of foundation, which is ready
-approximately 2 s after the start of an edit build.
+order-only input.  Of the ready edges, it starts first the edge with the
+longest chain of edges to a target of the build, and on a tie the edge that
+comes first in build.ninja.  It does not read the time of a job.  Two checks
+hold the graph to that model.
 
-THE RULE
-    The check reads build.ninja of the build directory.  For each compile
-    edge, it follows each input to the edge that writes the input, and then
-    each input of that edge, and so on.  An order-only input that a link or an
-    archive writes is an error.  The error names the edge that has the
-    order-only input, the link or the archive, and the number of compiles
-    that wait for it.  An explicit or an implicit input that a link writes is
-    permitted, because a command can run a tool of the build to write a
-    file that a compile reads.  The check does not follow the inputs of a
-    link or an archive.
+THE CHECK build-order
+    No compile waits for a link or an archive through an order-only input.
 
-    A compile edge has a rule whose name starts with CXX_COMPILER__ or
-    C_COMPILER__.  A link or an archive has a rule whose name has the form
-    <LANG>_<KIND>_LINKER__, for an executable, a static library, a shared
-    library or a module.
+    CMake gives each compile an order-only input, a phony edge that leads to
+    the custom commands of the target and of the targets that it links,
+    because such a command can write a header.  The Ninja generator also
+    gives a custom command an order-only input on each library that its
+    target links, unless the command takes DEPENDS_EXPLICIT_ONLY.  Each
+    compile behind such a command then waits for the link or the archive of
+    that library.  With such an input on the BPF commands of
+    cmake/CrucibleBpf.cmake, approximately 1000 compiles wait for the archive
+    of foundation, which is ready approximately 2 s after the start of an
+    edit build.
+
+    For each compile edge, the check follows each input to the edge that
+    writes the input, and then each input of that edge, and so on.  An
+    order-only input that a link or an archive writes is an error.  The error
+    names the edge that has the order-only input, the link or the archive,
+    and the number of compiles that wait for it.  An explicit or an implicit
+    input that a link writes is permitted, because a command can run a tool
+    of the build to write a file that a compile reads.  The check does not
+    follow the inputs of a link or an archive.
+
+THE CHECK compile-first
+    The targets with a long compile are on utils/scripts/compile-first.txt,
+    and each object of a listed target has a chain of three edges or more.
+
+    The object of a test has a chain of two edges, the compile and the link,
+    so Ninja starts the objects of the tests in the order of build.ninja, short
+    or long.  cmake/CompileFirst.cmake gives each listed target one more edge,
+    so Ninja starts its objects before the objects of the other tests.
+
+    * The graph: an object of a listed target of `all` with a chain of less
+      than three edges is an error at the row of the target.
+    * The records: the largest compile of a target is the compile of its
+      object with the most user instructions.  A target of `all` whose largest
+      compile exceeds the error threshold of the row compile-first of
+      utils/scripts/budgets.txt is an error when the list does not name it.  A
+      listed target whose largest compile does not exceed the warning
+      threshold gives a warning.  A listed target between the two thresholds
+      gives no finding, so a small change of a compile does not move a target
+      in and out of the list.  A listed name with no judged compile gives no
+      finding, because a preset can leave out a target.
+
+    The check judges the records only in a build of the kind of the row
+    `kind` of the list, because the instruction count of a compile changes
+    with the kind.  In a build of another kind, and in a build with no record
+    that holds an instruction count, the check judges only the graph.  The
+    list serves the build host.  A GitHub runner can use another build of the
+    compiler, which gives other counts, so on a GitHub runner a target that
+    the list does not name gives a warning, and the warning tells why.
+
+    --write writes the list again from the records.  It adds each target over
+    the error threshold, removes each listed target at or below the warning
+    threshold, and keeps each other name and the header of the list.
+
+WHAT THE CHECKS READ
+    * build.ninja of the build directory.  A line that ends with an unescaped
+      '$' continues on the next line.  The checks do not read an included
+      file, because CMake writes only rules there.  A compile edge has a rule
+      whose name starts with CXX_COMPILER__ or C_COMPILER__.  A link or an
+      archive has a rule whose name has the form <LANG>_<KIND>_LINKER__, for
+      an executable, a static library, a shared library or a module.  The
+      target of an object is the directory CMakeFiles/<target>.dir of its path.
+    * For compile-first: BUILD_DIR/compile-first-targets.txt, each target of
+      `all` that compiles a source, which cmake/CompileFirst.cmake writes at
+      each configure.  The compile database, and the record OBJECT.cost of
+      each object (utils/scripts/cost_meter.py): the user instructions of the
+      cost block of a built object, or of the last_cost block of a ccache hit.
+      The kind of the build (BUILD_DIR/build-kind.txt).
 
 Usage
     check-build-order.py --check build-order --build-dir BUILD_DIR [--warnings-dir DIR]
+    check-build-order.py --check compile-first --build-dir BUILD_DIR [--warnings-dir DIR]
+    check-build-order.py --check compile-first --build-dir BUILD_DIR --write
     check-build-order.py --self-test
 
-Exit 0 with no finding, 1 with an error or an input that the check cannot
-read, 2 on a usage error or a failed self-test, 3 when the build directory
-has no build.ninja, because a generator other than Ninja made it.
+Exit 0 with no finding or with warnings only, 1 with an error or an input that
+the check cannot read, 2 on a usage error or a failed self-test, 3 when the
+build directory has no build.ninja, because a generator other than Ninja made
+it, and for --write when the records do not apply.
 """
 
 from __future__ import annotations
@@ -42,6 +95,8 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import json
+import os
 import re
 import sys
 import tempfile
@@ -52,12 +107,22 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import check_report  # noqa: E402
+import cost_meter  # noqa: E402
 from repo_root import REPO_ROOT  # noqa: E402
 
-CHECKS = ("build-order",)
+CHECKS = ("build-order", "compile-first")
 NOT_APPLICABLE = 3
 COMPILE_RULE = re.compile(r"(?:CXX|C)_COMPILER__")
 LINK_RULE = re.compile(r"[A-Z]+_(?:EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY)_LINKER__")
+LIST = Path(__file__).resolve().parent / "compile-first.txt"
+CANDIDATES = "compile-first-targets.txt"
+KIND_PREFIX = "kind "
+GIGA = 1e9
+# The chain of the object of a test: the compile and the link.  An object of a
+# listed target has one edge more.
+LISTED_CHAIN = 3
+# The results of a record whose count belongs to the object that exists.
+COUNTED_RESULTS = frozenset({"built", "hit"})
 
 
 class NotApplicable(Exception):
@@ -88,16 +153,34 @@ class Graph:
     defaults: list[str]
 
 
-def display(path: Path) -> str:
-    """Return a path relative to the repository root when it is under the root.
+@dataclass(frozen=True, slots=True)
+class Compile:
+    """The largest compile of one target: its source and its user instructions."""
+
+    source: str
+    instructions: int
+
+
+@dataclass(slots=True)
+class CompileList:
+    """utils/scripts/compile-first.txt: its header lines, its kind, and the line of each name."""
+
+    header: list[str]
+    kind: str
+    names: dict[str, int]
+
+
+def display(path: Path, root: Path = REPO_ROOT) -> str:
+    """Return a path relative to the root when it is under the root.
 
     Args:
         path: The path
+        root: The root
 
     Returns:
         The text of the path
     """
-    return str(path.relative_to(REPO_ROOT)) if path.is_relative_to(REPO_ROOT) else str(path)
+    return str(path.relative_to(root)) if path.is_relative_to(root) else str(path)
 
 
 def split_paths(text: str) -> list[str]:
@@ -190,10 +273,6 @@ def parse_build_line(line: int, body: str) -> Edge:
 def read_graph(path: Path) -> Graph:
     """Read the build statements and the default targets of one build.ninja.
 
-    A line that ends with an unescaped '$' continues on the next line.  The
-    check does not read an included file, because CMake writes only rules
-    there.
-
     Complexity: linear in the size of the file.
 
     Args:
@@ -228,6 +307,22 @@ def read_graph(path: Path) -> Graph:
                 producer[output] = len(edges)
             edges.append(edge)
     return Graph(edges, producer, defaults)
+
+
+def target_of(object_path: Path) -> str | None:
+    """Return the target of an object, from the directory CMakeFiles/<target>.dir of its path.
+
+    Args:
+        object_path: The path of the object
+
+    Returns:
+        The target name, or None when the path has no such directory
+    """
+    parts = object_path.parts
+    for index in range(len(parts) - 1):
+        if parts[index] == "CMakeFiles" and parts[index + 1].endswith(".dir"):
+            return parts[index + 1][: -len(".dir")]
+    return None
 
 
 def order_only_waits(graph: Graph) -> dict[tuple[int, int], int]:
@@ -306,8 +401,370 @@ def evaluate_order(graph: Graph, ninja_shown: str) -> list[check_report.Finding]
     return findings
 
 
+def chain_lengths(graph: Graph) -> dict[int, int]:
+    """Return the chain of each edge that a default target reaches, as Ninja 1.12 and later count it.
+
+    The chain of an edge is the number of edges that are not phony on the
+    longest path from the edge to a default target, the edge included.  Ninja
+    starts the ready edge with the longest chain first.
+
+    Complexity: linear in the edges and their inputs.
+
+    Args:
+        graph: The graph
+
+    Returns:
+        The chain of each edge that a default target reaches
+    """
+    order: list[int] = []
+    seen: set[int] = set()
+    for target in graph.defaults or ["all"]:
+        root = graph.producer.get(target)
+        if root is None or root in seen:
+            continue
+        seen.add(root)
+        stack: list[tuple[int, int]] = [(root, 0)]
+        while stack:
+            current, child = stack.pop()
+            inputs = graph.edges[current].inputs + graph.edges[current].order_only
+            if child < len(inputs):
+                stack.append((current, child + 1))
+                producer = graph.producer.get(inputs[child])
+                if producer is not None and producer not in seen:
+                    seen.add(producer)
+                    stack.append((producer, 0))
+            else:
+                order.append(current)
+
+    def own(edge_id: int) -> int:
+        return 0 if graph.edges[edge_id].rule == "phony" else 1
+
+    chain = {edge_id: own(edge_id) for edge_id in order}
+    for edge_id in reversed(order):
+        edge = graph.edges[edge_id]
+        for name in edge.inputs + edge.order_only:
+            producer = graph.producer.get(name)
+            if producer is not None and producer in chain:
+                chain[producer] = max(chain[producer], chain[edge_id] + own(producer))
+    return chain
+
+
+def read_list(path: Path) -> CompileList:
+    """Read utils/scripts/compile-first.txt.
+
+    The comment lines before the first row are the header.  One row is
+    `kind KIND`, and each other row is one target name.
+
+    Args:
+        path: The list
+
+    Returns:
+        The list
+
+    Raises:
+        ValueError: If the list has no kind row or two, a name with a space, or a name on two rows
+        OSError: If the list cannot be read
+    """
+    header: list[str] = []
+    kind = ""
+    names: dict[str, int] = {}
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        text = raw.strip()
+        if not text or text.startswith("#"):
+            if not kind and not names:
+                header.append(raw)
+            continue
+        if text.startswith(KIND_PREFIX):
+            if kind:
+                raise ValueError(f"{path}:{number}: the list has a second kind row.  Keep one `kind KIND` row")
+            kind = text[len(KIND_PREFIX):].strip()
+            continue
+        if any(character.isspace() for character in text):
+            raise ValueError(f"{path}:{number}: the row `{text}` is not one target name")
+        if text in names:
+            raise ValueError(f"{path}:{number}: the target {text} has a second row.  Remove one")
+        names[text] = number
+    if not kind:
+        raise ValueError(f"{path}: the list has no `kind KIND` row.  Add the kind of the build that the list comes "
+                         f"from, for example `kind x86_64-debug-asan`")
+    return CompileList(header, kind, names)
+
+
+def read_candidates(build: Path) -> set[str]:
+    """Read the targets of `all` that compile a source, which cmake/CompileFirst.cmake writes.
+
+    Args:
+        build: The build directory
+
+    Returns:
+        The target names
+
+    Raises:
+        ValueError: If the file does not exist
+    """
+    path = build / CANDIDATES
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as problem:
+        raise ValueError(f"{path} cannot be read ({problem}).  Configure the build directory again, so that "
+                         f"cmake/CompileFirst.cmake writes it") from None
+    return {line.strip() for line in text.splitlines() if line.strip()}
+
+
+def evaluate_chains(graph: Graph, candidates: set[str], compile_list: CompileList,
+                    list_shown: str) -> list[check_report.Finding]:
+    """Make one error for each listed target of `all` with an object whose chain is shorter than LISTED_CHAIN.
+
+    Complexity: linear in the edges.
+
+    Args:
+        graph: The graph
+        candidates: The targets of `all` that compile a source
+        compile_list: The list
+        list_shown: The path of the list, for the findings
+
+    Returns:
+        The findings
+    """
+    chain = chain_lengths(graph)
+    shortest: dict[str, tuple[int, str]] = {}
+    for edge_id, edge in enumerate(graph.edges):
+        if not COMPILE_RULE.match(edge.rule):
+            continue
+        target = target_of(Path(edge.outputs[0]))
+        if target is None or target not in compile_list.names or target not in candidates:
+            continue
+        length = chain.get(edge_id, 0)
+        if target not in shortest or length < shortest[target][0]:
+            shortest[target] = (length, edge.outputs[0])
+    findings: list[check_report.Finding] = []
+    for target, (length, output) in sorted(shortest.items()):
+        if length < LISTED_CHAIN:
+            findings.append(check_report.Finding(
+                "error", list_shown, compile_list.names[target], "compile-first",
+                f"the target {target} is on the list, and its object {output} has a chain of {length} edge(s) in "
+                f"build.ninja.  cmake/CompileFirst.cmake gives each object of a listed target a chain of "
+                f"{LISTED_CHAIN} edges or more, so Ninja does not start the object first.  Configure the build "
+                f"again, and make sure that cmake/CompileFirst.cmake is included"))
+    return findings
+
+
+def record_count(object_path: Path) -> int | None:
+    """Return the user instructions of the compile of one object, from its record.
+
+    Args:
+        object_path: The path of the object
+
+    Returns:
+        The count of the cost block of a built object or of the last_cost block of a ccache hit, or None
+        when the record is missing, cannot be read, or holds no exact count
+    """
+    record_path = Path(str(object_path) + cost_meter.RECORD_SUFFIX)
+    try:
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if (not isinstance(record, dict) or record.get("format") != cost_meter.RECORD_FORMAT
+            or record.get("step") != "compile" or record.get("result") not in COUNTED_RESULTS):
+        return None
+    block = record.get("last_cost" if record["result"] == "hit" else "cost")
+    if not isinstance(block, dict):
+        return None
+    count = block.get("instructions")
+    return count if isinstance(count, int) and not isinstance(count, bool) and count >= 0 else None
+
+
+def read_largest(build: Path, root: Path = REPO_ROOT) -> dict[str, Compile]:
+    """Return the largest compile of each target that has a record with a count.
+
+    Complexity: linear in the rows of the compile database.
+
+    Args:
+        build: The build directory
+        root: The repository root, for the source paths of the findings
+
+    Returns:
+        The largest compile of each target
+
+    Raises:
+        ValueError: If the compile database cannot be read
+    """
+    database = build / "compile_commands.json"
+    try:
+        rows = json.loads(database.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as problem:
+        raise ValueError(f"the compile database {database} cannot be read ({problem}).  Configure the build "
+                         f"directory with a preset first") from None
+    largest: dict[str, Compile] = {}
+    for row in rows:
+        output = row.get("output") if isinstance(row, dict) else None
+        if not output:
+            continue
+        object_path = Path(os.path.normpath(os.path.join(row["directory"], output)))
+        target = target_of(object_path)
+        count = record_count(object_path) if target is not None else None
+        if target is None or count is None:
+            continue
+        if target not in largest or count > largest[target].instructions:
+            source = Path(os.path.normpath(os.path.join(row["directory"], row["file"])))
+            largest[target] = Compile(display(source, root), count)
+    return largest
+
+
+def evaluate_records(largest: dict[str, Compile], candidates: set[str], compile_list: CompileList,
+                     budget: check_report.Budget, list_shown: str) -> list[check_report.Finding]:
+    """Compare the largest compile of each target of `all` with the list.
+
+    Complexity: O(n log n) in the targets, because of the sort.
+
+    Args:
+        largest: The largest compile of each target with a count
+        candidates: The targets of `all` that compile a source
+        compile_list: The list
+        budget: The row compile-first
+        list_shown: The path of the list, for the findings
+
+    Returns:
+        The findings
+    """
+    findings: list[check_report.Finding] = []
+    command = "python3 utils/scripts/check-build-order.py --check compile-first --build-dir BUILD_DIR --write"
+    on_runner = cost_meter.is_github_actions()
+    for target in sorted(candidates & largest.keys()):
+        compile_ = largest[target]
+        giga = compile_.instructions / GIGA
+        line = compile_list.names.get(target)
+        if line is None and giga > budget.error:
+            text = (f"the target {target} compiles {compile_.source} in {giga:.1f} G instructions, more than the "
+                    f"error threshold {budget.error:g} G, and the list does not name it.  Ninja then starts the "
+                    f"compile after the compiles of the other tests.  Write the list again: {command}")
+            if on_runner:
+                text += (".  The check gives a warning on a CI runner (GITHUB_ACTIONS is true), because the list "
+                         "serves the build host and a runner can use another build of the compiler")
+            findings.append(check_report.Finding("warning" if on_runner else "error", list_shown, 0,
+                                                 "compile-first", text))
+        elif line is not None and giga <= budget.warn:
+            findings.append(check_report.judged(
+                "warning", list_shown, line, "compile-first",
+                f"the list names the target {target}, whose largest compile {compile_.source} takes "
+                f"{giga:.1f} G instructions, no more than the warning threshold {budget.warn:g} G.  Write the list "
+                f"again: {command}"))
+    return findings
+
+
+def write_list(path: Path, compile_list: CompileList, largest: dict[str, Compile], candidates: set[str],
+               budget: check_report.Budget) -> None:
+    """Write the list again from the largest compile of each target.
+
+    Args:
+        path: The list
+        compile_list: The list as it is
+        largest: The largest compile of each target with a count
+        candidates: The targets of `all` that compile a source
+        budget: The row compile-first
+    """
+    judged = candidates & largest.keys()
+    kept = {name for name in compile_list.names
+            if name not in judged or largest[name].instructions / GIGA > budget.warn}
+    kept |= {target for target in judged if largest[target].instructions / GIGA > budget.error}
+    header = "".join(f"{line}\n" for line in compile_list.header)
+    body = "".join(f"{name}\n" for name in sorted(kept))
+    path.write_text(f"{header}{KIND_PREFIX}{compile_list.kind}\n{body}", encoding="utf-8")
+
+
+def records_of(build: Path, compile_list: CompileList) -> dict[str, Compile]:
+    """Return the largest compile of each target, when the records of the build can judge the list.
+
+    Args:
+        build: The build directory
+        compile_list: The list
+
+    Returns:
+        The largest compile of each target with a count
+
+    Raises:
+        NotApplicable: If the build has another kind than the list, or no record holds a count
+        ValueError: If the kind of the build or the compile database cannot be read
+    """
+    kind = cost_meter.read_kind(str(build))
+    if kind is None:
+        raise ValueError(f"{build}/{cost_meter.KIND_FILE} does not exist, so the kind of the build is not known")
+    if kind != compile_list.kind:
+        raise NotApplicable(f"the build has the kind {kind}, and the list holds the counts of the kind "
+                            f"{compile_list.kind}")
+    largest = read_largest(build)
+    if not largest:
+        raise NotApplicable("no compile record of the build holds an instruction count")
+    return largest
+
+
 def self_test() -> int:
-    """Plant each verdict in a scratch build.ninja, and check it.
+    """Run the cases of the self-test with GITHUB_ACTIONS removed, except in the cases that set it.
+
+    Returns:
+        0 when every case holds, 2 otherwise
+    """
+    with check_report.github_actions(False):
+        return self_test_cases()
+
+
+def plant_object(build: Path, root: Path, target: str, source: str, record: dict[str, object] | None) -> dict[str, str]:
+    """Plant one object of a target and its record in a scratch build directory.
+
+    Args:
+        build: The scratch build directory
+        root: The scratch repository root
+        target: The target of the object
+        source: The source of the object, relative to the root
+        record: The record, or None for no record
+
+    Returns:
+        The row of the compile database for the object
+    """
+    output = f"test/CMakeFiles/{target}.dir/{Path(source).name}.o"
+    object_path = build / output
+    object_path.parent.mkdir(parents=True, exist_ok=True)
+    object_path.write_bytes(b"object")
+    if record is not None:
+        Path(str(object_path) + cost_meter.RECORD_SUFFIX).write_text(json.dumps(record), encoding="utf-8")
+    return {"directory": str(build), "file": str(root / source), "output": output}
+
+
+ORDER_GRAPH = (
+    "# a comment\n"
+    "rule CXX_COMPILER__a_unscanned_Debug\n"
+    "  command = g++ $in\n"
+    "build liba.a: CXX_STATIC_LIBRARY_LINKER__a_Debug a.o\n"
+    "build a.o: CXX_COMPILER__a_unscanned_Debug a.cpp || cmake_object_order_depends_target_a\n"
+    "build cmake_object_order_depends_target_a: phony || .\n"
+    "build gen.c | ${cmake_ninja_workdir}gen.c: CUSTOM_COMMAND gen.in || liba.a\n"
+    "build cmake_object_order_depends_target_b: phony || gen.c cmake_object_order_depends_target_a\n"
+    "build b.o: CXX_COMPILER__b_unscanned_Debug b.cpp || cmake_object_order_depends_target_b\n"
+    "build b2.o: CXX_COMPILER__b_unscanned_Debug $\n"
+    "    b2.cpp || cmake_object_order_depends_target_b\n"
+    "build tool: CXX_EXECUTABLE_LINKER__tool_Debug tool.o\n"
+    "build tool.o: CXX_COMPILER__tool_unscanned_Debug tool.cpp\n"
+    "build hdr.h: CUSTOM_COMMAND tool\n"
+    "build cmake_object_order_depends_target_c: phony || hdr.h\n"
+    "build c.o: CXX_COMPILER__c_unscanned_Debug c.cpp || cmake_object_order_depends_target_c\n"
+    "build all: phony liba.a tool\n"
+    "default all\n")
+
+CHAIN_GRAPH = (
+    "build t/CMakeFiles/listed.dir/listed.cpp.o: CXX_COMPILER__listed_unscanned_Debug listed.cpp\n"
+    "build t/listed: CXX_EXECUTABLE_LINKER__listed_Debug t/CMakeFiles/listed.dir/listed.cpp.o\n"
+    "build t/CMakeFiles/other.dir/other.cpp.o: CXX_COMPILER__other_unscanned_Debug other.cpp\n"
+    "build t/other: CXX_EXECUTABLE_LINKER__other_Debug t/CMakeFiles/other.dir/other.cpp.o\n"
+    "build t/CMakeFiles/unit.dir/unit.cpp.o: CXX_COMPILER__unit_unscanned_Debug unit.cpp\n"
+    "build unit: phony t/CMakeFiles/unit.dir/unit.cpp.o\n"
+    "build compile-first.stamp: CUSTOM_COMMAND || t/listed unit\n"
+    "build compile_first: phony compile-first.stamp\n"
+    "build all: phony t/listed t/other unit compile_first\n"
+    "default all\n")
+
+
+def self_test_cases() -> int:
+    """Plant each verdict of each check in scratch files, and check it.
 
     Returns:
         0 when every case holds, 2 otherwise
@@ -318,6 +775,10 @@ def self_test() -> int:
         print(f"  {'ok  ' if holds else 'FAIL'} {name}")
         if not holds:
             failures.append(name)
+
+    def built(giga: float) -> dict[str, object]:
+        return {"format": cost_meter.RECORD_FORMAT, "step": "compile", "result": "built",
+                "cost": {"cpu_s": 1.0, "instructions": int(giga * GIGA)}}
 
     expect("split_paths removes the escapes of a space and a colon",
            split_paths("a$ b c$:d  e") == ["a b", "c:d", "e"])
@@ -330,49 +791,162 @@ def self_test() -> int:
         expect("parse_build_line refuses a statement with no ':'", False)
     except ValueError:
         expect("parse_build_line refuses a statement with no ':'", True)
+    expect("target_of reads the target of an object",
+           target_of(Path("/b/test/CMakeFiles/test_a.dir/x/test_a.cpp.o")) == "test_a"
+           and target_of(Path("/b/test/x.o")) is None)
+    budget = check_report.Budget("compile-first", 15.0, 20.0, "G instructions", "the largest compile of one target")
 
-    planted = (
-        "# a comment\n"
-        "rule CXX_COMPILER__a_unscanned_Debug\n"
-        "  command = g++ $in\n"
-        "build liba.a: CXX_STATIC_LIBRARY_LINKER__a_Debug a.o\n"
-        "build a.o: CXX_COMPILER__a_unscanned_Debug a.cpp || cmake_object_order_depends_target_a\n"
-        "build cmake_object_order_depends_target_a: phony || .\n"
-        "build gen.c | ${cmake_ninja_workdir}gen.c: CUSTOM_COMMAND gen.in || liba.a\n"
-        "build cmake_object_order_depends_target_b: phony || gen.c cmake_object_order_depends_target_a\n"
-        "build b.o: CXX_COMPILER__b_unscanned_Debug b.cpp || cmake_object_order_depends_target_b\n"
-        "build b2.o: CXX_COMPILER__b_unscanned_Debug $\n"
-        "    b2.cpp || cmake_object_order_depends_target_b\n"
-        "build tool: CXX_EXECUTABLE_LINKER__tool_Debug tool.o\n"
-        "build tool.o: CXX_COMPILER__tool_unscanned_Debug tool.cpp\n"
-        "build hdr.h: CUSTOM_COMMAND tool\n"
-        "build cmake_object_order_depends_target_c: phony || hdr.h\n"
-        "build c.o: CXX_COMPILER__c_unscanned_Debug c.cpp || cmake_object_order_depends_target_c\n"
-        "build all: phony liba.a tool\n"
-        "default all\n")
     with tempfile.TemporaryDirectory(prefix="check-build-order-") as work:
-        ninja = Path(work) / "build.ninja"
-        ninja.write_text(planted, encoding="utf-8")
+        root = Path(work)
+        ninja = root / "build.ninja"
+        ninja.write_text(ORDER_GRAPH, encoding="utf-8")
         graph = read_graph(ninja)
         expect("read_graph reads each build statement, a continued line and the default targets",
                len(graph.edges) == 13 and graph.defaults == ["all"]
                and graph.edges[graph.producer["b2.o"]].inputs == ("b2.cpp",)
                and graph.edges[graph.producer["b2.o"]].line == 10)
         findings = evaluate_order(graph, "build.ninja")
-        expect("an error: a custom command with an order-only input that an archive writes, at its line, with the "
-               "count of the compiles behind it",
+        expect("build-order, an error: a custom command with an order-only input that an archive writes, at its "
+               "line, with the count of the compiles behind it",
                len(findings) == 1 and findings[0].level == "error" and findings[0].line == 7
                and "gen.c" in findings[0].message and "liba.a" in findings[0].message
                and "2 compile(s)" in findings[0].message)
-        expect("no finding: a command that runs a tool of the build as an explicit input",
+        expect("build-order, no finding: a command that runs a tool of the build as an explicit input",
                not any("hdr.h" in found.message for found in findings))
-        ninja.write_text(planted.replace(" || liba.a\n", "\n"), encoding="utf-8")
-        expect("no finding: the same graph with no order-only input on the archive",
+        ninja.write_text(ORDER_GRAPH.replace(" || liba.a\n", "\n"), encoding="utf-8")
+        expect("build-order, no finding: the same graph with no order-only input on the archive",
                evaluate_order(read_graph(ninja), "build.ninja") == [])
-        warnings_dir = Path(work) / "warnings"
+
+        ninja.write_text(CHAIN_GRAPH, encoding="utf-8")
+        chain_graph = read_graph(ninja)
+        chain = chain_lengths(chain_graph)
+        expect("chain_lengths: three edges for the object of a listed test, two for another test, two for the "
+               "object of a listed object library, and one for a link with no consumer",
+               chain[chain_graph.producer["t/CMakeFiles/listed.dir/listed.cpp.o"]] == 3
+               and chain[chain_graph.producer["t/CMakeFiles/other.dir/other.cpp.o"]] == 2
+               and chain[chain_graph.producer["t/CMakeFiles/unit.dir/unit.cpp.o"]] == 2
+               and chain[chain_graph.producer["t/other"]] == 1)
+        chain_list = CompileList([], "x86_64-debug-asan", {"listed": 4, "unit": 5, "outside": 6})
+        found = evaluate_chains(chain_graph, {"listed", "other", "unit"}, chain_list, "compile-first.txt")
+        expect("compile-first, an error at the row: a listed object library whose object has two edges",
+               len(found) == 1 and found[0].line == 5 and "unit" in found[0].message)
+        ninja.write_text(CHAIN_GRAPH.replace("build compile-first.stamp: CUSTOM_COMMAND || t/listed unit\n", ""),
+                         encoding="utf-8")
+        found = evaluate_chains(read_graph(ninja), {"listed", "other", "unit"}, chain_list, "compile-first.txt")
+        expect("compile-first, an error for each listed target when the graph has no stamp",
+               [item.line for item in found] == [4, 5])
+
+        build = root / "build"
+        build.mkdir()
+        rows = [
+            plant_object(build, root, "long_unlisted", "test/long_unlisted.cpp", built(25.0)),
+            plant_object(build, root, "long_listed", "test/long_listed_a.cpp", built(3.0)),
+            plant_object(build, root, "long_listed", "test/long_listed_b.cpp", built(30.0)),
+            plant_object(build, root, "short_listed", "test/short_listed.cpp", built(15.0)),
+            plant_object(build, root, "middle_listed", "test/middle_listed.cpp", built(18.0)),
+            plant_object(build, root, "middle_unlisted", "test/middle_unlisted.cpp", built(20.0)),
+            plant_object(build, root, "hit_long", "test/hit_long.cpp",
+                         {"format": cost_meter.RECORD_FORMAT, "step": "compile", "result": "hit",
+                          "last_cost": {"instructions": int(40 * GIGA)}}),
+            plant_object(build, root, "hit_no_count", "test/hit_no_count.cpp",
+                         {"format": cost_meter.RECORD_FORMAT, "step": "compile", "result": "hit"}),
+            plant_object(build, root, "failed_long", "test/failed_long.cpp", {**built(50.0), "result": "failed"}),
+            plant_object(build, root, "no_record", "test/no_record.cpp", None),
+            plant_object(build, root, "outside_all", "test/outside_all.cpp", built(60.0)),
+        ]
+        (build / "compile_commands.json").write_text(json.dumps(rows), encoding="utf-8")
+        candidates_text = "\n".join(("long_unlisted", "long_listed", "short_listed", "middle_listed",
+                                     "middle_unlisted", "hit_long", "hit_no_count", "failed_long", "no_record"))
+        (build / CANDIDATES).write_text(candidates_text + "\n", encoding="utf-8")
+        (build / cost_meter.KIND_FILE).write_text("x86_64-debug-asan\n", encoding="utf-8")
+        list_path = root / "compile-first.txt"
+        list_path.write_text("# the header\n#   with a command\nkind x86_64-debug-asan\nlong_listed\nshort_listed\n"
+                             "middle_listed\nabsent_target\n", encoding="utf-8")
+
+        compile_list = read_list(list_path)
+        expect("the list reads its header, its kind and the line of each name",
+               compile_list.header == ["# the header", "#   with a command"]
+               and compile_list.kind == "x86_64-debug-asan" and compile_list.names["short_listed"] == 5)
+        largest = read_largest(build, root)
+        expect("the largest compile of a target is its object with the most instructions",
+               largest["long_listed"] == Compile("test/long_listed_b.cpp", int(30 * GIGA)))
+        expect("a ccache hit counts the last_cost block", largest["hit_long"].instructions == int(40 * GIGA))
+        expect("no count: a hit with no last_cost, a failed compile and an object with no record",
+               not {"hit_no_count", "failed_long", "no_record"} & largest.keys())
+        candidates = read_candidates(build)
+        findings = evaluate_records(largest, candidates, compile_list, budget, "compile-first.txt")
+        expect("compile-first, an error: a target over the error threshold that the list does not name, with its "
+               "source",
+               any(found.level == "error" and "long_unlisted" in found.message
+                   and "test/long_unlisted.cpp" in found.message for found in findings))
+        expect("compile-first, an error: a ccache hit over the error threshold that the list does not name",
+               any(found.level == "error" and "hit_long" in found.message for found in findings))
+        expect("compile-first, a warning at the row of a listed target at or below the warning threshold",
+               any(found.level == "warning" and found.line == 5 and "short_listed" in found.message
+                   for found in findings))
+        expect("compile-first, no finding: a listed target over the error threshold, a listed or unlisted target "
+               "between the thresholds, a target outside all, and a listed name with no compile",
+               len(findings) == 3 and not any(name in found.message for found in findings
+                                              for name in ("long_listed", "middle_listed", "middle_unlisted",
+                                                           "outside_all", "absent_target")))
+        with check_report.github_actions(True):
+            on_runner = evaluate_records(largest, candidates, compile_list, budget, "compile-first.txt")
+        expect("compile-first, on a CI runner a target that the list does not name gives a warning that tells why",
+               len(on_runner) == 3 and all(found.level == "warning" for found in on_runner)
+               and sum("CI runner" in found.message for found in on_runner) == 2)
+        expect("records_of judges a build of the kind of the list",
+               {name: item.instructions for name, item in records_of(build, compile_list).items()}
+               == {name: item.instructions for name, item in largest.items()})
+        (build / cost_meter.KIND_FILE).write_text("x86_64-release\n", encoding="utf-8")
+        try:
+            records_of(build, compile_list)
+            expect("records_of does not apply to a build of another kind", False)
+        except NotApplicable:
+            expect("records_of does not apply to a build of another kind", True)
+
+        write_list(list_path, compile_list, largest, candidates, budget)
+        written = read_list(list_path)
+        expect("--write adds the targets over the error threshold, removes the listed target at or below the "
+               "warning threshold, and keeps the other names, the header and the kind",
+               set(written.names) == {"long_listed", "middle_listed", "absent_target", "long_unlisted", "hit_long"}
+               and written.header == compile_list.header and written.kind == compile_list.kind)
+        expect("compile-first, no finding for a list that --write wrote",
+               evaluate_records(largest, candidates, written, budget, "compile-first.txt") == [])
+
+        for label, body in (("no kind row", "a_target\n"), ("two kind rows", "kind a\nkind b\n"),
+                            ("a row with a space", "kind a\ntwo words\n"), ("a name on two rows", "kind a\nx\nx\n")):
+            list_path.write_text(body, encoding="utf-8")
+            try:
+                read_list(list_path)
+                expect(f"read_list refuses {label}", False)
+            except ValueError:
+                expect(f"read_list refuses {label}", True)
+        try:
+            read_candidates(root / "missing")
+            expect("read_candidates refuses a build directory with no list of targets", False)
+        except ValueError:
+            expect("read_candidates refuses a build directory with no list of targets", True)
+        try:
+            read_largest(root / "missing", root)
+            expect("read_largest refuses a build directory with no compile database", False)
+        except ValueError:
+            expect("read_largest refuses a build directory with no compile database", True)
+
+        warnings_dir = root / "warnings"
+        warning_only = [found for found in findings if found.level == "warning"]
+        with contextlib.redirect_stdout(io.StringIO()) as printed:
+            status = check_report.emit(warning_only, "compile-first", warnings_dir)
+        expect("warnings only give exit status 0, a line of the format and a warnings file",
+               status == 0 and (warnings_dir / "compile-first.txt").is_file()
+               and check_report.parse_line(printed.getvalue().splitlines()[0]) is not None)
         with contextlib.redirect_stdout(io.StringIO()):
-            status = check_report.emit(findings, "build-order", warnings_dir)
-        expect("an error gives exit status 1", status == 1)
+            status = check_report.emit([found for found in findings if found.level == "error"], "compile-first",
+                                       warnings_dir)
+        expect("an error gives exit status 1 and removes the warnings file",
+               status == 1 and not (warnings_dir / "compile-first.txt").exists())
+    expect("the repository budget table has the row compile-first", "compile-first" in check_report.read_budgets())
+    expect("the repository list reads, and it names the walk units of test/layer",
+           any(name.startswith("layer_walks_across_headers_") for name in read_list(LIST).names))
     if failures:
         print(f"check-build-order --self-test: FAILED, {len(failures)} case(s) did not hold")
         return 2
@@ -380,8 +954,58 @@ def self_test() -> int:
     return 0
 
 
+def run_compile_first(build: Path, graph: Graph, ninja_shown: str, is_write: bool,
+                      warnings_dir: Path | None) -> int:
+    """Run the check compile-first, or write the list again.
+
+    Args:
+        build: The build directory
+        graph: The graph of build.ninja
+        ninja_shown: The path of build.ninja, for an input finding
+        is_write: True to write the list again
+        warnings_dir: The warnings directory, or None
+
+    Returns:
+        The exit code
+    """
+    list_shown = display(LIST)
+    try:
+        budget = check_report.read_budgets()["compile-first"]
+        compile_list = read_list(LIST)
+        candidates = read_candidates(build)
+    except (ValueError, KeyError, OSError) as exc:
+        problem = "the row compile-first is missing from the budget table" if isinstance(exc, KeyError) else str(exc)
+        return check_report.emit([check_report.Finding("error", list_shown, 0, "compile-first",
+                                                       f"the check cannot read its input: {problem}")],
+                                 "compile-first", warnings_dir)
+    findings = evaluate_chains(graph, candidates, compile_list, list_shown)
+    try:
+        largest = records_of(build, compile_list)
+    except NotApplicable as exc:
+        if is_write:
+            print(f"check-build-order: the records cannot write the list: {exc}.", file=sys.stderr)
+            return NOT_APPLICABLE
+        print(f"check-build-order: the check judges only the graph: {exc}.", file=sys.stderr)
+        largest = {}
+    except ValueError as exc:
+        input_error = check_report.Finding("error", ninja_shown, 0, "compile-first",
+                                           f"the check cannot read its input: {exc}")
+        if is_write:
+            return check_report.emit([input_error], "compile-first", warnings_dir)
+        findings.append(input_error)
+        largest = {}
+    if is_write:
+        write_list(LIST, compile_list, largest, candidates, budget)
+        print(f"check-build-order: wrote {list_shown}.", file=sys.stderr)
+        return 0
+    findings += evaluate_records(largest, candidates, compile_list, budget, list_shown)
+    print(f"check-build-order: {len(candidates & largest.keys())} targets judged by their records, "
+          f"{len(compile_list.names)} names on the list, {len(findings)} finding(s).", file=sys.stderr)
+    return check_report.emit(findings, "compile-first", warnings_dir)
+
+
 def main(argv: list[str]) -> int:
-    """Run one check, or the self-test.
+    """Run one check, the write of the list, or the self-test.
 
     Args:
         argv: The arguments after the program name
@@ -393,12 +1017,16 @@ def main(argv: list[str]) -> int:
     check_report.add_arguments(parser)
     parser.add_argument("--check", choices=CHECKS)
     parser.add_argument("--build-dir", type=Path, help="the build directory")
-    parser.add_argument("--self-test", action="store_true", help="plant each verdict in a scratch build.ninja")
+    parser.add_argument("--write", action="store_true",
+                        help="with --check compile-first, write utils/scripts/compile-first.txt again from the records")
+    parser.add_argument("--self-test", action="store_true", help="plant each verdict of each check")
     arguments = parser.parse_args(argv)
     if arguments.self_test:
         return self_test()
     if arguments.check is None or arguments.build_dir is None:
         parser.error("give --check CHECK --build-dir BUILD_DIR, or --self-test")
+    if arguments.write and arguments.check != "compile-first":
+        parser.error("--write applies only to --check compile-first")
     build = arguments.build_dir.resolve()
     ninja = build / "build.ninja"
     try:
@@ -412,6 +1040,8 @@ def main(argv: list[str]) -> int:
         return check_report.emit([check_report.Finding("error", display(ninja), 0, arguments.check,
                                                        f"the check cannot read its input: {exc}")],
                                  arguments.check, arguments.warnings_dir)
+    if arguments.check == "compile-first":
+        return run_compile_first(build, graph, display(ninja), arguments.write, arguments.warnings_dir)
     findings = evaluate_order(graph, display(ninja))
     print(f"check-build-order: {len(graph.edges)} edges, {len(findings)} finding(s).", file=sys.stderr)
     return check_report.emit(findings, arguments.check, arguments.warnings_dir)

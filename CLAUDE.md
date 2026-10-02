@@ -2414,6 +2414,7 @@ Each translation unit that includes a header compiles that header again, and eac
 |---|---|---|---|---|---|
 | `compile-cpu` | The user and system CPU time of one compile job | 10 s | 20 s. A warning only when the record holds an instruction count. The launcher stops a job at 60 s | The build launcher and the test `compile_cpu` | Build, test run |
 | `compile-instructions` | The user instructions of one compile job | 55 G | 110 G | The test `compile_instructions` | Test run |
+| `compile-first` | The user instructions of the largest compile of one target, against `utils/scripts/compile-first.txt` (`cmake/CompileFirst.cmake`) | 15 G, for a listed target at or below it | 20 G, for a target over it that the list does not name | The test `compile_first` | Test run |
 | `compile-memory` | The peak memory of one compile job | 2 GB | 4 GB. The launcher fails the job | The build launcher and the test `compile_memory` | Build, test run |
 | `link-time` | The user and system CPU time of one link | 2 s | 5 s. The launcher stops a link at 15 s | The build launcher and the test `link_time` | Build, test run |
 | `link-memory` | The peak memory of one link | 0.5 GB | 1 GB. The launcher fails the link | The build launcher and the test `link_memory` | Build, test run |

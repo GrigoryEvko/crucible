@@ -5521,9 +5521,17 @@ set_tests_properties(compile_cost_self_test PROPERTIES LABELS "ci_guard")
 add_test(NAME build_order
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-build-order.py --check build-order
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+# compile_first — each target of all with a long compile is on
+# utils/scripts/compile-first.txt, and each object of a listed target has a
+# chain of three edges in build.ninja, so Ninja starts it before the objects
+# of the other tests (cmake/CompileFirst.cmake).
+add_test(NAME compile_first
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-build-order.py --check compile-first
+          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 add_test(NAME build_order_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-build-order.py --self-test)
-set_tests_properties(build_order build_order_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
+set_tests_properties(build_order compile_first build_order_self_test PROPERTIES LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
 
 # parse_total — the sum, over each object of the target all and each negative
 # fixture, of the bytes that its compile reads, against the baseline of the

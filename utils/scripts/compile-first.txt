@@ -1,0 +1,91 @@
+# utils/scripts/compile-first.txt — the targets with a long compile, one name on each line.
+#
+# cmake/CompileFirst.cmake gives each target of this list one more edge in the Ninja graph, so
+# Ninja starts its compiles before the compiles of the other tests.  The test compile_first
+# (utils/scripts/check-build-order.py) holds the list equal to the records of the build launcher
+# in a build of the kind of the row `kind`, with the thresholds of the row compile-first in
+# utils/scripts/budgets.txt.  Write the list again from such a build:
+#   python3 utils/scripts/check-build-order.py --check compile-first --build-dir build --write
+kind x86_64-debug-asan
+crucible_cipher
+crucible_hwprobe
+crucible_vessel
+crucible_vigil
+crucible_vis
+fixy
+layer_walks_across_headers_0
+layer_walks_across_headers_1
+layer_walks_across_headers_2
+layer_walks_across_headers_3
+test_armed_roster
+test_bench_harness
+test_checked
+test_cipher
+test_cipher_commit_lifetime
+test_cipher_publish_tier
+test_cipher_record_event
+test_cntp_connection_pool
+test_cntp_fec
+test_cntp_fountain
+test_cntp_path_swap
+test_collision
+test_concurrent_swmr_session
+test_crdt
+test_crucible_context
+test_endpoint
+test_expr_pool_fast_symbol
+test_federation_protocol
+test_fn
+test_forgeable_proofs
+test_fs
+test_iteration_detector
+test_lattices_bands
+test_ledger
+test_ledger_probes
+test_ledger_probes_cache_tier
+test_ledger_probes_refresh
+test_lower
+test_merkle_dag
+test_meta_log
+test_metalog_session
+test_os_spawn
+test_owned_region
+test_permission_row_roster
+test_pin_event_door
+test_plumtree
+test_region_cache
+test_registration_seal_race
+test_resnet
+test_row_hash_wrappers
+test_serialize
+test_serialize_release_gate
+test_session_async_channel
+test_session_crash_attack
+test_session_crash_race
+test_session_crash_stop
+test_session_delegation
+test_session_global_attack
+test_session_global_crash
+test_session_handle
+test_session_handle_attacks
+test_session_oracle_fixy_duality
+test_session_oracle_fixy_enroute
+test_session_oracle_fixy_keyed_subtype
+test_session_oracle_fixy_subtype
+test_session_oracle_fixy_wire
+test_session_ownership_attacks
+test_session_projected_value
+test_session_recording
+test_session_rollback
+test_session_subtype
+test_session_subtype_attack
+test_simd
+test_storage_nbytes_simd
+test_topology
+test_trace_loader
+test_trace_ring
+test_versioned_budgeted_attacks
+test_vigil
+test_vigil_dispatch
+test_vit
+test_warden_policy

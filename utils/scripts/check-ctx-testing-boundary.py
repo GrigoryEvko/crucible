@@ -29,7 +29,7 @@ SCOPE
     src, vessel, utils/tools and examples.  test/ and bench/ are not read,
     because taking the test path is what they are for.  The check files
     under test/layer/checks/ are test code of this kind.  Each build
-    compiles a check file only into object libraries that nothing links:
+    compiles a check file only into libraries that nothing links:
     the sentinel of its layer, and for a check file of
     test/layer/walk-checks.txt, one of the walk units of
     test/layer/walks_across_headers.cpp.  So a use of the door in a check

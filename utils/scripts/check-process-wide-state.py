@@ -29,7 +29,7 @@ WHAT THE CHECK READS
     Every C++ file under include/, src/ and vessel/.  It does not read the
     check files under test/layer/checks/.  A check file holds the self-test
     namespaces and the namespace-scope static_asserts of one header.  Each
-    build compiles it only into object libraries that nothing links: the
+    build compiles it only into libraries that nothing links: the
     sentinel of its layer, and for a check file of
     test/layer/walk-checks.txt, one of the walk units of
     test/layer/walks_across_headers.cpp.  An object of a check file

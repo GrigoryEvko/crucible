@@ -427,6 +427,13 @@ foreach(_entry IN LISTS _walk_order)
   math(EXPR _walk_size_${_least} "${_walk_size_${_least}} + 1")
 endforeach()
 
+# Each unit is a static library, which no target links.  Ninja starts the
+# ready job of the longest chain of edges to a target first, and it does not
+# read the time of a job.  The object of an object library has a chain of one
+# edge, so Ninja starts it after each object of a test, and a unit of 6 s then
+# makes the tail of an edit build.  The archive gives the object a chain of
+# two edges, as each object of a test has.  The archive step takes
+# approximately 10 ms.
 set(_walk_placed "")
 foreach(_unit RANGE ${_walk_last_unit})
   set(_unit_checks ${_walk_unit_checks_${_unit}})
@@ -438,7 +445,7 @@ foreach(_unit RANGE ${_walk_last_unit})
   endforeach()
   set(_unit_dir "${CMAKE_CURRENT_BINARY_DIR}/walk_units/${_unit}")
   file(CONFIGURE OUTPUT "${_unit_dir}/walk_checks.h" CONTENT "#pragma once\n${_unit_lines}" @ONLY)
-  add_library(layer_walks_across_headers_${_unit} OBJECT walks_across_headers.cpp)
+  add_library(layer_walks_across_headers_${_unit} STATIC walks_across_headers.cpp)
   target_link_libraries(layer_walks_across_headers_${_unit} PRIVATE crucible_dialect)
   target_include_directories(layer_walks_across_headers_${_unit} PRIVATE "${_layer_include}"
                              "${CMAKE_CURRENT_BINARY_DIR}/walk_headers" "${_unit_dir}" "${CMAKE_CURRENT_SOURCE_DIR}")

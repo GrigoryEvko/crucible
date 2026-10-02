@@ -275,6 +275,11 @@ include(cmake/BuildLauncher.cmake)
 # before the first target.
 include(cmake/TestLauncher.cmake)
 
+# Ninja starts the compiles of the targets in utils/scripts/compile-first.txt
+# before the other compiles of the tests.  The file defers its work to the end
+# of this directory, when each target exists.
+include(cmake/CompileFirst.cmake)
+
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
