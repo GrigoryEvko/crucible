@@ -652,6 +652,35 @@ consteval void check_protocol_evolution() noexcept {
 }
 
 // ── The asynchronous relation ────────────────────────────────────────
+//
+// The search below is the recursion of the rules.  Its data has a form
+// that needs few operations in a constant evaluation.  The form changes
+// only the cost: each step spends the same fuel, goes to the same
+// configurations in the same order and records the same derivation as a
+// search that copies vectors of actions.  These are the reasons:
+//
+//   An action is a code.  Two actions have one code when they are equal
+//     field by field, and only then.  Two prefixes are equal when their
+//     codes are equal, and only then.
+//   A prefix is a run of codes in one pool, with its count of outputs.
+//     fits and covers read the counts, and the counts are the counts of
+//     the actions.
+//   The moves of a node are the moves that a step reads at that node, in
+//     the same order.
+//   The search keeps the answer of the payload order for each pair of
+//     payloads that it asks, because the answer is a function of the two
+//     payloads.
+//   rho keeps the count of outputs at each length of ρ.  covers reads
+//     the directions of ρ' from two counts.
+//   A failed attempt sets the tops of the derivation to their values
+//     before the attempt, and this drops what the attempt recorded.
+//
+// The state of a step is its prefixes, its two nodes, its two unfold
+// bounds, the length of ρ, the assumptions and the fuel that is left.
+// Because of the assumptions and the directions of ρ, almost no state
+// occurs two times in one search.  A table of answers for each state
+// cannot decrease the work.  The cost of a step is the cost of its
+// operations, and a change of a vector costs the most of them.
 
 namespace detail::async {
 
@@ -668,15 +697,35 @@ struct action {
     std::meta::info note{};
 };
 
+// The code of an action in one search.  The search keeps a table that
+// holds each action that its steps read one time.  A code is the place of
+// the action in that table, shifted left by two bits.  Bit 1 is set for a
+// label action, and bit 0 is set for an output.  Two actions get one
+// code when same_action holds for them, and only then.
+using action_code = std::uint32_t;
+
+inline constexpr action_code output_bit = 1U;
+inline constexpr action_code label_bit = 2U;
+
 struct move {
-    action act{};
+    action_code act = 0;
     std::size_t next = ::foundation::algebra::transition::npos;
 };
 
+// A prefix: `length` codes from place `start` of the pool of the search,
+// of which `outputs` are outputs.  A prefix that a call of prove receives
+// does not change while that call runs, because each attempt writes its
+// new prefixes past the prefixes of the calls on the current path.
+struct prefix {
+    std::size_t start = 0;
+    std::size_t length = 0;
+    std::size_t outputs = 0;
+};
+
 struct assumption {
-    std::vector<action> sub_prefix{};
+    prefix sub_prefix{};
     std::size_t sub_node = ::foundation::algebra::transition::npos;
-    std::vector<action> super_prefix{};
+    prefix super_prefix{};
     std::size_t super_node = ::foundation::algebra::transition::npos;
     std::size_t rho_length = 0;
     std::size_t config = ::foundation::algebra::transition::npos;
@@ -688,66 +737,116 @@ struct assumption {
 // configuration that its rule proves, and rule asm leads back to the
 // assumption it uses.  A path to a configuration that rule end closes is
 // a run in which the subtype and the peer of the supertype both end.
-struct derivation {
-    std::vector<std::size_t> super_node{};
-    std::vector<std::uint8_t> is_end{};
-    std::vector<std::size_t> edge_from{};
-    std::vector<std::size_t> edge_to{};
+struct configuration {
+    std::size_t super_node = ::foundation::algebra::transition::npos;
+    bool is_end = false;
 };
 
-// The length of a derivation, so that a failed attempt can drop what it
-// recorded.
-struct derivation_mark {
-    std::size_t configs = 0;
-    std::size_t edges = 0;
+struct edge {
+    std::size_t from = ::foundation::algebra::transition::npos;
+    std::size_t to = ::foundation::algebra::transition::npos;
 };
 
-// The fuel of one direction of the search.  Each step spends units in
-// proportion to the work it does: the prefixes it copies, the
-// assumptions it scans and the actions it reads back.  A search that
-// runs out has not proven the pair, and the pair is refused.  The
-// amount keeps the search inside the constexpr operation limit of the
-// build (-fconstexpr-ops-limit, the row constexpr-ops of
-// utils/scripts/budgets.txt, 33,554,432 operations), so a hard pair is
-// refused with an answer and never stops the build.  On the hardest pair
-// of the differential corpus, one unit costs about 220 operations, so
-// the limit is about 152,000 units and one direction spends about 43% of
-// it.  The hardest evaluation of the corpus, in
-// test/session_oracle/generated_fixy_subtype_00.cpp, takes 28 to 30
-// million operations.  No pair of the corpus holds with twice this amount
-// and fails with it.
+// The answer of the payload order for the codes of two steps.
+struct payload_answer {
+    action_code sub = 0;
+    action_code super = 0;
+    bool holds = false;
+};
+
+// A stack whose storage never becomes smaller.  `items` points into
+// `storage`, and `top` counts the live elements.  A pop lowers `top` and
+// keeps the storage.  In a constant evaluation, a change of a vector
+// costs approximately 40 times a read through a pointer.  A step of the
+// search changes no vector.  Only make_room changes a vector, when the
+// storage is full, and it makes the storage two times larger.  The count
+// of these changes is logarithmic in the highest top.
+template <class T>
+struct stack {
+    std::vector<T> storage{};
+    T* items = nullptr;
+    std::size_t top = 0;
+};
+
+// Gives the stack space for `count` more elements.  A pointer or a
+// reference into the stack is not valid after this call.
+template <class T>
+consteval void make_room(stack<T>& pile, std::size_t count) {
+    if (pile.top + count <= pile.storage.size()) return;
+    std::vector<T> grown(2 * (pile.top + count) + 14);
+    T* const target = grown.data();
+    for (std::size_t index = 0; index < pile.top; ++index)
+        target[index] = pile.items[index];
+    pile.storage = std::move(grown);
+    pile.items = pile.storage.data();
+}
+
+template <class T>
+consteval void push(stack<T>& pile, const T& value) {
+    make_room(pile, 1);
+    pile.items[pile.top] = value;
+    ++pile.top;
+}
+
+// The fuel of one direction of the search.  A search that has no fuel
+// left has not proven the pair, and the pair is refused.  Each step
+// spends units by a fixed formula.  A call of prove spends one unit, one
+// unit for each code of its two prefixes and one unit for each action of
+// ρ.  For each assumption, it spends one more unit and one unit for each
+// code of its two prefixes.  An attempt spends two units and one unit
+// for each code of the two prefixes that it extends.  The amount and the
+// formula decide which pairs the check proves.  A change of one of them
+// can change an answer.
+//
+// The amount keeps the search inside the constexpr operation limit of
+// the build (-fconstexpr-ops-limit, the row constexpr-ops of
+// utils/scripts/budgets.txt, 33,554,432 operations).  A hard pair is
+// refused with an answer and never stops the build.  The evaluation of
+// the differential corpus that uses the most operations is a search that
+// spends all its fuel, in test/session_oracle/generated_fixy_subtype_00.cpp.
+// It uses approximately 2.2 million operations: approximately 34
+// operations for each unit, and 7% of the limit.  No pair of the corpus
+// fails with this amount and holds with two times this amount.
 inline constexpr std::size_t search_fuel = std::size_t{1} << 16;
 
+// The state of one direction of the search.
+//
+//   node_moves  two places for each node of the subtype graph, then two
+//               for each node of the supertype graph: the place of the
+//               first move of the node in `moves`, and the count of its
+//               moves.  The first place holds npos until a step reads
+//               the moves of the node.
+//   actions     the table of the actions, at the places that the codes
+//               name.
+//   pool        the codes of the prefixes.
+//   rho         at place k, the count of outputs among the first k + 1
+//               actions of ρ.  `top` is the length of ρ.
+//   sigma       the assumptions.
+//   configurations, edges
+//               the derivation.
 struct search {
     ::foundation::algebra::transition::graph_view sub{};
     ::foundation::algebra::transition::graph_view super{};
     std::meta::info axioms{};
     std::size_t capacity = 0;
     std::size_t fuel = search_fuel;
-    std::vector<action> rho{};
-    std::vector<assumption> sigma{};
-    derivation proof{};
+    std::vector<std::size_t> node_moves{};
+    std::size_t* node_items = nullptr;
+    stack<action> actions{};
+    stack<move> moves{};
+    stack<payload_answer> payload_answers{};
+    stack<action_code> pool{};
+    stack<std::size_t> rho{};
+    stack<assumption> sigma{};
+    stack<configuration> configurations{};
+    stack<edge> edges{};
 };
-
-// The current length of the derivation.
-[[nodiscard]] consteval derivation_mark mark_of(const search& state) {
-    return {state.proof.super_node.size(), state.proof.edge_from.size()};
-}
-
-// Drops what a failed attempt recorded after `mark`.
-consteval void drop_after(search& state, derivation_mark mark) {
-    state.proof.super_node.resize(mark.configs);
-    state.proof.is_end.resize(mark.configs);
-    state.proof.edge_from.resize(mark.edges);
-    state.proof.edge_to.resize(mark.edges);
-}
 
 // Records the edge from one configuration to another.  A configuration
 // with no parent is the root, and no edge leads to it.
 consteval void add_edge(search& state, std::size_t from, std::size_t to) {
     if (from == ::foundation::algebra::transition::npos) return;
-    state.proof.edge_from.push_back(from);
-    state.proof.edge_to.push_back(to);
+    push(state.edges, edge{from, to});
 }
 
 // Spends `units` of fuel.  False when the fuel does not cover them, and
@@ -767,10 +866,11 @@ consteval void add_edge(search& state, std::size_t from, std::size_t to) {
         && left.note == right.note;
 }
 
-[[nodiscard]] consteval bool same_prefix(const std::vector<action>& left, const std::vector<action>& right) {
-    if (left.size() != right.size()) return false;
-    for (std::size_t index = 0; index < left.size(); ++index) {
-        if (!same_action(left[index], right[index])) return false;
+// True when the two prefixes hold the same codes in the same order.
+[[nodiscard]] consteval bool same_codes(const search& state, prefix left, prefix right) {
+    if (left.length != right.length) return false;
+    for (std::size_t index = 0; index < left.length; ++index) {
+        if (state.pool.items[left.start + index] != state.pool.items[right.start + index]) return false;
     }
     return true;
 }
@@ -790,61 +890,93 @@ consteval void add_edge(search& state, std::size_t from, std::size_t to) {
                          : ::foundation::algebra::transition::subsorts(axioms, super.payload, sub.payload);
 }
 
+// The answer of matches for the actions of two codes, the subtype action
+// first.  The codes decide the answer in three cases:
+//
+//   Equal codes name one action.  matches holds for an action and the
+//     same action, because the payload order is reflexive.
+//   Codes of two directions do not match.
+//   A label action matches only an action with all its fields equal.
+//     Two different codes of which one is a label do not match.
+//
+// For two different steps of one direction, matches asks the payload
+// order.  The search keeps the answer for the pair of codes, because the
+// answer is a function of the two payloads.
+[[nodiscard]] consteval bool matches_code(search& state, action_code sub, action_code super) {
+    if (sub == super) return true;
+    if (((sub ^ super) & output_bit) != 0 || ((sub | super) & label_bit) != 0) return false;
+    for (std::size_t index = 0; index < state.payload_answers.top; ++index) {
+        const payload_answer& known = state.payload_answers.items[index];
+        if (known.sub == sub && known.super == super) return known.holds;
+    }
+    const bool holds = matches(state.axioms, state.actions.items[sub >> 2U], state.actions.items[super >> 2U]);
+    push(state.payload_answers, payload_answer{sub, super, holds});
+    return holds;
+}
+
 // Prefix reduction for one peer.  An input at the head of the subtype
 // prefix matches an input at the head of the supertype prefix (rule →i).
 // An output at the head of the subtype prefix matches the first output
 // of the supertype prefix after its inputs (rules →o and →B).  Nothing
-// else moves.
-consteval void reduce(std::meta::info axioms, std::vector<action>& sub_prefix, std::vector<action>& super_prefix) {
-    while (!sub_prefix.empty()) {
-        const action head = sub_prefix.front();
+// else moves.  The loop stops at a head that cannot move, and a second
+// reduction of a reduced pair changes nothing.  The supertype prefix
+// loses one code in place.  It must be a prefix that the caller wrote
+// for this reduction.
+consteval void reduce(search& state, prefix& sub_prefix, prefix& super_prefix) {
+    while (sub_prefix.length > 0) {
+        const action_code head = state.pool.items[sub_prefix.start];
         std::size_t partner = ::foundation::algebra::transition::npos;
-        if (head.is_output) {
-            for (std::size_t index = 0; index < super_prefix.size(); ++index) {
-                if (super_prefix[index].is_output) {
+        if ((head & output_bit) != 0) {
+            for (std::size_t index = 0; index < super_prefix.length; ++index) {
+                if ((state.pool.items[super_prefix.start + index] & output_bit) != 0) {
                     partner = index;
                     break;
                 }
             }
-        } else if (!super_prefix.empty() && !super_prefix.front().is_output) {
+        } else if (super_prefix.length > 0 && (state.pool.items[super_prefix.start] & output_bit) == 0) {
             partner = 0;
         }
-        if (partner == ::foundation::algebra::transition::npos || !matches(axioms, head, super_prefix[partner])) return;
-        sub_prefix.erase(sub_prefix.begin());
-        super_prefix.erase(super_prefix.begin() + static_cast<std::ptrdiff_t>(partner));
+        if (partner == ::foundation::algebra::transition::npos
+            || !matches_code(state, head, state.pool.items[super_prefix.start + partner])) {
+            return;
+        }
+        const action_code removed = state.pool.items[super_prefix.start + partner];
+        ++sub_prefix.start;
+        --sub_prefix.length;
+        sub_prefix.outputs -= head & output_bit;
+        super_prefix.outputs -= removed & output_bit;
+        if (partner == 0) {
+            ++super_prefix.start;
+        } else {
+            for (std::size_t index = partner; index + 1 < super_prefix.length; ++index) {
+                state.pool.items[super_prefix.start + index] = state.pool.items[super_prefix.start + index + 1];
+            }
+        }
+        --super_prefix.length;
     }
 }
 
 // The subtype prefix holds the outputs the subtype sent ahead, and the
 // supertype prefix holds the inputs the peer sent before the subtype
 // received them.  Each is a count of messages in one buffer.
-[[nodiscard]] consteval bool fits(std::size_t capacity, const std::vector<action>& sub_prefix,
-                                  const std::vector<action>& super_prefix) {
-    std::size_t ahead = 0;
-    for (const action& act : sub_prefix)
-        ahead += act.is_output ? 1 : 0;
-    std::size_t queued = 0;
-    for (const action& act : super_prefix)
-        queued += act.is_output ? 0 : 1;
-    return ahead <= capacity && queued <= capacity;
+[[nodiscard]] consteval bool fits(const search& state, prefix sub_prefix, prefix super_prefix) {
+    return sub_prefix.outputs <= state.capacity && super_prefix.length - super_prefix.outputs <= state.capacity;
+}
+
+// The count of outputs among the first `length` actions of ρ.
+[[nodiscard]] consteval std::size_t outputs_before(const search& state, std::size_t length) {
+    return length == 0 ? 0 : state.rho.items[length - 1];
 }
 
 // act(ρ') ⊇ act(π'): since the assumption, the subtype did an action of
-// each direction that the supertype prefix still holds.
-[[nodiscard]] consteval bool covers(const std::vector<action>& rho, std::size_t from,
-                                    const std::vector<action>& super_prefix) {
-    bool needs_output = false;
-    bool needs_input = false;
-    for (const action& act : super_prefix) {
-        needs_output = needs_output || act.is_output;
-        needs_input = needs_input || !act.is_output;
-    }
-    bool has_output = false;
-    bool has_input = false;
-    for (std::size_t index = from; index < rho.size(); ++index) {
-        has_output = has_output || rho[index].is_output;
-        has_input = has_input || !rho[index].is_output;
-    }
+// each direction that the supertype prefix still holds.  ρ' is ρ from
+// place `from`, and each action of ρ' that is not an output is an input.
+[[nodiscard]] consteval bool covers(const search& state, std::size_t from, prefix super_prefix) {
+    const bool needs_output = super_prefix.outputs > 0;
+    const bool needs_input = super_prefix.length > super_prefix.outputs;
+    const std::size_t outputs = outputs_before(state, state.rho.top) - outputs_before(state, from);
+    const bool has_output = outputs > 0;
+    const bool has_input = state.rho.top - from > outputs;
     return (!needs_output || has_output) && (!needs_input || has_input);
 }
 
@@ -853,23 +985,47 @@ consteval void reduce(std::meta::info axioms, std::vector<action>& sub_prefix, s
         || node.entry.kind == ::foundation::algebra::transition::shape_kind::choice;
 }
 
-[[nodiscard]] consteval std::vector<move> moves_of(const ::foundation::algebra::transition::graph_view& graph,
-                                                   std::size_t index) {
+// The code of an action.  The table gets the action when it does not
+// hold it.  Complexity: linear in the actions of the table.
+[[nodiscard]] consteval action_code code_of(search& state, const action& act) {
+    std::size_t place = 0;
+    while (place < state.actions.top && !same_action(state.actions.items[place], act))
+        ++place;
+    if (place == state.actions.top) push(state.actions, act);
+    return static_cast<action_code>((place << 2U) | (act.is_label ? label_bit : 0U)
+                                    | (act.is_output ? output_bit : 0U));
+}
+
+// The place in node_moves of the moves of node `index` of a graph.
+// `offset` is zero for the subtype graph, and the node count of the
+// subtype graph for the supertype graph.  The first read of a node
+// writes its moves.  A step has one move: its payload, to its
+// continuation.  A choice has one move for each branch, in the order of
+// the branches, with the word that the handle sends for the branch.
+[[nodiscard]] consteval std::size_t moves_of(search& state, const ::foundation::algebra::transition::graph_view& graph,
+                                             std::size_t offset, std::size_t index) {
+    const std::size_t slot = 2 * (offset + index);
+    if (state.node_items[slot] != ::foundation::algebra::transition::npos) return slot;
     const ::foundation::algebra::transition::graph_node& node = graph.nodes[index];
     const bool is_output = node.entry.direction == ::foundation::algebra::transition::polarity::output;
-    std::vector<move> result;
+    const std::size_t first = state.moves.top;
     if (node.entry.kind == ::foundation::algebra::transition::shape_kind::step) {
-        result.push_back(move{action{is_output, false, false, 0, {}, node.payload, {}}, node.next});
-        return result;
+        const action_code code = code_of(state, action{is_output, false, false, 0, {}, node.payload, {}});
+        push(state.moves, move{code, node.next});
+    } else {
+        for (std::size_t branch = 0; branch < node.child_count; ++branch) {
+            const std::size_t child = graph.children[node.first_child + branch];
+            const ::foundation::algebra::transition::graph_node& head = graph.nodes[child];
+            const std::uint64_t label = node.is_keyed ? head.label_word : static_cast<std::uint64_t>(branch);
+            const std::meta::info key = node.is_keyed ? head.label_key : std::meta::info{};
+            const action_code code =
+                code_of(state, action{is_output, true, node.is_keyed, label, key, {}, node.annotation});
+            push(state.moves, move{code, child});
+        }
     }
-    for (std::size_t branch = 0; branch < node.child_count; ++branch) {
-        const std::size_t child = graph.children[node.first_child + branch];
-        const ::foundation::algebra::transition::graph_node& head = graph.nodes[child];
-        const std::uint64_t label = node.is_keyed ? head.label_word : static_cast<std::uint64_t>(branch);
-        const std::meta::info key = node.is_keyed ? head.label_key : std::meta::info{};
-        result.push_back(move{action{is_output, true, node.is_keyed, label, key, {}, node.annotation}, child});
-    }
-    return result;
+    state.node_items[slot] = first;
+    state.node_items[slot + 1] = state.moves.top - first;
+    return slot;
 }
 
 // A back node leads to its binder.  The binder itself is not entered
@@ -883,30 +1039,61 @@ consteval void reduce(std::meta::info axioms, std::vector<action>& sub_prefix, s
     return index;
 }
 
-consteval bool prove(search& state, std::vector<action> sub_prefix, std::size_t sub_index, std::size_t sub_bound,
-                     std::vector<action> super_prefix, std::size_t super_index, std::size_t super_bound,
-                     std::size_t parent);
+// The prefixes of each call are reduced.  The root call has two empty
+// prefixes, attempt reduces the prefixes that it passes, and rules μL and
+// μR pass the prefixes of their own call.  prove does not reduce them
+// again.
+consteval bool prove(search& state, prefix sub_prefix, std::size_t sub_index, std::size_t sub_bound,
+                     prefix super_prefix, std::size_t super_index, std::size_t super_bound, std::size_t parent);
 
-consteval bool exchange(search& state, const std::vector<action>& sub_prefix, std::size_t sub_index,
-                        std::size_t sub_bound, const std::vector<action>& super_prefix, std::size_t super_index,
-                        std::size_t super_bound, std::size_t here) {
-    const std::vector<move> own = moves_of(state.sub, sub_index);
-    const std::vector<move> other = moves_of(state.super, super_index);
-    const auto attempt = [&](const move& mine, const move& theirs) {
-        if (!spend(state, 2 + sub_prefix.size() + super_prefix.size())) return false;
-        std::vector<action> next_sub = sub_prefix;
-        std::vector<action> next_super = super_prefix;
-        next_sub.push_back(mine.act);
-        next_super.push_back(theirs.act);
-        reduce(state.axioms, next_sub, next_super);
-        if (!fits(state.capacity, next_sub, next_super)) return false;
-        const derivation_mark mark = mark_of(state);
-        state.rho.push_back(mine.act);
-        const bool holds = prove(state, next_sub, mine.next, sub_bound, next_super, theirs.next, super_bound, here);
-        state.rho.pop_back();
-        if (!holds) drop_after(state, mark);
-        return holds;
-    };
+// One move of the subtype against one move of the supertype.  The new
+// prefixes are the old prefixes with the two actions added, reduced.
+// attempt writes them above the top of the pool and lowers the top again
+// when it returns.  The pool then holds only the prefixes of the calls
+// on the current path.  A failed attempt drops what it recorded in the
+// derivation.  The moves are values, because a later step can add moves
+// to the table and make a reference into it not valid.
+consteval bool attempt(search& state, prefix sub_prefix, std::size_t sub_bound, prefix super_prefix,
+                       std::size_t super_bound, move mine, move theirs, std::size_t here) {
+    if (!spend(state, 2 + sub_prefix.length + super_prefix.length)) return false;
+    const std::size_t base = state.pool.top;
+    make_room(state.pool, sub_prefix.length + super_prefix.length + 2);
+    action_code* const codes = state.pool.items;
+    prefix next_sub{base, sub_prefix.length + 1, sub_prefix.outputs + (mine.act & output_bit)};
+    for (std::size_t index = 0; index < sub_prefix.length; ++index)
+        codes[next_sub.start + index] = codes[sub_prefix.start + index];
+    codes[next_sub.start + sub_prefix.length] = mine.act;
+    prefix next_super{next_sub.start + next_sub.length, super_prefix.length + 1,
+                      super_prefix.outputs + (theirs.act & output_bit)};
+    for (std::size_t index = 0; index < super_prefix.length; ++index)
+        codes[next_super.start + index] = codes[super_prefix.start + index];
+    codes[next_super.start + super_prefix.length] = theirs.act;
+    state.pool.top = next_super.start + next_super.length;
+    reduce(state, next_sub, next_super);
+    bool holds = false;
+    if (fits(state, next_sub, next_super)) {
+        const std::size_t configurations = state.configurations.top;
+        const std::size_t edges = state.edges.top;
+        push(state.rho, outputs_before(state, state.rho.top) + (mine.act & output_bit));
+        holds = prove(state, next_sub, mine.next, sub_bound, next_super, theirs.next, super_bound, here);
+        --state.rho.top;
+        if (!holds) {
+            state.configurations.top = configurations;
+            state.edges.top = edges;
+        }
+    }
+    state.pool.top = base;
+    return holds;
+}
+
+consteval bool exchange(search& state, prefix sub_prefix, std::size_t sub_index, std::size_t sub_bound,
+                        prefix super_prefix, std::size_t super_index, std::size_t super_bound, std::size_t here) {
+    const std::size_t own_slot = moves_of(state, state.sub, 0, sub_index);
+    const std::size_t other_slot = moves_of(state, state.super, state.sub.nodes.size(), super_index);
+    const std::size_t own_first = state.node_items[own_slot];
+    const std::size_t own_end = own_first + state.node_items[own_slot + 1];
+    const std::size_t other_first = state.node_items[other_slot];
+    const std::size_t other_end = other_first + state.node_items[other_slot + 1];
     const bool sub_sends =
         state.sub.nodes[sub_index].entry.direction == ::foundation::algebra::transition::polarity::output;
     const bool super_sends =
@@ -914,9 +1101,12 @@ consteval bool exchange(search& state, const std::vector<action>& sub_prefix, st
     if (sub_sends && !super_sends) {
         // Rule oi: every output of the subtype against every input of
         // the supertype.
-        for (const move& mine : own) {
-            for (const move& theirs : other) {
-                if (!attempt(mine, theirs)) return false;
+        for (std::size_t mine = own_first; mine < own_end; ++mine) {
+            for (std::size_t theirs = other_first; theirs < other_end; ++theirs) {
+                if (!attempt(state, sub_prefix, sub_bound, super_prefix, super_bound, state.moves.items[mine],
+                             state.moves.items[theirs], here)) {
+                    return false;
+                }
             }
         }
         return true;
@@ -924,13 +1114,11 @@ consteval bool exchange(search& state, const std::vector<action>& sub_prefix, st
     if (sub_sends && super_sends) {
         // Rule oo: each output of the subtype against some output of the
         // supertype.
-        for (const move& mine : own) {
+        for (std::size_t mine = own_first; mine < own_end; ++mine) {
             bool found = false;
-            for (const move& theirs : other) {
-                if (attempt(mine, theirs)) {
-                    found = true;
-                    break;
-                }
+            for (std::size_t theirs = other_first; theirs < other_end && !found; ++theirs) {
+                found = attempt(state, sub_prefix, sub_bound, super_prefix, super_bound, state.moves.items[mine],
+                                state.moves.items[theirs], here);
             }
             if (!found) return false;
         }
@@ -939,13 +1127,11 @@ consteval bool exchange(search& state, const std::vector<action>& sub_prefix, st
     if (!sub_sends && !super_sends) {
         // Rule ii: each input of the supertype against some input of the
         // subtype.
-        for (const move& theirs : other) {
+        for (std::size_t theirs = other_first; theirs < other_end; ++theirs) {
             bool found = false;
-            for (const move& mine : own) {
-                if (attempt(mine, theirs)) {
-                    found = true;
-                    break;
-                }
+            for (std::size_t mine = own_first; mine < own_end && !found; ++mine) {
+                found = attempt(state, sub_prefix, sub_bound, super_prefix, super_bound, state.moves.items[mine],
+                                state.moves.items[theirs], here);
             }
             if (!found) return false;
         }
@@ -953,48 +1139,51 @@ consteval bool exchange(search& state, const std::vector<action>& sub_prefix, st
     }
     // Rule io: some input of the subtype against some output of the
     // supertype.
-    for (const move& mine : own) {
-        for (const move& theirs : other) {
-            if (attempt(mine, theirs)) return true;
+    for (std::size_t mine = own_first; mine < own_end; ++mine) {
+        for (std::size_t theirs = other_first; theirs < other_end; ++theirs) {
+            if (attempt(state, sub_prefix, sub_bound, super_prefix, super_bound, state.moves.items[mine],
+                        state.moves.items[theirs], here)) {
+                return true;
+            }
         }
     }
     return false;
 }
 
-consteval bool prove(search& state, std::vector<action> sub_prefix, std::size_t sub_index, std::size_t sub_bound,
-                     std::vector<action> super_prefix, std::size_t super_index, std::size_t super_bound,
-                     std::size_t parent) {
+consteval bool prove(search& state, prefix sub_prefix, std::size_t sub_index, std::size_t sub_bound,
+                     prefix super_prefix, std::size_t super_index, std::size_t super_bound, std::size_t parent) {
     using ::foundation::algebra::transition::shape_kind;
-    const std::size_t prefix_length = sub_prefix.size() + super_prefix.size();
-    if (!spend(state, 1 + prefix_length + state.rho.size() + state.sigma.size() * (1 + prefix_length))) return false;
+    const std::size_t prefix_length = sub_prefix.length + super_prefix.length;
+    const std::size_t rho_length = state.rho.top;
+    if (!spend(state, 1 + prefix_length + rho_length + state.sigma.top * (1 + prefix_length))) return false;
     sub_index = to_binder(state.sub, sub_index);
     super_index = to_binder(state.super, super_index);
     if (sub_index == ::foundation::algebra::transition::npos
         || super_index == ::foundation::algebra::transition::npos) {
         return false;
     }
-    reduce(state.axioms, sub_prefix, super_prefix);
     const ::foundation::algebra::transition::graph_node& own = state.sub.nodes[sub_index];
     const ::foundation::algebra::transition::graph_node& other = state.super.nodes[super_index];
     if (own.entry.kind == shape_kind::wrapper || other.entry.kind == shape_kind::wrapper) return false;
     // This call is a configuration of the derivation.  A caller whose
     // attempt fails drops it again.
-    const std::size_t here = state.proof.super_node.size();
-    state.proof.super_node.push_back(super_index);
-    state.proof.is_end.push_back(0);
+    const std::size_t here = state.configurations.top;
+    push(state.configurations, configuration{super_index, false});
     add_edge(state, parent, here);
     // Rule end.
-    if (sub_prefix.empty() && super_prefix.empty() && own.entry.kind == shape_kind::terminal
-        && other.entry.kind == shape_kind::terminal) {
+    if (prefix_length == 0 && own.entry.kind == shape_kind::terminal && other.entry.kind == shape_kind::terminal) {
         if (own.entry.shape != other.entry.shape) return false;
-        state.proof.is_end[here] = 1;
+        state.configurations.items[here].is_end = true;
         return true;
     }
-    // Rule asm.
-    for (const assumption& earlier : state.sigma) {
+    // Rule asm.  The loop adds to no stack but the edges.  The reference
+    // into sigma stays valid.
+    for (std::size_t index = 0; index < state.sigma.top; ++index) {
+        const assumption& earlier = state.sigma.items[index];
         if (earlier.sub_node == sub_index && earlier.super_node == super_index
-            && same_prefix(earlier.sub_prefix, sub_prefix) && same_prefix(earlier.super_prefix, super_prefix)
-            && covers(state.rho, earlier.rho_length, super_prefix)) {
+            && same_codes(state, earlier.sub_prefix, sub_prefix)
+            && same_codes(state, earlier.super_prefix, super_prefix)
+            && covers(state, earlier.rho_length, super_prefix)) {
             add_edge(state, here, earlier.config);
             return true;
         }
@@ -1005,22 +1194,26 @@ consteval bool prove(search& state, std::vector<action> sub_prefix, std::size_t 
     }
     // Rules μL and μR.
     if (own.entry.kind == shape_kind::binder && sub_bound > 0) {
-        const derivation_mark mark = mark_of(state);
-        state.sigma.push_back(assumption{sub_prefix, sub_index, super_prefix, super_index, state.rho.size(), here});
+        const std::size_t configurations = state.configurations.top;
+        const std::size_t edges = state.edges.top;
+        push(state.sigma, assumption{sub_prefix, sub_index, super_prefix, super_index, rho_length, here});
         const bool holds =
             prove(state, sub_prefix, own.next, sub_bound - 1, super_prefix, super_index, super_bound, here);
-        state.sigma.pop_back();
+        --state.sigma.top;
         if (holds) return true;
-        drop_after(state, mark);
+        state.configurations.top = configurations;
+        state.edges.top = edges;
     }
     if (other.entry.kind == shape_kind::binder && super_bound > 0) {
-        const derivation_mark mark = mark_of(state);
-        state.sigma.push_back(assumption{sub_prefix, sub_index, super_prefix, super_index, state.rho.size(), here});
+        const std::size_t configurations = state.configurations.top;
+        const std::size_t edges = state.edges.top;
+        push(state.sigma, assumption{sub_prefix, sub_index, super_prefix, super_index, rho_length, here});
         const bool holds =
             prove(state, sub_prefix, sub_index, sub_bound, super_prefix, other.next, super_bound - 1, here);
-        state.sigma.pop_back();
+        --state.sigma.top;
         if (holds) return true;
-        drop_after(state, mark);
+        state.configurations.top = configurations;
+        state.edges.top = edges;
     }
     return false;
 }
@@ -1050,18 +1243,23 @@ consteval bool prove(search& state, std::vector<action> sub_prefix, std::size_t 
 // the product.  Complexity: O(C·E) at worst for C configurations and E
 // edges, one pass per level of loop-back.
 [[nodiscard]] consteval bool keeps_exits(const search& state) {
-    const derivation& proof = state.proof;
-    std::vector<std::uint8_t> can_end = proof.is_end;
+    std::vector<std::uint8_t> reaches_end(state.configurations.top);
+    std::uint8_t* const can_end = reaches_end.data();
+    for (std::size_t config = 0; config < state.configurations.top; ++config)
+        can_end[config] = state.configurations.items[config].is_end ? 1 : 0;
     for (bool is_changed = true; is_changed;) {
         is_changed = false;
-        for (std::size_t edge = proof.edge_from.size(); edge-- > 0;) {
-            if (can_end[proof.edge_from[edge]] != 0 || can_end[proof.edge_to[edge]] == 0) continue;
-            can_end[proof.edge_from[edge]] = 1;
+        for (std::size_t index = state.edges.top; index-- > 0;) {
+            const edge& link = state.edges.items[index];
+            if (can_end[link.from] != 0 || can_end[link.to] == 0) continue;
+            can_end[link.from] = 1;
             is_changed = true;
         }
     }
-    for (std::size_t config = 0; config < proof.super_node.size(); ++config) {
-        if (state.super.nodes[proof.super_node[config]].can_end && can_end[config] == 0) return false;
+    for (std::size_t config = 0; config < state.configurations.top; ++config) {
+        if (state.super.nodes[state.configurations.items[config].super_node].can_end && can_end[config] == 0) {
+            return false;
+        }
     }
     return true;
 }
@@ -1099,7 +1297,10 @@ consteval bool prove(search& state, std::vector<action> sub_prefix, std::size_t 
     if (is_outside_the_check(state.sub, sub_top) || is_outside_the_check(state.super, super_top)) {
         return false;
     }
-    if (!prove(state, {}, sub_top, capacity + 1, {}, super_top, capacity + 1,
+    state.node_moves = std::vector<std::size_t>(2 * (state.sub.nodes.size() + state.super.nodes.size()),
+                                                ::foundation::algebra::transition::npos);
+    state.node_items = state.node_moves.data();
+    if (!prove(state, prefix{}, sub_top, capacity + 1, prefix{}, super_top, capacity + 1,
                ::foundation::algebra::transition::npos)) {
         return false;
     }
