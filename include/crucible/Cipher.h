@@ -127,14 +127,9 @@ template <typename W, ::fixy::Lifetime_v Scope>
 concept LifetimePinnedRegion = ::fixy::is_band_of_v<::fixy::LifetimeLattice, W> && ::fixy::satisfies_v<W, Scope>
                             && std::convertible_to<::fixy::band_value_t<W>, const RegionNode*>;
 
-// The gate of a commit to the head log.  The commit writes and flushes
-// files, so the context must fit the store.  The commit also stamps the
-// log entry with a reading of the monotonic clock, so the context must
-// fit the clock reader: its row owns Bg, Init or Test.  A clock read on
-// the replay-bound foreground path makes replay diverge across machines.
-template <typename Ctx>
-concept CtxFitsCipherCommit = ::crucible::CtxFitsCipherPersistence<Ctx>
-                           && ::fixy::time::CtxFitsClockReaderMint<Ctx, ::fixy::ClockSource_v::Monotonic>;
+// The gate of a commit to the head log, CtxFitsCipherCommit, is in
+// crucible/cipher/SessionPersistenceSurface.h, so that a header that names
+// the gate and no member of the store does not include this header.
 
 }  // namespace cipher
 

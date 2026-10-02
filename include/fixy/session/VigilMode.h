@@ -1,7 +1,7 @@
 #pragma once
 
-// The Vigil runtime's mode, as a cell one thread owns and a session an
-// observer drives.
+// The Vigil runtime's mode, as a session an observer drives over the cell
+// of fixy/session/VigilModeCell.h.
 //
 // The mode machinery sits outside the class that owns the Vigil
 // runtime, so that observing a mode costs nothing but this header.
@@ -11,22 +11,14 @@
 // the whole runtime hub and its dependency closure to name it.
 
 #include <fixy/session/MachineBridge.h>
+#include <fixy/session/VigilModeCell.h>
 
-#include <foundation/Platform.h>
 #include <foundation/diag/FailClosed.h>
 
-#include <atomic>
 #include <concepts>
-#include <cstdint>
 #include <type_traits>
 
 namespace fixy::session::vigil_mode {
-
-enum class Mode : std::uint8_t {
-    RECORDING,
-    COMPILED,
-    DIVERGED,
-};
 
 // A mode as a type, so the legal transitions can be a fail-closed
 // relation rather than a hand-written disjunction.  A disjunction such as
@@ -63,19 +55,6 @@ template <Mode From, Mode To>
 inline constexpr bool mode_transition_allowed_v =
     ::foundation::fail_closed::Admitted<^^admitted_mode_transitions, mode_tag<From>, mode_tag<To>>;
 
-// A transition as a value the session sends.  Each admitted edge has one
-// plain class, so the payload walk of fixy/concurrent/PayloadRow.h reads
-// it as a class with no member, and its effect row is empty.
-struct ModeRecordingToCompiled {
-    static constexpr Mode from = Mode::RECORDING;
-    static constexpr Mode to = Mode::COMPILED;
-};
-
-struct ModeCompiledToRecording {
-    static constexpr Mode from = Mode::COMPILED;
-    static constexpr Mode to = Mode::RECORDING;
-};
-
 namespace detail {
 
 // The class of the edge From -> To.  The static_assert is what a caller
@@ -104,52 +83,6 @@ using ModeTransition = typename detail::mode_transition<From, To>::type;
 using ModeProtocol =
     Loop<Select<Send<ModeRecordingToCompiled, Continue>, Send<ModeCompiledToRecording, Continue>, End>>;
 
-class ModeCell : public ::foundation::Pinned<ModeCell> {
-    std::atomic<Mode> value_{Mode::RECORDING};
-
-public:
-    using state_type = Mode;
-
-    // A session over the cell moves the cell and no peer, so each choice
-    // puts no label (Local choices in fixy/session/Handle.h).
-    static constexpr Network session_network = Network::Local;
-
-    constexpr ModeCell() noexcept = default;
-
-    ModeCell(const ModeCell&) = delete("Vigil mode cell is process-local state");
-    ModeCell& operator=(const ModeCell&) = delete("Vigil mode cell is process-local state");
-    ModeCell(ModeCell&&) = delete("atomic mode cell is the channel identity");
-    ModeCell& operator=(ModeCell&&) = delete("atomic mode cell is the channel identity");
-
-    // The owner of the cell publishes with release stores, and each load
-    // is an acquire, so an observer that reads a mode also sees what the
-    // owner wrote before it published that mode.  A session moves the
-    // cell along one admitted edge with a compare-and-swap from the source
-    // of the edge.  The cell holds one of two modes, so a compare that
-    // fails finds the target.  A cell in a third mode stops the process at
-    // the compare, and no session writes over it.
-
-    [[nodiscard]] Mode load() const noexcept { return value_.load(std::memory_order_acquire); }
-
-    void publish_compiled() noexcept { value_.store(Mode::COMPILED, std::memory_order_release); }
-
-    void publish_recording_after_divergence() noexcept { value_.store(Mode::RECORDING, std::memory_order_release); }
-
-    // Each returns true: the cell then stands at the target of the edge.
-    bool publish_from_session(ModeRecordingToCompiled) noexcept { return take_edge_(Mode::RECORDING, Mode::COMPILED); }
-
-    bool publish_from_session(ModeCompiledToRecording) noexcept { return take_edge_(Mode::COMPILED, Mode::RECORDING); }
-
-private:
-    bool take_edge_(Mode from, Mode to) noexcept {
-        Mode seen = from;
-        if (!value_.compare_exchange_strong(seen, to, std::memory_order_acq_rel, std::memory_order_acquire)) {
-            CRUCIBLE_FATAL_INVARIANT(seen == to);
-        }
-        return true;
-    }
-};
-
 // The handle borrows the cell mutably.  The transport that a Send branch
 // needs is publish_from_session of the cell, and it is not const, so a
 // handle over a const cell could walk only the End branch.  The Resource
@@ -161,8 +94,7 @@ private:
 // atomic_machine_state(cell), which takes a const reference.
 //
 // The alias is a template, so that only a translation unit that names the
-// handle opens the protocol to compute its first type.  Each includer of
-// crucible/Vigil.h reads the mode and the cell and names no handle.
+// handle opens the protocol to compute its first type.
 template <class Cell = ModeCell>
 using ModeSessionHandle = ::fixy::session::detail::first_handle_t<ModeProtocol, Cell&, DefaultAbandonmentPolicy>;
 

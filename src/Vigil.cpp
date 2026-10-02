@@ -1,12 +1,16 @@
 // The bodies of the cold members of crucible/Vigil.h: the constructor that
-// starts the runtime, the destructor, the region-ready callback that runs on
-// the publish stage, and the rollback.
+// starts the runtime, the destructor, the head of the store, the region-ready
+// callback that runs on the publish stage, and the rollback.
 //
 // The hot path (record_op, dispatch_op and the replay guard) and the cold
 // helpers that dispatch_op calls stay in the header, so a caller of
 // dispatch_op compiles the same machine code as before.
 
 #include <crucible/Vigil.h>
+
+#include <crucible/Cipher.h>
+#include <crucible/perf/Senses.h>
+#include <crucible/warden/DeadlineWatchdog.h>
 
 #include <filesystem>
 #include <memory>
@@ -25,7 +29,7 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup) : cfg_(std::move(cf
         // The configured path is operator-supplied, so it crosses the
         // trust boundary here and is declared external until the store's
         // own sanitizer promotes it.
-        cipher_.emplace(Cipher::open(
+        cipher_ = std::make_unique<Cipher>(Cipher::open(
             startup, ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{cfg_.cipher_path})));
     }
 
@@ -38,15 +42,18 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup) : cfg_(std::move(cf
     // without a null check.  Attach failure is not an error here: every
     // observation then returns InsufficientData.
     if (cfg_.enable_deadline_watchdog) {
-        senses_.emplace(
+        senses_ = std::make_unique<::crucible::perf::Senses>(
             ::crucible::perf::Senses::load_subset(startup, ::crucible::perf::SensesMask{.sched_switch = true}));
-        wd_.emplace(::crucible::warden::mint_deadline_watchdog(startup, &*senses_, cfg_.watchdog_policy));
+        wd_ = std::make_unique<::crucible::warden::DeadlineWatchdog>(
+            ::crucible::warden::mint_deadline_watchdog(startup, senses_.get(), cfg_.watchdog_policy));
     }
 
     bg_.start(ring_.get(), meta_log_.get(), cfg_.rank, cfg_.world_size, cfg_.device_capability);
 }
 
 Vigil::~Vigil() = default;
+
+ContentHash Vigil::head_hash() const noexcept { return cipher_ ? cipher_->head() : ContentHash{}; }
 
 bool Vigil::rollback() {
     bool restored_one = false;

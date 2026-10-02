@@ -23,9 +23,7 @@ include/crucible/SwissTable.h | <arm_neon.h>
 include/crucible/SwissTable.h | <immintrin.h>
 include/crucible/TraceLoader.h | <memory>
 include/crucible/Transaction.h | <memory>
-include/crucible/Vigil.h | <chrono>
 include/crucible/Vigil.h | <memory>
-include/crucible/Vigil.h | <thread>
 include/crucible/cntp/CongestionControl.h | <filesystem>
 include/crucible/cntp/Fec.h | <arm_neon.h>
 include/crucible/cntp/Fec.h | <immintrin.h>

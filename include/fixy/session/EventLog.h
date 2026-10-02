@@ -32,7 +32,7 @@
 //
 // ── The lanes of a stored log ───────────────────────────────────────
 //
-//   * The crash lane holds a CrashCause (fixy/session/Crash.h).  A stored
+//   * The crash lane holds a CrashCause (fixy/session/CrashCause.h).  A stored
 //     log can hold the value 3 there, a crash graded "no throw", which is
 //     a contradiction.  It decodes as CrashCause::Unknown.
 //   * The checkpoint kinds Checkpoint_Base and Checkpoint_Rollback record
@@ -59,7 +59,7 @@
 // append is a plain vector push, so the caller serialises its appends.
 
 #include <fixy/Mutation.h>
-#include <fixy/session/Crash.h>
+#include <fixy/session/CrashCause.h>
 
 #include <foundation/Pinned.h>
 #include <foundation/algebra/lattices/CipherTierLattice.h>

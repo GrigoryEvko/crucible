@@ -34,6 +34,7 @@
 
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/Policy.h>
+#include <crucible/warden/WatchdogVerdict.h>
 #include <fixy/Ctx.h>
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/Time.h>
@@ -49,26 +50,7 @@
 
 namespace crucible::warden {
 
-// InsufficientData carries no information. A caller must not read it
-// as "healthy" and must not act on it.
-enum class WatchdogVerdict : uint8_t {
-    InsufficientData = 0,  // nothing to observe, or the window has not closed
-    Healthy = 1,  // the miss count for the closed window is within budget
-    Downgrade = 2,  // the budget is exceeded; a weaker class is advised
-};
-
-[[nodiscard, gnu::const]] inline const char* watchdog_verdict_name(WatchdogVerdict v) noexcept {
-    switch (v) {
-        case WatchdogVerdict::InsufficientData:
-            return "InsufficientData";
-        case WatchdogVerdict::Healthy:
-            return "Healthy";
-        case WatchdogVerdict::Downgrade:
-            return "Downgrade";
-        default:
-            return "Invalid";
-    }
-}
+// The verdict, WatchdogVerdict, is in crucible/warden/WatchdogVerdict.h.
 
 // The telemetry pointer is borrowed, and what it points at must
 // outlive the watchdog. It is a raw pointer rather than a non-null

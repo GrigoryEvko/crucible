@@ -9,6 +9,7 @@
 
 #include "vigil_rig.h"
 
+#include <crucible/Cipher.h>
 #include <crucible/Vigil.h>
 #include "test_harness.h"
 #include "test_assert.h"

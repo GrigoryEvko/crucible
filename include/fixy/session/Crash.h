@@ -76,12 +76,8 @@
 //
 // ── What the crash cause is ─────────────────────────────────────────
 //
-// The calculus has no crash classes.  Crucible records how a peer
-// stopped, because replay must tell an abort from an error return.
-// That record is CrashCause, and it is metadata on the crash branch:
-// the value the survivor receives through Recv<Crash<Peer>, K> carries
-// it.  It is not in any type, it orders nothing, and no rule reads it.
-// It is not a lattice and not a fixy atom.
+// The calculus has no crash classes.  The cause that Crucible records is
+// metadata on the crash branch, and fixy/session/CrashCause.h holds it.
 //
 // ── What liveness means under crashes ───────────────────────────────
 //
@@ -118,6 +114,7 @@
 // Keeper starts a new session with a fresh endpoint.  No type in this
 // header claims more than that.
 
+#include <fixy/session/CrashCause.h>
 #include <fixy/session/Payload.h>
 #include <fixy/session/Protocol.h>
 
@@ -145,22 +142,8 @@ namespace fixy::session {
 
 // ── The crash label and its metadata ─────────────────────────────────
 
-// How the stopped peer ended, as the detector saw it.  The byte values
-// are the values of the crash lane in the session event log
-// (fixy/session/EventLog.h), and they are fixed, so a stored log decodes
-// unchanged.  A stored log can hold 3 for a crash graded "no throw", which
-// is a contradiction.  It decodes as Unknown.
-enum class CrashCause : std::uint8_t {
-    Abort = 0,
-    Throw = 1,
-    ErrorReturn = 2,
-    Unknown = 3,
-};
-
-inline constexpr std::uint8_t crash_cause_top_value = static_cast<std::uint8_t>(CrashCause::Unknown);
-
 // The value the survivor receives on a crash branch.  Peer is the
-// crashed role.  The cause is the metadata above.
+// crashed role.  The cause is the metadata of fixy/session/CrashCause.h.
 template <typename Peer>
 struct Crash {
     using peer = Peer;

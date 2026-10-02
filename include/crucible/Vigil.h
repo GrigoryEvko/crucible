@@ -26,7 +26,6 @@
 // claim.
 
 #include <crucible/BackgroundThread.h>
-#include <crucible/Cipher.h>
 #include <crucible/CrucibleContext.h>
 #include <crucible/ForegroundCtx.h>
 #include <crucible/IterationDetector.h>
@@ -35,9 +34,9 @@
 #include <crucible/RegionCache.h>
 #include <crucible/TraceRing.h>
 #include <crucible/Transaction.h>
-#include <crucible/perf/Senses.h>
-#include <crucible/warden/DeadlineWatchdog.h>
+#include <crucible/cipher/SessionPersistenceSurface.h>
 #include <crucible/warden/Policy.h>
+#include <crucible/warden/WatchdogVerdict.h>
 #include <fixy/Ctx.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
@@ -46,7 +45,7 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <fixy/handle/PublishOnce.h>
-#include <fixy/session/VigilMode.h>
+#include <fixy/session/VigilModeCell.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
@@ -55,13 +54,20 @@
 #include <foundation/effects/Row.h>
 
 #include <atomic>
-#include <chrono>
 #include <cstdint>
 #include <memory>
-#include <optional>
-#include <thread>
-#include <type_traits>
+#include <string>
 #include <utility>  // std::move, std::forward
+
+// The telemetry and the watchdog are held through pointers, so this header
+// only declares them.  src/Vigil.cpp includes their headers.
+namespace crucible::perf {
+class Senses;
+}  // namespace crucible::perf
+
+namespace crucible::warden {
+class DeadlineWatchdog;
+}  // namespace crucible::warden
 
 namespace crucible {
 
@@ -337,9 +343,9 @@ public:
     // Advanced only by the background thread, once per region transition.
     [[nodiscard]] uint64_t current_step() const noexcept { return step_.get(); }
 
-    [[nodiscard]] ContentHash head_hash() const noexcept {
-        return cipher_.has_value() ? cipher_->head() : ContentHash{};
-    }
+    // The head of the store, or the none hash when no store path was
+    // configured.  The body is in src/Vigil.cpp, which includes the store.
+    [[nodiscard]] ContentHash head_hash() const noexcept;
 
     // Waits until the background thread has fully processed every entry the
     // ring held when this was called.  Fully processed means drained, fed to
@@ -389,29 +395,28 @@ public:
     // flushes files, and the head commit reads the monotonic clock, so the
     // caller's context must fit a Cipher commit.  False when the store or
     // the clock read of the commit failed.
+    //
+    // This header only declares the store.  A caller of persist or load
+    // includes crucible/Cipher.h, as each caller of a member of the store
+    // does (crucible/cipher/SessionPersistenceSurface.h).
     template <class Ctx>
         requires ::crucible::cipher::CtxFitsCipherCommit<Ctx>
     [[nodiscard, gnu::cold]] bool persist(Ctx const& ctx) {
-        if (!cipher_.has_value()) return false;
+        if (!cipher_) return false;
         const RegionNode* region = active_region();
         if (!region) return false;
-        // The store is only ever emplaced from open(), so holding a value
-        // already proves it is open.  One mint serves both calls below.
-        auto open_view = cipher_->mint_open_view(ctx);
-        const ContentHash hash = cipher_->store(open_view, Cipher::content_addressed(region), meta_log_.get());
-        if (!hash) return false;
-        return cipher_->record_event(ctx, open_view, hash, step_.get()).has_value();
+        return persist_into_(ctx, *cipher_, region);
     }
 
     // Loads the most recent stored region and makes it active, activating
     // replay too when that region carries a memory plan.  The activation is
-    // foreground state, so this runs on the producer thread.
+    // foreground state, so this runs on the producer thread.  The row is the
+    // row that an open view of the store requires.
     template <class Ctx>
-        requires ::foundation::effects::CtxAdmits<Ctx, Cipher::open_view_required_row>
+        requires ::foundation::effects::CtxAdmits<Ctx, ::crucible::CipherSessionEventPersistenceRow>
     [[nodiscard, gnu::cold]] bool load(Ctx const& ctx, ::foundation::effects::Alloc a) {
-        if (!cipher_.has_value() || cipher_->empty()) return false;
-        auto open_view = cipher_->mint_open_view(ctx);
-        RegionNode* region = cipher_->load_content_addressed(open_view, a, cipher_->head(), load_arena_).get();
+        if (!cipher_) return false;
+        RegionNode* region = load_head_(ctx, a, *cipher_);
         if (!region) return false;
         const VigilFgCtx fg = assert_producer_thread_();
         bg_.active_region.store(region, std::memory_order_release);
@@ -479,7 +484,7 @@ public:
     //
     // True does not imply a usable verdict yet.  The first window always
     // reports InsufficientData while the baseline is captured.
-    [[nodiscard]] bool watchdog_enabled() const noexcept { return wd_.has_value(); }
+    [[nodiscard]] bool watchdog_enabled() const noexcept { return wd_ != nullptr; }
 
     // The acquire load pairs with the release store on the background
     // thread.  Reads InsufficientData when no region transition has happened
@@ -516,6 +521,28 @@ private:
     // write erases the earlier one.
     [[nodiscard]] CRUCIBLE_INLINE VigilFgCtx assert_producer_thread_() noexcept {
         return producer_claim_.mint_producer_context();
+    }
+
+    // The store parts of persist and load.  The store is a template
+    // parameter, so each member of the store resolves where a caller
+    // instantiates persist or load, and this header needs only the
+    // declaration of the store.
+    //
+    // The store is only ever made from open(), so holding one already
+    // proves it is open.  One mint of the open view serves both calls.
+    template <class Ctx, class Store>
+    [[nodiscard]] bool persist_into_(Ctx const& ctx, Store& store, const RegionNode* region) {
+        auto open_view = store.mint_open_view(ctx);
+        const ContentHash hash = store.store(open_view, Store::content_addressed(region), meta_log_.get());
+        if (!hash) return false;
+        return store.record_event(ctx, open_view, hash, step_.get()).has_value();
+    }
+
+    template <class Ctx, class Store>
+    [[nodiscard]] RegionNode* load_head_(Ctx const& ctx, ::foundation::effects::Alloc a, Store& store) {
+        if (store.empty()) return nullptr;
+        auto open_view = store.mint_open_view(ctx);
+        return store.load_content_addressed(open_view, a, store.head(), load_arena_).get();
     }
 
     // Runs on the background thread when a new region is ready.  It must
@@ -788,7 +815,9 @@ private:
     // Owned by the publish stage: each member takes that stage's proof, and
     // the foreground reaches the log only through run_on_publish_stage.
     TransactionLog<16, BackgroundThread::PublishStage> tx_log_;
-    std::optional<Cipher> cipher_;
+    // The store, when the configuration names a path.  It is held through
+    // a pointer, so this header only declares the class.
+    std::unique_ptr<Cipher> cipher_;
     // Every dispatch and every record must come from one and the same
     // thread.  Another thread entering breaks the ring's single-producer
     // protocol and can corrupt the head-to-tail relationship.  The claim
@@ -823,8 +852,11 @@ private:
     // The counters have no lifetime constraint of their own, but sit here
     // for locality: the background thread writes them in the same frame it
     // drives the watchdog.
-    std::optional<::crucible::perf::Senses> senses_;
-    std::optional<::crucible::warden::DeadlineWatchdog> wd_;
+    //
+    // The constructor makes the two objects only when the configuration
+    // asks for the watchdog, and each is null otherwise.
+    std::unique_ptr<::crucible::perf::Senses> senses_;
+    std::unique_ptr<::crucible::warden::DeadlineWatchdog> wd_;
     std::atomic<::crucible::warden::WatchdogVerdict> wd_last_verdict_{
         ::crucible::warden::WatchdogVerdict::InsufficientData};
     std::atomic<uint32_t> wd_healthy_count_{0};

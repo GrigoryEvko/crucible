@@ -1,6 +1,8 @@
 #pragma once
 
 #include <fixy/ScopedView.h>
+#include <fixy/os/ClockSource.h>
+#include <fixy/os/Time.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -32,5 +34,18 @@ using CipherSessionEventPersistenceRow =
 // neither, so it opens no store and gets no view.
 template <typename Ctx>
 concept CtxFitsCipherPersistence = ::foundation::effects::CtxAdmits<Ctx, CipherSessionEventPersistenceRow>;
+
+namespace cipher {
+
+// The gate of a commit to the head log.  The commit writes and flushes
+// files, so the context must fit the store.  The commit also stamps the
+// log entry with a reading of the monotonic clock, so the context must
+// fit the clock reader: its row owns Bg, Init or Test.  A clock read on
+// the replay-bound foreground path makes replay diverge across machines.
+template <typename Ctx>
+concept CtxFitsCipherCommit = ::crucible::CtxFitsCipherPersistence<Ctx>
+                           && ::fixy::time::CtxFitsClockReaderMint<Ctx, ::fixy::ClockSource_v::Monotonic>;
+
+}  // namespace cipher
 
 }  // namespace crucible
