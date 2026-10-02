@@ -394,6 +394,7 @@ static_assert(kStandinVerdict.stale == 1, "the census did not count the one tabl
 
 inline constexpr std::meta::info kCensusNamespaces[] = {
     ^^::foundation,
+    ^^::foundation::core,
     ^^::foundation::algebra,
     ^^::foundation::permissions,
     ^^::foundation::simd,
@@ -545,7 +546,8 @@ consteval void collect_namespaces(std::meta::info ns, std::vector<std::meta::inf
     }
     if (declares_a_class) out.push_back(ns);
     std::meta::info const* child = children.data();
-    for (std::size_t index = 0; index < children.size(); ++index) collect_namespaces(child[index], out);
+    for (std::size_t index = 0; index < children.size(); ++index)
+        collect_namespaces(child[index], out);
 }
 
 struct NamespaceVerdict {
@@ -560,7 +562,8 @@ struct NamespaceVerdict {
 // no declaring namespace is stale.
 [[nodiscard]] consteval NamespaceVerdict namespace_verdict() {
     std::vector<std::meta::info> declaring;
-    for (std::meta::info root : {^^::foundation, ^^::fixy}) collect_namespaces(root, declaring);
+    for (std::meta::info root : {^^::foundation, ^^::fixy})
+        collect_namespaces(root, declaring);
     NamespaceVerdict verdict{};
     verdict.declaring = declaring.size();
     std::vector<std::size_t> dispositions(declaring.size());
@@ -844,6 +847,13 @@ inline constexpr StatedZero kZeros[] = {
      "the one allocation of an open-addressing table: it holds storage and makes no claim about the slots"},
     {^^::foundation::ThreadLocalRef,
      "a stateless handle onto a cell of the thread: it holds nothing, and the cell it names is process state, not a claim"},
+    {^^::foundation::core::Option, kPayload},
+    {^^::foundation::core::NoValue, "the marker of an empty Option: it holds nothing, and no Option holds it"},
+    {^^::foundation::core::ExpectWhy,
+     "the reason and the place of a fatal unwrap: the argument of expect(), never a value in a kernel signature"},
+    {^^::foundation::core::niche, kMetafunction},
+    {^^::foundation::core::OptionCursor,
+     "the position of a loop over an Option: it lives inside the loop, and it is never a value in a signature"},
 
     {^^fa::is_graded_specialization, kMetafunction},
     {^^fa::graded_modality, kMetafunction},

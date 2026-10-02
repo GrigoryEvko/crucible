@@ -113,6 +113,11 @@ fixy::WriteOnce<int> | fixy/Mutation.h | fixy::WriteOnce<int>{} | private | clos
 fixy::WriteOnceNonNull<int*> | fixy/Mutation.h | fixy::WriteOnceNonNull<int*>{} | private | closed
 fixy::session::SessionFromMachine<int, fixy::session::End> | fixy/session/MachineBridge.h | fixy::session::SessionFromMachine<int, fixy::session::End>{forge::rvalue<fixy::Machine<int>>()} | private | closed
 
+# -- The primitive families ------------------------------------------
+# A cursor of an Option comes only from begin() of an Option, so no
+# pointer that a caller holds becomes a cursor.
+foundation::core::OptionCursor<int> | foundation/core/Choice.h | foundation::core::OptionCursor<int>{forge::rvalue<int*>()} | private | closed
+
 # -- The graded substrate --------------------------------------------
 # A grade that nothing derives is paired with a value only through a key,
 # and only the key's authority builds one.  Braces that pair a value with

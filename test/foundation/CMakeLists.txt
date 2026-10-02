@@ -1818,6 +1818,32 @@ foundation_neg_compile_test(neg_thread_local_ref_store_of_another_type
   "no matching function for call to .foundation::ThreadLocalRef<\\{anonymous\\}::CounterTag, \\{anonymous\\}::Counter>::store\\(\\{anonymous\\}::Label\\) const."
   "the expression .is_assignable_v<T&, U&&> \\[with T = <unnamed>::Counter; U = <unnamed>::Label\\]. evaluated to .false.")
 
+# ── The Choice family ─────────────────────────────────────────────────
+#
+# An Option holds an object whose move does not throw.  The reason of
+# expect() is a constant text with an end.  A cursor of a temporary and a
+# copy of an owning Option are refused.
+foundation_test(test_core_choice)
+
+foundation_neg_compile_test(neg_core_option_reference_payload
+  "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
+  "the expression .is_object_v<T> \\[with T = int&\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_option_throwing_move_payload
+  "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
+  "the expression .is_nothrow_move_constructible_v<T> \\[with T = ThrowingMove\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_option_expect_runtime_reason
+  "cannot convert .const char\\*. to .foundation::core::ExpectWhy."
+  "initializing argument 1 of .constexpr T foundation::core::Option<T>::expect\\(foundation::core::ExpectWhy\\) && \\[with T = int\\].")
+foundation_neg_compile_test(neg_core_option_expect_reason_without_end
+  "call to consteval function .foundation::core::ExpectWhy\\(unterminated_reason, __builtin_FILE\\(\\), __builtin_LINE\\(\\), __builtin_FUNCTION\\(\\)\\). is not a constant expression"
+  ".__builtin_trap\\(\\). is not a constant expression")
+foundation_neg_compile_test(neg_core_option_cursor_of_temporary
+  "use of deleted function .void foundation::core::Option<T>::begin\\(\\) && \\[with T = int\\]."
+  "a cursor of a temporary Option points into an object that the full expression ends")
+foundation_neg_compile_test(neg_core_option_owning_copied
+  "use of deleted function .foundation::core::Option<Owner>::Option\\(const foundation::core::Option<Owner>&\\)."
+  "an owning Option is move-only: a copy would duplicate what the payload owns")
+
 # ── Hard errors in a body ─────────────────────────────────────────────
 #
 # Neither template has a constraint.  The refusal is an error in the body

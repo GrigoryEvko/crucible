@@ -12,6 +12,12 @@ test/foundation/test_permissions_compile.cpp:union:UnionTag
 test/layer/checks/fixy/SelfContained.cpp:union:EitherPointer
 test/layer/checks/fixy/SelfContained.cpp:union:EitherValue
 
+# The storage of an Option.  The union holds an empty marker or the
+# payload.  The Option builds the payload only from a payload value that
+# the caller gives, and it reads the payload only after that, so the union
+# builds no object from bytes.
+include/foundation/core/Choice.h:union:<anonymous> x2
+
 # Unions of scalars in the stable-id tests.  GCC prints a union value
 # without its active member, so the stable id refuses a union value.  These
 # unions prove that refusal.  No member is a proof type.
