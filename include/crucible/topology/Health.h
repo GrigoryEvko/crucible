@@ -8,6 +8,7 @@
 #include <fixy/Stale.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/Saturate.h>
 #include <foundation/diag/Catalog.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
@@ -527,7 +528,11 @@ class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeer
         std::uint64_t const corrected_delta = slot.ecc.corrected.get() - slot.prior_ecc.corrected.get();
         if (corrected_delta >= policy_.corrected_ecc_warn_delta) {
             issues.set(HealthIssue::CorrectedEccTrend);
-            return detail::clamp_u32(static_cast<std::uint32_t>(400u + corrected_delta * 10u), 1000u);
+            // The sum saturates in 64 bits before the clamp.  A delta of any
+            // size then gives the maximum risk, and no wrap gives a low one.
+            std::uint64_t const trend_risk = ::foundation::sat::add_sat<std::uint64_t>(
+                400u, ::foundation::sat::mul_sat<std::uint64_t>(corrected_delta, 10u));
+            return detail::clamp_u32(trend_risk, 1000u);
         }
         return 0;
     }

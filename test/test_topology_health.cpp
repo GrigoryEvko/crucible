@@ -174,6 +174,39 @@ static void test_permanent_fault_is_sticky() {
     std::printf("  test_permanent_fault_is_sticky:    PASSED\n");
 }
 
+// The score of a peer whose only weighted risk is the trend of its corrected
+// ECC count, after a rise of `delta` in that count.  The score is 1000 minus
+// the risk.
+static std::uint16_t score_after_corrected_delta(std::uint64_t delta) {
+    topology::HealthPolicy policy = test_policy();
+    policy.weights = topology::HealthWeights{.phi = 0, .thermal = 0, .ecc = 1, .drop = 0, .wear = 0};
+    auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(
+        eff::ColdInitCtx{::foundation::effects::testing::init()}, policy);
+    auto const p = peer(5);
+    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 1)));
+    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(delta, 0, 2)));
+    auto snapshot = scorer.compute(p, 2000, 3);
+    assert(snapshot.peek().issues.test(topology::HealthIssue::CorrectedEccTrend));
+    return snapshot.peek().score.raw();
+}
+
+// The risk of a corrected ECC trend is 400 plus ten for each corrected error,
+// clamped at 1000.  Each delta below gives the full risk.  A sum that wraps
+// in 32 bits or a product that wraps in 64 bits would give a small risk and a
+// high score.
+static void test_large_corrected_delta_gives_full_risk() {
+    // 400 + 10 * d passes 2^32 at d = 429,496,690, and its low 32 bits are 4.
+    assert(score_after_corrected_delta(429496689) == 0);
+    assert(score_after_corrected_delta(429496690) == 0);
+    // 10 * 2^63 wraps to 0 in 64 bits, so the wrapped risk is 400.
+    assert(score_after_corrected_delta(std::uint64_t{1} << 63) == 0);
+    // 10 * (2^64 - 1) wraps to 2^64 - 10, and 400 more wraps to 390.
+    assert(score_after_corrected_delta(~std::uint64_t{0}) == 0);
+    // A delta at the threshold of the policy gives 400 + 40.
+    assert(score_after_corrected_delta(4) == 1000 - 440);
+    std::printf("  test_large_corrected_delta_gives_full_risk: PASSED\n");
+}
+
 int main() {
     static_assert(topology::CtxFitsHealthMint<eff::ColdInitCtx>);
     static_assert(!topology::CtxFitsHealthMint<eff::BgDrainCtx>);
@@ -181,13 +214,14 @@ int main() {
     static_assert(!topology::CtxFitsHealthUpdate<eff::HotFgCtx>);
     static_assert(::foundation::diag::is_diagnostic_class_v<topology::Health_Degraded>);
 
-    std::printf("test_topology_health: 6 groups\n");
+    std::printf("test_topology_health: 7 groups\n");
     test_name_accessors();
     test_healthy_snapshot_is_stale_wrapped();
     test_phi_delay_drives_suspect_state();
     test_thermal_ecc_and_drops_degrade_score();
     test_counter_regression_is_rejected();
     test_permanent_fault_is_sticky();
+    test_large_corrected_delta_gives_full_risk();
     std::printf("test_topology_health: all passed\n");
     return 0;
 }
