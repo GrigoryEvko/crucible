@@ -51,6 +51,14 @@ uint64_t bench_rand() noexcept {
     std::abort();
 }
 
+// The content hash loads the full lane width of sizes and strides, and it
+// masks the lanes past ndim.  The arena gives raw storage, so a meta that the
+// setup does not construct holds the bytes that the arena held before.
+void check_meta_tail(const TensorMeta& meta) {
+    for (uint8_t d = meta.ndim; d < kMaxTensorNDim; d++)
+        CRUCIBLE_BENCH_CHECK(raw_tensor_dim(meta.sizes[d]) == 0 && raw_tensor_dim(meta.strides[d]) == 0);
+}
+
 TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, Arena& arena, uint16_t n_in, uint16_t n_out,
                                 uint16_t n_scalar, uint8_t ndim) {
     TraceEntry te{};
@@ -66,6 +74,7 @@ TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, Arena& arena, ui
 
     if (n_in > 0) {
         te.input_metas = arena.alloc_array<TensorMeta>(a, n_in);
+        std::uninitialized_value_construct_n(te.input_metas, n_in);
         for (uint16_t j = 0; j < n_in; j++) {
             auto& m = te.input_metas[j];
             m.ndim = ndim;
@@ -78,10 +87,12 @@ TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, Arena& arena, ui
             }
             m.data_ptr = external_data_ptr(
                 std::bit_cast<void*>(static_cast<std::uintptr_t>(0x7f0000000000ULL + bench_rand() % 0x100000)));
+            check_meta_tail(m);
         }
     }
     if (n_out > 0) {
         te.output_metas = arena.alloc_array<TensorMeta>(a, n_out);
+        std::uninitialized_value_construct_n(te.output_metas, n_out);
         for (uint16_t j = 0; j < n_out; j++) {
             auto& m = te.output_metas[j];
             m.ndim = ndim;
@@ -94,6 +105,7 @@ TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, Arena& arena, ui
             }
             m.data_ptr = external_data_ptr(
                 std::bit_cast<void*>(static_cast<std::uintptr_t>(0x7f0000000000ULL + bench_rand() % 0x100000)));
+            check_meta_tail(m);
         }
     }
     if (n_scalar > 0) {
@@ -140,7 +152,7 @@ int main(int argc, char* argv[]) {
         for (uint32_t i = 0; i < N; i++) {
             const uint16_t n_in = static_cast<uint16_t>(1 + (bench_rand() % 3));
             const uint16_t n_out = static_cast<uint16_t>(1 + (bench_rand() % 2));
-            ops[i] = make_synthetic_entry(test.alloc, arena, n_in, n_out, 1, 4);
+            std::construct_at(&ops[i], make_synthetic_entry(test.alloc, arena, n_in, n_out, 1, 4));
         }
         return bench::run("content_hash (481 ops, ResNet-like)", [&] {
             auto h = compute_content_hash(std::span{ops, N});
@@ -157,7 +169,7 @@ int main(int argc, char* argv[]) {
         for (uint32_t i = 0; i < N; i++) {
             const uint16_t n_in = static_cast<uint16_t>(1 + (bench_rand() % 4));
             const uint16_t n_out = static_cast<uint16_t>(1 + (bench_rand() % 2));
-            ops[i] = make_synthetic_entry(test.alloc, arena, n_in, n_out, 2, 4);
+            std::construct_at(&ops[i], make_synthetic_entry(test.alloc, arena, n_in, n_out, 2, 4));
         }
         return bench::run("content_hash (1110 ops, GPT-like)", [&] {
             auto h = compute_content_hash(std::span{ops, N});
@@ -173,7 +185,7 @@ int main(int argc, char* argv[]) {
         auto* ops = data_arena.alloc_array<TraceEntry>(test.alloc, N);
         bench_rng_state = 0x12345678ABCDEF01ULL;
         for (uint32_t i = 0; i < N; i++)
-            ops[i] = make_synthetic_entry(test.alloc, data_arena, 2, 1, 1, 4);
+            std::construct_at(&ops[i], make_synthetic_entry(test.alloc, data_arena, 2, 1, 1, 4));
         return bench::run("make_region (481 ops)", [&] {
             Arena region_arena{1 << 20};
             auto* r = make_region(test.alloc, region_arena, ops, N);
@@ -189,7 +201,7 @@ int main(int argc, char* argv[]) {
         auto* ops = arena.alloc_array<TraceEntry>(test.alloc, N);
         bench_rng_state = 0xAAAABBBBCCCCDDDDULL;
         for (uint32_t i = 0; i < N; i++)
-            ops[i] = make_synthetic_entry(test.alloc, arena, 2, 1, 1, 4);
+            std::construct_at(&ops[i], make_synthetic_entry(test.alloc, arena, 2, 1, 1, 4));
         auto* region = make_region(test.alloc, arena, ops, N);
         return bench::run("compute_merkle_hash (RegionNode)", [&] {
             auto h = compute_merkle_hash(region);
@@ -208,14 +220,12 @@ int main(int argc, char* argv[]) {
         for (uint32_t e = 0; e < NUM_EDGES; e++) {
             const uint32_t src = static_cast<uint32_t>(bench_rand() % NUM_OPS);
             const uint32_t dst = std::min(src + 1 + static_cast<uint32_t>(bench_rand() % 5), NUM_OPS - 1);
-            edges[e] = {
-                .src = OpIndex{src},
-                .dst = OpIndex{dst},
-                .src_port = 0,
-                .dst_port = 0,
-                .kind = EdgeKind::DATA_FLOW,
-                .pad = 0,
-            };
+            std::construct_at(&edges[e], Edge{.src = OpIndex{src},
+                                              .dst = OpIndex{dst},
+                                              .src_port = 0,
+                                              .dst_port = 0,
+                                              .kind = EdgeKind::DATA_FLOW,
+                                              .pad = 0});
         }
         return bench::run("build_csr (481 ops, 900 edges)", [&] {
             Arena csr_arena{1 << 16};
@@ -234,6 +244,7 @@ int main(int argc, char* argv[]) {
         auto* slots = arena.alloc_array<TensorSlot>(test.alloc, NUM_SLOTS);
         bench_rng_state = 0x9999AAAABBBBCCCCULL;
         for (uint32_t s = 0; s < NUM_SLOTS; s++) {
+            std::construct_at(&slots[s]);
             slots[s].slot_id = SlotId{s};
             slots[s].birth_op = OpIndex{static_cast<uint32_t>(bench_rand() % 400)};
             slots[s].death_op = OpIndex{slots[s].birth_op.raw() + static_cast<uint32_t>(1 + bench_rand() % 80)};
@@ -242,6 +253,9 @@ int main(int argc, char* argv[]) {
             slots[s].device_type = DeviceType::CUDA;
             slots[s].device_idx = 0;
             slots[s].is_external = (s < 20);  // first 20 are params
+            // The planner writes the offset of each internal slot only, so
+            // each external slot keeps the zero of its member initializer.
+            CRUCIBLE_BENCH_CHECK(slots[s].offset_bytes == 0);
         }
         BackgroundThread bg;
         return bench::run("compute_memory_plan (300 slots)", [&] {

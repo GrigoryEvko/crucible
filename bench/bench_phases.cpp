@@ -81,6 +81,20 @@ void print_phase_table(PhaseTiming* phases, uint32_t n, double total_ns, uint64_
     std::printf("  %-22s  %8.1f  %8.2f  100.0%%\n", "TOTAL (measured)", ns_per, total_ns / 1e6);
 }
 
+// build_trace gives an op with no metadata null arrays and zero counts.  The
+// copy of its loop in the P2a phase does the same, so no field of such an op
+// keeps the bytes that the arena held before.
+void check_ops_without_metas(const TraceEntry* ops, const MetaIndex* meta_data, uint32_t count) {
+    for (uint32_t i = 0; i < count; i++) {
+        if (meta_data[i].is_valid()) continue;
+        const TraceEntry& op_record = ops[i];
+        CRUCIBLE_BENCH_CHECK(op_record.input_metas == nullptr && op_record.output_metas == nullptr);
+        CRUCIBLE_BENCH_CHECK(op_record.scalar_args == nullptr && op_record.input_trace_indices == nullptr);
+        CRUCIBLE_BENCH_CHECK(op_record.input_slot_ids == nullptr && op_record.output_slot_ids == nullptr);
+        CRUCIBLE_BENCH_CHECK(op_record.num_inputs == 0 && op_record.num_outputs == 0);
+    }
+}
+
 // ── Top-level Report via bench::run ──────────────────────────────────
 //
 // The full build_trace pipeline on a real recorded trace. The body
@@ -398,7 +412,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         if (!meta_base && total_metas > 0) {
             meta_base = bg.arena.alloc_array<TensorMeta>(A, total_metas);
             for (uint32_t m = 0; m < total_metas; m++)
-                meta_base[m] = meta_log.at(first_meta + m);
+                std::construct_at(&meta_base[m], meta_log.at(first_meta + m));
         }
         const size_t aux_bytes =
             static_cast<size_t>(total_scalars) * sizeof(int64_t) + static_cast<size_t>(total_inputs) * sizeof(OpIndex)
@@ -449,12 +463,22 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 te.output_slot_ids = ::foundation::lifetime::start_as_array<SlotId>(aux_cursor, n_out).data();
                 aux_cursor += n_out * sizeof(SlotId);
                 if (n_scalars > 0) std::memcpy(te.scalar_args, re.scalar_values.data(), n_scalars * sizeof(int64_t));
+            } else {
+                te.input_metas = nullptr;
+                te.output_metas = nullptr;
+                te.scalar_args = nullptr;
+                te.input_trace_indices = nullptr;
+                te.input_slot_ids = nullptr;
+                te.output_slot_ids = nullptr;
+                te.num_inputs = 0;
+                te.num_outputs = 0;
             }
         }
 
         const uint64_t t1 = bench::rdtsc_end();
         bench::do_not_optimize(ops);
         ns_p2a += static_cast<double>(t1 - t0) * nspc;
+        check_ops_without_metas(ops, meta_data, count);
     }
 
     // ── P2b: Content hash only ────────────────────────────────────

@@ -14,6 +14,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
+#include <span>
 #include <vector>
 
 #include <crucible/Arena.h>
@@ -54,10 +56,23 @@ static RegionNode* synth_region(Arena& arena, uint32_t num_ops, uint64_t salt) {
         std::uninitialized_value_construct_n(te.output_metas, 1);
         te.output_metas[0] = te.input_metas[0];
         te.input_trace_indices = arena.alloc_array<OpIndex>(A, 1);
+        std::uninitialized_value_construct_n(te.input_trace_indices, 1);
         te.input_slot_ids = arena.alloc_array<SlotId>(A, 1);
+        std::uninitialized_value_construct_n(te.input_slot_ids, 1);
         te.output_slot_ids = arena.alloc_array<SlotId>(A, 1);
+        std::uninitialized_value_construct_n(te.output_slot_ids, 1);
     }
     return make_region(A, arena, ops, num_ops);
+}
+
+// The store serializes the producer index and the slot ids of each op, and
+// the bench does not set them.  Each one keeps the none() of its default
+// constructor, so the stored bytes do not depend on the arena.
+static void check_unset_ids(const RegionNode& region) {
+    for (const TraceEntry& op_record : std::span{region.ops, region.num_ops}) {
+        CRUCIBLE_BENCH_CHECK(!op_record.input_trace_indices[0].is_valid());
+        CRUCIBLE_BENCH_CHECK(!op_record.input_slot_ids[0].is_valid() && !op_record.output_slot_ids[0].is_valid());
+    }
 }
 
 int main() {
@@ -94,6 +109,7 @@ int main() {
 
         Arena warm_arena{1 << 18};
         auto* warm_region = synth_region(warm_arena, num_ops, 0xC0FFEE + num_ops);
+        check_unset_ids(*warm_region);
         const auto warm_payload = Cipher::content_addressed(warm_region);
         (void)cipher.store(open_view, warm_payload, nullptr);  // prime the warm path
         const ContentHash warm_h = warm_region->content_hash;
