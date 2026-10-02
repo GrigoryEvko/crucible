@@ -7,8 +7,9 @@
 // pin, and the entry goes.
 //
 // The runtime attacks run two threads over two bounded queues.  A
-// watchdog ends a run that makes no progress for a fixed time and
-// records a deadlock, so no attack can hang the test.
+// watchdog reads the counts of the two queues, and it ends a run and
+// records a deadlock when the counts show that no side can make a step.
+// So no attack can hang the test, and no verdict reads a clock.
 //
 // The test is several source files of one executable, so that no
 // translation unit holds every attack:
@@ -36,7 +37,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <span>
 #include <string_view>
 #include <thread>
@@ -90,6 +90,11 @@ public:
         return head_.load(std::memory_order_acquire) == tail_.load(std::memory_order_acquire);
     }
 
+    // The number of pushes and the number of pops so far.  Each count only
+    // grows, and one side writes each count.
+    [[nodiscard]] std::size_t pushed() const { return head_.load(std::memory_order_acquire); }
+    [[nodiscard]] std::size_t popped() const { return tail_.load(std::memory_order_acquire); }
+
 private:
     std::array<int, max_capacity> slots_{};
     alignas(64) std::atomic<std::size_t> head_{0};
@@ -97,18 +102,90 @@ private:
     std::size_t capacity_;
 };
 
-// The state of one side of a run.
-enum class side : int {
-    running,
-    waiting,
+// The four counts of a run.  The left side writes the pushes of
+// left_to_right and the pops of right_to_left, and the right side writes
+// the other two counts.  Each step of a side is one push or one pop, so
+// the counts give the position of each side in its script and the number
+// of messages in each queue.
+struct run_counts {
+    std::size_t left_sent = 0;
+    std::size_t right_received = 0;
+    std::size_t right_sent = 0;
+    std::size_t left_received = 0;
+    friend bool operator==(run_counts const&, run_counts const&) = default;
+};
+
+// Reads the four counts until two reads in sequence agree.  Each count only
+// grows, so two equal reads show that no count changed between them.  Each
+// read is an acquire load, so the second read of a count sees each write
+// that happened before a write that the first reads saw.  The counts are
+// then a state of the run that holds each step before a step it holds.
+// The loop ends, because the scripts are finite and each step changes a
+// count once.
+inline run_counts read_counts(bounded_queue const& left_to_right, bounded_queue const& right_to_left) {
+    const auto read_once = [&] {
+        return run_counts{.left_sent = left_to_right.pushed(),
+                          .right_received = left_to_right.popped(),
+                          .right_sent = right_to_left.pushed(),
+                          .left_received = right_to_left.popped()};
+    };
+    run_counts earlier = read_once();
+    while (true) {
+        const run_counts later = read_once();
+        if (later == earlier) return later;
+        earlier = later;
+    }
+}
+
+enum class side_state : std::uint8_t {
+    can_step,
+    waits,
     finished
 };
 
+// The state of a side at `position` in its script.  A send waits while its
+// queue holds `capacity` messages, and a receive waits while its queue is
+// empty.
+inline side_state state_of(std::span<const step> script, std::size_t position, std::size_t outgoing,
+                           std::size_t incoming, std::size_t capacity) {
+    if (position >= script.size()) return side_state::finished;
+    const bool is_blocked = script[position].is_send ? outgoing >= capacity : incoming == 0;
+    return is_blocked ? side_state::waits : side_state::can_step;
+}
+
+enum class run_state : std::uint8_t {
+    running,
+    finished,
+    deadlocked
+};
+
+// The state of a run from its counts.  A run is a deadlock when no side can
+// step and a side has not finished.  Only a step changes a count, so that
+// state is final, and the verdict reads no clock: a side that is off the
+// processor for any time while its queue lets it step keeps the run alive.
+//
+// A step of one side never takes a step away from the other side: a push
+// can only fill the queue that the other side pops, and a pop can only free
+// the queue that the other side pushes.  So each schedule of a pair ends in
+// the same state, and a pair deadlocks in each schedule or in none.
+inline run_state state_of_run(run_counts const& counts, std::span<const step> left, std::span<const step> right,
+                              std::size_t capacity) {
+    const std::size_t left_to_right = counts.left_sent - counts.right_received;
+    const std::size_t right_to_left = counts.right_sent - counts.left_received;
+    const side_state left_state =
+        state_of(left, counts.left_sent + counts.left_received, left_to_right, right_to_left, capacity);
+    const side_state right_state =
+        state_of(right, counts.right_sent + counts.right_received, right_to_left, left_to_right, capacity);
+    if (left_state == side_state::finished && right_state == side_state::finished) return run_state::finished;
+    if (left_state == side_state::can_step || right_state == side_state::can_step) return run_state::running;
+    return run_state::deadlocked;
+}
+
 // One wait of a side for its queue.  The first waits of a step spin with
 // a pause, the next waits give the processor to another thread, and the
-// remaining waits sleep.  A side that waits through a deadlock then
-// sleeps through the stall ticks, and it does not make a system call in
-// a tight loop.  Each step starts its count at zero.
+// remaining waits sleep.  A side that waits through a deadlock then does
+// not make a system call in a tight loop until the watchdog stops it.
+// Each step starts its count at zero.
 inline void wait_for_queue(std::uint32_t& waits_of_step) {
     constexpr std::uint32_t pause_waits = 64;
     constexpr std::uint32_t yield_waits = 256;
@@ -122,25 +199,18 @@ inline void wait_for_queue(std::uint32_t& waits_of_step) {
     if (waits_of_step < pause_waits + yield_waits) ++waits_of_step;
 }
 
-// Runs the two scripts against each other.  A run is a deadlock when
-// each side that has not finished waits, and no side makes progress for
-// `stall_ticks`: a waiting side waits for the other side to act, and
-// the other side waits too.  The watchdog then raises the stop flag,
-// each thread leaves its wait, and both joins return.  A run with no
-// progress for `hard_ticks` while a side still runs is a fault of this
-// harness, and the test aborts with a diagnostic.
+// Runs the two scripts against each other.  The watchdog reads the counts
+// of the run between two polls.  When they show a deadlock, it raises the
+// stop flag, each thread leaves its wait, and both joins return.  The
+// poll interval sets only how soon the watchdog sees a final state, never
+// the verdict.
 outcome run_pair(std::span<const step> left, std::span<const step> right, std::size_t capacity) {
     bounded_queue left_to_right{capacity};
     bounded_queue right_to_left{capacity};
-    std::atomic<std::uint64_t> progress{0};
     std::atomic<bool> stop{false};
-    std::atomic<int> finished{0};
     std::atomic<bool> wrong{false};
-    std::array<std::atomic<side>, 2> sides{};
-    const auto play = [&](std::span<const step> script, bounded_queue& out, bounded_queue& in,
-                          std::atomic<side>& state) {
+    const auto play = [&](std::span<const step> script, bounded_queue& out, bounded_queue& in) {
         for (const step& action : script) {
-            state.store(side::waiting, std::memory_order_release);
             std::uint32_t waits_of_step = 0;
             if (action.is_send) {
                 while (!out.try_push(action.message)) {
@@ -155,40 +225,22 @@ outcome run_pair(std::span<const step> left, std::span<const step> right, std::s
                 }
                 if (value != action.message) wrong.store(true, std::memory_order_release);
             }
-            state.store(side::running, std::memory_order_release);
-            progress.fetch_add(1, std::memory_order_acq_rel);
         }
-        state.store(side::finished, std::memory_order_release);
-        finished.fetch_add(1, std::memory_order_acq_rel);
     };
     bool is_deadlocked = false;
     {
-        std::jthread first{[&] { play(left, left_to_right, right_to_left, sides[0]); }};
-        std::jthread second{[&] { play(right, right_to_left, left_to_right, sides[1]); }};
-        constexpr auto tick = std::chrono::milliseconds{5};
-        constexpr int stall_ticks = 40;
-        constexpr int hard_ticks = 2000;
-        std::uint64_t last = progress.load(std::memory_order_acquire);
-        int quiet = 0;
-        while (finished.load(std::memory_order_acquire) < 2) {
-            std::this_thread::sleep_for(tick);
-            const std::uint64_t now = progress.load(std::memory_order_acquire);
-            quiet = now == last ? quiet + 1 : 0;
-            last = now;
-            const bool is_blocked = sides[0].load(std::memory_order_acquire) != side::running
-                                 && sides[1].load(std::memory_order_acquire) != side::running;
-            if (is_blocked && quiet >= stall_ticks) {
+        std::jthread first{[&] { play(left, left_to_right, right_to_left); }};
+        std::jthread second{[&] { play(right, right_to_left, left_to_right); }};
+        constexpr auto poll = std::chrono::microseconds{500};
+        while (true) {
+            const run_state state = state_of_run(read_counts(left_to_right, right_to_left), left, right, capacity);
+            if (state == run_state::finished) break;
+            if (state == run_state::deadlocked) {
                 is_deadlocked = true;
                 stop.store(true, std::memory_order_release);
                 break;
             }
-            if (quiet >= hard_ticks) {
-                std::fprintf(stderr,
-                             "test_session_subtype_attack: a run made no progress for %d ticks while a side "
-                             "still ran; the harness is wrong\n",
-                             hard_ticks);
-                std::abort();
-            }
+            std::this_thread::sleep_for(poll);
         }
     }
     if (is_deadlocked) return outcome::deadlocked;
@@ -207,6 +259,42 @@ void expect(bool condition, std::string_view what) {
     if (condition) return;
     std::fprintf(stderr, "test_session_subtype_attack: %.*s\n", static_cast<int>(what.size()), what.data());
     ++failures;
+}
+
+// The verdict of the watchdog on planted counts.  A side that waits while
+// the other side can step is no deadlock, however long the other side is
+// off the processor.  A run with a time window called such a state a
+// deadlock when the other side stayed off the processor for the window.
+inline void watchdog_verdicts_read_the_counts() {
+    constexpr step send_a{.is_send = true, .message = 1};
+    constexpr step send_b{.is_send = true, .message = 2};
+    constexpr step recv_a{.is_send = false, .message = 1};
+    constexpr step recv_b{.is_send = false, .message = 2};
+
+    constexpr std::array ping{send_a, recv_b};
+    constexpr std::array pong{recv_a, send_b};
+    expect(state_of_run(run_counts{}, ping, pong, 1) == run_state::running, "a run that can start is running");
+    expect(state_of_run(run_counts{.left_sent = 1}, ping, pong, 1) == run_state::running,
+           "a side that waits for a message in the queue of the other side is no deadlock");
+    constexpr run_counts at_the_end{.left_sent = 1, .right_received = 1, .right_sent = 1, .left_received = 1};
+    expect(state_of_run(at_the_end, ping, pong, 1) == run_state::finished,
+           "a run whose two sides are at the end of their scripts is finished");
+
+    constexpr std::array waits_for_b{recv_b};
+    constexpr std::array waits_for_a{recv_a};
+    expect(state_of_run(run_counts{}, waits_for_b, waits_for_a, 1) == run_state::deadlocked,
+           "two sides that each wait for a message of the other side are a deadlock");
+
+    constexpr std::array sends_a{send_a, send_a};
+    constexpr std::array sends_b{send_b, send_b};
+    expect(state_of_run(run_counts{.left_sent = 1, .right_sent = 1}, sends_a, sends_b, 1) == run_state::deadlocked,
+           "two sides that each send into a full queue are a deadlock");
+
+    constexpr std::array one_send{send_a};
+    constexpr std::array two_receives{recv_a, recv_a};
+    expect(state_of_run(run_counts{.left_sent = 1, .right_received = 1}, one_send, two_receives, 1)
+               == run_state::deadlocked,
+           "a side that waits for a side that finished is a deadlock");
 }
 
 // The check and the runtime agree on each member of the family, for
@@ -232,6 +320,8 @@ void family_agrees_with_runtime() {
 using namespace test_session_subtype_attack_types;
 
 int main() {
+    watchdog_verdicts_read_the_counts();
+
     // The runtime half of the capacity family: the check and the runs agree.
     family_agrees_with_runtime<1>();
     family_agrees_with_runtime<2>();
