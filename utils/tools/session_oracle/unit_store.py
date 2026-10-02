@@ -15,7 +15,10 @@ THE STORE
     It is a result store of test/neg_compile_store.py, with the key, the
     entry format, the check of the inputs, the settle period and the
     eviction of that file.  The module text of that file tells why a stored
-    result of a compile is the result of the compile.  A memo of the hash
+    result of a compile is the result of the compile.  A store can take a
+    latest start time for its builds.  A build then takes the earlier of that
+    time and the clock, so the bound can only make the store refuse more
+    results.  The self-test uses it.  A memo of the hash
     of each dependency, with its stat fields, serves the lookups of one
     caller (DIGEST_MEMO_NAME).  When the caches are off, each unit builds
     again.
@@ -273,18 +276,23 @@ class UnitStore:
     """
 
     def __init__(self, cxx: str, flags: Sequence[str], link_flags: Sequence[str], scratch: Path,
-                 store_root: Path | None = None, caller: str | None = None) -> None:
+                 store_root: Path | None = None, caller: str | None = None,
+                 latest_start_ns: int | None = None) -> None:
         """Use the compiler ``cxx`` with the compile flags ``flags`` and the link flags ``link_flags``.
 
         ``store_root`` is the directory of the store.  Without it, the store
         is the cache STORE_NAME of cache_dir, and with the caches off there
         is no store.  ``caller`` names the digest memo of the lookups, and
         save_memo writes it.  Without it, the lookups use no memo.
+        ``latest_start_ns`` is the latest start time of a build, in
+        nanoseconds since the epoch.  A build takes the earlier of that time
+        and the clock (THE STORE).
         """
         self.cxx = shutil.which(cxx) or cxx
         self.flags = list(flags)
         self.link_flags = list(link_flags)
         self.scratch = scratch
+        self.latest_start_ns = latest_start_ns
         self.environment = compile_store.compile_environment(os.environ)
         self.module = _digest(Path(__file__).read_bytes())
         root = store_root if store_root is not None else cache_dir.cache_root(STORE_NAME)
@@ -553,9 +561,12 @@ class UnitStore:
 
         The key names the bytes of each source (THE SOURCES), so the sources
         are not dependencies of the result, and a new source does not wait
-        for the settle period.
+        for the settle period.  The start time of the build is the earlier of
+        the clock and the latest start time of the store (THE STORE).
         """
         started_ns = time.time_ns()
+        if self.latest_start_ns is not None:
+            started_ns = min(started_ns, self.latest_start_ns)
         if unit.kind == "static":
             proc, inputs = self._compile(unit.compiles[0], unit.directory, unit.sources[0], unit.work)
             result = UnitResult(proc.returncode, proc.stdout, proc.stderr)
@@ -724,9 +735,13 @@ def self_test(cxx: str) -> int:
 def _self_test_cases(expect: Callable[[str, bool], None], cxx: str, root: Path) -> None:
     """Run each case of the self-test under ``root``.
 
-    Each file starts outside the settle period after one wait.  A change
-    after the wait is in the settle period, so a case after a change shows
-    a miss or a result whose inputs are the same as stored ones.
+    In a case where the store must refuse a result, the store takes the
+    change time of the new file as the latest start of its builds.  The
+    change is then in the settle period, also on a slow host.  The cases
+    that read a stored result come after one wait that follows the last
+    change of the setup, and a wait can only make a file older.  A case
+    after a later change must give a miss, or a result whose inputs are the
+    same as stored ones, so the time of the change does not decide it.
     """
     include, early, library, early_library, scratch = (root / name for name in
                                                        ("include", "early", "library", "early_library", "scratch"))
@@ -744,15 +759,18 @@ def _self_test_cases(expect: Callable[[str, bool], None], cxx: str, root: Path) 
     store_root = root / "store"
     counted, log = _counting_compiler(cxx, root)
 
-    def unit_store(unit_flags: Sequence[str] = tuple(flags)) -> UnitStore:
-        return UnitStore(counted, unit_flags, link_flags, scratch, store_root)
+    def unit_store(unit_flags: Sequence[str] = tuple(flags), latest_start_ns: int | None = None) -> UnitStore:
+        return UnitStore(counted, unit_flags, link_flags, scratch, store_root, latest_start_ns=latest_start_ns)
 
-    first = unit_store()
+    first = unit_store(latest_start_ns=(include / "probe.h").stat().st_ctime_ns)
     fresh = first.static(static)
     first.static(planted)
     first.program(program)
+    reader = unit_store()
+    kept = [reader.stored(unit) for unit in (reader.static_unit(static), reader.static_unit(planted),
+                                              reader.program_unit(program))]
     expect("a unit whose inputs changed in the settle period builds, and the store keeps no result",
-           fresh.returncode == 0 and not unit_store().static(static).is_stored)
+           fresh.returncode == 0 and kept == [None, None, None])
     time.sleep(compile_store._SETTLE_NS / 1e9 + 0.2)
 
     cold = unit_store().static(static)
@@ -766,7 +784,10 @@ def _self_test_cases(expect: Callable[[str, bool], None], cxx: str, root: Path) 
     expect("a failed compile comes from the store with its error output",
            planted_warm.is_stored and planted_warm.returncode == 1 and "the planted probe value" in planted_warm.stderr)
     renamed = [("renamed.cpp", static[0][1])]
-    renamed_first = unit_store().static(renamed)
+    # The first build starts at most one settle period after the write of
+    # the source, so the source is in its settle period, also on a slow host.
+    written_ns = unit_store().sources(renamed)[0].stat().st_ctime_ns
+    renamed_first = unit_store(latest_start_ns=written_ns + compile_store._SETTLE_NS).static(renamed)
     expect("a new source does not wait for the settle period: its first build stores the result",
            not renamed_first.is_stored and unit_store().static(renamed).is_stored)
     directory = unit_store().sources(static)[0].parent

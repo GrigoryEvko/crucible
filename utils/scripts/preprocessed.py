@@ -64,6 +64,9 @@ THE SETTLE PERIOD
     run uses its output only.  A file system with coarse timestamps gives a
     change a time up to one tick early, and the period is much longer than a
     tick.  The result store of the negative fixtures uses the same period.
+    A store can take a latest start time for its runs.  A run then takes the
+    earlier of that time and the clock, so the bound can only make the store
+    refuse more variants.  The self-test uses it.
 
 THE MANIFEST
     A manifest is the marshal encoding of (MANIFEST_TAG, variants).  A tag of
@@ -285,7 +288,11 @@ class Expansion:
 
 @dataclass(frozen=True)
 class Plan:
-    """What a worker needs to fill the manifest of one unit."""
+    """What a worker needs to fill the manifest of one unit.
+
+    ``latest_start_ns`` is the latest start time of the preprocessor run, in
+    nanoseconds since the epoch, or None for the clock (THE SETTLE PERIOD).
+    """
 
     file: str
     run_argv: tuple[str, ...]
@@ -294,6 +301,7 @@ class Plan:
     rooted_key: str
     store: str
     root: str
+    latest_start_ns: int | None = None
 
 
 class PreprocessError(RuntimeError):
@@ -913,6 +921,8 @@ def fill(plan: Plan, reader: _Reader, wait: bool = True) -> tuple[Unit, bool] | 
         descriptor, depfile = tempfile.mkstemp(prefix="preprocessed-", suffix=".d")
         os.close(descriptor)
         started_ns = time.time_ns()
+        if plan.latest_start_ns is not None:
+            started_ns = min(started_ns, plan.latest_start_ns)
         try:
             result = subprocess.run([*plan.run_argv, "-MD", "-MF", depfile], cwd=plan.directory,
                                     capture_output=True)
@@ -1048,7 +1058,7 @@ def code_identity(*parts: object) -> str:
 class Store:
     """The shared preprocessed pass over one compile database."""
 
-    def __init__(self, compile_db: Path, root: Path, jobs: int = 0) -> None:
+    def __init__(self, compile_db: Path, root: Path, jobs: int = 0, latest_start_ns: int | None = None) -> None:
         """Open the store for a compile database.
 
         Args:
@@ -1056,8 +1066,12 @@ class Store:
             root: The repository root, whose files the store keeps
             jobs: The number of parallel preprocessor runs, or 0 for the
                 number of processors, at most 16
+            latest_start_ns: The latest start time of a preprocessor run, in
+                nanoseconds since the epoch, or None for the clock (THE
+                SETTLE PERIOD)
         """
         self.compile_db = compile_db
+        self.latest_start_ns = latest_start_ns
         self.root = root.resolve()
         self.prefix = str(self.root) + os.sep
         found = cache_dir.cache_root(STORE_CACHE)
@@ -1163,7 +1177,8 @@ class Store:
         identity = json.dumps([STORE_VERSION, arguments, without_root(directory, root),
                                compiler_identity(argv, directory), self._environment]).encode()
         return Plan(entry["file"], tuple(run_argv), directory, hashlib.sha256(identity).hexdigest(),
-                    hashlib.sha256(identity + b"\0" + root.encode()).hexdigest(), str(self.directory), root)
+                    hashlib.sha256(identity + b"\0" + root.encode()).hexdigest(), str(self.directory), root,
+                    self.latest_start_ns)
 
     def _lookup(self, plan: Plan) -> Unit | None:
         """Return the unit of a plan from a valid variant, or None when the unit misses."""
@@ -1743,10 +1758,12 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     saving = list(saving_store.units())
     expect("a file that changes during the run gives the unit no variant, so the next run reads the new text",
            not saving[0].from_cache and "seen_new" in joined(saving_store, files_of(saving[0])["saved.h"][1]))
+    # The run takes the change time of the new header as its latest start,
+    # so the change is in the settle period, also on a slow host.
     (root / "fresh.h").write_text("int fresh_value;\n")
     (root / "fresh.cpp").write_text('#include "fresh.h"\n')
     write_db(root, ["fresh.cpp"])
-    list(Store(database, root).units())
+    list(Store(database, root, latest_start_ns=(root / "fresh.h").stat().st_ctime_ns).units())
     expect("a file that changed less than the settle period before the run gives the unit no variant",
            not list(Store(database, root).units())[0].from_cache)
 
@@ -1876,7 +1893,8 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
         (root / "unsettled.h").write_text("int unsettled_value;\n")
         (root / "unsettled.cpp").write_text('#include "unsettled.h"\n')
         write_db(root, ["unsettled.cpp"])
-        evicting = Store(database, root)
+        # The change time of the new header is the latest start, so the unit gets no variant.
+        evicting = Store(database, root, latest_start_ns=(root / "unsettled.h").stat().st_ctime_ns)
         unsettled = list(evicting.units())
         try:
             readable = "unsettled_value" in joined(evicting, files_of(unsettled[0])["unsettled.h"][1])
