@@ -45,7 +45,6 @@
 #include <cstdint>
 #include <meta>
 #include <string_view>
-#include <type_traits>
 
 namespace foundation::effects {
 
@@ -64,40 +63,7 @@ enum class Effect : std::uint8_t {
     Test = 5,
 };
 
-inline constexpr std::size_t effect_count = std::meta::enumerators_of(^^Effect).size();
-
-// `effect_count` counts enumerator NAMES.  Two names can still share
-// one underlying value, which would raise the count while leaving the
-// atoms indistinguishable as bit positions: rows claiming one atom
-// would silently satisfy a gate that demands the other, and two
-// federation cache keys would collide.  This witness tracks each
-// observed value in a bitmask and refuses a repeat.  The check file of
-// this header calls it.
-namespace detail {
-
-[[nodiscard]] consteval bool every_effect_underlying_distinct_() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
-    using U = std::underlying_type_t<Effect>;
-    std::uint64_t seen = 0;
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        constexpr auto u = static_cast<U>([:en:]);
-        if constexpr (static_cast<unsigned>(u) >= 64u) {
-            return false;
-        } else {
-            const std::uint64_t bit = std::uint64_t{1} << static_cast<unsigned>(u);
-            if (seen & bit) {
-                return false;
-            }
-            seen |= bit;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-
-}  // namespace detail
+inline constexpr std::size_t effect_count = 6;
 
 // The name of an atom is the identifier its enumerator already
 // declares, read by reflection, so a new atom is named the moment it is
@@ -150,19 +116,6 @@ template <Effect E>
         default:
             return false;
     }
-}
-
-// Instantiating the classifier for every atom catches a contributor
-// who adds case arms whose default semantics disagree with the rest.
-// It does not catch an unclassified atom on its own.  The cardinality
-// pin in the check file of this header does that.
-consteval bool every_effect_observability_classified_() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) { (void)is_observable_effect_atom_<([:en:])>(); }
-#pragma GCC diagnostic pop
-    return true;
 }
 
 }  // namespace detail
@@ -502,60 +455,5 @@ struct TestWitness {
 [[nodiscard]] inline constexpr Test test() noexcept { return TestWitness::test(); }
 
 }  // namespace testing
-
-// The invariants of the family, read off the roster so that a context
-// is pinned the moment it is listed.  The check file of this header
-// calls the walk.  Each context obeys these rules:
-//
-//   - It is one byte and empty, because its atoms are.
-//   - It is built only through the door.
-//   - No route builds it or its key without a constructor.
-//   - It has the name of its own atom, so the effect table and the
-//     context table are one table.
-//   - It shares its key with no other context, so a key is the name of
-//     the context it mints.
-namespace detail {
-
-template <class C>
-[[nodiscard]] consteval bool context_invariants_hold_() noexcept {
-    static_assert(sizeof(C) == 1, "A context must be 1 byte.  Its capability members are empty and "
-                                  "collapse into the object's own byte.");
-    static_assert(std::is_empty_v<C>, "A context must be an empty class, so that ExecCtx holds it at no cost.");
-    static_assert(std::is_nothrow_copy_constructible_v<C> && std::is_trivially_destructible_v<C>,
-                  "A context is passed by value and copied into ExecCtx, so its copy must not throw and its "
-                  "destructor must stay trivial.");
-    static_assert(!std::is_trivially_copyable_v<C> && !std::is_implicit_lifetime_v<C>,
-                  "A context must have no trivial constructor.  A trivially copyable context is built by "
-                  "std::bit_cast from a byte, and an implicit-lifetime context by std::start_lifetime_as over "
-                  "a buffer.  Keep the constructors of ContextBase user-provided.");
-    static_assert(!std::is_trivially_copyable_v<typename C::key_type>
-                      && !std::is_implicit_lifetime_v<typename C::key_type>,
-                  "A context key must have no trivial constructor, or std::bit_cast and std::start_lifetime_as "
-                  "build the key that mints the context.  Keep the constructors of the key user-provided.");
-    static_assert(!std::is_default_constructible_v<C>,
-                  "A context's default constructor must stay private.  Build one through a friended entry "
-                  "point, or through the test witness.");
-    static_assert(effect_name(C::own_effect) == std::meta::identifier_of(^^C),
-                  "A context is named after its own atom.");
-    return true;
-}
-
-[[nodiscard]] consteval bool every_context_invariant_holds_() noexcept {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto entry : context_roster) {
-        (void)context_invariants_hold_<typename[:entry:]>();
-        template for (constexpr auto other : context_roster) {
-            if constexpr (entry != other) {
-                static_assert(!std::is_same_v<typename[:entry:] ::key_type, typename[:other:] ::key_type>,
-                              "Two contexts share a passkey, so one key would mint either.");
-            }
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-
-}  // namespace detail
 
 }  // namespace foundation::effects

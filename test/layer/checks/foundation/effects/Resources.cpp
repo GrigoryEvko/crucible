@@ -6,10 +6,11 @@ namespace foundation::effects {
 
 namespace detail::resources_self_test {
 
-static_assert(resource_kind_count == 23,
+static_assert(resource_kind_count == std::meta::enumerators_of(^^ResourceKind).size(),
               "The ResourceKind catalog has grown or shrunk.  Confirm the change is intended.  Give a new "
               "axis the next free underlying value, a tag template in namespace resource and a top-level "
-              "alias.  Do not renumber an existing axis.");
+              "alias, and write the new count in the initializer of resource_kind_count.  Do not renumber "
+              "an existing axis.");
 
 // Each axis has exactly one tag template, and its tags are resource
 // tags.  Each tag template has a top-level alias of its own name.
@@ -24,7 +25,7 @@ static_assert(resource_kind_count == 23,
         if constexpr (tag == ^^void) {
             all_found = false;
         } else {
-            all_found = all_found && ResourceTag<typename[:std::meta::substitute(tag, {zero_budget_}):]>;
+            all_found = all_found && ResourceTag<typename[:std::meta::substitute(tag, {zero_budget_()}):]>;
         }
     }
 #pragma GCC diagnostic pop
@@ -39,14 +40,14 @@ static_assert(every_axis_has_one_tag_template(),
     const auto context = std::meta::access_context::current();
     for (const auto tag : std::meta::members_of(^^resource, context)) {
         if (!std::meta::is_class_template(tag)) continue;
-        const auto zero_tag = std::meta::substitute(tag, {zero_budget_});
+        const auto zero_tag = std::meta::substitute(tag, {zero_budget_()});
         bool aliased = false;
         for (const auto alias : std::meta::members_of(^^::foundation::effects, context)) {
             if (!std::meta::is_alias_template(alias)
                 || std::meta::identifier_of(alias) != std::meta::identifier_of(tag)) {
                 continue;
             }
-            aliased = aliased || std::meta::dealias(std::meta::substitute(alias, {zero_budget_})) == zero_tag;
+            aliased = aliased || std::meta::dealias(std::meta::substitute(alias, {zero_budget_()})) == zero_tag;
         }
         if (!aliased) return false;
     }

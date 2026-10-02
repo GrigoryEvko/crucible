@@ -58,7 +58,9 @@ static_assert(category_count == catalog_size, "Category enum cardinality and Cat
                                               "(append-only discipline).  Likely cause: a new Category value "
                                               "was added without appending the corresponding tag struct + tag "
                                               "specialization, OR a tag was appended to Catalog without "
-                                              "shipping the Category enumerator.");
+                                              "shipping the Category enumerator.  catalog_size is a literal, "
+                                              "so that no includer of the header walks the enum: write the "
+                                              "new count in its initializer.");
 
 [[nodiscard]] consteval std::size_t enumerator_position(std::meta::info enumerator) noexcept {
     for (std::size_t i = 0; i < category_enumerators.size(); ++i) {

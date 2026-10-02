@@ -4,10 +4,10 @@
 
 namespace foundation::algebra::lattices {
 
-static_assert(numa_node_id_sentinel_count == 2, "NumaNodeId must hold exactly the two sentinels None and Any. "
-                                                "A third one needs a value that does not collide with the "
-                                                "concrete node identifiers, a place in leq, join and meet, and "
-                                                "an update to this count.");
+static_assert(numa_node_id_sentinel_count == std::meta::enumerators_of(^^NumaNodeId).size(),
+              "NumaNodeId must hold exactly the sentinels that numa_node_id_sentinel_count counts.  A third one "
+              "needs a value that does not collide with the concrete node identifiers, a place in leq, join "
+              "and meet, and an update to the initializer of numa_node_id_sentinel_count.");
 static_assert(std::to_underlying(NumaNodeId::None) == 254, "NumaNodeId::None must stay 254: every value below it "
                                                            "is a concrete node.");
 static_assert(std::to_underlying(NumaNodeId::Any) == 255, "NumaNodeId::Any must stay 255: every value below "

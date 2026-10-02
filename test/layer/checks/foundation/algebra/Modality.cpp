@@ -6,10 +6,10 @@ namespace foundation::algebra {
 
 namespace detail::modality_self_test {
 
-static_assert(modality_kind_count == 5, "Modality count diverged from the five-member set "
-                                        "(Comonad/RelativeMonad/Absolute/Relative/Stepping).  Confirm the "
-                                        "addition is intentional and that the name pins below still cover "
-                                        "the new enumerator.");
+static_assert(modality_kind_count == std::meta::enumerators_of(^^ModalityKind).size(),
+              "Modality count diverged from the five-member set (Comonad/RelativeMonad/Absolute/Relative/"
+              "Stepping).  Confirm the addition is intentional, that the name pins below still cover the new "
+              "enumerator, and write the new count in the initializer of modality_kind_count.");
 
 template <ModalityKind K>
 inline constexpr bool is_exactly_one_predicate =

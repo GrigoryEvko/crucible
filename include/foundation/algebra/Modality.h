@@ -47,7 +47,7 @@ enum class ModalityKind : std::uint8_t {
 // representatives is Absolute for every lattice in the tree, and a
 // semiring grade is a Semiring-shaped lattice under Absolute.
 
-inline constexpr std::size_t modality_kind_count = std::meta::enumerators_of(^^ModalityKind).size();
+inline constexpr std::size_t modality_kind_count = 5;
 
 // A kind is a modality when an enumerator holds it.  The test reads the
 // enumerators by reflection, so a new enumerator is admitted the moment

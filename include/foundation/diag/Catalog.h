@@ -1616,9 +1616,10 @@ struct catalog_of {
 template <class Unused = void>
 using Catalog = typename detail::catalog_of<Unused>::type;
 
-// The count of the enumerators, which is the count of the tags.  The
-// check file of this header pins the tuple to the same count.
-inline constexpr std::size_t catalog_size = std::meta::enumerators_of(^^Category).size();
+// The count of the enumerators, which is the count of the tags.  It is a
+// literal, so that no includer walks the enum.  The check file of this
+// header derives the count and pins the literal and the tuple to it.
+inline constexpr std::size_t catalog_size = 34;
 
 // An alias template cannot carry a requires-clause, so the constraint on the
 // Category value lives on a struct template that the alias forwards to.

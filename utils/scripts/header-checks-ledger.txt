@@ -25,7 +25,6 @@ include/crucible/ledger/probes/CacheTier.h | 1 | 0
 include/crucible/ledger/probes/HugePage.h | 1 | 0
 include/crucible/ledger/probes/VectorWidth.h | 1 | 0
 function static_assert | include/crucible/Graph.h | 1
-function static_assert | include/foundation/effects/Effect.h | 1
 eager evaluation | include/crucible/observe/Health.h | 1
 eager evaluation | include/fixy/Atom.h | 2
 eager evaluation | include/fixy/Axis.h | 1
@@ -34,13 +33,7 @@ eager evaluation | include/fixy/Secret.h | 1
 eager evaluation | include/fixy/Tagged.h | 1
 eager evaluation | include/fixy/atoms/Syscall.h | 4
 eager evaluation | include/fixy/session/Handle.h | 1
-eager evaluation | include/foundation/algebra/Modality.h | 1
 eager evaluation | include/foundation/algebra/lattices/MemoryScopeLattice.h | 2
-eager evaluation | include/foundation/algebra/lattices/NumaNodeLattice.h | 1
-eager evaluation | include/foundation/diag/Catalog.h | 1
-eager evaluation | include/foundation/effects/Effect.h | 7
-eager evaluation | include/foundation/effects/Resources.h | 2
-eager evaluation | include/foundation/effects/Row.h | 3
 
 keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||!std::is_trivially_destructible_v<Affine<int>> | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads
 keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||!std::is_trivially_destructible_v<Linear<int>> | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads

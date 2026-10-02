@@ -2,12 +2,55 @@
 
 #include <foundation/effects/Row.h>
 
+#include <vector>
+
 namespace foundation::effects {
 
+// A cardinality guard is not enough.  Atom values are assigned by hand,
+// so a pack of seven atoms could still spell one of them 100 and shift
+// past the carrier width.  This check reads the underlying value of
+// every atom instead of counting them.  A check below calls it beside
+// the cardinality guard.
+[[nodiscard]] consteval bool every_effect_underlying_lt_64() noexcept {
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
+    // -Wshadow fires spuriously on the expansion-statement induction variable.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        if (static_cast<std::uint64_t>([:en:]) >= 64) {
+            return false;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+
+namespace detail {
+
+// The complete atom list, substituted into whichever template asks for
+// it.  Row and EffectRowLattice::At both take a pack of Effect
+// non-type arguments, so one walk serves both.
+//
+// The atoms arrive in declaration order, which for this enum is also
+// sorted underlying-value order, and that is the canonical row order
+// the header defines.
+[[nodiscard]] consteval std::meta::info every_effect_of_(std::meta::info tmpl) {
+    std::vector<std::meta::info> atoms;
+    for (const auto enumerator : std::meta::enumerators_of(^^Effect)) {
+        atoms.push_back(std::meta::constant_of(enumerator));
+    }
+    return std::meta::substitute(tmpl, atoms);
+}
+
+}  // namespace detail
+
+static_assert(std::is_same_v<every_effect_row, typename[:detail::every_effect_of_(^^Row):]>,
+              "every_effect_row must list each Effect enumerator, in declaration order.  The list is written "
+              "out, so that no includer of the header walks the enum.  Write the new atom into the list.");
+
 static_assert(row_size(^^every_effect_row) == effect_count,
-              "every_effect_row must hold one atom for each Effect enumerator.  It is substituted from "
-              "enumerators_of, so a mismatch means a duplicate enumerator value collapsed two atoms into "
-              "one row bit.");
+              "every_effect_row must hold one atom for each Effect enumerator.  A mismatch means a duplicate "
+              "enumerator value collapsed two atoms into one row bit.");
 
 namespace detail::effect_row_self_test {
 

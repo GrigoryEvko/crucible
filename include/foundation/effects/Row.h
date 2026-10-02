@@ -33,7 +33,6 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace foundation::effects {
 
@@ -259,48 +258,11 @@ using row_intersection_t = canonical_row_t<typename detail::row_intersection_imp
 template <typename R1, typename R2>
 concept Subrow = is_subrow(^^R1, ^^R2);
 
-namespace detail {
-
-// The complete atom list, substituted into whichever template asks for
-// it.  Row and EffectRowLattice::At both take a pack of Effect
-// non-type arguments, so one walk serves both.
-//
-// The atoms arrive in declaration order, which for this enum is also
-// sorted underlying-value order, and that is the canonical row order
-// this header defines.
-[[nodiscard]] consteval std::meta::info every_effect_of_(std::meta::info tmpl) {
-    std::vector<std::meta::info> atoms;
-    for (const auto enumerator : std::meta::enumerators_of(^^Effect)) {
-        atoms.push_back(std::meta::constant_of(enumerator));
-    }
-    return std::meta::substitute(tmpl, atoms);
-}
-
-}  // namespace detail
-
-// The row of every atom the catalog declares.  Nine places used to
-// spell the six atoms out, and each of those was a copy that a new atom
-// would silently leave behind at five atoms.
-using every_effect_row = [:detail::every_effect_of_(^^Row):];
-
-// A cardinality guard is not enough.  Atom values are assigned by hand,
-// so a pack of seven atoms could still spell one of them 100 and shift
-// past the carrier width.  This check reads the underlying value of
-// every atom instead of counting them.  The check file of this header
-// calls it beside the cardinality guard.
-[[nodiscard]] consteval bool every_effect_underlying_lt_64() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
-    // -Wshadow fires spuriously on the expansion-statement induction variable.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (static_cast<std::uint64_t>([:en:]) >= 64) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
+// The row of every atom the catalog declares, in declaration order, which
+// is the canonical row order.  The list is written out, so that no
+// includer walks the enum.  The check file of this header derives the row
+// from the enum and pins this list to it, so a new atom cannot stay out.
+using every_effect_row = Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>;
 
 struct EffectRowLattice {
     using element_type = std::uint64_t;

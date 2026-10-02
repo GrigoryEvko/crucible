@@ -69,7 +69,7 @@ enum class ResourceKind : std::uint8_t {
     CarbonGramsPerKwh = 22,
 };
 
-inline constexpr std::size_t resource_kind_count = std::meta::enumerators_of(^^ResourceKind).size();
+inline constexpr std::size_t resource_kind_count = 23;
 
 // True when an enumerator of the catalog holds kind.  A value cast from
 // an integer that no enumerator holds is a well-formed ResourceKind, and
@@ -180,8 +180,9 @@ using CarbonGramsPerKwh = resource::CarbonGramsPerKwh<N>;
 
 namespace detail {
 
-// A budget of zero, the one argument that reads a tag template.
-inline constexpr std::meta::info zero_budget_ = std::meta::reflect_constant(std::uint64_t{0});
+// A budget of zero, the one argument that reads a tag template.  It is a
+// function, so that only a unit that reads a tag template makes it.
+[[nodiscard]] consteval std::meta::info zero_budget_() { return std::meta::reflect_constant(std::uint64_t{0}); }
 
 // The one class template in namespace resource whose tags name axis K,
 // or a reflection of void when no template or more than one template
@@ -197,8 +198,8 @@ template <ResourceKind K>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : members) {
-        if constexpr (std::meta::is_class_template(member) && std::meta::can_substitute(member, {zero_budget_})) {
-            using probe = typename[:std::meta::substitute(member, {zero_budget_}):];
+        if constexpr (std::meta::is_class_template(member) && std::meta::can_substitute(member, {zero_budget_()})) {
+            using probe = typename[:std::meta::substitute(member, {zero_budget_()}):];
             if constexpr (requires {
                               { probe::kind } -> std::convertible_to<ResourceKind>;
                           }) {

@@ -38,7 +38,7 @@ enum class NumaNodeId : std::uint8_t {
     Any = 255,  // top: every node
 };
 
-inline constexpr std::size_t numa_node_id_sentinel_count = std::meta::enumerators_of(^^NumaNodeId).size();
+inline constexpr std::size_t numa_node_id_sentinel_count = 2;
 
 // True when the identifier names one node, not a sentinel.
 [[nodiscard]] constexpr bool is_concrete_numa_node(NumaNodeId node) noexcept {
