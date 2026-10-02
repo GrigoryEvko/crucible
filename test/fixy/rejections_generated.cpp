@@ -91,7 +91,11 @@ int main() {
     }
     std::printf("\n");
 
-    if (rg::atom_members.empty()) return 1;
+    // GCC 16 refuses a call of empty() on a std::span of reflections in a
+    // function that runs, when that call instantiates empty() the first
+    // time in the translation unit.  So a constant holds the answer.
+    constexpr bool is_roster_empty = rg::atom_members.empty();
+    if (is_roster_empty) return 1;
     if (total.accepted_alone + total.refused_alone != rg::atom_members.size()) return 2;
     if (total.axes_with_a_pair < 15) return 3;
     if (total.lifting_atoms < 30) return 4;

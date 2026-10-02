@@ -34,6 +34,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/Modality.h>
+#include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Enumerate.h>
 
 #include <cstddef>
@@ -143,25 +144,35 @@ struct PinnedAt {
 // it only when it is called.  The underlying values must rise in
 // declaration order, because leq compares them.  verify_chain_lattice
 // checks that.
+//
+// The base keeps the first and the last enumerator as values of EnumT,
+// and no list of enumerators in static storage.  Each lattice header
+// instantiates this base for its lattice, so such a list would
+// instantiate std::define_static_array in each includer.  A splice in
+// the body of bottom() would put a list of reflections in a function that
+// a program calls at run time, and GCC refuses that.
 template <typename Derived, typename EnumT, ClaimOrientation Orientation>
     requires std::is_scoped_enum_v<EnumT>
           && (Orientation == ClaimOrientation::weaker_is_higher || Orientation == ClaimOrientation::stronger_is_higher)
 struct EnumChainLattice : ChainLatticeOps<EnumT> {
     static constexpr ClaimOrientation claim_orientation = Orientation;
 
-    [[nodiscard]] static constexpr EnumT bottom() noexcept { return [:enumerators_.front():]; }
-    [[nodiscard]] static constexpr EnumT top() noexcept { return [:enumerators_.back():]; }
+    [[nodiscard]] static constexpr EnumT bottom() noexcept { return first_enumerator_; }
+    [[nodiscard]] static constexpr EnumT top() noexcept { return last_enumerator_; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return std::meta::identifier_of(^^Derived); }
 
 private:
-    static constexpr auto enumerators_ = std::define_static_array(std::meta::enumerators_of(^^EnumT));
-    static_assert(!enumerators_.empty(), "EnumChainLattice: a chain needs at least one enumerator.");
+    static_assert(!std::meta::enumerators_of(^^EnumT).empty(),
+                  "EnumChainLattice: a chain needs at least one enumerator.");
+    static constexpr EnumT first_enumerator_ = [:std::meta::enumerators_of(^^EnumT).front():];
+    static constexpr EnumT last_enumerator_ = [:std::meta::enumerators_of(^^EnumT).back():];
 };
 
 template <typename ChainLattice>
 [[nodiscard]] consteval bool verify_chain_lattice_exhaustive() noexcept {
     using EnumT = typename ChainLattice::element_type;
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^EnumT));
+    static constexpr auto enumerators = std::define_static_array(
+        static_cast<::foundation::reflect::enumerator_list_t<EnumT>>(std::meta::enumerators_of(^^EnumT)));
     // `template for` unrolls into successive scopes that each declare the
     // induction variable, so -Wshadow fires on the body.
 #pragma GCC diagnostic push
@@ -182,7 +193,8 @@ template <typename ChainLattice>
 template <typename ChainLattice>
 [[nodiscard]] consteval bool verify_chain_lattice_distributive_exhaustive() noexcept {
     using EnumT = typename ChainLattice::element_type;
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^EnumT));
+    static constexpr auto enumerators = std::define_static_array(
+        static_cast<::foundation::reflect::enumerator_list_t<EnumT>>(std::meta::enumerators_of(^^EnumT)));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {
@@ -206,7 +218,8 @@ template <typename L>
     requires std::is_scoped_enum_v<typename L::element_type>
 [[nodiscard]] consteval bool verify_enum_lattice_exhaustive() noexcept {
     using EnumT = typename L::element_type;
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^EnumT));
+    static constexpr auto enumerators = std::define_static_array(
+        static_cast<::foundation::reflect::enumerator_list_t<EnumT>>(std::meta::enumerators_of(^^EnumT)));
     if (!verify_chain_lattice_exhaustive<L>()) {
         return false;
     }
@@ -238,7 +251,8 @@ template <typename L>
 template <typename L, typename E = typename L::element_type>
     requires std::is_scoped_enum_v<E>
 [[nodiscard]] consteval bool verify_pinned_at() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^E));
+    static constexpr auto enumerators = std::define_static_array(
+        static_cast<::foundation::reflect::enumerator_list_t<E>>(std::meta::enumerators_of(^^E)));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {
@@ -277,7 +291,8 @@ template <typename L>
     requires std::is_scoped_enum_v<typename L::element_type>
 [[nodiscard]] consteval bool verify_chain_lattice() noexcept {
     using EnumT = typename L::element_type;
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^EnumT));
+    static constexpr auto enumerators = std::define_static_array(
+        static_cast<::foundation::reflect::enumerator_list_t<EnumT>>(std::meta::enumerators_of(^^EnumT)));
     if constexpr (enumerators.empty()) {
         return false;
     } else {

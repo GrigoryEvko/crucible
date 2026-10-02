@@ -20,6 +20,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <vector>
 
 namespace foundation::reflect {
 
@@ -29,6 +30,19 @@ namespace foundation::reflect {
 template <class E>
 concept ScopedEnum = std::is_scoped_enum_v<E>;
 
+// The type that std::meta::enumerators_of returns, spelled so that it
+// depends on E.
+//
+// GCC resolves a call where its template is declared when no argument has
+// a type that depends on a template parameter.  std::define_static_array
+// deduces its return type, so that resolution instantiates it in each
+// includer, at a cost of about 68 M instructions.  A cast of the list of
+// enumerators to this type makes the call depend on E.  Then only a
+// translation unit that reads the enumerators of an enum instantiates it.
+// The alias cannot be specialized, and neither can std::enable_if.
+template <ScopedEnum E>
+using enumerator_list_t = std::enable_if_t<std::is_scoped_enum_v<E>, std::vector<std::meta::info>>;
+
 // `f` takes the value and the name as ordinary runtime parameters, not
 // as an NTTP `std::meta::info`.  `info` is consteval-only, so a lambda
 // taking it as an NTTP is immediate-escalated and can no longer mutate
@@ -36,7 +50,8 @@ concept ScopedEnum = std::is_scoped_enum_v<E>;
 
 template <ScopedEnum E, typename F>
 constexpr void for_each_enumerator(F&& f) {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^E));
+    static constexpr auto enumerators =
+        std::define_static_array(static_cast<enumerator_list_t<E>>(std::meta::enumerators_of(^^E)));
 // An expansion statement unrolls into successive scopes that each
 // declare the same induction variable, so -Wshadow fires once per
 // iteration.
@@ -57,7 +72,8 @@ constexpr void for_each_enumerator(F&& f) {
 template <ScopedEnum E, typename F>
 constexpr void for_each_single_bit_enumerator(F&& f) {
     using U = std::underlying_type_t<E>;
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^E));
+    static constexpr auto enumerators =
+        std::define_static_array(static_cast<enumerator_list_t<E>>(std::meta::enumerators_of(^^E)));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto e : enumerators) {
@@ -152,7 +168,8 @@ namespace detail {
 // in enumerator_name.
 template <ScopedEnum E, char Separator>
 [[nodiscard]] constexpr std::string_view enum_words(E value) noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^E));
+    static constexpr auto enumerators =
+        std::define_static_array(static_cast<enumerator_list_t<E>>(std::meta::enumerators_of(^^E)));
     std::string_view words = unknown_enum_sentinel<E>;
     bool is_found = false;
 #pragma GCC diagnostic push
