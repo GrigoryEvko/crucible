@@ -18,6 +18,9 @@
 #include <foundation/ChannelBinding.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Saturate.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Post.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/permissions/Permission.h>
 
 #include <algorithm>
@@ -138,16 +141,18 @@ struct BackgroundThread::Pipeline {
     static void DetectIterationFn(TraceBatchInput&& in, typename BuildWorkChannel::ProducerHandle&& out);
 
     // The build stage builds a trace graph from each work item and
-    // forwards commit markers unchanged.  It forwards the stop sentinel, a
-    // null BgBuildWork*, as a null BgGraphPublish*.
+    // forwards commit markers unchanged.  For a work item that met the
+    // overflow of the metadata log, it forwards a release.  It forwards the
+    // stop sentinel, a null BgBuildWork*, as a null BgGraphPublish*.
     //
     // The pipeline runs this body as the entry of its own thread, so the
     // body takes the background context of that thread from the door.
     static void BuildTraceFn(BuildWorkInput&& in, typename GraphPublishChannel::ProducerHandle&& out);
 
     // The publish stage publishes each graph whose reset epoch is current,
-    // releases each stale one, and advances total_processed at each commit
-    // marker.
+    // releases each stale one, advances total_processed at each commit
+    // marker, and applies each release.  It is the one writer of the tail
+    // of the metadata log.
     //
     // The channel is SPSC FIFO, so a commit marker can only arrive here
     // after every region produced from its batch and from preceding batches
@@ -227,11 +232,17 @@ BackgroundThread::BgBuildWork* BackgroundThread::prepare_iteration_build_work() 
     return work;
 }
 
-void BackgroundThread::discard_trace_graph(TraceGraph* graph) {
+void BackgroundThread::discard_trace_graph(PublishStage const& stage, TraceGraph* graph) {
     if (!graph) return;
-    const uint32_t max_meta_end = graph->max_meta_end.get_assuming_set();
-    if (max_meta_end > 0) {
-        meta_log.get()->advance_tail(max_meta_end);
+    release_meta_log(stage, graph->max_meta_end.get_assuming_set());
+}
+
+// The precondition of the release is the contract of the tail: meta_end is
+// past the tail, which advance_tail checks.  The postcondition is the store
+// itself, so the body states it once.
+void BackgroundThread::release_meta_log(PublishStage const&, uint32_t meta_end) {
+    if (meta_end > 0) {
+        meta_log.get()->advance_tail(meta_end);
     }
 }
 
@@ -249,7 +260,7 @@ void BackgroundThread::publish_trace_graph(::foundation::effects::Bg const& bg, 
     // inside the gate the build stage would sleep for all of it.
     //
     // Nothing after this scope touches the arena.  recompute_merkle
-    // walks nodes that already exist, advance_tail moves a counter in
+    // walks nodes that already exist, release_meta_log moves a counter in
     // the metadata log, and the queue below is heap storage the publish
     // stage owns alone.
     RegionNode* region = nullptr;
@@ -260,9 +271,7 @@ void BackgroundThread::publish_trace_graph(::foundation::effects::Bg const& bg, 
         }
     });
 
-    if (max_meta_end > 0) {
-        meta_log.get()->advance_tail(max_meta_end);
-    }
+    release_meta_log(stage, max_meta_end);
 
     recompute_merkle(region);
     uncompiled_regions.push(region);
@@ -389,8 +398,7 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
             // no pending region, or an active region whose plan is still
             // being computed.
             auto publish = std::make_unique<BgGraphPublish>();
-            publish->graph = nullptr;
-            publish->commit_only = true;
+            publish->kind = BgGraphPublish::Kind::Commit;
             publish->commit_count = work->commit_count;
             publish->epoch = work->epoch;
             push_pipeline(out, publish.get());
@@ -412,21 +420,31 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
         // wasted graph per in-flight region per divergence, on a path
         // that only runs when replay has already failed.
 
-        TraceGraph* graph = nullptr;
+        TraceBuild built{nullptr};
         owner->with_arena_alloc_gate_(ctx, [&]() noexcept {
-            graph = owner->build_trace_from(ctx.cap().alloc, work->completed_len, work->trace.data(),
+            built = owner->build_trace_from(ctx.cap().alloc, work->completed_len, work->trace.data(),
                                             work->meta_starts.data(), work->scope_hashes.data(),
                                             work->callsite_hashes.data());
         });
 
-        // Forwarding only well-formed graphs keeps the downstream
-        // contract at "a non-null graph is publishable".
-        if (!graph) continue;
+        // A work that met the overflow sends its release, and no graph.  The
+        // publish stage applies the release after each region of an earlier
+        // work, so the tail of the metadata log only moves forward.
+        if (!built) {
+            if (built.error().meta_end > 0) {
+                auto release = std::make_unique<BgGraphPublish>();
+                release->kind = BgGraphPublish::Kind::Release;
+                release->meta_end = built.error().meta_end;
+                release->epoch = work->epoch;
+                push_pipeline(out, release.get());
+                release.release();
+            }
+            continue;
+        }
 
         auto publish = std::make_unique<BgGraphPublish>();
-        publish->graph = graph;
-        publish->commit_only = false;
-        publish->commit_count = 0;
+        publish->kind = BgGraphPublish::Kind::Region;
+        publish->graph = *built;
         publish->epoch = work->epoch;
         push_pipeline(out, publish.get());
         publish.release();
@@ -458,12 +476,20 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
             return;
         }
 
-        if (publish->commit_only) {
+        if (publish->kind == BgGraphPublish::Kind::Commit) {
             // The marker sits strictly after every publish message from
             // the same and earlier batches, so this bump happens-after
             // every publish above.  Its release pairs with the
             // foreground's acquire load.
             (void)PublishStageAuth::commit(owner->total_processed, publish->commit_count);
+            continue;
+        }
+
+        // A release carries no region, so a reset does not drop it.  The
+        // metadata that it names is dead in each epoch, and the foreground
+        // has to be able to use that space again.
+        if (publish->kind == BgGraphPublish::Kind::Release) {
+            owner->release_meta_log(PublishStage{}, publish->meta_end);
             continue;
         }
 
@@ -483,7 +509,7 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
         // read are dead either way, and the foreground has to be able to
         // reuse that space.
         if (publish->epoch != owner->reset_epoch.get()) {
-            owner->discard_trace_graph(publish->graph);
+            owner->discard_trace_graph(PublishStage{}, publish->graph);
             continue;
         }
 
@@ -614,9 +640,15 @@ void BackgroundThread::ensure_scratch_buffers(uint32_t total_inputs, uint32_t to
     }
 }
 
-TraceGraph* BackgroundThread::build_trace_from(::foundation::effects::Alloc a, uint32_t count,
-                                               const TraceRing::Entry* trace_data, const MetaIndex* meta_data,
-                                               const ScopeHash* scope_data, const CallsiteHash* callsite_data) {
+BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::effects::Alloc a, uint32_t count,
+                                                                const TraceRing::Entry* trace_data,
+                                                                const MetaIndex* meta_data, const ScopeHash* scope_data,
+                                                                const CallsiteHash* callsite_data) {
+    CRUCIBLE_PRE(::foundation::decide::valid_span(count, trace_data));
+    CRUCIBLE_PRE(::foundation::decide::valid_span(count, meta_data));
+    CRUCIBLE_PRE(::foundation::decide::valid_span(count, scope_data));
+    CRUCIBLE_PRE(::foundation::decide::valid_span(count, callsite_data));
+
     // Scan for totals and for metadata-log overflow.
     uint32_t max_meta_end = 0;
     uint32_t first_meta = UINT32_MAX;
@@ -627,9 +659,10 @@ TraceGraph* BackgroundThread::build_trace_from(::foundation::effects::Alloc a, u
         MetaIndex ms = meta_data[i];
         const auto& re = trace_data[i];
         if (!ms.is_valid() && (re.num_inputs + re.num_outputs) > 0) {
-            // Overflow on an op that did have tensors.
-            if (max_meta_end > 0) meta_log.get()->advance_tail(max_meta_end);
-            return nullptr;
+            // Overflow on an op that did have tensors.  The publish stage
+            // releases the metadata that the scan read, in the order of the
+            // works.
+            return std::unexpected(MetaLogOverflow{.meta_end = max_meta_end});
         }
         if (ms.is_valid()) {
             if (first_meta == UINT32_MAX) first_meta = ms.raw();
@@ -646,8 +679,8 @@ TraceGraph* BackgroundThread::build_trace_from(::foundation::effects::Alloc a, u
     auto* ops = arena.alloc_array<TraceEntry>(a, count);
 
     // Point straight into the metadata log's circular buffer instead of
-    // copying.  These pointers stay valid until advance_tail runs, which
-    // is deferred until every read below is done.  A buffer wrap makes
+    // copying.  These pointers stay valid until the publish stage releases
+    // this metadata, which is after every read below.  A buffer wrap makes
     // the contiguous view unavailable and falls back to an arena copy.
     TensorMeta* meta_base = nullptr;
     if (first_meta != UINT32_MAX) {
@@ -942,6 +975,7 @@ TraceGraph* BackgroundThread::build_trace_from(::foundation::effects::Alloc a, u
     graph->max_meta_end.set(max_meta_end);
     build_csr(a, arena, graph, local_edges, num_edges, count);
 
+    CRUCIBLE_POST(graph, graph != nullptr);
     return graph;
 }
 

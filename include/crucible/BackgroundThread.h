@@ -13,6 +13,7 @@
 #include <atomic>
 #include <bit>
 #include <cstdint>
+#include <expected>
 #include <memory>
 #include <type_traits>
 #include <vector>
@@ -466,13 +467,14 @@ public:
     struct BgPipelineStart {};
 
     // Lifetime: the producing stage owns it until it is pushed, after which
-    // the consuming stage owns it and deletes it once the graph is
-    // published.  The graph itself is arena-allocated and outlives this
-    // wrapper.
+    // the consuming stage owns it and deletes it once it is handled.  The
+    // graph itself is arena-allocated and outlives this wrapper.
     //
-    // Two shapes flow through the channel:
-    //   graph non-null, commit_only false — an iteration region to publish.
-    //   graph null, commit_only true — a marker carrying the entry count.
+    // Three shapes flow through the channel, and kind names each one:
+    //   Region   graph is non-null: an iteration region to publish.
+    //   Commit   graph is null: a marker that carries the entry count.
+    //   Release  graph is null: the end of the metadata that a build read
+    //            before it met an op with tensors and no metadata index.
     //
     // The marker has to travel through the publish stage so that
     // total_processed advances only after every region ahead of it has been
@@ -480,10 +482,24 @@ public:
     // publish stage: a flush can return while a region is still queued, and
     // the caller then observes a compiled mode with no pending region, or an
     // active region whose plan is not finished.
+    //
+    // The release travels through the publish stage too.  That stage is the
+    // one writer of the tail of the metadata log, and the works reach it in
+    // the order of the recording, so each release is past the one before.  A
+    // release from the build stage can pass the end of a region that is still
+    // on its way to the publish stage.  The publish of that region then moves
+    // the tail back, and the contract of the tail stops the process.
     struct BgGraphPublish {
+        enum class Kind : uint8_t {
+            Region,
+            Commit,
+            Release
+        };
+        Kind kind = Kind::Commit;
         TraceGraph* graph = nullptr;
-        bool commit_only = false;
         uint32_t commit_count = 0;
+        // The new tail of the metadata log.  Only a release sets it.
+        uint32_t meta_end = 0;
         // Carried through from the BgBuildWork this came from, so a reset
         // that lands while the build stage is mid-graph is still caught
         // here, one stage later.
@@ -516,7 +532,14 @@ public:
     // the graph itself and never gives storage back, but the metadata log is
     // a ring the foreground keeps writing into, so its tail has to advance
     // past the entries this graph read or the log fills for good.
-    void discard_trace_graph(TraceGraph* graph) CRUCIBLE_NO_THREAD_SAFETY;
+    void discard_trace_graph(PublishStage const& stage, TraceGraph* graph) CRUCIBLE_NO_THREAD_SAFETY;
+
+    // Moves the tail of the metadata log to meta_end, which gives the entries
+    // before it back to the foreground.  Zero releases nothing.  The publish
+    // stage is the one writer of the tail, and the proof shows that the
+    // caller is that stage.  A meta_end that does not move the tail forward
+    // fails the contract of the tail.
+    void release_meta_log(PublishStage const& stage, uint32_t meta_end) CRUCIBLE_NO_THREAD_SAFETY;
 
 private:
     // Takes the gate under the context of the calling stage.
@@ -768,9 +791,21 @@ private:
 public:
     static constexpr uint32_t MAX_SLOTS = 65536;
 
+    // The error of a build that meets an op with tensors and no metadata
+    // index.  The foreground records such an op when the metadata log is
+    // full, and the build then makes no graph.  meta_end is the end of the
+    // metadata that the build read before that op, or zero when it read none.
+    // The build does not release that metadata, because only the publish
+    // stage writes the tail of the log (release_meta_log).
+    struct MetaLogOverflow {
+        uint32_t meta_end = 0;
+    };
+
+    // A non-null graph, or the overflow that stopped the build.
+    using TraceBuild = std::expected<TraceGraph*, MetaLogOverflow>;
+
     // Turns ring entries plus tensor metadata into a CSR property graph.
-    // Returns nullptr on metadata-log overflow.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceGraph* build_trace(::foundation::effects::Alloc a, uint32_t count)
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceBuild build_trace(::foundation::effects::Alloc a, uint32_t count)
         CRUCIBLE_NO_THREAD_SAFETY {
         return build_trace_from(a, count, current_trace.data(), current_meta_starts.data(), current_scope_hashes.data(),
                                 current_callsite_hashes.data());
@@ -778,9 +813,9 @@ public:
 
     // build_trace over caller-owned arrays: count entries of trace_data,
     // with meta_data, scope_data and callsite_data in parallel.  The build
-    // stage calls it on each work item.  Returns nullptr on metadata-log
-    // overflow, after it releases the metadata entries it scanned.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceGraph*
+    // stage calls it on each work item.  It reads the metadata log and never
+    // writes its tail.
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceBuild
     build_trace_from(::foundation::effects::Alloc a, uint32_t count, const TraceRing::Entry* trace_data,
                      const MetaIndex* meta_data, const ScopeHash* scope_data, const CallsiteHash* callsite_data)
         CRUCIBLE_NO_THREAD_SAFETY;

@@ -17,6 +17,7 @@
 //   ..._drain.cpp                       the drain loop behind run_in_row
 //   ..._publish.cpp                     the divergence reset and the
 //                                       publish stage
+//   ..._meta.cpp                        the release of the metadata log
 
 #include "background_thread_run_in_row.h"
 
@@ -175,12 +176,15 @@ int main() {
     test_concurrent_spsc_drain();
     test_large_batch_drain();
     test_rearm_cycle();
-    // These three run last because start() seals the global schema and
-    // kernel tables, which every group above deliberately avoids.
+    // These run last because they seal the global schema and kernel tables,
+    // which every group above deliberately avoids.
     test_uncompiled_queue_is_bounded();
     test_reset_drops_inflight_regions();
     test_callback_runs_outside_arena_gate();
+    test_overflow_build_leaves_tail();
+    test_publish_stage_releases_in_order();
+    test_pipeline_releases_after_overflow();
 
-    std::printf("test_background_thread_run_in_row: 11 groups, all passed\n");
+    std::printf("test_background_thread_run_in_row: 14 groups, all passed\n");
     return 0;
 }

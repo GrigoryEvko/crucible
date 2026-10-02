@@ -343,8 +343,8 @@ int main(int argc, char* argv[]) {
             new(&bg.arena) Arena{1 << 20};
             repopulate_meta_log();
 
-            auto* graph = bg.build_trace(test.alloc, N);
-            bench::do_not_optimize(graph);
+            auto built = bg.build_trace(test.alloc, N);
+            bench::do_not_optimize(built);
         });
     }());
 
@@ -390,8 +390,8 @@ int main(int argc, char* argv[]) {
                 bg.arena.~Arena();
                 new(&bg.arena) Arena{arena_bytes};
                 repopulate();
-                auto* graph = bg.build_trace(test.alloc, trace->num_ops);
-                bench::do_not_optimize(graph);
+                auto built = bg.build_trace(test.alloc, trace->num_ops);
+                bench::do_not_optimize(built);
             });
         }());
     }

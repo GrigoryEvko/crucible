@@ -116,8 +116,8 @@ bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const Lo
         bg.arena.~Arena();
         new(&bg.arena) Arena{arena_bytes};
         repopulate();
-        auto* graph = bg.build_trace(A, trace.num_ops);
-        bench::do_not_optimize(graph);
+        auto built = bg.build_trace(A, trace.num_ops);
+        bench::do_not_optimize(built);
     });
 }
 
@@ -155,8 +155,8 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.arena.~Arena();
         new(&bg.arena) Arena{arena_bytes};
         repopulate();
-        auto* g = bg.build_trace(A, trace.num_ops);
-        bench::do_not_optimize(g);
+        auto built = bg.build_trace(A, trace.num_ops);
+        bench::do_not_optimize(built);
     }
 
     // Measurement: run build_trace N times, accumulate.
@@ -173,10 +173,10 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         repopulate();
 
         const uint64_t t0 = bench::rdtsc_start();
-        auto* graph = bg.build_trace(A, trace.num_ops);
+        auto built = bg.build_trace(A, trace.num_ops);
         const uint64_t t1 = bench::rdtsc_end();
 
-        bench::do_not_optimize(graph);
+        bench::do_not_optimize(built);
         const double ns = static_cast<double>(t1 - t0) * nspc;
         total_ns += ns;
         samples[iter] = ns;
@@ -198,7 +198,7 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.arena.~Arena();
         new(&bg.arena) Arena{arena_bytes};
         repopulate();
-        auto* ref = bg.build_trace(A, trace.num_ops);
+        auto* ref = *bg.build_trace(A, trace.num_ops);
 
         const uint32_t num_ops = ref->num_ops.get_assuming_set();
         const uint32_t num_slots = ref->num_slots.get_assuming_set();
@@ -288,7 +288,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     bg.arena.~Arena();
     new(&bg.arena) Arena{arena_bytes};
     repopulate();
-    auto* ref = bg.build_trace(A, count);
+    auto ref = bg.build_trace(A, count);
     (void)ref;
 
     // ── P0: Pre-scan ──────────────────────────────────────────────
@@ -467,7 +467,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.arena.~Arena();
         new(&bg.arena) Arena{arena_bytes};
         repopulate();
-        auto* ref_graph = bg.build_trace(A, count);
+        auto* ref_graph = *bg.build_trace(A, count);
         TraceEntry* ref_ops = ref_graph->ops;
 
         for (uint32_t iter = 0; iter < iters; iter++) {
@@ -514,7 +514,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.arena.~Arena();
         new(&bg.arena) Arena{arena_bytes};
         repopulate();
-        auto* ref_graph = bg.build_trace(A, count);
+        auto* ref_graph = *bg.build_trace(A, count);
         TraceEntry* ref_ops = ref_graph->ops;
 
         for (uint32_t iter = 0; iter < iters; iter++) {
@@ -565,7 +565,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.arena.~Arena();
         new(&bg.arena) Arena{arena_bytes};
         repopulate();
-        auto* ref_graph = bg.build_trace(A, count);
+        auto* ref_graph = *bg.build_trace(A, count);
         TraceEntry* ref_ops = ref_graph->ops;
 
         for (uint32_t iter = 0; iter < iters; iter++) {
@@ -608,7 +608,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.arena.~Arena();
         new(&bg.arena) Arena{arena_bytes};
         repopulate();
-        auto* ref_graph = bg.build_trace(A, count);
+        auto* ref_graph = *bg.build_trace(A, count);
         const uint32_t num_slots = ref_graph->num_slots.get_assuming_set();
 
         std::vector<BackgroundThread::SlotInfo> saved_slots(bg.scratch_slots_.data(),

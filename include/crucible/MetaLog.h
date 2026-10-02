@@ -40,9 +40,9 @@ namespace crucible {
 // instead, and each ring slot carries the index of its block. An append that
 // finds this buffer full yields no index: the operation is still recorded well
 // enough to detect an iteration boundary, but the graph build does not skip
-// that operation and carry on. build_trace_from returns a null graph the
-// moment it meets an operation that had tensors and no index, which discards
-// the whole iteration. A full buffer costs the iteration, not one node.
+// that operation and carry on. build_trace_from returns no graph the moment
+// it meets an operation that had tensors and no index, which discards the
+// whole iteration. A full buffer costs the iteration, not one node.
 struct CRUCIBLE_OWNER MetaLog {
     static constexpr uint32_t CAPACITY = 1 << 20;
     static constexpr uint32_t MASK = CAPACITY - 1;

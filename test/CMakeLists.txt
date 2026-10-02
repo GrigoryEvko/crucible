@@ -1096,7 +1096,8 @@ crucible_test(test_computation_cache_invalidation)
 crucible_test(test_federation_protocol)
 crucible_test(test_cipher_record_event)
 crucible_test(test_background_thread_run_in_row test_background_thread_run_in_row.cpp
-  test_background_thread_run_in_row_drain.cpp test_background_thread_run_in_row_publish.cpp)
+  test_background_thread_run_in_row_drain.cpp test_background_thread_run_in_row_publish.cpp
+  test_background_thread_run_in_row_meta.cpp)
 crucible_test(test_computation_cache_federation)
 
 # A specialization of a split trait, or of one of its variables, is legal
