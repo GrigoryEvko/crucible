@@ -4,33 +4,32 @@
 // iteration boundaries, builds a trace graph for each iteration and
 // publishes a region with its memory plan.
 //
-// The class, its channel types and the owner mailbox are here.  The thread
-// body, the four pipeline stages, the trace graph build and the memory plan
-// are cold or background code, so their bodies are in
+// The class, its payload types and the owner mailbox are here.  The thread,
+// the channels, the four pipeline stages, the trace graph build and the
+// memory plan are cold or background code, so they are in
 // src/BackgroundThread.cpp.  Each translation unit that includes this header
-// then compiles no part of the pipeline.
+// then compiles no part of the pipeline and no channel type.
 
 #include <atomic>
 #include <bit>
 #include <cstdint>
 #include <memory>
-#include <thread>
 #include <type_traits>
 #include <vector>
 
+#include <crucible/IterationDetector.h>
 #include <crucible/MetaLog.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/TraceGraph.h>
+#include <crucible/TraceRing.h>
 #include <fixy/Ctx.h>
 #include <fixy/Mutation.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
 #include <fixy/handle/OneShotFlag.h>
 #include <fixy/handle/PublishCommit.h>
 #include <fixy/os/SpinLock.h>
 #include <foundation/AlignedBuffer.h>
-#include <foundation/ChannelBinding.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
@@ -39,32 +38,6 @@
 #include <foundation/permissions/Permission.h>
 
 namespace crucible {
-
-namespace detail::bg_pipeline {
-
-// The user tags of the four channels of the background pipeline.
-struct StartTag {};
-struct TraceBatchTag {};
-struct BuildWorkTag {};
-struct GraphPublishTag {};
-
-// One call site for the root of each channel.  Each run of the pipeline
-// mints its four roots here, so the type of each channel names the brand
-// of one site, and the stage functions can name the channel types.
-[[nodiscard]] inline auto start_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<StartTag>>();
-}
-[[nodiscard]] inline auto trace_batch_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<TraceBatchTag>>();
-}
-[[nodiscard]] inline auto build_work_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<BuildWorkTag>>();
-}
-[[nodiscard]] inline auto graph_publish_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<GraphPublishTag>>();
-}
-
-}  // namespace detail::bg_pipeline
 
 // Drains the ring buffer, detects iteration boundaries and builds a trace
 // graph per iteration.
@@ -322,8 +295,18 @@ public:
     // A one-way signal for a single run() invocation.  start() re-arms it
     // under quiescence before launching the next pipeline.
     alignas(64)::fixy::handle::OneShotFlag stop_requested;
-    std::jthread pipeline_thread;
 
+private:
+    // The pipeline: its thread, the types of its four channels, the input
+    // end of each stage and the four stage functions.  src/BackgroundThread.cpp
+    // defines it, so no other translation unit compiles a channel type.  The
+    // class is nested, so its stage functions reach the private state of the
+    // thread that they serve.  start() makes the one object that holds the
+    // thread, and the destructor of this class joins it.
+    struct Pipeline;
+    std::unique_ptr<Pipeline> pipeline_;
+
+public:
     // Total entries fully processed.  The write surface is friend-gated to
     // PublishStageAuth so only the publishing stage can advance it: bumping
     // from an earlier stage races the publish callback, and the gate turns
@@ -507,71 +490,6 @@ public:
         uint32_t epoch = 0;
     };
 
-    using StartChannel =
-        ::fixy::concurrent::spsc_channel_t<BgPipelineStart, 1, decltype(detail::bg_pipeline::start_root())>;
-    using TraceBatchChannel =
-        ::fixy::concurrent::spsc_channel_t<BgTraceBatch*, 64, decltype(detail::bg_pipeline::trace_batch_root())>;
-    using BuildWorkChannel =
-        ::fixy::concurrent::spsc_channel_t<BgBuildWork*, 64, decltype(detail::bg_pipeline::build_work_root())>;
-    using GraphPublishChannel =
-        ::fixy::concurrent::spsc_channel_t<BgGraphPublish*, 64, decltype(detail::bg_pipeline::graph_publish_root())>;
-
-    // The consumer end of a stage, together with the thread the stage
-    // serves.  Only run() builds one, from a channel end and this object.
-    template <class Consumer>
-    class StageInput {
-        Consumer inner_;
-        BackgroundThread* owner_;
-
-        StageInput(Consumer&& inner, BackgroundThread& owner) noexcept : inner_{std::move(inner)}, owner_{&owner} {}
-        friend struct BackgroundThread;
-
-    public:
-        static constexpr std::size_t per_call_working_set = Consumer::per_call_working_set;
-        // The pipeline joins this input to the output before it only when
-        // the two name one channel and bind one channel instance, so the
-        // input names and reports the channel of the consumer end that it
-        // holds.
-        using channel_type = typename Consumer::channel_type;
-
-        [[nodiscard]] ::foundation::ChannelIdentity<channel_type> channel_identity() const noexcept {
-            return inner_.channel_identity();
-        }
-
-        StageInput(StageInput&&) noexcept = default;
-        StageInput(const StageInput&) = delete("a stage input owns the linear consumer end of its channel");
-        StageInput& operator=(const StageInput&) = delete("a stage input owns the linear consumer end of its channel");
-        StageInput& operator=(StageInput&&) = delete("a stage input binds to one channel for life");
-
-        [[nodiscard]] decltype(std::declval<Consumer&>().try_pop()) try_pop() noexcept { return inner_.try_pop(); }
-
-        [[nodiscard]] BackgroundThread& owner() const noexcept { return *owner_; }
-    };
-
-    using StartInput = StageInput<typename StartChannel::ConsumerHandle>;
-    using TraceBatchInput = StageInput<typename TraceBatchChannel::ConsumerHandle>;
-    using BuildWorkInput = StageInput<typename BuildWorkChannel::ConsumerHandle>;
-    using GraphPublishInput = StageInput<typename GraphPublishChannel::ConsumerHandle>;
-
-    // Also carries the owner to the publish stage from its first
-    // iteration, so the stage can serve the owner mailbox before any
-    // region arrives.
-    struct BgSinkProducerHandle {
-        BackgroundThread* owner = nullptr;
-
-        [[nodiscard]] bool try_push(BgPipelineDone* const& done) noexcept {
-            delete done;
-            return true;
-        }
-    };
-
-    template <class Producer, class T>
-    static void push_pipeline(Producer& producer, T const& value) {
-        while (!producer.try_push(value)) {
-            CRUCIBLE_SPIN_PAUSE;
-        }
-    }
-
     // Gives each trace vector room for two batches.  start() calls it
     // before the pipeline thread starts.  The body stays here, where the
     // reserve ban of utils/scripts/check-banned-calls.py reads it.
@@ -633,44 +551,6 @@ public:
     void publish_trace_graph(::foundation::effects::Bg const& bg, PublishStage const& stage, TraceGraph* graph)
         CRUCIBLE_NO_THREAD_SAFETY;
 
-    // The four stages of the pipeline, in the order of its channels.
-    //
-    // The drain stage pops batches from the trace ring until a signal on
-    // stop_requested, then pushes the last batch and the stop sentinel.
-    static void DrainTraceRingFn(StartInput&& in, typename TraceBatchChannel::ProducerHandle&& out);
-
-    // The detect stage feeds each entry to the iteration detector, cuts a
-    // work item at each boundary, and pushes a commit marker after each
-    // batch.  It clears its trace and bumps the reset epoch on a divergence
-    // reset.
-    static void DetectIterationFn(TraceBatchInput&& in, typename BuildWorkChannel::ProducerHandle&& out);
-
-    // The build stage builds a trace graph from each work item and
-    // forwards commit markers unchanged.  It forwards the stop sentinel, a
-    // null BgBuildWork*, as a null BgGraphPublish*.
-    //
-    // The pipeline runs this body as the entry of its own thread, so the
-    // body takes the background context of that thread from the door.
-    static void BuildTraceFn(BuildWorkInput&& in, typename GraphPublishChannel::ProducerHandle&& out);
-
-    // The publish stage publishes each graph whose reset epoch is current,
-    // releases each stale one, and advances total_processed at each commit
-    // marker.
-    //
-    // The channel is SPSC FIFO, so a commit marker can only arrive here
-    // after every region produced from its batch and from preceding batches
-    // has gone through publish_trace_graph.  A completed flush therefore
-    // implies every region is published.
-    //
-    // This stage owns the state the region callback writes.  It builds a
-    // publish-stage proof for each call, serves the owner mailbox before
-    // every pop, and closes the mailbox on its way out, so a job posted to
-    // it runs here between two publications and never beside one.
-    //
-    // The pipeline runs this body as the entry of its own thread, so the
-    // body takes the background context of that thread from the door.
-    static void MakeRegionFn(GraphPublishInput&& in, BgSinkProducerHandle&& out);
-
     // The only legal caller of bump_by on total_processed.  Any other call
     // site fails to compile because bump_by is private to this friend.
     //
@@ -700,7 +580,9 @@ public:
 
     ~BackgroundThread() CRUCIBLE_NO_THREAD_SAFETY;
 
-    BackgroundThread() = default;
+    // src/BackgroundThread.cpp defines it, where the pipeline is a complete
+    // type.
+    BackgroundThread();
     BackgroundThread(const BackgroundThread&) = delete("BackgroundThread owns a pipeline jthread");
     BackgroundThread& operator=(const BackgroundThread&) = delete("BackgroundThread owns a pipeline jthread");
     BackgroundThread(BackgroundThread&&) = delete("BackgroundThread owns a pipeline jthread with captured this");

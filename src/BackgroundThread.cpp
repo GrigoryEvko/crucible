@@ -1,6 +1,7 @@
 // The bodies of the cold and background members of crucible/BackgroundThread.h:
-// the start and the stop of the pipeline thread, the thread body, the four
-// pipeline stages, the trace graph build and the memory plan.
+// the start and the stop of the pipeline thread, the thread body, the
+// channels and the four pipeline stages, the trace graph build and the memory
+// plan.
 //
 // Only this translation unit instantiates the pipeline: run_pipeline_ holds
 // the body of run_in_row, over fixy::BgLoadCtx, the one context that admits
@@ -11,17 +12,159 @@
 #include <crucible/CKernel.h>
 #include <crucible/SchemaTable.h>
 #include <fixy/Refined.h>
+#include <fixy/concurrent/PermissionedSpscChannel.h>
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/Stage.h>
+#include <foundation/ChannelBinding.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Saturate.h>
+#include <foundation/permissions/Permission.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
 #include <memory>
+#include <thread>
+#include <utility>
 
 namespace crucible {
+
+namespace detail::bg_pipeline {
+
+// The user tags of the four channels of the background pipeline.
+struct StartTag {};
+struct TraceBatchTag {};
+struct BuildWorkTag {};
+struct GraphPublishTag {};
+
+// One call site for the root of each channel.  Each run of the pipeline
+// mints its four roots here, so the type of each channel names the brand
+// of one site, and the stage functions can name the channel types.
+[[nodiscard]] inline auto start_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<StartTag>>();
+}
+[[nodiscard]] inline auto trace_batch_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<TraceBatchTag>>();
+}
+[[nodiscard]] inline auto build_work_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<BuildWorkTag>>();
+}
+[[nodiscard]] inline auto graph_publish_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<GraphPublishTag>>();
+}
+
+}  // namespace detail::bg_pipeline
+
+struct BackgroundThread::Pipeline {
+    // The thread that runs run_in_row.  start() sets it, and stop() joins it.
+    std::jthread thread;
+
+    using StartChannel =
+        ::fixy::concurrent::spsc_channel_t<BgPipelineStart, 1, decltype(detail::bg_pipeline::start_root())>;
+    using TraceBatchChannel =
+        ::fixy::concurrent::spsc_channel_t<BgTraceBatch*, 64, decltype(detail::bg_pipeline::trace_batch_root())>;
+    using BuildWorkChannel =
+        ::fixy::concurrent::spsc_channel_t<BgBuildWork*, 64, decltype(detail::bg_pipeline::build_work_root())>;
+    using GraphPublishChannel =
+        ::fixy::concurrent::spsc_channel_t<BgGraphPublish*, 64, decltype(detail::bg_pipeline::graph_publish_root())>;
+
+    // The consumer end of a stage, together with the thread the stage
+    // serves.  Only run_pipeline_ builds one, from a channel end and the
+    // thread object.
+    template <class Consumer>
+    class StageInput {
+        Consumer inner_;
+        BackgroundThread* owner_;
+
+        StageInput(Consumer&& inner, BackgroundThread& owner) noexcept : inner_{std::move(inner)}, owner_{&owner} {}
+        friend struct BackgroundThread;
+
+    public:
+        static constexpr std::size_t per_call_working_set = Consumer::per_call_working_set;
+        // The pipeline joins this input to the output before it only when
+        // the two name one channel and bind one channel instance, so the
+        // input names and reports the channel of the consumer end that it
+        // holds.
+        using channel_type = typename Consumer::channel_type;
+
+        [[nodiscard]] ::foundation::ChannelIdentity<channel_type> channel_identity() const noexcept {
+            return inner_.channel_identity();
+        }
+
+        StageInput(StageInput&&) noexcept = default;
+        StageInput(const StageInput&) = delete("a stage input owns the linear consumer end of its channel");
+        StageInput& operator=(const StageInput&) = delete("a stage input owns the linear consumer end of its channel");
+        StageInput& operator=(StageInput&&) = delete("a stage input binds to one channel for life");
+
+        [[nodiscard]] decltype(std::declval<Consumer&>().try_pop()) try_pop() noexcept { return inner_.try_pop(); }
+
+        [[nodiscard]] BackgroundThread& owner() const noexcept { return *owner_; }
+    };
+
+    using StartInput = StageInput<typename StartChannel::ConsumerHandle>;
+    using TraceBatchInput = StageInput<typename TraceBatchChannel::ConsumerHandle>;
+    using BuildWorkInput = StageInput<typename BuildWorkChannel::ConsumerHandle>;
+    using GraphPublishInput = StageInput<typename GraphPublishChannel::ConsumerHandle>;
+
+    // Also carries the owner to the publish stage from its first
+    // iteration, so the stage can serve the owner mailbox before any
+    // region arrives.
+    struct BgSinkProducerHandle {
+        BackgroundThread* owner = nullptr;
+
+        [[nodiscard]] bool try_push(BgPipelineDone* const& done) noexcept {
+            delete done;
+            return true;
+        }
+    };
+
+    template <class Producer, class T>
+    static void push_pipeline(Producer& producer, T const& value) {
+        while (!producer.try_push(value)) {
+            CRUCIBLE_SPIN_PAUSE;
+        }
+    }
+
+    // The four stages of the pipeline, in the order of its channels.
+    //
+    // The drain stage pops batches from the trace ring until a signal on
+    // stop_requested, then pushes the last batch and the stop sentinel.
+    static void DrainTraceRingFn(StartInput&& in, typename TraceBatchChannel::ProducerHandle&& out);
+
+    // The detect stage feeds each entry to the iteration detector, cuts a
+    // work item at each boundary, and pushes a commit marker after each
+    // batch.  It clears its trace and bumps the reset epoch on a divergence
+    // reset.
+    static void DetectIterationFn(TraceBatchInput&& in, typename BuildWorkChannel::ProducerHandle&& out);
+
+    // The build stage builds a trace graph from each work item and
+    // forwards commit markers unchanged.  It forwards the stop sentinel, a
+    // null BgBuildWork*, as a null BgGraphPublish*.
+    //
+    // The pipeline runs this body as the entry of its own thread, so the
+    // body takes the background context of that thread from the door.
+    static void BuildTraceFn(BuildWorkInput&& in, typename GraphPublishChannel::ProducerHandle&& out);
+
+    // The publish stage publishes each graph whose reset epoch is current,
+    // releases each stale one, and advances total_processed at each commit
+    // marker.
+    //
+    // The channel is SPSC FIFO, so a commit marker can only arrive here
+    // after every region produced from its batch and from preceding batches
+    // has gone through publish_trace_graph.  A completed flush therefore
+    // implies every region is published.
+    //
+    // This stage owns the state the region callback writes.  It builds a
+    // publish-stage proof for each call, serves the owner mailbox before
+    // every pop, and closes the mailbox on its way out, so a job posted to
+    // it runs here between two publications and never beside one.
+    //
+    // The pipeline runs this body as the entry of its own thread, so the
+    // body takes the background context of that thread from the door.
+    static void MakeRegionFn(GraphPublishInput&& in, BgSinkProducerHandle&& out);
+};
+
+BackgroundThread::BackgroundThread() = default;
 
 BackgroundThread::BgBuildWork* BackgroundThread::make_commit_work(uint32_t count) {
     auto* work = new BgBuildWork{};
@@ -130,7 +273,7 @@ void BackgroundThread::publish_trace_graph(::foundation::effects::Bg const& bg, 
     }
 }
 
-void BackgroundThread::DrainTraceRingFn(StartInput&& in, typename TraceBatchChannel::ProducerHandle&& out) {
+void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename TraceBatchChannel::ProducerHandle&& out) {
     BackgroundThread* const owner = &in.owner();
     while (!in.try_pop()) {
         CRUCIBLE_SPIN_PAUSE;
@@ -165,7 +308,8 @@ void BackgroundThread::DrainTraceRingFn(StartInput&& in, typename TraceBatchChan
     push_pipeline(out, stop);
 }
 
-void BackgroundThread::DetectIterationFn(TraceBatchInput&& in, typename BuildWorkChannel::ProducerHandle&& out) {
+void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
+                                                   typename BuildWorkChannel::ProducerHandle&& out) {
     BackgroundThread* const owner = &in.owner();
     while (true) {
         auto maybe_batch = in.try_pop();
@@ -219,7 +363,7 @@ void BackgroundThread::DetectIterationFn(TraceBatchInput&& in, typename BuildWor
     }
 }
 
-void BackgroundThread::BuildTraceFn(BuildWorkInput&& in, typename GraphPublishChannel::ProducerHandle&& out) {
+void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename GraphPublishChannel::ProducerHandle&& out) {
     const ::fixy::BgLoadCtx ctx{::foundation::effects::host::BackgroundOwner::mint_background_context()};
     BackgroundThread* const owner = &in.owner();
 
@@ -292,7 +436,7 @@ void BackgroundThread::BuildTraceFn(BuildWorkInput&& in, typename GraphPublishCh
 // Keeping the publish stage separate means the publish-side delegate
 // never sees the build-side machinery, so a crash-stop during publish
 // cannot taint the build stage's owner pointer.
-void BackgroundThread::MakeRegionFn(GraphPublishInput&& in, BgSinkProducerHandle&& out) {
+void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProducerHandle&& out) {
     const ::foundation::effects::Bg bg = ::foundation::effects::host::BackgroundOwner::mint_background_context();
     BackgroundThread* const owner = &in.owner();
     CRUCIBLE_ASSERT(out.owner == owner);
@@ -360,15 +504,18 @@ void BackgroundThread::start(TraceRing* ring_ptr, MetaLog* meta_log_ptr, int32_t
     stop_requested.reset_in_quiescent_context(::fixy::handle::OneShotFlag::QuiescenceProof{});
     // The lambda is the entry of the pipeline thread, so it takes the
     // background context of that thread from the door.
-    pipeline_thread = std::jthread([this](std::stop_token) noexcept {
+    if (!pipeline_) {
+        pipeline_ = std::make_unique<Pipeline>();
+    }
+    pipeline_->thread = std::jthread([this](std::stop_token) noexcept {
         run_in_row(::fixy::BgLoadCtx{::foundation::effects::host::BackgroundOwner::mint_background_context()});
     });
 }
 
 void BackgroundThread::stop() {
     stop_requested.signal();
-    if (pipeline_thread.joinable()) {
-        pipeline_thread.join();
+    if (pipeline_ && pipeline_->thread.joinable()) {
+        pipeline_->thread.join();
     }
 }
 
@@ -383,48 +530,50 @@ void BackgroundThread::run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept {
     // Each adjacent pair is one typed channel, and each stage's
     // permission proof comes from splitting a fresh root permission for
     // its channel.  The root carries the brand that the channel names.
-    TraceBatchChannel trace_batches;
-    BuildWorkChannel build_work;
-    GraphPublishChannel graph_publish;
+    Pipeline::TraceBatchChannel trace_batches;
+    Pipeline::BuildWorkChannel build_work;
+    Pipeline::GraphPublishChannel graph_publish;
 
-    StartChannel start;
+    Pipeline::StartChannel start;
     auto [start_prod_perm, start_cons_perm] =
-        perm::mint_permission_split<typename StartChannel::producer_tag, typename StartChannel::consumer_tag>(
-            detail::bg_pipeline::start_root());
+        perm::mint_permission_split<typename Pipeline::StartChannel::producer_tag,
+                                    typename Pipeline::StartChannel::consumer_tag>(detail::bg_pipeline::start_root());
 
     auto [trace_prod_perm, trace_cons_perm] =
-        perm::mint_permission_split<typename TraceBatchChannel::producer_tag, typename TraceBatchChannel::consumer_tag>(
+        perm::mint_permission_split<typename Pipeline::TraceBatchChannel::producer_tag,
+                                    typename Pipeline::TraceBatchChannel::consumer_tag>(
             detail::bg_pipeline::trace_batch_root());
 
     auto [build_prod_perm, build_cons_perm] =
-        perm::mint_permission_split<typename BuildWorkChannel::producer_tag, typename BuildWorkChannel::consumer_tag>(
+        perm::mint_permission_split<typename Pipeline::BuildWorkChannel::producer_tag,
+                                    typename Pipeline::BuildWorkChannel::consumer_tag>(
             detail::bg_pipeline::build_work_root());
 
     auto [publish_prod_perm, publish_cons_perm] =
-        perm::mint_permission_split<typename GraphPublishChannel::producer_tag,
-                                    typename GraphPublishChannel::consumer_tag>(
+        perm::mint_permission_split<typename Pipeline::GraphPublishChannel::producer_tag,
+                                    typename Pipeline::GraphPublishChannel::consumer_tag>(
             detail::bg_pipeline::graph_publish_root());
 
     auto start_prod = start.producer(std::move(start_prod_perm));
-    auto start_cons = StartInput{start.consumer(std::move(start_cons_perm)), *this};
+    auto start_cons = Pipeline::StartInput{start.consumer(std::move(start_cons_perm)), *this};
     auto trace_prod = trace_batches.producer(std::move(trace_prod_perm));
-    auto trace_cons = TraceBatchInput{trace_batches.consumer(std::move(trace_cons_perm)), *this};
+    auto trace_cons = Pipeline::TraceBatchInput{trace_batches.consumer(std::move(trace_cons_perm)), *this};
     auto build_prod = build_work.producer(std::move(build_prod_perm));
-    auto build_cons = BuildWorkInput{build_work.consumer(std::move(build_cons_perm)), *this};
+    auto build_cons = Pipeline::BuildWorkInput{build_work.consumer(std::move(build_cons_perm)), *this};
     auto publish_prod = graph_publish.producer(std::move(publish_prod_perm));
-    auto publish_cons = GraphPublishInput{graph_publish.consumer(std::move(publish_cons_perm)), *this};
+    auto publish_cons = Pipeline::GraphPublishInput{graph_publish.consumer(std::move(publish_cons_perm)), *this};
 
     while (!start_prod.try_push(BgPipelineStart{})) {
         CRUCIBLE_SPIN_PAUSE;
     }
     auto drain_stage =
-        ::fixy::concurrent::mint_stage<&DrainTraceRingFn>(ctx, std::move(start_cons), std::move(trace_prod));
+        ::fixy::concurrent::mint_stage<&Pipeline::DrainTraceRingFn>(ctx, std::move(start_cons), std::move(trace_prod));
     auto detect_stage =
-        ::fixy::concurrent::mint_stage<&DetectIterationFn>(ctx, std::move(trace_cons), std::move(build_prod));
+        ::fixy::concurrent::mint_stage<&Pipeline::DetectIterationFn>(ctx, std::move(trace_cons), std::move(build_prod));
     auto build_stage =
-        ::fixy::concurrent::mint_stage<&BuildTraceFn>(ctx, std::move(build_cons), std::move(publish_prod));
-    auto publish_stage =
-        ::fixy::concurrent::mint_stage<&MakeRegionFn>(ctx, std::move(publish_cons), BgSinkProducerHandle{this});
+        ::fixy::concurrent::mint_stage<&Pipeline::BuildTraceFn>(ctx, std::move(build_cons), std::move(publish_prod));
+    auto publish_stage = ::fixy::concurrent::mint_stage<&Pipeline::MakeRegionFn>(ctx, std::move(publish_cons),
+                                                                                 Pipeline::BgSinkProducerHandle{this});
 
     auto pipeline = ::fixy::concurrent::mint_pipeline(ctx, std::move(drain_stage), std::move(detect_stage),
                                                       std::move(build_stage), std::move(publish_stage));
