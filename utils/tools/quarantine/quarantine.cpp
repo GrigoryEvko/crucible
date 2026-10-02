@@ -1,15 +1,19 @@
 // The quarantine plugin of GCC.
 //
-// Every file under the source root outside the base and the build directory is
-// quarantined (THE FILES in plugin_core.h).  The base is include/foundation/,
-// include/fixy/, src/foundation/ and src/fixy/.  In a quarantined file, each
-// object must have a type that fixy or foundation gives, and the code must not
-// name a library entity that is not admitted.  The plugin reads the C++ trees
-// of the translation unit and records each place that breaks the rule.  The
-// location rule decides what it checks, and the target does not: a use is a
-// finding only when its spelling location is in a quarantined file.  A use
-// inside a base file, and a fixy template that a crucible type instantiates,
-// is not a finding.
+// The rule table (utils/scripts/layer-rules.txt, THE RULE TABLE in
+// plugin_core.h) gives the class of each file of the source root.  In a
+// quarantined file, each object must have a type that fixy or foundation
+// gives, and the code must not name a library entity that the table does not
+// admit.  The plugin reads the C++ trees of the translation unit and records
+// each place that breaks the rule.  The location rule decides what it checks,
+// and the target does not: a use is a finding only when its spelling location
+// is in a quarantined file.  A use inside a base file, and a fixy template
+// that a crucible type instantiates, is not a finding.
+//
+// The include rules apply to each #include directive that a base or a
+// quarantined file holds.  A base file can include a header of its own layer
+// and of each lower layer, and each header outside the root that the allow
+// rows give its layer.  A door header can have only its door as includer.
 //
 // The plugin also applies the contract rule of the tree, from plugin_core.h,
 // in each mode: each P2900 contract specifier that no region opts out is an
@@ -19,7 +23,10 @@
 // the objects of that build again.
 //
 // THE KINDS
-//     std_entity            a named reference to a declaration in namespace std
+//     std_entity            a named reference to a declaration in namespace std.
+//                           A typedef, an alias template or an enumeration of
+//                           namespace std that the type of a declaration names
+//                           is one too, such as std::size_t or std::byte
 //     std_object            a variable, data member, parameter or return type whose
 //                           type holds a class of the standard library
 //     c_library_object      the same, for a C struct or union of a system header
@@ -29,6 +36,12 @@
 //     raw_new_delete        a new-expression or a delete-expression
 //     c_library_call        a use of a function of a system header in the global
 //                           namespace
+//     layer_header          an include of a header outside the root that the
+//                           allow rows do not give the layer of the base file
+//     door_header           an include of a door header by a file that is not
+//                           its door
+//     upward_include        an include of a header of a higher layer, or of a
+//                           file outside the base, by a base file
 //     contract_specifier    a `pre` or a `post` contract specifier (the contract
 //                           rule, in each file under the root and in each mode)
 //     opted_out             one of the kinds above, inside a region that
@@ -47,14 +60,25 @@
 //                            and the bodies of template patterns.  The contract
 //                            rule has its own walk.
 //     PLUGIN_FINISH          the report, if the unit did not reach its end.
+//     PLUGIN_INCLUDE_FILE    each file that the preprocessor enters.  The file
+//                            that an #include directive enters is the target
+//                            of that directive.
+//     the include callback of libcpp
+//                            each #include directive, before the preprocessor
+//                            looks for the file.  A directive that enters no
+//                            file names a file that the unit entered before:
+//                            the plugin finds it beside the includer, or as
+//                            the entered file whose path ends with the name.
 //     plugin_core.h gives the hooks of the contract rule and of the two opt-out
 //     pragmas.
 //
 // THE ARGUMENTS (-fplugin-arg-crucible_quarantine-NAME=VALUE)
 //     root=PATH      the source root (necessary)
 //     build=PATH     a build directory under the root, whose files are generated
-//     admitted=PATH  the list of admitted standard library entities
-//     mode=report    each finding is a note, or a line of the report file
+//     rules=PATH     the rule table (necessary)
+//     mode=report    each finding is a note, or a line of the report file.
+//                    A finding in a file whose enforce mode is error, and that
+//                    no region opts out, is an error
 //     mode=error     each finding that no region opts out is an error
 //     out=DIR        write the report of the unit to a file in DIR, not as notes
 //     stamp=TEXT     ignored; a new value makes the build system compile again
@@ -102,6 +126,9 @@ enum class Kind : std::uint8_t {
     c_array_object,
     raw_new_delete,
     c_library_call,
+    layer_header,
+    door_header,
+    upward_include,
 };
 
 const char* kind_name(Kind kind) {
@@ -122,6 +149,12 @@ const char* kind_name(Kind kind) {
             return "raw_new_delete";
         case Kind::c_library_call:
             return "c_library_call";
+        case Kind::layer_header:
+            return "layer_header";
+        case Kind::door_header:
+            return "door_header";
+        case Kind::upward_include:
+            return "upward_include";
     }
     return "unknown";
 }
@@ -141,14 +174,34 @@ enum class Role : std::uint8_t {
 
 // ── The state of one translation unit ───────────────────────────────────
 
+// An #include directive of a base or a quarantined file whose target the
+// plugin does not know yet.
+struct PendingInclude {
+    bool is_set = false;
+    Place place;  // the directive
+    std::string spelled;  // the name inside the delimiters
+    bool is_angle = false;
+};
+
+using IncludeCallback = void (*)(cpp_reader*, location_t, const unsigned char*, const char*, int, const cpp_token**);
+
 // The state of the quarantine rule.  plugin_core.h holds the state that the
-// two rules share: the root, the files, the findings and the regions.
+// two rules share: the root, the rule table, the files, the findings and the
+// regions.
 struct State {
     std::string out_dir;
     bool is_error_mode = false;
 
     std::unordered_set<std::string> admitted_names;
-    std::vector<std::string> admitted_headers;  // "/type_traits", matched as a path suffix
+    // The real path of each file that an #include of an admitted header
+    // entered, and whether the last directive names an admitted header.
+    std::unordered_set<std::string> admitted_header_paths;
+    bool is_admitted_header_pending = false;
+
+    // The include rules.
+    IncludeCallback previous_include = nullptr;
+    PendingInclude pending;
+    std::unordered_map<std::string, std::vector<const FileEntry*>> entered_by_name;  // by the last path component
 
     // Caches keyed by tree.  A garbage collection can free a tree and reuse
     // its address, so each collection clears them.  Nothing depends on them
@@ -160,6 +213,9 @@ struct State {
 };
 
 State state;
+
+bool is_include_kind(const char* kind);
+void finish_pending_include(const FileEntry* entered);
 
 // ── Paths and places ────────────────────────────────────────────────────
 
@@ -179,14 +235,12 @@ bool is_worth_a_walk(location_t location) {
             && linemap_location_from_macro_expansion_p(line_table, location));
 }
 
-void record(Kind kind, location_t location, const std::string& entity) {
-    Place place = place_of(location, Scope::quarantine);
-    if (place.file_class != FileClass::quarantined) {
-        return;
-    }
-    // One finding for each kind and place.  Two names at one place, such as a
-    // type and its member function in one expression, are two findings.
-    bool is_name = kind == Kind::std_entity || kind == Kind::c_library_call;
+// One finding for each kind and place.  Two names at one place, such as a type
+// and its member function in one expression, are two findings, and so are two
+// headers that one place includes.
+void add_finding(Kind kind, const Place& place, const std::string& entity) {
+    bool is_name = kind == Kind::std_entity || kind == Kind::c_library_call || kind == Kind::layer_header
+                || kind == Kind::door_header || kind == Kind::upward_include;
     std::string key = std::string(kind_name(kind)) + ' ' + place.file->relative + ':' + std::to_string(place.line) + ':'
                     + std::to_string(place.column) + (is_name ? ' ' + entity : std::string{});
     if (!core.finding_keys.insert(key).second) {
@@ -200,6 +254,14 @@ void record(Kind kind, location_t location, const std::string& entity) {
     finding.spelling = place.spelling;
     finding.entity = entity;
     core.findings.push_back(std::move(finding));
+}
+
+// A finding of the quarantine rule, at a place in a quarantined file.
+void record(Kind kind, location_t location, const std::string& entity) {
+    Place place = place_of(location, Scope::quarantine);
+    if (place.file_class == FileClass::quarantined) {
+        add_finding(kind, place, entity);
+    }
 }
 
 // ── Names ───────────────────────────────────────────────────────────────
@@ -321,6 +383,13 @@ bool is_admitted_name(const std::string& name) {
     return false;
 }
 
+// A name entry admits the entity that it names and each name nested in it,
+// so std::tuple_size admits std::tuple_size<T>::value.  It admits no other
+// entity whose name starts with the same text: std::tuple_size_v and
+// std::tuple_element_t need their own entries.  A header entry admits each
+// entity that the header itself declares: the file that an #include of that
+// exact name enters, and not a header of the same last name in a different
+// directory, such as experimental/type_traits.
 bool is_admitted(tree decl) {
     auto cached = state.admitted_of.find(decl);
     if (cached != state.admitted_of.end()) {
@@ -329,11 +398,7 @@ bool is_admitted(tree decl) {
     bool is_listed = is_admitted_name(qualified_name(decl));
     if (!is_listed) {
         const char* file = DECL_SOURCE_FILE(decl);
-        if (file != nullptr) {
-            std::string path(file);
-            is_listed = std::any_of(state.admitted_headers.begin(), state.admitted_headers.end(),
-                                    [&path](const std::string& header) { return has_suffix(path, header); });
-        }
+        is_listed = file != nullptr && state.admitted_header_paths.count(classify_file(file).real) != 0;
     }
     state.admitted_of.emplace(decl, is_listed);
     return is_listed;
@@ -487,6 +552,40 @@ tree library_class_in(tree type, int depth) {
     return found;
 }
 
+// The library name that TYPE spells at its outer level, when the type is not
+// a class: a typedef or an alias template of namespace std, such as
+// std::size_t or std::tuple_element_t, or an enumeration of namespace std,
+// such as std::byte.  The walk looks through pointers, references and arrays,
+// and it stops at a typedef that is not of the library: a project alias of
+// std::size_t names no library entity where the code uses it.  Returns the
+// declaration of the alias template, of the typedef or of the enumeration, or
+// null when the table admits it.  A template argument loses its typedef, so a
+// typedef inside a template argument is no finding.
+tree library_type_name_in(tree type, int depth) {
+    if (type == NULL_TREE || type == error_mark_node || depth > 64) {
+        return NULL_TREE;
+    }
+    if (TREE_CODE(type) == POINTER_TYPE || TREE_CODE(type) == REFERENCE_TYPE) {
+        return FUNC_OR_METHOD_TYPE_P(TREE_TYPE(type)) ? NULL_TREE : library_type_name_in(TREE_TYPE(type), depth + 1);
+    }
+    if (TREE_CODE(type) == ARRAY_TYPE) {
+        return library_type_name_in(TREE_TYPE(type), depth + 1);
+    }
+    tree name = TYPE_NAME(type);
+    if (name != NULL_TREE && TREE_CODE(name) == TYPE_DECL && DECL_ORIGINAL_TYPE(name) != NULL_TREE) {
+        tree decl = name;
+        if (tree info = TYPE_ALIAS_TEMPLATE_INFO(type); info != NULL_TREE && TI_TEMPLATE(info) != NULL_TREE) {
+            decl = TI_TEMPLATE(info);
+        }
+        return library_of(decl) == Library::standard && !is_admitted(decl) ? decl : NULL_TREE;
+    }
+    if (TREE_CODE(type) == ENUMERAL_TYPE) {
+        tree decl = TYPE_MAIN_DECL(type);
+        return decl != NULL_TREE && library_of(decl) == Library::standard && !is_admitted(decl) ? decl : NULL_TREE;
+    }
+    return NULL_TREE;
+}
+
 // ── The checks of a declaration ─────────────────────────────────────────
 
 void check_object(tree decl, Role role) {
@@ -512,7 +611,19 @@ void check_object(tree decl, Role role) {
     if (tree found = library_class_in(type, 0)) {
         Kind kind = library_of(TYPE_MAIN_DECL(found)) == Library::c_library ? Kind::c_library_object : Kind::std_object;
         record(kind, location, qualified_name(found) + " (" + type_text(type) + ")");
+    } else if (tree named = library_type_name_in(type, 0)) {
+        record(Kind::std_entity, location, qualified_name(named));
     }
+}
+
+// A library entity that TYPE names: a class of namespace std inside it, or else
+// the library name at its outer level.  Returns null when it names none.
+tree std_entity_in(tree type) {
+    tree found = library_class_in(type, 0);
+    if (found != NULL_TREE) {
+        return library_of(TYPE_MAIN_DECL(found)) == Library::standard ? TYPE_MAIN_DECL(found) : NULL_TREE;
+    }
+    return library_type_name_in(type, 0);
 }
 
 void check_alias(tree decl) {
@@ -520,9 +631,8 @@ void check_alias(tree decl) {
     if (aliased == NULL_TREE || !is_quarantined(DECL_SOURCE_LOCATION(decl))) {
         return;
     }
-    tree found = library_class_in(aliased, 0);
-    if (found != NULL_TREE && library_of(TYPE_MAIN_DECL(found)) == Library::standard) {
-        record(Kind::std_entity, DECL_SOURCE_LOCATION(decl), qualified_name(found));
+    if (tree named = std_entity_in(aliased)) {
+        record(Kind::std_entity, DECL_SOURCE_LOCATION(decl), qualified_name(named));
     }
 }
 
@@ -712,9 +822,8 @@ void check_scope_use(tree scope_ref, location_t location) {
 // A type that a template names: the type of a cast, an explicit template
 // argument, a compound literal.
 void check_type_use(tree type, location_t location) {
-    tree found = library_class_in(type, 0);
-    if (found != NULL_TREE && library_of(TYPE_MAIN_DECL(found)) == Library::standard) {
-        record(Kind::std_entity, location, qualified_name(found));
+    if (tree named = std_entity_in(type)) {
+        record(Kind::std_entity, location, qualified_name(named));
     }
 }
 
@@ -1154,9 +1263,13 @@ void check_template_defaults(tree template_decl) {
             || TREE_VALUE(parameter) == NULL_TREE || !DECL_P(TREE_VALUE(parameter))) {
             continue;
         }
-        tree found = library_class_in_argument(TREE_PURPOSE(parameter), 0);
-        if (found != NULL_TREE && library_of(TYPE_MAIN_DECL(found)) == Library::standard) {
-            record(Kind::std_entity, DECL_SOURCE_LOCATION(TREE_VALUE(parameter)), qualified_name(found));
+        tree default_argument = TREE_PURPOSE(parameter);
+        tree found = library_class_in_argument(default_argument, 0);
+        tree named = found != NULL_TREE ? (library_of(TYPE_MAIN_DECL(found)) == Library::standard ? found : NULL_TREE)
+                   : TYPE_P(default_argument) ? library_type_name_in(default_argument, 0)
+                                              : NULL_TREE;
+        if (named != NULL_TREE) {
+            record(Kind::std_entity, DECL_SOURCE_LOCATION(TREE_VALUE(parameter)), qualified_name(named));
         }
     }
 }
@@ -1345,7 +1458,9 @@ void report() {
         return;
     }
     core.was_reported = true;
+    finish_pending_include(nullptr);
     report_open_regions();
+    report_unclassified();
     std::vector<std::string> lines;
     for (const Finding& finding : core.findings) {
         bool is_out = is_opted_out(finding);
@@ -1353,20 +1468,163 @@ void report() {
         std::string entity = is_out ? std::string(finding.kind) + " " + finding.entity : finding.entity;
         lines.push_back("quarantine: " + kind + " " + finding.file->relative + ":" + std::to_string(finding.line) + ":"
                         + std::to_string(finding.column) + " " + entity);
+        bool is_error = state.is_error_mode || finding.file->is_error_mode;
         // The contract rule gives an error in each mode.
         if (finding.kind == kContractKind && !is_out) {
             report_contract(finding);
-        } else if (state.is_error_mode && !is_out) {
+        } else if (is_error && !is_out && is_include_kind(finding.kind)) {
+            error_at(finding.spelling,
+                     "quarantine: %s %s; the rule table does not let this file include the header, so include a "
+                     "header that its layer can include",
+                     kind.c_str(), entity.c_str());
+        } else if (is_error && !is_out) {
             error_at(finding.spelling,
                      "quarantine: %s %s; use a type or an entity of fixy or foundation, or put the code in a "
                      "%<#pragma crucible %s(\"reason\")%> region",
                      kind.c_str(), entity.c_str(), kBeginPragma);
-        } else if (!state.is_error_mode && state.out_dir.empty()) {
+        } else if (!is_error && state.out_dir.empty()) {
             inform(finding.spelling, "quarantine: %s %s", kind.c_str(), entity.c_str());
         }
     }
     if (!state.out_dir.empty()) {
         write_report_file(lines);
+    }
+}
+
+// ── The include rules ───────────────────────────────────────────────────
+
+bool is_include_kind(const char* kind) {
+    return kind == kind_name(Kind::layer_header) || kind == kind_name(Kind::door_header)
+        || kind == kind_name(Kind::upward_include);
+}
+
+const std::string& layer_name(int layer) { return core.table.layers[static_cast<std::size_t>(layer)].name; }
+
+int layer_rank(int layer) { return core.table.layers[static_cast<std::size_t>(layer)].rank; }
+
+// The target of a directive that entered no file.  An include guard or
+// #pragma once stopped it, so the unit entered the target before: the file
+// beside the includer for a quoted name, or else the entered file whose real
+// path ends with the name.  Returns null for a name that the unit entered
+// under no such path, which the rules treat as a header outside the root.
+const FileEntry* resolve_skipped_include(const PendingInclude& pending) {
+    const std::string& includer = pending.place.file->real;
+    if (!pending.is_angle && !includer.empty()) {
+        std::string beside = real_path((includer.substr(0, includer.rfind('/')) + "/" + pending.spelled).c_str());
+        if (!beside.empty()) {
+            return &entry_of_real_path(beside);
+        }
+    }
+    std::size_t slash = pending.spelled.rfind('/');
+    auto found =
+        state.entered_by_name.find(slash == std::string::npos ? pending.spelled : pending.spelled.substr(slash + 1));
+    if (found == state.entered_by_name.end()) {
+        return nullptr;
+    }
+    std::string suffix = "/" + pending.spelled;
+    for (const FileEntry* candidate : found->second) {
+        if (has_suffix(candidate->real, suffix)) {
+            return candidate;
+        }
+    }
+    return nullptr;
+}
+
+// The include rules for one directive and its target.
+void check_include(const PendingInclude& pending, const FileEntry* target) {
+    const FileEntry& includer = *pending.place.file;
+    if (target != nullptr && target->file_class != FileClass::outside) {
+        if (includer.file_class != FileClass::base
+            || (target->file_class == FileClass::base && layer_rank(target->layer) <= layer_rank(includer.layer))) {
+            return;
+        }
+        std::string what =
+            target->file_class == FileClass::base ? "the layer " + layer_name(target->layer) : std::string("no layer");
+        add_finding(Kind::upward_include, pending.place,
+                    target->relative + " (" + what + ") from the layer " + layer_name(includer.layer));
+        return;
+    }
+    for (const DoorRow& door : core.table.doors) {
+        if (door.header == pending.spelled) {
+            if (includer.relative != door.owner) {
+                add_finding(Kind::door_header, pending.place, "<" + pending.spelled + "> has the door " + door.owner);
+            }
+            return;
+        }
+    }
+    if (includer.file_class != FileClass::base) {
+        return;
+    }
+    for (const auto& [layer, header] : core.table.allows) {
+        if (header == pending.spelled && layer_rank(layer) <= layer_rank(includer.layer)) {
+            return;
+        }
+    }
+    add_finding(Kind::layer_header, pending.place,
+                "<" + pending.spelled + "> in the layer " + layer_name(includer.layer));
+}
+
+void finish_pending_include(const FileEntry* entered) {
+    if (!state.pending.is_set) {
+        return;
+    }
+    PendingInclude pending = std::move(state.pending);
+    state.pending = PendingInclude{};
+    check_include(pending, entered != nullptr ? entered : resolve_skipped_include(pending));
+}
+
+// The include callback of libcpp: one #include directive, before the
+// preprocessor looks for the file.
+void on_include(cpp_reader* reader, location_t location, const unsigned char* directive, const char* name, int is_angle,
+                const cpp_token** comments) {
+    if (state.previous_include != nullptr) {
+        state.previous_include(reader, location, directive, name, is_angle, comments);
+    }
+    finish_pending_include(nullptr);
+    state.is_admitted_header_pending =
+        is_angle != 0 && name != nullptr
+        && std::find(core.table.admitted_headers.begin(), core.table.admitted_headers.end(), name)
+               != core.table.admitted_headers.end();
+    Place place = place_of(location, Scope::quarantine);
+    if (place.file == nullptr || name == nullptr) {
+        return;
+    }
+    state.pending.is_set = true;
+    state.pending.place = place;
+    state.pending.spelled = name;
+    state.pending.is_angle = is_angle != 0;
+}
+
+// Each file that the preprocessor enters.  The file that the last directive
+// names enters right after the include callback, with that directive as the
+// place it comes from.
+void on_include_file(void* gcc_data, void*) {
+    const char* name = static_cast<const char*>(gcc_data);
+    if (name == nullptr) {
+        return;
+    }
+    const FileEntry& entry = classify_file(name);
+    if (!entry.real.empty()) {
+        std::size_t slash = entry.real.rfind('/');
+        std::vector<const FileEntry*>& named = state.entered_by_name[entry.real.substr(slash + 1)];
+        if (std::find(named.begin(), named.end(), &entry) == named.end()) {
+            named.push_back(&entry);
+        }
+    }
+    const line_map_ordinary* map = LINEMAPS_LAST_ORDINARY_MAP(line_table);
+    if (map == nullptr || map->reason != LC_ENTER) {
+        return;
+    }
+    if (state.is_admitted_header_pending) {
+        state.is_admitted_header_pending = false;
+        state.admitted_header_paths.insert(entry.real);
+    }
+    if (!state.pending.is_set) {
+        return;
+    }
+    expanded_location from = expand_location(linemap_included_from(map));
+    if (from.file != nullptr && &classify_file(from.file) == state.pending.place.file) {
+        finish_pending_include(&entry);
     }
 }
 
@@ -1408,61 +1666,6 @@ void on_collection(void*, void*) {
     core.contract_walked.clear();
 }
 
-// ── The arguments and the admitted list ─────────────────────────────────
-
-std::string trimmed(const std::string& text) {
-    std::size_t first = text.find_first_not_of(" \t\r");
-    if (first == std::string::npos) {
-        return {};
-    }
-    std::size_t last = text.find_last_not_of(" \t\r");
-    return text.substr(first, last - first + 1);
-}
-
-// One entry on each line: a qualified name or a header in angle brackets,
-// then '|' and the reason.  A line that starts with '#' is a comment.
-bool load_admitted(const std::string& path) {
-    FILE* stream = fopen(path.c_str(), "r");
-    if (stream == nullptr) {
-        error("quarantine: cannot read the admitted list %s: %m", path.c_str());
-        return false;
-    }
-    std::string text;
-    std::vector<char> chunk(4096);
-    for (std::size_t count = 0; (count = fread(chunk.data(), 1, chunk.size(), stream)) > 0;) {
-        text.append(chunk.data(), count);
-    }
-    fclose(stream);
-    bool is_valid = true;
-    int line_number = 0;
-    std::size_t start = 0;
-    while (start <= text.size()) {
-        std::size_t end = text.find('\n', start);
-        std::string line = text.substr(start, end == std::string::npos ? std::string::npos : end - start);
-        start = end == std::string::npos ? text.size() + 1 : end + 1;
-        ++line_number;
-        std::string content = trimmed(line);
-        if (content.empty() || content[0] == '#') {
-            continue;
-        }
-        std::size_t bar = content.find('|');
-        std::string entry = trimmed(content.substr(0, bar));
-        std::string reason = bar == std::string::npos ? std::string{} : trimmed(content.substr(bar + 1));
-        if (entry.empty() || reason.empty()) {
-            error("quarantine: %s:%d: an entry is %<NAME | REASON%>, and the reason is necessary", path.c_str(),
-                  line_number);
-            is_valid = false;
-            continue;
-        }
-        if (entry.front() == '<' && entry.back() == '>' && entry.size() > 2) {
-            state.admitted_headers.push_back("/" + entry.substr(1, entry.size() - 2));
-        } else {
-            state.admitted_names.insert(entry);
-        }
-    }
-    return is_valid;
-}
-
 }  // namespace
 
 int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
@@ -1478,7 +1681,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     }
     core.plugin_name = plugin_info->base_name;
     std::string root_argument;
-    std::string admitted_argument;
+    std::string rules_argument;
     for (int index = 0; index < plugin_info->argc; ++index) {
         std::string key = plugin_info->argv[index].key;
         std::string value = plugin_info->argv[index].value != nullptr ? plugin_info->argv[index].value : "";
@@ -1488,8 +1691,8 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
             if (!set_build(value)) {
                 return 1;
             }
-        } else if (key == "admitted") {
-            admitted_argument = value;
+        } else if (key == "rules") {
+            rules_argument = value;
         } else if (key == "out") {
             state.out_dir = value;
         } else if (key == "mode") {
@@ -1499,7 +1702,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
             }
             state.is_error_mode = value == "error";
         } else if (key != "stamp") {
-            error("quarantine: unknown argument %qs; the arguments are root, build, admitted, mode, out and stamp",
+            error("quarantine: unknown argument %qs; the arguments are root, build, rules, mode, out and stamp",
                   key.c_str());
             return 1;
         }
@@ -1507,9 +1710,18 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     if (!set_root(root_argument)) {
         return 1;
     }
-    if (!admitted_argument.empty() && !load_admitted(admitted_argument)) {
+    if (rules_argument.empty()) {
+        error("quarantine: give the rule table with %<-fplugin-arg-%s-rules=PATH%>", core.plugin_name.c_str());
         return 1;
     }
+    if (!load_rule_table(rules_argument)) {
+        return 1;
+    }
+    state.admitted_names.insert(core.table.admitted_names.begin(), core.table.admitted_names.end());
+    cpp_callbacks* callbacks = cpp_get_callbacks(parse_in);
+    state.previous_include = callbacks->include;
+    callbacks->include = on_include;
+    register_callback(plugin_info->base_name, PLUGIN_INCLUDE_FILE, on_include_file, nullptr);
     register_contract_rule(plugin_info->base_name);
     register_callback(plugin_info->base_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_FINISH_UNIT, on_finish_unit, nullptr);

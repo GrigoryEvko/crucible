@@ -4,14 +4,22 @@
 The test builds the contract plugin and the quarantine plugin from their
 sources with the flags that CMake gives, compiles each fixture of this
 directory with a plugin loaded, and compares what the plugin reports with the
-expectations below.  This directory is the source root of the test:
-include/fixy/, src/foundation/ and src/fixy/ hold base code, and each other
-fixture is quarantined.
+expectations below.  This directory is the source root of the test, and
+rules.txt is its rule table: include/fixy/, src/foundation/ and src/fixy/ hold
+base code, and the quarantine rows name each other fixture.
 
 Each class of finding has an expectation that fails when the quarantine plugin
-loses the check of that class.  The base rule, the admitted list and the
-opt-out region each have an expectation that fails when the plugin loses that
-rule.
+loses the check of that class.  The base rule, the admit rows and the opt-out
+region each have an expectation that fails when the plugin loses that rule.
+
+Each row kind of the rule table has a plant: a forbidden header in a layer, a
+door header outside its door, an upward include and a standard library name
+that the table does not admit.  The test compiles each planted file in error
+mode one time with no plant, which must pass, and one time with each plant,
+which must fail with the finding of the plant.  An enforce row with the mode
+error makes a finding an error in report mode, and a file that no row holds
+is an error.  The plugin and utils/scripts/layer_rules.py get the same
+malformed tables, and each one must refuse each table.
 
 contracts.cpp holds each form of a P2900 contract specifier that the contract
 rule rejects, also in base code.  The test compiles it with the contract
@@ -26,10 +34,11 @@ directory, and compiles a unit of that root with each plugin.
 
 The two plugins build at the same time.  Then the parts of the test run at
 the same time: the findings, the base files, the malformed regions, the
-modes, the contract rule and the generated files.  Each part writes its own
-files, and main prints the verdicts of the parts in that order.
+modes, the contract rule, the generated files, the include rules and the
+readers of the table.  Each part writes its own files, and main prints the
+verdicts of the parts in that order.
 
-usage: check_plugin.py --cxx CXX --contract-source CONTRACT.cpp --source QUARANTINE.cpp --admitted LIST
+usage: check_plugin.py --cxx CXX --contract-source CONTRACT.cpp --source QUARANTINE.cpp --rules TABLE
                        -- BUILD_FLAGS...
 
 Exit 0 when each expectation holds, 1 when one fails, 2 on a usage error or a
@@ -50,8 +59,42 @@ from dataclasses import dataclass
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+TEST_RULES = HERE / "rules.txt"
 PLUGIN = "crucible_quarantine"
 CONTRACT_PLUGIN = "crucible_contract"
+
+sys.path.insert(0, str(HERE.parents[2] / "scripts"))
+import layer_rules  # noqa: E402
+
+# (the macro of the plant, the planted file, the kind, a text in the entity)
+PLANTS = (
+    ("PLANT_LAYER_HEADER", "src/fixy/Plants.cpp", "layer_header", "<cmath> in the layer low"),
+    ("PLANT_DOOR_HEADER", "src/fixy/Plants.cpp", "door_header", "<sys/socket.h> has the door src/fixy/SocketDoor.cpp"),
+    ("PLANT_UPWARD_INCLUDE", "src/fixy/Plants.cpp", "upward_include",
+     "include/fixy/high/High.h (the layer high) from the layer low"),
+    ("PLANT_STD_NAME", "plant_std.cpp", "std_entity", "std::swap"),
+)
+
+# Tables that do not obey the format.  The plugin and layer_rules.py must each
+# refuse each one.
+MALFORMED_TABLES = (
+    ("an unknown row kind", "bogus x/\n"),
+    ("a rank that is not digits", "layer low x include/\n"),
+    ("a rank of two layers", "layer one 0 a/\nlayer two 0 b/\n"),
+    ("a layer with two rows", "layer one 0 a/\nlayer one 1 b/\n"),
+    ("a path in a layer row and a quarantine row", "layer one 0 a/\nquarantine a/\n"),
+    ("an allow row of no layer", "allow none <cstdint>\n"),
+    ("a header with no angle brackets", "layer one 0 a/\nallow one cstdint\n"),
+    ("a door whose owner is a directory", "door <x.h> a/\n"),
+    ("a header with two doors", "door <x.h> a.cpp\ndoor <x.h> b.cpp\n"),
+    ("an admit row with no reason", "admit std::move\n"),
+    ("an absolute path", "quarantine /a/\n"),
+    ("a path with a parent component", "quarantine a/../b/\n"),
+    ("a path with an empty component", "quarantine a//\n"),
+    ("an unknown enforce mode", "enforce a/ fatal\n"),
+    ("a path with two enforce rows", "enforce a/ error\nenforce a/ report\n"),
+    ("a reason with no row kind", "| a reason\n"),
+)
 
 # (kind, fixture, line, a text that the entity holds, or '=' and the whole entity)
 PRESENT = (
@@ -259,21 +302,24 @@ def read_reports(directory: Path) -> list[Finding]:
     return findings
 
 
-def run(checker: Checker, admitted: Path) -> list[Section]:
+def run(checker: Checker, rules: Path) -> list[Section]:
     """Run each part of the test at the same time, and return the parts in their order.
 
     The parts write disjoint files under the work directory, so no part
     reads what another part writes.
     """
-    arguments = {"root": str(HERE), "mode": "report", "admitted": str(HERE / "admitted.txt"),
+    arguments = {"root": str(HERE), "mode": "report", "rules": str(TEST_RULES),
                  "out": str(checker.work / "reports")}
     parts: list[Callable[[Section], None]] = [
         lambda section: run_findings(section, arguments),
         lambda section: run_base_files(section, arguments),
         run_pragma_errors,
-        lambda section: run_modes(section, arguments, admitted),
+        lambda section: run_modes(section, arguments, rules),
         run_contract_rule,
         run_generated_files,
+        run_include_rules,
+        run_library_names,
+        run_table_readers,
     ]
     sections = [Section(checker) for _ in parts]
     with ThreadPoolExecutor(max_workers=len(parts)) as pool:
@@ -306,7 +352,7 @@ def run_findings(section: Section, arguments: dict[str, str]) -> None:
 def run_pragma_errors(section: Section) -> None:
     """Compile each fixture of a malformed region with each plugin, and judge the error."""
     for fixture, text in PRAGMA_ERRORS:
-        compiled = section.compile(fixture, {"root": str(HERE), "mode": "report"})
+        compiled = section.compile(fixture, {"root": str(HERE), "mode": "report", "rules": str(TEST_RULES)})
         section.expect(f"{fixture} is an error", compiled.returncode != 0 and text in compiled.stderr,
                        compiled.stderr[-2000:])
         compiled = section.compile(fixture, {"root": str(HERE)}, plugin=CONTRACT_PLUGIN)
@@ -314,20 +360,23 @@ def run_pragma_errors(section: Section) -> None:
                        compiled.returncode != 0 and text in compiled.stderr, compiled.stderr[-2000:])
 
 
-def run_modes(section: Section, arguments: dict[str, str], admitted: Path) -> None:
-    """Judge the report mode without out=, the error mode, -fsyntax-only, -E and the admitted lists."""
+def run_modes(section: Section, arguments: dict[str, str], rules: Path) -> None:
+    """Judge the report mode without out=, the error mode, -fsyntax-only, -E and the rule table of the tree.
+
+    The rule table of the tree classifies the paths of the tree, so its compile
+    has the repository as the source root.
+    """
     syntax_reports = section.work / "syntax-reports"
     preprocessed_reports = section.work / "preprocessed-reports"
-    malformed = section.work / "malformed.txt"
-    malformed.write_text("std::move\n", encoding="utf-8")
-    noted, failed, opted, syntax, preprocessed, real, broken = section.compile_all([
-        ("violations.cpp", {"root": str(HERE), "mode": "report"}),
-        ("violations.cpp", {"root": str(HERE), "mode": "error"}),
-        ("opt_out.cpp", {"root": str(HERE), "mode": "error"}),
+    test_rules = {"rules": str(TEST_RULES)}
+    noted, failed, opted, syntax, preprocessed, real, missing = section.compile_all([
+        ("violations.cpp", {"root": str(HERE), "mode": "report", **test_rules}),
+        ("violations.cpp", {"root": str(HERE), "mode": "error", **test_rules}),
+        ("opt_out.cpp", {"root": str(HERE), "mode": "error", **test_rules}),
         ("violations.cpp", {**arguments, "out": str(syntax_reports)}, ("-fsyntax-only",)),
         ("violations.cpp", {**arguments, "out": str(preprocessed_reports)}, ("-E", "-o", os.devnull)),
-        ("opt_out.cpp", {"root": str(HERE), "admitted": str(admitted)}),
-        ("violations.cpp", {"root": str(HERE), "admitted": str(malformed)}),
+        ("opt_out.cpp", {"root": str(rules.parents[2]), "rules": str(rules)}),
+        ("violations.cpp", {"root": str(HERE), "mode": "report"}),
     ])
     section.expect("report mode without out= gives notes and succeeds",
                    noted.returncode == 0 and "note: quarantine: raw_new_delete new" in noted.stderr,
@@ -346,9 +395,9 @@ def run_modes(section: Section, arguments: dict[str, str], admitted: Path) -> No
     section.expect("-E writes no report", preprocessed.returncode == 0 and not preprocessed_reports.exists(),
                    preprocessed.stderr[-2000:])
 
-    section.expect("the admitted list of the tree loads", real.returncode == 0, real.stderr[-2000:])
-    section.expect("an admitted entry without a reason is an error",
-                   broken.returncode != 0 and "the reason is necessary" in broken.stderr, broken.stderr[-2000:])
+    section.expect("the rule table of the tree loads", real.returncode == 0, real.stderr[-2000:])
+    section.expect("the quarantine plugin needs a rule table",
+                   missing.returncode != 0 and "give the rule table" in missing.stderr, missing.stderr[-2000:])
 
 
 def run_base_files(section: Section, arguments: dict[str, str]) -> None:
@@ -402,11 +451,12 @@ def run_generated_files(section: Section) -> None:
     unclosed = tree / "unclosed_unit.cpp"
     unclosed.write_text(UNCLOSED_GENERATED_UNIT, encoding="utf-8")
     places = {"root": str(tree), "build": str(build)}
+    test_rules = {"rules": str(TEST_RULES)}
     generated_reports = section.work / "generated-reports"
     runs = (
         ("the contract plugin", CONTRACT_PLUGIN, places),
-        ("mode=error", PLUGIN, {**places, "mode": "error"}),
-        ("mode=report", PLUGIN, {**places, "mode": "report", "out": str(generated_reports)}),
+        ("mode=error", PLUGIN, {**places, "mode": "error", **test_rules}),
+        ("mode=report", PLUGIN, {**places, "mode": "report", "out": str(generated_reports), **test_rules}),
     )
     for name, plugin, arguments in runs:
         compiled = section.compile(str(unit), arguments, extra=("-fcontracts",), plugin=plugin)
@@ -440,7 +490,9 @@ def run_contract_rule(section: Section) -> None:
     outside.mkdir(exist_ok=True)
     (outside / "Outside.h").write_text(OUTSIDE_HEADER, encoding="utf-8")
     (outside / "OutsideRegion.h").write_text(OUTSIDE_REGION_HEADER, encoding="utf-8")
-    for plugin, arguments in ((CONTRACT_PLUGIN, {"root": str(HERE)}), (PLUGIN, {"root": str(HERE), "mode": "error"})):
+    test_rules = {"rules": str(TEST_RULES)}
+    for plugin, arguments in ((CONTRACT_PLUGIN, {"root": str(HERE)}),
+                              (PLUGIN, {"root": str(HERE), "mode": "error", **test_rules})):
         compiled = section.compile("region_outside_root.cpp", arguments, extra=("-I", str(outside)), plugin=plugin)
         section.expect(f"{plugin}: a region of a header outside the root is no error",
                        compiled.returncode == 0 and "region" not in compiled.stderr, compiled.stderr[-2000:])
@@ -449,8 +501,8 @@ def run_contract_rule(section: Section) -> None:
     contract_reports = section.work / "contract-reports"
     runs = (
         ("the contract plugin", CONTRACT_PLUGIN, {"root": str(HERE)}, ("-S", "-o", os.devnull)),
-        ("mode=error", PLUGIN, {"root": str(HERE), "mode": "error"}, ("-S", "-o", os.devnull)),
-        ("mode=report", PLUGIN, {"root": str(HERE), "mode": "report", "out": str(contract_reports)},
+        ("mode=error", PLUGIN, {"root": str(HERE), "mode": "error", **test_rules}, ("-S", "-o", os.devnull)),
+        ("mode=report", PLUGIN, {"root": str(HERE), "mode": "report", "out": str(contract_reports), **test_rules},
          ("-S", "-o", os.devnull)),
         ("the contract plugin with -fsyntax-only", CONTRACT_PLUGIN, {"root": str(HERE)}, ("-fsyntax-only",)),
     )
@@ -487,13 +539,146 @@ def run_contract_rule(section: Section) -> None:
                    unknown.stderr[-2000:])
 
 
+def quarantine_errors(stderr: str, kind: str) -> list[str]:
+    """Return each error of the quarantine plugin of KIND in STDERR."""
+    return [row for row in stderr.splitlines() if f"error: quarantine: {kind} " in row]
+
+
+def run_include_rules(section: Section) -> None:
+    """Compile each planted file in error mode with no plant and with each plant, and judge the findings.
+
+    The part also judges the upward include that a directive with no entered
+    file makes, the enforce row of the test table and a file that no row
+    holds.
+    """
+    error_mode = {"root": str(HERE), "mode": "error", "rules": str(TEST_RULES)}
+    report_mode = {"root": str(HERE), "mode": "report", "rules": str(TEST_RULES)}
+    calls: list[tuple[object, ...]] = []
+    for fixture in sorted({fixture for _, fixture, _, _ in PLANTS}):
+        calls.append((fixture, error_mode))
+    for macro, fixture, _, _ in PLANTS:
+        calls.append((fixture, error_mode, ("-S", "-o", os.devnull), (f"-D{macro}",)))
+    calls += [
+        ("src/fixy/SocketDoor.cpp", error_mode),
+        ("low_includes_high.cpp", error_mode),
+        ("low_includes_high.cpp", error_mode, ("-S", "-o", os.devnull), ("-DHIGH_FIRST",)),
+        ("enforced.cpp", report_mode),
+        ("unclassified.cpp", report_mode),
+    ]
+    results = iter(section.compile_all(calls))
+    for fixture in sorted({fixture for _, fixture, _, _ in PLANTS}):
+        clean = next(results)
+        section.expect(f"{fixture} with no plant compiles in error mode", clean.returncode == 0, clean.stderr[-2000:])
+    for macro, fixture, kind, text in PLANTS:
+        planted = next(results)
+        errors = quarantine_errors(planted.stderr, kind)
+        section.expect(f"{fixture} with {macro} fails with one {kind} ({text})",
+                       planted.returncode != 0 and len(errors) == 1 and text in errors[0], planted.stderr[-2000:])
+    door = next(results)
+    section.expect("the door of <sys/socket.h> includes it with no finding", door.returncode == 0, door.stderr[-2000:])
+    for name in ("an include that enters High.h", "an include that #pragma once stops"):
+        compiled = next(results)
+        errors = quarantine_errors(compiled.stderr, "upward_include")
+        section.expect(f"{name}: fixy/Low.h has one upward include",
+                       compiled.returncode != 0 and len(errors) == 1 and "include/fixy/Low.h:8:" in errors[0]
+                       and "include/fixy/high/High.h (the layer high) from the layer low" in errors[0],
+                       compiled.stderr[-2000:])
+    enforced = next(results)
+    section.expect("an enforce row with the mode error makes a finding an error in report mode",
+                   enforced.returncode != 0 and len(quarantine_errors(enforced.stderr, "raw_pointer_object")) == 1,
+                   enforced.stderr[-2000:])
+    unclassified = next(results)
+    section.expect("a file that no row of the table holds is an error",
+                   unclassified.returncode != 0 and "no layer row and no quarantine row of the rule table holds "
+                   "'unclassified.cpp'" in unclassified.stderr.replace("‘", "'").replace("’", "'"),
+                   unclassified.stderr[-2000:])
+
+
+# (fixture, extra flags, line, the whole entity of a std_entity finding)
+LIBRARY_NAMES = (
+    ("nonclass.cpp", (), 13, "std::size_t"),
+    ("nonclass.cpp", (), 14, "std::byte"),
+    ("nonclass.cpp", (), 15, "std::nullptr_t"),
+    ("nonclass.cpp", (), 16, "std::align_val_t"),
+    ("nonclass.cpp", (), 17, "std::tuple_element_t"),
+    ("nonclass.cpp", (), 19, "std::size_t"),
+    ("nonclass.cpp", (), 25, "std::tuple_size_v"),
+    ("header_exact.cpp", (), 8, "std::experimental::nonesuch"),
+    ("meta_info.cpp", ("-freflection",), 7, "std::meta::info"),
+)
+# (fixture, line): no finding of any kind there.
+LIBRARY_NAMES_ABSENT = (
+    ("nonclass.cpp", 18),  # <type_traits> admits std::remove_cvref_t
+    ("nonclass.cpp", 20),  # a project alias of std::size_t names no library entity
+    ("nonclass.cpp", 23),  # the entry std::tuple_size admits std::tuple_size<T>::value
+    ("header_exact.cpp", 7),  # <type_traits> admits std::is_same
+)
+
+
+def run_library_names(section: Section) -> None:
+    """Compile the fixtures of the library names that are not classes, and of the exact header entry.
+
+    Each compile writes its report to a directory of its own, and the part
+    compares each report with LIBRARY_NAMES and LIBRARY_NAMES_ABSENT.
+    """
+    fixtures = sorted({(fixture, extra) for fixture, extra, _, _ in LIBRARY_NAMES})
+    calls: list[tuple[object, ...]] = []
+    for fixture, extra in fixtures:
+        out = section.work / f"library-names-{Path(fixture).stem}"
+        calls.append((fixture, {"root": str(HERE), "mode": "report", "rules": str(TEST_RULES), "out": str(out)},
+                      ("-S", "-o", os.devnull), extra))
+    findings: list[Finding] = []
+    for (fixture, _), compiled in zip(fixtures, section.compile_all(calls), strict=True):
+        section.expect(f"{fixture} compiles in report mode", compiled.returncode == 0, compiled.stderr[-2000:])
+        findings += read_reports(section.work / f"library-names-{Path(fixture).stem}")
+    for fixture, _, line, entity in LIBRARY_NAMES:
+        hits = [f for f in findings if f.kind == "std_entity" and f.file == fixture and f.line == line]
+        section.expect(f"std_entity {entity} at {fixture}:{line}", [f.entity for f in hits] == [entity],
+                       "; ".join(map(str, hits)))
+    for fixture, line in LIBRARY_NAMES_ABSENT:
+        hits = [f for f in findings if f.file == fixture and f.line == line]
+        section.expect(f"no finding at {fixture}:{line}", not hits, "; ".join(map(str, hits)))
+
+
+def run_table_readers(section: Section) -> None:
+    """Give the plugin and layer_rules.py each malformed table, and the test table and the tree table.
+
+    Each reader must refuse each malformed table and read each good table.
+    """
+    tables = section.work / "tables"
+    tables.mkdir(exist_ok=True)
+    calls: list[tuple[object, ...]] = []
+    for index, (_, text) in enumerate(MALFORMED_TABLES):
+        path = tables / f"malformed-{index}.txt"
+        path.write_text(text, encoding="utf-8")
+        calls.append(("plant_std.cpp", {"root": str(HERE), "mode": "report", "rules": str(path)}))
+    for (name, text), compiled in zip(MALFORMED_TABLES, section.compile_all(calls), strict=True):
+        try:
+            layer_rules.parse(text)
+            is_refused_by_python = False
+        except layer_rules.TableError:
+            is_refused_by_python = True
+        section.expect(f"layer_rules.py refuses {name}", is_refused_by_python)
+        section.expect(f"the plugin refuses {name}",
+                       compiled.returncode != 0 and "error: quarantine: " in compiled.stderr, compiled.stderr[-2000:])
+    for name, path in (("the test table", TEST_RULES), ("the tree table", layer_rules.TABLE)):
+        try:
+            layer_rules.load(path)
+            is_read = True
+        except layer_rules.TableError as failure:
+            is_read = False
+            section.expect(f"layer_rules.py reads {name}", False, str(failure))
+        if is_read:
+            section.expect(f"layer_rules.py reads {name}", True)
+
+
 def main(argv: list[str]) -> int:
     """Parse the arguments, build the plugin and run every case."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--cxx", required=True, help="the compiler that loads the plugins")
     parser.add_argument("--contract-source", required=True, type=Path, help="the source of the contract plugin")
     parser.add_argument("--source", required=True, type=Path, help="the source of the quarantine plugin")
-    parser.add_argument("--admitted", required=True, type=Path, help="the admitted list of the tree")
+    parser.add_argument("--rules", required=True, type=Path, help="the rule table of the tree")
     parser.add_argument("flags", nargs="*", help="the flags that build the plugins, after --")
     args = parser.parse_args(argv)
     with tempfile.TemporaryDirectory(prefix="quarantine-plugin-") as scratch:
@@ -503,7 +688,7 @@ def main(argv: list[str]) -> int:
         except RuntimeError as error:
             print(f"check_plugin: {error}", file=sys.stderr)
             return 2
-        sections = run(checker, args.admitted)
+        sections = run(checker, args.rules)
     for section in sections:
         print("\n".join(section.lines))
     failures = [failure for section in sections for failure in section.failures]

@@ -1,0 +1,39 @@
+# The rule table of the plugin test.  It stays apart from the rule table of the
+# tree, so a change of policy there does not change what the test expects.
+# The source root of a compile is this directory, its directory src/, or a
+# scratch tree of the test.  The rows fixy/ and foundation/ quarantine the
+# base files when src/ is the root.
+
+layer low 0 include/fixy/ src/foundation/ src/fixy/
+layer high 1 include/fixy/high/
+
+allow low <cstddef>
+allow low <cstring>
+allow low <source_location>
+allow low <vector>
+
+door <sys/socket.h> src/fixy/SocketDoor.cpp
+
+admit <type_traits> | a type trait is a compile-time query
+admit std::move | a cast to an rvalue reference
+admit std::tuple_size | a compile-time trait of the tuple protocol
+
+quarantine contracts.cpp
+quarantine end_without_region.cpp
+quarantine enforced.cpp
+quarantine header_exact.cpp
+quarantine low_includes_high.cpp
+quarantine meta_info.cpp
+quarantine nonclass.cpp
+quarantine opt_out.cpp
+quarantine plant_std.cpp
+quarantine region_outside_root.cpp
+quarantine region_without_reason.cpp
+quarantine unclosed_region.cpp
+quarantine violations.cpp
+quarantine fixy/
+quarantine foundation/
+quarantine generated_unit.cpp
+quarantine unclosed_unit.cpp
+
+enforce enforced.cpp error

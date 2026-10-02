@@ -17,6 +17,7 @@ layer_walks_across_headers_0
 layer_walks_across_headers_1
 layer_walks_across_headers_2
 layer_walks_across_headers_3
+rejections_generated
 test_armed_roster
 test_bench_harness
 test_checked
@@ -30,9 +31,11 @@ test_cntp_fec
 test_cntp_fountain
 test_cntp_path_swap
 test_collision
+test_compute
 test_concurrent_swmr_session
 test_crdt
 test_crucible_context
+test_diag
 test_endpoint
 test_expr_pool_fast_symbol
 test_federation_protocol

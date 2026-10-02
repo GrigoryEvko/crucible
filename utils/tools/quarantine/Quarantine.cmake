@@ -4,10 +4,10 @@
 # contract rule of the tree: a P2900 contract specifier is a compile error in
 # each file under the source root, also in a generated file of the build
 # directory.  quarantine.cpp builds the quarantine plugin,
-# crucible_quarantine.so.  Every source file outside the base
-# (include/foundation/, include/fixy/, src/foundation/ and src/fixy/) and the
-# build directory is quarantined, and the head of quarantine.cpp says what the
-# plugin reports.  The quarantine plugin applies the contract rule too.
+# crucible_quarantine.so.  It reads the rule table
+# utils/scripts/layer-rules.txt, which gives the base layers and the
+# quarantined directories, and the head of quarantine.cpp says what the plugin
+# reports.  The quarantine plugin applies the contract rule too.
 # plugin_core.h holds the part that the two share, and its section THE FILES
 # gives the class of each file.  Each plugin takes the build directory, so
 # the two plugins give each file the same class.
@@ -36,7 +36,7 @@
 # of the tree gets them.  execute_process builds the plugin, so the plugin is
 # not a target and it is not built with itself loaded.  A change of the
 # sources of the plugin, of its flags, of the compiler or (for the quarantine
-# plugin) of the admitted list configures again.  The stamp argument then
+# plugin) of the rule table configures again.  The stamp argument then
 # changes each compile line, and each object compiles again.  The stamp comes
 # from these inputs and not from the bytes of the plugin.  ccache ignores the
 # paths that the plugin arguments name, so the build directories of two work
@@ -55,7 +55,7 @@ endif()
 set(CRUCIBLE_CONTRACT_PLUGIN_SOURCE "${CMAKE_CURRENT_LIST_DIR}/contract.cpp")
 set(CRUCIBLE_QUARANTINE_SOURCE "${CMAKE_CURRENT_LIST_DIR}/quarantine.cpp")
 set(CRUCIBLE_PLUGIN_CORE "${CMAKE_CURRENT_LIST_DIR}/plugin_core.h")
-set(CRUCIBLE_QUARANTINE_ADMITTED "${CMAKE_SOURCE_DIR}/utils/scripts/quarantine-admitted-std.txt")
+set(CRUCIBLE_RULE_TABLE "${CMAKE_SOURCE_DIR}/utils/scripts/layer-rules.txt")
 
 # The flags that build a plugin.  GCC is built without RTTI, and the plugin
 # loads into cc1plus, so it finds the libstdc++ of the compiler through an
@@ -81,7 +81,7 @@ add_test(NAME quarantine_plugin
           --cxx "${CRUCIBLE_REAL_CXX}"
           --contract-source "${CRUCIBLE_CONTRACT_PLUGIN_SOURCE}"
           --source "${CRUCIBLE_QUARANTINE_SOURCE}"
-          --admitted "${CRUCIBLE_QUARANTINE_ADMITTED}"
+          --rules "${CRUCIBLE_RULE_TABLE}"
           -- ${CRUCIBLE_QUARANTINE_PLUGIN_FLAGS})
 set_tests_properties(quarantine_plugin PROPERTIES LABELS "ci_guard")
 
@@ -173,11 +173,11 @@ set(_crucible_quarantine_stamp_input "${_crucible_quarantine_key}")
 if(NOT CRUCIBLE_QUARANTINE STREQUAL "OFF")
   string(TOLOWER "${CRUCIBLE_QUARANTINE}" _crucible_quarantine_mode)
   list(APPEND _crucible_quarantine_flags
-    "${_crucible_quarantine_argument}-admitted=${CRUCIBLE_QUARANTINE_ADMITTED}"
+    "${_crucible_quarantine_argument}-rules=${CRUCIBLE_RULE_TABLE}"
     "${_crucible_quarantine_argument}-mode=${_crucible_quarantine_mode}")
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CRUCIBLE_QUARANTINE_ADMITTED}")
-  file(SHA256 "${CRUCIBLE_QUARANTINE_ADMITTED}" _crucible_quarantine_admitted_hash)
-  string(APPEND _crucible_quarantine_stamp_input " ${_crucible_quarantine_admitted_hash}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CRUCIBLE_RULE_TABLE}")
+  file(SHA256 "${CRUCIBLE_RULE_TABLE}" _crucible_quarantine_rules_hash)
+  string(APPEND _crucible_quarantine_stamp_input " ${_crucible_quarantine_rules_hash}")
 endif()
 string(SHA256 _crucible_quarantine_stamp "${_crucible_quarantine_stamp_input}")
 string(SUBSTRING "${_crucible_quarantine_stamp}" 0 16 _crucible_quarantine_stamp)
@@ -197,7 +197,7 @@ else()
     # ccache hashes the plugin path and the paths of the plugin arguments as
     # text, and each work tree has its own.  The stamp stays in the hash.
     list(APPEND CMAKE_CXX_COMPILER_LAUNCHER
-      "ignore_options=-fplugin=* ${_crucible_quarantine_argument}-root=* ${_crucible_quarantine_argument}-build=* ${_crucible_quarantine_argument}-admitted=*")
+      "ignore_options=-fplugin=* ${_crucible_quarantine_argument}-root=* ${_crucible_quarantine_argument}-build=* ${_crucible_quarantine_argument}-rules=*")
   endif()
 endif()
 foreach(_crucible_quarantine_flag IN LISTS _crucible_quarantine_flags)

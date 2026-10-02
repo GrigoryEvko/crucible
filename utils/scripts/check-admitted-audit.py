@@ -7,8 +7,10 @@ row for each name, and the flag matrix gives a static_assert for each property
 of each name.  This check keeps the three sources in step.
 
 THE INPUTS
-    utils/scripts/quarantine-admitted-std.txt    the admitted list, one
-                                                 `ENTRY | REASON` line each
+    utils/scripts/layer-rules.txt                the rule table.  Its admit
+                                                 rows are the admitted list,
+                                                 and utils/scripts/layer_rules.py
+                                                 reads them
     utils/scripts/quarantine-admitted-audit.txt  the audit table, one row of
                                                  nine fields each
     test/layer/admitted_flag_matrix.cpp          the flag matrix.  The check
@@ -56,10 +58,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import check_report  # noqa: E402
+import layer_rules  # noqa: E402
 import tsast  # noqa: E402
 
 CHECK = "admitted-audit"
-ADMITTED = Path("utils/scripts/quarantine-admitted-std.txt")
+ADMITTED = Path("utils/scripts/layer-rules.txt")
 TABLE = Path("utils/scripts/quarantine-admitted-audit.txt")
 MATRIX = Path("test/layer/admitted_flag_matrix.cpp")
 FIELDS = ("NAME", "ORIGIN", "FLAGS", "PREDICTABLE", "SAFE", "USES", "COST", "VERDICT", "REASON")
@@ -122,28 +125,20 @@ def error(path: Path, line: int, message: str) -> check_report.Finding:
 
 
 def read_admitted(root: Path, admitted: Path) -> tuple[dict[str, int], list[check_report.Finding]]:
-    """Read the entries of the admitted list.
+    """Read the admit rows of the rule table, which are the entries of the admitted list.
 
     Args:
         root: The root of the tree
-        admitted: The admitted list, relative to the root
+        admitted: The rule table, relative to the root
 
     Returns:
-        The line of each entry, and the findings of the lines that are not an entry
+        The line of each entry, and one finding when the table does not obey its format
     """
-    entries: dict[str, int] = {}
-    findings: list[check_report.Finding] = []
-    for number, raw in enumerate((root / admitted).read_text(encoding="utf-8").splitlines(), start=1):
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        entry, bar, reason = stripped.partition("|")
-        if not bar or not entry.strip() or not reason.strip():
-            findings.append(error(admitted, number, "a line of the admitted list is `ENTRY | REASON`, and this line "
-                                                    "is not.  Correct the line."))
-            continue
-        entries[entry.strip()] = number
-    return entries, findings
+    try:
+        table = layer_rules.parse((root / admitted).read_text(encoding="utf-8"), admitted.name)
+    except layer_rules.TableError as failure:
+        return {}, [error(admitted, 0, f"the rule table does not obey its format: {failure}.  Correct the row.")]
+    return {entry: line for entry, _, line in table.admits}, []
 
 
 def read_table(root: Path, table: Path) -> tuple[dict[str, Row], list[check_report.Finding]]:
@@ -270,7 +265,7 @@ def evaluate(root: Path, admitted: Path = ADMITTED, table: Path = TABLE,
 
     Args:
         root: The root of the tree
-        admitted: The admitted list, relative to the root
+        admitted: The rule table, whose admit rows are the admitted list, relative to the root
         table: The audit table, relative to the root
         matrix: The flag matrix, relative to the root
 
@@ -344,7 +339,8 @@ def self_test() -> int:
     candidate_sections = "".join(f"// name: {name}\nstatic_assert(true);\n" for name in sorted(CANDIDATES))
     with tempfile.TemporaryDirectory(prefix="admitted-audit-") as work:
         root = Path(work)
-        (root / "list.txt").write_text("# a comment\nstd::move | a cast\n<meta> | reflection\n", encoding="utf-8")
+        (root / "list.txt").write_text("# a comment\nadmit std::move | a cast\nadmit <meta> | reflection\n"
+                                       "quarantine test/\n", encoding="utf-8")
 
         def run(table: str, matrix: str) -> list[str]:
             """Evaluate one table and one matrix, and return the messages."""
@@ -412,6 +408,9 @@ def self_test() -> int:
         expect("a second section of one name is an error",
                any("std::byte has a second section" in text
                    for text in run(clean_table, clean_matrix + "// name: std::byte\nstatic_assert(true);\n")))
+        (root / "list.txt").write_text("admit std::move\n", encoding="utf-8")
+        expect("a rule table that does not obey its format is an error",
+               any("does not obey its format" in text for text in run(clean_table, clean_matrix)))
     if failures:
         print(f"check-admitted-audit --self-test: FAILED, {len(failures)} case(s)", file=sys.stderr)
         return 2

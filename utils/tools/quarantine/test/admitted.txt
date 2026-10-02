@@ -1,6 +1,0 @@
-# The admitted list of the plugin test.  It stays apart from the admitted list
-# of the tree, so a change of policy there does not change what the test
-# expects.
-
-<type_traits> | a type trait is a compile-time query
-std::move | a cast to an rvalue reference

@@ -23,7 +23,7 @@ utils/scripts/build-gauge.sh | compiler,git,text | the ninja log, the /usr/bin/t
 utils/scripts/build-launcher.py | compiler,text | the ccache stats log of each compile, the budget table and the ledger rows of the memory checks
 utils/scripts/build_census.py | json,text | the compile database, the output of ninja -t inputs and -t deps, the test list of ctest --show-only=json-v1, the records of the fixture driver and of the build launcher, and CMakeCache.txt
 utils/scripts/cache_dir.py | none |
-utils/scripts/check-admitted-audit.py | tsast,text | the rows of utils/scripts/quarantine-admitted-audit.txt and the entries of utils/scripts/quarantine-admitted-std.txt
+utils/scripts/check-admitted-audit.py | tsast,text | the rows of utils/scripts/quarantine-admitted-audit.txt and the admit rows of utils/scripts/layer-rules.txt
 utils/scripts/check-allowlist-keys.sh | text | the keys of the allowlists, and the paths in the Markdown guidance
 utils/scripts/check-atom-roster-joined.sh | compiler,text | the diagnostics of the sentinel compile, and the row constexpr-ops of utils/scripts/budgets.txt through utils/scripts/check_report.py
 utils/scripts/check-banned-calls.py | tsast,text | the allowlist rows and utils/scripts/fixy-only-paths.txt
@@ -52,7 +52,7 @@ utils/scripts/check-header-checks.py | tsast,compiler,json,text | the ledger row
 utils/scripts/check-header-constexpr-ops.py | compiler,json,text | the budget table, the rows of test/layer/header-constexpr-ops.txt and of test/layer/crucible-not-standalone.txt, and the diagnostics of the compiler
 utils/scripts/check-heavy-includes.py | tsast,compiler,text | the cost table utils/scripts/header-costs.txt, the ledger rows, the budget table, and in --measure the diagnostics and the -E output of the compiler
 utils/scripts/check-host-owners.py | tsast,text | the roster utils/scripts/host-owner-roster.txt
-utils/scripts/check-layer-boundary.py | tsast |
+utils/scripts/check-layer-boundary.py | tsast,text | the layer rows of the rule table utils/scripts/layer-rules.txt
 utils/scripts/check-lifetime-twin.py | tsast |
 utils/scripts/check-lock-free-asserts.py | tsast |
 utils/scripts/check-mint-pattern.py | tsast,text | the allowlist rows
@@ -91,6 +91,7 @@ utils/scripts/gen-aten-op-table.py | tsast,python-ast,text | native_functions.ya
 utils/scripts/gen-mint-inventory.py | tsast,text | misc/mint-inventory.md and the HS14 floor allowlist
 utils/scripts/install-ast-grep.sh | text,json | the release checksum, the version line and the matches of its fixture
 utils/scripts/install-tree-sitter.sh | text | the release checksum, the kit manifest and the parse of its fixture
+utils/scripts/layer_rules.py | text | the rule table utils/scripts/layer-rules.txt
 utils/scripts/loop_history.py | json,git,text | the ninja log, build.ninja, the records of the build launcher, /proc/stat and the lines of the history
 utils/scripts/mintmodel.py | tsast |
 utils/scripts/ninja_files.py | text | build.ninja and the ninja log of a build directory

@@ -8,8 +8,11 @@ or below it:
     include/fixy/        src/fixy/        names  foundation, fixy
     include/crucible/    the rest of src/ names  every project root
 
-A project root is a directory directly under include/, so a fourth root is a
-violation in the two lower layers until the table below admits it.  std and
+The layer rows of utils/scripts/layer-rules.txt give the first two lines.  The
+table has a finer order of layers inside foundation and fixy, and
+layer_rules.guard_layers() folds it into one layer for each project root.  A
+project root is a directory directly under include/, so a fourth root is a
+violation in the two lower layers until a layer row gives it a layer.  std and
 every system header are outside the rule.  The crucible layer may name every
 root, so only the two lower layers are read.
 
@@ -60,19 +63,22 @@ from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import layer_rules  # noqa: E402
 import tsast  # noqa: E402
 
-# The layer of each lower-layer directory, and the roots that layer may name.
-LAYERS: tuple[tuple[str, str], ...] = (
-    ("include/foundation/", "foundation"), ("src/foundation/", "foundation"),
-    ("include/fixy/", "fixy"), ("src/fixy/", "fixy"),
-)
-ALLOWED: dict[str, frozenset[str]] = {
-    "foundation": frozenset({"foundation"}),
-    "fixy": frozenset({"foundation", "fixy"}),
-    "crucible": frozenset(),
-}
 PROSE_SUFFIXES = (".md", ".txt")
+# The layer of a path that no lower layer holds.
+TOP_LAYER = "crucible"
+
+
+def table_layers() -> tuple[tuple[tuple[str, str], ...], dict[str, frozenset[str]]]:
+    """Return the scope prefix and the layer of each lower-layer directory, and the roots that each layer may name.
+
+    The rule table gives both (layer_rules.guard_layers).  The top layer may
+    name every root, so the guard reads no file of it.
+    """
+    layers, allowed = layer_rules.guard_layers(layer_rules.load())
+    return layers, {**allowed, TOP_LAYER: frozenset()}
 
 
 def project_roots(root: Path) -> frozenset[str]:
@@ -81,22 +87,23 @@ def project_roots(root: Path) -> frozenset[str]:
     return frozenset(path.name for path in base.iterdir() if path.is_dir()) if base.is_dir() else frozenset()
 
 
-def layer_of(rel: str) -> str:
+def layer_of(rel: str, layers: tuple[tuple[str, str], ...]) -> str:
     """Return the layer of a repo-relative path.
 
     Args:
         rel: A path relative to the scan root, in POSIX form
+        layers: The scope prefix and the layer of each lower-layer directory
 
     Returns:
-        foundation, fixy or crucible
+        The layer of the first prefix that holds the path, or TOP_LAYER
     """
-    for prefix, layer in LAYERS:
+    for prefix, layer in layers:
         if rel.startswith(prefix):
             return layer
-    return "crucible"
+    return TOP_LAYER
 
 
-def scope_files(root: Path) -> tuple[list[Path], list[str]]:
+def scope_files(root: Path, layers: tuple[tuple[str, str], ...]) -> tuple[list[Path], list[str]]:
     """Return the C++ files of the two lower layers, sorted, and each file of an unknown kind there.
 
     A C++ file is one whose suffix is in tsast.CPP_SUFFIXES, the one suffix
@@ -104,7 +111,7 @@ def scope_files(root: Path) -> tuple[list[Path], list[str]]:
     """
     found: list[Path] = []
     unknown: list[str] = []
-    for prefix, _ in LAYERS:
+    for prefix, _ in layers:
         base = root / prefix
         if not base.is_dir():
             continue
@@ -118,13 +125,14 @@ def scope_files(root: Path) -> tuple[list[Path], list[str]]:
     return sorted(found), sorted(unknown)
 
 
-def include_target(root: Path, rel: str, spelled: str) -> str | None:
+def include_target(root: Path, rel: str, spelled: str, layers: tuple[tuple[str, str], ...]) -> str | None:
     """Return the layer or root that one include names, or None for a system header.
 
     Args:
         root: The scan root
         rel: The including file, relative to the scan root
         spelled: The include path with its delimiters, `<a/b.h>` or `"a/b.h"`
+        layers: The scope prefix and the layer of each lower-layer directory
 
     Returns:
         The project root the include reaches, or None
@@ -136,7 +144,7 @@ def include_target(root: Path, rel: str, spelled: str) -> str | None:
             target = PurePosixPath(os.path.relpath(beside.resolve(), root.resolve()))
             if target.parts[:1] == ("include",) and len(target.parts) > 1:
                 return target.parts[1]
-            return layer_of(target.as_posix())
+            return layer_of(target.as_posix(), layers)
     parts = PurePosixPath(body).parts
     return parts[0] if len(parts) > 1 else None
 
@@ -171,7 +179,7 @@ USING_FORMS = {"namespace": "a using-directive", "enum": "a using-enum declarati
 
 
 def named_roots(root: Path, rel: str, tree: tsast.Tree, roots: frozenset[str],
-                macros: dict[str, str]) -> Iterator[tuple[int, str, str]]:
+                macros: dict[str, str], layers: tuple[tuple[str, str], ...]) -> Iterator[tuple[int, str, str]]:
     """Yield each root that a parsed file names, as (row, root, how).
 
     Complexity: linear in the number of nodes of the file.
@@ -182,6 +190,7 @@ def named_roots(root: Path, rel: str, tree: tsast.Tree, roots: frozenset[str],
         tree: The parse tree of the file
         roots: The project roots
         macros: The body of each object-like macro of the file, by name
+        layers: The scope prefix and the layer of each lower-layer directory
 
     Yields:
         The zero-based row, the root, and a short description of the form
@@ -199,7 +208,7 @@ def named_roots(root: Path, rel: str, tree: tsast.Tree, roots: frozenset[str],
             if not spelled.startswith(("<", '"')):
                 yield node.start[0], "?", "a computed include that no object-like macro of this file resolves"
                 continue
-        target = include_target(root, rel, spelled)
+        target = include_target(root, rel, spelled, layers)
         if target in roots:
             yield node.start[0], target, "an include"
     usings = tsast.using_names(tree)
@@ -277,8 +286,9 @@ def scan(root: Path) -> tuple[list[str], list[str]]:
     Returns:
         Each violation, and each file of an unknown kind
     """
+    layers, allowed = table_layers()
     roots = project_roots(root)
-    files, unknown = scope_files(root)
+    files, unknown = scope_files(root, layers)
     violations: list[str] = []
     trees: list[tuple[str, tsast.Tree]] = []
     for tree in tsast.parse(files, strict=False):
@@ -292,13 +302,14 @@ def scan(root: Path) -> tuple[list[str], list[str]]:
     for body in tsast.macro_bodies([tree for _, tree in trees]):
         bodies.setdefault(id(body.define.tree), []).append(body)
     for rel, tree in trees:
-        layer = layer_of(rel)
-        above = roots - ALLOWED[layer]
+        layer = layer_of(rel, layers)
+        above = roots - allowed[layer]
         own = bodies.get(id(tree), [])
         macros = {body.name: header_of(body) for body in own if not body.params
                   and body.define.type == "preproc_def"}
         hits: set[tuple[int, str, str]] = set()
-        hits.update(hit for hit in named_roots(root, rel, tree, roots, macros) if hit[1] in above or hit[1] == "?")
+        hits.update(hit for hit in named_roots(root, rel, tree, roots, macros, layers)
+                    if hit[1] in above or hit[1] == "?")
         for body in own:
             hits.update((row, name, "a word in a macro body") for row, name in macro_roots(body, above))
         for row, name, how in sorted(hits):
@@ -353,6 +364,19 @@ def self_test() -> int:
         print(f"  {'ok  ' if ok else 'FAIL'} {name}")
         if not ok:
             failures.append(name)
+
+    # The rule table of the tree gives the three-layer rule of the module text.
+    layers, allowed = table_layers()
+    expect("the rule table gives the scope prefixes of foundation and fixy",
+           set(layers) == {("include/foundation/", "foundation"), ("src/foundation/", "foundation"),
+                           ("include/fixy/", "fixy"), ("src/fixy/", "fixy")})
+    expect("the rule table orders foundation below fixy",
+           allowed.get("foundation") == {"foundation"} and allowed.get("fixy") == {"foundation", "fixy"})
+    planted_table = layer_rules.parse("layer low 0 include/fixy/\nlayer high 1 include/foundation/Up.h\n")
+    planted_layers, planted_allowed = layer_rules.guard_layers(planted_table)
+    expect("a planted table with fixy below foundation lets foundation name fixy",
+           planted_allowed.get("foundation") == {"fixy", "foundation"} and planted_allowed.get("fixy") == {"fixy"}
+           and ("include/foundation/", "foundation") in planted_layers)
 
     # Each line of the planted foundation header, and whether the guard flags it.
     planted: list[tuple[str, bool | None, str]] = [

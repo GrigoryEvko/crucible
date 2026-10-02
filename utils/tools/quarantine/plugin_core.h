@@ -1,28 +1,41 @@
 // The part that the two GCC plugins of this directory share: the files of the
-// source root, the opt-out regions, and the contract rule of the tree.
+// source root, the rule table, the opt-out regions, and the contract rule of
+// the tree.
 //
 // contract.cpp builds crucible_contract.so, which applies only the contract
 // rule, and a build loads it when CRUCIBLE_QUARANTINE is OFF.  quarantine.cpp
-// builds crucible_quarantine.so, which applies the quarantine rule and the
-// contract rule, and a build loads it when CRUCIBLE_QUARANTINE is REPORT or
-// ERROR.  A change of quarantine.cpp therefore does not change the plugin of a
-// build where CRUCIBLE_QUARANTINE is OFF, and its objects do not compile again.
+// builds crucible_quarantine.so, which applies the quarantine rule, the
+// include rules and the contract rule, and a build loads it when
+// CRUCIBLE_QUARANTINE is REPORT or ERROR.  A change of quarantine.cpp
+// therefore does not change the plugin of a build where CRUCIBLE_QUARANTINE is
+// OFF, and its objects do not compile again.
+//
+// THE RULE TABLE
+//     utils/scripts/layer-rules.txt gives the layers of the base, the headers
+//     that each layer can include, the door of each system header, the
+//     admitted entities of the standard library, the quarantined directories
+//     and the enforce mode of each path.  Its head comment gives the format,
+//     and utils/scripts/layer_rules.py reads the same format.  The quarantine
+//     plugin takes the table as rules=PATH.  The contract plugin takes no
+//     table.
 //
 // THE FILES
 //     Each file has one class, from its real path:
-//         base         include/foundation/, include/fixy/, src/foundation/
-//                      and src/fixy/ (rule R1 of
-//                      misc/01_10_2026_quarantine.md)
-//         generated    a file of the build directory, which the build writes
-//         quarantined  each other file under the source root
-//         outside      a system header, a file outside the source root, or a
-//                      scratch buffer
+//         base          a file that a layer row of the table holds
+//         quarantined   a file that a quarantine row of the table holds
+//         generated     a file of the build directory, which the build writes
+//         unclassified  a file under the source root that no row holds
+//         outside       a system header, a file outside the source root, or
+//                       a scratch buffer
+//     The longest path of a layer row or a quarantine row decides.  The
+//     quarantine plugin gives an error for each unclassified file that a unit
+//     reads.  The contract plugin reads no table, and it gives each file of
+//     the source root outside the build directory the quarantined class.
 //     The contract rule and the opt-out regions apply to each file under the
-//     source root: a base, a generated and a quarantined file.  The quarantine
-//     rule applies to a quarantined file only.  A place of the quarantine rule
-//     falls through a generated file to the point where its macro expands, as
-//     it falls through a system header.  Each plugin takes the build directory
-//     as build=PATH, so the two plugins give each file the same class.
+//     source root.  The quarantine rule applies to a quarantined file only.
+//     A place of the quarantine rule falls through a generated file to the
+//     point where its macro expands, as it falls through a system header.
+//     Each plugin takes the build directory as build=PATH.
 //
 // THE CONTRACT RULE
 //     A P2900 contract specifier (`pre` or `post` on a function declaration)
@@ -61,9 +74,11 @@
 
 #include <climits>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -88,15 +103,15 @@ enum class FileClass : std::uint8_t {
     generated,
     base,
     quarantined,
+    unclassified,
 };
-
-// The directories of the base, relative to the source root.
-inline constexpr const char* kBaseDirectories[] = {"include/foundation/", "include/fixy/", "src/foundation/",
-                                                   "src/fixy/"};
 
 struct FileEntry {
     FileClass file_class = FileClass::outside;
     std::string relative;  // empty when the file is outside the root
+    std::string real;  // the real path, empty for a scratch buffer
+    int layer = -1;  // the index of the layer row of a base file
+    bool is_error_mode = false;  // the enforce mode of the file is error
 };
 
 // The files that can own a place.
@@ -111,12 +126,44 @@ inline bool owns_place(FileClass file_class, Scope scope) {
         case FileClass::quarantined:
             return true;
         case FileClass::generated:
+        case FileClass::unclassified:
             return scope == Scope::tree;
         case FileClass::outside:
             return false;
     }
     return false;
 }
+
+// ── The rule table ──────────────────────────────────────────────────────
+
+struct LayerRow {
+    std::string name;
+    int rank = 0;
+    std::vector<std::string> paths;
+};
+
+struct DoorRow {
+    std::string header;  // the name inside the angle brackets
+    std::string owner;
+};
+
+struct EnforceRow {
+    std::string path;
+    bool is_error = false;
+};
+
+// The rows of the rule table, in the order of the file.  A header keeps the
+// name inside its angle brackets.
+struct RuleTable {
+    bool is_loaded = false;
+    std::vector<LayerRow> layers;
+    std::vector<std::pair<int, std::string>> allows;  // the layer index and the header
+    std::vector<DoorRow> doors;
+    std::vector<std::string> admitted_names;
+    std::vector<std::string> admitted_headers;  // "type_traits": the name inside the angle brackets
+    std::vector<std::string> quarantines;
+    std::vector<EnforceRow> enforces;
+};
 
 struct Place {
     FileClass file_class = FileClass::outside;
@@ -154,8 +201,14 @@ struct CoreState {
     std::string root;  // the real path of the source root, without a final '/'
     std::string build;  // the real path of the build directory, or empty
     bool was_reported = false;
+    RuleTable table;
 
-    std::unordered_map<const char*, FileEntry> files;
+    // One entry for each real path.  The empty path holds the entry of each
+    // scratch buffer.  A node of an unordered map keeps its address, so the
+    // pointers of `files` and `unclassified` stay valid.
+    std::unordered_map<std::string, FileEntry> entries;
+    std::unordered_map<const char*, const FileEntry*> files;  // by the file name of a line map
+    std::vector<const FileEntry*> unclassified;
     std::vector<Finding> findings;
     std::unordered_set<std::string> finding_keys;
     std::vector<Region> regions;
@@ -183,26 +236,93 @@ inline std::string real_path(const char* path) {
     return resolved;
 }
 
-inline const FileEntry& classify_file(const char* file) {
-    auto found = core.files.find(file);
-    if (found != core.files.end()) {
+// A path of a row holds a file: a directory holds each file under it, and a
+// file path holds that file only.
+inline bool row_holds(const std::string& path, const std::string& relative) {
+    return !path.empty() && path.back() == '/' ? has_prefix(relative, path) : relative == path;
+}
+
+// The class, the layer and the enforce mode of a file of the root that is not
+// generated.  The longest path decides.  Complexity: O(rows).
+inline void classify_by_table(FileEntry& entry) {
+    std::size_t best_length = 0;
+    bool is_found = false;
+    for (std::size_t index = 0; index < core.table.layers.size(); ++index) {
+        for (const std::string& path : core.table.layers[index].paths) {
+            if (row_holds(path, entry.relative) && (!is_found || path.size() > best_length)) {
+                entry.file_class = FileClass::base;
+                entry.layer = static_cast<int>(index);
+                best_length = path.size();
+                is_found = true;
+            }
+        }
+    }
+    for (const std::string& path : core.table.quarantines) {
+        if (row_holds(path, entry.relative) && (!is_found || path.size() > best_length)) {
+            entry.file_class = FileClass::quarantined;
+            entry.layer = -1;
+            best_length = path.size();
+            is_found = true;
+        }
+    }
+    if (!is_found) {
+        entry.file_class = FileClass::unclassified;
+    }
+    std::size_t mode_length = 0;
+    bool has_mode = false;
+    for (const EnforceRow& row : core.table.enforces) {
+        if (row_holds(row.path, entry.relative) && (!has_mode || row.path.size() > mode_length)) {
+            entry.is_error_mode = row.is_error;
+            mode_length = row.path.size();
+            has_mode = true;
+        }
+    }
+}
+
+// The entry of one real path, made and kept on the first request.
+inline const FileEntry& entry_of_real_path(const std::string& resolved) {
+    auto found = core.entries.find(resolved);
+    if (found != core.entries.end()) {
         return found->second;
     }
     FileEntry entry;
-    std::string resolved = file != nullptr ? real_path(file) : std::string{};
+    entry.real = resolved;
     if (!resolved.empty() && has_prefix(resolved, core.root + "/")) {
         entry.relative = resolved.substr(core.root.size() + 1);
         if (!core.build.empty() && has_prefix(resolved, core.build + "/")) {
             entry.file_class = FileClass::generated;
+        } else if (core.table.is_loaded) {
+            classify_by_table(entry);
         } else {
-            bool is_base = false;
-            for (const char* directory : kBaseDirectories) {
-                is_base = is_base || has_prefix(entry.relative, directory);
-            }
-            entry.file_class = is_base ? FileClass::base : FileClass::quarantined;
+            entry.file_class = FileClass::quarantined;
         }
     }
-    return core.files.emplace(file, std::move(entry)).first->second;
+    const FileEntry& stored = core.entries.emplace(resolved, std::move(entry)).first->second;
+    if (stored.file_class == FileClass::unclassified) {
+        core.unclassified.push_back(&stored);
+    }
+    return stored;
+}
+
+inline const FileEntry& classify_file(const char* file) {
+    auto found = core.files.find(file);
+    if (found != core.files.end()) {
+        return *found->second;
+    }
+    std::string resolved = file != nullptr ? real_path(file) : std::string{};
+    const FileEntry* entry = &entry_of_real_path(resolved);
+    core.files.emplace(file, entry);
+    return *entry;
+}
+
+// An error for each file of the root that the unit read and that no row of
+// the rule table holds.
+inline void report_unclassified() {
+    for (const FileEntry* entry : core.unclassified) {
+        error("quarantine: no layer row and no quarantine row of the rule table holds %qs; add a row for its "
+              "directory to the table",
+              entry->relative.c_str());
+    }
 }
 
 // The place of a location is its spelling location.  When the file that
@@ -530,6 +650,217 @@ inline void report_open_regions() {
                      kEndPragma);
         }
     }
+}
+
+// ── The reader of the rule table ────────────────────────────────────────
+
+inline std::string trimmed(const std::string& text) {
+    std::size_t first = text.find_first_not_of(" \t\r");
+    if (first == std::string::npos) {
+        return {};
+    }
+    std::size_t last = text.find_last_not_of(" \t\r");
+    return text.substr(first, last - first + 1);
+}
+
+inline std::vector<std::string> split_words(const std::string& text) {
+    std::vector<std::string> words;
+    std::size_t start = text.find_first_not_of(" \t");
+    while (start != std::string::npos) {
+        std::size_t end = text.find_first_of(" \t", start);
+        words.push_back(text.substr(start, end == std::string::npos ? std::string::npos : end - start));
+        start = end == std::string::npos ? end : text.find_first_not_of(" \t", end);
+    }
+    return words;
+}
+
+inline bool is_plain_path(const std::string& path) {
+    if (path.empty() || path.front() == '/') {
+        return false;
+    }
+    std::size_t start = 0;
+    std::size_t length = path.back() == '/' ? path.size() - 1 : path.size();
+    while (start <= length) {
+        std::size_t end = path.find('/', start);
+        if (end == std::string::npos || end > length) {
+            end = length;
+        }
+        std::string part = path.substr(start, end - start);
+        if (part.empty() || part == "." || part == "..") {
+            return false;
+        }
+        start = end + 1;
+    }
+    return true;
+}
+
+inline bool is_header(const std::string& text) { return text.size() >= 3 && text.front() == '<' && text.back() == '>'; }
+
+inline bool is_digits(const std::string& text) {
+    if (text.empty()) {
+        return false;
+    }
+    for (char character : text) {
+        if (character < '0' || character > '9') {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Reads the rule table at PATH into core.table.  The format and each check
+// are those of utils/scripts/layer_rules.py, and check_plugin.py gives the two
+// readers the same malformed tables.  Returns false after an error.
+inline bool load_rule_table(const std::string& path) {
+    FILE* stream = fopen(path.c_str(), "r");
+    if (stream == nullptr) {
+        error("quarantine: cannot read the rule table %s: %m", path.c_str());
+        return false;
+    }
+    std::string text;
+    char chunk[4096];
+    for (std::size_t count = 0; (count = fread(chunk, 1, sizeof chunk, stream)) > 0;) {
+        text.append(chunk, count);
+    }
+    fclose(stream);
+    RuleTable table;
+    std::vector<std::pair<std::string, std::string>> class_paths;  // a path of a layer or quarantine row, and its row
+    std::vector<std::pair<std::string, int>> allow_layers;  // the layer name of each allow row, and its line
+    std::vector<std::string> allow_headers;
+    bool is_valid = true;
+    int line_number = 0;
+    auto refuse = [&](const char* message) {
+        error("quarantine: %s:%d: %s", path.c_str(), line_number, message);
+        is_valid = false;
+    };
+    auto add_class_path = [&](const std::string& class_path, const std::string& row) {
+        for (const auto& [known, known_row] : class_paths) {
+            if (known == class_path) {
+                error("quarantine: %s:%d: the path %s is also in %s", path.c_str(), line_number, class_path.c_str(),
+                      known_row.c_str());
+                is_valid = false;
+                return;
+            }
+        }
+        class_paths.emplace_back(class_path, row);
+    };
+    std::size_t start = 0;
+    while (start <= text.size()) {
+        std::size_t end = text.find('\n', start);
+        std::string line = text.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        start = end == std::string::npos ? text.size() + 1 : end + 1;
+        ++line_number;
+        std::string content = trimmed(line);
+        if (content.empty() || content[0] == '#') {
+            continue;
+        }
+        std::size_t bar = content.find('|');
+        std::vector<std::string> words = split_words(content.substr(0, bar));
+        std::string reason = bar == std::string::npos ? std::string{} : trimmed(content.substr(bar + 1));
+        if (words.empty()) {
+            refuse("the row has a reason and no kind");
+            continue;
+        }
+        const std::string& kind = words[0];
+        std::vector<std::string> args(words.begin() + 1, words.end());
+        if (kind == "layer") {
+            if (args.size() < 3 || !is_digits(args[1])) {
+                refuse("a layer row is 'layer NAME RANK PATH...', with a RANK of digits");
+                continue;
+            }
+            LayerRow layer;
+            layer.name = args[0];
+            for (char digit : args[1]) {
+                layer.rank = layer.rank * 10 + (digit - '0');
+            }
+            for (const LayerRow& known : table.layers) {
+                if (known.name == layer.name) {
+                    refuse("the layer has a second row");
+                } else if (known.rank == layer.rank) {
+                    refuse("the rank belongs to a second layer");
+                }
+            }
+            for (std::size_t index = 2; index < args.size(); ++index) {
+                if (!is_plain_path(args[index])) {
+                    refuse("a path must be relative to the source root, with no '.', '..' or empty component");
+                    continue;
+                }
+                add_class_path(args[index], "the layer " + layer.name);
+                layer.paths.push_back(args[index]);
+            }
+            table.layers.push_back(std::move(layer));
+        } else if (kind == "allow") {
+            if (args.size() != 2 || !is_header(args[1])) {
+                refuse("an allow row is 'allow LAYER HEADER', with a HEADER in angle brackets");
+                continue;
+            }
+            allow_layers.emplace_back(args[0], line_number);
+            allow_headers.push_back(args[1].substr(1, args[1].size() - 2));
+        } else if (kind == "door") {
+            if (args.size() != 2 || !is_header(args[0]) || !is_plain_path(args[1]) || args[1].back() == '/') {
+                refuse("a door row is 'door HEADER OWNER', with a HEADER in angle brackets and one OWNER file");
+                continue;
+            }
+            DoorRow door{args[0].substr(1, args[0].size() - 2), args[1]};
+            for (const DoorRow& known : table.doors) {
+                if (known.header == door.header) {
+                    refuse("the header has a second door");
+                }
+            }
+            table.doors.push_back(std::move(door));
+        } else if (kind == "admit") {
+            if (args.size() != 1 || reason.empty()) {
+                refuse("an admit row is 'admit ENTRY | REASON', and the reason is necessary");
+                continue;
+            }
+            if (is_header(args[0])) {
+                table.admitted_headers.push_back(args[0].substr(1, args[0].size() - 2));
+            } else {
+                table.admitted_names.push_back(args[0]);
+            }
+        } else if (kind == "quarantine") {
+            if (args.size() != 1 || !is_plain_path(args[0])) {
+                refuse("a quarantine row is 'quarantine PATH', with a PATH relative to the source root");
+                continue;
+            }
+            add_class_path(args[0], "a quarantine row");
+            table.quarantines.push_back(args[0]);
+        } else if (kind == "enforce") {
+            if (args.size() != 2 || (args[1] != "report" && args[1] != "error") || !is_plain_path(args[0])) {
+                refuse("an enforce row is 'enforce PATH MODE', and MODE is report or error");
+                continue;
+            }
+            for (const EnforceRow& known : table.enforces) {
+                if (known.path == args[0]) {
+                    refuse("the path has a second enforce row");
+                }
+            }
+            table.enforces.push_back(EnforceRow{args[0], args[1] == "error"});
+        } else {
+            refuse("the row kind is unknown; the kinds are layer, allow, door, admit, quarantine and enforce");
+        }
+    }
+    for (std::size_t index = 0; index < allow_layers.size(); ++index) {
+        int layer = -1;
+        for (std::size_t known = 0; known < table.layers.size(); ++known) {
+            if (table.layers[known].name == allow_layers[index].first) {
+                layer = static_cast<int>(known);
+            }
+        }
+        if (layer < 0) {
+            error("quarantine: %s:%d: the allow row names the layer %s, and no layer row gives it", path.c_str(),
+                  allow_layers[index].second, allow_layers[index].first.c_str());
+            is_valid = false;
+            continue;
+        }
+        table.allows.emplace_back(layer, allow_headers[index]);
+    }
+    if (!is_valid) {
+        return false;
+    }
+    table.is_loaded = true;
+    core.table = std::move(table);
+    return true;
 }
 
 // ── The arguments that the two plugins share ────────────────────────────

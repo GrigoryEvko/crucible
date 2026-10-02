@@ -1,0 +1,139 @@
+# The rule table of the base layers and of the quarantine.
+#
+# The quarantine plugin of utils/tools/quarantine/ reads this table, and the
+# layer guard utils/scripts/check-layer-boundary.py reads it through
+# utils/scripts/layer_rules.py.  So each rule has one source.
+#
+# THE FORMAT
+#   One row on each line.  Spaces separate the words of a row.  A line that
+#   starts with '#' is a comment, and an empty line is no row.  A row can end
+#   with '| REASON'.  An admit row must have a reason.  A PATH is relative to
+#   the source root.  A PATH that ends with '/' is a directory, and each other
+#   PATH is one file.  A HEADER is a name in angle brackets, as an #include
+#   directive spells it.
+#
+# THE ROWS
+#   layer NAME RANK PATH...
+#       A layer of the base.  Each file under a PATH of the row is a base file
+#       of the layer.  A base file can include a header of its own layer and
+#       of each layer with a lower RANK.
+#   allow LAYER HEADER
+#       A file of LAYER, and a file of each layer with a higher RANK, can
+#       include the header HEADER.  Each other header that is not in the
+#       source root is a finding in a base file.
+#   door HEADER OWNER
+#       The file OWNER is the one file of the source root that can include
+#       the header HEADER.
+#   admit ENTRY | REASON
+#       A quarantined file can name the standard library entity ENTRY.  A
+#       qualified name admits the entity and each name in it, such as
+#       std::tuple_size<T>::value for std::tuple_size.  It admits no other
+#       name that starts with the same text: std::tuple_size_v needs its own
+#       row.  A header admits each entity that the header itself declares:
+#       the file that an #include of that exact name enters, and not a header
+#       with the same last name in a different directory.
+#   quarantine PATH
+#       Each file under PATH is quarantined.
+#   enforce PATH MODE
+#       MODE is report or error.  Each finding in a file under PATH that has
+#       error mode is a compile error in a build with
+#       CRUCIBLE_QUARANTINE=REPORT.  A finding in report mode is a line of the
+#       report of that build.
+#
+# THE LONGEST PATH
+#   When the PATHs of two rows hold one file, the longer PATH decides.  A
+#   layer row and a quarantine row decide the class of a file in this way.
+#   The plugin gives an error for a file under the source root that no layer
+#   row and no quarantine row holds.  A file that no enforce row holds has
+#   report mode.
+
+layer F0_floor 0 include/foundation/Platform.h include/foundation/Pinned.h
+layer F0_core 1 include/foundation/reflect/ include/foundation/contracts/ include/foundation/Brand.h include/foundation/Lifetime.h include/foundation/ByteSeal.h include/foundation/diag/FailClosed.h include/foundation/NoObject.h
+layer F0_primitives 2 include/foundation/core/ include/foundation/Simd.h include/foundation/Saturate.h include/foundation/AlignedBuffer.h include/foundation/SwissTableBuffer.h include/foundation/ThreadLocalRef.h include/foundation/ChannelBinding.h
+layer F1_algebra 3 include/foundation/ src/foundation/
+layer X1_wrappers 4 include/fixy/
+layer X2_binding 5 include/fixy/Fn.h include/fixy/Axis.h include/fixy/Atom.h include/fixy/atoms/ include/fixy/Collision.h include/fixy/Corpus.h include/fixy/Reject.h include/fixy/Insights.h include/fixy/Role.h include/fixy/Throws.h include/fixy/Federation.h
+layer X3_os 6 include/fixy/os/ src/fixy/os/
+layer X4_concurrent 7 include/fixy/concurrent/ include/fixy/handle/ src/fixy/concurrent/
+layer X5_session 8 include/fixy/session/
+
+allow F0_floor <cstddef>
+allow F0_floor <cstdint>
+allow F0_floor <type_traits>
+allow F0_floor <concepts>
+allow F0_floor <utility>
+allow F0_floor <compare>
+allow F0_floor <initializer_list>
+allow F0_floor <new>
+allow F0_floor <meta>
+
+door <linux/io_uring.h> include/fixy/os/Io.h
+door <sys/sendfile.h> include/fixy/os/Io.h
+door <linux/mempolicy.h> include/fixy/os/NumaPlacement.h
+door <sys/resource.h> include/fixy/os/Sched.h
+door <linux/netlink.h> include/fixy/os/Socket.h
+door <sys/socket.h> include/fixy/os/Socket.h
+door <linux/ptp_clock.h> include/fixy/os/Time.h
+door <sys/ioctl.h> include/fixy/os/Time.h
+
+admit <type_traits> | a type trait is a compile-time query, and it makes no object
+admit <concepts> | a concept is a compile-time predicate, and it makes no object
+admit <meta> | reflection runs at compile time only
+admit <limits> | numeric_limits gives compile-time constants of fundamental types
+admit std::move | a cast to an rvalue reference, and it makes no object
+admit std::forward | a cast that keeps the value category, and it makes no object
+admit std::move_if_noexcept | a cast to a reference, and it makes no object
+admit std::as_const | a cast to a const reference, and it makes no object
+admit std::to_underlying | a cast of an enumerator to the integer of its enumeration
+admit std::bit_cast | a copy of the bits into the type that the declaration of the result checks
+admit std::declval | an unevaluated operand only
+admit std::integer_sequence | a pack of compile-time integers, with no data
+admit std::make_integer_sequence | an alias of std::integer_sequence
+admit std::index_sequence | an alias of std::integer_sequence
+admit std::make_index_sequence | an alias of std::integer_sequence
+admit std::index_sequence_for | an alias of std::integer_sequence
+admit std::tuple_size | a compile-time trait of the tuple protocol
+admit std::tuple_element | a compile-time trait of the tuple protocol
+admit std::unreachable | a hint to the optimizer, and it makes no object
+admit std::size_t | a typedef of unsigned long on the two targets
+admit std::ptrdiff_t | a typedef of long on the two targets
+admit std::int8_t | a typedef of signed char on the two targets
+admit std::int16_t | a typedef of short on the two targets
+admit std::int32_t | a typedef of int on the two targets
+admit std::int64_t | a typedef of long on the two targets
+admit std::uint8_t | a typedef of unsigned char on the two targets
+admit std::uint16_t | a typedef of unsigned short on the two targets
+admit std::uint32_t | a typedef of unsigned int on the two targets
+admit std::uint64_t | a typedef of unsigned long on the two targets
+admit std::uintptr_t | a typedef of unsigned long on the two targets
+admit std::intmax_t | a typedef of long on the two targets
+admit std::uintmax_t | a typedef of unsigned long on the two targets
+admit std::uint_least32_t | a typedef of unsigned int on the two targets
+admit std::nullptr_t | the type of nullptr, with the size of a pointer
+admit std::meta::info | the type of a reflection, and the language refuses an object of it at run time
+admit std::byte | the type with the aliasing right, and not std::to_integer or the byte operators, which are other names
+admit std::align_val_t | the alignment argument of the allocation functions
+admit std::strong_ordering | the result of the operator <=>
+admit std::partial_ordering | the result of the operator <=> on a floating type
+admit std::is_eq | a constexpr and noexcept test of an ordering value
+admit std::is_neq | a constexpr and noexcept test of an ordering value
+admit std::is_lt | a constexpr and noexcept test of an ordering value
+admit std::is_gt | a constexpr and noexcept test of an ordering value
+
+quarantine bench/
+quarantine cmake/
+quarantine examples/
+quarantine include/crucible/
+quarantine src/
+quarantine test/
+quarantine utils/tools/
+quarantine vessel/
+
+enforce bench/ report
+enforce cmake/ report
+enforce examples/ report
+enforce include/crucible/ report
+enforce src/ report
+enforce test/ report
+enforce utils/tools/ report
+enforce vessel/ report
