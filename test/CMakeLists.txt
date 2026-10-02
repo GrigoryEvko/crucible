@@ -5312,7 +5312,9 @@ endif()
 #                    checks can call members_of on the reflection of a
 #                    namespace that a header opens, and no other file.  The
 #                    walk units of test/layer compile each listed file after
-#                    each header that can add to such a namespace.
+#                    each header that can add to such a namespace.  Each row
+#                    holds a weight, and a row with no measured weight gives
+#                    a warning.
 add_test(NAME layer_boundary_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-layer-boundary.py --self-test)
 add_test(NAME layer_boundary

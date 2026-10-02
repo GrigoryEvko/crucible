@@ -303,51 +303,135 @@ endforeach()
 # walks_across_headers.cpp includes each header of walk_headers.h, and then
 # each check file of walk_checks.h.  walk-checks.txt lists each check file
 # whose checks can call members_of on the reflection of a namespace that a
-# header opens, one row `<layer>/<path>.cpp | namespaces` each.
+# header opens, one row `<layer>/<path>.cpp | weight | namespaces` each.
 # utils/scripts/check-walk-units.py writes the list from the parse tree, and
-# the test walk_units fails when the list and the tree disagree.  The list
-# compiles in units of _walk_checks_per_unit check files.  On 2026-10-02,
-# walk_headers.h alone took 3.2 s of CPU time, the check file of
-# fixy/Collision.h added 5.3 s, and most check files added less than 0.2 s.
-# For the 105 check files of the list, units of 16 took 32.3 s of CPU time
-# together, and the longest unit took 9.7 s.  Units of 12 took 39.5 s, with
-# a longest unit of 8.9 s.  Each build compiles the units, so a refused
-# member stops the build.  file(CONFIGURE) rewrites a list only when its text
-# changes.
+# the test walk_units fails when the list and the tree disagree.  Each build
+# compiles the units, so a refused member stops the build.  file(CONFIGURE)
+# rewrites a list only when its text changes.
+#
+# The weight of a row is the share of its check file in a unit, in units of
+# 10^9 user instructions.  check-walk-units.py --measure BUILD_DIR writes the
+# weights.  A row with no measured weight gets the mean weight of the measured
+# rows.  When no row has a measured weight, each row weighs 1.0.  The number
+# of units is the total weight divided by _walk_weight_per_unit, rounded up.
+#
+# The check files go to the units in the order of their weights, the heaviest
+# first.  Each check file goes to the unit with the least weight at that time.
+# When two units have the same weight, it goes to the unit with fewer check
+# files.  So the longest unit holds the heaviest check file, or not much more
+# than the mean weight of a unit.
+#
+# Measured on 2026-10-02: a unit of walk_headers.h alone cost 15.6 G
+# instructions.  The 105 check files added 116.0 G, and the check file of
+# fixy/Collision.h added 22.9 G of it.  A unit for each 24.0 G of weight gives
+# 5 units.  The record of the build launcher also counts the preprocessor run
+# of ccache, which adds about 2.5 G to each unit.
+#
+# In one batch of compiles at the same load, 7 units of 16 check files in the
+# order of the list cost 197.9 G and 34.6 s of CPU time.  The largest of them
+# cost 61.8 G and 9.5 s.  The 5 weighted units cost 171.0 G and 29.1 s.  The
+# largest of them cost 38.9 G, and no unit took more than 6.5 s.
 file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/walk_headers/walk_headers.h"
      CONTENT "#pragma once\n${_walk_header_lines}" @ONLY)
-set(_walk_checks_per_unit 16)
+# The weights are in tenths of 10^9 instructions, because CMake has only
+# integer arithmetic.
+set(_walk_weight_per_unit 240)
 set(_walk_list "${CMAKE_CURRENT_SOURCE_DIR}/walk-checks.txt")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_walk_list}")
 file(STRINGS "${_walk_list}" _walk_rows ENCODING UTF-8)
 set(_walk_checks "")
+set(_walk_unmeasured "")
+set(_walk_measured_sum 0)
+set(_walk_measured_count 0)
 foreach(_row IN LISTS _walk_rows)
   string(STRIP "${_row}" _row)
   if(_row STREQUAL "" OR _row MATCHES "^#")
     continue()
   endif()
-  string(FIND "${_row}" " | " _cut)
-  if(_cut EQUAL -1)
-    message(FATAL_ERROR "test/layer/walk-checks.txt: the row `${_row}` has no ` | `.  Write the list again: python3 "
-                        "utils/scripts/check-walk-units.py --write")
+  if(NOT _row MATCHES "^([^ |]+) [|] (([0-9]+)[.]([0-9])|unmeasured) [|] [^|]+$")
+    message(FATAL_ERROR "test/layer/walk-checks.txt: the row `${_row}` is malformed.  A row is "
+                        "`<layer>/<path>.cpp | weight | namespaces`, and a weight is a number with one decimal or "
+                        "unmeasured.  Write the list again: python3 utils/scripts/check-walk-units.py --write")
   endif()
-  string(SUBSTRING "${_row}" 0 ${_cut} _check)
+  set(_check "${CMAKE_MATCH_1}")
+  set(_weight "${CMAKE_MATCH_2}")
+  set(_weight_units "${CMAKE_MATCH_3}")
+  set(_weight_tenths "${CMAKE_MATCH_4}")
   if(NOT _check IN_LIST _check_files)
     message(FATAL_ERROR "test/layer/walk-checks.txt: ${_check} is not a check file under test/layer/checks.  Write "
                         "the list again: python3 utils/scripts/check-walk-units.py --write")
   endif()
+  if(_check IN_LIST _walk_checks)
+    message(FATAL_ERROR "test/layer/walk-checks.txt: ${_check} has two rows.  Write the list again: python3 "
+                        "utils/scripts/check-walk-units.py --write")
+  endif()
   list(APPEND _walk_checks "${_check}")
+  if(_weight STREQUAL "unmeasured")
+    list(APPEND _walk_unmeasured "${_check}")
+  else()
+    math(EXPR "_walk_weight_of_${_check}" "${_weight_units} * 10 + ${_weight_tenths}")
+    math(EXPR _walk_measured_sum "${_walk_measured_sum} + ${_walk_weight_of_${_check}}")
+    math(EXPR _walk_measured_count "${_walk_measured_count} + 1")
+  endif()
 endforeach()
-list(SORT _walk_checks)
 list(LENGTH _walk_checks _walk_count)
 if(_walk_count EQUAL 0)
   message(FATAL_ERROR "test/layer/walk-checks.txt lists no check file, so the walks of the check files run with no "
                       "header in view.  Write the list again: python3 utils/scripts/check-walk-units.py --write")
 endif()
-math(EXPR _walk_last_unit "(${_walk_count} - 1) / ${_walk_checks_per_unit}")
+set(_walk_mean_weight 10)
+if(_walk_measured_count GREATER 0)
+  math(EXPR _walk_mean_weight "(${_walk_measured_sum} + ${_walk_measured_count} - 1) / ${_walk_measured_count}")
+endif()
+foreach(_check IN LISTS _walk_unmeasured)
+  set("_walk_weight_of_${_check}" "${_walk_mean_weight}")
+endforeach()
+
+# The heaviest check file first.  A key of ten digits sorts as text in the
+# order of its number, and two keys of equal weight sort by the check file.
+set(_walk_total 0)
+set(_walk_order "")
+foreach(_check IN LISTS _walk_checks)
+  math(EXPR _walk_total "${_walk_total} + ${_walk_weight_of_${_check}}")
+  math(EXPR _walk_rank "2000000000 - ${_walk_weight_of_${_check}}")
+  list(APPEND _walk_order "${_walk_rank}|${_check}")
+endforeach()
+list(SORT _walk_order)
+math(EXPR _walk_unit_count "(${_walk_total} + ${_walk_weight_per_unit} - 1) / ${_walk_weight_per_unit}")
+if(_walk_unit_count LESS 1)
+  set(_walk_unit_count 1)
+elseif(_walk_unit_count GREATER _walk_count)
+  set(_walk_unit_count ${_walk_count})
+endif()
+math(EXPR _walk_last_unit "${_walk_unit_count} - 1")
 foreach(_unit RANGE ${_walk_last_unit})
-  math(EXPR _walk_first "${_unit} * ${_walk_checks_per_unit}")
-  list(SUBLIST _walk_checks ${_walk_first} ${_walk_checks_per_unit} _unit_checks)
+  set(_walk_load_${_unit} 0)
+  set(_walk_size_${_unit} 0)
+  set(_walk_unit_checks_${_unit} "")
+endforeach()
+# Complexity: the number of check files times the number of units.
+foreach(_entry IN LISTS _walk_order)
+  string(FIND "${_entry}" "|" _cut)
+  math(EXPR _cut "${_cut} + 1")
+  string(SUBSTRING "${_entry}" ${_cut} -1 _check)
+  set(_least 0)
+  foreach(_unit RANGE ${_walk_last_unit})
+    if(${_walk_load_${_unit}} LESS ${_walk_load_${_least}}
+       OR (${_walk_load_${_unit}} EQUAL ${_walk_load_${_least}}
+           AND ${_walk_size_${_unit}} LESS ${_walk_size_${_least}}))
+      set(_least ${_unit})
+    endif()
+  endforeach()
+  list(APPEND _walk_unit_checks_${_least} "${_check}")
+  math(EXPR _walk_load_${_least} "${_walk_load_${_least}} + ${_walk_weight_of_${_check}}")
+  math(EXPR _walk_size_${_least} "${_walk_size_${_least}} + 1")
+endforeach()
+
+set(_walk_placed "")
+foreach(_unit RANGE ${_walk_last_unit})
+  set(_unit_checks ${_walk_unit_checks_${_unit}})
+  list(SORT _unit_checks)
+  list(APPEND _walk_placed ${_unit_checks})
   set(_unit_lines "")
   foreach(_check IN LISTS _unit_checks)
     string(APPEND _unit_lines "#include \"checks/${_check}\"\n")
@@ -361,6 +445,14 @@ foreach(_unit RANGE ${_walk_last_unit})
   target_compile_definitions(layer_walks_across_headers_${_unit} PRIVATE
     $<TARGET_PROPERTY:crucible,INTERFACE_COMPILE_DEFINITIONS>)
 endforeach()
+# Each check file of the list is in exactly one unit.
+list(SORT _walk_placed)
+set(_walk_listed ${_walk_checks})
+list(SORT _walk_listed)
+if(NOT _walk_placed STREQUAL _walk_listed)
+  message(FATAL_ERROR "test/layer/CMakeLists.txt did not put each check file of walk-checks.txt in exactly one walk "
+                      "unit.  Correct the division into units.")
+endif()
 
 # Each header of crucible-not-standalone.txt still fails to compile alone.
 # The test compiles it with the command of the crucible sentinels.  The

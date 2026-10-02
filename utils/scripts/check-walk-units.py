@@ -112,12 +112,30 @@ WHY THE FORM IS A DERIVED LIST
 THE LIST
     test/layer/walk-checks.txt holds one row for each selected check file:
 
-        <layer>/<path>.cpp | namespace, namespace, ...
+        <layer>/<path>.cpp | weight | namespace, namespace, ...
 
     The namespaces are the namespaces that the checks of the file can walk,
     each with its leading `::`, and unknown for a walk whose namespace the
-    analysis cannot name.  test/layer/CMakeLists.txt reads the paths, and
-    `--write` writes the list again from the tree.
+    analysis cannot name.  `--write` writes the list again from the tree.
+    It keeps the weight of each row that stays, and it gives a new row the
+    weight unmeasured.
+
+THE WEIGHTS
+    The weight of a row is the share of its check file in a walk unit: the
+    user instructions, in units of 10^9 with one decimal, that the check
+    file adds to a unit that holds only walk_headers.h.
+    test/layer/CMakeLists.txt reads the paths and the weights, and it
+    divides the check files into units by weight.  `--measure BUILD_DIR`
+    compiles the base unit and one unit for each check file of the list,
+    with the command of a walk unit from the compile database of the build,
+    and it writes each weight again.  The count is exact or absent
+    (utils/scripts/cost_meter.py), so a measure on a loaded host gives the
+    same weights.  A weight goes stale when a check file or a header that
+    it reads changes, and a stale weight makes the units uneven.  When a
+    unit then costs more than the warning threshold of the row
+    compile-instructions, the test compile_instructions warns.  Measure
+    again then.  The test walk_units warns about each unmeasured row, and it
+    refuses a weight that is not a number with one decimal.
 
 WHAT THE ANALYSIS CANNOT SEE
     With no types, the analysis does not follow these routes.  A walk that
@@ -139,20 +157,28 @@ WHAT THE ANALYSIS CANNOT SEE
 Usage
     check-walk-units.py [--warnings-dir DIR]   compare the tree with the list
     check-walk-units.py --write                write the list again from the tree
+    check-walk-units.py --measure BUILD_DIR [--jobs N]
+                                               measure the weight of each row and write the list again
     check-walk-units.py --explain CHECK_FILE   print the route of each walk of one check file
     check-walk-units.py --self-test            plant each route in a scratch tree and examine each verdict
 
 Exit 0 when the list agrees with the tree, 1 on a difference, a malformed
-row or a parse failure, 2 on a usage error or a failed self-test, 3 when
-the kit is not installed.
+row, a parse failure or a failed measure, 2 on a usage error or a failed
+self-test, 3 when the kit is not installed.
 """
 
 from __future__ import annotations
 
 import argparse
 import bisect
+import concurrent.futures
 import contextlib
 import io
+import json
+import multiprocessing
+import os
+import re
+import shlex
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -162,6 +188,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import check_report  # noqa: E402
+import cost_meter  # noqa: E402
 import tsast  # noqa: E402
 
 SCRIPT = "utils/scripts/check-walk-units.py"
@@ -172,6 +199,16 @@ CHECKS = "test/layer/checks"
 SEPARATOR = " | "
 # The tag of a walk whose namespace the analysis cannot name.
 UNKNOWN = "unknown"
+# The weight of a row that no measure gave a weight.
+UNMEASURED = "unmeasured"
+# A measured weight: instructions in units of 10^9, with one decimal.
+WEIGHT_FORM = re.compile(r"[0-9]+\.[0-9]")
+# The walk unit objects in the compile database, and the include directory of
+# the walk_checks.h of one unit.
+UNIT_OUTPUT = "/layer_walks_across_headers_"
+UNIT_INCLUDE = re.compile(r"-I(.*/test/layer/walk_units/[0-9]+)")
+# The default number of measure compiles at one time.
+MEASURE_JOBS = 8
 # The functions that walk the members of a namespace.  Only members_of takes
 # a namespace.  The other member queries of std::meta take a class.
 WALKS = frozenset({"members_of"})
@@ -219,8 +256,11 @@ LIST_HEADER = (
     "# test/layer/CMakeLists.txt compiles each listed file after each header that can add to\n"
     "# such a namespace, in test/layer/walks_across_headers.cpp.\n"
     "#\n"
-    "# A row:  <layer>/<path>.cpp | the namespaces that the checks can walk\n"
+    "# A row:  <layer>/<path>.cpp | weight | the namespaces that the checks can walk\n"
     "#   unknown stands for a walk whose namespace the analysis cannot name.\n"
+    "#   The weight is the share of the check file in a walk unit, in units of 10^9 instructions.\n"
+    "#   test/layer/CMakeLists.txt divides the check files into units by weight.  --write keeps\n"
+    "#   each weight, and --measure BUILD_DIR measures each weight again.\n"
 )
 
 NsTag = tuple[str, ...] | str
@@ -1593,14 +1633,34 @@ def derive(root: Path) -> tuple[Universe, dict[str, list[NsTag]]]:
     return universe, select(universe)
 
 
-def rows_of(selected: dict[str, list[NsTag]]) -> list[str]:
-    """Return the rows of the list for a selection."""
-    return [f"{rel}{SEPARATOR}{', '.join(shown_tag(tag) for tag in tags)}" for rel, tags in sorted(selected.items())]
+@dataclass(frozen=True)
+class ListRow:
+    """One row of the list: its line, the weight cell and the namespace cell."""
+
+    line: int
+    weight: str
+    namespaces: str
 
 
-def read_list(path: Path) -> tuple[dict[str, tuple[int, str]], list[tuple[int, str]]]:
-    """Read the list: each row by its check file, with its line, and each malformed row."""
-    rows: dict[str, tuple[int, str]] = {}
+def namespaces_of(tags: list[NsTag]) -> str:
+    """Return the namespace cell of a row for the tags of one check file."""
+    return ", ".join(shown_tag(tag) for tag in tags)
+
+
+def list_text(cells: list[tuple[str, str, str]]) -> str:
+    """Return the text of the list for (check file, weight, namespace cell) triples, in the order given."""
+    return LIST_HEADER + "".join(f"{rel}{SEPARATOR}{weight}{SEPARATOR}{namespaces}\n"
+                                 for rel, weight, namespaces in cells)
+
+
+def is_weight(cell: str) -> bool:
+    """Say whether a cell is a weight: a number with one decimal, or unmeasured."""
+    return cell == UNMEASURED or WEIGHT_FORM.fullmatch(cell) is not None
+
+
+def read_list(path: Path) -> tuple[dict[str, ListRow], list[tuple[int, str]]]:
+    """Read the list: each row by its check file, and each malformed row with its line."""
+    rows: dict[str, ListRow] = {}
     malformed: list[tuple[int, str]] = []
     if not path.is_file():
         return rows, [(0, f"{LIST} does not exist.  Run: python3 {SCRIPT} --write")]
@@ -1609,14 +1669,15 @@ def read_list(path: Path) -> tuple[dict[str, tuple[int, str]], list[tuple[int, s
         if not entry or entry.startswith("#"):
             continue
         cells = entry.split(SEPARATOR)
-        if len(cells) != 2 or not cells[0].endswith(".cpp") or not cells[1].strip():
-            malformed.append((number, f"the row is malformed: {entry}.  A row is `<layer>/<path>.cpp{SEPARATOR}"
-                                      f"namespace, ...`.  Run: python3 {SCRIPT} --write"))
+        if len(cells) != 3 or not cells[0].endswith(".cpp") or not is_weight(cells[1]) or not cells[2].strip():
+            malformed.append((number, f"the row is malformed: {entry}.  A row is `<layer>/<path>.cpp{SEPARATOR}weight"
+                                      f"{SEPARATOR}namespace, ...`, and a weight is a number with one decimal or "
+                                      f"{UNMEASURED}.  Run: python3 {SCRIPT} --write"))
             continue
         if cells[0] in rows:
             malformed.append((number, f"{cells[0]} has a row before this one.  Run: python3 {SCRIPT} --write"))
             continue
-        rows[cells[0]] = (number, entry)
+        rows[cells[0]] = ListRow(number, cells[1], cells[2])
     return rows, malformed
 
 
@@ -1630,23 +1691,27 @@ def check(root: Path, list_path: Path, warnings_dir: Path | None = None) -> int:
     rows, malformed = read_list(list_path)
     findings: list[check_report.Finding] = []
 
-    def report(path: str, line: int, message: str) -> None:
-        """Add one error finding."""
-        findings.append(check_report.Finding("error", path, line, CHECK, message))
+    def report(path: str, line: int, message: str, level: str = "error") -> None:
+        """Add one finding."""
+        findings.append(check_report.Finding(level, path, line, CHECK, message))
 
-    wanted = {row.split(SEPARATOR)[0]: row for row in rows_of(selected)}
-    for rel, row in sorted(wanted.items()):
+    wanted = {rel: namespaces_of(tags) for rel, tags in selected.items()}
+    for rel, namespaces in sorted(wanted.items()):
         if rel not in rows:
-            report(f"{CHECKS}/{rel}", 0, f"this check file can walk {row.split(SEPARATOR)[1]}, and {LIST} has no row "
-                                         f"for it, so no walk unit compiles it after the headers that can add to "
-                                         f"that namespace.  Run: python3 {SCRIPT} --write")
-        elif rows[rel][1] != row:
-            report(LIST, rows[rel][0], f"the row of {rel} is not the row that the tree gives: `{row}`.  Run: python3 "
-                                       f"{SCRIPT} --write")
-    for rel, (line, _entry) in sorted(rows.items()):
+            report(f"{CHECKS}/{rel}", 0, f"this check file can walk {namespaces}, and {LIST} has no row for it, so no "
+                                         f"walk unit compiles it after the headers that can add to that namespace.  "
+                                         f"Run: python3 {SCRIPT} --write")
+        elif rows[rel].namespaces != namespaces:
+            report(LIST, rows[rel].line, f"the row of {rel} names `{rows[rel].namespaces}`, and the tree gives "
+                                         f"`{namespaces}`.  Run: python3 {SCRIPT} --write")
+    for rel, row in sorted(rows.items()):
         if rel not in wanted:
-            report(LIST, line, f"{rel} walks no namespace that a header can add to, or it is not a check file, so a "
-                               f"walk unit compiles it for nothing.  Run: python3 {SCRIPT} --write")
+            report(LIST, row.line, f"{rel} walks no namespace that a header can add to, or it is not a check file, so "
+                                   f"a walk unit compiles it for nothing.  Run: python3 {SCRIPT} --write")
+        elif row.weight == UNMEASURED:
+            report(LIST, row.line, f"the row of {rel} has no measured weight, so test/layer/CMakeLists.txt gives it "
+                                   f"the mean weight of the measured rows.  Run: python3 {SCRIPT} --measure "
+                                   f"BUILD_DIR", "warning")
     for line, message in malformed:
         report(LIST, line, message)
     for path, message in universe.failures:
@@ -1659,7 +1724,7 @@ def check(root: Path, list_path: Path, warnings_dir: Path | None = None) -> int:
 
 
 def write(root: Path, list_path: Path) -> int:
-    """Write the list again from the tree.
+    """Write the list again from the tree, with the weight of each row that stays.
 
     Returns:
         0 when the list is written, 1 when a parse failure stops the write
@@ -1670,9 +1735,107 @@ def write(root: Path, list_path: Path) -> int:
             print(f"{path}: {message}", file=sys.stderr)
         print("check-walk-units: --write does not write the list while a file does not parse.", file=sys.stderr)
         return 1
+    rows, _malformed = read_list(list_path)
+    cells = [(rel, rows[rel].weight if rel in rows else UNMEASURED, namespaces_of(tags))
+             for rel, tags in sorted(selected.items())]
     list_path.parent.mkdir(parents=True, exist_ok=True)
-    list_path.write_text(LIST_HEADER + "".join(row + "\n" for row in rows_of(selected)), encoding="utf-8")
+    list_path.write_text(list_text(cells), encoding="utf-8")
     print(f"check-walk-units: {LIST} written with {len(selected)} row(s).", file=sys.stderr)
+    return 0
+
+
+class MeasureError(Exception):
+    """A measure that cannot run, with the reason and the repair."""
+
+
+def walk_unit_command(build_dir: Path) -> tuple[list[str], str, str]:
+    """Find the compile command of a walk unit in the compile database of a build.
+
+    Returns:
+        The arguments of the command, its directory, and the include directory of its walk_checks.h
+
+    Raises:
+        MeasureError: If the build has no compile database, or the database holds no walk unit
+    """
+    database = build_dir / "compile_commands.json"
+    if not database.is_file():
+        raise MeasureError(f"{database} does not exist.  Configure the build first, for example: cmake --preset "
+                           f"default")
+    for row in json.loads(database.read_text(encoding="utf-8")):
+        argv = row["arguments"] if "arguments" in row else shlex.split(row["command"])
+        if UNIT_OUTPUT not in row.get("output", "") and not any(UNIT_OUTPUT in arg for arg in argv):
+            continue
+        for arg in argv:
+            found = UNIT_INCLUDE.fullmatch(arg)
+            if found is not None:
+                return argv, row["directory"], found.group(1)
+        raise MeasureError(f"the walk unit command of {database} has no -I of a walk_units directory, so the measure "
+                           f"cannot give it another walk_checks.h.  Read test/layer/CMakeLists.txt.")
+    raise MeasureError(f"{database} holds no walk unit of test/layer/walks_across_headers.cpp.  Configure the build "
+                       f"again.")
+
+
+def measure_unit(command: list[str], directory: str, unit_dir: str, work: Path, checks: list[str]) -> int | None:
+    """Compile one walk unit that holds the given check files, and count its user instructions.
+
+    The function runs in a worker process, because cost_meter.measure sets a
+    signal handler, which only the main thread of a process can set.
+
+    Returns:
+        The user instructions of the compile, or None when it failed or the host gives no exact count
+    """
+    work.mkdir(parents=True, exist_ok=True)
+    (work / "walk_checks.h").write_text("#pragma once\n" + "".join(f'#include "checks/{check}"\n' for check in checks),
+                                        encoding="utf-8")
+    argv = [f"-I{work}" if arg == f"-I{unit_dir}" else arg for arg in command]
+    argv[argv.index("-o") + 1] = str(work / "unit.o")
+    os.chdir(directory)
+    run = cost_meter.measure(argv, count_instructions=True)
+    return run.instructions if run.exit_code == 0 else None
+
+
+def measure(build_dir: Path, list_path: Path, jobs: int) -> int:
+    """Measure the weight of each row of the list, and write the list again with the weights.
+
+    Complexity: one compile for each row and one more for the base, with jobs compiles at one time.
+
+    Returns:
+        0 when the list is written, 1 when the measure cannot run or a compile fails
+    """
+    rows, malformed = read_list(list_path)
+    for line, message in malformed:
+        print(f"{LIST}:{line}: {message}", file=sys.stderr)
+    if malformed or not rows:
+        print(f"check-walk-units: --measure measures the rows of a list with no malformed row.  Run: python3 {SCRIPT} "
+              f"--write", file=sys.stderr)
+        return 1
+    try:
+        command, directory, unit_dir = walk_unit_command(build_dir)
+    except MeasureError as exc:
+        print(f"check-walk-units: {exc}", file=sys.stderr)
+        return 1
+    units: dict[str, list[str]] = {"": [], **{rel: [rel] for rel in rows}}
+    counts: dict[str, int | None] = {}
+    with tempfile.TemporaryDirectory(prefix="walk-weights-") as work:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=jobs,
+                                                    mp_context=multiprocessing.get_context("fork")) as pool:
+            futures = {pool.submit(measure_unit, command, directory, unit_dir, Path(work) / f"unit{index}", checks): rel
+                       for index, (rel, checks) in enumerate(units.items())}
+            for future in concurrent.futures.as_completed(futures):
+                counts[futures[future]] = future.result()
+    failed = sorted(rel or "the base unit" for rel, count in counts.items() if count is None)
+    if failed:
+        print(f"check-walk-units: no exact count for {', '.join(failed)}.  A compile failed, or the host gives no "
+              f"instruction counter (utils/scripts/cost_meter.py).  The list stays as it was.", file=sys.stderr)
+        return 1
+    base = counts[""] or 0
+    weights = {rel: max(0, (counts[rel] or 0) - base) for rel in rows}
+    cells = [(rel, f"{weights[rel] / 1e9:.1f}", rows[rel].namespaces) for rel in sorted(rows)]
+    list_path.write_text(list_text(cells), encoding="utf-8")
+    heaviest = sorted(weights.items(), key=lambda item: (-item[1], item[0]))[:5]
+    print(f"check-walk-units: {LIST} written with {len(rows)} weight(s).  The base unit costs {base / 1e9:.1f} G "
+          f"instructions, and the check files add {sum(weights.values()) / 1e9:.1f} G.  The heaviest: "
+          + ", ".join(f"{rel} {count / 1e9:.1f} G" for rel, count in heaviest), file=sys.stderr)
     return 0
 
 
@@ -1886,19 +2049,52 @@ def self_test() -> int:
         code, report = captured(lambda: check(root, list_path))
         expect("a missing list fails", code == 1 and "does not exist" in report, True)
         expect("--write writes the list", captured(lambda: write(root, list_path))[0] == 0 and list_path.is_file())
-        expect("a list that agrees with the tree passes", captured(lambda: check(root, list_path))[0] == 0)
-        written = list_path.read_text(encoding="utf-8")
-        list_path.write_text(written.replace("fixy/Uses.cpp | ::foundation::tags\n", ""), encoding="utf-8")
+        code, report = captured(lambda: check(root, list_path))
+        expect("a list that agrees with the tree passes, and warns about each unmeasured row",
+               code == 0 and f"{LIST}:" in report and "has no measured weight" in report)
+        unmeasured = list_path.read_text(encoding="utf-8")
+        uses_row = f"fixy/Uses.cpp | {UNMEASURED} | ::foundation::tags\n"
+        expect("--write gives a new row the weight unmeasured", uses_row in unmeasured)
+        written = unmeasured.replace(uses_row, "fixy/Uses.cpp | 2.5 | ::foundation::tags\n")
+        list_path.write_text(written, encoding="utf-8")
+        code, report = captured(lambda: check(root, list_path))
+        expect("a measured row passes with no warning about it",
+               code == 0 and "the row of fixy/Uses.cpp has no measured weight" not in report)
+        captured(lambda: write(root, list_path))
+        expect("--write keeps the weight of a row that stays",
+               "fixy/Uses.cpp | 2.5 | ::foundation::tags\n" in list_path.read_text(encoding="utf-8"))
+        for weight in ("2.55", "2", "-1.0", "x"):
+            list_path.write_text(written.replace("fixy/Uses.cpp | 2.5 |", f"fixy/Uses.cpp | {weight} |"),
+                                 encoding="utf-8")
+            code, report = captured(lambda: check(root, list_path))
+            expect(f"a weight that is not a number with one decimal fails: {weight}",
+                   code == 1 and "the row is malformed" in report, True)
+        list_path.write_text(written.replace("fixy/Uses.cpp | 2.5 | ::foundation::tags\n", ""), encoding="utf-8")
         code, report = captured(lambda: check(root, list_path))
         expect("a check file that walks a namespace with no row fails",
                code == 1 and f"{CHECKS}/fixy/Uses.cpp:0: error: [{CHECK}]" in report, True)
-        list_path.write_text(written + "crucible/NoWalk.cpp | ::foundation::tags\n", encoding="utf-8")
+        list_path.write_text(written.replace("fixy/Uses.cpp | 2.5 | ::foundation::tags\n",
+                                             "fixy/Uses.cpp | 2.5 | ::foundation::rows\n"), encoding="utf-8")
+        code, report = captured(lambda: check(root, list_path))
+        expect("a row that names other namespaces than the tree gives fails",
+               code == 1 and "the row of fixy/Uses.cpp names `::foundation::rows`" in report, True)
+        list_path.write_text(written + "crucible/NoWalk.cpp | 0.1 | ::foundation::tags\n", encoding="utf-8")
         code, report = captured(lambda: check(root, list_path))
         expect("a row of a check file that walks no namespace fails",
                code == 1 and "crucible/NoWalk.cpp walks no namespace" in report, True)
         list_path.write_text(written + "a row with no separator\n", encoding="utf-8")
         code, report = captured(lambda: check(root, list_path))
         expect("a malformed row fails", code == 1 and "the row is malformed" in report, True)
+        list_path.write_text(written + "crucible/Registry.cpp | ::foundation::rows\n", encoding="utf-8")
+        code, report = captured(lambda: check(root, list_path))
+        expect("a row with no weight cell fails", code == 1 and "the row is malformed" in report, True)
+        code, report = captured(lambda: measure(root / "no-build", list_path, 1))
+        expect("--measure refuses a list with a malformed row", code == 1 and "no malformed row" in report, True)
+        list_path.write_text(written, encoding="utf-8")
+        code, report = captured(lambda: measure(root / "no-build", list_path, 1))
+        expect("--measure refuses a build with no compile database",
+               code == 1 and "compile_commands.json does not exist" in report
+               and list_path.read_text(encoding="utf-8") == written, True)
         (root / f"{INCLUDE}/fixy/Planted.h").write_text(
             "#pragma once\nnamespace foundation::tags { struct Planted {}; }\n", encoding="utf-8")
         list_path.write_text(written, encoding="utf-8")
@@ -1936,13 +2132,19 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="check-walk-units.py", add_help=True)
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--write", action="store_true", help="write the list again from the tree")
+    modes.add_argument("--measure", metavar="BUILD_DIR", type=Path,
+                       help="measure the weight of each row with the walk unit command of the build")
     modes.add_argument("--explain", metavar="CHECK_FILE", help="print the route of each walk of one check file")
     modes.add_argument("--self-test", action="store_true", help="plant each route and examine each verdict")
+    parser.add_argument("--jobs", type=int, default=MEASURE_JOBS, help="with --measure: the compiles at one time")
     check_report.add_arguments(parser)
     try:
         options = parser.parse_args(argv)
     except SystemExit as stop:
         return 0 if stop.code == 0 else 2
+    if options.jobs < 1:
+        print("check-walk-units: --jobs takes a number of 1 or more.", file=sys.stderr)
+        return 2
     root = tsast.REPO_ROOT
     list_path = root / LIST
     try:
@@ -1950,6 +2152,8 @@ def main(argv: list[str]) -> int:
             return self_test()
         if options.write:
             return write(root, list_path)
+        if options.measure is not None:
+            return measure(options.measure.resolve(), list_path, options.jobs)
         if options.explain is not None:
             return explain(root, options.explain)
         return check(root, list_path, options.warnings_dir)

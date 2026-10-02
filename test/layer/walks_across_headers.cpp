@@ -16,8 +16,9 @@
 // foundation and fixy header, and each crucible header that opens a
 // namespace of foundation or fixy.  This unit includes it, and then the
 // check files of walk_checks.h.  test/layer/CMakeLists.txt divides the check
-// files of test/layer/walk-checks.txt into several units, and
-// utils/scripts/check-walk-units.py derives that list from the parse tree:
+// files of test/layer/walk-checks.txt into several units by their measured
+// weights, and utils/scripts/check-walk-units.py derives that list from the
+// parse tree:
 // each check file whose checks can call members_of on the reflection of a
 // namespace that a header opens.  The include of the header at the top of a
 // check file then adds nothing, and its checks run with every member in
