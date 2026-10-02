@@ -135,13 +135,64 @@ struct head<fs::Offer<Bs...>> {
 template <typename H>
 void walk(H handle, Endpoint& self);
 
+// The transports of an endpoint, and the step to the next position.  Each
+// is one type at every protocol position, so a handle operation
+// instantiates its wait helpers once for each transport and not once for
+// each position.
+struct WordWriter {
+    Endpoint* self = nullptr;
+    bool operator()(Wire&, std::size_t word) const noexcept {
+        self->out->push(word);
+        return true;
+    }
+};
+
+struct ValueWriter {
+    Endpoint* self = nullptr;
+    template <typename T>
+    bool operator()(Wire&, T&) const noexcept {
+        self->out->push(value_word);
+        return true;
+    }
+};
+
+struct WordReader {
+    std::uint64_t word = 0;
+    std::optional<std::size_t> operator()(Wire&) const noexcept { return static_cast<std::size_t>(word); }
+};
+
+template <typename T>
+struct ValueReader {
+    std::optional<T> operator()(Wire&) const noexcept { return T{}; }
+};
+
+struct WalkOn {
+    Endpoint* self = nullptr;
+    template <typename H>
+    void operator()(H next) const {
+        walk(std::move(next), *self);
+    }
+};
+
+// Spends one action of fuel.  False when the endpoint has no fuel left,
+// and then the endpoint stops and closes its queue.
+[[gnu::noinline]] inline bool spend_fuel(Endpoint& self) {
+    if (self.fuel-- > 0) return true;
+    self.out->close();
+    return false;
+}
+
+// The next word for the endpoint.  False when its peer stopped and no
+// word is left, and then the endpoint stops and closes its queue.
+[[gnu::noinline]] inline bool take_word(Endpoint& self, std::uint64_t& word) {
+    if (self.in->pop(word)) return true;
+    self.out->close();
+    return false;
+}
+
 template <std::size_t... I, typename H>
 void select_branch(H handle, Endpoint& self, std::size_t pick, std::index_sequence<I...>) {
-    const auto write = [&](Wire&, std::size_t word) noexcept {
-        self.out->push(word);
-        return true;
-    };
-    (void)((pick == I ? (walk(std::move(handle).template select<I>(write), self), true) : false) || ...);
+    (void)((pick == I ? (walk(std::move(handle).template select<I>(WordWriter{&self}), self), true) : false) || ...);
 }
 
 template <typename H>
@@ -154,40 +205,23 @@ void walk(H handle, Endpoint& self) {
         self.out->close();
         return;
     } else {
-        if (self.fuel-- <= 0) {
-            self.out->close();
-            return;
-        }
+        if (!spend_fuel(self)) return;
         if constexpr (kind == 1) {
             using T = typename head<P>::message;
             if constexpr (H::is_keyed) {
-                walk(std::move(handle).send([&](Wire&, std::size_t word) noexcept {
-                    self.out->push(word);
-                    return true;
-                }),
-                     self);
+                walk(std::move(handle).send(WordWriter{&self}), self);
             } else {
-                walk(std::move(handle).send(T{},
-                                            [&](Wire&, T&) noexcept {
-                                                self.out->push(value_word);
-                                                return true;
-                                            }),
-                     self);
+                walk(std::move(handle).send(T{}, ValueWriter{&self}), self);
             }
         } else if constexpr (kind == 2) {
             using T = typename head<P>::message;
             std::uint64_t word = 0;
-            if (!self.in->pop(word)) {
-                self.out->close();
-                return;
-            }
+            if (!take_word(self, word)) return;
             if constexpr (H::is_keyed) {
-                walk(std::move(handle).recv(
-                         [&](Wire&) noexcept -> std::optional<std::size_t> { return static_cast<std::size_t>(word); }),
-                     self);
+                walk(std::move(handle).recv(WordReader{word}), self);
             } else {
                 if (word != value_word) std::_Exit(static_cast<int>(exit_code::desync));
-                auto [value, next] = std::move(handle).recv([](Wire&) noexcept -> std::optional<T> { return T{}; });
+                auto [value, next] = std::move(handle).recv(ValueReader<T>{});
                 (void)value;
                 walk(std::move(next), self);
             }
@@ -197,13 +231,8 @@ void walk(H handle, Endpoint& self) {
             select_branch(std::move(handle), self, pick, std::make_index_sequence<count>{});
         } else {
             std::uint64_t word = 0;
-            if (!self.in->pop(word)) {
-                self.out->close();
-                return;
-            }
-            std::move(handle).branch(
-                [&](Wire&) noexcept -> std::optional<std::size_t> { return static_cast<std::size_t>(word); },
-                [&](auto next) { walk(std::move(next), self); });
+            if (!take_word(self, word)) return;
+            std::move(handle).branch(WordReader{word}, WalkOn{&self});
         }
     }
 }
