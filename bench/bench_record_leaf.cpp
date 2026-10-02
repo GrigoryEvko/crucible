@@ -300,11 +300,16 @@ constexpr bool kGateOnP99 = false;
     std::fclose(f);
 
     size_t pos = 0;
-    auto field = [&](const char* key, size_t from, double& into) -> bool {
+    // The value of a key starts after "key":. The result is nullptr when the key is absent.
+    auto value_after = [&](const char* key, size_t from) -> const char* {
         const std::string needle = std::string("\"") + key + "\":";
-        size_t k = text.find(needle, from);
-        if (k == std::string::npos) return false;
-        into = std::strtod(text.c_str() + k + needle.size(), nullptr);
+        const size_t k = text.find(needle, from);
+        return k == std::string::npos ? nullptr : text.c_str() + k + needle.size();
+    };
+    auto field = [&](const char* key, size_t from, double& into) -> bool {
+        const char* value = value_after(key, from);
+        if (value == nullptr) return false;
+        into = std::strtod(value, nullptr);
         return true;
     };
     while ((pos = text.find("\"name\":", pos)) != std::string::npos) {
@@ -315,8 +320,9 @@ constexpr bool kGateOnP99 = false;
         Ceiling c;
         c.name = text.substr(q1 + 1, q2 - q1 - 1);
         if (!field("p50_ns", q2, c.p50_ns) || !field("p99_ns", q2, c.p99_ns)) break;
-        double gate_flag = 0.0;
-        c.gate = field("gate", q2, gate_flag) && gate_flag != 0.0;
+        // The gate field is the integer 0 or 1.
+        const char* gate_value = value_after("gate", q2);
+        c.gate = gate_value != nullptr && std::strtol(gate_value, nullptr, 10) != 0;
         out.push_back(std::move(c));
         pos = q2 + 1;
     }

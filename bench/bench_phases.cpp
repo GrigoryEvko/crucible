@@ -95,7 +95,7 @@ bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const Lo
         meta_log.reset();
         uint32_t cursor = 0;
         for (uint32_t i = 0; i < trace.num_ops; i++) {
-            const uint16_t n = trace.entries[i].num_inputs + trace.entries[i].num_outputs;
+            const uint16_t n = static_cast<uint16_t>(trace.entries[i].num_inputs + trace.entries[i].num_outputs);
             if (n > 0 && cursor + n <= trace.num_metas) {
                 (void)meta_log.try_append(&trace.metas[cursor], n);
                 cursor += n;
@@ -138,7 +138,7 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         meta_log.reset();
         uint32_t cursor = 0;
         for (uint32_t i = 0; i < trace.num_ops; i++) {
-            const uint16_t n = trace.entries[i].num_inputs + trace.entries[i].num_outputs;
+            const uint16_t n = static_cast<uint16_t>(trace.entries[i].num_inputs + trace.entries[i].num_outputs);
             if (n > 0 && cursor + n <= trace.num_metas) {
                 (void)meta_log.try_append(&trace.metas[cursor], n);
                 cursor += n;
@@ -272,7 +272,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         meta_log.reset();
         uint32_t cursor = 0;
         for (uint32_t i = 0; i < trace.num_ops; i++) {
-            const uint16_t n = trace.entries[i].num_inputs + trace.entries[i].num_outputs;
+            const uint16_t n = static_cast<uint16_t>(trace.entries[i].num_inputs + trace.entries[i].num_outputs);
             if (n > 0 && cursor + n <= trace.num_metas) {
                 (void)meta_log.try_append(&trace.metas[cursor], n);
                 cursor += n;

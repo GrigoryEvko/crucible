@@ -1060,11 +1060,9 @@ target_compile_options(crucible_dialect INTERFACE
 )
 
 if(CRUCIBLE_WERROR)
-  # Gated on target property so bench/ can opt out cleanly (benches
-  # legitimately ignore some [[nodiscard]] returns — they're measuring,
-  # not enforcing).  Library + tests keep full -Werror, with no exception.
-  target_compile_options(crucible_dialect INTERFACE
-    $<$<NOT:$<BOOL:$<TARGET_PROPERTY:CRUCIBLE_NO_WERROR>>>:-Werror>)
+  # Each target that consumes the dialect gets -Werror: the library, the
+  # tests, the benches and the tools.  No target has an exception.
+  target_compile_options(crucible_dialect INTERFACE -Werror)
 endif()
 
 # ═══════════════════════════════════════════════════════════════

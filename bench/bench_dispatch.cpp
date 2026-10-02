@@ -25,7 +25,6 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -98,7 +97,7 @@ OpData make_op(uint32_t iter, uint32_t op_idx) noexcept {
     uint16_t idx = 0;
     if (op_idx > 0) d.metas[idx++] = make_meta(fake_ptr(iter, op_idx - 1));
     d.metas[idx++] = make_meta(fake_ptr(iter, op_idx));
-    d.n_metas = d.entry.num_inputs + d.entry.num_outputs;
+    d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
     return d;
 }
 
@@ -117,11 +116,8 @@ void feed_trigger(Vigil& vigil, uint32_t iter) {
 }
 
 void wait_region_published(Vigil& vigil) {
-    uint64_t spins = 0;
-    while (!vigil.has_pending_region()) {
-        assert(++spins < 100000000 && "Vigil did not publish a region");
+    while (!vigil.has_pending_region())
         CRUCIBLE_SPIN_PAUSE;
-    }
 }
 
 void align_and_activate(Vigil& vigil, uint32_t iter) {
@@ -165,22 +161,20 @@ struct BenchRegion {
     void build(uint32_t n_ops, const SchemaHash* schemas, const ShapeHash* shapes) {
         auto* ops = arena.alloc_array<TraceEntry>(test.alloc, n_ops);
         for (uint32_t i = 0; i < n_ops; i++) {
-            std::memset(&ops[i], 0, sizeof(TraceEntry));
+            std::construct_at(&ops[i]);
             ops[i].schema_hash = schemas[i];
             ops[i].shape_hash = shapes[i];
             ops[i].num_inputs = (i == 0) ? 0 : 1;
             ops[i].num_outputs = 1;
 
             if (i > 0) {
-                ops[i].input_metas = arena.alloc_array<TensorMeta>(test.alloc, 1);
-                std::memset(ops[i].input_metas, 0, sizeof(TensorMeta));
+                ops[i].input_metas = std::construct_at(arena.alloc_obj<TensorMeta>(test.alloc));
                 ops[i].input_metas[0].ndim = 1;
                 ops[i].input_metas[0].sizes[0] = tensor_dim(1024);
                 ops[i].input_metas[0].strides[0] = tensor_dim(1);
                 ops[i].input_metas[0].dtype = ScalarType::Float;
             }
-            ops[i].output_metas = arena.alloc_array<TensorMeta>(test.alloc, 1);
-            std::memset(ops[i].output_metas, 0, sizeof(TensorMeta));
+            ops[i].output_metas = std::construct_at(arena.alloc_obj<TensorMeta>(test.alloc));
             ops[i].output_metas[0].ndim = 1;
             ops[i].output_metas[0].sizes[0] = tensor_dim(1024);
             ops[i].output_metas[0].strides[0] = tensor_dim(1);
@@ -207,8 +201,7 @@ struct BenchRegion {
             slots[i].is_external = false;
         }
 
-        plan = arena.alloc_obj<MemoryPlan>(test.alloc);
-        std::memset(plan, 0, sizeof(MemoryPlan));
+        plan = std::construct_at(arena.alloc_obj<MemoryPlan>(test.alloc));
         plan->slots = slots;
         plan->num_slots = n_ops;
         plan->num_external = 0;
@@ -538,7 +531,7 @@ int main() {
         for (uint32_t r = 0; r < NR; r++) {
             auto* ops = arena.alloc_array<TraceEntry>(test.alloc, NUM_OPS);
             for (uint32_t i = 0; i < NUM_OPS; i++) {
-                std::memset(&ops[i], 0, sizeof(TraceEntry));
+                std::construct_at(&ops[i]);
                 ops[i].schema_hash = SCHEMA[i];
                 ops[i].shape_hash = ShapeHash{SHAPE[i].raw() + r * 0x100};
             }

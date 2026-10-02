@@ -49,8 +49,6 @@ function(crucible_bench name)
     # are declared so we can batch them into one sudo invocation.
     set_property(GLOBAL APPEND PROPERTY CRUCIBLE_BENCH_CAP_TARGETS ${name})
   endif()
-  # Opt out of -Werror: benches ignore nodiscard returns by design.
-  set_target_properties(${name} PROPERTIES CRUCIBLE_NO_WERROR TRUE)
   # The folder marks the target as a bench in the CMake file API.
   # utils/scripts/pgo-bootstrap.sh reads the bench list from there.
   set_target_properties(${name} PROPERTIES FOLDER crucible_bench)
@@ -170,7 +168,6 @@ endif()
 add_executable(render_trace render_trace.cpp)
 target_link_libraries(render_trace PRIVATE crucible)
 target_compile_options(render_trace PRIVATE -O2)
-set_target_properties(render_trace PROPERTIES CRUCIBLE_NO_WERROR TRUE)
 
 # ── bench-caps target ────────────────────────────────────────────────
 #

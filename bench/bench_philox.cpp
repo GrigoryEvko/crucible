@@ -106,7 +106,7 @@ int main() {
         [&] {
             using foundation::simd::u32x8;
             const u32x8 ctr0(static_cast<uint32_t>(seed));
-            const u32x8 ctr1(static_cast<uint32_t>(seed + 1));
+            const u32x8 ctr1(static_cast<uint32_t>(seed) + 1u);
             const u32x8 ctr2(0u);
             const u32x8 ctr3(0u);
             const u32x8 key0(static_cast<uint32_t>(key));
@@ -168,7 +168,8 @@ int main() {
     auto r1 = Philox::generate(uint64_t{1}, uint64_t{2});
     auto r2 = Philox::generate(uint64_t{1}, uint64_t{2});
     for (int i = 0; i < 4; ++i) {
-        if (r1[i] != r2[i]) {
+        const auto lane = static_cast<std::size_t>(i);
+        if (r1[lane] != r2[lane]) {
             std::fprintf(stderr, "\n[FATAL] Philox non-deterministic!\n");
             return 1;
         }

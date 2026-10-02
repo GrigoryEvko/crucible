@@ -15,6 +15,7 @@
 #include <bit>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <span>
@@ -43,6 +44,11 @@ uint64_t bench_rand() noexcept {
     bench_rng_state ^= bench_rng_state >> 7;
     bench_rng_state ^= bench_rng_state << 17;
     return bench_rng_state;
+}
+
+[[noreturn]] CRUCIBLE_COLD void abort_full_ring(uint32_t appended, uint32_t total) noexcept {
+    std::fprintf(stderr, "bench_merkle_dag: the TraceRing is full after %u of %u ops\n", appended, total);
+    std::abort();
 }
 
 TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, Arena& arena, uint16_t n_in, uint16_t n_out,
@@ -271,7 +277,7 @@ int main(int argc, char* argv[]) {
             e.num_scalar_args = static_cast<uint16_t>(bench_rand() % 3);
             e.op_flags = static_cast<uint8_t>(e.op_flags | op_flag::GRAD_ENABLED);
 
-            const uint16_t total_metas = e.num_inputs + e.num_outputs;
+            const uint16_t total_metas = static_cast<uint16_t>(e.num_inputs + e.num_outputs);
             TensorMeta metas[8]{};
             for (uint16_t j = 0; j < total_metas && j < 8; j++) {
                 metas[j].ndim = 4;
@@ -286,7 +292,8 @@ int main(int argc, char* argv[]) {
                     std::bit_cast<void*>(static_cast<std::uintptr_t>(0x7f0000000000ULL + (i * 8 + j) * 0x1000)));
             }
             MetaIndex meta_start = meta_log.try_append(metas, total_metas);
-            ring->try_append(e, meta_start, ScopeHash{bench_rand()}, CallsiteHash{bench_rand()});
+            if (!ring->try_append(e, meta_start, ScopeHash{bench_rand()}, CallsiteHash{bench_rand()})) [[unlikely]]
+                abort_full_ring(i, N);
         }
 
         BackgroundThread bg;
@@ -311,7 +318,8 @@ int main(int argc, char* argv[]) {
             meta_log.reset();
             bench_rng_state = 0x1111222233334444ULL;
             for (uint32_t i = 0; i < n; i++) {
-                const uint16_t total_metas = saved_trace[i].num_inputs + saved_trace[i].num_outputs;
+                const uint16_t total_metas =
+                    static_cast<uint16_t>(saved_trace[i].num_inputs + saved_trace[i].num_outputs);
                 TensorMeta metas[8]{};
                 for (uint16_t j = 0; j < total_metas && j < 8; j++) {
                     metas[j].ndim = 4;
@@ -320,7 +328,9 @@ int main(int argc, char* argv[]) {
                     metas[j].data_ptr = external_data_ptr(
                         std::bit_cast<void*>(static_cast<std::uintptr_t>(0x7f0000000000ULL + (i * 8 + j) * 0x1000)));
                 }
-                meta_log.try_append(metas, total_metas);
+                // build_trace reads the metas at the indices in current_meta_starts, so this call
+                // does not use the returned index.
+                (void)meta_log.try_append(metas, total_metas);
             }
         };
 
@@ -354,10 +364,13 @@ int main(int argc, char* argv[]) {
             auto repopulate = [&] {
                 meta_log.reset();
                 uint32_t cursor = 0;
-                for (uint32_t i = 0; i < trace->num_ops; i++) {
-                    const uint16_t n = trace->entries[i].num_inputs + trace->entries[i].num_outputs;
+                for (uint32_t op_index = 0; op_index < trace->num_ops; op_index++) {
+                    const uint16_t n = static_cast<uint16_t>(trace->entries[op_index].num_inputs
+                                                             + trace->entries[op_index].num_outputs);
                     if (n > 0 && cursor + n <= trace->num_metas) {
-                        meta_log.try_append(&trace->metas[cursor], n);
+                        // build_trace reads the metas at the indices in current_meta_starts, so this
+                        // call does not use the returned index.
+                        (void)meta_log.try_append(&trace->metas[cursor], n);
                         cursor += n;
                     }
                 }

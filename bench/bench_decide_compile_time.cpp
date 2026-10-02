@@ -120,8 +120,8 @@ int main() {
     std::array<dc::Interval<std::uint64_t>, 8> ivs_disjoint{};
     for (std::size_t i = 0; i < ivs_disjoint.size(); ++i) {
         ivs_disjoint[i] = dc::Interval<std::uint64_t>{
-            .lo = static_cast<std::uint64_t>(i * 100),
-            .hi = static_cast<std::uint64_t>(i * 100 + 100),
+            .lo = i * 100,
+            .hi = i * 100 + 100,
         };
     }
 

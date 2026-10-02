@@ -66,7 +66,7 @@ int main() {
     {
         ExprPool pool{a};
         for (int i = 0; i < 10000; ++i) {
-            pool.integer(a, static_cast<int64_t>(i) + 5000);
+            (void)pool.integer(a, static_cast<int64_t>(i) + 5000);
         }
         const double load = static_cast<double>(pool.intern_size()) / static_cast<double>(pool.intern_capacity());
         std::printf("  hash-table load factor: %.1f%% (%zu / %zu entries, arena %zu B)\n\n", load * 100.0,
@@ -80,7 +80,7 @@ int main() {
         ExprPool pool{a};
         const Expr* e42 = pool.integer(a, 42);
         bench::do_not_optimize(e42);
-        auto r = bench::run("integer(42)  [cached, hit]", [&] {
+        auto report = bench::run("integer(42)  [cached, hit]", [&] {
             const Expr* r = pool.integer(a, 42);
             bench::do_not_optimize(r);
         });
@@ -89,7 +89,7 @@ int main() {
             std::fprintf(stderr, "[FATAL] interning broken!\n");
             std::exit(1);
         }
-        return r;
+        return report;
     }());
 
     reports.push_back([&] {

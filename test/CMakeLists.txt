@@ -212,7 +212,6 @@ crucible_test(test_arena)
 crucible_test(test_trace_ring)
 crucible_test(test_merkle_dag)
 crucible_test(test_merkle_dag_visualizer)
-set_target_properties(test_merkle_dag_visualizer PROPERTIES CRUCIBLE_NO_WERROR TRUE)
 crucible_test(test_vis_layout)  # vis/NetworkSimplex.h optimality, vis/SugiyamaLayout.h placement and layering, detect_u_shape
 crucible_test(test_memory_plan)
 # The DetSafe gate CLAUDE.md §XIII names first.  Labelled so it can be run
@@ -1176,9 +1175,7 @@ crucible_test(test_mimic_semaphore)
 # primitives, Snapshot::operator- and the affinity that a Run sets on the
 # calling thread.  Each short Run::measure loads the BPF sense hub when
 # the crucible target defines CRUCIBLE_HAVE_BPF, and a host without the
-# capabilities only prints a warning.  The SYSTEM include silences
-# -Werror diagnostics from the bench headers.  The .cpp of the test still
-# honours -Werror.
+# capabilities only prints a warning.
 crucible_test(test_bench_harness)
 # Exercises the crucible::warden module — bounds-enforcement policy rails
 # (SCHED_FIFO/RR priority clamp, mlock, CPU-pin helpers). Header-only,
@@ -1230,8 +1227,7 @@ crucible_test(test_perf_workload_profiler_smoke)
 # does not block the main thread, and that disabled/enabled Config
 # behave correctly across a region transition.
 crucible_test(test_vigil_deadline_watchdog)
-target_include_directories(test_bench_harness SYSTEM PRIVATE
-  ${CMAKE_SOURCE_DIR}/bench)
+target_include_directories(test_bench_harness PRIVATE ${CMAKE_SOURCE_DIR}/bench)
 
 # MetaLogSession.h — the typed-session facade over the production MetaLog
 # TensorMeta side channel.  Covers the permissioned endpoints, a session

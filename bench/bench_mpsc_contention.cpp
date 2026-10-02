@@ -91,7 +91,7 @@ struct BatchedPushWorker {
             const std::size_t remaining = kPerProducer - pushed;
             const std::size_t n = (remaining < BATCH) ? remaining : BATCH;
             for (std::size_t i = 0; i < n; ++i) {
-                buf[i] = base + static_cast<Item>(pushed + i);
+                buf[i] = base + (pushed + i);
             }
             std::size_t in_batch = 0;
             while (in_batch < n) {

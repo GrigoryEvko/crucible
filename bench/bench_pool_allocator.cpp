@@ -95,7 +95,7 @@ MemoryPlan make_mixed_plan(TensorSlot* slots, uint32_t n_internal, uint32_t n_ex
 void fill_random_indices(uint32_t* indices, uint32_t count, uint32_t num_slots) {
     std::mt19937 rng(42);
     for (uint32_t i = 0; i < count; i++) {
-        indices[i] = rng() % num_slots;
+        indices[i] = static_cast<uint32_t>(rng() % num_slots);
     }
 }
 

@@ -13,7 +13,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <vector>
 
 #include <crucible/CrucibleContext.h>
@@ -83,7 +82,6 @@ struct BenchRegion {
         plan.device_type = DeviceType::CPU;
         plan.device_idx = 0;
 
-        std::memset(&region, 0, sizeof(region));
         region.kind = TraceNodeKind::REGION;
         region.ops = ops;
         region.num_ops = n;
