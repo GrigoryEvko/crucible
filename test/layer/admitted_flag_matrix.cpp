@@ -6,9 +6,10 @@
 // those names: a type, a value, a size, a noexcept state or a result of a
 // constant evaluation.  test/layer/CMakeLists.txt compiles this file one time
 // for each flag set of the matrix: the Debug, Release, TSan, UBSan-strict,
-// verify and PGO presets, -D_GLIBCXX_DEBUG, -D_GLIBCXX_ASSERTIONS, NDEBUG and
-// each contract evaluation semantic.  So a flag that changes a property of a
-// name stops the build in the unit of that flag set.
+// verify and PGO presets, -D_GLIBCXX_ASSERTIONS, NDEBUG and each contract
+// evaluation semantic.  So a flag that changes a property of a name stops the
+// build in the unit of that flag set.  The rule table refuses each unit that
+// defines _GLIBCXX_DEBUG, so the matrix has no unit for it.
 //
 // A static_assert cannot see machine code.  The audit table gives the evidence
 // for the code of each name: the text of its definition after the preprocessor,
@@ -131,8 +132,9 @@ static_assert(std::is_same_v<decltype(std::meta::members_of(^^walked, std::meta:
 // Under _GLIBCXX_DEBUG, std::vector is std::__debug::vector.  Its debug
 // iterator over std::meta::info does not compile in a constant evaluation, so
 // std::define_static_array and a range-for over a query result do not compile.
-// The display string of a library container also changes.  No preset defines
-// the macro.
+// The display string of a library container also changes.  The rule table
+// refuses each unit that defines the macro, with the row
+// `admit <meta> unless _GLIBCXX_DEBUG`.
 #if !defined(_GLIBCXX_DEBUG)
 static_assert(std::define_static_array(std::meta::enumerators_of(^^Narrow)).size() == 2);
 static_assert(std::meta::display_string_of(^^std::vector<int>) == "std::vector<int>");

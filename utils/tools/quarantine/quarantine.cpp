@@ -172,6 +172,14 @@ enum class Role : std::uint8_t {
     return_value
 };
 
+// The use of a library class that the walk reads: the type of a parameter, or
+// each other use.  An admit row with the restriction `parameters` admits its
+// class only as the type of a parameter.
+enum class Use : std::uint8_t {
+    other,
+    parameter,
+};
+
 // ── The state of one translation unit ───────────────────────────────────
 
 // An #include directive of a base or a quarantined file whose target the
@@ -192,11 +200,14 @@ struct State {
     std::string out_dir;
     bool is_error_mode = false;
 
-    std::unordered_set<std::string> admitted_names;
-    // The real path of each file that an #include of an admitted header
-    // entered, and whether the last directive names an admitted header.
-    std::unordered_set<std::string> admitted_header_paths;
-    bool is_admitted_header_pending = false;
+    // The admit row of each name entry, and of each header entry by its name.
+    std::unordered_map<std::string, const AdmitRow*> admitted_names;
+    std::unordered_map<std::string, const AdmitRow*> admitted_headers;
+    // The admit row of each file that an #include of an admitted header
+    // entered, by its real path, and the row of the last directive when it
+    // names an admitted header.
+    std::unordered_map<std::string, const AdmitRow*> admitted_header_paths;
+    const AdmitRow* admitted_header_pending = nullptr;
 
     // The include rules.
     IncludeCallback previous_include = nullptr;
@@ -206,8 +217,9 @@ struct State {
     // Caches keyed by tree.  A garbage collection can free a tree and reuse
     // its address, so each collection clears them.  Nothing depends on them
     // for correctness: a finding is recorded one time for each place.
-    std::unordered_map<tree, tree> library_class_of;
-    std::unordered_map<tree, bool> admitted_of;
+    // The first two hold one map for each Use.
+    std::unordered_map<tree, tree> library_class_of[2];
+    std::unordered_map<tree, bool> admitted_of[2];
     std::unordered_map<tree, bool> default_argument_of;
     std::unordered_set<tree> walked;
 };
@@ -371,16 +383,64 @@ Library library_of(tree decl) {
     return top == global_namespace ? Library::c_library : Library::standard;
 }
 
-bool is_admitted_name(const std::string& name) {
-    if (state.admitted_names.count(name) != 0) {
-        return true;
+// The admit row of a qualified name: the row of the name, or of the first
+// enclosing name that has a row.  IS_EXACT tells whether the row names the
+// name itself.  Returns null when no row admits the name.
+const AdmitRow* admit_row_of_name(const std::string& name, bool& is_exact) {
+    auto found = state.admitted_names.find(name);
+    if (found != state.admitted_names.end()) {
+        is_exact = true;
+        return found->second;
     }
+    is_exact = false;
     for (std::size_t colon = name.find("::"); colon != std::string::npos; colon = name.find("::", colon + 2)) {
-        if (state.admitted_names.count(name.substr(0, colon)) != 0) {
-            return true;
+        auto enclosing = state.admitted_names.find(name.substr(0, colon));
+        if (enclosing != state.admitted_names.end()) {
+            return enclosing->second;
         }
     }
-    return false;
+    return nullptr;
+}
+
+// The parameter count of a function, without `this`, or -1 when DECL is no
+// function.
+int parameter_count(tree decl) {
+    if (decl != NULL_TREE && TREE_CODE(decl) == TEMPLATE_DECL) {
+        decl = DECL_TEMPLATE_RESULT(decl);
+    }
+    if (decl == NULL_TREE || TREE_CODE(decl) != FUNCTION_DECL) {
+        return -1;
+    }
+    int count = 0;
+    for (tree parameter = TYPE_ARG_TYPES(TREE_TYPE(decl)); parameter != NULL_TREE && parameter != void_list_node;
+         parameter = TREE_CHAIN(parameter)) {
+        ++count;
+    }
+    return DECL_IOBJ_MEMBER_FUNCTION_P(decl) ? count - 1 : count;
+}
+
+// A row admits DECL with its restrictions.  The plugin reads no base file, and
+// each path after `in` is a base path, so a row with `in` admits nothing in a
+// quarantined file.
+bool row_admits(const AdmitRow& row, tree decl, bool is_exact, Use use) {
+    if (!row.in_paths.empty()) {
+        return false;
+    }
+    if (row.arity >= 0 && parameter_count(decl) != row.arity) {
+        return false;
+    }
+    if (row.is_parameters_only && is_exact && use != Use::parameter) {
+        return false;
+    }
+    return !row.is_concepts_only || concept_definition_p(decl);
+}
+
+// A dependent qualified name, which names no declaration yet.  A restriction
+// that needs the declaration cannot apply, so only a row with `in` refuses it.
+bool is_admitted_name(const std::string& name) {
+    bool is_exact = false;
+    const AdmitRow* row = admit_row_of_name(name, is_exact);
+    return row != nullptr && row->in_paths.empty();
 }
 
 // A name entry admits the entity that it names and each name nested in it,
@@ -389,24 +449,30 @@ bool is_admitted_name(const std::string& name) {
 // std::tuple_element_t need their own entries.  A header entry admits each
 // entity that the header itself declares: the file that an #include of that
 // exact name enters, and not a header of the same last name in a different
-// directory, such as experimental/type_traits.
-bool is_admitted(tree decl) {
-    auto cached = state.admitted_of.find(decl);
-    if (cached != state.admitted_of.end()) {
+// directory, such as experimental/type_traits.  A restriction of the row
+// narrows what it admits (row_admits).
+bool is_admitted(tree decl, Use use = Use::other) {
+    std::unordered_map<tree, bool>& cache = state.admitted_of[static_cast<int>(use)];
+    auto cached = cache.find(decl);
+    if (cached != cache.end()) {
         return cached->second;
     }
-    bool is_listed = is_admitted_name(qualified_name(decl));
+    bool is_exact = false;
+    const AdmitRow* row = admit_row_of_name(qualified_name(decl), is_exact);
+    bool is_listed = row != nullptr && row_admits(*row, decl, is_exact, use);
     if (!is_listed) {
         const char* file = DECL_SOURCE_FILE(decl);
-        is_listed = file != nullptr && state.admitted_header_paths.count(classify_file(file).real) != 0;
+        auto header = file != nullptr ? state.admitted_header_paths.find(classify_file(file).real)
+                                      : state.admitted_header_paths.end();
+        is_listed = header != state.admitted_header_paths.end() && row_admits(*header->second, decl, false, use);
     }
-    state.admitted_of.emplace(decl, is_listed);
+    cache.emplace(decl, is_listed);
     return is_listed;
 }
 
 // ── The library class inside a type ─────────────────────────────────────
 
-tree library_class_in(tree type, int depth);
+tree library_class_in(tree type, int depth, Use use = Use::other);
 
 // The most general template of a class template specialization, or null.
 tree general_template_of(tree class_type) {
@@ -502,7 +568,9 @@ tree library_class_in_template_arguments(tree class_type, int depth) {
 // The walk looks through pointers, references, arrays, template arguments and
 // the enclosing class, and stops at an admitted class.  A function type is not
 // read: a callback that takes a std::string is not an object of that type.
-tree library_class_in(tree type, int depth) {
+// USE applies to the class at the outer level, through pointers and
+// references.  A template argument and an enclosing class are other uses.
+tree library_class_in(tree type, int depth, Use use) {
     if (type == NULL_TREE || type == error_mark_node || depth > 64) {
         return NULL_TREE;
     }
@@ -512,13 +580,13 @@ tree library_class_in(tree type, int depth) {
             if (FUNC_OR_METHOD_TYPE_P(TREE_TYPE(type))) {
                 return NULL_TREE;
             }
-            return library_class_in(TREE_TYPE(type), depth + 1);
+            return library_class_in(TREE_TYPE(type), depth + 1, use);
         case ARRAY_TYPE:
-            return library_class_in(TREE_TYPE(type), depth + 1);
+            return library_class_in(TREE_TYPE(type), depth + 1, use);
         case TYPENAME_TYPE:
             return library_class_in(TYPE_CONTEXT(type), depth + 1);
         case TYPE_PACK_EXPANSION:
-            return library_class_in(PACK_EXPANSION_PATTERN(type), depth + 1);
+            return library_class_in(PACK_EXPANSION_PATTERN(type), depth + 1, use);
         case RECORD_TYPE:
         case UNION_TYPE:
             break;
@@ -529,15 +597,16 @@ tree library_class_in(tree type, int depth) {
         return NULL_TREE;
     }
     tree main_type = TYPE_MAIN_VARIANT(type);
-    auto cached = state.library_class_of.find(main_type);
-    if (cached != state.library_class_of.end()) {
+    std::unordered_map<tree, tree>& cache = state.library_class_of[static_cast<int>(use)];
+    auto cached = cache.find(main_type);
+    if (cached != cache.end()) {
         return cached->second;
     }
     tree found = NULL_TREE;
     tree decl = TYPE_MAIN_DECL(main_type);
     if (decl != NULL_TREE && !LAMBDA_TYPE_P(main_type)) {
         if (library_of(decl) != Library::none) {
-            found = is_admitted(decl) ? NULL_TREE : main_type;
+            found = is_admitted(decl, use) ? NULL_TREE : main_type;
         } else {
             if (CLASS_TYPE_P(main_type) && CLASSTYPE_TEMPLATE_INFO(main_type) != NULL_TREE) {
                 found = library_class_in_template_arguments(main_type, depth);
@@ -548,7 +617,7 @@ tree library_class_in(tree type, int depth) {
             }
         }
     }
-    state.library_class_of.emplace(main_type, found);
+    cache.emplace(main_type, found);
     return found;
 }
 
@@ -608,7 +677,7 @@ void check_object(tree decl, Role role) {
             record(Kind::c_array_object, location, type_text(type));
         }
     }
-    if (tree found = library_class_in(type, 0)) {
+    if (tree found = library_class_in(type, 0, role == Role::parameter ? Use::parameter : Use::other)) {
         Kind kind = library_of(TYPE_MAIN_DECL(found)) == Library::c_library ? Kind::c_library_object : Kind::std_object;
         record(kind, location, qualified_name(found) + " (" + type_text(type) + ")");
     } else if (tree named = library_type_name_in(type, 0)) {
@@ -734,12 +803,45 @@ bool check_function_use(tree function, location_t location) {
     return false;
 }
 
-void check_overload_use(tree overload, location_t location) {
+// True when a call with ARGUMENTS arguments can call FUNCTION: the count is
+// at least the parameters with no default and at most all parameters, or the
+// function takes a pack or an ellipsis.
+bool takes_argument_count(tree function, int arguments) {
+    if (TREE_CODE(function) == TEMPLATE_DECL) {
+        function = DECL_TEMPLATE_RESULT(function);
+    }
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
+        return true;
+    }
+    tree parameter = TYPE_ARG_TYPES(TREE_TYPE(function));
+    if (DECL_IOBJ_MEMBER_FUNCTION_P(function) && parameter != NULL_TREE) {
+        parameter = TREE_CHAIN(parameter);
+    }
+    int needed = 0;
+    int total = 0;
+    for (; parameter != NULL_TREE && parameter != void_list_node; parameter = TREE_CHAIN(parameter)) {
+        if (PACK_EXPANSION_P(TREE_VALUE(parameter))) {
+            return arguments >= needed;
+        }
+        ++total;
+        needed += TREE_PURPOSE(parameter) == NULL_TREE ? 1 : 0;
+    }
+    return arguments >= needed && (parameter == NULL_TREE || arguments <= total);
+}
+
+// An overload set that the code names.  A template keeps the set of a
+// dependent call, and ARGUMENTS gives the argument count of that call, or -1.
+// Only a candidate that can take the count counts: std::move(value) then names
+// the cast of one argument and not the algorithm of three.
+void check_overload_use(tree overload, location_t location, int arguments = -1) {
     for (ovl_iterator candidate(overload, true); candidate; ++candidate) {
         tree function = *candidate;
         if (TREE_CODE(function) == OVERLOAD) {
-            check_overload_use(function, location);
+            check_overload_use(function, location, arguments);
             return;
+        }
+        if (arguments >= 0 && !takes_argument_count(function, arguments)) {
+            continue;
         }
         if (check_function_use(function, location)) {
             return;
@@ -950,7 +1052,8 @@ bool walk_call_without_immediate_defaults(tree call, BodyWalk& walk) {
 
 // One declaration that the code names, at the location of the expression that
 // holds it.
-void check_named(tree named, location_t location) {
+// ARGUMENTS is the argument count when NAMED is the callee of a call, or -1.
+void check_named(tree named, location_t location, int arguments = -1) {
     switch (TREE_CODE(named)) {
         case FUNCTION_DECL:
             check_function_use(named, location);
@@ -962,10 +1065,10 @@ void check_named(tree named, location_t location) {
             check_template_use(named, location);
             break;
         case OVERLOAD:
-            check_overload_use(named, location);
+            check_overload_use(named, location, arguments);
             break;
         case BASELINK:
-            check_overload_use(BASELINK_FUNCTIONS(named), location);
+            check_overload_use(BASELINK_FUNCTIONS(named), location, arguments);
             break;
         default:
             break;
@@ -1004,9 +1107,11 @@ void check_named_operands(tree node, location_t location) {
             break;
     }
     if (EXPR_P(node)) {
+        tree callee = TREE_CODE(node) == CALL_EXPR ? CALL_EXPR_FN(node) : NULL_TREE;
+        int arguments = callee != NULL_TREE ? call_expr_nargs(node) : -1;
         for (int index = 0; index < TREE_OPERAND_LENGTH(node); ++index) {
             if (tree operand = TREE_OPERAND(node, index)) {
-                check_named(operand, location);
+                check_named(operand, location, operand == callee ? arguments : -1);
             }
         }
     } else if (TREE_CODE(node) == TREE_LIST) {
@@ -1461,6 +1566,17 @@ void report() {
     finish_pending_include(nullptr);
     report_open_regions();
     report_unclassified();
+    // An admit row with `unless MACRO` refuses each unit that defines MACRO.
+    for (const AdmitRow& admit : core.table.admits) {
+        const std::string& macro = admit.unless_macro;
+        if (!macro.empty()
+            && cpp_defined(parse_in, reinterpret_cast<const unsigned char*>(macro.c_str()),
+                           static_cast<int>(macro.size()))) {
+            error("quarantine: the unit defines %s, and the rule table admits %s%s%s only in a unit that does not "
+                  "define it; remove the definition",
+                  macro.c_str(), admit.is_header ? "<" : "", admit.entry.c_str(), admit.is_header ? ">" : "");
+        }
+    }
     std::vector<std::string> lines;
     for (const Finding& finding : core.findings) {
         bool is_out = is_opted_out(finding);
@@ -1581,10 +1697,8 @@ void on_include(cpp_reader* reader, location_t location, const unsigned char* di
         state.previous_include(reader, location, directive, name, is_angle, comments);
     }
     finish_pending_include(nullptr);
-    state.is_admitted_header_pending =
-        is_angle != 0 && name != nullptr
-        && std::find(core.table.admitted_headers.begin(), core.table.admitted_headers.end(), name)
-               != core.table.admitted_headers.end();
+    auto header = is_angle != 0 && name != nullptr ? state.admitted_headers.find(name) : state.admitted_headers.end();
+    state.admitted_header_pending = header != state.admitted_headers.end() ? header->second : nullptr;
     Place place = place_of(location, Scope::quarantine);
     if (place.file == nullptr || name == nullptr) {
         return;
@@ -1615,9 +1729,9 @@ void on_include_file(void* gcc_data, void*) {
     if (map == nullptr || map->reason != LC_ENTER) {
         return;
     }
-    if (state.is_admitted_header_pending) {
-        state.is_admitted_header_pending = false;
-        state.admitted_header_paths.insert(entry.real);
+    if (state.admitted_header_pending != nullptr) {
+        state.admitted_header_paths.emplace(entry.real, state.admitted_header_pending);
+        state.admitted_header_pending = nullptr;
     }
     if (!state.pending.is_set) {
         return;
@@ -1659,8 +1773,10 @@ void on_finish(void*, void*) {
 }
 
 void on_collection(void*, void*) {
-    state.library_class_of.clear();
-    state.admitted_of.clear();
+    for (int use = 0; use < 2; ++use) {
+        state.library_class_of[use].clear();
+        state.admitted_of[use].clear();
+    }
     state.default_argument_of.clear();
     state.walked.clear();
     core.contract_walked.clear();
@@ -1717,7 +1833,9 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     if (!load_rule_table(rules_argument)) {
         return 1;
     }
-    state.admitted_names.insert(core.table.admitted_names.begin(), core.table.admitted_names.end());
+    for (const AdmitRow& admit : core.table.admits) {
+        (admit.is_header ? state.admitted_headers : state.admitted_names).emplace(admit.entry, &admit);
+    }
     cpp_callbacks* callbacks = cpp_get_callbacks(parse_in);
     state.previous_include = callbacks->include;
     callbacks->include = on_include;

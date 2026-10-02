@@ -89,7 +89,15 @@ MALFORMED_TABLES = (
     ("a header with two doors", "door <x.h> a.cpp\ndoor <x.h> b.cpp\n"),
     ("an admit row with no reason", "admit std::move\n"),
     ("an admit row with `until` and no family", "admit std::move until | a cast\n"),
-    ("an admit row with a word that is not `until`", "admit std::move after Scalar | a cast\n"),
+    ("an admit row with a word that is no restriction", "admit std::move after Scalar | a cast\n"),
+    ("a restriction two times", "admit std::move arity 1 arity 1 | a cast\n"),
+    ("an arity that is not digits", "admit std::move arity one | a cast\n"),
+    ("an arity of a header", "admit <utility> arity 1 | a cast\n"),
+    ("`concepts` of a name", "admit std::move concepts | a cast\n"),
+    ("`parameters` of a header", "admit <initializer_list> parameters | a list\n"),
+    ("`unless` with no identifier", "admit <meta> unless 1DEBUG | reflection\n"),
+    ("`in` with no path", "layer one 0 a/\nadmit std::move in | a cast\n"),
+    ("an `in` path outside the base", "layer one 0 a/\nquarantine b/\nadmit std::move in b/ | a cast\n"),
     ("an absolute path", "quarantine /a/\n"),
     ("a path with a parent component", "quarantine a/../b/\n"),
     ("a path with an empty component", "quarantine a//\n"),
@@ -321,6 +329,7 @@ def run(checker: Checker, rules: Path) -> list[Section]:
         run_generated_files,
         run_include_rules,
         run_library_names,
+        run_restrictions,
         run_table_readers,
     ]
     sections = [Section(checker) for _ in parts]
@@ -640,6 +649,43 @@ def run_library_names(section: Section) -> None:
     for fixture, line in LIBRARY_NAMES_ABSENT:
         hits = [f for f in findings if f.file == fixture and f.line == line]
         section.expect(f"no finding at {fixture}:{line}", not hits, "; ".join(map(str, hits)))
+
+
+# (the macro of the plant of a restriction, the kind, a text in the entity)
+RESTRICTION_PLANTS = (
+    ("PLANT_MOVE_ALGORITHM", "std_entity", "std::move"),
+    ("PLANT_RANGES_SWAP", "std_entity", "std::ranges::swap"),
+    ("PLANT_LIST_OBJECT", "std_object", "std::initializer_list"),
+    ("PLANT_TO_INTEGER", "std_entity", "std::to_integer"),
+    ("PLANT_BYTE_OPERATOR", "std_entity", "std::operator<<"),
+    ("PLANT_ALIGNMENT", "std_entity", "std::align_val_t"),
+)
+
+
+def run_restrictions(section: Section) -> None:
+    """Compile restricted.cpp in error mode with no plant, with each plant, and with _GLIBCXX_DEBUG.
+
+    The table restricted.txt holds the restrictions of the audit verdicts.
+    The file with no plant passes, each plant fails with a finding of its
+    restriction, and a unit that defines _GLIBCXX_DEBUG fails because of the
+    row `admit <meta> unless _GLIBCXX_DEBUG`.
+    """
+    error_mode = {"root": str(HERE), "mode": "error", "rules": str(HERE / "restricted.txt")}
+    calls: list[tuple[object, ...]] = [("restricted.cpp", error_mode)]
+    calls += [("restricted.cpp", error_mode, ("-S", "-o", os.devnull), (f"-D{macro}",))
+              for macro, _, _ in RESTRICTION_PLANTS]
+    calls.append(("restricted.cpp", error_mode, ("-S", "-o", os.devnull), ("-D_GLIBCXX_DEBUG",)))
+    results = iter(section.compile_all(calls))
+    clean = next(results)
+    section.expect("restricted.cpp with no plant compiles in error mode", clean.returncode == 0, clean.stderr[-2000:])
+    for macro, kind, text in RESTRICTION_PLANTS:
+        planted = next(results)
+        section.expect(f"restricted.cpp with {macro} fails with a {kind} of {text}",
+                       planted.returncode != 0 and any(text in row for row in quarantine_errors(planted.stderr, kind)),
+                       planted.stderr[-2000:])
+    debug = next(results)
+    section.expect("a unit that defines _GLIBCXX_DEBUG fails, because <meta> is admitted unless it does",
+                   debug.returncode != 0 and "the unit defines _GLIBCXX_DEBUG" in debug.stderr, debug.stderr[-2000:])
 
 
 def run_table_readers(section: Section) -> None:

@@ -35,8 +35,11 @@ THE RULES
        `// name: NAME`, and each section names a row.
     7. A section with the comment `// varies: MACRO` has a row whose FLAGS
        starts with `varies:` and names MACRO.
-    8. The admitted list applies each verdict.  A KEEP verdict has an entry,
-       and a DROP verdict has none.  A verdict `REPLACE: FAMILY` has the entry
+    8. The admitted list applies each verdict.  A KEEP verdict and a
+       KEEP-RESTRICTED verdict have an entry, and a DROP verdict has none.  The
+       plugin enforces each restriction through the restriction words of the
+       entry, and check_plugin.py holds a plant for each one.  A verdict
+       `REPLACE: FAMILY` has the entry
        `admit NAME until FAMILY`, and each entry with `until` has the verdict
        REPLACE of that family.
 
@@ -166,9 +169,11 @@ def verdict_findings(admitted: Path, table: Path, rows: dict[str, Row],
             continue
         entry = entries.get(name)
         family = verdict["family"]
-        if row.cells["VERDICT"] == "KEEP" and entry is None:
-            findings.append(error(table, row.line, f"the verdict of {name} is KEEP, and {admitted} has no admit row "
-                                                   f"for it.  Add `admit {name} | REASON`."))
+        is_kept = row.cells["VERDICT"] == "KEEP" or row.cells["VERDICT"].startswith("KEEP-RESTRICTED")
+        if is_kept and entry is None:
+            findings.append(error(table, row.line, f"the verdict of {name} is {row.cells['VERDICT'].split(':')[0]}, "
+                                                   f"and {admitted} has no admit row for it.  Add `admit {name} | "
+                                                   "REASON`, with the words of the restriction."))
         elif row.cells["VERDICT"] == "DROP" and entry is not None:
             findings.append(error(admitted, entry.line, f"the verdict of {name} is DROP, and the row admits it.  "
                                                         "Remove the row."))
@@ -474,6 +479,9 @@ def self_test() -> int:
         expect("a KEEP verdict with no admit row is an error",
                any("verdict of <meta> is KEEP" in text
                    for text in run_list(clean_list.replace("admit <meta> | reflection\n", ""), clean_table)))
+        expect("a KEEP-RESTRICTED verdict with no admit row is an error",
+               any("verdict of std::move is KEEP-RESTRICTED" in text
+                   for text in run_list(clean_list.replace("admit std::move | a cast\n", ""), clean_table)))
         expect("a DROP verdict with an admit row is an error",
                any("verdict of std::byte is DROP" in text
                    for text in run_list(clean_list + "admit std::byte | a type\n", clean_table)))

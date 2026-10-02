@@ -152,6 +152,19 @@ struct EnforceRow {
     bool is_error = false;
 };
 
+// One admit row and its restrictions, as the head comment of the table gives
+// them.  `until FAMILY` changes nothing in the plugin, so the row does not keep
+// it.
+struct AdmitRow {
+    std::string entry;  // a qualified name, or the name inside the angle brackets of a header
+    bool is_header = false;
+    int arity = -1;  // the parameter count of each admitted function, or -1
+    bool is_concepts_only = false;
+    bool is_parameters_only = false;
+    std::string unless_macro;
+    std::vector<std::string> in_paths;
+};
+
 // The rows of the rule table, in the order of the file.  A header keeps the
 // name inside its angle brackets.
 struct RuleTable {
@@ -159,8 +172,7 @@ struct RuleTable {
     std::vector<LayerRow> layers;
     std::vector<std::pair<int, std::string>> allows;  // the layer index and the header
     std::vector<DoorRow> doors;
-    std::vector<std::string> admitted_names;
-    std::vector<std::string> admitted_headers;  // "type_traits": the name inside the angle brackets
+    std::vector<AdmitRow> admits;
     std::vector<std::string> quarantines;
     std::vector<EnforceRow> enforces;
 };
@@ -708,6 +720,74 @@ inline bool is_digits(const std::string& text) {
     return true;
 }
 
+inline bool is_identifier(const std::string& text) {
+    if (text.empty() || (text[0] >= '0' && text[0] <= '9')) {
+        return false;
+    }
+    for (char character : text) {
+        bool is_word = (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z')
+                    || (character >= '0' && character <= '9') || character == '_';
+        if (!is_word) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The words of one admit row after the row kind: ENTRY, then each restriction
+// one time at most, in any order, and `in PATH...` last.  Returns false when a
+// restriction is unknown, repeated, malformed or does not fit the entry.
+inline bool parse_admit(const std::vector<std::string>& args, AdmitRow& row) {
+    row.entry = args[0];
+    row.is_header = is_header(args[0]);
+    if (row.is_header) {
+        row.entry = args[0].substr(1, args[0].size() - 2);
+    } else if (!args[0].empty() && args[0][0] == '<') {
+        return false;
+    }
+    std::vector<std::string> seen;
+    std::size_t index = 1;
+    while (index < args.size()) {
+        const std::string& word = args[index];
+        for (const std::string& known : seen) {
+            if (known == word) {
+                return false;
+            }
+        }
+        seen.push_back(word);
+        std::string value = index + 1 < args.size() ? args[index + 1] : std::string{};
+        if (word == "until" && !value.empty()) {
+            index += 2;
+        } else if (word == "arity" && is_digits(value) && !row.is_header) {
+            row.arity = 0;
+            for (char digit : value) {
+                row.arity = row.arity * 10 + (digit - '0');
+            }
+            index += 2;
+        } else if (word == "concepts" && row.is_header) {
+            row.is_concepts_only = true;
+            index += 1;
+        } else if (word == "parameters" && !row.is_header) {
+            row.is_parameters_only = true;
+            index += 1;
+        } else if (word == "unless" && is_identifier(value)) {
+            row.unless_macro = value;
+            index += 2;
+        } else if (word == "in" && !value.empty()) {
+            for (std::size_t path = index + 1; path < args.size(); ++path) {
+                if (!is_plain_path(args[path])) {
+                    return false;
+                }
+                row.in_paths.push_back(args[path]);
+            }
+            index = args.size();
+        } else {
+            return false;
+        }
+    }
+    return true;
+}
+
 // Reads the rule table at PATH into core.table.  The format and each check
 // are those of utils/scripts/layer_rules.py, and check_plugin.py gives the two
 // readers the same malformed tables.  Returns false after an error.
@@ -727,6 +807,7 @@ inline bool load_rule_table(const std::string& path) {
     std::vector<std::pair<std::string, std::string>> class_paths;  // a path of a layer or quarantine row, and its row
     std::vector<std::pair<std::string, int>> allow_layers;  // the layer name of each allow row, and its line
     std::vector<std::string> allow_headers;
+    std::vector<std::pair<std::string, int>> in_path_lines;  // each path after `in`, and its line
     bool is_valid = true;
     int line_number = 0;
     auto refuse = [&](const char* message) {
@@ -809,18 +890,17 @@ inline bool load_rule_table(const std::string& path) {
             }
             table.doors.push_back(std::move(door));
         } else if (kind == "admit") {
-            // The word after `until` names the family that replaces the entry.
-            // It changes nothing in the plugin.
-            if ((args.size() != 1 && args.size() != 3) || (args.size() == 3 && args[1] != "until") || reason.empty()) {
-                refuse("an admit row is 'admit ENTRY | REASON' or 'admit ENTRY until FAMILY | REASON', and the reason "
-                       "is necessary");
+            AdmitRow admit;
+            if (args.empty() || reason.empty() || !parse_admit(args, admit)) {
+                refuse("an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until "
+                       "FAMILY', 'arity N' and 'parameters' of a name, 'concepts' of a header, 'unless MACRO' and 'in "
+                       "PATH...', each one time, and the reason is necessary");
                 continue;
             }
-            if (is_header(args[0])) {
-                table.admitted_headers.push_back(args[0].substr(1, args[0].size() - 2));
-            } else {
-                table.admitted_names.push_back(args[0]);
+            for (const std::string& in_path : admit.in_paths) {
+                in_path_lines.emplace_back(in_path, line_number);
             }
+            table.admits.push_back(std::move(admit));
         } else if (kind == "quarantine") {
             if (args.size() != 1 || !is_plain_path(args[0])) {
                 refuse("a quarantine row is 'quarantine PATH', with a PATH relative to the source root");
@@ -857,6 +937,21 @@ inline bool load_rule_table(const std::string& path) {
             continue;
         }
         table.allows.emplace_back(layer, allow_headers[index]);
+    }
+    // The plugin reads no base file, so a path after `in` must be a base path.
+    for (const auto& [in_path, in_line] : in_path_lines) {
+        bool is_base = false;
+        for (const LayerRow& layer : table.layers) {
+            for (const std::string& layer_path : layer.paths) {
+                is_base = is_base || row_holds(layer_path, in_path);
+            }
+        }
+        if (!is_base) {
+            error("quarantine: %s:%d: the path %s after %<in%> is in no layer; an %<in%> path must be a path of the "
+                  "base",
+                  path.c_str(), in_line, in_path.c_str());
+            is_valid = false;
+        }
     }
     if (!is_valid) {
         return false;

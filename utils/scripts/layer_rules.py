@@ -36,12 +36,21 @@ class Layer:
 
 @dataclasses.dataclass(frozen=True)
 class Admit:
-    """One admit row: the entry, the family that replaces it (or ""), the reason and the line."""
+    """One admit row: the entry, its restriction words, the reason and the line.
+
+    `until` names the family that replaces the entry, or is "".  The other
+    fields are the restrictions that the head comment of the table gives.
+    """
 
     entry: str
     until: str
     reason: str
     line: int
+    arity: int = -1
+    concepts: bool = False
+    parameters: bool = False
+    unless: str = ""
+    in_paths: tuple[str, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -108,6 +117,55 @@ def _check_header(header: str, where: str) -> None:
         raise TableError(f"{where}: the header {header!r} must be a name in angle brackets, for example <cstdint>")
 
 
+def parse_admit(args: list[str], reason: str, number: int, where: str) -> Admit:
+    """Parse the words of one admit row after the row kind.
+
+    The words are ENTRY, then each restriction one time at most, in any order,
+    and `in PATH...` last.
+
+    Raises:
+        TableError: When a restriction is unknown, repeated, malformed or does not fit the entry
+    """
+    entry = args[0]
+    is_header = entry.startswith("<")
+    if is_header:
+        _check_header(entry, where)
+    fields: dict[str, object] = {}
+    index = 1
+    while index < len(args):
+        word = args[index]
+        if word in fields:
+            raise TableError(f"{where}: the restriction {word} is in the row two times")
+        value = args[index + 1] if index + 1 < len(args) else ""
+        if word == "until" and value:
+            fields[word] = value
+            index += 2
+        elif word == "arity" and value.isdigit() and not is_header:
+            fields[word] = int(value)
+            index += 2
+        elif word == "concepts" and is_header:
+            fields[word] = True
+            index += 1
+        elif word == "parameters" and not is_header:
+            fields[word] = True
+            index += 1
+        elif word == "unless" and value.isascii() and value.isidentifier():
+            fields[word] = value
+            index += 2
+        elif word == "in" and value:
+            for path in args[index + 1:]:
+                _check_path(path, where)
+            fields["in_paths"] = tuple(args[index + 1:])
+            index = len(args)
+        else:
+            raise TableError(f"{where}: {word!r} is no restriction of this entry.  The restrictions are 'until "
+                             f"FAMILY', 'arity N' and 'parameters' of a name, 'concepts' of a header, 'unless MACRO' "
+                             f"and 'in PATH...', each one time")
+    return Admit(entry, str(fields.get("until", "")), reason, number, int(fields.get("arity", -1)),
+                 bool(fields.get("concepts", False)), bool(fields.get("parameters", False)),
+                 str(fields.get("unless", "")), tuple(fields.get("in_paths", ())))  # type: ignore[arg-type]
+
+
 def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
     """Parse the text of a rule table.
 
@@ -129,6 +187,7 @@ def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
     enforces: list[tuple[str, str]] = []
     class_paths: dict[str, str] = {}
     allow_lines: list[tuple[str, str]] = []
+    in_path_lines: list[tuple[str, str]] = []
     for number, line in enumerate(text.splitlines(), start=1):
         content = line.strip()
         if not content or content.startswith("#"):
@@ -170,10 +229,12 @@ def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
                 raise TableError(f"{where}: the header {args[0]} has a second door")
             doors.append((args[0], args[1]))
         elif kind == "admit":
-            if len(args) not in (1, 3) or (len(args) == 3 and args[1] != "until") or not reason:
-                raise TableError(f"{where}: an admit row is 'admit ENTRY | REASON' or 'admit ENTRY until FAMILY | "
-                                 f"REASON', and the reason is necessary")
-            admits.append(Admit(args[0], args[2] if len(args) == 3 else "", reason, number))
+            if not args or not reason:
+                raise TableError(f"{where}: an admit row is 'admit ENTRY [RESTRICTION...] | REASON', and the reason "
+                                 f"is necessary")
+            admit = parse_admit(args, reason, number, where)
+            admits.append(admit)
+            in_path_lines.extend((path, where) for path in admit.in_paths)
         elif kind == "quarantine":
             if len(args) != 1:
                 raise TableError(f"{where}: a quarantine row is 'quarantine PATH'")
@@ -193,6 +254,10 @@ def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
     for layer_name, where in allow_lines:
         if layer_name not in known:
             raise TableError(f"{where}: the allow row names the layer {layer_name}, and no layer row gives it")
+    for path, where in in_path_lines:
+        if not any(holds(layer_path, path) for layer in layers for layer_path in layer.paths):
+            raise TableError(f"{where}: the path {path} after `in` is in no layer.  The plugin reads no base file, "
+                             f"so an `in` path must be a path of the base")
     return RuleTable(tuple(layers), tuple(allows), tuple(doors), tuple(admits), tuple(quarantines),
                      tuple(enforces))
 

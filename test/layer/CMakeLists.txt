@@ -471,7 +471,9 @@ endif()
 # flags of a set give each flag of its preset that changes a macro, the
 # optimization level, a sanitizer or the contract semantic.  The PGO units need
 # no profile: the generate unit only writes instrumented code, and the use unit
-# finds no counter file and gives no warning.
+# finds no counter file and gives no warning.  The rule table refuses each unit
+# that defines _GLIBCXX_DEBUG (`admit <meta> unless _GLIBCXX_DEBUG`), so the
+# matrix has no flag set for it.
 #
 # Measured on 2026-10-02: each unit takes approximately 0.35 s of CPU time.
 set(_matrix_release -O3 -march=native -DNDEBUG -U_GLIBCXX_ASSERTIONS -U_GLIBCXX_SANITIZE_VECTOR -fno-sanitize=all
@@ -490,7 +492,6 @@ set(_matrix_flags_pgo_generate ${_matrix_release} -fprofile-generate -fprofile-u
     -fcontract-evaluation-semantic=observe)
 set(_matrix_flags_pgo_use ${_matrix_release} -fprofile-use -fprofile-partial-training -Wno-missing-profile
     -fcontract-evaluation-semantic=observe)
-set(_matrix_flags_glibcxx_debug -D_GLIBCXX_DEBUG)
 set(_matrix_flags_glibcxx_assertions -D_GLIBCXX_ASSERTIONS=1)
 set(_matrix_flags_ndebug -DNDEBUG)
 set(_matrix_flags_contract_ignore ${CRUCIBLE_CONTRACT_IGNORE_OPTIONS})
@@ -498,7 +499,7 @@ set(_matrix_flags_contract_observe -fcontract-evaluation-semantic=observe)
 set(_matrix_flags_contract_enforce -fcontract-evaluation-semantic=enforce)
 set(_matrix_flags_contract_quick_enforce -fcontract-evaluation-semantic=quick_enforce)
 set(_matrix_units "")
-foreach(_set debug release tsan ubsan_strict verify pgo_generate pgo_use glibcxx_debug glibcxx_assertions ndebug
+foreach(_set debug release tsan ubsan_strict verify pgo_generate pgo_use glibcxx_assertions ndebug
              contract_ignore contract_observe contract_enforce contract_quick_enforce)
   set(_unit "${CMAKE_CURRENT_BINARY_DIR}/admitted_flag_matrix/${_set}.cpp")
   file(CONFIGURE OUTPUT "${_unit}" CONTENT "#include \"admitted_flag_matrix.cpp\"\n" @ONLY)

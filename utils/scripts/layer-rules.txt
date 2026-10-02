@@ -24,14 +24,24 @@
 #   door HEADER OWNER
 #       The file OWNER is the one file of the source root that can include
 #       the header HEADER.
-#   admit ENTRY | REASON
-#   admit ENTRY until FAMILY | REASON
-#       A quarantined file can name the standard library entity ENTRY.  The
-#       second form names the family of the base that replaces the entry.  The
-#       row goes when that family lands, and `rg 'until FAMILY'` finds the rows
-#       of one family.  utils/scripts/check-admitted-audit.py makes sure that
-#       each such row has the verdict REPLACE of the same family.  A
-#       qualified name admits the entity and each name in it, such as
+#   admit ENTRY [RESTRICTION...] | REASON
+#       A quarantined file can name the standard library entity ENTRY.  Each
+#       restriction comes one time at most, in any order, and `in` comes last:
+#         until FAMILY  The family of the base that replaces the entry.  The
+#                       row goes when that family lands, and `rg 'until
+#                       FAMILY'` finds the rows of one family.
+#                       utils/scripts/check-admitted-audit.py makes sure that
+#                       each such row has the verdict REPLACE of that family
+#         arity N       The entry admits only a function with N parameters
+#         parameters    The entry admits its class only as the type of a
+#                       parameter.  The names in the class stay admitted
+#         concepts      A header admits only the concepts that it declares
+#         unless MACRO  The plugin refuses each unit that defines MACRO
+#         in PATH...    The entry admits only in the files under the PATHs.
+#                       Each PATH is a path of the base, and the plugin reads
+#                       no base file, so the row admits nothing in a
+#                       quarantined file
+#       A qualified name admits the entity and each name in it, such as
 #       std::tuple_size<T>::value for std::tuple_size.  It admits no other
 #       name that starts with the same text: std::tuple_size_v needs its own
 #       row.  A header admits each entity that the header itself declares:
@@ -80,12 +90,13 @@ door <linux/netlink.h> include/fixy/os/Socket.h
 door <sys/socket.h> include/fixy/os/Socket.h
 door <linux/ptp_clock.h> include/fixy/os/Time.h
 door <sys/ioctl.h> include/fixy/os/Time.h
+door <contracts> src/foundation/ContractHandler.cpp
 
 admit <type_traits> | a type trait is a compile-time query, and it makes no object
-admit <concepts> | a concept is a compile-time predicate, and it makes no object
-admit <meta> | reflection runs at compile time only
+admit <concepts> concepts | a concept is a compile-time predicate, and std::ranges::swap stays a finding
+admit <meta> unless _GLIBCXX_DEBUG | reflection runs at compile time only, and _GLIBCXX_DEBUG changes its containers
 admit <limits> until Scalar | numeric_limits gives compile-time constants of fundamental types
-admit std::move | a cast to an rvalue reference, and it makes no object
+admit std::move arity 1 | a cast to an rvalue reference, and not the algorithm of three arguments
 admit std::forward | a cast that keeps the value category, and it makes no object
 admit std::as_const | a cast to a const reference, and it makes no object
 admit std::to_underlying | a cast of an enumerator to the integer of its enumeration
@@ -96,8 +107,8 @@ admit std::make_integer_sequence | an alias of std::integer_sequence
 admit std::index_sequence | an alias of std::integer_sequence
 admit std::make_index_sequence | an alias of std::integer_sequence
 admit std::index_sequence_for | an alias of std::integer_sequence
-admit std::tuple_size | a compile-time trait of the tuple protocol
-admit std::tuple_element | a compile-time trait of the tuple protocol
+admit std::tuple_size in include/foundation/core/ | the tuple protocol for the structured bindings of a family type
+admit std::tuple_element in include/foundation/core/ | the tuple protocol for the structured bindings of a family type
 admit std::unreachable until Report | a hint to the optimizer, and it makes no object
 admit std::source_location until Report | the place of a call, which the compiler gives at compile time
 admit std::size_t | a typedef of unsigned long on the two targets
@@ -117,7 +128,9 @@ admit std::uint_least32_t | a typedef of unsigned int on the two targets
 admit std::nullptr_t | the type of nullptr, with the size of a pointer
 admit std::meta::info | the type of a reflection, and the language refuses an object of it at run time
 admit std::byte | the type with the aliasing right, and not std::to_integer or the byte operators, which are other names
-admit std::align_val_t | the alignment argument of the allocation functions
+admit std::align_val_t in include/foundation/core/Ref.h | the alignment argument of the allocation functions, in the door of the Ref family
+admit std::initializer_list parameters | the type of a braced list, which outlives a parameter and not a data member
+admit std::contracts::contract_violation in src/foundation/ContractHandler.cpp | the parameter of the contract violation handler
 admit std::strong_ordering | the result of the operator <=>
 admit std::partial_ordering | the result of the operator <=> on a floating type
 admit std::is_eq | a constexpr and noexcept test of an ordering value
