@@ -15,7 +15,10 @@ THE CHECKS
                     compiles alone, in MB of 2^20 bytes.
 
     utils/scripts/budgets.txt gives the warning threshold and the error
-    threshold of each check (utils/scripts/check_report.py).  Each finding is
+    threshold of each check (utils/scripts/check_report.py).  header-alone
+    reads the row of the layer of the header: header-alone-foundation,
+    header-alone-fixy or header-alone-crucible.  Each translation unit of the
+    tree reads the base headers, so their rows are the tightest.  Each finding is
     one line in the format of check_report.py.  The path of a finding is the
     source of the object, the linked output or the header, relative to the
     repository root when it is in the tree.
@@ -157,6 +160,10 @@ TIMED = {"compile-cpu": ("compile", "time"), "compile-instructions": ("compile",
 # The time check whose error level an instruction count in the record holds, and the row of the count.
 COUNT_HOLDS_ERROR = {"compile-cpu": "compile-instructions"}
 GIGA = 1e9
+# The budget row of header-alone for the headers of each layer of include/.  The headers of a base
+# layer reach each translation unit of the tree, so their rows are tighter.
+LAYER_ROWS = {"foundation": "header-alone-foundation", "fixy": "header-alone-fixy",
+              "crucible": "header-alone-crucible"}
 RESULTS = frozenset({"built", "failed", "rejected", "hit"})
 LINKED_TYPES = frozenset({"EXECUTABLE", "SHARED_LIBRARY", "MODULE_LIBRARY"})
 SENTINEL_MARK = "/layer_sentinel_"
@@ -190,7 +197,8 @@ class Measure:
     """One measured value of one item, with the words that tell what it is.
 
     `error_row` names the row whose exact count holds the error level of the
-    item, or is empty when this check holds it.
+    item, or is empty when this check holds it.  `row` names the budget row
+    of the item, or is empty for the row of the check.
     """
 
     item: str
@@ -198,6 +206,7 @@ class Measure:
     value: float
     message: str
     error_row: str = ""
+    row: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -659,11 +668,17 @@ def header_measures(context: Context, outputs: list[Output]) -> tuple[list[Measu
         if header is None:
             findings.append(error_at(context.check, source_shown, f"the sentinel {key} includes no header of include/"))
             continue
+        header_shown = shown_path(header, context.root)
+        layer = header.relative_to(include_root).parts[0]
+        if layer not in LAYER_ROWS:
+            findings.append(error_at(context.check, header_shown, f"the header is in the layer {layer}, which has no "
+                                                                  f"budget row.  LAYER_ROWS names a row for each layer"))
+            continue
         total = sum(size for _, size in entries)
         timing = sentinel_timing(context, output)
-        header_shown = shown_path(header, context.root)
         measures.append(Measure(header_shown, header_shown, total / MB,
-                                f"the header alone includes {total / MB:.2f} MB in {len(entries)} files, and {timing}"))
+                                f"the header alone includes {total / MB:.2f} MB in {len(entries)} files, and {timing}",
+                                row=LAYER_ROWS[layer]))
     return measures, findings, f"{context.check}: {len(sentinels)} sentinels, {len(measures)} measured"
 
 
@@ -692,15 +707,15 @@ def read_ledger(context: Context) -> tuple[Ledger, list[check_report.Finding]]:
     return Ledger(path, shown, header, rows), [error_at(context.check, shown, text, line) for line, text in problems]
 
 
-def judge(context: Context, budget: check_report.Budget, measures: list[Measure], unjudged: set[str],
+def judge(context: Context, budgets: dict[str, check_report.Budget], measures: list[Measure], unjudged: set[str],
           ledger: Ledger) -> list[check_report.Finding]:
-    """Compare each measure with the thresholds and with the ledger rows of the kind of the build.
+    """Compare each measure with the thresholds of its row and with the ledger rows that apply to the build.
 
     Complexity: linear in the measures and the rows.
 
     Args:
         context: The run
-        budget: The budget row of the check
+        budgets: The budget rows of the check, by name
         measures: The measures
         unjudged: The items that the build holds and the check does not judge (a ccache hit)
         ledger: The ledger of the check
@@ -711,9 +726,10 @@ def judge(context: Context, budget: check_report.Budget, measures: list[Measure]
     rows = {item: entry for (kind, item), entry in ledger.rows.items() if kind == context.kind}
     findings: list[check_report.Finding] = []
     measured: set[str] = set()
-    budget_unit = budget.unit
     for measure in measures:
         measured.add(measure.item)
+        budget = budgets[measure.row or context.check]
+        budget_unit = budget.unit
         level = check_report.classify(measure.value, budget)
         row = rows.get(measure.item)
         if row is None and level == "error" and measure.error_row:
@@ -723,24 +739,26 @@ def judge(context: Context, budget: check_report.Budget, measures: list[Measure]
                 f"instruction count, so the row {measure.error_row} holds the error level of this step, and the CPU "
                 f"time, which rises with the load of the host, gives a warning only"))
             continue
+        of_row = f" of the row {measure.row}" if measure.row else ""
         if row is None:
             if level is not None:
                 limit = budget.error if level == "error" else budget.warn
                 findings.append(check_report.judged(
                     level, measure.path, 0, context.check,
-                    f"{measure.message}, over the {level} threshold {limit:g} {budget_unit}"))
+                    f"{measure.message}, over the {level} threshold{of_row} {limit:g} {budget_unit}"))
             continue
         line, value, reason = row
         if level == "error":
             findings.append(check_report.Finding(
                 "warning", measure.path, 0, context.check,
-                f"{measure.message}, over the error threshold {budget.error:g} {budget_unit}.  The row "
+                f"{measure.message}, over the error threshold{of_row} {budget.error:g} {budget_unit}.  The row "
                 f"{ledger.shown}:{line} admits it (value {value:g} at the last --write): {reason}"))
         else:
             findings.append(check_report.judged(
                 "error", ledger.shown, line, context.check,
                 f"the row admits {measure.item} in the kind {context.kind}, and it is at {measure.value:.2f} "
-                f"{budget_unit}, at or under the error threshold {budget.error:g} {budget_unit}.  Remove the row"))
+                f"{budget_unit}, at or under the error threshold{of_row} {budget.error:g} {budget_unit}.  Remove the "
+                f"row"))
     for item, (line, _value, _reason) in sorted(rows.items(), key=lambda entry: entry[1][0]):
         if item not in measured and item not in unjudged:
             findings.append(check_report.Finding(
@@ -783,16 +801,18 @@ def measure_all(context: Context) -> tuple[list[Measure], set[str], list[check_r
     return measures, unjudged, findings + problems, summary
 
 
-def budget_of(context: Context) -> check_report.Budget:
-    """Return the budget row of the check of a run.
+def budget_of(context: Context) -> dict[str, check_report.Budget]:
+    """Return the budget rows of the check of a run, by name: the row of the check, or the row of each layer.
 
     Raises:
-        ValueError: If the table is not valid or has no row for the check
+        ValueError: If the table is not valid or has no row that the check reads
     """
     budgets = check_report.read_budgets(context.budgets_path)
-    if context.check not in budgets:
-        raise ValueError(f"{context.budgets_path} has no row for {context.check}")
-    return budgets[context.check]
+    names = list(LAYER_ROWS.values()) if context.check == "header-alone" else [context.check]
+    missing = [name for name in names if name not in budgets]
+    if missing:
+        raise ValueError(f"{context.budgets_path} has no row for {', '.join(missing)}")
+    return {name: budgets[name] for name in names}
 
 
 def run_check(context: Context, warnings_dir: Path | None) -> int:
@@ -806,7 +826,7 @@ def run_check(context: Context, warnings_dir: Path | None) -> int:
         The exit status
     """
     try:
-        budget = budget_of(context)
+        budgets = budget_of(context)
     except ValueError as problem:
         return check_report.emit([error_at(context.check, shown_path(context.budgets_path, context.root),
                                            str(problem))], context.check, warnings_dir)
@@ -817,7 +837,7 @@ def run_check(context: Context, warnings_dir: Path | None) -> int:
         return NOT_APPLICABLE
     ledger, ledger_findings = read_ledger(context)
     findings += ledger_findings
-    findings += judge(context, budget, measures, unjudged, ledger)
+    findings += judge(context, budgets, measures, unjudged, ledger)
     status = check_report.emit(findings, context.check, warnings_dir)
     print(summary)
     return status
@@ -834,7 +854,7 @@ def write_ledger(context: Context, reason: str | None) -> int:
         0 when the ledger was written, 1 when an input or the ledger cannot be read or a new row has no reason
     """
     try:
-        budget = budget_of(context)
+        budgets = budget_of(context)
         measures, unjudged, findings, _ = measure_all(context)
     except (ValueError, NotApplicable) as problem:
         print(f"{context.check}: {problem}", file=sys.stderr)
@@ -848,7 +868,7 @@ def write_ledger(context: Context, reason: str | None) -> int:
     kept = {key: entry for key, entry in ledger.rows.items() if key[0] != context.kind or key[1] in unjudged}
     unexplained: list[str] = []
     for measure in measures:
-        if measure.value <= budget.error:
+        if measure.value <= budgets[measure.row or context.check].error:
             continue
         key = (context.kind, measure.item)
         old_reason = ledger.rows[key][2] if key in ledger.rows else reason
@@ -940,7 +960,8 @@ class Scratch:
                                 "compile-instructions | 50 | 100 | G instructions | i\n"
                                 "link-time | 2 | 5 | s | t\nlink-memory | 0.5 | 1 | GB | m\n"
                                 "function-size | 64 | 256 | KB | f\nobject-text | 512 | 768 | KB | o\n"
-                                "header-alone | 8 | 12 | MB | h\n", encoding="utf-8")
+                                "header-alone-foundation | 2 | 3 | MB | h\nheader-alone-fixy | 8 | 12 | MB | h\n"
+                                "header-alone-crucible | 9 | 14 | MB | h\n", encoding="utf-8")
         for check in CHECKS:
             (self.ledgers / f"{check}-ledger.txt").write_text("# a planted ledger\n", encoding="utf-8")
         self.ninja.write_text(f"#!{sys.executable}\nimport sys\nsys.stdout.write(open({str(self.deps)!r}).read())\n",
@@ -1262,23 +1283,26 @@ def self_test_cases() -> int:
 
         # header-alone.
         headers = Scratch(root / "headers")
+        for layer in ("fixy", "foundation", "other"):
+            (headers.root / "include" / layer).mkdir(parents=True)
+            link_root = headers.build / "layer-roots" / layer
+            link_root.mkdir(parents=True)
+            (link_root / layer).symlink_to(headers.root / "include" / layer)
         include = headers.root / "include" / "fixy"
-        include.mkdir(parents=True)
         (include / "Small.h").write_bytes(b"x" * MB)
         (include / "Big.h").write_bytes(b"x" * (9 * MB))
         (include / "Huge.h").write_bytes(b"x" * (13 * MB))
+        (headers.root / "include" / "foundation" / "Base.h").write_bytes(b"x" * (5 * MB // 2))
+        (headers.root / "include" / "other" / "Stray.h").write_bytes(b"x" * MB)
         system = headers.root / "system.h"
         system.write_bytes(b"y" * 1000)
-        link_root = headers.build / "layer-roots" / "fixy"
-        link_root.mkdir(parents=True)
-        (link_root / "fixy").symlink_to(include)
         deps: list[str] = []
 
-        def sentinel(name: str, header: str, state: str = "VALID") -> None:
+        def sentinel(name: str, header: str, state: str = "VALID", layer: str = "fixy") -> None:
             obj = headers.unit(name, sentinel=True, cpu_s=3.0)
             key = obj.relative_to(headers.build).as_posix()
             files = [str(headers.root / "test/layer/checks" / f"{name}.cpp"), str(system),
-                     str(link_root / "fixy" / header)]
+                     str(headers.build / "layer-roots" / layer / layer / header)]
             deps.append(f"{key}: #deps {len(files)}, deps mtime 1 ({state})\n" + "".join(f"    {f}\n" for f in files))
             headers.deps.write_text("\n".join(deps), encoding="utf-8")
 
@@ -1292,10 +1316,24 @@ def self_test_cases() -> int:
                and "3.0 s CPU" in found[0].message)
         sentinel("Huge", "Huge.h")
         status, found, _ = headers.run("header-alone")
-        expect("header-alone: a 13 MB header gives an error", status == 1 and levels(found) == ["error", "warning"])
+        expect("header-alone: a 13 MB header gives an error that names the row of its layer",
+               status == 1 and levels(found) == ["error", "warning"]
+               and any("of the row header-alone-fixy 12 MB" in f.message for f in found if f.level == "error"))
         headers.ledger("header-alone", f"{debug} | include/fixy/Huge.h | 13 | a planted reason\n")
         status, found, _ = headers.run("header-alone")
         expect("header-alone: a row turns the error into a warning", status == 0)
+        sentinel("Base", "Base.h", layer="foundation")
+        status, found, _ = headers.run("header-alone")
+        expect("header-alone: a 2.5 MB foundation header warns by the tighter row of its layer",
+               status == 0 and any(f.path == "include/foundation/Base.h" and f.level == "warning"
+                                   and "of the row header-alone-foundation 2 MB" in f.message for f in found))
+        sentinel("Stray", "Stray.h", layer="other")
+        status, found, _ = headers.run("header-alone")
+        expect("header-alone: a header of a layer with no row is an error",
+               status == 1 and any(f.path == "include/other/Stray.h" and "has no budget row" in f.message
+                                   for f in found))
+        headers.rows = [row for row in headers.rows if not row["output"].endswith("Stray.cpp.o")]
+        headers.write_database()
         sentinel("Stale", "Small.h", state="STALE")
         status, found, _ = headers.run("header-alone")
         expect("header-alone: a stale dependency list is an error",

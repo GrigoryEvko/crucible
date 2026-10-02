@@ -17,7 +17,9 @@ link-time      | 2  | 5  | s  | the user and system CPU time of one link, from t
 link-memory    | 0.5 | 1 | GB | the peak resident memory of one link, from the build launcher.  The launcher fails a link over the error threshold that no ledger row admits
 function-size  | 64 | 256 | KB | the size of the largest function in one object.  The Debug build with ASan has the largest functions
 object-text    | 512 | 768 | KB | the machine code of one object: the sum of its allocated, executable sections
-header-alone   | 8  | 12 | MB | the bytes that one header of include/ includes when it compiles alone, from the ninja dependency log of its sentinel
+header-alone-foundation | 3.25 | 3.5 | MB | the bytes that one header of include/foundation includes when it compiles alone, from the ninja dependency log of its sentinel.  Each translation unit of the tree reads the base headers, so their row is the tightest
+header-alone-fixy | 6 | 6.5 | MB | the bytes that one header of include/fixy includes when it compiles alone, from the ninja dependency log of its sentinel
+header-alone-crucible | 8 | 12 | MB | the bytes that one header of include/crucible includes when it compiles alone, from the ninja dependency log of its sentinel.  With -march=native a header can include <immintrin.h> too: include/crucible/Lower.h has 6.8 MB in the Debug build and 9.2 MB in the Release build
 test-time      | 5  | 30 | s  | the wall time of one test in one ctest run, from the test launcher for an executable test and from the JUnit report for another test (utils/scripts/check-test-time.py)
 test-memory    | 0.5 | 1.5 | GB | the peak resident memory of the largest process of one executable test, from the test launcher
 fixture-cpu    | 5  | 15 | s  | the user CPU time of one negative-fixture compile that the result store does not hold (test/neg_compile_driver.py).  When the compile has an instruction count, fixture-instructions holds the error level, and this row gives a warning only
