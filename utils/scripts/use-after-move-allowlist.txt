@@ -67,6 +67,14 @@ test/fixy/test_session_handle_attacks.cpp:use_after_move:handle
 test/fixy/test_session_handle_attacks.cpp:view_a_moved_from_handle:handle
 test/fixy/test_session_hold_consumed_aborts.cpp:take_twice:hold
 
+# Probe: a DelegatedSession that a move emptied holds no endpoint.  The
+# first two entries read that.  The others accept the empty payload, or
+# delegate with a consumed hold, and expect an abort.
+test/fixy/test_session_delegation.cpp:move_and_assign_take_the_endpoint:first
+test/fixy/test_session_delegation.cpp:move_and_assign_take_the_endpoint:second
+test/fixy/test_session_delegation_aborts.cpp:accept_after_a_move:parcel
+test/fixy/test_session_delegation_aborts.cpp:delegate_with_a_consumed_hold:hold
+
 # Probe: a crash writer that a move emptied names no cell, and the crash
 # mint that takes it aborts.
 test/fixy/test_session_crash_attack_cells.cpp:mint_takes_a_moved_from_writer:writer

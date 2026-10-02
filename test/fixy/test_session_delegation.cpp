@@ -17,6 +17,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <initializer_list>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -210,6 +211,32 @@ static_assert(!s::PermissionFlowCloses<s::Recv<CarriesRegion, s::End>, fp::PermS
     return 0;
 }
 
+// ── A move and an assignment take the endpoint ───────────────────────
+//
+// A move empties the source.  An assignment into an empty
+// DelegatedSession takes the endpoint of the source and empties it.
+// Each accepted handle then steps its own Resource to End.
+static_assert(std::is_nothrow_move_constructible_v<Carried> && std::is_nothrow_move_assignable_v<Carried>);
+
+[[nodiscard]] static int move_and_assign_take_the_endpoint() {
+    Carried first = s::mint_delegated_session(s::mint_session_handle<Inner, Wire>(Wire{1}));
+    Carried second = s::mint_delegated_session(s::mint_session_handle<Inner, Wire>(Wire{2}));
+    Carried drained = std::move(first);
+    if (first.holds_endpoint() || !drained.holds_endpoint()) return fail("a move did not take the endpoint");
+    first = std::move(second);
+    if (!first.holds_endpoint() || second.holds_endpoint()) return fail("an assignment did not take the endpoint");
+    int sent_total = 0;
+    for (Carried* parcel : {&drained, &first}) {
+        auto at_end = std::move(*parcel).accept().send(Ping{10}, [](Wire& wire, Ping& ping) noexcept {
+            wire.sent += ping.value;
+            return true;
+        });
+        sent_total += std::move(at_end).close().sent;
+    }
+    if (sent_total != 23) return fail("the accepted handles did not step the Resources that the parcels held");
+    return 0;
+}
+
 // ── The tokens travel with the endpoint ──────────────────────────────
 //
 // An endpoint whose permission set holds a tag is delegated with the hold
@@ -255,6 +282,7 @@ concept DelegatesWithHold =
 
 int main() {
     if (const int rc = test_session_delegation_types::delegate_over_a_channel(); rc != 0) return rc;
+    if (const int rc = test_session_delegation_types::move_and_assign_take_the_endpoint(); rc != 0) return rc;
     if (const int rc = test_session_delegation_types::tokens_travel_with_the_endpoint(); rc != 0) return rc;
     return 0;
 }

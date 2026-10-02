@@ -70,7 +70,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <meta>
-#include <optional>
+#include <new>
+#include <source_location>
 #include <type_traits>
 #include <utility>
 
@@ -112,22 +113,14 @@ class [[nodiscard]] DelegatedSession {
     using hold_type = PermHold<InnerPS>;
     static constexpr bool is_nothrow_move = std::is_nothrow_move_constructible_v<handle_type>;
 
-    // Empty after a move, an assignment from it, or accept().  The move of
-    // a std::optional keeps the source engaged, so each move resets it.
-    std::optional<handle_type> handle_;
-    std::optional<hold_type> hold_;
-
-    // Moves the endpoint and its hold out of `other`, and leaves it empty.
-    constexpr void take_from_(DelegatedSession& other) noexcept(is_nothrow_move) {
-        if (other.handle_.has_value()) {
-            handle_.emplace(std::move(*other.handle_));
-            other.handle_.reset();
-        }
-        if (other.hold_.has_value()) {
-            hold_.emplace(std::move(*other.hold_));
-            other.hold_.reset();
-        }
-    }
+    // The endpoint and the hold of its tokens.  Each constructor builds the
+    // two members, and no flag of presence guards the read of the handle
+    // policy in the destructor.  A move takes the two members together.
+    // It marks the source handle consumed and makes the source hold not
+    // live.  So a live hold tells that the payload holds the endpoint.  This
+    // is also true under check::Off, where the handle keeps no state.
+    handle_type handle_;
+    hold_type hold_;
 
 public:
     using inner_proto = InnerProto;
@@ -136,20 +129,26 @@ public:
     using abandonment_policy = Policy;
 
     // The constructor takes the delegation key, which only the delegation
-    // door makes.
+    // door makes.  The door gives a live handle and a live hold.
     constexpr DelegatedSession(DelegationKey const&, handle_type&& handle, hold_type&& hold) noexcept(is_nothrow_move)
-        : handle_{std::in_place, std::move(handle)}, hold_{std::in_place, std::move(hold)} {}
+        : handle_{std::move(handle)}, hold_{std::move(hold)} {}
 
-    constexpr DelegatedSession(DelegatedSession&& other) noexcept(is_nothrow_move) { take_from_(other); }
+    constexpr DelegatedSession(DelegatedSession&&) noexcept(is_nothrow_move) = default;
 
     // An assignment over a DelegatedSession that still holds an endpoint
     // drops that endpoint first, as an assignment over a live handle does.
-    constexpr DelegatedSession& operator=(DelegatedSession&& other) noexcept(is_nothrow_move) {
+    // A hold has no assignment, so the two members end and the assignment
+    // builds them again in place.  A move that can throw is refused.  A
+    // throw between the end and the build would end a member two times.
+    constexpr DelegatedSession& operator=(DelegatedSession&& other) noexcept
+        requires is_nothrow_move
+    {
         if (this == &other) [[unlikely]]
             return *this;
-        handle_.reset();
-        hold_.reset();
-        take_from_(other);
+        hold_.~hold_type();
+        handle_.~handle_type();
+        ::new(static_cast<void*>(&handle_)) handle_type{std::move(other.handle_)};
+        ::new(static_cast<void*>(&hold_)) hold_type{std::move(other.hold_)};
         return *this;
     }
 
@@ -162,19 +161,17 @@ public:
     // holds, so the abandonment policy of the handle acts.
     ~DelegatedSession() = default;
 
-    [[nodiscard]] constexpr bool holds_endpoint() const noexcept { return handle_.has_value(); }
+    [[nodiscard]] constexpr bool holds_endpoint() const noexcept { return hold_.is_live(); }
 
     // Gives the recipient the handle at the delegated position.  A handle
     // with an empty permission set comes alone.  A handle with tags comes
     // in a pair with the hold of their tokens.  An accept on a
     // DelegatedSession that holds no endpoint aborts.
     [[nodiscard]] constexpr auto accept() && noexcept(is_nothrow_move) {
-        if (!handle_.has_value()) [[unlikely]]
+        if (!hold_.is_live()) [[unlikely]]
             detail::report_delegation_taken();
-        handle_type handle{std::move(*handle_)};
-        hold_type hold{std::move(*hold_)};
-        handle_.reset();
-        hold_.reset();
+        handle_type handle{std::move(handle_)};
+        hold_type hold{std::move(hold_)};
         if constexpr (detail::perm_set_is_empty(^^InnerPS)) {
             return handle;
         } else {
@@ -212,7 +209,8 @@ concept HoldsTokensOf = std::is_same_v<Hold, PermHold<typename H::perm_set>>;
 class DelegationDoor final : ::foundation::NoObject<DelegationDoor> {
 public:
     // Moves the live handle and the hold of its tokens into the payload.  A
-    // consumed handle aborts here, as at every operation.
+    // consumed handle aborts here, as at every operation.  A consumed hold
+    // aborts too: the payload would claim tokens that it does not hold.
     template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS>
         requires DelegatableHandle<SessionHandle<Proto, Resource, void, Policy, PS>>
     [[nodiscard]] static constexpr DelegatedSession<Proto, Resource, Policy, PS>
@@ -221,6 +219,8 @@ public:
         using Handle = SessionHandle<Proto, Resource, void, Policy, PS>;
         if (!handle.is_live()) [[unlikely]]
             detail::report_use_after_consume(Handle::wrapper_name(), Handle::protocol_name(), std::source_location{});
+        if (!hold.is_live()) [[unlikely]]
+            detail::hold_consumed_abort_();
         return DelegatedSession<Proto, Resource, Policy, PS>{DelegationKey{}, std::move(handle), std::move(hold)};
     }
 };

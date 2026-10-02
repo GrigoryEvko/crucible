@@ -3397,6 +3397,11 @@ fixy_test(test_session_payload_seal)
 fixy_test(test_session_hold_consumed_aborts)
 fixy_test(test_session_hold_open_loan_aborts)
 
+# An accept after a move, a delegation with a consumed hold, and an
+# assignment over a live delegated endpoint each abort with a named
+# diagnostic, in a child process.
+fixy_test(test_session_delegation_aborts)
+
 # The payload walk refuses a token laundered through a pair, behind a
 # pointer or inside a std::optional, and a payload behind type erasure.
 fixy_neg_compile_test(neg_session_payload_token_behind_pointer
