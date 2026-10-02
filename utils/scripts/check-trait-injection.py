@@ -19,8 +19,7 @@ FAMILY B: FAIL-CLOSED RELATIONS
       retag_policy<From, To>        a provenance or trust transition.  A
                                     forged edge launders an untrusted value
                                     into a Sanitized or Verified tag.
-      machine_transition<From, To>  a state-machine edge, also reached
-                                    through CRUCIBLE_ALLOW_MACHINE_TRANSITION.
+      machine_transition<From, To>  a state-machine edge.
 
     can_split_into and can_split_into_pack have their own guard,
     utils/scripts/check-splits-orphan.py.
@@ -36,7 +35,9 @@ FAMILY C: FAIL-CLOSED NAMESPACES
     (fixy/Refined.h) and permission_rows (foundation/permissions/Permission.h
     and ReadView.h).  A tag that another header declares states its row with
     a permission_row member in its own definition, so no other file needs the
-    namespace.  A namespace alias adds no member and does not count.
+    namespace.  A namespace alias adds no member and does not count.  A call
+    of CRUCIBLE_ADMIT_MACHINE_TRANSITION opens admitted_transitions where it
+    expands, so the guard refuses each call outside the authoring set too.
 
 FAMILY D: THE ORPHAN RULE OF THE TWO LAYERS
     A concept of the two layers can read a class template: IsGraded reads
@@ -209,7 +210,7 @@ HEADER_TREE = "include/"
 SUBSTRATE_PATHS = ("include/foundation/algebra/*", "include/fixy/*",
                    "test/fixy/test_cheat_probe.cpp",
                    "test/fixy/neg/neg_cheat_graded_modality_injection.cpp")
-MACHINE_MACRO = "CRUCIBLE_ALLOW_MACHINE_TRANSITION"
+MACHINE_MACRO = "CRUCIBLE_ADMIT_MACHINE_TRANSITION"
 
 
 @dataclass(frozen=True)
@@ -235,7 +236,7 @@ RELATIONS = (
     Relation("permission_rows", "reopening", ("permission_rows",),
              ("include/foundation/permissions/Permission.h", "include/foundation/permissions/ReadView.h", "test/*")),
 )
-MACRO_OF = {MACHINE_MACRO: "machine_transition"}
+MACRO_OF = {MACHINE_MACRO: "admitted_transitions"}
 NAMES = {name: relation for relation in RELATIONS for name in relation.names}
 BY_LABEL = {relation.label: relation for relation in RELATIONS}
 
@@ -377,7 +378,13 @@ def root_sites(root: tsast.Node, path: str, line_of: Callable[[tsast.Node], int]
             sites.append(Site(relation.label, path, line_of(node), tsast.excerpt(node)))
     for node in root.descendants("macro_invocation", "call_expression"):
         callee = node.child_by_field("name") or node.child_by_field("function")
-        name = tsast.spelled(callee) if callee is not None else ""
+        # A macro name is one token, and a callee with a child has more
+        # tokens.  So only a callee with no child can name a macro.  The
+        # name of one token, without its line splices, costs much less
+        # than the lexer of tsast.spelled.
+        if callee is None or callee.children:
+            continue
+        name = tsast.leaf_name(callee) or ""
         if name in MACRO_OF:
             sites.append(Site(MACRO_OF[name], path, line_of(node), tsast.excerpt(node)))
     return sites
@@ -1036,11 +1043,13 @@ def self_test() -> int:
             "template <>\n"
             "struct [[deprecated]] fixy::machine_transition<A, B> : std::true_type {};\n"),
         "src/planted/machine.cpp": (
-            "CRUCIBLE_ALLOW_MACHINE_TRANSITION(Authenticated, Disconnected)\n"
+            "CRUCIBLE_ADMIT_MACHINE_TRANSITION(Authenticated, Disconnected)\n"
             "namespace fixy {\n"
             "template <>\n"
             "struct machine_transition<Authenticated, Disconnected> : std::true_type {};\n"
-            "}\n"),
+            "}\n"
+            "void admit() { CRUCIBLE_ADMIT_\\\nMACHINE_TRANSITION(Spliced, Name); }\n"
+            "void call() { planted::CRUCIBLE_ADMIT_MACHINE_TRANSITION(Qualified, Name); }\n"),
         "src/planted/partial.cpp": (
             "namespace fixy {\n"
             "template <class T>\n"
@@ -1121,8 +1130,9 @@ def self_test() -> int:
         ("retag_policy", "src/planted/retag.cpp", 2),
         ("retag_policy", "src/planted/qualified.cpp", 1),
         ("machine_transition", "src/planted/qualified.cpp", 3),
-        ("machine_transition", "src/planted/machine.cpp", 1),
+        ("admitted_transitions", "src/planted/machine.cpp", 1),
         ("machine_transition", "src/planted/machine.cpp", 3),
+        ("admitted_transitions", "src/planted/machine.cpp", 6),
         ("retag_policy", "src/planted/partial.cpp", 2),
         ("admitted_retags", "src/planted/retags.cpp", 1),
         ("admitted_retags", "src/planted/retags.cpp", 5),
@@ -1184,7 +1194,7 @@ def self_test() -> int:
         "include/fixy/Secret.h": "namespace fixy::tags::secret_policy::admitted_policies {\n}\n",
         "include/fixy/Machine.h": (
             "namespace fixy::machine::admitted_transitions {\n}\n"
-            "CRUCIBLE_ALLOW_MACHINE_TRANSITION(PlantedFrom, PlantedTo)\n"
+            "CRUCIBLE_ADMIT_MACHINE_TRANSITION(PlantedFrom, PlantedTo)\n"
             "namespace fixy::machine { template <> struct machine_transition<From, To> : std::true_type {}; }\n"),
         "include/fixy/Refined.h": "namespace fixy::refined::admitted_implications {\n}\n",
         "test/planted_test.cpp": "namespace fixy { template <> struct retag_policy<X, Y> {}; }\n",
