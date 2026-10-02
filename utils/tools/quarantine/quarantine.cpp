@@ -331,9 +331,15 @@ struct State {
     // Caches keyed by tree.  A garbage collection can free a tree and reuse
     // its address, so each collection clears them.  Nothing depends on them
     // for correctness: a finding is recorded one time for each place.
-    // The first two hold one map for each Use.
+    // The first three hold one map for each Use.  A type walk visits each
+    // type one time with these maps, also when a type tree shares its
+    // subtrees, so a walk stays linear in the distinct types.
     std::unordered_map<tree, LibraryClasses> library_class_of[2];
+    // The answers in a file of the language, which has admit rows of its own.
+    std::unordered_map<const FileEntry*, std::unordered_map<tree, LibraryClasses>> language_class_of[2];
     std::unordered_map<tree, const AdmitRow*> admitting_row_of[2];
+    // The answer of holds_bool_or_enumeration for each class and union.
+    std::unordered_map<tree, bool> holds_bool_of;
     std::unordered_map<tree, bool> default_argument_of;
     std::unordered_set<tree> walked;
 };
@@ -408,7 +414,7 @@ bool is_inside_system_assert(location_t location) {
         return false;
     }
     location_t current = location;
-    for (int depth = 0; depth < 64 && linemap_location_from_macro_expansion_p(line_table, current); ++depth) {
+    for (int depth = 0; depth < kMacroDepth && linemap_location_from_macro_expansion_p(line_table, current); ++depth) {
         const line_map* map = linemap_lookup(line_table, current);
         if (is_system_assert(MACRO_MAP_MACRO(linemap_check_macro(map)))) {
             return true;
@@ -536,7 +542,7 @@ std::string type_text(tree type) {
 // global namespace itself.
 tree top_namespace(tree decl) {
     tree current = decl;
-    for (int depth = 0; current != NULL_TREE && current != global_namespace && depth < 128; ++depth) {
+    for (int depth = 0; current != NULL_TREE && current != global_namespace && depth < kTypeDepth; ++depth) {
         if (TREE_CODE(current) == NAMESPACE_DECL) {
             tree context = CP_DECL_CONTEXT(current);
             if (context == global_namespace) {
@@ -613,9 +619,11 @@ int parameter_count(tree decl) {
 // class or a union.  A pointer holds an address, so the walk does not follow
 // it, also when its target is dependent.  Each other dependent type and an
 // incomplete class count as types that hold them, so the restriction
-// plain-result fails closed.  Complexity: O(size of the type tree).
+// plain-result fails closed.  The walk keeps the answer of each class, so a
+// class that holds the same class in many members costs one visit.
+// Complexity: O(distinct types in the type tree).
 bool holds_bool_or_enumeration(tree type, int depth) {
-    if (type == NULL_TREE || type == error_mark_node || depth > 64) {
+    if (type == NULL_TREE || type == error_mark_node || depth > kTypeDepth) {
         return true;
     }
     switch (TREE_CODE(type)) {
@@ -638,12 +646,16 @@ bool holds_bool_or_enumeration(tree type, int depth) {
             if (uses_template_parms(main_type) || !COMPLETE_TYPE_P(main_type)) {
                 return true;
             }
-            for (tree field = TYPE_FIELDS(main_type); field != NULL_TREE; field = DECL_CHAIN(field)) {
-                if (TREE_CODE(field) == FIELD_DECL && holds_bool_or_enumeration(TREE_TYPE(field), depth + 1)) {
-                    return true;
-                }
+            auto cached = state.holds_bool_of.find(main_type);
+            if (cached != state.holds_bool_of.end()) {
+                return cached->second;
             }
-            return false;
+            bool holds = false;
+            for (tree field = TYPE_FIELDS(main_type); field != NULL_TREE && !holds; field = DECL_CHAIN(field)) {
+                holds = TREE_CODE(field) == FIELD_DECL && holds_bool_or_enumeration(TREE_TYPE(field), depth + 1);
+            }
+            state.holds_bool_of.emplace(main_type, holds);
+            return holds;
         }
         default:
             return uses_template_parms(type);
@@ -890,11 +902,16 @@ LibraryClasses library_class_in_template_arguments(tree class_type, int depth, c
 // that takes a std::string is not an object of that type.  USE applies to the
 // class at the outer level, through pointers and references.  A template
 // argument and an enclosing class are other uses.  LANGUAGE names the file of
-// the language of the declaration, or is null.  The cache holds the answers of
-// a quarantined file only.
+// the language of the declaration, or is null.  The caches keep the answer of
+// each type for each use, and of a file of the language apart.  A type nested
+// deeper than kTypeDepth is refused, so the bound hides no library class.
 LibraryClasses library_class_in(tree type, int depth, Use use, const FileEntry* language) {
     LibraryClasses found;
-    if (type == NULL_TREE || type == error_mark_node || depth > 64) {
+    if (type == NULL_TREE || type == error_mark_node) {
+        return found;
+    }
+    if (depth > kTypeDepth) {
+        found.refused = type;
         return found;
     }
     switch (TREE_CODE(type)) {
@@ -921,12 +938,12 @@ LibraryClasses library_class_in(tree type, int depth, Use use, const FileEntry* 
         return found;
     }
     tree main_type = TYPE_MAIN_VARIANT(type);
-    std::unordered_map<tree, LibraryClasses>& cache = state.library_class_of[static_cast<int>(use)];
-    if (language == nullptr) {
-        auto cached = cache.find(main_type);
-        if (cached != cache.end()) {
-            return cached->second;
-        }
+    std::unordered_map<tree, LibraryClasses>& cache = language == nullptr
+                                                        ? state.library_class_of[static_cast<int>(use)]
+                                                        : state.language_class_of[static_cast<int>(use)][language];
+    auto cached = cache.find(main_type);
+    if (cached != cache.end()) {
+        return cached->second;
     }
     tree decl = TYPE_MAIN_DECL(main_type);
     if (decl != NULL_TREE && !LAMBDA_TYPE_P(main_type)) {
@@ -948,9 +965,7 @@ LibraryClasses library_class_in(tree type, int depth, Use use, const FileEntry* 
             }
         }
     }
-    if (language == nullptr) {
-        cache.emplace(main_type, found);
-    }
+    cache.emplace(main_type, found);
     return found;
 }
 
@@ -966,7 +981,7 @@ LibraryClasses library_class_in(tree type, int depth, Use use, const FileEntry* 
 // enumeration.  LANGUAGE names the file of the language of the declaration,
 // or is null.
 tree library_type_name_in(tree type, int depth, const FileEntry* language = nullptr) {
-    if (type == NULL_TREE || type == error_mark_node || depth > 64) {
+    if (type == NULL_TREE || type == error_mark_node || depth > kTypeDepth) {
         return NULL_TREE;
     }
     if (TREE_CODE(type) == POINTER_TYPE || TREE_CODE(type) == REFERENCE_TYPE) {
@@ -1070,7 +1085,7 @@ bool has_lang_template_info(tree decl) {
 // instantiation.
 bool is_in_instantiation(tree decl) {
     tree current = decl;
-    for (int depth = 0; current != NULL_TREE && current != global_namespace && depth < 128; ++depth) {
+    for (int depth = 0; current != NULL_TREE && current != global_namespace && depth < kTypeDepth; ++depth) {
         if (TREE_CODE(current) == NAMESPACE_DECL) {
             return false;
         }
@@ -2452,8 +2467,10 @@ void on_finish(void*, void*) {
 void on_collection(void*, void*) {
     for (int use = 0; use < 2; ++use) {
         state.library_class_of[use].clear();
+        state.language_class_of[use].clear();
         state.admitting_row_of[use].clear();
     }
+    state.holds_bool_of.clear();
     state.default_argument_of.clear();
     state.walked.clear();
     core.contract_walked.clear();

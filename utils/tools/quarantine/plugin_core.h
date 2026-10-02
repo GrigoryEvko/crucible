@@ -107,6 +107,14 @@ namespace crucible_plugin {
 
 // ── The files, the places and the findings ──────────────────────────────
 
+// The bound of each walk of a macro expansion, and of each walk of a type or
+// of a chain of scopes.  The type walks keep each answer, so they stay linear,
+// and the bounds only guard the stack.  The source can nest a type or a macro
+// deeper than a small bound, so a bound must not hide a finding.  A type walk
+// that reaches its bound fails closed.
+inline constexpr int kMacroDepth = 1 << 16;
+inline constexpr int kTypeDepth = 4096;
+
 // The class of a file, as THE FILES above gives it.
 enum class FileClass : std::uint8_t {
     outside,
@@ -396,7 +404,7 @@ inline Place place_of(location_t location, Scope scope) {
         return place;
     }
     location_t current = location;
-    for (int depth = 0; depth < 64; ++depth) {
+    for (int depth = 0; depth < kMacroDepth; ++depth) {
         location_t spelled = linemap_resolve_location(line_table, current, LRK_SPELLING_LOCATION, nullptr);
         expanded_location where = expand_location(spelled);
         if (where.file != nullptr) {
@@ -619,7 +627,7 @@ inline constexpr const char* kReasonClasses[] = {"ABI: ", "C-HEADER: ", "PROBE: 
 // macro.  Complexity: O(depth of the macro expansion).
 inline location_t region_macro_expansion(location_t location, const char* macro) {
     location_t current = location;
-    for (int depth = 0; depth < 64 && linemap_location_from_macro_expansion_p(line_table, current); ++depth) {
+    for (int depth = 0; depth < kMacroDepth && linemap_location_from_macro_expansion_p(line_table, current); ++depth) {
         const line_map* map = linemap_lookup(line_table, current);
         const line_map_macro* macro_map = linemap_check_macro(map);
         cpp_hashnode* node = MACRO_MAP_MACRO(macro_map);

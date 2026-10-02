@@ -53,6 +53,12 @@ and the opt-out regions apply to it, and the quarantine rule does not.  The
 test writes a source root with a build directory in its scratch directory,
 and compiles a unit of that root in each mode.
 
+A type walk and a walk of a macro expansion read a deep nesting to its end, so
+a library type behind 70 template wrappers and a C library token behind 70
+macros stay findings.  A type tree that shares its subtrees costs one visit
+for each type, also in a file of the language.  Each such compile has a time
+limit.
+
 A #line directive, a line marker and #pragma GCC system_header in a file of
 the root each fail the compile.  A file of the root that -isystem marks stays
 a file of the root, and a library namespace that a quarantined file opens
@@ -309,17 +315,22 @@ class Checker:
     def compile(self, fixture: str, arguments: dict[str, str],
                 stage: tuple[str, ...] = ("-S", "-o", os.devnull),
                 extra: tuple[str, ...] = (), launcher: tuple[str, ...] = (),
-                env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+                env: dict[str, str] | None = None, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
         """Compile one fixture with the plugin, the given plugin arguments, stage flags and extra flags.
 
         LAUNCHER goes in front of the compiler, as a compiler cache does, and
-        ENV is the environment of the compile.
+        ENV is the environment of the compile.  A compile that runs longer than
+        TIMEOUT seconds stops, and its result has the exit status -9 and the
+        error text "timeout".
         """
         command = [*launcher, self.cxx, "-std=c++26", "-I", str(HERE / "include"), "-I", str(REPO / "include"),
                    "-DCRUCIBLE_QUARANTINE_ACTIVE", *extra, f"-fplugin={self.plugin}"]
         command += [f"-fplugin-arg-{PLUGIN}-{key}={value}" for key, value in arguments.items()]
         command += ["-fdiagnostics-color=never", *stage, str(HERE / fixture)]
-        return subprocess.run(command, capture_output=True, text=True, env=env)
+        try:
+            return subprocess.run(command, capture_output=True, text=True, env=env, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return subprocess.CompletedProcess(command, -9, "", "timeout")
 
 
 class Section:
@@ -385,6 +396,7 @@ def run(checker: Checker, rules: Path) -> list[Section]:
         run_include_rules,
         run_library_names,
         run_provenance,
+        run_depth,
         run_restrictions,
         run_language,
         lambda section: run_tree_plants(section, rules),
@@ -822,6 +834,42 @@ def run_provenance(section: Section) -> None:
         holds = not hits if text is None else any(text in f.entity for f in hits)
         what = f"no {kind}" if text is None else f"{kind} {text}"
         section.expect(f"{what} at {file}:{line}", holds, "; ".join(map(str, hits)))
+
+
+# (fixture, table, line, kind, a text in the entity, or None for a compile with
+# no finding): a walk reads a deep type and a deep macro expansion to its end,
+# and a walk over a shared type tree stays linear.  Each compile stops after
+# DEPTH_TIMEOUT seconds, and the plugin needs much less than a second.
+DEPTH_CASES = (
+    ("deep_nesting.cpp", TEST_RULES, 25, "std_object", "std::vector"),
+    ("deep_nesting.cpp", TEST_RULES, 98, "c_library_call", "__errno_location"),
+    ("struct_tree.cpp", TEST_RULES, 62, "replace_pending:std::bit_cast", "std::bit_cast"),
+    ("deep_language_user.cpp", HERE / "language.txt", None, None, None),
+)
+DEPTH_TIMEOUT = 60.0
+
+
+def run_depth(section: Section) -> None:
+    """Compile each fixture of DEPTH_CASES in report mode with a time limit, and judge its findings."""
+    fixtures = sorted({(fixture, table) for fixture, table, _, _, _ in DEPTH_CASES})
+    calls: list[tuple[object, ...]] = []
+    for index, (fixture, table) in enumerate(fixtures):
+        arguments = {"root": str(HERE), "mode": "report", "rules": str(table),
+                     "out": str(section.work / f"depth-{index}")}
+        calls.append((fixture, arguments, ("-S", "-o", os.devnull), (), (), None, DEPTH_TIMEOUT))
+    results = section.compile_all(calls)
+    findings: dict[str, list[Finding]] = {}
+    for index, ((fixture, _), compiled) in enumerate(zip(fixtures, results, strict=True)):
+        section.expect(f"{fixture} compiles in report mode in less than {DEPTH_TIMEOUT:.0f} s",
+                       compiled.returncode == 0, compiled.stderr[-2000:])
+        findings[fixture] = read_reports(section.work / f"depth-{index}")
+    for fixture, _, line, kind, text in DEPTH_CASES:
+        if line is None:
+            section.expect(f"{fixture} has no finding", not findings[fixture], "; ".join(map(str, findings[fixture])))
+            continue
+        hits = [f for f in findings[fixture] if f.file == fixture and f.line == line and f.kind == kind]
+        section.expect(f"{kind} {text} at {fixture}:{line}", any(text in f.entity for f in hits),
+                       "; ".join(map(str, hits)))
 
 
 # (the macro of the plant of a restriction, the kind, a text in the entity)

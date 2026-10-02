@@ -23,6 +23,7 @@ admit std::source_location until Report | the place of a call
 admit std::unreachable until Report | a hint to the optimizer
 
 quarantine contracts.cpp
+quarantine deep_nesting.cpp
 quarantine end_without_region.cpp
 quarantine enforced.cpp
 quarantine gaps.cpp
@@ -48,6 +49,7 @@ quarantine region_without_reason.cpp
 quarantine region_wrapper.cpp
 quarantine reopened_std.cpp
 quarantine system_marked.cpp
+quarantine struct_tree.cpp
 quarantine unclosed_region.cpp
 quarantine violations.cpp
 quarantine fixy/
