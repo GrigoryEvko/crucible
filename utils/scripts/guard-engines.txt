@@ -18,7 +18,7 @@ test/neg_compile_driver.py | compiler,json,text | the compile database, the diag
 test/neg_compile_driver_test.py | compiler,json,text | the output of test/neg_compile_driver.py, planted search lists and lists of the loader, and planted budget tables and ledgers
 utils/scripts/audit-decide-cite-ratio.py | tsast,git | the history of Decide.h
 utils/scripts/audit-pre-callsite-count.py | tsast,json | the contract baseline utils/scripts/contracts-baseline.json
-utils/scripts/build-gauge.sh | compiler,git,text | the ninja log, the /usr/bin/time report and the ctest summary
+utils/scripts/build-gauge.sh | compiler,git,text | the ninja log, the /usr/bin/time report and the ctest log
 utils/scripts/build-launcher.py | compiler,text | the ccache stats log of each compile, the budget table and the ledger rows of the memory checks
 utils/scripts/build_census.py | json,text | the compile database, the output of ninja -t inputs and -t deps, the test list of ctest --show-only=json-v1, the records of the fixture driver and of the build launcher, and CMakeCache.txt
 utils/scripts/cache_dir.py | none |

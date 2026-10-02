@@ -2,19 +2,20 @@
 # build-gauge.sh — the cost of one clean build of the tree and of one run of each test group.
 #
 # The script configures a fresh build directory with no compiler cache and
-# builds `all`.  Then it runs the negative-compile fixtures, and then the
-# other tests.  For each of the three steps it records the wall time, the
-# user and system CPU time, and the largest resident set of one process,
-# from /usr/bin/time.  At the end it prints the 20 compile steps that took
-# the most time, from the ninja log of the build.
+# builds `all`.  Then it runs the tests in one ctest run, the negative-compile
+# fixtures with the other tests.  The census checks depend on the fixtures,
+# so ctest runs them after the last fixture.  For each of the two steps it
+# records the wall time, the user and system CPU time, and the largest
+# resident set of one process, from /usr/bin/time.  At the end it prints the
+# 20 compile steps that took the most time, from the ninja log of the build,
+# and the 10 tests that took the most time, from the ctest log.
 #
 # usage: utils/scripts/build-gauge.sh [option]...
 #   --jobs N          The build and test parallelism (48 without the option)
 #   --preset NAME     The configure preset (default without the option)
 #   --build-dir DIR   The build directory (<tree>/build-gauge without the option)
 #   --target NAME     Build NAME and not `all`.  Give it again for more targets
-#   --neg-regex RE    The ctest regex of the fixture run (^neg_ without the option)
-#   --rest-regex RE   A ctest regex that limits the run of the other tests
+#   --test-regex RE   A ctest regex that limits the test run
 #   --timeout S       The ctest limit for one test, in seconds (900 without the option)
 #   --no-tests        Build, and run no test
 #   -h, --help        Print this text
@@ -60,14 +61,13 @@ jobs=48
 preset=default
 build_dir="$REPO_ROOT/build-gauge"
 targets=()
-neg_regex='^neg_'
-rest_regex=''
+test_regex=''
 test_timeout=900
 run_tests=1
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --jobs | --preset | --build-dir | --target | --neg-regex | --rest-regex | --timeout)
+        --jobs | --preset | --build-dir | --target | --test-regex | --timeout)
             if [[ $# -lt 2 ]]; then
                 echo "build-gauge: $1 takes a value." >&2
                 exit 2
@@ -77,8 +77,7 @@ while [[ $# -gt 0 ]]; do
                 --preset) preset="$2" ;;
                 --build-dir) build_dir="$2" ;;
                 --target) targets+=("$2") ;;
-                --neg-regex) neg_regex="$2" ;;
-                --rest-regex) rest_regex="$2" ;;
+                --test-regex) test_regex="$2" ;;
                 --timeout) test_timeout="$2" ;;
             esac
             shift 2
@@ -211,15 +210,11 @@ fi
 
 if [[ "$run_tests" -eq 1 && "$status" -eq 0 ]]; then
     # A run that finds no test measures nothing, so it fails.
-    timed_step fixtures ctest --test-dir "$build_dir" -j "$jobs" --timeout "$test_timeout" --no-tests=error \
-        -R "$neg_regex"
-    [[ "$step_status" -eq 0 ]] || status=1
-    test_summary "$build_dir/gauge-fixtures.log"
-    rest_args=(--test-dir "$build_dir" -j "$jobs" --timeout "$test_timeout" --no-tests=error -E "$neg_regex")
-    if [[ -n "$rest_regex" ]]; then
-        rest_args+=(-R "$rest_regex")
+    test_args=(--test-dir "$build_dir" -j "$jobs" --timeout "$test_timeout" --no-tests=error)
+    if [[ -n "$test_regex" ]]; then
+        test_args+=(-R "$test_regex")
     fi
-    timed_step tests ctest "${rest_args[@]}"
+    timed_step tests ctest "${test_args[@]}"
     [[ "$step_status" -eq 0 ]] || status=1
     test_summary "$build_dir/gauge-tests.log"
 fi
@@ -228,11 +223,16 @@ fi
 # the modification time, the output path and a hash.  A step that ran two
 # times keeps its last row.  The source of an object is its path without
 # the CMakeFiles/<target>.dir/ part and without the .o suffix.
-python3 - "$build_dir/.ninja_log" <<'PY' | tee -a "$report"
+#
+# ctest prints one line for each test that ends: the count, the test number,
+# the name, a row of dots, the verdict and the wall time in seconds.
+python3 - "$build_dir/.ninja_log" "$build_dir/gauge-tests.log" <<'PY' | tee -a "$report"
+import re
 import sys
 from pathlib import Path
 
 log = Path(sys.argv[1])
+test_log = Path(sys.argv[2])
 if not log.is_file():
     print("build-gauge: the build wrote no ninja log.")
     sys.exit(0)
@@ -261,6 +261,19 @@ print(f"compile steps: {len(steps)}, sum of their wall times {total:.0f} s")
 print("the 20 slowest compile steps (wall seconds, from the ninja log):")
 for output, seconds in sorted(steps.items(), key=lambda item: item[1], reverse=True)[:20]:
     print(f"  {seconds:8.1f}  {source_of(output)}")
+
+if test_log.is_file():
+    tests = {}
+    for line in test_log.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = re.search(r"Test\s+#\d+: (\S+) \.+.*?([0-9.]+) sec$", line)
+        if match:
+            tests[match.group(1)] = float(match.group(2))
+    fixtures = [seconds for name, seconds in tests.items() if name.startswith("neg_")]
+    print(f"tests: {len(tests)}, of them {len(fixtures)} negative fixtures; sum of the wall times "
+          f"{sum(tests.values()):.0f} s, of the fixtures {sum(fixtures):.0f} s")
+    print("the 10 slowest tests (wall seconds, from the ctest log):")
+    for name, seconds in sorted(tests.items(), key=lambda item: item[1], reverse=True)[:10]:
+        print(f"  {seconds:8.1f}  {name}")
 PY
 
 echo "build-gauge: the report is in $report"
