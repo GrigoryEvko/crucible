@@ -2547,12 +2547,14 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultA
 
 namespace detail {
 
+// The walk keeps the rules in a stack of foundation/algebra/Transition.h
+// and reads them through a pointer.  It makes the vector one time, at the end.
 [[nodiscard]] consteval std::vector<::fixy::concurrent::payload_family_rule> session_payload_rules() {
     using Rule = ::fixy::concurrent::payload_family_rule;
     constexpr std::uint64_t carries_first = std::uint64_t{1};
     constexpr std::uint64_t carries_nothing = std::uint64_t{0};
     constexpr std::uint64_t carries_every = ~std::uint64_t{0};
-    std::vector<Rule> rules{
+    const Rule named[] = {
         Rule{^^Transferable, carries_first},
         Rule{^^Returned, carries_first},
         Rule{^^Borrowed, carries_first},
@@ -2567,26 +2569,34 @@ namespace detail {
         Rule{^^Crash, carries_nothing},
         Rule{^^::foundation::permissions::Permission, carries_nothing},
     };
+    stack<Rule> rules{};
+    for (const Rule& rule : named)
+        push(rules, rule);
     const auto has_rule = [&rules](std::meta::info family) consteval {
-        for (const Rule& rule : rules) {
-            if (rule.family == family) return true;
+        const Rule* const rule = rules.items;
+        for (std::size_t place = 0; place < rules.top; ++place) {
+            if (rule[place].family == family) return true;
         }
         return false;
     };
-    for (const std::meta::info member :
-         std::meta::members_of(protocol_registry, std::meta::access_context::current())) {
-        if (!std::meta::is_variable(member)) continue;
-        if (std::meta::remove_cvref(std::meta::type_of(member)) != ^^::foundation::algebra::transition::combinator)
+    const std::vector<std::meta::info> members =
+        std::meta::members_of(protocol_registry, std::meta::access_context::current());
+    const std::meta::info* const member = members.data();
+    const std::size_t member_count = members.size();
+    for (std::size_t place = 0; place < member_count; ++place) {
+        if (!std::meta::is_variable(member[place])) continue;
+        if (std::meta::remove_cvref(std::meta::type_of(member[place]))
+            != ^^::foundation::algebra::transition::combinator)
             continue;
-        const auto entry = std::meta::extract<::foundation::algebra::transition::combinator>(member);
+        const auto entry = std::meta::extract<::foundation::algebra::transition::combinator>(member[place]);
         if (std::meta::is_class_template(entry.shape) && !has_rule(entry.shape)) {
-            rules.push_back(Rule{entry.shape, carries_every});
+            push(rules, Rule{entry.shape, carries_every});
         }
         if (entry.annotation != std::meta::info{} && !has_rule(entry.annotation)) {
-            rules.push_back(Rule{entry.annotation, carries_nothing});
+            push(rules, Rule{entry.annotation, carries_nothing});
         }
     }
-    return rules;
+    return std::vector<Rule>(rules.items, rules.items + rules.top);
 }
 
 }  // namespace detail

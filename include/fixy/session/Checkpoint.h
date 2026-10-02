@@ -198,6 +198,7 @@ enum class CheckpointVerdict : std::uint8_t {
 
 namespace detail::checkpoint {
 
+namespace tr = ::foundation::algebra::transition;
 using info = std::meta::info;
 
 enum class Kind : std::uint8_t {
@@ -247,14 +248,23 @@ consteval info argument(info type, std::size_t index) {
     return strip(std::meta::template_arguments_of(strip(type))[index]);
 }
 
-// The real branches of a Select or an Offer.  A Sender tag is not a
-// branch.
-consteval std::vector<info> branches_of(info type) {
-    std::vector<info> branches = std::meta::template_arguments_of(strip(type));
-    if (!branches.empty()) {
-        const info first = std::meta::dealias(branches.front());
-        if (std::meta::has_template_arguments(first) && std::meta::template_of(first) == ^^Sender) {
-            branches.erase(branches.begin());
+// The template arguments of a Select or an Offer.  The real branches start
+// at `first`, because a Sender tag is not a branch.  A reader reads the
+// branches through the pointer of data().  No walk changes the vector.
+struct BranchList {
+    std::vector<info> arguments;
+    std::size_t first = 0;
+
+    [[nodiscard]] consteval const info* data() const { return arguments.data() + first; }
+    [[nodiscard]] consteval std::size_t size() const { return arguments.size() - first; }
+};
+
+consteval BranchList branches_of(info type) {
+    BranchList branches{std::meta::template_arguments_of(strip(type))};
+    if (!branches.arguments.empty()) {
+        const info head = std::meta::dealias(branches.arguments.data()[0]);
+        if (std::meta::has_template_arguments(head) && std::meta::template_of(head) == ^^Sender) {
+            branches.first = 1;
         }
     }
     return branches;
@@ -285,10 +295,12 @@ consteval bool shaped(info type, bool at_branch, int depth) {
             return payload_admitted(argument(type, 0)) && shaped(argument(type, 1), false, depth + 1);
         case Kind::Select:
         case Kind::Offer: {
-            const std::vector<info> branches = branches_of(type);
-            if (branches.empty()) return false;
-            for (const info branch : branches) {
-                if (!shaped(branch, true, depth + 1)) return false;
+            const BranchList branches = branches_of(type);
+            const info* const branch = branches.data();
+            const std::size_t branch_count = branches.size();
+            if (branch_count == 0) return false;
+            for (std::size_t place = 0; place < branch_count; ++place) {
+                if (!shaped(branch[place], true, depth + 1)) return false;
             }
             return true;
         }
@@ -351,9 +363,13 @@ consteval Party initial_party(info protocol) {
     return Party{start, ^^void, start, ^^void, false};
 }
 
+// `seen` holds each configuration that the walk admitted, and `pending`
+// each admitted configuration that the walk has not stepped yet.  Each is
+// a stack of foundation/algebra/Transition.h, read through a pointer, so
+// the walk changes no vector.
 struct Exploration {
-    std::vector<Configuration> seen;
-    std::vector<Configuration> pending;
+    tr::stack<Configuration> seen;
+    tr::stack<Configuration> pending;
     CheckpointVerdict verdict = CheckpointVerdict::Compliant;
 };
 
@@ -362,15 +378,16 @@ consteval void admit(Exploration& run, Configuration next) {
         run.verdict = CheckpointVerdict::LoopUnresolved;
         return;
     }
-    for (const Configuration& known : run.seen) {
-        if (same_configuration(known, next)) return;
+    const Configuration* const known = run.seen.items;
+    for (std::size_t place = 0; place < run.seen.top; ++place) {
+        if (same_configuration(known[place], next)) return;
     }
-    if (run.seen.size() >= configuration_bound) {
+    if (run.seen.top >= configuration_bound) {
         run.verdict = CheckpointVerdict::TooManyConfigurations;
         return;
     }
-    run.seen.push_back(next);
-    run.pending.push_back(next);
+    tr::push(run.seen, next);
+    tr::push(run.pending, next);
 }
 
 // One label exchange.  `active` selected label `index`, and `passive`
@@ -430,12 +447,15 @@ consteval CheckpointVerdict exchange(Exploration& run, Party active, Party passi
 
 consteval CheckpointVerdict choose(Exploration& run, const Party& active, const Party& passive,
                                    const Party& active_start, const Party& passive_start, bool active_is_left) {
-    const std::vector<info> labels = branches_of(active.position);
-    const std::vector<info> accepted = branches_of(passive.position);
-    if (labels.size() > accepted.size()) return CheckpointVerdict::LabelOutOfRange;
-    for (std::size_t index = 0; index < labels.size(); ++index) {
-        const CheckpointVerdict step =
-            exchange(run, active, passive, labels[index], accepted[index], active_start, passive_start, active_is_left);
+    const BranchList labels = branches_of(active.position);
+    const BranchList accepted = branches_of(passive.position);
+    const std::size_t label_count = labels.size();
+    if (label_count > accepted.size()) return CheckpointVerdict::LabelOutOfRange;
+    const info* const label = labels.data();
+    const info* const acceptance = accepted.data();
+    for (std::size_t index = 0; index < label_count; ++index) {
+        const CheckpointVerdict step = exchange(run, active, passive, label[index], acceptance[index], active_start,
+                                                passive_start, active_is_left);
         if (step != CheckpointVerdict::Compliant) return step;
     }
     return CheckpointVerdict::Compliant;
@@ -450,11 +470,11 @@ consteval CheckpointVerdict verdict_of(info left_protocol, info right_protocol) 
     }
     const Party left_start = initial_party(left_protocol);
     const Party right_start = initial_party(right_protocol);
-    Exploration run;
+    Exploration run{};
     admit(run, Configuration{left_start, right_start});
-    while (run.verdict == CheckpointVerdict::Compliant && !run.pending.empty()) {
-        const Configuration here = run.pending.back();
-        run.pending.pop_back();
+    while (run.verdict == CheckpointVerdict::Compliant && run.pending.top != 0) {
+        const Configuration here = run.pending.items[run.pending.top - 1];
+        --run.pending.top;
         const Kind left = kind_of(here.left.position);
         const Kind right = kind_of(here.right.position);
         if (left == Kind::End && right == Kind::End) continue;

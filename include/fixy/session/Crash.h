@@ -123,6 +123,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <meta>
+#include <span>
 #include <tuple>
 #include <type_traits>
 #include <vector>
@@ -400,14 +401,16 @@ private:
     // An Offer.  Rule 2: it has a message branch.  Rule 6: its crash
     // branches trail.  Rule 7: one crash branch for each peer.  Rule 3: an
     // unreliable sender has a crash branch, and each crash branch names
-    // the sender.  Rule 5: no crash branch names a reliable role.
-    // Complexity: quadratic in the crash branches, linear in the others.
+    // the sender.  Rule 5: no crash branch names a reliable role.  The
+    // crashed peers are a stack of foundation/algebra/Transition.h, read
+    // through a pointer, so the walk changes no vector.  Complexity:
+    // quadratic in the crash branches, linear in the others.
     template <class Child>
     static consteval verdict offer(const tr::node& view, const channel& on, const Child& child) {
         const std::meta::info sender =
             std::meta::dealias(view.annotation == std::meta::info{} ? on.peer : first_argument(view.annotation));
         verdict answer = admitted;
-        std::vector<std::meta::info> crashed;
+        tr::stack<std::meta::info> crashed{};
         bool has_message = false;
         bool trails = true;
         bool is_distinct = true;
@@ -417,23 +420,25 @@ private:
             const tr::node head = tr::decompose(protocol_registry, branch);
             if (is_branch_reception(head) && is_crash_payload_type(head.payload)) {
                 const std::meta::info peer = first_argument(head.payload);
-                for (const std::meta::info seen : crashed) {
-                    if (seen == peer) is_distinct = false;
+                const std::meta::info* const seen = crashed.items;
+                for (std::size_t place = 0; place < crashed.top; ++place) {
+                    if (seen[place] == peer) is_distinct = false;
                 }
-                crashed.push_back(peer);
+                tr::push(crashed, peer);
                 names_sender = names_sender && peer == sender;
                 spares_reliable = spares_reliable && !holds_role(on.reliable, peer);
                 answer = both(answer, child(head.next, on));
                 continue;
             }
             has_message = true;
-            trails = trails && crashed.empty();
+            trails = trails && crashed.top == 0;
             answer = both(answer, is_branch_reception(head) ? step_verdict(head, child(head.next, on), on, true)
                                                             : child(branch, on));
         }
         bool has_crash_for_sender = false;
-        for (const std::meta::info peer : crashed) {
-            if (peer == sender) has_crash_for_sender = true;
+        const std::meta::info* const crashed_peer = crashed.items;
+        for (std::size_t place = 0; place < crashed.top; ++place) {
+            if (crashed_peer[place] == sender) has_crash_for_sender = true;
         }
         answer.is_structured = answer.is_structured && has_message && trails && is_distinct;
         answer.is_covered = answer.is_covered && (holds_role(on.reliable, sender) || has_crash_for_sender)
@@ -587,16 +592,19 @@ struct erase_algebra {
     consteval std::meta::info step(const crash::tr::node& view, context ctx, const Child& child) const {
         return std::meta::substitute(view.entry.shape, {view.payload, child(view.next, ctx)});
     }
+    // The kept branches are a stack of foundation/algebra/Transition.h, so
+    // the walk changes no vector.
     template <class Child>
     consteval std::meta::info choice(const crash::tr::node& view, context ctx, const Child& child) const {
-        std::vector<std::meta::info> kept;
+        crash::tr::stack<std::meta::info> kept{};
         for (const std::meta::info branch : view.branches) {
             const bool drops = removes == erasure::crash_branches && view.entry.direction == crash::tr::polarity::input
                             && crash::is_crash_branch_type(branch);
-            if (!drops) kept.push_back(child(branch, ctx));
+            if (!drops) crash::tr::push(kept, child(branch, ctx));
         }
-        return std::meta::substitute(
-            view.entry.shape, crash::tr::detail::choice_arguments(protocol_registry, view, view.entry.shape, kept));
+        const std::vector<std::meta::info> arguments = crash::tr::detail::choice_arguments(
+            protocol_registry, view, view.entry.shape, std::span<const std::meta::info>{kept.items, kept.top});
+        return std::meta::substitute(view.entry.shape, arguments);
     }
     template <class Child>
     consteval std::meta::info binder(const crash::tr::node& view, context ctx, const Child& child) const {

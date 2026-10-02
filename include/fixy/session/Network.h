@@ -137,6 +137,7 @@ enum class NetworkRefusal : std::uint8_t {
 namespace detail::network {
 
 namespace g = ::fixy::session::global;
+namespace tr = ::foundation::algebra::transition;
 
 template <typename From, typename To>
 struct SenderReceiver {
@@ -200,9 +201,12 @@ struct hop {
 };
 
 // The transmissions of the run, with the loop body two times, or the
-// first choice on the path.
+// first choice on the path.  The hops are a stack of
+// foundation/algebra/Transition.h, so the walk changes no vector.  A
+// reader reads each hop through a pointer.  A stack has no copy, so
+// run_of fills the run of its caller.
 struct run {
-    std::vector<hop> hops{};
+    tr::stack<hop> hops{};
     bool has_choice = false;
 };
 
@@ -237,47 +241,52 @@ consteval std::uint64_t receive_word(std::meta::info from, std::meta::info label
     return word.value;
 }
 
+// Puts the transmissions of the run of `protocol` on the hops of `result`.
 // Complexity: linear in the transmissions of the run.
-consteval run run_of(std::meta::info protocol) {
-    run result{};
+consteval void run_of(std::meta::info protocol, run& result) {
     std::size_t loop_start = 0;
     std::meta::info node = std::meta::dealias(protocol);
     for (;;) {
-        if (node == ^^g::End) return result;
+        if (node == ^^g::End) return;
         if (node == ^^g::Var) {
             // A pair of transmissions from iterations k and k + m, m > 1,
             // is ordered when the pair from k and k + 1 is: the send in
             // k + m comes after the send of the same transmission in
             // k + 1, in the order of its sender.  So two copies of the
             // body hold every pair that the check must read.
-            const std::vector<hop> body(result.hops.begin() + static_cast<std::ptrdiff_t>(loop_start),
-                                        result.hops.end());
-            result.hops.insert(result.hops.end(), body.begin(), body.end());
-            return result;
+            const std::size_t body_end = result.hops.top;
+            tr::make_room(result.hops, body_end - loop_start);
+            hop* const hops = result.hops.items;
+            for (std::size_t place = loop_start; place < body_end; ++place)
+                hops[result.hops.top++] = hops[place];
+            return;
         }
         if (!std::meta::has_template_arguments(node)) bag_walk_meets_an_unknown_node();
-        const std::vector<std::meta::info> args = std::meta::template_arguments_of(node);
+        const std::vector<std::meta::info> arguments = std::meta::template_arguments_of(node);
+        const std::meta::info* const argument = arguments.data();
+        const std::size_t argument_count = arguments.size();
         if (std::meta::template_of(node) == ^^g::Rec) {
-            loop_start = result.hops.size();
-            node = std::meta::dealias(args[0]);
+            loop_start = result.hops.top;
+            node = std::meta::dealias(argument[0]);
             continue;
         }
-        if (std::meta::template_of(node) != ^^g::Comm || args.size() < 3) bag_walk_meets_an_unknown_node();
-        if (args.size() > 3) {
+        if (std::meta::template_of(node) != ^^g::Comm || argument_count < 3) bag_walk_meets_an_unknown_node();
+        if (argument_count > 3) {
             result.has_choice = true;
-            return result;
+            return;
         }
-        const std::meta::info branch = std::meta::dealias(args[2]);
+        const std::meta::info branch = std::meta::dealias(argument[2]);
         if (!std::meta::has_template_arguments(branch) || std::meta::template_of(branch) != ^^g::Branch) {
             bag_walk_meets_an_unknown_node();
         }
         const std::vector<std::meta::info> parts = std::meta::template_arguments_of(branch);
-        const std::meta::info from = std::meta::dealias(args[0]);
-        const std::meta::info to = std::meta::dealias(args[1]);
-        const std::meta::info label = std::meta::dealias(parts[0]);
-        const std::meta::info payload = std::meta::dealias(parts[1]);
-        result.hops.push_back(hop{from, to, label, payload, receive_word(from, label, payload)});
-        node = std::meta::dealias(parts[2]);
+        const std::meta::info* const part = parts.data();
+        const std::meta::info from = std::meta::dealias(argument[0]);
+        const std::meta::info to = std::meta::dealias(argument[1]);
+        const std::meta::info label = std::meta::dealias(part[0]);
+        const std::meta::info payload = std::meta::dealias(part[1]);
+        tr::push(result.hops, hop{from, to, label, payload, receive_word(from, label, payload)});
+        node = std::meta::dealias(part[2]);
     }
 }
 
@@ -286,26 +295,35 @@ consteval run run_of(std::meta::info protocol) {
 // transmission, the sweep keeps the roles whose later events come after
 // its receive: its receiver, and each role that then receives from such a
 // role.  A later transmission is ordered after the receive when its
-// sender is one of those roles.  Complexity: O(n² · r) for n hops and r
-// roles.
-consteval bag_verdict bag_verdict_of(std::meta::info protocol) {
-    const run walked = run_of(protocol);
+// sender is one of those roles.  One stack holds those roles.  Each
+// transmission starts the stack again.  Complexity: O(n² · r) for n hops
+// and r roles.
+consteval bag_verdict bag_verdict_of(const run& walked) {
     if (walked.has_choice) return {bag_fault::choice};
-    const std::vector<hop>& hops = walked.hops;
-    for (std::size_t first = 0; first < hops.size(); ++first) {
-        std::vector<std::meta::info> informed{hops[first].to};
-        for (std::size_t second = first + 1; second < hops.size(); ++second) {
+    const hop* const hops = walked.hops.items;
+    const std::size_t hop_count = walked.hops.top;
+    tr::stack<std::meta::info> informed{};
+    for (std::size_t first = 0; first < hop_count; ++first) {
+        informed.top = 0;
+        tr::push(informed, hops[first].to);
+        for (std::size_t second = first + 1; second < hop_count; ++second) {
             const hop& later = hops[second];
             const bool is_after_receive = ::fixy::session::detail::holds_type(informed, later.from);
             if (!is_after_receive && later.to == hops[first].to && later.word == hops[first].word) {
                 return {bag_fault::repeated_word, first, second};
             }
             if (is_after_receive && !::fixy::session::detail::holds_type(informed, later.to)) {
-                informed.push_back(later.to);
+                tr::push(informed, later.to);
             }
         }
     }
     return {};
+}
+
+consteval bag_verdict bag_verdict_of(std::meta::info protocol) {
+    run walked{};
+    run_of(protocol, walked);
+    return bag_verdict_of(walked);
 }
 
 consteval std::string hop_text(const hop& message) {
@@ -321,14 +339,15 @@ consteval std::string hop_text(const hop& message) {
 
 template <typename G>
 consteval std::string_view repeated_word_message() {
-    const bag_verdict verdict = bag_verdict_of(^^G);
-    const run walked = run_of(^^G);
+    run walked{};
+    run_of(^^G, walked);
+    const bag_verdict verdict = bag_verdict_of(walked);
     std::string text =
         "fixy::session::diagnostic [Network_Bag_Repeated_Word]: on a bag the wire word of a message is its label "
         "alone, so a receive cannot tell two messages with one label apart.  The message ";
-    text += hop_text(walked.hops[verdict.first]);
+    text += hop_text(walked.hops.items[verdict.first]);
     text += " and the message ";
-    text += hop_text(walked.hops[verdict.second]);
+    text += hop_text(walked.hops.items[verdict.second]);
     text += " go to one receiver with one word, and no receive of the first happens before the send of the second.  "
             "The receive of the first can take the second.  Give the two messages different labels, let the receiver "
             "answer the first before the second is sent, or bind to a per-pair FIFO carrier.";

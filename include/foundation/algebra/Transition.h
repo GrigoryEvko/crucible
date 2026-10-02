@@ -1487,7 +1487,7 @@ namespace detail {
 // target shape carries a note of the same template.
 [[nodiscard]] consteval std::vector<std::meta::info> choice_arguments(std::meta::info registry, const node& choice,
                                                                       std::meta::info target_shape,
-                                                                      const std::vector<std::meta::info>& mapped) {
+                                                                      std::span<const std::meta::info> mapped) {
     std::vector<std::meta::info> arguments;
     const combinator_lookup target = lookup_combinator(registry, target_shape);
     if (choice.annotation != std::meta::info{} && target.is_found
