@@ -5539,6 +5539,11 @@ add_test(NAME build_order_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-build-order.py --self-test)
 set_tests_properties(build_order compile_first custom_deps build_order_self_test PROPERTIES LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
+# ninja_files_self_test — utils/scripts/ninja_files.py reads build.ninja and the
+# ninja log for check-build-order.py and check-reconfigure-noop.py.
+add_test(NAME ninja_files_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/ninja_files.py --self-test)
+set_tests_properties(ninja_files_self_test PROPERTIES LABELS "ci_guard")
 
 # parse_total — the sum, over each object of the target all and each negative
 # fixture, of the bytes that its compile reads, against the baseline of the

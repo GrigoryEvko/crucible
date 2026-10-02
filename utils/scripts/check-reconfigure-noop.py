@@ -64,11 +64,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import check_report  # noqa: E402
+from ninja_files import LOG_NAME, read_log, ran_outputs  # noqa: E402
 
 CHECK = "reconfigure-noop"
 GLOB_CHECK = Path("CMakeFiles") / "cmake.verify_globs"
 MANIFEST = "build.ninja"
-NINJA_LOG = ".ninja_log"
 # The lines of build output that a finding prints, at most.
 OUTPUT_LINES = 60
 
@@ -177,30 +177,6 @@ def run(argv: list[str], cwd: Path | None = None) -> tuple[int, str]:
     return proc.returncode, proc.stdout
 
 
-def read_ninja_log(build: Path) -> dict[str, tuple[str, ...]]:
-    """Read the last record of each output in the ninja log.
-
-    Ninja can rewrite the log with one record for each output, so the check
-    compares records and not lines.  Complexity: O(n) in the lines of the log.
-
-    Args:
-        build: The build directory
-
-    Returns:
-        The record of each output, by its absolute normalized path
-    """
-    records: dict[str, tuple[str, ...]] = {}
-    for raw in (build / NINJA_LOG).read_text(encoding="utf-8", errors="replace").splitlines():
-        if raw.startswith("#"):
-            continue
-        fields = raw.split("\t")
-        if len(fields) < 5:
-            continue
-        start, end, mtime, output, command_hash = fields[:5]
-        records[os.path.normpath(os.path.join(build, output))] = (start, end, mtime, command_hash)
-    return records
-
-
 def read_links(build: Path) -> dict[str, LinkState]:
     """Record each symbolic link under the build directory.
 
@@ -248,19 +224,6 @@ def tail(text: str) -> str:
         At most OUTPUT_LINES lines
     """
     return "\n".join(text.splitlines()[-OUTPUT_LINES:])
-
-
-def ran_edges(before: dict[str, tuple[str, ...]], after: dict[str, tuple[str, ...]]) -> list[str]:
-    """Return the outputs whose ninja log record is new or changed.
-
-    Args:
-        before: The records before a build
-        after: The records after it
-
-    Returns:
-        The outputs in sorted order
-    """
-    return sorted(output for output, record in after.items() if before.get(output) != record)
 
 
 def missing_dependencies(tree: BuildDir) -> tuple[dict[str, list[str]], str]:
@@ -313,13 +276,13 @@ def evaluate(build: Path, jobs: int, root: Path) -> tuple[list[check_report.Find
     if code != 0:
         return [finding(place, "the build fails, so the check cannot measure a second configure.  Make the build "
                                "pass first.")], tail(output)
-    if not (build / NINJA_LOG).is_file():
-        return [finding(place, f"the build wrote no {NINJA_LOG}, so the check cannot see which edges ran.")], ""
+    if not (build / LOG_NAME).is_file():
+        return [finding(place, f"the build wrote no {LOG_NAME}, so the check cannot see which edges ran.")], ""
     links_before = read_links(build)
     code, output = run([tree.cmake, "-S", str(tree.source), "-B", str(build)])
     if code != 0:
         return [finding(place, "the second configure fails.")], tail(output)
-    log = read_ninja_log(build)
+    log = read_log(build)
     findings: list[check_report.Finding] = []
     for path, state in sorted(read_links(build).items()):
         old = links_before.get(path)
@@ -337,8 +300,8 @@ def evaluate(build: Path, jobs: int, root: Path) -> tuple[list[check_report.Find
             findings.append(finding(place, f"the {attempt} build after the second configure fails."))
             explained += tail(output) + "\n"
             break
-        after = read_ninja_log(build)
-        edges = [edge for edge in ran_edges(log, after) if edge != allowed]
+        after = read_log(build)
+        edges = [edge for edge in ran_outputs(log, after) if edge != allowed]
         log = after
         for edge in edges:
             if edge == manifest:

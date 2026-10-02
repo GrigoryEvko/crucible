@@ -89,6 +89,7 @@ utils/scripts/gen-mint-inventory.py | tsast,text | misc/mint-inventory.md and th
 utils/scripts/install-ast-grep.sh | text,json | the release checksum, the version line and the matches of its fixture
 utils/scripts/install-tree-sitter.sh | text | the release checksum, the kit manifest and the parse of its fixture
 utils/scripts/mintmodel.py | tsast |
+utils/scripts/ninja_files.py | text | build.ninja and the ninja log of a build directory
 utils/scripts/pgo-bootstrap.sh | cmake-api,git |
 utils/scripts/preprocessed.py | kit |
 utils/scripts/refresh-derived.sh | git |

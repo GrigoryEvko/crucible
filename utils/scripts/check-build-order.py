@@ -90,8 +90,8 @@ THE CHECK custom-deps
     a build with CRUCIBLE_HAVE_BPF off.
 
 WHAT THE CHECKS READ
-    * build.ninja of the build directory.  A line that ends with an unescaped
-      '$' continues on the next line.  An indented line after a build
+    * build.ninja of the build directory, through utils/scripts/ninja_files.py.
+      A line that ends with an unescaped '$' continues on the next line.  An indented line after a build
       statement is a binding of that statement, `name = value`, until a line
       that is empty or not indented.  The checks do not read an included
       file, because CMake writes only rules there.  A compile edge has a rule
@@ -130,7 +130,6 @@ import contextlib
 import io
 import json
 import os
-import re
 import sys
 import tempfile
 from collections import Counter
@@ -142,14 +141,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build_census  # noqa: E402
 import check_report  # noqa: E402
 import cost_meter  # noqa: E402
+from ninja_files import COMPILE_RULE, CUSTOM_RULE, LINK_RULE, Graph, read_graph  # noqa: E402
 from repo_root import REPO_ROOT  # noqa: E402
 
 CHECKS = ("build-order", "compile-first", "custom-deps")
 NOT_APPLICABLE = 3
-COMPILE_RULE = re.compile(r"(?:CXX|C)_COMPILER__")
-LINK_RULE = re.compile(r"[A-Z]+_(?:EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY)_LINKER__")
-# The rule of each custom command, and the suffix of an object that a custom command compiles.
-CUSTOM_RULE = "CUSTOM_COMMAND"
+# The suffix of an object that a custom command compiles.
 OBJECT_SUFFIX = ".o"
 # The value of the binding `deps` that makes Ninja move a depfile into its dependency log.
 GCC_DEPS = "gcc"
@@ -166,34 +163,6 @@ COUNTED_RESULTS = frozenset({"built", "hit"})
 
 class NotApplicable(Exception):
     """The check does not apply to the build."""
-
-
-@dataclass(frozen=True, slots=True)
-class Edge:
-    """One build statement of build.ninja.
-
-    `inputs` holds each explicit and each implicit input, and `order_only`
-    holds each order-only input.
-    """
-
-    line: int
-    rule: str
-    outputs: tuple[str, ...]
-    inputs: tuple[str, ...]
-    order_only: tuple[str, ...]
-
-
-@dataclass(slots=True)
-class Graph:
-    """The edges of build.ninja, the edge that writes each output, the default targets, and the bindings of each edge.
-
-    `variables` holds the bindings of each edge that has one, by the index of the edge.
-    """
-
-    edges: list[Edge]
-    producer: dict[str, int]
-    defaults: list[str]
-    variables: dict[int, dict[str, str]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,145 +193,6 @@ def display(path: Path, root: Path = REPO_ROOT) -> str:
         The text of the path
     """
     return str(path.relative_to(root)) if path.is_relative_to(root) else str(path)
-
-
-def split_paths(text: str) -> list[str]:
-    """Split a list of Ninja paths at each space that is not escaped, and remove the escapes.
-
-    Complexity: linear in the length of the text.
-
-    Args:
-        text: The paths, as build.ninja writes them
-
-    Returns:
-        The paths
-    """
-    paths: list[str] = []
-    current: list[str] = []
-    index = 0
-    while index < len(text):
-        character = text[index]
-        if character == "$" and index + 1 < len(text):
-            current.append(text[index + 1])
-            index += 2
-            continue
-        if character == " ":
-            if current:
-                paths.append("".join(current))
-                current = []
-        else:
-            current.append(character)
-        index += 1
-    if current:
-        paths.append("".join(current))
-    return paths
-
-
-def find_unescaped(text: str, token: str) -> int:
-    """Return the index of the first occurrence of a token that is not escaped with '$', or -1.
-
-    Args:
-        text: The text
-        token: The token
-
-    Returns:
-        The index, or -1 when the text holds no such occurrence
-    """
-    index = 0
-    while index < len(text):
-        if text[index] == "$":
-            index += 2
-            continue
-        if text.startswith(token, index):
-            return index
-        index += 1
-    return -1
-
-
-def parse_build_line(line: int, body: str) -> Edge:
-    """Read one build statement, the text after `build `.
-
-    Args:
-        line: The line of the statement in build.ninja
-        body: The statement
-
-    Returns:
-        The edge
-
-    Raises:
-        ValueError: If the statement has no ':' or no rule
-    """
-    colon = find_unescaped(body, ":")
-    if colon < 0:
-        raise ValueError(f"build.ninja:{line}: the build statement has no ':'")
-    outputs_text, rest = body[:colon], body[colon + 1:]
-    implicit_outputs = find_unescaped(outputs_text, "|")
-    if implicit_outputs >= 0:
-        outputs_text = outputs_text[:implicit_outputs] + " " + outputs_text[implicit_outputs + 1:]
-    validations = find_unescaped(rest, "|@")
-    if validations >= 0:
-        rest = rest[:validations]
-    order_only_at = find_unescaped(rest, "||")
-    order_only_text = ""
-    if order_only_at >= 0:
-        rest, order_only_text = rest[:order_only_at], rest[order_only_at + 2:]
-    parts = split_paths(rest)
-    if not parts:
-        raise ValueError(f"build.ninja:{line}: the build statement has no rule")
-    inputs = tuple(part for part in parts[1:] if part != "|")
-    return Edge(line, parts[0], tuple(split_paths(outputs_text)), inputs, tuple(split_paths(order_only_text)))
-
-
-def read_graph(path: Path) -> Graph:
-    """Read the build statements, their bindings and the default targets of one build.ninja.
-
-    An indented line after a build statement is a binding of that statement,
-    until a line that is empty or not indented.  The indented lines after a
-    rule statement are not read.
-
-    Complexity: linear in the size of the file.
-
-    Args:
-        path: The build.ninja
-
-    Returns:
-        The graph
-
-    Raises:
-        ValueError: If a build statement cannot be read
-        OSError: If the file cannot be read
-    """
-    edges: list[Edge] = []
-    producer: dict[str, int] = {}
-    defaults: list[str] = []
-    variables: dict[int, dict[str, str]] = {}
-    pending = ""
-    pending_line = 0
-    binding_edge: int | None = None
-    for number, raw in enumerate(path.read_text(encoding="utf-8").split("\n"), start=1):
-        if not pending:
-            pending_line = number
-        trailing = len(raw) - len(raw.rstrip("$"))
-        if trailing % 2 == 1:
-            pending += raw[:-1]
-            continue
-        text = pending + raw
-        pending = ""
-        if text[:1] in (" ", "\t") and text.strip():
-            name, separator, value = text.partition("=")
-            if binding_edge is not None and separator:
-                variables.setdefault(binding_edge, {})[name.strip()] = value.strip()
-            continue
-        binding_edge = None
-        if text.startswith("default "):
-            defaults.extend(split_paths(text[len("default "):]))
-        elif text.startswith("build "):
-            edge = parse_build_line(pending_line, text[len("build "):])
-            binding_edge = len(edges)
-            for output in edge.outputs:
-                producer[output] = len(edges)
-            edges.append(edge)
-    return Graph(edges, producer, defaults, variables)
 
 
 def target_of(object_path: Path) -> str | None:
@@ -949,17 +779,6 @@ def self_test_cases() -> int:
         return {"format": cost_meter.RECORD_FORMAT, "step": "compile", "result": "built",
                 "cost": {"cpu_s": 1.0, "instructions": int(giga * GIGA)}}
 
-    expect("split_paths removes the escapes of a space and a colon",
-           split_paths("a$ b c$:d  e") == ["a b", "c:d", "e"])
-    edge = parse_build_line(7, "out.o | $${dir}out.o: CXX_COMPILER__t_Debug src.cpp | dep.h || order phony |@ check")
-    expect("parse_build_line reads the outputs, the rule, the inputs and the order-only inputs",
-           edge.outputs == ("out.o", "${dir}out.o") and edge.rule == "CXX_COMPILER__t_Debug"
-           and edge.inputs == ("src.cpp", "dep.h") and edge.order_only == ("order", "phony"))
-    try:
-        parse_build_line(1, "no colon here")
-        expect("parse_build_line refuses a statement with no ':'", False)
-    except ValueError:
-        expect("parse_build_line refuses a statement with no ':'", True)
     expect("target_of reads the target of an object",
            target_of(Path("/b/test/CMakeFiles/test_a.dir/x/test_a.cpp.o")) == "test_a"
            and target_of(Path("/b/test/x.o")) is None)
