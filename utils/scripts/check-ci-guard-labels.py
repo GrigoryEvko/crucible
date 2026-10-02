@@ -35,6 +35,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import cmake_pin
 from repo_root import REPO_ROOT
 
 LABEL = "ci_guard"
@@ -220,16 +221,23 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--self-test", action="store_true", help="configure a planted project and check the verdicts")
     parser.add_argument("--build-dir", type=Path, help="the configured build directory to scan")
     parser.add_argument("--source-dir", type=Path, default=REPO_ROOT, help="the source root (default: this repository)")
-    parser.add_argument("--ctest", default="ctest", help="the ctest executable")
-    parser.add_argument("--cmake", default="cmake", help="the cmake executable (self-test only)")
+    parser.add_argument("--ctest", help="the ctest executable (default: the ctest of the build directory, or for "
+                                        "--self-test the ctest of PATH at the pin)")
+    parser.add_argument("--cmake", help="the cmake executable of the self-test (default: the cmake of PATH at the pin)")
     args = parser.parse_args(argv)
-    if args.self_test:
-        return self_test(args.cmake, args.ctest)
-    if args.build_dir is None:
-        parser.print_usage(sys.stderr)
-        print("check-ci-guard-labels: --build-dir is necessary for a scan", file=sys.stderr)
+    try:
+        if args.self_test:
+            return self_test(args.cmake or cmake_pin.pinned_program("cmake"),
+                             args.ctest or cmake_pin.pinned_program("ctest"))
+        if args.build_dir is None:
+            parser.print_usage(sys.stderr)
+            print("check-ci-guard-labels: --build-dir is necessary for a scan", file=sys.stderr)
+            return 2
+        ctest = args.ctest or cmake_pin.configured_program(args.build_dir, "ctest")
+    except cmake_pin.PinError as error:
+        print(f"check-ci-guard-labels: {error}", file=sys.stderr)
         return 2
-    return check(args.ctest, args.build_dir, args.source_dir)
+    return check(ctest, args.build_dir, args.source_dir)
 
 
 if __name__ == "__main__":

@@ -73,6 +73,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import cmake_pin  # noqa: E402
 import tsast  # noqa: E402
 from preprocessed import split_command  # noqa: E402
 
@@ -660,16 +661,19 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--self-test", action="store_true", help="plant every shape and check each verdict")
     parser.add_argument("--build-dir", type=Path, help="a configured build whose compile database is read")
-    parser.add_argument("--cmake", default="cmake", help="the cmake executable (self-test only)")
+    parser.add_argument("--cmake", help="the cmake executable of the self-test (default: the cmake of PATH at the pin)")
     parser.add_argument("--cxx", default="c++", help="the C++ compiler of the planted build (self-test only)")
     args = parser.parse_args(argv)
     try:
         if args.self_test:
-            return self_test(args.cmake, args.cxx)
+            return self_test(args.cmake or cmake_pin.pinned_program("cmake"), args.cxx)
         return check(REPO_ROOT, args.build_dir)
     except tsast.KitMissing as error:
         print(f"check-no-ffast-math: {error}", file=sys.stderr)
         return 3
+    except cmake_pin.PinError as error:
+        print(f"check-no-ffast-math --self-test: {error}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

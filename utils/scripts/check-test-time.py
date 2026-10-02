@@ -86,6 +86,10 @@ Usage
     check-test-time.py --build-dir BUILD_DIR [--log FILE] --write
     check-test-time.py --self-test [--cmake CMAKE] [--ctest CTEST]
 
+    Without --ctest, the check runs the ctest that CMakeCache.txt of the build
+    directory names, and the self-test runs the cmake and the ctest of PATH
+    only when they give the pinned version (utils/scripts/cmake_pin.py).
+
 Exit 0 with no error, 1 on an error or an input that the check cannot read, 2 on a
 usage error or a failed self-test.
 """
@@ -98,7 +102,6 @@ import io
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -109,6 +112,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import check_report  # noqa: E402
+import cmake_pin  # noqa: E402
 import cost_meter  # noqa: E402
 
 CHECK = "test-time"
@@ -717,21 +721,32 @@ def main(argv: list[str]) -> int:
                         help="read the log that the parent ctest holds open: the check is the command of ctest")
     parser.add_argument("--log", type=Path, default=DEFAULT_LOG,
                         help=f"the ctest log, relative to the build directory (default {DEFAULT_LOG})")
-    parser.add_argument("--ctest", default=shutil.which("ctest") or "ctest", help="the ctest program")
-    parser.add_argument("--cmake", default=shutil.which("cmake") or "cmake",
-                        help="the cmake program of the self-test")
+    parser.add_argument("--ctest", help="the ctest program (default: the ctest of the build directory, or for "
+                                        "--self-test the ctest of PATH at the pin)")
+    parser.add_argument("--cmake", help="the cmake program of the self-test (default: the cmake of PATH at the pin)")
     parser.add_argument("--write", action="store_true", help="write the rows of the kind of the build again")
     parser.add_argument("--self-test", action="store_true", help="plant each level and each failure mode")
     arguments = parser.parse_args(argv)
     if arguments.self_test:
-        return self_test(arguments.cmake, arguments.ctest)
+        try:
+            cmake = arguments.cmake or cmake_pin.pinned_program("cmake")
+            ctest = arguments.ctest or cmake_pin.pinned_program("ctest")
+        except cmake_pin.PinError as error:
+            print(f"check-test-time --self-test: {error}", file=sys.stderr)
+            return 2
+        return self_test(cmake, ctest)
     if arguments.build_dir is None:
         parser.error("give --build-dir BUILD_DIR, or --self-test")
     if arguments.from_ctest and arguments.write:
         parser.error("--write reads a finished log: give --log, not --from-ctest")
     build = arguments.build_dir.resolve()
+    try:
+        ctest = arguments.ctest or cmake_pin.configured_program(build, "ctest")
+    except cmake_pin.PinError as error:
+        print(f"check-test-time: {error}", file=sys.stderr)
+        return 1
     log = None if arguments.from_ctest else (arguments.log if arguments.log.is_absolute() else build / arguments.log)
-    return run(build, log, arguments.ctest, arguments.warnings_dir, arguments.write)
+    return run(build, log, ctest, arguments.warnings_dir, arguments.write)
 
 
 if __name__ == "__main__":

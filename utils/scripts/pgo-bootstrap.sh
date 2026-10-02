@@ -101,8 +101,10 @@ if [[ ${#benches[@]} -eq 0 ]]; then
     exit 1
 fi
 
-# 3. Build the instrumented benches.
-cmake --build "$build_dir" -j "$jobs" --target "${benches[@]}"
+# 3. Build the instrumented benches, with the cmake that configured the build
+#    directory (utils/scripts/cmake_pin.py).
+build_cmake="$(python3 "$REPO_ROOT/utils/scripts/cmake_pin.py" --print-program "$build_dir" cmake)"
+"$build_cmake" --build "$build_dir" -j "$jobs" --target "${benches[@]}"
 
 # 4. Start from no counters.  A rebuilt object replaces its counter
 #    file on its own, and a bench run again adds to it, so this only

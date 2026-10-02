@@ -72,15 +72,21 @@ THE RECORD
 The script is for the inner loop only.  CI and the checks before a landing
 run the full suite.
 
+THE PROGRAMS
+    The script builds with the cmake and runs the tests with the ctest that
+    CMakeCache.txt of BUILD_DIR names (utils/scripts/cmake_pin.py).  It runs
+    no cmake and no ctest of PATH, because PATH can hold a ctest of another
+    version.
+
 Usage:
-    run-affected-tests.py BUILD_DIR [-j N] [--no-build] [--all] [--plan] [--ctest CTEST] [-- CTEST_ARGUMENT...]
+    run-affected-tests.py BUILD_DIR [-j N] [--no-build] [--all] [--plan] [-- CTEST_ARGUMENT...]
     run-affected-tests.py --self-test [--ctest CTEST]
 
 --no-build  Do not build first.  Then a stale executable can look unchanged.
 --all       Run each executable test, and record each pass.
 --plan      Print what the script would run, and run nothing.
---ctest     The ctest program.  The default is the ctest in PATH.  The build
-            uses the cmake in the same directory.
+--ctest     The ctest of the fake build tree of the self-test.  The default
+            is the ctest of PATH, when it gives the pinned version.
 
 Exit 0 when each test that ran passed, 1 when the build or a test failed, 2 on
 a usage error, a build directory that the script cannot read, or a failed
@@ -108,6 +114,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import check_report  # noqa: E402
+import cmake_pin  # noqa: E402
 import elf_file  # noqa: E402
 import loop_history  # noqa: E402
 
@@ -115,9 +122,6 @@ import loop_history  # noqa: E402
 
 STATE_VERSION = 1
 STATE_DIRECTORY = "affected-tests"
-# --ctest puts its value here, so that each child process of the self-test
-# uses the same ctest.
-CTEST_VARIABLE = "CRUCIBLE_AFFECTED_TESTS_CTEST"
 FIXTURE_DRIVER = "neg_compile_driver.py"
 TEST_LAUNCHER = "test-launcher.py"
 LAUNCHER_INPUT_SUFFIXES = (".py", ".txt")
@@ -242,18 +246,17 @@ def read_trees(build_dir: Path) -> Trees:
                       f"directory again.")
 
 
-def ctest_program() -> str:
-    """Return the path of ctest from --ctest, or from PATH, or stop when there is none."""
-    program = os.environ.get(CTEST_VARIABLE) or shutil.which("ctest")
-    if program is None:
-        raise RunnerError("ctest is not in PATH.  Put the ctest of the CMake that configured the build in PATH, "
-                          "or give it with --ctest.")
-    return program
+def build_program(build_dir: Path, name: str) -> str:
+    """Return the cmake or the ctest that CMakeCache.txt of the build directory names, or stop."""
+    try:
+        return cmake_pin.configured_program(build_dir, name)
+    except cmake_pin.PinError as error:
+        raise RunnerError(str(error)) from None
 
 
 def list_tests(build_dir: Path) -> list[TestRecord]:
     """Return each test of the build directory, from `ctest --show-only=json-v1`."""
-    result = subprocess.run([ctest_program(), "--test-dir", str(build_dir), "--show-only=json-v1"],
+    result = subprocess.run([build_program(build_dir, "ctest"), "--test-dir", str(build_dir), "--show-only=json-v1"],
                             capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise RunnerError(f"`ctest --show-only=json-v1` failed with exit code {result.returncode}:\n"
@@ -606,7 +609,7 @@ def run_tests(build_dir: Path, names: list[str], state_dir: Path, jobs: int,
     report = state_dir / "junit.xml"
     write_list(selection, names)
     report.unlink(missing_ok=True)
-    command = [ctest_program(), "--test-dir", str(build_dir), "--tests-from-file", str(selection),
+    command = [build_program(build_dir, "ctest"), "--test-dir", str(build_dir), "--tests-from-file", str(selection),
                "--output-junit", str(report), f"-j{jobs}", *ctest_arguments]
     status = subprocess.run(command, check=False).returncode
     if not report.is_file():
@@ -618,10 +621,9 @@ def run_tests(build_dir: Path, names: list[str], state_dir: Path, jobs: int,
 
 
 def build(build_dir: Path, jobs: int) -> int:
-    """Build the tree with the cmake beside ctest, and return the exit code of the build."""
-    sibling = Path(ctest_program()).with_name("cmake")
-    cmake = str(sibling) if sibling.is_file() else (shutil.which("cmake") or "cmake")
-    return subprocess.run([cmake, "--build", str(build_dir), f"-j{jobs}"], check=False).returncode
+    """Build the tree with the cmake of the build directory, and return the exit code of the build."""
+    return subprocess.run([build_program(build_dir, "cmake"), "--build", str(build_dir), f"-j{jobs}"],
+                          check=False).returncode
 
 
 def update_state(state: dict[str, object], planner: Planner, decisions: list[Decision],
@@ -747,8 +749,8 @@ def synthetic_elf(allocated: bytes, other: bytes = b"", executable: bytes = b"")
 class SelfTest:
     """A fake source tree and build tree, with a CTestTestfile.cmake written by hand."""
 
-    def __init__(self, root: Path) -> None:
-        """Make the trees under `root`."""
+    def __init__(self, root: Path, ctest: str) -> None:
+        """Make the trees under `root`.  The cache of the fake build tree names `ctest`."""
         self.source_dir = root / "src"
         self.build_dir = self.source_dir / "build"
         (self.build_dir / "bin").mkdir(parents=True)
@@ -756,7 +758,8 @@ class SelfTest:
         (self.build_dir / "lib").mkdir()
         (self.source_dir / "data").mkdir()
         (self.source_dir / "test").mkdir()
-        (self.build_dir / "CMakeCache.txt").write_text(f"CMAKE_HOME_DIRECTORY:INTERNAL={self.source_dir}\n")
+        self.cache = f"CMAKE_HOME_DIRECTORY:INTERNAL={self.source_dir}\nCMAKE_CTEST_COMMAND:INTERNAL={ctest}\n"
+        (self.build_dir / "CMakeCache.txt").write_text(self.cache)
         self.golden = self.source_dir / "data" / "golden.csv"
         self.golden.write_text("1,2\n")
         self.library = self.build_dir / "lib" / "libnamed.so"
@@ -817,10 +820,14 @@ class SelfTest:
         ]
         (self.build_dir / "CTestTestfile.cmake").write_text("\n".join(lines) + "\n")
 
-    def call(self, *extra: str) -> tuple[int, str]:
-        """Run the script on the fake build tree without a build, and return its exit code and output."""
+    def call(self, *extra: str, path: str | None = None) -> tuple[int, str]:
+        """Run the script on the fake build tree without a build, and return its exit code and output.
+
+        With `path`, the script runs with that PATH.
+        """
+        environment = dict(os.environ, PATH=path) if path is not None else None
         result = subprocess.run([sys.executable, str(Path(__file__).resolve()), str(self.build_dir), "--no-build",
-                                 "-j4", *extra], capture_output=True, text=True, check=False)
+                                 "-j4", *extra], capture_output=True, text=True, check=False, env=environment)
         return result.returncode, result.stdout + result.stderr
 
     def skipped(self) -> list[str]:
@@ -828,8 +835,8 @@ class SelfTest:
         return (self.build_dir / STATE_DIRECTORY / "skipped.txt").read_text().split()
 
 
-def self_test() -> int:
-    """Run each plant, and return 0 when each one gives the expected result."""
+def self_test(ctest: str) -> int:
+    """Run each plant with `ctest` as the ctest of the fake build tree, and return 0 when each one holds."""
     failures: list[str] = []
 
     def expect(label: str, condition: bool, output: str = "") -> None:
@@ -865,9 +872,15 @@ def self_test() -> int:
     expect("source_paths_in ignores the build tree", source_paths_in("/s/b/x /s/y", trees) == ["/s/y"])
 
     with tempfile.TemporaryDirectory(prefix="affected-tests-") as directory:
-        fake = SelfTest(Path(directory))
-        status, output = fake.call()
-        expect("the first call runs each test, and exe_bad fails", status == 1 and fake.skipped() == [], output)
+        fake = SelfTest(Path(directory), ctest)
+        # A ctest of PATH that fails on each call.  The script runs the ctest of the cache.
+        wrong = Path(directory) / "wrong-path"
+        wrong.mkdir()
+        (wrong / "ctest").write_text("#!/bin/sh\necho 'the ctest of PATH ran'\nexit 3\n")
+        (wrong / "ctest").chmod(0o755)
+        status, output = fake.call(path=f"{wrong}:{os.environ.get('PATH', '')}")
+        expect("the first call runs each test with the ctest of the cache, and exe_bad fails",
+               status == 1 and fake.skipped() == [] and "the ctest of PATH ran" not in output, output)
         expect("the first call says that no state file exists", "no state file" in output, output)
         history = loop_history.read_lines(fake.build_dir)
         expect("a call appends one line to the loop history, with the tests and with no build after --no-build",
@@ -943,6 +956,11 @@ def self_test() -> int:
         expect("--plan appends no line to the loop history",
                len(loop_history.read_lines(fake.build_dir)) == lines_before, output)
 
+        (fake.build_dir / "CMakeCache.txt").write_text(f"CMAKE_HOME_DIRECTORY:INTERNAL={fake.source_dir}\n")
+        status, output = fake.call()
+        expect("a cache that names no ctest gives exit code 2 and the reason",
+               status == 2 and "has no entry CMAKE_CTEST_COMMAND" in output, output)
+
     status, output = subprocess.run([sys.executable, str(Path(__file__).resolve()), "/nonexistent/build"],
                                     capture_output=True, text=True, check=False).returncode, ""
     expect("a missing build directory gives exit code 2", status == 2, output)
@@ -970,17 +988,20 @@ def main(arguments: list[str]) -> int:
     parser.add_argument("--no-build", action="store_true")
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--plan", action="store_true")
-    parser.add_argument("--ctest", help="the ctest program; the default is the ctest in PATH")
+    parser.add_argument("--ctest", help="the ctest of the fake build tree of --self-test; the default is the ctest "
+                                        "of PATH, when it gives the pinned version")
     parser.add_argument("--self-test", action="store_true")
     options = parser.parse_args(arguments[:separator])
-    if options.ctest:
-        os.environ[CTEST_VARIABLE] = options.ctest
     if options.self_test:
         try:
-            return self_test()
-        except RunnerError as error:
+            return self_test(options.ctest or cmake_pin.pinned_program("ctest"))
+        except (RunnerError, cmake_pin.PinError) as error:
             print(f"run-affected-tests --self-test: {error}")
             return 2
+    if options.ctest:
+        print("run-affected-tests: --ctest is only for --self-test.  The script runs the ctest of the build "
+              "directory.")
+        return 2
     if options.build_dir is None or options.jobs < 1:
         print("run-affected-tests: give a build directory, and give -j a positive number.")
         return 2

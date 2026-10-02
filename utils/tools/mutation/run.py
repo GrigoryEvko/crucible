@@ -8,7 +8,10 @@ such test kills marks a gate with no witness.
 The run works on a configured export of the tree, never on the repository:
     run.py deps   --build B --out O        map each compile entry to its headers
     run.py mutate --src S --build B --out O --header H [H ...]
-    run.py selftest --compiler CXX         one planted survivor and two kills
+    run.py selftest --compiler CXX [--cmake CMAKE]   one planted survivor and two kills
+
+The run uses the cmake and the ctest that CMakeCache.txt of B names, not a
+cmake or a ctest of PATH (utils/scripts/cmake_pin.py).
 
 Candidates for a header, in this order:
     1. each negative fixture whose compile reaches the header
@@ -58,7 +61,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gates as gate_finder  # noqa: E402
-import tsast  # noqa: E402  (gates puts utils/scripts/ on the path)
+import cmake_pin  # noqa: E402  (gates puts utils/scripts/ on the path)
+import tsast  # noqa: E402
 from repo_root import REPO_ROOT  # noqa: E402
 
 INVALID_EXEMPTIONS = Path(__file__).resolve().parent / "invalid-exemptions.txt"
@@ -212,6 +216,17 @@ include("${CRUCIBLE_TESTS_FILE}")
 """
 
 
+def _build_program(build: Path, name: str) -> str:
+    """The cmake or the ctest that CMakeCache.txt of a configured build names (utils/scripts/cmake_pin.py).
+
+    A cmake or a ctest of PATH can have another version than the one that
+    configured the build, so the runner does not look in PATH."""
+    try:
+        return cmake_pin.configured_program(build, name)
+    except cmake_pin.PinError as error:
+        raise SystemExit(f"mutation: {error}") from None
+
+
 def _ctest_commands(build: Path) -> dict[str, list[str]]:
     """The command of each test, from CMake's own evaluation of the CTestTestfile.cmake tree.
 
@@ -224,7 +239,7 @@ def _ctest_commands(build: Path) -> dict[str, list[str]]:
         listing = Path(tmp_name) / "tests.jsonl"
         shim.write_text(CTEST_SHIM)
         listing.write_text("")
-        subprocess.run(["cmake", f"-DCRUCIBLE_TESTS_FILE={build / 'CTestTestfile.cmake'}",
+        subprocess.run([_build_program(build, "cmake"), f"-DCRUCIBLE_TESTS_FILE={build / 'CTestTestfile.cmake'}",
                         f"-DCRUCIBLE_TESTS_OUT={listing}", "-P", str(shim)], check=True, capture_output=True)
         commands: dict[str, list[str]] = {}
         for line in listing.read_text().splitlines():
@@ -249,7 +264,7 @@ def _target_sources(build: Path) -> dict[str, list[str]]:
     if not query.exists():
         query.parent.mkdir(parents=True, exist_ok=True)
         query.write_text("")
-        subprocess.run(["cmake", str(build)], check=True, capture_output=True)
+        subprocess.run([_build_program(build, "cmake"), str(build)], check=True, capture_output=True)
     indexes = sorted((api / "reply").glob("index-*.json"))
     if not indexes:
         raise SystemExit(f"mutation: the CMake file API left no reply under {api / 'reply'}")
@@ -268,8 +283,8 @@ def _target_sources(build: Path) -> dict[str, list[str]]:
 
 def load_candidates(build: Path, deps: dict[str, list[str]]) -> list[Candidate]:
     """Every negative fixture and every test source of the configured build, as candidates."""
-    tests = json.loads(subprocess.run(["ctest", "--show-only=json-v1"], cwd=build, capture_output=True,
-                                      text=True, check=True).stdout)["tests"]
+    tests = json.loads(subprocess.run([_build_program(build, "ctest"), "--show-only=json-v1"], cwd=build,
+                                      capture_output=True, text=True, check=True).stdout)["tests"]
     declared = _ctest_commands(build)
     entries = json.loads((build / "compile_commands.json").read_text())
     by_file = {str(Path(entry["file"]).resolve()): entry for entry in entries}
@@ -714,7 +729,11 @@ def _selftest_build_model(work: Path, args: argparse.Namespace) -> list[str]:
     (source / "sub" / "CMakeLists.txt").write_text(API_SUBDIR)
     (source / "planted_test.cpp").write_text("int main() { return 0; }\n")
     generator = ["-G", "Ninja", f"-DCMAKE_MAKE_PROGRAM={NINJA}"] if shutil.which(NINJA) else []
-    configured = subprocess.run(["cmake", "-S", str(source), "-B", str(build), *generator,
+    try:
+        cmake = args.cmake or cmake_pin.pinned_program("cmake")
+    except cmake_pin.PinError as error:
+        return [str(error)]
+    configured = subprocess.run([cmake, "-S", str(source), "-B", str(build), *generator,
                                  f"-DCMAKE_CXX_COMPILER={args.compiler}"], capture_output=True, text=True)
     if configured.returncode != 0:
         return [f"the planted project does not configure:\n{configured.stderr[-2000:]}"]
@@ -877,6 +896,8 @@ def main() -> int:
     selftest = sub.add_parser("selftest")
     selftest.add_argument("--compiler", required=True)
     selftest.add_argument("--ninja", default="", help="the ninja binary, when it is not on PATH")
+    selftest.add_argument("--cmake", default="", help="the cmake of the planted project (default: the cmake of "
+                                                       "PATH at the pin, utils/scripts/cmake_pin.py)")
     args = parser.parse_args()
     return {"deps": cmd_deps, "mutate": cmd_mutate, "selftest": cmd_selftest}[args.mode](args)
 

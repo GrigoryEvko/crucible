@@ -74,10 +74,13 @@ done
 
 [[ -f "$BUILD_DIR/CMakeCache.txt" ]] || \
     die "$BUILD_DIR not configured — run: cmake --preset $PRESET"
+# The cmake that configured BUILD_DIR builds it, not a cmake of PATH (utils/scripts/cmake_pin.py).
+BUILD_CMAKE="$(python3 "$REPO_ROOT/utils/scripts/cmake_pin.py" --print-program "$BUILD_DIR" cmake)" || \
+    die "$BUILD_DIR names no cmake that exists — configure it again: cmake --preset $PRESET"
 
 if [[ "$list_only" == 1 ]]; then
     log "buildable bench targets in $BUILD_DIR:"
-    cmake --build "$BUILD_DIR" --target help 2>/dev/null | grep -oE '\bbench_[a-z_]+' | sort -u
+    "$BUILD_CMAKE" --build "$BUILD_DIR" --target help 2>/dev/null | grep -oE '\bbench_[a-z_]+' | sort -u
     exit 0
 fi
 
@@ -113,7 +116,7 @@ for t in "${targets[@]}"; do
     bin="$BUILD_DIR/bench/$t"
     if [[ "$do_build" == 1 ]]; then
         log "build $t"
-        cmake --build "$BUILD_DIR" --target "$t" -j "$JOBS" >/dev/null \
+        "$BUILD_CMAKE" --build "$BUILD_DIR" --target "$t" -j "$JOBS" >/dev/null \
             || die "build failed: $t (known-drifted bench? try another target)"
     fi
     [[ -x "$bin" ]] || die "missing binary: $bin (build it first, drop --no-build)"

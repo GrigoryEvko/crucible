@@ -64,6 +64,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import check_report  # noqa: E402
+import cmake_pin  # noqa: E402
 from ninja_files import LOG_NAME, read_log, ran_outputs  # noqa: E402
 
 CHECK = "reconfigure-noop"
@@ -496,11 +497,16 @@ def main(argv: list[str]) -> int:
     parser.add_argument("build_dir", nargs="?", type=Path, help="the configured Ninja build directory")
     parser.add_argument("--jobs", type=int, default=96, help="the parallel jobs of each build (default 96)")
     parser.add_argument("--self-test", action="store_true", help="plant each defect in a scratch project")
-    parser.add_argument("--cmake", default=shutil.which("cmake") or "cmake", help="the cmake of the self-test")
+    parser.add_argument("--cmake", help="the cmake of the self-test (default: the cmake of PATH at the pin)")
     parser.add_argument("--ninja", default=shutil.which("ninja") or "ninja", help="the ninja of the self-test")
     arguments = parser.parse_args(argv)
     if arguments.self_test:
-        return self_test(arguments.cmake, arguments.ninja)
+        try:
+            cmake = arguments.cmake or cmake_pin.pinned_program("cmake")
+        except cmake_pin.PinError as error:
+            print(f"check-reconfigure-noop --self-test: {error}", file=sys.stderr)
+            return 2
+        return self_test(cmake, arguments.ninja)
     if arguments.build_dir is None:
         parser.error("give BUILD_DIR, or --self-test")
     if arguments.jobs < 1:

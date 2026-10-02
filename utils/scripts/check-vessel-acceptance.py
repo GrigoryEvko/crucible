@@ -159,7 +159,10 @@ def check_build(build_dir: Path, torch_dir: str, root: Path) -> list[str]:
     problems += werror_problems(build_dir, root)
     if problems:
         return problems
-    cmake = cache.get("CMAKE_COMMAND") or "cmake"
+    # The cmake of the build, not a cmake of PATH, which can have another version (utils/scripts/cmake_pin.py).
+    cmake = cache.get("CMAKE_COMMAND")
+    if not cmake:
+        return [f"{build_dir}/CMakeCache.txt has no entry CMAKE_COMMAND.  Configure the build directory again."]
     try:
         done = subprocess.run([cmake, "--build", str(build_dir), "--target", *TARGETS], capture_output=True,
                               text=True, timeout=BUILD_TIMEOUT_SECONDS)

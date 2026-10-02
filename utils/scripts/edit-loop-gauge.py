@@ -88,6 +88,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import check_report  # noqa: E402
+import cmake_pin  # noqa: E402
 import cost_meter  # noqa: E402
 import loop_history  # noqa: E402
 import ninja_files  # noqa: E402
@@ -436,10 +437,7 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
     print(f"edit-loop-gauge: host {socket.gethostname()}, commit {commit[:12]}, {state.get('changed_files')} changed "
           f"file(s) in the source work tree that the copy does not hold, preset {options.preset}, {jobs} jobs, "
           f"{options.runs} run(s), work directory {work}")
-    build_command = ["cmake", "--build", str(build), "-j", jobs]
-    test_command = ["ctest", "--test-dir", str(build), "-j", jobs, "--timeout", str(options.timeout),
-                    "--no-tests=error"]
-    configure_command = ["cmake", "--preset", options.preset, "-B", str(build)]
+    build_command: list[str] = []
     results: list[StepResult] = []
 
     def step(name: str, command: list[str]) -> StepResult:
@@ -454,10 +452,24 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
               f"{loop_history.cell(result.others_pct)} %{path}", flush=True)
         return result
 
+    # The first configure runs the cmake of PATH, and the configure step rejects
+    # it when its version is not the pin.  Each later step runs the cmake and
+    # the ctest that the build directory names (utils/scripts/cmake_pin.py).
     failed = False
     if options.reuse is None:
-        failed = step("configure", configure_command).status != 0
-        failed = failed or step("warm-build", build_command).status != 0
+        failed = step("configure", ["cmake", "--preset", options.preset, "-B", str(build)]).status != 0
+    try:
+        cmake = cmake_pin.configured_program(build, "cmake")
+        ctest = cmake_pin.configured_program(build, "ctest")
+    except cmake_pin.PinError as error:
+        print(f"edit-loop-gauge: {error}  The logs are in {logs}.")
+        return 1, True
+    build_command = [cmake, "--build", str(build), "-j", jobs]
+    test_command = [ctest, "--test-dir", str(build), "-j", jobs, "--timeout", str(options.timeout),
+                    "--no-tests=error"]
+    configure_command = [cmake, "--preset", options.preset, "-B", str(build)]
+    if options.reuse is None and not failed:
+        failed = step("warm-build", build_command).status != 0
         if not failed:
             step("warm-tests", test_command)
     header = tree / EDIT_HEADER

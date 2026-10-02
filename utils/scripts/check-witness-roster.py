@@ -103,7 +103,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import tsast  # noqa: E402  (the path insert above has to come first)
+import cmake_pin  # noqa: E402  (the path insert above has to come first)
+import tsast  # noqa: E402
 
 REPO = tsast.REPO_ROOT
 ROSTER = REPO / "utils" / "scripts" / "witness-roster.txt"
@@ -841,8 +842,9 @@ def self_test() -> int:
             expect(f"the mirror over {mirror.type_} is refused with both regexes",
                    refused.returncode != 0 and re.search(REASONS[mirror.reason], output) is not None
                    and re.search(rf"\b{re.escape(base_name(mirror.type_))}\(", output) is not None, True)
-            # ctest registers exactly the fixtures on disk.
-            listed = subprocess.run(["ctest", "-N", "-R", "^neg_witness_.*_direct_construction$"], cwd=build_dir,
+            # ctest registers exactly the fixtures on disk.  The ctest of the build tree lists them.
+            listed = subprocess.run([cmake_pin.configured_program(build_dir, "ctest"), "-N", "-R",
+                                     "^neg_witness_.*_direct_construction$"], cwd=build_dir,
                                     capture_output=True, text=True).stdout
             registered = sorted(set(re.findall(r"neg_witness_[a-z0-9_]+_direct_construction", listed)))
             on_disk = sorted(path.stem for path in FIXTURE_DIR.glob(FIXTURE_GLOB))

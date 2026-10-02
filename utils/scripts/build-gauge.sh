@@ -103,7 +103,7 @@ if ! [[ "$jobs" =~ ^[1-9][0-9]*$ && "$test_timeout" =~ ^[1-9][0-9]*$ ]]; then
     exit 2
 fi
 
-for tool in cmake ninja ctest python3; do
+for tool in cmake ninja python3; do
     if ! command -v "$tool" >/dev/null 2>&1; then
         echo "build-gauge: $tool is not on PATH." >&2
         exit 3
@@ -202,11 +202,17 @@ if [[ "$step_status" -ne 0 ]]; then
     exit 1
 fi
 
+# The configure ran the cmake of PATH, and it rejects a cmake off the pin.
+# The build and the tests run the cmake and the ctest that the build
+# directory names, not a ctest of PATH (utils/scripts/cmake_pin.py).
+build_cmake="$(python3 "$REPO_ROOT/utils/scripts/cmake_pin.py" --print-program "$build_dir" cmake)"
+build_ctest="$(python3 "$REPO_ROOT/utils/scripts/cmake_pin.py" --print-program "$build_dir" ctest)"
+
 build_args=(--build "$build_dir" -j "$jobs")
 if [[ ${#targets[@]} -gt 0 ]]; then
     build_args+=(--target "${targets[@]}")
 fi
-timed_step build env CCACHE_DISABLE=1 cmake "${build_args[@]}"
+timed_step build env CCACHE_DISABLE=1 "$build_cmake" "${build_args[@]}"
 if [[ "$step_status" -ne 0 ]]; then
     echo "build-gauge: the build failed.  Read $build_dir/gauge-build.log." >&2
     status=1
@@ -218,7 +224,7 @@ if [[ "$run_tests" -eq 1 && "$status" -eq 0 ]]; then
     if [[ -n "$test_regex" ]]; then
         test_args+=(-R "$test_regex")
     fi
-    timed_step tests ctest "${test_args[@]}"
+    timed_step tests "$build_ctest" "${test_args[@]}"
     [[ "$step_status" -eq 0 ]] || status=1
     test_summary "$build_dir/gauge-tests.log"
 fi

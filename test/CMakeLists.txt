@@ -5858,7 +5858,7 @@ if(CMAKE_GENERATOR MATCHES "Ninja")
 endif()
 add_test(NAME mutation_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/tools/mutation/run.py selftest
-          --compiler ${CMAKE_CXX_COMPILER} ${_mutation_ninja})
+          --compiler ${CMAKE_CXX_COMPILER} --cmake ${CMAKE_COMMAND} ${_mutation_ninja})
 set_tests_properties(mutation_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 
 # Each guard test of this directory starts on a full tree cache.  Eight setup

@@ -93,7 +93,10 @@ configure_and_build() {
             -DCMAKE_CXX_COMPILER="$afl_bin/afl-g++-fast" \
             -DCMAKE_BUILD_TYPE=Debug -DCRUCIBLE_BENCH=OFF -DCRUCIBLE_WERROR=ON -DCRUCIBLE_FUZZ=ON
     fi
-    nice -n 10 cmake --build "$dir" -j "$jobs" --target "fuzz_$harness"
+    # The cmake that configured the directory builds it (utils/scripts/cmake_pin.py).
+    local build_cmake
+    build_cmake=$(python3 "$root/utils/scripts/cmake_pin.py" --print-program "$dir" cmake)
+    nice -n 10 "$build_cmake" --build "$dir" -j "$jobs" --target "fuzz_$harness"
 }
 configure_and_build "$build_dir"
 AFL_GCC_CMPLOG=1 configure_and_build "$build_dir-cmplog"

@@ -145,8 +145,11 @@ def cache_value(build_dir: Path, name: str) -> str | None:
     return None
 
 
-def tools_of(build_dir: Path) -> tuple[str, str]:
-    """Return the ninja and the ctest of a build.
+def tools_of(build_dir: Path) -> tuple[str, str | None]:
+    """Return the ninja and the ctest of a build.  The ctest is None when the cache names none.
+
+    The census runs no ctest of PATH, because PATH can hold a ctest of another
+    version (utils/scripts/cmake_pin.py).
 
     Raises:
         NotApplicable: If the generator of the build is not ninja
@@ -158,8 +161,7 @@ def tools_of(build_dir: Path) -> tuple[str, str]:
     if "Ninja" not in generator:
         raise NotApplicable(f"the generator of the build is {generator}, and only ninja writes a dependency log")
     ninja = cache_value(build_dir, "CMAKE_MAKE_PROGRAM") or "ninja"
-    ctest = cache_value(build_dir, "CMAKE_CTEST_COMMAND") or "ctest"
-    return ninja, ctest
+    return ninja, cache_value(build_dir, "CMAKE_CTEST_COMMAND")
 
 
 def run_tool(command: list[str]) -> str:
@@ -275,12 +277,16 @@ def object_cost(path: Path) -> Cost:
                 count if isinstance(count, int) and not isinstance(count, bool) else None)
 
 
-def fixtures_of(build_dir: Path, ctest: str) -> list[tuple[str, str]]:
+def fixtures_of(build_dir: Path, ctest: str | None) -> list[tuple[str, str]]:
     """Return the name and the source of each negative fixture of the build, from the test list of ctest.
 
     Raises:
-        CensusError: If ctest cannot list the tests, or a fixture command does not have the form of the driver
+        CensusError: If the cache names no ctest, ctest cannot list the tests, or a fixture command does not have
+            the form of the driver
     """
+    if ctest is None:
+        raise CensusError(f"{build_dir}/CMakeCache.txt has no entry CMAKE_CTEST_COMMAND.  Configure the build "
+                          f"directory again")
     text = run_tool([ctest, "--test-dir", str(build_dir), "--show-only=json-v1"])
     try:
         tests = json.loads(text).get("tests", [])
