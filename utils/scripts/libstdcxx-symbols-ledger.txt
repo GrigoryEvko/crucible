@@ -4,7 +4,8 @@
 #
 # A kind row:    kind | KIND | TARGET
 #   The ledger holds the sets of the build kind KIND (BUILD_DIR/build-kind.txt) on the target TARGET, the
-#   value of -march that the compiler gives for the flags of the build.
+#   target tier of utils/scripts/build_target.py.  A build of a kind or a target that the ledger does not
+#   hold prints its rows, and --import LOG puts them here.
 #
 # A symbol row:  KIND | LIBRARY | MARK | CLASS | SYMBOL | DEMANGLED NAME
 #   An object of LIBRARY has an undefined reference to SYMBOL, and the libstdc++ of the compiler defines
@@ -16,7 +17,7 @@
 #   python3 utils/scripts/check-libstdcxx-symbols.py --build-dir build --write
 # --write refuses a new ratchet symbol.  The head comment of the check gives the reasons for --raise.
 
-kind | x86_64-debug-asan | x86-64
+kind | x86_64-debug-asan | x86-64-eb53fd1c
 x86_64-debug-asan | libcrucible.a | allow | abi | __gxx_personality_v0 | __gxx_personality_v0
 x86_64-debug-asan | libcrucible.a | ratchet | std | _ZNSt3_V215system_categoryEv | std::_V2::system_category()
 x86_64-debug-asan | libcrucible.a | ratchet | std | _ZNSt3_V216generic_categoryEv | std::_V2::generic_category()
@@ -86,7 +87,7 @@ x86_64-debug-asan | libfoundation.a | ratchet | std | _ZSt21__glibcxx_assert_fai
 x86_64-debug-asan | libfoundation.a | ratchet | std | _ZSt24__throw_out_of_range_fmtPKcz | std::__throw_out_of_range_fmt(char const*, ...)
 x86_64-debug-asan | libfoundation.a | ratchet | std | _ZSt9terminatev | std::terminate()
 x86_64-debug-asan | libfoundation.a | ratchet | std | _ZTINSt6thread6_StateE | typeinfo for std::thread::_State
-kind | x86_64-release | znver5
+kind | x86_64-release | znver5-f612fd24
 x86_64-release | libcrucible.a | allow | abi | __gxx_personality_v0 | __gxx_personality_v0
 x86_64-release | libcrucible.a | ratchet | std | _ZNSt3_V215system_categoryEv | std::_V2::system_category()
 x86_64-release | libcrucible.a | ratchet | std | _ZNSt3_V216generic_categoryEv | std::_V2::generic_category()

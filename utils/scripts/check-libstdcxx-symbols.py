@@ -68,12 +68,11 @@ THE LEDGER
         kind | KIND | TARGET
         KIND | LIBRARY | MARK | CLASS | SYMBOL | DEMANGLED NAME
     The sets depend on the build, because the inlining and the macro
-    _GLIBCXX_ASSERTIONS change the references.  KIND is the line of
-    BUILD_DIR/build-kind.txt, for example x86_64-debug-asan.  TARGET is the
-    value of -march that the compiler gives for the flags of the build.  A
-    -march=native build on a different processor then does not use the
-    rows.  A kind row tells that the ledger holds the sets of the kind on the
-    target.
+    _GLIBCXX_ASSERTIONS change the references.  KIND is the build kind and
+    TARGET is the target tier of utils/scripts/build_target.py, for example
+    x86_64-debug-asan on x86-64-eb53fd1c.  A -march=native build on a
+    different processor then does not use the rows.  A kind row tells that
+    the ledger holds the sets of the kind on the target.
     The demangled name is for the reader.  The check compares only the
     mangled names.
 
@@ -107,11 +106,21 @@ WRITE THE LEDGER
 NOT APPLICABLE
     The check exits 3, with the reason, in three conditions: the build has no
     build-kind.txt, the build has not made each archive, or the ledger holds
-    no sets of the kind and the target of the build.
+    no sets of the kind and the target of the build.  In the last case it
+    prints one line with the target of the build and the targets of the ledger
+    (build_target.not_held), and then the rows of the build.
+
+A KIND THAT ONLY CI BUILDS
+    No aarch64 compiler is on the build host, so only a CI leg can read the
+    sets of an aarch64 kind.  The check prints each row of the build with the
+    prefix "libstdcxx-row: " after a failure and when the ledger does not hold
+    the kind.  --import LOG puts those rows into the ledger in place of the
+    old rows of the kind.
 
 Usage
     check-libstdcxx-symbols.py --build-dir DIR [--warnings-dir DIR]
     check-libstdcxx-symbols.py --build-dir DIR --write [--raise]
+    check-libstdcxx-symbols.py --import LOG
     check-libstdcxx-symbols.py --self-test
 
 Exit 0 with no finding or with warnings only, 1 with an error, 2 on a usage error
@@ -138,6 +147,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import build_census  # noqa: E402
+import build_target  # noqa: E402
 import check_report  # noqa: E402
 import cost_meter  # noqa: E402
 import elf_file  # noqa: E402
@@ -146,7 +156,7 @@ from repo_root import REPO_ROOT  # noqa: E402
 CHECK = "libstdcxx-symbols"
 LEDGER = "utils/scripts/libstdcxx-symbols-ledger.txt"
 INPUTS = "libstdcxx-symbols-inputs.txt"
-NOT_APPLICABLE = 3
+NOT_APPLICABLE = build_target.NOT_APPLICABLE
 KIND_ROW = "kind"
 ALLOW = "allow"
 RATCHET = "ratchet"
@@ -165,7 +175,7 @@ GNU_NAME = re.compile(rf"_Z{_SPECIAL}{_NESTED}9__gnu_cxx")
 UNDEFINED_TYPES = frozenset({"U", "w", "v"})
 # One line of `nm -A --undefined-only` for a member of an archive.
 NM_LINE = re.compile(r"(?P<archive>[^:]+):(?P<member>[^:]+):\s+(?P<type>[A-Za-z])\s+(?P<symbol>\S+)")
-MARCH_LINE = re.compile(r"\s*-march=\s+(\S+)\s*")
+ROW_MARK = "libstdcxx-row: "
 RAISE_REASONS = ("a new toolchain", "code that moved from a base header into a base source file",
                  "a new build kind or target")
 
@@ -247,16 +257,25 @@ def mark_of(symbol: str) -> str:
 
 
 def read_ledger(path: Path) -> Ledger:
-    """Read the ledger.  The leading comment lines are its head.
+    """Read the ledger file.
+
+    Raises:
+        LedgerError: If a row does not have the format
+        OSError: If the file cannot be read
+    """
+    return parse_ledger(path.read_text(encoding="utf-8"), str(path))
+
+
+def parse_ledger(text: str, path: str) -> Ledger:
+    """Read the text of a ledger.  The leading comment lines are its head.
 
     Raises:
         LedgerError: If a row does not have the format, a symbol row comes before the row of its kind, or a row
             has a second copy
-        OSError: If the file cannot be read
     """
     ledger = Ledger()
     is_head = True
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for number, raw in enumerate(text.splitlines(), start=1):
         stripped = raw.strip()
         if not stripped or stripped.startswith("#"):
             if is_head:
@@ -349,27 +368,6 @@ def tool_output(command: list[str], data: str | None = None) -> str:
     if done.returncode != 0:
         raise InputError(f"{shlex.join(command)[:300]} exits {done.returncode}: {done.stderr.strip()[:400]}")
     return done.stdout
-
-
-def build_target(build_dir: Path, compiler: str) -> str:
-    """Return the value of -march that the compiler gives for the flags of the build.
-
-    The flags are CMAKE_CXX_FLAGS and the flags of the build type, from the
-    CMakeCache.txt of the build.  The last -march of them is the one that the
-    compiler uses.
-
-    Raises:
-        InputError: If the compiler gives no -march line
-    """
-    build_type = (build_census.cache_value(build_dir, "CMAKE_BUILD_TYPE") or "").upper()
-    flags = " ".join(build_census.cache_value(build_dir, name) or ""
-                     for name in ("CMAKE_CXX_FLAGS", f"CMAKE_CXX_FLAGS_{build_type}"))
-    march = [word for word in shlex.split(flags) if word.startswith("-march=")]
-    output = tool_output([compiler, *march[-1:], "-Q", "--help=target"])
-    found = [match[1] for match in map(MARCH_LINE.fullmatch, output.splitlines()) if match is not None]
-    if not found:
-        raise InputError(f"{compiler} -Q --help=target gives no -march line, so the target of the build is unknown")
-    return found[0]
 
 
 def libstdcxx_exports(compiler: str) -> frozenset[str]:
@@ -500,7 +498,7 @@ def run(build_dir: Path, root: Path, ledger_path: Path, warnings_dir: Path | Non
     """
     ledger_shown = build_census.shown(ledger_path, root)
     build_shown = build_census.shown(build_dir, root)
-    kind = cost_meter.read_kind(str(build_dir))
+    kind = build_target.kind_of(build_dir)
     if kind is None:
         print(f"{CHECK}: {build_shown} has no {cost_meter.KIND_FILE}.  The check does not apply")
         return NOT_APPLICABLE
@@ -515,28 +513,66 @@ def run(build_dir: Path, root: Path, ledger_path: Path, warnings_dir: Path | Non
         print(f"{CHECK}: the build has not made {', '.join(unbuilt)}.  Build the target all.  The check does not apply")
         return NOT_APPLICABLE
     try:
-        target = build_target(build_dir, inputs.compiler)
-    except InputError as problem:
-        return check_report.emit([check_report.Finding("error", build_shown, 0, CHECK, str(problem))], CHECK,
-                                 warnings_dir)
-    if not write and ledger.targets.get(kind) != target:
-        held = ", ".join(f"{name} on {ledger.targets[name]}" for name in sorted(ledger.targets)) or "none"
-        print(f"{CHECK}: the ledger holds no sets of the kind {kind} on the target {target}.  It holds: {held}.  The "
-              f"check does not apply")
-        return NOT_APPLICABLE
-    try:
+        target = build_target.build_tier(build_dir, inputs.compiler)
         census = read_census(inputs)
-    except (OSError, InputError) as problem:
+    except (OSError, InputError, build_target.TierError) as problem:
         return check_report.emit([check_report.Finding("error", build_shown, 0, CHECK, str(problem))], CHECK,
                                  warnings_dir)
     if write:
         return write_ledger(ledger_path, ledger, kind, target, census, allow_raise)
+    if ledger.targets.get(kind) != target:
+        print(build_target.not_held(CHECK, f"the kind {kind}", target, sorted(ledger.targets.items())))
+        print_rows(kind, target, census)
+        return NOT_APPLICABLE
     write_command = f"python3 utils/scripts/check-libstdcxx-symbols.py --build-dir {build_shown} --write"
     status = check_report.emit(evaluate(census, ledger, kind, ledger_shown, write_command), CHECK, warnings_dir)
     total = sum(len(uses) for uses in census.uses.values())
     print(f"{CHECK}: {total} libstdc++ symbols in {len(census.uses)} libraries of {kind} on {target}, from "
           f"{census.references} undefined references")
+    if status != 0:
+        print_rows(kind, target, census)
     return status
+
+
+def kind_rows(kind: str, census: Census) -> dict[str, dict[str, Row]]:
+    """Return the rows of the libstdc++ symbols of each library of the census, as the ledger holds them."""
+    return {library: {symbol: Row(kind, library, mark_of(symbol), classify(symbol), symbol, census.demangled[symbol])
+                      for symbol in uses}
+            for library, uses in census.uses.items() if uses}
+
+
+def print_rows(kind: str, target: str, census: Census) -> None:
+    """Print the kind row and the symbol rows of the build with ROW_MARK, as --import reads them from a log."""
+    ledger = Ledger(targets={kind: target}, rows={kind: kind_rows(kind, census)})
+    build_target.print_rows(ROW_MARK, ledger_text(ledger).splitlines())
+    print(f"{CHECK}: the lines above give the rows of the kind {kind}.  Import them from the log with "
+          f"`python3 utils/scripts/check-libstdcxx-symbols.py --import LOG`")
+
+
+def import_rows(ledger_path: Path, source: Path) -> int:
+    """Put the rows of one kind that print_rows printed into the ledger, in place of the old rows of the kind.
+
+    Returns:
+        0 when the ledger is written, 1 when the rows or the ledger do not have the format
+    """
+    try:
+        ledger = read_ledger(ledger_path)
+        imported = parse_ledger("\n".join(build_target.rows_in_log(
+            source.read_text(encoding="utf-8", errors="replace"), ROW_MARK)) + "\n", str(source))
+        if len(imported.targets) != 1:
+            raise LedgerError(f"{source}: the rows name {len(imported.targets)} kinds, and an import takes one")
+        kind, target = next(iter(imported.targets.items()))
+        ledger.targets[kind] = target
+        ledger.rows[kind] = imported.rows.get(kind, {})
+        text = ledger_text(ledger)
+        parse_ledger(text, str(source))
+    except (OSError, LedgerError) as problem:
+        print(f"{CHECK}: the ledger is not written: {problem}", file=sys.stderr)
+        return 1
+    ledger_path.write_text(text, encoding="utf-8")
+    rows = sum(len(symbols) for symbols in ledger.rows[kind].values())
+    print(f"{CHECK}: imported the kind {kind} on {target}: {rows} rows, to {ledger_path}")
+    return 0
 
 
 def write_ledger(ledger_path: Path, ledger: Ledger, kind: str, target: str, census: Census, allow_raise: bool) -> int:
@@ -557,9 +593,7 @@ def write_ledger(ledger_path: Path, ledger: Ledger, kind: str, target: str, cens
     for library in sorted(set(held) - set(census.uses)):
         print(f"{CHECK}: the inputs name no archive {library}, so its rows of {kind} go", file=sys.stderr)
     ledger.targets[kind] = target
-    ledger.rows[kind] = {library: {symbol: Row(kind, library, mark_of(symbol), classify(symbol), symbol,
-                                               census.demangled[symbol]) for symbol in uses}
-                         for library, uses in census.uses.items() if uses}
+    ledger.rows[kind] = kind_rows(kind, census)
     ledger_path.write_text(ledger_text(ledger), encoding="utf-8")
     rows = sum(len(uses) for uses in ledger.rows[kind].values())
     print(f"{CHECK}: wrote {rows} rows of {kind} on {target} to {ledger_path}")
@@ -592,8 +626,18 @@ SELF_TEST_UNITS = {
              "void copy_entry(char* to, const char* from, unsigned long size) { std::memcpy(to, from, size); }\n"
              "int exit_entry() { return std::atexit(crucible_symbols_at_exit); }\n",
 }
-SELF_TEST_KIND = "x86_64-self-test"
+SELF_TEST_KIND = "planted-self-test"
 SELF_TEST_HEAD = "# a planted ledger\n"
+# A compiler that prints the target of an aarch64 GCC with no target flag, and runs the real compiler for each
+# other command: it has no -march value, and it gives its target through -mcpu.
+AARCH64_WRAPPER = """\
+import os
+import sys
+if "--help=target" in sys.argv:
+    sys.stdout.write({help!r})
+    sys.exit(0)
+os.execv({real!r}, [{real!r}, *sys.argv[1:]])
+"""
 
 
 class Scratch:
@@ -773,13 +817,44 @@ def self_test() -> int:
         scratch.ledger.write_text(good.replace(f"kind | {SELF_TEST_KIND} | {target}",
                                                f"kind | {SELF_TEST_KIND} | other"), encoding="utf-8")
         status, _, text = scratch.run()
-        expect("a build of another target does not apply", status == NOT_APPLICABLE and "on the target" in text, text)
+        expect("a build of another target does not apply, and one line gives the two targets",
+               status == NOT_APPLICABLE and f"on the tier {target}" in text and f"{SELF_TEST_KIND} on other" in text,
+               text)
         scratch.ledger.write_text(good, encoding="utf-8")
 
-        (scratch.build / cost_meter.KIND_FILE).write_text("x86_64-other\n", encoding="utf-8")
+        (scratch.build / cost_meter.KIND_FILE).write_text("planted-other\n", encoding="utf-8")
         status, _, text = scratch.run()
-        expect("a build kind that the ledger does not hold does not apply", status == NOT_APPLICABLE, text)
+        expect("a build kind that the ledger does not hold does not apply, and the check prints its rows",
+               status == NOT_APPLICABLE and f"{ROW_MARK}kind | planted-other | {target}" in text
+               and f"{ROW_MARK}planted-other | libbase.a | allow | abi | __cxa_guard_acquire" in text, text)
+        log = root / "ci.log"
+        log.write_text("".join(f"build+test aarch64\tTest\t2026-10-02T21:00:00Z {line}\n"
+                               for line in text.splitlines()), encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            imported = import_rows(scratch.ledger, log)
+        status, findings, text = scratch.run()
+        expect("--import puts the rows of the log into the ledger, and the build of the kind then passes",
+               imported == 0 and status == 0 and not errors_of(findings)
+               and SELF_TEST_KIND in read_ledger(scratch.ledger).targets, text)
+        scratch.ledger.write_text(good, encoding="utf-8")
         (scratch.build / cost_meter.KIND_FILE).write_text(f"{SELF_TEST_KIND}\n", encoding="utf-8")
+
+        # An aarch64 compiler prints no -march value and gives its target through -mcpu.
+        wrapper = root / "aarch64-g++"
+        wrapper.write_text(f"#!{sys.executable}\n" + AARCH64_WRAPPER.format(help=build_target.AARCH64_HELP,
+                                                                            real=shutil.which(compiler)),
+                           encoding="utf-8")
+        wrapper.chmod(0o755)
+        scratch.compiler = str(wrapper)
+        scratch.write_inputs(scratch.libraries)
+        status, _, text = scratch.run(write=True)
+        status, findings, text = scratch.run()
+        expect("a compiler with no -march value has a target, so the build of an aarch64 compiler is read",
+               status == 0 and not errors_of(findings)
+               and read_ledger(scratch.ledger).targets[SELF_TEST_KIND].startswith("default-"), text)
+        scratch.compiler = compiler
+        scratch.write_inputs(scratch.libraries)
+        scratch.ledger.write_text(good, encoding="utf-8")
 
         scratch.write_inputs({**scratch.libraries, "libunbuilt.a": []})
         status, _, text = scratch.run()
@@ -808,15 +883,19 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--write", action="store_true", help="write the rows of the kind of the build")
     parser.add_argument("--raise", dest="allow_raise", action="store_true",
                         help="with --write, also write a new ratchet symbol")
+    parser.add_argument("--import", dest="import_path", type=Path, metavar="LOG",
+                        help="put the rows of a kind that the check printed into the ledger, from a log")
     parser.add_argument("--self-test", action="store_true", help="run the self-test")
     check_report.add_arguments(parser)
     args = parser.parse_args(argv)
     if args.self_test:
         return self_test()
+    root = args.root.resolve()
+    if args.import_path is not None:
+        return import_rows(root / LEDGER, args.import_path)
     if args.build_dir is None or (args.allow_raise and not args.write):
         parser.print_usage(sys.stderr)
         return 2
-    root = args.root.resolve()
     return run(args.build_dir.resolve(), root, root / LEDGER, args.warnings_dir, args.write, args.allow_raise)
 
 

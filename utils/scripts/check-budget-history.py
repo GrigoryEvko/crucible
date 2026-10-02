@@ -620,7 +620,8 @@ def ledger_rises(before: Any, after: Any, moves: dict[str, str], peaks: dict[Cou
 
     * Two versions of different formats compare the total of each kind of the base, because their rows count
       different things.
-    * A configuration that the old version does not have is new coverage, and no rise.
+    * A configuration that the old version does not have is new coverage, and no rise.  The base keeps its history
+      when its name changes.
     * A file that git moved keeps the rows of its old path: no rise when the old path has no row after the commit
       and had at least the count before it.
     * A count of a configuration other than the base rises only when its difference from the base rises, so a
@@ -633,12 +634,15 @@ def ledger_rises(before: Any, after: Any, moves: dict[str, str], peaks: dict[Cou
         old_totals, new_totals = kind_totals(before), kind_totals(after)
         return [LedgerRise(after.base, TOTAL, kind, old_totals.get(kind, 0), count)
                 for kind, count in sorted(new_totals.items()) if count > old_totals.get(kind, 0)]
-    old_counts, new_counts = absolute_counts(before), absolute_counts(after)
+    # A new name of the base keeps the history of the base.
+    old_counts = {(after.base if name == before.base else name, file, kind): count
+                  for (name, file, kind), count in absolute_counts(before).items()}
+    new_counts = absolute_counts(after)
     rises: list[LedgerRise] = []
     for key in sorted(new_counts):
         name, file, kind = key
         new, old = new_counts[key], old_counts.get(key, 0)
-        if new <= old or name not in before.configurations:
+        if new <= old or (name not in before.configurations and name != after.base):
             continue
         source = moves.get(file)
         if (source is not None and old == 0 and new_counts.get((name, source, kind), 0) == 0
@@ -939,6 +943,16 @@ def quarantine_cases(expect: Any, scratch: Path) -> None:
     status, found, _ = late.run()
     expect("the next raise of that configuration is an error, because its rows are current again",
            status == 1 and any(again[:9] in f.message for f in errors_of(found)))
+    renamed = Scratch(scratch / "quarantine-rename")
+    renamed.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 2}))
+    renamed.commit("Count one configuration", "The first counts.")
+    renamed.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 3}).replace("configuration default",
+                                                                                "configuration x86_64-debug-asan"))
+    hidden = renamed.commit("Rename the base and raise a count", "A new name must not hide the raise.")
+    status, found, _ = renamed.run()
+    expect("a new name of the base keeps its history, so a raise in the same commit is an error",
+           status == 1 and any(hidden[:9] in f.message for f in errors_of(found)))
+
     late.write("utils/tools/quarantine/plugin_core.h", "// a second rule\n")
     late.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 5}, {"arm": {"test/a.cpp": 4}}))
     base_raise = late.commit("Report a second kind in the plugin", "The base finds three more.")

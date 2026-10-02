@@ -23,6 +23,7 @@ utils/scripts/audit-pre-callsite-count.py | tsast,json | the contract baseline u
 utils/scripts/build-gauge.sh | compiler,git,text | the ninja log, the /usr/bin/time report and the ctest log
 utils/scripts/build-launcher.py | compiler,text | the ccache stats log of each compile, the budget table and the ledger rows of the memory checks
 utils/scripts/build_census.py | json,text | the compile database, the output of ninja -t inputs and -t deps, the test list of ctest --show-only=json-v1, the records of the fixture driver and of the build launcher, and CMakeCache.txt
+utils/scripts/build_target.py | compiler,text | the build kind, CMakeCache.txt, the target help of the compiler and the rows of a log
 utils/scripts/cache_dir.py | none |
 utils/scripts/check-admitted-audit.py | tsast,text | the rows of utils/scripts/quarantine-admitted-audit.txt and the admit rows of utils/scripts/layer-rules.txt
 utils/scripts/check-allowlist-keys.sh | text | the keys of the allowlists, and the paths in the Markdown guidance
@@ -56,7 +57,7 @@ utils/scripts/check-header-constexpr-ops.py | compiler,json,text | the budget ta
 utils/scripts/check-heavy-includes.py | tsast,compiler,text | the cost table utils/scripts/header-costs.txt, the ledger rows, the budget table, and in --measure the diagnostics and the -E output of the compiler
 utils/scripts/check-host-owners.py | tsast,text | the roster utils/scripts/host-owner-roster.txt
 utils/scripts/check-layer-boundary.py | tsast,text | the layer rows of the rule table utils/scripts/layer-rules.txt
-utils/scripts/check-libstdcxx-symbols.py | compiler,text | the nm symbol lists of the static libraries and of the libstdc++ of the compiler, the c++filt names, the target lines of the compiler, the inputs file, the build kind, CMakeCache.txt and the ledger rows
+utils/scripts/check-libstdcxx-symbols.py | compiler,text | the nm symbol lists of the static libraries and of the libstdc++ of the compiler, the c++filt names, the build kind and the target tier of build_target.py, the inputs file, the ledger rows and the rows of a log
 utils/scripts/check-lifetime-twin.py | tsast |
 utils/scripts/check-lock-free-asserts.py | tsast |
 utils/scripts/check-mint-pattern.py | tsast,text | the allowlist rows
@@ -73,7 +74,7 @@ utils/scripts/check-parse-cost.py | json,text | the census of utils/scripts/buil
 utils/scripts/check-permission-storage.py | tsast |
 utils/scripts/check-process-wide-state.py | tsast,text | the roster utils/scripts/process-wide-roster.txt
 utils/scripts/check-proof-routes.py | tsast,preprocessor,json,text | the witness roster, the allowlist rows and the proof names of test_forgeable_proofs
-utils/scripts/check-quarantine-ratchet.py | compiler,git,json,text | the census of utils/scripts/build_census.py, the sections of quarantine_sections.py, the ledger rows, the rule table, CMakeCache.txt, the predefined macros and the target help of the compiler, and the moves of `git diff --find-renames`
+utils/scripts/check-quarantine-ratchet.py | git,json,text | the census of utils/scripts/build_census.py, the sections of quarantine_sections.py, the ledger rows, the rule table, CMakeCache.txt, the build kind and the target tier of build_target.py, the rows of a log, and the moves of `git diff --find-renames`
 utils/scripts/check-quarantine-regions.py | tsast,text | the ledger rows of the opt-out regions
 utils/scripts/check-reconfigure-noop.py | text | CMakeCache.txt, the ninja log, the dependency log of Ninja and the symbolic links of the build directory
 utils/scripts/check-refined-pre-subsumption.py | tsast |

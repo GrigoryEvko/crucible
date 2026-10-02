@@ -5688,6 +5688,12 @@ add_test(NAME budget_history_self_test
 set_tests_properties(budget_history budget_history_self_test PROPERTIES LABELS "ci_guard")
 set_tests_properties(budget_history PROPERTIES SKIP_RETURN_CODE 3)
 
+# build_target_self_test — utils/scripts/build_target.py gives the build kind
+# and the target tier to the quarantine ratchet and to the libstdc++ symbols
+# check.  The self-test reads planted target help of x86_64 and aarch64 GCC.
+add_test(NAME build_target_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/build_target.py --self-test)
+set_tests_properties(build_target_self_test PROPERTIES LABELS "ci_guard")
 # elf_file_self_test — utils/scripts/elf_file.py is the one reader of ELF
 # headers of the scripts.  The self-test plants files with each kind of section,
 # the extended numbering, a symbol table, and tables outside the file.

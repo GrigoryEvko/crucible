@@ -560,32 +560,31 @@ jobs:
         if: ${{ matrix.run_tests }}
         run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }}
 
-      # The ratchet of the quarantine: the findings of each file and kind can
-      # only decrease (utils/scripts/check-quarantine-ratchet.py and
-      # utils/scripts/quarantine-ledger.txt).  The ledger holds the default and
-      # the release preset on x86_64 and on aarch64, and the job fuzz holds the
-      # configuration bench-fuzz.  The check exits 3 for a build of another
-      # configuration, such as the x86_64 release leg on a runner of another
-      # native tier.  Only CI builds aarch64, so after a failed check an aarch64
-      # leg prints the rows of its configuration.  `--import LOG` puts them
-      # into the ledger, and an aarch64 leg also fails with exit 3.  The step
-      # runs after a failed test step too, so the log still holds the rows.
-      # The step "Check warnings" annotates the warnings of the test
-      # quarantine_ratchet, so this step prints its findings as plain lines.
-      - name: Quarantine ratchet
+      # Two ledgers depend on the build kind and the target tier
+      # (utils/scripts/build_target.py): the quarantine ratchet, whose findings
+      # of each file and kind can only decrease, and the libstdc++ symbols of
+      # the libraries.  A build that a ledger does not hold gives exit 3 with
+      # one line that names its tier and the tiers of the ledger, for example
+      # the x86_64 release leg on a runner of another native tier.  Then the
+      # check prints the rows of the build, and it prints them after a failure
+      # too.  Only CI builds aarch64, so `--import LOG` of each check puts the
+      # rows of an aarch64 leg into its ledger.  ctest shows no output of a
+      # skipped test, so this step runs the two checks again, also after a
+      # failed test step.  The step "Check warnings" annotates the warnings of
+      # the two tests, so this step prints its findings as plain lines.
+      - name: Ledgers of the build kind
         if: ${{ !cancelled() && (matrix.preset == 'default' || matrix.preset == 'release') }}
         env:
           GITHUB_ACTIONS: "false"
-          RATCHET_BUILD: ${{ matrix.preset == 'default' && 'build' || format('build-{0}', matrix.preset) }}
-          RATCHET_ROWS: aarch64-${{ matrix.preset }}
+          LEDGER_BUILD: ${{ matrix.preset == 'default' && 'build' || format('build-{0}', matrix.preset) }}
         run: |
-          status=0
-          python3 utils/scripts/check-quarantine-ratchet.py --build-dir "$RATCHET_BUILD" || status=$?
-          if [ "$status" -ne 0 ] && [ "${{ matrix.arch }}" = aarch64 ]; then
-            python3 utils/scripts/check-quarantine-ratchet.py --build-dir "$RATCHET_BUILD" --rows "$RATCHET_ROWS" || true
-            exit "$status"
-          fi
-          if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then exit "$status"; fi
+          failed=0
+          for check in check-quarantine-ratchet.py check-libstdcxx-symbols.py; do
+            status=0
+            python3 "utils/scripts/$check" --build-dir "$LEDGER_BUILD" || status=$?
+            if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then failed=1; fi
+          done
+          exit "$failed"
 
       # A compile-time check that passes with warnings writes them to
       # <build>/check-warnings (utils/scripts/check_report.py), because ctest
@@ -841,7 +840,7 @@ jobs:
   # Fuzz smoke. Property fuzzers are plain GCC + ASan/UBSan with Philox-seeded
   # input (deterministic, not flaky). Build + run the short --iters=1000 smoke.
   # x86_64 only.  The build also holds the benches, and it is the
-  # configuration bench-fuzz of the quarantine ledger.  valgrind gives the
+  # configuration x86_64-debug-asan-bench-fuzz of the quarantine ledger.  valgrind gives the
   # headers that the default leg has, so the configurations agree.
   # ---------------------------------------------------------------------------
   fuzz:
@@ -907,12 +906,16 @@ jobs:
         run: ccache -s
       - name: Run property-fuzz smoke
         run: ctest --preset default -j 3 -L fuzz_property
-      # The configuration bench-fuzz of the quarantine ledger (see build job).
+      # The configuration x86_64-debug-asan-bench-fuzz of the quarantine ledger
+      # (see the step "Ledgers of the build kind" of the build job).
       - name: Quarantine ratchet
         if: ${{ !cancelled() }}
         env:
           GITHUB_ACTIONS: "false"
-        run: python3 utils/scripts/check-quarantine-ratchet.py --build-dir build
+        run: |
+          status=0
+          python3 utils/scripts/check-quarantine-ratchet.py --build-dir build || status=$?
+          if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then exit "$status"; fi
       - name: Save ccache
         if: always()
         uses: actions/cache/save@v4
