@@ -205,7 +205,8 @@ static_assert(bound_read_of(^^bound_holder<9u>).is_exact_integer && !bound_read_
               && bound_read_of(^^bound_holder<9u>).magnitude == 9);
 static_assert(bound_read_of(^^bound_holder<most_negative_bound>).is_negative
               && bound_read_of(^^bound_holder<most_negative_bound>).magnitude == (refined::widest_unsigned{1} << 127));
-static_assert(!bound_read_of(^^bound_holder<'a'>).is_exact_integer && !bound_read_of(^^bound_holder<true>).is_exact_integer
+static_assert(!bound_read_of(^^bound_holder<'a'>).is_exact_integer
+              && !bound_read_of(^^bound_holder<true>).is_exact_integer
               && !bound_read_of(^^bound_holder<1.5>).is_exact_integer);
 static_assert(!PredicateImplies<bounded_above<1.5>, bounded_above<2.5>>,
               "a bound that is not an exact integer defines its predicate on no value type, so no step reads it");

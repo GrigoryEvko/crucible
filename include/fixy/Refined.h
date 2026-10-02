@@ -965,11 +965,11 @@ inline constexpr std::meta::info exact_integer_types[] = {
 // The sign and the magnitude of one bound of an exact integer type.  Only
 // a query that reads a bound instantiates it, one time for each value.
 template <auto Bound>
-inline constexpr exact_bound exact_bound_of{
-    .is_exact_integer = true,
-    .is_negative = std::cmp_less(Bound, 0),
-    .magnitude = std::cmp_less(Bound, 0) ? widest_unsigned{0} - static_cast<widest_unsigned>(Bound)
-                                         : static_cast<widest_unsigned>(Bound)};
+inline constexpr exact_bound exact_bound_of{.is_exact_integer = true,
+                                            .is_negative = std::cmp_less(Bound, 0),
+                                            .magnitude = std::cmp_less(Bound, 0)
+                                                           ? widest_unsigned{0} - static_cast<widest_unsigned>(Bound)
+                                                           : static_cast<widest_unsigned>(Bound)};
 
 // Reads a bound of a predicate.  A bound whose type is not in
 // exact_integer_types reads as no exact integer.  The loop compares
