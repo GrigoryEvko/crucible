@@ -19,7 +19,12 @@ void test_page_policy_is_verified_against_the_kernel() {
     // The claim: a probe finds out what the kernel actually did rather
     // than trusting that madvise recording the advice means the fault path
     // honoured it.
-    const std::size_t bytes = 8u * 1024u * 1024u;
+    //
+    // Each region is one huge page, so the huge-page region costs one
+    // huge-page fault.  With the defrag mode `madvise`, that fault reclaims
+    // and compacts memory before it returns.  On a host with no free 2 MiB
+    // block and a full swap, one such fault can take seconds.
+    const std::size_t bytes = ledger::ProbeRegion::kHugePageBytes;
 
     auto base = ledger::ProbeRegion::create(probe_ctx, bytes, ledger::PagePolicy::BasePages);
     assert(base.has_value());
@@ -43,6 +48,10 @@ void test_page_policy_is_verified_against_the_kernel() {
         const bool took_base =
             ledger::probes::huge_page_detail::verify_page_policy_took(*huge, ledger::PagePolicy::BasePages);
         assert(!(took_huge && took_base));
+        // The region holds at most one huge page, so the test pays at most
+        // one huge-page fault.
+        assert(ledger::probes::huge_page_detail::anon_huge_kib_for(huge->data())
+               <= ledger::ProbeRegion::kHugePageBytes / 1024u);
         std::printf("    (hugepage advice %s on this host)\n", took_huge ? "took" : "was refused");
     }
 
