@@ -13,6 +13,14 @@ THE REGIONS
     region.  The check reads each preprocessor arm, so each preset gives the
     same regions.
 
+THE FILES
+    The plugin opens a region only where the line of the source spells the
+    name CRUCIBLE_I_KNOW_WHAT_IM_DOING with the reason after it
+    (is_plain_region_call in utils/tools/quarantine/plugin_core.h).  So a file
+    whose bytes do not hold the name holds no region, and the check parses only
+    the files whose bytes hold it.  Complexity: linear in the bytes of the
+    tracked C++ files, and one parse for each file that names the macro.
+
 THE LEDGER
     utils/scripts/quarantine-region-ledger.txt holds one row for each region:
     "FILE | REASON".  Two regions of one file with one reason are two equal
@@ -58,6 +66,7 @@ import tsast  # noqa: E402
 CHECK = "quarantine-regions"
 LEDGER = Path("utils/scripts/quarantine-region-ledger.txt")
 MACRO = "CRUCIBLE_I_KNOW_WHAT_IM_DOING"
+MACRO_BYTES = MACRO.encode()
 NOT_APPLICABLE = 3
 
 
@@ -91,6 +100,25 @@ def regions_of(tree: tsast.Tree) -> list[tuple[int, str]]:
     return found
 
 
+def naming_files(root: Path) -> list[str]:
+    """Return each tracked C++ file of one tree whose bytes hold the name of the macro (THE FILES).
+
+    A file that git tracks and that the work tree does not hold is no file of the tree.  Complexity: linear in the
+    bytes of the tracked C++ files.
+    """
+    found: list[str] = []
+    for rel in tsast.tracked_files(root):
+        if not tsast.is_in_cpp_scope(rel):
+            continue
+        try:
+            data = (root / rel).read_bytes()
+        except OSError:
+            continue
+        if MACRO_BYTES in data:
+            found.append(rel)
+    return found
+
+
 def tree_regions(root: Path) -> tuple[Counter[tuple[str, str]], dict[tuple[str, str], int]]:
     """Return the regions of each tracked C++ file of one tree.
 
@@ -99,7 +127,7 @@ def tree_regions(root: Path) -> tuple[Counter[tuple[str, str]], dict[tuple[str, 
     Returns:
         The count of each (file, reason), and the first line of each
     """
-    files = [rel for rel in tsast.tracked_files(root) if tsast.is_in_cpp_scope(rel) and (root / rel).is_file()]
+    files = naming_files(root)
     relative_of = {(root / rel).as_posix(): rel for rel in files}
     counts: Counter[tuple[str, str]] = Counter()
     lines: dict[tuple[str, str], int] = {}
@@ -219,8 +247,12 @@ def self_test() -> int:
             "#if 0\n"
             "CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"MEASURE: an arm that no preset compiles\")\n"
             "#endif\n", encoding="utf-8")
+        (root / "include/Plain.cpp").write_text("int plain_value() { return 1; }\n", encoding="utf-8")
         ledger = root / LEDGER
         ledger.write_text("# the head comment\n", encoding="utf-8")
+
+        expect("the check parses only the files whose bytes name the macro",
+               naming_files(root) == ["include/Abi.cpp", "include/Quarantine.h"], naming_files(root))
 
         found = evaluate(root)
         errors = [item for item in found if item.level == "error"]
