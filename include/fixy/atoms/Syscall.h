@@ -50,7 +50,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <meta>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -221,12 +220,16 @@ inline constexpr std::array<std::pair<sc::SyscallId, sc::SyscallFamily>, 50> sys
     {sc::SyscallId::perf_event_open, sc::SyscallFamily::Privilege},
 }};
 
-// How many rows of the table name the call.  Complexity: linear in the
-// table.
+// How many rows of the table name the call.  Each atom of the roster
+// evaluates this count in each includer.  A read through a pointer is the
+// cheapest read of a constant evaluation, so the loop reads the rows
+// through one.  Complexity: linear in the table.
 [[nodiscard]] consteval std::size_t syscall_rows_naming_(sc::SyscallId id) noexcept {
+    const std::pair<sc::SyscallId, sc::SyscallFamily>* const table_rows = syscall_family_table.data();
+    const std::size_t row_count = syscall_family_table.size();
     std::size_t rows = 0;
-    for (const auto& [row_id, row_family] : syscall_family_table) {
-        if (row_id == id) ++rows;
+    for (std::size_t place = 0; place < row_count; ++place) {
+        if (table_rows[place].first == id) ++rows;
     }
     return rows;
 }
@@ -237,8 +240,10 @@ inline constexpr std::array<std::pair<sc::SyscallId, sc::SyscallFamily>, 50> sys
 // after it is the top of the chain, the most restrictive answer, and it
 // is there only because a function must end in a return.
 [[nodiscard]] consteval sc::SyscallFamily syscall_family_of_(sc::SyscallId id) noexcept {
-    for (const auto& [row_id, row_family] : syscall_family_table) {
-        if (row_id == id) return row_family;
+    const std::pair<sc::SyscallId, sc::SyscallFamily>* const table_rows = syscall_family_table.data();
+    const std::size_t row_count = syscall_family_table.size();
+    for (std::size_t place = 0; place < row_count; ++place) {
+        if (table_rows[place].first == id) return table_rows[place].second;
     }
     return sc::SyscallFamily::Privilege;
 }
@@ -264,12 +269,15 @@ inline constexpr std::array<std::pair<sc::SyscallFamily, syscall_family_effects>
     {sc::SyscallFamily::Privilege, {.needs_io = true, .needs_block = true}},
 }};
 
-// How many rows of the family table name the family.  Complexity: linear
-// in the table.
+// How many rows of the family table name the family.  The loop reads
+// the rows through a pointer, as the count of the calls does.
+// Complexity: linear in the table.
 [[nodiscard]] consteval std::size_t syscall_family_rows_naming_(sc::SyscallFamily family) noexcept {
+    const std::pair<sc::SyscallFamily, syscall_family_effects>* const table_rows = syscall_family_effects_table.data();
+    const std::size_t row_count = syscall_family_effects_table.size();
     std::size_t rows = 0;
-    for (const auto& [row_family, row_effects] : syscall_family_effects_table) {
-        if (row_family == family) ++rows;
+    for (std::size_t place = 0; place < row_count; ++place) {
+        if (table_rows[place].first == family) ++rows;
     }
     return rows;
 }
@@ -278,8 +286,10 @@ inline constexpr std::array<std::pair<sc::SyscallFamily, syscall_family_effects>
 // most restrictive answer, and the check file of this header refuses
 // such a family.
 [[nodiscard]] consteval syscall_family_effects syscall_family_effects_of_(sc::SyscallFamily family) noexcept {
-    for (const auto& [row_family, row_effects] : syscall_family_effects_table) {
-        if (row_family == family) return row_effects;
+    const std::pair<sc::SyscallFamily, syscall_family_effects>* const table_rows = syscall_family_effects_table.data();
+    const std::size_t row_count = syscall_family_effects_table.size();
+    for (std::size_t place = 0; place < row_count; ++place) {
+        if (table_rows[place].first == family) return table_rows[place].second;
     }
     return syscall_family_effects{};
 }
@@ -296,13 +306,14 @@ using syscall_family_row_t = ::foundation::effects::row_union_t<
 // holds no row.
 [[nodiscard]] consteval bool is_catalogued_call_(sc::SyscallId id) noexcept { return syscall_rows_naming_(id) == 1; }
 
-// A value of SyscallFamily that names a family of the chain.  The loop
-// runs only when a call evaluates it.
+// A value of SyscallFamily that names a family of the chain: a value
+// that holds exactly one row of the family table.  The check file of
+// this header proves that each enumerator holds one row and that the
+// table has one row for each enumerator, so these values are the
+// enumerators.  A cast from an integer can make any value of the
+// underlying type, and such a value holds no row.
 [[nodiscard]] consteval bool is_catalogued_family_(sc::SyscallFamily family) noexcept {
-    for (const std::meta::info family_member : std::meta::enumerators_of(^^sc::SyscallFamily)) {
-        if (std::meta::extract<sc::SyscallFamily>(std::meta::constant_of(family_member)) == family) return true;
-    }
-    return false;
+    return syscall_family_rows_naming_(family) == 1;
 }
 
 }  // namespace fixy::atom::detail
@@ -332,21 +343,43 @@ struct family final : lifting_atom_of<Axis::SyscallSurface, ::fixy::atom::detail
 
 namespace fixy::atom::detail {
 
-inline constexpr auto syscall_calls_ = std::define_static_array(std::meta::enumerators_of(^^syscall::SyscallId));
-inline constexpr auto syscall_families_ = std::define_static_array(std::meta::enumerators_of(^^syscall::SyscallFamily));
+// Every call, in the order of the enumerators.  The atom is a template,
+// and the namespace walk of every_atom_in_is_rostered_ sees no
+// instantiation of a template.  So the check file of this header walks
+// the enumerators of SyscallId and requires each to hold exactly one atom
+// of this list.  A new call with no atom here fails the build.
+using syscall_call_atom_roster = std::tuple<
+    syscall::per<sc::SyscallId::clock_gettime>, syscall::per<sc::SyscallId::clock_getres>,
+    syscall::per<sc::SyscallId::getcpu_vdso>, syscall::per<sc::SyscallId::gettimeofday>,
+    syscall::per<sc::SyscallId::getpid>, syscall::per<sc::SyscallId::getppid>, syscall::per<sc::SyscallId::getuid>,
+    syscall::per<sc::SyscallId::geteuid>, syscall::per<sc::SyscallId::getgid>, syscall::per<sc::SyscallId::gettid>,
+    syscall::per<sc::SyscallId::uname>, syscall::per<sc::SyscallId::sysinfo>, syscall::per<sc::SyscallId::open>,
+    syscall::per<sc::SyscallId::openat>, syscall::per<sc::SyscallId::close>, syscall::per<sc::SyscallId::read>,
+    syscall::per<sc::SyscallId::write>, syscall::per<sc::SyscallId::pread>, syscall::per<sc::SyscallId::pwrite>,
+    syscall::per<sc::SyscallId::fsync>, syscall::per<sc::SyscallId::fdatasync>, syscall::per<sc::SyscallId::mmap>,
+    syscall::per<sc::SyscallId::munmap>, syscall::per<sc::SyscallId::mprotect>, syscall::per<sc::SyscallId::madvise>,
+    syscall::per<sc::SyscallId::futex>, syscall::per<sc::SyscallId::sched_yield>,
+    syscall::per<sc::SyscallId::sched_setaffinity>, syscall::per<sc::SyscallId::socket>,
+    syscall::per<sc::SyscallId::connect>, syscall::per<sc::SyscallId::sendmsg>, syscall::per<sc::SyscallId::recvmsg>,
+    syscall::per<sc::SyscallId::clone>, syscall::per<sc::SyscallId::execve>, syscall::per<sc::SyscallId::ptrace>,
+    syscall::per<sc::SyscallId::capset>, syscall::per<sc::SyscallId::sched_setattr>,
+    syscall::per<sc::SyscallId::mlock2>, syscall::per<sc::SyscallId::mlock>, syscall::per<sc::SyscallId::munlock>,
+    syscall::per<sc::SyscallId::prctl>, syscall::per<sc::SyscallId::bpf>, syscall::per<sc::SyscallId::perf_event_open>,
+    syscall::per<sc::SyscallId::sched_getaffinity>, syscall::per<sc::SyscallId::sched_getattr>,
+    syscall::per<sc::SyscallId::poll>, syscall::per<sc::SyscallId::epoll_wait>, syscall::per<sc::SyscallId::eventfd>,
+    syscall::per<sc::SyscallId::nanosleep>, syscall::per<sc::SyscallId::clock_nanosleep>>;
 
-// Declared and never defined: only its return type is read.
-template <std::size_t... Call, std::size_t... Family>
-auto syscall_roster_of_(std::index_sequence<Call...>, std::index_sequence<Family...>)
-    -> std::tuple<syscall::per<std::meta::extract<syscall::SyscallId>(syscall_calls_[Call])>...,
-                  syscall::family<std::meta::extract<syscall::SyscallFamily>(syscall_families_[Family])>...>;
+// Every family, in the order of the chain.  The check file holds this
+// list to the enumerators of SyscallFamily in the same way.
+using syscall_family_atom_roster =
+    std::tuple<syscall::family<sc::SyscallFamily::NoSyscall>, syscall::family<sc::SyscallFamily::VdsoOnly>,
+               syscall::family<sc::SyscallFamily::ReadOnlyState>, syscall::family<sc::SyscallFamily::FileMutation>,
+               syscall::family<sc::SyscallFamily::MemoryMapping>, syscall::family<sc::SyscallFamily::ThreadSync>,
+               syscall::family<sc::SyscallFamily::NetworkIo>, syscall::family<sc::SyscallFamily::ProcessControl>,
+               syscall::family<sc::SyscallFamily::Privilege>>;
 
-// Every call and every family.  The two atoms are templates, and the
-// namespace walk of every_atom_in_is_rostered_ sees no instantiation of a
-// template.  The roster is read off the two enums for that reason: a new
-// call is in the roster the day it is declared, with no hand list to
-// forget.
-using syscall_atom_roster = decltype(syscall_roster_of_(std::make_index_sequence<syscall_calls_.size()>{},
-                                                        std::make_index_sequence<syscall_families_.size()>{}));
+// Every call and every family.  The two lists name each atom, so an
+// includer evaluates the constraint of each atom and no reflection.
+using syscall_atom_roster = roster_cat_t<syscall_call_atom_roster, syscall_family_atom_roster>;
 
 }  // namespace fixy::atom::detail

@@ -2,6 +2,11 @@
 
 #include <fixy/atoms/Syscall.h>
 
+#include <meta>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+
 namespace fixy::atom::detail::syscall_atom_self_test {
 
 namespace fe = ::foundation::effects;
@@ -75,6 +80,31 @@ static_assert(every_family_has_exactly_one_row_(),
               "syscall_family_effects_table.  Add exactly one row that states its effects.");
 static_assert(syscall_family_effects_table.size() == std::meta::enumerators_of(^^SF).size(),
               "fixy/atoms/Syscall.h: the family table and the family chain must have the same size.");
+
+// The header names the atoms of the roster by hand.  These two lists
+// derive them from the enums: one per atom for each enumerator of
+// SyscallId and one family atom for each enumerator of SyscallFamily, in
+// the order of the enumerators.  The hand lists must be these lists, so a
+// new call with no atom fails here.
+inline constexpr auto enumerated_calls = std::define_static_array(std::meta::enumerators_of(^^SI));
+inline constexpr auto enumerated_families = std::define_static_array(std::meta::enumerators_of(^^SF));
+
+// Declared and never defined: only the return types are read.
+template <std::size_t... Call>
+auto enumerated_call_atoms_(std::index_sequence<Call...>)
+    -> std::tuple<syscall::per<std::meta::extract<SI>(enumerated_calls[Call])>...>;
+template <std::size_t... Family>
+auto enumerated_family_atoms_(std::index_sequence<Family...>)
+    -> std::tuple<syscall::family<std::meta::extract<SF>(enumerated_families[Family])>...>;
+
+static_assert(std::is_same_v<syscall_call_atom_roster,
+                             decltype(enumerated_call_atoms_(std::make_index_sequence<enumerated_calls.size()>{}))>,
+              "fixy/atoms/Syscall.h: syscall_call_atom_roster must hold one per<SyscallId::name> for each "
+              "enumerator of SyscallId, in the order of the enumerators.  Add the atom of each new call.");
+static_assert(std::is_same_v<syscall_family_atom_roster, decltype(enumerated_family_atoms_(
+                                                             std::make_index_sequence<enumerated_families.size()>{}))>,
+              "fixy/atoms/Syscall.h: syscall_family_atom_roster must hold one family<SyscallFamily::name> for "
+              "each enumerator of SyscallFamily, in the order of the chain.  Add the atom of each new family.");
 
 static_assert(every_atom_in_is_rostered_<^^::fixy::atom::syscall, syscall_atom_roster>(),
               "fixy/atoms/Syscall.h: an atom declared in fixy::atom::syscall is missing from syscall_atom_roster.");
