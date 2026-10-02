@@ -635,23 +635,40 @@ class StoreTest:
                     f"{fatal_paths}")
 
     def check_eviction(self) -> None:
-        """A store above its limit removes the entries that it did not use for the longest time."""
-        bucket = self.store / "entries" / "00"
-        bucket.mkdir(parents=True, exist_ok=True)
+        """A write into a bucket above its share removes the entries of that bucket unused for the longest time.
+
+        With a limit of 1 MB, each of the 256 buckets has a share of 4096
+        bytes.  The bucket of the entry gets four planted entries of 2048 bytes,
+        and a different bucket gets one planted entry larger than the full
+        limit.  The write reads only its own bucket, so the large entry stays.
+        """
+        first = self.run("neg_convert", *CONVERT)
+        entry = self.entry_path(first[3])
+        self.expect(entry is not None and entry.is_file(), f"the convert fixture has an entry: {first[3]}")
+        if entry is None or not entry.is_file():
+            return
+        entry.unlink()
+        share = (1 << 20) // driver._BUCKETS
         unused = []
         for index in range(4):
-            path = bucket / f"{index:064x}"
-            path.write_bytes(bytes(400 * 1024))
+            path = entry.parent / f"{index:064x}"
+            path.write_bytes(bytes(share // 2))
             moment = time.time() - 86400 + index
             os.utime(path, (moment, moment))
             unused.append(path)
+        other = self.store / "entries" / ("01" if entry.parent.name == "00" else "00") / f"{9:064x}"
+        other.parent.mkdir(parents=True, exist_ok=True)
+        other.write_bytes(bytes(2 << 20))
+        moment = time.time() - 2 * 86400
+        os.utime(other, (moment, moment))
         stored = self.run("neg_convert", *CONVERT, CRUCIBLE_NEG_CACHE_MAX_MB="1")
-        entry = self.entry_path(stored[3])
         remaining = [path for path in unused if path.exists()]
-        total = sum(path.stat().st_size for path in self.entry_files())
-        self.expect(entry is not None and entry.is_file(), f"the new entry stays: {stored[3]}")
-        self.expect(remaining == unused[2:] and total <= 1 << 20,
-                    f"the two entries unused for the longest time go: {[path.name[-1] for path in remaining]}")
+        bucket_total = sum(path.stat().st_size for path in entry.parent.iterdir())
+        self.expect(self.has(stored[3], "stored") and entry.is_file(), f"the new entry stays: {stored[3]}")
+        self.expect(len(remaining) <= 1 and remaining == unused[len(unused) - len(remaining):]
+                    and (bucket_total <= share or not remaining),
+                    f"the entries of the bucket unused for the longest time go: {[path.name[-1] for path in remaining]}")
+        self.expect(other.is_file(), "a write does not remove an entry of a different bucket")
 
 
 CHECKS: tuple[Callable[[StoreTest], None], ...] = (

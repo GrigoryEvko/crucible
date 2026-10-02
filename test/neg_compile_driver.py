@@ -34,10 +34,13 @@ removal of the caret display, the regexes and the independence report.  The
 store holds the output of the compiler, and not the decision to pass or fail.
 
 CRUCIBLE_NEG_CACHE=0 turns the store off.  CRUCIBLE_NEG_CACHE_MAX_MB sets the
-size limit of the store, and the preset value is 1024 MB.  When the store is
-larger than its limit, the driver removes the entries that it did not use for
-the longest time.  A damaged entry, an entry that the driver cannot read and an
-entry in a different format are not correct entries.
+size limit of the store, and the preset value is 1024 MB.  The store keeps each
+entry in one of 256 buckets, by the first two digits of its key.  Each bucket
+gets an equal part of the limit.  When a write makes a bucket larger than its
+part, the driver removes the entries of that bucket that it did not use for
+the longest time.  So a write reads one bucket and not the full store.  A
+damaged entry, an entry that the driver cannot read and an entry in a
+different format are not correct entries.
 
 The compile environment
 -----------------------
@@ -508,7 +511,11 @@ _STORE_MAGIC = b"crucible-neg-store 5\n"
 # sets file times.
 _SETTLE_NS = 1_000_000_000
 _DEFAULT_LIMIT_MB = 1024
-# The store removes entries until it uses at most this part of its limit.
+# The name of a bucket is the first two hexadecimal digits of a key.  A key is
+# a SHA-256 hash, so each bucket gets an equal part of the keys.
+_BUCKET_DIGITS = 2
+_BUCKETS = 16**_BUCKET_DIGITS
+# A bucket removes entries until it uses at most this part of its share of the limit.
 _EVICT_TO = 0.9
 _DEPFILE_PLACEHOLDER = "<dependency file>"
 # The environment variables that GCC reads.  Each one can change the files
@@ -1327,16 +1334,19 @@ class ResultStore:
         self.limit_bytes = limit_bytes
 
     def entry_path(self, key: str) -> Path:
-        """Return the path of the entry for `key`."""
-        return self.entries / key[:2] / key
+        """Return the path of the entry for `key`, in the bucket of the key."""
+        return self.entries / key[:_BUCKET_DIGITS] / key
 
     def lookup(self, key: str) -> tuple[CompileResult | None, str]:
         """Return the stored result for `key`, or None and the reason for a miss.
 
-        The function makes sure that each search root and each probed path has
-        the same state, that the names under each root are the same, and that
-        each dependency has the same bytes.  The cost is O(n + d) for n bytes of
-        dependencies and d directories under the roots.
+        The function makes sure that each dependency has the same bytes, that
+        each search root and each probed path has the same state, and that the
+        names under each root are the same.  An edit changes a dependency more
+        frequently than a new file changes a root, so the dependencies come
+        first, and an edit stops the lookup before the walk of a root.  The
+        cost is O(n + d) for n bytes of dependencies and d directories under
+        the roots.
         """
         path = self.entry_path(key)
         try:
@@ -1346,6 +1356,13 @@ class ResultStore:
         entry = decode_entry(blob)
         if entry is None:
             return None, "the entry is damaged"
+        for name, digest in entry["dependencies"]:  # type: ignore[union-attr]
+            try:
+                data = Path(name).read_bytes()
+            except OSError:
+                return None, f"a dependency cannot be read: {name}"
+            if _short_digest(data) != digest:
+                return None, f"a dependency changed: {name}"
         for name, state in entry["roots"]:  # type: ignore[union-attr]
             if root_state(name) != state:
                 return None, f"a search root changed: {name}"
@@ -1356,13 +1373,6 @@ class ResultStore:
             listing, reason = tree_listing(root, self.memo)
             if listing is None or listing.digest != digest:
                 return None, reason or f"a search directory changed: {root}"
-        for name, digest in entry["dependencies"]:  # type: ignore[union-attr]
-            try:
-                data = Path(name).read_bytes()
-            except OSError:
-                return None, f"a dependency cannot be read: {name}"
-            if _short_digest(data) != digest:
-                return None, f"a dependency changed: {name}"
         try:
             os.utime(path)
         except OSError:
@@ -1434,50 +1444,55 @@ class ResultStore:
             "system_s": round(result.system_s, 3),
             "instructions": result.instructions,
         }
+        path = self.entry_path(key)
         try:
-            _write_atomic(self.entry_path(key), encode_entry(entry))
+            _write_atomic(path, encode_entry(entry))
         except OSError as error:
             return False, f"the entry cannot be written: {error}"
-        self.evict()
+        self.evict(path)
         return True, ""
 
-    def evict(self) -> None:
-        """Remove the entries that the store did not use for the longest time.
+    def evict(self, written: Path) -> None:
+        """Remove the entries of the bucket of `written` that the store did not use for the longest time.
 
-        The function removes entries until the store uses at most 90 percent of
-        its limit.  It also removes each temporary file older than one hour, the
-        remains of a writer that stopped.  The cost is O(n log n) in the number
-        of entries.
+        Each bucket gets an equal share of the limit.  When the bucket uses more
+        than its share, the function removes entries until the bucket uses at
+        most 90 percent of its share.  It keeps `written`, the entry that the
+        caller wrote, also when that entry alone is larger than the share.  It
+        also removes each temporary file of the bucket older than one hour, the
+        remains of a writer that stopped.  The cost is O(m log m) in the m
+        entries of one bucket, which hold about 1/256 of the store.
         """
-        files: list[tuple[int, int, Path]] = []
+        files: list[tuple[int, int, str]] = []
         expired_ns = _now_ns() - 3600 * 1_000_000_000
         try:
-            buckets = list(self.entries.iterdir())
+            with os.scandir(written.parent) as iterator:
+                names = list(iterator)
         except OSError:
             return
-        for bucket in buckets:
+        for item in names:
             try:
-                names = list(os.scandir(bucket))
+                status = item.stat(follow_symlinks=False)
             except OSError:
                 continue
-            for item in names:
-                try:
-                    status = item.stat()
-                except OSError:
-                    continue
-                if item.name.endswith(".tmp"):
-                    if status.st_mtime_ns < expired_ns:
-                        Path(item.path).unlink(missing_ok=True)
-                    continue
-                files.append((status.st_mtime_ns, status.st_size, Path(item.path)))
-        total = sum(size for _, size, _ in files)
-        if total <= self.limit_bytes:
+            if item.name.endswith(".tmp"):
+                if status.st_mtime_ns < expired_ns:
+                    Path(item.path).unlink(missing_ok=True)
+                continue
+            if item.name != written.name:
+                files.append((status.st_mtime_ns, status.st_size, item.path))
+        share = self.limit_bytes // _BUCKETS
+        try:
+            total = sum(size for _, size, _ in files) + written.stat().st_size
+        except OSError:
             return
-        goal = int(self.limit_bytes * _EVICT_TO)
-        for _, size, path in sorted(files, key=lambda item: item[0]):
+        if total <= share:
+            return
+        goal = int(share * _EVICT_TO)
+        for _, size, name in sorted(files):
             if total <= goal:
                 break
-            path.unlink(missing_ok=True)
+            Path(name).unlink(missing_ok=True)
             total -= size
 
 
