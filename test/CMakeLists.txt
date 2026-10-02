@@ -2537,10 +2537,15 @@ crucible_neg_compile_test(neg_symbol_table_add_cross_tag
 #   * _non_power_of_two (N = 7): the class-body static_assert and the
 #     requires-clause of CyclicBuffer both refuse it.  A masked cursor over
 #     a non-power-of-two ring aliases two logical positions onto one slot.
-#   * _zero_capacity (N = 0): the static_assert admits it, because
-#     `0 & (0u - 1u)` is 0, and only `requires (N > 0 ...)` of CyclicBuffer
-#     refuses it.
+#   * _zero_capacity (N = 0): the power-of-two static_assert admits it,
+#     because `0 & (0u - 1u)` is 0.  The minimum-size static_assert and
+#     `requires (N > 0 ...)` of CyclicBuffer refuse it, and the fixture
+#     pins the requires-clause.
 # The bound of the fill counter lives inside CyclicBuffer.
+# A claim in a full ring keeps the slots of the active transaction and the
+# rollback target.  The class body also refuses a ring of less than 4
+# slots.  The power-of-two gate admits N = 1 and N = 2, and only the
+# minimum-size static_assert refuses them.
 crucible_neg_compile_test(neg_transaction_log_non_power_of_two
   "Transaction.h:[0-9]+:[0-9]+: error: static assertion failed: N must be a power of 2"
   "the expression .\\(N & N - 1\\) == 0 \\[with N = 7\\]. evaluated to .false.")
@@ -2548,8 +2553,11 @@ crucible_neg_compile_test(neg_transaction_log_zero_capacity
   "Transaction.h:[0-9]+:[0-9]+: error: template constraint failure for .template<class T, long unsigned int N>  requires  N > 0"
   "the expression .N > 0 \\[with N = 0\\]. evaluated to .false.")
 crucible_neg_compile_test(neg_transaction_log_capacity_one
-  "Transaction.h:[0-9]+:[0-9]+: error: static assertion failed: the ring must hold the active transaction and the transaction that a claim builds"
-  "the comparison reduces to .\\(1 != 1\\).")
+  "Transaction.h:[0-9]+:[0-9]+: error: static assertion failed: N must be at least 4: a claim keeps the slots of the active transaction and the rollback target"
+  "the comparison reduces to .\\(1 >= 4\\).")
+crucible_neg_compile_test(neg_transaction_log_capacity_two
+  "Transaction.h:[0-9]+:[0-9]+: error: static assertion failed: N must be at least 4: a claim keeps the slots of the active transaction and the rollback target"
+  "the comparison reduces to .\\(2 >= 4\\).")
 
 # TransactionLog::commit takes the region as
 # fixy::Tagged<RegionNode*, source::Arena>.  A raw RegionNode* and a region

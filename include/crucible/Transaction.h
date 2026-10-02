@@ -124,13 +124,21 @@ concept CtxFitsTransactionLog = ::fixy::time::CtxFitsClockReaderMint<Ctx, ::fixy
 // A pointer the log returns stays valid for as long as the ring has not
 // wrapped past the slot it points into, and it is the owner's to use: the
 // proof admits the call, and the pointer must stay on the owning thread.
-// A claim never recycles the slot of the active transaction, so a pointer to
-// the active transaction stays valid while that transaction is active.
+// A claim never recycles the slot of the active transaction or the slot of
+// the rollback target.  A pointer to either stays valid while the
+// transaction keeps its role.  A claim does not change the rollback target.
 
 template <uint32_t N, OwnerProof Owner>
 class TransactionLog {
     static_assert((N & (N - 1)) == 0, "N must be a power of 2");
-    static_assert(N != 1, "the ring must hold the active transaction and the transaction that a claim builds");
+    // A claim in a full ring keeps two slots: the slot of the active
+    // transaction and the slot of the rollback target.  The ring must hold
+    // a third slot for the claim.  N is a power of 2, and the smallest such
+    // ring holds 4 slots.  With the fourth slot, a claim also never recycles
+    // the slot of the last claim.
+    static_assert(N >= 4,
+                  "N must be at least 4: a claim keeps the slots of the active transaction and the rollback target, "
+                  "and N is a power of 2");
 
 public:
     // The slots, the write cursor and the fill counter as one composition, so
@@ -149,15 +157,21 @@ public:
     TransactionLog(TransactionLog&&) = delete("interior pointers into entries_ would dangle");
     TransactionLog& operator=(TransactionLog&&) = delete("interior pointers into entries_ would dangle");
 
-    [[nodiscard, gnu::cold]] Transaction* begin_tx(Owner const&, uint64_t step_id) noexcept {
-        // A full ring claims its oldest slot.  A rollback can make a
-        // transaction of any age the active one, so the oldest slot can hold
-        // the active transaction.  A recycle of that slot ends the life of
-        // the live transaction, and activate then finds the new transaction
-        // in the active slot.  So the claim passes over the active slot.  The
-        // active transaction becomes the newest entry, and the claim below
-        // takes the slot of the oldest entry other than the active one.
-        if (ring_.full() && &ring_.recent(N - 1) == active_tx_.value()) {
+    [[nodiscard, gnu::cold]] Transaction* begin_tx(Owner const& owner, uint64_t step_id) noexcept {
+        // A full ring claims its oldest slot, but two slots must stay.  A
+        // rollback can make a transaction of any age the active one.  If a
+        // claim recycles that slot, the live transaction ends.  Then activate
+        // finds the new transaction in the active slot.  An activation out of
+        // order, or a rollback before an activation, can put the rollback
+        // target in any slot.  If a claim recycles that slot, a rollback
+        // restores an older transaction.
+        Transaction* const target = previous(owner);
+        // A pass that finds a kept slot as the oldest claims that slot, which
+        // makes it the newest entry.  The claim keeps two slots, and the ring
+        // holds at least 4.  After two passes, the oldest slot holds neither.
+        for (uint32_t pass = 0; pass < 2 && ring_.full(); ++pass) {
+            const Transaction* const oldest = &ring_.recent(N - 1);
+            if (oldest != active_tx_.value() && oldest != target) break;
             (void)ring_.claim();
         }
         // Claiming advances only the cursor, so the reference it hands back
@@ -178,6 +192,7 @@ public:
         // stamp_transaction states the timestamp, and none here does.
         CRUCIBLE_POST(tx, tx != nullptr);
         CRUCIBLE_POST(tx, tx != active_tx_.value());
+        CRUCIBLE_POST(tx, tx != target);
         CRUCIBLE_POST(tx, tx->status == TxStatus::RECORDING);
         CRUCIBLE_POST(tx, tx->step_id.get() == step_id);
         return tx;

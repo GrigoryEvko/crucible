@@ -68,6 +68,8 @@ static_assert(!crucible::OwnerProof<TrivialOwner>);
 static_assert(!crucible::OwnerProof<int>);
 
 using Log = crucible::TransactionLog<16, SoloOwner>;
+// The smallest ring that the log admits.
+using SmallestLog = crucible::TransactionLog<4, SoloOwner>;
 
 // The log reads the monotonic clock, so only a context off the replay-bound
 // foreground path builds one.
@@ -101,14 +103,14 @@ static_assert(!std::is_trivially_copyable_v<crucible::Transaction>);
 // Begins, commits and activates the transaction of one step, as the publish
 // stage of a Vigil does for each region.  Returns the transaction that the
 // activation displaced.
-crucible::Transaction* publish(Log& log, const SoloOwner& owner, uint32_t step, crucible::RegionNode* region) {
+crucible::Transaction* publish(auto& log, const SoloOwner& owner, uint32_t step, crucible::RegionNode* region) {
     auto* tx = log.begin_tx(owner, step);
     assert(log.commit(owner, tx, arena_region(region), region->content_hash, region->merkle_hash));
     return log.activate(owner, tx);
 }
 
 // The log holds the transaction of `step` as the active one, with its region.
-void expect_active(Log& log, const SoloOwner& owner, uint32_t step, crucible::RegionNode* region) {
+void expect_active(auto& log, const SoloOwner& owner, uint32_t step, crucible::RegionNode* region) {
     const crucible::Transaction* active = log.active(owner);
     assert(active != nullptr);
     assert(active->status == crucible::TxStatus::ACTIVE);
@@ -211,6 +213,75 @@ void previous_follows_the_order_of_displacements(::foundation::effects::Alloc al
     expect_active(log, owner, 3, regions[3]);
     assert(log.previous(owner) == nullptr);
     assert(!log.rollback(owner));
+}
+
+// A full ring recycles its oldest slot, but a claim must keep the rollback
+// target.  Activations out of order put the target in the oldest slot.  The
+// second transaction displaces nothing, the first displaces the second, and
+// the third displaces the first.  The claim must not recycle the slot of the
+// first, and a rollback after the claim restores the first with its region.
+// The fourth transaction stays committed, and its slot does not change.
+void claim_keeps_the_target_of_out_of_order_activations(::foundation::effects::Alloc alloc,
+                                                        const ::fixy::TestRunnerCtx& ctx, const SoloOwner& owner) {
+    constexpr uint32_t kSlots = 4;
+    SmallestLog log{ctx};
+    crucible::Arena arena(1 << 12);
+    std::array<crucible::RegionNode*, kSlots + 1> regions{};
+    std::array<crucible::Transaction*, kSlots + 1> txs{};
+    for (uint32_t step = 1; step <= kSlots; ++step) {
+        regions[step] = region_of_step(alloc, arena, step);
+        txs[step] = log.begin_tx(owner, step);
+        assert(log.commit(owner, txs[step], arena_region(regions[step]), regions[step]->content_hash,
+                          regions[step]->merkle_hash));
+    }
+    assert(log.activate(owner, txs[2]) == nullptr);
+    assert(log.activate(owner, txs[1]) == txs[2]);
+    assert(log.activate(owner, txs[3]) == txs[1]);
+    assert(log.size(owner) == kSlots);
+    assert(log.previous(owner) == txs[1]);
+
+    const crucible::Transaction* claimed = log.begin_tx(owner, kSlots + 1);
+    assert(claimed != txs[1] && claimed != txs[3] && claimed != txs[4]);
+    assert(log.previous(owner) == txs[1]);
+    assert(txs[1]->step_id.get() == 1);
+    assert(txs[4]->status == crucible::TxStatus::COMMITTED);
+    assert(txs[4]->step_id.get() == 4);
+
+    assert(log.rollback(owner));
+    expect_active(log, owner, 1, regions[1]);
+}
+
+// A rollback between a claim and its activation moves the rollback target
+// to an older slot.  Four publications in sequence fill the ring, the fifth
+// claim recycles the slot of the first, and a rollback restores the third.
+// The second is then the rollback target, in the oldest slot.  The caller
+// does not activate the fifth transaction, and it claims a sixth.  That
+// claim must not recycle the slot of the second or the slot of the third.
+void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::effects::Alloc alloc,
+                                                               const ::fixy::TestRunnerCtx& ctx,
+                                                               const SoloOwner& owner) {
+    constexpr uint32_t kSlots = 4;
+    SmallestLog log{ctx};
+    crucible::Arena arena(1 << 12);
+    std::array<crucible::RegionNode*, kSlots + 1> regions{};
+    for (uint32_t step = 1; step <= kSlots; ++step) {
+        regions[step] = region_of_step(alloc, arena, step);
+        (void)publish(log, owner, step, regions[step]);
+    }
+    (void)log.begin_tx(owner, kSlots + 1);
+    assert(log.rollback(owner));
+    expect_active(log, owner, 3, regions[3]);
+    const crucible::Transaction* target = log.previous(owner);
+    assert(target != nullptr);
+    assert(target->step_id.get() == 2);
+
+    const crucible::Transaction* claimed = log.begin_tx(owner, kSlots + 2);
+    assert(claimed != target && claimed != log.active(owner));
+    assert(log.previous(owner) == target);
+    assert(target->step_id.get() == 2);
+
+    assert(log.rollback(owner));
+    expect_active(log, owner, 2, regions[2]);
 }
 
 }  // namespace
@@ -321,6 +392,8 @@ void previous_follows_the_order_of_displacements(::foundation::effects::Alloc al
     claim_passes_over_the_active_slot(test.alloc, ctx, owner, RollbackOrder::AfterEachPublication);
     claim_passes_over_the_active_slot(test.alloc, ctx, owner, RollbackOrder::InARow);
     previous_follows_the_order_of_displacements(test.alloc, ctx, owner);
+    claim_keeps_the_target_of_out_of_order_activations(test.alloc, ctx, owner);
+    claim_keeps_the_target_after_a_rollback_before_activation(test.alloc, ctx, owner);
 
     // A failed clock read leaves the transaction with no reading.  The
     // result of a failed read stands in for a clock that fails, because a

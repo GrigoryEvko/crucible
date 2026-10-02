@@ -7,14 +7,15 @@
 // The ring storage of TransactionLog<N> is fixy::CyclicBuffer<Transaction,
 // N>, and this fixture is the companion to the non-power-of-two one:
 //   * The class-body static_assert((N & (N - 1)) == 0, ...) PASSES for
-//     N = 0, because `0 & (0u - 1u)` is 0.  So the local gate does not
-//     catch a zero ring.
+//     N = 0, because `0 & (0u - 1u)` is 0.
+//   * The class-body static_assert(N >= 4, ...) refuses N = 0.  The
+//     capacity fixtures pin that gate.
 //   * CyclicBuffer<Transaction, 0>'s requires-clause
-//     `(N > 0 && (N & (N - 1)) == 0)` catches it, so the `Ring` alias is
-//     ill-formed and TransactionLog<0> has no valid specialization.
+//     `(N > 0 && (N & (N - 1)) == 0)` also refuses N = 0, so the `Ring`
+//     alias is ill-formed.  This fixture pins the requires-clause.
 //
 // Companion: neg_transaction_log_non_power_of_two.cpp (the non-power-of-two
-// edge, caught by both gates).
+// edge, caught by the power-of-two gate and the requires-clause).
 
 #include <crucible/Transaction.h>
 #include <fixy/Ctx.h>

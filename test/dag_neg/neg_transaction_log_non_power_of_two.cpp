@@ -19,8 +19,8 @@
 // previous()'s backward walk and begin_tx's slot recycling would both
 // corrupt.
 //
-// Companion: neg_transaction_log_zero_capacity.cpp, which slips past
-// gate (1) and is caught only by gate (2).
+// Companion: neg_transaction_log_zero_capacity.cpp, which gate (1) admits.
+// The minimum-size static_assert and gate (2) refuse it.
 
 #include <crucible/Transaction.h>
 #include <fixy/Ctx.h>
