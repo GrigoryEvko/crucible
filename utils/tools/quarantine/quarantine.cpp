@@ -10,16 +10,12 @@
 // header, and a fixy template that a crucible type instantiates, is not a
 // finding.
 //
-// The plugin also holds the contract rule of the tree.  A P2900 contract
-// specifier (`pre` or `post` on a function declaration) is not permitted, and
-// CRUCIBLE_PRE and CRUCIBLE_POST of foundation/contracts/ replace it.  GCC 16
-// does not keep the specifier of a template in a header unit or a precompiled
-// header, and a constant evaluation can ignore the specifier (CLAUDE.md
-// section XII).  The rule applies to each file under the source root, also to
-// include/foundation/, include/fixy/ and the build directory.  The rule
-// applies in each mode, and each specifier that no region opts out is an
-// error.  mode=contracts applies only the contract rule, and CMake loads the
-// plugin in that mode into each build where CRUCIBLE_QUARANTINE is OFF.
+// The plugin also applies the contract rule of the tree, from plugin_core.h,
+// in each mode: each P2900 contract specifier that no region opts out is an
+// error.  CMake loads this plugin only when CRUCIBLE_QUARANTINE is REPORT or
+// ERROR.  Each other build loads the contract plugin of contract.cpp, which
+// applies only the contract rule, so a change of this file does not compile
+// the objects of that build again.
 //
 // THE KINDS
 //     std_entity            a named reference to a declaration in namespace std
@@ -44,19 +40,14 @@
 //                            its pattern is read instead: a dependent name that
 //                            only the instantiation resolves is not a named
 //                            reference in the source.
-//     PLUGIN_FINISH_DECL     the contract rule: each declaration outside a
-//                            template, also a local one.
-//     PLUGIN_FINISH_PARSE_FUNCTION
-//                            the contract rule: each function definition, also
-//                            a template, a lambda and a member of a local class.
 //     PLUGIN_FINISH_UNIT     one walk of every namespace that a system header does
 //                            not own: namespace-scope objects, classes and their
 //                            data members, bases, aliases, function signatures,
 //                            and the bodies of template patterns.  The contract
-//                            rule has its own walk, which finds a template and a
-//                            member of a class template that has no definition.
-//     PLUGIN_PRAGMAS         the two opt-out pragmas.
+//                            rule has its own walk.
 //     PLUGIN_FINISH          the report, if the unit did not reach its end.
+//     plugin_core.h gives the hooks of the contract rule and of the two opt-out
+//     pragmas.
 //
 // THE ARGUMENTS (-fplugin-arg-crucible_quarantine-NAME=VALUE)
 //     root=PATH      the source root (necessary)
@@ -64,7 +55,6 @@
 //     admitted=PATH  the list of admitted standard library entities
 //     mode=report    each finding is a note, or a line of the report file
 //     mode=error     each finding that no region opts out is an error
-//     mode=contracts only the contract rule
 //     out=DIR        write the report of the unit to a file in DIR, not as notes
 //     stamp=TEXT     ignored; a new value makes the build system compile again
 //
@@ -75,12 +65,6 @@
 // destructor and a conversion function of a library class are not findings:
 // the compiler calls them for an object that the plugin reports where the code
 // declares it.
-//
-// The contract rule cannot see a specifier in a preprocessor arm that the unit
-// does not compile, or on a member function of a local class in a template
-// when the class declares the function and does not define it.
-// utils/scripts/check-contract-form.py reads the parse tree of each tracked
-// file, and it finds these specifiers too.
 
 #include <algorithm>
 #include <cerrno>
@@ -97,22 +81,16 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "gcc-plugin.h"
-#include "plugin-version.h"
-#include "tree.h"
-#include "cp/cp-tree.h"
-#include "cp/contracts.h"
-#include "c-family/c-pragma.h"
-#include "diagnostic-core.h"
-#include "input.h"
-#include "stringpool.h"
+#include "plugin_core.h"
 #include "tree-iterator.h"
 
 int plugin_is_GPL_compatible;
 
 namespace {
 
-// ── The kinds and the findings ──────────────────────────────────────────
+using namespace crucible_plugin;
+
+// ── The kinds of the quarantine rule ────────────────────────────────────
 
 enum class Kind : std::uint8_t {
     std_entity,
@@ -123,7 +101,6 @@ enum class Kind : std::uint8_t {
     c_array_object,
     raw_new_delete,
     c_library_call,
-    contract_specifier,
 };
 
 const char* kind_name(Kind kind) {
@@ -144,50 +121,9 @@ const char* kind_name(Kind kind) {
             return "raw_new_delete";
         case Kind::c_library_call:
             return "c_library_call";
-        case Kind::contract_specifier:
-            return "contract_specifier";
     }
     return "unknown";
 }
-
-// Where a location is spelled, as the source root sees it.
-enum class FileClass : std::uint8_t {
-    outside,  // a system header, a generated file, a scratch buffer
-    substrate,  // include/foundation/ or include/fixy/
-    quarantined,  // every other file under the root
-};
-
-struct FileEntry {
-    FileClass file_class = FileClass::outside;
-    bool is_under_root = false;  // also true for a file of the build directory
-    std::string relative;  // empty when the file is not under the root
-};
-
-struct Place {
-    FileClass file_class = FileClass::outside;
-    const FileEntry* file = nullptr;
-    int line = 0;
-    int column = 0;
-    location_t spelling = UNKNOWN_LOCATION;
-};
-
-struct Finding {
-    Kind kind = Kind::std_entity;
-    const FileEntry* file = nullptr;
-    int line = 0;
-    int column = 0;
-    // The spelling location, or for a contract specifier the location of the
-    // tree, so that a diagnostic also names the macro expansion.
-    location_t spelling = UNKNOWN_LOCATION;
-    std::string entity;
-};
-
-struct Region {
-    const FileEntry* file = nullptr;
-    int begin_line = 0;
-    int end_line = 0;  // zero while the region is open
-    location_t begin = UNKNOWN_LOCATION;
-};
 
 enum class Library : std::uint8_t {
     none,
@@ -204,22 +140,14 @@ enum class Role : std::uint8_t {
 
 // ── The state of one translation unit ───────────────────────────────────
 
+// The state of the quarantine rule.  plugin_core.h holds the state that the
+// two rules share: the root, the files, the findings and the regions.
 struct State {
-    std::string plugin_name;
-    std::string root;  // the real path of the source root, without a final '/'
-    std::string build;  // the real path of the build directory, or empty
     std::string out_dir;
     bool is_error_mode = false;
-    bool is_contract_rule_only = false;
-    bool was_reported = false;
 
     std::unordered_set<std::string> admitted_names;
     std::vector<std::string> admitted_headers;  // "/type_traits", matched as a path suffix
-
-    std::unordered_map<const char*, FileEntry> files;
-    std::vector<Finding> findings;
-    std::unordered_set<std::string> finding_keys;
-    std::vector<Region> regions;
 
     // Caches keyed by tree.  A garbage collection can free a tree and reuse
     // its address, so each collection clears them.  Nothing depends on them
@@ -228,81 +156,14 @@ struct State {
     std::unordered_map<tree, bool> admitted_of;
     std::unordered_map<tree, bool> default_argument_of;
     std::unordered_set<tree> walked;
-    std::unordered_set<tree> contract_walked;
 };
 
 State state;
 
 // ── Paths and places ────────────────────────────────────────────────────
 
-bool has_prefix(const std::string& text, const std::string& prefix) {
-    return text.size() >= prefix.size() && text.compare(0, prefix.size(), prefix) == 0;
-}
-
 bool has_suffix(const std::string& text, const std::string& suffix) {
     return text.size() >= suffix.size() && text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
-}
-
-std::string real_path(const char* path) {
-    std::string resolved(PATH_MAX + 1, '\0');
-    if (::realpath(path, resolved.data()) == nullptr) {
-        return {};
-    }
-    resolved.resize(std::strlen(resolved.c_str()));
-    return resolved;
-}
-
-const FileEntry& classify_file(const char* file) {
-    auto found = state.files.find(file);
-    if (found != state.files.end()) {
-        return found->second;
-    }
-    FileEntry entry;
-    std::string resolved = file != nullptr ? real_path(file) : std::string{};
-    if (!resolved.empty() && has_prefix(resolved, state.root + "/")) {
-        entry.is_under_root = true;
-        entry.relative = resolved.substr(state.root.size() + 1);
-        if (state.build.empty() || !has_prefix(resolved, state.build + "/")) {
-            bool is_substrate =
-                has_prefix(entry.relative, "include/foundation/") || has_prefix(entry.relative, "include/fixy/");
-            entry.file_class = is_substrate ? FileClass::substrate : FileClass::quarantined;
-        }
-    }
-    return state.files.emplace(file, std::move(entry)).first->second;
-}
-
-// The place of a location is its spelling location.  When the spelling is
-// outside the source root, as in the body of a macro of a system header, the
-// place is the expansion point of that macro, one level at a time.  A macro of
-// fixy therefore owns what it spells, and a quarantined file owns each system
-// macro that it uses.
-Place place_of(location_t location) {
-    Place place;
-    if (location == UNKNOWN_LOCATION || location <= BUILTINS_LOCATION) {
-        return place;
-    }
-    location_t current = location;
-    for (int depth = 0; depth < 64; ++depth) {
-        location_t spelled = linemap_resolve_location(line_table, current, LRK_SPELLING_LOCATION, nullptr);
-        expanded_location where = expand_location(spelled);
-        if (where.file != nullptr) {
-            const FileEntry& entry = classify_file(where.file);
-            if (entry.file_class != FileClass::outside) {
-                place.file_class = entry.file_class;
-                place.file = &entry;
-                place.line = where.line;
-                place.column = where.column;
-                place.spelling = spelled;
-                return place;
-            }
-        }
-        if (!linemap_location_from_macro_expansion_p(line_table, current)) {
-            return place;
-        }
-        const line_map* map = linemap_lookup(line_table, current);
-        current = linemap_unwind_toward_expansion(line_table, current, &map);
-    }
-    return place;
 }
 
 bool is_quarantined(location_t location) { return place_of(location).file_class == FileClass::quarantined; }
@@ -325,17 +186,17 @@ void record(Kind kind, location_t location, const std::string& entity) {
     bool is_name = kind == Kind::std_entity || kind == Kind::c_library_call;
     std::string key = std::string(kind_name(kind)) + ' ' + place.file->relative + ':' + std::to_string(place.line) + ':'
                     + std::to_string(place.column) + (is_name ? ' ' + entity : std::string{});
-    if (!state.finding_keys.insert(key).second) {
+    if (!core.finding_keys.insert(key).second) {
         return;
     }
     Finding finding;
-    finding.kind = kind;
+    finding.kind = kind_name(kind);
     finding.file = place.file;
     finding.line = place.line;
     finding.column = place.column;
     finding.spelling = place.spelling;
     finding.entity = entity;
-    state.findings.push_back(std::move(finding));
+    core.findings.push_back(std::move(finding));
 }
 
 // ── Names ───────────────────────────────────────────────────────────────
@@ -1354,12 +1215,6 @@ void walk_template(tree template_decl) {
     }
 }
 
-// The anonymous namespace of the unit is not a library namespace, even when a
-// system header opens it first.
-bool is_library_namespace(tree ns) {
-    return ns == std_node || (DECL_NAME(ns) != NULL_TREE && in_system_header_at(DECL_SOURCE_LOCATION(ns)));
-}
-
 void walk_namespace(tree ns);
 
 void walk_namespace_member(tree decl) {
@@ -1430,270 +1285,7 @@ void walk_namespace(tree ns) {
     }
 }
 
-// ── The contract rule ───────────────────────────────────────────────────
-
-// One contract specifier.  The spelling location decides whether the rule
-// applies, and one finding stays for each spelling: a template and its
-// instantiations share the specifier, and so do the uses of one macro.
-void record_contract(bool is_precondition, location_t location) {
-    if (location == UNKNOWN_LOCATION || location <= BUILTINS_LOCATION || in_system_header_at(location)) {
-        return;
-    }
-    location_t spelled = linemap_resolve_location(line_table, location, LRK_SPELLING_LOCATION, nullptr);
-    expanded_location where = expand_location(spelled);
-    if (where.file == nullptr) {
-        return;
-    }
-    const FileEntry& entry = classify_file(where.file);
-    if (!entry.is_under_root) {
-        return;
-    }
-    std::string key = std::string(kind_name(Kind::contract_specifier)) + ' ' + entry.relative + ':'
-                    + std::to_string(where.line) + ':' + std::to_string(where.column);
-    if (!state.finding_keys.insert(key).second) {
-        return;
-    }
-    Finding finding;
-    finding.kind = Kind::contract_specifier;
-    finding.file = &entry;
-    finding.line = where.line;
-    finding.column = where.column;
-    finding.spelling = location;
-    finding.entity = is_precondition ? "pre" : "post";
-    state.findings.push_back(std::move(finding));
-}
-
-// Each contract specifier of a function.  The front end keeps the specifiers
-// of a declaration in a table of its own, and each node of the list holds one
-// PRECONDITION_STMT or POSTCONDITION_STMT.
-void check_contracts(tree decl) {
-    if (decl != NULL_TREE && TREE_CODE(decl) == TEMPLATE_DECL) {
-        decl = DECL_TEMPLATE_RESULT(decl);
-    }
-    if (decl == NULL_TREE || TREE_CODE(decl) != FUNCTION_DECL) {
-        return;
-    }
-    for (tree specifier = get_fn_contract_specifiers(decl); specifier != NULL_TREE; specifier = TREE_CHAIN(specifier)) {
-        if (TREE_CODE(specifier) != TREE_LIST || TREE_VALUE(specifier) == NULL_TREE
-            || TREE_CODE(TREE_VALUE(specifier)) != TREE_LIST) {
-            continue;
-        }
-        tree statement = CONTRACT_STATEMENT(specifier);
-        if (statement == NULL_TREE || !CONTRACT_CONDITION_P(statement)) {
-            continue;
-        }
-        location_t location = EXPR_LOCATION(statement);
-        record_contract(PRECONDITION_P(statement),
-                        location != UNKNOWN_LOCATION ? location : DECL_SOURCE_LOCATION(decl));
-    }
-}
-
-void walk_contract_class(tree type);
-
-void walk_contract_template(tree template_decl) {
-    if (!state.contract_walked.insert(template_decl).second) {
-        return;
-    }
-    tree result = DECL_TEMPLATE_RESULT(template_decl);
-    if (result == NULL_TREE) {
-        return;
-    }
-    if (TREE_CODE(result) == FUNCTION_DECL) {
-        check_contracts(result);
-        return;
-    }
-    if (TREE_CODE(result) != TYPE_DECL || !DECL_IMPLICIT_TYPEDEF_P(result) || !CLASS_TYPE_P(TREE_TYPE(result))) {
-        return;
-    }
-    walk_contract_class(TREE_TYPE(result));
-    // The list of a class template holds its partial specializations.
-    for (tree entry = DECL_TEMPLATE_SPECIALIZATIONS(template_decl); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
-        tree partial = TREE_VALUE(entry);
-        if (partial != NULL_TREE && TREE_CODE(partial) == TEMPLATE_DECL) {
-            walk_contract_template(partial);
-        }
-    }
-}
-
-void walk_contract_decl(tree decl) {
-    if (decl == NULL_TREE || !DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl)
-        || in_system_header_at(DECL_SOURCE_LOCATION(decl))) {
-        return;
-    }
-    switch (TREE_CODE(decl)) {
-        case FUNCTION_DECL:
-            check_contracts(decl);
-            break;
-        case TEMPLATE_DECL:
-            walk_contract_template(decl);
-            break;
-        case TYPE_DECL:
-            if (DECL_IMPLICIT_TYPEDEF_P(decl) && !DECL_SELF_REFERENCE_P(decl) && CLASS_TYPE_P(TREE_TYPE(decl))) {
-                walk_contract_class(TREE_TYPE(decl));
-            }
-            break;
-        default:
-            break;
-    }
-}
-
-// The members of a class, its nested classes and member templates, and the
-// friends that a class template declares.  An implicit instantiation is not
-// walked: it shares each specifier with its template.
-void walk_contract_class(tree type) {
-    tree main_type = TYPE_MAIN_VARIANT(type);
-    if (!CLASS_TYPE_P(main_type) || LAMBDA_TYPE_P(main_type) || !state.contract_walked.insert(main_type).second) {
-        return;
-    }
-    for (tree member = TYPE_FIELDS(main_type); member != NULL_TREE; member = DECL_CHAIN(member)) {
-        if (TREE_CODE(member) == FIELD_DECL) {
-            if (DECL_NAME(member) == NULL_TREE && ANON_AGGR_TYPE_P(TREE_TYPE(member))) {
-                walk_contract_class(TREE_TYPE(member));
-            }
-            continue;
-        }
-        walk_contract_decl(member);
-    }
-    for (tree entry = CLASSTYPE_DECL_LIST(main_type); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
-        if (TREE_PURPOSE(entry) == NULL_TREE && TREE_VALUE(entry) != NULL_TREE && DECL_P(TREE_VALUE(entry))) {
-            walk_contract_decl(TREE_VALUE(entry));
-        }
-    }
-}
-
-// One walk of each namespace that a system header does not own.  The two
-// other hooks of the rule see each function definition and each declaration
-// outside a template.  This walk finds a function template, a member template
-// and a member of a class template that has no definition.
-void walk_contract_namespace(tree ns) {
-    if (!state.contract_walked.insert(ns).second) {
-        return;
-    }
-    for (tree decl = NAMESPACE_LEVEL(ns)->names; decl != NULL_TREE; decl = TREE_CHAIN(decl)) {
-        tree member = decl;
-        if (TREE_CODE(member) == TREE_LIST) {
-            member = TREE_VALUE(member);
-            if (member == NULL_TREE || TREE_CODE(member) == TREE_LIST) {
-                continue;
-            }
-        }
-        if (TREE_CODE(member) == OVERLOAD) {
-            for (ovl_iterator candidate(member, true); candidate; ++candidate) {
-                walk_contract_decl(*candidate);
-            }
-            continue;
-        }
-        if (TREE_CODE(member) == NAMESPACE_DECL) {
-            if (DECL_NAMESPACE_ALIAS(member) == NULL_TREE && !is_library_namespace(member)) {
-                walk_contract_namespace(member);
-            }
-            continue;
-        }
-        walk_contract_decl(member);
-    }
-}
-
-// The diagnostic of one contract specifier that no region opts out.
-void report_contract(const Finding& finding) {
-    bool is_precondition = finding.entity == "pre";
-    error_at(finding.spelling, "the %qs contract specifier is not permitted in this tree: write %<%s%> of %<%s%> %s",
-             finding.entity.c_str(), is_precondition ? "CRUCIBLE_PRE(condition)" : "CRUCIBLE_POST(result, condition)",
-             is_precondition ? "foundation/contracts/Pre.h" : "foundation/contracts/Post.h",
-             is_precondition ? "as the first statement of the function body" : "before each return statement");
-    inform(finding.spelling,
-           "GCC 16 does not keep the contract specifier of a template in a header unit or in a precompiled "
-           "header, and a constant evaluation can ignore the specifier (CLAUDE.md section XII)");
-    inform(finding.spelling, "a test of the specifier itself puts it in a %<#pragma crucible %s(\"reason\")%> region",
-           "I_KNOW_WHAT_IM_DOING");
-}
-
-// ── The opt-out pragmas ─────────────────────────────────────────────────
-
-const char* const kBeginPragma = "I_KNOW_WHAT_IM_DOING";
-const char* const kEndPragma = "END_I_KNOW_WHAT_IM_DOING";
-
-void handle_begin_pragma(cpp_reader*) {
-    tree value = NULL_TREE;
-    location_t open_location = UNKNOWN_LOCATION;
-    location_t token_location = UNKNOWN_LOCATION;
-    bool has_reason = false;
-    if (pragma_lex(&value, &open_location) == CPP_OPEN_PAREN) {
-        cpp_ttype token = pragma_lex(&value, &token_location);
-        if (token == CPP_STRING && value != NULL_TREE && TREE_CODE(value) == STRING_CST
-            && TREE_STRING_LENGTH(value) > 1) {
-            has_reason = pragma_lex(&value, &token_location) == CPP_CLOSE_PAREN
-                      && pragma_lex(&value, &token_location) == CPP_EOF;
-        }
-    }
-    location_t location = open_location != UNKNOWN_LOCATION ? open_location : input_location;
-    if (!has_reason) {
-        error_at(location,
-                 "%<#pragma crucible %s%> takes one string that gives the reason: "
-                 "write %<#pragma crucible %s(\"reason\")%>",
-                 kBeginPragma, kBeginPragma);
-        return;
-    }
-    Place place = place_of(location);
-    if (place.file == nullptr) {
-        return;
-    }
-    if (!state.regions.empty() && state.regions.back().end_line == 0) {
-        error_at(location,
-                 "a %<#pragma crucible %s%> region is open at line %d; close it with %<#pragma crucible %s%> "
-                 "before you open a new region",
-                 kBeginPragma, state.regions.back().begin_line, kEndPragma);
-        return;
-    }
-    Region region;
-    region.file = place.file;
-    region.begin_line = place.line;
-    region.begin = location;
-    state.regions.push_back(region);
-}
-
-void handle_end_pragma(cpp_reader*) {
-    tree value = NULL_TREE;
-    location_t location = UNKNOWN_LOCATION;
-    cpp_ttype token = pragma_lex(&value, &location);
-    if (location == UNKNOWN_LOCATION) {
-        location = input_location;
-    }
-    if (token != CPP_EOF) {
-        error_at(location, "%<#pragma crucible %s%> takes no argument", kEndPragma);
-        return;
-    }
-    Place place = place_of(location);
-    if (state.regions.empty() || state.regions.back().end_line != 0) {
-        error_at(location,
-                 "%<#pragma crucible %s%> has no open region; open one with "
-                 "%<#pragma crucible %s(\"reason\")%>",
-                 kEndPragma, kBeginPragma);
-        return;
-    }
-    Region& region = state.regions.back();
-    if (place.file != region.file) {
-        error_at(location,
-                 "%<#pragma crucible %s%> closes a region that another file opened; "
-                 "close each region in the file that opens it",
-                 kEndPragma);
-        return;
-    }
-    region.end_line = place.line;
-}
-
-void register_pragmas(void*, void*) {
-    c_register_pragma("crucible", kBeginPragma, handle_begin_pragma);
-    c_register_pragma("crucible", kEndPragma, handle_end_pragma);
-}
-
 // ── The report ──────────────────────────────────────────────────────────
-
-bool is_opted_out(const Finding& finding) {
-    return std::any_of(state.regions.begin(), state.regions.end(), [&finding](const Region& region) {
-        return region.file == finding.file && region.begin_line <= finding.line
-            && (region.end_line == 0 || finding.line <= region.end_line);
-    });
-}
 
 std::uint64_t fnv1a(const std::string& text) {
     std::uint64_t hash = 0xcbf29ce484222325ULL;
@@ -1746,32 +1338,27 @@ void write_report_file(const std::vector<std::string>& lines) {
 }
 
 void report() {
-    if (state.was_reported) {
+    if (core.was_reported) {
         return;
     }
-    state.was_reported = true;
-    for (const Region& region : state.regions) {
-        if (region.end_line == 0) {
-            error_at(region.begin, "this %<#pragma crucible %s%> region has no %<#pragma crucible %s%>", kBeginPragma,
-                     kEndPragma);
-        }
-    }
+    core.was_reported = true;
+    report_open_regions();
     std::vector<std::string> lines;
-    for (const Finding& finding : state.findings) {
+    for (const Finding& finding : core.findings) {
         bool is_out = is_opted_out(finding);
-        std::string kind = is_out ? std::string("opted_out") : std::string(kind_name(finding.kind));
-        std::string entity = is_out ? std::string(kind_name(finding.kind)) + " " + finding.entity : finding.entity;
+        std::string kind = is_out ? std::string("opted_out") : std::string(finding.kind);
+        std::string entity = is_out ? std::string(finding.kind) + " " + finding.entity : finding.entity;
         lines.push_back("quarantine: " + kind + " " + finding.file->relative + ":" + std::to_string(finding.line) + ":"
                         + std::to_string(finding.column) + " " + entity);
         // The contract rule gives an error in each mode.
-        if (finding.kind == Kind::contract_specifier && !is_out) {
+        if (finding.kind == kContractKind && !is_out) {
             report_contract(finding);
         } else if (state.is_error_mode && !is_out) {
             error_at(finding.spelling,
                      "quarantine: %s %s; use a type or an entity of fixy or foundation, or put the code in a "
                      "%<#pragma crucible %s(\"reason\")%> region",
                      kind.c_str(), entity.c_str(), kBeginPragma);
-        } else if (!state.is_error_mode && !state.is_contract_rule_only && state.out_dir.empty()) {
+        } else if (!state.is_error_mode && state.out_dir.empty()) {
             inform(finding.spelling, "quarantine: %s %s", kind.c_str(), entity.c_str());
         }
     }
@@ -1790,15 +1377,9 @@ void on_pre_genericize(void* gcc_data, void*) {
     walk_body(function, false);
 }
 
-void on_finish_decl(void* gcc_data, void*) { check_contracts(static_cast<tree>(gcc_data)); }
-
-void on_finish_parse_function(void* gcc_data, void*) { check_contracts(static_cast<tree>(gcc_data)); }
-
 void walk_declarations() {
     walk_contract_namespace(global_namespace);
-    if (!state.is_contract_rule_only) {
-        walk_namespace(global_namespace);
-    }
+    walk_namespace(global_namespace);
 }
 
 void on_finish_unit(void*, void*) {
@@ -1810,7 +1391,7 @@ void on_finish_unit(void*, void*) {
 // reach PLUGIN_FINISH_UNIT.  Under -fsyntax-only the trees are complete, so
 // the walk of declarations runs here.
 void on_finish(void*, void*) {
-    if (!state.was_reported && flag_syntax_only && !seen_error()) {
+    if (!core.was_reported && flag_syntax_only && !seen_error()) {
         walk_declarations();
     }
     report();
@@ -1821,7 +1402,7 @@ void on_collection(void*, void*) {
     state.admitted_of.clear();
     state.default_argument_of.clear();
     state.walked.clear();
-    state.contract_walked.clear();
+    core.contract_walked.clear();
 }
 
 // ── The arguments and the admitted list ─────────────────────────────────
@@ -1892,7 +1473,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     if (flag_preprocess_only) {
         return 0;
     }
-    state.plugin_name = plugin_info->base_name;
+    core.plugin_name = plugin_info->base_name;
     std::string root_argument;
     std::string admitted_argument;
     for (int index = 0; index < plugin_info->argc; ++index) {
@@ -1901,39 +1482,31 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
         if (key == "root") {
             root_argument = value;
         } else if (key == "build") {
-            state.build = real_path(value.c_str());
+            core.build = real_path(value.c_str());
         } else if (key == "admitted") {
             admitted_argument = value;
         } else if (key == "out") {
             state.out_dir = value;
         } else if (key == "mode") {
-            if (value != "report" && value != "error" && value != "contracts") {
-                error("quarantine: mode is %qs; the modes are report, error and contracts", value.c_str());
+            if (value != "report" && value != "error") {
+                error("quarantine: mode is %qs; the modes are report and error", value.c_str());
                 return 1;
             }
             state.is_error_mode = value == "error";
-            state.is_contract_rule_only = value == "contracts";
         } else if (key != "stamp") {
             error("quarantine: unknown argument %qs; the arguments are root, build, admitted, mode, out and stamp",
                   key.c_str());
             return 1;
         }
     }
-    state.root = root_argument.empty() ? std::string{} : real_path(root_argument.c_str());
-    if (state.root.empty()) {
-        error("quarantine: give the source root with %<-fplugin-arg-%s-root=PATH%>; the path must exist",
-              state.plugin_name.c_str());
+    if (!set_root(root_argument)) {
         return 1;
     }
     if (!admitted_argument.empty() && !load_admitted(admitted_argument)) {
         return 1;
     }
-    register_callback(plugin_info->base_name, PLUGIN_PRAGMAS, register_pragmas, nullptr);
-    if (!state.is_contract_rule_only) {
-        register_callback(plugin_info->base_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize, nullptr);
-    }
-    register_callback(plugin_info->base_name, PLUGIN_FINISH_DECL, on_finish_decl, nullptr);
-    register_callback(plugin_info->base_name, PLUGIN_FINISH_PARSE_FUNCTION, on_finish_parse_function, nullptr);
+    register_contract_rule(plugin_info->base_name);
+    register_callback(plugin_info->base_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_FINISH_UNIT, on_finish_unit, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_FINISH, on_finish, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_GGC_START, on_collection, nullptr);

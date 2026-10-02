@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
-"""check_plugin — the quarantine plugin finds each class of finding, only where the location rule puts it.
+"""check_plugin — the two plugins find each class of finding, only where the location rule puts it.
 
-The test builds the plugin from its source with the flags that CMake gives,
-compiles each fixture of this directory with the plugin loaded, and compares
-what the plugin reports with the expectations below.  This directory is the
-source root of the test: include/fixy/Shelf.h is substrate code, and each
-other fixture is quarantined.
+The test builds the contract plugin and the quarantine plugin from their
+sources with the flags that CMake gives, compiles each fixture of this
+directory with a plugin loaded, and compares what the plugin reports with the
+expectations below.  This directory is the source root of the test:
+include/fixy/Shelf.h is substrate code, and each other fixture is quarantined.
 
-Each class of finding has an expectation that fails when the plugin loses the
-check of that class.  The substrate rule, the admitted list and the opt-out
-region each have an expectation that fails when the plugin loses that rule.
+Each class of finding has an expectation that fails when the quarantine plugin
+loses the check of that class.  The substrate rule, the admitted list and the
+opt-out region each have an expectation that fails when the plugin loses that
+rule.
 
 contracts.cpp holds each form of a P2900 contract specifier that the contract
-rule rejects, in each mode and also in substrate code.  The test compares the
-errors with CONTRACT_ERRORS.  A form that the plugin stops seeing, a second
-error for one specifier and an error outside the list each fail the test.
+rule rejects, also in substrate code.  The test compiles it with the contract
+plugin and with the quarantine plugin in each mode, and compares the errors
+with CONTRACT_ERRORS.  A form that a plugin stops seeing, a second error for
+one specifier and an error outside the list each fail the test.
 
-usage: check_plugin.py --cxx CXX --source PLUGIN.cpp --admitted LIST -- BUILD_FLAGS...
+usage: check_plugin.py --cxx CXX --contract-source CONTRACT.cpp --source QUARANTINE.cpp --admitted LIST
+                       -- BUILD_FLAGS...
 
 Exit 0 when each expectation holds, 1 when one fails, 2 on a usage error or a
 plugin that does not build.
@@ -35,6 +38,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 PLUGIN = "crucible_quarantine"
+CONTRACT_PLUGIN = "crucible_contract"
 
 # (kind, fixture, line, a text that the entity holds, or '=' and the whole entity)
 PRESENT = (
@@ -142,23 +146,24 @@ class Finding:
 
 
 class Checker:
-    """Build the plugin one time, then compile fixtures with it."""
+    """Build each plugin one time, then compile fixtures with one of them."""
 
-    def __init__(self, cxx: str, source: Path, flags: list[str], work: Path) -> None:
+    def __init__(self, cxx: str, sources: dict[str, Path], flags: list[str], work: Path) -> None:
         self.cxx = cxx
         self.work = work
-        self.plugin = work / f"{PLUGIN}.so"
         self.failures: list[str] = []
-        built = subprocess.run([cxx, *flags, "-o", str(self.plugin), str(source)], capture_output=True, text=True)
-        if built.returncode != 0:
-            raise RuntimeError(f"the plugin did not build:\n{built.stderr}")
+        for name, source in sources.items():
+            built = subprocess.run([cxx, *flags, "-o", str(work / f"{name}.so"), str(source)], capture_output=True,
+                                   text=True)
+            if built.returncode != 0:
+                raise RuntimeError(f"the plugin {name} did not build:\n{built.stderr}")
 
     def compile(self, fixture: str, arguments: dict[str, str],
                 stage: tuple[str, ...] = ("-S", "-o", os.devnull),
-                extra: tuple[str, ...] = ()) -> subprocess.CompletedProcess[str]:
-        """Compile one fixture with the plugin, the given plugin arguments, stage flags and extra flags."""
-        command = [self.cxx, "-std=c++26", "-I", str(HERE / "include"), *extra, f"-fplugin={self.plugin}"]
-        command += [f"-fplugin-arg-{PLUGIN}-{key}={value}" for key, value in arguments.items()]
+                extra: tuple[str, ...] = (), plugin: str = PLUGIN) -> subprocess.CompletedProcess[str]:
+        """Compile one fixture with one plugin, the given plugin arguments, stage flags and extra flags."""
+        command = [self.cxx, "-std=c++26", "-I", str(HERE / "include"), *extra, f"-fplugin={self.work / plugin}.so"]
+        command += [f"-fplugin-arg-{plugin}-{key}={value}" for key, value in arguments.items()]
         command += ["-fdiagnostics-color=never", *stage, str(HERE / fixture)]
         return subprocess.run(command, capture_output=True, text=True)
 
@@ -208,6 +213,9 @@ def run(checker: Checker, admitted: Path) -> None:
         compiled = checker.compile(fixture, {"root": str(HERE), "mode": "report"})
         checker.expect(f"{fixture} is an error", compiled.returncode != 0 and text in compiled.stderr,
                        compiled.stderr[-2000:])
+        compiled = checker.compile(fixture, {"root": str(HERE)}, plugin=CONTRACT_PLUGIN)
+        checker.expect(f"{fixture} is an error for the contract plugin",
+                       compiled.returncode != 0 and text in compiled.stderr, compiled.stderr[-2000:])
 
     noted = checker.compile("violations.cpp", {"root": str(HERE), "mode": "report"})
     checker.expect("report mode without out= gives notes and succeeds",
@@ -256,7 +264,7 @@ def contract_errors(stderr: str) -> list[tuple[str, int, str]]:
 
 
 def run_contract_rule(checker: Checker) -> None:
-    """Compile contracts.cpp in each mode, and compare the errors with CONTRACT_ERRORS."""
+    """Compile contracts.cpp with each plugin and in each mode, and compare the errors with CONTRACT_ERRORS."""
     outside = checker.work / "outside"
     outside.mkdir(exist_ok=True)
     (outside / "Outside.h").write_text(OUTSIDE_HEADER, encoding="utf-8")
@@ -264,14 +272,14 @@ def run_contract_rule(checker: Checker) -> None:
     expected = sorted(CONTRACT_ERRORS)
     contract_reports = checker.work / "contract-reports"
     runs = (
-        ("mode=contracts", {"root": str(HERE), "mode": "contracts"}, ("-S", "-o", os.devnull)),
-        ("mode=error", {"root": str(HERE), "mode": "error"}, ("-S", "-o", os.devnull)),
-        ("mode=report", {"root": str(HERE), "mode": "report", "out": str(contract_reports)},
+        ("the contract plugin", CONTRACT_PLUGIN, {"root": str(HERE)}, ("-S", "-o", os.devnull)),
+        ("mode=error", PLUGIN, {"root": str(HERE), "mode": "error"}, ("-S", "-o", os.devnull)),
+        ("mode=report", PLUGIN, {"root": str(HERE), "mode": "report", "out": str(contract_reports)},
          ("-S", "-o", os.devnull)),
-        ("mode=contracts with -fsyntax-only", {"root": str(HERE), "mode": "contracts"}, ("-fsyntax-only",)),
+        ("the contract plugin with -fsyntax-only", CONTRACT_PLUGIN, {"root": str(HERE)}, ("-fsyntax-only",)),
     )
-    for name, arguments, stage in runs:
-        compiled = checker.compile("contracts.cpp", arguments, stage, extra)
+    for name, plugin, arguments, stage in runs:
+        compiled = checker.compile("contracts.cpp", arguments, stage, extra, plugin)
         found = contract_errors(compiled.stderr)
         missing = sorted(set(expected) - set(found))
         unexpected = [error for error in found if error not in expected or found.count(error) > 1]
@@ -283,33 +291,39 @@ def run_contract_rule(checker: Checker) -> None:
     checker.expect("the opt-out region turns the specifier on line 73 into opted_out",
                    any(f.entity == "contract_specifier pre" for f in opted), "; ".join(map(str, opted)))
 
-    named = checker.compile("contracts.cpp", {"root": str(HERE), "mode": "contracts"}, extra=extra)
+    named = checker.compile("contracts.cpp", {"root": str(HERE)}, extra=extra, plugin=CONTRACT_PLUGIN)
     checker.expect("the error names CRUCIBLE_PRE, CRUCIBLE_POST and the reasons",
                    all(text in named.stderr for text in ("CRUCIBLE_PRE(condition)", "foundation/contracts/Pre.h",
                                                          "CRUCIBLE_POST(result, condition)",
                                                          "foundation/contracts/Post.h", "header unit",
                                                          "precompiled header", "constant evaluation")),
                    named.stderr[-2000:])
-    quiet = checker.compile("violations.cpp", {"root": str(HERE), "mode": "contracts"})
-    checker.expect("mode=contracts applies only the contract rule",
+    quiet = checker.compile("violations.cpp", {"root": str(HERE)}, plugin=CONTRACT_PLUGIN)
+    checker.expect("the contract plugin applies only the contract rule",
                    quiet.returncode == 0 and "quarantine:" not in quiet.stderr, quiet.stderr[-2000:])
-    unknown = checker.compile("violations.cpp", {"root": str(HERE), "mode": "contract"})
+    foreign = checker.compile("violations.cpp", {"root": str(HERE), "mode": "report"}, plugin=CONTRACT_PLUGIN)
+    checker.expect("the contract plugin refuses an argument of the quarantine plugin",
+                   foreign.returncode != 0 and "the arguments are root and stamp" in foreign.stderr,
+                   foreign.stderr[-2000:])
+    unknown = checker.compile("violations.cpp", {"root": str(HERE), "mode": "contracts"})
     checker.expect("an unknown mode is an error",
-                   unknown.returncode != 0 and "the modes are report, error and contracts" in unknown.stderr,
+                   unknown.returncode != 0 and "the modes are report and error" in unknown.stderr,
                    unknown.stderr[-2000:])
 
 
 def main(argv: list[str]) -> int:
     """Parse the arguments, build the plugin and run every case."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    parser.add_argument("--cxx", required=True, help="the compiler that loads the plugin")
-    parser.add_argument("--source", required=True, type=Path, help="the source of the plugin")
+    parser.add_argument("--cxx", required=True, help="the compiler that loads the plugins")
+    parser.add_argument("--contract-source", required=True, type=Path, help="the source of the contract plugin")
+    parser.add_argument("--source", required=True, type=Path, help="the source of the quarantine plugin")
     parser.add_argument("--admitted", required=True, type=Path, help="the admitted list of the tree")
-    parser.add_argument("flags", nargs="*", help="the flags that build the plugin, after --")
+    parser.add_argument("flags", nargs="*", help="the flags that build the plugins, after --")
     args = parser.parse_args(argv)
     with tempfile.TemporaryDirectory(prefix="quarantine-plugin-") as scratch:
         try:
-            checker = Checker(args.cxx, args.source, args.flags, Path(scratch))
+            checker = Checker(args.cxx, {CONTRACT_PLUGIN: args.contract_source, PLUGIN: args.source}, args.flags,
+                              Path(scratch))
         except RuntimeError as error:
             print(f"check_plugin: {error}", file=sys.stderr)
             return 2

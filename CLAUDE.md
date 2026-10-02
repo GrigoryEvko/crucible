@@ -1037,10 +1037,14 @@ approximately 10 ms to each step, and the compile database does not show it.
 `utils/scripts/cost_meter.py` holds the measurement and the record format, and
 each launcher imports it.
 
-In each preset, `utils/tools/quarantine/Quarantine.cmake` builds the GCC plugin
-of `utils/tools/quarantine/` at configure time, and puts `-fplugin=` and the
-plugin arguments on each C++ compile. With `CRUCIBLE_QUARANTINE=OFF`, the
-plugin applies only the contract rule of §XII. The load of the plugin adds
+In each preset, `utils/tools/quarantine/Quarantine.cmake` builds one GCC
+plugin of `utils/tools/quarantine/` at configure time, and puts `-fplugin=` and
+the plugin arguments on each C++ compile. With `CRUCIBLE_QUARANTINE=OFF`, the
+build loads the contract plugin of `contract.cpp`, which applies only the
+contract rule of §XII. With `REPORT` or `ERROR`, it loads the quarantine plugin
+of `quarantine.cpp`, which applies the quarantine rule and the contract rule.
+The contract rule is in `plugin_core.h`, so a change of `quarantine.cpp`
+compiles no object of an `OFF` build again. The load of the plugin adds
 approximately 6 ms to each compile, and the rule takes less than 0.2% of the
 CPU time of a heavy unit. ccache ignores the paths in the plugin arguments, so
 the build directories of two work trees share the cache.
@@ -2116,7 +2120,7 @@ const auto& ck = *r;  // happy path
 - `CRUCIBLE_INVARIANT` — loop trip counts, alignment, range bounds. The optimizer uses it.
 - `CRUCIBLE_PRE` / `CRUCIBLE_POST` — each precondition and each postcondition of a function. `CRUCIBLE_PRE` is a statement at the start of the body, and `CRUCIBLE_POST` is a statement before each return. The decide-catalog predicates and the dual-side audit of pre and post use this rail.
 
-**The contract rule.** A P2900 `pre` or `post` specifier on a function declaration is a compile error in each build. The GCC plugin of `utils/tools/quarantine/` holds the rule. `utils/tools/quarantine/Quarantine.cmake` builds the plugin at configure time and loads it into each C++ compile of the tree. When `CRUCIBLE_QUARANTINE` is `OFF`, the plugin applies only this rule (`mode=contracts`). The rule applies to each file under the source root, also to `include/foundation/` and `include/fixy/`. The error names `CRUCIBLE_PRE` or `CRUCIBLE_POST`, and two notes give the reasons and the opt-out region. A test of the specifier itself puts the specifier in a `#pragma crucible I_KNOW_WHAT_IM_DOING("reason")` region. No file of the tree uses the region for this rule. `cmake/probes/contract_cache.cpp` holds a specifier, because it is a probe of a compiler fix to the specifier, and `execute_process` compiles it without the plugin. The fixtures `neg_contract_specifier_pre`, `neg_contract_specifier_post` and `neg_contract_specifier_template_member` show the error, and the test `quarantine_plugin` holds each form of the specifier. The plugin cannot see a specifier in a preprocessor arm that the unit does not compile, or on a member function of a local class in a template when the class declares the function and does not define it. `utils/scripts/check-contract-form.py` (the test `contract_form`) reads the parse tree of each tracked C++ file, so it finds these specifiers and a specifier in a file that no build compiles. `utils/scripts/contract-form-allowlist.txt` admits the files whose subject is the specifier, and the list only shrinks. The parse tree does not show a specifier that a macro spells, and the plugin finds that one.
+**The contract rule.** A P2900 `pre` or `post` specifier on a function declaration is a compile error in each build. `utils/tools/quarantine/plugin_core.h` holds the rule, and the two GCC plugins of that directory apply it. `utils/tools/quarantine/Quarantine.cmake` builds one plugin at configure time and loads it into each C++ compile of the tree. When `CRUCIBLE_QUARANTINE` is `OFF`, the build loads the contract plugin (`contract.cpp`), which applies only this rule. When it is `REPORT` or `ERROR`, the build loads the quarantine plugin, which applies this rule too. The rule applies to each file under the source root, also to `include/foundation/` and `include/fixy/`. The error names `CRUCIBLE_PRE` or `CRUCIBLE_POST`, and two notes give the reasons and the opt-out region. A test of the specifier itself puts the specifier in a `#pragma crucible I_KNOW_WHAT_IM_DOING("reason")` region. No file of the tree uses the region for this rule. `cmake/probes/contract_cache.cpp` holds a specifier, because it is a probe of a compiler fix to the specifier, and `execute_process` compiles it without the plugin. The fixtures `neg_contract_specifier_pre`, `neg_contract_specifier_post` and `neg_contract_specifier_template_member` show the error, and the test `quarantine_plugin` holds each form of the specifier. The plugin cannot see a specifier in a preprocessor arm that the unit does not compile, or on a member function of a local class in a template when the class declares the function and does not define it. `utils/scripts/check-contract-form.py` (the test `contract_form`) reads the parse tree of each tracked C++ file, so it finds these specifiers and a specifier in a file that no build compiles. `utils/scripts/contract-form-allowlist.txt` admits the files whose subject is the specifier, and the list only shrinks. The parse tree does not show a specifier that a macro spells, and the plugin finds that one.
 
 #### VC discharge framing — three layers stack
 
