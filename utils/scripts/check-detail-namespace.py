@@ -67,9 +67,19 @@ THE ALLOWLIST
     that admits more uses than the file has is stale, so the list only
     shrinks.
 
-The guard parses every C++ file of the scan roots and of the layers once,
+The guard reads every C++ file of the scan roots and of the layers,
 because an alias in any header of an include closure can open a detail
 namespace.  A file in scope that the parser cannot read fails the guard.
+
+THE STORE
+    The store of utils/scripts/preprocessed.py keeps the facts of each file
+    text under a hash of its role and of its bytes, and under a name that
+    hashes this guard and the parser: the includes as written, the aliases,
+    the directives, the names, and the detail namespaces that a layer file
+    declares.  The facts of a text do not depend on another file.  So a warm
+    run parses no file, and it resolves the includes and the names from the
+    facts of all files, as a cold run does.  The files that the store does
+    not hold go to worker processes, at most 16.
 
 Exit 0 clean, 1 on an unlisted use, a surplus, a stale row or a parse
 failure, 2 on a usage error, a bad allowlist or a failed self-test, 3 when
@@ -79,6 +89,7 @@ the parser kit is missing.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import os
 import re
@@ -91,8 +102,10 @@ from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import cache_dir  # noqa: E402
 import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
+from preprocessed import map_batches, text_results  # noqa: E402
 
 ALLOWLIST = "utils/scripts/detail-namespace-allowlist.txt"
 SCAN_ROOTS = ("include", "src", "test", "vessel", "utils/tools", "bench", "examples")
@@ -162,17 +175,16 @@ class AliasDef(NamedTuple):
 
 
 class FileFacts(NamedTuple):
-    """What the scan keeps of one parsed file once its tree is gone.
+    """What the resolver reads of one file: its resolved includes, its aliases and its directives.
 
-    names is empty for a layer file: the scan reads a layer file only for
-    its includes, its aliases and its directives.
+    The names of a file stay in its stored facts, and scan() decodes only a
+    name that can reach a detail namespace.
     """
 
     rel: str
     includes: list[str]
     aliases: list[AliasDef]
     directives: list[Directive]
-    names: list[Name]
 
 
 # The scopes where a namespace alias is a namespace member, so that a file
@@ -358,33 +370,54 @@ def outermost_qualified(tree: tsast.Tree) -> list[tsast.Node]:
             if not (node.parent is not None and node.parent.type == "qualified_identifier" and node.field == "name")]
 
 
-def resolved_includes(root: Path, rel: str, tree: tsast.Tree) -> list[str]:
-    """Return each file of the scan that one file includes, relative to the root.
+def include_specs(tree: tsast.Tree) -> list[tuple[str, str]]:
+    """Return (kind, path text) for each include of one parse that names a path: a quoted or a bracket include.
 
-    A quoted include resolves against the directory of the file first, then
-    every include resolves against INCLUDE_DIRS.  A system header and a
-    computed include resolve to nothing.
+    A computed include names no path, so it gives no entry.
     """
-    found: list[str] = []
+    specs: list[tuple[str, str]] = []
     for node in tree.find("preproc_include"):
         path = node.child_by_field("path")
         if path is None or path.type not in ("string_literal", "system_lib_string"):
             continue
-        body = tsast.prose_text(path)[1:-1].strip()
-        candidates = [(root / rel).parent / body] if path.type == "string_literal" else []
+        specs.append((path.type, tsast.prose_text(path)[1:-1].strip()))
+    return specs
+
+
+def resolved_includes(root: Path, rel: str, specs: list[tuple[str, str]], memo: dict[str, str | None]) -> list[str]:
+    """Return each file of the scan that one file includes, relative to the root.
+
+    A quoted include resolves against the directory of the file first, then
+    every include resolves against INCLUDE_DIRS.  A system header and a
+    computed include resolve to nothing.  `memo` keeps the answer for each
+    candidate path, so each candidate costs its file-system calls one time
+    in a run.
+
+    Complexity: linear in the number of includes.
+    """
+    found: list[str] = []
+    for kind, body in specs:
+        candidates = [(root / rel).parent / body] if kind == "string_literal" else []
         candidates += [root / directory / body for directory in INCLUDE_DIRS]
         for candidate in candidates:
-            if candidate.is_file():
-                found.append(os.path.relpath(candidate.resolve(), root.resolve()))
+            key = str(candidate)
+            if key not in memo:
+                memo[key] = os.path.relpath(candidate.resolve(), root.resolve()) if candidate.is_file() else None
+            if memo[key] is not None:
+                found.append(memo[key])
                 break
     return found
 
 
-def file_facts(root: Path, rel: str, tree: tsast.Tree, *, with_names: bool) -> FileFacts:
-    """Return the includes, aliases, directives and names of one parsed file.
+def tree_facts(tree: tsast.Tree, *, with_names: bool) -> dict:
+    """Return what the scan reads from one parse alone, as a JSON value that the store keeps.
 
-    with_names false keeps no name: a layer file serves only its includes,
-    its aliases and its directives.
+    The value holds the includes as written, the aliases, the directives,
+    the names when with_names is true, and the detail namespaces that the
+    file declares when with_names is false.  A layer file serves only its
+    includes, its aliases, its directives and its detail namespaces.  The
+    includes resolve against the tree later, so the value depends on the
+    text of the file alone.
 
     Complexity: linear in the number of nodes, plus the length of the macro bodies.
     """
@@ -404,9 +437,14 @@ def file_facts(root: Path, rel: str, tree: tsast.Tree, *, with_names: bool) -> F
             names.append(Name(using.node.line, using.is_global, target, enclosing, using.node.start))
             directives.append(Directive(using.node.start, using.scope.end, using.is_global, target, enclosing,
                                         using.scope.type in NAMESPACE_SCOPES))
-    includes = resolved_includes(root, rel, tree)
+    facts = {"includes": include_specs(tree), "aliases": aliases, "directives": directives, "names": names,
+             "declared": []}
     if not with_names:
-        return FileFacts(rel, includes, aliases, directives, [])
+        facts["names"] = []
+        facts["declared"] = sorted({namespace for definition in tree.find("namespace_definition")
+                                    if (body := definition.child_by_field("body")) is not None
+                                    and (namespace := detail_namespace(enclosing_of(body)))})
+        return facts
     for node in outermost_qualified(tree):
         parent = node.parent
         if parent is not None and parent.type == "using_declaration" and parent.start in directive_nodes:
@@ -426,7 +464,78 @@ def file_facts(root: Path, rel: str, tree: tsast.Tree, *, with_names: bool) -> F
         for is_global, parts, row in tsast.token_qualified_names(tokens):
             if len(parts) > 1 or (is_global and parts):
                 names.append(Name(row + 1, is_global, parts, (), None))
-    return FileFacts(rel, includes, aliases, directives, names)
+    return facts
+
+
+def facts_key(data: bytes, *, with_names: bool) -> str:
+    """Return the name of the stored facts of one text: a hash of the role of the file and of its bytes."""
+    return hashlib.sha256((b"names\0" if with_names else b"layer\0") + data).hexdigest()
+
+
+def parsed_facts(items: list[tuple[str, bool]]) -> list[tuple[str, dict]]:
+    """Parse files, and return the key and the facts of each file, in input order.
+
+    Each item is (absolute path, with_names).  A file with names that the
+    parser cannot read gives {"diagnostic": text} in place of its facts.
+    preprocessed.map_batches runs this function in a worker process.  A
+    parse comes from the tree cache of tsast when the cache holds it.
+
+    Complexity: linear in the nodes of each parse, plus the length of the macro bodies.
+    """
+    found: list[tuple[str, dict]] = []
+    for (_path, with_names), tree in zip(items, tsast.parse([Path(path) for path, _ in items], strict=False),
+                                         strict=True):
+        key = facts_key(tree.source, with_names=with_names)
+        if with_names and tree.diagnostic is not None:
+            found.append((key, {"diagnostic": tree.diagnostic}))
+        else:
+            found.append((key, tree_facts(tree, with_names=with_names)))
+    return found
+
+
+def cached_facts(root: Path, files: list[tuple[str, bool]]) -> dict[str, dict]:
+    """Return the facts of each (file, with_names) pair, from the store or from one parse in worker processes.
+
+    The store of utils/scripts/preprocessed.py keeps the facts of each text
+    under a hash of its role and of its bytes, and under a name that hashes
+    this guard and the parser.  Facts with a diagnostic are not stored, so
+    each run reads such a file again.
+
+    Complexity: one hash of each file, plus one parse of each file that the
+    store does not hold, spread over at most 16 workers.
+    """
+    results = text_results("detail-namespace", Path(__file__), tsast.parser_identity())
+    facts: dict[str, dict] = {}
+    missed: list[tuple[str, bool]] = []
+    for rel, with_names in files:
+        stored = None if results is None else results.get(facts_key((root / rel).read_bytes(),
+                                                                    with_names=with_names))
+        if isinstance(stored, dict):
+            facts[rel] = stored
+        else:
+            missed.append((rel, with_names))
+    jobs = min(16, os.cpu_count() or 1)
+    parsed = map_batches(parsed_facts, [(str(root / rel), with_names) for rel, with_names in missed], jobs)
+    for (rel, _with_names), (key, fact) in zip(missed, parsed, strict=True):
+        facts[rel] = fact
+        if results is not None and "diagnostic" not in fact:
+            results.put(key, fact)
+    return facts
+
+
+def decoded_facts(rel: str, includes: list[str], fact: dict) -> FileFacts:
+    """Return the FileFacts of one file from its stored facts and its resolved includes.
+
+    The store keeps each path and each position as a JSON list, so this
+    function turns each one into the tuple that the resolver compares and
+    hashes.
+    """
+    aliases = [AliasDef(name, is_global, tuple(target), tuple(enclosing), tuple(scope_start), tuple(scope_end),
+                        tuple(at), is_shared)
+               for name, is_global, target, enclosing, scope_start, scope_end, at, is_shared in fact["aliases"]]
+    directives = [Directive(tuple(start), tuple(end), is_global, tuple(target), tuple(enclosing), is_shared)
+                  for start, end, is_global, target, enclosing, is_shared in fact["directives"]]
+    return FileFacts(rel, includes, aliases, directives)
 
 
 def listed_files(root: Path, roots: tuple[str, ...]) -> list[str]:
@@ -443,7 +552,8 @@ def listed_files(root: Path, roots: tuple[str, ...]) -> list[str]:
 def scan(root: Path) -> tuple[Counter, dict[tuple[str, str], list[int]], list[str]]:
     """Return the count of uses for each (path, namespace), their lines, and each parse failure.
 
-    Complexity: one parse of each C++ file under the scan roots and the layers.
+    Complexity: one hash of each C++ file under the scan roots and the
+    layers, plus one parse of each such file that the store does not hold.
     """
     layer = listed_files(root, LAYER_ROOTS)
     scope = [rel for rel in listed_files(root, SCAN_ROOTS)
@@ -452,22 +562,30 @@ def scan(root: Path) -> tuple[Counter, dict[tuple[str, str], list[int]], list[st
     declared: set[str] = set()
     facts: dict[str, FileFacts] = {}
     problems: list[str] = []
-    for tree in tsast.parse([root / rel for rel in layer + scope], strict=False):
-        rel = str(Path(tree.path).relative_to(root))
-        if rel not in in_scope:
-            declared |= {namespace for definition in tree.find("namespace_definition")
-                         if (body := definition.child_by_field("body")) is not None
-                         and (namespace := detail_namespace(enclosing_of(body)))}
-        elif tree.diagnostic is not None:
+    stored = cached_facts(root, [(rel, rel in in_scope) for rel in layer + scope])
+    memo: dict[str, str | None] = {}
+    for rel in layer + scope:
+        fact = stored[rel]
+        if "diagnostic" in fact:
             problems.append(f"PARSE     {rel} — the parser cannot read it, so the guard cannot see its uses of a "
-                            f"detail namespace: {tree.diagnostic}")
+                            f"detail namespace: {fact['diagnostic']}")
             continue
-        facts[rel] = file_facts(root, rel, tree, with_names=rel in in_scope)
+        declared.update(fact["declared"])
+        facts[rel] = decoded_facts(rel, resolved_includes(root, rel, fact["includes"], memo), fact)
     resolver = Resolver(facts, frozenset(declared))
     counts: Counter = Counter()
     lines: dict[tuple[str, str], list[int]] = {}
     for rel in scope:
-        for name in facts[rel].names if rel in facts else ():
+        if rel not in facts:
+            continue
+        aliased = {alias.name for alias in facts[rel].aliases} | resolver.shared_names
+        for line, is_global, parts, enclosing, at in stored[rel]["names"]:
+            # Resolver.reaches counts a reading only when the name spells
+            # detail or starts with an alias of the file or a shared alias.
+            # Any other name reaches nothing, so it is not decoded.
+            if not parts or ("detail" not in parts and parts[0] not in aliased):
+                continue
+            name = Name(line, is_global, tuple(parts), tuple(enclosing), None if at is None else tuple(at))
             namespace = resolver.reaches(rel, name)
             if namespace:
                 counts[(rel, namespace)] += 1
@@ -569,7 +687,7 @@ def self_test() -> int:
         if not ok:
             failures.append(f"{name}: expected exit {code} and '{needle}', got exit {got}:\n{report}")
 
-    with tempfile.TemporaryDirectory() as work:
+    with cache_dir.scratch_root(), tempfile.TemporaryDirectory() as work:
         root = Path(work)
         throwaway_repo.init(root)
         write(root, "include/foundation/effects/Key.h",
@@ -685,6 +803,20 @@ def self_test() -> int:
             (root / rel).unlink()
         for rel in cross:
             (root / rel).unlink()
+
+        # The store keeps the facts of each text, and each run resolves the
+        # includes and the aliases again.  So the verdict of an unchanged
+        # file changes when a header that it includes changes.
+        write(root, "include/crucible/Alias.h", "#pragma once\nnamespace fe2 = ::foundation::effects;\n")
+        write(root, "src/Stable.cpp", "#include <crucible/Alias.h>\nauto k = fe2::detail::Key{};\n")
+        expect(root, 1, "REFUSED   src/Stable.cpp", "a use through the alias of an included header", True)
+        expect(root, 1, "REFUSED   src/Stable.cpp", "the same use when the store holds the facts of each file", True)
+        write(root, "include/crucible/Alias.h", "#pragma once\nnamespace fe2 = ::crucible::cipher;\n")
+        expect(root, 0, "2 use(s) of a detail namespace", "the unchanged file passes when its header changes the alias",
+               True)
+        (root / "include/crucible/Alias.h").unlink()
+        expect(root, 0, "2 use(s) of a detail namespace", "the unchanged file passes when its header is gone", True)
+        (root / "src/Stable.cpp").unlink()
 
         write(root, "test/fixy/test_probe.cpp",
               "auto first = ::foundation::effects::detail::Key{};\nauto second = foundation::effects::detail::Key{};\n"
