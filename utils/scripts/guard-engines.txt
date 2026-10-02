@@ -16,8 +16,8 @@ test/fuzz/run-afl.sh | none |
 test/guard_attacks/test_use_after_move_attacks.py | tsast |
 test/harness/check_output.py | text | the output and the status of the probes of the test harness
 test/neg_compile_driver.py | none |
-test/neg_compile_driver_test.py | compiler,json,text | the output of test/neg_compile_driver.py, planted search lists and lists of the loader, and planted budget tables and ledgers
-test/neg_compile_store.py | compiler,json,text | the compile database, CMakeCache.txt, the diagnostics, the dependency file, the search list of the compiler, the search directories of the compiler driver and the list of the loader, the budget table and the ledgers of the fixture budgets
+test/neg_compile_driver_test.py | compiler,json,text | the output of test/neg_compile_driver.py, planted search lists and lists of the loader, planted budget tables and ledgers, and the compile database and CMakeCache.txt of the build
+test/neg_compile_store.py | compiler,json,text | the compile database, CMakeCache.txt, the diagnostics, the dependency file, the search list of the compiler, the search directories of the compiler driver and the list of the loader, the budget table, the ledgers of the fixture budgets and the ledger of the reason of a failure
 utils/scripts/audit-decide-cite-ratio.py | tsast,git | the history of Decide.h
 utils/scripts/audit-pre-callsite-count.py | tsast,json | the contract baseline utils/scripts/contracts-baseline.json
 utils/scripts/build-gauge.sh | compiler,git,text | the ninja log, the /usr/bin/time report and the ctest log

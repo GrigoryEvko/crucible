@@ -39,6 +39,37 @@ a type name, a concept name or a list of template arguments, and a regex must
 find its text there.  The driver prints the full output for the reader, and it
 applies the regexes to the output without the caret display.
 
+The reason of the failure
+-------------------------
+A fixture must fail only for its own reason.  When each regex matches, the
+driver also makes sure that each error of the output has a regex
+(`unmatched_errors`).  The diagnostic of an error is its header line, the
+context lines that GCC prints before the header, and the lines after the
+header up to the context of the next error.  A regex match in one of these
+lines gives the error a regex.  An error with no regex fails the fixture, also
+when its other errors are the documented ones.  An unexpected error can hide
+a change: a fixture can keep its documented error and get a second error from a
+different cause.
+
+utils/scripts/fixture-own-reason-ledger.txt names the fixtures that had an
+error with no regex when the rule started, `fixture | note`.  A listed fixture
+gives a warning in the format of utils/scripts/check_report.py, and the driver
+writes it to the warnings directory (`fixture-own-reason.NAME.txt`).  A listed
+fixture with no such error fails, so that its row goes.
+CRUCIBLE_NEG_REASON_LEDGER names a different ledger, for the tests of the
+driver.
+
+The quarantine plugin
+---------------------
+Each compile of the tree loads the quarantine plugin, and the plugin reports
+the findings of each fixture, because test/ is a quarantined directory.  A
+fixture tests a compile-time rejection of the language or of the base, so the
+driver removes the plugin from the command (`_strip_plugin_flags`).  A test
+that sets CRUCIBLE_NEG_KEEP_PLUGIN=1 keeps the plugin: the fixtures of the
+contract rule test the plugin itself.  The same rule of the reason applies
+with the plugin kept, so an error of the plugin that no regex matches fails
+the fixture.
+
 The result store
 ----------------
 Without the store, CTest compiles each fixture again on each run, and these
@@ -110,9 +141,10 @@ makes.  The store makes sure of each input:
    that did not change in the settle period before the read (item 7).  After a
    fatal error, GCC writes no dependency file.  Then the driver preprocesses
    the source again with `-M -MG`, which writes the dependency rule and
-   continues after a missing header.  That pass reads each file that the
-   compile read before its fatal error, and it can read more.  It also names
-   each missing header.
+   continues after a missing header.  The pass also gives -Wno-fatal-errors,
+   so a -Wfatal-errors of the command does not stop it at the first error.
+   That pass reads each file that the compile read before its fatal error,
+   and it can read more.  It also names each missing header.
 3. Each result lists the search roots of the compile, with the kind and the
    real path of each root.  The roots are each directory that GCC names in its
    search list (the output of `-E -v` on an empty file, with each directory
@@ -286,11 +318,12 @@ or the list of the stored result.  utils/scripts/check-parse-cost.py adds
 the bytes of these files for each fixture.
 
 test/neg_compile_driver_test.py holds the tests of the store, of the cost
-budget and of the record.
+budget, of the record, of the rule of the reason and of the quarantine plugin.
 """
 
 from __future__ import annotations
 
+import bisect
 import hashlib
 import json
 import os
@@ -349,6 +382,18 @@ _ELISION = re.compile(r"^[ \t]*\.{3,}[ \t]*$")
 _ERROR_HEADER = re.compile(
     r"^(?:(?P<file>[^\s:][^:]*):(?:(?P<line>\d+):(?:\d+:)?)?[ \t]*)?"
     r"(?:error|fatal error):[ \t]",
+)
+
+# A line that GCC prints before a diagnostic to give its context: a line of
+# the include chain, the function or the instantiation that holds the
+# diagnostic (`FILE: In instantiation of ...:`), and a step of the
+# instantiation (`FILE:LINE:COLUMN:   required from here`).  A run of such
+# lines right before an error header belongs to that error
+# (`unmatched_errors`).
+_CONTEXT = re.compile(
+    r"^(?:In file included from |[ \t]+from |[ \t]+inlined from "
+    r"|[^:\s][^:]*: (?:In |At global scope:)"
+    r"|[^:\s][^:]*:\d+:\d+:[ \t]+(?:recursively )?required (?:from|by) )"
 )
 
 # A fixture name is a key of a warnings file, so it obeys WRITER_KEY of
@@ -492,6 +537,44 @@ def summarise_errors(stripped: str, source: Path) -> tuple[int, list[int]]:
     return total, sorted(own)
 
 
+def unmatched_errors(stripped: str, expected_regexes: list[str]) -> list[str]:
+    """Return the header line of each error diagnostic of `stripped` that no match of a regex reaches.
+
+    `stripped` is the output without the caret display (`strip_source_echo`).
+    The diagnostic of an error is its header line, the run of context lines
+    right before the header (_CONTEXT), and each line after the header up to
+    the context of the next error.  The lines before the first error belong
+    to the first error.  A match reaches a diagnostic when its span holds a
+    character of one of these lines, so one match can reach two diagnostics.
+    A regex applies as in `evaluate`, with re.MULTILINE.  The cost is
+    O(n + m log n) for n lines and m matches, plus the cost of the searches.
+    """
+    lines = stripped.split("\n")
+    headers = [number for number, line in enumerate(lines) if _ERROR_HEADER.match(line)]
+    if not headers:
+        return []
+    starts: list[int] = []
+    offset = 0
+    for line in lines:
+        starts.append(offset)
+        offset += len(line) + 1
+    is_reached = [False] * len(lines)
+    for pattern in expected_regexes:
+        for match in re.finditer(pattern, stripped, flags=re.MULTILINE):
+            first = bisect.bisect_right(starts, match.start()) - 1
+            last = bisect.bisect_right(starts, max(match.start(), match.end() - 1)) - 1
+            for number in range(first, last + 1):
+                is_reached[number] = True
+    firsts = [0]
+    for earlier, header in zip(headers, headers[1:]):
+        first = header
+        while first > earlier + 1 and _CONTEXT.match(lines[first - 1]):
+            first -= 1
+        firsts.append(first)
+    ends = [*firsts[1:], len(lines)]
+    return [lines[header] for header, first, end in zip(headers, firsts, ends) if not any(is_reached[first:end])]
+
+
 # ── The compile command ────────────────────────────────────────────
 
 
@@ -565,20 +648,20 @@ def _strip_dependency_flags(argv: list[str]) -> list[str]:
     return result
 
 
-def _strip_plugin_flags(argv: list[str]) -> list[str]:
+def _strip_plugin_flags(argv: list[str], keep: bool) -> list[str]:
     """Return `argv` without the options that load a GCC plugin, give it an argument or tell the code of it.
 
     A fixture tests a compile-time rejection of the language or of the base,
     and the quarantine plugin of the build reports a finding in each fixture.
-    So a fixture compiles with no plugin, unless its test sets
-    CRUCIBLE_NEG_KEEP_PLUGIN=1: the fixtures of the contract rule test the
-    plugin itself.  CRUCIBLE_QUARANTINE_ACTIVE goes too, because the region
-    macros of foundation/Quarantine.h expand to a pragma that only the plugin
-    knows.  The key of a stored result then holds no plugin, so a change of
-    the plugin compiles no other fixture again.
+    So a fixture compiles with no plugin, unless `keep` is True: its test sets
+    CRUCIBLE_NEG_KEEP_PLUGIN=1, because the fixture tests the plugin itself.
+    CRUCIBLE_QUARANTINE_ACTIVE goes too, because the region macros of
+    foundation/Quarantine.h expand to a pragma that only the plugin knows.
+    The key of a stored result then holds no plugin, so a change of the plugin
+    compiles no other fixture again.
     """
-    if os.environ.get("CRUCIBLE_NEG_KEEP_PLUGIN", "") == "1":
-        return argv
+    if keep:
+        return list(argv)
     return [arg for arg in argv
             if not arg.startswith(("-fplugin=", "-fplugin-arg-"))
             and arg != "-DCRUCIBLE_QUARANTINE_ACTIVE" and not arg.startswith("-DCRUCIBLE_QUARANTINE_ACTIVE=")]
@@ -590,7 +673,8 @@ def compile_argv(command: list[str], output: Path, depfile: Path) -> list[str]:
     The object file goes to `output`, and GCC writes the list of the files that
     it read to `depfile`.  The last two arguments are `-MF` and `depfile`.
     """
-    argv = _replace_output(_strip_plugin_flags(_strip_dependency_flags(command)), output)
+    keep = os.environ.get("CRUCIBLE_NEG_KEEP_PLUGIN", "") == "1"
+    argv = _replace_output(_strip_plugin_flags(_strip_dependency_flags(command), keep), output)
 
     # A negative-compile fixture asserts a COMPILE-TIME rejection — a
     # property that only manifests under the `enforce` contract
@@ -1460,8 +1544,11 @@ def dependency_pass(argv: list[str], directory: Path, scratch: Path,
     import subprocess
 
     depfile = scratch / "dependency-pass.d"
+    # A -Wfatal-errors of the command stops the pass at the first error, before
+    # it writes the rule, and the last of the two options applies.
+    pass_options = ["-M", "-MG", "-MF", str(depfile), "-Wno-fatal-errors"]
     try:
-        proc = subprocess.run([*_command_without_output(argv), "-M", "-MG", "-MF", str(depfile)], cwd=directory,
+        proc = subprocess.run([*_command_without_output(argv), *pass_options], cwd=directory,
                               env=env, capture_output=True, text=True, errors="surrogateescape", check=False)
         parsed = parse_dependency_file(depfile.read_text(errors="surrogateescape")) if depfile.exists() else None
     except OSError as error:
@@ -2606,14 +2693,79 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
     return result, False
 
 
+# ── The reason of the failure ──────────────────────────────────────
+
+_REASON_CHECK = "fixture-own-reason"
+# The variable that names a different ledger, and the ledger of the tree.
+_REASON_LEDGER = ("CRUCIBLE_NEG_REASON_LEDGER", _SCRIPTS / "fixture-own-reason-ledger.txt")
+
+
+def _shown_line(line: str) -> str:
+    """Return the diagnostic line `line` with each path of the tree relative to the root of the tree."""
+    return line.replace(f"{_REPO_ROOT}{os.sep}", "")
+
+
+def report_own_reason(fixture_name: str, source: Path, unmatched: list[str], is_stored: bool,
+                      warnings_dir: Path | None) -> int:
+    """Report each error of the compile that no regex reaches, against the ledger, and return 1 when the test fails.
+
+    `unmatched` comes from `evaluate`.  An error with no regex fails the test,
+    unless the ledger names the fixture: a listed fixture gives one warning.
+    A listed fixture with no such error fails, so that its row goes (the
+    module text, The reason of the failure).  A run with no finding, whose
+    fixture has no row and no warnings file, reads no report module.  The
+    ledger is a small text file, and the driver reads it on each run.
+    """
+    variable, default = _REASON_LEDGER
+    path = Path(os.environ.get(variable) or default)
+    try:
+        ledger, problem = _read_fixture_ledger(path)
+    except OSError as error:
+        ledger, problem = {}, f"the ledger {path} cannot be read: {error}"
+    is_listed = fixture_name in ledger
+    has_file = warnings_dir is not None and _warnings_file(warnings_dir, _REASON_CHECK, fixture_name).exists()
+    if not problem and not unmatched and not is_listed and not has_file:
+        return 0
+    report = _report_module()
+    try:
+        place = str(source.relative_to(_REPO_ROOT))
+    except ValueError:
+        place = str(source)
+    measured = "the stored compile" if is_stored else "the compile"
+    findings: list[object] = []
+    if problem:
+        findings.append(report.Finding("error", place, 0, _REASON_CHECK, f"{problem}."))
+    elif unmatched and is_listed:
+        findings.append(report.Finding(
+            "warning", place, 0, _REASON_CHECK,
+            f"{measured} of the fixture {fixture_name} gave {len(unmatched)} error(s) that no regex matches, and the "
+            f"fixture has a row in the ledger: {ledger[fixture_name]}.  The first error: {_shown_line(unmatched[0])}"))
+    elif unmatched:
+        findings.extend(report.Finding(
+            "error", place, 0, _REASON_CHECK,
+            f"{measured} of the fixture {fixture_name} gave an error that no regex matches: {_shown_line(line)}.  A "
+            f"fixture must fail only for its own reason: give the error a regex, or remove its cause.")
+            for line in unmatched)
+    elif is_listed:
+        findings.append(report.Finding(
+            "error", place, 0, _REASON_CHECK,
+            f"{measured} of the fixture {fixture_name} gave no error that no regex matches.  Remove its row from "
+            f"utils/scripts/{path.name}."))
+    return report.emit(findings, _REASON_CHECK, warnings_dir, fixture_name)
+
+
 # ── The test result ────────────────────────────────────────────────
 
 
-def evaluate(fixture_name: str, source: Path, expected_regexes: list[str], result: CompileResult) -> int:
-    """Print the output of the compile, apply the regexes, and return the exit code of the test.
+def evaluate(fixture_name: str, source: Path, expected_regexes: list[str],
+             result: CompileResult) -> tuple[int, list[str] | None]:
+    """Print the output of the compile, apply the regexes, and return the exit code of the regexes.
 
-    The function gives the same exit code and the same messages for a stored
-    result and for a fresh compile.
+    The second value is the list of the errors that no regex reaches
+    (`unmatched_errors`), for `report_own_reason`.  It is None when the
+    compile succeeded or a regex did not match, because the test then fails
+    for that cause.  The function gives the same values and the same messages
+    for a stored result and for a fresh compile.
     """
     combined = result.output
     # The HUMAN sees the compiler's output verbatim, carets and all.
@@ -2627,7 +2779,7 @@ def evaluate(fixture_name: str, source: Path, expected_regexes: list[str], resul
             f"negative fixture {fixture_name} compiled successfully",
             file=sys.stderr,
         )
-        return 1
+        return 1, None
 
     # Independence report.  A fixture documents ONE rejection; if its
     # own source produces error headers at several distinct lines it is
@@ -2684,10 +2836,10 @@ def evaluate(fixture_name: str, source: Path, expected_regexes: list[str], resul
                     f"text, not a rejection",
                     file=sys.stderr,
                 )
-        return 1
+        return 1, None
     # The regex verdict is the more informative one, so it is reported
     # first; the strict-mode verdict is applied only after it.
-    return 1 if (strict and not_independent) else 0
+    return (1 if (strict and not_independent) else 0), unmatched_errors(matchable, expected_regexes)
 
 
 def main(arguments: list[str]) -> int:
@@ -2736,7 +2888,10 @@ def main(arguments: list[str]) -> int:
     result, is_stored = obtain_result(fixture_name, argv, directory, source, output, budget, store, store_reason,
                                       build_roots(build_dir))
     write_inputs_record(scratch, fixture_name, result, is_stored)
-    verdict = evaluate(fixture_name, source, expected_regexes, result)
+    verdict, unmatched = evaluate(fixture_name, source, expected_regexes, result)
     sys.stdout.flush()
+    own_reason = 0
+    if unmatched is not None:
+        own_reason = report_own_reason(fixture_name, source, unmatched, is_stored, warnings_dir)
     over_budget = report_cost(fixture_name, source, result, is_stored, budget, warnings_dir)
-    return verdict or over_budget
+    return verdict or own_reason or over_budget

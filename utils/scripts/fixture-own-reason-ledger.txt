@@ -1,0 +1,102 @@
+# utils/scripts/fixture-own-reason-ledger.txt — the negative fixtures whose compile gives an error that
+# no regex of the fixture matches.  test/neg_compile_driver.py reads it after each compile and each result
+# from its store.
+#
+# A row:  fixture | note
+#
+# A fixture must fail only for its own reason.  A fixture with a row gives a warning, so the debt stays
+# visible.  A fixture with a row whose compile gives no error that no regex matches fails its test.
+# Remove the row in the commit that gives each error of the fixture a regex, or that removes the cause
+# of the error.
+neg_alloc_class_heap_at_pool_fence | an error that no regex matches: no matching function for call to ‘foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::AllocClas...
+neg_asymmetric_failure_record_fg_ctx | an error that no regex matches: ‘refused’ was not declared in this scope
+neg_atom_verdict_forged | an error that no regex matches: expected initializer before ‘<’ token
+neg_budgeted_axes_swapped | an error that no regex matches: no matching function for call to ‘fixy::Budgeted<int>::Budgeted(<brace-enclosed initializer list>)’
+neg_cipher_tier_demote_unmovable_payload | an error that no regex matches: ‘BadMint’ was not declared in this scope
+neg_cipher_tier_promote_unmovable_payload | an error that no regex matches: ‘BadMint’ was not declared in this scope
+neg_cipher_tier_restore_no_hash_projection | an error that no regex matches: ‘BadMint’ was not declared in this scope
+neg_cipher_tier_restore_unmovable_payload | an error that no regex matches: ‘BadMint’ was not declared in this scope
+neg_cipher_tier_restore_wrong_value_type | an error that no regex matches: ‘BadMint’ was not declared in this scope
+neg_computation_cache_closure_argument | an error that no regex matches: static assertion failed: foundation::reflect: a stable id refuses the type const closure_key::<lambda(int)>, because its part closure_key::<lambda(...
+neg_computation_cache_closure_invoker | an error that no regex matches: static assertion failed: stable_function_name_id: the function has no stable identity.  A static invoker of a closure or a function with internal l...
+neg_computation_cache_forged_function_identity | 2 errors that no regex matches, the first: expected initializer before ‘<’ token
+neg_dim_hash_cross_family | an error that no regex matches: no matching function for call to ‘foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::DetSafeLa...
+neg_endpoint_payload_row_outside_ctx | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘foundation::effects::Computation<foundation::e...
+neg_exec_ctx_forged_specialization | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘const foundation::effects::ExecCtx<foundation:...
+neg_fail_closed_admits_of_a_class | an error that no regex matches: ‘{anonymous}::NotARelation::raw_to_checked’ defined but not used [-Werror=unused-const-variable=]
+neg_fail_closed_unique_target_of_two_edges | an error that no regex matches: template argument 1 is invalid
+neg_fail_closed_unique_target_without_an_edge | an error that no regex matches: template argument 1 is invalid
+neg_fn_ctad_attempt | an error that no regex matches: no matching function for call to ‘fixy::fn<fixy::detail::ctad::fn_ctad_blocked_use_mint_fn>::fn(<brace-enclosed initializer list>)’
+neg_gpu_direct_raw_plan_register | an error that no regex matches: ‘std::expected<fixy::Qtt<foundation::algebra::lattices::QttGrade::One, crucible::cntp::_wip::gpu_direct::GpuDirectMrHandle>, crucible::cntp::_wip::...
+neg_graded_stored_grade_in_a_stronger_up_chain | an error that no regex matches: scalar object ‘read’ requires one element in initializer
+neg_graded_stored_grade_in_an_unstated_order | an error that no regex matches: scalar object ‘graded’ requires one element in initializer
+neg_graded_use_counter_dual | an error that no regex matches: scalar object ‘measured’ requires one element in initializer
+neg_graded_version_counter_in_product | an error that no regex matches: scalar object ‘value’ requires one element in initializer
+neg_graded_version_counter_numeric_order | an error that no regex matches: scalar object ‘stale’ requires one element in initializer
+neg_handle_traits_consumer_value_on_non_handle | an error that no regex matches: expected type-specifier before ‘::’ token
+neg_handle_traits_swmr_writer_value_on_non_writer | an error that no regex matches: expected type-specifier before ‘::’ token
+neg_happens_before_merge_overflows | an error that no regex matches: ‘__builtin_trap()’ is not a constant expression
+neg_incast_credit_fg_ctx | an error that no regex matches: no previous declaration for ‘void issue_from_foreground(const fixy::HotFgCtx&)’ [-Werror=missing-declarations]
+neg_integrity_cross_tag_verified | an error that no regex matches: no previous declaration for ‘void requires_verified(crucible::cntp::IntegrityVerifiedPayload<std::array<std::byte, 8> >)’ [-Werror=missing-declarat...
+neg_integrity_raw_payload_as_verified | an error that no regex matches: no previous declaration for ‘void requires_verified(crucible::cntp::IntegrityVerifiedPayload<std::array<std::byte, 8> >)’ [-Werror=missing-declarat...
+neg_ir001_comm_raw_node | an error that no regex matches: no previous declaration for ‘void consume(crucible::forge::ir001::DeclaredIr001Node<crucible::forge::ir001::Ir001Node<crucible::forge::ir001::Ir001...
+neg_lattice_bottom_above_top | an error that no regex matches: expected type-specifier
+neg_mimic_semaphore_backend_portable | 3 errors that no regex matches, the first: expected type-specifier
+neg_mtls_raw_config_connect | an error that no regex matches: ‘std::expected<crucible::cntp::MtlsConnection, crucible::cntp::MtlsError> crucible::cntp::connect_mtls(SocketFd, const DeclaredMtlsConfig&, MtlsDns...
+neg_network_recipe_raw_constraints | an error that no regex matches: no previous declaration for ‘void consume(crucible::forge::recipes::DeclaredNetworkRecipeConstraints)’ [-Werror=missing-declarations]
+neg_perm_set_union_shared_tag | an error that no regex matches: expected type-specifier
+neg_permission_make_unique | an error that no regex matches: use of deleted function ‘static void foundation::permissions::Permission<Tag, Brand>::operator delete(void*) [with Tag = {anonymous}::Region; Brand...
+neg_permission_row_edge_for_a_derived_tag | an error that no regex matches: expected type-specifier before ‘::’ token
+neg_permission_row_member_for_a_derived_tag | an error that no regex matches: expected type-specifier before ‘::’ token
+neg_permission_row_not_a_row | an error that no regex matches: template argument 1 is invalid
+neg_permission_row_t_undeclared_tag | an error that no regex matches: template argument 1 is invalid
+neg_pingmesh_record_fg_ctx | an error that no regex matches: ‘refused’ was not declared in this scope
+neg_pipeline_dag_cyclic_graph | an error that no regex matches: expected type-specifier
+neg_pipeline_dag_unreachable_stage | an error that no regex matches: expected type-specifier
+neg_read_view_body_returns_a_type_erased_callable | an error that no regex matches: noexcept-expression evaluates to ‘false’ because of a call to ‘main()::<lambda(const auto:6&)>::<lambda()>’ [-Werror=noexcept]
+neg_refined_class_in_the_relation | 20 errors that no regex matches, the first: non-constant condition for static assertion
+neg_refined_implication_cycle_edges | 24 errors that no regex matches, the first: non-constant condition for static assertion
+neg_refined_implication_cycle_ring | 26 errors that no regex matches, the first: non-constant condition for static assertion
+neg_refined_rule_of_the_wrong_type | 20 errors that no regex matches, the first: non-constant condition for static assertion
+neg_rule_f101_replay_reassociate | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘fixy::fn<foundation::algebra::Graded<foundatio...
+neg_rule_f101_replay_under_hot_path | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘fixy::fn<foundation::algebra::Graded<foundatio...
+neg_rule_f102_replay_contract_fast | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘fixy::fn<foundation::algebra::Graded<foundatio...
+neg_rule_s011_capability_replay_philox | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘fixy::fn<foundation::algebra::Graded<foundatio...
+neg_rule_s011_capability_replay_pure | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘fixy::fn<foundation::algebra::Graded<foundatio...
+neg_rule_v101_replay_pinned_isa | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘fixy::fn<foundation::algebra::Graded<foundatio...
+neg_rule_v101_replay_under_alloc_class | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘fixy::fn<foundation::algebra::Graded<foundatio...
+neg_rule_v203_replay_tsc | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘fixy::fn<foundation::algebra::Graded<foundatio...
+neg_sdc_detect_run_hot_ctx | an error that no regex matches: ‘Refused’ was not declared in this scope
+neg_sess_compose_at_branch_captures_continue | an error that no regex matches: invalid application of ‘sizeof’ to a void type [-Werror=pointer-arith]
+neg_sess_compose_captures_continue | an error that no regex matches: invalid application of ‘sizeof’ to a void type [-Werror=pointer-arith]
+neg_sess_compose_captures_under_nested_loop | an error that no regex matches: invalid application of ‘sizeof’ to a void type [-Werror=pointer-arith]
+neg_sess_event_log_copied | 2 errors that no regex matches, the first: use of deleted function ‘fixy::AtomicMonotonic<long unsigned int>::AtomicMonotonic(const fixy::AtomicMonotonic<long unsigned int>&)’
+neg_sess_mint_session_delivered_region_without_row | an error that no regex matches: no matching function for call to ‘mint_session<region_without_row_fixture::Proto>(const region_without_row_fixture::BgCtx&, region_without_row_fixt...
+neg_sess_project_not_a_global_type | an error that no regex matches: expected type-specifier
+neg_sess_project_unbound_variable | an error that no regex matches: expected type-specifier
+neg_sess_semantics_config_bare_payload | an error that no regex matches: expected type-specifier
+neg_sess_semantics_config_reliability_malformed | an error that no regex matches: expected type-specifier
+neg_sess_semantics_config_step_not_a_label | an error that no regex matches: expected type-specifier
+neg_sess_semantics_config_unguarded_loop | an error that no regex matches: expected type-specifier
+neg_sess_semantics_global_reliability_malformed | an error that no regex matches: expected type-specifier
+neg_sess_semantics_global_step_not_a_label | an error that no regex matches: expected type-specifier
+neg_sess_semantics_state_crashed_twice | an error that no regex matches: expected type-specifier
+neg_sess_semantics_state_self_communication | an error that no regex matches: expected type-specifier
+neg_sess_strip_peers_not_a_local_type | an error that no regex matches: expected type-specifier
+neg_sess_strip_peers_two_peers | an error that no regex matches: expected type-specifier
+neg_sess_unregistered_combinator_empty_choice | an error that no regex matches: non-constant condition for static assertion
+neg_sess_unregistered_combinator_involutive | 2 errors that no regex matches, the first: template argument 1 is invalid
+neg_session_payload_declared_template_behind_pointer | an error that no regex matches: static assertion failed
+neg_sharp_raw_plan_dispatch | an error that no regex matches: ‘std::expected<fixy::Tagged<crucible::cntp::_wip::sharp::SharpDispatchResult, crucible::cntp::_wip::sharp::wip_source::Sharp>, crucible::cntp::_wip...
+neg_signature_param_index_on_nullary | an error that no regex matches: expected type-specifier before ‘::’ token
+neg_signature_param_index_overflow | an error that no regex matches: expected type-specifier before ‘::’ token
+neg_stable_identity_verdict_forged | 2 errors that no regex matches, the first: expected initializer before ‘<’ token
+neg_stage_shape_input_value_on_non_stage | an error that no regex matches: expected type-specifier before ‘::’ token
+neg_stage_shape_output_value_on_non_stage | an error that no regex matches: expected type-specifier before ‘::’ token
+neg_substrate_session_payload_row_outside_ctx | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘foundation::effects::Computation<foundation::e...
+neg_topology_health_update_fg_ctx | an error that no regex matches: ‘refused’ was not declared in this scope
+neg_transaction_log_zero_capacity | an error that no regex matches: static assertion failed: N must be at least 4: a claim keeps the slots of the active transaction and the rollback target, and N is a power of 2
+neg_types_hash_family_unspecialized | 3 errors that no regex matches, the first: expected type-specifier before ‘::’ token
+neg_witness_fail_closed_detail_relation_cells_direct_construction | an error that no regex matches: consteval-only variable ‘forged’ not declared ‘constexpr’ used outside a constant-evaluated context
+neg_witness_permissions_detail_row_cell_direct_construction | an error that no regex matches: consteval-only variable ‘forged’ not declared ‘constexpr’ used outside a constant-evaluated context
+neg_xdp_map_key_without_equality | an error that no regex matches: request for member ‘size’ in ‘map’, which is of non-class type ‘int’

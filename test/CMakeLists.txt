@@ -1456,18 +1456,24 @@ endfunction()
 # the memos of the answers of the compiler driver, of the hashes of the
 # dependencies and of the budget, and the use of a result in a second work tree
 # with the same files, with a different header and with a header that names
-# the root of the second tree.  Each check waits about one second for
+# the root of the second tree.  It plants a fixture with an error that no regex
+# matches, with and without a ledger row.  It takes the quarantine plugin and
+# its flags from the compile database of this build, and it plants fixtures
+# that the plugin checks: an error of the plugin that no regex matches must
+# fail a fixture that keeps the plugin, and the region macros must work with
+# no plugin and with the plugin kept.  Each check waits about one second for
 # the files of its tree to age, and the checks run as
 # FIXTURE_STORE_SELF_TEST_PARTS parts at the same time.  Part K runs each check
-# whose position modulo the count of parts is K.  Exit 3 reports a skip when
+# whose position modulo the count of parts is K, and the count of parts is the
+# count of checks, so each part runs one check.  Exit 3 reports a skip when
 # the compiler cannot run, or when the host cannot give the condition of each
 # check of the part, for example an instruction counter.
-set(FIXTURE_STORE_SELF_TEST_PARTS 26)
+set(FIXTURE_STORE_SELF_TEST_PARTS 30)
 math(EXPR fixture_store_last_part "${FIXTURE_STORE_SELF_TEST_PARTS} - 1")
 foreach(part RANGE ${fixture_store_last_part})
   add_test(NAME fixture_store_self_test_${part}
     COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver_test.py --cxx ${CRUCIBLE_REAL_CXX}
-            --part ${part}/${FIXTURE_STORE_SELF_TEST_PARTS})
+            --build-dir ${CMAKE_BINARY_DIR} --part ${part}/${FIXTURE_STORE_SELF_TEST_PARTS})
   set_tests_properties(fixture_store_self_test_${part} PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)

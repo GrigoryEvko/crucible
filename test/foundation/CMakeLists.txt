@@ -120,17 +120,19 @@ foundation_neg_compile_test(neg_constraint_failure_names_the_concept
 # GCC lets -U remove a predefined macro.  The first two fixtures set the
 # architecture macros of an unsupported architecture and of an Apple aarch64
 # target.  The first regex names the #error of the header, and the second
-# names its rule.
+# names its rule.  With these macros, a system header of an x86_64 host looks
+# for the headers of a 32-bit target, and a fixture must fail only for its own
+# reason.  So -Wfatal-errors stops each compile at the #error.
 foundation_neg_compile_test(neg_platform_unsupported_architecture
   "Platform\\.h:[0-9]+:[0-9]+: error: #error"
   "foundation supports x86_64 and aarch64 only")
 set_property(TEST neg_platform_unsupported_architecture APPEND PROPERTY ENVIRONMENT
-  "CRUCIBLE_NEG_EXTRA_FLAGS=-U__x86_64__ -U__aarch64__")
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-U__x86_64__ -U__aarch64__ -Wfatal-errors")
 foundation_neg_compile_test(neg_platform_apple_aarch64
   "Platform\\.h:[0-9]+:[0-9]+: error: #error"
   "Apple aarch64 cores have 128-byte cache lines")
 set_property(TEST neg_platform_apple_aarch64 APPEND PROPERTY ENVIRONMENT
-  "CRUCIBLE_NEG_EXTRA_FLAGS=-U__x86_64__ -D__aarch64__ -D__APPLE__")
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-U__x86_64__ -D__aarch64__ -D__APPLE__ -Wfatal-errors")
 # The floor also reads the interference sizes that GCC gives the target, and
 # a --param option sets each of them.  The first regex names the static
 # assertion of the header, and the second names its rule.  The destructive

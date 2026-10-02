@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
-"""Test the result store and the cost budget of test/neg_compile_driver.py.
+"""Test the result store, the cost budget, the rule of the reason and the plugin handling of test/neg_compile_driver.py.
 
 Each check makes a small tree of headers, fixtures and a compile database in a
 temporary directory, with a store of its own.  It runs the driver as CTest does,
 and it reads the lines that the driver writes about the store.  Each check
-compiles with the compiler that `--cxx` names.  The exit code is 0 when each
-check passes, 1 when a check fails, and 3 when the compiler cannot run or when
-the host cannot give the condition of each check of the part.
+compiles with the compiler that `--cxx` names.  `--build-dir` names the build
+directory of the tree, whose compile database gives the quarantine plugin of
+the build and its flags.  The exit code is 0 when each check passes, 1 when a
+check fails, and 3 when the compiler cannot run or when the host cannot give
+the condition of each check of the part.
 
 With `--part K/N`, the test runs only the checks whose position modulo N is K.
-CTest runs each part as one test, so the parts run at the same time.  Part 0
-also checks the parse of a dependency file, of a search list and of a list of
-the loader, the ELF interpreter, the search roots, the compile environment,
-and the CPU budget of a compile with no user time.
+CTest runs each part as one test, so the parts run at the same time.  N must be
+at least the number of checks, so each part runs one check.  Part 0 also
+checks the parse of a dependency file, of a search list and of a list of the
+loader, the ELF interpreter, the search roots, the compile environment, the
+CPU budget of a compile with no user time, and the errors that no regex
+reaches.
 
 The store refuses a result while an input of the compile is less than one
 second old.  Each check waits for that period after it makes its tree, and
@@ -31,6 +35,7 @@ import io
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -62,17 +67,87 @@ FILES = {
     "neg/neg_computed.cpp": "#define HEADER <b/B.h>\n#include HEADER\nB converted = 3;\n",
     "neg/neg_quote.cpp": '#include "b/B.h"\nB converted = 3;\n',
     "neg/neg_parent.cpp": '#include "../b/B.h"\nB converted = 3;\n',
+    "neg/neg_two_reasons.cpp": (
+        '#include <a/A.h>\nstatic_assert(sizeof(A) == 1, "the size of A is one");\nint value = undeclared_name;\n'
+    ),
+    "neg/neg_error_directive.cpp": "#error the planted rule\n#include <a/A.h>\n",
 }
+DIRECTIVE = ("error: #error", "the planted rule")
 # The search list of each fixture is `-I shadow -I include`.  neg_parent also
 # searches include/sub, where its name `../b/B.h` reaches include/b/B.h.
 EXTRA_SEARCH = {"neg/neg_parent.cpp": "include/sub"}
 CONVERTING_B = "#pragma once\nstruct B { B(int) {} };\n"
 
+# The fixtures of a planted tree that the quarantine plugin of the build checks
+# (StoreTest.plant_plugin_tree).  Each one fails for its own reason, the static
+# assertion that OWN matches.  The planted rule table quarantines neg/, and its
+# enforce row makes each finding there an error, as an ERROR build does.
+OWN = ("static assertion failed", "the fixture fails for its own reason")
+OWN_REASON = 'static_assert(sizeof(char) == 2, "the fixture fails for its own reason");\n'
+REGION_BODY = ("int read_value() {\n"
+               '    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a raw array inside a region")\n'
+               "    int raw_values[2] = {};\n"
+               "    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING\n"
+               "    return raw_values[0];\n"
+               "}\n")
+PLUGIN_FIXTURES = {
+    # A region whose reason has no class: the plugin refuses each of its two
+    # pragmas, at the line of foundation/Quarantine.h that spells _Pragma.
+    "neg/neg_region_unclassed.cpp": ("#include <foundation/Quarantine.h>\n"
+                                     'CRUCIBLE_I_KNOW_WHAT_IM_DOING("a reason with no class")\n'
+                                     "CRUCIBLE_END_I_KNOW_WHAT_IM_DOING\n" + OWN_REASON),
+    # An object of a std type.  The object is in a function body, because the
+    # plugin reads a body when the parse of the function ends, and the error of
+    # the fixture stops the unit before its walk of the namespaces.
+    "neg/neg_std_object.cpp": ("#include <cstddef>\n"
+                               "int read_value() {\n"
+                               "    std::byte value{};\n"
+                               "    return static_cast<int>(value);\n"
+                               "}\n" + OWN_REASON),
+    # A raw array inside a region, and the same array with no region.
+    "neg/neg_region.cpp": "#include <foundation/Quarantine.h>\n" + REGION_BODY + OWN_REASON,
+    "neg/neg_no_region.cpp": ("int read_value() {\n"
+                              "    int raw_values[2] = {};\n"
+                              "    return raw_values[0];\n"
+                              "}\n" + OWN_REASON),
+    # The region fixture again, with a planted copy of the header first in the
+    # search list (PLANTED_HEADERS).
+    "neg/neg_region_pragma_header.cpp": "#include <foundation/Quarantine.h>\n" + REGION_BODY + OWN_REASON,
+    "neg/neg_region_empty_header.cpp": "#include <foundation/Quarantine.h>\n" + REGION_BODY + OWN_REASON,
+}
+# A copy of foundation/Quarantine.h whose expansion is broken.  In
+# planted_pragma/, the macros give the pragmas also with no plugin.  In
+# planted_empty/, they give nothing also with the plugin.  The region fixture
+# must fail with each one.
+PLANTED_HEADERS = {
+    "planted_pragma/foundation/Quarantine.h": (
+        "#pragma once\n"
+        "#define CRUCIBLE_QUARANTINE_PRAGMA_(text) _Pragma(#text)\n"
+        "#define CRUCIBLE_I_KNOW_WHAT_IM_DOING(reason) "
+        "CRUCIBLE_QUARANTINE_PRAGMA_(quarantine I_KNOW_WHAT_IM_DOING(reason))\n"
+        "#define CRUCIBLE_END_I_KNOW_WHAT_IM_DOING CRUCIBLE_QUARANTINE_PRAGMA_(quarantine END_I_KNOW_WHAT_IM_DOING)\n"
+    ),
+    "planted_empty/foundation/Quarantine.h": (
+        "#pragma once\n"
+        "#define CRUCIBLE_I_KNOW_WHAT_IM_DOING(reason)\n"
+        "#define CRUCIBLE_END_I_KNOW_WHAT_IM_DOING\n"
+    ),
+}
+# The directory of the planted header of each fixture that has one.
+PLANTED_SEARCH = {
+    "neg/neg_region_pragma_header.cpp": "planted_pragma",
+    "neg/neg_region_empty_header.cpp": "planted_empty",
+}
+PLANTED_RULES = ("# The rule table of a planted tree of the fixture driver test.\n"
+                 "layer planted 0 planted_pragma/ planted_empty/\n"
+                 "quarantine neg/\n"
+                 "enforce neg/ error\n")
+
 
 class StoreTest:
     """The checks of the result store, each one in a temporary tree of its own."""
 
-    def __init__(self, root: Path, cxx: str) -> None:
+    def __init__(self, root: Path, cxx: str, tree_build: Path) -> None:
         """Make the tree of headers, fixtures, compile database and CMakeCache.txt in `root`.
 
         The tree uses the real path of `root`, because the driver names each
@@ -80,11 +155,13 @@ class StoreTest:
         directory: a new directory in `root` changes the time that the store
         reads for each path in `root` that does not exist.  CMakeCache.txt
         names `root` as the source root and the build directory as the build
-        root, as CMake does.
+        root, as CMake does.  `tree_build` is the build directory of the
+        source tree, whose compile database gives the plugin flags.
         """
         root.mkdir(parents=True, exist_ok=True)
         self.root = root.resolve()
         self.cxx = cxx
+        self.tree_build = tree_build
         self.build = self.root / "build"
         self.caches = self.build / "caches"
         self.store = self.caches / "neg"
@@ -198,7 +275,7 @@ class StoreTest:
 
     def twin(self) -> StoreTest:
         """Return a second tree beside this one, a work tree of the same commit, with the store of this tree."""
-        other = StoreTest(self.root.parent / "twin", self.cxx)
+        other = StoreTest(self.root.parent / "twin", self.cxx, self.tree_build)
         other.caches = self.caches
         other.store = self.store
         return other
@@ -664,6 +741,15 @@ class StoreTest:
                     and str(self.root / "neg/neg_missing.cpp") in fatal_paths,
                     f"a fatal error with the store off writes the inputs of the -M -MG pass: {fatal_head} "
                     f"{fatal_paths}")
+        # -Wfatal-errors stops the compile at the #error, and GCC writes no
+        # dependency file.  The -M -MG pass must not stop there too.
+        stopped = self.run("neg_error_directive", *DIRECTIVE, CRUCIBLE_NEG_CACHE="0",
+                           CRUCIBLE_NEG_EXTRA_FLAGS="-Wfatal-errors")
+        stopped_head, stopped_paths = record("neg_error_directive")
+        self.expect(stopped[0] == 0 and stopped_head.get("has_inputs") is True
+                    and str(self.root / "neg/neg_error_directive.cpp") in stopped_paths and header_file in stopped_paths,
+                    f"a compile that -Wfatal-errors stops writes the inputs of the -M -MG pass: {stopped_head} "
+                    f"{stopped_paths}")
 
     def check_several_results(self) -> None:
         """An entry keeps the result of earlier inputs, so the undo of an edit uses the store."""
@@ -929,6 +1015,180 @@ class StoreTest:
                     f"the memos with the oldest write go until the memos fit their part: {memo_total} bytes on the "
                     f"disk for a part of {part}, {len(remaining)} planted memos remain")
 
+    def check_unmatched_error(self) -> None:
+        """An error that no regex matches fails the fixture, unless the ledger names it, also from the store.
+
+        neg_two_reasons fails for two reasons: the static assertion that SIZE
+        matches, and a name that is not declared.  A listed fixture warns, and a
+        listed fixture with no such error fails, so that its row goes.
+        """
+        ledger = self.root / "fixture-own-reason-ledger.txt"
+        warnings = self.root / "warnings"
+        ledger.write_text("# no row\n")
+        env = {"CRUCIBLE_NEG_REASON_LEDGER": str(ledger)}
+        own_file = warnings / "fixture-own-reason.neg_two_reasons.txt"
+
+        def finding(text: str, level: str) -> str | None:
+            """Return the first finding line of the level of the check fixture-own-reason in a standard output."""
+            return next((line for line in text.splitlines() if f": {level}: [fixture-own-reason] " in line), None)
+
+        first = self.run("neg_two_reasons", *SIZE, warnings_dir=warnings, **env)
+        line = finding(first[1], "error")
+        self.expect(first[0] == 1 and line is not None and "was not declared" in line and self.has(first[3], "stored"),
+                    f"an error that no regex matches fails the fixture: {first[0]} {line} {first[3]}")
+        stored = self.run("neg_two_reasons", *SIZE, warnings_dir=warnings, **env)
+        line = finding(stored[1], "error")
+        self.expect(stored[0] == 1 and self.has(stored[3], "the result comes from the store") and line is not None
+                    and "the stored compile" in line and "was not declared" in line,
+                    f"a stored result with an error that no regex matches fails too: {stored[0]} {line}")
+        both = self.run("neg_two_reasons", *SIZE, *PROBE, warnings_dir=warnings, **env)
+        self.expect(both[0] == 0 and finding(both[1], "error") is None and finding(both[1], "warning") is None,
+                    f"a fixture whose errors each have a regex passes: {both[0]} {both[1]}")
+        ledger.write_text("neg_two_reasons | a planted reason\n")
+        listed = self.run("neg_two_reasons", *SIZE, warnings_dir=warnings, **env)
+        line = finding(listed[1], "warning")
+        self.expect(listed[0] == 0 and line is not None and "a planted reason" in line and "was not declared" in line
+                    and own_file.is_file() and own_file.read_text().strip() == line,
+                    f"a listed fixture warns in the file of its fixture: {listed[0]} {line}")
+        stale = self.run("neg_two_reasons", *SIZE, *PROBE, warnings_dir=warnings, **env)
+        line = finding(stale[1], "error")
+        self.expect(stale[0] == 1 and line is not None and "Remove its row" in line and not own_file.exists(),
+                    f"a listed fixture with no such error fails: {stale[0]} {line}")
+        ledger.write_text("neg_two_reasons\n")
+        malformed = self.run("neg_size", *SIZE, **env)
+        line = finding(malformed[1], "error")
+        self.expect(malformed[0] == 1 and line is not None and "a row is `fixture | note`" in line,
+                    f"a malformed ledger row fails: {malformed[0]} {line}")
+        ledger.unlink()
+        missing = self.run("neg_size", *SIZE, **env)
+        line = finding(missing[1], "error")
+        self.expect(missing[0] == 1 and line is not None and "cannot be read" in line,
+                    f"a ledger that cannot be read fails: {missing[0]} {line}")
+
+    def plugin_flags(self) -> tuple[list[str], str]:
+        """Return the plugin flags of the build of the source tree, and the source root of that build.
+
+        The flags are the arguments of the first C++ compile of the compile
+        database of that build that the driver removes from a command: the
+        option that loads the quarantine plugin, the plugin arguments and the
+        definition that makes the region macros give the pragmas.  The test
+        takes them from the build, so it follows each change of
+        utils/tools/quarantine/Quarantine.cmake.  The source root is
+        CMAKE_HOME_DIRECTORY of the cache of the build, or an empty text.
+        """
+        rows = json.loads((self.tree_build / "compile_commands.json").read_text())
+        row = next((row for row in rows if str(row.get("file", "")).endswith((".cpp", ".cc", ".cxx"))), {})
+        command = list(row["arguments"]) if row.get("arguments") else shlex.split(row.get("command", ""))
+        kept = set(store._strip_plugin_flags(command, False))
+        found = store._CACHE_SOURCE.search((self.tree_build / "CMakeCache.txt").read_text())
+        return [arg for arg in command if arg not in kept], found.group(1) if found else ""
+
+    def plant_plugin_tree(self) -> bool:
+        """Add the plugin fixtures, the planted headers, a rule table and a compile row for each fixture to the tree.
+
+        Each row takes the plugin flags of the build (plugin_flags), with the
+        source root of that build changed to the root of this tree in each
+        plugin argument that names a path under it.  So the plugin takes this
+        tree as its source root.  A directory that such an argument names is
+        made in this tree, and the one file that such an argument names gets the
+        planted rule table.  Each row compiles with -Wall -Werror, as each
+        compile of the source tree does, and it finds foundation/Quarantine.h in
+        the include directory of the source tree, outside the root of the
+        plugin.  Returns False, after a recorded failure, when the build gives
+        no plugin, no source root or not one such file.
+        """
+        flags, source_root = self.plugin_flags()
+        if not source_root or not any(flag.startswith("-fplugin=") for flag in flags):
+            self.expect(False, f"the build {self.tree_build} gives the quarantine plugin and its source root: {flags} "
+                               f"{source_root!r}")
+            return False
+        local_flags: list[str] = []
+        named_files: list[Path] = []
+        for flag in flags:
+            head, equals, value = flag.partition("=")
+            if flag.startswith("-fplugin-arg-") and equals and (value == source_root
+                                                                or value.startswith(source_root + os.sep)):
+                local = Path(f"{self.root}{value[len(source_root):]}")
+                if os.path.isdir(value):
+                    local.mkdir(parents=True, exist_ok=True)
+                elif os.path.isfile(value):
+                    named_files.append(local)
+                flag = f"{head}={local}"
+            local_flags.append(flag)
+        if len(named_files) != 1:
+            self.expect(False, f"one plugin argument of the build names a file under its source root, the rule "
+                               f"table: {named_files}")
+            return False
+        named_files[0].parent.mkdir(parents=True, exist_ok=True)
+        named_files[0].write_text(PLANTED_RULES)
+        for name, text in {**PLUGIN_FIXTURES, **PLANTED_HEADERS}.items():
+            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / name).write_text(text)
+        database = self.build / "compile_commands.json"
+        rows = json.loads(database.read_text())
+        include = str(store._REPO_ROOT / "include")
+        for name in PLUGIN_FIXTURES:
+            planted = ["-I", str(self.root / PLANTED_SEARCH[name])] if name in PLANTED_SEARCH else []
+            rows.append({
+                "directory": str(self.build),
+                "file": str(self.root / name),
+                "arguments": [self.cxx, "-std=c++20", "-Wall", "-Werror", *planted, "-I", include, *local_flags,
+                              "-fdiagnostics-color=never", "-c", str(self.root / name), "-o",
+                              str(self.build / f"{Path(name).stem}.o")],
+            })
+        database.write_text(json.dumps(rows))
+        return True
+
+    def check_plugin_extra_error(self) -> None:
+        """An error of the quarantine plugin that no regex matches fails a fixture that keeps the plugin.
+
+        With no plugin, each fixture fails only for its own reason.  With
+        CRUCIBLE_NEG_KEEP_PLUGIN=1, the plugin refuses the region whose reason
+        has no class, at the line of foundation/Quarantine.h that spells
+        _Pragma.  It also refuses the object of a std type, because the planted
+        rule table gives neg/ the enforce mode error.  Each such error fails the
+        fixture, although the error of the fixture matches its regexes.
+        """
+        if not self.plant_plugin_tree():
+            return
+        stripped_env = {"CRUCIBLE_NEG_CACHE": "0"}
+        kept_env = {**stripped_env, "CRUCIBLE_NEG_KEEP_PLUGIN": "1"}
+        for fixture, place in (("neg_region_unclassed", "foundation/Quarantine.h:"),
+                               ("neg_std_object", "neg_std_object.cpp:")):
+            stripped = self.run(fixture, *OWN, **stripped_env)
+            self.expect(stripped[0] == 0, f"with no plugin, {fixture} fails only for its own reason: {stripped[0]} "
+                                          f"{stripped[1]}")
+            kept = self.run(fixture, *OWN, **kept_env)
+            line = next((text for text in kept[1].splitlines()
+                         if ": error: [fixture-own-reason] " in text and place in text), None)
+            self.expect(kept[0] == 1 and line is not None,
+                        f"with the plugin kept, an error of the plugin at {place} fails {fixture}: {kept[0]} {kept[1]}")
+
+    def check_region_macros(self) -> None:
+        """The region macros of foundation/Quarantine.h work through the driver, with and with no plugin.
+
+        neg_region holds a raw array inside a region.  With no plugin, the
+        macros give nothing, and -Werror makes no unknown pragma an error.
+        With the plugin kept, the region opts out the finding of the array.
+        neg_no_region holds the same array with no region, and it fails with
+        the plugin kept, so the region is what removes that error.  A planted
+        copy of the header whose macros give the pragmas with no plugin, or
+        nothing with the plugin, makes the region fixture fail.
+        """
+        if not self.plant_plugin_tree():
+            return
+        stripped_env = {"CRUCIBLE_NEG_CACHE": "0"}
+        kept_env = {**stripped_env, "CRUCIBLE_NEG_KEEP_PLUGIN": "1"}
+        cases = (("neg_region", stripped_env, 0), ("neg_region", kept_env, 0), ("neg_no_region", stripped_env, 0),
+                 ("neg_no_region", kept_env, 1), ("neg_region_pragma_header", stripped_env, 1),
+                 ("neg_region_empty_header", kept_env, 1))
+        for fixture, env, expected in cases:
+            result = self.run(fixture, *OWN, **env)
+            has_finding = ": error: [fixture-own-reason] " in result[1]
+            plugin = "the plugin kept" if env is kept_env else "no plugin"
+            self.expect(result[0] == expected and has_finding == (expected == 1),
+                        f"{fixture} with {plugin} gives the exit code {expected}: {result[0]} {result[1]}")
+
 
 CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_hit_and_header_edit,
@@ -958,6 +1218,9 @@ CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_cross_root_hit,
     StoreTest.check_cross_root_text,
     StoreTest.check_cross_root_edit,
+    StoreTest.check_unmatched_error,
+    StoreTest.check_plugin_extra_error,
+    StoreTest.check_region_macros,
 )
 
 SEARCH_LIST = """\
@@ -985,6 +1248,49 @@ LOADER_DEBUG = """\
      1234:\t search cache=/etc/ld.so.cache
      1234:\t  trying file=/lib64/libz.so.1
 """
+
+
+# A planted output of GCC with three errors.  The include chain, the
+# instantiation line and its step come before the first error, and the
+# function line comes before the third error.
+UNMATCHED_OUTPUT = """\
+In file included from /w/neg/neg_three.cpp:1:
+/w/include/a/A.h: In instantiation of ‘struct S<int>’:
+/w/neg/neg_three.cpp:4:12:   required from here
+/w/include/a/A.h:3:5: error: static assertion failed: the first reason
+/w/include/a/A.h:3:5: note: ‘false’ evaluates to false
+/w/neg/neg_three.cpp:6:13: error: ‘undeclared_name’ was not declared in this scope
+/w/neg/neg_three.cpp: In function ‘int main()’:
+/w/neg/neg_three.cpp:9:3: error: expected ‘;’ before ‘}’ token"""
+
+
+def check_unmatched_errors(failures: list[str]) -> None:
+    """Check which errors of a planted output each set of regexes reaches."""
+    lines = UNMATCHED_OUTPUT.split("\n")
+    first, second, third = lines[3], lines[5], lines[7]
+    cases: tuple[tuple[list[str], list[str]], ...] = (
+        (["the first reason"], [second, third]),
+        # A note after the header belongs to its error, and a step before the
+        # header belongs to the error after it.
+        (["evaluates to false", "was not declared", "expected .;."], []),
+        (["required from here", "was not declared", "expected .;."], []),
+        # The function line after the second error belongs to the third error.
+        (["the first reason", "In function"], [second]),
+        (["the first reason", "was not declared"], [third]),
+        # A match that spans two lines reaches the diagnostic of each line.
+        (["the first reason", "this scope\n/w/neg/neg_three.cpp: In"], []),
+        ([], [first, second, third]),
+    )
+    for regexes, expected in cases:
+        found = store.unmatched_errors(UNMATCHED_OUTPUT, regexes)
+        if found != expected:
+            failures.append(f"with the regexes {regexes}, the errors that no regex reaches are {found}")
+    if store.unmatched_errors("In file included from /w/x.cpp:1:\n/w/x.h:1:1: note: a note", []):
+        failures.append("an output with no error has no error that no regex reaches")
+    fatal = "/w/x.cpp:1:10: fatal error: nope/none.h: No such file or directory\ncompilation terminated."
+    if (store.unmatched_errors(fatal, []) != [fatal.split("\n")[0]]
+            or store.unmatched_errors(fatal, ["compilation terminated"])):
+        failures.append("a fatal error is an error, and a line after its header belongs to it")
 
 
 def check_parsers(failures: list[str]) -> None:
@@ -1035,6 +1341,7 @@ def check_parsers(failures: list[str]) -> None:
     check_roots(failures)
     check_entry_format(failures)
     check_kernel_time(failures)
+    check_unmatched_errors(failures)
 
 
 def check_kernel_time(failures: list[str]) -> None:
@@ -1136,18 +1443,30 @@ def check_entry_format(failures: list[str]) -> None:
 
 def main(arguments: list[str]) -> int:
     """Run the checks of one part, and return 0 when each check passes."""
-    cxx = arguments[2] if len(arguments) >= 3 and arguments[1] == "--cxx" else ""
+    usage = "usage: neg_compile_driver_test.py --cxx COMPILER --build-dir DIR [--part K/N]"
+    words = arguments[1:]
+    if len(words) not in (4, 6) or words[0] != "--cxx" or words[2] != "--build-dir" or (
+            len(words) == 6 and words[4] != "--part"):
+        print(usage, file=sys.stderr)
+        return 2
+    cxx, tree_build = words[1], Path(words[3]).resolve()
     index, count = 0, 1
-    if len(arguments) == 5 and arguments[3] == "--part":
-        text_index, slash, text_count = arguments[4].partition("/")
+    if len(words) == 6:
+        text_index, slash, text_count = words[5].partition("/")
         if not (slash and text_index.isdigit() and text_count.isdigit() and int(text_index) < int(text_count)):
-            print(f"neg_compile_driver_test.py: --part {arguments[4]} is not K/N with 0 <= K < N", file=sys.stderr)
+            print(f"neg_compile_driver_test.py: --part {words[5]} is not K/N with 0 <= K < N", file=sys.stderr)
             return 2
         index, count = int(text_index), int(text_count)
-    elif len(arguments) != 3:
-        print("usage: neg_compile_driver_test.py --cxx COMPILER [--part K/N]", file=sys.stderr)
+        if count < len(CHECKS):
+            print(f"neg_compile_driver_test.py: the test has {len(CHECKS)} checks, and --part gives {count} parts.  "
+                  f"Set FIXTURE_STORE_SELF_TEST_PARTS in test/CMakeLists.txt to {len(CHECKS)}, so that each part "
+                  f"runs one check.", file=sys.stderr)
+            return 2
+    if not (tree_build / "compile_commands.json").is_file() or not (tree_build / "CMakeCache.txt").is_file():
+        print(f"neg_compile_driver_test.py --build-dir {tree_build}: the directory holds no compile_commands.json "
+              f"and CMakeCache.txt of a build of the tree", file=sys.stderr)
         return 2
-    if not cxx or shutil.which(cxx) is None:
+    if shutil.which(cxx) is None:
         print("neg_compile_driver_test.py --cxx COMPILER: the compiler cannot run", file=sys.stderr)
         return 3
     # A time error becomes a warning when GITHUB_ACTIONS is true (cost_meter.ci_verdict).  The checks in this
@@ -1160,7 +1479,7 @@ def main(arguments: list[str]) -> int:
     checks = CHECKS[index::count]
     for check in checks:
         with tempfile.TemporaryDirectory(prefix="neg-store-") as directory:
-            test = StoreTest(Path(directory) / "tree", cxx)
+            test = StoreTest(Path(directory) / "tree", cxx, tree_build)
             test.settle()
             check(test)
             failures.extend(f"{check.__name__}: {failure}" for failure in test.failures)
