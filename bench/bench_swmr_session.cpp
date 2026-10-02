@@ -65,7 +65,7 @@ template <typename Body>
 // A reader of the channel, which has a free share by construction.
 [[nodiscard]] Swmr::ReaderHandle take_reader(Swmr& swmr) noexcept {
     auto reader = ses::mint_swmr_reader<Swmr>(swmr);
-    if (!reader) std::abort();
+    CRUCIBLE_BENCH_CHECK(reader.has_value());
     return std::move(*reader);
 }
 

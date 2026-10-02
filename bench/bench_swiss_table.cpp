@@ -52,7 +52,7 @@ struct MiniSwissTable {
     explicit MiniSwissTable(size_t cap) : capacity{cap} {
         ctrl = static_cast<int8_t*>(std::malloc(cap));
         hashes = static_cast<uint64_t*>(std::calloc(cap, sizeof(uint64_t)));
-        if (!ctrl || !hashes) std::abort();
+        CRUCIBLE_BENCH_CHECK(ctrl != nullptr && hashes != nullptr);
         std::memset(ctrl, 0x80, cap);  // all empty
     }
     ~MiniSwissTable() {

@@ -46,7 +46,7 @@ struct BenchRegion {
         out_slots = static_cast<SlotId*>(std::calloc(n, sizeof(SlotId)));
         in_slots = static_cast<SlotId*>(std::calloc(n, sizeof(SlotId)));
         slots = static_cast<TensorSlot*>(std::calloc(n, sizeof(TensorSlot)));
-        if (!ops || !out_slots || !in_slots || !slots) std::abort();
+        CRUCIBLE_BENCH_CHECK(ops != nullptr && out_slots != nullptr && in_slots != nullptr && slots != nullptr);
 
         for (uint32_t i = 0; i < n; i++) {
             out_slots[i] = SlotId{i};

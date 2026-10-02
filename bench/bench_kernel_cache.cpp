@@ -40,7 +40,7 @@ public:
 
     explicit RawKernelCache(std::uint32_t capacity = 4096) : capacity_{capacity} {
         table_ = static_cast<Entry*>(std::calloc(capacity_, sizeof(Entry)));
-        if (table_ == nullptr) std::abort();
+        CRUCIBLE_BENCH_CHECK(table_ != nullptr);
     }
 
     ~RawKernelCache() { std::free(table_); }
@@ -147,14 +147,14 @@ void seed_cache(Cache& cache, std::span<FakeKernel> kernels) {
         kernels[i].id = i + 1;
         auto inserted =
             cache.insert(ContentHash{0x1000 + static_cast<std::uint64_t>(i)}, RowHash{0}, fk_ptr(kernels[i]));
-        if (!inserted.has_value()) std::abort();
+        CRUCIBLE_BENCH_CHECK(inserted.has_value());
     }
 }
 
 template <typename Cache>
 void seed_row_siblings(Cache& cache, std::span<FakeKernel> kernels) {
     const std::size_t required = kRowClusterSlotBases.size() * static_cast<std::size_t>(kRowsPerCluster);
-    if (kernels.size() < required) std::abort();
+    CRUCIBLE_BENCH_CHECK(kernels.size() >= required);
 
     std::size_t cursor = 0;
     for (std::size_t cluster = 0; cluster < kRowClusterSlotBases.size(); ++cluster) {
@@ -163,7 +163,7 @@ void seed_row_siblings(Cache& cache, std::span<FakeKernel> kernels) {
             kernels[cursor].id = 0xA000 + cursor;
             auto inserted = cache.insert(ContentHash{content}, RowHash{0x200 + (cluster * kRowsPerCluster) + row},
                                          fk_ptr(kernels[cursor]));
-            if (!inserted.has_value()) std::abort();
+            CRUCIBLE_BENCH_CHECK(inserted.has_value());
             ++cursor;
         }
     }

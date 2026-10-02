@@ -38,7 +38,6 @@
 
 #include <cstdio>
 #include <cstdint>
-#include <cstdlib>
 #include <memory>
 #include <utility>
 
@@ -87,7 +86,7 @@ bench::Report wrapped_mpsc_push() {
     (void)consumer_perm;
     auto ch = std::make_unique<Channel>(std::move(producer_root));
     auto p_opt = ch->producer();
-    if (!p_opt) std::abort();
+    CRUCIBLE_BENCH_CHECK(p_opt.has_value());
     auto p = std::move(*p_opt);
     Item i = 0;
     return bench::run("wrapped Permissioned MPSC.ProducerHandle::try_push", [&] {
@@ -111,7 +110,7 @@ bench::Report wrapped_mpsc_pop() {
     auto ch = std::make_unique<Channel>(std::move(producer_root));
     {
         auto p_opt = ch->producer();
-        if (!p_opt) std::abort();
+        CRUCIBLE_BENCH_CHECK(p_opt.has_value());
         auto p = std::move(*p_opt);
         for (Item i = 0; i < kCap / 2; ++i)
             (void)p.try_push(i);
