@@ -1300,7 +1300,7 @@ Rule: prefetch 8-16 iterations ahead; `locality = 0` for streaming reads (don't 
 
 1. `[[likely]]` / `[[unlikely]]` on predictable branches.
 2. `__builtin_expect_with_probability(x, v, p)` for explicit probabilities.
-3. **Predication**: replace `if (x > limit) x = limit` with `x = fixy::min(x, limit)`. The compiler then gives a `cmov`. `fixy::min` is part of the Scalar family, which is planned (§XXII).
+3. **Predication**: replace `if (x > limit) x = limit` with `x = fixy::min(x, limit)`. The compiler then gives a `cmov`. `fixy::min` is a planned part of the Scalar family (§XXII).
 4. **Switch on small dense enum** — compiler generates jump table; one indirect branch.
 5. A switch that handles each enumerator also has a `default` arm (`-Werror=switch-default`). The arm calls `fixy::unreachable()`, which ends the process in each build, and it does not call `std::unreachable()` (§IV).
 6. **Branchless bit tricks** where appropriate: `x & -cond` for conditional zeroing.
@@ -3009,7 +3009,7 @@ Each type of the base has these properties:
 
 ### The families on main
 
-`include/foundation/core/` holds the first part of five families: Choice, Region, Ref, Atomic and Report. `include/fixy/Core.h` gives their public names in namespace `fixy`. Record, Scalar and Os are planned. The other types of the five families are planned too. If the code and plan §11 do not agree, the code is correct:
+`include/foundation/core/` holds the first part of six families: Choice, Region, Ref, Atomic, Report and Scalar. `include/fixy/Core.h` gives their public names in namespace `fixy`. Record and Os are planned. The other types of the six families are planned too. If the code and plan §11 do not agree, the code is correct:
 - `Option` has no `consume()`. Its fatal unwrap is `expect(reason)`. A loop of zero or one turns, `match()` and `value_or()` are the other operations that read the payload.
 - `cas_acq_rel(expected, desired)` of `Atomic` gives a `Result<Unit, CasRefusal<T>>`. The error holds the value that the cell held.
 - `Atomic<T>` accepts only a value that is trivially copyable, has one bit pattern for each value, and has lock-free atomic operations. `Atomic` rejects a type with padding and a floating-point type.

@@ -32,6 +32,7 @@ include/fixy/ScopedView.h — finds a view stored in a private member, so a clas
 include/fixy/SelfContained.h — walks every base and member to prove that a type holds no pointer out of itself
 include/fixy/session/Payload.h — walks every member of a session payload to find a delegated handle or a permission
 include/foundation/Lifetime.h — walks every base and member to prove that a type is an implicit-lifetime type
+include/foundation/core/Scalar.h — walks every base and member, a private one too, to prove that decode can make a type from bytes and to check each bool and enumeration of it
 include/foundation/effects/Ctx.h — reads the type and access of each member of an ExecCtx specialization to refuse a forged one
 include/foundation/reflect/Hash.h — walks every member of a type to fold its stable hash
 include/foundation/reflect/RawEscape.h — walks every base, a private one too, to find the members that a caller can name through a type

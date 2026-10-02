@@ -2583,7 +2583,7 @@ x86_64-debug-asan-bench-fuzz test/fuzz/boundary/harnesses/fountain.h std_entity 
 x86_64-debug-asan-bench-fuzz test/fuzz/boundary/harnesses/fountain.h std_object +7
 x86_64-debug-asan-bench-fuzz test/fuzz/boundary/harnesses/ledger.h std_entity +5
 x86_64-debug-asan-bench-fuzz test/fuzz/boundary/harnesses/ledger.h std_object +5
-x86_64-debug-asan-bench-fuzz test/fuzz/boundary/harnesses/recipe.h std_entity +8
+x86_64-debug-asan-bench-fuzz test/fuzz/boundary/harnesses/recipe.h std_entity +7
 x86_64-debug-asan-bench-fuzz test/fuzz/boundary/harnesses/recipe.h std_object +5
 x86_64-debug-asan-bench-fuzz test/fuzz/boundary/harnesses/region.h compiler_builtin +1
 x86_64-debug-asan-bench-fuzz test/fuzz/boundary/harnesses/region.h raw_pointer_object +9
@@ -2720,7 +2720,7 @@ x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_scuttlebutt_digest.cpp std_
 x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_scuttlebutt_digest.cpp std_object +2
 x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_sdc_tolerance.cpp raw_pointer_object +3
 x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_sdc_tolerance.cpp replace_pending:<limits> +10
-x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_sdc_tolerance.cpp std_entity +5
+x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_sdc_tolerance.cpp std_entity +3
 x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_storage_nbytes_simd_equivalence.cpp c_library_call +10
 x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_storage_nbytes_simd_equivalence.cpp raw_pointer_object +1
 x86_64-debug-asan-bench-fuzz test/fuzz/property/prop_swim_membership.cpp raw_pointer_object +1

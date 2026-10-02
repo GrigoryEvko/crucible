@@ -6,4 +6,6 @@
 # primitive of include/foundation/core that no lower type can hold.  The
 # change that moves the member to std::array or fixy::FixedArray deletes its
 # line in the same commit.
+include/foundation/core/Scalar.h bytes the bytes that decode checks before a value exists: foundation/core has no fixed array below it, std::array is outside the header allowance of the base, and each read is at an offset of a part of the type, inside its size
+include/foundation/core/Scalar.h sorted the sorted values of the enumerators of an enumeration: foundation/core has no fixed array below it, std::array is outside the header allowance of the base, and the search reads only the first count values
 include/foundation/core/Text.h bytes_ the buffer of FixedText: foundation/core has no fixed array below it, std::array is outside the header allowance of the base, and the count of the buffer never reads past it

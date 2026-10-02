@@ -20,6 +20,7 @@
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
+#include <foundation/core/Scalar.h>
 #include <foundation/core/Text.h>
 
 namespace fixy {
@@ -59,5 +60,8 @@ using ::foundation::core::dynamic_extent;
 using ::foundation::core::fill;
 using ::foundation::core::LengthMismatch;
 using ::foundation::core::View;
+
+using ::foundation::core::decode;
+using ::foundation::core::enum_from;
 
 }  // namespace fixy

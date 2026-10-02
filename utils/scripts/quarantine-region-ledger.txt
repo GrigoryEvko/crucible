@@ -9,6 +9,7 @@
 # --write, and only a region of a reason class of CLAUDE.md section XXII gets a
 # new row, with --write --admit.
 
+test/foundation/test_core_scalar.cpp | PROBE: decode walks a C array of enumerations, the array form of a quarantined type
 test/shape/core_shapes.cpp | ORACLE: the raw form that the shape of each family probe is compared with
 utils/tools/quarantine/test/contracts.cpp | PROBE: the test needs the specifier
 utils/tools/quarantine/test/opt_out.cpp | PROBE: the test needs a raw buffer

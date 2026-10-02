@@ -1977,6 +1977,31 @@ foundation_neg_compile_test(neg_core_cache_line_borrow_of_temporary
   "use of deleted function .T& foundation::core::CacheLine<T>::get\\(\\) && \\[with T = int\\]."
   "a borrow of a temporary CacheLine dangles at the end of the full expression")
 
+# ── The Scalar family: decode and enum_from ───────────────────────────
+#
+# decode gives a value only when each bool byte is 0 or 1 and each
+# enumeration value names an enumerator.  The two types have one size, the
+# source has no padding, and a part whose bytes are not its whole value is
+# refused: an address, a union, a bit-field, an empty class and a sealed
+# class.  enum_from refuses an enumeration with no enumerator.
+foundation_test(test_core_scalar)
+
+foundation_neg_compile_test(neg_core_decode_pointer_member
+  "no matching function for call to .decode<HoldsAddress>\\(uint64_t\\)."
+  "the expression .is_plain_at\\(.*\\(\\^\\^ To, 0\\) \\[with To = HoldsAddress\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_decode_union
+  "no matching function for call to .decode<PhaseOrByte>\\(uint8_t\\)."
+  "the expression .is_plain_at\\(.*\\(\\^\\^ To, 0\\) \\[with To = PhaseOrByte\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_decode_size_mismatch
+  "no matching function for call to .decode<uint32_t>\\(uint16_t\\)."
+  "the expression .sizeof \\(To\\) == sizeof \\(From\\) \\[with To = unsigned int; From = short unsigned int\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_decode_padded_source
+  "no matching function for call to .decode<uint64_t>\\(Padded\\)."
+  "the expression .has_unique_object_representations_v<From> \\[with From = Padded\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_enum_from_no_enumerator
+  "no matching function for call to .enum_from<Strong>\\(int\\)."
+  "the expression .has_enumerators\\(.*\\(\\^\\^ E\\) \\[with E = Strong\\]. evaluated to .false.")
+
 # ── The Region family: View, copy and fill ────────────────────────────
 #
 # A View borrows a run of objects with a fixed or a dynamic extent.  A

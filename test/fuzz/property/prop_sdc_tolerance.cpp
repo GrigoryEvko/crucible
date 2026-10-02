@@ -36,7 +36,7 @@
 // ── Float runs (float, double) ──
 // No independent oracle (a double reference would diverge from the
 // float computation near the boundary), so oracle-free invariants with
-// teeth — values drawn via bit_cast for full NaN/inf/denormal coverage:
+// teeth — values decoded from random bits for full NaN/inf/denormal coverage:
 //   * symmetry (fabs is sign-symmetric, holds even for NaN operands)
 //   * reflexivity for FINITE a (NaN−NaN and inf−inf are NaN → not equal,
 //     so reflexivity is finite-only — pinned explicitly)
@@ -53,8 +53,8 @@
 #include "property_runner.h"
 
 #include <crucible/observe/SdcDetect.h>
+#include <fixy/Core.h>
 
-#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -159,9 +159,9 @@ template <typename T>
             return std::numeric_limits<T>::denorm_min();
         default:
             if constexpr (sizeof(T) == 4) {
-                return std::bit_cast<T>(rng.next32());
+                return ::fixy::decode<T>(rng.next32()).expect("each pattern of 32 bits is a value of a float");
             } else {
-                return std::bit_cast<T>(rng.next64());
+                return ::fixy::decode<T>(rng.next64()).expect("each pattern of 64 bits is a value of a double");
             }
     }
 }
