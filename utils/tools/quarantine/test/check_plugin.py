@@ -16,7 +16,10 @@ Each row kind of the rule table has a plant: a forbidden header in a layer, a
 door header outside its door, an upward include and a standard library name
 that the table does not admit.  The test compiles each planted file in error
 mode one time with no plant, which must pass, and one time with each plant,
-which must fail with the finding of the plant.  An enforce row with the mode
+which must fail with the finding of the plant.  The same four plants also
+compile against the rule table of the tree, in a scratch root with the paths
+of the tree: in report mode the section of the object holds the one finding of
+the plant, and in error mode the plant fails the compile.  An enforce row with the mode
 error makes a finding an error in report mode, and a file that no row holds
 is an error.  The plugin and utils/scripts/layer_rules.py get the same
 malformed tables, and each one must refuse each table.
@@ -381,6 +384,7 @@ def run(checker: Checker, rules: Path) -> list[Section]:
         run_provenance,
         run_restrictions,
         run_language,
+        lambda section: run_tree_plants(section, rules),
         run_table_readers,
         run_section,
         run_dependencies,
@@ -1162,6 +1166,72 @@ def build_command(build_dir: Path) -> tuple[list[str], Path, str] | None:
                  entries[0])
     argv = entry["arguments"] if "arguments" in entry else shlex.split(entry["command"])
     return list(argv), Path(entry["directory"]), entry["file"]
+
+
+# A scratch root whose paths the rule table of the tree classifies: a base file
+# of the layer F1_algebra, a header of the higher layer X1_wrappers and a
+# quarantined file.  Each plant macro adds one use that a row kind of the table
+# refuses.
+TREE_PLANT_FILES = {
+    "include/fixy/PlantHigh.h": "#pragma once\ninline int plant_high = 1;\n",
+    "src/foundation/Plant.cpp": ("#if defined(PLANT_LAYER_HEADER)\n#include <cmath>\n#endif\n"
+                                 "#if defined(PLANT_DOOR_HEADER)\n#include <sys/socket.h>\n#endif\n"
+                                 "#if defined(PLANT_UPWARD_INCLUDE)\n#include <fixy/PlantHigh.h>\n#endif\n"
+                                 "int plant_base_value() { return 1; }\n"),
+    "test/Plant.cpp": ("#include <utility>\n"
+                       "void plant_quarantined(int& left, int& right) {\n"
+                       "#if defined(PLANT_STD_NAME)\n    std::swap(left, right);\n#endif\n"
+                       "    left = std::move(right);\n}\n"),
+}
+# (the macro of the plant, the planted file, the kind, the whole entity): one
+# plant for each row kind of the rule table of the tree.
+TREE_PLANTS = (
+    ("PLANT_LAYER_HEADER", "src/foundation/Plant.cpp", "layer_header", "<cmath> in the layer F1_algebra"),
+    ("PLANT_DOOR_HEADER", "src/foundation/Plant.cpp", "door_header",
+     "<sys/socket.h> has the door include/fixy/os/Socket.h"),
+    ("PLANT_UPWARD_INCLUDE", "src/foundation/Plant.cpp", "upward_include",
+     "include/fixy/PlantHigh.h (the layer X1_wrappers) from the layer F1_algebra"),
+    ("PLANT_STD_NAME", "test/Plant.cpp", "std_entity", "std::swap"),
+)
+
+
+def run_tree_plants(section: Section, rules: Path) -> None:
+    """Compile a plant of each row kind against the rule table of the tree, in report mode and in error mode.
+
+    In report mode the section of the object holds the one finding of the
+    plant, and the file with no plant has no finding of that kind.  In error
+    mode the plant fails the compile, and the file with no plant passes.
+    """
+    tree = section.work / "tree-plants"
+    write_tree(tree, TREE_PLANT_FILES)
+    for mode in ("report", "error"):
+        arguments = {"root": str(tree), "mode": mode, "rules": str(rules)}
+        cases = [(fixture, None) for fixture in sorted({fixture for _, fixture, _, _ in TREE_PLANTS})]
+        cases += [(fixture, macro) for macro, fixture, _, _ in TREE_PLANTS]
+        calls: list[tuple[object, ...]] = []
+        for index, (fixture, macro) in enumerate(cases):
+            stage = ("-c", "-o", str(section.work / f"tree-plant-{mode}-{index}.o")) if mode == "report" \
+                else ("-S", "-o", os.devnull)
+            calls.append((str(tree / fixture), arguments, stage,
+                          ("-I", str(tree / "include"), *((f"-D{macro}",) if macro else ()))))
+        results = dict(zip(cases, section.compile_all(calls), strict=True))
+        objects = {case: section.work / f"tree-plant-{mode}-{index}.o" for index, case in enumerate(cases)}
+        for macro, fixture, kind, entity in TREE_PLANTS:
+            planted, clean = results[(fixture, macro)], results[(fixture, None)]
+            if mode == "report":
+                rows = [line for line in (section_of(objects[(fixture, macro)]) or ("", []))[1]
+                        if line.startswith(f"quarantine: {kind} {fixture}:")]
+                clean_rows = [line for line in (section_of(objects[(fixture, None)]) or ("", []))[1]
+                              if line.startswith(f"quarantine: {kind} {fixture}:")]
+                holds = (planted.returncode == 0 and clean.returncode == 0 and len(rows) == 1
+                         and rows[0].endswith(f" {entity}") and not clean_rows)
+                detail = f"{rows} {clean_rows} " + planted.stderr[-1000:]
+            else:
+                errors = quarantine_errors(planted.stderr, kind)
+                holds = planted.returncode != 0 and len(errors) == 1 and entity in errors[0] and clean.returncode == 0
+                detail = planted.stderr[-1000:] + clean.stderr[-1000:]
+            section.expect(f"the tree table, mode {mode}: {macro} in {fixture} gives one {kind} ({entity})", holds,
+                           detail)
 
 
 def run_build_flags(section: Section) -> None:
