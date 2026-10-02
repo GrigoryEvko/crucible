@@ -37,6 +37,12 @@ static constexpr uint32_t CKERNEL_TABLE_CAP = 256;
 struct CKernelEntry {
     SchemaHash schema_hash;
     CKernelId id;
+    // pad holds the seven bytes after the identifier, so the entry has no
+    // padding byte.  With -ftrivial-auto-var-init=zero, GCC writes zero to
+    // each padding hole of each of the 256 entries of an automatic table, one
+    // store for each hole.  test/test_ckernel.cpp makes sure that the entry
+    // has no padding byte.
+    uint8_t pad[7]{};
 };
 
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(CKernelEntry);

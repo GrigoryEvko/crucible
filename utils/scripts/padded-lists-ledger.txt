@@ -13,7 +13,6 @@
 # A keep row:   keep | path | role | declaration | element type | reason
 #   An element type with padding on purpose.  The reason is mandatory.
 
-include/crucible/CKernel.h | member | crucible::CKernelTable::entries_ | crucible::CKernelEntry
 
 keep | include/fixy/session/Watch.h | member | fixy::session::watch::detail::registry::endpoints | fixy::session::watch::detail::endpoint_record | each record is alignas(64) and fills one cache line, so two threads that write two records never share a line. The registry has static storage
 keep | include/fixy/session/Watch.h | member | fixy::session::watch::detail::registry::threads | fixy::session::watch::detail::thread_record | each record is alignas(64) and fills one cache line, so two threads that write two records never share a line. The registry has static storage

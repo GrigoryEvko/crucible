@@ -3,6 +3,7 @@
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include "padding_bytes.h"
 #include "test_assert.h"
 #include <cstdio>
 #include <cstring>
@@ -204,6 +205,10 @@ int main() {
     assert(classify_kernel(HASH_UNKNOWN) == CKernelId::OPAQUE);
 
     global_ckernel_table().value()->clear(::foundation::effects::testing::test());
+
+    // A table holds 256 entries, and each padding byte of an entry costs one
+    // store at each initialization of an automatic table (padding_bytes.h).
+    crucible::test::expect_no_padding_byte<^^CKernelEntry>();
 
     std::printf("test_ckernel: all tests passed\n");
     return 0;
