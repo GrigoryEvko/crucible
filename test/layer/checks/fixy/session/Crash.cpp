@@ -3,7 +3,7 @@
 #include <fixy/session/Crash.h>
 
 // The traits of the armed cells of the header are aliases, and the roster
-// walk of foundation/contracts/Armed.h finds class templates only.  These
+// walk of foundation/contracts/ArmedRoster.h finds class templates only.  These
 // assertions read their cells.
 static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_crash_payload>);
 static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_crash_branch>);

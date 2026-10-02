@@ -25,7 +25,7 @@ static_assert(!::fixy::session::DelegatableHandle<int>
               && !::fixy::session::DelegatableHandle<::fixy::session::detail::delegatable_armed_witness::InLoop>);
 
 // The two traits are aliases, and the roster walk of
-// foundation/contracts/Armed.h finds class templates only.  These two
+// foundation/contracts/ArmedRoster.h finds class templates only.  These two
 // assertions read the two cells.
 static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_delegate>);
 static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_accept>);

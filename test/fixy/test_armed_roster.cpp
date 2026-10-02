@@ -4,7 +4,8 @@
 // A predicate that answers "no" for every type reads, at each call
 // site, as a gate that admits.  So does one that answers "yes" for
 // every type.  foundation/contracts/Armed.h gives the cell that pins
-// both directions and the walk that finds every predicate.  The roster
+// both directions, and foundation/contracts/ArmedRoster.h gives the walk
+// that finds every predicate.  The roster
 // comes from reflection over the two namespaces, not from a list here,
 // so a predicate added tomorrow is walked tomorrow.  The next unarmed
 // predicate is then the one that fails this file, not the one nobody

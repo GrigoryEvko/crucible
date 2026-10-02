@@ -895,5 +895,5 @@ struct foundation::contracts::armed_cell<::fixy::session::is_checkpoint_complian
 };
 
 // The two traits are aliases, and the roster walk of
-// foundation/contracts/Armed.h finds class templates only.  Two
+// foundation/contracts/ArmedRoster.h finds class templates only.  Two
 // assertions in the check file of this header read the two cells.

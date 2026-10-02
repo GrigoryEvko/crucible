@@ -720,6 +720,6 @@ struct foundation::contracts::armed_cell<::fixy::session::is_crash_covered> {
 };
 
 // The traits above are aliases, and the roster walk of
-// foundation/contracts/Armed.h finds class templates only.  Assertions in
+// foundation/contracts/ArmedRoster.h finds class templates only.  Assertions in
 // the check file of this header read their cells.  The check file also
 // checks each answer of the walk.

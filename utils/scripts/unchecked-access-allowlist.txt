@@ -20,7 +20,7 @@ include/fixy/Corpus.h — walks the secret-policy namespace to derive the corpus
 include/fixy/Secret.h — walks the admitted declassification policies to seal the policy relation
 include/fixy/atoms/Os.h — walks the OS atom namespaces to derive their rosters
 include/foundation/algebra/Transition.h — walks a transition registry to derive its edges
-include/foundation/contracts/Armed.h — walks a scope to derive the armed-predicate roster
+include/foundation/contracts/ArmedRoster.h — walks a scope to derive the armed-predicate roster
 include/foundation/diag/Catalog.h — walks the diagnostic namespace to derive the catalog
 include/foundation/diag/FailClosed.h — walks a fail-closed relation's namespace to count and seal its edges
 
