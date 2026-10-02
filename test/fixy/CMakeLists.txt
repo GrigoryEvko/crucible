@@ -900,6 +900,14 @@ fixy_neg_compile_test(neg_atom_family_namespace_unrostered
   "static assertion failed: fixy/atoms/Ctrl\\.h: an atom declared in fixy::atom::ctrl is missing from ctrl_atom_roster"
   "static assertion failed: fixy/atoms/Stack\\.h: an atom declared in fixy::atom::stack is missing from stack_atom_roster")
 
+# A ladder family gives one atom to each enumerator of its enum, and the
+# walk in fixy/Atom.h counts the claims on each enumerator.  The roster of
+# the fixture has one atom for each enumerator, but it names warm two
+# times and cold not at all.
+fixy_neg_compile_test(neg_atom_ladder_enumerator_claimed_twice
+  "static assertion failed: a regime roster that names warm two times claims each tier once"
+  "the comparison reduces to .\\(0 == 1\\).")
+
 # A final type that derives atom_base but names no axis fails the
 # requires-expression of IsAtom on `G::axis`.
 fixy_neg_compile_test(neg_atom_without_axis_rejected

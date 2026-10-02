@@ -23,6 +23,7 @@
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Hash.h>
 
+#include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -785,53 +786,45 @@ template <class Atom, class Enum>
     return grade;
 }
 
-// Whether a value of Enum is one of its enumerators.  A cast from an
-// integer can make a value that is not.
-template <class Enum>
-[[nodiscard]] consteval bool is_enumerator_of_(Enum value) noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Enum));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto enumerator : enumerators) {
-        if (value == [:enumerator:]) return true;
-    }
-#pragma GCC diagnostic pop
-    return false;
-}
-
 // Each member of the roster names exactly one enumerator of Enum, and each
 // enumerator is named by exactly one member.  A count of atoms would pass
-// against two atoms that name one enumerator, so the walk asks each
-// enumerator.  An enumerator with no atom cannot be written, and one with
-// two makes one of them unreachable.  A member that names a value outside
-// the enumerators is refused too.  Complexity: the roster size times the
-// number of enumerators.
+// against two atoms that name one enumerator, so the walk counts the claims
+// on each enumerator.  An enumerator with no atom cannot be written, and one
+// with two makes one of them unreachable.  A member that names a value
+// outside the enumerators is refused too.
+//
+// The walk expands the roster one time.  Each member adds one claim to each
+// enumerator that holds the value it names, in a plain loop.  Then each
+// enumerator must hold exactly one claim.  Complexity: the roster size
+// times the number of enumerators.
 template <class Roster, class Enum>
     requires std::is_scoped_enum_v<Enum>
 [[nodiscard]] consteval bool every_enumerator_has_exactly_one_atom_() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Enum));
+    std::array<std::size_t, enumerators.size()> claims{};
     bool exact = true;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : roster_members_v<Roster>) {
         using A = [:member:];
         if constexpr (ladder_members_of_<A, Enum>() == 1) {
-            exact = exact && is_enumerator_of_(ladder_grade_of_<A, Enum>());
+            const Enum grade = ladder_grade_of_<A, Enum>();
+            bool names_an_enumerator = false;
+            for (std::size_t index = 0; index < enumerators.size(); ++index) {
+                if (std::meta::extract<Enum>(std::meta::constant_of(enumerators[index])) == grade) {
+                    ++claims[index];
+                    names_an_enumerator = true;
+                }
+            }
+            exact = exact && names_an_enumerator;
         } else {
             exact = false;
         }
     }
-    template for (constexpr auto enumerator : enumerators) {
-        std::size_t claims = 0;
-        template for (constexpr auto member : roster_members_v<Roster>) {
-            using A = [:member:];
-            if constexpr (ladder_members_of_<A, Enum>() == 1) {
-                if (ladder_grade_of_<A, Enum>() == [:enumerator:]) ++claims;
-            }
-        }
-        exact = exact && claims == 1;
-    }
 #pragma GCC diagnostic pop
+    for (const std::size_t claim_count : claims) {
+        exact = exact && claim_count == 1;
+    }
     return exact;
 }
 

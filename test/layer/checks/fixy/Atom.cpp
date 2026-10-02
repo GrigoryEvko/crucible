@@ -55,6 +55,22 @@ static_assert(!every_enumerator_has_exactly_one_atom_<std::tuple<low_rung, high_
               "a member that names a value outside the enumerators");
 static_assert(!every_enumerator_has_exactly_one_atom_<std::tuple<low_rung, high_rung, no_rung>, rung>(),
               "a member that names no enumerator");
+
+// Two enumerators that hold one value are one rung.  The member that
+// names the value claims the two enumerators.
+enum class aliased_rung : std::uint8_t {
+    low = 0,
+    bottom = 0,
+    high = 1,
+};
+struct aliased_low_rung {
+    static constexpr aliased_rung grade = aliased_rung::low;
+};
+struct aliased_high_rung {
+    static constexpr aliased_rung grade = aliased_rung::high;
+};
+static_assert(every_enumerator_has_exactly_one_atom_<std::tuple<aliased_low_rung, aliased_high_rung>, aliased_rung>(),
+              "a member claims each enumerator that holds its value");
 }  // namespace ladder_walk_witness
 
 // ── Every Security atom has a class ──────────────────────────────────
