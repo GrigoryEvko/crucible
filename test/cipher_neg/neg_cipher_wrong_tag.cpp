@@ -17,6 +17,6 @@ int main() {
     // The store is never opened.  Overload resolution refuses the call
     // before the body of store could run.
     crucible::Cipher c;
-    (void)c.store(st_view, ::crucible::Cipher::content_addressed(nullptr), nullptr);
+    (void)c.store(st_view, ::crucible::Cipher::content_addressed(nullptr));
     return 0;
 }

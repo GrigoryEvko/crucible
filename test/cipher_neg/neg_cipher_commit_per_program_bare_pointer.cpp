@@ -5,7 +5,6 @@
 // PER_PROGRAM or wider, and a bare pointer states none.
 
 #include <crucible/Cipher.h>
-#include <crucible/MetaLog.h>
 #include <fixy/Ctx.h>
 
 int main() {
@@ -14,9 +13,8 @@ int main() {
         ::crucible::Cipher::open(store_ctx, ::fixy::mint_tagged<::fixy::tags::source::External>(
                                                 std::filesystem::path{"/tmp/crucible_neg_program_bare_pointer"}));
     const auto view = cipher.mint_open_view(store_ctx);
-    ::crucible::MetaLog log;
 
     const ::crucible::RegionNode* bare = nullptr;
-    auto result = cipher.commit_per_program(view, bare, &log);
+    auto result = cipher.commit_per_program(view, bare);
     return static_cast<int>(static_cast<bool>(std::move(result).consume()));
 }

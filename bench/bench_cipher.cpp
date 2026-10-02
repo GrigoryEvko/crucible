@@ -111,7 +111,7 @@ int main() {
         auto* warm_region = synth_region(warm_arena, num_ops, 0xC0FFEE + num_ops);
         check_unset_ids(*warm_region);
         const auto warm_payload = Cipher::content_addressed(warm_region);
-        (void)cipher.store(open_view, warm_payload, nullptr);  // prime the warm path
+        (void)cipher.store(open_view, warm_payload);  // prime the warm path
         const ContentHash warm_h = warm_region->content_hash;
 
         // Cold write: distinct content_hash per iteration, so every
@@ -135,18 +135,18 @@ int main() {
             return bench::run(label_cold, [&] {
                 Arena region_arena{1 << 18};
                 auto* r = synth_region(region_arena, num_ops, ++salt);
-                auto h = cipher.store(open_view, Cipher::content_addressed(r), nullptr);
+                auto h = cipher.store(open_view, Cipher::content_addressed(r));
                 bench::do_not_optimize(h);
             });
         }());
 
         reports.push_back(bench::run(label_warm, [&] {
-            auto h = cipher.store(open_view, warm_payload, nullptr);
+            auto h = cipher.store(open_view, warm_payload);
             bench::do_not_optimize(h);
         }));
 
         reports.push_back(bench::run(label_ca_warm, [&] {
-            auto h = cipher.store(open_view, warm_payload, nullptr);
+            auto h = cipher.store(open_view, warm_payload);
             bench::do_not_optimize(h);
         }));
 

@@ -87,8 +87,8 @@ static void test_publish_warm_bit_equality(const char* dir) {
     // The second write of the same region takes the already-exists
     // path, so publishing after storing must still report the hash the
     // raw store produced.
-    ContentHash raw = cipher.store(view, payload, nullptr);
-    auto warm = cipher.publish_warm(view, payload, nullptr);
+    ContentHash raw = cipher.store(view, payload);
+    auto warm = cipher.publish_warm(view, payload);
     ContentHash via_wrapper = std::move(warm).consume();
     assert(raw == via_wrapper);
     assert(static_cast<bool>(raw));
@@ -101,12 +101,12 @@ static void test_publish_warm_type_identity(const char* dir) {
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
-    using Got = decltype(cipher.publish_warm(view, payload, nullptr));
+    using Got = decltype(cipher.publish_warm(view, payload));
     using Want = CipherTier<CipherTierTag_v::Warm, ContentHash>;
     static_assert(std::is_same_v<Got, Want>, "publish_warm must return CipherTier<Warm, ContentHash>");
     static_assert(tier_v<Got> == CipherTierTag_v::Warm);
 
-    auto p = cipher.publish_warm(view, payload, nullptr);
+    auto p = cipher.publish_warm(view, payload);
     (void)std::move(p).consume();
 }
 
@@ -117,13 +117,13 @@ static void test_publish_hot_type_identity(const char* dir) {
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
-    using Got = decltype(cipher.publish_hot(view, payload, nullptr));
+    using Got = decltype(cipher.publish_hot(view, payload));
     using Want = CipherTier<CipherTierTag_v::Hot, ContentHash>;
     static_assert(std::is_same_v<Got, Want>, "publish_hot must return CipherTier<Hot, ContentHash>");
     static_assert(tier_v<Got> == CipherTierTag_v::Hot);
 
     // The hot path writes nothing yet, so the hash it returns is none.
-    auto p = cipher.publish_hot(view, payload, nullptr);
+    auto p = cipher.publish_hot(view, payload);
     ContentHash h = std::move(p).consume();
     assert(!static_cast<bool>(h));
 }
@@ -135,13 +135,13 @@ static void test_publish_cold_type_identity(const char* dir) {
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
-    using Got = decltype(cipher.publish_cold(view, payload, nullptr));
+    using Got = decltype(cipher.publish_cold(view, payload));
     using Want = CipherTier<CipherTierTag_v::Cold, ContentHash>;
     static_assert(std::is_same_v<Got, Want>, "publish_cold must return CipherTier<Cold, ContentHash>");
     static_assert(tier_v<Got> == CipherTierTag_v::Cold);
 
     // The cold path writes nothing yet, so the hash it returns is none.
-    auto p = cipher.publish_cold(view, payload, nullptr);
+    auto p = cipher.publish_cold(view, payload);
     ContentHash h = std::move(p).consume();
     assert(!static_cast<bool>(h));
 }
@@ -154,18 +154,18 @@ static void test_view_and_payload_route(const char* dir) {
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
-    using WarmGot = decltype(cipher.publish_warm(view, payload, nullptr));
+    using WarmGot = decltype(cipher.publish_warm(view, payload));
     static_assert(std::is_same_v<WarmGot, CipherTier<CipherTierTag_v::Warm, ContentHash>>);
 
-    using HotGot = decltype(cipher.publish_hot(view, payload, nullptr));
+    using HotGot = decltype(cipher.publish_hot(view, payload));
     static_assert(std::is_same_v<HotGot, CipherTier<CipherTierTag_v::Hot, ContentHash>>);
 
-    using ColdGot = decltype(cipher.publish_cold(view, payload, nullptr));
+    using ColdGot = decltype(cipher.publish_cold(view, payload));
     static_assert(std::is_same_v<ColdGot, CipherTier<CipherTierTag_v::Cold, ContentHash>>);
 
-    (void)std::move(cipher.publish_warm(view, payload, nullptr)).consume();
-    (void)std::move(cipher.publish_hot(view, payload, nullptr)).consume();
-    (void)std::move(cipher.publish_cold(view, payload, nullptr)).consume();
+    (void)std::move(cipher.publish_warm(view, payload)).consume();
+    (void)std::move(cipher.publish_hot(view, payload)).consume();
+    (void)std::move(cipher.publish_cold(view, payload)).consume();
 }
 
 static void test_hot_satisfies_weaker_tiers() {
@@ -202,7 +202,7 @@ static void test_relax_to_weaker_tiers(const char* dir) {
 
     // Relaxing twice in succession, to show the weakening composes and
     // carries the same value the whole way down.
-    auto hot = cipher.publish_hot(view, payload, nullptr);
+    auto hot = cipher.publish_hot(view, payload);
     auto warm = ::fixy::relax<CipherTierTag_v::Warm>(std::move(hot));
     static_assert(std::is_same_v<decltype(warm), CipherTier<CipherTierTag_v::Warm, ContentHash>>);
 
@@ -235,7 +235,7 @@ static void test_e2e_hot_fence_consumer(const char* dir) {
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
-    auto pinned = cipher.publish_hot(view, payload, nullptr);
+    auto pinned = cipher.publish_hot(view, payload);
     ContentHash h = hot_reshard_consumer(std::move(pinned));
     // Passing the gate is the property under test.  The hash is none
     // because the hot path writes nothing yet.
@@ -255,12 +255,12 @@ static void test_e2e_warm_fence_admits_hot_and_warm(const char* dir) {
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
-    auto warm_val = cipher.publish_warm(view, payload, nullptr);
+    auto warm_val = cipher.publish_warm(view, payload);
     ContentHash h_warm = warm_publish_consumer(std::move(warm_val));
     assert(static_cast<bool>(h_warm));
 
     // A stronger tier passes the same gate.
-    auto hot_val = cipher.publish_hot(view, payload, nullptr);
+    auto hot_val = cipher.publish_hot(view, payload);
     ContentHash h_hot = warm_publish_consumer(std::move(hot_val));
     (void)h_hot;
 }
@@ -272,14 +272,14 @@ static void test_phase5_stub_semantics(const char* dir) {
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
-    static_assert(noexcept(cipher.publish_hot(view, payload, nullptr)));
-    static_assert(noexcept(cipher.publish_cold(view, payload, nullptr)));
+    static_assert(noexcept(cipher.publish_hot(view, payload)));
+    static_assert(noexcept(cipher.publish_cold(view, payload)));
 
     // These two assertions hold only while the hot and cold paths write
     // nothing.  Giving either one a real backend makes them fail, and
     // the check belongs with that change rather than here.
-    auto hot = cipher.publish_hot(view, payload, nullptr);
-    auto cold = cipher.publish_cold(view, payload, nullptr);
+    auto hot = cipher.publish_hot(view, payload);
+    auto cold = cipher.publish_cold(view, payload);
     ContentHash h_hot = std::move(hot).consume();
     ContentHash h_cold = std::move(cold).consume();
     assert(!static_cast<bool>(h_hot));
@@ -305,9 +305,9 @@ static void test_runtime_tier_reader_pattern(const char* dir) {
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
-    auto warm_v = cipher.publish_warm(view, payload, nullptr);
-    auto hot_v = cipher.publish_hot(view, payload, nullptr);
-    auto cold_v = cipher.publish_cold(view, payload, nullptr);
+    auto warm_v = cipher.publish_warm(view, payload);
+    auto hot_v = cipher.publish_hot(view, payload);
+    auto cold_v = cipher.publish_cold(view, payload);
 
     static_assert(classify_tier_for_drift_attribution<decltype(warm_v)>() == 2);
     static_assert(classify_tier_for_drift_attribution<decltype(hot_v)>() == 1);
@@ -334,14 +334,14 @@ static void test_replay_engine_admits_all_tiers(const char* dir) {
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
-    auto cold = cipher.publish_cold(view, payload, nullptr);
+    auto cold = cipher.publish_cold(view, payload);
     (void)replay_consumer(std::move(cold));
 
-    auto warm = cipher.publish_warm(view, payload, nullptr);
+    auto warm = cipher.publish_warm(view, payload);
     ContentHash h = replay_consumer(std::move(warm));
     assert(static_cast<bool>(h));
 
-    auto hot = cipher.publish_hot(view, payload, nullptr);
+    auto hot = cipher.publish_hot(view, payload);
     (void)replay_consumer(std::move(hot));
 }
 
@@ -360,9 +360,9 @@ static void test_sequential_three_tier_publish(const char* dir) {
     // Publication runs from the fastest tier to the most durable, so
     // that a peer can serve the region before the archive write
     // finishes.
-    auto h_pub = cipher.publish_hot(view, payload, nullptr);
-    auto w_pub = cipher.publish_warm(view, payload, nullptr);
-    auto c_pub = cipher.publish_cold(view, payload, nullptr);
+    auto h_pub = cipher.publish_hot(view, payload);
+    auto w_pub = cipher.publish_warm(view, payload);
+    auto c_pub = cipher.publish_cold(view, payload);
 
     static_assert(!std::is_same_v<decltype(h_pub), decltype(w_pub)>);
     static_assert(!std::is_same_v<decltype(w_pub), decltype(c_pub)>);
@@ -415,17 +415,17 @@ static void test_content_addressed_publish_overloads(const char* dir) {
     using Payload = decltype(payload);
     static_assert(::fixy::session::is_content_addressed_v<typename Payload::payload_type>);
 
-    using WarmGot = decltype(cipher.publish_warm(view, payload, nullptr));
-    using HotGot = decltype(cipher.publish_hot(view, payload, nullptr));
-    using ColdGot = decltype(cipher.publish_cold(view, payload, nullptr));
+    using WarmGot = decltype(cipher.publish_warm(view, payload));
+    using HotGot = decltype(cipher.publish_hot(view, payload));
+    using ColdGot = decltype(cipher.publish_cold(view, payload));
     static_assert(std::is_same_v<WarmGot, CipherTier<CipherTierTag_v::Warm, ContentHash>>);
     static_assert(std::is_same_v<HotGot, CipherTier<CipherTierTag_v::Hot, ContentHash>>);
     static_assert(std::is_same_v<ColdGot, CipherTier<CipherTierTag_v::Cold, ContentHash>>);
 
-    ContentHash warm_hash = std::move(cipher.publish_warm(view, payload, nullptr)).consume();
+    ContentHash warm_hash = std::move(cipher.publish_warm(view, payload)).consume();
     assert(static_cast<bool>(warm_hash));
-    (void)std::move(cipher.publish_hot(view, payload, nullptr)).consume();
-    (void)std::move(cipher.publish_cold(view, payload, nullptr)).consume();
+    (void)std::move(cipher.publish_hot(view, payload)).consume();
+    (void)std::move(cipher.publish_cold(view, payload)).consume();
 }
 
 int main() {

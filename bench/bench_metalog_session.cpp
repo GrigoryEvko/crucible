@@ -50,7 +50,8 @@ using PermissionedLog = ::crucible::permissioned_metalog_t<decltype(log_root())>
     if (t == log.head.get()) {
         return std::nullopt;
     }
-    ::crucible::TensorMeta meta = log.at(t);
+    ::crucible::TensorMeta meta{};
+    log.copy_run(t, 1, &meta);
     log.advance_tail(t + 1);
     return meta;
 }

@@ -56,7 +56,7 @@ namespace {
 
     auto* region = crucible::make_region(bg.alloc, arena, ops, 1);
     if (region == nullptr) return 0;
-    return crucible::serialize_region(region, nullptr, out_buf);
+    return crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{out_buf});
 }
 
 // The wire layout, little-endian, restated here as this test's ground

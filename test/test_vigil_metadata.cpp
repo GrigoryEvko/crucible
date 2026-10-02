@@ -121,7 +121,8 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
     }
     assert(crucible::raw_data_ptr(recorded[0][0]) == parameter_ptr());
     std::vector<uint8_t> serialized_before(std::size_t{1} << 16);
-    const std::size_t bytes_before = crucible::serialize_region(region, nullptr, serialized_before);
+    const std::size_t bytes_before =
+        crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{serialized_before});
     assert(bytes_before > 0);
 
     fill_released_slots(vigil.meta_log(fg));
@@ -136,7 +137,8 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
     // The store writes the same bytes as before the overwrite, and a load of
     // them folds to the content hash of the region.
     std::vector<uint8_t> serialized_after(std::size_t{1} << 16);
-    const std::size_t bytes_after = crucible::serialize_region(region, nullptr, serialized_after);
+    const std::size_t bytes_after =
+        crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{serialized_after});
     assert(bytes_after == bytes_before);
     assert(std::memcmp(serialized_after.data(), serialized_before.data(), bytes_before) == 0);
     crucible::Arena load_arena{std::size_t{1} << 16};

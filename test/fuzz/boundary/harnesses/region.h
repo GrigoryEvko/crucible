@@ -97,7 +97,7 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
 
 [[nodiscard]] inline std::vector<std::uint8_t> region_image(const RegionNode* region) {
     std::vector<std::uint8_t> image(std::size_t{1} << 16);
-    image.resize(serialize_region(region, nullptr, std::span<std::uint8_t>{image}));
+    image.resize(serialize_region(SerializedRegion{*region}, SerialBuffer{image}));
     return image;
 }
 
@@ -158,7 +158,7 @@ inline void run_region(std::span<const std::uint8_t> bytes) {
     // The loaded region writes back to an image that loads to the same
     // region: the loader keeps every field the writer reads.
     std::vector<std::uint8_t> image(bytes.size() + 4096);
-    const std::size_t written = serialize_region(region, nullptr, std::span<std::uint8_t>{image});
+    const std::size_t written = serialize_region(SerializedRegion{*region}, SerialBuffer{image});
     CRUCIBLE_FUZZ_CLAIM("region", written > 0);
     const auto reloaded = deserialize_region(alloc, std::span<const std::uint8_t>{image.data(), written}, arena);
     CRUCIBLE_FUZZ_CLAIM("region", reloaded.has_value());

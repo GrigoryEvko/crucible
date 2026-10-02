@@ -57,7 +57,6 @@
 namespace crucible {
 
 class Arena;
-struct MetaLog;
 struct RegionNode;
 class Cipher;
 
@@ -258,29 +257,29 @@ public:
 
     // Writes the region to its object file, flushes it, and returns its
     // content hash.  A failure gives the none hash.
-    [[nodiscard]] ContentHash store(OpenView const&, ContentAddressedRegionPayload payload, const MetaLog* meta_log);
+    [[nodiscard]] ContentHash store(OpenView const&, ContentAddressedRegionPayload payload);
 
-    [[nodiscard]] ::fixy::wait::Block<ContentHash>
-    store_pinned(OpenView const& view, ContentAddressedRegionPayload payload, const MetaLog* meta_log) {
-        return ::fixy::mint_band<::fixy::wait::Block<ContentHash>>(store(view, payload, meta_log));
+    [[nodiscard]] ::fixy::wait::Block<ContentHash> store_pinned(OpenView const& view,
+                                                                ContentAddressedRegionPayload payload) {
+        return ::fixy::mint_band<::fixy::wait::Block<ContentHash>>(store(view, payload));
     }
 
-    [[nodiscard]] ::fixy::cipher_tier::Warm<ContentHash>
-    publish_warm(OpenView const& view, ContentAddressedRegionPayload payload, const MetaLog* meta_log) {
-        return ::fixy::mint_band<::fixy::cipher_tier::Warm<ContentHash>>(store(view, payload, meta_log));
+    [[nodiscard]] ::fixy::cipher_tier::Warm<ContentHash> publish_warm(OpenView const& view,
+                                                                      ContentAddressedRegionPayload payload) {
+        return ::fixy::mint_band<::fixy::cipher_tier::Warm<ContentHash>>(store(view, payload));
     }
 
     // The type declares Hot residency, but nothing is replicated.  The
     // returned none hash lets a caller testing the hash tell that no
     // Hot-tier store happened.
-    [[nodiscard]] ::fixy::cipher_tier::Hot<ContentHash>
-    publish_hot(OpenView const&, ContentAddressedRegionPayload payload, const MetaLog* meta_log) noexcept;
+    [[nodiscard]] ::fixy::cipher_tier::Hot<ContentHash> publish_hot(OpenView const&,
+                                                                    ContentAddressedRegionPayload payload) noexcept;
 
     // The type declares Cold residency, but nothing is written to durable
     // storage.  The returned none hash lets a caller testing the hash tell
     // that no Cold-tier store happened.
-    [[nodiscard]] ::fixy::cipher_tier::Cold<ContentHash>
-    publish_cold(OpenView const&, ContentAddressedRegionPayload payload, const MetaLog* meta_log) noexcept;
+    [[nodiscard]] ::fixy::cipher_tier::Cold<ContentHash> publish_cold(OpenView const&,
+                                                                      ContentAddressedRegionPayload payload) noexcept;
 
     // The commit_per_* family pairs a declared data lifetime with the
     // storage tier that matches it.  The rejection direction is the point:
@@ -290,26 +289,26 @@ public:
 
     template <typename W>
         requires cipher::LifetimePinnedRegion<W, ::fixy::Lifetime_v::PER_REQUEST>
-    [[nodiscard]] ::fixy::cipher_tier::Hot<ContentHash>
-    commit_per_request(OpenView const& view, W lifetime_pinned_region, const MetaLog* meta_log) noexcept {
+    [[nodiscard]] ::fixy::cipher_tier::Hot<ContentHash> commit_per_request(OpenView const& view,
+                                                                           W lifetime_pinned_region) noexcept {
         const RegionNode* region = std::move(lifetime_pinned_region).consume();
-        return publish_hot(view, content_addressed(region), meta_log);
+        return publish_hot(view, content_addressed(region));
     }
 
     template <typename W>
         requires cipher::LifetimePinnedRegion<W, ::fixy::Lifetime_v::PER_PROGRAM>
-    [[nodiscard]] ::fixy::cipher_tier::Warm<ContentHash>
-    commit_per_program(OpenView const& view, W lifetime_pinned_region, const MetaLog* meta_log) {
+    [[nodiscard]] ::fixy::cipher_tier::Warm<ContentHash> commit_per_program(OpenView const& view,
+                                                                            W lifetime_pinned_region) {
         const RegionNode* region = std::move(lifetime_pinned_region).consume();
-        return publish_warm(view, content_addressed(region), meta_log);
+        return publish_warm(view, content_addressed(region));
     }
 
     template <typename W>
         requires cipher::LifetimePinnedRegion<W, ::fixy::Lifetime_v::PER_FLEET>
-    [[nodiscard]] ::fixy::cipher_tier::Cold<ContentHash>
-    commit_per_fleet(OpenView const& view, W lifetime_pinned_region, const MetaLog* meta_log) noexcept {
+    [[nodiscard]] ::fixy::cipher_tier::Cold<ContentHash> commit_per_fleet(OpenView const& view,
+                                                                          W lifetime_pinned_region) noexcept {
         const RegionNode* region = std::move(lifetime_pinned_region).consume();
-        return publish_cold(view, content_addressed(region), meta_log);
+        return publish_cold(view, content_addressed(region));
     }
 
     // Real regions sit at a megabyte or less.  The ceiling leaves room for

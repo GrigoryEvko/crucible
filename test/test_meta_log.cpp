@@ -43,7 +43,8 @@ static void test_single_append_returns_index_zero() {
     assert(idx.is_valid());
     assert(idx.raw() == 0);
     assert(log.size().peek() == 1);
-    const auto& got = log.at(0);
+    TensorMeta got{};
+    log.copy_run(0, 1, &got);
     assert(raw_data_ptr(got) == raw_data_ptr(m));
     assert(::crucible::raw_tensor_dim(got.sizes[0]) == 128);
     assert(::crucible::raw_tensor_dim(got.sizes[1]) == 256);
@@ -162,15 +163,19 @@ static void test_counters_pass_two_to_the_32() {
     assert(across.is_valid() && across.raw() == (uint64_t{1} << 32));
     assert(log.size().peek() == 32);
 
-    // The records keep their order across the boundary, in the copy and in
-    // each read by index.
+    // The records keep their order across the boundary, in the copy of the
+    // run and in the copy of one record at each index.
     TensorMeta copied[32]{};
     log.copy_run(first.raw(), 32, copied);
     for (uint32_t i = 0; i < 32; ++i) {
         assert(raw_data_ptr(copied[i]) == raw_data_ptr(run[i]));
     }
-    assert(raw_data_ptr(log.at(last_below)) == raw_data_ptr(run[15]));
-    assert(raw_data_ptr(log.at(across)) == raw_data_ptr(run[16]));
+    TensorMeta read_below{};
+    log.copy_run(last_below.raw(), 1, &read_below);
+    TensorMeta read_across{};
+    log.copy_run(across.raw(), 1, &read_across);
+    assert(raw_data_ptr(read_below) == raw_data_ptr(run[15]));
+    assert(raw_data_ptr(read_across) == raw_data_ptr(run[16]));
 
     log.advance_tail(across.raw() + 16);
     assert(log.size().peek() == 0);
@@ -233,7 +238,8 @@ static void test_spsc_concurrent_integrity() {
                 continue;
             }
             for (uint32_t k = 0; k < avail; ++k) {
-                const TensorMeta& m = log.at(next + k);
+                TensorMeta m{};
+                log.copy_run(next + k, 1, &m);
                 const uintptr_t expected = static_cast<uintptr_t>(next + k + 1) << 16;
                 assert(std::bit_cast<uintptr_t>(raw_data_ptr(m)) == expected);
                 // The remaining fields are identical in every record,
@@ -271,7 +277,8 @@ static void test_try_append_pure() {
         assert(idx.is_valid());
         assert(idx.raw() == 0);
         assert(log.size().peek() == 1);
-        const auto& got = log.at(idx);
+        TensorMeta got{};
+        log.copy_run(idx.raw(), 1, &got);
         assert(raw_data_ptr(got) == raw_data_ptr(m));
     }
 
@@ -355,7 +362,8 @@ static void test_try_append_pure_concurrent() {
                 continue;
             }
             for (uint32_t k = 0; k < avail; ++k) {
-                const TensorMeta& m = log.at(next + k);
+                TensorMeta m{};
+                log.copy_run(next + k, 1, &m);
                 const uintptr_t expected = static_cast<uintptr_t>(next + k + 1) << 16;
                 assert(std::bit_cast<uintptr_t>(raw_data_ptr(m)) == expected);
                 assert(::crucible::raw_tensor_dim(m.sizes[0]) == 128);

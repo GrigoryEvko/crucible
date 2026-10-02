@@ -6,7 +6,6 @@
 
 #include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
-#include <crucible/MetaLog.h>
 #include <crucible/Serialize.h>
 #include <crucible/cipher/CipherTierPromotion.h>
 #include <crucible/cipher/FederationProtocol.h>
@@ -365,7 +364,7 @@ void hex16_(uint64_t value, char (&out)[16]) noexcept {
 
 }  // namespace
 
-ContentHash Cipher::store(OpenView const&, ContentAddressedRegionPayload payload, const MetaLog* meta_log) {
+ContentHash Cipher::store(OpenView const&, ContentAddressedRegionPayload payload) {
     const RegionNode* region = payload.get();
     if (!region) return ContentHash{};
     const ContentHash hash = region->content_hash;
@@ -388,7 +387,7 @@ ContentHash Cipher::store(OpenView const&, ContentAddressedRegionPayload payload
 
     const size_t cap = estimate_serial_size(region).value();
     std::vector<uint8_t> buf(cap);
-    const size_t n = serialize_region(region, meta_log, std::span<uint8_t>{buf});
+    const size_t n = serialize_region(SerializedRegion{*region}, SerialBuffer{buf});
     if (n == 0) return ContentHash{};
 
     std::filesystem::create_directories(std::filesystem::path(path).parent_path());
@@ -420,14 +419,14 @@ ContentHash Cipher::store(OpenView const&, ContentAddressedRegionPayload payload
     return hash;
 }
 
-::fixy::cipher_tier::Hot<ContentHash> Cipher::publish_hot(OpenView const&, ContentAddressedRegionPayload /*payload*/,
-                                                          const MetaLog* /*meta_log*/) noexcept {
+::fixy::cipher_tier::Hot<ContentHash> Cipher::publish_hot(OpenView const&,
+                                                          ContentAddressedRegionPayload /*payload*/) noexcept {
     return cipher::mint_promote<::fixy::CipherTierTag_v::Cold, ::fixy::CipherTierTag_v::Hot>(
         ::fixy::mint_band<::fixy::cipher_tier::Cold<ContentHash>>(ContentHash{}));
 }
 
-::fixy::cipher_tier::Cold<ContentHash> Cipher::publish_cold(OpenView const&, ContentAddressedRegionPayload /*payload*/,
-                                                            const MetaLog* /*meta_log*/) noexcept {
+::fixy::cipher_tier::Cold<ContentHash> Cipher::publish_cold(OpenView const&,
+                                                            ContentAddressedRegionPayload /*payload*/) noexcept {
     return cipher::mint_demote<::fixy::CipherTierTag_v::Hot, ::fixy::CipherTierTag_v::Cold>(
         ::fixy::mint_band<::fixy::cipher_tier::Hot<ContentHash>>(ContentHash{}));
 }

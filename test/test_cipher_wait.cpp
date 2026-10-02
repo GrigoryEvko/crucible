@@ -74,8 +74,8 @@ static void test_store_pinned_bit_equality(const char* dir) {
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
-    ContentHash raw = cipher.store(view, payload, nullptr);
-    auto pinned = cipher.store_pinned(view, payload, nullptr);
+    ContentHash raw = cipher.store(view, payload);
+    auto pinned = cipher.store_pinned(view, payload);
     ContentHash via_wrapper = std::move(pinned).consume();
     assert(raw == via_wrapper);
 }
@@ -87,13 +87,13 @@ static void test_store_pinned_type_identity(const char* dir) {
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
-    using Got = decltype(cipher.store_pinned(view, payload, nullptr));
+    using Got = decltype(cipher.store_pinned(view, payload));
     using Want = Wait<WaitStrategy_v::Block, ContentHash>;
     static_assert(std::is_same_v<Got, Want>, "store_pinned must return Wait<Block, ContentHash>");
     static_assert(::fixy::band_tier_v<Got> == WaitStrategy_v::Block);
 
     // The result must not be discarded.
-    auto p = cipher.store_pinned(view, payload, nullptr);
+    auto p = cipher.store_pinned(view, payload);
     (void)std::move(p).consume();
 }
 
@@ -104,11 +104,11 @@ static void test_store_pinned_payload_route(const char* dir) {
 
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
-    using Got = decltype(cipher.store_pinned(view, payload, nullptr));
+    using Got = decltype(cipher.store_pinned(view, payload));
     using Want = Wait<WaitStrategy_v::Block, ContentHash>;
     static_assert(std::is_same_v<Got, Want>);
 
-    auto p = cipher.store_pinned(view, payload, nullptr);
+    auto p = cipher.store_pinned(view, payload);
     ContentHash h = std::move(p).consume();
     assert(static_cast<bool>(h));
 }
@@ -142,7 +142,7 @@ static void test_e2e_block_fence_consumer(const char* dir) {
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
-    auto pinned = cipher.store_pinned(view, payload, nullptr);
+    auto pinned = cipher.store_pinned(view, payload);
     ContentHash h = block_fence_consumer(std::move(pinned));
     assert(static_cast<bool>(h));
 }

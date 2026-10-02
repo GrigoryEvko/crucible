@@ -231,21 +231,6 @@ struct CRUCIBLE_OWNER MetaLog {
         return try_append(metas, n);
     }
 
-    // The raw overload below is for the one caller that walks absolute
-    // positions arithmetically, where wrapping each intermediate sum would
-    // claim a strength the sum does not have. Everything else passes the
-    // strong index.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] const TensorMeta& at(MetaIndex idx) const CRUCIBLE_LIFETIMEBOUND
-    CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(idx.is_valid());
-        return entries[idx.raw() & MASK];
-    }
-
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] const TensorMeta& at(uint64_t idx) const CRUCIBLE_LIFETIMEBOUND
-    CRUCIBLE_NO_THREAD_SAFETY {
-        return entries[idx & MASK];
-    }
-
     // Copies the run of count records that starts at index start into dst.
     // A run that passes the end of the buffer takes two copies.  The tail
     // moves past a run when the consumer releases it.  The producer then

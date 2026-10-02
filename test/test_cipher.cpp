@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <fixy/Ctx.h>
+#include <fixy/FixedArray.h>
 #include <fixy/os/Time.h>
 #include <fixy/session/Subtype.h>
 #include "test_assert.h"
@@ -161,8 +162,7 @@ int main() {
     {
         auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
-        const crucible::ContentHash stored_hash =
-            cipher.store(ov, crucible::Cipher::content_addressed(region), nullptr);
+        const crucible::ContentHash stored_hash = cipher.store(ov, crucible::Cipher::content_addressed(region));
         assert(stored_hash == expected_hash);
 
         const std::string expected_path = object_path(dir, expected_hash);
@@ -170,8 +170,7 @@ int main() {
 
         // The content decides the name, so storing the same region
         // again names the same object.
-        const crucible::ContentHash second_hash =
-            cipher.store(ov, crucible::Cipher::content_addressed(region), nullptr);
+        const crucible::ContentHash second_hash = cipher.store(ov, crucible::Cipher::content_addressed(region));
         assert(second_hash == expected_hash);
     }
 
@@ -191,7 +190,7 @@ int main() {
     {
         auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
-        (void)cipher.store(ov, crucible::Cipher::content_addressed(region), nullptr);
+        (void)cipher.store(ov, crucible::Cipher::content_addressed(region));
 
         // The log line of the commit holds a reading of CLOCK_MONOTONIC,
         // so it lies between two readings taken around the commit.
@@ -260,7 +259,7 @@ int main() {
 
         auto cipher = open_cipher(dir_ca);
         auto ov = cipher.mint_open_view(store_ctx());
-        const crucible::ContentHash hash = cipher.store(ov, ca_payload, nullptr);
+        const crucible::ContentHash hash = cipher.store(ov, ca_payload);
         assert(hash == ca_region->content_hash);
 
         const std::string path = object_path(dir_ca, hash);
@@ -275,7 +274,7 @@ int main() {
         }
         const auto corrupted_size = std::filesystem::file_size(path);
 
-        const crucible::ContentHash second = cipher.store(ov, ca_payload, nullptr);
+        const crucible::ContentHash second = cipher.store(ov, ca_payload);
         assert(second == hash);
         assert(std::filesystem::file_size(path) == corrupted_size
                && "duplicate ContentAddressed store must not rewrite bytes");
@@ -311,8 +310,8 @@ int main() {
         auto receiver = open_cipher(receiver_dir);
         auto sender_ov = sender.mint_open_view(store_ctx());
         auto receiver_ov = receiver.mint_open_view(store_ctx());
-        const crucible::ContentHash sender_hash = sender.store(sender_ov, ca_payload, nullptr);
-        const crucible::ContentHash receiver_hash = receiver.store(receiver_ov, ca_payload, nullptr);
+        const crucible::ContentHash sender_hash = sender.store(sender_ov, ca_payload);
+        const crucible::ContentHash receiver_hash = receiver.store(receiver_ov, ca_payload);
         assert(sender_hash == receiver_hash);
 
         std::filesystem::remove(object_path(receiver_dir, receiver_hash));
@@ -342,7 +341,7 @@ int main() {
         // it as proof and repeats no check of its own.
         auto ov = cipher.mint_open_view(store_ctx());
         auto* region2 = make_test_region(arena);
-        const auto hash = cipher.store(ov, crucible::Cipher::content_addressed(region2), nullptr);
+        const auto hash = cipher.store(ov, crucible::Cipher::content_addressed(region2));
         assert(static_cast<bool>(hash));
         commit_head(cipher, ov, hash, 100);
         assert(cipher.head() == hash);
@@ -430,10 +429,10 @@ int main() {
         auto cipher = open_cipher(dir_cache);
         auto ov = cipher.mint_open_view(store_ctx());
         constexpr std::size_t kStoreCount = 65;
-        std::vector<crucible::ContentHash> hashes(kStoreCount);
+        ::fixy::FixedArray<crucible::ContentHash, kStoreCount> hashes{};
         for (std::size_t i = 0; i < kStoreCount; ++i) {
             const auto* distinct_region = make_test_region(cache_arena, i + 1);
-            hashes[i] = cipher.store(ov, crucible::Cipher::content_addressed(distinct_region), nullptr);
+            hashes[i] = cipher.store(ov, crucible::Cipher::content_addressed(distinct_region));
             assert(static_cast<bool>(hashes[i]));
         }
         for (const crucible::ContentHash hash : hashes) {

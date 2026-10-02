@@ -538,7 +538,7 @@ private:
     template <class Ctx, class Store>
     [[nodiscard]] bool persist_into_(Ctx const& ctx, Store& store, const RegionNode* region) {
         auto open_view = store.mint_open_view(ctx);
-        const ContentHash hash = store.store(open_view, Store::content_addressed(region), meta_log_.get());
+        const ContentHash hash = store.store(open_view, Store::content_addressed(region));
         if (!hash) return false;
         return store.record_event(ctx, open_view, hash, step_.get()).has_value();
     }

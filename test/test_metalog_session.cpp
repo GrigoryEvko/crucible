@@ -225,8 +225,8 @@ void test_partial_drain() {
     CRUCIBLE_TEST_REQUIRE(consumer.size_approx() == 0);
 }
 
-// A bulk append returns the index of the first record it wrote, and at()
-// reads a record by that index.
+// A bulk append returns the index of the first record it wrote, and copy_at()
+// copies the record at that index.
 void test_metaindex_propagates() {
     ::crucible::MetaLog raw_log;
     PermissionedLog log{raw_log};
@@ -244,8 +244,8 @@ void test_metaindex_propagates() {
     CRUCIBLE_TEST_REQUIRE(idx_second.is_valid());
     CRUCIBLE_TEST_REQUIRE(idx_second.raw() == first.size());
 
-    CRUCIBLE_TEST_REQUIRE(same_meta(consumer.at(::crucible::MetaIndex{0}), first[0]));
-    CRUCIBLE_TEST_REQUIRE(same_meta(consumer.at(::crucible::MetaIndex{2}), second[0]));
+    CRUCIBLE_TEST_REQUIRE(same_meta(consumer.copy_at(::crucible::MetaIndex{0}), make_meta(10)));
+    CRUCIBLE_TEST_REQUIRE(same_meta(consumer.copy_at(::crucible::MetaIndex{2}), make_meta(30)));
 }
 
 void test_empty_drain() {
@@ -388,6 +388,20 @@ void second_live_consumer() {
     [[maybe_unused]] auto second = log.consumer(std::move(second_consumer));
 }
 
+// The consumer drains the first record, and the tail moves past it.  The
+// producer can then write a new record into that slot, so a copy of the
+// record at index 0 ends the process.
+void copy_of_a_released_record() {
+    ::crucible::MetaLog raw_log;
+    PermissionedLog log{raw_log};
+    auto producer = log.producer(mint_halves().first);
+    auto consumer = log.consumer(mint_halves().second);
+    const ::crucible::TensorMeta record = make_meta(1);
+    CRUCIBLE_FATAL_INVARIANT(producer.try_append_one(record) && producer.try_append_one(record));
+    CRUCIBLE_FATAL_INVARIANT(consumer.drain([](const ::crucible::TensorMeta&) noexcept {}, 1) == 1);
+    (void)consumer.copy_at(::crucible::MetaIndex{0});
+}
+
 struct Attack {
     const char* name;
     void (*run)();
@@ -398,6 +412,7 @@ constexpr Attack kAttacks[] = {
     {"moved-from consumer", &log_consumer},
     {"second live producer", &second_live_producer},
     {"second live consumer", &second_live_consumer},
+    {"copy of a released record", &copy_of_a_released_record},
 };
 
 [[nodiscard]] bool ends_the_process(void (*attack)()) {

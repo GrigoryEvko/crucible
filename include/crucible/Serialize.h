@@ -12,9 +12,9 @@
 #include <crucible/Arena.h>
 #include <crucible/CKernelId.h>
 #include <crucible/MerkleDag.h>
-#include <crucible/MetaLog.h>
 #include <crucible/PoolAllocator.h>
 #include <crucible/TraceRing.h>
+#include <fixy/Borrowed.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
@@ -381,10 +381,17 @@ inline Header read_header(Reader& r) {
 
 }  // namespace detail_ser
 
-// Returns the byte count written, or zero if the buffer was too small. The
-// meta log is unused: each entry already carries its own tensor metadata.
-[[nodiscard]] inline size_t serialize_region(const RegionNode* region, const MetaLog* /*meta_log*/,
-                                             std::span<uint8_t> buf) {
+// The region that serialize_region reads.  A borrow is never null.
+using SerializedRegion = ::fixy::BorrowedRef<const RegionNode>;
+
+// The owner of the bytes that serialize_region writes: the caller.
+struct SerialBufferOwner {};
+using SerialBuffer = ::fixy::Borrowed<uint8_t, SerialBufferOwner>;
+
+// Returns the byte count written, or zero if the buffer was too small.  Each
+// entry of the region carries its own tensor metadata, so the function reads
+// no metadata log.
+[[nodiscard]] inline size_t serialize_region(SerializedRegion region, SerialBuffer buf) {
     using namespace detail_ser;
     Writer w{.buf = buf.data(), .pos = 0, .max = buf.size()};
 

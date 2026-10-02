@@ -98,7 +98,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     assert(static_cast<bool>(original_content_hash));
 
     uint8_t buf[65536];
-    const size_t n = crucible::serialize_region(region, nullptr, std::span<uint8_t>{buf, sizeof(buf)});
+    const size_t n = crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{buf});
     assert(n > 0 && "serialize_region returned 0 — buffer too small or bad region");
 
     crucible::Arena arena2(1 << 16);
@@ -170,8 +170,10 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         std::memset(buf_a, 0xAA, sizeof(buf_a));
         std::memset(buf_b, 0xBB, sizeof(buf_b));
 
-        const size_t na = crucible::serialize_region(region, nullptr, std::span<uint8_t>{buf_a, sizeof(buf_a)});
-        const size_t nb = crucible::serialize_region(region, nullptr, std::span<uint8_t>{buf_b, sizeof(buf_b)});
+        const size_t na =
+            crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{buf_a});
+        const size_t nb =
+            crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{buf_b});
         assert(na == nb && "serialize_region byte count must be deterministic");
         assert(na > 0);
         assert(std::memcmp(buf_a, buf_b, na) == 0
@@ -214,7 +216,8 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     }
 
     uint8_t tiny_buf[4];
-    const size_t n_tiny = crucible::serialize_region(region, nullptr, std::span<uint8_t>{tiny_buf, 4});
+    const size_t n_tiny =
+        crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{tiny_buf});
     assert(n_tiny == 0 && "serialize_region must return 0 on buffer overflow");
 
     crucible::Arena arena3(1 << 16);
@@ -257,7 +260,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         region->plan = &ok_plan;
 
         uint8_t pbuf[65536];
-        const size_t pn = crucible::serialize_region(region, nullptr, std::span<uint8_t>{pbuf, sizeof(pbuf)});
+        const size_t pn = crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{pbuf});
         assert(pn > 0 && "plan-bearing serialize failed");
         crucible::Arena parena(1 << 16);
         auto ok_loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{pbuf, pn}, parena);
@@ -270,7 +273,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         region->plan = &bad_plan;
 
         uint8_t nbuf[65536];
-        const size_t nn = crucible::serialize_region(region, nullptr, std::span<uint8_t>{nbuf, sizeof(nbuf)});
+        const size_t nn = crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{nbuf});
         assert(nn > 0 && "plan-bearing (oob) serialize failed");
         crucible::Arena narena(1 << 16);
         auto bad_loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{nbuf, nn}, narena);
@@ -293,7 +296,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         region->plan = &over_plan;
 
         uint8_t obuf[65536];
-        const size_t on = crucible::serialize_region(region, nullptr, std::span<uint8_t>{obuf, sizeof(obuf)});
+        const size_t on = crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{obuf});
         assert(on > 0 && "over-pool_bytes serialize failed");
         crucible::Arena oarena(1 << 16);
         auto over_loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{obuf, on}, oarena);
@@ -307,7 +310,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         region->plan = &at_plan;
 
         uint8_t abuf[65536];
-        const size_t an = crucible::serialize_region(region, nullptr, std::span<uint8_t>{abuf, sizeof(abuf)});
+        const size_t an = crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{abuf});
         assert(an > 0 && "at-cap pool_bytes serialize failed");
         crucible::Arena aarena(1 << 16);
         auto at_loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{abuf, an}, aarena);
@@ -330,7 +333,8 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         region->plan = &pad_plan;
 
         std::vector<uint8_t> image(65536);
-        const size_t image_bytes = crucible::serialize_region(region, nullptr, std::span<uint8_t>{image});
+        const size_t image_bytes =
+            crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{image});
         assert(image_bytes > 0 && "pad-probe serialize failed");
         image.resize(image_bytes);
 

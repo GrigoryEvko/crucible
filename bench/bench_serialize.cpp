@@ -99,12 +99,12 @@ int main() {
         std::snprintf(label_des, sizeof(label_des), "deserialize_region (%4u ops)", num_ops);
 
         reports.push_back(bench::run(label_ser, [&] {
-            size_t n = serialize_region(region, nullptr, std::span<uint8_t>{buf});
+            size_t n = serialize_region(SerializedRegion{*region}, SerialBuffer{buf});
             bench::do_not_optimize(n);
         }));
 
         // Prime the buffer once — deserialize consumes stable bytes.
-        const size_t serial_len = serialize_region(region, nullptr, std::span<uint8_t>{buf});
+        const size_t serial_len = serialize_region(SerializedRegion{*region}, SerialBuffer{buf});
         if (serial_len == 0) {
             std::fprintf(stderr, "serialize failed at num_ops=%u\n", num_ops);
             std::exit(1);

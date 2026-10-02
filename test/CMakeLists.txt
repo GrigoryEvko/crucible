@@ -5159,6 +5159,15 @@ crucible_neg_compile_test(neg_metalog_consumer_append
     "has no member named .try_append."
     ".class crucible::PermissionedMetaLog<.anonymous.::Tag, foundation::permissions::<lambda\\(\\)> >::ConsumerHandle. has no member")
 
+# No reader gets a reference into a slot of the log.  The producer writes a new
+# record into a slot after the consumer releases it, so a reader copies.
+crucible_neg_compile_test(neg_meta_log_reference_read
+    "has no member named .at."
+    ".struct crucible::MetaLog. has no member")
+crucible_neg_compile_test(neg_metalog_consumer_reference_read
+    "has no member named .at."
+    ".class crucible::PermissionedMetaLog<.anonymous.::Tag, foundation::permissions::<lambda\\(\\)> >::ConsumerHandle. has no member")
+
 # HS14 for the two MetaLog session mints.  Each gate is one concept, and
 # each fixture fails one clause of it: the context, the handle passed as
 # an lvalue, a type that is not a permissioned log, and the handle of the

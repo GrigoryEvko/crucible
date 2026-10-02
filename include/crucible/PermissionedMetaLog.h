@@ -31,7 +31,6 @@
 #include <foundation/permissions/Permission.h>
 
 #include <cstdint>
-#include <functional>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -178,7 +177,8 @@ public:
                 return std::nullopt;
             }
 
-            value_type meta = log.at(t);
+            value_type meta{};
+            log.copy_run(t, 1, &meta);
             log.advance_tail(t + 1);
             return meta;
         }
@@ -191,8 +191,12 @@ public:
             const std::uint64_t available = log.head.get() - t;
             const std::uint32_t count = max_items < available ? max_items : static_cast<std::uint32_t>(available);
 
+            // The body gets a copy of each record, and no reference into a
+            // slot that the producer writes again after the release.
             for (std::uint32_t i = 0; i < count; ++i) {
-                std::invoke(body, log.at(t + i));
+                value_type meta{};
+                log.copy_run(t + i, 1, &meta);
+                body(std::as_const(meta));
             }
             if (count != 0) {
                 log.advance_tail(t + count);
@@ -200,8 +204,16 @@ public:
             return count;
         }
 
-        [[nodiscard]] const value_type& at(::crucible::MetaIndex index) const CRUCIBLE_LIFETIMEBOUND {
-            return ch_->log_.at(index);
+        // Copies the record at index and leaves the tail where it is.  The
+        // index must name a record that the log holds, from the tail up to
+        // the head.  A record before the tail is free, and the producer can
+        // write a new record into its slot.
+        [[nodiscard]] value_type copy_at(::crucible::MetaIndex index) const {
+            CRUCIBLE_PRE(index.is_valid());
+            CRUCIBLE_PRE(index.raw() >= ch_->log_.tail.peek_relaxed() && index.raw() < ch_->log_.head.get());
+            value_type meta{};
+            ch_->log_.copy_run(index.raw(), 1, &meta);
+            return meta;
         }
 
         void advance_tail(std::uint64_t new_tail) { ch_->log_.advance_tail(new_tail); }

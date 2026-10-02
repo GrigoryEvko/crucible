@@ -7,7 +7,6 @@
 // so the gate refuses the call.
 
 #include <crucible/Cipher.h>
-#include <crucible/MetaLog.h>
 #include <fixy/Bands.h>
 #include <fixy/Ctx.h>
 
@@ -19,10 +18,9 @@ int main() {
         ::crucible::Cipher::open(store_ctx, ::fixy::mint_tagged<::fixy::tags::source::External>(
                                                 std::filesystem::path{"/tmp/crucible_neg_request_at_program"}));
     const auto view = cipher.mint_open_view(store_ctx);
-    ::crucible::MetaLog log;
 
     auto request_scoped =
         ::fixy::mint_band<::fixy::opaque_lifetime::PerRequest<const ::crucible::RegionNode*>>(nullptr);
-    auto result = cipher.commit_per_program(view, std::move(request_scoped), &log);
+    auto result = cipher.commit_per_program(view, std::move(request_scoped));
     return static_cast<int>(static_cast<bool>(std::move(result).consume()));
 }
