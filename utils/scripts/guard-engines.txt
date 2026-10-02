@@ -36,6 +36,7 @@ utils/scripts/check-clang-format.sh | text | the diagnostics of clang-format, th
 utils/scripts/check-compile-cost.py | compiler,json,text | the records of the build launcher, the ELF tables of the objects through elf_file.py, the file API reply, the ninja dependency log, the ledger rows and the budget table
 utils/scripts/check-contract-form.py | tsast,text | the allowlist rows
 utils/scripts/check-contract-semantic.py | json,text | the compile commands of the compile database
+utils/scripts/check-core-shapes.py | tsast,compiler,json,text | the objdump disassembly of the probe object and the compile commands of the compile database
 utils/scripts/check-ct-disassembly.py | tsast,compiler,text | the objdump disassembly of the compiled wrappers
 utils/scripts/check-ctx-init-door.py | tsast,text | the rows of the two door allowlists
 utils/scripts/check-ctx-testing-boundary.py | tsast,text | the allowlist rows

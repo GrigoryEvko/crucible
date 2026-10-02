@@ -5894,6 +5894,7 @@ add_subdirectory(fixy)
 add_subdirectory(session_oracle)
 add_subdirectory(ct)
 add_subdirectory(layer)
+add_subdirectory(shape)
 
 # The fuzz harnesses (opt-in).  test/fuzz/README.md tells how to run them.
 #   ctest -L fuzz_property  the property tests on Philox-derived input
