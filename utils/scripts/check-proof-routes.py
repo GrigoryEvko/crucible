@@ -161,7 +161,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cache_dir  # noqa: E402
 import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
-from preprocessed import MANIFEST_SUFFIX, Expansion, Store, chunk_text, text_results  # noqa: E402
+from preprocessed import Expansion, Store, chunk_text, text_results  # noqa: E402
 from repo_root import REPO_ROOT  # noqa: E402
 
 SOURCE_SUFFIXES = frozenset({".c", ".h", ".cc", ".hh", ".cpp", ".hpp", ".cxx", ".hxx", ".inl", ".ipp", ".tpp",
@@ -1019,7 +1019,7 @@ def planted_cases(caches: Path) -> int:
                                     f"{report.stderr}")
             if not any((caches / "preprocessed" / "results").glob("proof-routes-*/*/*.json")):
                 failures.append("the preprocessed pass wrote no result to the store")
-            if not any((caches / "preprocessed" / "units").glob(f"*/*{MANIFEST_SUFFIX}")):
+            if not any((caches / "preprocessed" / "chunks").glob("*/*")):
                 failures.append("the preprocessed pass did not use the shared store")
             # A layer fixture compiles against a staged root that links only to
             # a lower layer, and it includes a higher one.  The pass reads it

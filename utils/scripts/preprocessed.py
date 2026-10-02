@@ -41,6 +41,16 @@ THE KEY OF A UNIT
     hashes the root, and only the same root reads it.  So a variant under the
     shared name holds no text that depends on the root.
 
+THE SETTLE PERIOD
+    A variant records each file as the preprocessor read it, so a file that
+    changes during the run must not get a variant.  After the run, the store
+    reads the change time of each file that the unit read.  When one changed
+    in the SETTLE_NS before the start of the run or later, or when one
+    changed while the store hashed it, the unit gets no variant, and this
+    run uses its output only.  A file system with coarse timestamps gives a
+    change a time up to one tick early, and the period is much longer than a
+    tick.  The result store of the negative fixtures uses the same period.
+
 THE MANIFEST
     A manifest is the marshal encoding of (MANIFEST_TAG, variants).  A tag of
     another version, another marshal format or a damaged file counts as a
@@ -193,6 +203,9 @@ MISSING = bytes(32)
 LINE_TYPE = "I"
 # The files under units/ that one eviction removes as garbage, at most.
 GARBAGE_PER_TURN = 50_000
+# A unit gets no variant when a file that it read changed in this period
+# before the start of the preprocessor run, or later (THE SETTLE PERIOD).
+SETTLE_NS = 1_000_000_000
 
 # A line marker of the output: # line "file" flags, up to the end of its
 # line.  It is matched only at the start of a line.
@@ -521,7 +534,48 @@ class _Files:
         self.prefix = root + os.sep
         self.raw: dict[str, bytes] = {}
         self.real: dict[str, str] = {}
+        self.verified: dict[str, tuple[tuple[int, int, int, int], bytes]] = {}
         self.lock = threading.Lock()
+
+    def verified_digest(self, name: str, settled_ns: int) -> bytes | None:
+        """Return the raw SHA-256 of a file that did not change since settled_ns, or None.
+
+        The file must have a change time before settled_ns, and the same stat
+        fields before and after the hash.  The memory keeps the digest of each
+        such file with its stat fields.  A file with a change time before
+        settled_ns that changes again gets a later change time, so equal
+        fields mean equal contents.
+
+        Args:
+            name: The variant name of the file
+            settled_ns: The latest change time, in nanoseconds, that a file can have
+
+        Returns:
+            The digest, or None when the file changed after settled_ns, changed
+            during the hash, or cannot be read
+        """
+        path = name if name.startswith("/") else self.prefix + name
+        try:
+            before = os.stat(path)
+        except OSError:
+            return None
+        if before.st_ctime_ns >= settled_ns:
+            return None
+        fields = (before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+        known = self.verified.get(name)
+        if known is not None and known[0] == fields:
+            return known[1]
+        try:
+            with open(path, "rb") as stream:
+                found = hashlib.file_digest(stream, "sha256").digest()
+            after = os.stat(path)
+        except OSError:
+            return None
+        if (after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns) != fields:
+            return None
+        with self.lock:
+            self.verified[name] = (fields, found)
+        return found
 
     def name_of(self, absolute: str) -> str:
         """Return the name that a variant gives a file: relative under the root, absolute outside it."""
@@ -814,7 +868,8 @@ def fill(plan: Plan, reader: _Reader, wait: bool = True) -> tuple[Unit, bool] | 
 
     The lock of the shared name is held during the work, so a second guard
     that wants the same unit waits, then reads the variant that the first
-    one wrote.
+    one wrote.  A unit that read a file that changed in the settle period
+    gets no variant (THE SETTLE PERIOD).
 
     Args:
         plan: The unit and its two names
@@ -840,6 +895,7 @@ def fill(plan: Plan, reader: _Reader, wait: bool = True) -> tuple[Unit, bool] | 
                 return _unit_of(plan.file, variant, True), False
         descriptor, depfile = tempfile.mkstemp(prefix="preprocessed-", suffix=".d")
         os.close(descriptor)
+        started_ns = time.time_ns()
         try:
             result = subprocess.run([*plan.run_argv, "-MD", "-MF", depfile], cwd=plan.directory,
                                     capture_output=True)
@@ -851,14 +907,19 @@ def fill(plan: Plan, reader: _Reader, wait: bool = True) -> tuple[Unit, bool] | 
             failure = f"{plan.file}: {first[0] if first else 'exit ' + str(result.returncode)}"
             return Unit(plan.file, (), failure), True
         records, holds_root = _file_records(result.stdout, plan.directory, plan.root, store, reader)
-        for record in records:
-            reader.present[record[3]] = True
         files = reader.files
         inside = tuple(files.name_of(name) for name in names if name.startswith(files.prefix))
         outside = tuple(name for name in names if not name.startswith(files.prefix))
-        blob = _write_blob(store, marshal.dumps((outside, b"".join(map(files.raw_digest, outside)))), reader.chunks)
+        settled_ns = started_ns - SETTLE_NS
+        inside_digests = [files.verified_digest(name, settled_ns) for name in inside]
+        outside_digests = [files.verified_digest(name, settled_ns) for name in outside]
+        if None in inside_digests or None in outside_digests:
+            return Unit(plan.file, records, None, False, inside), True
+        for record in records:
+            reader.present[record[3]] = True
+        blob = _write_blob(store, marshal.dumps((outside, b"".join(outside_digests))), reader.chunks)
         reader.outside[blob] = True
-        variant: Variant = (inside, b"".join(map(files.raw_digest, inside)), blob, records)
+        variant: Variant = (inside, b"".join(inside_digests), blob, records)
         target = rooted if holds_root else shared
         target.parent.mkdir(parents=True, exist_ok=True)
         others = tuple(old for old in _read_variants(target) if not isinstance(old, tuple) or old[:3] != variant[:3])
@@ -995,6 +1056,8 @@ class Store:
         self._environment = [(name, os.environ.get(name)) for name in ENVIRONMENT]
         self._texts: dict[str, str] = {}
         self._lock = threading.Lock()
+        # The units of the last pass, whose chunks an eviction of this run keeps.
+        self._units: list[Unit] = []
         self._shared_lock = self._hold_shared()
         # The number of preprocessor runs this store started, for the self-test.
         self.runs = 0
@@ -1132,6 +1195,7 @@ class Store:
             found[index] = unit
             self.runs += ran
         units = [unit for unit in found if unit is not None]
+        self._units = units
         self.unit_count = len(units)
         self.cached_count = sum(unit.from_cache for unit in units)
         self.failed = [unit for unit in units if unit.failure is not None]
@@ -1224,7 +1288,11 @@ class Store:
                         fcntl.flock(exclusive, fcntl.LOCK_EX | fcntl.LOCK_NB)
                     except BlockingIOError:
                         return
-                    is_done = evict_store(self.directory, STORE_BYTES)
+                    # A unit of this run with no variant has chunks that no
+                    # manifest names, and the guard reads them after this.
+                    live = {record[3][at:at + 32].hex() for unit in self._units for record in unit.records
+                            for at in range(0, len(record[3]), 32)}
+                    is_done = evict_store(self.directory, STORE_BYTES, keep=frozenset(live))
             finally:
                 if not is_done:
                     if last is None:
@@ -1268,7 +1336,8 @@ def _remove_garbage(units: Path, limit: int) -> bool:
 
 
 def evict_store(directory: Path, max_bytes: int, max_age: float = cache_dir.MAX_AGE,
-                now: float | None = None, garbage_limit: int = GARBAGE_PER_TURN) -> bool:
+                now: float | None = None, garbage_limit: int = GARBAGE_PER_TURN,
+                keep: frozenset[str] = frozenset()) -> bool:
     """Remove the garbage, the old manifests and the old results of a store, then each chunk that no manifest names.
 
     The caller holds the exclusive lock of the store.  Complexity: one read
@@ -1280,6 +1349,8 @@ def evict_store(directory: Path, max_bytes: int, max_age: float = cache_dir.MAX_
         max_age: The age limit of an entry with no use
         now: The time of the eviction, or None for the clock
         garbage_limit: The largest number of garbage files to remove
+        keep: The chunks that the caller still reads, which stay with the
+            chunks that a manifest names
 
     Returns:
         Whether no garbage remains for the next turn
@@ -1302,7 +1373,7 @@ def evict_store(directory: Path, max_bytes: int, max_age: float = cache_dir.MAX_
         cache_dir.remove(chosen)
         for entry in chosen:
             entry.path.with_suffix(".lock").unlink(missing_ok=True)
-        named: set[str] = set()
+        named: set[str] = set(keep)
         for manifest in cache_dir.entries(directory / "units", MANIFEST_SUFFIX):
             for variant in _read_variants(manifest.path):
                 with contextlib.suppress(TypeError, ValueError, IndexError):
@@ -1441,8 +1512,26 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     (outside / "system.h").write_text("#pragma once\n#define SYSTEM_VALUE 1\n")
     (root / "c.cpp").write_text('#include <system.h>\nint c_value = SYSTEM_VALUE;\n')
     (root / "d.cpp").write_text('#include <system.h>\nint d_value = SYSTEM_VALUE;\n')
+    (root / "watched.h").write_text("#pragma once\n#define WATCHED 1\n")
+    (root / "watch.cpp").write_text('#include "watched.h"\nint watch_only;\n')
+    (root / "saved.h").write_text("int seen_old;\n")
+    (root / "saving.cpp").write_text('#include "saved.h"\n')
+    for name in ("duo_a", "duo_b"):
+        (root / f"{name}.cpp").write_text(f'#include "shared.h"\nint {name};\n')
+    sets = {stage: [f"{stage}{index}.cpp" for index in range(PARALLEL_MISSES + 2)]
+            for stage in ("many", "again", "sharded")}
+    for stage, names in sets.items():
+        for index, name in enumerate(names):
+            (root / name).write_text(f'#include "shared.h"\nint {stage}_{index};\n')
     database = root / "build" / "compile_commands.json"
     database.parent.mkdir()
+    # A second checkout of the same tree, made with the first.
+    second = scratch / "second"
+    shutil.copytree(root, second, ignore=shutil.ignore_patterns("build"))
+    (second / "build").mkdir()
+    # A unit gets a variant only when each file that it read is older than
+    # the settle period, so the cases that read a stored variant start after it.
+    time.sleep(SETTLE_NS / 1e9 + 0.1)
 
     def write_db(base: Path, files: list[str], flags: str = "") -> Path:
         """Write a compile database for the named sources of one tree, and return its path."""
@@ -1527,9 +1616,6 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     expect("a warm run gives the same dependencies", [u.dependencies for u in warm] == [u.dependencies for u in cold])
 
     # A second checkout of the same tree reads the variants of the first.
-    second = scratch / "second"
-    shutil.copytree(root, second, ignore=shutil.ignore_patterns("build"))
-    (second / "build").mkdir()
     shared_units = list(Store(write_db(second, ["a.cpp", "b.cpp"]), second).units())
     expect("a second work tree with the same files reads the variants of the first",
            [u.from_cache for u in shared_units] == [True, True]
@@ -1559,13 +1645,13 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     again = list(Store(second_db, second).units())
     expect("the same root reads a unit whose text holds the root", again[0].from_cache)
 
-    write_db(root, ["a.cpp", "b.cpp"])
-    time.sleep(0.01)
-    (root / "quiet.h").write_text("#pragma once\n#define QUIET 2\n")
+    write_db(root, ["watch.cpp", "b.cpp"])
+    list(Store(database, root).units())
+    (root / "watched.h").write_text("#pragma once\n#define WATCHED 2\n")
     changed = list(Store(database, root).units())
     expect("a changed header that adds no line makes its units stale",
            [u.from_cache for u in changed] == [False, True])
-    (root / "quiet.h").write_text("#pragma once\n#define QUIET 1\n")
+    (root / "watched.h").write_text("#pragma once\n#define WATCHED 1\n")
     reverted = list(Store(database, root).units())
     expect("a manifest keeps the old variant, so the old header reads it again",
            [u.from_cache for u in reverted] == [True, True])
@@ -1599,18 +1685,36 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     expect("the units that a changed outside file made stale give the new text",
            any("int c_value = 2 ;" in " ".join(joined(Store(database, root), e.chunks).split()) for e in system_text))
 
-    (root / "quiet.h").write_text("#pragma once\n#define QUIET 3\n")
-    (root / "shared.h").write_text("#pragma once\nstruct Shared { int a; int b; };\n")
-    write_db(root, ["a.cpp", "b.cpp"])
+    # A file that changes during the run, and a file that changed in the
+    # settle period before it, give the unit no variant.
+    wrapper = scratch / "cxx-saves-a-header"
+    wrapper.write_text(f'#!/bin/bash\n"{compiler}" "$@"\nstatus=$?\n'
+                       f'case " $* " in *" -E "*) [ -e "{root}/saved" ] || '
+                       f'{{ printf "int seen_new;\\n" > "{root}/saved.h"; : > "{root}/saved"; }} ;; esac\n'
+                       f'exit $status\n')
+    wrapper.chmod(0o755)
+    database.write_text(json.dumps([{"directory": str(root), "file": "saving.cpp",
+                                     "command": f"{wrapper} -c saving.cpp -o saving.o"}]))
+    list(Store(database, root).units())
+    saving_store = Store(database, root)
+    saving = list(saving_store.units())
+    expect("a file that changes during the run gives the unit no variant, so the next run reads the new text",
+           not saving[0].from_cache and "seen_new" in joined(saving_store, files_of(saving[0])["saved.h"][1]))
+    (root / "fresh.h").write_text("int fresh_value;\n")
+    (root / "fresh.cpp").write_text('#include "fresh.h"\n')
+    write_db(root, ["fresh.cpp"])
+    list(Store(database, root).units())
+    expect("a file that changed less than the settle period before the run gives the unit no variant",
+           not list(Store(database, root).units())[0].from_cache)
+
+    write_db(root, ["duo_a.cpp", "duo_b.cpp"])
     first, second_run = Store(database, root), Store(database, root)
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(lambda each: list(each.units()), (first, second_run)))
     expect("two guards that run at the same time preprocess each unit one time",
            first.runs + second_run.runs == 2)
 
-    many = [f"many{index}.cpp" for index in range(PARALLEL_MISSES + 2)]
-    for index, name in enumerate(many):
-        (root / name).write_text(f'#include "shared.h"\nint many_{index};\n')
+    many = sets["many"]
     write_db(root, many)
     in_workers = Store(database, root, jobs=4)
     parallel = list(in_workers.units())
@@ -1618,24 +1722,22 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     expect("worker processes fill the units that miss, and a second run reads them",
            in_workers.runs == len(many) and all(u.failure is None for u in parallel)
            and [u.chunks for u in parallel] == [u.chunks for u in inline] and all(u.from_cache for u in inline))
-    for index, name in enumerate(many):
-        (root / name).write_text(f'#include "shared.h"\nint many_{index}_again;\n')
+    write_db(root, sets["again"])
     together = [Store(database, root, jobs=3), Store(database, root, jobs=3)]
     with ThreadPoolExecutor(max_workers=2) as pool:
         both = list(pool.map(lambda each: list(each.units()), together))
     expect("two guards with worker processes that start cold together preprocess each unit one time",
-           sum(each.runs for each in together) == len(many)
+           sum(each.runs for each in together) == len(sets["again"])
            and [unit.chunks for unit in both[0]] == [unit.chunks for unit in both[1]]
            and all(unit.failure is None for unit in both[0]))
-    for index, name in enumerate(many):
-        (root / name).write_text(f'#include "shared.h"\nint many_{index}_sharded;\n')
+    write_db(root, sets["sharded"])
     fillers = [Store(database, root, jobs=2) for _shard in range(3)]
     shards = [filler.fill_shard(shard, 3) for shard, filler in enumerate(fillers)]
     after = Store(database, root)
     reread = list(after.units())
     expect("the shards of a database are disjoint, hold each entry, and fill the store for a guard after them",
-           sorted(unit.file for part in shards for unit in part) == sorted(many)
-           and sum(filler.runs for filler in fillers) == len(many) and after.runs == 0
+           sorted(unit.file for part in shards for unit in part) == sorted(sets["sharded"])
+           and sum(filler.runs for filler in fillers) == len(sets["sharded"]) and after.runs == 0
            and all(unit.from_cache for unit in reread))
     squares = Store(database, root, jobs=4)
     expect("map_batches gives one result for each item, in order, in worker processes and inline",
@@ -1728,6 +1830,19 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     # The stores above still hold their shared locks, so the turn cases use
     # a store of their own.
     with cache_dir.scratch_root() as turn_caches:
+        (root / "unsettled.h").write_text("int unsettled_value;\n")
+        (root / "unsettled.cpp").write_text('#include "unsettled.h"\n')
+        write_db(root, ["unsettled.cpp"])
+        evicting = Store(database, root)
+        unsettled = list(evicting.units())
+        try:
+            readable = "unsettled_value" in joined(evicting, files_of(unsettled[0])["unsettled.h"][1])
+        except FileNotFoundError:
+            readable = False
+        expect("an eviction keeps the chunks of a unit of its own run that got no variant",
+               (turn_caches / STORE_CACHE / "evicted").is_file() and not unsettled[0].from_cache and readable)
+        del evicting, unsettled
+        write_db(root, ["b.cpp"])
         list(Store(database, root).units())
         stamp = turn_caches / STORE_CACHE / "evicted"
         stale = time.time() - 2 * cache_dir.EVICT_INTERVAL

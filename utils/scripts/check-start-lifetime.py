@@ -146,7 +146,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cache_dir  # noqa: E402
 import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
-from preprocessed import Expansion, Store, chunk_text, map_batches, text_results  # noqa: E402
+from preprocessed import SETTLE_NS, Expansion, Store, chunk_text, map_batches, text_results  # noqa: E402
 from repo_root import REPO_ROOT  # noqa: E402
 
 NAMES = frozenset({"start_lifetime_as", "start_lifetime_as_array"})
@@ -791,6 +791,9 @@ def planted_cases() -> int:
             {"directory": str(root), "file": "src/planted.cpp",
              "command": f"{compiler} -std=c++20 -Ibuild-planted/gen -MD -MF build-planted/planted.d "
                         f"-c src/planted.cpp -o build-planted/planted.o"}]))
+        # A unit gets a variant only when each file that it read is older than
+        # the settle period of the store, and the cached runs below read them.
+        time.sleep(SETTLE_NS / 1e9 + 0.1)
         code, report = run(root, database)
         if code != 1:
             failures.append(f"the preprocessed run gave exit {code}, not 1:\n{report}")
