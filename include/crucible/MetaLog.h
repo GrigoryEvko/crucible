@@ -61,18 +61,24 @@ struct CRUCIBLE_OWNER MetaLog {
     // sees the entries. That also reaches a consumer that only acquires the
     // recording ring's counter, since this one is released first in program
     // order.
-    alignas(64)::fixy::AtomicMonotonic<uint32_t> head = ::fixy::mint_atomic_monotonic<uint32_t>(0);
+    //
+    // Each counter counts the records that passed it from the first record
+    // that the log held, and a MetaIndex is such a count.  The counters have
+    // 64 bits.  At 2^32 records a 32-bit counter wraps to zero, and the
+    // contract of the counter stops the process.  A large model reaches that
+    // count in hours.  The slot of a record is its count masked by MASK.
+    alignas(64)::fixy::AtomicMonotonic<uint64_t> head = ::fixy::mint_atomic_monotonic<uint64_t>(0);
     // The producer's private view of the consumer's counter, refreshed only
     // when it claims the buffer is full. A stale value can only under-report
     // free space, so acting on it is safe. The type enforces the direction,
     // since a value that moved backwards would mean a lost acquire.
-    ::fixy::Monotonic<uint32_t> cached_tail_ = ::fixy::mint_monotonic<uint32_t>(0);
+    ::fixy::Monotonic<uint64_t> cached_tail_ = ::fixy::mint_monotonic<uint64_t>(0);
     ::foundation::AlignedBuffer<TensorMeta, ::foundation::huge_page_bytes> entries_buffer_;
     // A cached projection of the buffer's base, so an indexed access on the
     // hot path stays one load with no indirection through the owner.
     TensorMeta* entries = nullptr;
 
-    alignas(64)::fixy::AtomicMonotonic<uint32_t> tail = ::fixy::mint_atomic_monotonic<uint32_t>(0);
+    alignas(64)::fixy::AtomicMonotonic<uint64_t> tail = ::fixy::mint_atomic_monotonic<uint64_t>(0);
 
     MetaLog()
         : entries_buffer_{
@@ -153,7 +159,7 @@ struct CRUCIBLE_OWNER MetaLog {
         if (n == 0) [[unlikely]]
             return MetaIndex::none();
 
-        const uint32_t h = head.peek_relaxed();
+        const uint64_t h = head.peek_relaxed();
 
         // A private view that says there is room is always right, because the
         // real counter only ever frees more. Only the other answer needs the
@@ -165,7 +171,7 @@ struct CRUCIBLE_OWNER MetaLog {
             }
         }
 
-        uint32_t start_pos = h & MASK;
+        uint32_t start_pos = static_cast<uint32_t>(h & MASK);
         [[assume(start_pos < CAPACITY)]];
         uint32_t end_pos = start_pos + n;
 
@@ -183,7 +189,7 @@ struct CRUCIBLE_OWNER MetaLog {
         // whole of the caller's remaining work to complete in. The prefetch
         // itself has no bearing on when the copy above becomes visible.
         {
-            uint32_t next_pos = (h + n) & MASK;
+            uint32_t next_pos = static_cast<uint32_t>((h + n) & MASK);
             // Byte arithmetic for the builtin's address only. No array of
             // characters begins life here.
             const char* next_ptr = static_cast<const char*>(static_cast<const void*>(&entries[next_pos]));
@@ -235,7 +241,7 @@ struct CRUCIBLE_OWNER MetaLog {
         return entries[idx.raw() & MASK];
     }
 
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] const TensorMeta& at(uint32_t idx) const CRUCIBLE_LIFETIMEBOUND
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] const TensorMeta& at(uint64_t idx) const CRUCIBLE_LIFETIMEBOUND
     CRUCIBLE_NO_THREAD_SAFETY {
         return entries[idx & MASK];
     }
@@ -247,12 +253,12 @@ struct CRUCIBLE_OWNER MetaLog {
     // after the release keeps this copy, and no pointer into the buffer.  The
     // consumer copies a run before it releases the run, and the producer
     // writes no slot of that run while the copy operates.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE void copy_run(uint32_t start, uint32_t count, TensorMeta* dst) const
+    CRUCIBLE_UNSAFE_BUFFER_USAGE void copy_run(uint64_t start, uint32_t count, TensorMeta* dst) const
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(count, std::uint32_t{0}, CAPACITY));
         CRUCIBLE_PRE(::foundation::decide::valid_span(count, dst));
         if (count == 0) return;
-        const uint32_t start_pos = start & MASK;
+        const uint32_t start_pos = static_cast<uint32_t>(start & MASK);
         const uint32_t first_chunk = (count <= CAPACITY - start_pos) ? count : CAPACITY - start_pos;
         std::memcpy(dst, &entries[start_pos], first_chunk * sizeof(TensorMeta));
         if (count > first_chunk) {
@@ -267,15 +273,22 @@ struct CRUCIBLE_OWNER MetaLog {
 
     // The consumer is the one writer of tail, so its relaxed load reads its
     // own last store.  The callers give only the new tail.
-    void advance_tail(uint32_t new_tail) CRUCIBLE_NO_THREAD_SAFETY {
+    void advance_tail(uint64_t new_tail) CRUCIBLE_NO_THREAD_SAFETY {
         tail.advance_sole_writer_from(tail.peek_relaxed(), new_tail);
     }
 
     // The two counters are read at different instants while both threads run,
     // so the difference is a snapshot of a value that was never simultaneously
     // true. The return type says so and forces the caller to acknowledge it.
+    //
+    // The function reads the tail first.  The head that it reads next is at
+    // least that tail, and the difference does not wrap.  The tail can move
+    // between the two reads, and the difference is then larger than the log
+    // holds.  The result stops at CAPACITY.
     [[nodiscard]] ::fixy::Stale<uint32_t> size() const CRUCIBLE_NO_THREAD_SAFETY {
-        return ::fixy::Stale<uint32_t>::at_infinity(head.get() - tail.get());
+        const uint64_t tail_seen = tail.get();
+        const uint64_t live = head.get() - tail_seen;
+        return ::fixy::Stale<uint32_t>::at_infinity(static_cast<uint32_t>(live < CAPACITY ? live : CAPACITY));
     }
 
     // Valid only once both threads have stopped. Every counter here moves

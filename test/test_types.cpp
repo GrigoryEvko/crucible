@@ -16,7 +16,10 @@ static void test_layout_and_trivial_relocatability() {
     static_assert(sizeof(SlotId) == 4);
     static_assert(sizeof(NodeId) == 4);
     static_assert(sizeof(SymbolId) == 4);
-    static_assert(sizeof(MetaIndex) == 4);
+    // A count of metadata records, which a 32-bit word wraps in hours.
+    static_assert(sizeof(MetaIndex) == 8);
+    static_assert(MetaIndex{uint64_t{UINT32_MAX}}.is_valid() && MetaIndex{uint64_t{1} << 32}.is_valid());
+    static_assert(MetaIndex::none().raw() == UINT64_MAX);
     static_assert(sizeof(SchemaHash) == 8);
     static_assert(sizeof(ShapeHash) == 8);
     static_assert(sizeof(ScopeHash) == 8);

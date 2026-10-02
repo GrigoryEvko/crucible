@@ -74,11 +74,10 @@ struct TraceGraph {
 
     ContentHash content_hash;
 
-    // The end of the run of the metadata log that this trace read.  The ops
-    // hold a copy of that run in the arena.  The owner of the log can release
-    // the run after the build.
-    BuiltCount max_meta_end = ::fixy::mint_write_once<uint32_t>();
-    uint32_t pad_tg = 0;
+    // The end of the run of the metadata log that this trace read, as a count
+    // of records (MetaLog::head).  The ops hold a copy of that run in the
+    // arena.  The owner of the log can release the run after the build.
+    ::fixy::WriteOnce<uint64_t> max_meta_end = ::fixy::mint_write_once<uint64_t>();
 
     [[nodiscard, gnu::pure]] const Edge* fwd_begin(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND {
         return fwd_edges + fwd_offsets[checked_index_(i)];

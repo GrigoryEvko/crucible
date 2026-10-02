@@ -66,7 +66,7 @@ struct Work {
 
     // An op with one output tensor, whose metadata goes to the log.  Returns
     // the end of that metadata in the log.
-    uint32_t push_op_with_meta(MetaLog& log, uint32_t op) {
+    uint64_t push_op_with_meta(MetaLog& log, uint32_t op) {
         assert(count < CAPACITY);
         const crucible::TensorMeta meta = output_meta(op);
         const MetaIndex index = log.try_append(&meta, 1);
@@ -117,7 +117,7 @@ void test_overflow_build_leaves_tail() {
 
     Work overflowing;
     (void)overflowing.push_op_with_meta(*metalog, 0);
-    const uint32_t read_end = overflowing.push_op_with_meta(*metalog, 1);
+    const uint64_t read_end = overflowing.push_op_with_meta(*metalog, 1);
     overflowing.push_op_without_meta(2);
 
     const BackgroundThread::TraceBuild built =
@@ -159,11 +159,11 @@ void test_publish_stage_releases_in_order() {
     Work first;
     (void)first.push_op_with_meta(*metalog, 0);
     (void)first.push_op_with_meta(*metalog, 1);
-    const uint32_t first_end = first.push_op_with_meta(*metalog, 2);
+    const uint64_t first_end = first.push_op_with_meta(*metalog, 2);
 
     Work overflowing;
     (void)overflowing.push_op_with_meta(*metalog, 3);
-    const uint32_t overflow_end = overflowing.push_op_with_meta(*metalog, 4);
+    const uint64_t overflow_end = overflowing.push_op_with_meta(*metalog, 4);
     overflowing.push_op_without_meta(5);
 
     const BackgroundThread::TraceBuild built = bt.build_trace_from(
@@ -212,7 +212,7 @@ void test_pipeline_releases_after_overflow() {
         }
     };
 
-    uint32_t overflow_end = 0;
+    uint64_t overflow_end = 0;
     for (uint32_t iter = 0; iter < ITERS; ++iter) {
         const bool is_last = iter + 1 == ITERS;
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op) {
@@ -243,7 +243,8 @@ void test_pipeline_releases_after_overflow() {
     assert(overflow_end != 0u);
     assert(metalog->tail.get() == overflow_end && "the publish stage did not apply the release of the last iteration");
 
-    std::printf("  pipeline_releases_after_overflow:          PASSED (tail=%u)\n", metalog->tail.get());
+    std::printf("  pipeline_releases_after_overflow:          PASSED (tail=%llu)\n",
+                static_cast<unsigned long long>(metalog->tail.get()));
 }
 
 // The ops of a built graph hold a copy of the run of the metadata log that
@@ -292,6 +293,50 @@ void test_built_graph_owns_its_metadata() {
     assert(metalog->tail.get() == OPS);
 
     std::printf("  built_graph_owns_its_metadata:             PASSED\n");
+}
+
+// The two counters of the metadata log count each record that the log held.
+// A run of ops whose metadata passes 2^32 records builds, the graph holds the
+// metadata of each op, and the release moves the tail past 2^32.
+void test_build_and_release_pass_two_to_the_32() {
+    using namespace meta_rig;
+    seal_global_tables();
+
+    BackgroundThread bt;
+    auto metalog = std::make_unique<MetaLog>();
+    bt.meta_log.set(metalog.get());
+    const auto test = ::foundation::effects::testing::test();
+    const auto bg = ::foundation::effects::testing::bg();
+
+    // No other thread uses the log, which is the condition of the reset.
+    constexpr uint32_t BELOW_WRAP = 0xFFFF'FFFEu;
+    metalog->head.reset_under_quiescence(BELOW_WRAP);
+    metalog->tail.reset_under_quiescence(BELOW_WRAP);
+    metalog->cached_tail_.reset_under_quiescence(BELOW_WRAP);
+
+    constexpr uint32_t OPS = 4;
+    Work work;
+    uint64_t run_end = 0;
+    for (uint32_t op = 0; op < OPS; ++op)
+        run_end = work.push_op_with_meta(*metalog, op);
+    assert(run_end == uint64_t{BELOW_WRAP} + OPS);
+
+    const BackgroundThread::TraceBuild built =
+        bt.build_trace_from(test.alloc, work.count, work.trace, work.meta_starts, work.scope_hashes,
+                            work.callsite_hashes);
+    assert(built.has_value() && *built != nullptr);
+    for (uint32_t op = 0; op < OPS; ++op) {
+        const crucible::TensorMeta* const metas = (*built)->ops[op].output_metas;
+        assert(metas != nullptr);
+        assert(crucible::raw_data_ptr(metas[0]) == crucible::raw_data_ptr(output_meta(op)));
+    }
+
+    bt.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
+        bt.publish_trace_graph(bg, stage, *built);
+    });
+    assert(metalog->tail.get() == run_end && "the release did not move the tail past 2^32");
+
+    std::printf("  build_and_release_pass_two_to_the_32:      PASSED\n");
 }
 
 }  // namespace test_background_thread_run_in_row

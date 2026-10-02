@@ -186,7 +186,8 @@ int main() {
     test_publish_stage_releases_in_order();
     test_pipeline_releases_after_overflow();
     test_built_graph_owns_its_metadata();
+    test_build_and_release_pass_two_to_the_32();
 
-    std::printf("test_background_thread_run_in_row: 15 groups, all passed\n");
+    std::printf("test_background_thread_run_in_row: 16 groups, all passed\n");
     return 0;
 }

@@ -282,14 +282,15 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
         const uint64_t t0 = bench::rdtsc_start();
 
-        uint32_t max_meta_end = 0, first_meta = UINT32_MAX;
+        uint64_t max_meta_end = 0;
+        MetaIndex first_meta = MetaIndex::none();
         uint32_t total_inputs = 0, total_outputs = 0, total_scalars = 0;
         for (uint32_t i = 0; i < count; i++) {
             const MetaIndex ms = meta_data[i];
             const auto& re = trace_data[i];
             if (ms.is_valid()) {
-                if (first_meta == UINT32_MAX) first_meta = ms.raw();
-                const uint32_t end = ms.raw() + re.num_inputs + re.num_outputs;
+                if (!first_meta.is_valid()) first_meta = ms;
+                const uint64_t end = ms.raw() + re.num_inputs + re.num_outputs;
                 if (end > max_meta_end) max_meta_end = end;
             }
             total_inputs += re.num_inputs;
@@ -349,16 +350,18 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     {
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bench::refill_meta_log(meta_log, trace);
-        uint32_t max_meta_end = 0, first_meta = UINT32_MAX;
+        uint64_t max_meta_end = 0;
+        MetaIndex first_meta = MetaIndex::none();
         for (uint32_t i = 0; i < count; i++) {
             const MetaIndex ms = bg.current_meta_starts[i];
             if (ms.is_valid()) {
-                if (first_meta == UINT32_MAX) first_meta = ms.raw();
-                const uint32_t end = ms.raw() + trace.entries[i].num_inputs + trace.entries[i].num_outputs;
+                if (!first_meta.is_valid()) first_meta = ms;
+                const uint64_t end = ms.raw() + trace.entries[i].num_inputs + trace.entries[i].num_outputs;
                 if (end > max_meta_end) max_meta_end = end;
             }
         }
-        const uint32_t total_metas = (first_meta != UINT32_MAX) ? max_meta_end - first_meta : 0;
+        const uint32_t total_metas =
+            first_meta.is_valid() ? static_cast<uint32_t>(max_meta_end - first_meta.raw()) : uint32_t{0};
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             bg.arena.~Arena();
@@ -366,7 +369,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
             const uint64_t t0 = bench::rdtsc_start();
             TensorMeta* meta_base = bg.arena.alloc_array<TensorMeta>(A, total_metas);
-            meta_log.copy_run(first_meta, total_metas, meta_base);
+            meta_log.copy_run(first_meta.raw(), total_metas, meta_base);
             const uint64_t t1 = bench::rdtsc_end();
 
             bench::do_not_optimize(meta_base);
@@ -390,14 +393,15 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         const ScopeHash* scope_data = bg.current_scope_hashes.data();
         const CallsiteHash* callsite_data = bg.current_callsite_hashes.data();
 
-        uint32_t max_meta_end = 0, first_meta = UINT32_MAX;
+        uint64_t max_meta_end = 0;
+        MetaIndex first_meta = MetaIndex::none();
         uint32_t total_inputs = 0, total_outputs = 0, total_scalars = 0;
         for (uint32_t i = 0; i < count; i++) {
             const MetaIndex ms = meta_data[i];
             const auto& re = trace_data[i];
             if (ms.is_valid()) {
-                if (first_meta == UINT32_MAX) first_meta = ms.raw();
-                const uint32_t end = ms.raw() + re.num_inputs + re.num_outputs;
+                if (!first_meta.is_valid()) first_meta = ms;
+                const uint64_t end = ms.raw() + re.num_inputs + re.num_outputs;
                 if (end > max_meta_end) max_meta_end = end;
             }
             total_inputs += re.num_inputs;
@@ -406,9 +410,10 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         }
 
         auto* ops = bg.arena.alloc_array<TraceEntry>(A, count);
-        const uint32_t total_metas = (first_meta != UINT32_MAX) ? max_meta_end - first_meta : 0;
+        const uint32_t total_metas =
+            first_meta.is_valid() ? static_cast<uint32_t>(max_meta_end - first_meta.raw()) : uint32_t{0};
         TensorMeta* meta_base = bg.arena.alloc_array<TensorMeta>(A, total_metas);
-        meta_log.copy_run(first_meta, total_metas, meta_base);
+        meta_log.copy_run(first_meta.raw(), total_metas, meta_base);
         const size_t aux_bytes =
             static_cast<size_t>(total_scalars) * sizeof(int64_t) + static_cast<size_t>(total_inputs) * sizeof(OpIndex)
             + static_cast<size_t>(total_inputs) * sizeof(SlotId) + static_cast<size_t>(total_outputs) * sizeof(SlotId);
@@ -444,7 +449,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             if (ms.is_valid()) {
                 const uint16_t n_in = re.num_inputs;
                 const uint16_t n_out = re.num_outputs;
-                const uint32_t meta_offset = ms.raw() - first_meta;
+                const uint64_t meta_offset = ms.raw() - first_meta.raw();
                 te.input_metas = meta_base + meta_offset;
                 te.output_metas = meta_base + meta_offset + n_in;
                 te.scalar_args = (n_scalars > 0)

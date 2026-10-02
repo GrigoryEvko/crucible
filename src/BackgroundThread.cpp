@@ -240,7 +240,7 @@ void BackgroundThread::discard_trace_graph(PublishStage const& stage, TraceGraph
 // The precondition of the release is the contract of the tail: meta_end is
 // past the tail, which advance_tail checks.  The postcondition is the store
 // itself, so the body states it once.
-void BackgroundThread::release_meta_log(PublishStage const&, uint32_t meta_end) {
+void BackgroundThread::release_meta_log(PublishStage const&, uint64_t meta_end) {
     if (meta_end > 0) {
         meta_log.get()->advance_tail(meta_end);
     }
@@ -252,7 +252,7 @@ void BackgroundThread::publish_trace_graph(::foundation::effects::Bg const& bg, 
 
     const uint32_t num_ops = graph->num_ops.get_assuming_set();
     const uint32_t num_slots = graph->num_slots.get_assuming_set();
-    const uint32_t max_meta_end = graph->max_meta_end.get_assuming_set();
+    const uint64_t max_meta_end = graph->max_meta_end.get_assuming_set();
 
     // The gate covers the arena bump cursor and nothing else.  The
     // region-ready callback stays outside it: that callback commits a
@@ -649,9 +649,10 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
     CRUCIBLE_PRE(::foundation::decide::valid_span(count, scope_data));
     CRUCIBLE_PRE(::foundation::decide::valid_span(count, callsite_data));
 
-    // Scan for totals and for metadata-log overflow.
-    uint32_t max_meta_end = 0;
-    uint32_t first_meta = UINT32_MAX;
+    // Scan for totals and for metadata-log overflow.  A metadata index is a
+    // count of records with 64 bits, and the arithmetic on it keeps 64 bits.
+    uint64_t max_meta_end = 0;
+    MetaIndex first_meta = MetaIndex::none();
     uint32_t total_inputs = 0;
     uint32_t total_outputs = 0;
     uint32_t total_scalars = 0;
@@ -665,8 +666,8 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
             return std::unexpected(MetaLogOverflow{.meta_end = max_meta_end});
         }
         if (ms.is_valid()) {
-            if (first_meta == UINT32_MAX) first_meta = ms.raw();
-            uint32_t meta_end = ms.raw() + re.num_inputs + re.num_outputs;
+            if (!first_meta.is_valid()) first_meta = ms;
+            const uint64_t meta_end = ms.raw() + re.num_inputs + re.num_outputs;
             if (meta_end > max_meta_end) max_meta_end = meta_end;
         }
         total_inputs += re.num_inputs;
@@ -684,11 +685,19 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
     // releases this run of the metadata log.  The foreground then writes new
     // records over the run.  The build copies the run, and no op points into
     // the log.  Each read below reads the copy.
+    //
+    // The tail stays at or before the first record of a work until the
+    // release of that work.  The log held each record of the run at one
+    // time, and the run is at most CAPACITY records.  The check is armed in
+    // a release build too: the count of the copy has 32 bits, and a longer
+    // run loses its high bits there.
     TensorMeta* meta_base = nullptr;
-    if (first_meta != UINT32_MAX) {
-        const uint32_t total_metas = max_meta_end - first_meta;
+    if (first_meta.is_valid()) {
+        const uint64_t run_length = max_meta_end - first_meta.raw();
+        CRUCIBLE_FATAL_INVARIANT(run_length <= MetaLog::CAPACITY);
+        const uint32_t total_metas = static_cast<uint32_t>(run_length);
         meta_base = arena.alloc_array<TensorMeta>(a, total_metas);
-        meta_log.get()->copy_run(first_meta, total_metas, meta_base);
+        meta_log.get()->copy_run(first_meta.raw(), total_metas, meta_base);
     }
 
     // One auxiliary block holds scalars, trace indices and slot ids.
@@ -796,7 +805,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
             uint16_t n_in = re.num_inputs;
             uint16_t n_out = re.num_outputs;
 
-            uint32_t meta_offset = ms.raw() - first_meta;
+            const uint64_t meta_offset = ms.raw() - first_meta.raw();
             te.input_metas = meta_base + meta_offset;
             te.output_metas = meta_base + meta_offset + n_in;
 
@@ -839,14 +848,14 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
         if (i + 1 < count) {
             MetaIndex next_ms = meta_data[i + 1];
             if (next_ms.is_valid()) {
-                uint32_t next_off = next_ms.raw() - first_meta;
+                const uint64_t next_off = next_ms.raw() - first_meta.raw();
                 const auto& next_re = trace_data[i + 1];
                 if (next_re.num_inputs > 0) {
                     uint32_t bucket_idx = hash_ptr(raw_data_ptr(meta_base[next_off])) & local_mask;
                     __builtin_prefetch(&local_map[bucket_idx], 0, 1);
                 }
                 if (next_re.num_outputs > 0) {
-                    uint32_t out_off = next_off + next_re.num_inputs;
+                    const uint64_t out_off = next_off + next_re.num_inputs;
                     uint32_t bucket_idx = hash_ptr(raw_data_ptr(meta_base[out_off])) & local_mask;
                     __builtin_prefetch(&local_map[bucket_idx], 1, 1);
                 }

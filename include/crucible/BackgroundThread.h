@@ -499,7 +499,7 @@ public:
         TraceGraph* graph = nullptr;
         uint32_t commit_count = 0;
         // The new tail of the metadata log.  Only a release sets it.
-        uint32_t meta_end = 0;
+        uint64_t meta_end = 0;
         // Carried through from the BgBuildWork this came from, so a reset
         // that lands while the build stage is mid-graph is still caught
         // here, one stage later.
@@ -539,7 +539,7 @@ public:
     // stage is the one writer of the tail, and the proof shows that the
     // caller is that stage.  A meta_end that does not move the tail forward
     // fails the contract of the tail.
-    void release_meta_log(PublishStage const& stage, uint32_t meta_end) CRUCIBLE_NO_THREAD_SAFETY;
+    void release_meta_log(PublishStage const& stage, uint64_t meta_end) CRUCIBLE_NO_THREAD_SAFETY;
 
 private:
     // Takes the gate under the context of the calling stage.
@@ -798,7 +798,7 @@ public:
     // The build does not release that metadata, because only the publish
     // stage writes the tail of the log (release_meta_log).
     struct MetaLogOverflow {
-        uint32_t meta_end = 0;
+        uint64_t meta_end = 0;
     };
 
     // A non-null graph, or the overflow that stopped the build.

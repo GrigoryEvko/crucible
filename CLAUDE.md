@@ -655,7 +655,7 @@ Every edit checks all eight. No exceptions. No "fix it later." The axiom violate
 - Every struct field has NSDMI (non-static data-member initializer): `T field = sentinel_value;`.
 - Padding is explicit: `uint8_t pad[N]{};` never bare arrays.
 - Stack aggregates: `RegionNode r{};` always, never `RegionNode r;`.
-- C arrays of strong IDs: default ctor of the strong ID initializes (e.g. `MetaIndex::none()` → `UINT32_MAX`).
+- C arrays of strong IDs: default ctor of the strong ID initializes (e.g. `MetaIndex::none()` → `UINT64_MAX`).
 - `memset` only as fast-path zeroing AFTER NSDMI already documents zero semantics.
 
 ```cpp
@@ -685,7 +685,7 @@ struct TensorSlot {
 
 **Discipline:**
 - Every semantic value is a strong type. No raw `uint32_t` for anything with meaning.
-- IDs: `OpIndex`, `SlotId`, `NodeId`, `SymbolId`, `MetaIndex`, `KernelId` (all `CRUCIBLE_STRONG_ID(Name)` → `explicit(uint32_t)`, `.raw()`, `.none()`, `<=>`, no arithmetic).
+- IDs: `OpIndex`, `SlotId`, `NodeId`, `SymbolId`, `MetaIndex`, `KernelId` (all `CRUCIBLE_STRONG_ID(Name, Word)` → `explicit(Word)`, `.raw()`, `.none()`, `<=>`, no arithmetic). `MetaIndex` has a `uint64_t` word: it counts metadata records, and 32 bits wrap in hours. Each other ID has a `uint32_t` word.
 - Hashes: `SchemaHash`, `ShapeHash`, `ContentHash` (all `CRUCIBLE_STRONG_HASH(Name)`).
 - Enums: `enum class` with explicit underlying type. Convert via `std::to_underlying()` only.
 - Bit reinterpretation: `std::bit_cast<T>()` only. `reinterpret_cast` is BANNED.

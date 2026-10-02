@@ -46,7 +46,7 @@ using PermissionedLog = ::crucible::permissioned_metalog_t<decltype(log_root())>
 }
 
 [[nodiscard]] std::optional<::crucible::TensorMeta> raw_drain_one(::crucible::MetaLog& log) {
-    const std::uint32_t t = log.tail.peek_relaxed();
+    const std::uint64_t t = log.tail.peek_relaxed();
     if (t == log.head.get()) {
         return std::nullopt;
     }

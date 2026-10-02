@@ -173,7 +173,7 @@ public:
 
         [[nodiscard, gnu::hot]] std::optional<value_type> try_drain_one() {
             ::crucible::MetaLog& log = ch_->log_;
-            const std::uint32_t t = log.tail.peek_relaxed();
+            const std::uint64_t t = log.tail.peek_relaxed();
             if (t == log.head.get()) [[unlikely]] {
                 return std::nullopt;
             }
@@ -187,9 +187,9 @@ public:
             requires std::is_invocable_v<Body&, const value_type&>
         [[nodiscard]] std::uint32_t drain(Body&& body, std::uint32_t max_items = ::crucible::MetaLog::CAPACITY) {
             ::crucible::MetaLog& log = ch_->log_;
-            const std::uint32_t t = log.tail.peek_relaxed();
-            const std::uint32_t available = log.head.get() - t;
-            const std::uint32_t count = max_items < available ? max_items : available;
+            const std::uint64_t t = log.tail.peek_relaxed();
+            const std::uint64_t available = log.head.get() - t;
+            const std::uint32_t count = max_items < available ? max_items : static_cast<std::uint32_t>(available);
 
             for (std::uint32_t i = 0; i < count; ++i) {
                 std::invoke(body, log.at(t + i));
@@ -204,11 +204,11 @@ public:
             return ch_->log_.at(index);
         }
 
-        void advance_tail(std::uint32_t new_tail) { ch_->log_.advance_tail(new_tail); }
+        void advance_tail(std::uint64_t new_tail) { ch_->log_.advance_tail(new_tail); }
 
-        [[nodiscard]] std::uint32_t head_index() const { return ch_->log_.head.get(); }
+        [[nodiscard]] std::uint64_t head_index() const { return ch_->log_.head.get(); }
 
-        [[nodiscard]] std::uint32_t tail_index() const { return ch_->log_.tail.get(); }
+        [[nodiscard]] std::uint64_t tail_index() const { return ch_->log_.tail.get(); }
 
         [[nodiscard]] std::uint32_t size_approx() const { return ch_->log_.size().peek(); }
     };

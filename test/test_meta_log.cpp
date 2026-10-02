@@ -138,6 +138,46 @@ static void test_copy_run_across_the_end() {
     std::printf("  test_copy_run_across_the_end:   PASSED\n");
 }
 
+// The head and the tail count each record that the log held, and the index of
+// a record is its count.  Appends and releases pass 2^32 records with no wrap.
+// In 32 bits the record at 2^32 - 1 takes the index of none, and the append
+// after it moves the head back.
+static void test_counters_pass_two_to_the_32() {
+    MetaLog log;
+    // No other thread uses the log, which is the condition of the reset.
+    constexpr uint32_t BELOW_WRAP = 0xFFFF'FFF0u;
+    log.head.reset_under_quiescence(BELOW_WRAP);
+    log.tail.reset_under_quiescence(BELOW_WRAP);
+    log.cached_tail_.reset_under_quiescence(BELOW_WRAP);
+
+    TensorMeta run[32]{};
+    for (uint32_t i = 0; i < 32; ++i) {
+        run[i] = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x6000 + i * 0x100)));
+    }
+    const MetaIndex first = log.try_append(run, 15);
+    assert(first.is_valid() && first.raw() == uint64_t{BELOW_WRAP});
+    const MetaIndex last_below = log.try_append(&run[15], 1);
+    assert(last_below.is_valid() && last_below.raw() == uint64_t{BELOW_WRAP} + 15);
+    const MetaIndex across = log.try_append(&run[16], 16);
+    assert(across.is_valid() && across.raw() == (uint64_t{1} << 32));
+    assert(log.size().peek() == 32);
+
+    // The records keep their order across the boundary, in the copy and in
+    // each read by index.
+    TensorMeta copied[32]{};
+    log.copy_run(first.raw(), 32, copied);
+    for (uint32_t i = 0; i < 32; ++i) {
+        assert(raw_data_ptr(copied[i]) == raw_data_ptr(run[i]));
+    }
+    assert(raw_data_ptr(log.at(last_below)) == raw_data_ptr(run[15]));
+    assert(raw_data_ptr(log.at(across)) == raw_data_ptr(run[16]));
+
+    log.advance_tail(across.raw() + 16);
+    assert(log.size().peek() == 0);
+    assert(log.tail.get() == (uint64_t{1} << 32) + 16);
+    std::printf("  test_counters_pass_2_to_the_32: PASSED\n");
+}
+
 // A run longer than the buffer holds records that the producer wrote over.
 // The copy refuses such a run before it reads a slot.
 static void test_copy_run_refuses_a_run_longer_than_the_buffer() {
@@ -343,10 +383,13 @@ int main() {
     test_tail_advance_frees_capacity();
     test_reset_zeroes_both_pointers();
     test_copy_run_across_the_end();
-    test_copy_run_refuses_a_run_longer_than_the_buffer();
+    test_counters_pass_two_to_the_32();
     test_spsc_concurrent_integrity();
     test_try_append_pure();
     test_try_append_pure_concurrent();
-    std::printf("test_meta_log: 10 groups, all passed\n");
+    // Last: the contract handler reports one violation in a process, and this
+    // test makes one on purpose.
+    test_copy_run_refuses_a_run_longer_than_the_buffer();
+    std::printf("test_meta_log: 11 groups, all passed\n");
     return 0;
 }

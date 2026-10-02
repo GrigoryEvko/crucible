@@ -55,12 +55,12 @@ std::vector<Op> build_ops(const LoadedTrace& trace) {
 
         const auto mi = trace.meta_starts[i];
         if (mi.is_valid()) {
-            const uint32_t base = mi.raw();
+            const uint64_t base = mi.raw();
             for (uint16_t j = 0; j < e.num_inputs && j < 8; j++)
                 if (base + j < trace.num_metas)
                     op.data_ptr_in[j] = std::bit_cast<uint64_t>(raw_data_ptr(trace.metas[base + j]));
             for (uint16_t j = 0; j < e.num_outputs && j < 4; j++) {
-                uint32_t mi_out = base + e.num_inputs + j;
+                const uint64_t mi_out = base + e.num_inputs + j;
                 if (mi_out < trace.num_metas) {
                     op.data_ptr_out[j] = std::bit_cast<uint64_t>(raw_data_ptr(trace.metas[mi_out]));
                     if (j == 0) {

@@ -7,6 +7,7 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <utility>
 
 namespace crucible {
@@ -145,34 +146,41 @@ enum class TrainingPhase : uint8_t {
 // which makes every place one index is derived from another one visible.
 // The check file of this header finds each class that this macro and
 // CRUCIBLE_STRONG_HASH write, and it holds each one to the size of its word.
+//
+// Word is an unsigned integer type.  Its largest value is the none value.
 
-#define CRUCIBLE_STRONG_ID(Name)                                                                  \
+#define CRUCIBLE_STRONG_ID(Name, Word)                                                            \
     struct Name {                                                                                 \
     private:                                                                                      \
         /* Private, so the explicit constructor is the only way in. A public */                   \
         /* field would let a plain assignment bypass it and rewrite an */                         \
         /* identifier in place. */                                                                \
-        uint32_t v;                                                                               \
+        Word v;                                                                                   \
+        static constexpr Word none_word = std::numeric_limits<Word>::max();                       \
                                                                                                   \
     public:                                                                                       \
-        constexpr Name() noexcept : v(UINT32_MAX) {}                                              \
-        constexpr explicit Name(uint32_t val) noexcept : v(val) {}                                \
+        constexpr Name() noexcept : v(none_word) {}                                               \
+        constexpr explicit Name(Word val) noexcept : v(val) {}                                    \
         /* The named form for building one identifier kind out of another, */                     \
         /* which is where a silent mix-up happens. Naming it makes every */                       \
         /* such crossing findable by one search. */                                               \
-        [[nodiscard]] static constexpr Name from_raw(uint32_t val) noexcept { return Name{val}; } \
-        [[nodiscard]] static constexpr Name none() noexcept { return Name{UINT32_MAX}; }          \
-        [[nodiscard]] constexpr bool is_valid() const noexcept { return v != UINT32_MAX; }        \
+        [[nodiscard]] static constexpr Name from_raw(Word val) noexcept { return Name{val}; }     \
+        [[nodiscard]] static constexpr Name none() noexcept { return Name{none_word}; }           \
+        [[nodiscard]] constexpr bool is_valid() const noexcept { return v != none_word; }         \
         [[nodiscard]] constexpr explicit operator bool() const noexcept { return is_valid(); }    \
-        [[nodiscard]] constexpr uint32_t raw() const noexcept { return v; }                       \
+        [[nodiscard]] constexpr Word raw() const noexcept { return v; }                           \
         constexpr auto operator<=>(const Name&) const noexcept = default;                         \
     }
 
-CRUCIBLE_STRONG_ID(OpIndex);
-CRUCIBLE_STRONG_ID(SlotId);
-CRUCIBLE_STRONG_ID(NodeId);
-CRUCIBLE_STRONG_ID(SymbolId);
-CRUCIBLE_STRONG_ID(MetaIndex);
+CRUCIBLE_STRONG_ID(OpIndex, uint32_t);
+CRUCIBLE_STRONG_ID(SlotId, uint32_t);
+CRUCIBLE_STRONG_ID(NodeId, uint32_t);
+CRUCIBLE_STRONG_ID(SymbolId, uint32_t);
+// The count of the first record of a run in the metadata log, from the first
+// record that the log held.  The count only grows, and 64 bits do not wrap in
+// the life of a process.  The slot of the record is the count masked by the
+// capacity of the log.
+CRUCIBLE_STRONG_ID(MetaIndex, uint64_t);
 
 #undef CRUCIBLE_STRONG_ID
 

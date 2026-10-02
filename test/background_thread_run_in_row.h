@@ -34,5 +34,6 @@ void test_overflow_build_leaves_tail();
 void test_publish_stage_releases_in_order();
 void test_pipeline_releases_after_overflow();
 void test_built_graph_owns_its_metadata();
+void test_build_and_release_pass_two_to_the_32();
 
 }  // namespace test_background_thread_run_in_row
