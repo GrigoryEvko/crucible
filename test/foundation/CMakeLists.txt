@@ -1877,6 +1877,9 @@ foundation_neg_compile_test(neg_core_result_err_payload
 foundation_neg_compile_test(neg_core_option_match_one_arm
   "no matching function for call to .foundation::core::Option<int>::match\\(main\\(\\)::<lambda\\(int\\)>\\)."
   "candidate expects 2 arguments, 1 provided")
+foundation_neg_compile_test(neg_core_option_match_returns_reference
+  "no matching function for call to .foundation::core::Option<int>::match\\(main\\(\\)::<lambda\\(int&&\\)>, main\\(\\)::<lambda\\(\\)>\\)."
+  "the expression .!\\(is_reference_v<typename std::invoke_result<OnNone>::type>\\) \\[with OnNone = main::._anon_[0-9]+\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_option_match_arm_types
   "no matching function for call to .foundation::core::Option<int>::match\\(main\\(\\)::<lambda\\(int\\)>, main\\(\\)::<lambda\\(\\)>\\)."
   "the expression .is_same_v<_Tp, _Up> \\[with _Tp = int. _Up = long int\\]. evaluated to .false.")
@@ -1969,6 +1972,12 @@ foundation_neg_compile_test(neg_core_copy_result_discarded
 foundation_neg_compile_test(neg_core_fill_const
   "no matching function for call to .fill\\(foundation::core::View<const int>&, int\\)."
   "required for the satisfaction of .RegionCopyElement<T>. .with T = const int.")
+
+# ── The attack ledger of the primitive families ───────────────────────
+#
+# Each attack that type-checks and that a family cannot refuse in C++, with
+# a pin that fails when a repair refuses it.
+foundation_test(test_core_attack_ledger)
 
 # ── Hard errors in a body ─────────────────────────────────────────────
 #

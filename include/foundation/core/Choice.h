@@ -292,10 +292,13 @@ public:
     // The total match.  on_some gets the payload, or on_none runs, and
     // the two arms give the same type.  A call with one arm does not
     // compile, so no caller forgets the empty case.  The rvalue form moves
-    // the payload out first, so the Option is empty when on_some runs.
+    // the payload out first, so the Option is empty when on_some runs.  The
+    // payload then lives in the match only, so an arm that gives a
+    // reference is refused: the reference would dangle.
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, T&&> && std::is_invocable_v<OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T&&>, std::invoke_result_t<OnNone>>
+              && (!std::is_reference_v<std::invoke_result_t<OnNone>>)
     constexpr std::invoke_result_t<OnNone> match(OnSome&& on_some,
                                                  OnNone&& on_none) && noexcept(std::is_nothrow_invocable_v<OnSome, T&&>
                                                                                && std::is_nothrow_invocable_v<OnNone>) {
@@ -343,15 +346,16 @@ struct Unit final {
     [[nodiscard]] friend constexpr bool operator==(Unit, Unit) noexcept = default;
 };
 
-// An error: a scoped enum, or a trivially copyable class of at most 16
-// bytes.  A plain integer is refused, because its meaning is not in its
-// type, and a class that owns memory is refused, because an error never
-// allocates.
+// An error: a scoped enum, or a trivially copyable and assignable class of
+// at most 16 bytes.  A plain integer is refused, because its meaning is not
+// in its type.  A class that owns memory is refused, because an error never
+// allocates.  A class with a reference member is refused, because the
+// reference cannot be assigned and can outlive its object.
 template <class E>
 concept ErrorValue = !std::is_const_v<E> && !std::is_volatile_v<E>
                   && (std::is_scoped_enum_v<E>
                       || (std::is_class_v<E> && std::is_trivially_copyable_v<E> && std::is_trivially_destructible_v<E>
-                          && sizeof(E) <= 16));
+                          && std::is_trivially_copy_assignable_v<E> && sizeof(E) <= 16));
 
 // The mark of an error, so that an error and a value of the same type
 // never meet in one conversion.
@@ -498,10 +502,13 @@ public:
 
     // The total match: on_ok gets the value, or on_err gets the error, and
     // the two arms give the same type.  A call with one arm does not
-    // compile, so no caller forgets the error.
+    // compile, so no caller forgets the error.  The rvalue form gives up
+    // the Result, which is often a temporary, so an arm that gives a
+    // reference is refused: the reference would dangle.
     template <class OnOk, class OnErr>
         requires std::is_invocable_v<OnOk, T&&> && std::is_invocable_v<OnErr, E>
               && std::same_as<std::invoke_result_t<OnOk, T&&>, std::invoke_result_t<OnErr, E>>
+              && (!std::is_reference_v<std::invoke_result_t<OnErr, E>>)
     constexpr std::invoke_result_t<OnErr, E>
     match(OnOk&& on_ok,
           OnErr&& on_err) && noexcept(std::is_nothrow_invocable_v<OnOk, T&&> && std::is_nothrow_invocable_v<OnErr, E>) {

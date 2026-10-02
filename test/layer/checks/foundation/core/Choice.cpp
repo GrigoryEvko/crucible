@@ -198,9 +198,15 @@ struct CountedError {
     CountedError(CountedError const& other) noexcept : count{other.count + 1} {}
 };
 
-// The error gate: a scoped enum, or a trivially copyable class of at most
-// 16 bytes.
+// An error that refers to an object outside it.
+struct ReferringError {
+    int& target;
+};
+
+// The error gate: a scoped enum, or a trivially copyable and assignable
+// class of at most 16 bytes.
 static_assert(ErrorValue<Code> && ErrorValue<WideError> && ErrorValue<Unit>);
+static_assert(std::is_trivially_copyable_v<ReferringError> && !ErrorValue<ReferringError>);
 static_assert(!ErrorValue<int>);
 static_assert(!ErrorValue<bool>);
 static_assert(!ErrorValue<TooWideError>);
@@ -249,6 +255,24 @@ template <int Value>
 constexpr bool expects_half = requires { typename std::integral_constant<int, checked_half(Value).expect("even")>; };
 static_assert(expects_half<4>);
 static_assert(!expects_half<5>);
+
+// The rvalue match gives up its source, so an arm that gives a reference
+// is refused, and the borrow match keeps its source, so a reference into
+// it is a borrow.
+inline constexpr int fallback_number = 0;
+using NumberBorrow = int const&;
+template <class R>
+constexpr bool moved_match_gives_reference = requires(R result) {
+    static_cast<R&&>(result).match([](int&& value) noexcept -> NumberBorrow { return value; },
+                                   [](Code) noexcept -> NumberBorrow { return fallback_number; });
+};
+static_assert(!moved_match_gives_reference<Result<int, Code>>);
+template <class R>
+constexpr bool borrowed_match_gives_reference = requires(R const& result) {
+    result.match([](NumberBorrow value) noexcept -> NumberBorrow { return value; },
+                 [](Code) noexcept -> NumberBorrow { return fallback_number; });
+};
+static_assert(borrowed_match_gives_reference<Result<int, Code>>);
 
 // A match of a Result needs both arms.
 template <class R>
