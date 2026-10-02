@@ -210,16 +210,31 @@ def is_admitted_path(path: str) -> bool:
     return path == CHECKED_START or FIXTURE.match(path) is not None
 
 
-def resolve_include(root: Path, including: Path, delimiter: str, name: str) -> Path | None:
-    """The file under the root that an include directive names, if one exists."""
-    candidates = [including.parent / name] if delimiter == '"' else []
-    candidates += [root / base / name for base in INCLUDE_ROOTS]
+def resolve_include(root: Path, including: Path, delimiter: str, name: str,
+                    memo: dict[tuple[str, str], Path | None] | None = None) -> Path | None:
+    """The file under the root that an include directive names, if one exists.
+
+    A quoted name is looked up beside the including file first, so its
+    answer depends on that directory.  An angled name has one answer for the
+    whole run.  The memo holds each answer of this run.
+    """
+    parent = str(including.parent) if delimiter == '"' else ""
+    key = (parent, name)
+    if memo is not None and key in memo:
+        return memo[key]
+    base_dir = str(root)
+    candidates = [os.path.join(parent, name)] if parent else []
+    candidates += [os.path.join(base_dir, base, name) for base in INCLUDE_ROOTS]
+    found: Path | None = None
     for candidate in candidates:
-        if candidate.is_file():
-            resolved = candidate.resolve()
-            if resolved.is_relative_to(root):
-                return resolved
-    return None
+        if os.path.isfile(candidate):
+            resolved = os.path.realpath(candidate)
+            if resolved == base_dir or resolved.startswith(base_dir + os.sep):
+                found = Path(resolved)
+                break
+    if memo is not None:
+        memo[key] = found
+    return found
 
 
 def shown(root: Path, path: Path) -> str:
@@ -376,6 +391,7 @@ def lexical_scan(root: Path, compile_db: Path | None) -> Uses:
     in_scope = listed | sources
     pending = {p for p in listed if is_source(p)} | sources
     seen: set[Path] = set()
+    targets: dict[tuple[str, str], Path | None] = {}
     results = text_results("start-lifetime-lexical", Path(__file__), tsast.parser_identity())
     while pending:
         batch = sorted(pending - seen)
@@ -398,7 +414,7 @@ def lexical_scan(root: Path, compile_db: Path | None) -> Uses:
             for line, key in facts[path]["uses"]:
                 uses[f"{where}:{key}"].append(line)
             for delimiter, name in facts[path]["includes"]:
-                target = resolve_include(root, path, delimiter, name)
+                target = resolve_include(root, path, delimiter, name, targets)
                 if target is not None and target not in seen and target in in_scope:
                     pending.add(target)
     return uses

@@ -31,22 +31,45 @@ THE KEY OF A UNIT
 
     A name can hold up to MAX_VARIANTS variants.  A variant lists each file
     that the unit read, from the -MD dependency file, with the SHA-256 of the
-    file: a file under the root by its path relative to the root, and a system
-    header by its absolute path.  A variant is valid while each file it lists
-    has the same contents, so a header that adds no line to the output still
-    makes the variant stale when it changes.  Two work trees with different
-    headers keep one variant each, and neither removes the other.
+    file.  A variant is valid while each file it lists has the same contents,
+    so a header that adds no line to the output still makes the variant stale
+    when it changes.  Two work trees with different headers keep one variant
+    each, and neither removes the other.
 
     The kept output of a variant can hold the root after all, for example
     through a -D value.  Then the variant goes under a second name that also
     hashes the root, and only the same root reads it.  So a variant under the
     shared name holds no text that depends on the root.
 
+THE MANIFEST
+    A manifest is the marshal encoding of (MANIFEST_TAG, variants).  A tag of
+    another version, another marshal format or a damaged file counts as a
+    miss.  A variant is a tuple of four items:
+      - The files under the root that the unit read, by path relative to the
+        root
+      - The raw SHA-256 of each of those files, in one byte string
+      - The name of a stored blob that lists the files outside the root that
+        the unit read, by absolute path, with the raw SHA-256 of each.  Most
+        units read the same system headers, so the store holds each list one
+        time, and a run checks each list one time.
+      - One record for each file under the root that the output holds, in
+        the order of its first chunk: the path, the expansion key, the line
+        of each chunk as unsigned 32-bit integers, and the raw SHA-256 of
+        each chunk, each in one byte string.  The expansion key is the
+        SHA-256 of the hexadecimal chunk names joined by newlines, so a guard
+        reads it and does not calculate it.
+    A variant is valid when each listed file has its recorded SHA-256, when
+    its blob of outside files is valid in the same way, and when the store
+    holds each of its chunks.  A run checks each distinct blob and each
+    distinct record one time.
+
 THE SHARDED FILL
     preprocessed.py --fill COMPILE_DB --shard K --of N reads or preprocesses
     each entry whose index is K modulo N.  ctest runs the N shards as setup
     tests of the guards that read the store, so each guard starts on a full
-    store, and no one test pays for a cold store alone.
+    store, and no one test pays for a cold store alone.  The fill is
+    incremental per unit: a unit whose variant is valid costs one manifest
+    read, and only a unit with a changed input runs the preprocessor.
 
 EXPANSIONS AND RESULTS
     expansions() gives each distinct expansion of each file one time: the
@@ -72,10 +95,15 @@ CONCURRENCY
     exclusive lock, so an eviction never runs while a guard reads.
 
 THE BOUND
-    A manifest and a result that no run used for cache_dir.MAX_AGE go first.
-    Then the oldest go until the store is under STORE_BYTES.  A chunk that no
-    remaining manifest names goes with them.  One process each day does this,
-    when it can get the exclusive lock at once.
+    A file under units/ that is not a manifest of this version, or a lock
+    with no manifest, goes first, at most GARBAGE_PER_TURN of them for each
+    eviction.  A manifest and a result that no run used for
+    cache_dir.MAX_AGE go next.  Then the oldest go until the store is under
+    STORE_BYTES.  A chunk that no remaining manifest names goes with them.
+    One process each day does this, when it can get the exclusive lock at
+    once.  A process that gets the turn and not the lock, or that leaves
+    garbage for the next turn, keeps the turn due, so the next run tries
+    again.
 
 FAILURE
     A unit that the preprocessor rejects gives a failure and no variant, so
@@ -98,16 +126,19 @@ WHAT THE KEY CANNOT SEE, STATED RATHER THAN IMPLIED
     - __DATE__, __TIME__ and __TIMESTAMP__.  The tree uses none of them.
 
 Complexity: a cold run is linear in the total size of the preprocessed
-output.  A warm run reads one manifest for each unit and one hash for each
-distinct file that a unit read.
+output.  A warm run reads one manifest for each unit, one hash for each
+distinct file that a unit read, and one check for each distinct blob and
+each distinct record.
 """
 
 from __future__ import annotations
 
+import array
 import contextlib
 import fcntl
 import hashlib
 import json
+import marshal
 import multiprocessing
 import os
 import random
@@ -122,15 +153,19 @@ import time
 import zlib
 from collections.abc import Callable, Iterator
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import cache_dir
 from repo_root import REPO_ROOT
 
-# Bumped when the store reads or writes the output differently, so an older
-# manifest is not reused.
-STORE_VERSION = 2
+# Bumped when the store reads or writes the output or a manifest differently,
+# so an older manifest is not reused.
+STORE_VERSION = 3
+# Bumped when a result of a guard no longer means what it meant.  It is apart
+# from STORE_VERSION, because a new manifest format leaves each expansion key
+# and each chunk text as it was.
+RESULTS_VERSION = 2
 # The name of the store in utils/scripts/cache_dir.py.
 STORE_CACHE = "preprocessed"
 # The size limit of the store.  One build directory of this tree takes about
@@ -148,9 +183,28 @@ PATH_FLAGS = ("-I", "-iquote", "-isystem", "-idirafter", "-iprefix", "-iwithpref
 ROOT_MARK = "\u0000root\u0000"
 # A cold run uses worker processes when at least this many units miss.
 PARALLEL_MISSES = 4
+# The suffix of a manifest file.
+MANIFEST_SUFFIX = ".bin"
+# The first item of each manifest.  A manifest with another tag is a miss.
+MANIFEST_TAG = ("crucible-preprocessed", STORE_VERSION, marshal.version)
+# The raw SHA-256 that a variant records for a file that does not exist.
+MISSING = bytes(32)
+# The array type code of a chunk line in a record: an unsigned 32-bit integer.
+LINE_TYPE = "I"
+# The files under units/ that one eviction removes as garbage, at most.
+GARBAGE_PER_TURN = 50_000
 
-# A line marker of the output: # line "file" flags.
-MARKER = re.compile(rb'^# ([0-9]+) "((?:[^"\\]|\\.)*)"[^\n]*\n?', re.M)
+# A line marker of the output: # line "file" flags, up to the end of its
+# line.  It is matched only at the start of a line.
+MARKER = re.compile(rb'# ([0-9]+) "((?:[^"\\]|\\.)*)"[^\n]*')
+# A line marker after the newline that ends the line before it.  The literal
+# prefix lets the regular expression engine find each candidate in C.
+MARKER_AFTER_NEWLINE = re.compile(rb'\n' + MARKER.pattern)
+
+# A record of one file of one unit: (path, expansion key, lines, chunk digests).
+Record = tuple[str, str, bytes, bytes]
+# A variant: (names under the root, their digests, outside blob, records).
+Variant = tuple[tuple[str, ...], bytes, str, tuple[Record, ...]]
 
 
 @dataclass(frozen=True)
@@ -166,16 +220,27 @@ class Chunk:
 class Unit:
     """One compile-database entry after the preprocessed pass.
 
-    dependencies names each file under the root that the unit read, from the
-    -MD dependency file, so a header that adds no line to the output is still
-    listed.
+    records holds one record for each file under the root that the output
+    holds, in the order of its first chunk.  inside names each file under the
+    root that the unit read, from the -MD dependency file, so a header that
+    adds no line to the output is still listed.
     """
 
     file: str
-    chunks: list[Chunk] = field(default_factory=list)
+    records: tuple[Record, ...] = ()
     failure: str | None = None
     from_cache: bool = False
-    dependencies: frozenset[str] = frozenset()
+    inside: tuple[str, ...] = ()
+
+    @property
+    def dependencies(self) -> frozenset[str]:
+        """Return each file under the root that the unit read."""
+        return frozenset(self.inside)
+
+    @property
+    def chunks(self) -> list[Chunk]:
+        """Return the chunks of the unit, grouped by file, in the order of the first chunk of each file."""
+        return [chunk for record in self.records for chunk in record_chunks(record)]
 
 
 @dataclass(frozen=True)
@@ -212,6 +277,20 @@ class DamagedStore(PreprocessError):
     """A chunk of the store does not match its name.  The store removed it, and the next run makes it again."""
 
 
+def record_chunks(record: Record) -> tuple[Chunk, ...]:
+    """Return the chunks that one record describes, in output order.
+
+    Args:
+        record: (path, expansion key, lines, chunk digests)
+
+    Returns:
+        One Chunk for each line of the record
+    """
+    path, _key, lines, digests = record
+    return tuple(Chunk(path, line, digests[32 * index:32 * index + 32].hex())
+                 for index, line in enumerate(array.array(LINE_TYPE, lines)))
+
+
 def preprocess_argv(argv: list[str]) -> list[str]:
     """Return the compile command with -E, and without its output and dependency-file flags.
 
@@ -222,19 +301,26 @@ def preprocess_argv(argv: list[str]) -> list[str]:
         The command that preprocesses the same source with the same flags
     """
     out: list[str] = []
-    index = 0
-    while index < len(argv):
-        flag = argv[index]
-        if flag in ("-c", "-MD", "-MMD", "-MP"):
-            index += 1
-        elif flag in ("-o", "-MF", "-MT", "-MQ"):
-            index += 2
-        elif flag.startswith(("-o", "-MF", "-MT", "-MQ")):
-            index += 1
-        else:
+    skips_value = False
+    for flag in argv:
+        if skips_value:
+            skips_value = False
+        elif flag in _DROPPED_FLAGS:
+            pass
+        elif flag in _DROPPED_WITH_VALUE:
+            skips_value = True
+        elif not flag.startswith(_DROPPED_PREFIXES):
             out.append(flag)
-            index += 1
-    return out + ["-E"]
+    out.append("-E")
+    return out
+
+
+# The flags that preprocess_argv drops, the flags that it drops with the
+# argument after them, and the prefixes of the attached forms of the second
+# set.
+_DROPPED_FLAGS = frozenset({"-c", "-MD", "-MMD", "-MP"})
+_DROPPED_WITH_VALUE = frozenset({"-o", "-MF", "-MT", "-MQ"})
+_DROPPED_PREFIXES = ("-o", "-MF", "-MT", "-MQ")
 
 
 def is_staged_root(directory: Path, include: Path) -> bool:
@@ -259,7 +345,8 @@ def is_staged_root(directory: Path, include: Path) -> bool:
                                  for entry in entries)
 
 
-def widen_staged_roots(argv: list[str], directory: str, root: Path) -> list[str]:
+def widen_staged_roots(argv: list[str], directory: str, root: Path,
+                       staged: dict[str, bool] | None = None) -> list[str]:
     """Replace each staged layer root on the include path with the include directory of the repository.
 
     The preprocessed pass reads what a unit holds.  A layer fixture exists to
@@ -270,26 +357,37 @@ def widen_staged_roots(argv: list[str], directory: str, root: Path) -> list[str]
         argv: The compile command of one database entry
         directory: The directory the command runs in
         root: The repository root
+        staged: The verdict on each include directory that this run has seen,
+            or None for no memory
 
     Returns:
         The command with each staged root replaced
     """
     include = root / "include"
     out: list[str] = []
+    count = len(argv)
     index = 0
-    while index < len(argv):
+    while index < count:
         flag = argv[index]
-        if flag == "-I" and index + 1 < len(argv):
-            value, step = argv[index + 1], 2
-        elif flag.startswith("-I") and len(flag) > 2:
-            value, step = flag[2:], 1
-        else:
+        index += 1
+        if not flag.startswith("-I"):
             out.append(flag)
-            index += 1
             continue
-        target = Path(directory) / value
-        out.append("-I" + (str(include) if is_staged_root(target, include) else value))
-        index += step
+        if flag == "-I":
+            if index == count:
+                out.append(flag)
+                continue
+            value = argv[index]
+            index += 1
+        else:
+            value = flag[2:]
+        target = os.path.join(directory, value)
+        verdict = None if staged is None else staged.get(target)
+        if verdict is None:
+            verdict = is_staged_root(Path(target), include)
+            if staged is not None:
+                staged[target] = verdict
+        out.append("-I" + (str(include) if verdict else value))
     return out
 
 
@@ -356,13 +454,25 @@ def _cc1plus(binary: str) -> str | None:
     return found if os.path.isabs(found) else None
 
 
-def under_root(name: str, directory: str, prefix: str) -> str | None:
+def _resolved(path: str, real: dict[str, str] | None) -> str:
+    """Return the resolved path of a file name, from the memory of this run when it holds the name."""
+    if real is None:
+        return os.path.realpath(path)
+    found = real.get(path)
+    if found is None:
+        found = real[path] = os.path.realpath(path)
+    return found
+
+
+def under_root(name: str, directory: str, prefix: str, real: dict[str, str] | None = None) -> str | None:
     """Return the root-relative path of a file name from the output, or None outside the root.
 
     Args:
         name: The file name, as a line marker or a dependency file spells it
         directory: The directory the command ran in
         prefix: The resolved root and a trailing separator
+        real: The resolved path of each name that this run has seen, or None
+            for no memory
 
     Returns:
         The path relative to the root, or None
@@ -372,22 +482,18 @@ def under_root(name: str, directory: str, prefix: str) -> str | None:
     # The root is resolved, so the name is resolved too: a database entry
     # whose directory goes through a symbolic link names files under the
     # root by another path, and a plain join would put them outside it.
-    absolute = os.path.realpath(os.path.join(directory, name))
+    absolute = _resolved(os.path.join(directory, name), real)
     return absolute[len(prefix):] if absolute.startswith(prefix) else None
 
 
-def dependency_names(text: str, directory: str) -> list[str]:
+def dependency_names(text: str, directory: str, real: dict[str, str] | None = None) -> list[str]:
     """Return each file that a make-style dependency file names, resolved, in order and without repeats."""
     body = text.replace("\\\n", " ").split(":", 1)[-1]
     found: dict[str, None] = {}
     for name in re.split(r"(?<!\\)\s+", body):
         if name:
-            found[os.path.realpath(os.path.join(directory, name.replace("\\ ", " ")))] = None
+            found[_resolved(os.path.join(directory, name.replace("\\ ", " ")), real)] = None
     return list(found)
-
-
-# The value that _Files.digest finds for a file that it has not hashed yet.
-_ABSENT = object()
 
 
 def split_command(command: str) -> list[str]:
@@ -408,41 +514,64 @@ def split_command(command: str) -> list[str]:
 
 
 class _Files:
-    """The SHA-256 of each file that a run reads, calculated one time for each run."""
+    """The raw SHA-256 of each file and the resolved path of each name that a run reads, each found one time."""
 
     def __init__(self, root: str) -> None:
         """Start an empty memory for one root."""
         self.prefix = root + os.sep
-        self.hashes: dict[str, str | None] = {}
+        self.raw: dict[str, bytes] = {}
+        self.real: dict[str, str] = {}
         self.lock = threading.Lock()
 
     def name_of(self, absolute: str) -> str:
         """Return the name that a variant gives a file: relative under the root, absolute outside it."""
         return absolute[len(self.prefix):] if absolute.startswith(self.prefix) else absolute
 
-    def digest(self, name: str) -> str | None:
-        """Return the SHA-256 of a file by its variant name, or None when the file does not exist."""
-        known = self.hashes.get(name, _ABSENT)
-        if known is not _ABSENT:
+    def raw_digest(self, name: str) -> bytes:
+        """Return the raw SHA-256 of a file by its variant name, or MISSING when the file does not exist."""
+        known = self.raw.get(name)
+        if known is not None:
             return known
         path = name if name.startswith("/") else self.prefix + name
         try:
             with open(path, "rb") as stream:
-                found: str | None = hashlib.file_digest(stream, "sha256").hexdigest()
+                found = hashlib.file_digest(stream, "sha256").digest()
         except OSError:
-            found = None
+            found = MISSING
         with self.lock:
-            self.hashes[name] = found
+            self.raw[name] = found
         return found
+
+    def digest(self, name: str) -> str | None:
+        """Return the hexadecimal SHA-256 of a file by its variant name, or None when the file does not exist."""
+        found = self.raw_digest(name)
+        return None if found == MISSING else found.hex()
+
+
+def _chunk_names(directory: Path) -> set[str]:
+    """Return the name of each chunk file of a store, with no stat call: one listing of each fan-out directory."""
+    names: set[str] = set()
+    with contextlib.suppress(FileNotFoundError):
+        for fan in os.scandir(directory):
+            if fan.is_dir(follow_symlinks=False):
+                with contextlib.suppress(FileNotFoundError), os.scandir(fan.path) as listing:
+                    names.update(item.name for item in listing if not item.name.startswith("."))
+    return names
 
 
 class _Chunks:
-    """The names of the chunks in the store, listed one time and then kept up to date by this process."""
+    """The names of the chunks in the store, listed one time or found one at a time, and kept up to date."""
 
-    def __init__(self, directory: Path) -> None:
-        """Bind the memory to the chunk directory of a store."""
+    def __init__(self, directory: Path, listed: bool = True) -> None:
+        """Bind the memory to the chunk directory of a store.
+
+        Args:
+            directory: The chunk directory
+            listed: List the directory at the first question.  A worker that
+                asks about few chunks finds each one with a stat instead.
+        """
         self.directory = directory
-        self.known: set[str] | None = None
+        self.known: set[str] | None = None if listed else set()
         self.lock = threading.Lock()
 
     def has(self, digest: str) -> bool:
@@ -451,7 +580,7 @@ class _Chunks:
         if known is None:
             with self.lock:
                 if self.known is None:
-                    self.known = {entry.path.name for entry in cache_dir.entries(self.directory)}
+                    self.known = _chunk_names(self.directory)
                 known = self.known
         if digest in known:
             return True
@@ -467,39 +596,109 @@ class _Chunks:
                 self.known.add(digest)
 
 
+class _Reader:
+    """What one process learns during one run: file hashes, chunk names, and the verdict on each blob and record."""
+
+    def __init__(self, root: str, store: Path, listed: bool = True) -> None:
+        """Start an empty memory for one root and one store.
+
+        Args:
+            root: The resolved root
+            store: The directory of the store
+            listed: Whether the chunk directory is listed at the first question
+        """
+        self.files = _Files(root)
+        self.chunks = _Chunks(store / "chunks", listed)
+        self.store = store
+        self.outside: dict[str, bool] = {}
+        self.present: dict[bytes, bool] = {}
+
+    def matches(self, names: tuple[str, ...], digests: bytes) -> bool:
+        """Return whether each named file has the raw SHA-256 at its place in digests."""
+        return b"".join(map(self.files.raw_digest, names)) == digests
+
+    def outside_holds(self, digest: str) -> bool:
+        """Return whether each file of a stored blob of outside files has its recorded SHA-256."""
+        known = self.outside.get(digest)
+        if known is None:
+            try:
+                names, digests = marshal.loads(blob_bytes(self.store, digest))
+                known = self.matches(names, digests)
+            except (OSError, ValueError, EOFError, TypeError, DamagedStore):
+                known = False
+            self.outside[digest] = known
+        return known
+
+    def has_chunks(self, record: Record) -> bool:
+        """Return whether the store holds each chunk of a record."""
+        digests = record[3]
+        known = self.present.get(digests)
+        if known is None:
+            known = all(self.chunks.has(digests[at:at + 32].hex()) for at in range(0, len(digests), 32))
+            self.present[digests] = known
+        return known
+
+    def valid_variant(self, variants: tuple) -> Variant | None:
+        """Return the first variant whose files have their recorded contents and whose chunks all exist."""
+        for variant in variants:
+            try:
+                names, digests, outside, records = variant
+                if self.matches(names, digests) and self.outside_holds(outside) \
+                        and all(map(self.has_chunks, records)):
+                    return variant
+            except (TypeError, ValueError, IndexError):
+                continue
+        return None
+
+
 def _manifest_path(store: Path, key: str) -> Path:
     """Return the path of the manifest of one key."""
-    return store / "units" / key[:2] / f"{key}.json"
+    return store / "units" / key[:2] / f"{key}{MANIFEST_SUFFIX}"
 
 
-def _read_variants(manifest: Path) -> list[dict]:
-    """Return the variants of a manifest, or none when it is absent or damaged."""
+def _read_variants(manifest: Path) -> tuple:
+    """Return the variants of a manifest, or none when it is absent, damaged or of another tag."""
     try:
-        data = json.loads(manifest.read_bytes())
-        variants = data["variants"]
-        if data.get("version") != STORE_VERSION or not isinstance(variants, list):
-            return []
-        return variants
-    except (OSError, ValueError, KeyError, TypeError):
-        return []
+        tag, variants = marshal.loads(manifest.read_bytes())
+    except (OSError, ValueError, EOFError, TypeError):
+        return ()
+    return variants if tag == MANIFEST_TAG and isinstance(variants, tuple) else ()
 
 
-def _valid_variant(variants: list[dict], files: _Files, chunks: _Chunks) -> dict | None:
-    """Return the first variant whose files all have their recorded contents and whose chunks all exist."""
-    for variant in variants:
-        try:
-            if all(files.digest(name) == digest for name, digest in variant["dependencies"].items()) \
-                    and all(chunks.has(item[2]) for item in variant["chunks"]):
-                return variant
-        except (KeyError, TypeError, IndexError):
-            continue
-    return None
-
-
-def _unit_of(file: str, variant: dict, from_cache: bool) -> Unit:
+def _unit_of(file: str, variant: Variant, from_cache: bool) -> Unit:
     """Return the Unit that a valid variant describes."""
-    return Unit(file, [Chunk(path, line, digest) for path, line, digest in variant["chunks"]], None, from_cache,
-                frozenset(name for name in variant["dependencies"] if not name.startswith("/")))
+    return Unit(file, variant[3], None, from_cache, variant[0])
+
+
+def _chunk_path(store: Path, digest: str) -> Path:
+    """Return the path of one chunk or blob of a store."""
+    return store / "chunks" / digest[:2] / digest
+
+
+def blob_bytes(store: Path, digest: str) -> bytes:
+    """Return the bytes of one chunk or blob of a store, read from its file.
+
+    Args:
+        store: The directory of the store
+        digest: The SHA-256 of the bytes
+
+    Returns:
+        The bytes
+
+    Raises:
+        FileNotFoundError: If the store lost the chunk
+        DamagedStore: If the chunk does not match its name
+    """
+    path = _chunk_path(store, digest)
+    try:
+        data = zlib.decompress(path.read_bytes())
+        if hashlib.sha256(data).hexdigest() != digest:
+            raise ValueError("the bytes do not match their name")
+    except (zlib.error, ValueError) as exc:
+        path.unlink(missing_ok=True)
+        raise DamagedStore(f"the chunk {path} of the preprocessed store is damaged ({exc}).  The store removed "
+                           f"it.  Run the guard again, and the store makes the chunk again.") from exc
+    return data
 
 
 def chunk_text(store: Path, digest: str) -> str:
@@ -516,44 +715,101 @@ def chunk_text(store: Path, digest: str) -> str:
         FileNotFoundError: If the store lost the chunk
         DamagedStore: If the chunk does not match its name
     """
-    path = store / "chunks" / digest[:2] / digest
-    try:
-        data = zlib.decompress(path.read_bytes())
-        if hashlib.sha256(data).hexdigest() != digest:
-            raise ValueError("the text does not match its name")
-    except (zlib.error, ValueError) as exc:
-        path.unlink(missing_ok=True)
-        raise DamagedStore(f"the chunk {path} of the preprocessed store is damaged ({exc}).  The store removed "
-                           f"it.  Run the guard again, and the store makes the chunk again.") from exc
-    return data.decode()
+    return blob_bytes(store, digest).decode()
 
 
-def _write_chunk(store: Path, text: str, chunks: _Chunks) -> str:
-    """Store a chunk text under its hash and return the hash."""
-    data = text.encode()
+def _write_blob(store: Path, data: bytes, chunks: _Chunks) -> str:
+    """Store bytes under their hash, when the store does not hold them yet, and return the hash."""
     digest = hashlib.sha256(data).hexdigest()
     if not chunks.has(digest):
-        cache_dir.write_atomic(store / "chunks" / digest[:2] / digest, zlib.compress(data, 1))
+        cache_dir.write_atomic(_chunk_path(store, digest), zlib.compress(data, 1))
         chunks.add(digest)
     return digest
 
 
-# The memories of one worker process, made by _start_worker.
+def _markers(output: bytes) -> list[tuple[int, int, bytes, bytes]]:
+    """Return each line marker of the output, in order: (start of its line, start of its text, line, file name).
+
+    A line marker starts a line.  The text of a marker starts after the
+    newline that ends the marker, and it ends where the line of the next
+    marker starts, so it holds the newline of its last line.
+
+    Complexity: linear in the length of the output.
+    """
+    end = len(output)
+    found: list[tuple[int, int, bytes, bytes]] = []
+    head = MARKER.match(output)
+    if head is not None:
+        found.append((0, min(head.end() + 1, end), head.group(1), head.group(2)))
+    for match in MARKER_AFTER_NEWLINE.finditer(output):
+        found.append((match.start() + 1, min(match.end() + 1, end), match.group(1), match.group(2)))
+    return found
+
+
+# The value that a memory of names finds for a name that it has not resolved yet.
+_ABSENT = object()
+
+
+def _file_records(output: bytes, directory: str, root: str, store: Path,
+                  reader: _Reader) -> tuple[tuple[Record, ...], bool]:
+    """Divide the output at its line markers, store each part under the root, and say if one holds the root.
+
+    A part is stored as its bytes when they are valid UTF-8, and as its text
+    with each invalid sequence replaced otherwise, so the name of a chunk is
+    the SHA-256 of its UTF-8 text.
+
+    Returns:
+        One record for each file under the root, in the order of its first
+        chunk, and whether the text of one chunk holds the root, which makes
+        the variant depend on the root
+    """
+    prefix = root + os.sep
+    root_bytes = root.encode()
+    grouped: dict[str, tuple[list[int], list[str]]] = {}
+    holds_root = False
+    markers = _markers(output)
+    names: dict[bytes, object] = {}
+    for index, (_line_start, text_start, line, name) in enumerate(markers):
+        path = names.get(name, _ABSENT)
+        if path is _ABSENT:
+            spelled = name.decode(errors="replace").replace('\\"', '"').replace("\\\\", "\\")
+            path = names[name] = under_root(spelled, directory, prefix, reader.files.real)
+        if path is None:
+            continue
+        end = markers[index + 1][0] if index + 1 < len(markers) else len(output)
+        raw = output[text_start:end]
+        if not raw:
+            continue
+        try:
+            raw.decode()
+            data = raw
+        except UnicodeDecodeError:
+            data = raw.decode(errors="replace").encode()
+        holds_root = holds_root or root_bytes in data
+        lines, digests = grouped.setdefault(str(path), ([], []))
+        lines.append(int(line))
+        digests.append(_write_blob(store, data, reader.chunks))
+    records = tuple((path, hashlib.sha256("\n".join(digests).encode()).hexdigest(),
+                     array.array(LINE_TYPE, lines).tobytes(), bytes.fromhex("".join(digests)))
+                    for path, (lines, digests) in grouped.items())
+    return records, holds_root
+
+
+# The memory of one worker process, made by _start_worker.
 _WORKER: dict = {}
 
 
 def _start_worker(root: str, store: str) -> None:
-    """Give a worker process its own memory of hashes and chunks for one run."""
-    _WORKER["files"] = _Files(root)
-    _WORKER["chunks"] = _Chunks(Path(store) / "chunks")
+    """Give a worker process its own memory of hashes, names and chunks for one run."""
+    _WORKER["reader"] = _Reader(root, Path(store), listed=False)
 
 
 def _fill_in_worker(plan: Plan, wait: bool) -> tuple[Unit, bool] | None:
     """Fill the manifest of one unit in a worker process."""
-    return fill(plan, _WORKER["files"], _WORKER["chunks"], wait)
+    return fill(plan, _WORKER["reader"], wait)
 
 
-def fill(plan: Plan, files: _Files, chunks: _Chunks, wait: bool = True) -> tuple[Unit, bool] | None:
+def fill(plan: Plan, reader: _Reader, wait: bool = True) -> tuple[Unit, bool] | None:
     """Read one unit from a valid variant, or preprocess it and add its variant to its manifest.
 
     The lock of the shared name is held during the work, so a second guard
@@ -562,8 +818,7 @@ def fill(plan: Plan, files: _Files, chunks: _Chunks, wait: bool = True) -> tuple
 
     Args:
         plan: The unit and its two names
-        files: The memory of hashes of this process
-        chunks: The memory of chunk names of this process
+        reader: The memory of this process
         wait: When false, give up at once on a unit that another process holds
 
     Returns:
@@ -580,7 +835,7 @@ def fill(plan: Plan, files: _Files, chunks: _Chunks, wait: bool = True) -> tuple
         except BlockingIOError:
             return None
         for manifest in (shared, rooted):
-            variant = _valid_variant(_read_variants(manifest), files, chunks)
+            variant = reader.valid_variant(_read_variants(manifest))
             if variant is not None:
                 return _unit_of(plan.file, variant, True), False
         descriptor, depfile = tempfile.mkstemp(prefix="preprocessed-", suffix=".d")
@@ -588,51 +843,27 @@ def fill(plan: Plan, files: _Files, chunks: _Chunks, wait: bool = True) -> tuple
         try:
             result = subprocess.run([*plan.run_argv, "-MD", "-MF", depfile], cwd=plan.directory,
                                     capture_output=True)
-            names = dependency_names(Path(depfile).read_text(errors="replace"), plan.directory)
+            names = dependency_names(Path(depfile).read_text(errors="replace"), plan.directory, reader.files.real)
         finally:
             os.unlink(depfile)
         if result.returncode != 0:
             first = result.stderr.decode(errors="replace").strip().splitlines()[:1]
             failure = f"{plan.file}: {first[0] if first else 'exit ' + str(result.returncode)}"
-            return Unit(plan.file, [], failure), True
-        found, holds_root = _chunks_of(result.stdout, plan.directory, plan.root, store, chunks)
-        variant = {"dependencies": {files.name_of(name): files.digest(files.name_of(name)) for name in names},
-                   "chunks": [[chunk.path, chunk.line, chunk.digest] for chunk in found]}
+            return Unit(plan.file, (), failure), True
+        records, holds_root = _file_records(result.stdout, plan.directory, plan.root, store, reader)
+        for record in records:
+            reader.present[record[3]] = True
+        files = reader.files
+        inside = tuple(files.name_of(name) for name in names if name.startswith(files.prefix))
+        outside = tuple(name for name in names if not name.startswith(files.prefix))
+        blob = _write_blob(store, marshal.dumps((outside, b"".join(map(files.raw_digest, outside)))), reader.chunks)
+        reader.outside[blob] = True
+        variant: Variant = (inside, b"".join(map(files.raw_digest, inside)), blob, records)
         target = rooted if holds_root else shared
         target.parent.mkdir(parents=True, exist_ok=True)
-        others = [old for old in _read_variants(target) if old.get("dependencies") != variant["dependencies"]]
-        cache_dir.write_atomic(target, json.dumps({"version": STORE_VERSION,
-                                                   "variants": [variant, *others][:MAX_VARIANTS]}).encode())
+        others = tuple(old for old in _read_variants(target) if not isinstance(old, tuple) or old[:3] != variant[:3])
+        cache_dir.write_atomic(target, marshal.dumps((MANIFEST_TAG, (variant, *others)[:MAX_VARIANTS])))
         return _unit_of(plan.file, variant, False), True
-
-
-def _chunks_of(output: bytes, directory: str, root: str, store: Path,
-               chunks: _Chunks) -> tuple[list[Chunk], bool]:
-    """Divide the output at its line markers, store each part that falls under the root, and say if one holds the root.
-
-    Returns:
-        The chunks in output order, and whether the text of one of them holds
-        the root, which makes the variant depend on the root
-    """
-    prefix = root + os.sep
-    found: list[Chunk] = []
-    holds_root = False
-    markers = list(MARKER.finditer(output))
-    names: dict[bytes, str | None] = {}
-    for index, marker in enumerate(markers):
-        name = marker.group(2)
-        if name not in names:
-            spelled = name.decode(errors="replace").replace('\\"', '"').replace("\\\\", "\\")
-            names[name] = under_root(spelled, directory, prefix)
-        path = names[name]
-        if path is None:
-            continue
-        end = markers[index + 1].start() if index + 1 < len(markers) else len(output)
-        text = output[marker.end():end].decode(errors="replace")
-        if text:
-            holds_root = holds_root or root in text
-            found.append(Chunk(path, int(marker.group(1)), _write_chunk(store, text, chunks)))
-    return found, holds_root
 
 
 class Results:
@@ -729,7 +960,7 @@ def code_identity(*parts: object) -> str:
     Returns:
         The hexadecimal SHA-256
     """
-    digest = hashlib.sha256(f"results-{STORE_VERSION}".encode())
+    digest = hashlib.sha256(f"results-{RESULTS_VERSION}".encode())
     for part in parts:
         digest.update(b"\0")
         digest.update(hashlib.sha256(part.read_bytes() if isinstance(part, Path) else str(part).encode()).digest())
@@ -758,8 +989,10 @@ class Store:
         for part in ("units", "chunks", "results"):
             (self.directory / part).mkdir(parents=True, exist_ok=True)
         self.jobs = jobs or min(16, os.cpu_count() or 1)
-        self._files = _Files(str(self.root))
-        self._chunks = _Chunks(self.directory / "chunks")
+        self._reader = _Reader(str(self.root), self.directory)
+        self._staged: dict[str, bool] = {}
+        self._unrooted: dict[str, str] = {}
+        self._environment = [(name, os.environ.get(name)) for name in ENVIRONMENT]
         self._texts: dict[str, str] = {}
         self._lock = threading.Lock()
         self._shared_lock = self._hold_shared()
@@ -787,11 +1020,11 @@ class Store:
         Returns:
             The hash, or None when the file no longer exists
         """
-        return self._files.digest(relative)
+        return self._reader.files.digest(relative)
 
     def under_root(self, name: str, directory: str) -> str | None:
         """Return the root-relative path of a file name from the output, or None outside the root."""
-        return under_root(name, directory, self.prefix)
+        return under_root(name, directory, self.prefix, self._reader.files.real)
 
     def text(self, digest: str) -> str:
         """Return the text of a chunk.
@@ -829,24 +1062,34 @@ class Store:
         return map_batches(function, items, self.jobs, batch)
 
     def _plan(self, entry: dict) -> Plan:
-        """Return the plan of one database entry: its preprocessor command and its two manifest names."""
+        """Return the plan of one database entry: its preprocessor command and its two manifest names.
+
+        The name hashes one JSON text of the key items.  The rooted name
+        hashes that text, a NUL and the root.  JSON has no raw NUL and a path
+        has none, so the two names never meet.
+        """
         argv = entry["arguments"] if "arguments" in entry else split_command(entry["command"])
         directory = entry["directory"]
         root = str(self.root)
-        run_argv = preprocess_argv(widen_staged_roots(argv, directory, self.root))
+        run_argv = preprocess_argv(widen_staged_roots(argv, directory, self.root, self._staged))
         run_argv[-1:-1] = [f"-fmacro-prefix-map={root}/="]
-        identity = [STORE_VERSION, [without_root(arg, root) for arg in run_argv], without_root(directory, root),
-                    compiler_identity(argv, directory), [(name, os.environ.get(name)) for name in ENVIRONMENT]]
-        shared = json.dumps(identity)
-        rooted = json.dumps([identity, root])
-        return Plan(entry["file"], tuple(run_argv), directory, hashlib.sha256(shared.encode()).hexdigest(),
-                    hashlib.sha256(rooted.encode()).hexdigest(), str(self.directory), root)
+        unrooted = self._unrooted
+        arguments: list[str] = []
+        for argument in run_argv:
+            found = unrooted.get(argument)
+            if found is None:
+                found = unrooted[argument] = without_root(argument, root)
+            arguments.append(found)
+        identity = json.dumps([STORE_VERSION, arguments, without_root(directory, root),
+                               compiler_identity(argv, directory), self._environment]).encode()
+        return Plan(entry["file"], tuple(run_argv), directory, hashlib.sha256(identity).hexdigest(),
+                    hashlib.sha256(identity + b"\0" + root.encode()).hexdigest(), str(self.directory), root)
 
     def _lookup(self, plan: Plan) -> Unit | None:
         """Return the unit of a plan from a valid variant, or None when the unit misses."""
         for key in (plan.shared_key, plan.rooted_key):
             manifest = _manifest_path(self.directory, key)
-            variant = _valid_variant(_read_variants(manifest), self._files, self._chunks)
+            variant = self._reader.valid_variant(_read_variants(manifest))
             if variant is not None:
                 with contextlib.suppress(OSError):
                     cache_dir.mark_used(manifest, manifest.stat().st_mtime)
@@ -906,7 +1149,7 @@ class Store:
         if not plans:
             return []
         if len(plans) < PARALLEL_MISSES or self.jobs <= 1:
-            return [fill(plan, self._files, self._chunks) for plan in plans]
+            return [fill(plan, self._reader) for plan in plans]
         order = random.sample(range(len(plans)), len(plans))
         done: list[tuple[Unit, bool] | None] = [None] * len(plans)
         method = "fork" if threading.active_count() == 1 else "forkserver"
@@ -922,27 +1165,28 @@ class Store:
         filled = [result for result in done if result is not None]
         for unit, _ran in filled:
             for chunk in unit.chunks:
-                self._chunks.add(chunk.digest)
+                self._reader.chunks.add(chunk.digest)
         return filled
 
     def expansions(self) -> Iterator[Expansion]:
         """Yield each distinct expansion of each file under the root, over every unit.
 
-        The order follows the compile database and then the output, so a
-        report is stable.  A unit that failed gives no expansion, and its
-        failure is in self.failures after the pass.
+        The order follows the compile database and then the order of the
+        first chunk of each file, so a report is stable.  A unit that failed
+        gives no expansion, and its failure is in self.failures after the
+        pass.
 
         Yields:
             One Expansion for each distinct (path, key, lines)
         """
-        seen: set[tuple[str, str, tuple[int, ...]]] = set()
+        seen: set[tuple[str, str, bytes]] = set()
         for unit in self.units():
-            for path, (key, chunks) in files_of(unit).items():
-                lines = tuple(chunk.line for chunk in chunks)
-                if (path, key, lines) in seen:
+            for record in unit.records:
+                marker = record[:3]
+                if marker in seen:
                     continue
-                seen.add((path, key, lines))
-                yield Expansion(path, key, tuple(chunks))
+                seen.add(marker)
+                yield Expansion(record[0], record[1], record_chunks(record))
 
     def results(self, guard: str, *identity: object) -> Results:
         """Return the store of one guard's results, under a name that hashes the guard and its inputs.
@@ -958,25 +1202,74 @@ class Store:
         return _results_in(self.directory, guard, identity)
 
     def _evict(self) -> None:
-        """Hold the store under its size and age limits, when the turn is due and no other process reads."""
+        """Hold the store under its size and age limits, when the turn is due and no other process reads.
+
+        A process that gets the turn and not the exclusive lock, or that
+        leaves garbage for the next turn, gives the stamp its last time
+        again, so the turn stays due for the next run.
+        """
+        stamp = self.directory / "evicted"
+        try:
+            last = stamp.stat().st_mtime
+        except FileNotFoundError:
+            last = None
         with cache_dir.eviction_turn(self.directory) as has_turn:
             if not has_turn:
                 return
             self._shared_lock.close()
+            is_done = False
             try:
                 with open(self.directory / "store.lock", "a") as exclusive:
                     try:
                         fcntl.flock(exclusive, fcntl.LOCK_EX | fcntl.LOCK_NB)
                     except BlockingIOError:
                         return
-                    evict_store(self.directory, STORE_BYTES)
+                    is_done = evict_store(self.directory, STORE_BYTES)
             finally:
+                if not is_done:
+                    if last is None:
+                        stamp.unlink(missing_ok=True)
+                    else:
+                        os.utime(stamp, (last, last))
                 self._shared_lock = self._hold_shared()
 
 
+def _remove_garbage(units: Path, limit: int) -> bool:
+    """Remove each file under units/ that is not a manifest of this version, and each lock with no manifest.
+
+    The caller holds the exclusive lock of the store, so no process fills a
+    unit and a lock with no manifest is free.
+
+    Args:
+        units: The units directory of a store
+        limit: The largest number of files to remove
+
+    Returns:
+        Whether no garbage remains
+    """
+    removed = 0
+    with contextlib.suppress(FileNotFoundError):
+        for fan in os.scandir(units):
+            if not fan.is_dir(follow_symlinks=False):
+                continue
+            with os.scandir(fan.path) as listing:
+                names = {item.name for item in listing}
+            for name in names:
+                if name.endswith(MANIFEST_SUFFIX) or name.startswith("."):
+                    continue
+                if name.endswith(".lock") and f"{name[:-len('.lock')]}{MANIFEST_SUFFIX}" in names:
+                    continue
+                if removed >= limit:
+                    return False
+                with contextlib.suppress(FileNotFoundError):
+                    os.unlink(os.path.join(fan.path, name))
+                removed += 1
+    return True
+
+
 def evict_store(directory: Path, max_bytes: int, max_age: float = cache_dir.MAX_AGE,
-                now: float | None = None) -> None:
-    """Remove the old manifests and results of a store, then each chunk that no manifest names.
+                now: float | None = None, garbage_limit: int = GARBAGE_PER_TURN) -> bool:
+    """Remove the garbage, the old manifests and the old results of a store, then each chunk that no manifest names.
 
     The caller holds the exclusive lock of the store.  Complexity: one read
     of each remaining manifest, and one listing of each entry.
@@ -986,14 +1279,19 @@ def evict_store(directory: Path, max_bytes: int, max_age: float = cache_dir.MAX_
         max_bytes: The size limit
         max_age: The age limit of an entry with no use
         now: The time of the eviction, or None for the clock
+        garbage_limit: The largest number of garbage files to remove
+
+    Returns:
+        Whether no garbage remains for the next turn
     """
     moment = time.time() if now is None else now
+    is_clean = _remove_garbage(directory / "units", garbage_limit)
 
     def owners() -> list[cache_dir.Entry]:
         """Return each manifest and each result of the store."""
         results = [entry for folder in (directory / "results").iterdir() if folder.is_dir()
                    for entry in cache_dir.entries(folder, ".json")]
-        return cache_dir.entries(directory / "units", ".json") + results
+        return cache_dir.entries(directory / "units", MANIFEST_SUFFIX) + results
 
     def drop(chosen: list[cache_dir.Entry]) -> int:
         """Remove manifests and results, then each chunk that no remaining manifest names.
@@ -1005,10 +1303,13 @@ def evict_store(directory: Path, max_bytes: int, max_age: float = cache_dir.MAX_
         for entry in chosen:
             entry.path.with_suffix(".lock").unlink(missing_ok=True)
         named: set[str] = set()
-        for manifest in cache_dir.entries(directory / "units", ".json"):
+        for manifest in cache_dir.entries(directory / "units", MANIFEST_SUFFIX):
             for variant in _read_variants(manifest.path):
-                with contextlib.suppress(KeyError, TypeError, IndexError):
-                    named.update(item[2] for item in variant["chunks"])
+                with contextlib.suppress(TypeError, ValueError, IndexError):
+                    named.add(variant[2])
+                    for record in variant[3]:
+                        digests = record[3]
+                        named.update(digests[at:at + 32].hex() for at in range(0, len(digests), 32))
         chunks = cache_dir.entries(directory / "chunks")
         cache_dir.remove([entry for entry in chunks if entry.path.name not in named])
         return (sum(entry.size for entry in owners())
@@ -1020,8 +1321,9 @@ def evict_store(directory: Path, max_bytes: int, max_age: float = cache_dir.MAX_
     while held > max_bytes:
         remaining = sorted(owners(), key=lambda entry: entry.used)
         if not remaining:
-            return
+            break
         held = drop(remaining[:max(1, len(remaining) // 2)])
+    return is_clean
 
 
 def files_of(unit: Unit) -> dict[str, tuple[str, list[Chunk]]]:
@@ -1037,11 +1339,7 @@ def files_of(unit: Unit) -> dict[str, tuple[str, list[Chunk]]]:
     Returns:
         For each path, the key and the chunks
     """
-    by_path: dict[str, list[Chunk]] = {}
-    for chunk in unit.chunks:
-        by_path.setdefault(chunk.path, []).append(chunk)
-    return {path: (hashlib.sha256("\n".join(c.digest for c in chunks).encode()).hexdigest(), chunks)
-            for path, chunks in by_path.items()}
+    return {record[0]: (record[1], list(record_chunks(record))) for record in unit.records}
 
 
 def joined(store: Store, chunks: list[Chunk] | tuple[Chunk, ...]) -> str:
@@ -1138,6 +1436,11 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     (root / "b.cpp").write_text('#include "shared.h"\nint b_only;\n')
     (root / "broken.cpp").write_text('#include "missing.h"\n')
     (root / "rooted.cpp").write_text("const char* home = HOME_PATH;\n")
+    outside = scratch / "outside"
+    outside.mkdir()
+    (outside / "system.h").write_text("#pragma once\n#define SYSTEM_VALUE 1\n")
+    (root / "c.cpp").write_text('#include <system.h>\nint c_value = SYSTEM_VALUE;\n')
+    (root / "d.cpp").write_text('#include <system.h>\nint d_value = SYSTEM_VALUE;\n')
     database = root / "build" / "compile_commands.json"
     database.parent.mkdir()
 
@@ -1157,6 +1460,19 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
                "g++ -DE=a\\ b -c a.cpp"]
     expect("split_command splits each command as shlex.split does",
            all(split_command(sample) == shlex.split(sample) for sample in samples))
+    sample_output = (b'# 0 "x.cpp"\nint text_zero;\n# 1 "x.h" 1 3\n# 3 "x.h"\n#notmarker\n# not a marker\n'
+                     b'# 9 "x.h"\nint nine; # 5 "inside.h"\n# 2 "x.cpp" 2\n# 4 "x.cpp"')
+    scanned = _markers(sample_output)
+    by_line_start = [(line, name, sample_output[text:scanned[index + 1][0] if index + 1 < len(scanned) else None])
+                     for index, (_start, text, line, name) in enumerate(scanned)]
+    by_multiline = list(re.finditer(b"^" + MARKER.pattern + b"\n?", sample_output, re.M))
+    expect("the scan of line markers finds each marker at the start of a line, and each text up to the next one",
+           [(line, name) for line, name, _text in by_line_start]
+           == [(b"0", b"x.cpp"), (b"1", b"x.h"), (b"3", b"x.h"), (b"9", b"x.h"), (b"2", b"x.cpp"), (b"4", b"x.cpp")]
+           == [(m.group(1), m.group(2)) for m in by_multiline]
+           and [text for _line, _name, text in by_line_start]
+           == [sample_output[m.end():by_multiline[index + 1].start() if index + 1 < len(by_multiline) else None]
+               for index, m in enumerate(by_multiline)])
     write_db(root, ["a.cpp", "b.cpp"])
     cold = list(Store(database, root).units())
     expect("a cold run preprocesses each unit", [u.from_cache for u in cold] == [False, False])
@@ -1165,13 +1481,18 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
            (store_dir / "units").is_dir() and not (database.parent / "preprocessed-cache").exists())
     shared = {c.digest for u in cold for c in u.chunks if c.path == "shared.h"}
     expect("a header included the same way is stored one time", len(shared) == 1)
-    expect("the store holds each distinct chunk one time",
-           len(chunk_files()) == len({c.digest for u in cold for c in u.chunks}))
+    blobs = {variant[2] for manifest in (store_dir / "units").rglob(f"*{MANIFEST_SUFFIX}")
+             for variant in _read_variants(manifest)}
+    expect("the store holds each distinct chunk and each distinct blob of outside files one time",
+           len(chunk_files()) == len({c.digest for u in cold for c in u.chunks} | blobs))
     store = Store(database, root)
     files = files_of(cold[0])
     expect("the joined text of a file holds its code", "struct Shared" in joined(store, files["shared.h"][1]))
     expect("two units that expand a file the same way give one key",
            files["shared.h"][0] == files_of(cold[1])["shared.h"][0])
+    expect("a record keeps the expansion key of its chunk names",
+           all(key == hashlib.sha256("\n".join(c.digest for c in chunks).encode()).hexdigest()
+               for key, chunks in files.values()))
     lines = [c.line + store.text(c.digest).split("a_only")[0].count("\n")
              for c in cold[0].chunks if c.path == "a.cpp" and "a_only" in store.text(c.digest)]
     expect("a chunk's line gives the source line of its text", lines == [3])
@@ -1220,11 +1541,14 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
            _manifest_path(store_dir, rooted_plan.rooted_key).is_file()
            and not _manifest_path(store_dir, rooted_plan.shared_key).exists())
     marker = f'# 1 "{root}/x.h"\n'.encode()
-    probe = _Chunks(store_dir / "chunks")
+    probe = _Reader(str(root), store_dir)
     expect("the text of a chunk that holds the root marks its variant",
-           _chunks_of(marker + f"const char* p = \"{root}/y\";\n".encode(), str(root), str(root), store_dir,
-                      probe)[1]
-           and not _chunks_of(marker + b"int clean;\n", str(root), str(root), store_dir, probe)[1])
+           _file_records(marker + f"const char* p = \"{root}/y\";\n".encode(), str(root), str(root), store_dir,
+                         probe)[1]
+           and not _file_records(marker + b"int clean;\n", str(root), str(root), store_dir, probe)[1])
+    invalid = _file_records(marker + b"int bad = '\xff';\n", str(root), str(root), store_dir, probe)[0]
+    expect("a chunk that is not UTF-8 is stored as its text with the invalid byte replaced",
+           chunk_text(store_dir, record_chunks(invalid[0])[0].digest) == "int bad = '\ufffd';\n")
     second_db = write_db(second, ["rooted.cpp"], f'-DHOME_PATH=\\"{second}/home\\"')
     rooted_store = Store(second_db, second)
     rooted_second = list(rooted_store.units())
@@ -1255,9 +1579,29 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
         else:
             os.environ["CPATH"] = saved_cpath
     expect("an include path from the environment is part of the name", [u.from_cache for u in moved] == [False, False])
+    plain, empty = (Store(database, root)._plan({"directory": str(root), "file": "a.cpp", "arguments": arguments})
+                    for arguments in ([compiler, "-DX", "-c", "a.cpp"], [compiler, "-DX", "", "-c", "a.cpp"]))
+    expect("an empty argument is part of the name", plain.shared_key != empty.shared_key)
+
+    # The files outside the root: one stored list for the units that read the
+    # same ones, and a change to one of them makes each of its units stale.
+    write_db(root, ["c.cpp", "d.cpp"], f"-isystem {outside}")
+    system_units = list(Store(database, root).units())
+    system_blobs = [{variant[2] for variant in _read_variants(_manifest_path(store_dir, plan.shared_key))}
+                    for plan in (Store(database, root)._plan(entry) for entry in json.loads(database.read_text()))]
+    expect("units that read the same files outside the root name one stored list of them",
+           all(u.failure is None for u in system_units) and len(system_blobs[0] | system_blobs[1]) == 1)
+    (outside / "system.h").write_text("#pragma once\n#define SYSTEM_VALUE 2\n")
+    system_changed = list(Store(database, root).units())
+    expect("a changed file outside the root makes each unit that read it stale",
+           [u.from_cache for u in system_changed] == [False, False])
+    system_text = list(Store(database, root).expansions())
+    expect("the units that a changed outside file made stale give the new text",
+           any("int c_value = 2 ;" in " ".join(joined(Store(database, root), e.chunks).split()) for e in system_text))
 
     (root / "quiet.h").write_text("#pragma once\n#define QUIET 3\n")
     (root / "shared.h").write_text("#pragma once\nstruct Shared { int a; int b; };\n")
+    write_db(root, ["a.cpp", "b.cpp"])
     first, second_run = Store(database, root), Store(database, root)
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(lambda each: list(each.units()), (first, second_run)))
@@ -1316,11 +1660,15 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     write_db(root, ["a.cpp"])
     store = Store(database, root)
     plan = store._plan(json.loads(database.read_text())[0])
-    for manifest in (store.directory / "units").rglob("*.json"):
-        manifest.write_text("{not json")
+    for manifest in (store.directory / "units").rglob(f"*{MANIFEST_SUFFIX}"):
+        manifest.write_bytes(b"{not marshal")
     damaged = list(Store(database, root).units())
     expect("a damaged manifest counts as a miss", not damaged[0].from_cache and damaged[0].failure is None)
     victim = damaged[0].chunks[0].digest
+    (store.directory / "chunks" / victim[:2] / victim).unlink()
+    lost = list(Store(database, root).units())
+    expect("a manifest that names a lost chunk counts as a miss, and the run makes the chunk again",
+           not lost[0].from_cache and (store.directory / "chunks" / victim[:2] / victim).is_file())
     (store.directory / "chunks" / victim[:2] / victim).write_bytes(zlib.compress(b"other text"))
     reader = Store(database, root)
     raised = False
@@ -1332,6 +1680,11 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     expect("a damaged chunk raises, goes away, and the next run makes it again",
            raised and not remade[0].from_cache and Store(database, root).text(victim))
     expect("the plan of a unit names two manifests", plan.shared_key != plan.rooted_key)
+    retagged = _manifest_path(store_dir, plan.shared_key)
+    _tag, kept_variants = marshal.loads(retagged.read_bytes())
+    retagged.write_bytes(marshal.dumps((("crucible-preprocessed", STORE_VERSION - 1, marshal.version),
+                                        kept_variants)))
+    expect("a manifest of another version counts as a miss", not list(Store(database, root).units())[0].from_cache)
 
     results = Store(database, root).results("probe", Path(__file__), "parser-1")
     results.put("k" * 64, {"rows": [1, 2]})
@@ -1346,18 +1699,41 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     list(Store(database, root).units())
     kept_store = Store(database, root)
     kept = [kept_store._plan(entry) for entry in json.loads(database.read_text())]
-    for manifest in (store_dir / "units").rglob("*.json"):
+    for manifest in (store_dir / "units").rglob(f"*{MANIFEST_SUFFIX}"):
         if manifest.stem not in {kept[0].shared_key, kept[0].rooted_key}:
             os.utime(manifest, (old, old))
     results.put("r" * 64, [1])
     os.utime(results.directory / "rr" / f"{'r' * 64}.json", (old, old))
     named_before = len(chunk_files())
-    evict_store(store_dir, STORE_BYTES)
+    garbage = [store_dir / "units" / "ab" / "abandoned.json", store_dir / "units" / "ab" / "orphan.lock"]
+    for path in garbage:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}")
+    expect("an eviction with a small garbage limit removes part of the garbage and says that some remains",
+           not evict_store(store_dir, STORE_BYTES, garbage_limit=1) and sum(p.exists() for p in garbage) == 1)
+    expect("the next eviction removes the rest of the garbage", evict_store(store_dir, STORE_BYTES)
+           and not any(p.exists() for p in garbage))
     left = list(Store(database, root).units())
     expect("an eviction removes old manifests, old results and their chunks, and keeps the used ones",
            left[0].from_cache and len(chunk_files()) < named_before and results.get("r" * 64) is None)
+
+    # The stores above still hold their shared locks, so the turn cases use
+    # a store of their own.
+    with cache_dir.scratch_root() as turn_caches:
+        list(Store(database, root).units())
+        stamp = turn_caches / STORE_CACHE / "evicted"
+        stale = time.time() - 2 * cache_dir.EVICT_INTERVAL
+        os.utime(stamp, (stale, stale))
+        with open(turn_caches / STORE_CACHE / "store.lock", "a") as reader_lock:
+            fcntl.flock(reader_lock, fcntl.LOCK_SH)
+            list(Store(database, root).units())
+        expect("a turn that cannot get the store from another reader stays due",
+               abs(stamp.stat().st_mtime - stale) < 1.0)
+        list(Store(database, root).units())
+        expect("the next run with no other reader takes the turn", time.time() - stamp.stat().st_mtime < 60)
     evict_store(store_dir, 1)
-    expect("a size limit removes manifests until the store fits", not list((store_dir / "units").rglob("*.json")))
+    expect("a size limit removes manifests until the store fits",
+           not list((store_dir / "units").rglob(f"*{MANIFEST_SUFFIX}")))
 
     saved_root = os.environ[cache_dir.ROOT_VARIABLE]
     os.environ[cache_dir.ROOT_VARIABLE] = "off"
@@ -1384,11 +1760,11 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
          "command": f"{compiler} -std=c++20 -Ibuild/stage -c fixture.cpp -o fixture.o"},
         {"directory": str(root), "file": "fixture.cpp",
          "command": f"{compiler} -std=c++20 -I build/real -c fixture.cpp -o fixture.o"}]))
-    staged, plain = list(Store(database, root).units())
+    staged, plain_unit = list(Store(database, root).units())
     expect("a staged layer root reads with the include directory, so a layer fixture is read",
            staged.failure is None and any(c.path == "include/upper/upper.h" for c in staged.chunks))
     expect("a directory that holds a file is not a staged root, and keeps its include path",
-           plain.failure is not None)
+           plain_unit.failure is not None)
 
 
 def fill_main(compile_db: Path, shard: int, count: int) -> int:
