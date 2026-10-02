@@ -1709,8 +1709,16 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     for path in garbage:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("{}")
+
+    def garbage_count() -> int:
+        """Return the number of files under units/ that are not a manifest or the lock of one."""
+        names = {path.name for path in (store_dir / "units").rglob("*") if path.is_file()}
+        return sum(1 for name in names if not name.endswith(MANIFEST_SUFFIX)
+                   and not (name.endswith(".lock") and f"{name[:-len('.lock')]}{MANIFEST_SUFFIX}" in names))
+
+    before = garbage_count()
     expect("an eviction with a small garbage limit removes part of the garbage and says that some remains",
-           not evict_store(store_dir, STORE_BYTES, garbage_limit=1) and sum(p.exists() for p in garbage) == 1)
+           before >= 2 and not evict_store(store_dir, STORE_BYTES, garbage_limit=1) and garbage_count() == before - 1)
     expect("the next eviction removes the rest of the garbage", evict_store(store_dir, STORE_BYTES)
            and not any(p.exists() for p in garbage))
     left = list(Store(database, root).units())
