@@ -267,8 +267,8 @@ static_assert(!HasStableIdentity<decltype(identity_test::shadowed_local())>);
 static_assert(!HasStableIdentity<decltype(identity_test::NestsInLocal::nested<int>())>);
 static_assert(!HasStableIdentity<identity_test::Holds<reflect_a_local_variable()>>);
 static_assert(!HasStableIdentity<identity_test::Holds<^^identity_test::templated_function<identity_test::Internal>>>);
-static_assert(identity_verdict_of<decltype(identity_test::local_of_named())>.fault == identity_fault::function_local);
-static_assert(identity_verdict_of<decltype(identity_test::local_of_named())>.culprit
+static_assert(identity_of_type(^^decltype(identity_test::local_of_named())).fault == identity_fault::function_local);
+static_assert(identity_of_type(^^decltype(identity_test::local_of_named())).culprit
               == std::meta::dealias(^^decltype(identity_test::local_of_named())));
 
 static_assert(function_has_stable_identity_v<&identity_test::named_function>);
@@ -276,13 +276,13 @@ static_assert(!function_has_stable_identity_v<identity_test::closure_invoker>);
 
 // The verdict names the part that has no identity, not the whole type,
 // and the kind of fault that part has.
-static_assert(identity_verdict_of<identity_test::Box<identity_test::Box<identity_test::Internal>>>.culprit
+static_assert(identity_of_type(^^identity_test::Box<identity_test::Box<identity_test::Internal>>).culprit
               == ^^identity_test::Internal);
-static_assert(identity_verdict_of<identity_test::Internal>.fault == identity_fault::internal_linkage);
+static_assert(identity_of_type(^^identity_test::Internal).fault == identity_fault::internal_linkage);
 static_assert(
-    identity_verdict_of<identity_test::Box<identity_test::Box<decltype(identity_test::plain_closure)>>>.culprit
+    identity_of_type(^^identity_test::Box<identity_test::Box<decltype(identity_test::plain_closure)>>).culprit
     == std::meta::dealias(std::meta::remove_cv(^^decltype(identity_test::plain_closure))));
-static_assert(identity_verdict_of<decltype(identity_test::plain_closure)>.fault == identity_fault::no_declared_name);
+static_assert(identity_of_type(^^decltype(identity_test::plain_closure)).fault == identity_fault::no_declared_name);
 
 }  // namespace detail::stable_name_self_test
 

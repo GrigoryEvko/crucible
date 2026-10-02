@@ -1756,6 +1756,11 @@ foundation_neg_compile_test(neg_stable_id_refuses_a_nan_value
 foundation_neg_compile_test(neg_stable_id_refuses_a_union_value
   "a stable id refuses the type"
   "prints a text that a different value also prints")
+# The gate calls the identity walk itself, so a translation unit cannot
+# put a verdict of no fault in front of the walk for a closure type.
+foundation_neg_compile_test(neg_stable_identity_verdict_forged
+  "static assertion failed: foundation::reflect: a stable id refuses the type const<lambda\\(\\)>"
+  "because its part <lambda\\(\\)> has no declared name")
 
 # ── The owned buffers ─────────────────────────────────────────────────
 #

@@ -551,16 +551,15 @@ consteval void append_value_type(std::string& suffix, std::meta::info type) {
     return std::define_static_string(text);
 }
 
-template <typename T>
-inline constexpr identity_verdict identity_verdict_of = identity_of_type(^^T);
-
 }  // namespace detail
 
 // True when the printed name of T is a path of declared names from the
 // global namespace, so that every translation unit prints it the same
-// and no other type prints it.  Every id below requires it.
+// and no other type prints it.  Every id below requires it.  The concept
+// calls the walk itself.  A concept has no specialization, so no
+// translation unit can put a different verdict in front of the walk.
 template <typename T>
-concept HasStableIdentity = detail::identity_verdict_of<T>.fault == detail::identity_fault::none;
+concept HasStableIdentity = detail::identity_of_type(^^T).fault == detail::identity_fault::none;
 
 // The same question for a function that a pointer names.  A pointer to
 // the static invoker of a closure, or to a function with internal
@@ -576,7 +575,7 @@ namespace detail {
 // the part of the type that has no identity.
 template <typename T>
 [[nodiscard]] consteval std::string_view checked_stable_name() {
-    static_assert(HasStableIdentity<T>, identity_refusal_text(^^T, identity_verdict_of<T>));
+    static_assert(HasStableIdentity<T>, identity_refusal_text(^^T, identity_of_type(^^T)));
     std::string suffix;
     (void)identity_of_type(^^T, &suffix);
     if (suffix.empty()) return std::meta::display_string_of(^^T);
