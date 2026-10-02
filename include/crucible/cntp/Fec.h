@@ -7,12 +7,14 @@
 #include <fixy/Qtt.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
+#include <foundation/Simd.h>
 #include <foundation/effects/Concurrent.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Resources.h>
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -23,9 +25,9 @@
 #include <type_traits>
 #include <utility>
 
-#if defined(__AVX2__)
-#include <immintrin.h>
-#elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
+// The AVX2 kernels call GCC builtins, so they include no intrinsics header.
+// Only the NEON kernels include one.
+#if (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
 #include <arm_neon.h>
 #endif
 
@@ -220,17 +222,64 @@ template <class Field = void>
 // A vector kernel steps one register per iteration, so its stride is the
 // size of the register type that its loads use.
 #if defined(__AVX2__)
-// std::simd loses here on two counts: it is gated on __SSE2__ and so
-// compiles to nothing on ARM, and it exposes no byte-shuffle, which the
-// GF(2^8) nibble-table lookup needs.
+// One AVX2 register, as a vector of four 64-bit words.  The may_alias
+// attribute lets a load or a store reach the shard bytes.  The unaligned
+// type makes no claim about the address.
+using Avx2Register [[gnu::vector_size(32), gnu::may_alias]] = long long;
+using Avx2UnalignedRegister [[gnu::vector_size(32), gnu::may_alias, gnu::aligned(1)]] = long long;
+
+// The views of one register that the byte builtins, the 16-bit shift
+// builtin and the bitwise operations take.  Each operation of a kernel is a
+// function call.  GCC evaluates the arguments of a call from right to left,
+// and that order sets the register allocation of the kernel.
+using Avx2Bytes = ::foundation::simd::vec<char, 32>;
+using Avx2Halfwords = ::foundation::simd::vec<short, 16>::raw_type;
+using Avx2UnsignedWords = ::foundation::simd::vec<unsigned long long, 4>::raw_type;
+
+// A template argument does not keep the attributes of a vector type, so the
+// pointer that start_as_array gives has neither attribute.  The parameter
+// type of each function that follows puts them back before the access.
+[[nodiscard]] CRUCIBLE_INLINE Avx2Register load_aligned_avx2(const Avx2Register* source) noexcept { return *source; }
+
+[[nodiscard]] CRUCIBLE_INLINE Avx2Register load_unaligned_avx2(const Avx2UnalignedRegister* source) noexcept {
+    return *source;
+}
+
+CRUCIBLE_INLINE void store_unaligned_avx2(Avx2UnalignedRegister* target, Avx2Register value) noexcept {
+    *target = value;
+}
+
+// The facade of foundation/Simd.h has no byte shuffle, and the GF(2^8)
+// nibble-table lookup needs one.  So the kernel calls the builtin of
+// vpshufb.  Each 128-bit half of the table serves the indices of its own
+// half, and the nibble tables hold the same 16 bytes in each half.
+[[nodiscard]] CRUCIBLE_INLINE Avx2Register shuffle_bytes_avx2(Avx2Register table, Avx2Register indices) noexcept {
+    return std::bit_cast<Avx2Register>(__builtin_ia32_pshufb256(std::bit_cast<Avx2Bytes::raw_type>(table),
+                                                                std::bit_cast<Avx2Bytes::raw_type>(indices)));
+}
+
+// A logical right shift of each 16-bit lane, as vpsrlw does it.
+[[nodiscard]] CRUCIBLE_INLINE Avx2Register shift_halfwords_right_avx2(Avx2Register value, int count) noexcept {
+    return std::bit_cast<Avx2Register>(__builtin_ia32_psrlwi256(std::bit_cast<Avx2Halfwords>(value), count));
+}
+
+// The bitwise operations of two registers, on unsigned 64-bit lanes.
+[[nodiscard]] CRUCIBLE_INLINE Avx2Register and_avx2(Avx2Register lhs, Avx2Register rhs) noexcept {
+    return std::bit_cast<Avx2Register>(std::bit_cast<Avx2UnsignedWords>(lhs) & std::bit_cast<Avx2UnsignedWords>(rhs));
+}
+
+[[nodiscard]] CRUCIBLE_INLINE Avx2Register xor_avx2(Avx2Register lhs, Avx2Register rhs) noexcept {
+    return std::bit_cast<Avx2Register>(std::bit_cast<Avx2UnsignedWords>(lhs) ^ std::bit_cast<Avx2UnsignedWords>(rhs));
+}
+
 CRUCIBLE_HOT void xor_bytes_avx2(std::byte* dst, std::byte const* src, std::size_t len) noexcept {
     namespace lifetime = ::foundation::lifetime;
-    constexpr std::size_t stride_bytes = sizeof(__m256i);
+    constexpr std::size_t stride_bytes = sizeof(Avx2Register);
     std::size_t i = 0;
     for (; i + stride_bytes <= len; i += stride_bytes) {
-        auto const a = _mm256_loadu_si256(lifetime::start_as_array<const __m256i>(dst + i, 1).data());
-        auto const b = _mm256_loadu_si256(lifetime::start_as_array<const __m256i>(src + i, 1).data());
-        _mm256_storeu_si256(lifetime::start_as_array<__m256i>(dst + i, 1).data(), _mm256_xor_si256(a, b));
+        const Avx2Register a = load_unaligned_avx2(lifetime::start_as_array<const Avx2Register>(dst + i, 1).data());
+        const Avx2Register b = load_unaligned_avx2(lifetime::start_as_array<const Avx2Register>(src + i, 1).data());
+        store_unaligned_avx2(lifetime::start_as_array<Avx2Register>(dst + i, 1).data(), xor_avx2(a, b));
     }
     for (; i < len; ++i) {
         dst[i] ^= src[i];
@@ -249,19 +298,21 @@ CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst, std::byte const* src, std::uint8_
     }
 
     const auto tables = make_nibble_tables(coeff);
-    const auto lo_table = _mm256_load_si256(lifetime::start_as_array<const __m256i>(tables.lo.data(), 1).data());
-    const auto hi_table = _mm256_load_si256(lifetime::start_as_array<const __m256i>(tables.hi.data(), 1).data());
-    const auto mask = _mm256_set1_epi8(0x0f);
+    const Avx2Register lo_table =
+        load_aligned_avx2(lifetime::start_as_array<const Avx2Register>(tables.lo.data(), 1).data());
+    const Avx2Register hi_table =
+        load_aligned_avx2(lifetime::start_as_array<const Avx2Register>(tables.hi.data(), 1).data());
+    const auto mask = std::bit_cast<Avx2Register>(Avx2Bytes{char{0x0f}}.v_);
 
-    constexpr std::size_t stride_bytes = sizeof(__m256i);
+    constexpr std::size_t stride_bytes = sizeof(Avx2Register);
     std::size_t i = 0;
     for (; i + stride_bytes <= len; i += stride_bytes) {
-        const auto bytes = _mm256_loadu_si256(lifetime::start_as_array<const __m256i>(src + i, 1).data());
-        const auto lo = _mm256_and_si256(bytes, mask);
-        const auto hi = _mm256_and_si256(_mm256_srli_epi16(bytes, 4), mask);
-        const auto prod = _mm256_xor_si256(_mm256_shuffle_epi8(lo_table, lo), _mm256_shuffle_epi8(hi_table, hi));
-        const auto old = _mm256_loadu_si256(lifetime::start_as_array<const __m256i>(dst + i, 1).data());
-        _mm256_storeu_si256(lifetime::start_as_array<__m256i>(dst + i, 1).data(), _mm256_xor_si256(old, prod));
+        const Avx2Register bytes = load_unaligned_avx2(lifetime::start_as_array<const Avx2Register>(src + i, 1).data());
+        const Avx2Register lo = and_avx2(bytes, mask);
+        const Avx2Register hi = and_avx2(shift_halfwords_right_avx2(bytes, 4), mask);
+        const Avx2Register prod = xor_avx2(shuffle_bytes_avx2(lo_table, lo), shuffle_bytes_avx2(hi_table, hi));
+        const Avx2Register old = load_unaligned_avx2(lifetime::start_as_array<const Avx2Register>(dst + i, 1).data());
+        store_unaligned_avx2(lifetime::start_as_array<Avx2Register>(dst + i, 1).data(), xor_avx2(old, prod));
     }
     for (; i < len; ++i) {
         dst[i] ^= static_cast<std::byte>(mul(static_cast<std::uint8_t>(src[i]), coeff));

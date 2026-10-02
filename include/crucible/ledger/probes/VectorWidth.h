@@ -57,12 +57,10 @@
 #include <fixy/concurrent/Topology.h>
 #include <fixy/concurrent/WorkingSet.h>
 #include <foundation/Saturate.h>
-
-#if defined(__x86_64__) || defined(__i386__)
-#include <immintrin.h>
-#endif
+#include <foundation/Simd.h>
 
 #include <algorithm>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -152,84 +150,155 @@ inline constexpr std::size_t kMinStreamCacheMultiple = 4;
 // noinline on all four so the measured body is the same code whatever the
 // caller was compiled for, and so the two widths cannot be merged into one
 // function by a compiler that notices they compute the same sum.
+//
+// The kernels call GCC builtins and vector operations, so this header
+// includes no intrinsics header.  Each register type is a vector of float.
+// The may_alias attribute lets a load or a store reach a float buffer.
+
+using Floats256 [[gnu::vector_size(32), gnu::may_alias]] = float;
+using Floats512 [[gnu::vector_size(64), gnu::may_alias]] = float;
+using Floats128 = ::foundation::simd::vec<float, 4>::raw_type;
+using Doubles256 = ::foundation::simd::vec<double, 4>::raw_type;
+using Doubles512 = ::foundation::simd::vec<double, 8>::raw_type;
+using Ints128 = ::foundation::simd::vec<int, 4>::raw_type;
+
+// Each operation of a kernel is a function call.  GCC evaluates the
+// arguments of a call from right to left, and that order sets the register
+// allocation of the kernel.  A change of the machine code of a kernel
+// changes what the probe measures.
+
+// An aligned load or store of one register.  The buffer of a probe region
+// is page aligned, and each kernel steps whole registers.
+[[nodiscard]] CRUCIBLE_INLINE Floats256 load_floats256(const float* source) noexcept {
+    return *static_cast<const Floats256*>(static_cast<const void*>(source));
+}
+
+[[nodiscard]] CRUCIBLE_INLINE Floats512 load_floats512(const float* source) noexcept {
+    return *static_cast<const Floats512*>(static_cast<const void*>(source));
+}
+
+CRUCIBLE_INLINE void store_floats256(float* target, Floats256 value) noexcept {
+    *static_cast<Floats256*>(static_cast<void*>(target)) = value;
+}
+
+[[nodiscard]] CRUCIBLE_INLINE Floats256 add_floats256(Floats256 lhs, Floats256 rhs) noexcept { return lhs + rhs; }
+
+[[nodiscard]] CRUCIBLE_INLINE Floats512 add_floats512(Floats512 lhs, Floats512 rhs) noexcept { return lhs + rhs; }
+
+[[gnu::target("avx2,fma")]] [[nodiscard]] CRUCIBLE_INLINE Floats256 fmadd_floats256(Floats256 factor, Floats256 scale,
+                                                                                    Floats256 addend) noexcept {
+    return __builtin_ia32_vfmaddps256(factor, scale, addend);
+}
+
+// The write mask of all ones updates each lane, and the rounding operand
+// keeps the current rounding direction.
+[[gnu::target("avx512f")]] [[nodiscard]] CRUCIBLE_INLINE Floats512 fmadd_floats512(Floats512 factor, Floats512 scale,
+                                                                                   Floats512 addend) noexcept {
+    constexpr short all_lanes = -1;
+    constexpr int current_rounding = 4;
+    return __builtin_ia32_vfmaddps512_mask(factor, scale, addend, all_lanes, current_rounding);
+}
+
+// One 256-bit half of a 512-bit register.  The extract builtin takes a
+// merge source, and the write mask of all ones takes no lane from it.
+[[gnu::target("avx512f")]] [[nodiscard]] CRUCIBLE_INLINE Floats256 half_of_floats512(Floats512 value,
+                                                                                     int half) noexcept {
+    constexpr unsigned char all_lanes = 0xFF;
+    return std::bit_cast<Floats256>(
+        __builtin_ia32_extractf64x4_mask(std::bit_cast<Doubles512>(value), half, Doubles256{}, all_lanes));
+}
+
+// The sum of the 16 lanes.  The two 256-bit halves add first, then the two
+// 128-bit halves, then the two 64-bit halves, then the two lanes.
+[[gnu::target("avx512f")]] [[nodiscard]] CRUCIBLE_INLINE float sum_floats512(Floats512 value) noexcept {
+    const Floats256 upper = half_of_floats512(value, 1);
+    const Floats256 lower = half_of_floats512(value, 0);
+    const Floats256 halves = upper + lower;
+    const Floats128 upper_quarter = __builtin_ia32_vextractf128_ps256(halves, 1);
+    const Floats128 lower_quarter = __builtin_ia32_vextractf128_ps256(halves, 0);
+    const Floats128 quarters = upper_quarter + lower_quarter;
+    const Floats128 swapped = __builtin_shuffle(quarters, Ints128{2, 3, 0, 1});
+    const Floats128 pairs = quarters + swapped;
+    return pairs[0] + pairs[1];
+}
 
 [[gnu::target("avx2,fma"), gnu::noinline]] inline float compute_fma_256(const float* buffer, std::size_t float_count,
                                                                         std::size_t passes) noexcept {
-    __m256 lane0 = _mm256_setzero_ps();
-    __m256 lane1 = lane0, lane2 = lane0, lane3 = lane0;
-    __m256 lane4 = lane0, lane5 = lane0, lane6 = lane0, lane7 = lane0;
-    const __m256 multiplier = _mm256_set1_ps(1.0000001f);
+    Floats256 lane0{};
+    Floats256 lane1 = lane0, lane2 = lane0, lane3 = lane0;
+    Floats256 lane4 = lane0, lane5 = lane0, lane6 = lane0, lane7 = lane0;
+    const Floats256 multiplier = ::foundation::simd::vec<float, 8>{1.0000001f}.v_;
     for (std::size_t pass = 0; pass < passes; ++pass) {
         for (std::size_t index = 0; index + 64 <= float_count; index += 64) {
-            lane0 = _mm256_fmadd_ps(_mm256_load_ps(buffer + index + 0), multiplier, lane0);
-            lane1 = _mm256_fmadd_ps(_mm256_load_ps(buffer + index + 8), multiplier, lane1);
-            lane2 = _mm256_fmadd_ps(_mm256_load_ps(buffer + index + 16), multiplier, lane2);
-            lane3 = _mm256_fmadd_ps(_mm256_load_ps(buffer + index + 24), multiplier, lane3);
-            lane4 = _mm256_fmadd_ps(_mm256_load_ps(buffer + index + 32), multiplier, lane4);
-            lane5 = _mm256_fmadd_ps(_mm256_load_ps(buffer + index + 40), multiplier, lane5);
-            lane6 = _mm256_fmadd_ps(_mm256_load_ps(buffer + index + 48), multiplier, lane6);
-            lane7 = _mm256_fmadd_ps(_mm256_load_ps(buffer + index + 56), multiplier, lane7);
+            lane0 = fmadd_floats256(load_floats256(buffer + index + 0), multiplier, lane0);
+            lane1 = fmadd_floats256(load_floats256(buffer + index + 8), multiplier, lane1);
+            lane2 = fmadd_floats256(load_floats256(buffer + index + 16), multiplier, lane2);
+            lane3 = fmadd_floats256(load_floats256(buffer + index + 24), multiplier, lane3);
+            lane4 = fmadd_floats256(load_floats256(buffer + index + 32), multiplier, lane4);
+            lane5 = fmadd_floats256(load_floats256(buffer + index + 40), multiplier, lane5);
+            lane6 = fmadd_floats256(load_floats256(buffer + index + 48), multiplier, lane6);
+            lane7 = fmadd_floats256(load_floats256(buffer + index + 56), multiplier, lane7);
         }
     }
-    lane0 = _mm256_add_ps(_mm256_add_ps(lane0, lane1), _mm256_add_ps(lane2, lane3));
-    lane4 = _mm256_add_ps(_mm256_add_ps(lane4, lane5), _mm256_add_ps(lane6, lane7));
-    lane0 = _mm256_add_ps(lane0, lane4);
+    lane0 = add_floats256(add_floats256(lane0, lane1), add_floats256(lane2, lane3));
+    lane4 = add_floats256(add_floats256(lane4, lane5), add_floats256(lane6, lane7));
+    lane0 = add_floats256(lane0, lane4);
     alignas(32) float out[8]{};
-    _mm256_store_ps(out, lane0);
+    store_floats256(out, lane0);
     return out[0] + out[1] + out[2] + out[3] + out[4] + out[5] + out[6] + out[7];
 }
 
 [[gnu::target("avx512f"), gnu::noinline]] inline float compute_fma_512(const float* buffer, std::size_t float_count,
                                                                        std::size_t passes) noexcept {
-    __m512 lane0 = _mm512_setzero_ps();
-    __m512 lane1 = lane0, lane2 = lane0, lane3 = lane0;
-    __m512 lane4 = lane0, lane5 = lane0, lane6 = lane0, lane7 = lane0;
-    const __m512 multiplier = _mm512_set1_ps(1.0000001f);
+    Floats512 lane0{};
+    Floats512 lane1 = lane0, lane2 = lane0, lane3 = lane0;
+    Floats512 lane4 = lane0, lane5 = lane0, lane6 = lane0, lane7 = lane0;
+    const Floats512 multiplier = ::foundation::simd::vec<float, 16>{1.0000001f}.v_;
     for (std::size_t pass = 0; pass < passes; ++pass) {
         for (std::size_t index = 0; index + 128 <= float_count; index += 128) {
-            lane0 = _mm512_fmadd_ps(_mm512_load_ps(buffer + index + 0), multiplier, lane0);
-            lane1 = _mm512_fmadd_ps(_mm512_load_ps(buffer + index + 16), multiplier, lane1);
-            lane2 = _mm512_fmadd_ps(_mm512_load_ps(buffer + index + 32), multiplier, lane2);
-            lane3 = _mm512_fmadd_ps(_mm512_load_ps(buffer + index + 48), multiplier, lane3);
-            lane4 = _mm512_fmadd_ps(_mm512_load_ps(buffer + index + 64), multiplier, lane4);
-            lane5 = _mm512_fmadd_ps(_mm512_load_ps(buffer + index + 80), multiplier, lane5);
-            lane6 = _mm512_fmadd_ps(_mm512_load_ps(buffer + index + 96), multiplier, lane6);
-            lane7 = _mm512_fmadd_ps(_mm512_load_ps(buffer + index + 112), multiplier, lane7);
+            lane0 = fmadd_floats512(load_floats512(buffer + index + 0), multiplier, lane0);
+            lane1 = fmadd_floats512(load_floats512(buffer + index + 16), multiplier, lane1);
+            lane2 = fmadd_floats512(load_floats512(buffer + index + 32), multiplier, lane2);
+            lane3 = fmadd_floats512(load_floats512(buffer + index + 48), multiplier, lane3);
+            lane4 = fmadd_floats512(load_floats512(buffer + index + 64), multiplier, lane4);
+            lane5 = fmadd_floats512(load_floats512(buffer + index + 80), multiplier, lane5);
+            lane6 = fmadd_floats512(load_floats512(buffer + index + 96), multiplier, lane6);
+            lane7 = fmadd_floats512(load_floats512(buffer + index + 112), multiplier, lane7);
         }
     }
-    lane0 = _mm512_add_ps(_mm512_add_ps(lane0, lane1), _mm512_add_ps(lane2, lane3));
-    lane4 = _mm512_add_ps(_mm512_add_ps(lane4, lane5), _mm512_add_ps(lane6, lane7));
-    return _mm512_reduce_add_ps(_mm512_add_ps(lane0, lane4));
+    lane0 = add_floats512(add_floats512(lane0, lane1), add_floats512(lane2, lane3));
+    lane4 = add_floats512(add_floats512(lane4, lane5), add_floats512(lane6, lane7));
+    return sum_floats512(add_floats512(lane0, lane4));
 }
 
 [[gnu::target("avx2"), gnu::noinline]] inline float stream_sum_256(const float* buffer,
                                                                    std::size_t float_count) noexcept {
-    __m256 lane0 = _mm256_setzero_ps();
-    __m256 lane1 = lane0, lane2 = lane0, lane3 = lane0;
+    Floats256 lane0{};
+    Floats256 lane1 = lane0, lane2 = lane0, lane3 = lane0;
     for (std::size_t index = 0; index + 32 <= float_count; index += 32) {
-        lane0 = _mm256_add_ps(lane0, _mm256_load_ps(buffer + index + 0));
-        lane1 = _mm256_add_ps(lane1, _mm256_load_ps(buffer + index + 8));
-        lane2 = _mm256_add_ps(lane2, _mm256_load_ps(buffer + index + 16));
-        lane3 = _mm256_add_ps(lane3, _mm256_load_ps(buffer + index + 24));
+        lane0 = add_floats256(lane0, load_floats256(buffer + index + 0));
+        lane1 = add_floats256(lane1, load_floats256(buffer + index + 8));
+        lane2 = add_floats256(lane2, load_floats256(buffer + index + 16));
+        lane3 = add_floats256(lane3, load_floats256(buffer + index + 24));
     }
-    lane0 = _mm256_add_ps(_mm256_add_ps(lane0, lane1), _mm256_add_ps(lane2, lane3));
+    lane0 = add_floats256(add_floats256(lane0, lane1), add_floats256(lane2, lane3));
     alignas(32) float out[8]{};
-    _mm256_store_ps(out, lane0);
+    store_floats256(out, lane0);
     return out[0] + out[1] + out[2] + out[3] + out[4] + out[5] + out[6] + out[7];
 }
 
 [[gnu::target("avx512f"), gnu::noinline]] inline float stream_sum_512(const float* buffer,
                                                                       std::size_t float_count) noexcept {
-    __m512 lane0 = _mm512_setzero_ps();
-    __m512 lane1 = lane0, lane2 = lane0, lane3 = lane0;
+    Floats512 lane0{};
+    Floats512 lane1 = lane0, lane2 = lane0, lane3 = lane0;
     for (std::size_t index = 0; index + 64 <= float_count; index += 64) {
-        lane0 = _mm512_add_ps(lane0, _mm512_load_ps(buffer + index + 0));
-        lane1 = _mm512_add_ps(lane1, _mm512_load_ps(buffer + index + 16));
-        lane2 = _mm512_add_ps(lane2, _mm512_load_ps(buffer + index + 32));
-        lane3 = _mm512_add_ps(lane3, _mm512_load_ps(buffer + index + 48));
+        lane0 = add_floats512(lane0, load_floats512(buffer + index + 0));
+        lane1 = add_floats512(lane1, load_floats512(buffer + index + 16));
+        lane2 = add_floats512(lane2, load_floats512(buffer + index + 32));
+        lane3 = add_floats512(lane3, load_floats512(buffer + index + 48));
     }
-    lane0 = _mm512_add_ps(_mm512_add_ps(lane0, lane1), _mm512_add_ps(lane2, lane3));
-    return _mm512_reduce_add_ps(lane0);
+    lane0 = add_floats512(add_floats512(lane0, lane1), add_floats512(lane2, lane3));
+    return sum_floats512(lane0);
 }
 
 [[nodiscard]] inline bool host_has_wide_vector_unit() noexcept { return __builtin_cpu_supports("avx512f") != 0; }

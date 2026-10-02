@@ -60,10 +60,6 @@
 #include <utility>
 #include <vector>
 
-#if defined(__x86_64__) || defined(__i386__)
-#include <x86intrin.h>
-#endif
-
 #ifdef __linux__
 #include <sched.h>
 #include <unistd.h>
@@ -129,8 +125,8 @@ static_assert(sizeof(CpuId) == sizeof(int));
 
 [[nodiscard, gnu::always_inline]] inline uint64_t rdtsc_start() noexcept {
 #if defined(__x86_64__) || defined(__i386__)
-    _mm_lfence();
-    return __rdtsc();
+    __builtin_ia32_lfence();
+    return __builtin_ia32_rdtsc();
 #else
     return static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
 #endif
@@ -139,8 +135,8 @@ static_assert(sizeof(CpuId) == sizeof(int));
 [[nodiscard, gnu::always_inline]] inline uint64_t rdtsc_end() noexcept {
 #if defined(__x86_64__) || defined(__i386__)
     unsigned int aux;
-    const uint64_t t = __rdtscp(&aux);
-    _mm_lfence();
+    const uint64_t t = __builtin_ia32_rdtscp(&aux);
+    __builtin_ia32_lfence();
     return t;
 #else
     return static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());

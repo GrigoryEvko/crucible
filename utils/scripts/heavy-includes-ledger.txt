@@ -20,13 +20,11 @@ include/crucible/IterationDetector.h | <memory>
 include/crucible/SchemaTable.h | <memory>
 include/crucible/Serialize.h | <memory>
 include/crucible/SwissTable.h | <arm_neon.h>
-include/crucible/SwissTable.h | <immintrin.h>
 include/crucible/TraceLoader.h | <memory>
 include/crucible/Transaction.h | <memory>
 include/crucible/Vigil.h | <memory>
 include/crucible/cntp/CongestionControl.h | <filesystem>
 include/crucible/cntp/Fec.h | <arm_neon.h>
-include/crucible/cntp/Fec.h | <immintrin.h>
 include/crucible/cntp/RoceConfig.h | <filesystem>
 include/crucible/ledger/HostFingerprint.h | <filesystem>
 include/crucible/ledger/LedgerStore.h | <chrono>
@@ -36,7 +34,6 @@ include/crucible/ledger/RefreshDaemon.h | <chrono>
 include/crucible/ledger/RefreshDaemon.h | <memory>
 include/crucible/ledger/RefreshDaemon.h | <thread>
 include/crucible/ledger/probes/CacheTier.h | <thread>
-include/crucible/ledger/probes/VectorWidth.h | <immintrin.h>
 include/crucible/observe/SdcDetect.h | <memory>
 include/crucible/perf/LockContention.h | <memory>
 include/crucible/perf/PmuSample.h | <memory>

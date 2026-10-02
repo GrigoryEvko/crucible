@@ -178,6 +178,13 @@ crucible_test(test_kernel_cache_key)
 crucible_test(test_cost_model)
 crucible_test(test_call_site_table)
 crucible_test(test_swiss_table)
+# The AVX2 arm of crucible/SwissTable.h.  The default build selects the SSE2
+# arm, and -march=native on an AVX-512 host selects the AVX-512 arm.  The x86
+# floor of the tree is AVX2, so each x86 test host can run this binary.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  crucible_test(test_swiss_table_avx2 test_swiss_table.cpp)
+  target_compile_options(test_swiss_table_avx2 PRIVATE -mavx2 -mno-avx512f)
+endif()
 crucible_test(test_meta_log)
 crucible_test(test_symbol_table)
 crucible_test(test_hlc)
@@ -198,16 +205,11 @@ crucible_test(test_cntp_path_swap)
 crucible_test(test_cntp_pacing)
 crucible_test(test_cntp_roce_config)
 crucible_test(test_cntp_integrity)
-# test_cntp_fec and test_cntp_fountain instantiate the `#if __AVX2__` kernels of
-# cntp/Fec.h, which call std::start_lifetime_as<const __m256i>.  The writable-asm
-# barrier of libstdc++ 16 rejects that call under -march=native (release/bench).
-# CRUCIBLE_FEC_CONST_SIMD_OK, probed in the top-level CMakeLists, is TRUE on
-# default/tsan/analyzer, where the AVX2 arm is compiled out and the scalar path runs.
-# It is FALSE under release/bench until cntp/Fec.h adopts a const-safe load.
-if(CRUCIBLE_FEC_CONST_SIMD_OK)
+# The two tests run the kernels of cntp/Fec.h that the flags of the build
+# select: the AVX2 kernels under -march=native on an AVX2 host, the NEON
+# kernels on aarch64, and the scalar kernels otherwise.
 crucible_test(test_cntp_fec)
 crucible_test(test_cntp_fountain)
-endif()
 crucible_test(test_cntp_overlay_multicast)
 crucible_test(test_cntp_gossip_multicast)
 crucible_test(test_trace_graph)

@@ -70,6 +70,38 @@ void verify_all_recoverable_erasures(Codec const& codec, std::array<std::byte, I
     }
 }
 
+// A vector kernel of mul_xor steps one register at a time, and a shard that
+// is shorter than one register reaches only the scalar tail.  This check
+// compares the kernel that the build selects with the scalar product, for
+// each coefficient, for lengths around one, two and three register steps,
+// and at an address that is not aligned for a register.
+void verify_mul_xor_against_scalar_product() {
+    namespace detail = crucible::cntp::detail;
+    constexpr std::size_t buffer_bytes = 112;
+    constexpr auto source_seed = payload_seed<buffer_bytes>();
+    constexpr std::array<std::size_t, 2> offsets{0, 1};
+    constexpr std::array<std::size_t, 15> lengths{0, 1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 95, 96, 97, 110};
+    for (const std::size_t offset : offsets) {
+        for (const std::size_t len : lengths) {
+            for (unsigned coeff = 0; coeff < 256U; ++coeff) {
+                const auto factor = static_cast<std::uint8_t>(coeff);
+                std::array<std::byte, buffer_bytes> target{};
+                std::array<std::byte, buffer_bytes> expected{};
+                for (std::size_t i = 0; i < buffer_bytes; ++i) {
+                    target[i] = static_cast<std::byte>((i * 11U + coeff) & 0xFFU);
+                    expected[i] = target[i];
+                }
+                for (std::size_t i = 0; i < len; ++i) {
+                    const auto source_byte = static_cast<std::uint8_t>(source_seed[offset + i]);
+                    expected[offset + i] ^= static_cast<std::byte>(detail::mul(source_byte, factor));
+                }
+                detail::mul_xor(target.data() + offset, source_seed.data() + offset, factor, len);
+                assert(same_prefix(expected, target));
+            }
+        }
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -108,6 +140,17 @@ int main() {
         auto decoded_ok = rs42.decode(encoded, erasures, decoded);
         assert(decoded_ok.has_value());
         assert(same_prefix(payload, decoded));
+    }
+
+    verify_mul_xor_against_scalar_product();
+
+    {
+        // Each shard holds 104 bytes: three register steps of 32 bytes and a
+        // tail of eight bytes.
+        constexpr auto payload = payload_seed<413>();
+        std::array<std::byte, Rs42::encoded_size_for(payload.size())> encoded{};
+        assert(rs42.encode(payload, encoded).has_value());
+        verify_all_recoverable_erasures(rs42, payload, encoded);
     }
 
     {

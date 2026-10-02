@@ -4,8 +4,8 @@
 #
 # A row:  kind | header | MB | reason
 #   kind     the build kind of BUILD_DIR/build-kind.txt, for example x86_64-debug-asan.  The bytes of
-#            a header alone depend on the kind: with -march=native, a header that selects intrinsics
-#            includes <immintrin.h> too
+#            a header alone can depend on the kind, because a header can select its includes with a
+#            macro that the flags of the build set
 #   header   the header, relative to the repository root
 #   MB       the bytes that it includes alone at the last --write, in MB of 2^20 bytes
 #   reason   why the header can include that much.  A row needs a reason

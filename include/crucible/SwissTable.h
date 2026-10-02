@@ -6,6 +6,7 @@
 #include <fixy/atoms/Hw.h>
 #include <fixy/atoms/Simd.h>
 #include <foundation/Platform.h>
+#include <foundation/Simd.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
 
@@ -16,13 +17,9 @@
 #include <type_traits>
 #include <utility>
 
-#if defined(__AVX512BW__)
-#include <immintrin.h>
-#elif defined(__AVX2__)
-#include <immintrin.h>
-#elif defined(__SSE2__)
-#include <emmintrin.h>
-#elif defined(__aarch64__)
+// The x86 arms call GCC builtins, so they include no intrinsics header.
+// Only the NEON arm includes one.
+#if defined(__aarch64__)
 #include <arm_neon.h>
 #endif
 
@@ -62,8 +59,8 @@ using ActiveSimdIsa = fas::neon;
 using ActiveSimdIsa = fas::scalar;
 #endif
 
-// The four vector arms issue SIMD intrinsics.  The portable arm runs SWAR
-// over general-purpose registers, which is the scalar class.
+// The four vector arms issue vector instructions.  The portable arm runs
+// SWAR over general-purpose registers, which is the scalar class.
 using InstructionTier = std::conditional_t<fas::is_trunk_pinned(ActiveSimdIsa::isa), fah::vectorizable, fah::scalar>;
 
 }  // namespace swiss_hw
@@ -124,67 +121,75 @@ private:
 };
 
 struct CtrlGroup {
-#if defined(__AVX512BW__)
-    __m512i ctrl;
+#if defined(__AVX512BW__) || defined(__AVX2__) || defined(__SSE2__)
+    // One register of the active instruction set.  The register holds 64-bit
+    // words, so an AVX-512 load of it is vmovdqu64.  The byte builtins take
+    // lanes of char, and lanes of signed char do not convert to them, so each
+    // operation reads the register as char lanes.
+    using Words = ::foundation::simd::vec<long long, static_cast<int>(group_width() / 8U)>::raw_type;
+    using Bytes = ::foundation::simd::vec<char, static_cast<int>(group_width())>;
+    using Lanes = Bytes::raw_type;
+
+    // The type of an unaligned load of one register.  The may_alias
+    // attribute lets the load read the int8_t control bytes, and the
+    // alignment of one byte makes no claim about the address.
+    using UnalignedWords [[gnu::vector_size(group_width()), gnu::may_alias, gnu::aligned(1)]] = long long;
+
+    Words ctrl;
 
     [[nodiscard]] CRUCIBLE_INLINE static CtrlGroup load(const int8_t* pos) {
-        // The intrinsic takes a pointer to the vector type. That type carries
-        // the may_alias attribute, so the byte read is well defined.
-        return {_mm512_loadu_si512(static_cast<const __m512i*>(static_cast<const void*>(pos)))};
+        return {*static_cast<const UnalignedWords*>(static_cast<const void*>(pos))};
     }
+#endif
 
+#if defined(__AVX512BW__)
+    // The write mask of all ones compares each of the 64 lanes.
     [[nodiscard]] CRUCIBLE_INLINE BitMask match(int8_t h2) const {
-        return BitMask{static_cast<uint64_t>(_mm512_cmpeq_epi8_mask(ctrl, _mm512_set1_epi8(h2)))};
+        const Lanes needle = Bytes{static_cast<char>(h2)}.v_;
+        return BitMask{
+            static_cast<uint64_t>(__builtin_ia32_pcmpeqb512_mask(std::bit_cast<Lanes>(ctrl), needle, ~0ULL))};
     }
 
     // kEmpty is the only control byte with bit 7 set, so extracting the sign
     // bit of each byte is equivalent to comparing every byte against kEmpty.
     [[nodiscard]] CRUCIBLE_INLINE BitMask match_empty() const {
-        return BitMask{static_cast<uint64_t>(_mm512_movepi8_mask(ctrl))};
+        return BitMask{static_cast<uint64_t>(__builtin_ia32_cvtb2mask512(std::bit_cast<Lanes>(ctrl)))};
     }
 
 #elif defined(__AVX2__)
-    __m256i ctrl;
-
-    [[nodiscard]] CRUCIBLE_INLINE static CtrlGroup load(const int8_t* pos) {
-        // The intrinsic takes a pointer to the vector type. That type carries
-        // the may_alias attribute, so the byte read is well defined.
-        return {_mm256_loadu_si256(static_cast<const __m256i*>(static_cast<const void*>(pos)))};
-    }
-
+    // The comparison gives lanes of signed char.  The movemask builtin takes
+    // lanes of char, and the bit cast keeps each bit.
     [[nodiscard]] CRUCIBLE_INLINE BitMask match(int8_t h2) const {
-        auto cmp = _mm256_cmpeq_epi8(ctrl, _mm256_set1_epi8(h2));
+        const Lanes needle = Bytes{static_cast<char>(h2)}.v_;
+        const auto cmp = std::bit_cast<Lanes>(std::bit_cast<Lanes>(ctrl) == needle);
         // The movemask result is a signed int. Widening through uint32_t
         // stops a set top bit from sign-extending across the upper 32 bits.
-        return BitMask{static_cast<uint64_t>(static_cast<uint32_t>(_mm256_movemask_epi8(cmp)))};
+        return BitMask{static_cast<uint64_t>(static_cast<uint32_t>(__builtin_ia32_pmovmskb256(cmp)))};
     }
 
     // kEmpty is the only control byte with bit 7 set, so extracting the sign
     // bit of each byte is equivalent to comparing every byte against kEmpty.
     [[nodiscard]] CRUCIBLE_INLINE BitMask match_empty() const {
-        return BitMask{static_cast<uint64_t>(static_cast<uint32_t>(_mm256_movemask_epi8(ctrl)))};
+        return BitMask{
+            static_cast<uint64_t>(static_cast<uint32_t>(__builtin_ia32_pmovmskb256(std::bit_cast<Lanes>(ctrl))))};
     }
 
 #elif defined(__SSE2__)
-    __m128i ctrl;
-
-    [[nodiscard]] CRUCIBLE_INLINE static CtrlGroup load(const int8_t* pos) {
-        // The intrinsic takes a pointer to the vector type. That type carries
-        // the may_alias attribute, so the byte read is well defined.
-        return {_mm_loadu_si128(static_cast<const __m128i*>(static_cast<const void*>(pos)))};
-    }
-
+    // The comparison gives lanes of signed char.  The movemask builtin takes
+    // lanes of char, and the bit cast keeps each bit.
     [[nodiscard]] CRUCIBLE_INLINE BitMask match(int8_t h2) const {
-        auto cmp = _mm_cmpeq_epi8(ctrl, _mm_set1_epi8(h2));
+        const Lanes needle = Bytes{static_cast<char>(h2)}.v_;
+        const auto cmp = std::bit_cast<Lanes>(std::bit_cast<Lanes>(ctrl) == needle);
         // The movemask result is a signed int. Widening through uint32_t
         // stops a set top bit from sign-extending across the upper 32 bits.
-        return BitMask{static_cast<uint64_t>(static_cast<uint32_t>(_mm_movemask_epi8(cmp)))};
+        return BitMask{static_cast<uint64_t>(static_cast<uint32_t>(__builtin_ia32_pmovmskb128(cmp)))};
     }
 
     // kEmpty is the only control byte with bit 7 set, so extracting the sign
     // bit of each byte is equivalent to comparing every byte against kEmpty.
     [[nodiscard]] CRUCIBLE_INLINE BitMask match_empty() const {
-        return BitMask{static_cast<uint64_t>(static_cast<uint32_t>(_mm_movemask_epi8(ctrl)))};
+        return BitMask{
+            static_cast<uint64_t>(static_cast<uint32_t>(__builtin_ia32_pmovmskb128(std::bit_cast<Lanes>(ctrl))))};
     }
 
 #elif defined(__aarch64__)

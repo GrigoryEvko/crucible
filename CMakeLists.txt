@@ -486,30 +486,6 @@ else()
   set(_CRUCIBLE_CFI_FLAGS)
 endif()
 
-# cntp/Fec.h (off-limits to edit here) instantiates std::start_lifetime_as<const
-# __m256i> inside its `#if defined(__AVX2__)` arm (lines ~292-355). libstdc++ 16
-# implements start_lifetime_as with a writable inline-asm barrier (`"=m"(*p)`), which
-# is a hard "read-only location used as 'asm' output" error whenever the target type
-# is const-qualified — on BOTH stock and patched GCC 16, at every -O level. It only
-# bites when __AVX2__ is defined: release/bench pass -march=native (CMAKE_CXX_FLAGS);
-# default/tsan/analyzer omit it, so the AVX2 arm is #if'd out and the FEC tests compile
-# against the scalar path. Probe the exact idiom under the active flags so the two tests
-# that instantiate the AVX2 kernels are skipped ONLY where they genuinely cannot compile,
-# and auto-re-enable if cntp/Fec.h ever adopts a const-safe load.
-include(CheckCXXSourceCompiles)
-set(_crucible_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
-set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -std=c++26")
-check_cxx_source_compiles("
-#include <immintrin.h>
-#if !defined(__AVX2__)
-int main() {}
-#else
-#include <memory>
-int main() { const __m256i* p = nullptr; (void) std::start_lifetime_as<const __m256i>(p); }
-#endif
-" CRUCIBLE_FEC_CONST_SIMD_OK)
-set(CMAKE_REQUIRED_FLAGS "${_crucible_saved_required_flags}")
-
 # canopy/Hlc.h (off-limits to edit here) static_asserts
 # std::atomic<unsigned __int128>::is_always_lock_free on every non-x86
 # target and refuses to build otherwise — a hidden libstdc++ mutex
@@ -531,6 +507,7 @@ set(CMAKE_REQUIRED_FLAGS "${_crucible_saved_required_flags}")
 # future LSE128 runners via -march=native, or toolchains where
 # -mno-outline-atomics suffices). No-op on x86; strictly cannot regress.
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+  include(CheckCXXSourceCompiles)
   set(_crucible_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
   set(_crucible_lockfree128_flags "")
   set(_crucible_lockfree128_idx 0)
