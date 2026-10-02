@@ -46,6 +46,14 @@ THE TESTS THAT ALWAYS RUN
       the source tree that is not a file.
     - A test whose ELF file the script cannot read as an ELF64 file.
 
+THE LOOP HISTORY
+    After each call that builds or runs tests, the script appends one line to
+    BUILD_DIR/loop-history/history.jsonl: the commit, the job count, the host
+    load, the wall time, the CPU time and the critical path of the build, the
+    compiles and the links that ran, and the wall time and the CPU time of
+    the tests.  `python3 utils/scripts/loop_history.py BUILD_DIR` prints the
+    last lines as a table.  utils/scripts/loop_history.py gives the rules.
+
 THE RECORD
     After an executable test passes, the script records its fingerprint in
     BUILD_DIR/affected-tests/state.json.  A test that fails, a test that ctest
@@ -97,6 +105,10 @@ import xml.etree.ElementTree as ElementTree
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import loop_history  # noqa: E402
 
 # ── Constants ──────────────────────────────────────────────────────────────
 
@@ -677,6 +689,21 @@ def update_state(state: dict[str, object], planner: Planner, decisions: list[Dec
     state["scans"] = planner.used_scans
 
 
+def save_history(recorder: loop_history.Recorder, build_dir: Path) -> None:
+    """Append the line of this call to the loop history, and print the times of the call in one line."""
+    problem = recorder.save()
+    if problem:
+        print(f"run-affected-tests: the loop history has a problem: {problem}")
+    parts = []
+    for name, part in (("build", recorder.line.get("build")), ("tests", recorder.line.get("tests"))):
+        if isinstance(part, dict) and "wall_s" in part:
+            path = f", critical path {part['critical_path_s']} s" if "critical_path_s" in part else ""
+            parts.append(f"{name} {part['wall_s']:.1f} s with {part['cpu_s']:.0f} s CPU{path}")
+    if parts:
+        print(f"run-affected-tests: {'; '.join(parts)}.  `python3 utils/scripts/loop_history.py {build_dir}` prints "
+              f"the history.")
+
+
 def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only: bool,
         ctest_arguments: list[str]) -> int:
     """Build, decide, run and record.  Return the exit code of the script."""
@@ -687,10 +714,14 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
     state_dir.mkdir(exist_ok=True)
     with open(state_dir / "lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
+        recorder = loop_history.Recorder(build_dir, Path(trees.source_root), jobs)
         if should_build and not plan_only:
-            status = build(build_dir, jobs)
+            with recorder.start_build():
+                status = build(build_dir, jobs)
+            recorder.finish_build(status)
             if status != 0:
                 print(f"run-affected-tests: the build failed with exit code {status}.  No test ran.")
+                save_history(recorder, build_dir)
                 return 1
         elif not should_build:
             print("run-affected-tests: --no-build: the script does not make sure that each executable is current.")
@@ -707,18 +738,25 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
         print_plan(decisions, build_dir)
         if plan_only:
             return 0
-        status, statuses = (run_tests(build_dir, selected, state_dir, jobs, ctest_arguments)
-                            if selected else (0, {}))
+        status, statuses = 0, {}
+        if selected:
+            with recorder.test_timer:
+                status, statuses = run_tests(build_dir, selected, state_dir, jobs, ctest_arguments)
         if selected and not statuses:
-            print(f"run-affected-tests: ctest gave no JUnit report (exit code {status}).  The script records nothing.")
+            print(f"run-affected-tests: ctest gave no JUnit report (exit code {status}).  The script records no pass.")
+            recorder.finish_tests(status or 2, {"selected": len(selected), "skipped": len(skipped)})
+            save_history(recorder, build_dir)
             return 2
         update_state(state, planner, decisions, statuses, tests)
         save_state(state_path, state)
         counts = Counter(statuses.get(name, "notrun") for name in selected)
+        recorder.finish_tests(status, {"selected": len(selected), "passed": counts["run"], "failed": counts["fail"],
+                                       "not_run": counts["notrun"] + counts["disabled"], "skipped": len(skipped)})
         print(f"run-affected-tests: {len(selected)} tests selected: {counts['run']} passed, {counts['fail']} failed, "
               f"{counts['notrun'] + counts['disabled']} did not run.")
         print(f"run-affected-tests: {len(skipped)} tests skipped, because {REASON_SAME} "
               f"({state_dir / 'skipped.txt'}).  The script reports no skipped test as passed.")
+        save_history(recorder, build_dir)
         return 0 if status == 0 and counts["fail"] == 0 else 1
 
 
@@ -861,6 +899,11 @@ def self_test() -> int:
         status, output = fake.call()
         expect("the first call runs each test, and exe_bad fails", status == 1 and fake.skipped() == [], output)
         expect("the first call says that no state file exists", "no state file" in output, output)
+        history = loop_history.read_lines(fake.build_dir)
+        expect("a call appends one line to the loop history, with the tests and with no build after --no-build",
+               len(history) == 1 and history[0]["build"] is None and history[0]["tests"]["failed"] == 1
+               and history[0]["tests"]["selected"] == history[0]["tests"]["passed"] + 1 + history[0]["tests"]["not_run"]
+               and history[0]["jobs"] == 4, output)
 
         status, output = fake.call()
         expect("an unchanged tree skips exactly the passed executable tests",
@@ -924,8 +967,11 @@ def self_test() -> int:
         expect("a failed test gets no record", "exe_ok" not in state["passed"], output)
         expect("a disabled test gets no record", "disabled_test" not in state["passed"], output)
 
+        lines_before = len(loop_history.read_lines(fake.build_dir))
         status, output = fake.call("--plan")
         expect("--plan runs no test", status == 0 and "tests selected" not in output, output)
+        expect("--plan appends no line to the loop history",
+               len(loop_history.read_lines(fake.build_dir)) == lines_before, output)
 
     status, output = subprocess.run([sys.executable, str(Path(__file__).resolve()), "/nonexistent/build"],
                                     capture_output=True, text=True, check=False).returncode, ""

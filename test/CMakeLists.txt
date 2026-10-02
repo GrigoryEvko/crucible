@@ -5549,7 +5549,8 @@ add_test(NAME build_order_self_test
 set_tests_properties(build_order compile_first custom_deps build_order_self_test PROPERTIES LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 # ninja_files_self_test — utils/scripts/ninja_files.py reads build.ninja and the
-# ninja log for check-build-order.py and check-reconfigure-noop.py.
+# ninja log for check-build-order.py, check-reconfigure-noop.py and the loop
+# history of utils/scripts/loop_history.py.
 add_test(NAME ninja_files_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/ninja_files.py --self-test)
 set_tests_properties(ninja_files_self_test PROPERTIES LABELS "ci_guard")
@@ -5603,7 +5604,13 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 add_test(NAME affected_tests_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/run-affected-tests.py --self-test
           --ctest ${CMAKE_CTEST_COMMAND})
-set_tests_properties(affected_tests_self_test PROPERTIES LABELS "ci_guard")
+# loop_history_self_test — each call of run-affected-tests.py appends one line
+# to BUILD_DIR/loop-history/history.jsonl: the build and test times, their CPU
+# time and the host load, the critical path of the build, and the compiles and
+# links that ran.  `python3 utils/scripts/loop_history.py BUILD_DIR` prints it.
+add_test(NAME loop_history_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/loop_history.py --self-test)
+set_tests_properties(affected_tests_self_test loop_history_self_test PROPERTIES LABELS "ci_guard")
 
 # vessel_acceptance is the acceptance gate of the PyTorch vessel under
 # vessel/torch.  utils/scripts/check-vessel-acceptance.py builds the vessel targets
