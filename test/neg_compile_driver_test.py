@@ -746,8 +746,9 @@ class StoreTest:
         stopped = self.run("neg_error_directive", *DIRECTIVE, CRUCIBLE_NEG_CACHE="0",
                            CRUCIBLE_NEG_EXTRA_FLAGS="-Wfatal-errors")
         stopped_head, stopped_paths = record("neg_error_directive")
+        stopped_source = str(self.root / "neg/neg_error_directive.cpp")
         self.expect(stopped[0] == 0 and stopped_head.get("has_inputs") is True
-                    and str(self.root / "neg/neg_error_directive.cpp") in stopped_paths and header_file in stopped_paths,
+                    and stopped_source in stopped_paths and header_file in stopped_paths,
                     f"a compile that -Wfatal-errors stops writes the inputs of the -M -MG pass: {stopped_head} "
                     f"{stopped_paths}")
 
@@ -1088,13 +1089,13 @@ class StoreTest:
         return list(row["arguments"]) if row.get("arguments") else shlex.split(row.get("command", ""))
 
     def cc1plus_view(self, command: list[str]) -> tuple[list[str], bool] | None:
-        """Return the plugin options that the GCC driver gives cc1plus for `command`, and True when it defines the macro.
+        """Return the plugin options that GCC gives cc1plus for `command`, and True when it defines the macro.
 
         `-###` prints the command of each program that the GCC driver runs,
         and it runs none.  The command of cc1plus names each plugin option and
-        each macro definition in the spelling of cc1plus, whatever spelling
-        `command` uses.  The macro is QUARANTINE_MACRO of the driver.  The
-        result is None when the GCC driver refuses `command` and prints no
+        each macro definition in the spelling of cc1plus, for each spelling
+        that `command` can use.  The macro is QUARANTINE_MACRO of the driver.
+        The result is None when the GCC driver refuses `command` and prints no
         command of cc1plus, so a refused command never looks like a clean one.
         """
         proc = subprocess.run([self.cxx, "-###", *command[1:]], capture_output=True, text=True, check=False)
@@ -1118,9 +1119,10 @@ class StoreTest:
         so the check copies no flag of utils/tools/quarantine/Quarantine.cmake.
         GCC is the judge (cc1plus_view): the command of the build loads the
         plugin and defines the macro, and the command that the driver keeps
-        does neither.  With CRUCIBLE_NEG_KEEP_PLUGIN=1 the command stays the
-        same.  Each flag that the driver removes, alone, loads the plugin,
-        gives it an argument or defines the macro.  GCC also takes the aliases
+        loads no plugin and defines no macro.  With
+        CRUCIBLE_NEG_KEEP_PLUGIN=1 the command stays the same.  Each flag that
+        the driver removes, alone, loads the plugin, gives it an argument or
+        defines the macro.  GCC also takes the aliases
         --plugin= and --plugin-arg-, the definition in the spellings -D NAME,
         --define-macro=NAME and --define-macro NAME, after -Xpreprocessor and in
         a -Wp, list, and the check makes each of them from the flags of the
@@ -1133,8 +1135,9 @@ class StoreTest:
         self.expect(bool(options) and defines,
                     f"the command of the build loads the plugin and defines {store.QUARANTINE_MACRO}: {view}")
         kept = store._strip_plugin_flags(command, False)
-        self.expect(self.cc1plus_view(kept) == ([], False),
-                    f"the command that the driver keeps loads no plugin and defines no macro: {self.cc1plus_view(kept)}")
+        kept_view = self.cc1plus_view(kept)
+        self.expect(kept_view == ([], False),
+                    f"the command that the driver keeps loads no plugin and defines no macro: {kept_view}")
         self.expect(store._strip_plugin_flags(command, True) == command,
                     "with CRUCIBLE_NEG_KEEP_PLUGIN=1 the driver keeps each flag")
         for flag in flags:
@@ -1364,7 +1367,7 @@ In file included from /w/neg/neg_three.cpp:1:
 
 
 def check_unmatched_errors(failures: list[str]) -> None:
-    """Check which errors of a planted output each set of regexes reaches."""
+    """Do a check of the errors of a planted output that each set of regexes reaches."""
     lines = UNMATCHED_OUTPUT.split("\n")
     first, second, third = lines[3], lines[5], lines[7]
     cases: tuple[tuple[list[str], list[str]], ...] = (

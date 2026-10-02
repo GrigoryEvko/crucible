@@ -47,8 +47,8 @@ driver also makes sure that each error of the output has a regex
 context lines that GCC prints before the header, and the lines after the
 header up to the context of the next error.  A regex match in one of these
 lines gives the error a regex.  An error with no regex fails the fixture, also
-when its other errors are the documented ones.  An unexpected error can hide
-a change: a fixture can keep its documented error and get a second error from a
+when the regexes match its other errors.  An error with no regex can hide a
+change: a fixture can keep its own error and get a second error from a
 different cause.
 
 utils/scripts/fixture-own-reason-ledger.txt names the fixtures that had an
