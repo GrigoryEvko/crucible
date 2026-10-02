@@ -38,10 +38,9 @@
 # sources of the plugin, of its flags, of the compiler or (for the quarantine
 # plugin) of the admitted list configures again.  The stamp argument then
 # changes each compile line, and each object compiles again.  The stamp comes
-# from these inputs and not from the bytes of the plugin, which hold the path
-# of the source tree in their debug information.  ccache ignores the paths
-# that the plugin arguments name, so the build directories of two work trees
-# share the entries of the cache.
+# from these inputs and not from the bytes of the plugin.  ccache ignores the
+# paths that the plugin arguments name, so the build directories of two work
+# trees share the entries of the cache.
 #
 # The root CMakeLists.txt includes this file after the ccache block and the
 # PGO block, which can also clear the compiler launcher, and before the first
@@ -123,12 +122,18 @@ if(EXISTS "${_crucible_quarantine_cc1plus}")
 endif()
 
 # Builds the plugin NAME from SOURCE and plugin_core.h when its key changed,
-# and sets the variable named by OUT_KEY to the key.
+# and sets the variable named by OUT_KEY to the key.  The compile runs in the
+# directory of the sources and maps that directory to `.`, so the plugin bytes
+# hold no path of the work tree, and two work trees build the same bytes.  The
+# result store of the negative fixtures keys these bytes
+# (test/neg_compile_store.py).  The key names the map with no path, so the key
+# and the stamp stay the same in each work tree.
 function(crucible_build_gcc_plugin name source out_key)
   file(SHA256 "${source}" source_hash)
   file(SHA256 "${CRUCIBLE_PLUGIN_CORE}" core_hash)
-  set(key "${source_hash} ${core_hash} ${_crucible_quarantine_compiler_key}")
+  set(key "${source_hash} ${core_hash} ${_crucible_quarantine_compiler_key} -ffile-prefix-map=SOURCE_DIRECTORY=.")
   set(plugin "${_crucible_quarantine_out}/${name}.so")
+  get_filename_component(source_dir "${source}" DIRECTORY)
   set(recorded_key "")
   if(EXISTS "${plugin}.key")
     file(READ "${plugin}.key" recorded_key)
@@ -136,7 +141,9 @@ function(crucible_build_gcc_plugin name source out_key)
   if(NOT EXISTS "${plugin}" OR NOT recorded_key STREQUAL key)
     file(MAKE_DIRECTORY "${_crucible_quarantine_out}")
     execute_process(
-      COMMAND "${CRUCIBLE_REAL_CXX}" ${CRUCIBLE_QUARANTINE_PLUGIN_FLAGS} -o "${plugin}" "${source}"
+      COMMAND "${CRUCIBLE_REAL_CXX}" ${CRUCIBLE_QUARANTINE_PLUGIN_FLAGS} "-ffile-prefix-map=${source_dir}=."
+              -o "${plugin}" "${source}"
+      WORKING_DIRECTORY "${source_dir}"
       RESULT_VARIABLE result
       ERROR_VARIABLE error_text)
     if(NOT result EQUAL 0)

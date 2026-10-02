@@ -1361,14 +1361,16 @@ endfunction()
 # checks the warning, the error and the ledger rows of the CPU budget and of
 # the instruction budget of a compile, the record of the inputs of each run, the
 # kept command of a fixture, the earlier result that the undo of an edit uses,
-# and the memos of the answers of the compiler driver, of the hashes of the
-# dependencies and of the budget.  Each check waits about one second for
+# the memos of the answers of the compiler driver, of the hashes of the
+# dependencies and of the budget, and the use of a result in a second work tree
+# with the same files, with a different header and with a header that names
+# the root of the second tree.  Each check waits about one second for
 # the files of its tree to age, and the checks run as
 # FIXTURE_STORE_SELF_TEST_PARTS parts at the same time.  Part K runs each check
 # whose position modulo the count of parts is K.  Exit 3 reports a skip when
 # the compiler cannot run, or when the host cannot give the condition of each
 # check of the part, for example an instruction counter.
-set(FIXTURE_STORE_SELF_TEST_PARTS 23)
+set(FIXTURE_STORE_SELF_TEST_PARTS 26)
 math(EXPR fixture_store_last_part "${FIXTURE_STORE_SELF_TEST_PARTS} - 1")
 foreach(part RANGE ${fixture_store_last_part})
   add_test(NAME fixture_store_self_test_${part}

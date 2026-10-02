@@ -70,13 +70,16 @@ class StoreTest:
     """The checks of the result store, each one in a temporary tree of its own."""
 
     def __init__(self, root: Path, cxx: str) -> None:
-        """Make the tree of headers, fixtures and compile database in `root`.
+        """Make the tree of headers, fixtures, compile database and CMakeCache.txt in `root`.
 
         The tree uses the real path of `root`, because the driver names each
         search directory by its real path.  The store is in the build
         directory: a new directory in `root` changes the time that the store
-        reads for each path in `root` that does not exist.
+        reads for each path in `root` that does not exist.  CMakeCache.txt
+        names `root` as the source root and the build directory as the build
+        root, as CMake does.
         """
+        root.mkdir(parents=True, exist_ok=True)
         self.root = root.resolve()
         self.cxx = cxx
         self.build = self.root / "build"
@@ -89,6 +92,8 @@ class StoreTest:
             (self.root / name).write_text(text)
         (self.root / "shadow").mkdir()
         self.build.mkdir()
+        (self.build / "CMakeCache.txt").write_text(f"CMAKE_HOME_DIRECTORY:INTERNAL={self.root}\n"
+                                                   f"CMAKE_CACHEFILE_DIR:INTERNAL={self.build}\n")
         rows = []
         for name in FILES:
             if not name.startswith("neg/"):
@@ -187,6 +192,13 @@ class StoreTest:
     def has(notes: list[str], text: str) -> bool:
         """Return True when a note starts with `text`."""
         return any(note.startswith(text) for note in notes)
+
+    def twin(self) -> StoreTest:
+        """Return a second tree beside this one, a work tree of the same commit, with the store of this tree."""
+        other = StoreTest(self.root.parent / "twin", self.cxx)
+        other.caches = self.caches
+        other.store = self.store
+        return other
 
     def check_hit_and_header_edit(self) -> None:
         """A second run uses the store, and a header edit compiles only the fixtures that read it."""
@@ -702,7 +714,7 @@ class StoreTest:
                     f"a rewritten compile database replaces the kept command: {rewritten[0]} {rewritten[3]}")
 
     def check_driver_answers(self) -> None:
-        """A new assembler on a path that the compiler driver searches gives a new key, also after a memo of the answers.
+        """A new assembler on a path that the compiler driver searches gives a new key, also with a memo of answers.
 
         COMPILER_PATH puts an empty directory first in the program search of
         the driver.  The first run keeps the answers of the driver in a memo,
@@ -781,6 +793,73 @@ class StoreTest:
         self.expect(warned[0] == 0 and warning(warned[1]) is not None,
                     f"a new budget table replaces the kept budget: {warned[0]} {warned[3]}")
 
+    def check_cross_root_hit(self) -> None:
+        """A second work tree of the same files uses the result of the first, and its output names its own paths."""
+        twin = self.twin()
+        self.settle()
+        first = self.run("neg_size", *SIZE)
+        own_source = re.escape(str(twin.root / "neg" / "neg_size.cpp"))
+        shared = twin.run("neg_size", *SIZE, own_source)
+        self.expect(self.has(first[3], "stored") and self.has(shared[3], "the result comes from the store")
+                    and shared[0] == 0 and self.entry_path(first[3]) == twin.entry_path(shared[3]),
+                    f"the second tree uses the entry of the first: {first[3]} {shared[0]} {shared[3]}")
+        self.expect(str(twin.root / "neg") in shared[1] and f"{self.root}/" not in shared[1],
+                    f"the stored output names the paths of the second tree: {shared[1]}")
+        foreign = twin.run("neg_size", *SIZE, re.escape(str(self.root / "neg" / "neg_size.cpp")))
+        self.expect(foreign[0] == 1 and "expected diagnostic not found" in foreign[2],
+                    f"a regex sees the paths of the tree that runs only: {foreign[0]} {foreign[3]}")
+
+    def check_cross_root_text(self) -> None:
+        """A dependency that holds the text of the root of the reading tree gives no result from a different root.
+
+        The header A.h of both trees compares its own __FILE__ with its path in
+        the second tree.  The first tree stores its result.  In the second tree
+        the assertion of the header fails, so the stored output is stale there.
+        """
+        twin = self.twin()
+        header = ("#pragma once\n"
+                  "constexpr bool same_text(const char* left, const char* right) {\n"
+                  "    while (*left != '\\0' && *left == *right) { ++left; ++right; }\n"
+                  "    return *left == *right;\n"
+                  "}\n"
+                  f'static_assert(!same_text(__FILE__, "{twin.root}/include/a/A.h"),\n'
+                  '              "the header is in the second tree");\n'
+                  "struct A { int field; };\n")
+        for tree in (self, twin):
+            (tree.root / "include/a/A.h").write_text(header)
+        self.settle()
+        first = self.run("neg_size", *SIZE)
+        self.expect(first[0] == 0 and self.has(first[3], "stored")
+                    and "the header is in the second tree" not in first[1],
+                    f"the first tree stores its result: {first[0]} {first[3]}")
+        twin_header = twin.root / "include/a/A.h"
+        second = twin.run("neg_size", *SIZE, "the header is in the second tree")
+        self.expect(second[0] == 0 and twin.has(second[3], f"compiled (a dependency holds the text of a root: "
+                                                           f"{twin_header})")
+                    and twin.has(second[3], f"not stored (a dependency holds the text of a root: {twin_header})"),
+                    f"the second tree compiles, and its header fails: {second[0]} {second[3]}")
+
+    def check_cross_root_edit(self) -> None:
+        """A second tree with a different header, or a new name in a search root, takes no result of the first tree."""
+        twin = self.twin()
+        twin_header = twin.root / "include/a/A.h"
+        twin_header.write_text("#pragma once\nstruct A { char field; };\n")
+        self.settle()
+        self.run("neg_size", *SIZE)
+        edited = twin.run("neg_size", *SIZE)
+        self.expect(edited[0] == 1 and "compiled successfully" in edited[2]
+                    and twin.has(edited[3], f"compiled (a dependency changed: {twin_header})"),
+                    f"a different header in the second tree compiles the fixture there: {edited[0]} {edited[3]}")
+        self.run("neg_convert", *CONVERT)
+        shared = twin.run("neg_convert", *CONVERT)
+        self.expect(twin.has(shared[3], "the result comes from the store"),
+                    f"the second tree takes the result of a fixture whose inputs are the same: {shared[3]}")
+        (twin.root / "include/b/Other.h").write_text("#pragma once\n")
+        rooted = twin.run("neg_convert", *CONVERT)
+        self.expect(rooted[0] == 0
+                    and twin.has(rooted[3], f"compiled (a search directory changed: {twin.root / 'include'})"),
+                    f"a new name in a search directory of the second tree compiles the fixture there: {rooted[3]}")
+
     def check_eviction(self) -> None:
         """A write into a bucket above its share removes the entries of that bucket unused for the longest time.
 
@@ -842,6 +921,9 @@ CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_driver_answers,
     StoreTest.check_digest_memo,
     StoreTest.check_budget_memo,
+    StoreTest.check_cross_root_hit,
+    StoreTest.check_cross_root_text,
+    StoreTest.check_cross_root_edit,
 )
 
 SEARCH_LIST = """\
@@ -916,7 +998,40 @@ def check_parsers(failures: list[str]) -> None:
                               "neg_one")
         if not store._warnings_file(warnings_dir, "fixture-cpu", "neg_one").is_file():
             failures.append("the warnings file of a fixture has the name that check_report.write_warnings gives it")
+    check_roots(failures)
     check_entry_format(failures)
+
+
+def check_roots(failures: list[str]) -> None:
+    """Check the marks of the roots, the roots of a CMakeCache.txt and the refusal of an output with a NUL character."""
+    with tempfile.TemporaryDirectory(prefix="neg-roots-") as scratch:
+        base = Path(scratch).resolve()
+        source, build = f"{base}/src", f"{base}/src/build"
+        roots = store.Roots(source, build)
+        text = f"{build}/x.o: {source}/include/a.h, {source}x and {base}/other"
+        relabeled = roots.relabel(text)
+        expected = f"\x00build root\x00/x.o: \x00source root\x00/include/a.h, \x00source root\x00x and {base}/other"
+        if relabeled != expected or roots.restore(relabeled) != text:
+            failures.append(f"the marks of a build root inside the source root give {relabeled!r}")
+        if store.Roots("/", "/tmp").identity():
+            failures.append("a root of fewer than two components takes no part in the marks")
+        if not roots.holds_root(f"// {source}/x.h\n".encode()) or roots.holds_root(f"// {base}/srd\n".encode()):
+            failures.append("a byte search finds the text of a root, and only that text")
+        (base / "CMakeCache.txt").write_text(f"OTHER:STRING=x\nCMAKE_HOME_DIRECTORY:INTERNAL={source}\n"
+                                             f"CMAKE_CACHEFILE_DIR:INTERNAL={build}\n")
+        if store.build_roots(base).identity() != [build, source]:
+            failures.append(f"the roots of a CMakeCache.txt are {store.build_roots(base).identity()}")
+        if store.build_roots(base / "src").identity():
+            failures.append("a build directory with no CMakeCache.txt has no root")
+        dependency = base / "dependency.h"
+        dependency.write_text("int value;\n")
+        (base / "store" / "memo").mkdir(parents=True)
+        result_store = store.ResultStore(base / "store", 1 << 20)
+        is_stored, why = result_store.record("0" * 64, store.CompileResult(1, "a\x00b\n", 0.1, 0.0, None),
+                                             [str(dependency)], [], [str(base)], time.time_ns() + 2 * store._SETTLE_NS,
+                                             roots)
+        if is_stored or "NUL" not in why:
+            failures.append(f"the store refuses an output with a NUL character: {is_stored} {why}")
 
 
 def planted_result(digest: str, output: str = "planted output\n") -> dict[str, object]:
@@ -973,7 +1088,7 @@ def main(arguments: list[str]) -> int:
     checks = CHECKS[index::count]
     for check in checks:
         with tempfile.TemporaryDirectory(prefix="neg-store-") as directory:
-            test = StoreTest(Path(directory), cxx)
+            test = StoreTest(Path(directory) / "tree", cxx)
             test.settle()
             check(test)
             failures.extend(f"{check.__name__}: {failure}" for failure in test.failures)

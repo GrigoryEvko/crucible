@@ -297,7 +297,10 @@ class UnitStore:
         self.sources_root = (root if root is not None else scratch.resolve()) / "sources"
         memo_path = (self.store.memo / DIGEST_MEMO_NAME.format(caller)
                      if self.store is not None and caller is not None else None)
-        self.digests = compile_store.DigestMemo(memo_path)
+        # The units have no build directory, so no root takes the place of a
+        # mark, and the store keys each path as it is.
+        self.roots = compile_store.Roots(None, None)
+        self.digests = compile_store.DigestMemo(memo_path, self.roots)
         self._lock = threading.Lock()
         self._program_paths: dict[str, str | None] = {}
 
@@ -370,7 +373,8 @@ class UnitStore:
         if self.store is None:
             return None
         protected = {os.path.realpath(source), os.path.realpath(key_argv[-1])}
-        key, _reason = compile_store.compile_key(key_argv, directory, protected, self.store.memo, self.environment)
+        key, _reason = compile_store.compile_key(key_argv, directory, protected, self.store.memo, self.environment,
+                                                 self.roots)
         return key
 
     def _program_path(self, program: str, directory: Path) -> str | None:
@@ -471,12 +475,12 @@ class UnitStore:
         stored = compile_store.CompileResult(result.returncode, _encode(result.stdout, result.stderr), 0.0, 0.0,
                                              None)
         self.store.record(key, stored, list(dict.fromkeys(inputs.dependencies)), list(dict.fromkeys(inputs.missing)),
-                          list(dict.fromkeys(inputs.named)), started_ns)
+                          list(dict.fromkeys(inputs.named)), started_ns, self.roots)
 
     def _lookup(self, key: str) -> UnitResult | None:
         """Return the stored result of ``key``, or None."""
         assert self.store is not None
-        stored, _reason = self.store.lookup(key, self.digests)
+        stored, _reason = self.store.lookup(key, self.digests, self.roots)
         outputs = _decode(stored.output) if stored is not None else None
         if stored is None or outputs is None:
             return None

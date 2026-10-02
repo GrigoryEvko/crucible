@@ -93,7 +93,8 @@ makes.  The store makes sure of each input:
    loader maps into them, and of the specs file, and the codeset of LC_CTYPE.
    The key also holds the bytes of each file that the command names, for
    example a plugin.  When the command contains `-march=native`, the key holds
-   the model and the flags of the host CPU.
+   the model and the flags of the host CPU.  In each item, a mark takes the
+   place of each text of the source root and of the build root (item 8).
 2. Each result lists each file that GCC read, from the dependency file of the
    compile, with a hash of its bytes.  The driver compares the hash of each
    file now with the hash in the result.  `NAME.digests` in the scratch
@@ -170,6 +171,37 @@ Why these inputs are sufficient
    tests of the driver.  An earlier time only makes the driver refuse more
    results.
 
+Why a result from a different root is the result of the compile
+---------------------------------------------------------------
+8. Two build directories of one commit, in two work trees, share each result.
+   The source root and the build root of a build directory come from its
+   CMakeCache.txt (CMAKE_HOME_DIRECTORY and CMAKE_CACHEFILE_DIR).  The key
+   holds a mark in place of each text of a root: in the command, in each path
+   and in the environment.  A result holds the marks in each path, in each
+   hash of the names under a root, and in the output.  A lookup changes each
+   mark to the root of this build, and it does the checks of items 2 to 4 at
+   the paths that it gets.  It gives the output with the paths of this build,
+   so each regex sees the paths of this build.  A compile in a different root
+   gives the same output with the other roots when these conditions hold:
+   - The command, the environment and the names under each root are the same
+     with the marks (item 1, item 3 and item 4).
+   - Each dependency has the same bytes (item 2).  No dependency holds the
+     text of a root of the compile that stored the result, or of the build
+     that reads it.  A file that names a root can make GCC read a file
+     outside the roots, or compare a path with that text.  The store finds
+     such a text as one run of bytes, so a file that joins it from parts,
+     for example from two string literals, breaks this condition unseen.
+   - GCC uses a path only to print it, or to compare it with another path of
+     the same compile, for equality or for a suffix.  At compile time, the
+     tree reads a file name only in these ways: fixy/Atom.h compares two file
+     names, and test/layer/checks/crucible/Types.cpp compares a suffix.  Code
+     that reads the length, a hash or the sequence of a path and other text
+     can break this condition.
+   A root takes part only when it is an absolute path of two components or
+   more, because GCC writes no such text on its own.  A mark holds a NUL
+   character, and no path and no command holds one.  The store keeps no
+   output that holds a NUL character, so a mark stands for its root only.
+
 A new file in a root changes the key of each compile that searches that root,
 also when no lookup names the new file.  A new header in `include/` then
 compiles each fixture again, and a new fixture file compiles each fixture of
@@ -182,6 +214,8 @@ The driver stores no result in these conditions:
 - An input changed in the settle period of item 7, or the key changed during
   the compile (item 6).
 - The driver cannot read a root or a probed path.
+- The output holds a NUL character, or a dependency holds the text of a root
+  (item 8).
 - A search directory holds a precompiled header (a name that ends in `.gch`),
   or a probed path of item 4 is one.  GCC reads its bytes, and the dependency
   file does not name it.
@@ -312,6 +346,93 @@ _ERROR_HEADER = re.compile(
 # utils/scripts/check_report.py.  The test of the driver holds the two
 # patterns equal.
 _FIXTURE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]*")
+
+# The marks that stand for the build root and the source root in a key and in
+# a stored result (the module text, item 8).  A path and a command hold no NUL
+# character, and the store keeps no output that holds one, so a mark stands
+# for its root only.
+_BUILD_MARK = "\x00build root\x00"
+_SOURCE_MARK = "\x00source root\x00"
+# The lines of CMakeCache.txt that name the source root and the build root.
+_CACHE_SOURCE = re.compile(r"^CMAKE_HOME_DIRECTORY:INTERNAL=(.*)$", re.MULTILINE)
+_CACHE_BUILD = re.compile(r"^CMAKE_CACHEFILE_DIR:INTERNAL=(.*)$", re.MULTILINE)
+
+
+def _is_markable(root: str | None) -> bool:
+    """Return True when `root` can take part in the marks: an absolute path of two components or more, with no NUL.
+
+    GCC writes no such text on its own.  A root such as `/` or `/tmp` can be
+    part of a text that GCC writes, for example the name of a temporary file.
+    """
+    return (root is not None and os.path.isabs(root) and "\x00" not in root
+            and len([part for part in root.split(os.sep) if part]) >= 2)
+
+
+class Roots:
+    """The build root and the source root of a compile, and the change of each one to its mark and back.
+
+    `relabel` changes each text of a root to its mark, the longer root first,
+    so a build root inside the source root takes the mark of the build root.
+    `restore` changes each mark back to the text of its root.  For a text
+    with no NUL character, restore(relabel(text)) is the text.  A root that
+    `_is_markable` refuses takes no part, and its text stays as it is.
+    """
+
+    __slots__ = ("pairs", "texts")
+
+    def __init__(self, source: str | None, build: str | None) -> None:
+        """Hold the roots that can take part in the marks, and the bytes that a byte search for a root reads."""
+        chosen = [(root, mark) for root, mark in ((build, _BUILD_MARK), (source, _SOURCE_MARK)) if _is_markable(root)]
+        self.pairs: list[tuple[str, str]] = sorted(chosen, key=lambda pair: -len(pair[0]))  # type: ignore[arg-type]
+        # A root whose text holds the text of another root needs no search of its own.
+        texts = [root for root, _ in self.pairs]
+        self.texts = [os.fsencode(root) for root in texts
+                      if not any(other != root and other in root for other in texts)]
+
+    def relabel(self, text: str) -> str:
+        """Return `text` with each text of a root changed to its mark."""
+        for root, mark in self.pairs:
+            text = text.replace(root, mark)
+        return text
+
+    def restore(self, text: str) -> str:
+        """Return `text` with each mark changed back to the text of its root."""
+        for root, mark in self.pairs:
+            text = text.replace(mark, root)
+        return text
+
+    def relabel_tree(self, value: object) -> object:
+        """Return `value`, a tree of lists, dictionaries and texts, with each text relabeled."""
+        if isinstance(value, str):
+            return self.relabel(value)
+        if isinstance(value, list):
+            return [self.relabel_tree(item) for item in value]
+        if isinstance(value, dict):
+            return {key: self.relabel_tree(item) for key, item in value.items()}
+        return value
+
+    def holds_root(self, data: bytes) -> bool:
+        """Return True when the bytes `data` hold the text of a root.  The cost is O(n) in the length of `data`."""
+        return any(text in data for text in self.texts)
+
+    def identity(self) -> list[str]:
+        """Return the texts of the roots that take part, the longer first, for the name of a memo."""
+        return [root for root, _ in self.pairs]
+
+
+def build_roots(build_dir: Path) -> Roots:
+    """Return the roots of the build in `build_dir`, from the lines of its CMakeCache.txt.
+
+    With no CMakeCache.txt, or no such line, a root takes no part, and the
+    store keys its text as it is.
+    """
+    try:
+        text = (build_dir / "CMakeCache.txt").read_text(encoding="utf-8", errors="surrogateescape")
+    except OSError:
+        return Roots(None, None)
+    source = _CACHE_SOURCE.search(text)
+    build = _CACHE_BUILD.search(text)
+    return Roots(source.group(1) if source else None, build.group(1) if build else None)
 
 
 def strip_source_echo(text: str) -> str:
@@ -589,7 +710,7 @@ def run_compile(argv: list[str], directory: Path, env: Mapping[str, str]) -> Com
 
 # ── The result store ───────────────────────────────────────────────
 
-_STORE_MAGIC = b"crucible-neg-store 6\n"
+_STORE_MAGIC = b"crucible-neg-store 7\n"
 # An entry holds at most this number of results of one key (the module text).
 _RESULTS_PER_ENTRY = 4
 # A change in this period before the compile started can be a change that the
@@ -625,7 +746,7 @@ _LISTING_LIMIT = 200_000
 # The format of the memo of the answers of the compiler driver.
 _ANSWERS_FORMAT = 1
 # The format of the record of the hashes of the dependencies of one fixture.
-_DIGESTS_FORMAT = 1
+_DIGESTS_FORMAT = 2
 _DIGESTS_SUFFIX = ".digests"
 # The format of the memo of the budget rows and the ledgers.
 _BUDGET_FORMAT = 1
@@ -948,13 +1069,14 @@ def _key_refusal(argv: list[str], directory: Path) -> str:
 
 
 def compile_key(argv: list[str], directory: Path, protected: set[str], memo_dir: Path,
-                env: Mapping[str, str]) -> tuple[str | None, str]:
+                env: Mapping[str, str], roots: Roots) -> tuple[str | None, str]:
     """Return the store key of the compile, or None and the reason for no key.
 
     `argv` ends with `-MF` and the dependency file, and `env` is the compile
     environment.  `protected` holds the resolved paths of the source, the
     object file and the dependency file, which are not inputs of the key.  The
-    key holds the inputs of items 1 and 6 of the module text.
+    key holds the inputs of items 1 and 6 of the module text, with the mark of
+    each root of `roots` in place of its text (item 8).
     """
     refusal = _key_refusal(argv, directory)
     if refusal:
@@ -1005,7 +1127,7 @@ def compile_key(argv: list[str], directory: Path, protected: set[str], memo_dir:
     )
     is_native = any(arg.startswith("-m") and arg.endswith("=native") for arg in argv)
     material = json.dumps(
-        {
+        roots.relabel_tree({
             "argv": argv[:-1] + [_DEPFILE_PLACEHOLDER],
             "codeset": locale_codeset(env),
             "directory": str(directory),
@@ -1015,7 +1137,7 @@ def compile_key(argv: list[str], directory: Path, protected: set[str], memo_dir:
             "format": _STORE_MAGIC.decode("ascii"),
             "host": _host_cpu() if is_native else "",
             "identity": identity,
-        },
+        }),
         sort_keys=True,
     )
     return hashlib.sha256(material.encode("ascii")).hexdigest(), ""
@@ -1394,15 +1516,17 @@ class Listing:
         self.entries = entries
 
 
-def _walk(root: str) -> tuple[Listing, list[list[object]], list[list[object]]] | None:
+def _walk(root: str, roots: Roots) -> tuple[Listing, list[list[object]], list[list[object]]] | None:
     """Walk the tree under the real directory `root`, and return the hash of its names, its directories and its links.
 
     Each directory is a row (path, inode, mtime, ctime), and each symbolic link
     is a row (path, target, kind of the file that it names, real path of a
     named directory).  The walk follows each link to a directory, and it walks
-    each real directory one time.  The function returns None for a tree of more
-    than _LISTING_LIMIT names.  The cost is O(n log n) for n names, because
-    the names of each directory are sorted.
+    each real directory one time.  The hash holds the path of each directory
+    and the target of each link with the marks of `roots` (the module text,
+    item 8).  The function returns None for a tree of more than _LISTING_LIMIT
+    names.  The cost is O(n log n) for n names, because the names of each
+    directory are sorted.
     """
     hasher = hashlib.sha256()
     directories: list[list[object]] = []
@@ -1422,7 +1546,7 @@ def _walk(root: str) -> tuple[Listing, list[list[object]], list[list[object]]] |
         newest = max(newest, status.st_ctime_ns)
         with os.scandir(current) as iterator:
             items = sorted(iterator, key=lambda item: item.name)
-        hasher.update(b"D" + os.fsencode(current) + b"\0")
+        hasher.update(b"D" + os.fsencode(roots.relabel(current)) + b"\0")
         for item in items:
             entries += 1
             name = os.fsencode(item.name)
@@ -1437,7 +1561,8 @@ def _walk(root: str) -> tuple[Listing, list[list[object]], list[list[object]]] |
                 real = os.path.realpath(item.path) if kind == "dir" else None
                 links.append([item.path, target, kind, real])
                 newest = max(newest, _entry_ctime(item.path))
-                hasher.update(b"l" + name + b"\0" + os.fsencode(target) + b"\0" + str(kind).encode() + b"\0")
+                hasher.update(b"l" + name + b"\0" + os.fsencode(roots.relabel(target)) + b"\0" + str(kind).encode()
+                              + b"\0")
                 if real is not None:
                     pending.append(real)
             elif item.is_dir(follow_symlinks=False):
@@ -1478,26 +1603,28 @@ def _links_agree(links: list[list[object]]) -> bool:
     return True
 
 
-def tree_listing(root: str, memo_dir: Path) -> tuple[Listing | None, str]:
-    """Return the hash of the names under the real directory `root`, or None and the reason.
+def tree_listing(root: str, memo_dir: Path, roots: Roots) -> tuple[Listing | None, str]:
+    """Return the hash of the names under the real directory `root`, with the marks of `roots`, or None and the reason.
 
     A memo keeps the hash with the stamp of each directory and each link
-    (item 7 of the module text).  The function writes the memo only when no
-    directory changed in the settle period before the walk.  A check of a
-    memo costs one stat for each directory and two for each link.  A walk of
-    /usr/include, with 1,600 directories, costs about 40 ms, and the check of
-    its memo about 5 ms.
+    (item 7 of the module text).  The roots of the marks are part of the name
+    of the memo.  The function writes the memo only when no directory changed
+    in the settle period before the walk.  A check of a memo costs one stat
+    for each directory and two for each link.  A walk of /usr/include, with
+    1,600 directories, costs about 40 ms, and the check of its memo about 5 ms.
     """
-    memo = memo_dir / f"listing-{_short_digest(os.fsencode(root))}.json"
+    material = json.dumps([root, roots.identity()]).encode("utf-8", "surrogateescape")
+    memo = memo_dir / f"listing-{_short_digest(material)}.json"
     try:
         recorded = json.loads(memo.read_text())
-        if recorded["root"] == root and _stamps_agree(recorded["directories"]) and _links_agree(recorded["links"]):
+        if (recorded["root"] == root and recorded["roots"] == roots.identity()
+                and _stamps_agree(recorded["directories"]) and _links_agree(recorded["links"])):
             return Listing(*recorded["listing"]), ""
     except (OSError, ValueError, KeyError, TypeError):
         pass
     started_ns = _now_ns()
     try:
-        walked = _walk(root)
+        walked = _walk(root, roots)
     except OSError as error:
         return None, f"the search directory {root} cannot be read: {error}"
     if walked is None:
@@ -1509,6 +1636,7 @@ def tree_listing(root: str, memo_dir: Path) -> tuple[Listing | None, str]:
         try:
             _write_atomic(memo, json.dumps({
                 "root": root,
+                "roots": roots.identity(),
                 "listing": [listing.digest, listing.newest_ctime_ns, listing.precompiled, listing.entries],
                 "directories": directories,
                 "links": links,
@@ -1656,14 +1784,17 @@ class DigestMemo:
     module text, item 2).  It gives the kept hash of a file while the device,
     the inode, the size and the two change times of the file are the same.  It
     keeps a hash only for a file that did not change in the settle period
-    before the read, so a change in the same clock tick cannot hide.  The memo
-    keeps the files of the last check only, so it holds no more than the
+    before the read, so a change in the same clock tick cannot hide.  With each
+    hash it keeps whether the bytes hold the text of a root (item 8).  One
+    build directory has one pair of roots, so the answer stays correct.  The
+    memo keeps the files of the last check only, so it holds no more than the
     dependencies of one fixture.  A check of a kept hash costs one stat.
     """
 
-    def __init__(self, path: Path | None) -> None:
-        """Read the memo at `path`, or use no memo when `path` is None."""
+    def __init__(self, path: Path | None, roots: Roots) -> None:
+        """Read the memo at `path`, or use no memo when `path` is None.  `roots` gives the texts of the roots."""
         self.path = path
+        self.roots = roots
         self.kept: dict[str, list[object]] = {}
         self.used: dict[str, list[object]] = {}
         if path is None:
@@ -1672,37 +1803,45 @@ class DigestMemo:
             recorded = json.loads(path.read_text())
         except (OSError, ValueError):
             return
-        files = recorded.get("files") if isinstance(recorded, dict) and recorded.get("format") == _DIGESTS_FORMAT else None
+        is_current = (isinstance(recorded, dict) and recorded.get("format") == _DIGESTS_FORMAT
+                      and recorded.get("roots") == roots.identity())
+        files = recorded.get("files") if is_current else None
         if isinstance(files, dict):
             self.kept = files
 
-    def digest(self, name: str) -> str | None:
-        """Return the hash of the bytes of the file `name`, or None when the file cannot be read."""
+    def digest(self, name: str) -> tuple[str | None, bool]:
+        """Return the hash of the bytes of the file `name`, and True when the bytes hold the text of a root.
+
+        The hash is None when the file cannot be read.
+        """
         try:
             fields = _stat_fields(os.stat(name))
         except OSError:
-            return None
+            return None, False
         kept = self.kept.get(name)
-        if isinstance(kept, list) and len(kept) == 6 and kept[:5] == fields and isinstance(kept[5], str):
+        if (isinstance(kept, list) and len(kept) == 7 and kept[:5] == fields and isinstance(kept[5], str)
+                and isinstance(kept[6], bool)):
             self.used[name] = kept
-            return kept[5]
+            return kept[5], kept[6]
         try:
             with open(name, "rb") as stream:
                 data = stream.read()
             after = os.stat(name)
         except OSError:
-            return None
+            return None, False
         digest = _short_digest(data)
+        holds_root = self.roots.holds_root(data)
         if _stat_fields(after) == fields and after.st_ctime_ns < _now_ns() - _SETTLE_NS:
-            self.used[name] = [*fields, digest]
-        return digest
+            self.used[name] = [*fields, digest, holds_root]
+        return digest, holds_root
 
     def save(self) -> None:
-        """Write the memo when the files of this check differ from the kept files.  A failure to write changes nothing."""
+        """Write the memo when the files of this check differ from the kept files.  A failed write changes nothing."""
         if self.path is None or self.used == self.kept:
             return
         try:
-            _write_atomic(self.path, json.dumps({"format": _DIGESTS_FORMAT, "files": self.used}).encode("ascii"))
+            _write_atomic(self.path, json.dumps({"format": _DIGESTS_FORMAT, "roots": self.roots.identity(),
+                                                 "files": self.used}).encode("ascii"))
         except OSError:
             pass
 
@@ -1718,30 +1857,36 @@ class InputCheck:
     hold, d directories under the roots, and k inputs in each of r results.
     """
 
-    def __init__(self, memo_dir: Path, digests: DigestMemo) -> None:
-        """Make a check that keeps the memos of the root listings in `memo_dir` and reads hashes through `digests`."""
+    def __init__(self, memo_dir: Path, digests: DigestMemo, roots: Roots) -> None:
+        """Make a check that keeps the memos of the root listings in `memo_dir` and reads hashes through `digests`.
+
+        A stored result names each path with the marks of the roots (the
+        module text, item 8), and `roots` gives the paths of this build.
+        """
         self.memo_dir = memo_dir
         self.digest_memo = digests
-        self.digests: dict[str, str | None] = {}
+        self.roots = roots
+        self.digests: dict[str, tuple[str | None, bool]] = {}
         self.states: dict[str, list[str] | None] = {}
         self.listings: dict[str, tuple[Listing | None, str]] = {}
 
-    def digest(self, name: str) -> str | None:
-        """Return the hash of the bytes of the file `name`, or None when the file cannot be read."""
+    def digest(self, name: str) -> tuple[str | None, bool]:
+        """Return the hash of the bytes of the file `name`, or None, and True when the bytes hold the text of a root."""
         if name not in self.digests:
             self.digests[name] = self.digest_memo.digest(name)
         return self.digests[name]
 
     def state(self, name: str) -> list[str] | None:
-        """Return the `root_state` of the path `name`."""
+        """Return the `root_state` of the path `name`, with the marks of the roots."""
         if name not in self.states:
-            self.states[name] = root_state(name)
+            state = root_state(name)
+            self.states[name] = None if state is None else [state[0], self.roots.relabel(state[1])]
         return self.states[name]
 
     def listing(self, root: str) -> tuple[Listing | None, str]:
         """Return the `tree_listing` of the root `root`."""
         if root not in self.listings:
-            self.listings[root] = tree_listing(root, self.memo_dir)
+            self.listings[root] = tree_listing(root, self.memo_dir, self.roots)
         return self.listings[root]
 
     def reason(self, result: Mapping[str, object]) -> str:
@@ -1749,24 +1894,30 @@ class InputCheck:
 
         The dependencies come first.  An edit changes a dependency more
         frequently than a new file changes a root, so an edit stops the check
-        before the walk of a root.
+        before the walk of a root.  A dependency whose bytes hold the text of a
+        root of this build does not match (item 8).  The reason names each
+        path of this build.
         """
+        restore = self.roots.restore
         for name, digest in result["dependencies"]:  # type: ignore[attr-defined]
-            now = self.digest(name)
+            path = restore(name)
+            now, holds_root = self.digest(path)
             if now is None:
-                return f"a dependency cannot be read: {name}"
+                return f"a dependency cannot be read: {path}"
             if now != digest:
-                return f"a dependency changed: {name}"
+                return f"a dependency changed: {path}"
+            if holds_root:
+                return f"a dependency holds the text of a root: {path}"
         for name, state in result["roots"]:  # type: ignore[attr-defined]
-            if self.state(name) != state:
-                return f"a search root changed: {name}"
+            if self.state(restore(name)) != state:
+                return f"a search root changed: {restore(name)}"
         for name, state in result["probes"]:  # type: ignore[attr-defined]
-            if self.state(name) != state:
-                return f"a probed path changed: {name}"
+            if self.state(restore(name)) != state:
+                return f"a probed path changed: {restore(name)}"
         for root, digest in result["listings"]:  # type: ignore[attr-defined]
-            listing, why = self.listing(root)
+            listing, why = self.listing(restore(root))
             if listing is None or listing.digest != digest:
-                return why or f"a search directory changed: {root}"
+                return why or f"a search directory changed: {restore(root)}"
         return ""
 
 
@@ -1791,14 +1942,16 @@ class ResultStore:
         """Return the path of the entry for `key`, in the bucket of the key."""
         return self.entries / key[:_BUCKET_DIGITS] / key
 
-    def lookup(self, key: str, digests: DigestMemo) -> tuple[CompileResult | None, str]:
+    def lookup(self, key: str, digests: DigestMemo, roots: Roots) -> tuple[CompileResult | None, str]:
         """Return the stored result for `key`, or None and the reason for a miss.
 
         The function returns the first result of the entry whose inputs are
         the same (InputCheck): each dependency has the same bytes, each search
         root and each probed path has the same state, and the names under each
-        root are the same.  The reason for a miss is the reason of the newest
-        result.  The cost is the cost of one InputCheck.
+        root are the same.  The output and the inputs of the result get the
+        paths of `roots` in place of the marks (the module text, item 8).  The
+        reason for a miss is the reason of the newest result.  The cost is the
+        cost of one InputCheck.
         """
         path = self.entry_path(key)
         try:
@@ -1808,7 +1961,7 @@ class ResultStore:
         entry = decode_entry(blob)
         if entry is None:
             return None, "the entry is damaged"
-        check = InputCheck(self.memo, digests)
+        check = InputCheck(self.memo, digests, roots)
         newest_reason = ""
         for result in unpack_results(entry):
             reason = check.reason(result)
@@ -1819,8 +1972,8 @@ class ResultStore:
                 os.utime(path)
             except OSError:
                 pass
-            inputs = tuple(name for name, _ in result["dependencies"])  # type: ignore[attr-defined]
-            return CompileResult(result["returncode"], result["output"],  # type: ignore[arg-type]
+            inputs = tuple(roots.restore(name) for name, _ in result["dependencies"])  # type: ignore[attr-defined]
+            return CompileResult(result["returncode"], roots.restore(result["output"]),  # type: ignore[arg-type]
                                  float(result["user_s"]), float(result["system_s"]),  # type: ignore[arg-type]
                                  result["instructions"], inputs), ""  # type: ignore[arg-type]
         return None, newest_reason
@@ -1833,6 +1986,7 @@ class ResultStore:
         missing: list[str],
         named: list[str],
         started_ns: int,
+        roots: Roots,
     ) -> tuple[bool, str]:
         """Store `result` for `key`, and return True, or False and the reason.
 
@@ -1840,13 +1994,18 @@ class ResultStore:
         a fatal error did not find, and `named` each directory of the search
         list.  The function refuses a result whose inputs changed in the settle
         period before `started_ns`, and a result that a precompiled header or a
-        root that it cannot read can change.  The new result goes first in the
-        entry.  The entry drops each earlier result with the same inputs, and
-        keeps at most _RESULTS_PER_ENTRY results.  Two writers of one entry at
-        the same time can lose one result, which costs one compile later.  The
-        cost is O(n + d) for n bytes of dependencies and d directories under the
-        roots, plus a walk of each root that has no memo.
+        root that it cannot read can change.  It also refuses a result whose
+        output holds a NUL character, or a dependency that holds the text of a
+        root of `roots`.  The result names each path and its output names each
+        root with the marks of `roots` (the module text, item 8).  The new
+        result goes first in the entry.  The entry drops each earlier result
+        with the same inputs, and keeps at most _RESULTS_PER_ENTRY results.  Two
+        writers of one entry at the same time can lose one result, which costs
+        one compile later.  The cost is O(n + d) for n bytes of dependencies and
+        d directories under the roots, plus a walk of each root that has no memo.
         """
+        if "\x00" in result.output:
+            return False, "the output holds a NUL character, which the store uses in a mark"
         settled_ns = started_ns - _SETTLE_NS
         recorded: list[list[str]] = []
         for name in dependencies:
@@ -1858,16 +2017,18 @@ class ResultStore:
                 return False, f"a dependency cannot be read: {name}"
             if _stat_fields(before) != _stat_fields(after) or after.st_ctime_ns >= settled_ns:
                 return False, f"a dependency changed less than one second before the compile: {name}"
-            recorded.append([name, _short_digest(data)])
-        roots, probes = search_roots(named, dependencies, missing)
-        states = {path: root_state(path) for path in roots}
+            if roots.holds_root(data):
+                return False, f"a dependency holds the text of a root: {name}"
+            recorded.append([roots.relabel(name), _short_digest(data)])
+        searched, probes = search_roots(named, dependencies, missing)
+        states = {path: root_state(path) for path in searched}
         probe_states = {path: root_state(path) for path in probes}
         for path, state in [*states.items(), *probe_states.items()]:
             if state is not None and state[0].startswith("error"):
                 return False, f"a search root cannot be read: {path}"
             if state is not None and path in probe_states and path.endswith(".gch"):
                 return False, f"a precompiled header is on a probed path: {path}"
-        listed = [(root, *tree_listing(root, self.memo)) for root in listing_roots(states)]
+        listed = [(root, *tree_listing(root, self.memo, roots)) for root in listing_roots(states)]
         for root, listing, reason in listed:
             if listing is None:
                 return False, reason
@@ -1879,13 +2040,13 @@ class ResultStore:
         changed = next((path for path in [*states, *probe_states] if _entry_ctime(path) >= settled_ns), None)
         if changed is not None:
             return False, f"a search root changed less than one second before the compile: {changed}"
-        listings = [[root, listing.digest] for root, listing, _ in listed if listing is not None]
+        listings = [[roots.relabel(root), listing.digest] for root, listing, _ in listed if listing is not None]
         new_result: dict[str, object] = {
             "dependencies": recorded,
-            "roots": [[path, state] for path, state in states.items()],
-            "probes": [[path, state] for path, state in probe_states.items()],
+            "roots": roots.relabel_tree([[path, state] for path, state in states.items()]),
+            "probes": roots.relabel_tree([[path, state] for path, state in probe_states.items()]),
             "listings": listings,
-            "output": result.output,
+            "output": roots.relabel(result.output),
             "returncode": result.returncode,
             "user_s": round(result.user_s, 3),
             "system_s": round(result.system_s, 3),
@@ -2196,7 +2357,7 @@ def _judge_row(report: ModuleType, row: BudgetRow, verdict: str, fixture_name: s
 
 
 def _warnings_file(warnings_dir: Path, check: str, fixture_name: str) -> Path:
-    """Return the warnings file of one check of this fixture, with the name that check_report.write_warnings gives it."""
+    """Return the warnings file of one check of this fixture, by the name that check_report.write_warnings gives."""
     return warnings_dir / f"{check}.{fixture_name}.txt"
 
 
@@ -2245,8 +2406,9 @@ def report_cost(fixture_name: str, source: Path, result: CompileResult, is_store
 
 
 def _record_compile(store: ResultStore, key: str, result: CompileResult, missing: list[str], argv: list[str],
-                    directory: Path, source: Path, env: Mapping[str, str], started_ns: int) -> tuple[bool, str]:
-    """Find the search list of a compile, and store its result.
+                    directory: Path, source: Path, env: Mapping[str, str], started_ns: int,
+                    roots: Roots) -> tuple[bool, str]:
+    """Find the search list of a compile, and store its result with the marks of `roots`.
 
     `result.inputs` is the list of the dependency file of GCC, or after a
     fatal error the list of the `-M -MG` pass, and `missing` holds each header
@@ -2258,7 +2420,7 @@ def _record_compile(store: ResultStore, key: str, result: CompileResult, missing
     named, reason = search_directories(argv, directory, source, Path(argv[-1]).parent, env)
     if named is None:
         return False, reason
-    return store.record(key, result, list(result.inputs), missing, named, started_ns)
+    return store.record(key, result, list(result.inputs), missing, named, started_ns, roots)
 
 
 _INPUTS_FORMAT = 1
@@ -2289,16 +2451,18 @@ def write_inputs_record(scratch: Path, fixture_name: str, result: CompileResult,
 
 
 def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: Path, output: Path,
-                  budget: CostBudget, store: ResultStore | None, store_reason: str) -> tuple[CompileResult, bool]:
+                  budget: CostBudget, store: ResultStore | None, store_reason: str,
+                  roots: Roots) -> tuple[CompileResult, bool]:
     """Return the result of the compile, from the store or from a compile, and True when it comes from the store.
 
     `argv` ends with `-MF` and the dependency file of this process.  After a
     compile, the dependency file goes to the name of the fixture in the scratch
     directory, which also holds the digest memo of the fixture.  The compile
     runs in the compile environment, with or without the store, and
-    `store_reason` tells why `store` is None.  A stored result whose compile is
-    over the error threshold of the row that holds the error level is a miss,
-    so the driver measures again.
+    `store_reason` tells why `store` is None.  The key and the stored result
+    hold the marks of `roots` in place of the source root and the build root.
+    A stored result whose compile is over the error threshold of the row that
+    holds the error level is a miss, so the driver measures again.
     """
     depfile = Path(argv[-1])
     env = compile_environment(os.environ)
@@ -2306,10 +2470,10 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
     reason = store_reason
     key: str | None = None
     if store is not None:
-        key, reason = compile_key(argv, directory, protected, store.memo, env)
+        key, reason = compile_key(argv, directory, protected, store.memo, env, roots)
     if store is not None and key is not None:
-        digests = DigestMemo(depfile.parent / f"{fixture_name}{_DIGESTS_SUFFIX}")
-        stored, reason = store.lookup(key, digests)
+        digests = DigestMemo(depfile.parent / f"{fixture_name}{_DIGESTS_SUFFIX}", roots)
+        stored, reason = store.lookup(key, digests, roots)
         digests.save()
         if stored is not None and budget.is_over_error(fixture_name, stored):
             stored, reason = None, f"the stored compile {budget.excess_text(stored)} than the error threshold"
@@ -2346,12 +2510,13 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
             is_stored, why = False, f"the exit code is {result.returncode}"
         elif budget.is_over_error(fixture_name, result):
             is_stored, why = False, f"the compile {budget.excess_text(result)} than the error threshold"
-        elif compile_key(argv, directory, protected, store.memo, env)[0] != key:
+        elif compile_key(argv, directory, protected, store.memo, env, roots)[0] != key:
             # The compiler, a shared object, a path that the loader tried or a
             # file of the command changed between the key and the compile.
             is_stored, why = False, "the compiler identity changed during the compile"
         else:
-            is_stored, why = _record_compile(store, key, result, missing, argv, directory, source, env, started_ns)
+            is_stored, why = _record_compile(store, key, result, missing, argv, directory, source, env, started_ns,
+                                             roots)
         _note(fixture_name, f"stored (entry {key})" if is_stored else f"not stored ({why})")
     return result, False
 
@@ -2483,7 +2648,8 @@ def main(arguments: list[str]) -> int:
     argv = compile_argv(command, output, depfile)
     store, store_reason = open_store()
     budget = read_cost_budget(store.memo if store is not None else None)
-    result, is_stored = obtain_result(fixture_name, argv, directory, source, output, budget, store, store_reason)
+    result, is_stored = obtain_result(fixture_name, argv, directory, source, output, budget, store, store_reason,
+                                      build_roots(build_dir))
     write_inputs_record(scratch, fixture_name, result, is_stored)
     verdict = evaluate(fixture_name, source, expected_regexes, result)
     sys.stdout.flush()
