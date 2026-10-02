@@ -33,7 +33,7 @@ namespace crucible::test {
 #ifdef assert
 #undef assert
 #endif
-#define assert(cond)                                                                 \
-    do {                                                                             \
+#define assert(cond)                                                                \
+    do {                                                                            \
         if (!(cond)) ::crucible::test::assertion_failed(__FILE__, __LINE__, #cond); \
     } while (0)
