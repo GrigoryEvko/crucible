@@ -263,13 +263,13 @@ namespace detail {
 
 // How the declarations of a tag state its row.
 enum class row_shape : unsigned char {
-    none,                  // no source declares a row
-    by_edge,               // one edge of permission_rows
-    by_member,             // a permission_row member
-    by_parent,             // the row of the parent_type member
-    declared_twice,        // an edge and a permission_row member
+    none,  // no source declares a row
+    by_edge,  // one edge of permission_rows
+    by_member,  // a permission_row member
+    by_parent,  // the row of the parent_type member
+    declared_twice,  // an edge and a permission_row member
     derived_with_own_row,  // a parent_type, and an edge or a permission_row member
-    two_edges,             // more than one edge of permission_rows
+    two_edges,  // more than one edge of permission_rows
 };
 
 // Has no constant definition.  A call to it stops the constant
@@ -1612,18 +1612,33 @@ bool with_shared_read(Args&&... args) noexcept(detail::shared_read_nothrow_v<Arg
 // The fixture tags of the checks of this header, which are in its check
 // file.  They stay here, beside their rows and their split manifest, so
 // that test/test_permission_row_roster.cpp finds them when it walks the
-// permission tags.
+// permission tags.  Each one declares its row as a member.  So
+// permission_rows holds only the edges of the canonical tags, and each
+// includer that asks for a row walks only those edges.
 namespace detail {
-struct seplog_test_tag {};
-struct seplog_test_left {};
-struct seplog_test_right {};
-struct seplog_io_tag {};
-struct seplog_block_tag {};
-struct seplog_multi_effect_tag {};
+struct seplog_test_tag {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct seplog_test_left {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct seplog_test_right {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct seplog_io_tag {
+    using permission_row = ::foundation::effects::Row<::foundation::effects::Effect::IO>;
+};
+struct seplog_block_tag {
+    using permission_row = ::foundation::effects::Row<::foundation::effects::Effect::Block>;
+};
+struct seplog_multi_effect_tag {
+    using permission_row =
+        ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
+};
 // Declared and never given a row, so the relation's answer for it is a
 // negative control.
 struct seplog_undeclared_tag {};
-// A tag that declares its row as a member rather than as an edge.
+// A second tag whose member names one effect.
 struct seplog_member_row_tag {
     using permission_row = ::foundation::effects::Row<::foundation::effects::Effect::Block>;
 };
@@ -1631,42 +1646,19 @@ struct seplog_member_row_tag {
 struct seplog_derived_tag {
     using parent_type = seplog_io_tag;
 };
+struct seplog_combine_n_parent {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct seplog_combine_n_a {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct seplog_combine_n_b {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct seplog_combine_n_c {
+    using permission_row = ::foundation::effects::Row<>;
+};
 }  // namespace detail
-
-namespace permission_rows {
-inline constexpr ::foundation::fail_closed::edge<detail::seplog_test_tag, ::foundation::effects::Row<>> seplog_test{};
-inline constexpr ::foundation::fail_closed::edge<detail::seplog_test_left, ::foundation::effects::Row<>> seplog_left{};
-inline constexpr ::foundation::fail_closed::edge<detail::seplog_test_right, ::foundation::effects::Row<>>
-    seplog_right{};
-inline constexpr ::foundation::fail_closed::edge<detail::seplog_io_tag,
-                                                 ::foundation::effects::Row<::foundation::effects::Effect::IO>>
-    seplog_io{};
-inline constexpr ::foundation::fail_closed::edge<detail::seplog_block_tag,
-                                                 ::foundation::effects::Row<::foundation::effects::Effect::Block>>
-    seplog_block{};
-inline constexpr ::foundation::fail_closed::edge<
-    detail::seplog_multi_effect_tag,
-    ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>>
-    seplog_multi_effect{};
-}  // namespace permission_rows
-
-namespace detail {
-struct seplog_combine_n_parent {};
-struct seplog_combine_n_a {};
-struct seplog_combine_n_b {};
-struct seplog_combine_n_c {};
-}  // namespace detail
-
-namespace permission_rows {
-inline constexpr ::foundation::fail_closed::edge<detail::seplog_combine_n_parent, ::foundation::effects::Row<>>
-    seplog_combine_n_parent_row{};
-inline constexpr ::foundation::fail_closed::edge<detail::seplog_combine_n_a, ::foundation::effects::Row<>>
-    seplog_combine_n_a_row{};
-inline constexpr ::foundation::fail_closed::edge<detail::seplog_combine_n_b, ::foundation::effects::Row<>>
-    seplog_combine_n_b_row{};
-inline constexpr ::foundation::fail_closed::edge<detail::seplog_combine_n_c, ::foundation::effects::Row<>>
-    seplog_combine_n_c_row{};
-}  // namespace permission_rows
 
 template <>
 struct can_split_into_pack<detail::seplog_combine_n_parent, detail::seplog_combine_n_a, detail::seplog_combine_n_b,

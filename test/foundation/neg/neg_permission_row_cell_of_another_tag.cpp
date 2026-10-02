@@ -34,11 +34,11 @@ template <>
 inline constexpr ::foundation::permissions::detail::row_cell foundation::permissions::detail::row_cell_at<
     ^^IoTag,
     std::meta::members_of(^^::foundation::permissions::permission_rows, std::meta::access_context::unprivileged())
-        .size()> = ::foundation::permissions::detail::walk_row(^^PureTag,
-                                                               std::meta::members_of(
-                                                                   ^^::foundation::permissions::permission_rows,
-                                                                   std::meta::access_context::unprivileged())
-                                                                   .size());
+        .size()> =
+    ::foundation::permissions::detail::walk_row(
+        ^^PureTag,
+        std::meta::members_of(^^::foundation::permissions::permission_rows, std::meta::access_context::unprivileged())
+            .size());
 
 namespace {
 

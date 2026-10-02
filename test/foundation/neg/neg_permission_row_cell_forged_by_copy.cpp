@@ -30,9 +30,9 @@ inline constexpr ::foundation::permissions::detail::row_cell foundation::permiss
     ^^IoTag,
     std::meta::members_of(^^::foundation::permissions::permission_rows, std::meta::access_context::unprivileged())
         .size()> =
-    ::foundation::permissions::detail::row_cell_at<^^PureTag, std::meta::members_of(
-                                                                  ^^::foundation::permissions::permission_rows,
-                                                                  std::meta::access_context::unprivileged())
-                                                                  .size()>;
+    ::foundation::permissions::detail::row_cell_at<^^PureTag,
+                                                   std::meta::members_of(^^::foundation::permissions::permission_rows,
+                                                                         std::meta::access_context::unprivileged())
+                                                       .size()>;
 
 int main() { return 0; }

@@ -388,24 +388,22 @@ template <typename Tag, typename Brand>
 
 // The fixture tags of the checks of this header.  They stay here, beside
 // their rows, so that test/test_permission_row_roster.cpp finds the
-// admitted one when it walks the permission tags.
+// admitted one when it walks the permission tags.  Each one declares its
+// row as a member, so permission_rows holds only the edges of the
+// canonical tags of Permission.h.
 namespace detail {
-struct read_view_test_tag {};
+struct read_view_test_tag {
+    using permission_row = ::foundation::effects::Row<>;
+};
 struct read_view_brand_a {};
 struct read_view_brand_b {};
 // Two tags the row gate must refuse, kept beside the one it admits: a
 // region whose row names an effect, and a region that declares no row.
-struct read_view_effectful_tag {};
+struct read_view_effectful_tag {
+    using permission_row = ::foundation::effects::Row<::foundation::effects::Effect::IO>;
+};
 struct read_view_rowless_tag {};
 }  // namespace detail
-
-namespace permission_rows {
-inline constexpr ::foundation::fail_closed::edge<detail::read_view_test_tag, ::foundation::effects::Row<>>
-    read_view_test{};
-inline constexpr ::foundation::fail_closed::edge<detail::read_view_effectful_tag,
-                                                 ::foundation::effects::Row<::foundation::effects::Effect::IO>>
-    read_view_effectful{};
-}  // namespace permission_rows
 
 namespace row_discipline {
 struct read_view;
