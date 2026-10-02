@@ -118,10 +118,13 @@ concept CtxFitsTransactionLog = ::fixy::time::CtxFitsClockReaderMint<Ctx, ::fixy
 // A pointer the log returns stays valid for as long as the ring has not
 // wrapped past the slot it points into, and it is the owner's to use: the
 // proof admits the call, and the pointer must stay on the owning thread.
+// A claim never recycles the slot of the active transaction, so a pointer to
+// the active transaction stays valid while that transaction is active.
 
 template <uint32_t N, OwnerProof Owner>
 class TransactionLog {
     static_assert((N & (N - 1)) == 0, "N must be a power of 2");
+    static_assert(N != 1, "the ring must hold the active transaction and the transaction that a claim builds");
 
 public:
     // The slots, the write cursor and the fill counter as one composition, so
@@ -141,6 +144,16 @@ public:
     TransactionLog& operator=(TransactionLog&&) = delete("interior pointers into entries_ would dangle");
 
     [[nodiscard, gnu::cold]] Transaction* begin_tx(Owner const&, uint64_t step_id) noexcept {
+        // A full ring claims its oldest slot.  A rollback can make a
+        // transaction of any age the active one, so the oldest slot can hold
+        // the active transaction.  A recycle of that slot ends the life of
+        // the live transaction, and activate then finds the new transaction
+        // in the active slot.  So the claim passes over the active slot.  The
+        // active transaction becomes the newest entry, and the claim below
+        // takes the slot of the oldest entry other than the active one.
+        if (ring_.full() && &ring_.recent(N - 1) == active_tx_.value()) {
+            (void)ring_.claim();
+        }
         // Claiming advances only the cursor, so the reference it hands back
         // stays valid across the reset that follows.
         Transaction* tx = &ring_.claim();
@@ -158,6 +171,7 @@ public:
         // leaves the timestamp empty, so the postcondition of
         // stamp_transaction states the timestamp, and none here does.
         CRUCIBLE_POST(tx, tx != nullptr);
+        CRUCIBLE_POST(tx, tx != active_tx_.value());
         CRUCIBLE_POST(tx, tx->status == TxStatus::RECORDING);
         CRUCIBLE_POST(tx, tx->step_id.get() == step_id);
         return tx;

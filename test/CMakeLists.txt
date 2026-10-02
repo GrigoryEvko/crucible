@@ -2529,6 +2529,9 @@ crucible_neg_compile_test(neg_transaction_log_non_power_of_two
 crucible_neg_compile_test(neg_transaction_log_zero_capacity
   "Transaction.h:[0-9]+:[0-9]+: error: template constraint failure for .template<class T, long unsigned int N>  requires  N > 0"
   "the expression .N > 0 \\[with N = 0\\]. evaluated to .false.")
+crucible_neg_compile_test(neg_transaction_log_capacity_one
+  "Transaction.h:[0-9]+:[0-9]+: error: static assertion failed: the ring must hold the active transaction and the transaction that a claim builds"
+  "the comparison reduces to .\\(1 != 1\\).")
 
 # TransactionLog::commit takes the region as
 # fixy::Tagged<RegionNode*, source::Arena>.  A raw RegionNode* and a region
