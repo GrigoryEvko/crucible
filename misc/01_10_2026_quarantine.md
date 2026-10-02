@@ -443,6 +443,60 @@ The state of each criterion:
 - The four presets: each full suite passes. Two defects that the measurement found are fixed: the seal livelock under ThreadSanitizer (772a45908) and a false array-bounds error in the UBSan-strict build (c78ee01d3). Met.
 - The owner's target of 15 s for the edit build and 15 s for its tests: not met (19.3 s and 30.1 s). Both steps are bound by their total CPU. The levers are the store cost on a full miss, the guard chain after a base-header edit, the fixture compile CPU, the build CPU and the system time.
 
+**The second measurement of 2026-10-02** (commit d6ef48653, Debug preset, `-j 192` for each build and each test run). The first measurement gave no job count to `cmake --build`. Ninja then used its default of 378 jobs. Each run had a cache root of its own. Each clean run had a new root, and the runs in the warm build directory had one warm root. The default cache root and the default ccache directory did not change. Before most runs, `vmstat` showed 7 to 40 processes in the run queue, and the CPUs were free for 90 % to 98 % of the time. At three times, a process outside the measurement used 35 % to 43 % of the CPUs. The host had 60 to 117 GB of free memory. Its swap held 127 GB. A different user held a pool of 96 GB of huge pages.
+
+| Case | Build | Tests | Sum |
+|---|---|---|---|
+| Clean build, no ccache, cold cache root (median of 3) | 15.2 s, 2,017 CPU-s, 1,025 compiles | 23.8 s, 4,044 CPU-s, in one ctest run of 2,616 tests | 39.0 s |
+| A code edit of `foundation/Platform.h` in a warm build directory (median of 3) | 16.8 s, 2,285 CPU-s, 880 compiles | 21.8 s, 3,966 CPU-s | 38.6 s |
+| No edit (median of 3) | 0.18 s | 10.1 s, 382 CPU-s | 10.3 s |
+
+The edit is the edit of the first measurement: a statement `static_cast<void>(N);` in the body of `breakpoint()`, with a new N in each run. With a new N, ccache and the fixture store hold no result for the edited units. The runs of each case were these:
+- Clean case: the build times were 14.8 s, 15.2 s and 15.8 s. The test run times were 22.0 s, 23.8 s and 23.9 s.
+- Edit case: the build times were 16.8 s, 16.6 s and 17.2 s. The test run times were 20.9 s, 22.0 s and 21.8 s. Six more edit builds had times of 14.9 s to 20.4 s, and the median of all nine edit builds is 16.8 s.
+- No-edit case: the test run times were 29.0 s, 10.0 s and 10.1 s. In the first run, `test_ledger_probes_huge_page` used 24.1 s.
+
+From c78ee01d3 to d6ef48653, these times decreased:
+- The clean build, from 21.3 s to 15.2 s
+- The edit build, from 19.3 s and approximately 3,500 CPU-s to 16.8 s and 2,285 CPU-s
+- The test run after the edit, from 30.1 s and approximately 5,460 CPU-s to 21.8 s and 3,966 CPU-s
+- The test run with no edit, from 14.0 s to 10.1 s.
+
+After the edit, each test group alone, in a run with no other load (in parentheses, a run with the load of the outside process):
+- The fixtures use 12.7 s and 2,222 CPU-s (13.8 s and 2,320 CPU-s). With the result store off, two runs used 11.5 s and 1,950 CPU-s, and 12.4 s and 2,142 CPU-s. When the store holds a result for no fixture, it adds 0.3 s to 1.2 s and 80 to 270 CPU-s. At c78ee01d3 it added 5 s and 960 CPU-s.
+- The guard scripts use 7.7 s and 1,105 CPU-s (9.1 s and 1,215 CPU-s). The fill of the preprocessed store uses 5.0 s and 535 CPU-s. The three parts of the session oracle self-test use 8.0 s and 258 CPU-s. The other guards use 6.4 s and 281 CPU-s.
+- The other tests use 2.1 s and 91 CPU-s (6.4 s and 111 CPU-s).
+
+Two pairs of edit builds give a comparison of ccache on and off. With ccache off, the build times were 17.0 s and 18.8 s. With ccache on, they were 18.9 s and 17.8 s. The difference is less than the noise of the host. At 64 jobs, the clean build used 31.0 s and 1,658 CPU-s for the same 1,025 compiles. At 192 jobs, the same work uses 2,017 CPU-s, approximately 22 % more. A possible cause is that two jobs operate on one core. System time is 7 % to 9 % of each build and 14 % to 19 % of each test run.
+
+The records of the build launcher give this sequence of jobs in an edit build:
+- Until approximately 13 s, each of the 192 job slots holds a compile.
+- Then, for 4 s to 6 s, only 2 to 35 job slots hold a job. The four walk units of `test/layer` start at 11.9 s to 13.5 s, and each uses 5.8 s to 7.4 s. Some shards of the session oracle test start at 7.6 s to 9.2 s, and each uses 8 s to 10 s. The build completes when the last of these compiles completes.
+- In one run, 339 of the 357 compiles that start after 9 s are layer sentinels. A layer sentinel and a walk unit are objects of an object library, and no link step waits for them. Ninja starts these objects after the objects that a link step waits for.
+
+Two tests had failures in some runs. The gauge sets `CCACHE_DISABLE=1` for its full run, and ctest gets the variable too. `ccache_relocation_self_test` then has a failure in each gauge run, and it has no failure in the warm build directory. `session_oracle_store_self_test` had a failure in 2 of 16 runs at 192 jobs, in the case "a warm static unit comes from the store, and no compile runs". It had no failure in 32 runs at a lower load.
+
+The state of each criterion at d6ef48653:
+- Tail: in a clean run at 64 jobs, the slowest compile used 8.3 s, the slowest cold fixture used 5.8 s and the slowest test used 8.5 s. Met. At 192 jobs, the slowest compile after an edit uses 10.7 s to 11.3 s (`test/fixy/test_session_handle.cpp`). The slowest fixture after an edit uses 8.0 s to 8.7 s (`neg_row_hash_census_undisposed_carrier`). In two warm runs, `test_ledger_probes_huge_page` used 12.0 s and 24.1 s. In the first test run of the warm build directory, four `test_ct_taint_fixy_*` tests used 10.9 s to 11.7 s.
+- Clean build: 15.2 s. Met.
+- Full test run with a cold cache root: 23.8 s. A second run on the unchanged tree compiled 0 of the 2,080 fixtures. Met.
+- Header-checks ledger: no count row stays. The 64 rows are keep rows, each with its reason: 27 eager folds, 25 static_asserts, 9 eager instantiations and 3 eager evaluations. Met.
+- The four presets: this measurement built only the Debug preset. At 867246c98, the last commit with a completed CI run, CI built the Debug, Release, TSan and UBSan-strict presets on x86_64 and aarch64. Each full test run had no failure. Met.
+- The owner's target of 15 s for the edit build and 15 s for its tests: not met (16.8 s and 21.8 s). At 192 jobs, 15 s of wall time is approximately 2,900 CPU-s. The edit build uses less CPU time than that, and its tail controls its wall time. The tests use 3,966 CPU-s, and their total CPU time controls their wall time.
+
+The levers that remain are these, in the order of their size. For the tests after an edit (21.8 s and 3,966 CPU-s):
+1. The fixture compiles: 2,222 CPU-s, 56 % of the run, approximately 1.07 CPU-s for each of the 2,080 fixtures. If each fixture uses 0.3 CPU-s less, the run decreases by approximately 620 CPU-s and 3 s. `neg_row_hash_census_undisposed_carrier` alone uses 7.2 CPU-s and 32.5 G instructions, more than the warning threshold of 28 G.
+2. System time: 540 to 730 CPU-s, 14 % to 19 % of the run.
+3. The fill of the preprocessed store: 535 CPU-s and 5.0 s. After a base-header edit, it preprocesses each unit again.
+4. The other guards: 281 CPU-s. The three parts of the session oracle self-test use 258 CPU-s. With 7.1 s to 7.6 s each, they are the slowest guards.
+5. The other tests: 91 CPU-s.
+
+For the edit build (16.8 s and 2,285 CPU-s, a CPU bound of approximately 12 s at 192 jobs):
+1. The order of the jobs: the walk units and some shards of the session oracle test start late, and they make the tail of 4 s to 6 s. If these long compiles start first, the build can complete near 13.5 s.
+2. The longest compiles: `test/fixy/test_session_handle.cpp` uses 10.7 s to 12.3 s. `test_session_rollback.cpp`, `test_session_recording_decorators.cpp`, `test_session_crash_stop.cpp` and `src/BackgroundThread.cpp` use 10 s to 12 s each. Each of them keeps the build at more than 10 s.
+3. The compile CPU: in the clean build at 64 jobs, the 369 layer sentinels use 266 CPU-s (17 %). The 37 shards of the session oracle test use 222 CPU-s (14 %).
+4. ccache is not a lever. With ccache on and off, the edit builds differ by less than the noise.
+
 ---
 
 ## 8. Stage 1: rules, audit and ratchet
