@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""check-parse-cost — the total of the bytes that the compiles of one build and its fixtures read, against a baseline.
+"""check-parse-cost — the bytes that the compiles of one build and its fixtures read, against a baseline.
 
-THE CHECK
+THE CHECKS
     parse-total     The sum, over each object of the target all and each
                     negative fixture, of the bytes of each file that its
                     compile reads.  The file lists come from
@@ -16,6 +16,17 @@ THE CHECK
     a base header costs a little in each of thousands of compiles.  On 192
     cores the wall time of a build is at least its total CPU divided by 192,
     so the total is the budget of a snappy build.
+
+    header-fanout   For each header of include/ that a sentinel of test/layer
+                    compiles alone: the bytes that the header includes alone,
+                    times the number of units (objects and fixtures) that read
+                    it.  The product tells which headers cost the build the
+                    most, and the check prints the ten largest products, the
+                    list that a developer reads first.  The bytes alone are
+                    the files of the sentinel after its source, as for
+                    header-alone of check-compile-cost.py, so a check file
+                    that includes more than its header counts those files
+                    too.  This check gives warnings only.
 
 THE BASELINE
     utils/scripts/parse-total-ledger.txt holds the baseline of each build
@@ -46,17 +57,31 @@ THE LEVELS
     now, and the change from the baseline.  A file under the floor of the
     baseline counts as zero there.
 
+THE FAN-OUT BASELINE
+    utils/scripts/header-fanout-ledger.txt holds the 30 largest products of
+    each build kind at the last --write:
+
+        header | KIND | HEADER | ALONE BYTES | READERS
+
+    A header in the ten largest products of the build that was not in the ten
+    largest of the baseline gives a warning.  A header whose product grew by
+    more than the threshold of the row header-fanout of
+    utils/scripts/budgets.txt gives a warning.  A header whose product fell
+    by more than that threshold, and a header of the baseline that has no
+    sentinel in the build, give a warning to write the baseline again, so
+    that it keeps no slack.
+
 NOT APPLICABLE
-    The check exits 3, with the reason, when the census does not apply to the
+    A check exits 3, with the reason, when the census does not apply to the
     build (build_census.NotApplicable: no ninja, only some targets built, no
-    fixture ran), or when the ledger has no total row of the kind of the
-    build.  A kind with no row is a build that nobody measured, for example a
-    build for another architecture.  Each other input that the check cannot
-    read is an error.
+    fixture ran), or when its ledger has no baseline of the kind of the
+    build.  A kind with no baseline is a build that nobody measured, for
+    example a build for another architecture.  Each other input that a check
+    cannot read is an error.
 
 Usage
-    check-parse-cost.py --check parse-total --build-dir DIR [--warnings-dir DIR]
-    check-parse-cost.py --check parse-total --build-dir DIR --write [--reason TEXT]
+    check-parse-cost.py --check CHECK --build-dir DIR [--warnings-dir DIR]
+    check-parse-cost.py --check CHECK --build-dir DIR --write [--reason TEXT]
     check-parse-cost.py --self-test
 
 Exit 0 with no finding or with warnings only, 1 with an error, 2 on a usage
@@ -69,6 +94,7 @@ import argparse
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -82,8 +108,15 @@ import cost_meter  # noqa: E402
 from repo_root import REPO_ROOT  # noqa: E402
 
 SCRIPTS = Path(__file__).resolve().parent
-CHECKS = ("parse-total",)
+# The ledger of each check.
+LEDGERS = {"parse-total": "parse-total-ledger.txt", "header-fanout": "header-fanout-ledger.txt"}
+CHECKS = tuple(LEDGERS)
 NOT_APPLICABLE = 3
+# The part of the path of an object of a sentinel of test/layer, which compiles one header alone.
+SENTINEL_MARK = "/layer_sentinel_"
+# The headers that the fan-out lists, and the headers that its baseline keeps.
+FANOUT_TOP = 10
+FANOUT_KEPT = 30
 # The product of a file row is at least this part of the total at the last --write.
 FILE_FLOOR = 0.0005
 # The number of files that a finding names.
@@ -292,9 +325,155 @@ def write_ledger(path: Path, ledger: Ledger, kind: str, measured: Measure, reaso
                   f"rows of the kind {kind}")
 
 
-def run(build_dir: Path, root: Path, kind: str, ledger_path: Path, budgets_path: Path, warnings_dir: Path | None,
-        write: bool = False, reason: str | None = None) -> int:
-    """Run the check, or its --write, over one build.
+@dataclass(frozen=True, slots=True)
+class Fan:
+    """One header that a sentinel compiles alone: the bytes that it includes alone and the units that read it."""
+
+    header: str
+    alone: int
+    readers: int
+
+    @property
+    def product(self) -> int:
+        """The bytes alone times the readers."""
+        return self.alone * self.readers
+
+
+@dataclass(slots=True)
+class FanLedger:
+    """The rows of the fan-out ledger: the header lines and, for each kind, the line, bytes and readers of a header."""
+
+    header: list[str]
+    rows: dict[str, dict[str, tuple[int, int, int]]]
+
+
+def fanout(census: build_census.Census, root: Path) -> list[Fan]:
+    """Find the bytes alone and the readers of each header that a sentinel compiles, largest product first.
+
+    The header of a sentinel is the first file of its list under include/
+    after the source, as for header-alone of check-compile-cost.py, and the
+    bytes alone are the sum of the files after the source.  Complexity: linear
+    in the total length of the file lists, and O(n log n) for the sort.
+    """
+    readers = census.readers()
+    include_root = f"{root / 'include'}{os.sep}"
+    fans: dict[str, Fan] = {}
+    for unit in census.units:
+        if unit.kind != "object" or SENTINEL_MARK not in f"/{unit.item}":
+            continue
+        header = next((path for path in unit.files[1:] if path.startswith(include_root)), None)
+        if header is None:
+            continue
+        key = build_census.file_key(header, root, census.build_dir)
+        fans[key] = Fan(key, sum(census.sizes[path] for path in unit.files[1:]), readers[header])
+    return sorted(fans.values(), key=lambda fan: (-fan.product, fan.header))
+
+
+def read_fanout_ledger(path: Path) -> FanLedger:
+    """Read the fan-out ledger.
+
+    Raises:
+        LedgerError: If the file does not exist, or a row is malformed or repeated
+    """
+    if not path.is_file():
+        raise LedgerError(f"{path.name} does not exist.  It holds a comment block and the rows that --write writes")
+    ledger = FanLedger([], {})
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        text = raw.strip()
+        if not text or text.startswith("#"):
+            if not ledger.rows:
+                ledger.header.append(raw)
+            continue
+        cells = [cell.strip() for cell in text.split(" | ")]
+        if len(cells) != 5 or cells[0] != "header" or not is_kind(cells[1]) or not cells[2]:
+            raise LedgerError(f"{path.name}:{number}: a row is `header | KIND | HEADER | ALONE BYTES | READERS`, and "
+                              f"this row is: {text}")
+        try:
+            alone, readers = int(cells[3]), int(cells[4])
+        except ValueError:
+            raise LedgerError(f"{path.name}:{number}: a count of this row is not a whole number: {text}") from None
+        rows = ledger.rows.setdefault(cells[1], {})
+        if cells[2] in rows or alone <= 0 or readers <= 0:
+            raise LedgerError(f"{path.name}:{number}: the header {cells[2]} has a second row of the kind {cells[1]}, "
+                              f"or a count that is not positive")
+        rows[cells[2]] = (number, alone, readers)
+    return ledger
+
+
+def fan_text(fan: Fan) -> str:
+    """Return the cost of one header as words: its bytes alone, its readers and their product."""
+    return f"{size_text(fan.alone)} alone x {fan.readers} readers = {size_text(fan.product)}"
+
+
+def evaluate_fanout(fans: list[Fan], rows: dict[str, tuple[int, int, int]], ledger_shown: str,
+                    budget: check_report.Budget) -> list[check_report.Finding]:
+    """Compare the fan-out of a build with the baseline rows of its kind.
+
+    Returns:
+        A warning for each header that enters the top list, for each header whose product changed by more than the
+        threshold, and for each header of the baseline that has no sentinel
+    """
+    findings: list[check_report.Finding] = []
+    old_top = set(sorted(rows, key=lambda header: (-rows[header][1] * rows[header][2], header))[:FANOUT_TOP])
+    now = {fan.header: fan for fan in fans}
+    for rank, fan in enumerate(fans[:FANOUT_TOP], start=1):
+        if fan.header not in old_top:
+            findings.append(check_report.Finding(
+                "warning", fan.header, 0, "header-fanout",
+                f"the header enters the top {FANOUT_TOP} of the fan-out at rank {rank}: {fan_text(fan)}.  Each unit "
+                f"that reads the header pays the bytes that it includes.  Remove an include from it, or move code that "
+                f"needs a heavy include to a source file.  When the cost stays, write the baseline again: --write"))
+    for header, (line, alone, readers) in sorted(rows.items(), key=lambda item: item[1][0]):
+        fan = now.get(header)
+        if fan is None:
+            findings.append(check_report.Finding(
+                "warning", ledger_shown, line, "header-fanout",
+                f"the build has no sentinel of {header}, which the baseline holds.  Write the baseline again: --write"))
+            continue
+        change = (fan.product - alone * readers) / (alone * readers) * 100.0
+        was = f"was {size_text(alone)} alone x {readers} readers"
+        if change > budget.warn:
+            findings.append(check_report.Finding(
+                "warning", fan.header, 0, "header-fanout",
+                f"the fan-out of the header grew by {change:.1f}%, over the threshold {budget.warn:g}%: {fan_text(fan)} "
+                f"({was}).  Remove an include from it, or write the baseline again when the cost stays: --write"))
+        elif change < -budget.warn:
+            findings.append(check_report.Finding(
+                "warning", ledger_shown, line, "header-fanout",
+                f"the fan-out of {header} fell by {-change:.1f}%, more than the threshold {budget.warn:g}%: "
+                f"{fan_text(fan)} ({was}).  Write the baseline again, so that it keeps no slack: --write"))
+    return findings
+
+
+def write_fanout_ledger(path: Path, ledger: FanLedger, kind: str, fans: list[Fan]) -> str:
+    """Write the rows of one kind again from the largest products of a build, and keep the rows of the other kinds.
+
+    Returns:
+        The summary
+    """
+    rows = dict(ledger.rows)
+    rows[kind] = {fan.header: (0, fan.alone, fan.readers) for fan in fans[:FANOUT_KEPT]}
+    lines = list(ledger.header)
+    for each_kind in sorted(rows):
+        ordered = sorted(rows[each_kind].items(), key=lambda item: (-item[1][1] * item[1][2], item[0]))
+        lines.extend(f"header | {each_kind} | {header} | {alone} | {readers}"
+                     for header, (_, alone, readers) in ordered)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return f"header-fanout: {path.name} holds {len(rows[kind])} rows of the kind {kind}"
+
+
+def top_table(fans: list[Fan]) -> str:
+    """Return the headers with the largest products as lines of text, for the output of the check."""
+    lines = [f"header-fanout: the {FANOUT_TOP} headers whose bytes alone times readers are the largest:"]
+    for rank, fan in enumerate(fans[:FANOUT_TOP], start=1):
+        lines.append(f"  {rank:2d}. {size_text(fan.product):>9}  {size_text(fan.alone):>9} alone x {fan.readers:5d} "
+                     f"readers  {fan.header}")
+    return "\n".join(lines)
+
+
+def run(check: str, build_dir: Path, root: Path, kind: str, ledger_path: Path, budgets_path: Path,
+        warnings_dir: Path | None, write: bool = False, reason: str | None = None) -> int:
+    """Run one check, or its --write, over one build.
 
     Returns:
         The exit status
@@ -304,39 +483,52 @@ def run(build_dir: Path, root: Path, kind: str, ledger_path: Path, budgets_path:
 
     def fail(path: str, message: str, line: int = 0) -> int:
         if write:
-            print(f"parse-total: {message}", file=sys.stderr)
+            print(f"{check}: {message}", file=sys.stderr)
             return 1
-        return check_report.emit([check_report.Finding("error", path, line, "parse-total", message)], "parse-total",
-                                 warnings_dir)
+        return check_report.emit([check_report.Finding("error", path, line, check, message)], check, warnings_dir)
 
     try:
-        budget = check_report.read_budgets(budgets_path).get("parse-total")
+        budget = check_report.read_budgets(budgets_path).get(check)
     except (OSError, ValueError) as problem:
         return fail(build_census.shown(budgets_path, root), str(problem))
     if budget is None:
-        return fail(build_census.shown(budgets_path, root), f"{budgets_path.name} has no row parse-total")
+        return fail(build_census.shown(budgets_path, root), f"{budgets_path.name} has no row {check}")
     try:
-        ledger = read_ledger(ledger_path)
+        if check == "parse-total":
+            ledger: Ledger | FanLedger = read_ledger(ledger_path)
+            has_baseline = kind in ledger.totals  # type: ignore[union-attr]
+        else:
+            ledger = read_fanout_ledger(ledger_path)
+            has_baseline = kind in ledger.rows  # type: ignore[union-attr]
     except LedgerError as problem:
         return fail(ledger_shown, str(problem))
-    if not write and kind not in ledger.totals:
-        print(f"parse-total: {ledger_shown} has no total row of the kind {kind}, so no baseline applies to this "
-              f"build.  The check does not apply")
+    if not write and not has_baseline:
+        print(f"{check}: {ledger_shown} has no baseline of the kind {kind}, so no baseline applies to this build.  "
+              f"The check does not apply")
         return NOT_APPLICABLE
     try:
         census = build_census.read_census(build_dir, root)
     except build_census.NotApplicable as problem:
-        print(f"parse-total: {problem}.  The check does not apply")
+        print(f"{check}: {problem}.  The check does not apply")
         return NOT_APPLICABLE
     except build_census.CensusError as problem:
         return fail(build_shown, str(problem))
+    if isinstance(ledger, FanLedger):
+        fans = fanout(census, root)
+        if write:
+            print(write_fanout_ledger(ledger_path, ledger, kind, fans))
+            return 0
+        status = check_report.emit(evaluate_fanout(fans, ledger.rows[kind], ledger_shown, budget), check,
+                                   warnings_dir)
+        print(top_table(fans))
+        return status
     measured = measure(census, root)
     if write:
         is_written, summary = write_ledger(ledger_path, ledger, kind, measured, reason, budget)
         print(summary, file=sys.stderr if not is_written else sys.stdout)
         return 0 if is_written else 1
     findings = evaluate(measured, ledger, ledger_shown, kind, budget, build_shown)
-    status = check_report.emit(findings, "parse-total", warnings_dir)
+    status = check_report.emit(findings, check, warnings_dir)
     baseline = ledger.totals[kind].bytes
     print(f"parse-total: {measured.bytes} bytes ({size_text(measured.bytes)}) in {measured.object_units} objects and "
           f"{measured.fixture_units} fixtures, {(measured.bytes - baseline) / baseline * 100.0:+.2f}% against the "
@@ -366,6 +558,9 @@ class Scratch:
     """A scratch tree, build directory, ninja, ctest, budget table and ledger for the self-test."""
 
     KIND = "x86_64-debug-asan"
+    BUDGETS = ("parse-total | 2 | 5 | % | the growth of the total\n"
+               "header-fanout | 10 | 10 | % | the change of the product of a header\n")
+    SENTINELS = "test/layer/CMakeFiles/layer_sentinel_fixy.dir"
 
     def __init__(self, root: Path) -> None:
         """Make the tree with one header, two objects and two fixtures."""
@@ -375,8 +570,10 @@ class Scratch:
         (root / "include").mkdir()
         self.ledger = root / "parse-total-ledger.txt"
         self.ledger.write_text("# a planted ledger\n", encoding="utf-8")
+        self.fan_ledger = root / "header-fanout-ledger.txt"
+        self.fan_ledger.write_text("# a planted fan-out ledger\n", encoding="utf-8")
         self.budgets = root / "budgets.txt"
-        self.budgets.write_text("parse-total | 2 | 5 | % | the growth of the total\n", encoding="utf-8")
+        self.budgets.write_text(self.BUDGETS, encoding="utf-8")
         for name, text in (("ninja.py", FAKE_NINJA), ("ctest.py", FAKE_CTEST)):
             tool = root / name
             tool.write_text(f"#!{sys.executable}\n{text}", encoding="utf-8")
@@ -384,7 +581,7 @@ class Scratch:
         (self.build / "CMakeCache.txt").write_text(
             f"CMAKE_GENERATOR:INTERNAL=Ninja\nCMAKE_MAKE_PROGRAM:FILEPATH={root / 'ninja.py'}\n"
             f"CMAKE_CTEST_COMMAND:INTERNAL={root / 'ctest.py'}\n", encoding="utf-8")
-        self.objects: dict[str, list[str]] = {}
+        self.objects: dict[str, tuple[str, list[str]]] = {}
         self.fixtures: dict[str, list[str]] = {}
         self.write("include/Base.h", 1000)
         self.write("include/Big.h", 5000)
@@ -403,13 +600,20 @@ class Scratch:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"x" * size)
 
-    def add_object(self, name: str, files: list[str], state: str = "VALID") -> None:
-        """Plant one object of all with its dependency list."""
-        self.objects[name] = files
-        obj = self.build / "CMakeFiles" / f"{name}.o"
+    def add_object(self, name: str, files: list[str], state: str = "VALID", directory: str = "CMakeFiles") -> None:
+        """Plant one object of all with its dependency list, in a directory of the build."""
+        rel = f"{directory}/{name}.o"
+        self.objects[name] = (rel, files)
+        obj = self.build / rel
         obj.parent.mkdir(parents=True, exist_ok=True)
         obj.write_bytes(b"object")
         self.flush(state)
+
+    def remove_object(self, name: str) -> None:
+        """Remove one planted object from all."""
+        rel, _ = self.objects.pop(name)
+        (self.build / rel).unlink()
+        self.flush()
 
     def add_fixture(self, name: str, files: list[str], has_inputs: bool = True) -> None:
         """Plant one fixture with its record."""
@@ -424,15 +628,15 @@ class Scratch:
 
     def flush(self, state: str = "VALID") -> None:
         """Write the compile database, the inputs of all, the dependency log and the test list."""
-        rows = [{"directory": str(self.build), "file": str(self.root / files[0]), "output": f"CMakeFiles/{name}.o"}
-                for name, files in self.objects.items()]
+        rows = [{"directory": str(self.build), "file": str(self.root / files[0]), "output": rel}
+                for rel, files in self.objects.values()]
         (self.build / "compile_commands.json").write_text(json.dumps(rows), encoding="utf-8")
-        (self.build / "inputs.txt").write_text("".join(f"CMakeFiles/{name}.o\n" for name in self.objects),
+        (self.build / "inputs.txt").write_text("".join(f"{rel}\n" for rel, _ in self.objects.values()),
                                                encoding="utf-8")
         deps = []
-        for name, files in self.objects.items():
-            listed = "".join(f"    {self.root / rel}\n" for rel in files)
-            deps.append(f"CMakeFiles/{name}.o: #deps {len(files)}, deps mtime 1 ({state})\n{listed}")
+        for rel, files in self.objects.values():
+            listed = "".join(f"    {self.root / path}\n" for path in files)
+            deps.append(f"{rel}: #deps {len(files)}, deps mtime 1 ({state})\n{listed}")
         (self.build / "deps.txt").write_text("\n".join(deps), encoding="utf-8")
         tests = [{"name": name, "command": [sys.executable, "/x/test/neg_compile_driver.py", "--warnings-dir", "/w",
                                             str(self.build), str(self.root / files[0]), name, "regex"]}
@@ -441,11 +645,12 @@ class Scratch:
         (self.build / "tests.json").write_text(json.dumps({"tests": tests}), encoding="utf-8")
 
     def run(self, kind: str = KIND, write: bool = False, reason: str | None = None,
-            warnings_dir: Path | None = None) -> tuple[int, list[check_report.Finding], str]:
-        """Run the check or its --write, and return its status, its findings and its output."""
+            warnings_dir: Path | None = None, check: str = "parse-total") -> tuple[int, list[check_report.Finding], str]:
+        """Run one check or its --write, and return its status, its findings and its output."""
         output = io.StringIO()
+        ledger = self.ledger if check == "parse-total" else self.fan_ledger
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
-            status = run(self.build.resolve(), self.root.resolve(), kind, self.ledger, self.budgets, warnings_dir,
+            status = run(check, self.build.resolve(), self.root.resolve(), kind, ledger, self.budgets, warnings_dir,
                          write, reason)
         found = [parsed for line in output.getvalue().splitlines()
                  if (parsed := check_report.parse_line(line)) is not None]
@@ -469,7 +674,7 @@ def self_test() -> int:
         tree = Scratch(Path(scratch_name).resolve())
         status, found, output = tree.run()
         expect("a ledger with no total row of the kind exits 3", status == NOT_APPLICABLE and not found
-               and "has no total row" in output)
+               and "has no baseline of the kind" in output)
         status, _, output = tree.run(write=True)
         written = tree.ledger.read_text(encoding="utf-8")
         expect("--write writes the total and the file rows, and keeps the header",
@@ -502,8 +707,7 @@ def self_test() -> int:
         expect("--write with a reason raises the baseline, and the build then passes",
                status == 0 and status_after == 0 and not found
                and "| a planted reason" in tree.ledger.read_text(encoding="utf-8"))
-        del tree.objects["c"]
-        tree.flush()
+        tree.remove_object("c")
         status, found, _ = tree.run()
         expect("a fall of more than 2% is an error that asks to lower the baseline",
                status == 1 and [f.level for f in found] == ["error"] and "Lower the baseline" in found[0].message
@@ -536,7 +740,7 @@ def self_test() -> int:
         status, found, _ = tree.run()
         expect("a budget table with no row parse-total is an error", status == 1 and "no row parse-total"
                in found[0].message)
-        tree.budgets.write_text("parse-total | 2 | 5 | % | the growth of the total\n", encoding="utf-8")
+        tree.budgets.write_text(Scratch.BUDGETS, encoding="utf-8")
 
         (tree.build / "CMakeFiles" / "b.o").unlink()
         status, found, output = tree.run()
@@ -563,6 +767,66 @@ def self_test() -> int:
         (tree.build / "CMakeCache.txt").write_text("CMAKE_GENERATOR:INTERNAL=Unix Makefiles\n", encoding="utf-8")
         status, found, output = tree.run()
         expect("a build of another generator exits 3", status == NOT_APPLICABLE and "only ninja" in output)
+
+        # header-fanout: twelve headers, each with a sentinel, and one object that reads each header.
+        fan = Scratch(Path(scratch_name).resolve() / "fan")
+        names = [f"H{index:02d}" for index in range(12)]
+        for index, name in enumerate(names):
+            fan.write(f"include/{name}.h", (index + 1) * 100)
+            fan.write(f"test/layer/checks/{name}.cpp", 10)
+            fan.add_object(name, [f"test/layer/checks/{name}.cpp", f"include/{name}.h"], directory=Scratch.SENTINELS)
+        fan.add_object("user", ["src/a.cpp", *(f"include/{name}.h" for name in names)])
+
+        def fan_run(**options: object) -> tuple[int, list[check_report.Finding], str]:
+            return fan.run(check="header-fanout", **options)  # type: ignore[arg-type]
+
+        status, found, output = fan_run()
+        expect("header-fanout: a ledger with no row of the kind exits 3", status == NOT_APPLICABLE and not found)
+        status, _, output = fan_run(write=True)
+        written = fan.fan_ledger.read_text(encoding="utf-8")
+        expect("header-fanout: --write writes a row for each header, the largest product first",
+               status == 0 and written.startswith("# a planted fan-out ledger\n")
+               and written.splitlines()[1] == f"header | {Scratch.KIND} | include/H11.h | 1200 | 2"
+               and written.count("\nheader |") == 12)
+        status, found, output = fan_run()
+        expect("header-fanout: an unchanged build gives no warning and prints the top list",
+               status == 0 and not found and "   1.    2.3 KB     1.2 KB alone x     2 readers  include/H11.h"
+               in output and "include/H01.h" not in output)
+        fan.write("include/H00.h", 5000)
+        status, found, _ = fan_run()
+        entered = [f for f in found if "enters the top 10" in f.message]
+        grew = [f for f in found if "grew by" in f.message]
+        expect("header-fanout: a header that enters the top 10 warns at its path with its rank, and its growth warns",
+               status == 0 and {f.level for f in found} == {"warning"} and len(entered) == 1
+               and entered[0].path == "include/H00.h" and "at rank 1: 4.9 KB alone x 2 readers" in entered[0].message
+               and len(grew) == 1 and "grew by 4900.0%" in grew[0].message)
+        fan.write("include/H00.h", 100)
+        fan.write("include/H11.h", 100)
+        status, found, _ = fan_run()
+        fell = [f for f in found if "fell by" in f.message]
+        expect("header-fanout: a header whose product fell by more than 10% warns at its row, to write the baseline "
+               "again, and the header that takes its place in the top 10 warns",
+               status == 0 and len(fell) == 1 and fell[0].path == "header-fanout-ledger.txt" and fell[0].line == 2
+               and "fell by 91.7%" in fell[0].message
+               and [f.path for f in found if "enters the top 10" in f.message] == ["include/H01.h"])
+        fan.write("include/H11.h", 1200)
+        fan.remove_object("H05")
+        status, found, _ = fan_run()
+        expect("header-fanout: a header of the baseline with no sentinel warns at its row",
+               status == 0 and [f.line for f in found if "has no sentinel of include/H05.h" in f.message] == [8])
+        good_fan = fan.fan_ledger.read_text(encoding="utf-8")
+        for label, text in (("a row of four cells", f"header | {Scratch.KIND} | include/H00.h | 1\n"),
+                            ("a word count", f"header | {Scratch.KIND} | include/H99.h | many | 2\n"),
+                            ("a second row of one header", f"header | {Scratch.KIND} | include/H00.h | 100 | 2\n"),
+                            ("a count of zero", f"header | {Scratch.KIND} | include/H99.h | 0 | 2\n")):
+            fan.fan_ledger.write_text(good_fan + text, encoding="utf-8")
+            status, found, _ = fan_run()
+            expect(f"header-fanout: a ledger with {label} is an error",
+                   status == 1 and found[0].path == "header-fanout-ledger.txt")
+        fan.fan_ledger.write_text(good_fan, encoding="utf-8")
+        (fan.build / "neg-compile" / "neg_one" / "neg_one.inputs").unlink()
+        status, found, _ = fan_run()
+        expect("header-fanout: a fixture with no record is an error", status == 1 and "neg_one" in found[0].message)
 
     if failures:
         print(f"check-parse-cost --self-test: FAILED, {len(failures)} case(s) did not hold")
@@ -593,7 +857,7 @@ def main(argv: list[str]) -> int:
             "error", build_census.shown(build_dir / cost_meter.KIND_FILE, REPO_ROOT), 0, arguments.check,
             "the build has no build kind.  cmake/BuildLauncher.cmake writes it at each configure.  Configure the build "
             "again")], arguments.check, arguments.warnings_dir)
-    return run(build_dir, REPO_ROOT, kind, SCRIPTS / "parse-total-ledger.txt", check_report.BUDGETS,
+    return run(arguments.check, build_dir, REPO_ROOT, kind, SCRIPTS / LEDGERS[arguments.check], check_report.BUDGETS,
                arguments.warnings_dir, arguments.write, arguments.reason)
 
 

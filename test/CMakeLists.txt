@@ -5444,10 +5444,21 @@ add_test(NAME parse_total
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 add_test(NAME parse_cost_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-parse-cost.py --self-test)
-set_tests_properties(parse_total parse_cost_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
+# header_fanout — for each header of include/, the bytes that its sentinel
+# includes alone times the units that read it, against the 30 largest
+# products of utils/scripts/header-fanout-ledger.txt.  It prints the ten
+# largest products, and it gives warnings only: for a header that enters the
+# ten largest, and for a product that changed by more than the row
+# header-fanout of utils/scripts/budgets.txt.
+add_test(NAME header_fanout
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-parse-cost.py --check header-fanout
+          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+set_tests_properties(parse_total parse_cost_self_test header_fanout PROPERTIES
+    LABELS "ci_guard" SKIP_RETURN_CODE 3)
 function(crucible_order_census_checks)
   get_property(_fixtures GLOBAL PROPERTY CRUCIBLE_NEG_FIXTURE_TESTS)
-  set_tests_properties(parse_total DIRECTORY ${CMAKE_SOURCE_DIR}/test PROPERTIES DEPENDS "${_fixtures}")
+  set_tests_properties(parse_total header_fanout DIRECTORY ${CMAKE_SOURCE_DIR}/test PROPERTIES
+      DEPENDS "${_fixtures}")
 endfunction()
 cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_checks)
 
