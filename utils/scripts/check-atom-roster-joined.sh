@@ -52,10 +52,11 @@
 # compile that a signal stopped, or that failed with no diagnostic, is not
 # kept, because its verdict says nothing about the inputs.  The cache is
 # the "atom-roster" directory of the root that utils/scripts/cache_dir.py
-# describes, and CRUCIBLE_CACHE_DIR=off turns it off.  A variant that no run
-# used for 14 days goes.  The limit of the cache is the limit of the direct
-# mode of ccache: a new header that hides a listed header earlier on the
-# include path is not seen.
+# describes, and CRUCIBLE_CACHE_DIR=off turns it off.  The cache stays under
+# its row of LIMITS in that file: a variant that no run used for 14 days goes,
+# and then the variants with the oldest use.  The limit of the cache key is the
+# limit of the direct mode of ccache: a new header that hides a listed header
+# earlier on the include path is not seen.
 #
 # Exit codes
 #   0 — every declared roster is joined, and no sample set is joined
@@ -233,10 +234,9 @@ keep_variant() {
     mv -f -- "$staging" "$name.deps"
 }
 
-# Removes each variant of the cache $1 that no run used for 14 days, and each empty name.
-evict_old_variants() {
-    find "$1" -mindepth 2 -maxdepth 2 -type f -mtime +14 -delete 2>/dev/null || true
-    find "$1" -mindepth 1 -maxdepth 1 -type d -empty -delete 2>/dev/null || true
+# Holds the verdict cache under its row of LIMITS when its eviction turn is due.
+hold_cache_bound() {
+    python3 "$REPO_ROOT/utils/scripts/cache_dir.py" --evict atom-roster >/dev/null 2>&1 || true
 }
 
 # Compiles the sentinel and classifies the outcome, or reads the verdict
@@ -279,7 +279,7 @@ classify() {
     fi
     if [[ $cache_outcome == miss && ( $status -eq 0 || ( $status -eq 1 && $total -gt 0 ) ) ]]; then
         keep_variant "$dir/$key" "$tu" "$log.d" "$log" "$verdict"
-        evict_old_variants "$dir"
+        hold_cache_bound
     fi
     printf '%s' "$verdict"
 }

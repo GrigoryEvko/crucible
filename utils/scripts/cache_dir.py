@@ -381,15 +381,16 @@ def _walk(directory: str, sample: int | None, rng) -> tuple[float, float]:
     return size, files
 
 
-def estimated_bytes(directory: Path, rng=None) -> int:
+def estimated_bytes(directory: Path, rng=None, full_walk: int = FULL_WALK) -> int:
     """Return the allocated bytes under a directory, from a sample of its fan-out directories (THE SAMPLE).
 
     Complexity: about n * SAMPLE_FANS / 256 stat calls for n files under fan-out
-    directories, and n calls when the sample shows FULL_WALK files or fewer.
+    directories, and n calls when the sample shows full_walk files or fewer.
 
     Args:
         directory: The directory
         rng: The random generator of the sample, or None for a new one
+        full_walk: The file count of the sample at or under which the function walks each file
 
     Returns:
         The estimated bytes.  A missing directory has 0
@@ -398,7 +399,7 @@ def estimated_bytes(directory: Path, rng=None) -> int:
 
     chooser = random.Random() if rng is None else rng
     size, files = _walk(str(directory), SAMPLE_FANS, chooser)
-    if files <= FULL_WALK:
+    if files <= full_walk:
         size, _files = _walk(str(directory), None, chooser)
     return int(size)
 
@@ -486,8 +487,113 @@ def evict_main(name: str) -> int:
     return 0
 
 
+def self_test() -> int:
+    """Do a test of the sample, the turn, the bound and the command line on scratch caches.
+
+    Returns:
+        0 when every case holds, else 2
+    """
+    import random
+    import subprocess
+
+    failures: list[str] = []
+
+    def expect(name: str, holds: bool) -> None:
+        """Record one case."""
+        print(f"  {'ok  ' if holds else 'FAIL'} {name}")
+        if not holds:
+            failures.append(name)
+
+    def exact(directory: Path) -> int:
+        """Return the allocated bytes of each file under a directory, from a walk of each file."""
+        return sum(allocated(path.lstat()) for path in directory.rglob("*") if path.is_file())
+
+    rng = random.Random(42)
+    with scratch_root() as root:
+        fanned = root / "fanned"
+        for fan in range(256):
+            for index in range(1 + rng.randrange(8)):
+                path = fanned / f"{fan:02x}" / f"{index:064x}"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(bytes(4096 * (1 + rng.randrange(4))))
+        total = exact(fanned)
+        sampled = estimated_bytes(fanned, random.Random(7), full_walk=0)
+        expect("a sample of 16 of 256 fan-out directories gives the size within 25 percent",
+               abs(sampled - total) <= total // 4 and sampled != total)
+        expect("a sample that shows few files gives way to a walk of each file", estimated_bytes(fanned) == total)
+        expect("a missing directory has no size", estimated_bytes(root / "missing") == 0)
+
+        stamp = fanned / "evicted"
+        stamp.touch()
+        probed = fanned / "evicted.probed"
+        probed.touch()
+        with eviction_turn(fanned, max_bytes=total // 2) as has_turn:
+            expect("a recent turn and a recent sample give no turn, also over the limit", not has_turn)
+        stale = time.time() - 2 * PROBE_INTERVAL
+        os.utime(probed, (stale, stale))
+        with eviction_turn(fanned, max_bytes=2 * total) as has_turn:
+            expect("a due sample under the limit gives no turn", not has_turn)
+        expect("a sample touches its stamp", time.time() - probed.stat().st_mtime < 60)
+        os.utime(probed, (stale, stale))
+        with eviction_turn(fanned, max_bytes=total // 2) as has_turn:
+            expect("a due sample over the limit gives the turn, and the turn touches the stamp",
+                   has_turn and time.time() - stamp.stat().st_mtime < 60)
+
+        everything = entries(fanned)
+        old = time.time() - 86400
+        for offset, entry in enumerate(everything):
+            os.utime(entry.path, (old + offset, old + offset))
+        newest = max(everything, key=lambda entry: entry.path.stat().st_mtime).path
+        dead = fanned / "00" / ".writer.1.2.tmp"
+        dead.write_bytes(b"x")
+        os.utime(dead, (old, old))
+        live = fanned / "01" / ".writer.3.4.tmp"
+        live.write_bytes(b"x")
+        empty = fanned / "zz"
+        empty.mkdir()
+        os.utime(empty, (old, old))
+        os.utime(stamp, (old, old))
+        expect("hold_bound takes a due turn", hold_bound(fanned, total // 2))
+        kept = sum(entry.size for entry in entries(fanned))
+        expect("hold_bound leaves the entries under EVICT_TO of the limit, and keeps the entry of the newest use",
+               kept <= EVICT_TO * (total // 2) and newest.exists())
+        expect("hold_bound removes an old temporary file and an old empty directory, and keeps a new temporary file",
+               not dead.exists() and not empty.exists() and live.exists())
+        expect("write_atomic makes the directory of an entry", write_atomic(fanned / "new" / "entry", b"y") is None
+               and (fanned / "new" / "entry").read_bytes() == b"y")
+
+        script = str(Path(__file__).resolve())
+        refused = subprocess.run([sys.executable, script, "--evict", "no-such-cache"], capture_output=True, text=True)
+        expect("--evict refuses a cache with no row of LIMITS", refused.returncode == 2 and "LIMITS" in refused.stderr)
+        roster = root / "atom-roster" / ("a" * 64)
+        roster.mkdir(parents=True)
+        (roster / "variant.log").write_bytes(bytes(8192))
+        os.utime(roster / "variant.log", (time.time() - 2 * MAX_AGE, time.time() - 2 * MAX_AGE))
+        done = subprocess.run([sys.executable, script, "--evict", "atom-roster"], capture_output=True, text=True,
+                              env={**os.environ, ROOT_VARIABLE: str(root)})
+        expect("--evict holds a cache of LIMITS under its limits", done.returncode == 0
+               and not (roster / "variant.log").exists())
+    expect("each row of LIMITS is a positive size", all(limit > 0 for limit in LIMITS.values()))
+    saved = os.environ.get(ROOT_VARIABLE)
+    os.environ[ROOT_VARIABLE] = "off"
+    try:
+        expect("with the caches off, no root and no cache", base_root() is None and cache_root("x") is None)
+    finally:
+        if saved is None:
+            os.environ.pop(ROOT_VARIABLE, None)
+        else:
+            os.environ[ROOT_VARIABLE] = saved
+    if failures:
+        print(f"cache_dir --self-test: FAILED, {len(failures)} case(s) did not hold")
+        return 2
+    print("cache_dir --self-test: every case holds.")
+    return 0
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--self-test"]:
+        sys.exit(self_test())
     if len(sys.argv) == 3 and sys.argv[1] == "--evict":
         sys.exit(evict_main(sys.argv[2]))
-    print("usage: cache_dir.py --evict NAME", file=sys.stderr)
+    print("usage: cache_dir.py --self-test | --evict NAME", file=sys.stderr)
     sys.exit(2)

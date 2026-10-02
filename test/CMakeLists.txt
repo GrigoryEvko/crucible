@@ -676,6 +676,14 @@ add_test(NAME preprocessed_store_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/preprocessed.py --self-test)
 set_tests_properties(preprocessed_store_self_test PROPERTIES
     LABELS "ci_guard")
+# utils/scripts/cache_dir.py gives each cache its limit, its eviction turn and
+# a sample of its size.  The self-test proves that a sample gives the size,
+# that a cache over its limit gets its turn at the next sample, and that an
+# eviction leaves the cache under its limit.
+add_test(NAME cache_dir_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/cache_dir.py --self-test)
+set_tests_properties(cache_dir_self_test PROPERTIES
+    LABELS "ci_guard")
 # A linear token is an empty class, so a moved-from token looks live, and
 # a second std::move of one Permission gives two owners of one region.
 # sizeof(Permission) stays 1, so no byte records the move.

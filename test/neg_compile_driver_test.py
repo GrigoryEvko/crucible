@@ -863,10 +863,11 @@ class StoreTest:
     def check_eviction(self) -> None:
         """A write into a bucket above its share removes the entries of that bucket unused for the longest time.
 
-        With a limit of 1 MB, each of the 256 buckets has a share of 4096
-        bytes.  The bucket of the entry gets four planted entries of 2048 bytes,
-        and a different bucket gets one planted entry larger than the full
-        limit.  The write reads only its own bucket, so the large entry stays.
+        With a limit of 4 MB, the entries use 15/16 of it, so each of the 256
+        buckets has a share of 15360 bytes on the disk.  The bucket of the entry
+        gets four planted entries of 8192 bytes, and a different bucket gets one
+        planted entry larger than the full limit.  The write reads only its own
+        bucket, so the large entry stays.
         """
         first = self.run("neg_convert", *CONVERT)
         entry = self.entry_path(first[3])
@@ -874,27 +875,56 @@ class StoreTest:
         if entry is None or not entry.is_file():
             return
         entry.unlink()
-        share = (1 << 20) // store._BUCKETS
+        share = int((4 << 20) * (1 - store._MEMO_PART)) // store._BUCKETS
         unused = []
         for index in range(4):
             path = entry.parent / f"{index:064x}"
-            path.write_bytes(bytes(share // 2))
+            path.write_bytes(bytes(8192))
             moment = time.time() - 86400 + index
             os.utime(path, (moment, moment))
             unused.append(path)
         other = self.store / "entries" / ("01" if entry.parent.name == "00" else "00") / f"{9:064x}"
         other.parent.mkdir(parents=True, exist_ok=True)
-        other.write_bytes(bytes(2 << 20))
+        other.write_bytes(bytes(8 << 20))
         moment = time.time() - 2 * 86400
         os.utime(other, (moment, moment))
-        stored = self.run("neg_convert", *CONVERT, CRUCIBLE_NEG_CACHE_MAX_MB="1")
+        stored = self.run("neg_convert", *CONVERT, CRUCIBLE_NEG_CACHE_MAX_MB="4")
         remaining = [path for path in unused if path.exists()]
-        bucket_total = sum(path.stat().st_size for path in entry.parent.iterdir())
+        bucket_total = sum(path.stat().st_blocks * 512 for path in entry.parent.iterdir())
         self.expect(self.has(stored[3], "stored") and entry.is_file(), f"the new entry stays: {stored[3]}")
         self.expect(len(remaining) <= 1 and remaining == unused[len(unused) - len(remaining):]
                     and (bucket_total <= share or not remaining),
                     f"the entries of the bucket unused for the longest time go: {[path.name[-1] for path in remaining]}")
         self.expect(other.is_file(), "a write does not remove an entry of a different bucket")
+
+    def check_memo_sweep(self) -> None:
+        """A write sweeps the memos when they use more than their part of the limit, the oldest write first.
+
+        With a limit of 4 MB, the memos can use 256 KB.  The check plants 64
+        memos of 8192 bytes with an old write, 512 KB on the disk, and a sweep
+        stamp older than the sweep interval.  A write then removes the oldest
+        memos until the memos use at most 90 percent of their part.
+        """
+        (self.store / "memo").mkdir(parents=True, exist_ok=True)
+        planted = []
+        for index in range(64):
+            path = self.store / "memo" / f"file-{index:032x}.json"
+            path.write_bytes(bytes(8192))
+            moment = time.time() - 86400 + index
+            os.utime(path, (moment, moment))
+            planted.append(path)
+        stamp = self.store / store._MEMO_SWEEP_STAMP
+        stamp.touch()
+        moment = time.time() - 2 * store._MEMO_SWEEP_SECONDS
+        os.utime(stamp, (moment, moment))
+        stored = self.run("neg_convert", *CONVERT, CRUCIBLE_NEG_CACHE_MAX_MB="4")
+        part = int((4 << 20) * store._MEMO_PART)
+        memo_total = sum(path.stat().st_blocks * 512 for path in (self.store / "memo").iterdir())
+        remaining = [path for path in planted if path.exists()]
+        self.expect(self.has(stored[3], "stored"), f"the convert fixture stores its result: {stored[3]}")
+        self.expect(memo_total <= part and remaining == planted[len(planted) - len(remaining):],
+                    f"the memos with the oldest write go until the memos fit their part: {memo_total} bytes on the "
+                    f"disk for a part of {part}, {len(remaining)} planted memos remain")
 
 
 CHECKS: tuple[Callable[[StoreTest], None], ...] = (
@@ -913,6 +943,7 @@ CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_store_off,
     StoreTest.check_stored_output_is_evaluated,
     StoreTest.check_eviction,
+    StoreTest.check_memo_sweep,
     StoreTest.check_cpu_budget,
     StoreTest.check_instruction_budget,
     StoreTest.check_inputs_record,

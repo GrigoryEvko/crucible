@@ -61,11 +61,16 @@ result goes, and the oldest result goes when the entry holds more than four.
 The entry keeps each dependency path one time, for all its results.
 
 CRUCIBLE_NEG_CACHE=0 turns the store off.  CRUCIBLE_NEG_CACHE_MAX_MB sets the
-size limit of the store, and the preset value is 1024 MB.  The store keeps each
-entry in one of 256 buckets, by the first two digits of its key.  Each bucket
-gets an equal part of the limit.  When a write makes a bucket larger than its
-part, the driver removes the entries of that bucket that it did not use for
-the longest time.  So a write reads one bucket and not the full store.  A
+size limit of the store, and the preset value is the row "neg" of LIMITS in
+utils/scripts/cache_dir.py.  A size is the space that a file takes on the
+disk.  The memos can use _MEMO_PART of the limit, and the entries use the
+rest.  The store keeps each entry in one of 256 buckets, by the first two
+digits of its key.  Each bucket gets an equal part of the entries.  When a
+write makes a bucket larger than its part, the driver removes the entries of
+that bucket that it did not use for the longest time.  So a write reads one
+bucket and not the full store.  One write in each _MEMO_SWEEP_SECONDS reads
+the memos, and it removes the memos with the oldest write while they use
+more than their part.  A removed memo costs one more hash of its file.  A
 damaged entry, an entry that the driver cannot read and an entry in a
 different format are not correct entries.
 
@@ -717,13 +722,18 @@ _RESULTS_PER_ENTRY = 4
 # compiler did not see.  The period is longer than one tick of the clock that
 # sets file times.
 _SETTLE_NS = 1_000_000_000
-_DEFAULT_LIMIT_MB = 1024
 # The name of a bucket is the first two hexadecimal digits of a key.  A key is
 # a SHA-256 hash, so each bucket gets an equal part of the keys.
 _BUCKET_DIGITS = 2
 _BUCKETS = 16**_BUCKET_DIGITS
 # A bucket removes entries until it uses at most this part of its share of the limit.
 _EVICT_TO = 0.9
+# The part of the size limit that the memos can use.  The entries use the rest.
+_MEMO_PART = 1 / 16
+# The time between two sweeps of the memos.
+_MEMO_SWEEP_SECONDS = 120
+# The stamp of the last sweep of the memos, in the directory of the store.
+_MEMO_SWEEP_STAMP = "memo-swept"
 _DEPFILE_PLACEHOLDER = "<dependency file>"
 # The environment variables that GCC reads.  Each one can change the files
 # that GCC finds or the text of a diagnostic.  The variables of the loader
@@ -2063,65 +2073,111 @@ class ResultStore:
         except OSError as error:
             return False, f"the entry cannot be written: {error}"
         self.evict(path)
+        self.sweep_memos()
         return True, ""
 
     def evict(self, written: Path) -> None:
         """Remove the entries of the bucket of `written` that the store did not use for the longest time.
 
-        Each bucket gets an equal share of the limit.  When the bucket uses more
-        than its share, the function removes entries until the bucket uses at
-        most 90 percent of its share.  It keeps `written`, the entry that the
-        caller wrote, also when that entry alone is larger than the share.  It
-        also removes each temporary file of the bucket older than one hour, the
-        remains of a writer that stopped.  The cost is O(m log m) in the m
-        entries of one bucket, which hold about 1/256 of the store.
+        Each bucket gets an equal share of the part of the limit that the
+        entries use.  When the bucket uses more than its share, the function
+        removes entries until the bucket uses at most 90 percent of its share.
+        It keeps `written`, the entry that the caller wrote, also when that
+        entry alone is larger than the share.  It also removes each temporary
+        file of the bucket older than one hour, the remains of a writer that
+        stopped.  The cost is O(m log m) in the m entries of one bucket, which
+        hold about 1/256 of the store.
         """
-        files: list[tuple[int, int, str]] = []
         expired_ns = _now_ns() - 3600 * 1_000_000_000
         try:
             with os.scandir(written.parent) as iterator:
                 names = list(iterator)
         except OSError:
             return
-        for item in names:
-            try:
-                status = item.stat(follow_symlinks=False)
-            except OSError:
-                continue
-            if item.name.endswith(".tmp"):
-                if status.st_mtime_ns < expired_ns:
-                    Path(item.path).unlink(missing_ok=True)
-                continue
-            if item.name != written.name:
-                files.append((status.st_mtime_ns, status.st_size, item.path))
-        share = self.limit_bytes // _BUCKETS
+        files = [file for file in _removable(names, expired_ns) if file[2] != str(written)]
+        share = int(self.limit_bytes * (1 - _MEMO_PART)) // _BUCKETS
         try:
-            total = sum(size for _, size, _ in files) + written.stat().st_size
+            total = sum(size for _, size, _ in files) + _allocated(written.stat())
         except OSError:
             return
-        if total <= share:
+        _remove_oldest(files, total, share)
+
+    def sweep_memos(self) -> None:
+        """Remove the memos with the oldest write while the memos use more than _MEMO_PART of the limit.
+
+        One write each _MEMO_SWEEP_SECONDS does the sweep, so a cold run of
+        many fixtures reads the memo directory rarely.  A memo gets a new write
+        only when its file changes, so a memo of a removed work tree goes
+        first.  A reader that loses a memo hashes its file again.  The sweep
+        also removes each temporary file of the memos older than one hour.  The
+        cost is O(m log m) in the m memos.
+        """
+        stamp = self.root / _MEMO_SWEEP_STAMP
+        now_ns = _now_ns()
+        try:
+            if now_ns - stamp.stat().st_mtime_ns < _MEMO_SWEEP_SECONDS * 1_000_000_000:
+                return
+        except FileNotFoundError:
+            pass
+        try:
+            stamp.touch()
+            with os.scandir(self.memo) as iterator:
+                names = list(iterator)
+        except OSError:
             return
-        goal = int(share * _EVICT_TO)
-        for _, size, name in sorted(files):
-            if total <= goal:
-                break
-            Path(name).unlink(missing_ok=True)
-            total -= size
+        files = _removable(names, now_ns - 3600 * 1_000_000_000)
+        _remove_oldest(files, sum(size for _, size, _ in files), int(self.limit_bytes * _MEMO_PART))
 
 
-def _store_limit_bytes() -> int:
-    """Return the size limit of the store from CRUCIBLE_NEG_CACHE_MAX_MB."""
+def _allocated(status: os.stat_result) -> int:
+    """Return the bytes that a file takes on the disk."""
+    return status.st_blocks * 512
+
+
+def _removable(items: list[os.DirEntry], expired_ns: int) -> list[tuple[int, int, str]]:
+    """Return (mtime, allocated bytes, path) of each file of a listing, and remove each old temporary file.
+
+    A temporary file is old when its mtime is before `expired_ns`.
+    """
+    files: list[tuple[int, int, str]] = []
+    for item in items:
+        try:
+            status = item.stat(follow_symlinks=False)
+        except OSError:
+            continue
+        if item.name.endswith(".tmp"):
+            if status.st_mtime_ns < expired_ns:
+                Path(item.path).unlink(missing_ok=True)
+            continue
+        files.append((status.st_mtime_ns, _allocated(status), item.path))
+    return files
+
+
+def _remove_oldest(files: list[tuple[int, int, str]], total: int, share: int) -> None:
+    """When `total` is over `share`, remove the oldest of `files` until the total is at most _EVICT_TO of the share."""
+    if total <= share:
+        return
+    goal = int(share * _EVICT_TO)
+    for _, size, name in sorted(files):
+        if total <= goal:
+            break
+        Path(name).unlink(missing_ok=True)
+        total -= size
+
+
+def _store_limit_bytes(default: int) -> int:
+    """Return the size limit of the store from CRUCIBLE_NEG_CACHE_MAX_MB, else `default`."""
     text = os.environ.get("CRUCIBLE_NEG_CACHE_MAX_MB", "")
     if not text:
-        return _DEFAULT_LIMIT_MB << 20
+        return default
     megabytes = int(text) if text.isdigit() else 0
     if megabytes <= 0:
         print(
             f"CRUCIBLE_NEG_CACHE_MAX_MB is '{text}'.  Set it to a positive number of megabytes.  "
-            f"The store uses {_DEFAULT_LIMIT_MB} MB.",
+            f"The store uses {default >> 20} MB.",
             file=sys.stderr,
         )
-        return _DEFAULT_LIMIT_MB << 20
+        return default
     return megabytes << 20
 
 
@@ -2141,7 +2197,7 @@ def open_store() -> tuple[ResultStore | None, str]:
         (root / "memo").mkdir(parents=True, exist_ok=True)
     except OSError as error:
         return None, f"the store directory cannot be made: {error}"
-    return ResultStore(root, _store_limit_bytes()), ""
+    return ResultStore(root, _store_limit_bytes(cache_dir.LIMITS["neg"])), ""
 
 
 def _note(fixture_name: str, text: str) -> None:

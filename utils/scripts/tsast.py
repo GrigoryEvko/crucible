@@ -936,10 +936,10 @@ def _strict_policy(tree: Tree, strict: bool) -> Tree:
 
 # ── The tree cache ───────────────────────────────────────────────────────────
 
-# The name of the cache in utils/scripts/cache_dir.py.
+# The name of the cache in utils/scripts/cache_dir.py.  Its row of
+# cache_dir.LIMITS is the size limit of the cache.  One state of this tree
+# takes about 100 MB.
 TREE_CACHE = "tsast"
-# The size limit of the cache.  One state of this tree takes about 100 MB.
-TREE_CACHE_BYTES = 2 << 30
 # The layout of an entry.  A change to the layout gives every entry a new name.
 _TREE_FORMAT = b"tsast-tree-1"
 _TREE_MAGIC = b"TSA1"
@@ -1236,10 +1236,8 @@ def _reparse(directory: Path, key: str, path: Path, data: bytes) -> Tree:
 
 
 def _evict_trees(directory: Path) -> None:
-    """Hold the tree cache under its size and age limits, one time for each eviction interval."""
-    with cache_dir.eviction_turn(directory) as has_turn:
-        if has_turn:
-            cache_dir.remove(cache_dir.victims(cache_dir.entries(directory), TREE_CACHE_BYTES))
+    """Hold the tree cache under its size and age limits when its turn is due (utils/scripts/cache_dir.py, THE TURN)."""
+    cache_dir.hold_bound(directory, cache_dir.LIMITS[TREE_CACHE])
 
 
 # The one suffix policy of every C++ scan.  A BPF program is C (`.bpf.c`), and
@@ -4019,6 +4017,25 @@ def _self_test_cache(check: Callable[..., None], work: Path) -> None:
                 pass
             check("one process takes a due eviction turn, a second one does not wait for the lock, and a third "
                   "waits for the interval", first_turn and not locked_out and not too_soon)
+            # A recent turn, and a cache that grows over its limit: the next
+            # sample of the size makes the turn due, and the oldest entry goes.
+            oldest = _entry_of(root / TREE_CACHE, "f" * 64)
+            oldest.parent.mkdir(parents=True, exist_ok=True)
+            oldest.write_bytes(bytes(1 << 20))
+            moment = time.time() - 86400
+            os.utime(oldest, (moment, moment))
+            probed = root / TREE_CACHE / "evicted.probed"
+            probed.touch()
+            stale = time.time() - 2 * cache_dir.PROBE_INTERVAL
+            os.utime(probed, (stale, stale))
+            saved_limit = cache_dir.LIMITS[TREE_CACHE]
+            cache_dir.LIMITS[TREE_CACHE] = 1 << 19
+            try:
+                list(parse_texts(texts[:1]))
+            finally:
+                cache_dir.LIMITS[TREE_CACHE] = saved_limit
+            check("a cache over its limit after a recent turn takes its turn at the next sample, and its oldest "
+                  "entry goes", not oldest.exists() and time.time() - stamp.stat().st_mtime < 60)
             planted = work / "fill"
             planted.mkdir()
             sources = {"a.h": "#define FILL_TWICE(x) ((x) + (x))\nint filled_a;\n", "b.cpp": "int filled_b;\n",
