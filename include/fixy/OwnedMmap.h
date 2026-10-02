@@ -301,7 +301,7 @@ private:
 namespace detail {
 
 // A sample mapping type.  The check file of this header and
-// test/fixy/test_row_hash_wrappers.cpp read it.
+// test/fixy/row_hash_census.h read it.
 struct DummyTag {
     using permission_row = ::foundation::effects::Row<>;
 };

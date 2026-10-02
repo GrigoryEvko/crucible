@@ -58,15 +58,16 @@ test/fixy/test_session_wire_word.cpp ::foundation::effects::detail x1 — builds
 
 # Self-test namespaces and helpers: a test that runs a self-test namespace of
 # a layer header, or checks one helper that no public door exposes.
+test/fixy/row_hash_census.h ::fixy::concurrent::detail x7 — hashes the row of the stage fakes
+test/fixy/row_hash_census.h ::fixy::detail x3 — hashes the row of the mapping and view probes
 test/fixy/test_atom.cpp ::fixy::atom::detail x66 — tests the roster and lift helpers of the atoms
 test/fixy/test_collision.cpp ::fixy::collision::detail x15 — tests each collision predicate on its own
 test/fixy/test_fp_polynomial.cpp ::fixy::fp::detail x1 — reads the pinned Box-Muller pair of the polynomial header
 test/fixy/test_os_numa_placement.cpp ::fixy::detail x3 — sizes a probe mask with the node-mask constants of the layer
 test/fixy/test_os_time.cpp ::fixy::time::detail x1 — checks the PTP clock-id helper, which no door reaches without a device
 test/fixy/test_owned_mmap.cpp ::fixy::atom::detail x1 — uses the sample leak rationale as a leak atom
-test/fixy/test_row_hash_wrappers.cpp ::fixy::concurrent::detail x7 — hashes the row of the stage fakes
 test/fixy/test_row_hash_wrappers.cpp ::fixy::corpus::detail x3 — hashes the row of a secret carrier
-test/fixy/test_row_hash_wrappers.cpp ::fixy::detail x6 — hashes the row of the mapping and view probes, and counts the reflected roles
+test/fixy/test_row_hash_wrappers.cpp ::fixy::detail x3 — counts the reflected roles
 test/foundation/test_algebra_core.cpp ::foundation::algebra::detail x6 — runs the fixtures of the algebra headers
 test/foundation/test_computation.cpp ::foundation::effects::detail x30 — pins the graded capabilities of the computation carrier
 test/foundation/test_diag.cpp ::foundation::diag::detail x1 — makes sure that a failed write poisons the stream sink of the JSON emitter

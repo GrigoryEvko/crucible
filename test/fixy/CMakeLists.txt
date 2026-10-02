@@ -5104,7 +5104,8 @@ endforeach()
 file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/census/census_public_headers.h" CONTENT "${_census_text}" @ONLY)
 target_include_directories(test_row_hash_wrappers PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/census")
 # A class in a censused namespace with no row fails the census.  The
-# fixture declares one and then compiles the census file.
+# fixture declares one and then includes the census header,
+# row_hash_census.h, which test_row_hash_wrappers also includes.
 fixy_neg_compile_test(neg_row_hash_census_undisposed_carrier
   "static assertion failed: a carrier in a censused namespace is unproven"
   "the comparison reduces to .\\(([0-9]+) == ([0-9]+)\\).")

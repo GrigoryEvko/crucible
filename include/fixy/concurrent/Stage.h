@@ -429,7 +429,7 @@ mint_stage(Ctx const& ctx, std::remove_reference_t<::foundation::reflect::param_
 // (utils/scripts/witness-roster.txt) forges each stage through these
 // names.  The check files of this header and of
 // fixy/concurrent/Pipeline.h, test/fixy/test_armed_roster.cpp and
-// test/fixy/test_row_hash_wrappers.cpp name them too.  No code runs them.
+// test/fixy/row_hash_census.h name them too.  No code runs them.
 namespace detail::stage_witness {
 
 // A pipeline joins two stages only when their handles name one channel, so

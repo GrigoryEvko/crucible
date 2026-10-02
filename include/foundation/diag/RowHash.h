@@ -39,9 +39,9 @@
 // contract instead of a lattice. Every other carrier names its claim
 // with a discipline identity and names its payload, and one fold reads
 // those two. A type with a claim and neither shape still falls to the
-// zero below, so test/fixy/test_row_hash_wrappers.cpp reads the carrier
-// roster by reflection and fails on any member that folds to zero and
-// has no stated reason to.
+// zero below, so the census of test/fixy/row_hash_census.h reads the
+// carrier roster by reflection and fails on any member that folds to zero
+// and has no stated reason to.
 //
 // Portability bound, and it is not one bound but three. The arithmetic,
 // the effect enum values and the salts are portable. A lattice identity

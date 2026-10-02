@@ -64,6 +64,7 @@ test/fixy/neg/neg_witness_permissions_sharedpermissionpool_direct_construction.c
 test/fixy/neg/neg_witness_scopedview_direct_construction.cpp	1
 test/fixy/neg/neg_witness_session_permhold_direct_construction.cpp	1
 test/fixy/neg/neg_witness_sharedread_direct_construction.cpp	1
+test/fixy/row_hash_census.h	15
 test/fixy/test_armed_roster.cpp	6
 test/fixy/test_borrowed.cpp	20
 test/fixy/test_cheat_probe.cpp	2
@@ -71,7 +72,7 @@ test/fixy/test_forgeable_proofs.cpp	10
 test/fixy/test_os_numa_placement.cpp	1
 test/fixy/test_owned_mmap.cpp	2
 test/fixy/test_owned_region.cpp	13
-test/fixy/test_row_hash_wrappers.cpp	29
+test/fixy/test_row_hash_wrappers.cpp	14
 test/fixy/test_scoped_view.cpp	9
 test/fixy/test_session_handle.cpp	1
 test/fixy/test_session_ownership_attacks.cpp	37
