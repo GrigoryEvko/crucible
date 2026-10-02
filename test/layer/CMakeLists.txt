@@ -461,6 +461,66 @@ if(NOT _walk_placed STREQUAL _walk_listed)
                       "unit.  Correct the division into units.")
 endif()
 
+# The flag matrix of the audited standard library names.
+# admitted_flag_matrix.cpp holds a static_assert for each property of each name
+# of utils/scripts/quarantine-admitted-audit.txt.  One generated unit for each
+# flag set includes the file, and the COMPILE_OPTIONS property of the unit gives
+# the flags of the set.  A source property comes last on the compile line, so
+# the flags of the set win over the flags of the build, and each build compiles
+# each flag set.  A flag that changes a property then stops the build.  The
+# flags of a set give each flag of its preset that changes a macro, the
+# optimization level, a sanitizer or the contract semantic.  The PGO units need
+# no profile: the generate unit only writes instrumented code, and the use unit
+# finds no counter file and gives no warning.
+#
+# Measured on 2026-10-02: each unit takes approximately 0.35 s of CPU time.
+set(_matrix_release -O3 -march=native -DNDEBUG -U_GLIBCXX_ASSERTIONS -U_GLIBCXX_SANITIZE_VECTOR -fno-sanitize=all
+    -fharden-compares -fharden-conditional-branches -fno-strict-overflow)
+set(_matrix_debug -O1 -UNDEBUG -D_GLIBCXX_ASSERTIONS=1 -D_GLIBCXX_SANITIZE_VECTOR=1 -fno-sanitize=all)
+set(_matrix_flags_debug ${_matrix_debug} -fsanitize=address -fno-sanitize-recover=all -fno-strict-overflow
+    -fcontract-evaluation-semantic=enforce)
+set(_matrix_flags_release ${_matrix_release} -fcontract-evaluation-semantic=observe)
+set(_matrix_flags_tsan ${_matrix_debug} -fsanitize=thread -Wno-tsan -fno-strict-overflow
+    -fcontract-evaluation-semantic=enforce)
+set(_matrix_flags_ubsan_strict ${_matrix_debug}
+    -fsanitize=undefined,float-cast-overflow,float-divide-by-zero,bounds-strict -fno-sanitize-recover=all
+    -fstrict-overflow -fcontract-evaluation-semantic=enforce)
+set(_matrix_flags_verify ${_matrix_release} -UNDEBUG -fcontract-evaluation-semantic=enforce)
+set(_matrix_flags_pgo_generate ${_matrix_release} -fprofile-generate -fprofile-update=atomic
+    -fcontract-evaluation-semantic=observe)
+set(_matrix_flags_pgo_use ${_matrix_release} -fprofile-use -fprofile-partial-training -Wno-missing-profile
+    -fcontract-evaluation-semantic=observe)
+set(_matrix_flags_glibcxx_debug -D_GLIBCXX_DEBUG)
+set(_matrix_flags_glibcxx_assertions -D_GLIBCXX_ASSERTIONS=1)
+set(_matrix_flags_ndebug -DNDEBUG)
+set(_matrix_flags_contract_ignore ${CRUCIBLE_CONTRACT_IGNORE_OPTIONS})
+set(_matrix_flags_contract_observe -fcontract-evaluation-semantic=observe)
+set(_matrix_flags_contract_enforce -fcontract-evaluation-semantic=enforce)
+set(_matrix_flags_contract_quick_enforce -fcontract-evaluation-semantic=quick_enforce)
+set(_matrix_units "")
+foreach(_set debug release tsan ubsan_strict verify pgo_generate pgo_use glibcxx_debug glibcxx_assertions ndebug
+             contract_ignore contract_observe contract_enforce contract_quick_enforce)
+  set(_unit "${CMAKE_CURRENT_BINARY_DIR}/admitted_flag_matrix/${_set}.cpp")
+  file(CONFIGURE OUTPUT "${_unit}" CONTENT "#include \"admitted_flag_matrix.cpp\"\n" @ONLY)
+  set_source_files_properties("${_unit}" PROPERTIES COMPILE_OPTIONS "${_matrix_flags_${_set}}")
+  list(APPEND _matrix_units "${_unit}")
+endforeach()
+add_library(layer_admitted_flag_matrix OBJECT ${_matrix_units})
+target_link_libraries(layer_admitted_flag_matrix PRIVATE crucible_dialect)
+target_include_directories(layer_admitted_flag_matrix PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+
+# Each admitted entry and each candidate of the audit has one row in the audit
+# table and one section in the flag matrix, and each row and each section
+# names an audited name.
+add_test(NAME admitted_audit_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-admitted-audit.py --self-test)
+add_test(NAME admitted_audit
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-admitted-audit.py
+          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+set_tests_properties(admitted_audit admitted_audit_self_test PROPERTIES
+    LABELS "ci_guard;substrate"
+    SKIP_RETURN_CODE 3)
+
 # Each header of crucible-not-standalone.txt still fails to compile alone.
 # The test compiles it with the command of the crucible sentinels.  The
 # command comes from the compile database, so the test needs no target of
