@@ -10,7 +10,7 @@
 #include <foundation/effects/Resources.h>
 #include <foundation/effects/Row.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
 
@@ -316,6 +316,6 @@ int main() {
     test_has_cog_capacity_caps_lockstep();
     test_fits_cog_multi_axis_all_must_fit();
     test_every_substrate_every_axis_runtime();
-    std::puts("FitsCog: all 16 sentinel groups passed.");
+    crucible::test::pass("FitsCog: all 16 sentinel groups passed.\n");
     return 0;
 }

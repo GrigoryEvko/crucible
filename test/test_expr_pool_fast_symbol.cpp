@@ -31,7 +31,7 @@ static void test_fmix64_zero_and_non_zero() {
     assert(detail::fmix64(zero_seed) == 0);
     assert(detail::fmix64(non_zero_seed) != 0);
 
-    std::printf("  test_fmix64_zero_and_non_zero: PASSED\n");
+    crucible::test::pass("  test_fmix64_zero_and_non_zero: PASSED\n");
 }
 
 static void test_unregistered_returns_nullptr() {
@@ -51,7 +51,7 @@ static void test_unregistered_returns_nullptr() {
     assert(pool.fast_symbol(SymbolId{6}) == nullptr);
     assert(pool.fast_symbol(SymbolId{1000}) == nullptr);
 
-    std::printf("  test_unregistered_returns_nullptr: PASSED\n");
+    crucible::test::pass("  test_unregistered_returns_nullptr: PASSED\n");
 }
 
 static void test_matches_slow_path() {
@@ -75,7 +75,7 @@ static void test_matches_slow_path() {
     assert(pool.symbol(a, "y", SymbolId{1}, NUM_FLAGS) == pool.fast_symbol(SymbolId{1}));
     assert(pool.symbol(a, "z", SymbolId{2}, NUM_FLAGS) == pool.fast_symbol(SymbolId{2}));
 
-    std::printf("  test_matches_slow_path: PASSED\n");
+    crucible::test::pass("  test_matches_slow_path: PASSED\n");
 }
 
 static void test_sparse_sids() {
@@ -105,7 +105,7 @@ static void test_sparse_sids() {
     assert(pool.fast_symbol(SymbolId{100}) == e100);
     assert(pool.fast_symbol(SymbolId{1000}) == e1000);
 
-    std::printf("  test_sparse_sids: PASSED\n");
+    crucible::test::pass("  test_sparse_sids: PASSED\n");
 }
 
 static void test_dense_sids_stress() {
@@ -130,7 +130,7 @@ static void test_dense_sids_stress() {
     assert(pool.fast_symbol(SymbolId{N}) == nullptr);
     assert(pool.fast_symbol(SymbolId{N + 100}) == nullptr);
 
-    std::printf("  test_dense_sids_stress: PASSED (%u symbols)\n", N);
+    crucible::test::pass("  test_dense_sids_stress: PASSED ({} symbols)\n", N);
 }
 
 static void test_make_returns_interned_det_safe() {
@@ -146,7 +146,7 @@ static void test_make_returns_interned_det_safe() {
     const Expr* raw = wrapped.peek().value();
     assert(raw == pool.add(a, x, y));
 
-    std::printf("  test_make_returns_interned_det_safe: PASSED\n");
+    crucible::test::pass("  test_make_returns_interned_det_safe: PASSED\n");
 }
 
 // A wide operand list must reach the intern table intact.  The n-ary
@@ -173,7 +173,7 @@ static void test_wide_variadic_operands() {
         }
     }
 
-    std::printf("  test_wide_variadic_operands: PASSED\n");
+    crucible::test::pass("  test_wide_variadic_operands: PASSED\n");
 }
 
 // The same bound on the logical constructors, whose only guard used to be a
@@ -197,7 +197,7 @@ static void test_wide_logical_operands() {
         assert(built->is_boolean());
     }
 
-    std::printf("  test_wide_logical_operands: PASSED\n");
+    crucible::test::pass("  test_wide_logical_operands: PASSED\n");
 }
 
 // A flatten that would pass the arity ceiling keeps the child node whole.
@@ -225,7 +225,7 @@ static void test_flatten_degrades_at_the_ceiling() {
     // min(x, x) is x whichever way the flatten went.
     assert(merged == wide);
 
-    std::printf("  test_flatten_degrades_at_the_ceiling: PASSED\n");
+    crucible::test::pass("  test_flatten_degrades_at_the_ceiling: PASSED\n");
 }
 
 // Interning must survive the table growing underneath a lookup.  The probe
@@ -254,7 +254,7 @@ static void test_intern_identity_across_rehash() {
     for (int64_t i = 1; i < kCount; ++i)
         assert(first[i] != first[i - 1]);
 
-    std::printf("  test_intern_identity_across_rehash: PASSED (%zu nodes)\n", count_after_first_pass);
+    crucible::test::pass("  test_intern_identity_across_rehash: PASSED ({} nodes)\n", count_after_first_pass);
 }
 
 // Constant folding saturates at the bounds of int64 rather than wrapping,
@@ -296,7 +296,7 @@ static void test_constant_folding_saturates() {
     const Expr* quotient = pool.floor_div(a, low, pool.integer(a, -1));
     assert(quotient->op != Op::INTEGER || quotient->as_int() == kMax);
 
-    std::printf("  test_constant_folding_saturates: PASSED\n");
+    crucible::test::pass("  test_constant_folding_saturates: PASSED\n");
 }
 
 // A full-width sum has no slot left for a folded constant, because a 256th
@@ -335,11 +335,11 @@ static void test_folded_constant_nests_at_the_ceiling() {
         assert(nested == pool.make(a, op, both).peek().value());
     }
 
-    std::printf("  test_folded_constant_nests_at_the_ceiling: PASSED\n");
+    crucible::test::pass("  test_folded_constant_nests_at_the_ceiling: PASSED\n");
 }
 
 int main() {
-    std::printf("test_expr_pool_fast_symbol:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_expr_pool_fast_symbol:\n");
     static_assert(std::is_same_v<ExprPool::InternedExpr, ::fixy::Tagged<const Expr*, ::fixy::tags::source::Interned>>);
     static_assert(std::is_same_v<ExprPool::PureInternedExpr, ::fixy::det_safe::Pure<ExprPool::InternedExpr>>);
     static_assert(sizeof(ExprPool::PureInternedExpr) == sizeof(const Expr*));
@@ -357,6 +357,6 @@ int main() {
     test_constant_folding_saturates();
     test_folded_constant_nests_at_the_ceiling();
 
-    std::printf("test_expr_pool_fast_symbol: ALL PASSED\n");
+    crucible::test::pass("test_expr_pool_fast_symbol: ALL PASSED\n");
     return 0;
 }

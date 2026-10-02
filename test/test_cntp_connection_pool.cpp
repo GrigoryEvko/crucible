@@ -3,7 +3,7 @@
 #include <fixy/Ctx.h>
 
 #include <atomic>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 #include <string_view>
 #include <thread>
@@ -79,7 +79,7 @@ void test_admission_and_names() {
     assert(good->peek().connection_id().value() == 77);
     drop(std::move(*good));
 
-    std::printf("  test_admission_and_names:       PASSED\n");
+    crucible::test::pass("  test_admission_and_names:       PASSED\n");
 }
 
 void test_lease_return_and_capacity() {
@@ -141,7 +141,7 @@ void test_lease_return_and_capacity() {
     held->reset();
     assert(pool.available_count(bg, id) == 2);
 
-    std::printf("  test_lease_return_and_capacity: PASSED\n");
+    crucible::test::pass("  test_lease_return_and_capacity: PASSED\n");
 }
 
 void test_unhealthy_idle_and_quarantine_eviction() {
@@ -171,7 +171,7 @@ void test_unhealthy_idle_and_quarantine_eviction() {
     assert(!blocked.has_value());
     assert(blocked.error() == cntp::PoolError::PoolEmpty);
 
-    std::printf("  test_unhealthy_idle_and_quarantine_eviction: PASSED\n");
+    crucible::test::pass("  test_unhealthy_idle_and_quarantine_eviction: PASSED\n");
 }
 
 void test_quarantined_remote_refuses_a_lease() {
@@ -196,7 +196,7 @@ void test_quarantined_remote_refuses_a_lease() {
     held->reset();
     assert(pool.distinct_remote_count(bg) == 0u);
 
-    std::printf("  test_quarantined_remote_refuses_a_lease: PASSED\n");
+    crucible::test::pass("  test_quarantined_remote_refuses_a_lease: PASSED\n");
 }
 
 void test_configured_per_remote_limit() {
@@ -210,7 +210,7 @@ void test_configured_per_remote_limit() {
     assert(!full.has_value());
     assert(full.error() == cntp::PoolError::PoolFull);
 
-    std::printf("  test_configured_per_remote_limit: PASSED\n");
+    crucible::test::pass("  test_configured_per_remote_limit: PASSED\n");
 }
 
 void test_event_ring_wrap_chronological_order() {
@@ -260,7 +260,7 @@ void test_event_ring_wrap_chronological_order() {
     assert(!out_of_range.has_value());
     assert(out_of_range.error() == cntp::PoolError::InvalidConnectionId);
 
-    std::printf("  test_event_ring_wrap_chronological_order: PASSED\n");
+    crucible::test::pass("  test_event_ring_wrap_chronological_order: PASSED\n");
 }
 
 void test_distinct_remote_counter_parity() {
@@ -324,7 +324,7 @@ void test_distinct_remote_counter_parity() {
     lease->reset();
     assert(pool.distinct_remote_count(bg) == 1u);
 
-    std::printf("  test_distinct_remote_counter_parity: PASSED\n");
+    crucible::test::pass("  test_distinct_remote_counter_parity: PASSED\n");
 }
 
 // Two background threads take and return leases on one pool at once.  The
@@ -358,7 +358,7 @@ void test_concurrent_leases_keep_the_count() {
     assert(pool.available_count(bg, id) == 4);
     assert(pool.distinct_remote_count(bg) == 1u);
 
-    std::printf("  test_concurrent_leases_keep_the_count: PASSED\n");
+    crucible::test::pass("  test_concurrent_leases_keep_the_count: PASSED\n");
 }
 
 void test_gate_cache_line_isolation() {
@@ -369,7 +369,7 @@ void test_gate_cache_line_isolation() {
     using PoolT = cntp::ConnectionPool<cntp::TransportClass::MtlsTcp, 2, 2>;
     static_assert(alignof(PoolT) >= 64u, "The pool must be aligned to a cache line so that the "
                                          "gate does not share one with the counters.");
-    std::printf("  test_gate_cache_line_isolation: PASSED\n");
+    crucible::test::pass("  test_gate_cache_line_isolation: PASSED\n");
 }
 
 }  // namespace
@@ -393,7 +393,7 @@ int main() {
     static_assert(!cntp::CtxFitsConnectionPoolRuntime<::fixy::BgDrainCtx>);
     static_assert(!cntp::CtxFitsConnectionPoolRuntime<::fixy::HotFgCtx>);
 
-    std::printf("test_cntp_connection_pool:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cntp_connection_pool:\n");
     test_admission_and_names();
     test_lease_return_and_capacity();
     test_unhealthy_idle_and_quarantine_eviction();
@@ -403,6 +403,6 @@ int main() {
     test_distinct_remote_counter_parity();
     test_concurrent_leases_keep_the_count();
     test_gate_cache_line_isolation();
-    std::printf("test_cntp_connection_pool: all PASSED\n");
+    crucible::test::pass("test_cntp_connection_pool: all PASSED\n");
     return 0;
 }

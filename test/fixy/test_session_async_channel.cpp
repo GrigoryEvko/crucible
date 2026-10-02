@@ -27,6 +27,7 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
+#include "../test_assert.h"
 
 namespace s = ::fixy::session;
 namespace perm = ::foundation::permissions;
@@ -263,6 +264,6 @@ struct RightBody {
 
 int main() {
     if (const int rc = run_pair_on_one_slot_channel(); rc != 0) return rc;
-    std::puts("test_session_async_channel: all checks passed");
+    crucible::test::pass("test_session_async_channel: all checks passed\n");
     return 0;
 }

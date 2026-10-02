@@ -19,6 +19,7 @@
 #include <system_error>
 #include <type_traits>
 #include <utility>
+#include "test_assert.h"
 
 // The two constants below are asserted here because this file is
 // their only consumer, and an unused constant is an error under the
@@ -275,7 +276,7 @@ int main() {
     }
 
     if (failures == 0) {
-        std::printf("warden::DeadlineWatchdog smoke OK\n");
+        crucible::test::pass("warden::DeadlineWatchdog smoke OK\n");
     }
     return failures == 0 ? 0 : 1;
 }

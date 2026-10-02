@@ -52,7 +52,7 @@ static topology::DropCounters drops(std::uint64_t packets, std::uint64_t dropped
 static void test_name_accessors() {
     static_assert(::foundation::reflect::enum_name(topology::HealthState::Quarantined) == "Quarantined");
     static_assert(::foundation::reflect::enum_name(topology::HealthIssue::DropRateCritical) == "DropRateCritical");
-    std::printf("  test_name_accessors:              PASSED\n");
+    crucible::test::pass("  test_name_accessors:              PASSED\n");
 }
 
 static void test_healthy_snapshot_is_stale_wrapped() {
@@ -81,7 +81,7 @@ static void test_healthy_snapshot_is_stale_wrapped() {
     auto current = scorer.current(p, 9);
     assert(current.peek().state == topology::HealthState::Healthy);
     assert(current.staleness().value == 2);
-    std::printf("  test_healthy_snapshot_is_stale_wrapped: PASSED\n");
+    crucible::test::pass("  test_healthy_snapshot_is_stale_wrapped: PASSED\n");
 }
 
 static void test_phi_delay_drives_suspect_state() {
@@ -103,7 +103,7 @@ static void test_phi_delay_drives_suspect_state() {
            || snapshot.peek().issues.test(topology::HealthIssue::PhiQuarantine));
     assert(scorer.transition_event_count() == 1);
     assert(scorer.transition_events()[0].from == topology::HealthState::Healthy);
-    std::printf("  test_phi_delay_drives_suspect_state: PASSED\n");
+    crucible::test::pass("  test_phi_delay_drives_suspect_state: PASSED\n");
 }
 
 static void test_thermal_ecc_and_drops_degrade_score() {
@@ -130,7 +130,7 @@ static void test_thermal_ecc_and_drops_degrade_score() {
     assert(snapshot.peek().issues.test(topology::HealthIssue::ClockDegraded));
     assert(snapshot.peek().issues.test(topology::HealthIssue::CorrectedEccTrend));
     assert(snapshot.peek().issues.test(topology::HealthIssue::DropRateCritical));
-    std::printf("  test_thermal_ecc_and_drops_degrade_score: PASSED\n");
+    crucible::test::pass("  test_thermal_ecc_and_drops_degrade_score: PASSED\n");
 }
 
 static void test_counter_regression_is_rejected() {
@@ -148,7 +148,7 @@ static void test_counter_regression_is_rejected() {
                                topology::WearSample{.used_ppm = 1000001, .sequence = 5}));
     assert(scorer.update_wear(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
                               topology::WearSample{.used_ppm = 900000, .sequence = 5}));
-    std::printf("  test_counter_regression_is_rejected: PASSED\n");
+    crucible::test::pass("  test_counter_regression_is_rejected: PASSED\n");
 }
 
 static void test_permanent_fault_is_sticky() {
@@ -171,7 +171,7 @@ static void test_permanent_fault_is_sticky() {
     auto still_failed = scorer.compute(p, 2600, 9);
     assert(still_failed.peek().state == topology::HealthState::Permanent);
     assert(scorer.transition_event_count() == 1);
-    std::printf("  test_permanent_fault_is_sticky:    PASSED\n");
+    crucible::test::pass("  test_permanent_fault_is_sticky:    PASSED\n");
 }
 
 // The score of a peer whose only weighted risk is the trend of its corrected
@@ -204,7 +204,7 @@ static void test_large_corrected_delta_gives_full_risk() {
     assert(score_after_corrected_delta(~std::uint64_t{0}) == 0);
     // A delta at the threshold of the policy gives 400 + 40.
     assert(score_after_corrected_delta(4) == 1000 - 440);
-    std::printf("  test_large_corrected_delta_gives_full_risk: PASSED\n");
+    crucible::test::pass("  test_large_corrected_delta_gives_full_risk: PASSED\n");
 }
 
 int main() {
@@ -214,7 +214,7 @@ int main() {
     static_assert(!topology::CtxFitsHealthUpdate<eff::HotFgCtx>);
     static_assert(::foundation::diag::is_diagnostic_class_v<topology::Health_Degraded>);
 
-    std::printf("test_topology_health: 7 groups\n");
+    ::fixy::report(::fixy::Sink::Out, "test_topology_health: 7 groups\n");
     test_name_accessors();
     test_healthy_snapshot_is_stale_wrapped();
     test_phi_delay_drives_suspect_state();
@@ -222,6 +222,6 @@ int main() {
     test_counter_regression_is_rejected();
     test_permanent_fault_is_sticky();
     test_large_corrected_delta_gives_full_risk();
-    std::printf("test_topology_health: all passed\n");
+    crucible::test::pass("test_topology_health: all passed\n");
     return 0;
 }

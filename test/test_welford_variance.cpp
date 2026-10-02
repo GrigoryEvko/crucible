@@ -26,6 +26,7 @@
 #include <cstdlib>
 #include <type_traits>
 #include <vector>
+#include "test_assert.h"
 
 namespace {
 
@@ -167,7 +168,7 @@ int main() {
     test_welford_deterministic();
 
     if (g_failures == 0) {
-        std::printf("Welford variance sentinel: PASS\n");
+        crucible::test::pass("Welford variance sentinel: PASS\n");
         return 0;
     }
     std::fprintf(stderr,

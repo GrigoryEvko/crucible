@@ -69,7 +69,7 @@ void test_names_and_admission() {
     assert(!dataplane::admit_bpf_map_element_bytes(0).has_value());
     assert(dataplane::admit_xdp_ifindex(7).has_value());
 
-    std::printf("  test_names_and_admission: PASSED\n");
+    crucible::test::pass("  test_names_and_admission: PASSED\n");
 }
 
 void test_program_caps() {
@@ -92,7 +92,7 @@ void test_program_caps() {
     assert(!wrong_cog.has_value());
     assert(wrong_cog.error() == dataplane::XdpError::WrongCogKind);
 
-    std::printf("  test_program_caps: PASSED\n");
+    crucible::test::pass("  test_program_caps: PASSED\n");
 }
 
 void test_map_spec_and_image() {
@@ -125,7 +125,7 @@ void test_map_spec_and_image() {
     assert(!map.lookup(FlowKey{.src = 1, .dst = 2}).has_value());
     assert(map.lookup(FlowKey{.src = 2, .dst = 3}).has_value());
 
-    std::printf("  test_map_spec_and_image: PASSED\n");
+    crucible::test::pass("  test_map_spec_and_image: PASSED\n");
 }
 
 }  // namespace
@@ -145,10 +145,10 @@ int main() {
     static_assert(dataplane::BpfMapElement<FlowDecision>);
     static_assert(!dataplane::BpfMapElement<std::array<std::byte, 65536>>);
 
-    std::printf("test_cntp_dataplane_xdp:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cntp_dataplane_xdp:\n");
     test_names_and_admission();
     test_program_caps();
     test_map_spec_and_image();
-    std::printf("test_cntp_dataplane_xdp: all PASSED\n");
+    crucible::test::pass("test_cntp_dataplane_xdp: all PASSED\n");
     return 0;
 }

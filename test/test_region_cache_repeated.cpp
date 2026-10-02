@@ -76,7 +76,7 @@ void test_cache_repeated_switching() {
         }
     }
 
-    std::printf("  test_cache_repeated_switching: PASSED\n");
+    crucible::test::pass("  test_cache_repeated_switching: PASSED\n");
 }
 
 }  // namespace test_region_cache

@@ -39,7 +39,7 @@ static void test_enum_names_come_from_reflection() {
 
     volatile auto kind = topology::LinkKind::RoceV2;
     assert(enum_name(static_cast<topology::LinkKind>(kind)) == std::string_view{"RoceV2"});
-    std::printf("  test_enum_names_come_from_reflection: PASSED\n");
+    crucible::test::pass("  test_enum_names_come_from_reflection: PASSED\n");
 }
 
 // The mapping from link kind to layer is a partition, so every kind
@@ -73,7 +73,7 @@ static void test_link_layer_for_runtime() {
         auto got = topology::link_layer_for(static_cast<topology::LinkKind>(v));
         assert(got == p.expected);
     }
-    std::printf("  test_link_layer_for_runtime:          PASSED\n");
+    crucible::test::pass("  test_link_layer_for_runtime:          PASSED\n");
 }
 
 static void test_edge_id_runtime() {
@@ -94,7 +94,7 @@ static void test_edge_id_runtime() {
     assert(b > a);
     assert(a != b);
 
-    std::printf("  test_edge_id_runtime:                 PASSED\n");
+    crucible::test::pass("  test_edge_id_runtime:                 PASSED\n");
 }
 
 static void test_default_topology_edge() {
@@ -120,7 +120,7 @@ static void test_default_topology_edge() {
 
     // The edge occupies exactly one cache line.
     static_assert(sizeof(topology::TopologyEdge) == 64);
-    std::printf("  test_default_topology_edge:           PASSED\n");
+    crucible::test::pass("  test_default_topology_edge:           PASSED\n");
 }
 
 static void test_mint_topology_graph_round_trip() {
@@ -187,7 +187,7 @@ static void test_mint_topology_graph_round_trip() {
     // An end node is named by one half-edge only.
     assert(found_on_end_node == 1);
 
-    std::printf("  test_mint_topology_graph_round_trip:  PASSED\n");
+    crucible::test::pass("  test_mint_topology_graph_round_trip:  PASSED\n");
 }
 
 // A graph minted over no storage reports no nodes and no edges, in the
@@ -207,7 +207,7 @@ static void test_empty_topology_graph() {
     volatile auto ec = g.edge_count();
     assert(nc == 0);
     assert(ec == 0);
-    std::printf("  test_empty_topology_graph:            PASSED\n");
+    crucible::test::pass("  test_empty_topology_graph:            PASSED\n");
 }
 
 // Each concept result is captured into a volatile so the compiler
@@ -226,7 +226,7 @@ static void test_ctx_fits_topology_graph_runtime() {
     // half of the gate.
     assert(!int_admits);
 
-    std::printf("  test_ctx_fits_topology_graph_runtime: PASSED\n");
+    crucible::test::pass("  test_ctx_fits_topology_graph_runtime: PASSED\n");
 }
 
 static void test_topology_graph_pinned() {
@@ -240,11 +240,11 @@ static void test_topology_graph_pinned() {
     static_assert(std::is_trivially_destructible_v<topology::TopologyGraph>,
                   "The graph holds only spans and owns no storage, so it must "
                   "destroy trivially.");
-    std::printf("  test_topology_graph_pinned:           PASSED\n");
+    crucible::test::pass("  test_topology_graph_pinned:           PASSED\n");
 }
 
 int main() {
-    std::printf("test_topology_graph:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_topology_graph:\n");
     test_enum_names_come_from_reflection();
     test_link_layer_for_runtime();
     test_edge_id_runtime();
@@ -253,6 +253,6 @@ int main() {
     test_empty_topology_graph();
     test_ctx_fits_topology_graph_runtime();
     test_topology_graph_pinned();
-    std::printf("test_topology_graph: all PASSED\n");
+    crucible::test::pass("test_topology_graph: all PASSED\n");
     return 0;
 }

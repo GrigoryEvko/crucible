@@ -510,7 +510,7 @@ namespace {
         auto h_six_again = crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&e_six, 1});
         assert(h_six == h_six_again);
 
-        std::printf("  scalar args: count and past-index-4 value axes both separate\n");
+        ::fixy::report(::fixy::Sink::Out, "  scalar args: count and past-index-4 value axes both separate\n");
     }
 
     // The background thread folds a region's content hash one op at a
@@ -581,8 +581,8 @@ namespace {
         assert(crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&e_empty, 1})
                != crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&e_count_only, 1}));
 
-        std::printf("  streaming fold matches the span fold "
-                    "(count==0 / no-tensor / scalar / tensor / multi-op)\n");
+        ::fixy::report(::fixy::Sink::Out, "  streaming fold matches the span fold "
+                                          "(count==0 / no-tensor / scalar / tensor / multi-op)\n");
 
         // Frozen content-hash vectors.
         //
@@ -666,8 +666,8 @@ namespace {
                && "the region content-hash format changed: every persisted content hash and "
                   "every cached kernel keyed on one is now stale");
 
-        std::printf("  content-hash vectors frozen "
-                    "(seed, per-op mix, finalizer, recipe fold)\n");
+        ::fixy::report(::fixy::Sink::Out, "  content-hash vectors frozen "
+                                          "(seed, per-op mix, finalizer, recipe fold)\n");
     }
 
     // REGRESSION PIN for the absorbing-element collapse, fixed 2026-09-15.
@@ -749,8 +749,8 @@ namespace {
                    != crucible::compute_content_hash(std::span<const crucible::TraceEntry>{reversed, 2})
                && "the fold lost op-order sensitivity: it was flattened into a single xor");
 
-        std::printf("  absorbing-element collapse repaired and pinned "
-                    "(dtype Undefined, zero-packed metadata, op order)\n");
+        ::fixy::report(::fixy::Sink::Out, "  absorbing-element collapse repaired and pinned "
+                                          "(dtype Undefined, zero-packed metadata, op order)\n");
     }
 
     // ── A recipe-blind content hash collides across numerics ──────────
@@ -822,7 +822,8 @@ namespace {
         static_assert(std::is_constructible_v<crucible::ContentHashFold, crucible::ContentHashFold::NoRecipe>);
         static_assert(std::is_constructible_v<crucible::ContentHashFold, const crucible::NumericalRecipe&>);
 
-        std::printf("  content hash separates numerics tiers; a fold cannot omit the recipe question\n");
+        ::fixy::report(::fixy::Sink::Out,
+                       "  content hash separates numerics tiers; a fold cannot omit the recipe question\n");
     }
 
     // ── LoopNode: epsilon is identity, repeat_count is execution ──────
@@ -877,7 +878,8 @@ namespace {
                   "convergence thresholds now share a merkle hash, so one's "
                   "compiled kernel can serve the other");
 
-        std::printf("  loop replay walks repeat_count and ignores epsilon; epsilon stays in the hash\n");
+        ::fixy::report(::fixy::Sink::Out,
+                       "  loop replay walks repeat_count and ignores epsilon; epsilon stays in the hash\n");
     }
 
     // ── make_loop's preconditions actually fire ───────────────────────
@@ -950,9 +952,10 @@ namespace {
                && "an unobserved UNTIL loop was accepted: replay would skip its body "
                   "and report a successful replay of a body that never ran");
 
-        std::printf("  make_loop rejects NaN, infinite and negative epsilon, and an UNTIL count of zero\n");
+        ::fixy::report(::fixy::Sink::Out,
+                       "  make_loop rejects NaN, infinite and negative epsilon, and an UNTIL count of zero\n");
     }
 
-    std::printf("test_merkle_dag: all tests passed\n");
+    crucible::test::pass("test_merkle_dag: all tests passed\n");
     return 0;
 }

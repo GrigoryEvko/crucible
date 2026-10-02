@@ -224,9 +224,10 @@ void test_reset_drops_inflight_regions() {
                      stale, gate.published_after_reset.load(), bt.iterations_completed.get());
     assert(stale == 0 && "a region built from pre-divergence entries published after the reset");
 
-    std::printf("  reset_drops_inflight_regions:              "
-                "PASSED (published=%u, after reset=%u, stale=%u, cut=%u)\n",
-                gate.published.load(), gate.published_after_reset.load(), stale, bt.iterations_completed.get());
+    ::fixy::report(::fixy::Sink::Out,
+                   "  reset_drops_inflight_regions:              "
+                   "PASSED (published={}, after reset={}, stale={}, cut={})\n",
+                   gate.published.load(), gate.published_after_reset.load(), stale, bt.iterations_completed.get());
 }
 
 // The region-ready callback must not run inside the arena gate.  The
@@ -276,9 +277,9 @@ void test_callback_runs_outside_arena_gate() {
     assert(bt.uncompiled_regions.size()
            == std::min<uint64_t>(bt.uncompiled_regions.total(), BackgroundThread::UncompiledRegionQueue::CAP));
 
-    std::printf("  callback_outside_arena_gate:               "
-                "PASSED (gate free in callback, retained=%u of %llu)\n",
-                bt.uncompiled_regions.size(), static_cast<unsigned long long>(bt.uncompiled_regions.total()));
+    crucible::test::pass("  callback_outside_arena_gate:               "
+                         "PASSED (gate free in callback, retained={} of {})\n",
+                         bt.uncompiled_regions.size(), static_cast<unsigned long long>(bt.uncompiled_regions.total()));
 }
 
 }  // namespace test_background_thread_run_in_row

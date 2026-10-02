@@ -33,7 +33,7 @@ static void test_layout_and_trivial_relocatability() {
     static_assert(std::is_trivially_copyable_v<SchemaHash>);
     static_assert(std::is_standard_layout_v<OpIndex>);
     static_assert(std::is_standard_layout_v<SchemaHash>);
-    std::printf("  test_layout:                    PASSED\n");
+    crucible::test::pass("  test_layout:                    PASSED\n");
 }
 
 static void test_default_ctor_is_sentinel() {
@@ -47,7 +47,7 @@ static void test_default_ctor_is_sentinel() {
     assert(!static_cast<bool>(h));
     assert(h.raw() == 0);
 
-    std::printf("  test_default_sentinel:          PASSED\n");
+    crucible::test::pass("  test_default_sentinel:          PASSED\n");
 }
 
 static void test_explicit_construction() {
@@ -64,7 +64,7 @@ static void test_explicit_construction() {
     static_assert(!std::is_convertible_v<SlotId, OpIndex>);
     static_assert(!std::is_convertible_v<SchemaHash, ShapeHash>);
 
-    std::printf("  test_explicit_construction:     PASSED\n");
+    crucible::test::pass("  test_explicit_construction:     PASSED\n");
 }
 
 static void test_three_way_compare() {
@@ -75,7 +75,7 @@ static void test_three_way_compare() {
     assert(a != b);
     assert((a <=> b) == std::strong_ordering::less);
     assert((a <=> a2) == std::strong_ordering::equal);
-    std::printf("  test_compare:                   PASSED\n");
+    crucible::test::pass("  test_compare:                   PASSED\n");
 }
 
 static void test_hash_sentinel_distinct_from_default() {
@@ -86,7 +86,7 @@ static void test_hash_sentinel_distinct_from_default() {
     assert(sent.is_sentinel());
     assert(def.raw() == 0);
     assert(sent.raw() == UINT64_MAX);
-    std::printf("  test_hash_sentinel:             PASSED\n");
+    crucible::test::pass("  test_hash_sentinel:             PASSED\n");
 }
 
 // A usable cache key is not zero and not the sentinel.  Each of the two
@@ -127,7 +127,7 @@ static void test_hash_sentinel_under_decide() {
     static_assert(is_admissible_cache_key(ContentHash{0xCAFEBABEULL}));
     static_assert(is_admissible_cache_key(ContentHash{ContentHash::sentinel().raw() - 1}));
 
-    std::printf("  test_hash_sentinel_decide:      PASSED\n");
+    crucible::test::pass("  test_hash_sentinel_decide:      PASSED\n");
 }
 
 static void test_noexcept_ctors_propagate() {
@@ -141,7 +141,7 @@ static void test_noexcept_ctors_propagate() {
     static_assert(noexcept(SchemaHash{0xDEADBEEFULL}));
     static_assert(noexcept(OpIndex::none()));
     static_assert(noexcept(SchemaHash::sentinel()));
-    std::printf("  test_noexcept:                  PASSED\n");
+    crucible::test::pass("  test_noexcept:                  PASSED\n");
 }
 
 // Each value of the underlying type that no enumerator names reaches the
@@ -173,7 +173,7 @@ static void test_scalar_type_element_sizes() {
     assert(element_size(ScalarType::Float8_e4m3fn) == ElementBytes{1});
     assert(element_size(ScalarType::Undefined).is_zero());
     expect_element_size_ends_the_process_outside_the_enumerators();
-    std::printf("  test_element_size:              PASSED\n");
+    crucible::test::pass("  test_element_size:              PASSED\n");
 }
 
 static void test_bit_cast_round_trip() {
@@ -188,7 +188,7 @@ static void test_bit_cast_round_trip() {
     SchemaHash h_in{0xDEADBEEFCAFEBABEULL};
     auto h_raw = std::bit_cast<uint64_t>(h_in);
     assert(h_raw == 0xDEADBEEFCAFEBABEULL);
-    std::printf("  test_bit_cast:                  PASSED\n");
+    crucible::test::pass("  test_bit_cast:                  PASSED\n");
 }
 
 int main() {
@@ -201,6 +201,6 @@ int main() {
     test_noexcept_ctors_propagate();
     test_scalar_type_element_sizes();
     test_bit_cast_round_trip();
-    std::printf("test_types: 9 groups, all passed\n");
+    crucible::test::pass("test_types: 9 groups, all passed\n");
     return 0;
 }

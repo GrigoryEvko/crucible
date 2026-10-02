@@ -93,6 +93,6 @@ namespace {
     assert(contains(svg, "feedback"));
     assert(contains(svg, "loop x3"));
 
-    std::printf("test_merkle_dag_visualizer: all tests passed\n");
+    crucible::test::pass("test_merkle_dag_visualizer: all tests passed\n");
     return 0;
 }

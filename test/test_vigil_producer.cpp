@@ -33,7 +33,7 @@ void test_record_op_claims_the_producer_role() {
     assert(!vigil.is_producer_thread()
            && "record_op must claim the producer role, which makes every later thread a second producer");
 
-    std::printf("  test_record_op_claims_the_producer_role: PASSED\n");
+    crucible::test::pass("  test_record_op_claims_the_producer_role: PASSED\n");
 }
 
 // The producer surface of the ring and of the metadata log takes the context
@@ -52,7 +52,7 @@ void test_producer_surface_takes_the_claim_context() {
     assert(meta_log.size().peek() == vigil.meta_log_size().peek());
     assert(&vigil.ring(fg) == &ring && "every call opens the same ring");
 
-    std::printf("  test_producer_surface_takes_the_claim_context: PASSED\n");
+    crucible::test::pass("  test_producer_surface_takes_the_claim_context: PASSED\n");
 }
 
 }  // namespace test_vigil

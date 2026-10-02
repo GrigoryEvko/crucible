@@ -128,7 +128,7 @@ static void test_fresh_mint_state_runtime() {
 
     static_assert(mimic::CogMimic<cog::CogKind::Gpu>::kind == cog::CogKind::Gpu);
 
-    std::printf("  test_fresh_mint_state_runtime:        PASSED\n");
+    crucible::test::pass("  test_fresh_mint_state_runtime:        PASSED\n");
 }
 
 static void test_target_caps_class_hash_determinism() {
@@ -152,7 +152,7 @@ static void test_target_caps_class_hash_determinism() {
     assert(ha != hs);
     assert(hc != hs);
 
-    std::printf("  test_target_caps_class_hash_determinism: PASSED\n");
+    crucible::test::pass("  test_target_caps_class_hash_determinism: PASSED\n");
 }
 
 // Two GPU generations must produce different federation hashes, or a
@@ -172,7 +172,7 @@ static void test_target_caps_class_hash_sm_version_discrimination() {
     volatile std::uint64_t twin_hash = hopper_twin.target_caps_class_hash();
     assert(hopper_hash == twin_hash);
 
-    std::printf("  test_target_caps_class_hash_sm_version_discrimination: PASSED\n");
+    crucible::test::pass("  test_target_caps_class_hash_sm_version_discrimination: PASSED\n");
 }
 
 // One physical Cog that takes a firmware update gets a new per-Cog cache
@@ -213,7 +213,7 @@ static void test_cog_kernel_cache_key_firmware_rotation() {
     volatile std::uint64_t fed_bios_drift = mimic_bios_drift.target_caps_class_hash();
     assert(fed_bios_drift == fed_v1);
 
-    std::printf("  test_cog_kernel_cache_key_firmware_rotation: PASSED\n");
+    crucible::test::pass("  test_cog_kernel_cache_key_firmware_rotation: PASSED\n");
 }
 
 static void test_mint_cog_mimic_round_trip() {
@@ -257,7 +257,7 @@ static void test_mint_cog_mimic_round_trip() {
     volatile std::uint64_t bg_per_cog_key = m_bg.cog_kernel_cache_key();
     assert(bg_per_cog_key == per_cog_key);  // same identity → same key
 
-    std::printf("  test_mint_cog_mimic_round_trip:       PASSED\n");
+    crucible::test::pass("  test_mint_cog_mimic_round_trip:       PASSED\n");
 }
 
 // All three admitted compute kinds flow through one factory.  Driving
@@ -299,7 +299,7 @@ static void test_mint_cpu_paths() {
 
     assert(cpu_core_fed != sock_fed);
 
-    std::printf("  test_mint_cpu_paths:                  PASSED\n");
+    crucible::test::pass("  test_mint_cpu_paths:                  PASSED\n");
 }
 
 // The assignments are written by hand, so they are driven with values the
@@ -320,7 +320,7 @@ static void test_assignment_runtime() {
     assert(&moved_into.identity() == &id_b);
     assert(moved_into.target_caps_class_hash() == source.target_caps_class_hash());
 
-    std::printf("  test_assignment_runtime:              PASSED\n");
+    crucible::test::pass("  test_assignment_runtime:              PASSED\n");
 }
 
 // The header asserts admission at compile time.  Reading the same
@@ -354,7 +354,7 @@ static void test_ctx_fits_cog_mimic_concept_gate_runtime() {
     // A Test context carries neither Init nor Bg in its row.
     assert(!test_admits_gpu);
 
-    std::printf("  test_ctx_fits_cog_mimic_concept_gate_runtime: PASSED\n");
+    crucible::test::pass("  test_ctx_fits_cog_mimic_concept_gate_runtime: PASSED\n");
 }
 
 static void test_trivially_destructible_carrier() {
@@ -363,11 +363,11 @@ static void test_trivially_destructible_carrier() {
     static_assert(std::is_trivially_destructible_v<mimic::CogMimic<cog::CogKind::CpuCore>>);
     static_assert(std::is_trivially_destructible_v<mimic::CogMimic<cog::CogKind::CpuSocket>>);
 
-    std::printf("  test_trivially_destructible_carrier:  PASSED\n");
+    crucible::test::pass("  test_trivially_destructible_carrier:  PASSED\n");
 }
 
 int main() {
-    std::printf("test_cog_mimic:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cog_mimic:\n");
     test_fresh_mint_state_runtime();
     test_target_caps_class_hash_determinism();
     test_target_caps_class_hash_sm_version_discrimination();
@@ -377,6 +377,6 @@ int main() {
     test_assignment_runtime();
     test_ctx_fits_cog_mimic_concept_gate_runtime();
     test_trivially_destructible_carrier();
-    std::printf("test_cog_mimic: all PASSED\n");
+    crucible::test::pass("test_cog_mimic: all PASSED\n");
     return 0;
 }

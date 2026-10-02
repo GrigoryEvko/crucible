@@ -157,9 +157,9 @@ int main() {
         consumer.join();
         delete r;
 
-        std::printf("test_trace_ring: concurrent SPSC integrity "
-                    "(N=%u, producer_spins=%u) OK\n",
-                    N, producer_spins.load());
+        crucible::test::pass("test_trace_ring: concurrent SPSC integrity "
+                             "(N={}, producer_spins={}) OK\n",
+                             N, producer_spins.load());
     }
 
     {
@@ -235,7 +235,7 @@ int main() {
                                             eff::Effect::Block>>);  // multi-atom
 
         delete r;
-        std::printf("test_trace_ring: try_append_pure / drain_pure OK\n");
+        crucible::test::pass("test_trace_ring: try_append_pure / drain_pure OK\n");
     }
 
     // The same exchange driven through the row-typed facades, to show the
@@ -299,9 +299,9 @@ int main() {
         consumer.join();
         delete r;
 
-        std::printf("test_trace_ring: try_append_pure/drain_pure concurrent "
-                    "(N=%u, producer_spins=%u) OK\n",
-                    N, producer_spins.load());
+        crucible::test::pass("test_trace_ring: try_append_pure/drain_pure concurrent "
+                             "(N={}, producer_spins={}) OK\n",
+                             N, producer_spins.load());
     }
 
     {
@@ -413,11 +413,11 @@ int main() {
         }
 
         delete r;
-        std::printf("test_trace_ring: try_append_pure/drain_pure edge cases "
-                    "(bare default + full ring + wrap-around + "
-                    "nullable outputs) OK\n");
+        crucible::test::pass("test_trace_ring: try_append_pure/drain_pure edge cases "
+                             "(bare default + full ring + wrap-around + "
+                             "nullable outputs) OK\n");
     }
 
-    std::printf("test_trace_ring: all tests passed\n");
+    crucible::test::pass("test_trace_ring: all tests passed\n");
     return 0;
 }

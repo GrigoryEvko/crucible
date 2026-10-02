@@ -89,7 +89,7 @@ void test_mtls_stub_returns_backend_unavailable() {
         cntp::SocketFd, cntp::DeclaredMtlsConfig const&, cntp::MtlsDnsName, cntp::MtlsCertificateFingerprint) noexcept;
     constexpr ConnectFn p = &cntp::connect_mtls;
     (void)p;
-    std::printf("  test_mtls_stub_returns_backend_unavailable: PASSED\n");
+    crucible::test::pass("  test_mtls_stub_returns_backend_unavailable: PASSED\n");
 }
 
 void test_nic_apply_returns_privileged_deferred() {
@@ -103,7 +103,7 @@ void test_nic_apply_returns_privileged_deferred() {
     auto applied = nic::apply_ethtool(*declared);
     assert(!applied.has_value());
     assert(applied.error() == nic::NicConfigError::PrivilegedApplyDeferred);
-    std::printf("  test_nic_apply_returns_privileged_deferred: PASSED\n");
+    crucible::test::pass("  test_nic_apply_returns_privileged_deferred: PASSED\n");
 }
 
 void test_sriov_query_returns_query_deferred() {
@@ -118,7 +118,7 @@ void test_sriov_query_returns_query_deferred() {
     auto query = sriov::query_current(physical, iface);
     assert(!query.has_value());
     assert(query.error() == sriov::SrIovError::QueryDeferred);
-    std::printf("  test_sriov_query_returns_query_deferred: PASSED\n");
+    crucible::test::pass("  test_sriov_query_returns_query_deferred: PASSED\n");
 }
 
 void test_roce_dcqcn_state_unavailable() {
@@ -131,7 +131,7 @@ void test_roce_dcqcn_state_unavailable() {
     auto verify = cntp::verify_dcqcn_active(iface);
     assert(!verify.has_value());
     assert(verify.error() == cntp::RoceError::DcqcnStatusUnavailable);
-    std::printf("  test_roce_dcqcn_state_unavailable: PASSED\n");
+    crucible::test::pass("  test_roce_dcqcn_state_unavailable: PASSED\n");
 }
 
 void test_tcam_force_returns_vendor_unavailable() {
@@ -159,7 +159,7 @@ void test_tcam_force_returns_vendor_unavailable() {
     auto force = tcam::force_tcam_backend_boundary(*declared_plan, *declared_rule);
     assert(!force.has_value());
     assert(force.error() == tcam::TcamError::VendorBackendUnavailable);
-    std::printf("  test_tcam_force_returns_vendor_unavailable: PASSED\n");
+    crucible::test::pass("  test_tcam_force_returns_vendor_unavailable: PASSED\n");
 }
 
 #pragma GCC diagnostic pop
@@ -167,12 +167,12 @@ void test_tcam_force_returns_vendor_unavailable() {
 }  // namespace
 
 int main() {
-    std::printf("test_stub_discipline:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_stub_discipline:\n");
     test_mtls_stub_returns_backend_unavailable();
     test_nic_apply_returns_privileged_deferred();
     test_sriov_query_returns_query_deferred();
     test_roce_dcqcn_state_unavailable();
     test_tcam_force_returns_vendor_unavailable();
-    std::printf("test_stub_discipline: all PASSED\n");
+    crucible::test::pass("test_stub_discipline: all PASSED\n");
     return 0;
 }

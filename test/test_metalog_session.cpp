@@ -22,6 +22,7 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
+#include "test_assert.h"
 
 namespace {
 
@@ -457,6 +458,6 @@ int main() {
     run_test("empty_drain", test_empty_drain);
     run_test("typed_session_round_trip", test_typed_session_round_trip);
     run_test("session_gives_the_handle_back", test_session_gives_the_handle_back);
-    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
+    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
     return total_failed == 0 ? 0 : 1;
 }

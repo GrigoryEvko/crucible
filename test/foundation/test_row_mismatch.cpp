@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <string_view>
 #include <type_traits>
+#include "../test_assert.h"
 
 // The display-name tests need functions at namespace scope.
 inline void sample_dispatch(int) noexcept {}
@@ -206,8 +207,8 @@ int main() {
     run_test("test_message_builder_per_category", test_message_builder_per_category);
     run_test("test_row_mismatch_message_v_caching", test_row_mismatch_message_v_caching);
     run_test("test_macro_happy_path", test_macro_happy_path);
-    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
+    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
-    std::fprintf(stderr, "ALL PASSED\n");
+    crucible::test::pass("ALL PASSED\n");
     return EXIT_SUCCESS;
 }

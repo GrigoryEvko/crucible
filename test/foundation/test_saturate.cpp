@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <limits>
 #include <numeric>
+#include "../test_assert.h"
 
 using foundation::sat::add_sat;
 using foundation::sat::mul_sat;
@@ -190,6 +191,6 @@ int main() {
         std::fprintf(stderr, "test_saturate: %d failure(s)\n", g_failures);
         return 1;
     }
-    std::printf("test_saturate: all 7 groups passed\n");
+    crucible::test::pass("test_saturate: all 7 groups passed\n");
     return 0;
 }

@@ -2,7 +2,7 @@
 #include <fixy/Ctx.h>
 
 #include <atomic>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
 #include <functional>
@@ -84,7 +84,7 @@ void test_admission() {
     assert(plan.value().new_path().value() == 30);
     assert(plan.value().timeout_ns().value() == 1000);
 
-    std::printf("  test_admission: PASSED\n");
+    crucible::test::pass("  test_admission: PASSED\n");
 }
 
 void test_state_machine_and_session_resource_transition() {
@@ -127,7 +127,7 @@ void test_state_machine_and_session_resource_transition() {
     assert(final_wire.id == 2);
     assert(final_wire.last == 42);
 
-    std::printf("  test_state_machine_and_session_resource_transition: PASSED\n");
+    crucible::test::pass("  test_state_machine_and_session_resource_transition: PASSED\n");
 }
 
 // The swapper is address-stable and therefore shareable across threads,
@@ -179,7 +179,7 @@ void test_concurrent_observer_sees_only_valid_states() {
     assert(torn_observations.load(std::memory_order_acquire) == 0);
     assert(total_observations.load(std::memory_order_acquire) > 0);
 
-    std::printf("  test_concurrent_observer_sees_only_valid_states: PASSED\n");
+    crucible::test::pass("  test_concurrent_observer_sees_only_valid_states: PASSED\n");
 }
 
 // Committing a swap moves the state machine and nothing else.  Data
@@ -222,7 +222,7 @@ void test_commit_sender_loses_in_flight_bytes() {
     assert(final_wire.id == 9);
     assert(final_wire.last == 7);
 
-    std::printf("  test_commit_sender_loses_in_flight_bytes: PASSED\n");
+    crucible::test::pass("  test_commit_sender_loses_in_flight_bytes: PASSED\n");
 }
 
 // A transition that read the state and then stored it without a gate
@@ -288,7 +288,7 @@ void test_concurrent_complete_receiver_exactly_one_wins() {
     assert(swapper.event_at(bg, 3).to == cntp::SwapState::Complete);
     assert(swapper.state() == cntp::SwapState::Complete);
 
-    std::printf("  test_concurrent_complete_receiver_exactly_one_wins: PASSED\n");
+    crucible::test::pass("  test_concurrent_complete_receiver_exactly_one_wins: PASSED\n");
 }
 
 // A reader of the plan and of the audit log runs beside a writer that
@@ -338,7 +338,7 @@ void test_plan_reader_races_the_writer() {
     reader.join();
     assert(mixed_reads.load(std::memory_order_acquire) == 0);
 
-    std::printf("  test_plan_reader_races_the_writer: PASSED\n");
+    crucible::test::pass("  test_plan_reader_races_the_writer: PASSED\n");
 }
 
 // Two threads start a swap at the same time with different plans.  One of
@@ -380,7 +380,7 @@ void test_concurrent_begin_swap_keeps_the_winning_plan() {
         assert(event.new_path == held->new_path().value());
     }
 
-    std::printf("  test_concurrent_begin_swap_keeps_the_winning_plan: PASSED\n");
+    crucible::test::pass("  test_concurrent_begin_swap_keeps_the_winning_plan: PASSED\n");
 }
 
 void test_invalid_transition_and_timeout() {
@@ -405,7 +405,7 @@ void test_invalid_transition_and_timeout() {
     assert(timeout.error() == cntp::SwapError::Timeout);
     assert(swapper.state() == cntp::SwapState::Failed);
 
-    std::printf("  test_invalid_transition_and_timeout: PASSED\n");
+    crucible::test::pass("  test_invalid_transition_and_timeout: PASSED\n");
 }
 
 void test_deadline_overflow() {
@@ -420,7 +420,7 @@ void test_deadline_overflow() {
     assert(swapper.state() == cntp::SwapState::Stable);
     assert(!swapper.plan(bg).has_value());
 
-    std::printf("  test_deadline_overflow: PASSED\n");
+    crucible::test::pass("  test_deadline_overflow: PASSED\n");
 }
 
 }  // namespace
@@ -447,7 +447,7 @@ int main() {
     static_assert(!cntp::PathSwapper<8>::data_migration_implemented);
     static_assert(!cntp::PathSwapper<16>::data_migration_implemented);
 
-    std::printf("test_cntp_path_swap:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cntp_path_swap:\n");
     test_admission();
     test_state_machine_and_session_resource_transition();
     test_commit_sender_loses_in_flight_bytes();
@@ -457,7 +457,7 @@ int main() {
     test_concurrent_begin_swap_keeps_the_winning_plan();
     test_invalid_transition_and_timeout();
     test_deadline_overflow();
-    std::printf("test_cntp_path_swap: all PASSED\n");
+    crucible::test::pass("test_cntp_path_swap: all PASSED\n");
     return 0;
 }
 

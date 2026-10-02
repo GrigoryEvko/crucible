@@ -13,6 +13,7 @@
 
 #include <cstdio>
 #include <utility>
+#include "../test_assert.h"
 
 namespace eff = foundation::effects;
 
@@ -51,6 +52,6 @@ int main() {
         std::fprintf(stderr, "test_os_socket: check %d failed\n", failed);
         return failed;
     }
-    std::puts("test_os_socket: passed");
+    crucible::test::pass("test_os_socket: passed\n");
     return 0;
 }

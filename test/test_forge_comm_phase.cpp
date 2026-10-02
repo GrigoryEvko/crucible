@@ -3,7 +3,7 @@
 
 #include <array>
 #include <concepts>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
 #include <span>
@@ -137,7 +137,7 @@ void test_names_layout_and_static_gates() {
     static_assert(!phase::CommFusionRecipeAllowed<StrictRecipe, phase::CommFusionPattern::CompressBeforeSend>);
     static_assert(phase::CommFusionRecipeAllowed<OrderedRecipe, phase::CommFusionPattern::CompressBeforeSend>);
 
-    std::printf("  test_names_layout_and_static_gates: PASSED\n");
+    crucible::test::pass("  test_names_layout_and_static_gates: PASSED\n");
 }
 
 void test_send_from_epilogue_decision() {
@@ -164,7 +164,7 @@ void test_send_from_epilogue_decision() {
     assert(!blocked.has_value());
     assert(blocked.error() == phase::CommPhaseError::PatternDisabled);
 
-    std::printf("  test_send_from_epilogue_decision: PASSED\n");
+    crucible::test::pass("  test_send_from_epilogue_decision: PASSED\n");
 }
 
 void test_recipe_and_algorithm_blocks() {
@@ -198,16 +198,16 @@ void test_recipe_and_algorithm_blocks() {
     assert(!bad_algorithm.has_value());
     assert(bad_algorithm.error() == phase::CommPhaseError::RecipeForbidsAlgorithm);
 
-    std::printf("  test_recipe_and_algorithm_blocks: PASSED\n");
+    crucible::test::pass("  test_recipe_and_algorithm_blocks: PASSED\n");
 }
 
 }  // namespace
 
 int main() {
-    std::printf("test_forge_comm_phase:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_forge_comm_phase:\n");
     test_names_layout_and_static_gates();
     test_send_from_epilogue_decision();
     test_recipe_and_algorithm_blocks();
-    std::printf("test_forge_comm_phase: all PASSED\n");
+    crucible::test::pass("test_forge_comm_phase: all PASSED\n");
     return 0;
 }

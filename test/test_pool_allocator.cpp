@@ -102,7 +102,7 @@ static void test_basic_init() {
     // someone registers storage for it.
     assert(pool.slot_ptr(SlotId{2}, pv) == nullptr);
 
-    std::printf("  test_basic_init: PASSED\n");
+    crucible::test::pass("  test_basic_init: PASSED\n");
 }
 
 static void test_external_registration() {
@@ -146,7 +146,7 @@ static void test_external_registration() {
 
     assert(pool.slot_ptr(SlotId{1}, pv) == fake_param);
 
-    std::printf("  test_external_registration: PASSED\n");
+    crucible::test::pass("  test_external_registration: PASSED\n");
 }
 
 // The three offsets are laid out end to end with no overlap, which is
@@ -211,7 +211,7 @@ static void test_write_read_isolation() {
     for (uint32_t i = 0; i < 256; i++)
         assert(p2[i] == 0xCC);
 
-    std::printf("  test_write_read_isolation: PASSED\n");
+    crucible::test::pass("  test_write_read_isolation: PASSED\n");
 }
 
 // A plan whose slots are all external asks for no pool at all, so the
@@ -264,7 +264,7 @@ static void test_all_external() {
     assert(pool.slot_ptr(SlotId{0}, pv) == buf_a);
     assert(pool.slot_ptr(SlotId{1}, pv) == buf_b);
 
-    std::printf("  test_all_external: PASSED\n");
+    crucible::test::pass("  test_all_external: PASSED\n");
 }
 
 static void test_reinit() {
@@ -333,7 +333,7 @@ static void test_reinit() {
     assert(pool.slot_ptr(SlotId{0}, pv_b) == base);
     assert(pool.slot_ptr(SlotId{1}, pv_b) == base + 1024);
 
-    std::printf("  test_reinit: PASSED\n");
+    crucible::test::pass("  test_reinit: PASSED\n");
 }
 
 // The plan here comes from the real planner, so the offsets are whatever
@@ -436,7 +436,7 @@ static void test_integration_with_sweep_line() {
     for (uint32_t i = 0; i < 1024; i++)
         assert(p2[i] == 0x33);
 
-    std::printf("  test_integration_with_sweep_line: PASSED\n");
+    crucible::test::pass("  test_integration_with_sweep_line: PASSED\n");
 }
 
 // The slot-bounds checks in PoolAllocator::init are CRUCIBLE_FATAL_INVARIANT
@@ -491,11 +491,11 @@ static void test_slot_bounds_guard_is_armed() {
                              .pad2 = {}};
     expect_abort_on_init(misaligned, 4096, "misaligned slot offset");
 
-    std::printf("  test_slot_bounds_guard_is_armed: PASSED\n");
+    crucible::test::pass("  test_slot_bounds_guard_is_armed: PASSED\n");
 }
 
 int main() {
-    std::printf("test_pool_allocator:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_pool_allocator:\n");
     test_basic_init();
     test_external_registration();
     test_write_read_isolation();
@@ -503,6 +503,6 @@ int main() {
     test_reinit();
     test_integration_with_sweep_line();
     test_slot_bounds_guard_is_armed();
-    std::printf("test_pool_allocator: all tests passed\n");
+    crucible::test::pass("test_pool_allocator: all tests passed\n");
     return 0;
 }

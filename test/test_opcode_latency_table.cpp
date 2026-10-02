@@ -61,7 +61,7 @@ static void test_enum_names() {
     static_assert(reflect::enum_name(cog::GpuOpcode::Conv2D) == "Conv2D");
     static_assert(reflect::enum_name(cog::MessageSizeBucket::M64B) == "M64B");
     static_assert(reflect::unknown_enum_sentinel<cog::SizeBucket> == "<unknown SizeBucket>");
-    std::printf("  test_enum_names:                      PASSED\n");
+    crucible::test::pass("  test_enum_names:                      PASSED\n");
 }
 
 static void test_latency_quantiles_ordered_construction() {
@@ -84,7 +84,7 @@ static void test_latency_quantiles_ordered_construction() {
 
     static_assert(sizeof(cog::OrderedLatencyQuantiles) == sizeof(cog::LatencyQuantiles));
 
-    std::printf("  test_latency_quantiles_construction:  PASSED\n");
+    crucible::test::pass("  test_latency_quantiles_construction:  PASSED\n");
 }
 
 static void test_gpu_opcode_table_construction() {
@@ -173,7 +173,7 @@ static void test_gpu_opcode_table_construction() {
     volatile auto default_sample_count = default_entry.sample_count.value();
     assert(default_sample_count == 0);
 
-    std::printf("  test_gpu_opcode_table_construction:   PASSED\n");
+    crucible::test::pass("  test_gpu_opcode_table_construction:   PASSED\n");
 }
 
 static void test_nic_opcode_table_construction() {
@@ -223,7 +223,7 @@ static void test_nic_opcode_table_construction() {
 
     assert(table.calibration_age_seconds.is_fresh());
 
-    std::printf("  test_nic_opcode_table_construction:   PASSED\n");
+    crucible::test::pass("  test_nic_opcode_table_construction:   PASSED\n");
 }
 
 static void test_opcodes_for_binding() {
@@ -256,16 +256,16 @@ static void test_opcodes_for_binding() {
         + query.template operator()<cog::CogKind::CpuSocket>() + query.template operator()<cog::CogKind::DramChannel>();
     assert(total == 6);
 
-    std::printf("  test_opcodes_for_binding:             PASSED\n");
+    crucible::test::pass("  test_opcodes_for_binding:             PASSED\n");
 }
 
 int main() {
-    std::printf("test_opcode_latency_table: 5 groups\n");
+    ::fixy::report(::fixy::Sink::Out, "test_opcode_latency_table: 5 groups\n");
     test_enum_names();
     test_latency_quantiles_ordered_construction();
     test_gpu_opcode_table_construction();
     test_nic_opcode_table_construction();
     test_opcodes_for_binding();
-    std::printf("test_opcode_latency_table: 5 groups, all passed\n");
+    crucible::test::pass("test_opcode_latency_table: 5 groups, all passed\n");
     return 0;
 }

@@ -1,7 +1,7 @@
 #include <crucible/cntp/_wip/GpuDirect.h>
 #include <fixy/Ctx.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <concepts>
 #include <cstdio>
 #include <string_view>
@@ -96,7 +96,7 @@ void test_admission_and_names() {
     assert(gd::mrc_write_access().test(gd::MrAccessFlag::RemoteWrite));
     assert(!gd::placement_known(gd::PeerPlacement{}));
 
-    std::printf("  test_admission_and_names: PASSED\n");
+    crucible::test::pass("  test_admission_and_names: PASSED\n");
 }
 
 void test_rdma_plan_minting() {
@@ -158,7 +158,7 @@ void test_rdma_plan_minting() {
     assert(!no_access.has_value());
     assert(no_access.error() == gd::GpuDirectError::InvalidAccess);
 
-    std::printf("  test_rdma_plan_minting: PASSED\n");
+    crucible::test::pass("  test_rdma_plan_minting: PASSED\n");
 }
 
 void test_registration_boundary() {
@@ -187,7 +187,7 @@ void test_registration_boundary() {
     assert(!reg_unavailable.has_value());
     assert(reg_unavailable.error() == gd::GpuDirectError::VendorBackendUnavailable);
 
-    std::printf("  test_registration_boundary: PASSED\n");
+    crucible::test::pass("  test_registration_boundary: PASSED\n");
 }
 
 void test_storage_plan_boundary() {
@@ -234,7 +234,7 @@ void test_storage_plan_boundary() {
     assert(!missing_storage.has_value());
     assert(missing_storage.error() == gd::GpuDirectError::MissingGpuStorageCapability);
 
-    std::printf("  test_storage_plan_boundary: PASSED\n");
+    crucible::test::pass("  test_storage_plan_boundary: PASSED\n");
 }
 
 }  // namespace
@@ -255,12 +255,12 @@ int main() {
     static_assert(!gd::gpu_direct_backend_implemented,
                   "no driver registers a region, so each registration and storage call is a stub");
 
-    std::printf("test_cntp_gpu_direct:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cntp_gpu_direct:\n");
     test_admission_and_names();
     test_rdma_plan_minting();
     test_registration_boundary();
     test_storage_plan_boundary();
-    std::printf("test_cntp_gpu_direct: all PASSED\n");
+    crucible::test::pass("test_cntp_gpu_direct: all PASSED\n");
     return 0;
 }
 

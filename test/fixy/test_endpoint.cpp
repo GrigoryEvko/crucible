@@ -18,6 +18,7 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
+#include "../test_assert.h"
 
 namespace c = fixy::concurrent;
 namespace s = fixy::session;
@@ -326,6 +327,6 @@ int main() {
         std::fprintf(stderr, "test_endpoint: %d check(s) failed\n", failures);
         return 1;
     }
-    std::puts("test_endpoint: all checks passed");
+    crucible::test::pass("test_endpoint: all checks passed\n");
     return 0;
 }

@@ -2,7 +2,7 @@
 #include <fixy/Ctx.h>
 
 #include <array>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 #include <span>
 #include <string_view>
@@ -64,7 +64,7 @@ void test_admission() {
     assert(neighbor.ipv4_be() == (0x0A000000U | 9U));
     static_assert(cntp::GossipNeighborTarget{}.ifindex().value() == 1);
 
-    std::printf("  test_admission: PASSED\n");
+    crucible::test::pass("  test_admission: PASSED\n");
 }
 
 void test_plan_registration_and_publish() {
@@ -129,7 +129,7 @@ void test_plan_registration_and_publish() {
     assert(!too_large.has_value());
     assert(too_large.error() == cntp::GossipMulticastError::PacketTooLarge);
 
-    std::printf("  test_plan_registration_and_publish: PASSED\n");
+    crucible::test::pass("  test_plan_registration_and_publish: PASSED\n");
 }
 
 }  // namespace
@@ -145,9 +145,9 @@ int main() {
     static_assert(!cntp::CtxFitsGossipMulticastMint<::fixy::BgDrainCtx>);
     static_assert(!cntp::CtxFitsGossipMulticastMint<::fixy::HotFgCtx>);
 
-    std::printf("test_cntp_gossip_multicast:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cntp_gossip_multicast:\n");
     test_admission();
     test_plan_registration_and_publish();
-    std::printf("test_cntp_gossip_multicast: all PASSED\n");
+    crucible::test::pass("test_cntp_gossip_multicast: all PASSED\n");
     return 0;
 }

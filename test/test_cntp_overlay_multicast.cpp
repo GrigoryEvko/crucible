@@ -56,7 +56,7 @@ void test_admission() {
     assert(!cntp::admit_overlay_peer(zero).has_value());
     static_assert(std::same_as<cntp::DeclaredOverlayPeer::tag_type, source::OverlayMulticast>);
 
-    std::printf("  test_admission: PASSED\n");
+    crucible::test::pass("  test_admission: PASSED\n");
 }
 
 void test_routes_and_message_plan() {
@@ -113,7 +113,7 @@ void test_routes_and_message_plan() {
     assert(!rejected.has_value());
     assert(rejected.error() == cntp::OverlayMulticastError::EmptyMessage);
 
-    std::printf("  test_routes_and_message_plan: PASSED\n");
+    crucible::test::pass("  test_routes_and_message_plan: PASSED\n");
 }
 
 void test_peer_mutation_errors() {
@@ -145,7 +145,7 @@ void test_peer_mutation_errors() {
     assert(!full.has_value());
     assert(full.error() == cntp::OverlayMulticastError::TooManyPeers);
 
-    std::printf("  test_peer_mutation_errors: PASSED\n");
+    crucible::test::pass("  test_peer_mutation_errors: PASSED\n");
 }
 
 }  // namespace
@@ -160,10 +160,10 @@ int main() {
     static_assert(!cntp::CtxFitsOverlayMulticastMint<::fixy::HotFgCtx>);
     static_assert(!std::is_constructible_v<cntp::OverlayMulticastPlan<4, 8, 2>, cntp::DeclaredOverlayPeer>);
 
-    std::printf("test_cntp_overlay_multicast:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cntp_overlay_multicast:\n");
     test_admission();
     test_routes_and_message_plan();
     test_peer_mutation_errors();
-    std::printf("test_cntp_overlay_multicast: all PASSED\n");
+    crucible::test::pass("test_cntp_overlay_multicast: all PASSED\n");
     return 0;
 }

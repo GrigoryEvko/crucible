@@ -54,7 +54,7 @@ void test_names_and_admission() {
     assert(dataplane::admit_tc_flow_priority(7).has_value());
     assert(!dataplane::admit_tc_flow_priority(8).has_value());
 
-    std::printf("  test_names_and_admission: PASSED\n");
+    crucible::test::pass("  test_names_and_admission: PASSED\n");
 }
 
 void test_program_caps() {
@@ -81,7 +81,7 @@ void test_program_caps() {
     assert(!attached.has_value());
     assert(attached.error() == dataplane::TcError::PrivilegedAttachDeferred);
 
-    std::printf("  test_program_caps: PASSED\n");
+    crucible::test::pass("  test_program_caps: PASSED\n");
 }
 
 void test_flow_class_map() {
@@ -110,7 +110,7 @@ void test_flow_class_map() {
     auto missing = map.lookup(dataplane::tc_flow_key(cntp::admit_socket_fd(8).value()));
     assert(!missing.has_value());
 
-    std::printf("  test_flow_class_map: PASSED\n");
+    crucible::test::pass("  test_flow_class_map: PASSED\n");
 }
 
 }  // namespace
@@ -123,10 +123,10 @@ int main() {
     static_assert(sizeof(dataplane::TcFlowClassRecord) == 8, "the record is the kernel map value");
     static_assert(!std::copy_constructible<dataplane::TcFlowClassMap<2>>);
 
-    std::printf("test_cntp_dataplane_tc_ebpf:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cntp_dataplane_tc_ebpf:\n");
     test_names_and_admission();
     test_program_caps();
     test_flow_class_map();
-    std::printf("test_cntp_dataplane_tc_ebpf: all PASSED\n");
+    crucible::test::pass("test_cntp_dataplane_tc_ebpf: all PASSED\n");
     return 0;
 }

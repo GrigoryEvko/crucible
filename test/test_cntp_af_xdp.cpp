@@ -2,7 +2,7 @@
 #include <fixy/Ctx.h>
 #include <foundation/reflect/EnumName.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
@@ -71,7 +71,7 @@ void test_admission() {
     assert(!too_wide.has_value());
     assert(too_wide.error() == cntp::AfXdpError::InvalidUmemShape);
 
-    std::printf("  test_admission: PASSED\n");
+    crucible::test::pass("  test_admission: PASSED\n");
 }
 
 void test_socket_substrate_rings() {
@@ -118,7 +118,7 @@ void test_socket_substrate_rings() {
     assert(clean->value().size() == 96);
     assert(socket.rx_pending() == 0);
 
-    std::printf("  test_socket_substrate_rings: PASSED\n");
+    crucible::test::pass("  test_socket_substrate_rings: PASSED\n");
 }
 
 // This socket is a façade: its rings live in this process and the
@@ -173,7 +173,7 @@ void test_rings_are_in_process_only() {
     static_assert(!std::copy_constructible<decltype(socket)>);
     static_assert(!std::move_constructible<decltype(socket)>);
 
-    std::printf("  test_rings_are_in_process_only: PASSED\n");
+    crucible::test::pass("  test_rings_are_in_process_only: PASSED\n");
 }
 
 }  // namespace
@@ -201,10 +201,10 @@ int main() {
     static_assert(std::is_same_v<decltype(cntp::kernel_rings_shared), const bool>,
                   "kernel_rings_shared must be a compile-time bool");
 
-    std::printf("test_cntp_af_xdp:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cntp_af_xdp:\n");
     test_admission();
     test_socket_substrate_rings();
     test_rings_are_in_process_only();
-    std::printf("test_cntp_af_xdp: all PASSED\n");
+    crucible::test::pass("test_cntp_af_xdp: all PASSED\n");
     return 0;
 }

@@ -139,7 +139,7 @@ void test_overflow_build_leaves_tail() {
     assert(built_at_start.error().meta_end == 0u);
     assert(metalog->tail.get() == 0u);
 
-    std::printf("  overflow_build_leaves_tail:                PASSED\n");
+    crucible::test::pass("  overflow_build_leaves_tail:                PASSED\n");
 }
 
 // The order that the pipeline permits: the build stage builds a graph and
@@ -182,7 +182,7 @@ void test_publish_stage_releases_in_order() {
     });
     assert(metalog->tail.get() == overflow_end);
 
-    std::printf("  publish_stage_releases_in_order:           PASSED\n");
+    crucible::test::pass("  publish_stage_releases_in_order:           PASSED\n");
 }
 
 // The release goes through the four stages of a running pipeline.  The last
@@ -243,8 +243,8 @@ void test_pipeline_releases_after_overflow() {
     assert(overflow_end != 0u);
     assert(metalog->tail.get() == overflow_end && "the publish stage did not apply the release of the last iteration");
 
-    std::printf("  pipeline_releases_after_overflow:          PASSED (tail=%llu)\n",
-                static_cast<unsigned long long>(metalog->tail.get()));
+    crucible::test::pass("  pipeline_releases_after_overflow:          PASSED (tail={})\n",
+                         static_cast<unsigned long long>(metalog->tail.get()));
 }
 
 // The ops of a built graph hold a copy of the run of the metadata log that
@@ -292,7 +292,7 @@ void test_built_graph_owns_its_metadata() {
     assert(region != nullptr && region->ops == (*built)->ops);
     assert(metalog->tail.get() == OPS);
 
-    std::printf("  built_graph_owns_its_metadata:             PASSED\n");
+    crucible::test::pass("  built_graph_owns_its_metadata:             PASSED\n");
 }
 
 // The two counters of the metadata log count each record that the log held.
@@ -336,7 +336,7 @@ void test_build_and_release_pass_two_to_the_32() {
     });
     assert(metalog->tail.get() == run_end && "the release did not move the tail past 2^32");
 
-    std::printf("  build_and_release_pass_two_to_the_32:      PASSED\n");
+    crucible::test::pass("  build_and_release_pass_two_to_the_32:      PASSED\n");
 }
 
 }  // namespace test_background_thread_run_in_row

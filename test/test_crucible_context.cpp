@@ -72,7 +72,7 @@ static void test_initial_state() {
     assert(ctx.diverged_count() == 0);
     assert(ctx.active_region() == nullptr);
 
-    std::printf("  test_initial_state: PASSED\n");
+    crucible::test::pass("  test_initial_state: PASSED\n");
 }
 
 static void test_activate() {
@@ -103,7 +103,7 @@ static void test_activate() {
     assert(ctx.pool().is_initialized());
     assert(ctx.engine().is_initialized());
 
-    std::printf("  test_activate: PASSED\n");
+    crucible::test::pass("  test_activate: PASSED\n");
 }
 
 // A region with no memory plan cannot be activated, because the
@@ -118,7 +118,7 @@ static void test_activate_no_plan() {
     assert(!ctx.activate(&region));
     assert(ctx.is_recording());
 
-    std::printf("  test_activate_no_plan: PASSED\n");
+    crucible::test::pass("  test_activate_no_plan: PASSED\n");
 }
 
 static void test_full_replay() {
@@ -168,7 +168,7 @@ static void test_full_replay() {
     assert(ctx.advance(SchemaHash{101}, ShapeHash{201}, cv) == ReplayStatus::COMPLETE);
     assert(ctx.compiled_iterations() == 2);
 
-    std::printf("  test_full_replay: PASSED\n");
+    crucible::test::pass("  test_full_replay: PASSED\n");
 }
 
 static void test_divergence() {
@@ -204,7 +204,7 @@ static void test_divergence() {
     assert(ctx.is_recording());
     assert(ctx.active_region() == nullptr);
 
-    std::printf("  test_divergence: PASSED\n");
+    crucible::test::pass("  test_divergence: PASSED\n");
 }
 
 static void test_reactivate() {
@@ -263,7 +263,7 @@ static void test_reactivate() {
     }
     assert(ctx.compiled_iterations() == 2);
 
-    std::printf("  test_reactivate: PASSED\n");
+    crucible::test::pass("  test_reactivate: PASSED\n");
 }
 
 static void test_external_slots() {
@@ -328,7 +328,7 @@ static void test_external_slots() {
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
     assert(ctx.pool().slot_ptr(SlotId{1}, pv) == fake_param);
 
-    std::printf("  test_external_slots: PASSED\n");
+    crucible::test::pass("  test_external_slots: PASSED\n");
 }
 
 // The plan here comes from the real sweep-line planner rather than the
@@ -440,7 +440,7 @@ static void test_integration_sweep_line() {
     ctx.deactivate();
     assert(ctx.is_recording());
 
-    std::printf("  test_integration_sweep_line: PASSED\n");
+    crucible::test::pass("  test_integration_sweep_line: PASSED\n");
 }
 
 // The divergence count belongs to the context, not to an activation, so
@@ -494,11 +494,11 @@ static void test_divergence_counter() {
     assert(ctx.diverged_count() == 2);  // unchanged
     assert(ctx.compiled_iterations() == 1);
 
-    std::printf("  test_divergence_counter: PASSED\n");
+    crucible::test::pass("  test_divergence_counter: PASSED\n");
 }
 
 int main() {
-    std::printf("test_crucible_context:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_crucible_context:\n");
     test_initial_state();
     test_activate();
     test_activate_no_plan();
@@ -508,6 +508,6 @@ int main() {
     test_external_slots();
     test_integration_sweep_line();
     test_divergence_counter();
-    std::printf("test_crucible_context: all tests passed\n");
+    crucible::test::pass("test_crucible_context: all tests passed\n");
     return 0;
 }

@@ -190,6 +190,6 @@
         assert(!ac->is_dead());
     }
 
-    std::printf("test_graph: all tests passed\n");
+    crucible::test::pass("test_graph: all tests passed\n");
     return 0;
 }

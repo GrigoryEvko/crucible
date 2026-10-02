@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <type_traits>
 #include <utility>
+#include "../test_assert.h"
 
 namespace eff = ::foundation::effects;
 namespace perm = ::foundation::permissions;
@@ -249,6 +250,6 @@ int main() {
              test_a_context_that_refuses_the_row_refuses_the_read);
     run_test("test_the_erased_brand_reads_nothing", test_the_erased_brand_reads_nothing);
     run_test("test_a_share_of_a_region_of_the_same_site_aborts", test_a_share_of_a_region_of_the_same_site_aborts);
-    std::fprintf(stderr, "test_shared_region: %d passed, %d failed\n", total_passed, total_failed);
+    crucible::test::pass("test_shared_region: {} passed, {} failed\n", total_passed, total_failed);
     return total_failed == 0 ? 0 : 1;
 }

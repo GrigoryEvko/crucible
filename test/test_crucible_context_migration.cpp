@@ -172,30 +172,30 @@ ChildResult run_in_child(void (*attack)()) {
 // below fail for the width of the plan and for no other reason.
 void test_plan_at_the_bound_migrates() {
     assert(switch_to_plan(kBitsetSlots, kBitsetSlots - 1));
-    std::printf("  test_plan_at_the_bound_migrates: PASSED\n");
+    crucible::test::pass("  test_plan_at_the_bound_migrates: PASSED\n");
 }
 
 // The shared prefix writes a slot that the bitset can record, and the plan is
 // still too wide.  The switch is refused before it copies the slot.
 void test_wide_plan_is_refused() {
     assert(is_refused([] { (void)switch_to_plan(kWideSlots, 5); }));
-    std::printf("  test_wide_plan_is_refused: PASSED\n");
+    crucible::test::pass("  test_wide_plan_is_refused: PASSED\n");
 }
 
 // The shared prefix writes a slot past the end of the bitset.  Without the
 // refusal, the migration sets a bit outside the bitset on the stack.
 void test_slot_past_the_bitset_is_refused() {
     assert(is_refused([] { (void)switch_to_plan(kWideSlots, kBitsetSlots + 476); }));
-    std::printf("  test_slot_past_the_bitset_is_refused: PASSED\n");
+    crucible::test::pass("  test_slot_past_the_bitset_is_refused: PASSED\n");
 }
 
 }  // namespace
 
 int main() {
-    std::printf("test_crucible_context_migration:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_crucible_context_migration:\n");
     test_plan_at_the_bound_migrates();
     test_wide_plan_is_refused();
     test_slot_past_the_bitset_is_refused();
-    std::printf("test_crucible_context_migration: all tests passed\n");
+    crucible::test::pass("test_crucible_context_migration: all tests passed\n");
     return 0;
 }

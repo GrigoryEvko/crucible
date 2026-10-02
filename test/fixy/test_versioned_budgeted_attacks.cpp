@@ -34,6 +34,7 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#include "../test_assert.h"
 
 namespace {
 
@@ -561,6 +562,6 @@ int main() {
         std::fprintf(stderr, "test_versioned_budgeted_attacks: %d case(s) failed\n", g_failures);
         return 1;
     }
-    std::printf("test_versioned_budgeted_attacks: ok\n");
+    crucible::test::pass("test_versioned_budgeted_attacks: ok\n");
     return 0;
 }

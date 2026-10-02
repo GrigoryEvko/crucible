@@ -38,6 +38,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include "../test_assert.h"
 
 namespace test_owned_region {
 
@@ -350,8 +351,8 @@ int main() {
              test_recombine_refuses_a_shard_moved_out_of_the_tuple);
     run_test("test_every_consuming_door_empties_the_region", test_every_consuming_door_empties_the_region);
 
-    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
+    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
-    std::fprintf(stderr, "ALL PASSED\n");
+    crucible::test::pass("ALL PASSED\n");
     return EXIT_SUCCESS;
 }

@@ -56,14 +56,14 @@ static void test_enumerator_names() {
     using ::foundation::reflect::enum_name;
     assert(enum_name(cog::NumaNicIssue::IrqRemoteFromTarget) == std::string_view{"IrqRemoteFromTarget"});
     assert(enum_name(static_cast<cog::NumaNicIssue>(1u << 31)) == std::string_view{"<unknown NumaNicIssue>"});
-    std::printf("  test_enumerator_names:            PASSED\n");
+    crucible::test::pass("  test_enumerator_names:            PASSED\n");
 }
 
 static void test_local_configuration_passes() {
     auto const report = cog::verify_numa_pinning<cog::CogKind::NicPort>(nic_identity(), nic_caps(), local_facts());
     assert(report.passes());
     assert(report.effective_target_node == cog::NumaNodeId{1});
-    std::printf("  test_local_configuration_passes:  PASSED\n");
+    crucible::test::pass("  test_local_configuration_passes:  PASSED\n");
 }
 
 static void test_remote_nic_is_error() {
@@ -73,7 +73,7 @@ static void test_remote_nic_is_error() {
     auto const report = cog::verify_numa_pinning<cog::CogKind::NicPort>(nic_identity(), nic_caps(), facts);
     assert(report.severity == cog::AuditSeverity::Error);
     assert(report.has(cog::NumaNicIssue::NicRemoteFromTarget));
-    std::printf("  test_remote_nic_is_error:         PASSED\n");
+    crucible::test::pass("  test_remote_nic_is_error:         PASSED\n");
 }
 
 static void test_remote_irq_rps_xps_are_warnings() {
@@ -89,7 +89,7 @@ static void test_remote_irq_rps_xps_are_warnings() {
     assert(report.has(cog::NumaNicIssue::RpsRemoteFromTarget));
     assert(report.has(cog::NumaNicIssue::XpsRemoteFromTarget));
     assert(report.has(cog::NumaNicIssue::GpuDirectPeerRemote));
-    std::printf("  test_remote_irq_rps_xps_are_warnings: PASSED\n");
+    crucible::test::pass("  test_remote_irq_rps_xps_are_warnings: PASSED\n");
 }
 
 static void test_unknown_topology_policy() {
@@ -101,7 +101,7 @@ static void test_unknown_topology_policy() {
     assert(report.severity == cog::AuditSeverity::Warn);
     assert(report.has(cog::NumaNicIssue::NicNumaUnknown));
     assert(report.has(cog::NumaNicIssue::TargetNumaUnknown));
-    std::printf("  test_unknown_topology_policy:     PASSED\n");
+    crucible::test::pass("  test_unknown_topology_policy:     PASSED\n");
 }
 
 int main() {
@@ -109,12 +109,12 @@ int main() {
     static_assert(!cog::NumaNicAuditableCog<cog::CogKind::Gpu>);
     static_assert(::foundation::diag::is_diagnostic_class_v<cog::NumaNic_Misaligned>);
 
-    std::printf("test_numa_nic: 5 groups\n");
+    ::fixy::report(::fixy::Sink::Out, "test_numa_nic: 5 groups\n");
     test_enumerator_names();
     test_local_configuration_passes();
     test_remote_nic_is_error();
     test_remote_irq_rps_xps_are_warnings();
     test_unknown_topology_policy();
-    std::printf("test_numa_nic: all passed\n");
+    crucible::test::pass("test_numa_nic: all passed\n");
     return 0;
 }

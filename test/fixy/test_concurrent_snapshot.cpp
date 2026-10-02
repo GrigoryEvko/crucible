@@ -22,6 +22,7 @@
 #include <thread>
 #include <type_traits>
 #include <vector>
+#include "../test_assert.h"
 
 namespace {
 
@@ -339,6 +340,6 @@ int main() {
     run_test("try_load_rejects_in_progress", test_try_load_rejects_in_progress);
     run_test("two_writers_end_through_the_catalog", test_two_writers_end_through_the_catalog);
 
-    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
+    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
     return total_failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

@@ -8,7 +8,7 @@
 #include <foundation/effects/Effect.h>
 
 #include <array>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 #include <span>
 #include <string_view>
@@ -132,7 +132,7 @@ void test_static_contracts() {
     assert(mb::network_artifact_kind_name(artifact) == std::string_view{"dpu-offload"});
     assert(mb::network_backend_error_name(error) == std::string_view{"BackendUnavailable"});
 
-    std::printf("  test_static_contracts: PASSED\n");
+    crucible::test::pass("  test_static_contracts: PASSED\n");
 }
 
 void test_cpu_stub_signals_unavailable() {
@@ -154,7 +154,7 @@ void test_cpu_stub_signals_unavailable() {
     // path consults, so the two layers cannot disagree.
     static_assert(!mb::network_backend_has_emit_path_v<mb::NetworkBackendVendor::Cpu>);
 
-    std::printf("  test_cpu_stub_signals_unavailable: PASSED\n");
+    crucible::test::pass("  test_cpu_stub_signals_unavailable: PASSED\n");
 }
 
 void test_gpu_stub_signals_unavailable() {
@@ -171,7 +171,7 @@ void test_gpu_stub_signals_unavailable() {
 
     static_assert(!mb::network_backend_has_emit_path_v<mb::NetworkBackendVendor::Nv>);
 
-    std::printf("  test_gpu_stub_signals_unavailable: PASSED\n");
+    crucible::test::pass("  test_gpu_stub_signals_unavailable: PASSED\n");
 }
 
 void test_empty_content_hash_rejected_with_distinct_error() {
@@ -197,8 +197,8 @@ void test_empty_content_hash_rejected_with_distinct_error() {
     assert(!planned.has_value());
     assert(planned.error() == mb::NetworkBackendError::EmptyContentHash);
 
-    std::printf("  test_empty_content_hash_rejected_with_distinct_error: "
-                "PASSED\n");
+    crucible::test::pass("  test_empty_content_hash_rejected_with_distinct_error: "
+                         "PASSED\n");
 }
 
 void test_recipe_rejection() {
@@ -213,7 +213,7 @@ void test_recipe_rejection() {
     assert(!planned.has_value());
     assert(planned.error() == mb::NetworkBackendError::RecipeForbidsAlgorithm);
 
-    std::printf("  test_recipe_rejection: PASSED\n");
+    crucible::test::pass("  test_recipe_rejection: PASSED\n");
 }
 
 void test_changed_identity_rejected() {
@@ -238,19 +238,19 @@ void test_changed_identity_rejected() {
     assert(!rekinded.has_value());
     assert(rekinded.error() == mb::NetworkBackendError::UnsupportedCogKind);
 
-    std::printf("  test_changed_identity_rejected: PASSED\n");
+    crucible::test::pass("  test_changed_identity_rejected: PASSED\n");
 }
 
 }  // namespace
 
 int main() {
-    std::printf("test_mimic_network_backend:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_mimic_network_backend:\n");
     test_static_contracts();
     test_cpu_stub_signals_unavailable();
     test_gpu_stub_signals_unavailable();
     test_empty_content_hash_rejected_with_distinct_error();
     test_recipe_rejection();
     test_changed_identity_rejected();
-    std::printf("test_mimic_network_backend: all PASSED\n");
+    crucible::test::pass("test_mimic_network_backend: all PASSED\n");
     return 0;
 }

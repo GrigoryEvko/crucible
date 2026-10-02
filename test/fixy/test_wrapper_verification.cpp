@@ -39,6 +39,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include "../test_assert.h"
 
 namespace {
 
@@ -558,6 +559,6 @@ int main() {
         if (!ok) ++failed;
     }
     if (failed != 0) return EXIT_FAILURE;
-    std::fprintf(stderr, "\nALL PASSED: 17 fixy wrappers verified uniformly (9 classes, 7 bands, RecipeSpec)\n");
+    crucible::test::pass("\nALL PASSED: 17 fixy wrappers verified uniformly (9 classes, 7 bands, RecipeSpec)\n");
     return EXIT_SUCCESS;
 }

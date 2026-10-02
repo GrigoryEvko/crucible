@@ -47,6 +47,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include "../test_assert.h"
 
 namespace {
 
@@ -294,6 +295,6 @@ int main() {
         std::fprintf(stderr, "test_decide_fuzz: WARNING — sink is 0; harness may have been DCE'd\n");
         return 1;
     }
-    std::fprintf(stderr, "test_decide_fuzz: all %d × 4 = %d iterations passed\n", kIterations, kIterations * 4);
+    crucible::test::pass("test_decide_fuzz: all {} × 4 = {} iterations passed\n", kIterations, kIterations * 4);
     return 0;
 }

@@ -81,7 +81,7 @@ void test_each_object_has_one_address(const Library& writer, const Library& read
     for (unsigned control = 0; writer_control(control) != nullptr; ++control)
         require(writer_control(control) != reader_control(control),
                 "an object with no marker has a copy in each library, so the two libraries are loaded apart");
-    std::printf("  test_each_object_has_one_address: PASSED (%u objects)\n", index);
+    crucible::test::pass("  test_each_object_has_one_address: PASSED ({} objects)\n", index);
 }
 
 // A marked thread_local object is one object for each thread, whatever
@@ -123,7 +123,7 @@ void test_each_thread_object_is_one_for_the_thread(const Library& writer, const 
             "a second thread has objects of its own, one address in the two libraries, and sees its own writes");
     require(reader_value(0) == 7 && reader_value(1) == 7,
             "the write of the second thread did not reach the main thread");
-    std::printf("  test_each_thread_object_is_one_for_the_thread: PASSED (%u objects)\n", count);
+    crucible::test::pass("  test_each_thread_object_is_one_for_the_thread: PASSED ({} objects)\n", count);
 }
 
 void test_the_reader_sees_each_write(const Library& writer, const Library& reader) {
@@ -138,7 +138,7 @@ void test_the_reader_sees_each_write(const Library& writer, const Library& reade
     const char* const name = schema_name(pwl::kNamedHash);
     require(name != nullptr && std::strcmp(name, pwl::kSchemaName) == 0,
             "the reader library sees the schema name that the writer registered");
-    std::printf("  test_the_reader_sees_each_write: PASSED\n");
+    crucible::test::pass("  test_the_reader_sees_each_write: PASSED\n");
 }
 
 void test_the_reader_sees_the_claim(const Library& writer, const Library& reader) {
@@ -155,7 +155,7 @@ void test_the_reader_sees_the_claim(const Library& writer, const Library& reader
 
     writer.symbol<decltype(process_wide_release_brand)>("process_wide_release_brand")(brand);
     require(on_other_thread(is_usable) == 1, "the claim ends when its brand is destroyed");
-    std::printf("  test_the_reader_sees_the_claim: PASSED\n");
+    crucible::test::pass("  test_the_reader_sees_the_claim: PASSED\n");
 }
 
 }  // namespace
@@ -166,11 +166,11 @@ int main(int argc, char** argv) {
     const Library writer{PROCESS_WIDE_WRITER_PATH};
     const Library reader{PROCESS_WIDE_READER_PATH};
     const auto is_selected = [argc, argv](const char* name) { return argc < 2 || std::strcmp(argv[1], name) == 0; };
-    std::printf("test_process_wide_across_libraries:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_process_wide_across_libraries:\n");
     if (is_selected("addresses")) test_each_object_has_one_address(writer, reader);
     if (is_selected("threads")) test_each_thread_object_is_one_for_the_thread(writer, reader);
     if (is_selected("writes")) test_the_reader_sees_each_write(writer, reader);
     if (is_selected("claim")) test_the_reader_sees_the_claim(writer, reader);
-    std::printf("test_process_wide_across_libraries: all tests passed\n");
+    crucible::test::pass("test_process_wide_across_libraries: all tests passed\n");
     return 0;
 }

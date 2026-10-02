@@ -28,6 +28,7 @@
 
 #include <sys/syscall.h>
 #include <unistd.h>
+#include "test_assert.h"
 
 namespace {
 
@@ -330,6 +331,6 @@ int main() {
         std::fprintf(stderr, "test_clock_failed_read: %d check(s) failed\n", tally.failures);
         return 1;
     }
-    std::printf("test_clock_failed_read: all cases passed\n");
+    crucible::test::pass("test_clock_failed_read: all cases passed\n");
     return 0;
 }

@@ -282,6 +282,6 @@ int main() {
         assert(crucible::loopterm_hash(alt_eps) != h_base);
     }
 
-    std::printf("test_reflect: all tests passed\n");
+    crucible::test::pass("test_reflect: all tests passed\n");
     return 0;
 }

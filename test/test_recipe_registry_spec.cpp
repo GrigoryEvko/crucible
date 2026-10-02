@@ -15,7 +15,6 @@
 
 #include "test_assert.h"
 #include <array>
-#include <cassert>
 #include <cstdio>
 #include <type_traits>
 #include <utility>

@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <utility>
+#include "test_assert.h"
 
 namespace {
 
@@ -143,6 +144,6 @@ int main() {
     test_bit_determinism();
     test_finite_output();
     test_statistical_sanity();
-    std::printf("box_muller_polynomial: PASS\n");
+    crucible::test::pass("box_muller_polynomial: PASS\n");
     return 0;
 }

@@ -62,7 +62,7 @@ void test_dispatch_data_flow() {
     // One iteration from the alignment helper, one from the loop above.
     assert(vigil.compiled_iterations() == 2);
 
-    std::printf("  test_dispatch_data_flow: PASSED\n");
+    crucible::test::pass("  test_dispatch_data_flow: PASSED\n");
 }
 
 void test_dispatch_pool_bounds() {
@@ -95,7 +95,7 @@ void test_dispatch_pool_bounds() {
     assert(vigil.compiled_iterations() == 2);
     assert(pool.num_external() == 0);
 
-    std::printf("  test_dispatch_pool_bounds: PASSED\n");
+    crucible::test::pass("  test_dispatch_pool_bounds: PASSED\n");
 }
 
 }  // namespace test_vigil_dispatch

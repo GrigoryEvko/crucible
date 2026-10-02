@@ -50,7 +50,7 @@ static std::string write_tmp(const void* data, size_t n) {
 static void test_missing_file() {
     auto t = load_trace(kTestIo, "/definitely/does/not/exist.crtrace");
     assert(!t);
-    std::printf("  test_missing_file:              PASSED\n");
+    crucible::test::pass("  test_missing_file:              PASSED\n");
 }
 
 static void test_empty_file() {
@@ -58,7 +58,7 @@ static void test_empty_file() {
     auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
     std::remove(path.c_str());
-    std::printf("  test_empty_file:                PASSED\n");
+    crucible::test::pass("  test_empty_file:                PASSED\n");
 }
 
 static void test_bad_magic() {
@@ -73,7 +73,7 @@ static void test_bad_magic() {
     auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
     std::remove(path.c_str());
-    std::printf("  test_bad_magic:                 PASSED\n");
+    crucible::test::pass("  test_bad_magic:                 PASSED\n");
 }
 
 static void test_wrong_version() {
@@ -87,7 +87,7 @@ static void test_wrong_version() {
     auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
     std::remove(path.c_str());
-    std::printf("  test_wrong_version:             PASSED\n");
+    crucible::test::pass("  test_wrong_version:             PASSED\n");
 }
 
 static void test_truncated_header() {
@@ -97,7 +97,7 @@ static void test_truncated_header() {
     auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
     std::remove(path.c_str());
-    std::printf("  test_truncated_header:          PASSED\n");
+    crucible::test::pass("  test_truncated_header:          PASSED\n");
 }
 
 static void test_truncated_op_records() {
@@ -115,7 +115,7 @@ static void test_truncated_op_records() {
     auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
     std::remove(path.c_str());
-    std::printf("  test_truncated_ops:             PASSED\n");
+    crucible::test::pass("  test_truncated_ops:             PASSED\n");
 }
 
 static void test_happy_path_zero_ops() {
@@ -134,7 +134,7 @@ static void test_happy_path_zero_ops() {
     assert(t->num_metas == 0);
     assert(t->entries.empty());
     std::remove(path.c_str());
-    std::printf("  test_happy_path_empty:          PASSED\n");
+    crucible::test::pass("  test_happy_path_empty:          PASSED\n");
 }
 
 static void test_adversarial_num_ops_rejected() {
@@ -150,7 +150,7 @@ static void test_adversarial_num_ops_rejected() {
     auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
     std::remove(path.c_str());
-    std::printf("  test_adversarial_counts:        PASSED\n");
+    crucible::test::pass("  test_adversarial_counts:        PASSED\n");
 }
 
 static void test_round_trip_single_op() {
@@ -183,7 +183,7 @@ static void test_round_trip_single_op() {
     assert(t->entries[0].shape_hash.raw() == shape);
     assert(t->scope_hashes[0].raw() == scope);
     assert(t->callsite_hashes[0].raw() == callsite);
-    std::printf("  test_round_trip_single_op:      PASSED\n");
+    crucible::test::pass("  test_round_trip_single_op:      PASSED\n");
 }
 
 // The trailing schema-name section of the file carries a length field
@@ -259,7 +259,7 @@ static void test_schema_name_table_round_trip() {
     assert(missing(global_schema_table().lookup(SchemaHash{0xDEADBEEFULL})));
 
     global_schema_table().clear(::foundation::effects::testing::test());
-    std::printf("  test_schema_name_table_round_trip: PASSED\n");
+    crucible::test::pass("  test_schema_name_table_round_trip: PASSED\n");
 }
 
 static void test_schema_name_table_corrupt_zero_len() {
@@ -289,7 +289,7 @@ static void test_schema_name_table_corrupt_zero_len() {
     assert(global_schema_table().count() == 0);
 
     global_schema_table().clear(::foundation::effects::testing::test());
-    std::printf("  test_schema_name_table_corrupt_zero_len: PASSED\n");
+    crucible::test::pass("  test_schema_name_table_corrupt_zero_len: PASSED\n");
 }
 
 static void test_schema_name_table_corrupt_oversize_len() {
@@ -325,7 +325,7 @@ static void test_schema_name_table_corrupt_oversize_len() {
     assert(global_schema_table().count() == 0);
 
     global_schema_table().clear(::foundation::effects::testing::test());
-    std::printf("  test_schema_name_table_corrupt_oversize_len: PASSED\n");
+    crucible::test::pass("  test_schema_name_table_corrupt_oversize_len: PASSED\n");
 }
 
 // The loader builds each op's meta start from a running cursor over its
@@ -358,7 +358,7 @@ static void test_meta_overrun_rejected() {
     auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
     std::remove(path.c_str());
-    std::printf("  test_meta_overrun_rejected:     PASSED\n");
+    crucible::test::pass("  test_meta_overrun_rejected:     PASSED\n");
 }
 
 static void test_meta_exact_count_loads() {
@@ -372,7 +372,7 @@ static void test_meta_exact_count_loads() {
     assert(t->entries[0].num_outputs == 2);
     assert(t->meta_starts[0].raw() == 0);  // sole op starts at metas[0]
     std::remove(path.c_str());
-    std::printf("  test_meta_exact_count_loads:    PASSED\n");
+    crucible::test::pass("  test_meta_exact_count_loads:    PASSED\n");
 }
 
 static void test_meta_count_uint16_overflow_rejected() {
@@ -383,7 +383,7 @@ static void test_meta_count_uint16_overflow_rejected() {
     auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
     std::remove(path.c_str());
-    std::printf("  test_meta_uint16_overflow:      PASSED\n");
+    crucible::test::pass("  test_meta_uint16_overflow:      PASSED\n");
 }
 
 // The peak resident size of this process, in kilobytes.  It only grows,
@@ -411,7 +411,7 @@ static void test_counts_past_the_file_allocate_nothing() {
     }
     const long growth_kb = peak_resident_kb() - peak_before_kb;
     assert(growth_kb < 64 * 1024);
-    std::printf("  test_counts_past_the_file:      PASSED\n");
+    crucible::test::pass("  test_counts_past_the_file:      PASSED\n");
 }
 
 // One metadata record as the file carries it.  A record of zeros is a
@@ -479,7 +479,7 @@ static void test_meta_bytes_break_no_claim_of_the_type() {
 
     // A rank past the bound is refused before a lane is read.
     assert(!loads_with_meta_field(offsetof(TensorMeta, ndim), uint8_t{9}));
-    std::printf("  test_meta_bytes_checked:        PASSED\n");
+    crucible::test::pass("  test_meta_bytes_checked:        PASSED\n");
 }
 
 static void test_names_on_a_sealed_table_are_skipped() {
@@ -504,7 +504,7 @@ static void test_names_on_a_sealed_table_are_skipped() {
     assert(missing(global_schema_table().lookup(SchemaHash{0x5EA1ED0000000001ULL})));
 
     global_schema_table().clear(::foundation::effects::testing::test());
-    std::printf("  test_names_on_sealed_table:     PASSED\n");
+    crucible::test::pass("  test_names_on_sealed_table:     PASSED\n");
 }
 
 int main() {
@@ -526,6 +526,6 @@ int main() {
     test_meta_count_uint16_overflow_rejected();
     test_meta_bytes_break_no_claim_of_the_type();
     test_names_on_a_sealed_table_are_skipped();
-    std::printf("test_trace_loader: 18 groups, all passed\n");
+    crucible::test::pass("test_trace_loader: 18 groups, all passed\n");
     return 0;
 }

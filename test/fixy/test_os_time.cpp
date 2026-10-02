@@ -33,6 +33,7 @@
 
 #include <pthread.h>
 #include <signal.h>
+#include "../test_assert.h"
 
 namespace eff = foundation::effects;
 namespace ml = foundation::algebra::lattices;
@@ -383,7 +384,7 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
     std::uint64_t low = 500;
     auto last_returned = fixy::mint_atomic_monotonic<std::uint64_t>(0);
     if (fixy::time::clamp_non_decreasing(last_returned, high) != high) {
-        std::fprintf(stderr, "the clamp did not pass a value above the floor through\n");
+        crucible::test::pass("the clamp did not pass a value above the floor through\n");
         return 1;
     }
     if (fixy::time::clamp_non_decreasing(last_returned, low) != high) {

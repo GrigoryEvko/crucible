@@ -67,7 +67,7 @@ void test_stream_buffer_outgrows_the_reachable_cache() {
         assert(*host_sized / kMinStreamCacheMultiple >= host_reach);
     }
 
-    std::printf("  test_stream_buffer_outgrows_the_reachable_cache: PASSED\n");
+    crucible::test::pass("  test_stream_buffer_outgrows_the_reachable_cache: PASSED\n");
 }
 
 // The sample count of a streaming run.  The default settings derive it from
@@ -80,7 +80,7 @@ void test_stream_sample_count_follows_the_settings() {
     assert(ledger::probes::stream_sample_count() == ledger::kMinSampleCount);
     ledger::set_probe_settings(ledger::ProbeSettings{.sample_count = 64, .pin_core = -1, .stream_sample_count = 2});
     assert(ledger::probes::stream_sample_count() == 2u);
-    std::printf("  test_stream_sample_count_follows_the_settings: PASSED\n");
+    crucible::test::pass("  test_stream_sample_count_follows_the_settings: PASSED\n");
 }
 
 void test_vector_width_probe_answers_or_declines() {
@@ -106,7 +106,7 @@ void test_vector_width_probe_answers_or_declines() {
         assert(preferred.error() == LedgerError::NotApplicableOnThisHost);
         assert(!ledger::probes::probe_vector_width_compute_gain(probe_ctx, fit_host()).has_value());
         assert(!ledger::probes::probe_vector_width_memory_gain(probe_ctx, fit_host()).has_value());
-        std::printf("  test_vector_width_probe_answers_or_declines: PASSED (instrumented build declines)\n");
+        crucible::test::pass("  test_vector_width_probe_answers_or_declines: PASSED (instrumented build declines)\n");
         return;
     }
 
@@ -118,7 +118,7 @@ void test_vector_width_probe_answers_or_declines() {
         assert(preferred.error() == LedgerError::NotApplicableOnThisHost
                || preferred.error() == LedgerError::StorePathUnavailable
                || preferred.error() == LedgerError::ConfidenceBelowBar);
-        std::printf("  test_vector_width_probe_answers_or_declines: PASSED (declined)\n");
+        crucible::test::pass("  test_vector_width_probe_answers_or_declines: PASSED (declined)\n");
         return;
     }
 
@@ -138,9 +138,9 @@ void test_vector_width_probe_answers_or_declines() {
     if (width == ledger::probes::kWideWidthBits) {
         assert(compute->value.raw() > 100u + ledger::kPracticalMarginPercent);
     }
-    std::printf("  test_vector_width_probe_answers_or_declines: PASSED (%llu bits, compute=%llu%%, memory=%llu%%)\n",
-                static_cast<unsigned long long>(width), static_cast<unsigned long long>(compute->value.raw()),
-                static_cast<unsigned long long>(memory->value.raw()));
+    crucible::test::pass("  test_vector_width_probe_answers_or_declines: PASSED ({} bits, compute={}%, memory={}%)\n",
+                         static_cast<unsigned long long>(width), static_cast<unsigned long long>(compute->value.raw()),
+                         static_cast<unsigned long long>(memory->value.raw()));
 }
 
 }  // namespace
@@ -175,10 +175,10 @@ static_assert(!stream_bytes_for(kMaxStreamBytes / kMinStreamCacheMultiple + 1).h
 }  // namespace crucible::ledger::probes
 
 int main() {
-    std::printf("test_ledger_probes_vector_width:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_ledger_probes_vector_width:\n");
     test_stream_buffer_outgrows_the_reachable_cache();
     test_stream_sample_count_follows_the_settings();
     test_vector_width_probe_answers_or_declines();
-    std::printf("test_ledger_probes_vector_width: 3 groups, all passed\n");
+    crucible::test::pass("test_ledger_probes_vector_width: 3 groups, all passed\n");
     return 0;
 }

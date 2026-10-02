@@ -45,7 +45,7 @@ static void test_names() {
     static_assert(enum_name(topology::PingmeshError::Full) == "Full");
     volatile auto error = topology::PingmeshError::LatencyOutOfRange;
     assert(enum_name(static_cast<topology::PingmeshError>(error)) == std::string_view{"LatencyOutOfRange"});
-    std::printf("  test_names:                         PASSED\n");
+    crucible::test::pass("  test_names:                         PASSED\n");
 }
 
 static void test_register_and_record_pairs() {
@@ -73,7 +73,7 @@ static void test_register_and_record_pairs() {
     assert(stats.p99_latency_ns != 0);
     assert(mesh.per_pair_latency(peers[0].uuid, peers[1].uuid) != nullptr);
     assert(mesh.per_pair_latency(peers[1].uuid, peers[1].uuid) == nullptr);
-    std::printf("  test_register_and_record_pairs:      PASSED\n");
+    crucible::test::pass("  test_register_and_record_pairs:      PASSED\n");
 }
 
 static void test_loss_and_rejection_accounting() {
@@ -98,7 +98,7 @@ static void test_loss_and_rejection_accounting() {
     assert(report.count == 1);
     assert(report.entries[0].anomalous);
     assert(report.entries[0].stats.lost == 1);
-    std::printf("  test_loss_and_rejection_accounting:  PASSED\n");
+    crucible::test::pass("  test_loss_and_rejection_accounting:  PASSED\n");
 }
 
 static void test_unknown_and_out_of_range_rejected() {
@@ -114,7 +114,7 @@ static void test_unknown_and_out_of_range_rejected() {
     assert(stats.sent == 1);
     assert(stats.delivered == 0);
     assert(stats.rejected == 1);
-    std::printf("  test_unknown_and_out_of_range_rejected: PASSED\n");
+    crucible::test::pass("  test_unknown_and_out_of_range_rejected: PASSED\n");
 }
 
 // enable_pair admits a pair of two registered peers, and refuses a self
@@ -126,7 +126,7 @@ static void test_enable_pair() {
     assert(mesh.enable_pair(init_ctx(), peers[0].uuid, peers[1].uuid) == topology::PingmeshError::None);
     assert(mesh.enable_pair(init_ctx(), peers[0].uuid, peers[0].uuid) == topology::PingmeshError::SelfPair);
     assert(mesh.enable_pair(init_ctx(), peers[0].uuid, peer(11).uuid) == topology::PingmeshError::UnknownPeer);
-    std::printf("  test_enable_pair:                   PASSED\n");
+    crucible::test::pass("  test_enable_pair:                   PASSED\n");
 }
 
 // The pair counters are cache-line aligned, so an array of them must place
@@ -148,7 +148,7 @@ static void test_pair_counter_layout_invariants() {
             assert(addr - prev_addr >= LINE);
         }
     }
-    std::printf("  test_pair_counter_layout_invariants: PASSED\n");
+    crucible::test::pass("  test_pair_counter_layout_invariants: PASSED\n");
 }
 
 int main() {
@@ -158,13 +158,13 @@ int main() {
     static_assert(!topology::CtxFitsPingmeshRecord<eff::HotFgCtx>);
     static_assert(!std::is_constructible_v<topology::Pingmesh<2>, topology::PingmeshConfig>);
 
-    std::printf("test_topology_pingmesh: 6 groups\n");
+    ::fixy::report(::fixy::Sink::Out, "test_topology_pingmesh: 6 groups\n");
     test_names();
     test_register_and_record_pairs();
     test_loss_and_rejection_accounting();
     test_unknown_and_out_of_range_rejected();
     test_enable_pair();
     test_pair_counter_layout_invariants();
-    std::printf("test_topology_pingmesh: all passed\n");
+    crucible::test::pass("test_topology_pingmesh: all passed\n");
     return 0;
 }

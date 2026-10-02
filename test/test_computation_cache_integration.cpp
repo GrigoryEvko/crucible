@@ -345,6 +345,6 @@ int main() {
         std::fprintf(stderr, "PASSED\n");
     }
 
-    std::fprintf(stderr, "\n8 scenarios passed.\n");
+    crucible::test::pass("\n8 scenarios passed.\n");
     return 0;
 }

@@ -4,7 +4,7 @@
 #include <foundation/reflect/EnumName.h>
 
 #include <array>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 #include <span>
 #include <string_view>
@@ -68,7 +68,7 @@ void test_admission_helpers() {
     // A pressure on one resource says nothing about a limit on another.
     assert(!cntp::resource_pressure_exceeds(*nic_pressure, *hbm_limit));
 
-    std::printf("  test_admission_helpers:       PASSED\n");
+    crucible::test::pass("  test_admission_helpers:       PASSED\n");
 }
 
 void test_credit_flow_control() {
@@ -102,7 +102,7 @@ void test_credit_flow_control() {
     assert(!overflow.has_value());
     assert(overflow.error() == cntp::BackpressureError::TooManyCreditFlows);
 
-    std::printf("  test_credit_flow_control:     PASSED\n");
+    crucible::test::pass("  test_credit_flow_control:     PASSED\n");
 }
 
 void test_credit_flow_control_parallel_grants() {
@@ -138,7 +138,7 @@ void test_credit_flow_control_parallel_grants() {
     assert(controller.consume_credit(bg, fd, consume_all).has_value());
     assert(!controller.current_credit(fd).has_value());
 
-    std::printf("  test_credit_flow_control_parallel_grants: PASSED\n");
+    crucible::test::pass("  test_credit_flow_control_parallel_grants: PASSED\n");
 }
 
 // Two threads start the same socket at once.  The start gate serializes
@@ -171,7 +171,7 @@ void test_credit_flow_control_parallel_start_same_fd() {
     assert(current.has_value());
     assert(current->value() == 1u || current->value() == 2u);
 
-    std::printf("  test_credit_flow_control_parallel_start_same_fd: PASSED\n");
+    crucible::test::pass("  test_credit_flow_control_parallel_start_same_fd: PASSED\n");
 }
 
 void test_admission_controller() {
@@ -232,7 +232,7 @@ void test_admission_controller() {
     controller.release_connection(bg);
     assert(controller.live_connections() == 0);
 
-    std::printf("  test_admission_controller:    PASSED\n");
+    crucible::test::pass("  test_admission_controller:    PASSED\n");
 }
 
 }  // namespace
@@ -259,12 +259,12 @@ int main() {
     static_assert(cntp::CtxFitsBackpressureStart<::fixy::BgLoadCtx>);
     static_assert(!cntp::CtxFitsBackpressureStart<::fixy::BgDrainCtx>);
 
-    std::printf("test_cntp_backpressure:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cntp_backpressure:\n");
     test_admission_helpers();
     test_credit_flow_control();
     test_credit_flow_control_parallel_grants();
     test_credit_flow_control_parallel_start_same_fd();
     test_admission_controller();
-    std::printf("test_cntp_backpressure: all PASSED\n");
+    crucible::test::pass("test_cntp_backpressure: all PASSED\n");
     return 0;
 }

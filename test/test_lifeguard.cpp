@@ -1,7 +1,7 @@
 #include <crucible/canopy/Lifeguard.h>
 
 #include <array>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdint>
 #include <span>
 #include <string_view>

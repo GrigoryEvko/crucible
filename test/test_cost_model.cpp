@@ -55,7 +55,7 @@ static void test_preset_sanity() {
     assert(a100.num_sms == 108);
     assert(approx(a100.peak_fp8, 0.0f));  // A100 predates FP8
 
-    std::printf("  test_preset_sanity:             PASSED\n");
+    crucible::test::pass("  test_preset_sanity:             PASSED\n");
 }
 
 static void test_ridge_point() {
@@ -71,7 +71,7 @@ static void test_ridge_point() {
     auto h100 = hopper_h100();
     assert(approx(h100.ridge_point(ScalarType::Half), 295.52f));
 
-    std::printf("  test_ridge_point:               PASSED\n");
+    crucible::test::pass("  test_ridge_point:               PASSED\n");
 }
 
 static void test_wave_efficiency() {
@@ -86,7 +86,7 @@ static void test_wave_efficiency() {
     assert(approx(wave_efficiency(pure_ctx, tpw / 2, hw).value(), 0.5f));
     const float expect = static_cast<float>(tpw + 1) / static_cast<float>(2 * tpw);
     assert(approx(wave_efficiency(pure_ctx, tpw + 1, hw).value(), expect));
-    std::printf("  test_wave_efficiency:           PASSED\n");
+    crucible::test::pass("  test_wave_efficiency:           PASSED\n");
 }
 
 static void test_sm_occupancy() {
@@ -107,7 +107,7 @@ static void test_sm_occupancy() {
     // register count cannot be constructed at all.
     assert(approx(sm_occupancy(pure_ctx, regs(255), 0, 8, hw).value(), 0.125f));
 
-    std::printf("  test_sm_occupancy:              PASSED\n");
+    crucible::test::pass("  test_sm_occupancy:              PASSED\n");
 }
 
 static void test_validate_config() {
@@ -146,7 +146,7 @@ static void test_validate_config() {
     deep.pipeline_stages = 0;
     assert(!validate_config(deep, hw));
 
-    std::printf("  test_validate_config:           PASSED\n");
+    crucible::test::pass("  test_validate_config:           PASSED\n");
 }
 
 static void test_fusion_benefit() {
@@ -160,7 +160,7 @@ static void test_fusion_benefit() {
     assert(approx(static_cast<float>(fb.saved_ns), 4000.0f));
     assert(approx(fb.speedup, 10.0f / 6.0f));
     assert(fb.saved_launches == 1);
-    std::printf("  test_fusion_benefit:            PASSED\n");
+    crucible::test::pass("  test_fusion_benefit:            PASSED\n");
 }
 
 // One concept for each evaluator, so each gate is read on its own.
@@ -214,7 +214,7 @@ static void test_pure_context_gate() {
     assert(approx(static_cast<float>(explicit_cfg.total_ns), static_cast<float>(default_cfg.total_ns)));
     assert(compute_fusion_benefit(narrowed, 10000.0, 6000.0, 1024000, 1).saved_launches == 1);
 
-    std::printf("  test_pure_context_gate:         PASSED\n");
+    crucible::test::pass("  test_pure_context_gate:         PASSED\n");
 }
 
 int main() {
@@ -225,6 +225,6 @@ int main() {
     test_validate_config();
     test_fusion_benefit();
     test_pure_context_gate();
-    std::printf("test_cost_model: 7 groups, all passed\n");
+    crucible::test::pass("test_cost_model: 7 groups, all passed\n");
     return 0;
 }

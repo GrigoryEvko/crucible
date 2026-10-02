@@ -4,7 +4,7 @@
 #include <foundation/effects/Effect.h>
 
 #include <array>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
@@ -81,7 +81,7 @@ void test_interface_name_admission() {
     assert(!too_long.has_value());
     assert(too_long.error() == cntp::PacingError::InvalidInterfaceName);
 
-    std::printf("  test_interface_name_admission: PASSED\n");
+    crucible::test::pass("  test_interface_name_admission: PASSED\n");
 }
 
 void test_qdisc_parse() {
@@ -126,7 +126,7 @@ void test_qdisc_parse() {
     assert(!missing.has_value());
     assert(missing.error() == cntp::PacingError::QdiscKindMissing);
 
-    std::printf("  test_qdisc_parse:              PASSED\n");
+    crucible::test::pass("  test_qdisc_parse:              PASSED\n");
 }
 
 void test_mint_and_rate_surfaces() {
@@ -147,7 +147,7 @@ void test_mint_and_rate_surfaces() {
     assert(!zero.has_value());
     assert(zero.error() == cntp::PacingError::InvalidPacingRate);
 
-    std::printf("  test_mint_and_rate_surfaces:   PASSED\n");
+    crucible::test::pass("  test_mint_and_rate_surfaces:   PASSED\n");
 }
 
 void test_live_socket_pacing_if_available() {
@@ -166,12 +166,12 @@ void test_live_socket_pacing_if_available() {
     auto set = cntp::set_socket_pacing_rate(test_ctx, *fd, *rate);
     assert(set.has_value());
 
-    std::printf("  test_live_socket_pacing_if_available: PASSED\n");
+    crucible::test::pass("  test_live_socket_pacing_if_available: PASSED\n");
 }
 
 void test_live_loopback_qdisc_query_if_available() {
     if (::if_nametoindex("lo") == 0) {
-        std::printf("  test_live_loopback_qdisc_query_if_available: SKIPPED\n");
+        ::fixy::report(::fixy::Sink::Out, "  test_live_loopback_qdisc_query_if_available: SKIPPED\n");
         return;
     }
 
@@ -186,13 +186,13 @@ void test_live_loopback_qdisc_query_if_available() {
                || queried.error() == cntp::PacingError::NetlinkOpenFailed
                || queried.error() == cntp::PacingError::NetlinkSendFailed
                || queried.error() == cntp::PacingError::NetlinkReceiveFailed);
-        std::printf("  test_live_loopback_qdisc_query_if_available: SKIPPED\n");
+        ::fixy::report(::fixy::Sink::Out, "  test_live_loopback_qdisc_query_if_available: SKIPPED\n");
         return;
     }
 
     assert(*queried == cntp::Qdisc::Fq || *queried == cntp::Qdisc::FqCodel || *queried == cntp::Qdisc::Pfifo
            || *queried == cntp::Qdisc::Mq || *queried == cntp::Qdisc::Noqueue || *queried == cntp::Qdisc::Other);
-    std::printf("  test_live_loopback_qdisc_query_if_available: PASSED\n");
+    crucible::test::pass("  test_live_loopback_qdisc_query_if_available: PASSED\n");
 }
 
 }  // namespace
@@ -228,12 +228,12 @@ int main() {
     static_assert(cntp::NicInterfaceName::from("eth0").value().view().size() < cntp::NicInterfaceName::max_bytes);
     static_assert(std::same_as<cntp::DeclaredQdiscConfig::tag_type, ::fixy::tags::source::QdiscConfig>);
 
-    std::printf("test_cntp_pacing:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cntp_pacing:\n");
     test_interface_name_admission();
     test_qdisc_parse();
     test_mint_and_rate_surfaces();
     test_live_socket_pacing_if_available();
     test_live_loopback_qdisc_query_if_available();
-    std::printf("test_cntp_pacing: all PASSED\n");
+    crucible::test::pass("test_cntp_pacing: all PASSED\n");
     return 0;
 }

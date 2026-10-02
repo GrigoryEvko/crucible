@@ -62,7 +62,7 @@ static void test_empty_lookup_returns_nullptr() {
     assert(missing(t.lookup(H(0xDEAD))));
     assert(missing(t.short_name(H(0xDEAD))));
     assert(t.count() == 0);
-    std::printf("  test_empty:                     PASSED\n");
+    crucible::test::pass("  test_empty:                     PASSED\n");
 }
 
 static void test_register_and_lookup() {
@@ -77,7 +77,7 @@ static void test_register_and_lookup() {
     assert(eq(t.lookup(H(0x200)), "aten::add.Tensor"));
     assert(eq(t.lookup(H(0x300)), "aten::linear"));
     assert(t.count() == 3);
-    std::printf("  test_register_lookup:           PASSED\n");
+    crucible::test::pass("  test_register_lookup:           PASSED\n");
 }
 
 static void test_short_name_strips_aten_prefix() {
@@ -92,7 +92,7 @@ static void test_short_name_strips_aten_prefix() {
     assert(eq(t.short_name(H(0x200)), "scaled_dot_product_attention"));
     // Non-aten names pass through unchanged.
     assert(eq(t.short_name(H(0x300)), "prim::TupleConstruct"));
-    std::printf("  test_short_name:                PASSED\n");
+    crucible::test::pass("  test_short_name:                PASSED\n");
 }
 
 static void test_idempotent_re_register() {
@@ -104,7 +104,7 @@ static void test_idempotent_re_register() {
     reg(t, *mv, H(0x42), S("updated"));  // same hash, new name
     assert(t.count() == 1);  // no duplicate
     assert(eq(t.lookup(H(0x42)), "updated"));
-    std::printf("  test_re_register:               PASSED\n");
+    crucible::test::pass("  test_re_register:               PASSED\n");
 }
 
 static void test_binary_search_across_many() {
@@ -127,7 +127,7 @@ static void test_binary_search_across_many() {
         assert(std::strcmp(got, names[i]) == 0);
     }
     assert(missing(t.lookup(H(0xCAFEBABEDEADBEEFULL))));
-    std::printf("  test_binary_search:             PASSED\n");
+    crucible::test::pass("  test_binary_search:             PASSED\n");
 }
 
 static void test_global_table_convenience() {
@@ -140,7 +140,7 @@ static void test_global_table_convenience() {
     assert(eq(schema_short_name(H(0xAA)), "relu"));
     assert(missing(schema_name(H(0xBB))));
     global_schema_table().clear(test_ctx());
-    std::printf("  test_global_helpers:            PASSED\n");
+    crucible::test::pass("  test_global_helpers:            PASSED\n");
 }
 
 static void test_null_name_is_noop() {
@@ -150,7 +150,7 @@ static void test_null_name_is_noop() {
     reg(t, *mv, H(0x77), S(nullptr));  // must not crash or corrupt
     assert(t.count() == 0);
     assert(missing(t.lookup(H(0x77))));
-    std::printf("  test_null_name:                 PASSED\n");
+    crucible::test::pass("  test_null_name:                 PASSED\n");
 }
 
 static void test_default_is_mutable_and_seal_flips() {
@@ -161,7 +161,7 @@ static void test_default_is_mutable_and_seal_flips() {
     // Idempotent: re-seal keeps the state sealed.
     t.seal();
     assert(t.is_sealed());
-    std::printf("  test_seal_flips:                PASSED\n");
+    crucible::test::pass("  test_seal_flips:                PASSED\n");
 }
 
 static void test_sealed_table_mints_no_mutable_view() {
@@ -171,7 +171,7 @@ static void test_sealed_table_mints_no_mutable_view() {
     t.seal();
     assert(!t.mint_mutable_view(kVigilForeground).has_value());
     assert(t.count() == 0);
-    std::printf("  test_sealed_no_mutable_view:    PASSED\n");
+    crucible::test::pass("  test_sealed_no_mutable_view:    PASSED\n");
 }
 
 static void test_clear_resets_seal() {
@@ -192,7 +192,7 @@ static void test_clear_resets_seal() {
     reg(t, *mv_after_clear, H(0xCD), S("aten::add"));
     assert(t.count() == 1);
     assert(eq(t.lookup(H(0xCD)), "aten::add"));
-    std::printf("  test_clear_resets_seal:         PASSED\n");
+    crucible::test::pass("  test_clear_resets_seal:         PASSED\n");
 }
 
 static void test_write_after_seal_through_an_older_view_is_refused() {
@@ -211,7 +211,7 @@ static void test_write_after_seal_through_an_older_view_is_refused() {
     const bool was_renamed = t.register_name(*mv, H(0x10), S("aten::renamed"));
     assert(!was_renamed);
     assert(eq(t.lookup(H(0x10)), "aten::before"));
-    std::printf("  test_write_after_seal_refused:  PASSED\n");
+    crucible::test::pass("  test_write_after_seal_refused:  PASSED\n");
 }
 
 static void test_typed_register_with_mutable_view() {
@@ -220,7 +220,7 @@ static void test_typed_register_with_mutable_view() {
     assert(mv.has_value());
     reg(t, *mv, H(0xBEEF), S("aten::conv2d"));
     assert(eq(t.lookup(H(0xBEEF)), "aten::conv2d"));
-    std::printf("  test_typed_register:            PASSED\n");
+    crucible::test::pass("  test_typed_register:            PASSED\n");
 }
 
 static void test_sanitized_boundary_name_registers() {
@@ -232,7 +232,7 @@ static void test_sanitized_boundary_name_registers() {
     auto sanitized = ::fixy::mint_tagged<source::ABIBoundary>("aten::from_abi").retag<source::Sanitized>();
     reg(t, *mv, H(0xAB1), sanitized);
     assert(eq(t.lookup(H(0xAB1)), "aten::from_abi"));
-    std::printf("  test_sanitized_boundary_name:   PASSED\n");
+    crucible::test::pass("  test_sanitized_boundary_name:   PASSED\n");
 }
 
 static void test_lookup_works_post_seal() {
@@ -250,14 +250,14 @@ static void test_lookup_works_post_seal() {
     assert(eq(t.short_name(H(0x222)), "mean"));
     assert(t.count() == 2);
     (void)sv;
-    std::printf("  test_lookup_post_seal:          PASSED\n");
+    crucible::test::pass("  test_lookup_post_seal:          PASSED\n");
 }
 
 // A table holds 512 entries, and each padding byte of an entry costs one
 // store at each initialization of an automatic table (padding_bytes.h).
 static void test_entry_has_no_padding_byte() {
     crucible::test::expect_no_padding_byte<^^SchemaEntry>();
-    std::printf("  test_entry_has_no_padding_byte: PASSED\n");
+    crucible::test::pass("  test_entry_has_no_padding_byte: PASSED\n");
 }
 
 int main() {
@@ -276,6 +276,6 @@ int main() {
     test_sanitized_boundary_name_registers();
     test_lookup_works_post_seal();
     test_entry_has_no_padding_byte();
-    std::printf("test_schema_table: 15 groups, all passed\n");
+    crucible::test::pass("test_schema_table: 15 groups, all passed\n");
     return 0;
 }

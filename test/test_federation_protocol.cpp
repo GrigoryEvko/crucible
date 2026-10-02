@@ -48,7 +48,7 @@ static void test_header_layout_invariants() {
 
     static_assert(fed::FEDERATION_HEADER_BYTES == 32);
 
-    std::printf("  test_header_layout_invariants:                  PASSED\n");
+    crucible::test::pass("  test_header_layout_invariants:                  PASSED\n");
 }
 
 // The codec itself writes two regions, the header and the payload.  The
@@ -87,7 +87,7 @@ static void test_cold_blob_layout_predicate() {
     constexpr auto regions_256 = build_256_region_layout();
     static_assert(fed::cold_blob_regions_pairwise_disjoint<256>(std::span<const fed::ColdBlobRegion>{regions_256}));
 
-    std::printf("  test_cold_blob_layout_predicate:                PASSED\n");
+    crucible::test::pass("  test_cold_blob_layout_predicate:                PASSED\n");
 }
 
 // The bytes C, F, E, D appear in increasing address order on the wire.
@@ -111,7 +111,7 @@ static void test_magic_byte_order() {
     assert(bytes[2] == 'E');
     assert(bytes[3] == 'D');
 
-    std::printf("  test_magic_byte_order:                          PASSED\n");
+    crucible::test::pass("  test_magic_byte_order:                          PASSED\n");
 }
 
 static void test_round_trip_basic() {
@@ -144,7 +144,7 @@ static void test_round_trip_basic() {
         assert(view->payload[i] == payload[i]);
     }
 
-    std::printf("  test_round_trip_basic:                          PASSED\n");
+    crucible::test::pass("  test_round_trip_basic:                          PASSED\n");
 }
 
 // An entry with no payload is legal, and means something: it announces
@@ -169,7 +169,7 @@ static void test_round_trip_empty_payload() {
     assert(view->payload.empty());
     assert(view->header.payload_size == 0u);
 
-    std::printf("  test_round_trip_empty_payload:                  PASSED\n");
+    crucible::test::pass("  test_round_trip_empty_payload:                  PASSED\n");
 }
 
 // The sentinel key, both axes all ones, is the empty-slot marker of the
@@ -183,7 +183,7 @@ static void test_serialize_rejects_sentinel() {
     ASSERT_TRUE(!written.has_value());
     assert(written.error() == fed::FederationError::SentinelKey);
 
-    std::printf("  test_serialize_rejects_sentinel:                PASSED\n");
+    crucible::test::pass("  test_serialize_rejects_sentinel:                PASSED\n");
 }
 
 // A key with both axes zero is what a default-constructed key looks
@@ -199,7 +199,7 @@ static void test_serialize_rejects_zero() {
     ASSERT_TRUE(!written.has_value());
     assert(written.error() == fed::FederationError::ZeroKey);
 
-    std::printf("  test_serialize_rejects_zero:                    PASSED\n");
+    crucible::test::pass("  test_serialize_rejects_zero:                    PASSED\n");
 }
 
 // Serialize refuses rather than truncating, because a partial entry on
@@ -220,7 +220,7 @@ static void test_serialize_rejects_undersized_buffer() {
     ASSERT_TRUE(!tiny_written.has_value());
     assert(tiny_written.error() == fed::FederationError::OutputBufferTooSmall);
 
-    std::printf("  test_serialize_rejects_undersized_buffer:       PASSED\n");
+    crucible::test::pass("  test_serialize_rejects_undersized_buffer:       PASSED\n");
 }
 
 static void test_deserialize_rejects_truncated_header() {
@@ -233,7 +233,7 @@ static void test_deserialize_rejects_truncated_header() {
     ASSERT_TRUE(!empty_view.has_value());
     assert(empty_view.error() == fed::FederationError::TruncatedHeader);
 
-    std::printf("  test_deserialize_rejects_truncated_header:      PASSED\n");
+    crucible::test::pass("  test_deserialize_rejects_truncated_header:      PASSED\n");
 }
 
 // Everything in this header is valid except the magic, so the decoder
@@ -255,7 +255,7 @@ static void test_deserialize_rejects_bad_magic() {
     ASSERT_TRUE(!view.has_value());
     assert(view.error() == fed::FederationError::BadMagic);
 
-    std::printf("  test_deserialize_rejects_bad_magic:             PASSED\n");
+    crucible::test::pass("  test_deserialize_rejects_bad_magic:             PASSED\n");
 }
 
 // The version check is strict equality, not a minimum.  A later version
@@ -278,7 +278,7 @@ static void test_deserialize_rejects_unsupported_version() {
     ASSERT_TRUE(!view.has_value());
     assert(view.error() == fed::FederationError::UnsupportedVersion);
 
-    std::printf("  test_deserialize_rejects_unsupported_version:   PASSED\n");
+    crucible::test::pass("  test_deserialize_rejects_unsupported_version:   PASSED\n");
 }
 
 // The reserved field is the extension point.  Rejecting a non-zero
@@ -301,7 +301,7 @@ static void test_deserialize_rejects_reserved_nonzero() {
     ASSERT_TRUE(!view.has_value());
     assert(view.error() == fed::FederationError::ReservedNonZero);
 
-    std::printf("  test_deserialize_rejects_reserved_nonzero:      PASSED\n");
+    crucible::test::pass("  test_deserialize_rejects_reserved_nonzero:      PASSED\n");
 }
 
 // Each entry carries the number of effect atoms its sender knew about.
@@ -358,7 +358,7 @@ static void test_universe_cardinality_acceptance() {
         ASSERT_TRUE(view.has_value());
     }
 
-    std::printf("  test_universe_cardinality_acceptance:           PASSED\n");
+    crucible::test::pass("  test_universe_cardinality_acceptance:           PASSED\n");
 }
 
 // The same rule again as a pure predicate, which a caller can consult
@@ -374,7 +374,7 @@ static void test_accepts_cardinality_predicate() {
     static_assert(fed::federation_accepts_cardinality(64, 64));
     static_assert(!fed::federation_accepts_cardinality(65, 64));
 
-    std::printf("  test_accepts_cardinality_predicate:             PASSED\n");
+    crucible::test::pass("  test_accepts_cardinality_predicate:             PASSED\n");
 }
 
 // The receiver repeats the sender's key checks, because the sender is
@@ -409,7 +409,7 @@ static void test_deserialize_rejects_sentinel_and_zero() {
         assert(view.error() == fed::FederationError::ZeroKey);
     }
 
-    std::printf("  test_deserialize_rejects_sentinel_and_zero:     PASSED\n");
+    crucible::test::pass("  test_deserialize_rejects_sentinel_and_zero:     PASSED\n");
 }
 
 // A declared payload larger than the bytes that follow is refused, not
@@ -431,7 +431,7 @@ static void test_deserialize_rejects_truncated_payload() {
     ASSERT_TRUE(!view.has_value());
     assert(view.error() == fed::FederationError::TruncatedPayload);
 
-    std::printf("  test_deserialize_rejects_truncated_payload:     PASSED\n");
+    crucible::test::pass("  test_deserialize_rejects_truncated_payload:     PASSED\n");
 }
 
 // The encoder must have no hidden input.  Two calls with the same key
@@ -456,7 +456,7 @@ static void test_serialize_is_deterministic() {
         assert(buf_a[i] == buf_b[i]);
     }
 
-    std::printf("  test_serialize_is_deterministic:                PASSED\n");
+    crucible::test::pass("  test_serialize_is_deterministic:                PASSED\n");
 }
 
 // A caller that only wants the header must not get a weaker check than
@@ -499,7 +499,7 @@ static void test_header_overload_agreement() {
         assert(h->row_hash == e->header.row_hash);
     }
 
-    std::printf("  test_header_overload_agreement:                 PASSED\n");
+    crucible::test::pass("  test_header_overload_agreement:                 PASSED\n");
 }
 
 // A new error added to the enum without a name lands on the unknown
@@ -521,7 +521,7 @@ static void test_error_name_coverage() {
     assert(fed::federation_error_name(E::BadMagic) == "BadMagic");
     assert(fed::federation_error_name(E::UniverseCardinalityTooHigh) == "UniverseCardinalityTooHigh");
 
-    std::printf("  test_error_name_coverage:                       PASSED\n");
+    crucible::test::pass("  test_error_name_coverage:                       PASSED\n");
 }
 
 // The payload is every byte value once, so a codec that mangled one
@@ -550,7 +550,7 @@ static void test_round_trip_full_byte_range() {
         assert(view->payload[i] == payload[i]);
     }
 
-    std::printf("  test_round_trip_full_byte_range:                PASSED\n");
+    crucible::test::pass("  test_round_trip_full_byte_range:                PASSED\n");
 }
 
 // The decoded payload points into the caller's buffer rather than into
@@ -571,7 +571,7 @@ static void test_view_payload_aliases_input() {
 
     assert(view->payload.data() == buf.data() + fed::FEDERATION_HEADER_BYTES);
 
-    std::printf("  test_view_payload_aliases_input:                PASSED\n");
+    crucible::test::pass("  test_view_payload_aliases_input:                PASSED\n");
 }
 
 // The two key axes are distinct types in the source, but on the wire
@@ -598,7 +598,7 @@ static void test_axis_swap_distinct_on_wire() {
     assert(*wn == *ws);  // same byte count
     assert(std::memcmp(buf_n.data(), buf_s.data(), *wn) != 0);  // different bytes
 
-    std::printf("  test_axis_swap_distinct_on_wire:                PASSED\n");
+    crucible::test::pass("  test_axis_swap_distinct_on_wire:                PASSED\n");
 }
 
 // The receiver's cardinality is a parameter, not a compile-time
@@ -630,7 +630,7 @@ static void test_receiver_cardinality_is_explicit() {
     auto big = fed::deserialize_untrusted_federation_entry(buf, 100);
     ASSERT_TRUE(big.has_value());
 
-    std::printf("  test_receiver_cardinality_is_explicit:          PASSED\n");
+    crucible::test::pass("  test_receiver_cardinality_is_explicit:          PASSED\n");
 }
 
 // The returned error is the only failure channel the codec has, so
@@ -646,7 +646,7 @@ static void test_codec_is_noexcept() {
     static_assert(noexcept(fed::federation_accepts_cardinality(std::uint16_t{6}, std::uint16_t{6})));
     static_assert(noexcept(fed::federation_error_name(fed::FederationError::None)));
 
-    std::printf("  test_codec_is_noexcept:                         PASSED\n");
+    crucible::test::pass("  test_codec_is_noexcept:                         PASSED\n");
 }
 
 // The cardinality field is 16 bits, so the largest value it can hold is
@@ -678,7 +678,7 @@ static void test_cardinality_boundary_uint16_max() {
     ASSERT_TRUE(!reject_one_below.has_value());
     assert(reject_one_below.error() == fed::FederationError::UniverseCardinalityTooHigh);
 
-    std::printf("  test_cardinality_boundary_uint16_max:           PASSED\n");
+    crucible::test::pass("  test_cardinality_boundary_uint16_max:           PASSED\n");
 }
 
 // An exactly-sized buffer must be accepted.  An off-by-one in the size
@@ -708,7 +708,7 @@ static void test_buffer_exactly_fits() {
     ASSERT_TRUE(tight.has_value());
     assert(*tight == 32u);
 
-    std::printf("  test_buffer_exactly_fits:                       PASSED\n");
+    crucible::test::pass("  test_buffer_exactly_fits:                       PASSED\n");
 }
 
 // A transport that batches several entries into one buffer hands the
@@ -742,7 +742,7 @@ static void test_extra_bytes_at_end() {
     assert(view->payload[2] == 0xCC);
     assert(view->payload[3] == 0xDD);
 
-    std::printf("  test_extra_bytes_at_end:                        PASSED\n");
+    crucible::test::pass("  test_extra_bytes_at_end:                        PASSED\n");
 }
 
 // Only the full sentinel is refused.  A key with one axis all ones and
@@ -802,7 +802,7 @@ static void test_partial_sentinel_accepted() {
         ASSERT_TRUE(written.has_value());
     }
 
-    std::printf("  test_partial_sentinel_accepted:                 PASSED\n");
+    crucible::test::pass("  test_partial_sentinel_accepted:                 PASSED\n");
 }
 
 // Nothing forbids the two axes from holding the same 64 bits, and the
@@ -835,7 +835,7 @@ static void test_same_bit_pattern_axes() {
         assert(buf[8 + i] == buf[16 + i]);
     }
 
-    std::printf("  test_same_bit_pattern_axes:                     PASSED\n");
+    crucible::test::pass("  test_same_bit_pattern_axes:                     PASSED\n");
 }
 
 // The query side folds at compile time.  The codec itself does not, and
@@ -866,7 +866,7 @@ static void test_constexpr_witnesses() {
     assert(card_check);
     assert(name_check == "None");
 
-    std::printf("  test_constexpr_witnesses:                       PASSED\n");
+    crucible::test::pass("  test_constexpr_witnesses:                       PASSED\n");
 }
 
 // A federation stream and a graph snapshot are told apart by their
@@ -887,7 +887,7 @@ static void test_magic_collision_with_cdag() {
     static_assert(cdag_first_byte == 'G');
     static_assert(fed_first_byte != cdag_first_byte);
 
-    std::printf("  test_magic_collision_with_cdag:                 PASSED\n");
+    crucible::test::pass("  test_magic_collision_with_cdag:                 PASSED\n");
 }
 
 static void test_field_width_pins() {
@@ -903,7 +903,7 @@ static void test_field_width_pins() {
     // padding and no compiler can insert any.
     static_assert(4 + 2 + 2 + 8 + 8 + 4 + 4 == 32);
 
-    std::printf("  test_field_width_pins:                          PASSED\n");
+    crucible::test::pass("  test_field_width_pins:                          PASSED\n");
 }
 
 // The payload alternates two values, so a copy shifted by one byte
@@ -934,7 +934,7 @@ static void test_vector_buffer_roundtrip() {
         assert(view->payload[i] == payload[i]);
     }
 
-    std::printf("  test_vector_buffer_roundtrip:                   PASSED\n");
+    crucible::test::pass("  test_vector_buffer_roundtrip:                   PASSED\n");
 }
 
 // The permissioned decode takes a peer token from the federation door of
@@ -990,11 +990,11 @@ static void test_permissioned_decode_tags_the_view() {
         assert(view.payload[i] == body[i]);
     }
 
-    std::printf("  permissioned_decode_tags_the_view:               PASSED\n");
+    crucible::test::pass("  permissioned_decode_tags_the_view:               PASSED\n");
 }
 
 int main() {
-    std::printf("test_federation_protocol — wire-format witness\n");
+    ::fixy::report(::fixy::Sink::Out, "test_federation_protocol — wire-format witness\n");
     test_header_layout_invariants();
     test_cold_blob_layout_predicate();
     test_magic_byte_order();
@@ -1029,6 +1029,6 @@ int main() {
     test_magic_collision_with_cdag();
     test_field_width_pins();
     test_vector_buffer_roundtrip();
-    std::printf("test_federation_protocol: 34 groups, all passed\n");
+    crucible::test::pass("test_federation_protocol: 34 groups, all passed\n");
     return 0;
 }

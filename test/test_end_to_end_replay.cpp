@@ -96,7 +96,7 @@ void test_pipeline_basic() {
     delete meta_log;
     delete ring;
 
-    std::printf("  test_pipeline_basic: PASSED\n");
+    crucible::test::pass("  test_pipeline_basic: PASSED\n");
 }
 
 void test_pipeline_divergence() {
@@ -141,7 +141,7 @@ void test_pipeline_divergence() {
     delete meta_log;
     delete ring;
 
-    std::printf("  test_pipeline_divergence: PASSED\n");
+    crucible::test::pass("  test_pipeline_divergence: PASSED\n");
 }
 
 }  // namespace test_end_to_end

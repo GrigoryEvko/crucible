@@ -152,7 +152,7 @@ void test_signature_build_requires_K_ops() {
     assert(d.signature_len.get() == 4);
     assert(!d.check(H(5)));
     assert(d.signature_len.get() == 5);
-    std::printf("  test_signature_build:            PASSED\n");
+    crucible::test::pass("  test_signature_build:            PASSED\n");
 }
 
 void test_boundary_needs_two_equal_iterations() {
@@ -175,7 +175,7 @@ void test_boundary_needs_two_equal_iterations() {
     assert(d.last_completed_len == 5);
     assert(d.boundaries_detected.get() == 1);
     assert(d.ops_since_boundary.get() == K);
-    std::printf("  test_boundary_two_iterations:    PASSED\n");
+    crucible::test::pass("  test_boundary_two_iterations:    PASSED\n");
 }
 
 void test_unequal_iterations_do_not_fire() {
@@ -193,7 +193,7 @@ void test_unequal_iterations_do_not_fire() {
         assert(!d.check(h));
     assert(d.boundaries_detected.get() == 0);
     assert(!d.confirmed);
-    std::printf("  test_unequal_iterations:         PASSED\n");
+    crucible::test::pass("  test_unequal_iterations:         PASSED\n");
 }
 
 void test_broken_period_is_refuted() {
@@ -211,7 +211,7 @@ void test_broken_period_is_refuted() {
     assert(!d.check(H(1)));
     assert(!d.confirmed);
     assert(d.refuted_count_ == 1);
-    std::printf("  test_broken_period:              PASSED\n");
+    crucible::test::pass("  test_broken_period:              PASSED\n");
 }
 
 void test_sub_period_signature_mlp_aten_level() {
@@ -238,7 +238,7 @@ void test_sub_period_signature_mlp_aten_level() {
     // relu t addmm occurs three times, and 2 3 1 2 1 at offset 7 once.
     assert(boundaries.front().op_index == 2 * 11 + 7 + K - 1);
     assert_settles_on(boundaries, 11, boundaries.size() - 1);
-    std::printf("  test_sub_period_aten_level:      PASSED\n");
+    crucible::test::pass("  test_sub_period_aten_level:      PASSED\n");
 }
 
 void test_repeated_layers_recorded_mlp() {
@@ -264,7 +264,7 @@ void test_repeated_layers_recorded_mlp() {
     const auto phase = static_cast<uint32_t>(iteration_start % 46);
     assert(window_count(body, phase) == 1);
     assert(phase == 32);
-    std::printf("  test_repeated_layers_mlp:        PASSED (%zu early boundaries)\n", wrong);
+    crucible::test::pass("  test_repeated_layers_mlp:        PASSED ({} early boundaries)\n", wrong);
 }
 
 void test_refuted_period_survives_divergence_restart() {
@@ -298,7 +298,7 @@ void test_refuted_period_survives_divergence_restart() {
     for (const auto& boundary : boundaries)
         assert(boundary.length == 46);
     assert_settles_on(boundaries, 46, boundaries.size() - 1);
-    std::printf("  test_refuted_survives_restart:   PASSED\n");
+    crucible::test::pass("  test_refuted_survives_restart:   PASSED\n");
 }
 
 void test_divergence_after_a_second_period_refutes_nothing() {
@@ -325,7 +325,7 @@ void test_divergence_after_a_second_period_refutes_nothing() {
             assert(boundary.length == 46);
         assert_settles_on(boundaries, 46, boundaries.size() - 1);
     }
-    std::printf("  test_second_period_not_refuted:  PASSED\n");
+    crucible::test::pass("  test_second_period_not_refuted:  PASSED\n");
 }
 
 void test_gap_in_the_recording_does_not_refute() {
@@ -342,7 +342,7 @@ void test_gap_in_the_recording_does_not_refute() {
     auto after = feed(d, body, 20, 0, 3);
     assert(!d.is_refuted(8, d.period_body_sum_));
     assert_settles_on(after, 8, 10);
-    std::printf("  test_gap_does_not_refute:        PASSED\n");
+    crucible::test::pass("  test_gap_does_not_refute:        PASSED\n");
 }
 
 void test_short_periods() {
@@ -363,7 +363,7 @@ void test_short_periods() {
         auto boundaries = feed(d, bodies[i], iterations);
         assert_settles_on(boundaries, expected[i], 10);
     }
-    std::printf("  test_short_periods:              PASSED\n");
+    crucible::test::pass("  test_short_periods:              PASSED\n");
 }
 
 void test_random_bodies_settle_on_true_period() {
@@ -387,7 +387,7 @@ void test_random_bodies_settle_on_true_period() {
             ++streams;
         }
     }
-    std::printf("  test_random_bodies:              PASSED (%u streams)\n", streams);
+    crucible::test::pass("  test_random_bodies:              PASSED ({} streams)\n", streams);
 }
 
 void test_restart_without_unique_phase_refutes_nothing() {
@@ -401,7 +401,7 @@ void test_restart_without_unique_phase_refutes_nothing() {
     assert(d.refuted_count_ == 0);
     boundaries = feed(d, {{7, 0}}, 30);
     assert_settles_on(boundaries, 5, 3);
-    std::printf("  test_restart_no_unique_phase:    PASSED\n");
+    crucible::test::pass("  test_restart_no_unique_phase:    PASSED\n");
 }
 
 void test_reset_clears_everything() {
@@ -420,7 +420,7 @@ void test_reset_clears_everything() {
     for (uint32_t i = 0; i < 4; i++)
         assert(!d.check(H(100 + i)));
     assert(d.signature_len.get() == 4);
-    std::printf("  test_reset:                      PASSED\n");
+    crucible::test::pass("  test_reset:                      PASSED\n");
 }
 
 void test_typestate_witness_minting() {
@@ -456,7 +456,7 @@ void test_typestate_witness_minting() {
         assert(&rebuilt_view.carrier() == &d);
         assert(rebuilt_view->signature_len.get() == 0);
     }
-    std::printf("  test_typestate_witness:          PASSED\n");
+    crucible::test::pass("  test_typestate_witness:          PASSED\n");
 }
 
 }  // namespace
@@ -476,6 +476,6 @@ int main() {
     test_restart_without_unique_phase_refutes_nothing();
     test_reset_clears_everything();
     test_typestate_witness_minting();
-    std::printf("test_iteration_detector: 14 groups, all passed\n");
+    crucible::test::pass("test_iteration_detector: 14 groups, all passed\n");
     return 0;
 }

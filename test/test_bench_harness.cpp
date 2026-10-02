@@ -619,7 +619,7 @@ int main() {
 
     constexpr int kNumGroups = 12;
     if (g_failures == 0) {
-        std::fprintf(stderr, "test_bench_harness: PASS (%d groups, 0 failures)\n", kNumGroups);
+        crucible::test::pass("test_bench_harness: PASS ({} groups, 0 failures)\n", kNumGroups);
         return 0;
     }
     std::fprintf(stderr, "test_bench_harness: FAIL (%d groups, %d CHECK failure(s))\n", kNumGroups, g_failures);

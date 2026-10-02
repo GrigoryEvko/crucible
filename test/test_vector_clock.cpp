@@ -1,7 +1,7 @@
 #include <crucible/canopy/VectorClock.h>
 
 #include <array>
-#include <cassert>
+#include "test_assert.h"
 #include <compare>
 #include <cstdint>
 #include <thread>

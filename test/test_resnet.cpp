@@ -30,13 +30,13 @@ using namespace test_resnet;
 using test::flush_and_wait_region_published;
 
 int main() {
-    std::printf("test_resnet: ResNet-50 (He et al. 2015)\n");
+    ::fixy::report(::fixy::Sink::Out, "test_resnet: ResNet-50 (He et al. 2015)\n");
 
     ResNet50 net;
     net.build(2);
-    std::printf("  %zu ops, %llu params, %u param tensors, %u activations\n", net.ops.size(),
-                static_cast<unsigned long long>(net.params), static_cast<uint32_t>(net.np - 1),
-                static_cast<uint32_t>(net.na));
+    ::fixy::report(::fixy::Sink::Out, "  {} ops, {} params, {} param tensors, {} activations\n", net.ops.size(),
+                   static_cast<unsigned long long>(net.params), static_cast<uint32_t>(net.np - 1),
+                   static_cast<uint32_t>(net.na));
 
     assert(net.ops.size() == 175 && "the forward pass is 175 operations");
     assert(net.params == 25557032
@@ -52,14 +52,14 @@ int main() {
 
     const auto* region = vigil.active_region();
     assert(region && region->plan);
-    std::printf("  region: %u ops, pool %llu B, %u slots (%u ext)\n", region->num_ops,
-                static_cast<unsigned long long>(region->plan->pool_bytes), region->plan->num_slots,
-                region->plan->num_external);
+    ::fixy::report(::fixy::Sink::Out, "  region: {} ops, pool {} B, {} slots ({} ext)\n", region->num_ops,
+                   static_cast<unsigned long long>(region->plan->pool_bytes), region->plan->num_slots,
+                   region->plan->num_external);
 
     align_and_complete_iteration(vigil, net.ops);
     run_compiled_iterations(vigil, net.ops);
     verify_data_flow(vigil, net.ops);
 
-    std::printf("test_resnet: PASSED\n");
+    crucible::test::pass("test_resnet: PASSED\n");
     return 0;
 }

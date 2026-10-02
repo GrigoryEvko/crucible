@@ -90,12 +90,12 @@ void wait_processed(BackgroundThread& bt, TraceRing& ring) {
 
 int main() {
     using namespace test_end_to_end;
-    std::printf("test_end_to_end:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_end_to_end:\n");
     test_pipeline_basic();
     test_pipeline_divergence();
     test_pipeline_data_flow();
     test_pipeline_pool_bounds();
     test_pipeline_multi_iteration();
-    std::printf("test_end_to_end: all tests passed\n");
+    crucible::test::pass("test_end_to_end: all tests passed\n");
     return 0;
 }

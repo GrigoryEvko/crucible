@@ -44,7 +44,7 @@ void test_dispatch_basic() {
     assert(complete_count == 1);
     assert(vigil.compiled_iterations() == 2);
 
-    std::printf("  test_dispatch_basic: PASSED\n");
+    crucible::test::pass("  test_dispatch_basic: PASSED\n");
 }
 
 void test_dispatch_divergence() {
@@ -85,7 +85,7 @@ void test_dispatch_divergence() {
     assert(result2.action == DispatchResult::Action::RECORD);
     assert(!vigil.context().is_compiled());
 
-    std::printf("  test_dispatch_divergence: PASSED\n");
+    crucible::test::pass("  test_dispatch_divergence: PASSED\n");
 }
 
 void test_dispatch_recovery() {
@@ -130,7 +130,7 @@ void test_dispatch_recovery() {
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
-    std::printf("  test_dispatch_recovery: PASSED\n");
+    crucible::test::pass("  test_dispatch_recovery: PASSED\n");
 }
 
 }  // namespace test_vigil_dispatch

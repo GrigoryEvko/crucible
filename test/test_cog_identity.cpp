@@ -32,7 +32,7 @@ static void test_names_at_run_time() {
     check_every_name_at_run_time<cog::CogLevel>();
     check_every_name_at_run_time<cog::CogKind>();
     check_every_name_at_run_time<cog::CogFamily>();
-    std::printf("  test_names_at_run_time:              PASSED\n");
+    crucible::test::pass("  test_names_at_run_time:              PASSED\n");
 }
 
 static void test_uuid_layout() {
@@ -64,7 +64,7 @@ static void test_uuid_layout() {
     cog::Uuid mixed_b{2, 0};
     assert(mixed_a < mixed_b);
 
-    std::printf("  test_uuid_layout:                    PASSED\n");
+    crucible::test::pass("  test_uuid_layout:                    PASSED\n");
 }
 
 static void test_cog_identity_runtime() {
@@ -99,7 +99,7 @@ static void test_cog_identity_runtime() {
     volatile std::uint64_t h5 = cog::content_hash(gpu_other);
     assert(h1 != h5);
 
-    std::printf("  test_cog_identity_runtime:           PASSED\n");
+    crucible::test::pass("  test_cog_identity_runtime:           PASSED\n");
 }
 
 static void test_is_compute_kind_partitioning() {
@@ -122,7 +122,7 @@ static void test_is_compute_kind_partitioning() {
         + count.template operator()<cog::CogKind::GpuPackage>() + count.template operator()<cog::CogKind::CpuSocket>();
     assert(total == 4);
 
-    std::printf("  test_is_compute_kind_partitioning:   PASSED\n");
+    crucible::test::pass("  test_is_compute_kind_partitioning:   PASSED\n");
 }
 
 static void test_cog_identity_topology_links() {
@@ -162,16 +162,16 @@ static void test_cog_identity_topology_links() {
     assert(package.neighbors_l2.empty());
     assert(package.neighbors_l3.empty());
 
-    std::printf("  test_cog_identity_topology_links:    PASSED\n");
+    crucible::test::pass("  test_cog_identity_topology_links:    PASSED\n");
 }
 
 int main() {
-    std::printf("test_cog_identity: 5 groups\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cog_identity: 5 groups\n");
     test_names_at_run_time();
     test_uuid_layout();
     test_cog_identity_runtime();
     test_is_compute_kind_partitioning();
     test_cog_identity_topology_links();
-    std::printf("test_cog_identity: 5 groups, all passed\n");
+    crucible::test::pass("test_cog_identity: 5 groups, all passed\n");
     return 0;
 }

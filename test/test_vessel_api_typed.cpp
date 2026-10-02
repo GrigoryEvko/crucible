@@ -15,6 +15,7 @@
 #include <cstring>
 #include <type_traits>
 #include <utility>
+#include "test_assert.h"
 
 namespace {
 
@@ -289,6 +290,6 @@ int main() {
         return EXIT_FAILURE;
     }
 
-    std::fprintf(stderr, "test_vessel_api_typed: PASS\n");
+    crucible::test::pass("test_vessel_api_typed: PASS\n");
     return EXIT_SUCCESS;
 }

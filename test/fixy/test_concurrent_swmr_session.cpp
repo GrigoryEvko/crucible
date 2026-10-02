@@ -21,6 +21,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include "../test_assert.h"
 
 namespace {
 
@@ -403,6 +404,6 @@ int main() {
     run_test("sixteen_readers_stress_latest_snapshot", test_sixteen_readers_stress_latest_snapshot);
     run_test("static_shape_witnesses", test_static_shape_witnesses);
 
-    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
+    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
     return total_failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

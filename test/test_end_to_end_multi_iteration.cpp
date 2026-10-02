@@ -80,7 +80,7 @@ void test_pipeline_multi_iteration() {
     delete meta_log;
     delete ring;
 
-    std::printf("  test_pipeline_multi_iteration: PASSED\n");
+    crucible::test::pass("  test_pipeline_multi_iteration: PASSED\n");
 }
 
 }  // namespace test_end_to_end

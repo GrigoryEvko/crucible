@@ -72,7 +72,7 @@ void test_all_zeros() {
     std::array<Philox::Ctr, 8> counters{};  // value-initialized to zero
     std::array<Philox::Key, 8> keys{};
     check_equivalence(counters, keys, "all-zeros");
-    std::printf("  test_all_zeros: PASSED\n");
+    crucible::test::pass("  test_all_zeros: PASSED\n");
 }
 
 void test_all_ones() {
@@ -83,7 +83,7 @@ void test_all_ones() {
         keys[i] = {0xFFFFFFFFu, 0xFFFFFFFFu};
     }
     check_equivalence(counters, keys, "all-ones");
-    std::printf("  test_all_ones: PASSED\n");
+    crucible::test::pass("  test_all_ones: PASSED\n");
 }
 
 void test_streaming_counters() {
@@ -98,7 +98,7 @@ void test_streaming_counters() {
         keys[i] = shared_key;
     }
     check_equivalence(counters, keys, "streaming-counters");
-    std::printf("  test_streaming_counters: PASSED\n");
+    crucible::test::pass("  test_streaming_counters: PASSED\n");
 }
 
 void test_heterogeneous_keys() {
@@ -113,7 +113,7 @@ void test_heterogeneous_keys() {
         keys[i] = {0x10000000u + iu * 0x11111111u, 0xFEDCBA98u + iu};
     }
     check_equivalence(counters, keys, "heterogeneous-keys");
-    std::printf("  test_heterogeneous_keys: PASSED\n");
+    crucible::test::pass("  test_heterogeneous_keys: PASSED\n");
 }
 
 void test_boundary_values() {
@@ -141,7 +141,7 @@ void test_boundary_values() {
         Philox::Key{0xA5A5A5A5u, 0x5A5A5A5Au},
     };
     check_equivalence(counters, keys, "boundary-values");
-    std::printf("  test_boundary_values: PASSED\n");
+    crucible::test::pass("  test_boundary_values: PASSED\n");
 }
 
 void test_per_lane_independence() {
@@ -190,7 +190,7 @@ void test_per_lane_independence() {
         assert(at(a.r3, lane) == at(b.r3, lane));
     }
 
-    std::printf("  test_per_lane_independence: PASSED\n");
+    crucible::test::pass("  test_per_lane_independence: PASSED\n");
 }
 
 void test_known_vector_lane0() {
@@ -226,13 +226,13 @@ void test_known_vector_lane0() {
     assert(at(batch.r2, 0) == 0xBC57AC4Cu);
     assert(at(batch.r3, 0) == 0x9B00DBD8u);
 
-    std::printf("  test_known_vector_lane0: PASSED\n");
+    crucible::test::pass("  test_known_vector_lane0: PASSED\n");
 }
 
 }  // namespace
 
 int main() {
-    std::printf("test_philox_simd:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_philox_simd:\n");
 
     test_all_zeros();
     test_all_ones();
@@ -242,6 +242,6 @@ int main() {
     test_per_lane_independence();
     test_known_vector_lane0();
 
-    std::printf("test_philox_simd: ALL PASSED\n");
+    crucible::test::pass("test_philox_simd: ALL PASSED\n");
     return 0;
 }

@@ -29,6 +29,7 @@
 #include <memory>
 #include <thread>
 #include <type_traits>
+#include "test_assert.h"
 
 using crucible::SchemaHash;
 using crucible::ShapeHash;
@@ -210,6 +211,6 @@ int main() {
     rollback_on_a_fresh_vigil();
     rollback_while_regions_are_in_flight();
     job_runs_on_the_stage_while_it_runs();
-    std::printf("test_transaction_owner: passed\n");
+    crucible::test::pass("test_transaction_owner: passed\n");
     return 0;
 }

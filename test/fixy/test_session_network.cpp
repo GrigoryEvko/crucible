@@ -23,6 +23,7 @@
 
 #include <cstdio>
 #include <type_traits>
+#include "../test_assert.h"
 
 namespace session_network_test {
 
@@ -226,6 +227,6 @@ int main() {
         std::fputs("test_session_network: a network verdict differs at run time\n", stderr);
         return 1;
     }
-    std::puts("test_session_network: ok");
+    crucible::test::pass("test_session_network: ok\n");
     return 0;
 }

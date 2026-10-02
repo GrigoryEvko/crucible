@@ -140,7 +140,7 @@ void test_cache_dedup_and_cap() {
     // 0x1234 went in first, so it is the one that leaves.
     assert(cache.find(ContentHash{0x1234}) == nullptr);
 
-    std::printf("  test_cache_dedup_and_cap: PASSED\n");
+    crucible::test::pass("  test_cache_dedup_and_cap: PASSED\n");
 }
 
 // find_alternate reads the plan off the region, not off a snapshot taken
@@ -208,7 +208,7 @@ void test_find_alternate_tracks_live_plan() {
     // And exclude still excludes.
     assert(cache.find_alternate(0, ops[0].schema_hash, ops[0].shape_hash, region) == nullptr);
 
-    std::printf("  test_find_alternate_tracks_live_plan: PASSED\n");
+    crucible::test::pass("  test_find_alternate_tracks_live_plan: PASSED\n");
 }
 
 }  // namespace
@@ -217,13 +217,13 @@ void test_find_alternate_tracks_live_plan() {
 
 int main() {
     using namespace test_region_cache;
-    std::printf("test_region_cache:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_region_cache:\n");
     test_cache_dedup_and_cap();
     test_find_alternate_tracks_live_plan();
     test_cache_miss_fallback();
     test_cache_switch_mid_iter();
     test_cache_data_migration();
     test_cache_repeated_switching();
-    std::printf("test_region_cache: all tests passed\n");
+    crucible::test::pass("test_region_cache: all tests passed\n");
     return 0;
 }

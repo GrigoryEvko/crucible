@@ -108,21 +108,21 @@ void reserve_entries(std::size_t entries) {
 // grows the table to 1 << 18 slots.
 void test_reserve_inside_the_bound_passes() {
     reserve_entries(kLargestReserve / (std::size_t{1} << 12));
-    std::printf("  test_reserve_inside_the_bound_passes: PASSED\n");
+    crucible::test::pass("  test_reserve_inside_the_bound_passes: PASSED\n");
 }
 
 // One entry more than the bound needs a table of 1 << 31 slots.
 void test_reserve_past_the_bound_is_refused() {
     assert(is_refused([] { reserve_entries(kLargestReserve + 1); }));
-    std::printf("  test_reserve_past_the_bound_is_refused: PASSED\n");
+    crucible::test::pass("  test_reserve_past_the_bound_is_refused: PASSED\n");
 }
 
 }  // namespace
 
 int main() {
-    std::printf("test_expr_pool_capacity:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_expr_pool_capacity:\n");
     test_reserve_inside_the_bound_passes();
     test_reserve_past_the_bound_is_refused();
-    std::printf("test_expr_pool_capacity: all tests passed\n");
+    crucible::test::pass("test_expr_pool_capacity: all tests passed\n");
     return 0;
 }

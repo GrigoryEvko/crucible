@@ -1,7 +1,7 @@
 #include <crucible/cntp/MtlsTransport.h>
 
 #include <array>
-#include <cassert>
+#include "test_assert.h"
 #include <cstddef>
 #include <cstdio>
 #include <span>
@@ -56,7 +56,7 @@ void test_name_and_error_surfaces() {
     assert(!bad.has_value());
     assert(bad.error() == cntp::MtlsError::InvalidPeerName);
 
-    std::printf("  test_name_and_error_surfaces: PASSED\n");
+    crucible::test::pass("  test_name_and_error_surfaces: PASSED\n");
 }
 
 void test_material_admission() {
@@ -85,7 +85,7 @@ void test_material_admission() {
     assert(!zero.has_value());
     assert(zero.error() == cntp::MtlsError::EmptyFingerprint);
 
-    std::printf("  test_material_admission:       PASSED\n");
+    crucible::test::pass("  test_material_admission:       PASSED\n");
 }
 
 void test_policy_and_peer_admission() {
@@ -148,7 +148,7 @@ void test_policy_and_peer_admission() {
     assert(!connection.has_value());
     assert(connection.error() == cntp::MtlsError::BackendUnavailable);
 
-    std::printf("  test_policy_and_peer_admission: PASSED\n");
+    crucible::test::pass("  test_policy_and_peer_admission: PASSED\n");
 }
 
 // This pins the exact contract every data-plane entry point offers
@@ -205,7 +205,7 @@ void test_data_plane_is_stub() {
     assert(rejected.error() == cntp::MtlsError::PeerNameNotAllowed);
     assert(rejected.error() != cntp::MtlsError::BackendUnavailable);
 
-    std::printf("  test_data_plane_is_stub:        PASSED\n");
+    crucible::test::pass("  test_data_plane_is_stub:        PASSED\n");
 }
 
 void test_reject_insecure_policy() {
@@ -239,7 +239,7 @@ void test_reject_insecure_policy() {
     assert(!empty_key.has_value());
     assert(empty_key.error() == cntp::MtlsError::EmptyPrivateKey);
 
-    std::printf("  test_reject_insecure_policy:   PASSED\n");
+    crucible::test::pass("  test_reject_insecure_policy:   PASSED\n");
 }
 
 }  // namespace
@@ -266,13 +266,13 @@ int main() {
     static_assert(std::is_same_v<decltype(cntp::data_plane_implemented), const bool>,
                   "The marker must be a compile-time bool.");
 
-    std::printf("test_cntp_mtls_transport:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cntp_mtls_transport:\n");
     test_name_and_error_surfaces();
     test_material_admission();
     test_policy_and_peer_admission();
     test_data_plane_is_stub();
     test_reject_insecure_policy();
-    std::printf("test_cntp_mtls_transport: all PASSED\n");
+    crucible::test::pass("test_cntp_mtls_transport: all PASSED\n");
     return 0;
 }
 

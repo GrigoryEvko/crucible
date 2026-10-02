@@ -70,7 +70,7 @@ void test_cache_data_migration() {
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
-    std::printf("  test_cache_data_migration: PASSED\n");
+    crucible::test::pass("  test_cache_data_migration: PASSED\n");
 }
 
 }  // namespace test_region_cache

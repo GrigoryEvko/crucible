@@ -2,7 +2,7 @@
 #include <foundation/reflect/EnumName.h>
 
 #include <array>
-#include <cassert>
+#include "test_assert.h"
 #include <cstddef>
 #include <cstdint>
 #include <span>

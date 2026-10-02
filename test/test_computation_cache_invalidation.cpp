@@ -233,7 +233,7 @@ int main() {
 
     std::fprintf(stderr, "PASSED\n");
 
-    std::fprintf(stderr, "\n2 runtime checks passed; the invalidation invariants are "
+    crucible::test::pass("\n2 runtime checks passed; the invalidation invariants are "
                          "pinned at compile time.\n");
     return 0;
 }

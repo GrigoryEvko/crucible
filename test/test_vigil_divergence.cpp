@@ -129,7 +129,7 @@ void test_divergence_drops_the_unobserved_region() {
            && "the first op after a divergence must be recorded, not aligned against the region the "
               "background thread published while the context was compiled");
 
-    std::printf("  test_divergence_drops_the_unobserved_region: PASSED\n");
+    crucible::test::pass("  test_divergence_drops_the_unobserved_region: PASSED\n");
 }
 
 // The other half of the same defect: the alignment walk, rather than the
@@ -192,7 +192,7 @@ void test_divergence_drops_a_half_finished_alignment() {
            && "the first op after a divergence must be recorded, not fed to an alignment walk the "
               "divergence abandoned");
 
-    std::printf("  test_divergence_drops_a_half_finished_alignment: PASSED\n");
+    crucible::test::pass("  test_divergence_drops_a_half_finished_alignment: PASSED\n");
 }
 
 }  // namespace test_vigil

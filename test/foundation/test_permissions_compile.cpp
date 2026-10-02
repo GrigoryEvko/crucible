@@ -14,6 +14,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include "../test_assert.h"
 
 namespace {
 
@@ -275,8 +276,8 @@ int main() {
     run_test("test_permission_row_compile", test_permission_row_compile);
     run_test("test_perm_set_compile", test_perm_set_compile);
     run_test("test_read_view_compile", test_read_view_compile);
-    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
+    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
-    std::fprintf(stderr, "ALL PASSED\n");
+    crucible::test::pass("ALL PASSED\n");
     return EXIT_SUCCESS;
 }

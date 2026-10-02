@@ -60,6 +60,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <type_traits>
+#include "../test_assert.h"
 
 namespace {
 
@@ -492,8 +493,8 @@ int main() {
     run_test("test_two_claims_keep_two_slots", test_two_claims_keep_two_slots);
     run_test("test_every_role_is_off_the_zero_slot", test_every_role_is_off_the_zero_slot);
     run_test("test_every_carrier_is_off_the_zero_slot", test_every_carrier_is_off_the_zero_slot);
-    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
+    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
-    std::fprintf(stderr, "ALL PASSED\n");
+    crucible::test::pass("ALL PASSED\n");
     return EXIT_SUCCESS;
 }

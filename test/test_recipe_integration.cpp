@@ -245,6 +245,6 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         assert(cache.lookup(region_bf16_tc->content_hash, RowHash{0}) == nullptr);
     }
 
-    std::printf("test_recipe_integration: all tests passed\n");
+    crucible::test::pass("test_recipe_integration: all tests passed\n");
     return 0;
 }

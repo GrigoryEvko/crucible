@@ -38,7 +38,7 @@ void test_t04_runtime_smoke() {
     t.join();
     assert(done);
 
-    std::printf("  T04 runtime_smoke:                         PASSED\n");
+    crucible::test::pass("  T04 runtime_smoke:                         PASSED\n");
 }
 
 // A real drain, with one thread pushing while the entry point consumes.
@@ -87,7 +87,7 @@ void test_concurrent_spsc_drain() {
     bt.stop_requested.signal();
     bg_thread.join();
 
-    std::printf("  concurrent_spsc_drain:                     PASSED\n");
+    crucible::test::pass("  concurrent_spsc_drain:                     PASSED\n");
 }
 
 // A batch large enough to span several drain batches, to catch a loop that
@@ -133,9 +133,9 @@ void test_large_batch_drain() {
     // completed count stays at zero.
     assert(bt.iterations_completed.get() == 0u);
 
-    std::printf("  large_batch_drain:                         "
-                "PASSED (processed=%llu of %u)\n",
-                static_cast<unsigned long long>(processed_after_push), TOTAL);
+    crucible::test::pass("  large_batch_drain:                         "
+                         "PASSED (processed={} of {})\n",
+                         static_cast<unsigned long long>(processed_after_push), TOTAL);
 }
 
 // Spawn, stop, spawn again.  A once-flag, a static guard inside the template
@@ -186,9 +186,9 @@ void test_rearm_cycle() {
     // Both invocations consumed entries, so the total covers both cycles.
     assert(bt.total_processed.load_acquire() >= 2 * PER_CYCLE);
 
-    std::printf("  rearm_cycle:                               "
-                "PASSED (total=%llu over 2 cycles)\n",
-                static_cast<unsigned long long>(bt.total_processed.load_acquire()));
+    crucible::test::pass("  rearm_cycle:                               "
+                         "PASSED (total={} over 2 cycles)\n",
+                         static_cast<unsigned long long>(bt.total_processed.load_acquire()));
 }
 
 }  // namespace test_background_thread_run_in_row

@@ -1,6 +1,6 @@
 #include <crucible/forge/recipes/Network.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
@@ -59,7 +59,7 @@ void test_names_and_layout() {
     assert(net::admit_network_participant_count(2).has_value());
     assert(!net::admit_network_participant_count(0).has_value());
 
-    std::printf("  test_names_and_layout: PASSED\n");
+    crucible::test::pass("  test_names_and_layout: PASSED\n");
 }
 
 void test_runtime_constraints_by_tier() {
@@ -92,7 +92,7 @@ void test_runtime_constraints_by_tier() {
                                                   net::NetworkReductionLaws{.associative = true, .commutative = false});
     assert(!non_commutative.value().sharp_eligible);
 
-    std::printf("  test_runtime_constraints_by_tier: PASSED\n");
+    crucible::test::pass("  test_runtime_constraints_by_tier: PASSED\n");
 }
 
 void test_algorithm_admission() {
@@ -117,7 +117,7 @@ void test_algorithm_admission() {
     assert(!net::algorithm_eligible(strict, net::NetworkCollectiveAlgorithm::TopKCompressed, four).has_value());
     assert(net::algorithm_eligible(strict, net::NetworkCollectiveAlgorithm::FecProtected, four).has_value());
 
-    std::printf("  test_algorithm_admission: PASSED\n");
+    crucible::test::pass("  test_algorithm_admission: PASSED\n");
 }
 
 void test_compile_time_concepts() {
@@ -127,17 +127,17 @@ void test_compile_time_concepts() {
     static_assert(!net::NetworkRecipeEligible<StrictAssociativeRecipe, net::TopKCompressedAlgorithm>);
     static_assert(!net::NetworkRecipeEligible<OrderedOddParticipantRecipe, net::RecursiveHalvingDoublingAlgorithm>);
 
-    std::printf("  test_compile_time_concepts: PASSED\n");
+    crucible::test::pass("  test_compile_time_concepts: PASSED\n");
 }
 
 }  // namespace
 
 int main() {
-    std::printf("test_network_recipe:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_network_recipe:\n");
     test_names_and_layout();
     test_runtime_constraints_by_tier();
     test_algorithm_admission();
     test_compile_time_concepts();
-    std::printf("test_network_recipe: all PASSED\n");
+    crucible::test::pass("test_network_recipe: all PASSED\n");
     return 0;
 }

@@ -45,7 +45,7 @@ static void record_pair(Detector& detector, cog::CogIdentity const& p, bool outb
 static void test_name_accessors() {
     static_assert(::foundation::reflect::enum_name(topology::FailureClass::TxBroken) == "TxBroken");
     static_assert(::foundation::reflect::enum_name(topology::FailureSignal::WitnessReachable) == "WitnessReachable");
-    std::printf("  test_name_accessors:                     PASSED\n");
+    crucible::test::pass("  test_name_accessors:                     PASSED\n");
 }
 
 static void test_local_bidirectional_classification() {
@@ -72,7 +72,7 @@ static void test_local_bidirectional_classification() {
     record_pair(detector, dead, false, false, 32);
     assert(detector.classify(dead) == topology::FailureClass::BidiFailed);
 
-    std::printf("  test_local_bidirectional_classification: PASSED\n");
+    crucible::test::pass("  test_local_bidirectional_classification: PASSED\n");
 }
 
 static void test_multi_vantage_overrides_naive_dead_peer() {
@@ -93,7 +93,7 @@ static void test_multi_vantage_overrides_naive_dead_peer() {
     assert(summary.with_witnesses == topology::FailureClass::TxBroken);
     assert(detector.classify_with_witnesses(target) == topology::FailureClass::TxBroken);
 
-    std::printf("  test_multi_vantage_overrides_naive_dead_peer: PASSED\n");
+    crucible::test::pass("  test_multi_vantage_overrides_naive_dead_peer: PASSED\n");
 }
 
 static void test_witness_majority_unreachable_keeps_dead_class() {
@@ -112,7 +112,7 @@ static void test_witness_majority_unreachable_keeps_dead_class() {
     assert(topology::health_state_for_failure(summary.with_witnesses, topology::HealthState::Healthy)
            == topology::HealthState::Quarantined);
 
-    std::printf("  test_witness_majority_unreachable_keeps_dead_class: PASSED\n");
+    crucible::test::pass("  test_witness_majority_unreachable_keeps_dead_class: PASSED\n");
 }
 
 static void test_synthetic_round_and_transition_events() {
@@ -133,7 +133,7 @@ static void test_synthetic_round_and_transition_events() {
     assert(topology::health_state_for_failure(topology::FailureClass::TxBroken, topology::HealthState::Healthy)
            == topology::HealthState::Suspect);
 
-    std::printf("  test_synthetic_round_and_transition_events: PASSED\n");
+    crucible::test::pass("  test_synthetic_round_and_transition_events: PASSED\n");
 }
 
 int main() {
@@ -144,12 +144,12 @@ int main() {
     static_assert(std::is_trivially_copyable_v<topology::FailureSummary>);
     static_assert(sizeof(topology::AsymmetricFailureEvent) <= 64);
 
-    std::printf("test_asymmetric_failure:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_asymmetric_failure:\n");
     test_name_accessors();
     test_local_bidirectional_classification();
     test_multi_vantage_overrides_naive_dead_peer();
     test_witness_majority_unreachable_keeps_dead_class();
     test_synthetic_round_and_transition_events();
-    std::printf("test_asymmetric_failure: all PASSED\n");
+    crucible::test::pass("test_asymmetric_failure: all PASSED\n");
     return 0;
 }

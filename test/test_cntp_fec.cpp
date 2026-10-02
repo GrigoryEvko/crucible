@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <array>
-#include <cassert>
+#include "test_assert.h"
 #include <concepts>
 #include <cstddef>
 #include <cstdint>

@@ -20,7 +20,7 @@ static void test_layout_invariants() {
     static_assert(offsetof(KernelCacheKey, content_hash) == 0);
     static_assert(offsetof(KernelCacheKey, row_hash) == 8);
 
-    std::printf("  test_layout_invariants:         PASSED\n");
+    crucible::test::pass("  test_layout_invariants:         PASSED\n");
 }
 
 static void test_default_is_zero() {
@@ -35,7 +35,7 @@ static void test_default_is_zero() {
     static_assert(noexcept(KernelCacheKey{}));
     static_assert(std::is_nothrow_default_constructible_v<KernelCacheKey>);
 
-    std::printf("  test_default_is_zero:           PASSED\n");
+    crucible::test::pass("  test_default_is_zero:           PASSED\n");
 }
 
 // UINT64_MAX is reserved as the empty-slot marker.  A real avalanche
@@ -53,7 +53,7 @@ static void test_sentinel_state() {
     static_assert(s != d);
     static_assert(d != s);
 
-    std::printf("  test_sentinel_state:            PASSED\n");
+    crucible::test::pass("  test_sentinel_state:            PASSED\n");
 }
 
 // A pure-row kernel and an IO-row kernel can share a region
@@ -83,7 +83,7 @@ static void test_per_axis_distinctness() {
     constexpr KernelCacheKey k_a_pure_dup{content_a, row_pure};
     static_assert(k_a_pure == k_a_pure_dup);
 
-    std::printf("  test_per_axis_distinctness:     PASSED\n");
+    crucible::test::pass("  test_per_axis_distinctness:     PASSED\n");
 }
 
 static void test_lexicographic_ordering() {
@@ -107,7 +107,7 @@ static void test_lexicographic_ordering() {
     static_assert((k_lolo <=> k_hihi) == std::strong_ordering::less);
     static_assert((k_hihi <=> k_lolo) == std::strong_ordering::greater);
 
-    std::printf("  test_lexicographic_ordering:    PASSED\n");
+    crucible::test::pass("  test_lexicographic_ordering:    PASSED\n");
 }
 
 // A plain pair of uint64_t would let a caller pass the row value where
@@ -124,7 +124,7 @@ static void test_axis_swap_rejected() {
     static_assert(!std::is_convertible_v<ContentHash, KernelCacheKey>);
     static_assert(!std::is_convertible_v<RowHash, KernelCacheKey>);
 
-    std::printf("  test_axis_swap_rejected:        PASSED\n");
+    crucible::test::pass("  test_axis_swap_rejected:        PASSED\n");
 }
 
 // The strong-hash macro already makes each hash a distinct type.  These
@@ -158,7 +158,7 @@ static void test_rowhash_isolation() {
 
     static_assert(std::is_constructible_v<KernelCacheKey, ContentHash, RowHash>);
 
-    std::printf("  test_rowhash_isolation:         PASSED\n");
+    crucible::test::pass("  test_rowhash_isolation:         PASSED\n");
 }
 
 // The key travels as an SPSC payload.  A member that throws would leak
@@ -180,7 +180,7 @@ static void test_full_noexcept() {
     static_assert(noexcept(k1 == k2));
     static_assert(noexcept(k1 != k2));
 
-    std::printf("  test_full_noexcept:             PASSED\n");
+    crucible::test::pass("  test_full_noexcept:             PASSED\n");
 }
 
 // Callers often have one axis and want the other defaulted.
@@ -209,7 +209,7 @@ static void test_designated_init_forms() {
     static_assert(k_positional_one.content_hash == ContentHash{42});
     static_assert(k_positional_one.row_hash.raw() == 0);
 
-    std::printf("  test_designated_init:           PASSED\n");
+    crucible::test::pass("  test_designated_init:           PASSED\n");
 }
 
 // The constexpr assertions above could all hold while a runtime path
@@ -240,7 +240,7 @@ static void test_runtime_peer() {
     auto back = std::bit_cast<KernelCacheKey>(bytes);
     assert(back == k_a_pure);
 
-    std::printf("  test_runtime_peer:              PASSED\n");
+    crucible::test::pass("  test_runtime_peer:              PASSED\n");
 }
 
 // A real hash can land on UINT64_MAX on one axis by collision.  Only
@@ -266,7 +266,7 @@ static void test_partial_sentinel_not_full_sentinel() {
     static_assert(k_partial_content != KernelCacheKey::sentinel());
     static_assert(k_partial_row != KernelCacheKey::sentinel());
 
-    std::printf("  test_partial_sentinel:          PASSED\n");
+    crucible::test::pass("  test_partial_sentinel:          PASSED\n");
 }
 
 // The on-disk byte layout must match the in-memory layout, which is
@@ -286,7 +286,7 @@ static void test_bit_cast_round_trip() {
     static_assert(back.content_hash == k_in.content_hash);
     static_assert(back.row_hash == k_in.row_hash);
 
-    std::printf("  test_bit_cast_round_trip:       PASSED\n");
+    crucible::test::pass("  test_bit_cast_round_trip:       PASSED\n");
 }
 
 int main() {
@@ -302,6 +302,6 @@ int main() {
     test_runtime_peer();
     test_partial_sentinel_not_full_sentinel();
     test_bit_cast_round_trip();
-    std::printf("test_kernel_cache_key: 12 groups, all passed\n");
+    crucible::test::pass("test_kernel_cache_key: 12 groups, all passed\n");
     return 0;
 }

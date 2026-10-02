@@ -7,6 +7,7 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
+#include "test_assert.h"
 
 namespace {
 
@@ -83,6 +84,6 @@ int main() {
     }
 #endif
 
-    std::printf("perf::SyscallTpBtf smoke OK\n");
+    crucible::test::pass("perf::SyscallTpBtf smoke OK\n");
     return 0;
 }

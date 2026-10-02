@@ -69,7 +69,7 @@ void test_gain_percent_states_its_direction() {
     // rather than wrapping to something small and plausible.
     assert(gain_percent(1e300, 1.0) == 4294967295u);
 
-    std::printf("  test_gain_percent_states_its_direction:    PASSED\n");
+    crucible::test::pass("  test_gain_percent_states_its_direction:    PASSED\n");
 }
 
 void test_ab_rule_needs_both_tests() {
@@ -99,7 +99,7 @@ void test_ab_rule_needs_both_tests() {
     const ledger::VariantComparison same = compare_variants(base, synthetic_report("same", 100.0, 0.0005));
     assert(same.is_a_tie());
 
-    std::printf("  test_ab_rule_needs_both_tests:             PASSED\n");
+    crucible::test::pass("  test_ab_rule_needs_both_tests:             PASSED\n");
 }
 
 void test_ratio_evidence_catches_an_unreproducible_ratio() {
@@ -141,7 +141,7 @@ void test_ratio_evidence_catches_an_unreproducible_ratio() {
                            synthetic_report("b4", 200.0, 0.40), synthetic_report("c4", 100.0, 0.0005));
     assert(audit_evidence(noisy) == EvidenceFault::WithinRunCvTooHigh);
 
-    std::printf("  test_ratio_evidence_catches_an_unreproducible_ratio: PASSED\n");
+    crucible::test::pass("  test_ratio_evidence_catches_an_unreproducible_ratio: PASSED\n");
 }
 
 void test_scratch_region_is_aligned_and_faultable() {
@@ -171,7 +171,7 @@ void test_scratch_region_is_aligned_and_faultable() {
     assert(!unmapped.is_mapped());
     assert(unmapped.size() == 0u);
 
-    std::printf("  test_scratch_region_is_aligned_and_faultable: PASSED\n");
+    crucible::test::pass("  test_scratch_region_is_aligned_and_faultable: PASSED\n");
 }
 
 int g_memo_call_count = 0;
@@ -200,7 +200,7 @@ void test_memo_shares_one_measurement() {
     assert(memo.get_or_measure(measure) == 2);
     assert(g_memo_call_count == 2);
 
-    std::printf("  test_memo_shares_one_measurement:          PASSED\n");
+    crucible::test::pass("  test_memo_shares_one_measurement:          PASSED\n");
 }
 
 void test_every_verdict_id_has_a_name_and_a_trait() {
@@ -227,7 +227,7 @@ void test_every_verdict_id_has_a_name_and_a_trait() {
     const auto beyond = static_cast<VerdictId>(ledger::kVerdictIdCount);
     assert(ledger::verdict_trait(beyond).name.empty());
 
-    std::printf("  test_every_verdict_id_has_a_name_and_a_trait: PASSED (%u ids)\n", ledger::kVerdictIdCount);
+    crucible::test::pass("  test_every_verdict_id_has_a_name_and_a_trait: PASSED ({} ids)\n", ledger::kVerdictIdCount);
 }
 
 }  // namespace
@@ -300,13 +300,13 @@ static_assert(std::is_nothrow_move_constructible_v<ProbeRegion>);
 }  // namespace crucible::ledger
 
 int main() {
-    std::printf("test_ledger_probes:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_ledger_probes:\n");
     test_gain_percent_states_its_direction();
     test_ab_rule_needs_both_tests();
     test_ratio_evidence_catches_an_unreproducible_ratio();
     test_scratch_region_is_aligned_and_faultable();
     test_memo_shares_one_measurement();
     test_every_verdict_id_has_a_name_and_a_trait();
-    std::printf("test_ledger_probes: 6 groups, all passed\n");
+    crucible::test::pass("test_ledger_probes: 6 groups, all passed\n");
     return 0;
 }

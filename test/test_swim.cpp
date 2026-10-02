@@ -1,7 +1,7 @@
 #include <crucible/canopy/Swim.h>
 
 #include <array>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdint>
 #include <type_traits>
 

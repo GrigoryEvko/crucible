@@ -32,6 +32,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <type_traits>
+#include "../test_assert.h"
 
 // The identities the probes below fold.  They stand outside the unnamed
 // namespace, because a stable id refuses a type with internal linkage.
@@ -569,8 +570,8 @@ int main() {
     std::fprintf(stderr, "test_row_hash:\n");
     run_test("test_constants_reach_runtime", test_constants_reach_runtime);
     run_test("test_fold_reaches_runtime", test_fold_reaches_runtime);
-    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
+    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
-    std::fprintf(stderr, "ALL PASSED\n");
+    crucible::test::pass("ALL PASSED\n");
     return EXIT_SUCCESS;
 }

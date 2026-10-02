@@ -411,6 +411,6 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
         assert(!stamped.ts_ns.has_value() && "a failed clock read must leave the timestamp empty");
     }
 
-    std::printf("test_transaction: all tests passed\n");
+    crucible::test::pass("test_transaction: all tests passed\n");
     return 0;
 }

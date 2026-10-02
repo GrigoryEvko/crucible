@@ -79,7 +79,7 @@ void test_cache_switch_mid_iter() {
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
-    std::printf("  test_cache_switch_mid_iter: PASSED\n");
+    crucible::test::pass("  test_cache_switch_mid_iter: PASSED\n");
 }
 
 void test_cache_miss_fallback() {
@@ -108,7 +108,7 @@ void test_cache_miss_fallback() {
 
     assert(vigil.region_cache().size() == 1);
 
-    std::printf("  test_cache_miss_fallback: PASSED\n");
+    crucible::test::pass("  test_cache_miss_fallback: PASSED\n");
 }
 
 }  // namespace test_region_cache

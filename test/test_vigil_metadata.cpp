@@ -168,7 +168,7 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
     assert(vigil.input_ptr(fg, 0) == parameter_ptr()
            && "the activation registered the data pointer of a record that the foreground wrote after the release");
 
-    std::printf("  test_region_keeps_its_metadata_after_the_log_wraps: PASSED\n");
+    crucible::test::pass("  test_region_keeps_its_metadata_after_the_log_wraps: PASSED\n");
 }
 
 }  // namespace test_vigil

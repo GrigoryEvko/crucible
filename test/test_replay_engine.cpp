@@ -119,7 +119,7 @@ static void test_linear_match() {
     }
     assert(engine.is_complete());
 
-    std::printf("  test_linear_match: PASSED\n");
+    crucible::test::pass("  test_linear_match: PASSED\n");
 }
 
 static void test_schema_divergence() {
@@ -155,7 +155,7 @@ static void test_schema_divergence() {
     assert(engine.advance(SchemaHash{999}, ShapeHash{200}, av) == ReplayStatus::DIVERGED);
     assert(engine.diverged_op_index_tagged().value() == OpIndex{1});
 
-    std::printf("  test_schema_divergence: PASSED\n");
+    crucible::test::pass("  test_schema_divergence: PASSED\n");
 }
 
 static void test_shape_divergence() {
@@ -189,7 +189,7 @@ static void test_shape_divergence() {
     assert(engine.advance(SchemaHash{101}, ShapeHash{999}, av) == ReplayStatus::DIVERGED);
     assert(engine.diverged_op_index_tagged().value() == OpIndex{1});
 
-    std::printf("  test_shape_divergence: PASSED\n");
+    crucible::test::pass("  test_shape_divergence: PASSED\n");
 }
 
 static void test_reset() {
@@ -228,7 +228,7 @@ static void test_reset() {
     assert(engine.advance(SchemaHash{11}, ShapeHash{21}, av) == ReplayStatus::COMPLETE);
     assert(engine.is_complete());
 
-    std::printf("  test_reset: PASSED\n");
+    crucible::test::pass("  test_reset: PASSED\n");
 }
 
 // Op 1 reads the slot op 0 writes, so the two ops alias one pool
@@ -273,7 +273,7 @@ static void test_input_ptr() {
 
     assert(engine.input_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
 
-    std::printf("  test_input_ptr: PASSED\n");
+    crucible::test::pass("  test_input_ptr: PASSED\n");
 }
 
 static void test_invalid_slot() {
@@ -301,7 +301,7 @@ static void test_invalid_slot() {
     assert(engine.output_ptr(0, av) != nullptr);
     assert(engine.output_ptr(1, av) == nullptr);
 
-    std::printf("  test_invalid_slot: PASSED\n");
+    crucible::test::pass("  test_invalid_slot: PASSED\n");
 }
 
 static void test_current_entry() {
@@ -334,7 +334,7 @@ static void test_current_entry() {
         assert(entry.shape_hash == ShapeHash{400 + i});
     }
 
-    std::printf("  test_current_entry: PASSED\n");
+    crucible::test::pass("  test_current_entry: PASSED\n");
 }
 
 // The plan here comes from the real sweep-line planner rather than the
@@ -446,11 +446,11 @@ static void test_integration_with_pool() {
     assert(engine.advance(SchemaHash{0xCCCC}, ShapeHash{0xDDDD}, av) == ReplayStatus::COMPLETE);
     assert(engine.is_complete());
 
-    std::printf("  test_integration_with_pool: PASSED\n");
+    crucible::test::pass("  test_integration_with_pool: PASSED\n");
 }
 
 int main() {
-    std::printf("test_replay_engine:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_replay_engine:\n");
     static_assert(std::is_same_v<ReplayEngine::PoolBorrow, ::fixy::BorrowedRef<const PoolAllocator>>);
     static_assert(sizeof(ReplayEngine::PoolBorrow) == sizeof(const PoolAllocator*));
     test_linear_match();
@@ -461,6 +461,6 @@ int main() {
     test_invalid_slot();
     test_current_entry();
     test_integration_with_pool();
-    std::printf("test_replay_engine: all tests passed\n");
+    crucible::test::pass("test_replay_engine: all tests passed\n");
     return 0;
 }

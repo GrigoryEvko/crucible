@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include <limits>
 #include <type_traits>
+#include "../test_assert.h"
 
 namespace {
 
@@ -194,6 +195,6 @@ int main() {
     for (std::size_t i = 0; i < kCarrierHashes.size(); ++i) {
         if (kCarrierHashes[i] == 0) fail("a counter carrier folded to the zero slot");
     }
-    std::printf("test_lattices_counters: ok\n");
+    crucible::test::pass("test_lattices_counters: ok\n");
     return 0;
 }

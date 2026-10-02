@@ -10,6 +10,7 @@
 #include <thread>
 #include <type_traits>
 #include <utility>
+#include "../test_assert.h"
 
 using namespace foundation::permissions;
 
@@ -342,8 +343,8 @@ int main() {
     run_test("test_loan_across_threads", test_loan_across_threads);
     run_test("test_handle_composition_zero_cost", test_handle_composition_zero_cost);
 
-    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
+    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
-    std::fprintf(stderr, "ALL PASSED\n");
+    crucible::test::pass("ALL PASSED\n");
     return EXIT_SUCCESS;
 }

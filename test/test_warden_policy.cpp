@@ -25,6 +25,7 @@
 #include <fixy/os/Sched.h>
 
 #include "padding_bytes.h"
+#include "test_assert.h"
 
 namespace {
 
@@ -435,7 +436,7 @@ int main() {
     test_region_and_slot_have_no_padding_byte();
 
     if (failures == 0) {
-        std::puts("test_warden_policy: OK");
+        crucible::test::pass("test_warden_policy: OK\n");
         return 0;
     }
     std::fprintf(stderr, "test_warden_policy: %d FAILURES\n", failures);

@@ -80,7 +80,7 @@ static void test_enumerator_names() {
     assert(enum_name(cog::NicTxQdisc::Fq) == std::string_view{"Fq"});
     assert(enum_name(cog::NicAuditIssue::RssDisabled) == std::string_view{"RssDisabled"});
     assert(enum_name(static_cast<cog::NicAuditIssue>(1u << 31)) == std::string_view{"<unknown NicAuditIssue>"});
-    std::printf("  test_enumerator_names:                PASSED\n");
+    crucible::test::pass("  test_enumerator_names:                PASSED\n");
 }
 
 static void test_good_configuration_passes() {
@@ -89,7 +89,7 @@ static void test_good_configuration_passes() {
     assert(report.passes());
     assert(report.missing_required_offloads.none());
     assert(report.unsupported_required_offloads.none());
-    std::printf("  test_good_configuration_passes:       PASSED\n");
+    crucible::test::pass("  test_good_configuration_passes:       PASSED\n");
 }
 
 static void test_missing_required_offload_is_error() {
@@ -102,7 +102,7 @@ static void test_missing_required_offload_is_error() {
     assert(report.severity == cog::AuditSeverity::Error);
     assert(report.has(cog::NicAuditIssue::MissingRequiredOffload));
     assert(report.missing_required_offloads.test(cog::NicFeature::Tso));
-    std::printf("  test_missing_required_offload_is_error: PASSED\n");
+    crucible::test::pass("  test_missing_required_offload_is_error: PASSED\n");
 }
 
 static void test_later_warning_keeps_error() {
@@ -115,7 +115,7 @@ static void test_later_warning_keeps_error() {
     assert(report.severity == cog::AuditSeverity::Error);
     assert(report.has(cog::NicAuditIssue::MissingRequiredOffload));
     assert(report.has(cog::NicAuditIssue::TxQdiscNotFq));
-    std::printf("  test_later_warning_keeps_error:       PASSED\n");
+    crucible::test::pass("  test_later_warning_keeps_error:       PASSED\n");
 }
 
 static void test_unsupported_required_offload_is_error() {
@@ -127,7 +127,7 @@ static void test_unsupported_required_offload_is_error() {
     assert(report.severity == cog::AuditSeverity::Error);
     assert(report.has(cog::NicAuditIssue::UnsupportedRequiredOffload));
     assert(report.unsupported_required_offloads.test(cog::NicFeature::Gso));
-    std::printf("  test_unsupported_required_offload_is_error: PASSED\n");
+    crucible::test::pass("  test_unsupported_required_offload_is_error: PASSED\n");
 }
 
 static void test_rss_and_policy_warnings() {
@@ -154,7 +154,7 @@ static void test_rss_and_policy_warnings() {
     assert(report.has(cog::NicAuditIssue::NetdevBudgetTooSmall));
     assert(report.has(cog::NicAuditIssue::TxQdiscNotFq));
     assert(report.has(cog::NicAuditIssue::BusyPollMissing));
-    std::printf("  test_rss_and_policy_warnings:         PASSED\n");
+    crucible::test::pass("  test_rss_and_policy_warnings:         PASSED\n");
 }
 
 int main() {
@@ -162,13 +162,13 @@ int main() {
     static_assert(!cog::NicOffloadAuditableCog<cog::CogKind::Gpu>);
     static_assert(::foundation::diag::is_diagnostic_class_v<cog::NicOffload_Misconfigured>);
 
-    std::printf("test_nic_offload_audit: 6 groups\n");
+    ::fixy::report(::fixy::Sink::Out, "test_nic_offload_audit: 6 groups\n");
     test_enumerator_names();
     test_good_configuration_passes();
     test_missing_required_offload_is_error();
     test_later_warning_keeps_error();
     test_unsupported_required_offload_is_error();
     test_rss_and_policy_warnings();
-    std::printf("test_nic_offload_audit: all passed\n");
+    crucible::test::pass("test_nic_offload_audit: all passed\n");
     return 0;
 }

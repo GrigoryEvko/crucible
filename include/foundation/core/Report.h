@@ -265,30 +265,33 @@ void write_sink_(Sink sink, char const* bytes, std::size_t count) noexcept;
 
 }  // namespace detail
 
-// THE TWO FORMS OF report() AND fatal()
-//   The form with no argument is inline.  It loads the parts of its text
+// THE FORMS OF report() AND fatal()
+//   The fatal() with no argument is inline.  It loads the parts of its text
 //   into registers and calls one cold function, and the caller builds no
 //   object on its stack.
 //
-//   The form with arguments is a cold function that is not inline.  It
-//   takes the text by const reference, and GCC keeps a constant text in
-//   read-only data.  Each argument is a small value, so it comes by value
-//   in a register.  An inline expansion of this form at each call costs
-//   the compiler more than the call: a Debug build of a test with 63
-//   asserts measured 19.5 G instructions inline and 18.9 G with the cold
-//   form, against 17.7 G before the formatter.
+//   Each other form is a cold function that is not inline.  report() takes
+//   its text by value: the caller writes the text into the argument area
+//   of the call and keeps no object in its frame.  A Fmt in the frame of
+//   the main of a test made GCC inline six test functions into it, under
+//   the limit of large-stack-frame-growth, and the Debug build of the test
+//   took 21.5 G instructions in place of 18.3 G.  The fatal() with
+//   arguments takes its text by const reference, because the assert of the
+//   tests gives it a text in read-only data.  Each argument is a small
+//   value, so it comes by value in a register.  An inline expansion of a
+//   form with arguments at each call costs the compiler more than the
+//   call: a Debug build of a test with 63 asserts measured 19.5 G
+//   instructions inline and 18.9 G with the cold form, against 17.7 G
+//   before the formatter.
 
 // Writes the text to the sink.  The text is written with one system call
 // when it fits 512 bytes.  A search for `report(` finds each report of the
 // code.
-[[gnu::always_inline]] inline void report(Sink sink, Fmt<> fmt) noexcept {
-    detail::report_(sink, detail::FmtDoor::text_of_(fmt), nullptr, 0);
-}
+[[gnu::cold]] void report(Sink sink, Fmt<> fmt) noexcept;
 
 // The same, with arguments.
 template <class First, class... Rest>
-[[gnu::cold, gnu::noinline]] void report(Sink sink,
-                                         Fmt<std::type_identity_t<First>, std::type_identity_t<Rest>...> const& fmt,
+[[gnu::cold, gnu::noinline]] void report(Sink sink, Fmt<std::type_identity_t<First>, std::type_identity_t<Rest>...> fmt,
                                          First first, Rest... rest) noexcept {
     detail::FmtArg const arguments[1 + sizeof...(Rest)] = {detail::fmt_arg_of_(first), detail::fmt_arg_of_(rest)...};
     detail::report_(sink, detail::FmtDoor::text_of_(fmt), arguments, 1 + sizeof...(Rest));

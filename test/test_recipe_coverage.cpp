@@ -507,26 +507,27 @@ int main() {
             }
         }
 
-        std::printf("test_recipe_coverage: report ───────────────────────────────\n"
-                    "  CKernelId taxonomy (146 ops + OPAQUE):\n"
-                    "    recipe-relevant: %d ops\n"
-                    "      REDUCING:       %d\n"
-                    "      SOFTMAX_USING:  %d\n"
-                    "      SCALE_USING:    %d\n"
-                    "      RNG_USING:      %d\n"
-                    "      COMM_REDUCING:  %d\n"
-                    "    recipe-vacuous:  %d ops\n"
-                    "      POINTWISE:      %d\n"
-                    "      DATA_MOVE:      %d\n"
-                    "      IO:             %d\n"
-                    "      SYNC:           %d\n"
-                    "  Coverage matrix (8 starter recipes):\n"
-                    "    covered cells:   %d\n"
-                    "    gap cells:       %d  (structural: %d)\n",
-                    relevant_count, reducing, softmax, scale, rng, comm_red, vacuous_count, pointwise, data_move, io,
-                    sync, covered_cells, gap_cells, structural_gaps);
+        ::fixy::report(::fixy::Sink::Out,
+                       "test_recipe_coverage: report ───────────────────────────────\n"
+                       "  CKernelId taxonomy (146 ops + OPAQUE):\n"
+                       "    recipe-relevant: {} ops\n"
+                       "      REDUCING:       {}\n"
+                       "      SOFTMAX_USING:  {}\n"
+                       "      SCALE_USING:    {}\n"
+                       "      RNG_USING:      {}\n"
+                       "      COMM_REDUCING:  {}\n"
+                       "    recipe-vacuous:  {} ops\n"
+                       "      POINTWISE:      {}\n"
+                       "      DATA_MOVE:      {}\n"
+                       "      IO:             {}\n"
+                       "      SYNC:           {}\n"
+                       "  Coverage matrix (8 starter recipes):\n"
+                       "    covered cells:   {}\n"
+                       "    gap cells:       {}  (structural: {})\n",
+                       relevant_count, reducing, softmax, scale, rng, comm_red, vacuous_count, pointwise, data_move, io,
+                       sync, covered_cells, gap_cells, structural_gaps);
     }
 
-    std::printf("test_recipe_coverage: all assertions passed\n");
+    crucible::test::pass("test_recipe_coverage: all assertions passed\n");
     return 0;
 }

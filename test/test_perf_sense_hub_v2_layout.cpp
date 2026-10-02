@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include "test_assert.h"
 
 namespace {
 
@@ -73,6 +74,6 @@ int main() {
         return 1;
     }
 
-    std::printf("perf::SenseHubV2 layout smoke OK\n");
+    crucible::test::pass("perf::SenseHubV2 layout smoke OK\n");
     return 0;
 }

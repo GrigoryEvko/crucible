@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <optional>
 #include <utility>
+#include "../test_assert.h"
 
 using namespace foundation::permissions;
 
@@ -131,6 +132,6 @@ int main() {
     run_test("stashed_token_does_not_unblock_upgrade", test_stashed_token_does_not_unblock_upgrade);
     run_test("multiple_guards_block_upgrade", test_multiple_guards_block_upgrade);
 
-    std::fprintf(stderr, "  passed=%d failed=%d\n", total_passed, total_failed);
+    crucible::test::pass("  passed={} failed={}\n", total_passed, total_failed);
     return total_failed == 0 ? 0 : 1;
 }

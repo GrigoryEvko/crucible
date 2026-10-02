@@ -180,6 +180,6 @@ int main() {
     test_lookup_l1_miss();
     test_publish_l1_variant_update();
     test_publish_l1_row_discrimination();
-    std::printf("test_kernel_cache_levels: all tests passed\n");
+    crucible::test::pass("test_kernel_cache_levels: all tests passed\n");
     return 0;
 }

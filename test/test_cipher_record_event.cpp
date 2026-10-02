@@ -92,7 +92,7 @@ static void test_t01_required_row_pinned() {
 
     static_assert(eff::row_size(^^Cipher::record_event_required_row) == 2);
 
-    std::printf("  T01 required_row_pinned:                 PASSED\n");
+    crucible::test::pass("  T01 required_row_pinned:                 PASSED\n");
 }
 
 static void test_t02_subrow_accepted_shapes() {
@@ -122,7 +122,7 @@ static void test_t02_subrow_accepted_shapes() {
     static_assert(crucible::cipher::CtxFitsCipherCommit<::fixy::BgLoadCtx>);
     static_assert(crucible::cipher::CtxFitsCipherCommit<::fixy::InitLoadCtx>);
 
-    std::printf("  T02 subrow_accepted_shapes:              PASSED\n");
+    crucible::test::pass("  T02 subrow_accepted_shapes:              PASSED\n");
 }
 
 // These assert the containment predicate directly.  What happens at a
@@ -161,7 +161,7 @@ static void test_t03_subrow_rejected_shapes() {
     static_assert(!crucible::cipher::CtxFitsCipherCommit<::fixy::HotFgCtx>);
     static_assert(!crucible::cipher::CtxFitsCipherCommit<::fixy::BgDrainCtx>);
 
-    std::printf("  T03 subrow_rejected_shapes:              PASSED\n");
+    crucible::test::pass("  T03 subrow_rejected_shapes:              PASSED\n");
 }
 
 // The commit is durable: a Cipher opened again on the same directory
@@ -187,7 +187,7 @@ static void test_t04_record_event_is_durable(const char* base_dir) {
     assert(reopened.head() == kHash);
     assert(reopened.hash_at_step(view, kStep) == kHash);
 
-    std::printf("  T04 record_event_is_durable:             PASSED\n");
+    crucible::test::pass("  T04 record_event_is_durable:             PASSED\n");
 }
 
 static void test_t05_round_trip(const char* base_dir) {
@@ -207,7 +207,7 @@ static void test_t05_round_trip(const char* base_dir) {
     // A query past the end answers with the last recorded step.
     assert(cipher.hash_at_step(view, kStep + 100) == kHash);
 
-    std::printf("  T05 round_trip:                          PASSED\n");
+    crucible::test::pass("  T05 round_trip:                          PASSED\n");
 }
 
 // The context of a background thread carries more than the two required
@@ -227,7 +227,7 @@ static void test_t06_bg_superset_row(const char* base_dir) {
     record(cipher, bg_ctx, view, kHash, 1u);
 
     assert(cipher.head() == kHash);
-    std::printf("  T06 bg_superset_row:                     PASSED\n");
+    crucible::test::pass("  T06 bg_superset_row:                     PASSED\n");
 }
 
 // The startup context carries Init on top of the two required atoms.
@@ -244,7 +244,7 @@ static void test_t07_startup_superset_row(const char* base_dir) {
     record(cipher, init_ctx, view, kHash, 1u);
 
     assert(cipher.head() == kHash);
-    std::printf("  T07 startup_superset_row:                PASSED\n");
+    crucible::test::pass("  T07 startup_superset_row:                PASSED\n");
 }
 
 // Recording an ordered sequence and querying it back shows that the
@@ -271,7 +271,7 @@ static void test_t08_monotonic_steps(const char* base_dir) {
     assert(cipher.hash_at_step(view, 10u) == ContentHash{0xCC});
     assert(cipher.hash_at_step(view, 99u) == ContentHash{0xCC});  // future
 
-    std::printf("  T08 monotonic_steps:                     PASSED\n");
+    crucible::test::pass("  T08 monotonic_steps:                     PASSED\n");
 }
 
 static void test_t09_multiple_events_monotonic(const char* base_dir) {
@@ -294,7 +294,7 @@ static void test_t09_multiple_events_monotonic(const char* base_dir) {
         assert(h == ContentHash{std::uint64_t{0x1000u} + static_cast<std::uint64_t>(i)});
     }
 
-    std::printf("  T09 multiple_events_monotonic:           PASSED\n");
+    crucible::test::pass("  T09 multiple_events_monotonic:           PASSED\n");
 }
 
 // The context travels as the first argument, and the result says whether
@@ -321,7 +321,7 @@ static void test_t10_api_surface_pinned(const char* base_dir) {
     record(cipher, store_ctx(), view, ContentHash{42u}, 0u);
     assert(cipher.head() == ContentHash{42u});
 
-    std::printf("  T10 api_surface_pinned:                  PASSED\n");
+    crucible::test::pass("  T10 api_surface_pinned:                  PASSED\n");
 }
 
 // Each log line holds a reading of CLOCK_MONOTONIC.  So every recorded
@@ -352,7 +352,7 @@ static void test_t11_log_holds_monotonic_readings(const char* base_dir) {
         }
     }
 
-    std::printf("  T11 log_holds_monotonic_readings:        PASSED\n");
+    crucible::test::pass("  T11 log_holds_monotonic_readings:        PASSED\n");
 }
 
 // The header asserts the content of the required row where it
@@ -370,7 +370,7 @@ static void test_required_row_header_fence() {
     static_assert(!eff::row_contains(^^Cipher::record_event_required_row, eff::Effect::Init));
     static_assert(!eff::row_contains(^^Cipher::record_event_required_row, eff::Effect::Test));
 
-    std::printf("  required_row_header_fence:              PASSED\n");
+    crucible::test::pass("  required_row_header_fence:              PASSED\n");
 }
 
 // One record is not enough to show that the files read back.  A defect
@@ -408,7 +408,7 @@ static void test_multi_event_durability(const char* base_dir) {
         assert(reopened.hash_at_step(view, static_cast<std::uint64_t>(i)) == ContentHash{kHashes[i]});
     }
 
-    std::printf("  multi_event_durability:                 PASSED\n");
+    crucible::test::pass("  multi_event_durability:                 PASSED\n");
 }
 
 // Every other use of the required row in this file is inside a
@@ -427,7 +427,7 @@ static_assert(eff::CtxAdmits<::fixy::TestRunnerCtx, ExtRow>);
 static void test_external_visibility() {
     using ExtRow = external_visibility::ExtRow;
     static_assert(eff::row_size(^^ExtRow) == 2u);
-    std::printf("  external_visibility:                    PASSED\n");
+    crucible::test::pass("  external_visibility:                    PASSED\n");
 }
 
 // Each context that fits the commit is interchangeable at a call site,
@@ -453,7 +453,7 @@ static void test_canonical_row_acceptance(const char* base_dir) {
     record(cipher, reordered, view, ContentHash{0xCCCC}, 3u);
     assert(cipher.head() == ContentHash{0xCCCC});
 
-    std::printf("  canonical_row_acceptance:               PASSED\n");
+    crucible::test::pass("  canonical_row_acceptance:               PASSED\n");
 }
 
 // The context gate fires while the template is substituted and the
@@ -479,7 +479,7 @@ static void test_pre_clause_orthogonal(const char* base_dir) {
     assert(cipher.hash_at_step(view, 1u) == ContentHash{3u});  // the later of the two at step 1
     assert(cipher.hash_at_step(view, 5u) == ContentHash{4u});
 
-    std::printf("  pre_clause_orthogonal:                  PASSED\n");
+    crucible::test::pass("  pre_clause_orthogonal:                  PASSED\n");
 }
 
 int main() {
@@ -489,7 +489,7 @@ int main() {
     std::filesystem::create_directories(tmpl);
     const std::string base = tmpl.string();
 
-    std::printf("test_cipher_record_event\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cipher_record_event\n");
     test_t01_required_row_pinned();
     test_t02_subrow_accepted_shapes();
     test_t03_subrow_rejected_shapes();
@@ -511,6 +511,6 @@ int main() {
     std::error_code ec;
     std::filesystem::remove_all(tmpl, ec);
 
-    std::printf("test_cipher_record_event: 16 groups, all passed\n");
+    crucible::test::pass("test_cipher_record_event: 16 groups, all passed\n");
     return 0;
 }

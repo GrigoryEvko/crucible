@@ -10,6 +10,7 @@
 #include <cstdlib>  // setenv
 #include <type_traits>
 #include <utility>
+#include "test_assert.h"
 
 namespace {
 
@@ -235,6 +236,6 @@ int main() {
     (void)assigned_into;
 #endif
 
-    std::printf("perf::Senses smoke OK\n");
+    crucible::test::pass("perf::Senses smoke OK\n");
     return 0;
 }

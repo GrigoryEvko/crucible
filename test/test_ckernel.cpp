@@ -222,6 +222,6 @@ int main() {
 
     expect_name_of_the_count_ends_the_process();
 
-    std::printf("test_ckernel: all tests passed\n");
+    crucible::test::pass("test_ckernel: all tests passed\n");
     return 0;
 }

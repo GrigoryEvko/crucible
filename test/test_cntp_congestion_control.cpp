@@ -4,7 +4,7 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
@@ -69,7 +69,7 @@ void test_name_admission() {
     assert(!fd.has_value());
     assert(fd.error() == cntp::CcError::InvalidSocketFd);
 
-    std::printf("  test_name_admission:                     PASSED\n");
+    crucible::test::pass("  test_name_admission:                     PASSED\n");
 }
 
 void test_availability_parse_and_recommendation() {
@@ -115,7 +115,7 @@ void test_availability_parse_and_recommendation() {
     assert(fallback.has_value());
     assert(fallback->value().algorithm == cntp::CcAlgorithm::Cubic);
 
-    std::printf("  test_availability_parse_and_recommendation: PASSED\n");
+    crucible::test::pass("  test_availability_parse_and_recommendation: PASSED\n");
 }
 
 void test_mint_surfaces() {
@@ -128,7 +128,7 @@ void test_mint_surfaces() {
     assert(custom.value().algorithm == cntp::CcAlgorithm::Custom);
     assert(custom.value().kernel_name.view() == "user_cc");
 
-    std::printf("  test_mint_surfaces:                       PASSED\n");
+    crucible::test::pass("  test_mint_surfaces:                       PASSED\n");
 }
 
 void test_live_socket_roundtrip_if_available() {
@@ -141,13 +141,13 @@ void test_live_socket_roundtrip_if_available() {
     ::fixy::InitLoadCtx load{fe::testing::init()};
     auto availability = cntp::read_available_congestion_control(load);
     if (!availability.has_value()) {
-        std::printf("  test_live_socket_roundtrip_if_available: SKIPPED\n");
+        ::fixy::report(::fixy::Sink::Out, "  test_live_socket_roundtrip_if_available: SKIPPED\n");
         return;
     }
 
     auto choice = cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(*availability);
     if (!choice.has_value()) {
-        std::printf("  test_live_socket_roundtrip_if_available: SKIPPED\n");
+        ::fixy::report(::fixy::Sink::Out, "  test_live_socket_roundtrip_if_available: SKIPPED\n");
         return;
     }
 
@@ -165,7 +165,7 @@ void test_live_socket_roundtrip_if_available() {
     assert(selection.has_value());
     assert(!selection->kernel_name.view().empty());
 
-    std::printf("  test_live_socket_roundtrip_if_available: PASSED\n");
+    crucible::test::pass("  test_live_socket_roundtrip_if_available: PASSED\n");
 }
 
 // Each gated form reaches the kernel and reports the failure of its own
@@ -203,7 +203,7 @@ void test_gated_forms_report_kernel_refusal() {
         assert(cntp::kernel_supports(load, algo) == (listed.has_value() && listed->contains(algo)));
     }
 
-    std::printf("  test_gated_forms_report_kernel_refusal: PASSED\n");
+    crucible::test::pass("  test_gated_forms_report_kernel_refusal: PASSED\n");
 }
 
 }  // namespace
@@ -242,12 +242,12 @@ int main() {
     assert(cntp::cc_algorithm_name(cntp::CcAlgorithm::Bbr3) == std::string_view{"bbr3"});
     assert(cntp::link_class_name(cntp::LinkClass::PublicInternet) == std::string_view{"public-internet"});
 
-    std::printf("test_cntp_congestion_control:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cntp_congestion_control:\n");
     test_name_admission();
     test_availability_parse_and_recommendation();
     test_mint_surfaces();
     test_gated_forms_report_kernel_refusal();
     test_live_socket_roundtrip_if_available();
-    std::printf("test_cntp_congestion_control: all PASSED\n");
+    crucible::test::pass("test_cntp_congestion_control: all PASSED\n");
     return 0;
 }

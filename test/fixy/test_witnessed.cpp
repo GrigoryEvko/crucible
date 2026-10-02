@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <type_traits>
 #include <utility>
+#include "../test_assert.h"
 
 namespace eff = ::foundation::effects;
 namespace perm = ::foundation::permissions;
@@ -218,6 +219,6 @@ int main() {
     run_test("test_the_position_is_the_witness_and_not_the_spelling",
              test_the_position_is_the_witness_and_not_the_spelling);
     run_test("test_a_witness_of_one_kind_is_not_the_other", test_a_witness_of_one_kind_is_not_the_other);
-    std::fprintf(stderr, "test_witnessed: %d passed, %d failed\n", total_passed, total_failed);
+    crucible::test::pass("test_witnessed: {} passed, {} failed\n", total_passed, total_failed);
     return total_failed == 0 ? 0 : 1;
 }

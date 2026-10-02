@@ -42,7 +42,7 @@ static void test_empty_deque() {
     assert(dq.size_approx() == 0);
     assert(!dq.pop_bottom().has_value());
     assert(!dq.steal_top().has_value());
-    std::printf("  test_empty_deque: PASSED\n");
+    crucible::test::pass("  test_empty_deque: PASSED\n");
 }
 
 static void test_single_thread_lifo() {
@@ -63,7 +63,7 @@ static void test_single_thread_lifo() {
     assert(dq.empty_approx());
     assert(!dq.pop_bottom().has_value());
 
-    std::printf("  test_single_thread_lifo: PASSED\n");
+    crucible::test::pass("  test_single_thread_lifo: PASSED\n");
 }
 
 static void test_single_thread_steal_fifo() {
@@ -80,7 +80,7 @@ static void test_single_thread_steal_fifo() {
     }
     assert(!dq.steal_top().has_value());
 
-    std::printf("  test_single_thread_steal_fifo: PASSED\n");
+    crucible::test::pass("  test_single_thread_steal_fifo: PASSED\n");
 }
 
 static void test_capacity_bound() {
@@ -99,7 +99,7 @@ static void test_capacity_bound() {
     assert(dq.push_bottom(99));
     assert(dq.size_approx() == 8);
 
-    std::printf("  test_capacity_bound: PASSED\n");
+    crucible::test::pass("  test_capacity_bound: PASSED\n");
 }
 
 static void test_interleaved_single_thread() {
@@ -122,7 +122,7 @@ static void test_interleaved_single_thread() {
 
     assert(dq.empty_approx());
 
-    std::printf("  test_interleaved_single_thread: PASSED\n");
+    crucible::test::pass("  test_interleaved_single_thread: PASSED\n");
 }
 
 // The owner both produces and consumes here, so the contended element
@@ -133,7 +133,8 @@ static void test_stress_one_owner_n_thieves() {
     constexpr int N_THIEVES = 4;
     constexpr std::size_t CAPACITY = 1024;
 
-    std::printf("  test_stress_one_owner_n_thieves: %zu items, %d thieves...\n", N_ITEMS, N_THIEVES);
+    ::fixy::report(::fixy::Sink::Out, "  test_stress_one_owner_n_thieves: {} items, {} thieves...\n", N_ITEMS,
+                   N_THIEVES);
 
     ChaseLevDeque<uint64_t, CAPACITY> dq;
     std::atomic<bool> owner_done{false};
@@ -224,14 +225,16 @@ static void test_stress_one_owner_n_thieves() {
     const uint64_t dup = duplicate_count.load(std::memory_order_relaxed);
     const uint64_t empty_steals = empty_steal_count.load(std::memory_order_relaxed);
 
-    std::printf("    items: %zu, missing: %zu, duplicates: %llu\n"
-                "    empty steal attempts: %llu (informational)\n",
-                N_ITEMS, missing, static_cast<unsigned long long>(dup), static_cast<unsigned long long>(empty_steals));
+    ::fixy::report(::fixy::Sink::Out,
+                   "    items: {}, missing: {}, duplicates: {}\n"
+                   "    empty steal attempts: {} (informational)\n",
+                   N_ITEMS, missing, static_cast<unsigned long long>(dup),
+                   static_cast<unsigned long long>(empty_steals));
 
     assert(missing == 0 && "item lost — owner pushed but no receiver marked it");
     assert(dup == 0 && "item duplicated — owner-vs-thief race resolution is broken");
 
-    std::printf("  test_stress_one_owner_n_thieves: PASSED\n");
+    crucible::test::pass("  test_stress_one_owner_n_thieves: PASSED\n");
 }
 
 // A small queue with more thieves keeps the two ends close together, so
@@ -243,8 +246,8 @@ static void test_stress_high_contention() {
     constexpr int N_THIEVES = 8;
     constexpr std::size_t CAPACITY = 32;
 
-    std::printf("  test_stress_high_contention: %zu items, %d thieves, capacity %zu...\n", N_ITEMS, N_THIEVES,
-                CAPACITY);
+    ::fixy::report(::fixy::Sink::Out, "  test_stress_high_contention: {} items, {} thieves, capacity {}...\n", N_ITEMS,
+                   N_THIEVES, CAPACITY);
 
     ChaseLevDeque<uint32_t, CAPACITY> dq;
     std::atomic<bool> owner_done{false};
@@ -306,13 +309,13 @@ static void test_stress_high_contention() {
     }
     const uint64_t dup = duplicate_count.load(std::memory_order_relaxed);
 
-    std::printf("    items: %zu, missing: %zu, duplicates: %llu\n", N_ITEMS, missing,
-                static_cast<unsigned long long>(dup));
+    ::fixy::report(::fixy::Sink::Out, "    items: {}, missing: {}, duplicates: {}\n", N_ITEMS, missing,
+                   static_cast<unsigned long long>(dup));
 
     assert(missing == 0 && "item lost under high contention");
     assert(dup == 0 && "item duplicated under high contention");
 
-    std::printf("  test_stress_high_contention: PASSED\n");
+    crucible::test::pass("  test_stress_high_contention: PASSED\n");
 }
 
 // A pointer payload is the shape real work items take, and it is also
@@ -335,11 +338,11 @@ static void test_pointer_payload() {
         assert(**opt == i * 100);
     }
 
-    std::printf("  test_pointer_payload: PASSED\n");
+    crucible::test::pass("  test_pointer_payload: PASSED\n");
 }
 
 int main() {
-    std::printf("test_chase_lev_deque:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_chase_lev_deque:\n");
 
     test_empty_deque();
     test_single_thread_lifo();
@@ -350,6 +353,6 @@ int main() {
     test_stress_one_owner_n_thieves();
     test_stress_high_contention();
 
-    std::printf("test_chase_lev_deque: ALL PASSED\n");
+    crucible::test::pass("test_chase_lev_deque: ALL PASSED\n");
     return 0;
 }

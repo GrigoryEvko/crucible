@@ -43,7 +43,7 @@ void test_signal_then_wait() {
     signal_then_wait<VendorBackend::TPU>();
     signal_then_wait<VendorBackend::TRN>();
     signal_then_wait<VendorBackend::CER>();
-    std::printf("  test_signal_then_wait:        PASSED\n");
+    crucible::test::pass("  test_signal_then_wait:        PASSED\n");
 }
 
 // A copy and an assignment keep the counter and the handle of their source,
@@ -60,7 +60,7 @@ void test_copy_and_assignment() {
     assert(second.native_handle() == 1);
     assert(second.try_wait(3));
     assert(second_counter.load(std::memory_order_acquire) == 0);
-    std::printf("  test_copy_and_assignment:     PASSED\n");
+    crucible::test::pass("  test_copy_and_assignment:     PASSED\n");
 }
 
 // A waiter on another thread that sees the signal also sees the write that
@@ -81,16 +81,16 @@ void test_signal_publishes_prior_writes() {
         semaphore.signal(1);
     }
     assert(observed == 99);
-    std::printf("  test_signal_publishes_prior_writes: PASSED\n");
+    crucible::test::pass("  test_signal_publishes_prior_writes: PASSED\n");
 }
 
 }  // namespace
 
 int main() {
-    std::printf("test_mimic_semaphore:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_mimic_semaphore:\n");
     test_signal_then_wait();
     test_copy_and_assignment();
     test_signal_publishes_prior_writes();
-    std::printf("test_mimic_semaphore: all PASSED\n");
+    crucible::test::pass("test_mimic_semaphore: all PASSED\n");
     return 0;
 }

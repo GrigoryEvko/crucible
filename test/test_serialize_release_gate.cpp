@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <cstring>
 #include <span>
+#include "test_assert.h"
 
 namespace {
 
@@ -151,6 +152,6 @@ constexpr size_t kMetaLayout = kMetaDevice + 1 + 1;  // +device_idx, layout byte
         }
     }
 
-    std::fprintf(stderr, "OK: all trust-boundary enum gates reject malformed wire bytes\n");
+    crucible::test::pass("OK: all trust-boundary enum gates reject malformed wire bytes\n");
     return 0;
 }

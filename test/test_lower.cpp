@@ -402,6 +402,6 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1, int8_t dev = 0, vo
     assert(graph2.input_slots(NodeId{2})[0] == SlotId{0});
     assert(graph2.input_slots(NodeId{2})[1] == SlotId{1});
 
-    std::printf("test_lower: all tests passed\n");
+    crucible::test::pass("test_lower: all tests passed\n");
     return 0;
 }

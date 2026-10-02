@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <type_traits>
 #include <utility>
+#include "test_assert.h"
 
 namespace {
 
@@ -288,7 +289,7 @@ int main() {
     }
 
     if (failures == 0) {
-        std::printf("perf::WorkloadProfiler smoke OK\n");
+        crucible::test::pass("perf::WorkloadProfiler smoke OK\n");
     }
     return failures == 0 ? 0 : 1;
 }

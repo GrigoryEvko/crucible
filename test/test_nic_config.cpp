@@ -3,7 +3,7 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/reflect/EnumName.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
@@ -80,7 +80,7 @@ void test_admission() {
     assert(!zero_rto.has_value());
     assert(zero_rto.error() == nic::NicConfigError::InvalidTcpRtoMinUs);
 
-    std::printf("  test_admission: PASSED\n");
+    crucible::test::pass("  test_admission: PASSED\n");
 }
 
 void test_mint_and_apply_boundaries() {
@@ -145,7 +145,7 @@ void test_mint_and_apply_boundaries() {
     assert(!privileged_apply.has_value());
     assert(privileged_apply.error() == nic::NicConfigError::PrivilegedBackendUnavailable);
 
-    std::printf("  test_mint_and_apply_boundaries: PASSED\n");
+    crucible::test::pass("  test_mint_and_apply_boundaries: PASSED\n");
 }
 
 void test_identity_and_sysctl_validation() {
@@ -199,7 +199,7 @@ void test_identity_and_sysctl_validation() {
     assert(!query.has_value());
     assert(query.error() == nic::NicConfigError::QueryDeferred);
 
-    std::printf("  test_identity_and_sysctl_validation: PASSED\n");
+    crucible::test::pass("  test_identity_and_sysctl_validation: PASSED\n");
 }
 
 // Nothing here touches the kernel yet, and three separate claims say
@@ -256,7 +256,7 @@ void test_apply_paths_are_stubbed() {
     assert(!query.has_value());
     assert(query.error() == nic::NicConfigError::QueryDeferred);
 
-    std::printf("  test_apply_paths_are_stubbed: PASSED\n");
+    crucible::test::pass("  test_apply_paths_are_stubbed: PASSED\n");
 }
 
 void test_audit_mapping() {
@@ -277,7 +277,7 @@ void test_audit_mapping() {
     assert(features.test(cog::NicFeature::Rss));
     assert(!features.test(cog::NicFeature::Gso));
 
-    std::printf("  test_audit_mapping: PASSED\n");
+    crucible::test::pass("  test_audit_mapping: PASSED\n");
 }
 
 void test_enumerator_names() {
@@ -286,7 +286,7 @@ void test_enumerator_names() {
     assert(enum_name(nic::NicOffload::RxHash) == std::string_view{"RxHash"});
     assert(enum_name(static_cast<nic::NicConfigError>(0xFF)) == std::string_view{"<unknown NicConfigError>"});
 
-    std::printf("  test_enumerator_names: PASSED\n");
+    crucible::test::pass("  test_enumerator_names: PASSED\n");
 }
 
 }  // namespace
@@ -315,14 +315,14 @@ int main() {
                                                       "can change interface settings, and fixtures driven against a "
                                                       "live interface.");
 
-    std::printf("test_nic_config:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_nic_config:\n");
     test_admission();
     test_mint_and_apply_boundaries();
     test_identity_and_sysctl_validation();
     test_audit_mapping();
     test_enumerator_names();
     test_apply_paths_are_stubbed();
-    std::printf("test_nic_config: all PASSED\n");
+    crucible::test::pass("test_nic_config: all PASSED\n");
     return 0;
 }
 

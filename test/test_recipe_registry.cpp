@@ -401,6 +401,6 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
         assert((*a)->out_dtype == (*b)->out_dtype);
     }
 
-    std::printf("test_recipe_registry: all tests passed\n");
+    crucible::test::pass("test_recipe_registry: all tests passed\n");
     return 0;
 }

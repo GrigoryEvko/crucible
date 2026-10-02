@@ -15,6 +15,7 @@
 #include <thread>
 #include <type_traits>
 #include <utility>
+#include "../test_assert.h"
 
 namespace {
 
@@ -190,6 +191,6 @@ int main() {
     if (const int rc = names_the_protocol(); rc != 0) return 300 + rc;
     if (const int rc = two_racing_observers_get_one_session(); rc != 0) return 400 + rc;
     if (const int rc = worker_polls_until_the_publish(); rc != 0) return 500 + rc;
-    std::puts("handle_lazy_channel: one session per resource, refusals, race and startup OK");
+    crucible::test::pass("handle_lazy_channel: one session per resource, refusals, race and startup OK\n");
     return 0;
 }

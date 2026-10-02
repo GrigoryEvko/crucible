@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <type_traits>
 #include <utility>
+#include "../test_assert.h"
 
 namespace {
 
@@ -200,6 +201,6 @@ int main() {
     if (const int rc = mint_walks_to_end(); rc != 0) return rc;
     if (const int rc = loop_head_is_the_choice(); rc != 0) return rc;
     if (const int rc = callback_lends_the_resource(); rc != 0) return rc;
-    std::fprintf(stderr, "test_session_entry: OK\n");
+    crucible::test::pass("test_session_entry: OK\n");
     return 0;
 }

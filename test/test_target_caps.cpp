@@ -59,7 +59,7 @@ static void test_names_at_run_time() {
     check_every_name_at_run_time<cog::SwitchFeature>();
     check_every_name_at_run_time<cog::CpuFeature>();
     check_every_name_at_run_time<cog::DramFeature>();
-    std::printf("  test_names_at_run_time:               PASSED\n");
+    crucible::test::pass("  test_names_at_run_time:               PASSED\n");
 }
 
 // The underlying value of each PCIe generation is the generation number,
@@ -75,7 +75,7 @@ static void test_pcie_gen_value_is_generation() {
             assert(value == static_cast<std::uint8_t>(identifier[3] - '0'));
         }
     });
-    std::printf("  test_pcie_gen_value_is_generation:    PASSED\n");
+    crucible::test::pass("  test_pcie_gen_value_is_generation:    PASSED\n");
 }
 
 static void test_gpu_feature_runtime() {
@@ -93,7 +93,7 @@ static void test_gpu_feature_runtime() {
     assert(nic_bits.popcount() == 1);
     assert(!nic_bits.test(cog::NicFeature::Roce));
 
-    std::printf("  test_gpu_feature_runtime:             PASSED\n");
+    crucible::test::pass("  test_gpu_feature_runtime:             PASSED\n");
 }
 
 static void test_gpu_target_caps_construction() {
@@ -123,7 +123,7 @@ static void test_gpu_target_caps_construction() {
     assert(caps.features.test(cog::GpuFeature::Tma));
     assert(!caps.features.test(cog::GpuFeature::ClusterLaunch));
 
-    std::printf("  test_gpu_target_caps_construction:    PASSED\n");
+    crucible::test::pass("  test_gpu_target_caps_construction:    PASSED\n");
 }
 
 static void test_nic_port_target_caps_construction() {
@@ -146,7 +146,7 @@ static void test_nic_port_target_caps_construction() {
     assert(eff < caps.line_rate_bytes_per_sec.value());
     assert(caps.features.test(cog::NicFeature::Roce));
 
-    std::printf("  test_nic_port_target_caps_construction: PASSED\n");
+    crucible::test::pass("  test_nic_port_target_caps_construction: PASSED\n");
 }
 
 static void test_nvswitch_target_caps_construction() {
@@ -160,7 +160,7 @@ static void test_nvswitch_target_caps_construction() {
     assert(pc == 64);
     assert(caps.features.test(cog::SwitchFeature::Sharp));
 
-    std::printf("  test_nvswitch_target_caps_construction: PASSED\n");
+    crucible::test::pass("  test_nvswitch_target_caps_construction: PASSED\n");
 }
 
 static void test_cpu_target_caps_construction() {
@@ -185,7 +185,7 @@ static void test_cpu_target_caps_construction() {
     assert(cores == 56);
     assert(socket.representative_core.features.test(cog::CpuFeature::Amx));
 
-    std::printf("  test_cpu_target_caps_construction:    PASSED\n");
+    crucible::test::pass("  test_cpu_target_caps_construction:    PASSED\n");
 }
 
 static void test_dram_target_caps_construction() {
@@ -201,7 +201,7 @@ static void test_dram_target_caps_construction() {
     assert(bw > 0);
     assert(caps.features.test(cog::DramFeature::Ecc));
 
-    std::printf("  test_dram_target_caps_construction:   PASSED\n");
+    crucible::test::pass("  test_dram_target_caps_construction:   PASSED\n");
 }
 
 static void test_caps_for_binding() {
@@ -235,7 +235,7 @@ static void test_caps_for_binding() {
         + query.template operator()<cog::CogKind::CpuSocket>() + query.template operator()<cog::CogKind::DramChannel>();
     assert(total == 6);
 
-    std::printf("  test_caps_for_binding:                PASSED\n");
+    crucible::test::pass("  test_caps_for_binding:                PASSED\n");
 }
 
 // Each node fact of a discovery snapshot holds one NIC port schema, and each
@@ -243,11 +243,11 @@ static void test_caps_for_binding() {
 // initialization of an automatic snapshot (padding_bytes.h).
 static void test_nic_port_target_caps_has_no_padding_byte() {
     crucible::test::expect_no_padding_byte<^^cog::NicPortTargetCaps>();
-    std::printf("  test_nic_port_target_caps_has_no_padding_byte: PASSED\n");
+    crucible::test::pass("  test_nic_port_target_caps_has_no_padding_byte: PASSED\n");
 }
 
 int main() {
-    std::printf("test_target_caps: 10 groups\n");
+    ::fixy::report(::fixy::Sink::Out, "test_target_caps: 10 groups\n");
     test_names_at_run_time();
     test_pcie_gen_value_is_generation();
     test_gpu_feature_runtime();
@@ -258,6 +258,6 @@ int main() {
     test_dram_target_caps_construction();
     test_caps_for_binding();
     test_nic_port_target_caps_has_no_padding_byte();
-    std::printf("test_target_caps: 10 groups, all passed\n");
+    crucible::test::pass("test_target_caps: 10 groups, all passed\n");
     return 0;
 }

@@ -29,6 +29,7 @@
 #include <limits>
 #include <string_view>
 #include <type_traits>
+#include "../test_assert.h"
 
 namespace {
 
@@ -595,6 +596,6 @@ int main() {
         std::fprintf(stderr, "test_counter_clock_attacks: %d case(s) failed\n", g_failures);
         return 1;
     }
-    std::printf("test_counter_clock_attacks: ok\n");
+    crucible::test::pass("test_counter_clock_attacks: ok\n");
     return 0;
 }

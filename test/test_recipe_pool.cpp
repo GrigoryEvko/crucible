@@ -279,6 +279,6 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<Arena&
         assert(r != nullptr);
     }
 
-    std::printf("test_recipe_pool: all tests passed\n");
+    crucible::test::pass("test_recipe_pool: all tests passed\n");
     return 0;
 }

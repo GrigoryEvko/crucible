@@ -448,6 +448,6 @@ int main() {
 
     std::filesystem::remove_all(dir);
 
-    std::printf("test_cipher: all tests passed\n");
+    crucible::test::pass("test_cipher: all tests passed\n");
     return 0;
 }

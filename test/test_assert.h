@@ -35,13 +35,18 @@
 
 namespace crucible::test {
 
-// Writes the pass line text, with its arguments, to standard output.  The
-// text holds its own line break.  The function is cold and not inline, as
-// the report with arguments is, so each pass line costs its caller one
-// call.
-template <class... Args>
-[[gnu::cold, gnu::noinline]] void pass(::fixy::Fmt<std::type_identity_t<Args>...> const& text, Args... args) noexcept {
-    ::fixy::report(::fixy::Sink::Out, text, args...);
+// Writes the pass line text to standard output.  The text holds its own
+// line break.  The text comes by value, so the caller writes it into the
+// argument area of the call and keeps no object in its frame, as a call of
+// fixy::report with no argument does.
+[[gnu::cold, gnu::noinline]] inline void pass(::fixy::Fmt<> text) noexcept { ::fixy::report(::fixy::Sink::Out, text); }
+
+// The same, with arguments.  The function is cold and not inline, as the
+// report with arguments is, so each pass line costs its caller one call.
+template <class First, class... Rest>
+[[gnu::cold, gnu::noinline]] void pass(::fixy::Fmt<std::type_identity_t<First>, std::type_identity_t<Rest>...> text,
+                                       First first, Rest... rest) noexcept {
+    ::fixy::report(::fixy::Sink::Out, text, first, rest...);
 }
 
 }  // namespace crucible::test

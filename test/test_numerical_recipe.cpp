@@ -229,6 +229,6 @@ int main() {
         assert(crucible::compute_recipe_hash(a) == crucible::compute_recipe_hash(b));
     }
 
-    std::printf("test_numerical_recipe: all tests passed\n");
+    crucible::test::pass("test_numerical_recipe: all tests passed\n");
     return 0;
 }

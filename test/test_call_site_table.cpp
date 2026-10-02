@@ -34,7 +34,7 @@ static void test_empty_table_has_nothing() {
     assert(t.size() == 0);
     assert(!t.has(H(1)));
     assert(!t.has(H(0x12345678ABCDEF00ULL)));
-    std::printf("  test_empty:                     PASSED\n");
+    crucible::test::pass("  test_empty:                     PASSED\n");
 }
 
 static void test_single_insert_then_has() {
@@ -47,7 +47,7 @@ static void test_single_insert_then_has() {
     // reads through value().
     assert(t.entries[0].filename.value() == "foo.py");
     assert(t.entries[0].funcname.value() == "main");
-    std::printf("  test_single_insert:             PASSED\n");
+    crucible::test::pass("  test_single_insert:             PASSED\n");
 }
 
 static void test_duplicate_insert_is_noop() {
@@ -58,7 +58,7 @@ static void test_duplicate_insert_is_noop() {
     assert(t.size() == 1);
     assert(t.entries[0].lineno.value() == 10);
     assert(t.entries[0].filename.value() == "foo.py");
-    std::printf("  test_duplicate_noop:            PASSED\n");
+    crucible::test::pass("  test_duplicate_noop:            PASSED\n");
 }
 
 static void test_many_distinct_inserts() {
@@ -72,7 +72,7 @@ static void test_many_distinct_inserts() {
         assert(t.has(H(i)));
     assert(!t.has(H(0)));  // zero is the empty-slot sentinel
     assert(!t.has(H(9999)));
-    std::printf("  test_many_inserts:              PASSED\n");
+    crucible::test::pass("  test_many_inserts:              PASSED\n");
 }
 
 static void test_probe_does_not_confuse_hash_collision() {
@@ -87,7 +87,7 @@ static void test_probe_does_not_confuse_hash_collision() {
     assert(t.has(h_a));
     assert(t.has(h_b));
     assert(t.size() == 2);
-    std::printf("  test_collision_probe:           PASSED\n");
+    crucible::test::pass("  test_collision_probe:           PASSED\n");
 }
 
 static void test_sentinel_zero_is_not_a_callsite() {
@@ -98,7 +98,7 @@ static void test_sentinel_zero_is_not_a_callsite() {
     assert(!t.has(H(0)));
     t.insert(NZ(5), "five.py", "f5", 5);
     assert(t.has(H(5)));
-    std::printf("  test_sentinel_zero:             PASSED\n");
+    crucible::test::pass("  test_sentinel_zero:             PASSED\n");
 }
 
 static void test_tagged_overloads_store_interned() {
@@ -116,7 +116,7 @@ static void test_tagged_overloads_store_interned() {
     assert(t.entries[0].lineno.value() == 70);
     assert(t.entries[1].filename.value() == "int.py" && t.entries[1].funcname.value() == "int_fn");
     assert(t.entries[1].lineno.value() == 80);
-    std::printf("  test_tagged_overloads:          PASSED\n");
+    crucible::test::pass("  test_tagged_overloads:          PASSED\n");
 }
 
 int main() {
@@ -127,6 +127,6 @@ int main() {
     test_probe_does_not_confuse_hash_collision();
     test_sentinel_zero_is_not_a_callsite();
     test_tagged_overloads_store_interned();
-    std::printf("test_call_site_table: 7 groups, all passed\n");
+    crucible::test::pass("test_call_site_table: 7 groups, all passed\n");
     return 0;
 }

@@ -141,6 +141,6 @@ void test_enabled_watchdog() {
 int main() {
     test_disabled_watchdog();
     test_enabled_watchdog();
-    std::printf("test_vigil_deadline_watchdog: all tests passed\n");
+    crucible::test::pass("test_vigil_deadline_watchdog: all tests passed\n");
     return 0;
 }

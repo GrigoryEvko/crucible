@@ -82,7 +82,7 @@ static void test_name_accessors() {
     static_assert(enum_name(topology::PtpDegradationReason::ExcessiveSkew) == "ExcessiveSkew");
     volatile auto error = topology::PtpError::TimestampOverflow;
     assert(enum_name(static_cast<topology::PtpError>(error)) == std::string_view{"TimestampOverflow"});
-    std::printf("  test_name_accessors:        PASSED\n");
+    crucible::test::pass("  test_name_accessors:        PASSED\n");
 }
 
 static void test_fd_and_nic_admission() {
@@ -105,7 +105,7 @@ static void test_fd_and_nic_admission() {
     auto too_high = topology::admit_ptp_device_index(256);
     assert(!too_high.has_value());
     assert(too_high.error() == topology::PtpError::InvalidDeviceIndex);
-    std::printf("  test_fd_and_nic_admission:  PASSED\n");
+    crucible::test::pass("  test_fd_and_nic_admission:  PASSED\n");
 }
 
 static void test_handle_status_and_timestamp() {
@@ -142,7 +142,7 @@ static void test_handle_status_and_timestamp() {
     handle.record_status(eff::BgDrainCtx{::foundation::effects::testing::bg()}, degraded);
     assert(handle.status().servo == topology::PtpServoState::Degraded);
     assert(handle.status().sequence == 6);
-    std::printf("  test_handle_status_and_timestamp: PASSED\n");
+    crucible::test::pass("  test_handle_status_and_timestamp: PASSED\n");
 }
 
 // Every field of the status written at tick n is a function of n alone, so a
@@ -208,8 +208,8 @@ static void test_status_seqlock_never_tears() {
 
     assert(torn.load(std::memory_order_acquire) == 0);
     assert(handle.status().sequence == ticks);
-    std::printf("  test_status_seqlock_never_tears: PASSED (%llu reads, 0 torn)\n",
-                static_cast<unsigned long long>(reads.load(std::memory_order_acquire)));
+    ::fixy::report(::fixy::Sink::Out, "  test_status_seqlock_never_tears: PASSED ({} reads, 0 torn)\n",
+                   static_cast<unsigned long long>(reads.load(std::memory_order_acquire)));
 }
 
 static void test_daemon_report_boundary() {
@@ -254,7 +254,7 @@ static void test_daemon_report_boundary() {
     auto excessive_skew = topology::ptp_diagnostic_from_daemon_report(topology::admit_ptp_daemon_report(bg, report));
     assert(excessive_skew.value().reason == topology::PtpDegradationReason::ExcessiveSkew);
 
-    std::printf("  test_daemon_report_boundary: PASSED\n");
+    crucible::test::pass("  test_daemon_report_boundary: PASSED\n");
 }
 
 static void test_timestamped_packet_view() {
@@ -269,7 +269,7 @@ static void test_timestamped_packet_view() {
     auto empty = topology::timestamp_packet_view(std::span<const std::byte>{}, stamp, 9);
     assert(!empty.has_value());
     assert(empty.error() == topology::PtpError::Degraded);
-    std::printf("  test_timestamped_packet_view: PASSED\n");
+    crucible::test::pass("  test_timestamped_packet_view: PASSED\n");
 }
 
 // A build host usually has no /dev/ptpN, so the open takes the missing
@@ -318,7 +318,7 @@ static void test_linux_boundaries_if_available() {
     auto recv = topology::recv_with_hw_timestamp(*sock_fd, std::span<std::byte>{payload});
     assert(recv.has_value() || recv.error() == topology::PtpError::RecvFailed
            || recv.error() == topology::PtpError::NoTimestamp);
-    std::printf("  test_linux_boundaries_if_available: PASSED\n");
+    crucible::test::pass("  test_linux_boundaries_if_available: PASSED\n");
 }
 
 int main() {
@@ -330,7 +330,7 @@ int main() {
     static_assert(!::fixy::time::CtxFitsPtpClockReaderMint<eff::BgDrainCtx>,
                   "opening /dev/ptpN blocks on the file system, so a context without Block is refused");
 
-    std::printf("test_topology_ptp: 7 groups\n");
+    ::fixy::report(::fixy::Sink::Out, "test_topology_ptp: 7 groups\n");
     test_name_accessors();
     test_fd_and_nic_admission();
     test_handle_status_and_timestamp();
@@ -338,6 +338,6 @@ int main() {
     test_daemon_report_boundary();
     test_timestamped_packet_view();
     test_linux_boundaries_if_available();
-    std::printf("test_topology_ptp: all passed\n");
+    crucible::test::pass("test_topology_ptp: all passed\n");
     return 0;
 }

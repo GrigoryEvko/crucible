@@ -51,7 +51,7 @@ static void test_empty_returns_zero() {
     assert(n == 0);
     assert(ring->size().peek() == 0);
 
-    std::printf("  test_empty_returns_zero: PASSED\n");
+    crucible::test::pass("  test_empty_returns_zero: PASSED\n");
 }
 
 // A count of zero returns zero without touching the output buffers,
@@ -74,7 +74,7 @@ static void test_max_count_zero() {
     assert(n == 0);
     assert(ring->size().peek() == 1);  // entry not drained
 
-    std::printf("  test_max_count_zero: PASSED\n");
+    crucible::test::pass("  test_max_count_zero: PASSED\n");
 }
 
 static void test_single_thread_fifo() {
@@ -104,7 +104,7 @@ static void test_single_thread_fifo() {
         assert(out_calls[i] == make_callsite(i));
     }
 
-    std::printf("  test_single_thread_fifo: PASSED\n");
+    crucible::test::pass("  test_single_thread_fifo: PASSED\n");
 }
 
 static void test_multi_batch_drain() {
@@ -137,7 +137,7 @@ static void test_multi_batch_drain() {
         assert(out_metas[i] == make_meta(i));
     }
 
-    std::printf("  test_multi_batch_drain: PASSED\n");
+    crucible::test::pass("  test_multi_batch_drain: PASSED\n");
 }
 
 // Draining a run of entries that straddles the end of the ring has to
@@ -181,7 +181,7 @@ static void test_wrap_around() {
         assert(e[i].schema_hash == SchemaHash{0x10000ULL + i});
     }
 
-    std::printf("  test_wrap_around: PASSED\n");
+    crucible::test::pass("  test_wrap_around: PASSED\n");
 }
 
 // Two rings receive the same stream.  One is drained in random batch
@@ -232,7 +232,7 @@ static void test_equivalence_with_single_pop() {
         assert(a_calls[i] == b_calls[i]);
     }
 
-    std::printf("  test_equivalence_with_single_pop: PASSED (%u entries)\n", N);
+    crucible::test::pass("  test_equivalence_with_single_pop: PASSED ({} entries)\n", N);
 }
 
 // One producer, one consumer, and a consumer that keeps changing how it
@@ -243,7 +243,8 @@ static void test_spsc_stress() {
     auto ring = std::make_unique<TraceRing>();
     constexpr uint64_t N = 100000;
 
-    std::printf("  test_spsc_stress: 1 producer + 1 consumer, N=%llu...\n", static_cast<unsigned long long>(N));
+    ::fixy::report(::fixy::Sink::Out, "  test_spsc_stress: 1 producer + 1 consumer, N={}...\n",
+                   static_cast<unsigned long long>(N));
 
     std::atomic<bool> producer_done{false};
     std::atomic<uint64_t> received{0};
@@ -314,11 +315,12 @@ static void test_spsc_stress() {
         }
     }
 
-    std::printf("  test_spsc_stress: PASSED (%llu entries delivered in order)\n", static_cast<unsigned long long>(N));
+    crucible::test::pass("  test_spsc_stress: PASSED ({} entries delivered in order)\n",
+                         static_cast<unsigned long long>(N));
 }
 
 int main() {
-    std::printf("test_trace_ring_pop_batch:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_trace_ring_pop_batch:\n");
 
     test_empty_returns_zero();
     test_max_count_zero();
@@ -328,6 +330,6 @@ int main() {
     test_equivalence_with_single_pop();
     test_spsc_stress();
 
-    std::printf("test_trace_ring_pop_batch: ALL PASSED\n");
+    crucible::test::pass("test_trace_ring_pop_batch: ALL PASSED\n");
     return 0;
 }

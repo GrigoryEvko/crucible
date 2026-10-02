@@ -10,7 +10,7 @@
 #include <foundation/algebra/GradedTrait.h>
 #include <foundation/diag/FailClosed.h>
 
-#include <cassert>
+#include "../test_assert.h"
 #include <cstddef>
 #include <cstdint>
 #include <meta>

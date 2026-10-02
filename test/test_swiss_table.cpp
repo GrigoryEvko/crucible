@@ -29,7 +29,7 @@ static void test_h2_tag_range() {
     assert(h2_tag(0) == 0);
     assert(h2_tag(~0ULL) == 0x7F);  // high 7 bits all set
     assert(h2_tag(1ULL << 57) == 0x01);
-    std::printf("  test_h2_tag_range:              PASSED\n");
+    crucible::test::pass("  test_h2_tag_range:              PASSED\n");
 }
 
 static void test_bitmask_iteration() {
@@ -60,7 +60,7 @@ static void test_bitmask_iteration() {
     }
     assert(count == 8);
     assert(last == 15);
-    std::printf("  test_bitmask_iteration:         PASSED\n");
+    crucible::test::pass("  test_bitmask_iteration:         PASSED\n");
 }
 
 static void test_group_match_empty() {
@@ -82,7 +82,7 @@ static void test_group_match_empty() {
         ctrl[i] = static_cast<int8_t>(i & 0x7F);
     g = CtrlGroup::load(ctrl);
     assert(!static_cast<bool>(g.match_empty()));
-    std::printf("  test_match_empty:               PASSED\n");
+    crucible::test::pass("  test_match_empty:               PASSED\n");
 }
 
 static void test_group_match_tag() {
@@ -106,7 +106,7 @@ static void test_group_match_tag() {
     // Tag that appears nowhere.
     auto none = g.match(0x55);
     assert(!static_cast<bool>(none));
-    std::printf("  test_match_tag:                 PASSED\n");
+    crucible::test::pass("  test_match_tag:                 PASSED\n");
 }
 
 static void test_match_single_position() {
@@ -123,16 +123,16 @@ static void test_match_single_position() {
         hits.clear_lowest();
         assert(!static_cast<bool>(hits));
     }
-    std::printf("  test_position_coverage:         PASSED\n");
+    crucible::test::pass("  test_position_coverage:         PASSED\n");
 }
 
 int main() {
-    std::printf("test_swiss_table (kGroupWidth=%zu):\n", kGroupWidth);
+    ::fixy::report(::fixy::Sink::Out, "test_swiss_table (kGroupWidth={}):\n", kGroupWidth);
     test_h2_tag_range();
     test_bitmask_iteration();
     test_group_match_empty();
     test_group_match_tag();
     test_match_single_position();
-    std::printf("test_swiss_table: 5 groups, all passed\n");
+    crucible::test::pass("test_swiss_table: 5 groups, all passed\n");
     return 0;
 }

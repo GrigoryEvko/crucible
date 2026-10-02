@@ -10,7 +10,6 @@
 #include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
-#include <cassert>
 #include <cstdio>
 #include <type_traits>
 #include <utility>

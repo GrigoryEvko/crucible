@@ -3,7 +3,7 @@
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
@@ -73,7 +73,7 @@ void test_admission_and_names() {
     assert(!zero_senders.has_value());
     assert(zero_senders.error() == cntp::IncastError::InvalidSenderCount);
 
-    std::printf("  test_admission_and_names: PASSED\n");
+    crucible::test::pass("  test_admission_and_names: PASSED\n");
 }
 
 void test_config_minting() {
@@ -103,7 +103,7 @@ void test_config_minting() {
     assert(manual.has_value());
     assert(!manual->value().enable_dctcp);
 
-    std::printf("  test_config_minting:      PASSED\n");
+    crucible::test::pass("  test_config_minting:      PASSED\n");
 }
 
 void test_credit_pacing_state() {
@@ -156,7 +156,7 @@ void test_credit_pacing_state() {
     assert(!overflow.has_value());
     assert(overflow.error() == cntp::IncastError::TooManyFlows);
 
-    std::printf("  test_credit_pacing_state: PASSED\n");
+    crucible::test::pass("  test_credit_pacing_state: PASSED\n");
 }
 
 void test_live_rto_if_available() {
@@ -175,11 +175,11 @@ void test_live_rto_if_available() {
     if (!set.has_value()) {
         assert(set.error() == cntp::IncastError::SetRtoMinFailed
                || set.error() == cntp::IncastError::UnsupportedRtoMinSockOpt);
-        std::printf("  test_live_rto_if_available: SKIPPED\n");
+        ::fixy::report(::fixy::Sink::Out, "  test_live_rto_if_available: SKIPPED\n");
         return;
     }
 
-    std::printf("  test_live_rto_if_available: PASSED\n");
+    crucible::test::pass("  test_live_rto_if_available: PASSED\n");
 }
 
 }  // namespace
@@ -202,11 +202,11 @@ int main() {
     static_assert(!cntp::CtxFitsIncastApply<::fixy::ColdInitCtx>,
                   "a context without Block can neither read the algorithm list nor set a socket option");
 
-    std::printf("test_cntp_incast_control:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cntp_incast_control:\n");
     test_admission_and_names();
     test_config_minting();
     test_credit_pacing_state();
     test_live_rto_if_available();
-    std::printf("test_cntp_incast_control: all PASSED\n");
+    crucible::test::pass("test_cntp_incast_control: all PASSED\n");
     return 0;
 }

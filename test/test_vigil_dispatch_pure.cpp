@@ -79,7 +79,7 @@ void test_dispatch_pure_matches_dispatch_op() {
         }
     }
 
-    std::printf("  test_dispatch_pure_matches_dispatch_op: PASSED\n");
+    crucible::test::pass("  test_dispatch_pure_matches_dispatch_op: PASSED\n");
 }
 
 }  // namespace test_vigil_dispatch

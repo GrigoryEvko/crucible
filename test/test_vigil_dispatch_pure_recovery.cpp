@@ -131,7 +131,7 @@ void test_dispatch_pure_divergence_and_recovery() {
         }
     }
 
-    std::printf("  test_dispatch_pure_divergence_and_recovery: PASSED\n");
+    crucible::test::pass("  test_dispatch_pure_divergence_and_recovery: PASSED\n");
 }
 
 }  // namespace test_vigil_dispatch

@@ -21,6 +21,7 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#include "../test_assert.h"
 
 using fixy::contains_scoped_view;
 using fixy::IsScopedView;
@@ -301,8 +302,8 @@ int main() {
     run_test("linear_view_mint_consume", test_linear_view_mint_and_consume);
     run_test("linear_view_transition", test_linear_view_transition_pattern);
 
-    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
+    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
-    std::fprintf(stderr, "ALL PASSED\n");
+    crucible::test::pass("ALL PASSED\n");
     return EXIT_SUCCESS;
 }

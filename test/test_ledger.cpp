@@ -92,7 +92,7 @@ void test_fingerprint_is_stable_and_complete() {
     // This is the property the whole cache rests on.
     assert(ledger::probe_host_fingerprint(probe_ctx) == first);
 
-    std::printf("  test_fingerprint_is_stable_and_complete:   PASSED\n");
+    crucible::test::pass("  test_fingerprint_is_stable_and_complete:   PASSED\n");
 }
 
 void test_fingerprint_halves_are_independent() {
@@ -131,7 +131,7 @@ void test_fingerprint_halves_are_independent() {
     rewired.numa_distance_digest ^= 0x1ull;
     assert(ledger::fold_hardware(rewired) != baseline.hardware);
 
-    std::printf("  test_fingerprint_halves_are_independent:   PASSED\n");
+    crucible::test::pass("  test_fingerprint_halves_are_independent:   PASSED\n");
 }
 
 void test_fingerprint_reuses_the_cogmimic_projection() {
@@ -152,7 +152,7 @@ void test_fingerprint_reuses_the_cogmimic_projection() {
     doubled.l3_total_bytes = facts.l3_total_bytes * 2u;
     assert(ledger::fold_hardware(doubled) != ledger::fold_hardware(facts));
 
-    std::printf("  test_fingerprint_reuses_the_cogmimic_projection: PASSED\n");
+    crucible::test::pass("  test_fingerprint_reuses_the_cogmimic_projection: PASSED\n");
 }
 
 // ── Competence ────────────────────────────────────────────────────────
@@ -174,7 +174,7 @@ void test_competence_names_every_defect() {
     std::array<char, 1> tiny{};
     assert(ledger::describe_defects(fit, tiny).empty());
 
-    std::printf("  test_competence_names_every_defect:        PASSED\n");
+    crucible::test::pass("  test_competence_names_every_defect:        PASSED\n");
 }
 
 void test_competence_load_uses_machine_capacity() {
@@ -194,7 +194,7 @@ void test_competence_load_uses_machine_capacity() {
     assert((ledger::derive_defects(busy, true).raw() & static_cast<std::uint16_t>(CompetenceDefect::LoadAverageHigh))
            != 0u);
 
-    std::printf("  test_competence_load_uses_machine_capacity: PASSED\n");
+    crucible::test::pass("  test_competence_load_uses_machine_capacity: PASSED\n");
 }
 
 void test_competence_accepts_a_pinned_floor_under_any_governor() {
@@ -217,7 +217,7 @@ void test_competence_accepts_a_pinned_floor_under_any_governor() {
             & static_cast<std::uint16_t>(CompetenceDefect::ClockNotPinned))
            != 0u);
 
-    std::printf("  test_competence_accepts_a_pinned_floor:    PASSED\n");
+    crucible::test::pass("  test_competence_accepts_a_pinned_floor:    PASSED\n");
 }
 
 // ── Admission ─────────────────────────────────────────────────────────
@@ -267,7 +267,7 @@ void test_admission_refuses_unsound_evidence() {
     assert(!timeless.has_value());
     assert(timeless.error() == LedgerError::ClockUnavailable);
 
-    std::printf("  test_admission_refuses_unsound_evidence:   PASSED\n");
+    crucible::test::pass("  test_admission_refuses_unsound_evidence:   PASSED\n");
 }
 
 void test_unfit_host_caps_confidence_at_low() {
@@ -288,7 +288,7 @@ void test_unfit_host_caps_confidence_at_low() {
     assert(!entry->is_expired_at(1000u));
     assert(!entry->is_servable_at(1000u));
 
-    std::printf("  test_unfit_host_caps_confidence_at_low:    PASSED\n");
+    crucible::test::pass("  test_unfit_host_caps_confidence_at_low:    PASSED\n");
 }
 
 void test_expiry_including_a_clock_that_moved_backwards() {
@@ -313,7 +313,7 @@ void test_expiry_including_a_clock_that_moved_backwards() {
     geometry.ttl = ledger::VerdictTtl::never();
     assert(!geometry.is_expired_at(10000u + 10000000u));
 
-    std::printf("  test_expiry_including_backwards_clock:     PASSED\n");
+    crucible::test::pass("  test_expiry_including_backwards_clock:     PASSED\n");
 }
 
 // ── The fail-closed read path ─────────────────────────────────────────
@@ -356,7 +356,7 @@ void test_reader_returns_the_callers_conservative_answer() {
     assert(explicit_low.confidence() == Confidence::Low);
     assert(explicit_low.value_or_conservative(VerdictValue{5u}) == VerdictValue{77u});
 
-    std::printf("  test_reader_returns_conservative_answer:   PASSED\n");
+    crucible::test::pass("  test_reader_returns_conservative_answer:   PASSED\n");
 }
 
 // ── Serialization ─────────────────────────────────────────────────────
@@ -414,7 +414,7 @@ void test_serialization_round_trips() {
     assert(!ledger::deserialize_ledger(head + "competence\t0\t0\t0\t0\t0\t0\t0\t0\t2\tnone\n"));
     assert(ledger::deserialize_ledger(head + "competence\t0\t0\t0\t0\t0\t-1\t0\t0\t1\tnone\n"));
 
-    std::printf("  test_serialization_round_trips:            PASSED\n");
+    crucible::test::pass("  test_serialization_round_trips:            PASSED\n");
 }
 
 void test_parser_rejects_malformed_and_tampered_records() {
@@ -510,7 +510,7 @@ void test_parser_rejects_malformed_and_tampered_records() {
     // A truncated verdict line is malformed, not silently short-read.
     assert(!ledger::deserialize_ledger(good + "verdict\ttimer_floor_ns\t1\n").has_value());
 
-    std::printf("  test_parser_rejects_tampered_records:      PASSED\n");
+    crucible::test::pass("  test_parser_rejects_tampered_records:      PASSED\n");
 }
 
 // ── Store round-trip on a real filesystem ─────────────────────────────
@@ -589,7 +589,7 @@ void test_store_round_trips_through_the_filesystem() {
     assert(mismatched.error() == LedgerError::FingerprintMismatch);
     assert(!ledger::mint_ledger_view(ctx, written.fingerprint).is_loaded());
 
-    std::printf("  test_store_round_trips_through_fs:         PASSED\n");
+    crucible::test::pass("  test_store_round_trips_through_fs:         PASSED\n");
 }
 
 // A run of the store test that aborts runs no destructor and leaves its
@@ -610,7 +610,7 @@ void test_store_leaves_no_directory() {
     test_store_round_trips_through_the_filesystem();
 
     assert(!std::filesystem::exists(planted, error));
-    std::printf("  test_store_leaves_no_directory:            PASSED\n");
+    crucible::test::pass("  test_store_leaves_no_directory:            PASSED\n");
 }
 
 // ── The refresh seam ──────────────────────────────────────────────────
@@ -703,7 +703,7 @@ void test_refresh_plan_and_run() {
     assert(failed.log[0].had_probe);
     assert(failed.log[0].error == LedgerError::StoreReadFailed);
 
-    std::printf("  test_refresh_plan_and_run:                 PASSED\n");
+    crucible::test::pass("  test_refresh_plan_and_run:                 PASSED\n");
 }
 
 void test_refusals_name_the_bar_they_missed() {
@@ -742,7 +742,7 @@ void test_refusals_name_the_bar_they_missed() {
     // Nothing reached the ledger.
     assert(target.entries.empty());
 
-    std::printf("  test_refusals_name_the_bar_they_missed:    PASSED\n");
+    crucible::test::pass("  test_refusals_name_the_bar_they_missed:    PASSED\n");
 }
 
 void test_store_is_bounded() {
@@ -767,7 +767,7 @@ void test_store_is_bounded() {
     assert(full.upsert(*entry).has_value());
     assert(full.entries.size() == ledger::kMaxLedgerEntries);
 
-    std::printf("  test_store_is_bounded:                     PASSED\n");
+    crucible::test::pass("  test_store_is_bounded:                     PASSED\n");
 }
 
 // ── Layout ────────────────────────────────────────────────────────────
@@ -781,13 +781,13 @@ void test_list_elements_have_no_padding_byte() {
     crucible::test::expect_no_padding_byte<^^ledger::RefreshRecord>();
     crucible::test::expect_no_padding_byte<^^ledger::CompetenceReport>();
 
-    std::printf("  test_list_elements_have_no_padding_byte:   PASSED\n");
+    crucible::test::pass("  test_list_elements_have_no_padding_byte:   PASSED\n");
 }
 
 }  // namespace
 
 int main() {
-    std::printf("test_ledger:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_ledger:\n");
     test_fingerprint_is_stable_and_complete();
     test_fingerprint_halves_are_independent();
     test_fingerprint_reuses_the_cogmimic_projection();
@@ -805,6 +805,6 @@ int main() {
     test_refusals_name_the_bar_they_missed();
     test_store_is_bounded();
     test_list_elements_have_no_padding_byte();
-    std::printf("test_ledger: 17 groups, all passed\n");
+    crucible::test::pass("test_ledger: 17 groups, all passed\n");
     return 0;
 }

@@ -4,7 +4,7 @@
 #include <foundation/reflect/EnumName.h>
 
 #include <array>
-#include <cassert>
+#include "test_assert.h"
 #include <concepts>
 #include <cstdio>
 #include <span>
@@ -100,7 +100,7 @@ void test_admission() {
     assert(!zero_mac.has_value());
     assert(zero_mac.error() == sriov::SrIovError::InvalidMac);
 
-    std::printf("  test_admission: PASSED\n");
+    crucible::test::pass("  test_admission: PASSED\n");
 }
 
 void test_mint_and_handles() {
@@ -146,7 +146,7 @@ void test_mint_and_handles() {
     assert(empty.parent_uuid().is_zero());
     assert(empty.identity().uuid.is_zero());
 
-    std::printf("  test_mint_and_handles: PASSED\n");
+    crucible::test::pass("  test_mint_and_handles: PASSED\n");
 }
 
 void test_identity_and_capability_gates() {
@@ -176,7 +176,7 @@ void test_identity_and_capability_gates() {
     assert(!query.has_value());
     assert(query.error() == sriov::SrIovError::QueryDeferred);
 
-    std::printf("  test_identity_and_capability_gates: PASSED\n");
+    crucible::test::pass("  test_identity_and_capability_gates: PASSED\n");
 }
 
 void test_privileged_boundaries() {
@@ -207,7 +207,7 @@ void test_privileged_boundaries() {
     assert(!disable.has_value());
     assert(disable.error() == sriov::SrIovError::PrivilegedApplyDeferred);
 
-    std::printf("  test_privileged_boundaries: PASSED\n");
+    crucible::test::pass("  test_privileged_boundaries: PASSED\n");
 }
 
 // The distinction these assertions defend is between a substrate that reports
@@ -248,7 +248,7 @@ void test_apply_paths_are_stubbed() {
     assert(!query.has_value());
     assert(query.error() == sriov::SrIovError::QueryDeferred);
 
-    std::printf("  test_apply_paths_are_stubbed: PASSED\n");
+    crucible::test::pass("  test_apply_paths_are_stubbed: PASSED\n");
 }
 
 void test_enumerator_names() {
@@ -256,7 +256,7 @@ void test_enumerator_names() {
     assert(enum_name(sriov::SrIovError::QueryDeferred) == std::string_view{"QueryDeferred"});
     assert(enum_name(static_cast<sriov::SrIovError>(0xFF)) == std::string_view{"<unknown SrIovError>"});
 
-    std::printf("  test_enumerator_names: PASSED\n");
+    crucible::test::pass("  test_enumerator_names: PASSED\n");
 }
 
 }  // namespace
@@ -284,14 +284,14 @@ int main() {
                   "and query_current returns QueryDeferred. The trait turns true "
                   "only alongside a CAP_NET_ADMIN backend and live-NIC fixtures.");
 
-    std::printf("test_sriov:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_sriov:\n");
     test_admission();
     test_mint_and_handles();
     test_identity_and_capability_gates();
     test_privileged_boundaries();
     test_apply_paths_are_stubbed();
     test_enumerator_names();
-    std::printf("test_sriov: all PASSED\n");
+    crucible::test::pass("test_sriov: all PASSED\n");
     return 0;
 }
 

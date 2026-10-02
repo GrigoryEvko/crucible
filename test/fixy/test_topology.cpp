@@ -21,6 +21,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include "../test_assert.h"
 
 using namespace fixy::concurrent;
 
@@ -438,8 +439,8 @@ int main() {
     run_test("test_malformed_distance_row_reads_conventional", test_malformed_distance_row_reads_conventional);
     run_test("test_missing_cache_directory_still_reads_nodes", test_missing_cache_directory_still_reads_nodes);
 
-    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
+    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
-    std::fprintf(stderr, "ALL PASSED\n");
+    crucible::test::pass("ALL PASSED\n");
     return EXIT_SUCCESS;
 }

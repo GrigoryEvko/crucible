@@ -66,7 +66,7 @@ void test_second_producer_is_rejected() {
     auto r2 = crucible::test::dispatch_synthetic(vigil, again.entry, again.metas, again.n_metas);
     assert(r2.action == DispatchResult::Action::RECORD);
 
-    std::printf("  test_second_producer_is_rejected: PASSED\n");
+    crucible::test::pass("  test_second_producer_is_rejected: PASSED\n");
 }
 
 // A reference to the producer context can reach another thread, and there
@@ -103,7 +103,7 @@ void test_cold_gates_reject_a_context_on_another_thread() {
     static_cast<void>(vigil.ring(fg));
     static_cast<void>(vigil.meta_log(fg));
 
-    std::printf("  test_cold_gates_reject_a_context_on_another_thread: PASSED\n");
+    crucible::test::pass("  test_cold_gates_reject_a_context_on_another_thread: PASSED\n");
 }
 
 // The cold gate of a table asks which thread holds the live claims of the
@@ -134,7 +134,7 @@ void test_second_thread_cannot_claim_the_brand() {
     later_thread.join();
     assert(is_later_claim_admitted && "no claim of the brand was live, so another thread must claim it");
 
-    std::printf("  test_second_thread_cannot_claim_the_brand: PASSED\n");
+    crucible::test::pass("  test_second_thread_cannot_claim_the_brand: PASSED\n");
 }
 
 }  // namespace test_vigil_dispatch

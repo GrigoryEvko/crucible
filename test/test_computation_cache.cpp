@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <thread>
+#include "test_assert.h"
 
 namespace {
 
@@ -514,6 +515,6 @@ int main() {
         EXPECT_TRUE(is_one_of);
     });
 
-    std::fprintf(stderr, "\ntotal: %d passed, %d failed\n", total_passed, total_failed);
+    crucible::test::pass("\ntotal: {} passed, {} failed\n", total_passed, total_failed);
     return total_failed == 0 ? 0 : 1;
 }

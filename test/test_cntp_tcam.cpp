@@ -5,7 +5,7 @@
 #include <fixy/Tags.h>
 #include <foundation/effects/Ctx.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <concepts>
 #include <cstdio>
 #include <limits>
@@ -111,7 +111,7 @@ void test_admission_and_names() {
     assert(!bad_match.has_value());
     assert(bad_match.error() == tcam::TcamError::InvalidMatchParameter);
 
-    std::printf("  test_admission_and_names: PASSED\n");
+    crucible::test::pass("  test_admission_and_names: PASSED\n");
 }
 
 void test_table_minting() {
@@ -147,7 +147,7 @@ void test_table_minting() {
     assert(!zero.has_value());
     assert(zero.error() == tcam::TcamError::ZeroTargetCog);
 
-    std::printf("  test_table_minting: PASSED\n");
+    crucible::test::pass("  test_table_minting: PASSED\n");
 }
 
 void test_rule_table_lifecycle() {
@@ -182,7 +182,7 @@ void test_rule_table_lifecycle() {
     assert(removed.has_value());
     assert(table.installed_rules() == 0);
 
-    std::printf("  test_rule_table_lifecycle: PASSED\n");
+    crucible::test::pass("  test_rule_table_lifecycle: PASSED\n");
 }
 
 // A table that owns fewer slots than its plan asks for reports only the
@@ -206,7 +206,7 @@ void test_slot_bound_caps_available_rules() {
 
     assert(table.remove_rule(std::move(*first)).has_value());
     assert(table.remove_rule(std::move(*second)).has_value());
-    std::printf("  test_slot_bound_caps_available_rules: PASSED\n");
+    crucible::test::pass("  test_slot_bound_caps_available_rules: PASSED\n");
 }
 
 // Two tables put the same rule in the same slot at the same generation.
@@ -243,7 +243,7 @@ void test_foreign_handle_and_generation() {
 
     assert(sw_table.remove_rule(std::move(*sw_handle)).has_value());
     assert(nic_table.remove_rule(std::move(*again)).has_value());
-    std::printf("  test_foreign_handle_and_generation: PASSED\n");
+    crucible::test::pass("  test_foreign_handle_and_generation: PASSED\n");
 }
 
 // The ready and the not-ready plan must produce different outcomes.
@@ -266,7 +266,7 @@ void test_backend_boundary() {
     assert(!pending.has_value());
     assert(pending.error() == tcam::TcamError::VendorBackendUnavailable);
 
-    std::printf("  test_backend_boundary: PASSED\n");
+    crucible::test::pass("  test_backend_boundary: PASSED\n");
 }
 
 // Nothing in this substrate reaches hardware.  The ready flag on a
@@ -340,7 +340,7 @@ void test_apply_paths_are_stubbed() {
     assert(!pending_require.has_value());
     assert(pending_require.error() == tcam::TcamError::VendorBackendUnavailable);
 
-    std::printf("  test_apply_paths_are_stubbed: PASSED\n");
+    crucible::test::pass("  test_apply_paths_are_stubbed: PASSED\n");
 }
 
 }  // namespace
@@ -371,7 +371,7 @@ int main() {
                                                   "one. The vendor_backend_attached marker carries the wire-level "
                                                   "claim and stays false until a real install path is wired in.");
 
-    std::printf("test_cntp_tcam:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cntp_tcam:\n");
     test_admission_and_names();
     test_table_minting();
     test_rule_table_lifecycle();
@@ -379,7 +379,7 @@ int main() {
     test_foreign_handle_and_generation();
     test_backend_boundary();
     test_apply_paths_are_stubbed();
-    std::printf("test_cntp_tcam: all PASSED\n");
+    crucible::test::pass("test_cntp_tcam: all PASSED\n");
     return 0;
 }
 

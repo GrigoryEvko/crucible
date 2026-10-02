@@ -4,7 +4,7 @@
 #include <foundation/reflect/EnumName.h>
 
 #include <array>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 #include <limits>
 #include <span>
@@ -95,7 +95,7 @@ void test_admission() {
     assert(!cog::admit_sample_count(0u).has_value());
     assert(cog::admit_sample_count(65535u)->value() == 65535u);
 
-    std::printf("  test_admission: PASSED\n");
+    crucible::test::pass("  test_admission: PASSED\n");
 }
 
 void test_latency_entry_and_result() {
@@ -144,7 +144,7 @@ void test_latency_entry_and_result() {
     assert(!mismatched.has_value());
     assert(mismatched.error() == cog::CalibrationError::KindMismatch);
 
-    std::printf("  test_latency_entry_and_result: PASSED\n");
+    crucible::test::pass("  test_latency_entry_and_result: PASSED\n");
 }
 
 void test_nic_result() {
@@ -180,7 +180,7 @@ void test_nic_result() {
     assert(found.has_value());
     assert(found->latency.value().p99_ns == 2500u);
 
-    std::printf("  test_nic_result: PASSED\n");
+    crucible::test::pass("  test_nic_result: PASSED\n");
 }
 
 eff::ColdInitCtx init_ctx() { return eff::ColdInitCtx{testing::init()}; }
@@ -210,7 +210,7 @@ void test_backend_boundaries() {
     assert(!empty_specific.has_value());
     assert(empty_specific.error() == cog::CalibrationError::EmptyOpcodeSet);
 
-    std::printf("  test_backend_boundaries: PASSED\n");
+    crucible::test::pass("  test_backend_boundaries: PASSED\n");
 }
 
 void test_drift_gate() {
@@ -232,7 +232,7 @@ void test_drift_gate() {
     assert(!above_result.has_value());
     assert(above_result.error() == cog::CalibrationError::BackendUnavailable);
 
-    std::printf("  test_drift_gate: PASSED\n");
+    crucible::test::pass("  test_drift_gate: PASSED\n");
 }
 
 }  // namespace
@@ -262,12 +262,12 @@ int main() {
     static_assert(::foundation::reflect::enum_name(static_cast<cog::CalibrationError>(200))
                   == "<unknown CalibrationError>");
 
-    std::printf("test_calibrate:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_calibrate:\n");
     test_admission();
     test_latency_entry_and_result();
     test_nic_result();
     test_backend_boundaries();
     test_drift_gate();
-    std::printf("test_calibrate: all PASSED\n");
+    crucible::test::pass("test_calibrate: all PASSED\n");
     return 0;
 }

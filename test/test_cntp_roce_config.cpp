@@ -2,7 +2,7 @@
 #include <fixy/Ctx.h>
 #include <foundation/reflect/EnumName.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
 #include <limits>
@@ -68,7 +68,7 @@ void test_admission_and_names() {
     assert(ce->value() == 64 * 1024);
     assert(cntp::admit_dcqcn_ce_threshold_bytes(0).error() == cntp::RoceError::InvalidCeThresholdBytes);
 
-    std::printf("  test_admission_and_names: PASSED\n");
+    crucible::test::pass("  test_admission_and_names: PASSED\n");
 }
 
 void test_config_minting_and_validation() {
@@ -107,7 +107,7 @@ void test_config_minting_and_validation() {
     assert(!forged_valid.has_value());
     assert(forged_valid.error() == cntp::RoceError::InvalidDscp);
 
-    std::printf("  test_config_minting_and_validation: PASSED\n");
+    crucible::test::pass("  test_config_minting_and_validation: PASSED\n");
 }
 
 void test_pause_counter_parse() {
@@ -132,7 +132,7 @@ void test_pause_counter_parse() {
     assert(!blank.has_value());
     assert(blank.error() == cntp::RoceError::CounterParseFailed);
 
-    std::printf("  test_pause_counter_parse: PASSED\n");
+    crucible::test::pass("  test_pause_counter_parse: PASSED\n");
 }
 
 void test_live_surfaces_if_available() {
@@ -144,9 +144,9 @@ void test_live_surfaces_if_available() {
     if (!counters.has_value()) {
         assert(counters.error() == cntp::RoceError::CounterUnavailable
                || counters.error() == cntp::RoceError::CounterParseFailed);
-        std::printf("  test_live_pfc_pause_counters: SKIPPED\n");
+        ::fixy::report(::fixy::Sink::Out, "  test_live_pfc_pause_counters: SKIPPED\n");
     } else {
-        std::printf("  test_live_pfc_pause_counters: PASSED\n");
+        crucible::test::pass("  test_live_pfc_pause_counters: PASSED\n");
     }
 
     // An interface name may be "..", and the read stays under the sysfs
@@ -173,7 +173,7 @@ void test_live_surfaces_if_available() {
     assert(!dcqcn.has_value());
     assert(dcqcn.error() == cntp::RoceError::DcqcnStatusUnavailable);
 
-    std::printf("  test_live_surfaces_if_available: PASSED\n");
+    crucible::test::pass("  test_live_surfaces_if_available: PASSED\n");
 }
 
 // The distinction these assertions defend is between a substrate that
@@ -209,7 +209,7 @@ void test_apply_paths_are_stubbed() {
     assert(!verify.has_value());
     assert(verify.error() == cntp::RoceError::DcqcnStatusUnavailable);
 
-    std::printf("  test_apply_paths_are_stubbed: PASSED\n");
+    crucible::test::pass("  test_apply_paths_are_stubbed: PASSED\n");
 }
 
 }  // namespace
@@ -243,13 +243,13 @@ int main() {
                   "turns true only alongside a vendor policy installer, a per-vendor "
                   "probe, and live-NIC fixtures.");
 
-    std::printf("test_cntp_roce_config:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cntp_roce_config:\n");
     test_admission_and_names();
     test_config_minting_and_validation();
     test_pause_counter_parse();
     test_live_surfaces_if_available();
     test_apply_paths_are_stubbed();
-    std::printf("test_cntp_roce_config: all PASSED\n");
+    crucible::test::pass("test_cntp_roce_config: all PASSED\n");
     return 0;
 }
 

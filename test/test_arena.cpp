@@ -112,6 +112,6 @@ namespace {
         }
     }
 
-    std::printf("test_arena: all tests passed\n");
+    crucible::test::pass("test_arena: all tests passed\n");
     return 0;
 }

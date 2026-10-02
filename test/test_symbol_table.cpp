@@ -26,7 +26,7 @@ static void test_add_assigns_monotonic_ids() {
     assert(b.value().raw() == 1);
     assert(c.value().raw() == 2);
     assert(t.size() == 3);
-    std::printf("  test_add_monotonic:             PASSED\n");
+    crucible::test::pass("  test_add_monotonic:             PASSED\n");
 }
 
 static void test_default_ranges_by_kind() {
@@ -49,7 +49,7 @@ static void test_default_ranges_by_kind() {
     const double hi = std::bit_cast<double>(t.upper(f.value()));
     assert(std::isinf(lo) && lo < 0);
     assert(std::isinf(hi) && hi > 0);
-    std::printf("  test_default_ranges:            PASSED\n");
+    crucible::test::pass("  test_default_ranges:            PASSED\n");
 }
 
 static void test_hint_set_clears_sentinel() {
@@ -60,7 +60,7 @@ static void test_hint_set_clears_sentinel() {
     t.set_hint(s.value(), 42);
     assert(t.has_hint(s.value()));
     assert(t.hint(s.value()) == 42);
-    std::printf("  test_set_hint:                  PASSED\n");
+    crucible::test::pass("  test_set_hint:                  PASSED\n");
 }
 
 static void test_set_hint_float_round_trip() {
@@ -71,7 +71,7 @@ static void test_set_hint_float_round_trip() {
     // The round trip is exact, so the raw bits are the right comparison
     // and an epsilon would be the wrong one.
     assert(std::bit_cast<uint64_t>(t.hint_float(f.value())) == std::bit_cast<uint64_t>(3.14159));
-    std::printf("  test_set_hint_float:            PASSED\n");
+    crucible::test::pass("  test_set_hint_float:            PASSED\n");
 }
 
 static void test_tighten_range_only_narrows() {
@@ -91,7 +91,7 @@ static void test_tighten_range_only_narrows() {
     t.tighten_range(u.value(), 20, 80);
     assert(t.lower(u.value()) == 20);
     assert(t.upper(u.value()) == 80);
-    std::printf("  test_tighten_range:             PASSED\n");
+    crucible::test::pass("  test_tighten_range:             PASSED\n");
 }
 
 static void test_size_like_flag() {
@@ -100,7 +100,7 @@ static void test_size_like_flag() {
     assert(!t.is_size_like(u.value()));
     t.set_size_like(u.value());
     assert(t.is_size_like(u.value()));
-    std::printf("  test_size_like:                 PASSED\n");
+    crucible::test::pass("  test_size_like:                 PASSED\n");
 }
 
 static void test_range_predicates() {
@@ -120,7 +120,7 @@ static void test_range_predicates() {
     t.tighten_range(z.value(), 0, 10);
     assert(!t.is_positive(z.value()));  // 0 is not > 0
     assert(t.is_nonnegative(z.value()));  // 0 is >= 0
-    std::printf("  test_range_predicates:          PASSED\n");
+    crucible::test::pass("  test_range_predicates:          PASSED\n");
 }
 
 static void test_kind_roundtrip() {
@@ -129,7 +129,7 @@ static void test_kind_roundtrip() {
     assert(t.kind(t.add(SymKind::FLOAT, 0).value()) == SymKind::FLOAT);
     assert(t.kind(t.add(SymKind::UNBACKED_INT, 0).value()) == SymKind::UNBACKED_INT);
     assert(t.kind(t.add(SymKind::UNBACKED_FLOAT, 0).value()) == SymKind::UNBACKED_FLOAT);
-    std::printf("  test_kind:                      PASSED\n");
+    crucible::test::pass("  test_kind:                      PASSED\n");
 }
 
 // Three properties that the per-flag tests above cannot catch on their
@@ -188,7 +188,7 @@ static void test_sym_flags_bits_typed_surface() {
     assert(n_empty == 0);
     assert(empty_buf[0] == '\0');
 
-    std::printf("  test_sym_flags_bits_typed_surface: PASSED\n");
+    crucible::test::pass("  test_sym_flags_bits_typed_surface: PASSED\n");
 }
 
 [[gnu::cold]] int main() {
@@ -201,6 +201,6 @@ static void test_sym_flags_bits_typed_surface() {
     test_range_predicates();
     test_kind_roundtrip();
     test_sym_flags_bits_typed_surface();
-    std::printf("test_symbol_table: 9 groups, all passed\n");
+    crucible::test::pass("test_symbol_table: 9 groups, all passed\n");
     return 0;
 }

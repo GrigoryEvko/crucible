@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <limits>
 #include <type_traits>
+#include "../test_assert.h"
 
 using fixy::sat::add_sat_det;
 using fixy::sat::add_sat_from;
@@ -109,6 +110,6 @@ int main() {
         std::fprintf(stderr, "test_saturate: %d failure(s)\n", g_failures);
         return 1;
     }
-    std::printf("test_saturate: both wrapped groups passed\n");
+    crucible::test::pass("test_saturate: both wrapped groups passed\n");
     return 0;
 }

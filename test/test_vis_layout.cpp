@@ -18,6 +18,7 @@
 #include <span>
 #include <utility>
 #include <vector>
+#include "test_assert.h"
 
 namespace {
 
@@ -473,6 +474,6 @@ void check_u_shape_uses_the_largest_resolution(Checker& checker) {
     check_layout_invariants_on_a_random_dag(checker, 60, 110);
     check_layout_refuses_malformed_input(checker);
     check_u_shape_uses_the_largest_resolution(checker);
-    if (checker.exit_code() == 0) std::printf("test_vis_layout: all tests passed\n");
+    if (checker.exit_code() == 0) crucible::test::pass("test_vis_layout: all tests passed\n");
     return checker.exit_code();
 }

@@ -67,7 +67,7 @@ void test_pipeline_data_flow() {
     delete meta_log;
     delete ring;
 
-    std::printf("  test_pipeline_data_flow: PASSED\n");
+    crucible::test::pass("  test_pipeline_data_flow: PASSED\n");
 }
 
 void test_pipeline_pool_bounds() {
@@ -121,7 +121,7 @@ void test_pipeline_pool_bounds() {
     delete meta_log;
     delete ring;
 
-    std::printf("  test_pipeline_pool_bounds: PASSED\n");
+    crucible::test::pass("  test_pipeline_pool_bounds: PASSED\n");
 }
 
 }  // namespace test_end_to_end

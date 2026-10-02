@@ -69,7 +69,8 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     slots[1].death_op = crucible::OpIndex{death_op};
     slots[1].slot_id = crucible::SlotId{1};
     auto* plan = bt.compute_memory_plan(test.alloc, slots, 2);
-    std::printf("  the planner returned a plan of %llu bytes\n", static_cast<unsigned long long>(plan->pool_bytes));
+    ::fixy::report(::fixy::Sink::Out, "  the planner returned a plan of {} bytes\n",
+                   static_cast<unsigned long long>(plan->pool_bytes));
 }
 
 // The sizes of the sweep come from the largest death_op + 2.  A death_op of
@@ -107,7 +108,7 @@ void test_refuses_slot_lifetimes_outside_the_sweep() {
         assert(result.was_aborted);
         assert(names_the_rule);
     }
-    std::printf("  test_refuses_slot_lifetimes_outside_the_sweep: PASSED\n");
+    crucible::test::pass("  test_refuses_slot_lifetimes_outside_the_sweep: PASSED\n");
 }
 
 }  // namespace
@@ -199,10 +200,11 @@ int main() {
         assert(disjoint);
     }
 
-    std::printf("test_memory_plan: all tests passed\n");
-    std::printf("  pool_bytes: %lu\n", static_cast<unsigned long>(plan->pool_bytes));
-    std::printf("  slot offsets: [%lu, %lu, %lu, %lu]\n", static_cast<unsigned long>(slots[0].offset_bytes),
-                static_cast<unsigned long>(slots[1].offset_bytes), static_cast<unsigned long>(slots[2].offset_bytes),
-                static_cast<unsigned long>(slots[3].offset_bytes));
+    crucible::test::pass("test_memory_plan: all tests passed\n");
+    ::fixy::report(::fixy::Sink::Out, "  pool_bytes: {}\n", static_cast<unsigned long>(plan->pool_bytes));
+    ::fixy::report(::fixy::Sink::Out, "  slot offsets: [{}, {}, {}, {}]\n",
+                   static_cast<unsigned long>(slots[0].offset_bytes), static_cast<unsigned long>(slots[1].offset_bytes),
+                   static_cast<unsigned long>(slots[2].offset_bytes),
+                   static_cast<unsigned long>(slots[3].offset_bytes));
     return 0;
 }

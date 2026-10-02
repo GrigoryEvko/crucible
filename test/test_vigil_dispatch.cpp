@@ -138,7 +138,7 @@ static_assert(DispatchResult::record().is_record() && !DispatchResult::record().
 
 int main() {
     using namespace test_vigil_dispatch;
-    std::printf("test_vigil_dispatch:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_vigil_dispatch:\n");
     test_second_producer_is_rejected();
     test_cold_gates_reject_a_context_on_another_thread();
     test_second_thread_cannot_claim_the_brand();
@@ -149,6 +149,6 @@ int main() {
     test_dispatch_pool_bounds();
     test_dispatch_pure_matches_dispatch_op();
     test_dispatch_pure_divergence_and_recovery();
-    std::printf("test_vigil_dispatch: all tests passed\n");
+    crucible::test::pass("test_vigil_dispatch: all tests passed\n");
     return 0;
 }

@@ -18,6 +18,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include "../test_assert.h"
 
 namespace cc = fixy::concurrent;
 
@@ -115,6 +116,6 @@ static void test_diamond_dag_runtime() {
 
 int main() {
     pipeline_dag_test::test_diamond_dag_runtime();
-    std::fprintf(stderr, "test_pipeline_dag: ALL PASSED\n");
+    crucible::test::pass("test_pipeline_dag: ALL PASSED\n");
     return EXIT_SUCCESS;
 }

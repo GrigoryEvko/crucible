@@ -24,7 +24,7 @@ static void test_type_aliases() {
     static_assert(simd::u64x8::size() == 8);
     static_assert(simd::i32x16::size() == 16);
     static_assert(simd::u8x32::size() == 32);
-    std::printf("  test_type_aliases: PASSED\n");
+    crucible::test::pass("  test_type_aliases: PASSED\n");
 }
 
 static void test_iota() {
@@ -32,7 +32,7 @@ static void test_iota() {
     for (int lane = 0; lane < static_cast<int>(simd::i64x8::size()); ++lane) {
         assert(indices[lane] == static_cast<int64_t>(lane));
     }
-    std::printf("  test_iota: PASSED\n");
+    crucible::test::pass("  test_iota: PASSED\n");
 }
 
 static void test_prefix_mask() {
@@ -50,7 +50,7 @@ static void test_prefix_mask() {
     auto mask8 = simd::prefix_mask<simd::i64x8>(8);
     for (int lane = 0; lane < 8; ++lane)
         assert(mask8[lane]);
-    std::printf("  test_prefix_mask: PASSED\n");
+    crucible::test::pass("  test_prefix_mask: PASSED\n");
 }
 
 static void test_det_safe_simd_concept() {
@@ -69,7 +69,7 @@ static void test_det_safe_simd_concept() {
     static_assert(!simd::DetSafeSimd<f64x4>);
 
     static_assert(!simd::DetSafeSimd<int64_t>);
-    std::printf("  test_det_safe_simd_concept: PASSED\n");
+    crucible::test::pass("  test_det_safe_simd_concept: PASSED\n");
 }
 
 static void test_load() {
@@ -78,7 +78,7 @@ static void test_load() {
     for (int lane = 0; lane < 8; ++lane) {
         assert(v[lane] == source[static_cast<size_t>(lane)]);
     }
-    std::printf("  test_load: PASSED\n");
+    crucible::test::pass("  test_load: PASSED\n");
 }
 
 static void test_reduce_xor_sum() {
@@ -96,8 +96,8 @@ static void test_reduce_xor_sum() {
     int64_t sum_got = simd::reduce_add(input);
     assert(xor_got == xor_expected);
     assert(sum_got == sum_expected);
-    std::printf("  test_reduce_xor_sum: PASSED (xor=%lld sum=%lld)\n", static_cast<long long>(xor_got),
-                static_cast<long long>(sum_got));
+    crucible::test::pass("  test_reduce_xor_sum: PASSED (xor={} sum={})\n", static_cast<long long>(xor_got),
+                         static_cast<long long>(sum_got));
 }
 
 static void test_reduce_or_and() {
@@ -105,7 +105,7 @@ static void test_reduce_or_and() {
     auto input = simd::load<simd::u64x8>(values.data());
     assert(simd::reduce_or(input) == 0xFFULL);
     assert(simd::reduce_and(input) == 0ULL);
-    std::printf("  test_reduce_or_and: PASSED\n");
+    crucible::test::pass("  test_reduce_or_and: PASSED\n");
 }
 
 static void test_reduce_max_min() {
@@ -113,7 +113,7 @@ static void test_reduce_max_min() {
     auto input = simd::load<simd::i64x8>(values.data());
     assert(simd::reduce_max(input) == 999);
     assert(simd::reduce_min(input) == -200);
-    std::printf("  test_reduce_max_min: PASSED\n");
+    crucible::test::pass("  test_reduce_max_min: PASSED\n");
 }
 
 static void test_select() {
@@ -140,7 +140,7 @@ static void test_select() {
         assert(t_v[lane] == on_true[static_cast<size_t>(lane)]);
         assert(f_v[lane] == on_false[static_cast<size_t>(lane)]);
     }
-    std::printf("  test_select: PASSED\n");
+    crucible::test::pass("  test_select: PASSED\n");
 }
 
 // This is the shape the dimension hash uses: one masked reduction over
@@ -163,9 +163,9 @@ static void test_masked_reduce_for_dim_hash_pattern() {
     }
 
     assert(simd_result == scalar_result);
-    std::printf("  test_masked_reduce_for_dim_hash_pattern: PASSED "
-                "(simd=%lld scalar=%lld)\n",
-                static_cast<long long>(simd_result), static_cast<long long>(scalar_result));
+    crucible::test::pass("  test_masked_reduce_for_dim_hash_pattern: PASSED "
+                         "(simd={} scalar={})\n",
+                         static_cast<long long>(simd_result), static_cast<long long>(scalar_result));
 }
 
 static void test_microarch_detection() {
@@ -181,11 +181,12 @@ static void test_microarch_detection() {
         simd::runtime_supports_sse42() || simd::runtime_supports_avx2() || simd::runtime_supports_avx512();
     assert(any_runtime && "no SIMD ISA detected at runtime on x86-64");
 #endif
-    std::printf("  test_microarch_detection: PASSED "
-                "(compile: sse42=%d avx2=%d avx512=%d neon=%d; "
-                "runtime: sse42=%d avx2=%d avx512=%d)\n",
-                simd::kSse42Available, simd::kAvx2Available, simd::kAvx512Available, simd::kNeonAvailable,
-                simd::runtime_supports_sse42(), simd::runtime_supports_avx2(), simd::runtime_supports_avx512());
+    crucible::test::pass("  test_microarch_detection: PASSED "
+                         "(compile: sse42={} avx2={} avx512={} neon={}; "
+                         "runtime: sse42={} avx2={} avx512={})\n",
+                         simd::kSse42Available, simd::kAvx2Available, simd::kAvx512Available, simd::kNeonAvailable,
+                         simd::runtime_supports_sse42(), simd::runtime_supports_avx2(),
+                         simd::runtime_supports_avx512());
 }
 
 // The shapes below are chosen by hand, one per structural case the
@@ -272,7 +273,7 @@ static void test_dim_hash_equivalence_handcoded() {
     assert(dim_hash_scalar(m_1d) != dim_hash_scalar(m_2d));
     assert(dim_hash_simd(m_1d) != dim_hash_simd(m_2d));
 
-    std::printf("  test_dim_hash_equivalence_handcoded: PASSED\n");
+    crucible::test::pass("  test_dim_hash_equivalence_handcoded: PASSED\n");
 }
 
 int main() {
@@ -288,6 +289,6 @@ int main() {
     test_masked_reduce_for_dim_hash_pattern();
     test_microarch_detection();
     test_dim_hash_equivalence_handcoded();
-    std::printf("test_simd: ALL PASSED\n");
+    crucible::test::pass("test_simd: ALL PASSED\n");
     return 0;
 }

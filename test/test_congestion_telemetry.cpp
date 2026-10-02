@@ -100,7 +100,7 @@ void test_names_and_admission() {
     auto period = topology::admit_sample_period_ns(1000);
     assert(period.has_value());
     assert(period->value() == 1000);
-    std::printf("  test_names_and_admission: PASSED\n");
+    crucible::test::pass("  test_names_and_admission: PASSED\n");
 }
 
 void test_aggregate_and_drift() {
@@ -127,7 +127,7 @@ void test_aggregate_and_drift() {
                                                    });
     assert(drift.degraded);
     assert(drift.bandwidth_drop_ppm >= 100000);
-    std::printf("  test_aggregate_and_drift: PASSED\n");
+    crucible::test::pass("  test_aggregate_and_drift: PASSED\n");
 }
 
 void test_worker_recording() {
@@ -165,7 +165,7 @@ void test_worker_recording() {
         observe::latest_observation(sinks[static_cast<std::size_t>(topology::CongestionMetricSlot::P95BandwidthBps)]);
     assert(p95.metric_id == topology::congestion_metric_id(0, topology::CongestionMetricSlot::P95BandwidthBps));
     assert(p95.sequence == 7);
-    std::printf("  test_worker_recording: PASSED\n");
+    crucible::test::pass("  test_worker_recording: PASSED\n");
 }
 
 void test_live_tcp_info_if_available() {
@@ -179,7 +179,7 @@ void test_live_tcp_info_if_available() {
     eff::TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
     auto harvested = topology::harvest_socket(test_ctx, *fd);
     if (!harvested.has_value()) {
-        std::printf("  test_live_tcp_info_if_available: SKIPPED\n");
+        ::fixy::report(::fixy::Sink::Out, "  test_live_tcp_info_if_available: SKIPPED\n");
         return;
     }
     assert(harvested->value().rt_prop_us.value() > 0);
@@ -193,7 +193,7 @@ void test_live_tcp_info_if_available() {
     auto wrong_cog = topology::harvest_per_link(test_ctx, gpu(88), std::span{fds});
     assert(!wrong_cog.has_value());
     assert(wrong_cog.error() == topology::TelemetryError::InvalidNicCog);
-    std::printf("  test_live_tcp_info_if_available: PASSED\n");
+    crucible::test::pass("  test_live_tcp_info_if_available: PASSED\n");
 }
 
 void test_aggregate_finalize_guard() {
@@ -219,7 +219,7 @@ void test_aggregate_finalize_guard() {
     assert(agg.mean_btl_bw_bps == 200000000ull);
     assert(agg.nic_uuid == nic(102).uuid);
 
-    std::printf("  test_aggregate_finalize_guard: PASSED\n");
+    crucible::test::pass("  test_aggregate_finalize_guard: PASSED\n");
 }
 
 }  // namespace
@@ -240,12 +240,12 @@ int main() {
                   "a refined field keeps bytes from becoming a sample");
     static_assert(!std::is_default_constructible_v<topology::CongestionTelemetryWorker<2, 8>>);
 
-    std::printf("test_congestion_telemetry:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_congestion_telemetry:\n");
     test_names_and_admission();
     test_aggregate_and_drift();
     test_aggregate_finalize_guard();
     test_worker_recording();
     test_live_tcp_info_if_available();
-    std::printf("test_congestion_telemetry: all PASSED\n");
+    crucible::test::pass("test_congestion_telemetry: all PASSED\n");
     return 0;
 }

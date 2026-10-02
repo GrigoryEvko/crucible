@@ -3,7 +3,7 @@
 #include <foundation/reflect/Hash.h>
 
 #include <array>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
@@ -96,7 +96,7 @@ void test_taxonomy() {
     assert(!gemm.side_effecting);
     assert(!gemm.network_visible);
 
-    std::printf("  test_taxonomy: PASSED\n");
+    crucible::test::pass("  test_taxonomy: PASSED\n");
 }
 
 void test_collective_node_admission() {
@@ -152,7 +152,7 @@ void test_collective_node_admission() {
     auto const peer_hash = ir::serialize_ir001_header(ir::admit_ir001_node(changed_participants)).content_hash;
     assert(peer_hash != header.content_hash);
 
-    std::printf("  test_collective_node_admission: PASSED\n");
+    crucible::test::pass("  test_collective_node_admission: PASSED\n");
 }
 
 void test_other_attr_shapes() {
@@ -197,16 +197,16 @@ void test_other_attr_shapes() {
     assert(send_header.content_hash == 0xb71c22794a3b58b0ULL);
     assert(telemetry_header.content_hash == 0xbe2e6fabe114c6cfULL);
 
-    std::printf("  test_other_attr_shapes: PASSED\n");
+    crucible::test::pass("  test_other_attr_shapes: PASSED\n");
 }
 
 }  // namespace
 
 int main() {
-    std::printf("test_ir001_comm:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_ir001_comm:\n");
     test_taxonomy();
     test_collective_node_admission();
     test_other_attr_shapes();
-    std::printf("test_ir001_comm: all PASSED\n");
+    crucible::test::pass("test_ir001_comm: all PASSED\n");
     return 0;
 }

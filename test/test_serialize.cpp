@@ -373,6 +373,6 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         region->plan = nullptr;
     }
 
-    std::printf("test_serialize: all tests passed\n");
+    crucible::test::pass("test_serialize: all tests passed\n");
     return 0;
 }

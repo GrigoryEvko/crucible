@@ -32,6 +32,7 @@
 #include <span>
 #include <string>
 #include <utility>
+#include "../test_assert.h"
 
 namespace eff = foundation::effects;
 namespace fs = fixy::fs;
@@ -211,8 +212,8 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
         return 1;
     }
     if (refused.error().value() == EINVAL) {
-        std::fprintf(stderr,
-                     "[skipped] this filesystem has no RENAME_NOREPLACE; the errno is passed through as designed\n");
+        crucible::test::pass(
+            "[skipped] this filesystem has no RENAME_NOREPLACE; the errno is passed through as designed\n");
         return 0;
     }
     if (refused.error().value() != EEXIST) {

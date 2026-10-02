@@ -67,7 +67,7 @@ static void test_t01_content_hash_well_formed() {
     constexpr auto h = fed::federation_content_hash<&t_unary, R0, int>();
     static_assert(h.raw() != ~std::uint64_t{0});  // all-ones is the sentinel
 
-    std::printf("  T01 content_hash_well_formed:                PASSED\n");
+    crucible::test::pass("  T01 content_hash_well_formed:                PASSED\n");
 }
 
 static void test_t02_row_hash_well_formed() {
@@ -82,7 +82,7 @@ static void test_t02_row_hash_well_formed() {
     constexpr auto er = fed::federation_row_hash<R0>();
     static_assert(er.raw() != 0);
 
-    std::printf("  T02 row_hash_well_formed:                    PASSED\n");
+    crucible::test::pass("  T02 row_hash_well_formed:                    PASSED\n");
 }
 
 static void test_t03_key_composes_axes() {
@@ -90,7 +90,7 @@ static void test_t03_key_composes_axes() {
     static_assert(k.content_hash == fed::federation_content_hash<&t_unary, R0, int>());
     static_assert(k.row_hash == fed::federation_row_hash<R0>());
 
-    std::printf("  T03 key_composes_axes:                       PASSED\n");
+    crucible::test::pass("  T03 key_composes_axes:                       PASSED\n");
 }
 
 static void test_t04_deterministic() {
@@ -98,7 +98,7 @@ static void test_t04_deterministic() {
     static_assert(fed::federation_key<&t_binary, RBgIO, int, double>()
                   == fed::federation_key<&t_binary, RBgIO, int, double>());
 
-    std::printf("  T04 deterministic:                           PASSED\n");
+    crucible::test::pass("  T04 deterministic:                           PASSED\n");
 }
 
 static void test_t05_row_distinguishes() {
@@ -112,14 +112,14 @@ static void test_t05_row_distinguishes() {
     static_assert(fed::federation_row_hash<RBg>() != fed::federation_row_hash<RIO>());
     static_assert(fed::federation_row_hash<RBgIO>() != fed::federation_row_hash<RFull>());
 
-    std::printf("  T05 row_distinguishes:                       PASSED\n");
+    crucible::test::pass("  T05 row_distinguishes:                       PASSED\n");
 }
 
 static void test_t06_fnptr_distinguishes() {
     static_assert(fed::federation_key<&t_unary, R0, int>() != fed::federation_key<&t_other, R0, int>());
     static_assert(fed::federation_key<&t_unary, R0, int>() != fed::federation_key<&t_void, R0>());
 
-    std::printf("  T06 fnptr_distinguishes:                     PASSED\n");
+    crucible::test::pass("  T06 fnptr_distinguishes:                     PASSED\n");
 }
 
 static void test_t07_args_distinguishes() {
@@ -127,14 +127,14 @@ static void test_t07_args_distinguishes() {
     static_assert(fed::federation_key<&t_binary, R0, int, double>()
                   != fed::federation_key<&t_binary, R0, double, int>());
 
-    std::printf("  T07 args_distinguishes:                      PASSED\n");
+    crucible::test::pass("  T07 args_distinguishes:                      PASSED\n");
 }
 
 static void test_t08_row_permutation_invariance() {
     static_assert(fed::federation_row_hash<RBgIO>() == fed::federation_row_hash<RIOBg>());
     static_assert(fed::federation_key<&t_unary, RBgIO, int>() == fed::federation_key<&t_unary, RIOBg, int>());
 
-    std::printf("  T08 row_permutation_invariance:              PASSED\n");
+    crucible::test::pass("  T08 row_permutation_invariance:              PASSED\n");
 }
 
 static void test_t09_empty_args_round_trip() {
@@ -143,7 +143,7 @@ static void test_t09_empty_args_round_trip() {
     static_assert(k_void_empty.content_hash.raw() != 0);
     static_assert(k_void_empty != k_void_bg);
 
-    std::printf("  T09 empty_args_round_trip:                   PASSED\n");
+    crucible::test::pass("  T09 empty_args_round_trip:                   PASSED\n");
 }
 
 static void test_t10_codec_round_trip() {
@@ -169,7 +169,7 @@ static void test_t10_codec_round_trip() {
         assert(view->payload[i] == body[i]);
     }
 
-    std::printf("  T10 codec_round_trip:                        PASSED\n");
+    crucible::test::pass("  T10 codec_round_trip:                        PASSED\n");
 }
 
 // One function and one argument list across four rows. The streams differ
@@ -206,7 +206,7 @@ static void test_t11_cross_row_on_wire_distinct() {
     assert(bufs_differ(buf_rbg, buf_rbgio));
     assert(bufs_differ(buf_rio, buf_rbgio));
 
-    std::printf("  T11 cross_row_on_wire_distinct:              PASSED\n");
+    crucible::test::pass("  T11 cross_row_on_wire_distinct:              PASSED\n");
 }
 
 static void test_t12_key_never_sentinel_or_zero() {
@@ -224,7 +224,7 @@ static void test_t12_key_never_sentinel_or_zero() {
     static_assert(!kf.is_zero());
     static_assert(!kf.is_sentinel());
 
-    std::printf("  T12 key_never_sentinel_or_zero:              PASSED\n");
+    crucible::test::pass("  T12 key_never_sentinel_or_zero:              PASSED\n");
 }
 
 static void test_t13_composes_with_cache_key() {
@@ -234,13 +234,13 @@ static void test_t13_composes_with_cache_key() {
                                             "the same function, row and arguments. The projection between them "
                                             "is a plain wrap.");
 
-    std::printf("  T13 composes_with_cache_key:                 PASSED\n");
+    crucible::test::pass("  T13 composes_with_cache_key:                 PASSED\n");
 }
 
 static void test_t14_header_smoke_test() {
     bool ok = fed::computation_cache_federation_smoke_test(local_cipher_permission());
     assert(ok);
-    std::printf("  T14 header_smoke_test:                       PASSED\n");
+    crucible::test::pass("  T14 header_smoke_test:                       PASSED\n");
 }
 
 // The decoded payload points into the caller's buffer just past the header
@@ -258,7 +258,7 @@ static void test_t15_payload_aliases_input() {
     ASSERT_TRUE(view.has_value());
     assert(view->payload.data() == buf.data() + fed::FEDERATION_HEADER_BYTES);
 
-    std::printf("  T15 payload_aliases_input:                   PASSED\n");
+    crucible::test::pass("  T15 payload_aliases_input:                   PASSED\n");
 }
 
 // When the receiver is known to hold the bytes already, only the header need
@@ -293,7 +293,7 @@ static void test_t16_content_addressed_payload_elision() {
     assert((view->header.content_hash == fed::federation_key<&t_unary, R0, int>().content_hash));
     assert((view->header.row_hash == fed::federation_key<&t_unary, R0, int>().row_hash));
 
-    std::printf("  T16 content_addressed_payload_elision:       PASSED\n");
+    crucible::test::pass("  T16 content_addressed_payload_elision:       PASSED\n");
 }
 
 // The tests above compare composite keys. Here only the content axis is read,
@@ -315,7 +315,7 @@ static void test_content_axis_row_isolation() {
                   "The content hash inherits the row projection's permutation "
                   "invariance.");
 
-    std::printf("  content_axis_row_isolation:                  PASSED\n");
+    crucible::test::pass("  content_axis_row_isolation:                  PASSED\n");
 }
 
 // The header is 32 bytes, little-endian, laid out as:
@@ -358,7 +358,7 @@ static void test_wire_byte_offset_stability() {
     }
     assert(observed_magic == fed::FEDERATION_MAGIC);
 
-    std::printf("  wire_byte_offset_stability:                  PASSED\n");
+    crucible::test::pass("  wire_byte_offset_stability:                  PASSED\n");
 }
 
 // The effect universe only ever grows: atoms are appended, never removed or
@@ -396,7 +396,7 @@ static void test_cross_universe_cardinality_rejection() {
         assert(view.error() == crucible::cipher::federation::FederationError::UniverseCardinalityTooHigh);
     }
 
-    std::printf("  cross_universe_cardinality_rejection:        PASSED\n");
+    crucible::test::pass("  cross_universe_cardinality_rejection:        PASSED\n");
 }
 
 // Two permutations of one row produce equal keys. The serialized bytes have
@@ -420,7 +420,7 @@ static void test_row_permutation_byte_invariance() {
         assert(buf_bgio[i] == buf_iobg[i]);
     }
 
-    std::printf("  row_permutation_byte_invariance:             PASSED\n");
+    crucible::test::pass("  row_permutation_byte_invariance:             PASSED\n");
 }
 
 // The saturation case: a row naming every atom of the universe.
@@ -452,7 +452,7 @@ static void test_saturation_row_round_trip() {
         assert(view->payload[i] == body[i]);
     }
 
-    std::printf("  saturation_row_round_trip:                   PASSED\n");
+    crucible::test::pass("  saturation_row_round_trip:                   PASSED\n");
 }
 
 namespace {
@@ -474,7 +474,7 @@ static void test_gate_a_canonical_args_accepted() {
     static_assert(!k.is_zero());
     static_assert(!k.is_sentinel());
 
-    std::printf("  GATE-A canonical_args_accepted:              PASSED\n");
+    crucible::test::pass("  GATE-A canonical_args_accepted:              PASSED\n");
 }
 
 // The canonical-order predicate is consulted at the publish boundary, so an
@@ -485,7 +485,7 @@ static void test_gate_b_inverted_args_rejected() {
     static_assert(!fed::ArgsCanonicallyOrdered<InvStack>,
                   "The federation argument gate rejects an inverted wrapper stack.");
 
-    std::printf("  GATE-B inverted_args_rejected:               PASSED\n");
+    crucible::test::pass("  GATE-B inverted_args_rejected:               PASSED\n");
 }
 
 static void test_gate_c_canonical_stack_deterministic_distinct() {
@@ -495,11 +495,11 @@ static void test_gate_c_canonical_stack_deterministic_distinct() {
                   "A wrapped argument keys to its own cache slot and does not collapse "
                   "onto the bare payload.");
 
-    std::printf("  GATE-C canonical_stack_deterministic_distinct: PASSED\n");
+    crucible::test::pass("  GATE-C canonical_stack_deterministic_distinct: PASSED\n");
 }
 
 int main() {
-    std::printf("test_computation_cache_federation — cache bridge\n");
+    ::fixy::report(::fixy::Sink::Out, "test_computation_cache_federation — cache bridge\n");
     test_t01_content_hash_well_formed();
     test_t02_row_hash_well_formed();
     test_t03_key_composes_axes();
@@ -524,6 +524,6 @@ int main() {
     test_gate_a_canonical_args_accepted();
     test_gate_b_inverted_args_rejected();
     test_gate_c_canonical_stack_deterministic_distinct();
-    std::printf("test_computation_cache_federation: 24 groups, all passed\n");
+    crucible::test::pass("test_computation_cache_federation: 24 groups, all passed\n");
     return 0;
 }

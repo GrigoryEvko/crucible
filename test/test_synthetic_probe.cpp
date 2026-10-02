@@ -25,7 +25,7 @@ static void test_name_accessors() {
            == std::string_view{"FederationMtls"});
     assert(observe::synthetic_probe_failure_name(observe::SyntheticProbeFailureClass::Completion)
            == std::string_view{"Completion"});
-    std::printf("  test_name_accessors:            PASSED\n");
+    crucible::test::pass("  test_name_accessors:            PASSED\n");
 }
 
 static void test_register_and_record_success() {
@@ -68,7 +68,7 @@ static void test_register_and_record_success() {
     assert(stats.last_latency_ns == 11000);
     assert(stats.last_sequence == 9);
     assert(observe::latest_observation(observations).kind == observe::ObservationKind::BitsTransferred);
-    std::printf("  test_register_and_record_success: PASSED\n");
+    crucible::test::pass("  test_register_and_record_success: PASSED\n");
 }
 
 static void test_failure_accounting() {
@@ -98,7 +98,7 @@ static void test_failure_accounting() {
     assert(stats.failed == 1);
     assert(stats.timed_out == 1);
     assert(stats.last_failure == observe::SyntheticProbeFailureClass::Timeout);
-    std::printf("  test_failure_accounting:        PASSED\n");
+    crucible::test::pass("  test_failure_accounting:        PASSED\n");
 }
 
 static void test_rejects_unregistered_or_disabled() {
@@ -114,7 +114,7 @@ static void test_rejects_unregistered_or_disabled() {
     assert(!runner.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
                                   observe::ProbeOutcome{.kind = observe::TransportProbeKind::FederationMtls}));
     assert(runner.stats(missing, observe::TransportProbeKind::TcpCubic).scheduled == 0);
-    std::printf("  test_rejects_unregistered_or_disabled: PASSED\n");
+    crucible::test::pass("  test_rejects_unregistered_or_disabled: PASSED\n");
 }
 
 // The dispatch and outcome counters are independent, and the loss rate is
@@ -186,7 +186,7 @@ static void test_schedule_record_separation() {
                                   observe::TransportProbeKind::FederationMtls));
     assert(!runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
                                   observe::TransportProbeKind::TcpBbr3));
-    std::printf("  test_schedule_record_separation:  PASSED\n");
+    crucible::test::pass("  test_schedule_record_separation:  PASSED\n");
 }
 
 // The stats grid is indexed by peer and by transport kind, and both indices
@@ -213,7 +213,7 @@ static void test_probe_stats_layout_invariants() {
             }
         }
     }
-    std::printf("  test_probe_stats_layout_invariants: PASSED\n");
+    crucible::test::pass("  test_probe_stats_layout_invariants: PASSED\n");
 }
 
 int main() {
@@ -222,13 +222,13 @@ int main() {
     static_assert(observe::CtxFitsSyntheticProbeRecord<eff::BgDrainCtx>);
     static_assert(!observe::CtxFitsSyntheticProbeRecord<eff::HotFgCtx>);
 
-    std::printf("test_synthetic_probe: 6 groups\n");
+    ::fixy::report(::fixy::Sink::Out, "test_synthetic_probe: 6 groups\n");
     test_name_accessors();
     test_register_and_record_success();
     test_failure_accounting();
     test_rejects_unregistered_or_disabled();
     test_schedule_record_separation();
     test_probe_stats_layout_invariants();
-    std::printf("test_synthetic_probe: all passed\n");
+    crucible::test::pass("test_synthetic_probe: all passed\n");
     return 0;
 }

@@ -4,7 +4,7 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/reflect/EnumName.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <cmath>
 #include <cstdio>
 #include <string_view>
@@ -59,7 +59,7 @@ static void test_enumerator_names() {
     assert(enum_name(topology::NicTelemetryError::InvalidNicCog) == std::string_view{"InvalidNicCog"});
     assert(enum_name(static_cast<topology::NicTelemetryError>(0xFF))
            == std::string_view{"<unknown NicTelemetryError>"});
-    std::printf("  test_enumerator_names:                PASSED\n");
+    crucible::test::pass("  test_enumerator_names:                PASSED\n");
 }
 
 static void test_parsers_and_drop_rate() {
@@ -99,7 +99,7 @@ static void test_parsers_and_drop_rate() {
     auto unknown = topology::parse_sysctl_snapshot(topology::tag_external_telemetry_text("net.core.other = 1\n"));
     assert(!unknown.has_value());
     assert(unknown.error() == topology::NicTelemetryError::MissingRequiredField);
-    std::printf("  test_parsers_and_drop_rate:           PASSED\n");
+    crucible::test::pass("  test_parsers_and_drop_rate:           PASSED\n");
 }
 
 static void test_snapshot_mint() {
@@ -129,7 +129,7 @@ static void test_snapshot_mint() {
                                                            tcp_sample(1, 1, 0), samples.thermal, 1);
     assert(!zero_uuid.has_value());
     assert(zero_uuid.error() == topology::NicTelemetryError::InvalidNicCog);
-    std::printf("  test_snapshot_mint:                   PASSED\n");
+    crucible::test::pass("  test_snapshot_mint:                   PASSED\n");
 }
 
 static void test_effective_bandwidth_and_history() {
@@ -185,7 +185,7 @@ static void test_effective_bandwidth_and_history() {
     assert(steady.has_value());
     assert(!steady->degraded);
     assert(steady->bandwidth_drop_ppm == 0);
-    std::printf("  test_effective_bandwidth_and_history: PASSED\n");
+    crucible::test::pass("  test_effective_bandwidth_and_history: PASSED\n");
 }
 
 static void test_static_gates() {
@@ -208,16 +208,16 @@ static void test_static_gates() {
     // The per-socket sample and the health class of a link have two names,
     // so the telemetry headers and the graph header build in one TU.
     static_assert(std::is_enum_v<topology::CongestionState> && std::is_class_v<topology::CongestionSample>);
-    std::printf("  test_static_gates:                     PASSED\n");
+    crucible::test::pass("  test_static_gates:                     PASSED\n");
 }
 
 int main() {
-    std::printf("test_topology_telemetry:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_topology_telemetry:\n");
     test_enumerator_names();
     test_parsers_and_drop_rate();
     test_snapshot_mint();
     test_effective_bandwidth_and_history();
     test_static_gates();
-    std::printf("test_topology_telemetry: all PASSED\n");
+    crucible::test::pass("test_topology_telemetry: all PASSED\n");
     return 0;
 }

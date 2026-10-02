@@ -129,6 +129,16 @@ std::size_t format_window_(char* out, std::size_t capacity, std::size_t skip, ch
     return window.position();
 }
 
+}  // namespace foundation::core::detail
+
+namespace foundation::core {
+
+void report(Sink sink, Fmt<> fmt) noexcept { detail::report_(sink, detail::FmtDoor::text_of_(fmt), nullptr, 0); }
+
+}  // namespace foundation::core
+
+namespace foundation::core::detail {
+
 void report_(Sink sink, char const* text, FmtArg const* arguments, std::size_t count) noexcept {
     char window[report_window_bytes] = {};
     std::size_t skip = 0;

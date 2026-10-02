@@ -33,7 +33,7 @@ static void test_empty_state() {
     MetaLog log;
     assert(log.size().peek() == 0);
     assert(!log.try_append(nullptr, 0).is_valid());
-    std::printf("  test_empty:                     PASSED\n");
+    crucible::test::pass("  test_empty:                     PASSED\n");
 }
 
 static void test_single_append_returns_index_zero() {
@@ -48,7 +48,7 @@ static void test_single_append_returns_index_zero() {
     assert(raw_data_ptr(got) == raw_data_ptr(m));
     assert(::crucible::raw_tensor_dim(got.sizes[0]) == 128);
     assert(::crucible::raw_tensor_dim(got.sizes[1]) == 256);
-    std::printf("  test_single_append:             PASSED\n");
+    crucible::test::pass("  test_single_append:             PASSED\n");
 }
 
 static void test_batch_append_and_monotonic() {
@@ -70,7 +70,7 @@ static void test_batch_append_and_monotonic() {
     for (int i = 0; i < 8; ++i) {
         assert(raw_data_ptr(copied[i]) == raw_data_ptr(batch[static_cast<size_t>(i)]));
     }
-    std::printf("  test_batch_monotonic:           PASSED\n");
+    crucible::test::pass("  test_batch_monotonic:           PASSED\n");
 }
 
 static void test_tail_advance_frees_capacity() {
@@ -84,7 +84,7 @@ static void test_tail_advance_frees_capacity() {
     // counting, so the next append is 1 and not 0.
     auto idx2 = log.try_append(&m, 1);
     assert(idx2.raw() == 1);
-    std::printf("  test_tail_advance:              PASSED\n");
+    crucible::test::pass("  test_tail_advance:              PASSED\n");
 }
 
 static void test_reset_zeroes_both_pointers() {
@@ -98,7 +98,7 @@ static void test_reset_zeroes_both_pointers() {
     // A reset does rewind the index, where advancing the tail does not.
     auto idx = log.try_append(&m, 1);
     assert(idx.raw() == 0);
-    std::printf("  test_reset:                     PASSED\n");
+    crucible::test::pass("  test_reset:                     PASSED\n");
 }
 
 static void test_copy_run_across_the_end() {
@@ -136,7 +136,7 @@ static void test_copy_run_across_the_end() {
     log.copy_run(near_end + 3, 2, head2);
     assert(raw_data_ptr(head2[0]) == raw_data_ptr(tail5[3]));
     assert(raw_data_ptr(head2[1]) == raw_data_ptr(tail5[4]));
-    std::printf("  test_copy_run_across_the_end:   PASSED\n");
+    crucible::test::pass("  test_copy_run_across_the_end:   PASSED\n");
 }
 
 // The head and the tail count each record that the log held, and the index of
@@ -180,7 +180,7 @@ static void test_counters_pass_two_to_the_32() {
     log.advance_tail(across.raw() + 16);
     assert(log.size().peek() == 0);
     assert(log.tail.get() == (uint64_t{1} << 32) + 16);
-    std::printf("  test_counters_pass_2_to_the_32: PASSED\n");
+    crucible::test::pass("  test_counters_pass_2_to_the_32: PASSED\n");
 }
 
 // A run longer than the buffer holds records that the producer wrote over.
@@ -189,7 +189,7 @@ static void test_copy_run_refuses_a_run_longer_than_the_buffer() {
     MetaLog log;
     TensorMeta destination[1]{};
     assert(crucible::test::aborts([&] { log.copy_run(0, MetaLog::CAPACITY + 1, destination); }));
-    std::printf("  test_copy_run_refuses_long_run: PASSED\n");
+    crucible::test::pass("  test_copy_run_refuses_long_run: PASSED\n");
 }
 
 // The producer reads its own head relaxed and publishes with a release
@@ -258,9 +258,9 @@ static void test_spsc_concurrent_integrity() {
 
     producer.join();
     consumer.join();
-    std::printf("  test_spsc_integrity:            PASSED "
-                "(N=%u, producer_spins=%u)\n",
-                N, lost_spin.load());
+    crucible::test::pass("  test_spsc_integrity:            PASSED "
+                         "(N={}, producer_spins={})\n",
+                         N, lost_spin.load());
 }
 
 // Only the accepting legs of the row-typed facade are exercised here.
@@ -321,7 +321,7 @@ static void test_try_append_pure() {
     static_assert(!eff::IsPure<eff::Row<eff::Effect::IO>>);
     static_assert(!eff::IsPure<eff::Row<eff::Effect::Bg>>);
 
-    std::printf("  test_try_append_pure: PASSED\n");
+    crucible::test::pass("  test_try_append_pure: PASSED\n");
 }
 
 // The interleaving check above is single-threaded, which cannot see a
@@ -379,9 +379,9 @@ static void test_try_append_pure_concurrent() {
 
     producer.join();
     consumer.join();
-    std::printf("  test_try_append_pure_concurrent: "
-                "PASSED (N=%u, producer_spins=%u)\n",
-                N, lost_spin.load());
+    crucible::test::pass("  test_try_append_pure_concurrent: "
+                         "PASSED (N={}, producer_spins={})\n",
+                         N, lost_spin.load());
 }
 
 int main() {
@@ -398,6 +398,6 @@ int main() {
     // Last: the contract handler reports one violation in a process, and this
     // test makes one on purpose.
     test_copy_run_refuses_a_run_longer_than_the_buffer();
-    std::printf("test_meta_log: 11 groups, all passed\n");
+    crucible::test::pass("test_meta_log: 11 groups, all passed\n");
     return 0;
 }

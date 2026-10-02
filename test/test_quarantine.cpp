@@ -58,7 +58,7 @@ static void test_names() {
     static_assert(::foundation::reflect::enum_name(warden::QuarantineSignal::OperatorOverride) == "OperatorOverride");
     static_assert(::foundation::reflect::enum_name(static_cast<warden::QuarantineState>(0xFF))
                   == "<unknown QuarantineState>");
-    std::printf("  test_names:                              PASSED\n");
+    crucible::test::pass("  test_names:                              PASSED\n");
 }
 
 static void test_health_hysteresis() {
@@ -83,7 +83,7 @@ static void test_health_hysteresis() {
     assert(!policy.on_health_event(bg_ctx(), target, health(100, topology::HealthState::Quarantined, 1), 400));
     assert(policy.transition_event_count() == 2);
 
-    std::printf("  test_health_hysteresis:                  PASSED\n");
+    crucible::test::pass("  test_health_hysteresis:                  PASSED\n");
 }
 
 static void test_asymmetric_failure_policy() {
@@ -99,7 +99,7 @@ static void test_asymmetric_failure_policy() {
     assert(policy.state(dead) == warden::QuarantineState::Quarantined);
     assert(policy.current(dead).signals.test(warden::QuarantineSignal::AsymmetricDead));
 
-    std::printf("  test_asymmetric_failure_policy:          PASSED\n");
+    crucible::test::pass("  test_asymmetric_failure_policy:          PASSED\n");
 }
 
 static void test_recovery_canary() {
@@ -121,7 +121,7 @@ static void test_recovery_canary() {
     assert(policy.on_health_event(bg_ctx(), target, health(1000, topology::HealthState::Healthy, 5), 500));
     assert(policy.state(target) == warden::QuarantineState::Healthy);
 
-    std::printf("  test_recovery_canary:                    PASSED\n");
+    crucible::test::pass("  test_recovery_canary:                    PASSED\n");
 }
 
 static void test_permanent_requires_operator_permission() {
@@ -141,7 +141,7 @@ static void test_permanent_requires_operator_permission() {
     assert(policy.current(target).signals.test(warden::QuarantineSignal::OperatorOverride));
     perm::permission_drop(std::move(authority));
 
-    std::printf("  test_permanent_requires_operator_permission: PASSED\n");
+    crucible::test::pass("  test_permanent_requires_operator_permission: PASSED\n");
 }
 
 static void test_event_ring_wrap_chronological_order() {
@@ -184,7 +184,7 @@ static void test_event_ring_wrap_chronological_order() {
 
     assert(policy.transition_event_at(4) == nullptr);
 
-    std::printf("  test_event_ring_wrap_chronological_order: PASSED\n");
+    crucible::test::pass("  test_event_ring_wrap_chronological_order: PASSED\n");
 }
 
 int main() {
@@ -201,13 +201,13 @@ int main() {
     static_assert(std::is_trivially_copyable_v<warden::QuarantineSnapshot>);
     static_assert(sizeof(warden::QuarantineEvent) <= 64);
 
-    std::printf("test_quarantine:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_quarantine:\n");
     test_names();
     test_health_hysteresis();
     test_asymmetric_failure_policy();
     test_recovery_canary();
     test_permanent_requires_operator_permission();
     test_event_ring_wrap_chronological_order();
-    std::printf("test_quarantine: all PASSED\n");
+    crucible::test::pass("test_quarantine: all PASSED\n");
     return 0;
 }

@@ -2,7 +2,7 @@
 #include <fixy/Ctx.h>
 
 #include <array>
-#include <cassert>
+#include "test_assert.h"
 #include <concepts>
 #include <cstdio>
 #include <string_view>
@@ -78,7 +78,7 @@ void test_admission_and_names() {
     static_assert(!shp::SharpEligibleRecipe<StrictRecipe>);
     static_assert(!shp::SharpEligibleRecipe<NonCommutativeRecipe>);
 
-    std::printf("  test_admission_and_names: PASSED\n");
+    crucible::test::pass("  test_admission_and_names: PASSED\n");
 }
 
 void test_fabric_plan_minting() {
@@ -109,7 +109,7 @@ void test_fabric_plan_minting() {
     assert(!zero_switch.has_value());
     assert(zero_switch.error() == shp::SharpError::ZeroSwitchCog);
 
-    std::printf("  test_fabric_plan_minting: PASSED\n");
+    crucible::test::pass("  test_fabric_plan_minting: PASSED\n");
 }
 
 void test_recipe_eligibility() {
@@ -139,7 +139,7 @@ void test_recipe_eligibility() {
     assert(!unsupported_dtype.has_value());
     assert(unsupported_dtype.error() == shp::SharpError::UnsupportedScalarType);
 
-    std::printf("  test_recipe_eligibility: PASSED\n");
+    crucible::test::pass("  test_recipe_eligibility: PASSED\n");
 }
 
 void test_dispatch_boundary() {
@@ -210,7 +210,7 @@ void test_dispatch_boundary() {
     assert(!mismatch.has_value());
     assert(mismatch.error() == shp::SharpError::ParticipantCountMismatch);
 
-    std::printf("  test_dispatch_boundary: PASSED\n");
+    crucible::test::pass("  test_dispatch_boundary: PASSED\n");
 }
 
 }  // namespace
@@ -234,12 +234,12 @@ int main() {
     static_assert(!shp::sharp_backend_implemented,
                   "no SHARP runtime is linked, so the context mint and the dispatch calls are stubs");
 
-    std::printf("test_cntp_sharp:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_cntp_sharp:\n");
     test_admission_and_names();
     test_fabric_plan_minting();
     test_recipe_eligibility();
     test_dispatch_boundary();
-    std::printf("test_cntp_sharp: all PASSED\n");
+    crucible::test::pass("test_cntp_sharp: all PASSED\n");
     return 0;
 }
 

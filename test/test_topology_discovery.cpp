@@ -23,7 +23,7 @@ static void test_enum_names_come_from_reflection() {
 
     volatile auto source = topology::DiscoverySource::Lldp;
     assert(enum_name(static_cast<topology::DiscoverySource>(source)) == std::string_view{"Lldp"});
-    std::printf("  test_enum_names_come_from_reflection: PASSED\n");
+    crucible::test::pass("  test_enum_names_come_from_reflection: PASSED\n");
 }
 
 static void test_lspci_and_graph_materialization() {
@@ -62,7 +62,7 @@ static void test_lspci_and_graph_materialization() {
     assert(edge != nullptr);
     assert(edge->kind == topology::LinkKind::PciE);
     assert(edge->peer == &snapshot.nodes()[1]);
-    std::printf("  test_lspci_and_graph_materialization: PASSED\n");
+    crucible::test::pass("  test_lspci_and_graph_materialization: PASSED\n");
 }
 
 static void test_ethtool_features_and_lldp() {
@@ -116,7 +116,7 @@ static void test_ethtool_features_and_lldp() {
     auto graph = snapshot.graph(ctx);
     assert(graph.edges()[0].kind == topology::LinkKind::Ethernet);
     assert(graph.edges()[0].bandwidth_bytes_per_sec.value() == 12500000000ull);
-    std::printf("  test_ethtool_features_and_lldp:       PASSED\n");
+    crucible::test::pass("  test_ethtool_features_and_lldp:       PASSED\n");
 }
 
 static void test_lldp_record_state_reset() {
@@ -146,7 +146,7 @@ static void test_lldp_record_state_reset() {
     auto graph = snapshot.graph(ctx);
     assert(graph.edges()[0].bandwidth_bytes_per_sec.value() == 12500000000ull);
     assert(graph.edges()[1].bandwidth_bytes_per_sec.value() == 0);
-    std::printf("  test_lldp_record_state_reset:         PASSED\n");
+    crucible::test::pass("  test_lldp_record_state_reset:         PASSED\n");
 }
 
 static void test_graceful_empty_live_discovery() {
@@ -161,7 +161,7 @@ static void test_graceful_empty_live_discovery() {
     auto trigger = topology::notify_rediscovery_trigger(bg, topology::DiscoverySource::Udev);
     assert(trigger.has_value());
     assert(trigger->source == topology::DiscoverySource::Udev);
-    std::printf("  test_graceful_empty_live_discovery:   PASSED\n");
+    crucible::test::pass("  test_graceful_empty_live_discovery:   PASSED\n");
 }
 
 static void test_static_gates() {
@@ -177,7 +177,7 @@ static void test_static_gates() {
     static_assert(!std::is_default_constructible_v<topology::DiscoverySnapshot<16, 32>>);
     static_assert(std::is_same_v<decltype(topology::mint_discovery_snapshot(std::declval<eff::ColdInitCtx const&>())),
                                  topology::DefaultDiscoverySnapshot>);
-    std::printf("  test_static_gates:                    PASSED\n");
+    crucible::test::pass("  test_static_gates:                    PASSED\n");
 }
 
 // A snapshot holds 64 identities, 64 node facts and 128 edge facts, and each
@@ -187,11 +187,11 @@ static void test_snapshot_elements_have_no_padding_byte() {
     crucible::test::expect_no_padding_byte<^^cog::CogIdentity>();
     crucible::test::expect_no_padding_byte<^^topology::DiscoveryNodeFact>();
     crucible::test::expect_no_padding_byte<^^topology::DiscoveryEdgeFact>();
-    std::printf("  test_snapshot_elements_have_no_padding_byte: PASSED\n");
+    crucible::test::pass("  test_snapshot_elements_have_no_padding_byte: PASSED\n");
 }
 
 int main() {
-    std::printf("test_topology_discovery:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_topology_discovery:\n");
     test_enum_names_come_from_reflection();
     test_lspci_and_graph_materialization();
     test_ethtool_features_and_lldp();
@@ -199,6 +199,6 @@ int main() {
     test_graceful_empty_live_discovery();
     test_static_gates();
     test_snapshot_elements_have_no_padding_byte();
-    std::printf("test_topology_discovery: all PASSED\n");
+    crucible::test::pass("test_topology_discovery: all PASSED\n");
     return 0;
 }

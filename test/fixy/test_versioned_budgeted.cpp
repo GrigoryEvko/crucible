@@ -19,6 +19,7 @@
 #include <cstdlib>
 #include <limits>
 #include <utility>
+#include "../test_assert.h"
 
 namespace {
 
@@ -188,6 +189,6 @@ void exercise_budgeted() {
 int main() {
     exercise_epoch_versioned();
     exercise_budgeted();
-    std::printf("test_versioned_budgeted: ok\n");
+    crucible::test::pass("test_versioned_budgeted: ok\n");
     return 0;
 }

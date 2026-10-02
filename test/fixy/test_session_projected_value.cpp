@@ -23,6 +23,7 @@
 #include <thread>
 #include <type_traits>
 #include <utility>
+#include "../test_assert.h"
 
 namespace s = ::fixy::session;
 namespace g = ::fixy::session::global;
@@ -157,6 +158,6 @@ int main() {
         std::fprintf(stderr, "test_session_projected_value: a word stayed on the channel\n");
         return 1;
     }
-    std::fprintf(stderr, "test_session_projected_value: OK\n");
+    crucible::test::pass("test_session_projected_value: OK\n");
     return 0;
 }

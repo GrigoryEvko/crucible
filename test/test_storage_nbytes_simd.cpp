@@ -99,7 +99,7 @@ static void test_scalar_tensor() {
     meta.dtype = ScalarType::Byte;
     check_equiv(meta, "scalar-byte");
 
-    std::printf("  test_scalar_tensor: PASSED\n");
+    crucible::test::pass("  test_scalar_tensor: PASSED\n");
 }
 
 static void test_zero_size_tensor() {
@@ -116,7 +116,7 @@ static void test_zero_size_tensor() {
     assert(compute_storage_nbytes_simd(external_meta(m3)) == 0);
     check_equiv(m3, "zero-trailing-3d");
 
-    std::printf("  test_zero_size_tensor: PASSED\n");
+    crucible::test::pass("  test_zero_size_tensor: PASSED\n");
 }
 
 static void test_common_shapes() {
@@ -137,7 +137,7 @@ static void test_common_shapes() {
     auto m8d = make_meta({2, 3, 5, 7, 11, 13, 17, 19}, {1, 2, 3, 4, 5, 6, 7, 8});
     check_equiv(m8d, "8D");
 
-    std::printf("  test_common_shapes: PASSED\n");
+    crucible::test::pass("  test_common_shapes: PASSED\n");
 }
 
 static void test_natural_tensor_meta_alignment() {
@@ -161,7 +161,7 @@ static void test_natural_tensor_meta_alignment() {
     check_equiv(*meta, "natural-align-not-vector-align");
     std::destroy_at(meta);
 
-    std::printf("  test_natural_tensor_meta_alignment: PASSED\n");
+    crucible::test::pass("  test_natural_tensor_meta_alignment: PASSED\n");
 }
 
 static void test_negative_strides() {
@@ -179,7 +179,7 @@ static void test_negative_strides() {
     auto m4 = make_meta({3, 4, 5, 6}, {-120, 30, -6, 1});
     check_equiv(m4, "neg-multi-4d");
 
-    std::printf("  test_negative_strides: PASSED\n");
+    crucible::test::pass("  test_negative_strides: PASSED\n");
 }
 
 static void test_stride_zero() {
@@ -194,7 +194,7 @@ static void test_stride_zero() {
     auto m3 = make_meta({3, 4, 5}, {0, 0, 1});
     check_equiv(m3, "stride0-multi");
 
-    std::printf("  test_stride_zero: PASSED\n");
+    crucible::test::pass("  test_stride_zero: PASSED\n");
 }
 
 static void test_dtype_variations() {
@@ -211,7 +211,7 @@ static void test_dtype_variations() {
         assert(compute_storage_nbytes_simd(external_meta(m)) == expected);
     }
 
-    std::printf("  test_dtype_variations: PASSED\n");
+    crucible::test::pass("  test_dtype_variations: PASSED\n");
 }
 
 // These inputs overflow int64 in the (size - 1) times stride step.  Both
@@ -238,7 +238,7 @@ static void test_overflow_multiply() {
     auto m2 = make_meta({3, (int64_t{1} << 32) + 1}, {1, int64_t{1} << 31});
     check_equiv(m2, "overflow-mul-2d");
 
-    std::printf("  test_overflow_multiply: PASSED\n");
+    crucible::test::pass("  test_overflow_multiply: PASSED\n");
 }
 
 // Here the multiply stays in range and the additive fold across the
@@ -253,7 +253,7 @@ static void test_overflow_add_fold() {
                         int64_t{1} << 29, int64_t{1} << 29, int64_t{1} << 29});
     check_equiv(m, "overflow-add-fold-8d");
 
-    std::printf("  test_overflow_add_fold: PASSED\n");
+    crucible::test::pass("  test_overflow_add_fold: PASSED\n");
 }
 
 // INT64_MIN is the boundary case for the absolute value the pre-screen
@@ -265,7 +265,7 @@ static void test_int64_min_stride() {
     auto m = make_meta({2}, {INT64_MIN});
     check_equiv(m, "int64-min-stride");
 
-    std::printf("  test_int64_min_stride: PASSED\n");
+    crucible::test::pass("  test_int64_min_stride: PASSED\n");
 }
 
 // A negative size is not a valid extent, but a hostile descriptor can hold
@@ -289,7 +289,7 @@ static void test_negative_size() {
     const auto saturated = compute_storage_nbytes_scalar(external_meta(make_meta({INT64_MIN}, {1})));
     assert(saturated.was_clamped());
 
-    std::printf("  test_negative_size: PASSED\n");
+    crucible::test::pass("  test_negative_size: PASSED\n");
 }
 
 // The lanes past ndim take part in every vector operation, and a hostile
@@ -312,7 +312,7 @@ static void test_dead_lanes_hold_extremes() {
     const auto span = compute_storage_nbytes_simd(external_meta(m));
     assert(!span.was_clamped() && span.value() == 100);
 
-    std::printf("  test_dead_lanes_hold_extremes: PASSED\n");
+    crucible::test::pass("  test_dead_lanes_hold_extremes: PASSED\n");
 }
 
 // These bounds keep every generated input on the vector fast path, so
@@ -336,7 +336,7 @@ static void test_random_well_bounded() {
         check_equiv(m, "random-bounded");
     }
 
-    std::printf("  test_random_well_bounded: PASSED (%d trials)\n", N_TRIALS);
+    crucible::test::pass("  test_random_well_bounded: PASSED ({} trials)\n", N_TRIALS);
 }
 
 // These bounds are wide enough to fail the pre-screen, so this case
@@ -360,11 +360,11 @@ static void test_random_extreme() {
         check_equiv(m, "random-extreme");
     }
 
-    std::printf("  test_random_extreme: PASSED (%d trials)\n", N_TRIALS);
+    crucible::test::pass("  test_random_extreme: PASSED ({} trials)\n", N_TRIALS);
 }
 
 int main() {
-    std::printf("test_storage_nbytes_simd:\n");
+    ::fixy::report(::fixy::Sink::Out, "test_storage_nbytes_simd:\n");
 
     test_scalar_tensor();
     test_zero_size_tensor();
@@ -381,6 +381,6 @@ int main() {
     test_random_well_bounded();
     test_random_extreme();
 
-    std::printf("test_storage_nbytes_simd: ALL PASSED\n");
+    crucible::test::pass("test_storage_nbytes_simd: ALL PASSED\n");
     return 0;
 }

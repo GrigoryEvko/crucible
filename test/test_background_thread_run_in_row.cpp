@@ -59,7 +59,7 @@ void test_t01_required_row_pinned() {
 
     static_assert(eff::row_size(^^BackgroundThread::run_required_row) == 4);
 
-    std::printf("  T01 required_row_pinned:                   PASSED\n");
+    crucible::test::pass("  T01 required_row_pinned:                   PASSED\n");
 }
 
 // The one context that admits the row, and the contexts that do not.  These
@@ -87,7 +87,7 @@ void test_t02_context_matrix() {
     // A value that is not a context admits nothing.
     static_assert(!eff::CtxAdmits<int, Required>);
 
-    std::printf("  T02 context_matrix:                        PASSED\n");
+    crucible::test::pass("  T02 context_matrix:                        PASSED\n");
 }
 
 // The pointer is never dereferenced.  The call expression sits inside
@@ -99,7 +99,7 @@ void test_t03_api_surface_pinned() {
     static_assert(noexcept(bt_ptr->run_in_row(std::declval<::fixy::BgLoadCtx const&>())),
                   "run_in_row(ctx) is noexcept, because the pipeline thread runs it as its entry.");
 
-    std::printf("  T03 api_surface_pinned:                    PASSED\n");
+    crucible::test::pass("  T03 api_surface_pinned:                    PASSED\n");
 }
 
 // The drain loop calls record_event while committing a region, so by
@@ -122,7 +122,7 @@ void test_cross_fence_consistency() {
     static_assert(eff::row_size(^^BgRow) == 4u);
     static_assert(eff::row_size(^^RecordRow) == 2u);
 
-    std::printf("  cross_fence_consistency:                   PASSED\n");
+    crucible::test::pass("  cross_fence_consistency:                   PASSED\n");
 }
 
 // The retained-region queue is bounded, so a process that publishes forever
@@ -156,9 +156,9 @@ void test_uncompiled_queue_is_bounded() {
     for (uint32_t age = 0; age < CAP; ++age)
         assert(queue.at(age) == fake(OVERRUN - 1 - age) && "the bound keeps the newest CAP, in order");
 
-    std::printf("  uncompiled_queue_bounded:                  "
-                "PASSED (pushed=%llu, retained=%u)\n",
-                static_cast<unsigned long long>(queue.total()), queue.size());
+    crucible::test::pass("  uncompiled_queue_bounded:                  "
+                         "PASSED (pushed={}, retained={})\n",
+                         static_cast<unsigned long long>(queue.total()), queue.size());
 }
 
 }  // namespace
@@ -167,7 +167,7 @@ void test_uncompiled_queue_is_bounded() {
 
 int main() {
     using namespace test_background_thread_run_in_row;
-    std::printf("test_background_thread_run_in_row — effect-row fence\n");
+    ::fixy::report(::fixy::Sink::Out, "test_background_thread_run_in_row — effect-row fence\n");
     test_t01_required_row_pinned();
     test_t02_context_matrix();
     test_t03_api_surface_pinned();
@@ -188,6 +188,6 @@ int main() {
     test_built_graph_owns_its_metadata();
     test_build_and_release_pass_two_to_the_32();
 
-    std::printf("test_background_thread_run_in_row: 16 groups, all passed\n");
+    crucible::test::pass("test_background_thread_run_in_row: 16 groups, all passed\n");
     return 0;
 }

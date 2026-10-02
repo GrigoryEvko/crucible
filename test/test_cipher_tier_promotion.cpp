@@ -5,7 +5,7 @@
 #include <foundation/Pinned.h>
 #include <foundation/reflect/EnumName.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <expected>
 #include <cstdio>
 #include <optional>
@@ -183,6 +183,6 @@ int main() {
     test_restore_returns_expected_warm_handle();
     test_restore_error_surface();
     test_hot_promote_delegate_protocol();
-    std::puts("cipher_tier_promotion: ok");
+    crucible::test::pass("cipher_tier_promotion: ok\n");
     return 0;
 }

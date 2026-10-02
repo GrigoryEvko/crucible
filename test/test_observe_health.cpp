@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <type_traits>
+#include "test_assert.h"
 
 namespace {
 
@@ -97,6 +98,6 @@ int main() {
     run_test("snapshot_maps_to_fixed_observation_batch", test_snapshot_maps_to_fixed_observation_batch);
     run_test("publish_updates_dedicated_latest_value_sinks", test_publish_updates_dedicated_latest_value_sinks);
 
-    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
+    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
     return total_failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

@@ -22,7 +22,7 @@ static void test_empty_graph() {
     build_csr(t.alloc, arena, &g, nullptr, 0, 0);
     static_assert(std::is_same_v<TraceGraph::BuiltCount, ::fixy::WriteOnce<uint32_t>>);
     assert(g.num_edges.get_assuming_set() == 0);
-    std::printf("  test_empty:                     PASSED\n");
+    crucible::test::pass("  test_empty:                     PASSED\n");
 }
 
 static void test_single_edge_fwd_rev() {
@@ -38,7 +38,7 @@ static void test_single_edge_fwd_rev() {
     assert(g.in_degree(OpIndex{0}) == 0);
     assert(g.in_degree(OpIndex{1}) == 1);
     assert(g.rev_begin(OpIndex{1})->src == OpIndex{0});
-    std::printf("  test_single_edge:               PASSED\n");
+    crucible::test::pass("  test_single_edge:               PASSED\n");
 }
 
 static void test_counting_sort_groups_by_src() {
@@ -69,7 +69,7 @@ static void test_counting_sort_groups_by_src() {
             assert(e->dst == oi);
         }
     }
-    std::printf("  test_counting_sort:             PASSED\n");
+    crucible::test::pass("  test_counting_sort:             PASSED\n");
 }
 
 static void test_edge_kind_preserved() {
@@ -92,7 +92,7 @@ static void test_edge_kind_preserved() {
         if (e->kind == EdgeKind::CONTROL_FLOW) saw_cf = true;
     }
     assert(saw_df && saw_alias && saw_cf);
-    std::printf("  test_edge_kind_preserved:       PASSED\n");
+    crucible::test::pass("  test_edge_kind_preserved:       PASSED\n");
 }
 
 static void test_offsets_prefix_sum_invariant() {
@@ -113,7 +113,7 @@ static void test_offsets_prefix_sum_invariant() {
     }
     assert(g.fwd_offsets[10] == 9);
     assert(g.rev_offsets[10] == 9);
-    std::printf("  test_prefix_sum:                PASSED\n");
+    crucible::test::pass("  test_prefix_sum:                PASSED\n");
 }
 
 static void test_fanout_node_has_multiple_edges() {
@@ -132,7 +132,7 @@ static void test_fanout_node_has_multiple_edges() {
         assert(g.in_degree(oi) == 1);
         assert(g.rev_begin(oi)->src == OpIndex{0});
     }
-    std::printf("  test_fanout:                    PASSED\n");
+    crucible::test::pass("  test_fanout:                    PASSED\n");
 }
 
 [[gnu::cold]] int main() {
@@ -142,6 +142,6 @@ static void test_fanout_node_has_multiple_edges() {
     test_edge_kind_preserved();
     test_offsets_prefix_sum_invariant();
     test_fanout_node_has_multiple_edges();
-    std::printf("test_trace_graph: 6 groups, all passed\n");
+    crucible::test::pass("test_trace_graph: 6 groups, all passed\n");
     return 0;
 }
