@@ -2434,6 +2434,7 @@ Each translation unit that includes a header compiles that header again, and eac
 | `test-time` | The wall time of one test | 5 s | 30 s. A warning only in a TSan build | The test launcher, and `utils/scripts/check-test-time.py` after the tests for a script test | Test run |
 | `test-memory` | The peak memory of one executable test | 0.5 GB | 1.5 GB | The test launcher | Test run |
 | Test timeout | The wall time of one test | None | The timeout of the test preset stops the test | ctest | Test run |
+| `cache-size` | The size of one cache under the root of `utils/scripts/cache_dir.py`, from a sample of its files, as a multiple of its row of `LIMITS` | 1 | 2 | The test `cache_size` | Test run |
 | Raised threshold, grown ledger | A threshold of the budget table above its lowest committed value, and a ledger above its lowest committed row count, from the git history | Each one, with the commits that raised it | A rise whose commits give no measurement of the row, unless `utils/scripts/budget-history-ledger.txt` admits it | The test `budget_history` | Test run |
 | `fixture-cpu` | The user CPU time of one cold fixture compile | 5 s | 15 s. A warning only when the compile has an instruction count | The fixture driver | Test run |
 | `fixture-instructions` | The user instructions of one cold fixture compile | 28 G | 45 G | The fixture driver | Test run |

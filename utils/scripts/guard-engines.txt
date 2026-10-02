@@ -30,6 +30,7 @@ utils/scripts/check-banned-calls.py | tsast,text | the allowlist rows and utils/
 utils/scripts/check-brand-drain.py | tsast,text | the ledger utils/scripts/brand-drain.txt
 utils/scripts/check-budget-history.py | git,text | the git history of utils/scripts/budgets.txt and of each ledger, the subjects and bodies of its commits, and utils/scripts/budget-history-ledger.txt
 utils/scripts/check-build-order.py | json,text | build.ninja of the build directory, the dependency log of Ninja, the compile database, the records of the build launcher, utils/scripts/compile-first.txt, the list of targets that cmake/CompileFirst.cmake writes, the build kind and the budget table
+utils/scripts/check-cache-size.py | text | the budget table and the sizes of the files under the root of the caches
 utils/scripts/check-ci-guard-labels.py | json | the test list of ctest --show-only=json-v1
 utils/scripts/check-clang-format.sh | text | the diagnostics of clang-format, the file list of fd and the cache of the hashes of clean files
 utils/scripts/check-compile-cost.py | compiler,json,text | the records of the build launcher, the ELF tables of the objects, the file API reply, the ninja dependency log, the ledger rows and the budget table

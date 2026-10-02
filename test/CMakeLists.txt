@@ -686,6 +686,18 @@ add_test(NAME cache_dir_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/cache_dir.py --self-test)
 set_tests_properties(cache_dir_self_test PROPERTIES
     LABELS "ci_guard")
+# utils/scripts/check-cache-size.py takes the size of each cache under the root
+# of the caches from a sample of its files, and compares it with the row of
+# the cache in cache_dir.LIMITS.  A cache over its limit gives a warning, and
+# a cache over twice its limit gives an error (the row cache-size of
+# utils/scripts/budgets.txt).
+add_test(NAME cache_size
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-cache-size.py
+          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+add_test(NAME cache_size_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-cache-size.py --self-test)
+set_tests_properties(cache_size cache_size_self_test PROPERTIES
+    LABELS "ci_guard")
 # A linear token is an empty class, so a moved-from token looks live, and
 # a second std::move of one Permission gives two owners of one region.
 # sizeof(Permission) stays 1, so no byte records the move.
