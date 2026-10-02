@@ -51,9 +51,10 @@
 #       Each file under PATH is quarantined.
 #   enforce PATH MODE
 #       MODE is report or error.  Each finding in a file under PATH that has
-#       error mode is a compile error in a build with
-#       CRUCIBLE_QUARANTINE=REPORT.  A finding in report mode is a line of the
-#       report of that build.
+#       error mode is a compile error in each build.  A finding in report mode
+#       is a line of the section .crucible.quarantine of the object.  A change
+#       of the mode of a file compiles again only the units with a finding in
+#       that file, and a change of a reason or of a comment compiles nothing.
 #
 # THE LONGEST PATH
 #   When the PATHs of two rows hold one file, the longer PATH decides.  A

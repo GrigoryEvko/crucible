@@ -565,13 +565,28 @@ def _strip_dependency_flags(argv: list[str]) -> list[str]:
     return result
 
 
+def _strip_plugin_flags(argv: list[str]) -> list[str]:
+    """Return `argv` without the options that load a GCC plugin or give it an argument.
+
+    A fixture tests a compile-time rejection of the language or of the base,
+    and the quarantine plugin of the build reports a finding in each fixture.
+    So a fixture compiles with no plugin, unless its test sets
+    CRUCIBLE_NEG_KEEP_PLUGIN=1: the fixtures of the contract rule test the
+    plugin itself.  The key of a stored result then holds no plugin, so a
+    change of the plugin compiles no other fixture again.
+    """
+    if os.environ.get("CRUCIBLE_NEG_KEEP_PLUGIN", "") == "1":
+        return argv
+    return [arg for arg in argv if not arg.startswith(("-fplugin=", "-fplugin-arg-"))]
+
+
 def compile_argv(command: list[str], output: Path, depfile: Path) -> list[str]:
     """Return the command that compiles the fixture.
 
     The object file goes to `output`, and GCC writes the list of the files that
     it read to `depfile`.  The last two arguments are `-MF` and `depfile`.
     """
-    argv = _replace_output(_strip_dependency_flags(command), output)
+    argv = _replace_output(_strip_plugin_flags(_strip_dependency_flags(command)), output)
 
     # A negative-compile fixture asserts a COMPILE-TIME rejection — a
     # property that only manifests under the `enforce` contract

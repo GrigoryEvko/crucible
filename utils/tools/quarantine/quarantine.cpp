@@ -17,10 +17,8 @@
 //
 // The plugin also applies the contract rule of the tree, from plugin_core.h,
 // in each mode: each P2900 contract specifier that no region opts out is an
-// error.  CMake loads this plugin only when CRUCIBLE_QUARANTINE is REPORT or
-// ERROR.  Each other build loads the contract plugin of contract.cpp, which
-// applies only the contract rule, so a change of this file does not compile
-// the objects of that build again.
+// error.  Each build of the tree loads this plugin
+// (utils/tools/quarantine/Quarantine.cmake).
 //
 // THE KINDS
 //     std_entity            a named reference to a declaration in namespace std.
@@ -82,8 +80,19 @@
 //                    no region opts out, is an error
 //     mode=error     each finding that no region opts out is an error
 //     out=DIR        also write the report of the unit to a file in DIR
+//     stamps=DIR     the directory of the mode stamps (THE DEPENDENCIES)
 //     stamp=TEXT     the head line of the section holds it; a new value makes
 //                    the build system compile again
+//
+// THE DEPENDENCIES
+//     utils/scripts/quarantine_stamps.py writes DIR/modes/PATH for each source
+//     file of a row of the table, with the enforce mode of that file.  At
+//     PLUGIN_FINISH_UNIT, the plugin adds the mode stamp of each file with a
+//     finding that a mode can make an error to the dependency file of the
+//     unit.  A file with no mode stamp adds DIR/enforce.txt.  A change of the
+//     mode of a file then compiles again only the units with such a finding
+//     in that file.  An opted-out finding and a finding of the contract rule
+//     add nothing, because no mode changes them.
 //
 // THE SECTION
 //     A unit that writes an object puts the report into the section
@@ -124,6 +133,10 @@
 #include "tree-iterator.h"
 
 int plugin_is_GPL_compatible;
+
+// libcpp exports deps_add_dep, and mkdeps.h, which declares it, is not one of
+// the plugin headers.
+void deps_add_dep(class mkdeps*, const char*);
 
 namespace {
 
@@ -212,6 +225,7 @@ using IncludeCallback = void (*)(cpp_reader*, location_t, const unsigned char*, 
 // regions.
 struct State {
     std::string out_dir;
+    std::string stamps_dir;
     std::string stamp;
     bool is_error_mode = false;
 
@@ -1605,7 +1619,36 @@ void write_section(const std::vector<std::string>& lines) {
     fwrite(text.data(), 1, text.size(), asm_out_file);
 }
 
-void report() {
+// The mode stamp of each file with a finding that a mode can make an error,
+// in the dependency file of the unit (THE DEPENDENCIES).  Complexity: O(findings).
+void add_mode_dependencies() {
+    class mkdeps* dependencies = cpp_get_deps(parse_in);
+    if (dependencies == nullptr || state.stamps_dir.empty()) {
+        return;
+    }
+    std::unordered_set<const FileEntry*> files;
+    bool needs_enforce = false;
+    for (const Finding& finding : core.findings) {
+        if (finding.kind == kContractKind || finding.file == nullptr || is_opted_out(finding)
+            || !files.insert(finding.file).second) {
+            continue;
+        }
+        std::string stamp = state.stamps_dir + "/modes/" + finding.file->relative;
+        struct stat status;
+        if (::stat(stamp.c_str(), &status) == 0 && S_ISREG(status.st_mode)) {
+            deps_add_dep(dependencies, stamp.c_str());
+        } else {
+            needs_enforce = true;
+        }
+    }
+    if (needs_enforce) {
+        deps_add_dep(dependencies, (state.stamps_dir + "/enforce.txt").c_str());
+    }
+}
+
+// The report of the unit.  CAN_ADD_DEPENDENCIES is true at PLUGIN_FINISH_UNIT,
+// before GCC writes the dependency file.
+void report(bool can_add_dependencies) {
     if (core.was_reported) {
         return;
     }
@@ -1613,6 +1656,9 @@ void report() {
     finish_pending_include(nullptr);
     report_open_regions();
     report_unclassified();
+    if (can_add_dependencies) {
+        add_mode_dependencies();
+    }
     bool has_section = writes_section();
     // An admit row with `unless MACRO` refuses each unit that defines MACRO.
     for (const AdmitRow& admit : core.table.admits) {
@@ -1810,17 +1856,18 @@ void walk_declarations() {
 
 void on_finish_unit(void*, void*) {
     walk_declarations();
-    report();
+    report(true);
 }
 
 // A unit that stopped on an error, or that -fsyntax-only compiled, does not
 // reach PLUGIN_FINISH_UNIT.  Under -fsyntax-only the trees are complete, so
-// the walk of declarations runs here.
+// the walk of declarations runs here.  GCC wrote the dependency file before
+// PLUGIN_FINISH, so the report adds no dependency.
 void on_finish(void*, void*) {
     if (!core.was_reported && flag_syntax_only && !seen_error()) {
         walk_declarations();
     }
-    report();
+    report(false);
 }
 
 void on_collection(void*, void*) {
@@ -1862,6 +1909,8 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
             rules_argument = value;
         } else if (key == "out") {
             state.out_dir = value;
+        } else if (key == "stamps") {
+            state.stamps_dir = value;
         } else if (key == "mode") {
             if (value != "report" && value != "error") {
                 error("quarantine: mode is %qs; the modes are report and error", value.c_str());
@@ -1871,7 +1920,8 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
         } else if (key == "stamp") {
             state.stamp = value;
         } else {
-            error("quarantine: unknown argument %qs; the arguments are root, build, rules, mode, out and stamp",
+            error("quarantine: unknown argument %qs; the arguments are root, build, rules, mode, out, stamps and "
+                  "stamp",
                   key.c_str());
             return 1;
         }

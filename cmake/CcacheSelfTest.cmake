@@ -18,8 +18,8 @@
 # The two relocation cases build the object of one source with debug
 # information in build roots inside the source root.  The project loads the
 # GCC plugin of the tree as the root CMakeLists.txt does
-# (utils/tools/quarantine/Quarantine.cmake), and the plugin options name the
-# source root and the build root.
+# (utils/tools/quarantine/Quarantine.cmake), with a rule table of its own, and
+# the plugin options name the source root and the build root.
 #   - CASE=relocation builds in two build roots with the ccache that PATH holds,
 #     with a cache of their own in WORK, so the second gets a hit from the
 #     first.  Then the second compiles its object again with CCACHE_RECACHE,
@@ -54,11 +54,15 @@ file(WRITE "${WORK}/project/CMakeLists.txt"
   "crucible_ccache_after_project()\n"
   "crucible_relocatable_objects()\n"
   "if(WITH_TREE_PLUGIN)\n"
+  "  set(CRUCIBLE_RULE_TABLE \"\${CMAKE_SOURCE_DIR}/rules.txt\")\n"
   "  include(\"${quarantine}\")\n"
   "endif()\n"
   "file(WRITE \"\${CMAKE_BINARY_DIR}/launcher.txt\" \"\${CMAKE_CXX_COMPILER_LAUNCHER}\")\n"
   "add_library(probe OBJECT probe.cpp)\n"
   "target_include_directories(probe PRIVATE include)\n")
+# The rule table of the project.  The plugin gives an error for a file of the
+# source root that no row holds, so each file of the project has a row.
+file(WRITE "${WORK}/project/rules.txt" "quarantine probe.cpp\nquarantine include/\n")
 file(WRITE "${WORK}/project/include/probe.h" "#pragma once\ninline int twice(int value) { return 2 * value; }\n")
 file(WRITE "${WORK}/project/probe.cpp"
   "#include <probe.h>\n"

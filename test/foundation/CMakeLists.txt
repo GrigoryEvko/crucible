@@ -695,6 +695,10 @@ foundation_neg_compile_test(neg_contract_specifier_template_member
   "neg_contract_specifier_template_member\\.cpp:12:[0-9]+: error: the .pre. contract specifier is not permitted"
   "write .CRUCIBLE_PRE\\(condition\\). of .foundation/contracts/Pre\\.h."
   "does not keep the contract specifier of a template in a header unit or in a precompiled header")
+# The fixture driver compiles each other fixture with no plugin.  These three
+# test the contract rule of the plugin, so they keep it.
+set_property(TEST neg_contract_specifier_pre neg_contract_specifier_post neg_contract_specifier_template_member
+  APPEND PROPERTY ENVIRONMENT CRUCIBLE_NEG_KEEP_PLUGIN=1)
 
 # test/CMakeLists.txt registers test_reflect for test/test_reflect.cpp,
 # and a CMake target name is global.  This target carries the name of

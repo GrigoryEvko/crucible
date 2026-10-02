@@ -1,23 +1,16 @@
-// The part that the two GCC plugins of this directory share: the files of the
-// source root, the rule table, the opt-out regions, and the contract rule of
-// the tree.
-//
-// contract.cpp builds crucible_contract.so, which applies only the contract
-// rule, and a build loads it when CRUCIBLE_QUARANTINE is OFF.  quarantine.cpp
-// builds crucible_quarantine.so, which applies the quarantine rule, the
-// include rules and the contract rule, and a build loads it when
-// CRUCIBLE_QUARANTINE is REPORT or ERROR.  A change of quarantine.cpp
-// therefore does not change the plugin of a build where CRUCIBLE_QUARANTINE is
-// OFF, and its objects do not compile again.
+// The core of the quarantine plugin: the files of the source root, the rule
+// table, the opt-out regions, and the contract rule of the tree.
+// quarantine.cpp builds crucible_quarantine.so from this header and applies
+// the quarantine rule and the include rules too.  Each build of the tree loads
+// the plugin.
 //
 // THE RULE TABLE
 //     utils/scripts/layer-rules.txt gives the layers of the base, the headers
 //     that each layer can include, the door of each system header, the
 //     admitted entities of the standard library, the quarantined directories
 //     and the enforce mode of each path.  Its head comment gives the format,
-//     and utils/scripts/layer_rules.py reads the same format.  The quarantine
-//     plugin takes the table as rules=PATH.  The contract plugin takes no
-//     table.
+//     and utils/scripts/layer_rules.py reads the same format.  The plugin
+//     takes the table as rules=PATH.
 //
 // THE FILES
 //     Each file has one class, from its real path:
@@ -28,14 +21,12 @@
 //         outside       a system header, a file outside the source root, or
 //                       a scratch buffer
 //     The longest path of a layer row or a quarantine row decides.  The
-//     quarantine plugin gives an error for each unclassified file that a unit
-//     reads.  The contract plugin reads no table, and it gives each file of
-//     the source root outside the build directory the quarantined class.
+//     plugin gives an error for each unclassified file that a unit reads.
 //     The contract rule and the opt-out regions apply to each file under the
 //     source root.  The quarantine rule applies to a quarantined file only.
 //     A place of the quarantine rule falls through a generated file to the
 //     point where its macro expands, as it falls through a system header.
-//     Each plugin takes the build directory as build=PATH.
+//     The plugin takes the build directory as build=PATH.
 //
 // THE CONTRACT RULE
 //     A P2900 contract specifier (`pre` or `post` on a function declaration)
@@ -66,9 +57,9 @@
 //     #pragma crucible END_I_KNOW_WHAT_IM_DOING closes it.  A finding inside a
 //     region is reported as opted_out and is not an error.
 //
-// Each plugin includes this header in its one translation unit, after the
-// standard headers that the plugin uses, because the headers of GCC rename
-// some functions of the C library.
+// quarantine.cpp includes this header after the standard headers that the
+// plugin uses, because the headers of GCC rename some functions of the C
+// library.
 
 #pragma once
 
@@ -168,7 +159,6 @@ struct AdmitRow {
 // The rows of the rule table, in the order of the file.  A header keeps the
 // name inside its angle brackets.
 struct RuleTable {
-    bool is_loaded = false;
     std::vector<LayerRow> layers;
     std::vector<std::pair<int, std::string>> allows;  // the layer index and the header
     std::vector<DoorRow> doors;
@@ -303,10 +293,8 @@ inline const FileEntry& entry_of_real_path(const std::string& resolved) {
         entry.relative = resolved.substr(core.root.size() + 1);
         if (!core.build.empty() && has_prefix(resolved, core.build + "/")) {
             entry.file_class = FileClass::generated;
-        } else if (core.table.is_loaded) {
-            classify_by_table(entry);
         } else {
-            entry.file_class = FileClass::quarantined;
+            classify_by_table(entry);
         }
     }
     const FileEntry& stored = core.entries.emplace(resolved, std::move(entry)).first->second;
@@ -956,12 +944,11 @@ inline bool load_rule_table(const std::string& path) {
     if (!is_valid) {
         return false;
     }
-    table.is_loaded = true;
     core.table = std::move(table);
     return true;
 }
 
-// ── The arguments that the two plugins share ────────────────────────────
+// ── The place arguments ─────────────────────────────────────────────────
 
 // Records the source root.  Returns false, after an error, when the path does
 // not exist.

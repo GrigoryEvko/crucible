@@ -1048,17 +1048,15 @@ approximately 10 ms to each step, and the compile database does not show it.
 `utils/scripts/cost_meter.py` holds the measurement and the record format, and
 each launcher imports it.
 
-In each preset, `utils/tools/quarantine/Quarantine.cmake` builds one GCC
+In each preset, `utils/tools/quarantine/Quarantine.cmake` builds the quarantine
 plugin of `utils/tools/quarantine/` at configure time, and puts `-fplugin=` and
-the plugin arguments on each C++ compile. With `CRUCIBLE_QUARANTINE=OFF`, the
-build loads the contract plugin of `contract.cpp`, which applies only the
-contract rule of §XII. With `REPORT` or `ERROR`, it loads the quarantine plugin
-of `quarantine.cpp`, which applies the quarantine rule and the contract rule.
-The contract rule is in `plugin_core.h`, so a change of `quarantine.cpp`
-compiles no object of an `OFF` build again. The load of the plugin adds
-approximately 6 ms to each compile, and the rule takes less than 0.2% of the
-CPU time of a heavy unit. ccache ignores the paths in the plugin arguments, so
-the build directories of two work trees share the cache.
+the plugin arguments on each C++ compile. The plugin applies the quarantine
+rule of §XXII and the contract rule of §XII. `CRUCIBLE_QUARANTINE_MODE` is
+`REPORT`, the default, or `ERROR` (§XXII). On 2026-10-02, the plugin added 5 to
+60 million user instructions to a compile: 0.07% to 0.35% of six units of 2 to
+47 billion instructions. ccache ignores the paths in the plugin arguments, so
+the build directories of two work trees share the cache. ccache also hashes
+the enforce rows of the rule table.
 
 ### Debug preset
 
@@ -2151,7 +2149,7 @@ const auto& ck = *r;  // happy path
 - `CRUCIBLE_INVARIANT` — loop trip counts, alignment, range bounds. The optimizer uses it.
 - `CRUCIBLE_PRE` / `CRUCIBLE_POST` — each precondition and each postcondition of a function. `CRUCIBLE_PRE` is a statement at the start of the body, and `CRUCIBLE_POST` is a statement before each return. The decide-catalog predicates and the dual-side audit of pre and post use this rail.
 
-**The contract rule.** A P2900 `pre` or `post` specifier on a function declaration is a compile error in each build. `utils/tools/quarantine/plugin_core.h` holds the rule, and the two GCC plugins of that directory apply it. `utils/tools/quarantine/Quarantine.cmake` builds one plugin at configure time and loads it into each C++ compile of the tree. When `CRUCIBLE_QUARANTINE` is `OFF`, the build loads the contract plugin (`contract.cpp`), which applies only this rule. When it is `REPORT` or `ERROR`, the build loads the quarantine plugin, which applies this rule too. The rule applies to each file under the source root, also to `include/foundation/` and `include/fixy/`. The error names `CRUCIBLE_PRE` or `CRUCIBLE_POST`, and two notes give the reasons and the opt-out region. A test of the specifier itself puts the specifier in a `#pragma crucible I_KNOW_WHAT_IM_DOING("reason")` region. No file of the tree uses the region for this rule. `cmake/probes/contract_cache.cpp` holds a specifier, because it is a probe of a compiler fix to the specifier, and `execute_process` compiles it without the plugin. The fixtures `neg_contract_specifier_pre`, `neg_contract_specifier_post` and `neg_contract_specifier_template_member` show the error, and the test `quarantine_plugin` holds each form of the specifier. The plugin cannot see a specifier in a preprocessor arm that the unit does not compile, or on a member function of a local class in a template when the class declares the function and does not define it. `utils/scripts/check-contract-form.py` (the test `contract_form`) reads the parse tree of each tracked C++ file, so it finds these specifiers and a specifier in a file that no build compiles. `utils/scripts/contract-form-allowlist.txt` admits the files whose subject is the specifier, and the list only shrinks. The parse tree does not show a specifier that a macro spells, and the plugin finds that one.
+**The contract rule.** A P2900 `pre` or `post` specifier on a function declaration is a compile error in each build. `utils/tools/quarantine/plugin_core.h` holds the rule, and the quarantine plugin of that directory applies it in each mode. `utils/tools/quarantine/Quarantine.cmake` builds the plugin at configure time and loads it into each C++ compile of the tree. The rule applies to each file under the source root, also to `include/foundation/` and `include/fixy/`. The error names `CRUCIBLE_PRE` or `CRUCIBLE_POST`, and two notes give the reasons and the opt-out region. A test of the specifier itself puts the specifier in a `#pragma crucible I_KNOW_WHAT_IM_DOING("reason")` region. No file of the tree uses the region for this rule. `cmake/probes/contract_cache.cpp` holds a specifier, because it is a probe of a compiler fix to the specifier, and `execute_process` compiles it without the plugin. The fixtures `neg_contract_specifier_pre`, `neg_contract_specifier_post` and `neg_contract_specifier_template_member` show the error, and the test `quarantine_plugin` holds each form of the specifier. The tests of the three fixtures set `CRUCIBLE_NEG_KEEP_PLUGIN=1`, because the fixture driver compiles each other fixture with no plugin. The plugin cannot see a specifier in a preprocessor arm that the unit does not compile, or on a member function of a local class in a template when the class declares the function and does not define it. `utils/scripts/check-contract-form.py` (the test `contract_form`) reads the parse tree of each tracked C++ file, so it finds these specifiers and a specifier in a file that no build compiles. `utils/scripts/contract-form-allowlist.txt` admits the files whose subject is the specifier, and the list only shrinks. The parse tree does not show a specifier that a macro spells, and the plugin finds that one.
 
 #### VC discharge framing — three layers stack
 
@@ -3023,11 +3021,11 @@ The owner approved each verdict on 2026-10-02. `test/layer/admitted_flag_matrix.
 
 ### The plugin modes and the enforce rows
 
-§V gives the three values of `CRUCIBLE_QUARANTINE`: `OFF`, `REPORT` and `ERROR`. `OFF` is the default. No preset sets a different value. An `OFF` build loads the contract plugin, which does not read the rule table.
+§V gives the two values of `CRUCIBLE_QUARANTINE_MODE`: `REPORT` and `ERROR`. `REPORT` is the default, and no preset sets a different value. Each build loads the quarantine plugin. In an `ERROR` build, each finding outside an opt-out region is a compile error.
 
-To get the findings of a change, configure a second build directory with `-DCRUCIBLE_QUARANTINE=REPORT`. Build the targets that compile the changed files, before and after the change. Then compare the output of `python3 utils/scripts/quarantine_sections.py OBJECT...` for their objects. Each object holds the findings of its unit in the section `.crucible.quarantine`, so a `REPORT` build uses ccache, and a cache hit gives the findings too.
+To get the findings of a change, build the targets that compile the changed files, before and after the change. Then compare the output of `python3 utils/scripts/quarantine_sections.py OBJECT...` for their objects. Each object holds the findings of its unit in the section `.crucible.quarantine`, so a cache hit of ccache gives the findings too.
 
-The `enforce` rows of the rule table give each quarantined directory a mode, `report` or `error`. A file that no `enforce` row holds has the mode `report`. In a `REPORT` build, a finding in a file with the mode `error` is a compile error. At this time, each `enforce` row has the mode `report`. A directory changes to `error` when it has no finding outside the opt-out ledger.
+The `enforce` rows of the rule table give each quarantined directory a mode, `report` or `error`. A file that no `enforce` row holds has the mode `report`. In each build, a finding in a file with the mode `error` is a compile error. At this time, each `enforce` row has the mode `report`. A directory changes to `error` when it has no finding outside the opt-out ledger. A change of the mode of a file compiles again only the units with a finding in that file, and a change of a reason or of a comment compiles nothing. `utils/scripts/quarantine_stamps.py` writes the inputs that make this so.
 
 ### The ratchet (R11)
 

@@ -1,68 +1,70 @@
-# The two GCC plugins of the tree: CRUCIBLE_QUARANTINE = OFF | REPORT | ERROR
+# The GCC plugin of the tree: CRUCIBLE_QUARANTINE_MODE = REPORT | ERROR
 #
-# contract.cpp builds the contract plugin, crucible_contract.so.  It holds the
+# quarantine.cpp and plugin_core.h build the quarantine plugin,
+# crucible_quarantine.so.  It reads the rule table
+# utils/scripts/layer-rules.txt, which gives the base layers, the quarantined
+# directories and the enforce mode of each path, and the head of
+# quarantine.cpp says what the plugin reports.  The plugin also applies the
 # contract rule of the tree: a P2900 contract specifier is a compile error in
 # each file under the source root, also in a generated file of the build
-# directory.  quarantine.cpp builds the quarantine plugin,
-# crucible_quarantine.so.  It reads the rule table
-# utils/scripts/layer-rules.txt, which gives the base layers and the
-# quarantined directories, and the head of quarantine.cpp says what the plugin
-# reports.  The quarantine plugin applies the contract rule too.
-# plugin_core.h holds the part that the two share, and its section THE FILES
-# gives the class of each file.  Each plugin takes the build directory, so
-# the two plugins give each file the same class.
-# CMake builds the plugin of the build at configure time with the compiler of
-# the build, and loads it into every C++ compile of the tree:
+# directory.  CMake builds the plugin at configure time with the compiler of
+# the build, and loads it into every C++ compile of the tree, in each preset:
 #
-#   OFF     The default.  Each compile loads the contract plugin.  The rule
-#           writes no file, so the compiler launcher stays: a cache hit gives
-#           an object that the same source and the same plugin made, and that
-#           compile passed the rule.
-#   REPORT  Each compile loads the quarantine plugin, and each object holds
-#           the findings of its unit in the section .crucible.quarantine
-#           (the head comment of quarantine.cpp, THE SECTION).  A finding in
-#           a path with the enforce mode report does not stop the build.  The
-#           compiler launcher stays: a cache hit gives an object with the
-#           section of the same source, plugin and rule table, because the
-#           stamp holds the plugin and the rule table.
-#           utils/scripts/quarantine_sections.py reads the section.
-#   ERROR   Each compile loads the quarantine plugin.  Each finding that no
-#           opt-out region covers is a compile error.
+#   REPORT  The default.  Each object holds the findings of its unit in the
+#           section .crucible.quarantine (the head comment of quarantine.cpp,
+#           THE SECTION), and utils/scripts/quarantine_sections.py reads the
+#           section.  A finding in a file whose enforce mode is error is a
+#           compile error, and each other finding stops nothing.
+#   ERROR   Each finding that no opt-out region covers is a compile error.
 #
-# A compile loads one of the two plugins, because each registers the opt-out
-# pragmas.  The plugin of an OFF build comes from contract.cpp and
-# plugin_core.h only.  So a change of quarantine.cpp configures no OFF build
-# again, and it compiles none of its objects again.
-#
-# The location rule decides what a plugin checks, and the target does not.
+# The location rule decides what the plugin checks, and the target does not.
 # So the flags go on the directory before the first target, and every target
 # of the tree gets them.  execute_process builds the plugin, so the plugin is
-# not a target and it is not built with itself loaded.  A change of the
-# sources of the plugin, of its flags, of the compiler or (for the quarantine
-# plugin) of the rule table configures again.  The stamp argument then
-# changes each compile line, and each object compiles again.  The stamp comes
-# from these inputs and not from the bytes of the plugin.  ccache ignores the
-# paths that the plugin arguments name, so the build directories of two work
-# trees share the entries of the cache.
+# not a target and it is not built with itself loaded.
+#
+# THE INPUTS OF A COMPILE
+#   utils/scripts/quarantine_stamps.py runs at each configure.  It writes the
+#   facts of the rule table (facts.txt), its enforce rows (enforce.txt) and a
+#   mode stamp for each source file of a row into ${CMAKE_BINARY_DIR}/quarantine.
+#   It writes a file only when its content changes.
+#   - The stamp argument holds the key of the plugin, the mode and the hash of
+#     facts.txt.  A change of the plugin, of its flags, of the compiler or of a
+#     fact changes each compile line, and each object compiles again.  A
+#     change of a reason or of a comment changes no compile line.
+#   - The plugin names the mode stamp of each file with a finding in the
+#     dependency file of the unit.  A change of the enforce mode of a file
+#     compiles again only the units with a finding in that file.
+#   - ccache hashes enforce.txt (extra_files_to_hash), so a unit that compiles
+#     again after a change of a mode never gets the object of the old mode.
+#   ccache ignores the paths that the plugin arguments name, so the build
+#   directories of two work trees share the entries of the cache.  The stamp
+#   stays in the hash, and the section of each object holds it.
 #
 # The root CMakeLists.txt includes this file after the ccache block and the
 # PGO block, which can also clear the compiler launcher, and before the first
-# target.
+# target.  A project that is not the tree, such as the project of
+# cmake/CcacheSelfTest.cmake, sets CRUCIBLE_RULE_TABLE to a table of its own
+# before the include.
 
-set(CRUCIBLE_QUARANTINE "OFF" CACHE STRING "The quarantine plugin of GCC: OFF, REPORT or ERROR")
-set_property(CACHE CRUCIBLE_QUARANTINE PROPERTY STRINGS OFF REPORT ERROR)
-if(NOT CRUCIBLE_QUARANTINE MATCHES "^(OFF|REPORT|ERROR)$")
-  message(FATAL_ERROR "CRUCIBLE_QUARANTINE is '${CRUCIBLE_QUARANTINE}'. The values are OFF, REPORT and ERROR.")
+set(CRUCIBLE_QUARANTINE_MODE "REPORT" CACHE STRING "The mode of the quarantine plugin of GCC: REPORT or ERROR")
+set_property(CACHE CRUCIBLE_QUARANTINE_MODE PROPERTY STRINGS REPORT ERROR)
+if(NOT CRUCIBLE_QUARANTINE_MODE MATCHES "^(REPORT|ERROR)$")
+  message(FATAL_ERROR "CRUCIBLE_QUARANTINE_MODE is '${CRUCIBLE_QUARANTINE_MODE}'. The values are REPORT and ERROR. "
+    "Each build loads the quarantine plugin, and REPORT is the default.")
 endif()
 
-set(CRUCIBLE_CONTRACT_PLUGIN_SOURCE "${CMAKE_CURRENT_LIST_DIR}/contract.cpp")
 set(CRUCIBLE_QUARANTINE_SOURCE "${CMAKE_CURRENT_LIST_DIR}/quarantine.cpp")
 set(CRUCIBLE_PLUGIN_CORE "${CMAKE_CURRENT_LIST_DIR}/plugin_core.h")
-set(CRUCIBLE_RULE_TABLE "${CMAKE_SOURCE_DIR}/utils/scripts/layer-rules.txt")
+cmake_path(SET _crucible_quarantine_scripts NORMALIZE "${CMAKE_CURRENT_LIST_DIR}/../../scripts")
+set(CRUCIBLE_QUARANTINE_STAMPS_SCRIPT "${_crucible_quarantine_scripts}/quarantine_stamps.py")
+if(NOT DEFINED CRUCIBLE_RULE_TABLE)
+  set(CRUCIBLE_RULE_TABLE "${_crucible_quarantine_scripts}/layer-rules.txt")
+endif()
+find_program(CRUCIBLE_PYTHON3 NAMES python3 REQUIRED)
 
-# The flags that build a plugin.  GCC is built without RTTI, and the plugin
+# The flags that build the plugin.  GCC is built without RTTI, and the plugin
 # loads into cc1plus, so it finds the libstdc++ of the compiler through an
-# rpath.  The test below builds its own copies with the same flags.
+# rpath.  The test below builds its own copy with the same flags.
 execute_process(
   COMMAND "${CRUCIBLE_REAL_CXX}" -print-file-name=plugin
   OUTPUT_VARIABLE _crucible_quarantine_gcc_plugin_dir
@@ -77,24 +79,27 @@ set(CRUCIBLE_QUARANTINE_PLUGIN_FLAGS
   -isystem "${_crucible_quarantine_gcc_plugin_dir}/include"
   "-Wl,-rpath,${_crucible_quarantine_library_dir}")
 
-# The test of the two plugins.  It builds its own copies in a temporary
-# directory.
+# The test of the plugin.  It builds its own copy in a temporary directory,
+# and it takes the compile command of one object of this build.
 add_test(NAME quarantine_plugin
-  COMMAND python3 "${CMAKE_CURRENT_LIST_DIR}/test/check_plugin.py"
+  COMMAND "${CRUCIBLE_PYTHON3}" "${CMAKE_CURRENT_LIST_DIR}/test/check_plugin.py"
           --cxx "${CRUCIBLE_REAL_CXX}"
-          --contract-source "${CRUCIBLE_CONTRACT_PLUGIN_SOURCE}"
           --source "${CRUCIBLE_QUARANTINE_SOURCE}"
           --rules "${CRUCIBLE_RULE_TABLE}"
+          --build-dir "${CMAKE_BINARY_DIR}"
           -- ${CRUCIBLE_QUARANTINE_PLUGIN_FLAGS})
 set_tests_properties(quarantine_plugin PROPERTIES LABELS "ci_guard")
+add_test(NAME quarantine_stamps_self_test
+  COMMAND "${CRUCIBLE_PYTHON3}" "${CRUCIBLE_QUARANTINE_STAMPS_SCRIPT}" --self-test)
+set_tests_properties(quarantine_stamps_self_test PROPERTIES LABELS "ci_guard")
 
 if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  message(FATAL_ERROR "The contract rule of the tree loads a GCC plugin, and the compiler is "
+  message(FATAL_ERROR "The quarantine rule and the contract rule of the tree load a GCC plugin, and the compiler is "
     "${CMAKE_CXX_COMPILER_ID}. Configure with GCC 16 (cmake/Toolchain-gcc16.cmake).")
 endif()
 if(NOT EXISTS "${_crucible_quarantine_gcc_plugin_dir}/include/gcc-plugin.h")
-  message(FATAL_ERROR "The contract rule of the tree loads a GCC plugin, and '${CRUCIBLE_REAL_CXX} "
-    "-print-file-name=plugin' gave '${_crucible_quarantine_gcc_plugin_dir}', which holds no "
+  message(FATAL_ERROR "The quarantine rule and the contract rule of the tree load a GCC plugin, and "
+    "'${CRUCIBLE_REAL_CXX} -print-file-name=plugin' gave '${_crucible_quarantine_gcc_plugin_dir}', which holds no "
     "include/gcc-plugin.h. Use a compiler with plugin support: utils/toolchain/gcc/build.sh builds one.")
 endif()
 
@@ -124,77 +129,76 @@ if(EXISTS "${_crucible_quarantine_cc1plus}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_crucible_quarantine_cc1plus}")
 endif()
 
-# Builds the plugin NAME from SOURCE and plugin_core.h when its key changed,
-# and sets the variable named by OUT_KEY to the key.  The compile runs in the
-# directory of the sources and maps that directory to `.`, so the plugin bytes
-# hold no path of the work tree, and two work trees build the same bytes.  The
-# result store of the negative fixtures keys these bytes
-# (test/neg_compile_store.py).  The key names the map with no path, so the key
-# and the stamp stay the same in each work tree.
-function(crucible_build_gcc_plugin name source out_key)
-  file(SHA256 "${source}" source_hash)
-  file(SHA256 "${CRUCIBLE_PLUGIN_CORE}" core_hash)
-  set(key "${source_hash} ${core_hash} ${_crucible_quarantine_compiler_key} -ffile-prefix-map=SOURCE_DIRECTORY=.")
-  set(plugin "${_crucible_quarantine_out}/${name}.so")
-  get_filename_component(source_dir "${source}" DIRECTORY)
-  set(recorded_key "")
-  if(EXISTS "${plugin}.key")
-    file(READ "${plugin}.key" recorded_key)
-  endif()
-  if(NOT EXISTS "${plugin}" OR NOT recorded_key STREQUAL key)
-    file(MAKE_DIRECTORY "${_crucible_quarantine_out}")
-    execute_process(
-      COMMAND "${CRUCIBLE_REAL_CXX}" ${CRUCIBLE_QUARANTINE_PLUGIN_FLAGS} "-ffile-prefix-map=${source_dir}=."
-              -o "${plugin}" "${source}"
-      WORKING_DIRECTORY "${source_dir}"
-      RESULT_VARIABLE result
-      ERROR_VARIABLE error_text)
-    if(NOT result EQUAL 0)
-      message(FATAL_ERROR "The plugin ${name} did not build:\n${error_text}")
-    endif()
-    file(WRITE "${plugin}.key" "${key}")
-  endif()
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${source}" "${CRUCIBLE_PLUGIN_CORE}")
-  set(${out_key} "${key}" PARENT_SCOPE)
-endfunction()
-
-if(CRUCIBLE_QUARANTINE STREQUAL "OFF")
-  set(_crucible_quarantine_name crucible_contract)
-  crucible_build_gcc_plugin(crucible_contract "${CRUCIBLE_CONTRACT_PLUGIN_SOURCE}" _crucible_quarantine_key)
-else()
-  set(_crucible_quarantine_name crucible_quarantine)
-  crucible_build_gcc_plugin(crucible_quarantine "${CRUCIBLE_QUARANTINE_SOURCE}" _crucible_quarantine_key)
+# The plugin builds when its key changed.  The compile runs in the directory
+# of the sources and maps that directory to `.`, so the plugin bytes hold no
+# path of the work tree, and two work trees build the same bytes.  The result
+# store of the negative fixtures keys these bytes (test/neg_compile_store.py).
+# The key names the map with no path, so the key and the stamp stay the same
+# in each work tree.
+file(SHA256 "${CRUCIBLE_QUARANTINE_SOURCE}" _crucible_quarantine_source_hash)
+file(SHA256 "${CRUCIBLE_PLUGIN_CORE}" _crucible_quarantine_core_hash)
+set(_crucible_quarantine_key
+  "${_crucible_quarantine_source_hash} ${_crucible_quarantine_core_hash} ${_crucible_quarantine_compiler_key} -ffile-prefix-map=SOURCE_DIRECTORY=.")
+set(CRUCIBLE_QUARANTINE_PLUGIN "${_crucible_quarantine_out}/crucible_quarantine.so")
+set(_crucible_quarantine_recorded_key "")
+if(EXISTS "${CRUCIBLE_QUARANTINE_PLUGIN}.key")
+  file(READ "${CRUCIBLE_QUARANTINE_PLUGIN}.key" _crucible_quarantine_recorded_key)
 endif()
-set(CRUCIBLE_QUARANTINE_PLUGIN "${_crucible_quarantine_out}/${_crucible_quarantine_name}.so")
-set(_crucible_quarantine_argument "-fplugin-arg-${_crucible_quarantine_name}")
+if(NOT EXISTS "${CRUCIBLE_QUARANTINE_PLUGIN}" OR NOT _crucible_quarantine_recorded_key STREQUAL _crucible_quarantine_key)
+  file(MAKE_DIRECTORY "${_crucible_quarantine_out}")
+  execute_process(
+    COMMAND "${CRUCIBLE_REAL_CXX}" ${CRUCIBLE_QUARANTINE_PLUGIN_FLAGS}
+            "-ffile-prefix-map=${CMAKE_CURRENT_LIST_DIR}=." -o "${CRUCIBLE_QUARANTINE_PLUGIN}"
+            "${CRUCIBLE_QUARANTINE_SOURCE}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
+    RESULT_VARIABLE _crucible_quarantine_result
+    ERROR_VARIABLE _crucible_quarantine_error)
+  if(NOT _crucible_quarantine_result EQUAL 0)
+    message(FATAL_ERROR "The quarantine plugin did not build:\n${_crucible_quarantine_error}")
+  endif()
+  file(WRITE "${CRUCIBLE_QUARANTINE_PLUGIN}.key" "${_crucible_quarantine_key}")
+endif()
 
+# The facts, the enforce rows and the mode stamps of the rule table.
+execute_process(
+  COMMAND "${CRUCIBLE_PYTHON3}" "${CRUCIBLE_QUARANTINE_STAMPS_SCRIPT}"
+          --root "${CMAKE_SOURCE_DIR}" --rules "${CRUCIBLE_RULE_TABLE}" --out "${_crucible_quarantine_out}"
+          --build "${CMAKE_BINARY_DIR}"
+  RESULT_VARIABLE _crucible_quarantine_result
+  ERROR_VARIABLE _crucible_quarantine_error)
+if(NOT _crucible_quarantine_result EQUAL 0)
+  message(FATAL_ERROR "The quarantine stamps were not written:\n${_crucible_quarantine_error}")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  "${CRUCIBLE_QUARANTINE_SOURCE}" "${CRUCIBLE_PLUGIN_CORE}" "${CRUCIBLE_RULE_TABLE}"
+  "${CRUCIBLE_QUARANTINE_STAMPS_SCRIPT}" "${_crucible_quarantine_scripts}/layer_rules.py")
+
+string(TOLOWER "${CRUCIBLE_QUARANTINE_MODE}" _crucible_quarantine_mode)
+file(SHA256 "${_crucible_quarantine_out}/facts.txt" _crucible_quarantine_facts_hash)
+string(SHA256 _crucible_quarantine_stamp
+  "${_crucible_quarantine_key} ${_crucible_quarantine_mode} ${_crucible_quarantine_facts_hash}")
+string(SUBSTRING "${_crucible_quarantine_stamp}" 0 16 _crucible_quarantine_stamp)
+set(_crucible_quarantine_argument "-fplugin-arg-crucible_quarantine")
 set(_crucible_quarantine_flags
   "-fplugin=${CRUCIBLE_QUARANTINE_PLUGIN}"
   "${_crucible_quarantine_argument}-root=${CMAKE_SOURCE_DIR}"
-  "${_crucible_quarantine_argument}-build=${CMAKE_BINARY_DIR}")
-set(_crucible_quarantine_stamp_input "${_crucible_quarantine_key}")
-if(NOT CRUCIBLE_QUARANTINE STREQUAL "OFF")
-  string(TOLOWER "${CRUCIBLE_QUARANTINE}" _crucible_quarantine_mode)
-  list(APPEND _crucible_quarantine_flags
-    "${_crucible_quarantine_argument}-rules=${CRUCIBLE_RULE_TABLE}"
-    "${_crucible_quarantine_argument}-mode=${_crucible_quarantine_mode}")
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CRUCIBLE_RULE_TABLE}")
-  file(SHA256 "${CRUCIBLE_RULE_TABLE}" _crucible_quarantine_rules_hash)
-  string(APPEND _crucible_quarantine_stamp_input " ${_crucible_quarantine_rules_hash}")
-endif()
-string(SHA256 _crucible_quarantine_stamp "${_crucible_quarantine_stamp_input}")
-string(SUBSTRING "${_crucible_quarantine_stamp}" 0 16 _crucible_quarantine_stamp)
-list(APPEND _crucible_quarantine_flags "${_crucible_quarantine_argument}-stamp=${_crucible_quarantine_stamp}")
+  "${_crucible_quarantine_argument}-build=${CMAKE_BINARY_DIR}"
+  "${_crucible_quarantine_argument}-rules=${CRUCIBLE_RULE_TABLE}"
+  "${_crucible_quarantine_argument}-stamps=${_crucible_quarantine_out}"
+  "${_crucible_quarantine_argument}-mode=${_crucible_quarantine_mode}"
+  "${_crucible_quarantine_argument}-stamp=${_crucible_quarantine_stamp}")
 
 crucible_launcher_is_ccache("${CMAKE_CXX_COMPILER_LAUNCHER}" _crucible_quarantine_launcher_is_ccache)
 if(_crucible_quarantine_launcher_is_ccache)
   # ccache hashes the plugin path and the paths of the plugin arguments as
-  # text, and each work tree has its own.  The stamp stays in the hash.
+  # text, and each work tree has its own.  The stamp stays in the hash, and
+  # ccache hashes the content of enforce.txt and not its path.
   list(APPEND CMAKE_CXX_COMPILER_LAUNCHER
-    "ignore_options=-fplugin=* ${_crucible_quarantine_argument}-root=* ${_crucible_quarantine_argument}-build=* ${_crucible_quarantine_argument}-rules=*")
+    "ignore_options=-fplugin=* ${_crucible_quarantine_argument}-root=* ${_crucible_quarantine_argument}-build=* ${_crucible_quarantine_argument}-rules=* ${_crucible_quarantine_argument}-stamps=*"
+    "extra_files_to_hash=${_crucible_quarantine_out}/enforce.txt")
 endif()
 foreach(_crucible_quarantine_flag IN LISTS _crucible_quarantine_flags)
   add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:${_crucible_quarantine_flag}>")
 endforeach()
-message(STATUS "CRUCIBLE_QUARANTINE=${CRUCIBLE_QUARANTINE}: plugin ${CRUCIBLE_QUARANTINE_PLUGIN} (stamp "
+message(STATUS "CRUCIBLE_QUARANTINE_MODE=${CRUCIBLE_QUARANTINE_MODE}: plugin ${CRUCIBLE_QUARANTINE_PLUGIN} (stamp "
   "${_crucible_quarantine_stamp})")

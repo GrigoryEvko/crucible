@@ -101,6 +101,7 @@ utils/scripts/ninja_files.py | text | build.ninja and the ninja log of a build d
 utils/scripts/pgo-bootstrap.sh | cmake-api,git |
 utils/scripts/preprocessed.py | kit |
 utils/scripts/quarantine_sections.py | text | the section headers, the section names and the section .crucible.quarantine of an ELF object
+utils/scripts/quarantine_stamps.py | text | the rule table utils/scripts/layer-rules.txt and the names of the files under its rows
 utils/scripts/refresh-derived.sh | git |
 utils/scripts/repo_root.py | none |
 utils/scripts/repo_root.sh | none |

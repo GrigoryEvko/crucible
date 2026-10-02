@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""check_plugin — the two plugins find each class of finding, only where the location rule puts it.
+"""check_plugin — the quarantine plugin finds each class of finding, only where the location rule puts it.
 
-The test builds the contract plugin and the quarantine plugin from their
-sources with the flags that CMake gives, compiles each fixture of this
-directory with a plugin loaded, and compares what the plugin reports with the
-expectations below.  This directory is the source root of the test, and
-rules.txt is its rule table: include/fixy/, src/foundation/ and src/fixy/ hold
-base code, and the quarantine rows name each other fixture.
+The test builds the quarantine plugin from its source with the flags that
+CMake gives, compiles each fixture of this directory with the plugin loaded,
+and compares what the plugin reports with the expectations below.  This
+directory is the source root of the test, and rules.txt is its rule table:
+include/fixy/, src/foundation/ and src/fixy/ hold base code, and the
+quarantine rows name each other fixture.
 
 Each class of finding has an expectation that fails when the quarantine plugin
 loses the check of that class.  The base rule, the admit rows and the opt-out
@@ -22,10 +22,19 @@ is an error.  The plugin and utils/scripts/layer_rules.py get the same
 malformed tables, and each one must refuse each table.
 
 contracts.cpp holds each form of a P2900 contract specifier that the contract
-rule rejects, also in base code.  The test compiles it with the contract
-plugin and with the quarantine plugin in each mode, and compares the errors
-with CONTRACT_ERRORS.  A form that a plugin stops seeing, a second error for
-one specifier and an error outside the list each fail the test.
+rule rejects, also in base code.  The test compiles it in each mode and with
+-fsyntax-only, and compares the errors with CONTRACT_ERRORS.  A form that the
+plugin stops seeing, a second error for one specifier and an error outside
+the list each fail the test.
+
+The plugin names the mode stamp of each file with a finding in the dependency
+file of the unit, and enforce.txt for a file with no mode stamp.  Through
+ccache, a unit whose file changes to the mode error after a stored compile
+must miss and fail.  The negative control shows that a cache without
+extra_files_to_hash gives the stored object and skips the error.  The last
+part takes the compile command of a real object of the build directory, and
+compiles build_plant.cpp with the flags of that preset: an enforce row with the
+mode error fails the compile, and a row with the mode report does not.
 
 A unit that writes an object holds its findings in the section
 .crucible.quarantine of the object.  The test compares the section with the
@@ -36,18 +45,19 @@ stamp alone carries the table into the key of the cache, and that a key
 without the stamp gives a section whose stamp is not the stamp of the
 command, which utils/scripts/check-quarantine-ratchet.py refuses.
 
-A generated file of the build directory follows one rule in the two plugins:
-the contract rule and the opt-out regions apply to it, and the quarantine rule
-does not.  The test writes a source root with a build directory in its scratch
-directory, and compiles a unit of that root with each plugin.
+A generated file of the build directory follows one rule: the contract rule
+and the opt-out regions apply to it, and the quarantine rule does not.  The
+test writes a source root with a build directory in its scratch directory,
+and compiles a unit of that root in each mode.
 
-The two plugins build at the same time.  Then the parts of the test run at
-the same time: the findings, the base files, the malformed regions, the
-modes, the contract rule, the generated files, the include rules, the
-readers of the table and the section.  Each part writes its own files, and main prints the
-verdicts of the parts in that order.
+The plugin builds first.  Then the parts of the test run at the same time:
+the findings, the base files, the malformed regions, the modes, the contract
+rule, the generated files, the include rules, the library names, the
+restrictions, the readers of the table, the section, the dependencies, the
+enforce modes through ccache and the flags of the build.  Each part writes its
+own files, and main prints the verdicts of the parts in that order.
 
-usage: check_plugin.py --cxx CXX --contract-source CONTRACT.cpp --source QUARANTINE.cpp --rules TABLE
+usage: check_plugin.py --cxx CXX --source QUARANTINE.cpp --rules TABLE [--build-dir BUILD]
                        -- BUILD_FLAGS...
 
 Exit 0 when each expectation holds, 1 when one fails, 2 on a usage error or a
@@ -57,8 +67,10 @@ plugin that does not build.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -71,11 +83,11 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 TEST_RULES = HERE / "rules.txt"
 PLUGIN = "crucible_quarantine"
-CONTRACT_PLUGIN = "crucible_contract"
 
 sys.path.insert(0, str(HERE.parents[2] / "scripts"))
 import layer_rules  # noqa: E402
 import quarantine_sections  # noqa: E402
+import quarantine_stamps  # noqa: E402
 
 # (the macro of the plant, the planted file, the kind, a text in the entity)
 PLANTS = (
@@ -254,35 +266,33 @@ class Finding:
 
 
 class Checker:
-    """Build each plugin one time, then compile fixtures with one of them.
+    """Build the plugin one time, then compile fixtures with it.
 
-    The two plugins build at the same time.  compile is safe to call from
-    many threads, because each compile is its own process.
+    compile is safe to call from many threads, because each compile is its own
+    process.
     """
 
-    def __init__(self, cxx: str, sources: dict[str, Path], flags: list[str], work: Path) -> None:
+    def __init__(self, cxx: str, source: Path, flags: list[str], work: Path, build_dir: Path | None) -> None:
         self.cxx = cxx
         self.work = work
-        with ThreadPoolExecutor(max_workers=len(sources)) as pool:
-            builds = {name: pool.submit(subprocess.run, [cxx, *flags, "-o", str(work / f"{name}.so"), str(source)],
-                                        capture_output=True, text=True)
-                      for name, source in sources.items()}
-        for name, build in builds.items():
-            if build.result().returncode != 0:
-                raise RuntimeError(f"the plugin {name} did not build:\n{build.result().stderr}")
+        self.build_dir = build_dir
+        self.plugin = work / f"{PLUGIN}.so"
+        build = subprocess.run([cxx, *flags, "-o", str(self.plugin), str(source)], capture_output=True, text=True)
+        if build.returncode != 0:
+            raise RuntimeError(f"the plugin {PLUGIN} did not build:\n{build.stderr}")
 
     def compile(self, fixture: str, arguments: dict[str, str],
                 stage: tuple[str, ...] = ("-S", "-o", os.devnull),
-                extra: tuple[str, ...] = (), plugin: str = PLUGIN, launcher: tuple[str, ...] = (),
+                extra: tuple[str, ...] = (), launcher: tuple[str, ...] = (),
                 env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-        """Compile one fixture with one plugin, the given plugin arguments, stage flags and extra flags.
+        """Compile one fixture with the plugin, the given plugin arguments, stage flags and extra flags.
 
         LAUNCHER goes in front of the compiler, as a compiler cache does, and
         ENV is the environment of the compile.
         """
         command = [*launcher, self.cxx, "-std=c++26", "-I", str(HERE / "include"), *extra,
-                   f"-fplugin={self.work / plugin}.so"]
-        command += [f"-fplugin-arg-{plugin}-{key}={value}" for key, value in arguments.items()]
+                   f"-fplugin={self.plugin}"]
+        command += [f"-fplugin-arg-{PLUGIN}-{key}={value}" for key, value in arguments.items()]
         command += ["-fdiagnostics-color=never", *stage, str(HERE / fixture)]
         return subprocess.run(command, capture_output=True, text=True, env=env)
 
@@ -297,6 +307,9 @@ class Section:
     def __init__(self, checker: Checker) -> None:
         self.work = checker.work
         self.compile = checker.compile
+        self.plugin = checker.plugin
+        self.cxx = checker.cxx
+        self.build_dir = checker.build_dir
         self.lines: list[str] = []
         self.failures: list[str] = []
 
@@ -349,6 +362,9 @@ def run(checker: Checker, rules: Path) -> list[Section]:
         run_restrictions,
         run_table_readers,
         run_section,
+        run_dependencies,
+        run_enforce_cache,
+        run_build_flags,
     ]
     sections = [Section(checker) for _ in parts]
     with ThreadPoolExecutor(max_workers=len(parts)) as pool:
@@ -379,14 +395,11 @@ def run_findings(section: Section, arguments: dict[str, str]) -> None:
 
 
 def run_pragma_errors(section: Section) -> None:
-    """Compile each fixture of a malformed region with each plugin, and judge the error."""
+    """Compile each fixture of a malformed region, and judge the error."""
     for fixture, text in PRAGMA_ERRORS:
         compiled = section.compile(fixture, {"root": str(HERE), "mode": "report", "rules": str(TEST_RULES)})
         section.expect(f"{fixture} is an error", compiled.returncode != 0 and text in compiled.stderr,
                        compiled.stderr[-2000:])
-        compiled = section.compile(fixture, {"root": str(HERE)}, plugin=CONTRACT_PLUGIN)
-        section.expect(f"{fixture} is an error for the contract plugin",
-                       compiled.returncode != 0 and text in compiled.stderr, compiled.stderr[-2000:])
 
 
 def run_modes(section: Section, arguments: dict[str, str], rules: Path) -> None:
@@ -404,7 +417,7 @@ def run_modes(section: Section, arguments: dict[str, str], rules: Path) -> None:
         ("opt_out.cpp", {"root": str(HERE), "mode": "error", **test_rules}),
         ("violations.cpp", {**arguments, "out": str(syntax_reports)}, ("-fsyntax-only",)),
         ("violations.cpp", {**arguments, "out": str(preprocessed_reports)}, ("-E", "-o", os.devnull)),
-        ("opt_out.cpp", {"root": str(rules.parents[2]), "rules": str(rules)}),
+        ("opt_out.cpp", {"root": str(rules.resolve().parents[2]), "rules": str(rules)}),
         ("violations.cpp", {"root": str(HERE), "mode": "report"}),
     ])
     section.expect("report mode without out= and with no object gives notes and succeeds",
@@ -469,7 +482,7 @@ def contract_errors(stderr: str, root: Path = HERE) -> list[tuple[str, int, str]
 
 
 def run_generated_files(section: Section) -> None:
-    """Compile a unit that includes a generated header with each plugin, and compare what each plugin gives."""
+    """Compile a unit that includes a generated header in each mode, and compare what each mode gives."""
     tree = section.work / "tree"
     build = tree / "build"
     build.mkdir(parents=True, exist_ok=True)
@@ -483,24 +496,23 @@ def run_generated_files(section: Section) -> None:
     test_rules = {"rules": str(TEST_RULES)}
     generated_reports = section.work / "generated-reports"
     runs = (
-        ("the contract plugin", CONTRACT_PLUGIN, places),
-        ("mode=error", PLUGIN, {**places, "mode": "error", **test_rules}),
-        ("mode=report", PLUGIN, {**places, "mode": "report", "out": str(generated_reports), **test_rules}),
+        ("mode=error", {**places, "mode": "error", **test_rules}),
+        ("mode=report", {**places, "mode": "report", "out": str(generated_reports), **test_rules}),
     )
-    for name, plugin, arguments in runs:
-        compiled = section.compile(str(unit), arguments, extra=("-fcontracts",), plugin=plugin)
+    for name, arguments in runs:
+        compiled = section.compile(str(unit), arguments, extra=("-fcontracts",))
         found = contract_errors(compiled.stderr, tree)
         section.expect(f"{name}: a region of a generated file opts out its specifier, and the other one is an error",
                        compiled.returncode != 0 and found == GENERATED_CONTRACT_ERRORS,
                        f"errors {found}; " + compiled.stderr[-2000:])
-        compiled = section.compile(str(unclosed), arguments, plugin=plugin)
+        compiled = section.compile(str(unclosed), arguments)
         section.expect(f"{name}: an unclosed region of a generated file is an error",
                        compiled.returncode != 0 and "region has no" in compiled.stderr, compiled.stderr[-2000:])
-        # No out= here: a plugin that accepts the directory must not replace
-        # the report of the unit.
-        missing = section.compile(str(unit), {"root": str(tree), "build": str(tree / "missing")}, plugin=plugin)
-        section.expect(f"{name}: a build directory that does not exist is an error",
-                       missing.returncode != 0 and "does not exist" in missing.stderr, missing.stderr[-2000:])
+    # No out= here: a plugin that accepts the directory must not replace the
+    # report of the unit.
+    missing = section.compile(str(unit), {"root": str(tree), "build": str(tree / "missing"), **test_rules})
+    section.expect("a build directory that does not exist is an error",
+                   missing.returncode != 0 and "does not exist" in missing.stderr, missing.stderr[-2000:])
     found = read_reports(generated_reports)
     section.expect("the region of the generated file turns the specifier on line 3 into opted_out",
                    any(f.kind == "opted_out" and f.file == "build/Generated.h" and f.line == 3
@@ -514,29 +526,28 @@ def run_generated_files(section: Section) -> None:
 
 
 def run_contract_rule(section: Section) -> None:
-    """Compile contracts.cpp with each plugin and in each mode, and compare the errors with CONTRACT_ERRORS."""
+    """Compile contracts.cpp in each mode and with -fsyntax-only, and compare the errors with CONTRACT_ERRORS."""
     outside = section.work / "outside"
     outside.mkdir(exist_ok=True)
     (outside / "Outside.h").write_text(OUTSIDE_HEADER, encoding="utf-8")
     (outside / "OutsideRegion.h").write_text(OUTSIDE_REGION_HEADER, encoding="utf-8")
     test_rules = {"rules": str(TEST_RULES)}
-    for plugin, arguments in ((CONTRACT_PLUGIN, {"root": str(HERE)}),
-                              (PLUGIN, {"root": str(HERE), "mode": "error", **test_rules})):
-        compiled = section.compile("region_outside_root.cpp", arguments, extra=("-I", str(outside)), plugin=plugin)
-        section.expect(f"{plugin}: a region of a header outside the root is no error",
-                       compiled.returncode == 0 and "region" not in compiled.stderr, compiled.stderr[-2000:])
+    compiled = section.compile("region_outside_root.cpp", {"root": str(HERE), "mode": "error", **test_rules},
+                               extra=("-I", str(outside)))
+    section.expect("a region of a header outside the root is no error",
+                   compiled.returncode == 0 and "region" not in compiled.stderr, compiled.stderr[-2000:])
     extra = ("-fcontracts", "-I", str(outside))
     expected = sorted(CONTRACT_ERRORS)
     contract_reports = section.work / "contract-reports"
+    error_mode = {"root": str(HERE), "mode": "error", **test_rules}
     runs = (
-        ("the contract plugin", CONTRACT_PLUGIN, {"root": str(HERE)}, ("-S", "-o", os.devnull)),
-        ("mode=error", PLUGIN, {"root": str(HERE), "mode": "error", **test_rules}, ("-S", "-o", os.devnull)),
-        ("mode=report", PLUGIN, {"root": str(HERE), "mode": "report", "out": str(contract_reports), **test_rules},
+        ("mode=error", error_mode, ("-S", "-o", os.devnull)),
+        ("mode=report", {"root": str(HERE), "mode": "report", "out": str(contract_reports), **test_rules},
          ("-S", "-o", os.devnull)),
-        ("the contract plugin with -fsyntax-only", CONTRACT_PLUGIN, {"root": str(HERE)}, ("-fsyntax-only",)),
+        ("mode=report with -fsyntax-only", {"root": str(HERE), "mode": "report", **test_rules}, ("-fsyntax-only",)),
     )
-    for name, plugin, arguments, stage in runs:
-        compiled = section.compile("contracts.cpp", arguments, stage, extra, plugin)
+    results = [section.compile("contracts.cpp", arguments, stage, extra) for _, arguments, stage in runs]
+    for (name, _, _), compiled in zip(runs, results, strict=True):
         found = contract_errors(compiled.stderr)
         missing = sorted(set(expected) - set(found))
         unexpected = [error for error in found if error not in expected or found.count(error) > 1]
@@ -548,20 +559,13 @@ def run_contract_rule(section: Section) -> None:
     section.expect("the opt-out region turns the specifier on line 73 into opted_out",
                    any(f.entity == "contract_specifier pre" for f in opted), "; ".join(map(str, opted)))
 
-    named = section.compile("contracts.cpp", {"root": str(HERE)}, extra=extra, plugin=CONTRACT_PLUGIN)
+    named = results[0]
     section.expect("the error names CRUCIBLE_PRE, CRUCIBLE_POST and the reasons",
                    all(text in named.stderr for text in ("CRUCIBLE_PRE(condition)", "foundation/contracts/Pre.h",
                                                          "CRUCIBLE_POST(result, condition)",
                                                          "foundation/contracts/Post.h", "header unit",
                                                          "precompiled header", "constant evaluation")),
                    named.stderr[-2000:])
-    quiet = section.compile("violations.cpp", {"root": str(HERE)}, plugin=CONTRACT_PLUGIN)
-    section.expect("the contract plugin applies only the contract rule",
-                   quiet.returncode == 0 and "quarantine:" not in quiet.stderr, quiet.stderr[-2000:])
-    foreign = section.compile("violations.cpp", {"root": str(HERE), "mode": "report"}, plugin=CONTRACT_PLUGIN)
-    section.expect("the contract plugin refuses an argument of the quarantine plugin",
-                   foreign.returncode != 0 and "the arguments are root, build and stamp" in foreign.stderr,
-                   foreign.stderr[-2000:])
     unknown = section.compile("violations.cpp", {"root": str(HERE), "mode": "contracts"})
     section.expect("an unknown mode is an error",
                    unknown.returncode != 0 and "the modes are report and error" in unknown.stderr,
@@ -853,19 +857,182 @@ def run_section(section: Section) -> None:
                    f"{blind_hits} {blind_found}")
 
 
+def write_tree(tree: Path, files: dict[str, str]) -> None:
+    """Write each file of FILES, a map from a path relative to TREE to its text."""
+    for relative, text in files.items():
+        (tree / relative).parent.mkdir(parents=True, exist_ok=True)
+        (tree / relative).write_text(text, encoding="utf-8")
+
+
+# The tree of the dependency part.  fresh.h is written after the stamps, so it
+# has no mode stamp, as a file that the tree got after the last configure.
+DEPENDENCY_TREE = {
+    "rules.txt": "quarantine app/\nenforce app/ report\n",
+    "app/Header.h": "#pragma once\ninline int* header_pointer = nullptr;\n",
+    "app/Clean.h": "#pragma once\ninline int clean_value = 1;\n",
+    "app/finding.cpp": "#include \"Header.h\"\n#include \"Clean.h\"\n#include \"fresh.h\"\n"
+                       "int* finding_pointer = nullptr;\n",
+    "app/opted.cpp": "#pragma crucible I_KNOW_WHAT_IM_DOING(\"a test of the dependencies of the plugin\")\n"
+                     "int* opted_pointer = nullptr;\n#pragma crucible END_I_KNOW_WHAT_IM_DOING\n",
+}
+
+
+def run_dependencies(section: Section) -> None:
+    """Compile units of a scratch tree with a dependency file, and judge the mode stamps in it."""
+    tree = section.work / "dependency-tree"
+    write_tree(tree, DEPENDENCY_TREE)
+    stamps = tree / "stamps"
+    quarantine_stamps.write_stamps(tree, tree / "rules.txt", stamps, None)
+    write_tree(tree, {"app/fresh.h": "#pragma once\ninline int* fresh_pointer = nullptr;\n"})
+    arguments = {"root": str(tree), "rules": str(tree / "rules.txt"), "stamps": str(stamps), "mode": "report"}
+
+    def dependencies(unit: str, stage: tuple[str, ...]) -> tuple[subprocess.CompletedProcess[str], str]:
+        depfile = section.work / f"dependency-{Path(unit).stem}-{stage[0][1:]}.d"
+        compiled = section.compile(str(tree / unit), arguments, stage, ("-MD", "-MF", str(depfile)))
+        return compiled, depfile.read_text(encoding="utf-8") if depfile.is_file() else ""
+
+    modes = stamps / "modes" / "app"
+    found, text = dependencies("app/finding.cpp", ("-c", "-o", str(section.work / "dependency-finding.o")))
+    section.expect("a unit names the mode stamp of each file with a finding, and enforce.txt for a file with none",
+                   found.returncode == 0 and str(modes / "finding.cpp") in text and str(modes / "Header.h") in text
+                   and str(stamps / "enforce.txt") in text, found.stderr[-2000:] + text)
+    section.expect("a file with no finding adds no mode stamp", str(modes / "Clean.h") not in text, text)
+    opted, text = dependencies("app/opted.cpp", ("-c", "-o", str(section.work / "dependency-opted.o")))
+    section.expect("an opted-out finding adds no dependency",
+                   opted.returncode == 0 and str(stamps) not in text, opted.stderr[-2000:] + text)
+    syntax, text = dependencies("app/finding.cpp", ("-fsyntax-only",))
+    section.expect("-fsyntax-only writes the dependency file before the report, so it holds no mode stamp",
+                   syntax.returncode == 0 and str(stamps) not in text, syntax.stderr[-2000:] + text)
+
+
+def run_enforce_cache(section: Section) -> None:
+    """Change the mode of a file between two compiles through ccache, and judge the second compile.
+
+    The keyed chain has the options of Quarantine.cmake: ccache ignores the
+    paths of the plugin arguments and hashes enforce.txt.  The blind chain does
+    not hash enforce.txt, and it is the negative control.
+    """
+    if shutil.which("ccache") is None:
+        section.lines.append("  skip the enforce modes through ccache: no ccache on PATH")
+        return
+    ignored = " ".join(f"-fplugin-arg-{PLUGIN}-{key}=*" for key in ("root", "build", "rules", "stamps"))
+
+    def chain(name: str, is_keyed: bool) -> list[tuple[int, subprocess.CompletedProcess[str]]]:
+        tree = section.work / f"{name}-tree"
+        write_tree(tree, {"app/unit.cpp": "int* cached_pointer = nullptr;\n"})
+        rules, stamps = tree / "rules.txt", tree / "stamps"
+        (section.work / f"{name}.conf").write_text("", encoding="utf-8")
+        environment = {**os.environ, "CCACHE_DIR": str(section.work / name),
+                       "CCACHE_CONFIGPATH": str(section.work / f"{name}.conf")}
+        launcher = ("ccache", f"ignore_options=-fplugin=* {ignored}",
+                    *((f"extra_files_to_hash={stamps / 'enforce.txt'}",) if is_keyed else ()))
+        arguments = {"root": str(tree), "rules": str(rules), "stamps": str(stamps), "mode": "report",
+                     "stamp": "e4f0e4f0e4f0e4f0"}
+        results = []
+        for mode in ("report", "error", "report"):
+            rules.write_text(f"quarantine app/\nenforce app/unit.cpp {mode}\n", encoding="utf-8")
+            quarantine_stamps.write_stamps(tree, rules, stamps, None)
+            before = ccache_hits(environment)
+            compiled = section.compile(str(tree / "app/unit.cpp"), arguments,
+                                       ("-c", "-o", str(section.work / f"{name}.o")), launcher=launcher,
+                                       env=environment)
+            results.append((ccache_hits(environment) - before, compiled))
+        return results
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        keyed_future, blind_future = pool.submit(chain, "enforce-keyed", True), pool.submit(chain, "enforce-blind", False)
+        keyed, blind = keyed_future.result(), blind_future.result()
+    (_, stored), (error_hits, failed), (_, back) = keyed
+    section.expect("through ccache, a unit whose file changes to the mode error misses and fails",
+                   stored.returncode == 0 and error_hits == 0 and failed.returncode != 0
+                   and "error: quarantine: raw_pointer_object" in failed.stderr and back.returncode == 0,
+                   f"{error_hits} " + failed.stderr[-2000:])
+    _, (blind_hits, skipped), _ = blind
+    section.expect("negative control: a cache that does not hash enforce.txt hits, and skips the error",
+                   blind_hits == 1 and skipped.returncode == 0, f"{blind_hits} " + skipped.stderr[-2000:])
+
+
+def build_command(build_dir: Path) -> tuple[list[str], Path, str] | None:
+    """Return the compile command of a real object of BUILD_DIR, its directory and its source.
+
+    The command is the first one that loads the quarantine plugin, and
+    src/foundation/ContractHandler.cpp when the database holds it.
+    """
+    database = build_dir / "compile_commands.json"
+    if not database.is_file():
+        return None
+    entries = [entry for entry in json.loads(database.read_text(encoding="utf-8"))
+               if "-fplugin=" in (entry.get("command") or " ".join(entry.get("arguments", [])))]
+    if not entries:
+        return None
+    entry = next((entry for entry in entries if entry["file"].endswith("src/foundation/ContractHandler.cpp")),
+                 entries[0])
+    argv = entry["arguments"] if "arguments" in entry else shlex.split(entry["command"])
+    return list(argv), Path(entry["directory"]), entry["file"]
+
+
+def run_build_flags(section: Section) -> None:
+    """Compile build_plant.cpp with the compile command of a real object of the build directory.
+
+    The command keeps each flag of the preset.  An enforce row with the mode
+    error for the plant fails the compile, and the table of the tree, which
+    gives the plant the mode report, does not.
+    """
+    found = build_command(section.build_dir) if section.build_dir is not None else None
+    if found is None:
+        section.lines.append("  skip the flags of the build: no compile command with the plugin in the build directory")
+        return
+    command, directory, source = found
+    plant = HERE / "build_plant.cpp"
+    rules_option = f"-fplugin-arg-{PLUGIN}-rules="
+    tree_table = next((Path(arg[len(rules_option):]) for arg in command if arg.startswith(rules_option)), None)
+    root_option = f"-fplugin-arg-{PLUGIN}-root="
+    root = next((Path(arg[len(root_option):]) for arg in command if arg.startswith(root_option)), None)
+    if tree_table is None or root is None:
+        section.expect("the compile command names the rule table and the root", False, " ".join(command))
+        return
+    error_table = section.work / "build-error-rules.txt"
+    error_table.write_text(tree_table.read_text(encoding="utf-8")
+                           + f"enforce {plant.relative_to(root).as_posix()} error\n", encoding="utf-8")
+
+    def compile_plant(table: Path) -> subprocess.CompletedProcess[str]:
+        argv: list[str] = []
+        skip_next = False
+        for arg in command:
+            if skip_next:
+                skip_next = False
+            elif arg in ("-o", "-MF", "-MT", "-MQ"):
+                skip_next = True
+            elif arg in ("-MD", "-MMD") or arg == source:
+                pass
+            elif arg.startswith(rules_option):
+                argv.append(f"{rules_option}{table}")
+            else:
+                argv.append(arg)
+        argv += ["-fdiagnostics-color=never", "-o", str(section.work / f"build-plant-{table.stem}.o"), str(plant)]
+        return subprocess.run(argv, capture_output=True, text=True, cwd=directory)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        failed, passed = pool.map(compile_plant, (error_table, tree_table))
+    section.expect("with the flags of the build, an enforce row with the mode error fails the compile of the plant",
+                   failed.returncode != 0 and "error: quarantine: raw_pointer_object" in failed.stderr,
+                   failed.stderr[-2000:])
+    section.expect("with the flags of the build and the table of the tree, the plant compiles",
+                   passed.returncode == 0, passed.stderr[-2000:])
+
+
 def main(argv: list[str]) -> int:
     """Parse the arguments, build the plugin and run every case."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    parser.add_argument("--cxx", required=True, help="the compiler that loads the plugins")
-    parser.add_argument("--contract-source", required=True, type=Path, help="the source of the contract plugin")
+    parser.add_argument("--cxx", required=True, help="the compiler that loads the plugin")
     parser.add_argument("--source", required=True, type=Path, help="the source of the quarantine plugin")
     parser.add_argument("--rules", required=True, type=Path, help="the rule table of the tree")
-    parser.add_argument("flags", nargs="*", help="the flags that build the plugins, after --")
+    parser.add_argument("--build-dir", type=Path, help="a build directory with compile_commands.json")
+    parser.add_argument("flags", nargs="*", help="the flags that build the plugin, after --")
     args = parser.parse_args(argv)
     with tempfile.TemporaryDirectory(prefix="quarantine-plugin-") as scratch:
         try:
-            checker = Checker(args.cxx, {CONTRACT_PLUGIN: args.contract_source, PLUGIN: args.source}, args.flags,
-                              Path(scratch))
+            checker = Checker(args.cxx, args.source, args.flags, Path(scratch), args.build_dir)
         except RuntimeError as error:
             print(f"check_plugin: {error}", file=sys.stderr)
             return 2
