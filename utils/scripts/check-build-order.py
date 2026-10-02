@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""check-build-order — the order in which Ninja starts the compiles of an edit build.
+"""check-build-order — the order in which Ninja starts the compiles of an edit build, and the headers of a custom compile.
 
 Ninja starts an edge only when each input of the edge is ready, also each
 order-only input.  Of the ready edges, it starts first the edge with the
 longest chain of edges to a target of the build, and on a tie the edge that
 comes first in build.ninja.  It does not read the time of a job.  Two checks
-hold the graph to that model.
+hold the graph to that model.  The check custom-deps holds the header
+dependencies of each object that a custom command compiles.
 
 THE CHECK build-order
     No compile waits for a link or an archive through an order-only input.
@@ -63,14 +64,44 @@ THE CHECK compile-first
     the error threshold, removes each listed target at or below the warning
     threshold, and keeps each other name and the header of the list.
 
+THE CHECK custom-deps
+    Each object that a custom command compiles has the headers of its compile
+    in the dependency log of Ninja.
+
+    A custom command can compile a source, as the BPF programs of
+    cmake/CrucibleBpf.cmake do.  The option IMPLICIT_DEPENDS of
+    add_custom_command applies only to the Makefile generators.  With Ninja
+    and no depfile, an edit of a header does not compile the object again,
+    and the build keeps the object of the old header.  The command must
+    write a depfile, and add_custom_command must take the option DEPFILE.
+    CMake then gives the edge the bindings `depfile` and `deps = gcc`, and
+    Ninja moves the list of the depfile into its dependency log.
+
+    * build.ninja: an edge of the rule CUSTOM_COMMAND whose first output ends
+      with `.o` is an error at its line when it has no `depfile` binding or
+      no `deps = gcc` binding.
+    * The dependency log: for each such object that exists, `ninja -t deps`
+      must give a VALID list that holds a header, a file that is not an
+      input of the edge in build.ninja.  Each other state is an error.  The
+      check does not read the log of an object that does not exist, because
+      a build can make only some targets.
+
+    The check exits 3 when no custom command writes an object, for example in
+    a build with CRUCIBLE_HAVE_BPF off.
+
 WHAT THE CHECKS READ
     * build.ninja of the build directory.  A line that ends with an unescaped
-      '$' continues on the next line.  The checks do not read an included
+      '$' continues on the next line.  An indented line after a build
+      statement is a binding of that statement, `name = value`, until a line
+      that is empty or not indented.  The checks do not read an included
       file, because CMake writes only rules there.  A compile edge has a rule
       whose name starts with CXX_COMPILER__ or C_COMPILER__.  A link or an
       archive has a rule whose name has the form <LANG>_<KIND>_LINKER__, for
       an executable, a static library, a shared library or a module.  The
       target of an object is the directory CMakeFiles/<target>.dir of its path.
+    * For custom-deps: the dependency log (`ninja -t deps`), through the
+      ninja of the value CMAKE_MAKE_PROGRAM of the CMakeCache.txt of the
+      build (utils/scripts/build_census.py reads the output).
     * For compile-first: BUILD_DIR/compile-first-targets.txt, each target of
       `all` that compiles a source, which cmake/CompileFirst.cmake writes at
       each configure.  The compile database, and the record OBJECT.cost of
@@ -82,12 +113,14 @@ Usage
     check-build-order.py --check build-order --build-dir BUILD_DIR [--warnings-dir DIR]
     check-build-order.py --check compile-first --build-dir BUILD_DIR [--warnings-dir DIR]
     check-build-order.py --check compile-first --build-dir BUILD_DIR --write
+    check-build-order.py --check custom-deps --build-dir BUILD_DIR [--warnings-dir DIR]
     check-build-order.py --self-test
 
 Exit 0 with no finding or with warnings only, 1 with an error or an input that
 the check cannot read, 2 on a usage error or a failed self-test, 3 when the
 build directory has no build.ninja, because a generator other than Ninja made
-it, and for --write when the records do not apply.
+it, for --write when the records do not apply, and for custom-deps when no
+custom command writes an object.
 """
 
 from __future__ import annotations
@@ -106,14 +139,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import build_census  # noqa: E402
 import check_report  # noqa: E402
 import cost_meter  # noqa: E402
 from repo_root import REPO_ROOT  # noqa: E402
 
-CHECKS = ("build-order", "compile-first")
+CHECKS = ("build-order", "compile-first", "custom-deps")
 NOT_APPLICABLE = 3
 COMPILE_RULE = re.compile(r"(?:CXX|C)_COMPILER__")
 LINK_RULE = re.compile(r"[A-Z]+_(?:EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY)_LINKER__")
+# The rule of each custom command, and the suffix of an object that a custom command compiles.
+CUSTOM_RULE = "CUSTOM_COMMAND"
+OBJECT_SUFFIX = ".o"
+# The value of the binding `deps` that makes Ninja move a depfile into its dependency log.
+GCC_DEPS = "gcc"
 LIST = Path(__file__).resolve().parent / "compile-first.txt"
 CANDIDATES = "compile-first-targets.txt"
 KIND_PREFIX = "kind "
@@ -146,11 +185,15 @@ class Edge:
 
 @dataclass(slots=True)
 class Graph:
-    """The edges of build.ninja, the edge that writes each output, and the default targets."""
+    """The edges of build.ninja, the edge that writes each output, the default targets, and the bindings of each edge.
+
+    `variables` holds the bindings of each edge that has one, by the index of the edge.
+    """
 
     edges: list[Edge]
     producer: dict[str, int]
     defaults: list[str]
+    variables: dict[int, dict[str, str]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -271,7 +314,11 @@ def parse_build_line(line: int, body: str) -> Edge:
 
 
 def read_graph(path: Path) -> Graph:
-    """Read the build statements and the default targets of one build.ninja.
+    """Read the build statements, their bindings and the default targets of one build.ninja.
+
+    An indented line after a build statement is a binding of that statement,
+    until a line that is empty or not indented.  The indented lines after a
+    rule statement are not read.
 
     Complexity: linear in the size of the file.
 
@@ -288,8 +335,10 @@ def read_graph(path: Path) -> Graph:
     edges: list[Edge] = []
     producer: dict[str, int] = {}
     defaults: list[str] = []
+    variables: dict[int, dict[str, str]] = {}
     pending = ""
     pending_line = 0
+    binding_edge: int | None = None
     for number, raw in enumerate(path.read_text(encoding="utf-8").split("\n"), start=1):
         if not pending:
             pending_line = number
@@ -299,14 +348,21 @@ def read_graph(path: Path) -> Graph:
             continue
         text = pending + raw
         pending = ""
+        if text[:1] in (" ", "\t") and text.strip():
+            name, separator, value = text.partition("=")
+            if binding_edge is not None and separator:
+                variables.setdefault(binding_edge, {})[name.strip()] = value.strip()
+            continue
+        binding_edge = None
         if text.startswith("default "):
             defaults.extend(split_paths(text[len("default "):]))
         elif text.startswith("build "):
             edge = parse_build_line(pending_line, text[len("build "):])
+            binding_edge = len(edges)
             for output in edge.outputs:
                 producer[output] = len(edges)
             edges.append(edge)
-    return Graph(edges, producer, defaults)
+    return Graph(edges, producer, defaults, variables)
 
 
 def target_of(object_path: Path) -> str | None:
@@ -398,6 +454,71 @@ def evaluate_order(graph: Graph, ninja_shown: str) -> list[check_report.Finding]
             f"the edge that writes {waiting.outputs[0]} has the order-only input {written}, which a link or an "
             f"archive writes, so {count} compile(s) wait for that link or archive.  If the command reads only the "
             f"files that its DEPENDS name, give add_custom_command the option DEPENDS_EXPLICIT_ONLY"))
+    return findings
+
+
+def custom_objects(graph: Graph) -> list[int]:
+    """Return each edge of a custom command whose first output is an object.
+
+    Complexity: linear in the edges.
+
+    Args:
+        graph: The graph
+
+    Returns:
+        The index of each such edge, in the order of build.ninja
+    """
+    return [edge_id for edge_id, edge in enumerate(graph.edges)
+            if edge.rule == CUSTOM_RULE and edge.outputs and edge.outputs[0].endswith(OBJECT_SUFFIX)]
+
+
+def evaluate_custom_deps(graph: Graph, build: Path, built: set[str], lists: dict[str, list[str]],
+                         states: dict[str, str], ninja_shown: str) -> list[check_report.Finding]:
+    """Make one error for each object of a custom command whose headers Ninja does not record.
+
+    An edge with no `depfile` binding or no `deps = gcc` binding gives one
+    error, and the check then does not read the log of its object.
+
+    Complexity: linear in the edges, their inputs and the files of the log.
+
+    Args:
+        graph: The graph
+        build: The build directory, against which a relative path of build.ninja resolves
+        built: The first output of each such edge that exists
+        lists: The files of each object in the dependency log, from build_census.parse_dependencies
+        states: The state of the list of each object in the dependency log
+        ninja_shown: The path of build.ninja, for the findings
+
+    Returns:
+        The findings
+    """
+    def resolved(name: str) -> str:
+        return os.path.normpath(os.path.join(build, name))
+
+    findings: list[check_report.Finding] = []
+    for edge_id in custom_objects(graph):
+        edge = graph.edges[edge_id]
+        output = edge.outputs[0]
+        bindings = graph.variables.get(edge_id, {})
+        if not bindings.get("depfile") or bindings.get("deps") != GCC_DEPS:
+            findings.append(check_report.Finding(
+                "error", ninja_shown, edge.line, "custom-deps",
+                f"the custom command that writes {output} has no `depfile` binding with `deps = {GCC_DEPS}`, so the "
+                f"dependency log of Ninja holds no header of the compile, and an edit of a header does not compile "
+                f"{output} again.  Give the compiler -MD -MF FILE, and give add_custom_command the option DEPFILE "
+                f"FILE"))
+            continue
+        if output not in built:
+            continue
+        state = states.get(output, "MISSING")
+        inputs = {resolved(name) for name in edge.inputs}
+        has_header = any(resolved(name) not in inputs for name in lists.get(output, []))
+        if state != "VALID" or not has_header:
+            findings.append(check_report.Finding(
+                "error", ninja_shown, edge.line, "custom-deps",
+                f"the dependency log of Ninja holds no header of {output}, and the state of its list is {state}, "
+                f"although build.ninja gives the command a depfile.  Make sure that the depfile names each header "
+                f"that the compile reads, and build {output} again"))
     return findings
 
 
@@ -762,6 +883,54 @@ CHAIN_GRAPH = (
     "build all: phony t/listed t/other unit compile_first\n"
     "default all\n")
 
+CUSTOM_GRAPH = (
+    "rule CUSTOM_COMMAND\n"
+    "  command = $COMMAND\n"
+    "build plain.bpf.o | ${cmake_ninja_workdir}plain.bpf.o: CUSTOM_COMMAND /src/plain.bpf.c /src/plain.bpf.c\n"
+    "  COMMAND = clang -c /src/plain.bpf.c -o plain.bpf.o\n"
+    "  restat = 1\n"
+    "\n"
+    "  depfile = CMakeFiles/d/after_blank.d\n"
+    "build halfway.bpf.o: CUSTOM_COMMAND /src/halfway.bpf.c\n"
+    "  depfile = CMakeFiles/d/halfway.d\n"
+    "build kept.bpf.o: CUSTOM_COMMAND /src/kept.bpf.c\n"
+    "  COMMAND = clang -MD -MF kept.bpf.d -c /src/kept.bpf.c $\n"
+    "      -o kept.bpf.o\n"
+    "  depfile = CMakeFiles/d/kept.d\n"
+    "  deps = gcc\n"
+    "build empty.bpf.o: CUSTOM_COMMAND /src/empty.bpf.c\n"
+    "  depfile = CMakeFiles/d/empty.d\n"
+    "  deps = gcc\n"
+    "build stale.bpf.o: CUSTOM_COMMAND /src/stale.bpf.c\n"
+    "  depfile = CMakeFiles/d/stale.d\n"
+    "  deps = gcc\n"
+    "build missing.bpf.o: CUSTOM_COMMAND /src/missing.bpf.c\n"
+    "  depfile = CMakeFiles/d/missing.d\n"
+    "  deps = gcc\n"
+    "build unbuilt.bpf.o: CUSTOM_COMMAND /src/unbuilt.bpf.c\n"
+    "  depfile = CMakeFiles/d/unbuilt.d\n"
+    "  deps = gcc\n"
+    "build gen.c: CUSTOM_COMMAND kept.bpf.o\n"
+    "  COMMAND = xxd -i kept.bpf.o > gen.c\n"
+    "build lib.o: CXX_COMPILER__lib_unscanned_Debug lib.cpp\n"
+    "  DEP_FILE = lib.o.d\n")
+
+# The output of `ninja -t deps` for the built objects of CUSTOM_GRAPH.  The
+# log holds no list of missing.bpf.o.
+CUSTOM_DEPS_OUTPUT = (
+    "kept.bpf.o: #deps 2, deps mtime 1 (VALID)\n"
+    "    /src/kept.bpf.c\n"
+    "    /src/common.h\n"
+    "\n"
+    "empty.bpf.o: #deps 1, deps mtime 1 (VALID)\n"
+    "    /src/empty.bpf.c\n"
+    "\n"
+    "stale.bpf.o: #deps 2, deps mtime 1 (STALE)\n"
+    "    /src/stale.bpf.c\n"
+    "    /src/common.h\n"
+    "\n"
+    "missing.bpf.o: deps not found\n")
+
 
 def self_test_cases() -> int:
     """Plant each verdict of each check in scratch files, and check it.
@@ -835,6 +1004,45 @@ def self_test_cases() -> int:
         found = evaluate_chains(read_graph(ninja), {"listed", "other", "unit"}, chain_list, "compile-first.txt")
         expect("compile-first, an error for each listed target when the graph has no stamp",
                [item.line for item in found] == [4, 5])
+
+        ninja.write_text(CUSTOM_GRAPH, encoding="utf-8")
+        custom_graph = read_graph(ninja)
+        kept_bindings = custom_graph.variables.get(custom_graph.producer["kept.bpf.o"], {})
+        plain_bindings = custom_graph.variables.get(custom_graph.producer["plain.bpf.o"], {})
+        expect("read_graph reads the bindings of a build statement, also a continued one, and no binding of a rule",
+               kept_bindings.get("depfile") == "CMakeFiles/d/kept.d" and kept_bindings.get("deps") == "gcc"
+               and "-o kept.bpf.o" in kept_bindings.get("COMMAND", "")
+               and not any("command" in bindings for bindings in custom_graph.variables.values()))
+        expect("read_graph ends the bindings of a build statement at an empty line",
+               set(plain_bindings) == {"COMMAND", "restat"})
+        expect("custom_objects takes each custom command whose first output is an object, and no other edge",
+               [custom_graph.edges[edge_id].outputs[0] for edge_id in custom_objects(custom_graph)]
+               == ["plain.bpf.o", "halfway.bpf.o", "kept.bpf.o", "empty.bpf.o", "stale.bpf.o", "missing.bpf.o",
+                   "unbuilt.bpf.o"])
+        lists, states = build_census.parse_dependencies(CUSTOM_DEPS_OUTPUT)
+        expect("parse_dependencies reads the files and the state of each list of the log",
+               lists["kept.bpf.o"] == ["/src/kept.bpf.c", "/src/common.h"] and states["kept.bpf.o"] == "VALID"
+               and states["stale.bpf.o"] == "STALE" and states["missing.bpf.o"] == "MISSING"
+               and lists["missing.bpf.o"] == [])
+        built_objects = {"halfway.bpf.o", "kept.bpf.o", "empty.bpf.o", "stale.bpf.o", "missing.bpf.o"}
+        found = evaluate_custom_deps(custom_graph, root, built_objects, lists, states, "build.ninja")
+        expect("custom-deps, an error at the line of each edge with no depfile or no `deps = gcc`, also for an "
+               "object that is not built, and of each built object whose list is empty of headers, stale or missing",
+               [(item.line, item.level) for item in found]
+               == [(3, "error"), (8, "error"), (15, "error"), (18, "error"), (21, "error")]
+               and "plain.bpf.o" in found[0].message and "DEPFILE" in found[0].message
+               and "MISSING" in found[4].message)
+        expect("custom-deps, no finding: a built object whose list holds a header, an object that is not built, a "
+               "custom command that writes a source, and a compile of CMake",
+               not any(name in item.message for item in found
+                       for name in ("kept.bpf.o", "unbuilt.bpf.o", "gen.c", "lib.o ")))
+        custom_build = root / "custom"
+        custom_build.mkdir()
+        (custom_build / "build.ninja").write_text(ORDER_GRAPH, encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()):
+            status = run_custom_deps(custom_build, read_graph(custom_build / "build.ninja"), "build.ninja", None)
+        expect("custom-deps does not apply to a build in which no custom command writes an object",
+               status == NOT_APPLICABLE)
 
         build = root / "build"
         build.mkdir()
@@ -1004,6 +1212,42 @@ def run_compile_first(build: Path, graph: Graph, ninja_shown: str, is_write: boo
     return check_report.emit(findings, "compile-first", warnings_dir)
 
 
+def run_custom_deps(build: Path, graph: Graph, ninja_shown: str, warnings_dir: Path | None) -> int:
+    """Run the check custom-deps.
+
+    Args:
+        build: The build directory
+        graph: The graph of build.ninja
+        ninja_shown: The path of build.ninja, for the findings
+        warnings_dir: The warnings directory, or None
+
+    Returns:
+        The exit code
+    """
+    objects = custom_objects(graph)
+    if not objects:
+        print("check-build-order: the check does not apply: no custom command of build.ninja writes an object.",
+              file=sys.stderr)
+        return NOT_APPLICABLE
+    built = sorted({graph.edges[edge_id].outputs[0] for edge_id in objects
+                    if (build / graph.edges[edge_id].outputs[0]).is_file()})
+    lists: dict[str, list[str]] = {}
+    states: dict[str, str] = {}
+    if built:
+        ninja = build_census.cache_value(build, "CMAKE_MAKE_PROGRAM") or "ninja"
+        try:
+            lists, states = build_census.parse_dependencies(
+                build_census.run_tool([ninja, "-C", str(build), "-t", "deps", *built]))
+        except build_census.CensusError as exc:
+            return check_report.emit([check_report.Finding("error", ninja_shown, 0, "custom-deps",
+                                                           f"the check cannot read the dependency log: {exc}")],
+                                     "custom-deps", warnings_dir)
+    findings = evaluate_custom_deps(graph, build, set(built), lists, states, ninja_shown)
+    print(f"check-build-order: {len(objects)} object(s) of custom commands, {len(built)} of them built, "
+          f"{len(findings)} finding(s).", file=sys.stderr)
+    return check_report.emit(findings, "custom-deps", warnings_dir)
+
+
 def main(argv: list[str]) -> int:
     """Run one check, the write of the list, or the self-test.
 
@@ -1042,6 +1286,8 @@ def main(argv: list[str]) -> int:
                                  arguments.check, arguments.warnings_dir)
     if arguments.check == "compile-first":
         return run_compile_first(build, graph, display(ninja), arguments.write, arguments.warnings_dir)
+    if arguments.check == "custom-deps":
+        return run_custom_deps(build, graph, display(ninja), arguments.warnings_dir)
     findings = evaluate_order(graph, display(ninja))
     print(f"check-build-order: {len(graph.edges)} edges, {len(findings)} finding(s).", file=sys.stderr)
     return check_report.emit(findings, arguments.check, arguments.warnings_dir)

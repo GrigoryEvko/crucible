@@ -5528,9 +5528,16 @@ add_test(NAME build_order
 add_test(NAME compile_first
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-build-order.py --check compile-first
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+# custom_deps — each object that a custom command compiles, as each BPF object
+# of cmake/CrucibleBpf.cmake, has a depfile in build.ninja, and the ninja
+# dependency log holds a header of each built one.  Without the depfile, an
+# edit of a header does not compile the object again.
+add_test(NAME custom_deps
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-build-order.py --check custom-deps
+          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 add_test(NAME build_order_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-build-order.py --self-test)
-set_tests_properties(build_order compile_first build_order_self_test PROPERTIES LABELS "ci_guard"
+set_tests_properties(build_order compile_first custom_deps build_order_self_test PROPERTIES LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 
 # parse_total — the sum, over each object of the target all and each negative

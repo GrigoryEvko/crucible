@@ -204,15 +204,20 @@ def objects_of_all(build_dir: Path, ninja: str, root: Path) -> list[tuple[Path, 
     return [(Path(path), source) for path, source in sorted(objects.items())]
 
 
-def read_dependencies(build_dir: Path, ninja: str, keys: list[str]) -> dict[str, list[str]]:
-    """Read the dependency list of each object from the ninja log.
+def parse_dependencies(output: str) -> tuple[dict[str, list[str]], dict[str, str]]:
+    """Read the output of `ninja -t deps`: the files of each target and the state of its list.
 
-    Complexity: linear in the length of the log output.
+    The state is VALID, MISSING (the log holds no list of the target) or
+    STALE (the list is older than the output).
 
-    Raises:
-        CensusError: If ninja fails, or the log holds no valid list for an object
+    Complexity: linear in the length of the output.
+
+    Args:
+        output: The standard output of `ninja -t deps`
+
+    Returns:
+        The files of each target, and the state of each target
     """
-    output = run_tool([ninja, "-C", str(build_dir), "-t", "deps", *keys])
     lists: dict[str, list[str]] = {}
     states: dict[str, str] = {}
     current: list[str] | None = None
@@ -227,6 +232,18 @@ def read_dependencies(build_dir: Path, ninja: str, keys: list[str]) -> dict[str,
         current = []
         lists[target] = current
         states[target] = "VALID" if rest.endswith("(VALID)") else "MISSING" if "deps not found" in rest else "STALE"
+    return lists, states
+
+
+def read_dependencies(build_dir: Path, ninja: str, keys: list[str]) -> dict[str, list[str]]:
+    """Read the dependency list of each object from the ninja log.
+
+    Complexity: linear in the length of the log output.
+
+    Raises:
+        CensusError: If ninja fails, or the log holds no valid list for an object
+    """
+    lists, states = parse_dependencies(run_tool([ninja, "-C", str(build_dir), "-t", "deps", *keys]))
     bad = [key for key in keys if states.get(key) != "VALID" or not lists.get(key)]
     if bad:
         raise CensusError(f"the ninja log holds no valid dependency list of {len(bad)} objects: {names_text(bad)}.  "

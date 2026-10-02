@@ -180,6 +180,7 @@ function(crucible_bpf_program name source)
   set(_BPF_SRC          "${CMAKE_SOURCE_DIR}/${source}")
   get_filename_component(_BPF_SRC_DIR "${_BPF_SRC}" DIRECTORY)
   set(_BPF_OBJ          "${CMAKE_CURRENT_BINARY_DIR}/${name}.bpf.o")
+  set(_BPF_DEPFILE      "${CMAKE_CURRENT_BINARY_DIR}/${name}.bpf.d")
   set(_BPF_EMBED_DIR    "${CMAKE_CURRENT_BINARY_DIR}/bpf_embed/${name}")
   set(_BPF_EMBED_STAGED "${_BPF_EMBED_DIR}/${name}_bpf_bytecode")
   set(_BPF_EMBED_C      "${CMAKE_CURRENT_BINARY_DIR}/${name}_bpf_bytecode.c")
@@ -189,10 +190,13 @@ function(crucible_bpf_program name source)
   # (-g) for CO-RE field relocations.  -fdebug-prefix-map scrubs the
   # absolute build path from .debug_str so the generated .o (and the
   # embedded byte array) are reproducible across checkouts.
-  # IMPLICIT_DEPENDS CXX walks #includes in the .bpf.c to track
-  # every header (common.h, vmlinux.h, plus any new file added under
-  # include/crucible/perf/bpf/) automatically — saves a brittle
-  # manual list per program.
+  #
+  # -MD -MF writes the depfile of the compile, and DEPFILE gives that file to
+  # the generator.  The depfile names each header that the compile reads,
+  # also common.h, vmlinux.h and the libbpf headers.  Ninja moves the list
+  # into its dependency log, so an edit of a header compiles the object
+  # again.  The test custom_deps (utils/scripts/check-build-order.py) holds
+  # this for each object that a custom command compiles.
   #
   # The kernel compiles with -fms-extensions, so vmlinux.h has members such
   # as `struct ns_tree;` that put the fields of a named struct in place.
@@ -200,12 +204,14 @@ function(crucible_bpf_program name source)
   # -Wno-microsoft-anon-tag stops the warning that the flag itself gives.
   # -Werror makes each other warning stop the build.
   #
-  # The two commands read only the files that their DEPENDS name, so each
-  # command takes DEPENDS_EXPLICIT_ONLY.  Without it, the Ninja generator
-  # makes each command wait for each library that its target links, also
-  # libfoundation.a.  Each object of a target that links crucible waits for
-  # these commands.  In an edit build, each such compile then starts after
-  # the archive of foundation, approximately 2 s after the start.
+  # The two commands read no file that a target of the build writes.  The
+  # compile reads its source and the headers that its depfile names, and the
+  # embed reads the object.  So each command takes DEPENDS_EXPLICIT_ONLY.
+  # Without it, the Ninja generator makes each command wait for each library
+  # that its target links, also libfoundation.a.  Each object of a target that
+  # links crucible waits for these commands.  In an edit build, each such
+  # compile then starts after the archive of foundation, approximately 2 s
+  # after the start.
   add_custom_command(
     OUTPUT  ${_BPF_OBJ}
     COMMAND ${CLANG_BPF_COMPILER}
@@ -218,11 +224,12 @@ function(crucible_bpf_program name source)
             -fdebug-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=.
             -fms-extensions -Wno-microsoft-anon-tag
             -Wall -Werror -Wno-unused-function -Wno-address-of-packed-member
+            -MD -MF ${_BPF_DEPFILE}
             -c ${_BPF_SRC}
             -o ${_BPF_OBJ}
     DEPENDS ${_BPF_SRC}
     DEPENDS_EXPLICIT_ONLY
-    IMPLICIT_DEPENDS CXX ${_BPF_SRC}
+    DEPFILE ${_BPF_DEPFILE}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     VERBATIM
     COMMENT "Compiling BPF ${source} → ${name}.bpf.o")
