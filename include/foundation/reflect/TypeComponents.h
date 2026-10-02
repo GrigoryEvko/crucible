@@ -94,6 +94,68 @@ struct TypeNode {
     bool may_read_members = false;
 };
 
+// The nodes that one step of the walk lists, in a growable array.
+//
+// The list is a class and not std::vector.  The two functions below that
+// fill it are not templates, so no translation unit can specialize an
+// answer.  GCC instantiates each member of std::vector that the body of
+// such a function calls, in each includer, at about 40 M instructions.
+// The members of this class are not templates.
+//
+// The list allocates its array in the constant evaluation and frees it
+// when the list ends.  A read goes through a pointer.  Complexity:
+// amortized constant for each push_back.
+class TypeNodeList {
+public:
+    consteval TypeNodeList() noexcept = default;
+    consteval TypeNodeList(TypeNodeList&& other) noexcept
+        : nodes_{other.nodes_}, size_{other.size_}, capacity_{other.capacity_} {
+        other.nodes_ = nullptr;
+        other.size_ = 0;
+        other.capacity_ = 0;
+    }
+    TypeNodeList(const TypeNodeList&) = delete("a list owns its array, so a copy would free the array two times");
+    TypeNodeList& operator=(const TypeNodeList&) = delete("a list owns its array, so a copy would free the array two "
+                                                          "times");
+    TypeNodeList& operator=(TypeNodeList&&) = delete("a list is filled one time and then read, never assigned");
+    // A destructor cannot be consteval.  A TypeNode holds a reflection, so
+    // a list exists only in a constant evaluation, and the branch is the
+    // only path.
+    constexpr ~TypeNodeList() {
+        if consteval {
+            delete[] nodes_;
+        }
+    }
+
+    consteval void push_back(TypeNode node) {
+        if (size_ == capacity_) grow_();
+        nodes_[size_] = node;
+        ++size_;
+    }
+
+    [[nodiscard]] consteval const TypeNode* begin() const noexcept { return nodes_; }
+    [[nodiscard]] consteval const TypeNode* end() const noexcept { return nodes_ + size_; }
+    [[nodiscard]] consteval std::size_t size() const noexcept { return size_; }
+    [[nodiscard]] consteval bool empty() const noexcept { return size_ == 0; }
+
+private:
+    // Doubles the capacity, and moves each node into the new array.
+    // Complexity: linear in the number of nodes.
+    consteval void grow_() {
+        const std::size_t capacity = capacity_ == 0 ? 8 : 2 * capacity_;
+        TypeNode* const nodes = new TypeNode[capacity];
+        for (std::size_t index = 0; index < size_; ++index)
+            nodes[index] = nodes_[index];
+        delete[] nodes_;
+        nodes_ = nodes;
+        capacity_ = capacity;
+    }
+
+    TypeNode* nodes_ = nullptr;
+    std::size_t size_ = 0;
+    std::size_t capacity_ = 0;
+};
+
 // The type with each alias, cv qualifier and reference removed.
 [[nodiscard]] consteval std::meta::info bare_type(std::meta::info type) {
     return std::meta::dealias(std::meta::remove_cvref(std::meta::dealias(type)));
@@ -191,9 +253,9 @@ enum class SpecializationRead : unsigned char {
 // inherits `may_read_members`, because the element of a complete array is
 // complete.  Complexity: linear in the number of parameters or template
 // arguments.
-[[nodiscard]] consteval std::vector<TypeNode>
+[[nodiscard]] consteval TypeNodeList
 argument_components_of(TypeNode node, SpecializationRead read = SpecializationRead::ArgumentsOnly) {
-    std::vector<TypeNode> components;
+    TypeNodeList components;
     const std::meta::info type = bare_type(node.type);
 
     if (std::meta::is_pointer_type(type)) {
@@ -232,9 +294,9 @@ argument_components_of(TypeNode node, SpecializationRead read = SpecializationRe
 // members the walk may read.  For a specialization this read
 // instantiates the class, so the caller must know it is complete.
 // Complexity: linear in the number of bases and members.
-[[nodiscard]] consteval std::vector<TypeNode>
-member_components_of(TypeNode node, SpecializationRead read = SpecializationRead::ArgumentsOnly) {
-    std::vector<TypeNode> components;
+[[nodiscard]] consteval TypeNodeList member_components_of(TypeNode node,
+                                                          SpecializationRead read = SpecializationRead::ArgumentsOnly) {
+    TypeNodeList components;
     const std::meta::info type = bare_type(node.type);
     if (!node.may_read_members) return components;
     if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return components;
@@ -278,7 +340,7 @@ template <auto Predicate, SpecializationRead Read = SpecializationRead::Argument
         bool reads_members = false;
     };
     std::vector<Step> pending{Step{TypeNode{bare_type(root), true}, false}};
-    std::vector<TypeNode> visited;
+    TypeNodeList visited;
     while (!pending.empty()) {
         const Step step = pending.back();
         pending.pop_back();
