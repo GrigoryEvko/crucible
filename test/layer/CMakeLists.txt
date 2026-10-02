@@ -210,6 +210,7 @@ endif()
 add_custom_target(layer_alone)
 
 set(_walk_header_lines "")
+set(_walk_crucible_headers "")
 foreach(_layer foundation fixy crucible)
   if(_layer STREQUAL "crucible")
     set(_root "${_layer_include}")
@@ -251,6 +252,7 @@ foreach(_layer foundation fixy crucible)
       string(REGEX REPLACE "[][;]" " " _text "${_text}")
       if(_text MATCHES "${_opens_layer_namespace}")
         string(APPEND _walk_header_lines "#include <${_header}>\n")
+        list(APPEND _walk_crucible_headers "${_header}")
       endif()
     else()
       string(APPEND _walk_header_lines "#include <${_header}>\n")
@@ -301,17 +303,62 @@ endforeach()
 # only its header and the includes of that header, so a walk in it does not
 # see a member that another header adds to the namespace that it walks.
 # walks_across_headers.cpp includes each header of walk_headers.h, and then
-# each check file whose walk reads such a namespace.  Each build compiles
-# it, so a refused member stops the build.  file(CONFIGURE) rewrites the
-# list only when its text changes.
+# each check file of walk_checks.h.  The list holds each check file whose
+# walk can read such a namespace, with no hand edit:
+#   - each check file of a foundation or fixy header, because these layers
+#     declare the walks and the namespaces that other headers add to
+#   - the check file of each crucible header that walk_headers.h includes
+#   - each crucible check file that holds a reflection operator, because a
+#     check file passes a namespace or a relation to a walk as a reflection.
+# A crucible check file that reaches a walk with no reflection operator of
+# its own does not join.  A configure run reads the text, so a crucible
+# check file that gets its first reflection operator joins at the next
+# configure run, as a header that opens a namespace does above.  The list
+# compiles in units of
+# _walk_checks_per_unit check files, so that no unit is a long job.  On
+# 2026-10-02, walk_headers.h alone took 2.6 s of CPU time, the check file of
+# fixy/Collision.h added 5.3 s, and most check files added less than 1 s.
+# Each build compiles the units, so a refused member stops the build.
+# file(CONFIGURE) rewrites a list only when its text changes.
 file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/walk_headers/walk_headers.h"
      CONTENT "#pragma once\n${_walk_header_lines}" @ONLY)
-add_library(layer_walks_across_headers OBJECT walks_across_headers.cpp)
-target_link_libraries(layer_walks_across_headers PRIVATE crucible_dialect)
-target_include_directories(layer_walks_across_headers PRIVATE "${_layer_include}"
-                           "${CMAKE_CURRENT_BINARY_DIR}/walk_headers")
-target_compile_definitions(layer_walks_across_headers PRIVATE
-  $<TARGET_PROPERTY:crucible,INTERFACE_COMPILE_DEFINITIONS>)
+set(_walk_checks_per_unit 8)
+set(_walk_checks "")
+foreach(_check IN LISTS _check_files)
+  string(REGEX REPLACE "\\.cpp$" ".h" _header "${_check}")
+  if(_check MATCHES "^(foundation|fixy)/" OR _header IN_LIST _walk_crucible_headers)
+    list(APPEND _walk_checks "${_check}")
+    continue()
+  endif()
+  file(READ "${_layer_checks}/${_check}" _text)
+  string(FIND "${_text}" "^^" _reflection_at)
+  if(NOT _reflection_at EQUAL -1)
+    list(APPEND _walk_checks "${_check}")
+  endif()
+endforeach()
+list(SORT _walk_checks)
+list(LENGTH _walk_checks _walk_count)
+if(_walk_count EQUAL 0)
+  message(FATAL_ERROR "test/layer: no check file joins the walk units, so the walks run with no header in view.  "
+                      "A foundation or fixy check file always joins, so the glob of test/layer/checks is wrong.")
+endif()
+math(EXPR _walk_last_unit "(${_walk_count} - 1) / ${_walk_checks_per_unit}")
+foreach(_unit RANGE ${_walk_last_unit})
+  math(EXPR _walk_first "${_unit} * ${_walk_checks_per_unit}")
+  list(SUBLIST _walk_checks ${_walk_first} ${_walk_checks_per_unit} _unit_checks)
+  set(_unit_lines "")
+  foreach(_check IN LISTS _unit_checks)
+    string(APPEND _unit_lines "#include \"checks/${_check}\"\n")
+  endforeach()
+  set(_unit_dir "${CMAKE_CURRENT_BINARY_DIR}/walk_units/${_unit}")
+  file(CONFIGURE OUTPUT "${_unit_dir}/walk_checks.h" CONTENT "#pragma once\n${_unit_lines}" @ONLY)
+  add_library(layer_walks_across_headers_${_unit} OBJECT walks_across_headers.cpp)
+  target_link_libraries(layer_walks_across_headers_${_unit} PRIVATE crucible_dialect)
+  target_include_directories(layer_walks_across_headers_${_unit} PRIVATE "${_layer_include}"
+                             "${CMAKE_CURRENT_BINARY_DIR}/walk_headers" "${_unit_dir}" "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_compile_definitions(layer_walks_across_headers_${_unit} PRIVATE
+    $<TARGET_PROPERTY:crucible,INTERFACE_COMPILE_DEFINITIONS>)
+endforeach()
 
 # Each header of crucible-not-standalone.txt still fails to compile alone.
 # The test compiles it with the command of the crucible sentinels.  The
