@@ -33,6 +33,7 @@
 #include <fixy/Corpus.h>
 #include <foundation/Platform.h>
 #include <foundation/diag/Catalog.h>
+#include <foundation/reflect/Anchor.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -40,6 +41,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <vector>
 
 namespace fixy {
 
@@ -109,7 +111,10 @@ template <Axis A, class... Atoms>
 template <class... Atoms>
 [[nodiscard]] consteval std::size_t first_duplicated_axis_() noexcept {
     std::size_t offender = ::fixy::axis_count;
-    template for (constexpr auto axis_member : std::define_static_array(std::meta::enumerators_of(^^Axis))) {
+    using axis_list = ::foundation::reflect::anchored_t<std::meta::reflect_constant(sizeof...(Atoms)),
+                                                        std::vector<std::meta::info>>;
+    template for (constexpr auto axis_member :
+                  std::define_static_array(static_cast<axis_list>(std::meta::enumerators_of(^^Axis)))) {
         constexpr Axis axis = [:axis_member:];
         if (offender == ::fixy::axis_count && count_on_axis_<axis, Atoms...>() > 1) {
             offender = static_cast<std::size_t>(std::to_underlying(axis));
@@ -176,14 +181,15 @@ namespace detail::reject {
 
 template <Axis A>
 [[nodiscard]] consteval std::string_view duplicate_name_() {
-    std::string text{"DuplicateAtomOn"};
+    ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{"DuplicateAtomOn"};
     text += ::fixy::axis_name(A);
     return std::define_static_string(text);
 }
 
 template <Axis A>
 [[nodiscard]] consteval std::string_view duplicate_description_() {
-    std::string text{"Two or more atoms in one fixy::fn pack name the "};
+    ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{
+        "Two or more atoms in one fixy::fn pack name the "};
     text += ::fixy::axis_name(A);
     text += " axis.  An axis carries one grade, so the pack does not say "
             "which of them the binding means.";
@@ -192,7 +198,7 @@ template <Axis A>
 
 template <class G>
 [[nodiscard]] consteval std::string_view malformed_name_() {
-    std::string text{"MalformedAtom<"};
+    ::foundation::reflect::anchored_t<^^G, std::string> text{"MalformedAtom<"};
     text += std::meta::display_string_of(^^G);
     text += '>';
     return std::define_static_string(text);
@@ -223,7 +229,7 @@ template <class G>
 
 template <class T>
 [[nodiscard]] consteval std::string_view payload_name_() {
-    std::string text{"UnholdablePayload<"};
+    ::foundation::reflect::anchored_t<^^T, std::string> text{"UnholdablePayload<"};
     text += std::meta::display_string_of(^^T);
     text += '>';
     return std::define_static_string(text);
@@ -397,8 +403,9 @@ template <class... Atoms>
     if constexpr (offender == ::fixy::axis_count) {
         return "fixy::fn<Type, Atoms...> [tier 4]: not reached — no axis carries two grades.";
     } else {
-        std::string text{"fixy::fn<Type, Atoms...> [tier 4]: an axis carries one grade, so the pack must not "
-                         "name an axis twice.  The axis graded twice here is "};
+        ::foundation::reflect::anchored_t<std::meta::reflect_constant(offender), std::string> text{
+            "fixy::fn<Type, Atoms...> [tier 4]: an axis carries one grade, so the pack must not "
+            "name an axis twice.  The axis graded twice here is "};
         text += ::fixy::axis_name(static_cast<Axis>(offender));
         text += ", and fixy::duplicate_atom_on<Axis> carries its insight.";
         return std::define_static_string(text);
@@ -418,8 +425,8 @@ template <class... Atoms>
         return "fixy::fn<Type, Atoms...> [tier 2]: not reached — every entry in the pack is an atom.";
     } else {
         using Offender = [:offender:];
-        std::string text{"fixy::fn<Type, Atoms...> [tier 2]: every entry in the pack must be an atom of the closed "
-                         "catalog.  "};
+        ::foundation::reflect::anchored_t<^^Offender, std::string> text{
+            "fixy::fn<Type, Atoms...> [tier 2]: every entry in the pack must be an atom of the closed catalog.  "};
         text += malformed_text_<Offender>();
         return std::define_static_string(text);
     }
@@ -438,7 +445,8 @@ template <class T, class... Atoms>
     } else {
         using Entry = corpus_tag_or_void_t<T, Atoms...>;
         constexpr std::string_view codes = ::fixy::collision::rules_of<T, Atoms...>::failing_codes();
-        std::string text{"fixy::fn<Type, Atoms...> [tier 5]: the combination is refused.  "};
+        ::foundation::reflect::anchored_t<^^T, std::string> text{
+            "fixy::fn<Type, Atoms...> [tier 5]: the combination is refused.  "};
         if constexpr (!std::is_void_v<Entry>) {
             text += "Corpus entry ";
             text += Entry::name;

@@ -30,6 +30,7 @@
 #include <foundation/Platform.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/Hash.h>
 
 #include <cstddef>
@@ -37,6 +38,7 @@
 #include <meta>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace fixy {
 
@@ -401,7 +403,9 @@ template <class Binding>
     // The range is materialised into a static array because the
     // reflection query returns a vector, whose allocation is not a
     // constant in the context an expansion statement needs.
-    static constexpr auto axis_members = std::define_static_array(std::meta::enumerators_of(^^Axis));
+    static constexpr auto axis_members = std::define_static_array(
+        static_cast<::foundation::reflect::anchored_t<^^Binding, std::vector<std::meta::info>>>(
+            std::meta::enumerators_of(^^Axis)));
     template for (constexpr auto axis_member : axis_members) {
         constexpr Axis axis = [:axis_member:];
         using Grade = typename Binding::template grade_on<axis>;

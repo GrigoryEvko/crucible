@@ -71,6 +71,7 @@
 #include <foundation/effects/Capability.h>
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/TypeComponents.h>
 
 #include <cstddef>
@@ -327,17 +328,21 @@ using row_of_effect_mask_t = [:row_of_effect_mask(EffectMask):];
 // The diagnostic text when the walk refuses a type.  The refused type is
 // part of the text, because the walk can refuse a member deep inside the
 // payload, which the instantiation note for payload_row<T> does not name.
+// The function is a template only so that its text can depend on Anchor
+// (foundation/reflect/Anchor.h).  No check reads the text.
+template <class Anchor = void>
 [[nodiscard]] consteval std::string_view payload_row_refusal(PayloadRowWalk walked) {
     if (!walked.is_refused) return {};
-    std::string text{"payload_row<T>: T is, or holds, a type this extractor cannot classify.  A class template "
-                     "specialization whose family is on none of the three payload rosters in "
-                     "fixy/concurrent/PayloadRow.h, and on no rule of the layer that asks, is refused, and so is a "
-                     "class that is only declared, or that holds state the walk cannot read, such as a lambda with "
-                     "captures.  A payload that hides "
-                     "another type must say what it hides: add the family to transparent_payload_families if it "
-                     "unwraps, to row_carrying_payload_families with its rule if it carries a row of its own, or to "
-                     "leaf_payload_families if it holds no row at all.  Answering Row<> for an unclassified type "
-                     "would let it satisfy every execution context.  The refused type: "};
+    ::foundation::reflect::anchored_t<^^Anchor, std::string> text{
+        "payload_row<T>: T is, or holds, a type this extractor cannot classify.  A class template "
+        "specialization whose family is on none of the three payload rosters in "
+        "fixy/concurrent/PayloadRow.h, and on no rule of the layer that asks, is refused, and so is a "
+        "class that is only declared, or that holds state the walk cannot read, such as a lambda with "
+        "captures.  A payload that hides "
+        "another type must say what it hides: add the family to transparent_payload_families if it "
+        "unwraps, to row_carrying_payload_families with its rule if it carries a row of its own, or to "
+        "leaf_payload_families if it holds no row at all.  Answering Row<> for an unclassified type "
+        "would let it satisfy every execution context.  The refused type: "};
     text += std::meta::display_string_of(walked.refused_type);
     return std::define_static_string(text);
 }
@@ -377,7 +382,7 @@ template <class T>
 template <class T>
 struct payload_row {
     static constexpr detail::PayloadRowWalk walked = detail::walk_payload_row(^^T);
-    static_assert(!walked.is_refused, detail::payload_row_refusal(walked));
+    static_assert(!walked.is_refused, detail::payload_row_refusal<::foundation::reflect::anchored_t<^^T, void>>(walked));
     using type = detail::row_of_effect_mask_t<walked.effect_mask>;
 };
 
@@ -394,7 +399,7 @@ struct payload_row_under {
                   "fixy/concurrent/PayloadRow.h names, or two rules name one family.  A rule must not change "
                   "an answer of the rosters, so give each family one rule, outside the rosters.");
     static constexpr detail::PayloadRowWalk walked = detail::walk_payload_row(^^T, LayerRules);
-    static_assert(!walked.is_refused, detail::payload_row_refusal(walked));
+    static_assert(!walked.is_refused, detail::payload_row_refusal<::foundation::reflect::anchored_t<^^T, void>>(walked));
     using type = detail::row_of_effect_mask_t<walked.effect_mask>;
 };
 

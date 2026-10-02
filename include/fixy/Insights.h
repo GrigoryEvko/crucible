@@ -26,6 +26,7 @@
 #include <fixy/Reject.h>
 #include <fixy/Tags.h>
 #include <foundation/diag/Insights.h>
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <cstddef>
@@ -36,8 +37,11 @@
 
 namespace fixy::insights::detail {
 
+// The decimal digits of value.  The function is a template only so that
+// its text can depend on Anchor (foundation/reflect/Anchor.h).
+template <class Anchor = void>
 [[nodiscard]] consteval std::string_view digits_(unsigned long long value) noexcept {
-    std::string text;
+    ::foundation::reflect::anchored_t<^^Anchor, std::string> text;
     do {
         text.insert(text.begin(), static_cast<char>('0' + static_cast<int>(value % 10)));
         value /= 10;
@@ -62,7 +66,8 @@ template <Axis A>
             if constexpr (std::is_enum_v<decltype(value)>) {
                 return ::foundation::reflect::enum_name(value);
             } else {
-                return digits_(static_cast<unsigned long long>(value));
+                return digits_<::foundation::reflect::anchored_t<^^Strict, void>>(
+                    static_cast<unsigned long long>(value));
             }
         } else {
             constexpr std::meta::info pole = std::meta::dealias(^^Strict);
@@ -77,7 +82,8 @@ template <Axis A>
 
 template <Axis A>
 [[nodiscard]] consteval std::string_view why_() noexcept {
-    std::string text{"An axis carries one grade.  A binding that says nothing about the "};
+    ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{
+        "An axis carries one grade.  A binding that says nothing about the "};
     text += ::fixy::axis_name(A);
     text += " axis takes its strict pole, ";
     text += strict_pole_name_<A>();
@@ -88,7 +94,7 @@ template <Axis A>
 
 template <Axis A>
 [[nodiscard]] consteval std::string_view symptom_() noexcept {
-    std::string text{"Two atoms from the "};
+    ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{"Two atoms from the "};
     text += ::fixy::axis_name(A);
     text += " family in one fixy::fn pack, usually after two packs were merged, or after a role that already "
             "names the axis was extended with a second atom on it.";
@@ -97,7 +103,7 @@ template <Axis A>
 
 template <Axis A>
 [[nodiscard]] consteval std::string_view correct_() noexcept {
-    std::string text{"fixy::fn<T, atom_on_"};
+    ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{"fixy::fn<T, atom_on_"};
     text += ::fixy::axis_name(A);
     text += ">  // or fixy::fn<T>: the strict pole ";
     text += strict_pole_name_<A>();
@@ -107,7 +113,7 @@ template <Axis A>
 
 template <Axis A>
 [[nodiscard]] consteval std::string_view violating_() noexcept {
-    std::string text{"fixy::fn<T, atom_on_"};
+    ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{"fixy::fn<T, atom_on_"};
     text += ::fixy::axis_name(A);
     text += ", second_atom_on_";
     text += ::fixy::axis_name(A);

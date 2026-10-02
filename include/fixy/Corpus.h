@@ -49,6 +49,7 @@
 #include <foundation/diag/Catalog.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/Anchor.h>
 
 #include <concepts>
 #include <cstddef>
@@ -59,6 +60,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace fixy::corpus {
 
@@ -115,11 +117,13 @@ namespace detail {
 // list, so the count reads every declared policy; fixy/Secret.h proves
 // the declared set and the admitted set are one set.  The walk is a
 // template, so that only a translation unit that calls it expands it.
-template <class = void>
+// Its list depends on Anchor (foundation/reflect/Anchor.h).
+template <class Anchor = void>
 [[nodiscard]] consteval std::size_t non_none_policy_count_() noexcept {
     std::size_t count = 0;
     static constexpr auto members = std::define_static_array(
-        std::meta::members_of(^^::fixy::tags::secret_policy, std::meta::access_context::unchecked()));
+        static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
+            std::meta::members_of(^^::fixy::tags::secret_policy, std::meta::access_context::unchecked())));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : members) {
@@ -229,8 +233,9 @@ using ::fixy::detail::text_contains;
 // assemble it.
 template <class Entry>
 inline constexpr std::string_view full_diagnostic_v = []() consteval -> std::string_view {
-    std::string text{"fixy::fn<Type, Atoms...> [tier 5: NotInCorpus]: the binding matches the "
-                     "refused-combination corpus entry "};
+    ::foundation::reflect::anchored_t<^^Entry, std::string> text{
+        "fixy::fn<Type, Atoms...> [tier 5: NotInCorpus]: the binding matches the "
+        "refused-combination corpus entry "};
     text += Entry::name;
     text += ".  ";
     text += Entry::cite();
@@ -509,7 +514,8 @@ template <class Site>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : std::define_static_array(
-                      std::meta::members_of(^^::fixy::corpus, std::meta::access_context::current()))) {
+                      static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
+                          std::meta::members_of(^^::fixy::corpus, std::meta::access_context::current())))) {
         if constexpr (std::meta::is_type(member)) {
             using Candidate = [:member:];
             if constexpr (detail::IsCorpusEntry<Candidate>) {
@@ -531,7 +537,7 @@ template <class Site>
 [[nodiscard]] consteval std::string_view corpus_join_diagnostic() {
     const std::string offenders = corpus_entries_declared_but_not_joined<Site>();
     if (offenders.empty()) return {};
-    std::string message =
+    ::foundation::reflect::anchored_t<^^Site, std::string> message =
         "fixy/Corpus.h: these corpus entries are declared in fixy::corpus and missing from Entries, so they "
         "refuse nothing: ";
     message += offenders;
@@ -548,7 +554,8 @@ template <class Type, class... Atoms>
 [[nodiscard]] consteval std::meta::info first_match_() noexcept {
     std::meta::info found = ^^void;
     static constexpr auto entries =
-        std::define_static_array(std::meta::template_arguments_of(std::meta::dealias(^^Entries)));
+        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Type, std::vector<std::meta::info>>>(
+            std::meta::template_arguments_of(std::meta::dealias(^^Entries))));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto entry : entries) {

@@ -171,6 +171,20 @@ static_assert(!PredicateImplies<divisible_by<4>, divisible_by<8>>,
               "does not imply a tighter one, and four itself is a "
               "counterexample.");
 
+namespace detail::refined_edge_walk {
+
+// The number of narrowing edges in the namespace.
+[[nodiscard]] consteval std::size_t narrowing_edge_count() noexcept {
+    std::size_t count = 0;
+    for (const std::meta::info m :
+         std::meta::members_of(^^refined::admitted_implications, std::meta::access_context::unchecked())) {
+        if (refined::is_narrowing_edge(m)) ++count;
+    }
+    return count;
+}
+
+}  // namespace detail::refined_edge_walk
+
 namespace detail::refined_self_test {
 
 // Each type in exact_integer_types is one that ExactInteger admits.

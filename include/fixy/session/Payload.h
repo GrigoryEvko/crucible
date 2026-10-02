@@ -191,6 +191,7 @@
 #include <foundation/permissions/PermSet.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/TypeComponents.h>
 #include <fixy/session/Classified.h>
 #include <fixy/session/Protocol.h>
@@ -1240,8 +1241,12 @@ struct payload_admitted_gate {
     return true;
 }
 
+// The function is a template only so that its text can depend on Anchor
+// (foundation/reflect/Anchor.h).  No check reads the text.
+template <class Anchor = void>
 [[nodiscard]] consteval std::string_view unreadable_component_text(std::meta::info type) {
-    std::string text{"fixy::session::diagnostic [Payload_Delegation_Unreadable]: the payload reaches "};
+    ::foundation::reflect::anchored_t<^^Anchor, std::string> text{
+        "fixy::session::diagnostic [Payload_Delegation_Unreadable]: the payload reaches "};
     text += std::meta::display_string_of(type);
     text += ", which has no definition here, so the delegation query cannot read whether it holds a session "
             "endpoint.  Define it before the query, or send a payload that does not reach it.";
@@ -1255,7 +1260,8 @@ struct payload_admitted_gate {
 template <class P>
 struct delegation_readable_gate {
     static constexpr PayloadFacts facts = payload_facts_of(^^P);
-    static_assert(facts.is_carrier_readable, unreadable_component_text(facts.carrier_type));
+    static_assert(facts.is_carrier_readable,
+                  unreadable_component_text<::foundation::reflect::anchored_t<^^P, void>>(facts.carrier_type));
     static constexpr bool holds = true;
 };
 

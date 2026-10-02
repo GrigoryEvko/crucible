@@ -22,10 +22,12 @@
 #include <fixy/Tags.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/reflect/Anchor.h>
 
 #include <cstdint>
 #include <meta>
 #include <type_traits>
+#include <vector>
 
 namespace fixy::role {
 
@@ -99,18 +101,20 @@ namespace fixy::detail {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
 
+// The template parameter defers the walk to the first call.  A
+// translation unit that includes this header and does not call the walk
+// does not evaluate it.  The same holds for the walk below.
+template <class Site = void>
 [[nodiscard]] consteval std::size_t roles_declared() noexcept {
     return std::meta::members_of(^^::fixy::role, std::meta::access_context::current()).size();
 }
 
-// The template parameter defers the walk to the first call.  A
-// translation unit that includes this header and does not call the walk
-// does not evaluate it.
 template <class Site = void>
 [[nodiscard]] consteval std::size_t roles_off_the_zero_slot() noexcept {
     std::size_t proven = 0;
     static constexpr auto role_members =
-        std::define_static_array(std::meta::members_of(^^::fixy::role, std::meta::access_context::current()));
+        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
+            std::meta::members_of(^^::fixy::role, std::meta::access_context::current())));
     template for (constexpr auto role_member : role_members) {
         constexpr auto payload = ^^int;
         constexpr auto policy = ^^::fixy::tags::secret_policy::WireSerialize;

@@ -17,7 +17,6 @@ include/fixy/Atom.h — walks the atom namespaces and an owner's members to deri
 include/fixy/Bands.h — walks the band namespace to derive the band roster
 include/fixy/Collision.h — walks the members of rules_of<void> to derive the collision rule set
 include/fixy/Corpus.h — walks the secret-policy namespace to derive the corpus of policies
-include/fixy/Secret.h — walks the admitted declassification policies to seal the policy relation
 include/fixy/atoms/Os.h — walks the OS atom namespaces to derive their rosters
 include/foundation/algebra/Transition.h — walks a transition registry to derive its edges
 include/foundation/contracts/ArmedRoster.h — walks a scope to derive the armed-predicate roster
@@ -47,6 +46,8 @@ test/fixy/test_refined.cpp — walks the admitted implications to check the seal
 test/fixy/test_secret.cpp — walks the secret-policy namespace to check the policy roster
 test/fixy/test_splice_access_attacks.cpp — the ledger reproducer: a splice of a private member still writes it
 test/fixy/test_tagged.cpp — walks the admitted retags to check the sealed relation
+test/layer/checks/fixy/Refined.cpp — walks the admitted implications to count the narrowing edges of the relation
+test/layer/checks/fixy/Secret.cpp — walks the admitted declassification policies to check that each edge is a policy exit
 test/layer/checks/foundation/permissions/Permission.cpp — walks the permission tag namespace to check that each canonical tag is a sound token
 test/padding_bytes.h — walks every base and member of a type, a private one too, to count the bits that hold a value, and gives a test the type of a private member
 

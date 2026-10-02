@@ -53,6 +53,7 @@
 #include <foundation/algebra/lattices/ConfLattice.h>
 #include <foundation/algebra/lattices/QttSemiring.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/Enumerate.h>
 #include <fixy/Tags.h>
 
@@ -63,6 +64,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <vector>
 
 namespace fixy {
 
@@ -589,9 +591,13 @@ concept AxisIsClassified = (TakesDefaultTraits<A> == axis_takes_defaults<A>);
 //
 // The walk is a template, so that only a translation unit that calls it
 // expands it.  The two walks below are templates for the same reason.
-template <class = void>
+// Each list and each text depends on Anchor (foundation/reflect/Anchor.h),
+// and each call between the walks passes Anchor on.
+template <class Anchor = void>
 [[nodiscard]] consteval bool every_axis_has_traits() noexcept {
-    static constexpr auto axes = std::define_static_array(std::meta::enumerators_of(^^Axis));
+    static constexpr auto axes = std::define_static_array(
+        static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
+            std::meta::enumerators_of(^^Axis)));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : axes) {
@@ -621,9 +627,11 @@ template <class = void>
     return true;
 }
 
-template <class = void>
+template <class Anchor = void>
 [[nodiscard]] consteval std::size_t count_axes_of_shape(Shape shape) noexcept {
-    static constexpr auto axes = std::define_static_array(std::meta::enumerators_of(^^Axis));
+    static constexpr auto axes = std::define_static_array(
+        static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
+            std::meta::enumerators_of(^^Axis)));
     std::size_t count = 0;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -646,9 +654,11 @@ concept StatesItsClaim = requires {
 
 namespace detail {
 
-template <class = void>
+template <class Anchor = void>
 [[nodiscard]] consteval std::string axes_whose_pole_is_not_the_weakest_claim_() {
-    static constexpr auto axes = std::define_static_array(std::meta::enumerators_of(^^Axis));
+    static constexpr auto axes = std::define_static_array(
+        static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
+            std::meta::enumerators_of(^^Axis)));
     std::string offenders;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -669,11 +679,11 @@ template <class = void>
     return offenders;
 }
 
-template <class = void>
+template <class Anchor = void>
 [[nodiscard]] consteval std::string_view weakest_claim_diagnostic_() {
-    std::string message =
+    ::foundation::reflect::anchored_t<^^Anchor, std::string> message =
         "fixy/Axis.h: the strict pole of each axis must be its weakest claim, and these axes break the rule: ";
-    message += axes_whose_pole_is_not_the_weakest_claim_();
+    message += axes_whose_pole_is_not_the_weakest_claim_<Anchor>();
     message += ".  An axis states its claim in axis_traits<A>::claim.  The pole of a Fact axis must claim nothing: "
                "pole::Unconstrained<A>, or the point of its vocabulary that states nothing.  The pole of a Right axis "
                "must grant no right, so it is never a pole that claims nothing.";
@@ -682,9 +692,9 @@ template <class = void>
 
 }  // namespace detail
 
-template <class = void>
+template <class Anchor = void>
 [[nodiscard]] consteval bool every_pole_is_the_weakest_claim() {
-    return detail::axes_whose_pole_is_not_the_weakest_claim_().empty();
+    return detail::axes_whose_pole_is_not_the_weakest_claim_<Anchor>().empty();
 }
 
 }  // namespace fixy

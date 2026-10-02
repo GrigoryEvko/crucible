@@ -21,6 +21,7 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/Hash.h>
 
 #include <array>
@@ -32,6 +33,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace fixy::atom {
 
@@ -670,7 +672,8 @@ namespace detail {
 // alias.
 template <class Roster>
 inline constexpr auto roster_members_v =
-    std::define_static_array(std::meta::template_arguments_of(std::meta::dealias(^^Roster)));
+    std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Roster, std::vector<std::meta::info>>>(
+        std::meta::template_arguments_of(std::meta::dealias(^^Roster))));
 
 // Reads the enum, so an axis value that is not an enumerator fails
 // here without a hand list of the enumerators.  The loop runs only when a
@@ -799,7 +802,9 @@ template <class Atom, class Enum>
 template <class Roster, class Enum>
     requires std::is_scoped_enum_v<Enum>
 [[nodiscard]] consteval bool every_enumerator_has_exactly_one_atom_() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Enum));
+    static constexpr auto enumerators = std::define_static_array(
+        static_cast<::foundation::reflect::anchored_t<^^Enum, std::vector<std::meta::info>>>(
+            std::meta::enumerators_of(^^Enum)));
     std::array<std::size_t, enumerators.size()> claims{};
     bool exact = true;
 #pragma GCC diagnostic push
@@ -874,7 +879,8 @@ template <std::meta::info Ns, class Roster>
     static_assert(std::meta::is_namespace(Ns), "fixy/Atom.h: every_atom_in_is_rostered_<Ns, Roster> takes a "
                                                "reflection of a namespace, written ^^name.");
     static constexpr auto members =
-        std::define_static_array(std::meta::members_of(Ns, std::meta::access_context::unchecked()));
+        std::define_static_array(static_cast<::foundation::reflect::anchored_t<Ns, std::vector<std::meta::info>>>(
+            std::meta::members_of(Ns, std::meta::access_context::unchecked())));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : members) {

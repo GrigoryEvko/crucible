@@ -44,6 +44,7 @@
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/Instance.h>
 
 #include <concepts>
@@ -81,7 +82,7 @@ namespace detail {
 
 template <std::meta::info Cls>
 [[nodiscard]] consteval std::string_view make_structural_kind() {
-    std::string text{"structural::"};
+    ::foundation::reflect::anchored_t<Cls, std::string> text{"structural::"};
     text += named_entity_of(Cls);
     return std::define_static_string(text);
 }

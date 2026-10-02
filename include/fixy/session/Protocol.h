@@ -50,6 +50,7 @@
 
 #include <foundation/algebra/Transition.h>
 #include <foundation/algebra/lattices/VendorLattice.h>
+#include <foundation/reflect/Anchor.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -1220,7 +1221,8 @@ template <typename P>
 consteval std::string_view choice_fault_message() {
     const ::foundation::algebra::transition::choice_verdict verdict =
         ::foundation::algebra::transition::first_faulty_choice(protocol_registry, ^^P);
-    std::string text = "fixy::session::diagnostic [Protocol_Choice_Ill_Formed]: the choice ";
+    ::foundation::reflect::anchored_t<^^P, std::string> text =
+        "fixy::session::diagnostic [Protocol_Choice_Ill_Formed]: the choice ";
     text +=
         verdict.choice == std::meta::info{} ? std::string_view{"(none)"} : std::meta::display_string_of(verdict.choice);
     text += " is not well-formed: ";

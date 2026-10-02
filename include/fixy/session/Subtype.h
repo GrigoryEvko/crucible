@@ -201,6 +201,7 @@
 #include <foundation/algebra/lattices/ToleranceLattice.h>
 #include <foundation/contracts/Armed.h>
 #include <foundation/diag/FailClosed.h>
+#include <foundation/reflect/Anchor.h>
 
 #include <concepts>
 #include <cstddef>
@@ -531,7 +532,7 @@ struct reason_of {
 template <typename Sub, typename Super>
 consteval std::string_view refusal_message(std::string_view site) {
     const ::foundation::algebra::transition::verdict found = subtype_verdict_v<Sub, Super>;
-    std::string text = "fixy::session::diagnostic [";
+    ::foundation::reflect::anchored_t<^^Sub, std::string> text = "fixy::session::diagnostic [";
     text += mismatch_token(found.reason);
     text += "]: ";
     text += site;

@@ -32,11 +32,13 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/Instance.h>
 
 #include <cstddef>
 #include <meta>
 #include <type_traits>
+#include <vector>
 
 namespace fixy::atom_pack {
 
@@ -172,7 +174,8 @@ template <std::meta::info Ns, auto Predicate>
     static_assert(std::meta::is_namespace(Ns),
                   "fixy/os/AtomPack.h: every_tag_in_satisfies<Ns, Predicate> takes a reflection of a namespace.");
     static constexpr auto members =
-        std::define_static_array(std::meta::members_of(Ns, std::meta::access_context::current()));
+        std::define_static_array(static_cast<::foundation::reflect::anchored_t<Ns, std::vector<std::meta::info>>>(
+            std::meta::members_of(Ns, std::meta::access_context::current())));
     template for (constexpr auto member : members) {
         if constexpr (std::meta::is_type(member) && !std::meta::is_type_alias(member)
                       && std::meta::is_class_type(member)) {

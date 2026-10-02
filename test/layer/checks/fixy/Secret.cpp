@@ -109,6 +109,22 @@ static_assert(::foundation::fail_closed::every_class_in_has_edge<
 
 namespace detail::secret_policy_relation {
 
+// The converse of the completeness check: every edge starts at the
+// Secret tier and ends at a final tag derived from the marker base, so
+// the relation admits nothing that DeclassificationPolicy rejects.
+[[nodiscard]] consteval bool every_edge_is_a_policy_exit() noexcept {
+    for (const auto m :
+         std::meta::members_of(^^tags::secret_policy::admitted_policies, std::meta::access_context::unchecked())) {
+        if (!::foundation::fail_closed::is_edge(m)) continue;
+        const auto ends = ::foundation::fail_closed::ends_of(m);
+        if (ends.from != std::meta::dealias(^^tags::secret_policy::admitted_policies::classified)) return false;
+        if (!std::meta::is_base_of_type(^^tags::secret_policy::secret_policy_base, ends.to)) return false;
+        if (ends.to == ^^tags::secret_policy::secret_policy_base) return false;
+        if (!std::meta::is_final(ends.to)) return false;
+    }
+    return true;
+}
+
 static_assert(every_edge_is_a_policy_exit(), "Every edge in fixy::tags::secret_policy::admitted_policies must "
                                              "run from `classified` to a final class derived from "
                                              "secret_policy_base.  Any other edge is inert for "

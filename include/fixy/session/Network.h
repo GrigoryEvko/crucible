@@ -99,6 +99,7 @@
 #include <fixy/session/Protocol.h>
 #include <foundation/algebra/Transition.h>
 #include <foundation/contracts/Armed.h>
+#include <foundation/reflect/Anchor.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -342,7 +343,7 @@ consteval std::string_view repeated_word_message() {
     run walked{};
     run_of(^^G, walked);
     const bag_verdict verdict = bag_verdict_of(walked);
-    std::string text =
+    ::foundation::reflect::anchored_t<^^G, std::string> text =
         "fixy::session::diagnostic [Network_Bag_Repeated_Word]: on a bag the wire word of a message is its label "
         "alone, so a receive cannot tell two messages with one label apart.  The message ";
     text += hop_text(walked.hops.items[verdict.first]);

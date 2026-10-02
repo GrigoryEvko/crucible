@@ -58,6 +58,22 @@ static_assert(rule_corpus_size == 57,
               "B002, R004 and W003, which this file adds.  A code dropped from this list stops being reported "
               "as absent.");
 
+namespace detail {
+
+[[nodiscard]] consteval std::string_view named_(std::string_view lead, std::string_view code) noexcept {
+    return std::define_static_string(std::string{lead} + std::string{code});
+}
+
+[[nodiscard]] consteval std::string_view absent_pin_message_(std::string_view lead, const std::string& offenders) {
+    std::string message;
+    for (const char letter : lead)
+        message += letter;
+    message += offenders;
+    return std::define_static_string(message);
+}
+
+}  // namespace detail
+
 static_assert(detail::code_the_enum_disagrees_about_().empty(),
               detail::named_("fixy/Collision.h: the rule corpus and the RuleCode enum disagree about rule ",
                              detail::code_the_enum_disagrees_about_()));

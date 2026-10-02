@@ -37,6 +37,7 @@
 #include <foundation/algebra/lattices/BoolLattice.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/diag/FailClosed.h>
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/Instance.h>
 
 #include <array>
@@ -1256,9 +1257,22 @@ struct step_view {
 // class and the rule admits the step to it.  Every other member is
 // skipped here, and the edge walk below refuses it.  Complexity:
 // O(members of admitted_implications) rule calls.
+//
+// The members are in a std::array of their count.  The function is not a
+// template, so std::define_static_array would be instantiated in each
+// includer, at a cost of about 68 M instructions.
 [[nodiscard]] consteval step_view steps_from(std::meta::info node, std::meta::info conclusion) {
-    static constexpr auto members = std::define_static_array(
-        std::meta::members_of(^^admitted_implications, std::meta::access_context::unchecked()));
+    static constexpr auto members = [] consteval {
+        const std::vector<std::meta::info> found =
+            std::meta::members_of(^^admitted_implications, std::meta::access_context::unchecked());
+        std::array<std::meta::info,
+                   std::meta::members_of(^^admitted_implications, std::meta::access_context::unchecked()).size()>
+            items{};
+        const std::meta::info* const source = found.data();
+        std::meta::info* const target = items.data();
+        for (std::size_t index = 0; index < items.size(); ++index) target[index] = source[index];
+        return items;
+    }();
     step_view view{};
     const bool node_has_base = has_base_class(node);
     const std::meta::info asked = node_has_base || has_base_class(conclusion) ? std::meta::info{} : conclusion;
@@ -1417,7 +1431,8 @@ template <class From, class To>
 template <class Site = void>
 [[nodiscard]] consteval bool every_edge_holds() noexcept {
     static constexpr auto members = std::define_static_array(
-        std::meta::members_of(^^refined::admitted_implications, std::meta::access_context::unchecked()));
+        static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
+            std::meta::members_of(^^refined::admitted_implications, std::meta::access_context::unchecked())));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto m : members) {
@@ -1435,16 +1450,6 @@ template <class Site = void>
     }
 #pragma GCC diagnostic pop
     return true;
-}
-
-// The number of narrowing edges in the namespace.
-[[nodiscard]] consteval std::size_t narrowing_edge_count() noexcept {
-    std::size_t count = 0;
-    for (const std::meta::info m :
-         std::meta::members_of(^^refined::admitted_implications, std::meta::access_context::unchecked())) {
-        if (refined::is_narrowing_edge(m)) ++count;
-    }
-    return count;
 }
 
 }  // namespace detail::refined_edge_walk

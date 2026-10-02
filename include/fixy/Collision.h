@@ -75,6 +75,7 @@
 #include <foundation/diag/Catalog.h>
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/Anchor.h>
 
 #include <array>
 #include <concepts>
@@ -122,7 +123,9 @@ namespace detail {
 // also walks the pack through this helper.
 template <class... Atoms>
 [[nodiscard]] consteval auto pack_entries_() {
-    return std::define_static_array(std::vector<std::meta::info>{^^Atoms...});
+    using entry_list = ::foundation::reflect::anchored_t<std::meta::reflect_constant(sizeof...(Atoms)),
+                                                         std::vector<std::meta::info>>;
+    return std::define_static_array(entry_list{^^Atoms...});
 }
 
 template <Axis A, class... Atoms>
@@ -586,13 +589,17 @@ namespace detail {
 
 // A template, so that only a translation unit that calls it expands the
 // walk.  The same holds for each walk over an enum or a class below that
-// takes an unused template parameter.
-template <class = void>
+// takes the parameter Anchor.  Each list and each text of such a walk
+// depends on Anchor (foundation/reflect/Anchor.h), and each call between
+// the walks passes Anchor on.
+template <class Anchor = void>
 [[nodiscard]] consteval bool rule_code_names_(std::string_view code) noexcept {
     bool found = false;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto enumerator : std::define_static_array(std::meta::enumerators_of(^^RuleCode))) {
+    template for (constexpr auto enumerator : std::define_static_array(
+                      static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
+                          std::meta::enumerators_of(^^RuleCode)))) {
         if (std::meta::identifier_of(enumerator) == code) found = true;
     }
 #pragma GCC diagnostic pop
@@ -619,10 +626,12 @@ inline constexpr std::size_t live_rule_count = detail::corpus_count_(Disposition
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
 
-template <class = void>
+template <class Anchor = void>
 [[nodiscard]] consteval bool every_pending_axis_is_still_empty() noexcept {
     bool unchanged = true;
-    template for (constexpr auto axis_member : std::define_static_array(std::meta::enumerators_of(^^::fixy::Axis))) {
+    template for (constexpr auto axis_member : std::define_static_array(
+                      static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
+                          std::meta::enumerators_of(^^::fixy::Axis)))) {
         constexpr Axis axis = [:axis_member:];
         if constexpr (axis != Axis::Type) {
             unchanged = unchanged && (axis_is_pending(axis) != axis_has_an_atom<axis>);
@@ -725,9 +734,11 @@ template <class Roster, class Population = all_atom_roster>
 
 template <class Site>
 [[nodiscard]] consteval std::string_view roster_declared_but_not_joined() {
-    std::string offenders;
-    template for (constexpr auto member : std::define_static_array(
-                      std::meta::members_of(^^::fixy::atom::detail, std::meta::access_context::current()))) {
+    ::foundation::reflect::anchored_t<^^Site, std::string> offenders;
+    static constexpr auto members = std::define_static_array(
+        static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
+            std::meta::members_of(^^::fixy::atom::detail, std::meta::access_context::current())));
+    template for (constexpr auto member : members) {
         if constexpr (std::meta::is_type_alias(member)) {
             constexpr std::string_view name = std::meta::identifier_of(member);
             if constexpr (name.ends_with("_atom_roster")) {
@@ -750,9 +761,11 @@ template <class Site>
 // name no longer says which it is.
 template <class Site>
 [[nodiscard]] consteval std::string_view sample_set_wrongly_joined() {
-    std::string offenders;
-    template for (constexpr auto member : std::define_static_array(
-                      std::meta::members_of(^^::fixy::atom::detail, std::meta::access_context::current()))) {
+    ::foundation::reflect::anchored_t<^^Site, std::string> offenders;
+    static constexpr auto members = std::define_static_array(
+        static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
+            std::meta::members_of(^^::fixy::atom::detail, std::meta::access_context::current())));
+    template for (constexpr auto member : members) {
         if constexpr (std::meta::is_type_alias(member)) {
             constexpr std::string_view name = std::meta::identifier_of(member);
             if constexpr (name.ends_with("_atom_samples")) {
@@ -781,7 +794,7 @@ template <class Site>
 [[nodiscard]] consteval std::string_view roster_join_diagnostic() {
     const std::string_view offenders = roster_declared_but_not_joined<Site>();
     if (offenders.empty()) return {};
-    std::string message =
+    ::foundation::reflect::anchored_t<^^Site, std::string> message =
         "fixy/Collision.h: the atom-population relation: declared in fixy::atom::detail and NOT joined into "
         "fixy::collision::all_atom_roster, so their atoms sit outside the population that every axis-coverage "
         "and collision-rule check reads: ";
@@ -796,8 +809,9 @@ template <class Site>
 [[nodiscard]] consteval std::string_view sample_set_diagnostic() {
     const std::string_view offenders = sample_set_wrongly_joined<Site>();
     if (offenders.empty()) return {};
-    std::string message = "fixy/Collision.h: the atom-population relation: these sample sets ARE joined into "
-                          "fixy::collision::all_atom_roster: ";
+    ::foundation::reflect::anchored_t<^^Site, std::string> message =
+        "fixy/Collision.h: the atom-population relation: these sample sets ARE joined into "
+        "fixy::collision::all_atom_roster: ";
     message += offenders;
     message += ".  A sample set is a set of INSTANTIATIONS of a parametric family, kept outside the population "
                "because the family has no finite membership and no list can enumerate it; the instantiations are "
@@ -821,30 +835,28 @@ template <class Site>
 
 namespace detail {
 
-template <class = void>
+template <class Anchor = void>
 [[nodiscard]] consteval std::string_view code_the_enum_disagrees_about_() noexcept {
     for (const corpus_entry& entry : rule_corpus) {
         const bool shipped = entry.disposition == Disposition::Live || entry.disposition == Disposition::Pending;
-        if (rule_code_names_(entry.code) != shipped) return entry.code;
+        if (rule_code_names_<Anchor>(entry.code) != shipped) return entry.code;
     }
     return {};
 }
 
-template <class = void>
+template <class Anchor = void>
 [[nodiscard]] consteval std::string_view code_the_corpus_never_listed_() noexcept {
     std::string_view missing{};
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto enumerator : std::define_static_array(std::meta::enumerators_of(^^RuleCode))) {
+    template for (constexpr auto enumerator : std::define_static_array(
+                      static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
+                          std::meta::enumerators_of(^^RuleCode)))) {
         constexpr std::string_view name = std::meta::identifier_of(enumerator);
         if (missing.empty() && !corpus_lists_(name)) missing = name;
     }
 #pragma GCC diagnostic pop
     return missing;
-}
-
-[[nodiscard]] consteval std::string_view named_(std::string_view lead, std::string_view code) noexcept {
-    return std::define_static_string(std::string{lead} + std::string{code});
 }
 
 }  // namespace detail
@@ -922,14 +934,6 @@ namespace detail {
         }
     }
     return {};
-}
-
-[[nodiscard]] consteval std::string_view absent_pin_message_(std::string_view lead, const std::string& offenders) {
-    std::string message;
-    for (const char letter : lead)
-        message += letter;
-    message += offenders;
-    return std::define_static_string(message);
 }
 
 }  // namespace detail
@@ -1916,7 +1920,7 @@ struct rules_of {
     // imply L002's, so no pack names R002 alone, and listing every one
     // is what lets each rule's fixture floor on its own code.
     [[nodiscard]] static consteval std::string_view failing_codes() noexcept {
-        std::string text;
+        ::foundation::reflect::anchored_t<^^Payload, std::string> text;
         for (const rule_verdict& verdict : verdicts()) {
             if (verdict.ok) continue;
             if (!text.empty()) text += ", ";
@@ -1928,7 +1932,7 @@ struct rules_of {
     // Every code, whatever the pack.  A pin in the check file of this
     // header reads it against the member walk; nothing else calls it.
     [[nodiscard]] static consteval std::string_view every_code() noexcept {
-        std::string text;
+        ::foundation::reflect::anchored_t<^^Payload, std::string> text;
         for (const rule_verdict& verdict : verdicts()) {
             text += std::string{verdict.code};
             text += ' ';
@@ -2133,13 +2137,14 @@ namespace detail {
     return id.size() == code.size() + 3 && id.starts_with(code) && id.ends_with("_ok");
 }
 
-template <class = void>
+template <class Anchor = void>
 [[nodiscard]] consteval std::size_t implemented_rule_count_() noexcept {
     std::size_t found = 0;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : std::define_static_array(
-                      std::meta::members_of(^^rules_of<void>, std::meta::access_context::unchecked()))) {
+                      static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
+                          std::meta::members_of(^^rules_of<void>, std::meta::access_context::unchecked())))) {
         if constexpr (std::meta::has_identifier(member)) {
             if constexpr (std::meta::identifier_of(member).ends_with("_ok")) {
                 ++found;
@@ -2150,7 +2155,7 @@ template <class = void>
     return found;
 }
 
-template <class = void>
+template <class Anchor = void>
 [[nodiscard]] consteval bool every_live_entry_is_implemented_() noexcept {
     for (const corpus_entry& entry : rule_corpus) {
         if (entry.disposition != Disposition::Live) continue;
@@ -2158,7 +2163,8 @@ template <class = void>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
         template for (constexpr auto member : std::define_static_array(
-                          std::meta::members_of(^^rules_of<void>, std::meta::access_context::unchecked()))) {
+                          static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
+                              std::meta::members_of(^^rules_of<void>, std::meta::access_context::unchecked())))) {
             if (member_is_the_gate_for_(member, entry.code)) implemented = true;
         }
 #pragma GCC diagnostic pop
@@ -2176,16 +2182,19 @@ template <class = void>
 // verdict row is named even before it reaches the corpus.
 namespace detail {
 
-template <class = void>
+template <class Anchor = void>
 [[nodiscard]] consteval bool every_ok_member_has_a_verdict_row_() noexcept {
     bool all_rowed = true;
     // The list of codes is read one time, before the walk.  A call inside
-    // the expansion statement builds the list again for each member.
-    constexpr std::string_view every_live_code = live_rules<>::every_code();
+    // the expansion statement builds the list again for each member.  The
+    // payload depends on Anchor, so only a call instantiates the class.
+    constexpr std::string_view every_live_code =
+        rules_of<::foundation::reflect::anchored_t<^^Anchor, void>>::every_code();
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : std::define_static_array(
-                      std::meta::members_of(^^rules_of<void>, std::meta::access_context::unchecked()))) {
+                      static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
+                          std::meta::members_of(^^rules_of<void>, std::meta::access_context::unchecked())))) {
         if constexpr (std::meta::has_identifier(member)) {
             constexpr std::string_view id = std::meta::identifier_of(member);
             if constexpr (id.size() > 3 && id.ends_with("_ok")) {

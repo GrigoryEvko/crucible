@@ -4,11 +4,13 @@
 #include <crucible/cog/TargetCaps.h>
 #include <foundation/effects/Concurrent.h>
 #include <foundation/effects/Resources.h>
+#include <foundation/reflect/Anchor.h>
 
 #include <concepts>
 #include <cstdint>
 #include <meta>
 #include <type_traits>
+#include <vector>
 
 namespace crucible::cog {
 
@@ -185,8 +187,9 @@ namespace detail {
 
 template <typename Row, CogKind K>
 [[nodiscard]] consteval bool evaluate_row_fits_cog() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^::foundation::effects::ResourceKind));
+    static constexpr auto enumerators = std::define_static_array(
+        static_cast<::foundation::reflect::anchored_t<^^Row, std::vector<std::meta::info>>>(
+            std::meta::enumerators_of(^^::foundation::effects::ResourceKind)));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -346,8 +349,9 @@ struct caps_runtime_capacity<CogKind::DramChannel> {
 template <typename Row, CogKind K>
     requires ::foundation::effects::IsConcurrentRow<Row> && HasCogCapacity<K>
 [[nodiscard]] constexpr bool fits_cog_caps_runtime(caps_for_t<K> const& caps) noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^::foundation::effects::ResourceKind));
+    static constexpr auto enumerators = std::define_static_array(
+        static_cast<::foundation::reflect::anchored_t<^^Row, std::vector<std::meta::info>>>(
+            std::meta::enumerators_of(^^::foundation::effects::ResourceKind)));
     bool fits = true;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"

@@ -53,6 +53,7 @@
 // the number of distinct types reached, because a type reached twice is
 // read once.
 
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/Instance.h>
 
 #include <bit>
@@ -143,7 +144,9 @@ template <typename T>
                     if (found != std::meta::info{}) return found;
                     // The comparator, the hasher and the allocator are part
                     // of the container, and a template argument names each.
-                    static constexpr auto arguments = std::define_static_array(type_arguments_of(bare));
+                    static constexpr auto arguments = std::define_static_array(
+                        static_cast<::foundation::reflect::anchored_t<bare, std::vector<std::meta::info>>>(
+                            type_arguments_of(bare)));
                     template for (constexpr std::meta::info argument : arguments) {
                         std::meta::info const reached = first_outside_reach<typename[:argument:]>(visiting);
                         if (reached != std::meta::info{}) return reached;
@@ -151,10 +154,12 @@ template <typename T>
                     return std::meta::info{};
                 }
             } else {
-                static constexpr auto bases =
-                    std::define_static_array(std::meta::bases_of(bare, std::meta::access_context::unchecked()));
+                static constexpr auto bases = std::define_static_array(
+                    static_cast<::foundation::reflect::anchored_t<bare, std::vector<std::meta::info>>>(
+                        std::meta::bases_of(bare, std::meta::access_context::unchecked())));
                 static constexpr auto members = std::define_static_array(
-                    std::meta::nonstatic_data_members_of(bare, std::meta::access_context::unchecked()));
+                    static_cast<::foundation::reflect::anchored_t<bare, std::vector<std::meta::info>>>(
+                        std::meta::nonstatic_data_members_of(bare, std::meta::access_context::unchecked())));
                 // Storage the walk cannot account for.  A member-less union
                 // or a one-byte closure holds no address, so only a larger
                 // one is refused.
@@ -306,7 +311,9 @@ template <typename T>
         } else if constexpr (::foundation::reflect::IsInstanceOf<U, ^^std::optional>) {
             return first_uncomparable<typename U::value_type>(visiting);
         } else if constexpr (::foundation::reflect::IsInstanceOf<U, ^^std::variant>) {
-            static constexpr auto alternatives = std::define_static_array(type_arguments_of(bare));
+            static constexpr auto alternatives = std::define_static_array(
+                static_cast<::foundation::reflect::anchored_t<bare, std::vector<std::meta::info>>>(
+                    type_arguments_of(bare)));
             template for (constexpr std::meta::info alternative : alternatives) {
                 std::meta::info const found = first_uncomparable<typename[:alternative:]>(visiting);
                 if (found != std::meta::info{}) return found;
@@ -316,10 +323,12 @@ template <typename T>
             if constexpr (!declared_by_the_standard(bare) && std::equality_comparable<U>) {
                 if (!declares_only_defaulted_equality(bare)) return bare;
             }
-            static constexpr auto bases =
-                std::define_static_array(std::meta::bases_of(bare, std::meta::access_context::unchecked()));
+            static constexpr auto bases = std::define_static_array(
+                static_cast<::foundation::reflect::anchored_t<bare, std::vector<std::meta::info>>>(
+                    std::meta::bases_of(bare, std::meta::access_context::unchecked())));
             static constexpr auto members = std::define_static_array(
-                std::meta::nonstatic_data_members_of(bare, std::meta::access_context::unchecked()));
+                static_cast<::foundation::reflect::anchored_t<bare, std::vector<std::meta::info>>>(
+                    std::meta::nonstatic_data_members_of(bare, std::meta::access_context::unchecked())));
             if constexpr (bases.size() == 0 && members.size() == 0 && !std::is_empty_v<U>) {
                 return bare;
             } else {
@@ -407,10 +416,12 @@ template <EqualityByMembers T>
         }(std::make_index_sequence<std::variant_size_v<U>>{});
     } else {
         constexpr std::meta::info bare = std::meta::dealias(^^U);
-        static constexpr auto bases =
-            std::define_static_array(std::meta::bases_of(bare, std::meta::access_context::unchecked()));
+        static constexpr auto bases = std::define_static_array(
+            static_cast<::foundation::reflect::anchored_t<bare, std::vector<std::meta::info>>>(
+                std::meta::bases_of(bare, std::meta::access_context::unchecked())));
         static constexpr auto members = std::define_static_array(
-            std::meta::nonstatic_data_members_of(bare, std::meta::access_context::unchecked()));
+            static_cast<::foundation::reflect::anchored_t<bare, std::vector<std::meta::info>>>(
+                std::meta::nonstatic_data_members_of(bare, std::meta::access_context::unchecked())));
         bool same = true;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
