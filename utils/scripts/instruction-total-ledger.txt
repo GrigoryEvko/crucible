@@ -4,7 +4,8 @@
 #
 # A row:  total | KIND | OBJECT INSTRUCTIONS | FIXTURE INSTRUCTIONS | reason
 #   The sum, over each object of the target all and over each negative fixture, of the user
-#   instructions of its last real compile, at the last --write.
+#   instructions of the compiler run of its last real compile, at the last --write.  A direct compile
+#   and a ccache miss give the same count (utils/scripts/cost_meter.py, A COMPILE THROUGH CCACHE).
 #
 # A growth over the warning threshold of the row instruction-total of utils/scripts/budgets.txt gives a
 # warning, and over its error threshold an error.  A fall of more than the warning threshold is an error

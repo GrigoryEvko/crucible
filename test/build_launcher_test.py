@@ -10,19 +10,22 @@ the thresholds and the admitted outputs.  A case examines the status, the
 output and the record of the launcher.  Each case runs with no
 GITHUB_ACTIONS, except two cases that set it to "true": on a CI runner, a
 compile past the CPU limit runs to its end with a warning, and a compile over
-the memory error threshold still fails.  Two cases read the instruction
-count of a compile record: the record holds the count when this host gives
-an exact counter (utils/scripts/cost_meter.py, THE INSTRUCTION COUNT), and
-no count with CRUCIBLE_COUNT_INSTRUCTIONS=0.
+the memory error threshold still fails.  The cases that read the instruction
+counts of a compile record expect them when this host gives an exact counter
+(utils/scripts/cost_meter.py, THE INSTRUCTION COUNT), and no count with
+CRUCIBLE_COUNT_INSTRUCTIONS=0.  The planted ccache is a file named ccache.
+On a miss it runs a preprocessor run, and then the compiler run behind the
+words of CCACHE_PREFIX, as ccache 4 does.
 
 With `--cxx`, two more cases use the real compiler.  One compiles and links.
 The other compiles a constant evaluation that runs away, and the compile must
 end at the CPU limit with status 1, as the GCC driver reports a compiler that
-SIGKILL stopped.  When ccache is on PATH, a case compiles through the real
-ccache with a cache
-directory of its own: a cold cache must give a built record, and a warm cache
-a hit.  Without ccache that part is skipped, because a build without ccache
-never gives a hit.
+SIGKILL stopped.  When ccache is on PATH, a case compiles a source that
+includes <vector> directly, through the real ccache with CCACHE_DISABLE, and
+through the real ccache with a cache directory of its own.  The three counts
+of the compiler run must agree within COUNT_TOLERANCE.  A cold cache must
+give a built record, and a warm cache a hit.  Without ccache that part is
+skipped, because a build without ccache never gives a hit.
 
 The cases form groups, and each group runs in a temporary directory of its
 own, at the same time as the other groups.  The cases at a CPU limit take
@@ -82,6 +85,8 @@ with open(out, "wb") as handle:
     handle.write(b"object" * 10)
 """
 
+# A planted ccache.  As ccache 4 does, a miss runs a preprocessor run with no prefix, and then the compiler run with
+# the words of CCACHE_PREFIX in front of it.
 PLANTED_CCACHE = """\
 import os, subprocess, sys
 log = os.environ["CCACHE_STATSLOG"]
@@ -94,7 +99,9 @@ if os.environ.get("PLANTED_HIT") == "1":
     sys.exit(0)
 with open(log, "a") as handle:
     handle.write("# source.cpp\\ncache_miss\\ndirect_cache_miss\\n")
-sys.exit(subprocess.call(sys.argv[1:]))
+subprocess.call([sys.executable, "-c", "sum(range(300000))"])
+prefix = os.environ.get("CCACHE_PREFIX", "").split()
+sys.exit(subprocess.call([*prefix, *sys.argv[1:]]))
 """
 
 # A constant evaluation that takes minutes, so a compile of it reaches each CPU limit of the test.
@@ -111,6 +118,17 @@ int main() { return static_cast<int>(spun & 1); }
 """
 SPIN_FLAGS = ("-fconstexpr-loop-limit=2147483647", "-fconstexpr-ops-limit=1000000000000")
 
+# A source whose preprocessor run is a real part of the step, as in a unit of the tree.
+HEADER_SOURCE = """\
+#include <vector>
+int main() {
+    std::vector<int> values(3);
+    return static_cast<int>(values.size()) - 3;
+}
+"""
+# Two compiles of one source differ by less than this part of their count, also when one runs through ccache.
+COUNT_TOLERANCE = 0.005
+
 QUIET = ("compile-cpu | 1000 | 2000 | s | t\ncompile-memory | 1000 | 2000 | GB | m\n"
          "link-time | 1000 | 2000 | s | t\nlink-memory | 1000 | 2000 | GB | m\n")
 
@@ -124,9 +142,13 @@ class Bench:
         (root / "CMakeCache.txt").write_text("", encoding="utf-8")
         (root / "build-kind.txt").write_text(f"{KIND}\n", encoding="utf-8")
         self.tool = [sys.executable, str(root / "tool.py")]
-        self.ccache = [sys.executable, str(root / "ccache.py")]
+        # The launcher takes a command for a ccache call when its program is named ccache.
+        planted_ccache = root / "planted" / "ccache"
+        planted_ccache.parent.mkdir()
+        planted_ccache.write_text(f"#!{sys.executable}\n{PLANTED_CCACHE}", encoding="utf-8")
+        planted_ccache.chmod(0o755)
+        self.ccache = [str(planted_ccache)]
         (root / "tool.py").write_text(PLANTED_TOOL, encoding="utf-8")
-        (root / "ccache.py").write_text(PLANTED_CCACHE, encoding="utf-8")
         self.source = root / "source.cpp"
         self.source.write_text("int main() { return 0; }\n", encoding="utf-8")
         self.object = root / "out" / "source.o"
@@ -142,7 +164,7 @@ class Bench:
         # A case that needs a CI runner sets GITHUB_ACTIONS itself, so each
         # verdict is the same on a CI runner and on the build host.
         for name in ("CCACHE_STATSLOG", "CCACHE_DISABLE", "CCACHE_RECACHE", "CCACHE_READONLY", "GITHUB_ACTIONS",
-                     cost_meter.INSTRUCTIONS_ENV):
+                     cost_meter.INSTRUCTIONS_ENV, cost_meter.CCACHE_PREFIX_ENV, cost_meter.COMPILER_COUNT_ENV):
             self.env.pop(name, None)
 
     def argv(self, tool: list[str], link: bool = False, output: Path | None = None) -> list[str]:
@@ -185,6 +207,15 @@ class Verdicts:
             self.failures.append(name)
 
 
+def host_gives_counter() -> bool:
+    """Return True when this host gives an exact instruction counter (utils/scripts/cost_meter.py)."""
+    probe = cost_meter.open_instruction_counter()
+    if probe is None:
+        return False
+    os.close(probe)
+    return True
+
+
 def last_finding(stderr: bytes) -> check_report.Finding | None:
     """Return the finding of the last line of standard error, or None."""
     lines = stderr.decode().splitlines()
@@ -203,17 +234,16 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
            and first.get("output_bytes") == bench.object.stat().st_size
            and float(first["cost"]["cpu_s"]) > 0 and first.get("source") == str(bench.source))
     expect("the stats log of the call is removed", not Path(f"{bench.object}.ccache-stats").exists())
-    probe = cost_meter.open_instruction_counter()
-    host_counts = probe is not None
-    if probe is not None:
-        os.close(probe)
-    counted = first["cost"].get("instructions")
-    expect(f"a compile record holds the user instructions of the compile exactly when the host gives a counter "
+    host_counts = host_gives_counter()
+    counted = first["cost"].get(cost_meter.COMPILER_COUNT_KEY)
+    expect(f"a compile record holds the user instructions of the compiler run exactly when the host gives a counter, "
+           f"and a compile with no ccache holds no ccache part "
            f"(this host: {'a counter' if host_counts else 'no counter'})",
-           (isinstance(counted, int) and counted > 0) if host_counts else counted is None)
+           ((isinstance(counted, int) and counted > 0) if host_counts else counted is None)
+           and cost_meter.CCACHE_COUNT_KEY not in first["cost"] and "instructions" not in first["cost"])
     bench.launch(bench.tool, **{cost_meter.INSTRUCTIONS_ENV: "0"})
     expect(f"with {cost_meter.INSTRUCTIONS_ENV}=0, a compile record holds no instruction count",
-           bench.record().get("result") == "built" and "instructions" not in bench.record()["cost"])
+           bench.record().get("result") == "built" and cost_meter.COMPILER_COUNT_KEY not in bench.record()["cost"])
 
     result = bench.launch(bench.tool, PLANTED_MODE="fail")
     expect("a failed compile passes status 1 and gives a failed record",
@@ -238,11 +268,31 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
            and hit.get("last_cost") == compiled and hit.get("output_bytes") == len(b"cached object"))
     bench.launch([*bench.ccache, *bench.tool], PLANTED_HIT="1")
     expect("a second hit keeps the same last cost", bench.record().get("last_cost") == compiled)
+    count_file = Path(f"{bench.object}{cost_meter.COMPILER_COUNT_SUFFIX}")
+    expect("a ccache hit runs no meter and leaves no file of counts", not count_file.exists())
     outer = bench.root / "outer.log"
     result = bench.launch([*bench.ccache, *bench.tool], PLANTED_HIT="0", CCACHE_STATSLOG=str(outer))
     expect("a ccache miss gives a built record, and the counters reach the stats log of the build",
            result.returncode == 0 and bench.record().get("result") == "built"
            and "cache_miss" in outer.read_text(encoding="utf-8"))
+    missed = bench.record().get("cost", {})
+    compiler_count = missed.get(cost_meter.COMPILER_COUNT_KEY)
+    rest_count = missed.get(cost_meter.CCACHE_COUNT_KEY)
+    expect(f"a ccache miss records the count of the compiler run alone, and the rest of the step apart, exactly when "
+           f"the host gives a counter, and the launcher removes the file of counts (this host: "
+           f"{'a counter' if host_counts else 'no counter'})",
+           ((isinstance(compiler_count, int) and compiler_count > 0 and isinstance(rest_count, int) and rest_count > 0)
+            if host_counts else compiler_count is None and rest_count is None)
+           and result.stdout == b"tool stdout\n" and result.stderr == b"tool stderr\n" and not count_file.exists())
+    result = bench.launch([*bench.ccache, *bench.tool], PLANTED_HIT="0", CCACHE_PREFIX=shutil.which("env") or "env")
+    expect("with CCACHE_PREFIX in the environment, the launcher sets no meter, and the record holds no count",
+           result.returncode == 0 and bench.record().get("result") == "built"
+           and cost_meter.COMPILER_COUNT_KEY not in bench.record()["cost"]
+           and cost_meter.CCACHE_COUNT_KEY not in bench.record()["cost"])
+    result = bench.launch([*bench.ccache, *bench.tool], PLANTED_HIT="0", PLANTED_MODE="fail")
+    expect("a failed compile through ccache passes status 1 and the output of the compiler through the meter",
+           result.returncode == 1 and bench.record().get("result") == "failed" and result.stdout == b"tool stdout\n"
+           and result.stderr == b"tool stderr\n" and not count_file.exists())
 
     bench.table("compile-cpu | 0 | 1000 | s | t\ncompile-memory | 0 | 1000 | GB | m\n")
     result = bench.launch(bench.tool)
@@ -331,7 +381,7 @@ def run_link(bench: Bench, verdicts: Verdicts) -> None:
     expect("a link gives a built record of step link, with no source and no instruction count",
            result.returncode == 0 and link_record.get("step") == "link" and link_record.get("result") == "built"
            and "source" not in link_record and link_record.get("output") == str(linked)
-           and "instructions" not in link_record["cost"])
+           and not any(key.endswith("instructions") for key in link_record["cost"]))
     bench.table("link-time | 1000 | 2000 | s | t\nlink-memory | 0.0001 | 0.0002 | GB | m\n")
     result = bench.launch(bench.tool, link=True, output=linked)
     found_line = last_finding(result.stderr)
@@ -385,15 +435,35 @@ def run_real_tools(bench: Bench, verdicts: Verdicts, cxx: str | None) -> None:
         config.write_text("", encoding="utf-8")
         env = {"CCACHE_DIR": str(bench.root / "ccache"), "CCACHE_CONFIGPATH": str(config),
                "CCACHE_NOHASHDIR": "1"}
+        bench.source.write_text(HEADER_SOURCE, encoding="utf-8")
+        bench.object.unlink(missing_ok=True)
+        direct_run = bench.launch([cxx])
+        direct = bench.record()
+        bench.object.unlink(missing_ok=True)
+        disabled_run = bench.launch([real_ccache, cxx], CCACHE_DISABLE="1", **env)
+        disabled = bench.record()
         bench.object.unlink(missing_ok=True)
         cold_run = bench.launch([real_ccache, cxx], **env)
         cold = bench.record()
         bench.object.unlink(missing_ok=True)
         warm_run = bench.launch([real_ccache, cxx], **env)
         warm = bench.record()
+        bench.source.write_text("int main() { return 0; }\n", encoding="utf-8")
         expect("the real ccache: a cold cache gives a built record, and a warm cache a hit",
                cold_run.returncode == 0 and warm_run.returncode == 0 and cold.get("result") == "built"
                and warm.get("result") == "hit" and warm.get("last_cost") == cold.get("cost"))
+        if host_gives_counter():
+            counts = [record.get("cost", {}).get(cost_meter.COMPILER_COUNT_KEY) for record in (direct, disabled, cold)]
+            rest = cold.get("cost", {}).get(cost_meter.CCACHE_COUNT_KEY)
+            agree = (all(isinstance(count, int) and count > 0 for count in counts)
+                     and all(abs(count - counts[0]) <= COUNT_TOLERANCE * counts[0] for count in counts[1:]))
+            expect(f"the real ccache: a direct compile, a compile with CCACHE_DISABLE and a compile through a cold "
+                   f"cache give counts of the compiler run within {COUNT_TOLERANCE:.1%}, and the miss records the "
+                   f"preprocessor run and ccache apart (counts {counts}, rest {rest})",
+                   direct_run.returncode == 0 and disabled_run.returncode == 0 and agree
+                   and isinstance(rest, int) and rest > 0)
+        else:
+            verdicts.lines.append("  skip the comparison of the counts: the host gives no exact counter")
     else:
         verdicts.lines.append(f"  skip the real ccache case: compiler {cxx or 'not given'}, ccache "
                               f"{real_ccache or 'not on PATH'}")

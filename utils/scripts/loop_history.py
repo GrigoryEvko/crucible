@@ -54,7 +54,9 @@ THE COST RECORDS
     For each compile and each link that ran, the recorder reads the record
     OUTPUT.cost of utils/scripts/build-launcher.py, when the build wrote it.
     The CPU time and the instructions of a compile come from its cost block.
-    A ccache hit holds no cost.  The instructions of the compiles are a sum
+    The instructions are those of the compiler run, also for a ccache miss
+    (utils/scripts/cost_meter.py, A COMPILE THROUGH CCACHE).  A ccache hit
+    holds no cost.  The instructions of the compiles are a sum
     only when each compile that did not hit has an exact count.  The peak
     concurrent memory is the largest sum of the peak memory of the steps
     whose wall times overlap, from the end and the wall time of each cost
@@ -522,7 +524,7 @@ def summarize_build(build: Path, graph: CompactGraph | None, before: dict[str, n
         blocks.append(block)
         target["cpu_s"] += number(block, "cpu_s") or 0.0
         if kind == "compile":
-            count = number(block, "instructions")
+            count = number(block, cost_meter.COMPILER_COUNT_KEY)
             if count is None:
                 compiles["exact"] = False
             else:
@@ -950,7 +952,8 @@ def self_test() -> int:
 
         for name, record in (("a.o", {"step": "compile", "result": "built",
                                       "cost": {"cpu_s": 4.0, "wall_s": 5.0, "end": time.time(),
-                                               "peak_rss_kb": KB_PER_GB, "instructions": 2_000_000_000}}),
+                                               "peak_rss_kb": KB_PER_GB,
+                                               cost_meter.COMPILER_COUNT_KEY: 2_000_000_000}}),
                              ("c.o", {"step": "compile", "result": "hit"}),
                              ("tool", {"step": "link", "result": "built",
                                        "cost": {"cpu_s": 1.5, "wall_s": 3.0, "end": time.time() - 100,

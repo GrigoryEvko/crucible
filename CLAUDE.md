@@ -1033,7 +1033,9 @@ launcher in front of each link of an executable or a shared library. The
 launcher gives the command to the compiler or the linker unchanged. It writes
 the CPU time, the wall time and the peak memory of the step to `<output>.cost`,
 and a record of a ccache hit holds no time. The record of a compile also holds
-its user instructions, from a hardware counter, when the host gives an exact
+the user instructions of its compiler run, from a hardware counter, when the
+host gives an exact count. On a ccache miss, `utils/scripts/compile-meter.py`
+counts the compiler run alone, so a direct compile and a miss give the same
 count. A step over the memory error
 threshold of the row `compile-memory` or `link-memory` in
 `utils/scripts/budgets.txt` fails, unless a row of the ledger of that check
@@ -2422,7 +2424,7 @@ Each translation unit that includes a header compiles that header again, and eac
 | Budget | What it measures | Warning | Error | Held by | Runs in |
 |---|---|---|---|---|---|
 | `compile-cpu` | The user and system CPU time of one compile job | 10 s | 20 s. A warning only when the record holds an instruction count. The launcher stops a job at 60 s | The build launcher and the test `compile_cpu` | Build, test run |
-| `compile-instructions` | The user instructions of one compile job | 55 G | 110 G | The test `compile_instructions` | Test run |
+| `compile-instructions` | The user instructions of the compiler run of one compile job | 55 G | 110 G | The test `compile_instructions` | Test run |
 | `compile-first` | The user instructions of the largest compile of one target, against `utils/scripts/compile-first.txt` (`cmake/CompileFirst.cmake`) | 15 G, for a listed target at or below it | 20 G, for a target over it that the list does not name | The test `compile_first` | Test run |
 | `compile-memory` | The peak memory of one compile job | 2 GB | 4 GB. The launcher fails the job | The build launcher and the test `compile_memory` | Build, test run |
 | `link-time` | The user and system CPU time of one link | 2 s | 5 s. The launcher stops a link at 15 s | The build launcher and the test `link_time` | Build, test run |

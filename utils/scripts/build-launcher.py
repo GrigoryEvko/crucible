@@ -13,9 +13,9 @@ WHAT THE SCRIPT DOES
     standard streams, so the output of the step is the output of the
     command.  It writes the record OUTPUT.cost (the format is in
     cost_meter.py), and it exits with the status of the command.  The record
-    of a compile also holds the user instructions of the compile when the
-    host gives an exact count (cost_meter.py, THE INSTRUCTION COUNT), which
-    costs approximately 1 ms.  When the
+    of a compile also holds the user instructions of the compiler run when
+    the host gives an exact count (cost_meter.py, THE INSTRUCTION COUNT),
+    which costs approximately 1 ms.  When the
     command ends on a signal, the script ends on the same signal.  A failure
     to measure or to write the record never changes the status and prints
     nothing.  utils/scripts/check-compile-cost.py finds a missing record, and
@@ -57,6 +57,17 @@ A CCACHE HIT
     of the last real compile of the earlier record as "last_cost".  A hit has
     no memory to judge.
 
+A COMPILE THROUGH CCACHE
+    A compile whose command starts with a program named ccache runs with the
+    environment of cost_meter.compiler_meter_environment(), so the meter of
+    utils/scripts/compile-meter.py counts the compiler run of a miss alone
+    and writes the count to OBJECT.compiler-count.  The launcher reads and
+    removes that file after the step (cost_meter.py, A COMPILE THROUGH
+    CCACHE).  The record then gives the count of the compiler run as
+    compiler_instructions, and the rest of the step as ccache_instructions.
+    For a compile with no ccache, the count of the step is the count of the
+    compiler run.
+
 The variables CRUCIBLE_BUILD_BUDGETS and CRUCIBLE_BUILD_LEDGERS name another
 budget table and another directory of ledgers.  test/build_launcher_test.py
 uses them.
@@ -69,6 +80,8 @@ import cost_meter
 
 STEP_ROWS = {"compile": ("compile-cpu", "compile-memory"), "link": ("link-time", "link-memory")}
 CPU_LIMIT_FACTOR = 3
+# The name of the program of a compile command that runs ccache (cmake/Ccache.cmake uses the same rule).
+CCACHE_NAME = "ccache"
 BUDGETS_ENV = "CRUCIBLE_BUILD_BUDGETS"
 LEDGERS_ENV = "CRUCIBLE_BUILD_LEDGERS"
 SCRIPTS = os.path.dirname(os.path.abspath(__file__))
@@ -186,7 +199,34 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
     return "built", ("warning", check, f"the {step} job took " + ", and ".join(parts))
 
 
-def write(step: str, output: str, source: str | None, run: cost_meter.Measurement, result: str) -> None:
+def compile_counts(run: cost_meter.Measurement, is_ccache: bool,
+                   count_path: str | None) -> tuple[tuple[str, int], ...]:
+    """Return the instruction counts of the cost block of one compile (A COMPILE THROUGH CCACHE).
+
+    Args:
+        run: The measurement of the command
+        is_ccache: Whether the command runs ccache
+        count_path: The file of the counts of the meter, or None when the call had no meter
+
+    Returns:
+        The key and the value of each exact count: the compiler run, and for a ccache miss the rest of the step.
+        No count when the compiler run has no exact count
+    """
+    if not is_ccache:
+        return () if run.instructions is None else ((cost_meter.COMPILER_COUNT_KEY, run.instructions),)
+    if count_path is None:
+        return ()
+    has_run, compiler = cost_meter.read_compiler_count(count_path)
+    if not has_run or compiler is None:
+        return ()
+    counts = [(cost_meter.COMPILER_COUNT_KEY, compiler)]
+    if run.instructions is not None and run.instructions >= compiler:
+        counts.append((cost_meter.CCACHE_COUNT_KEY, run.instructions - compiler))
+    return tuple(counts)
+
+
+def write(step: str, output: str, source: str | None, run: cost_meter.Measurement, result: str,
+          counts: tuple[tuple[str, int], ...] = ()) -> None:
     """Write the record of one step beside its output.
 
     Args:
@@ -195,6 +235,7 @@ def write(step: str, output: str, source: str | None, run: cost_meter.Measuremen
         source: The absolute source of a compile, or None
         run: The measurement of the command
         result: The result of judge()
+        counts: The instruction counts of the cost block, from compile_counts()
     """
     record_path = output + cost_meter.RECORD_SUFFIX
     fields = [("format", str(cost_meter.RECORD_FORMAT)), ("step", f'"{step}"'), ("result", f'"{result}"')]
@@ -211,7 +252,7 @@ def write(step: str, output: str, source: str | None, run: cost_meter.Measuremen
         if carried is not None:
             fields.append(("last_cost", carried))
     else:
-        fields.append(("cost", cost_meter.cost_block(run)))
+        fields.append(("cost", cost_meter.cost_block(run, counts)))
     cost_meter.write_record(record_path, fields)
 
 
@@ -240,7 +281,8 @@ def main() -> None:
         budget = {}
     cpu_limit = CPU_LIMIT_FACTOR * budget[time_row][1] if time_row in budget else None
     environment = None
-    stats_path = outer_log = None
+    stats_path = outer_log = count_path = None
+    is_ccache = step == "compile" and os.path.basename(arguments[0]) == CCACHE_NAME
     if step == "compile":
         stats_path = output + ".ccache-stats"
         try:
@@ -249,6 +291,17 @@ def main() -> None:
             pass
         outer_log = os.environ.get("CCACHE_STATSLOG")
         environment = dict(os.environ, CCACHE_STATSLOG=stats_path)
+    if is_ccache and environment is not None:
+        count_path = output + cost_meter.COMPILER_COUNT_SUFFIX
+        try:
+            os.unlink(count_path)
+        except OSError:
+            pass
+        metered = cost_meter.compiler_meter_environment(environment, count_path)
+        if metered is None:
+            count_path = None
+        else:
+            environment = metered
     try:
         run = cost_meter.measure(arguments, environment, cpu_limit, count_instructions=step == "compile")
     except OSError as error:
@@ -259,7 +312,10 @@ def main() -> None:
     status = run.exit_code
     result = "built" if status == 0 else "failed"
     line = None
+    counts: tuple[tuple[str, int], ...] = ()
     try:
+        if step == "compile":
+            counts = compile_counts(run, is_ccache, count_path)
         hit = stats_path is not None and cost_meter.ccache_hit(stats_path, outer_log)
         result, line = judge(step, output, run, budget, hit)
     except BaseException:  # noqa: BLE001
@@ -277,7 +333,7 @@ def main() -> None:
     except BaseException:  # noqa: BLE001
         pass
     try:
-        write(step, output, source, run, result)
+        write(step, output, source, run, result, counts)
     except BaseException:  # noqa: BLE001
         pass
     cost_meter.end_like(status)

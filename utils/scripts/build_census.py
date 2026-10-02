@@ -23,7 +23,11 @@ THE COST OF A UNIT
     utils/scripts/build-launcher.py: the cost block of a compile, or the last
     cost that the record of a ccache hit keeps.  The cost of a fixture comes
     from its record.  So the cost of a unit is the cost of its last real
-    compile, and a sum over the units is the cost of a cold build.
+    compile, and a sum over the units is the cost of a cold build.  The
+    instructions of a unit are those of its compiler run: the record of an
+    object gives them also for a ccache miss (utils/scripts/cost_meter.py, A
+    COMPILE THROUGH CCACHE), and the fixture driver runs the compiler
+    directly.
 
 THE TOOLS
     The ninja and ctest of a build are the values CMAKE_MAKE_PROGRAM and
@@ -47,6 +51,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import cost_meter
+
 FIXTURE_DRIVER = "neg_compile_driver.py"
 FIXTURE_DIR = "neg-compile"
 INPUTS_SUFFIX = ".inputs"
@@ -66,7 +72,8 @@ class CensusError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class Cost:
-    """The CPU time and the user instructions of the last real compile of a unit, each None when unknown."""
+    """The CPU time and the user instructions of the compiler run of the last real compile of a unit, each None when
+    unknown."""
 
     cpu_s: float | None = None
     instructions: int | None = None
@@ -263,7 +270,7 @@ def object_cost(path: Path) -> Cost:
     if not isinstance(block, dict):
         return Cost()
     cpu = block.get("cpu_s")
-    count = block.get("instructions")
+    count = block.get(cost_meter.COMPILER_COUNT_KEY)
     return Cost(float(cpu) if isinstance(cpu, (int, float)) and not isinstance(cpu, bool) else None,
                 count if isinstance(count, int) and not isinstance(count, bool) else None)
 

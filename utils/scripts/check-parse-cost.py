@@ -30,10 +30,13 @@ THE CHECKS
 
     instruction-total
                     The sum, over each object of all and each fixture, of the
-                    user instructions of its last real compile: the count of
-                    the record of the build launcher (the cost block, or the
-                    last cost that a ccache hit keeps), and the count of the
-                    fixture record.  The count covers the template
+                    user instructions of the compiler run of its last real
+                    compile: the count of the record of the build launcher
+                    (the cost block, or the last cost that a ccache hit
+                    keeps), and the count of the fixture record.  A direct
+                    compile and a ccache miss give the same count
+                    (utils/scripts/cost_meter.py, A COMPILE THROUGH CCACHE).
+                    The count covers the template
                     instantiation and the constant evaluation that the bytes
                     do not see.  The check exits 3 when one compile has no
                     count (the host gives no exact counter, or a ccache hit
@@ -725,7 +728,7 @@ class Scratch:
         obj.write_bytes(b"object")
         cost: dict[str, object] = {"cpu_s": 1.5}
         if instructions is not None:
-            cost["instructions"] = instructions
+            cost[cost_meter.COMPILER_COUNT_KEY] = instructions
         Path(f"{obj}.cost").write_text(json.dumps({"format": 1, "step": "compile", "result": "built", "cost": cost}),
                                        encoding="utf-8")
         self.flush(state)

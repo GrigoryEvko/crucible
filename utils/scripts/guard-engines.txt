@@ -85,7 +85,8 @@ utils/scripts/check-vessel-acceptance.py | compiler,json,text | CMakeCache.txt a
 utils/scripts/check-walk-units.py | tsast,compiler,json,text | the rows of test/layer/walk-checks.txt, and in --measure the compile database and the instruction count of each compile
 utils/scripts/check-witness-roster.py | tsast,json,compiler,text | the witness roster rows and the compiler diagnostics of its fixtures
 utils/scripts/check_report.py | text | the budget table utils/scripts/budgets.txt and the warnings files of the checks
-utils/scripts/cost_meter.py | compiler,text | the ccache stats log of a compile, the records, the budget table and the ledger rows
+utils/scripts/compile-meter.py | none |
+utils/scripts/cost_meter.py | compiler,text | the ccache stats log of a compile, the counts of the compile meter, the records, the budget table and the ledger rows
 utils/scripts/decide_catalog.py | tsast |
 utils/scripts/edit-loop-gauge.py | tsast,git,json,text | the exit status and the logs of the configure, the build and ctest of its copy, /proc/meminfo and the budget table
 utils/scripts/gen-aten-op-table.py | tsast,python-ast,text | native_functions.yaml through a YAML parser, and each schema string through torchgen

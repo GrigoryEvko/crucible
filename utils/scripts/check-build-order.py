@@ -106,7 +106,9 @@ WHAT THE CHECKS READ
       `all` that compiles a source, which cmake/CompileFirst.cmake writes at
       each configure.  The compile database, and the record OBJECT.cost of
       each object (utils/scripts/cost_meter.py): the user instructions of the
-      cost block of a built object, or of the last_cost block of a ccache hit.
+      compiler run in the cost block of a built object, or in the last_cost
+      block of a ccache hit.  A direct compile and a ccache miss give the same
+      count (cost_meter.py, A COMPILE THROUGH CCACHE).
       The kind of the build (BUILD_DIR/build-kind.txt).
 
 Usage
@@ -501,7 +503,7 @@ def evaluate_chains(graph: Graph, candidates: set[str], compile_list: CompileLis
 
 
 def record_count(object_path: Path) -> int | None:
-    """Return the user instructions of the compile of one object, from its record.
+    """Return the user instructions of the compiler run of one object, from its record.
 
     Args:
         object_path: The path of the object
@@ -521,7 +523,7 @@ def record_count(object_path: Path) -> int | None:
     block = record.get("last_cost" if record["result"] == "hit" else "cost")
     if not isinstance(block, dict):
         return None
-    count = block.get("instructions")
+    count = block.get(cost_meter.COMPILER_COUNT_KEY)
     return count if isinstance(count, int) and not isinstance(count, bool) and count >= 0 else None
 
 
@@ -777,7 +779,7 @@ def self_test_cases() -> int:
 
     def built(giga: float) -> dict[str, object]:
         return {"format": cost_meter.RECORD_FORMAT, "step": "compile", "result": "built",
-                "cost": {"cpu_s": 1.0, "instructions": int(giga * GIGA)}}
+                "cost": {"cpu_s": 1.0, cost_meter.COMPILER_COUNT_KEY: int(giga * GIGA)}}
 
     expect("target_of reads the target of an object",
            target_of(Path("/b/test/CMakeFiles/test_a.dir/x/test_a.cpp.o")) == "test_a"
@@ -874,7 +876,10 @@ def self_test_cases() -> int:
             plant_object(build, root, "middle_unlisted", "test/middle_unlisted.cpp", built(20.0)),
             plant_object(build, root, "hit_long", "test/hit_long.cpp",
                          {"format": cost_meter.RECORD_FORMAT, "step": "compile", "result": "hit",
-                          "last_cost": {"instructions": int(40 * GIGA)}}),
+                          "last_cost": {cost_meter.COMPILER_COUNT_KEY: int(40 * GIGA)}}),
+            plant_object(build, root, "step_count", "test/step_count.cpp",
+                         {"format": cost_meter.RECORD_FORMAT, "step": "compile", "result": "built",
+                          "cost": {"cpu_s": 1.0, "instructions": int(50 * GIGA)}}),
             plant_object(build, root, "hit_no_count", "test/hit_no_count.cpp",
                          {"format": cost_meter.RECORD_FORMAT, "step": "compile", "result": "hit"}),
             plant_object(build, root, "failed_long", "test/failed_long.cpp", {**built(50.0), "result": "failed"}),
@@ -883,7 +888,8 @@ def self_test_cases() -> int:
         ]
         (build / "compile_commands.json").write_text(json.dumps(rows), encoding="utf-8")
         candidates_text = "\n".join(("long_unlisted", "long_listed", "short_listed", "middle_listed",
-                                     "middle_unlisted", "hit_long", "hit_no_count", "failed_long", "no_record"))
+                                     "middle_unlisted", "hit_long", "hit_no_count", "failed_long", "no_record",
+                                     "step_count"))
         (build / CANDIDATES).write_text(candidates_text + "\n", encoding="utf-8")
         (build / cost_meter.KIND_FILE).write_text("x86_64-debug-asan\n", encoding="utf-8")
         list_path = root / "compile-first.txt"
@@ -898,8 +904,9 @@ def self_test_cases() -> int:
         expect("the largest compile of a target is its object with the most instructions",
                largest["long_listed"] == Compile("test/long_listed_b.cpp", int(30 * GIGA)))
         expect("a ccache hit counts the last_cost block", largest["hit_long"].instructions == int(40 * GIGA))
-        expect("no count: a hit with no last_cost, a failed compile and an object with no record",
-               not {"hit_no_count", "failed_long", "no_record"} & largest.keys())
+        expect("no count: a hit with no last_cost, a failed compile, an object with no record, and a record of the "
+               "earlier format whose count holds the full step",
+               not {"hit_no_count", "failed_long", "no_record", "step_count"} & largest.keys())
         candidates = read_candidates(build)
         findings = evaluate_records(largest, candidates, compile_list, budget, "compile-first.txt")
         expect("compile-first, an error: a target over the error threshold that the list does not name, with its "

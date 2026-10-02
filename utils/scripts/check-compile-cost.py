@@ -4,7 +4,8 @@
 THE CHECKS
     compile-cpu     The user and system CPU time of one compile job.
     compile-instructions
-                    The user instructions of one compile job, in G (10^9).
+                    The user instructions of the compiler run of one compile
+                    job, in G (10^9).
     compile-memory  The peak resident memory of one compile job, in GB of 2^30 bytes.
     link-time       The user and system CPU time of one link.
     link-memory     The peak resident memory of one link, in GB.
@@ -51,9 +52,12 @@ THE INSTRUCTION COUNT HOLDS THE ERROR LEVEL OF A COMPILE
     INSTRUCTION COUNT).  So when the record of a compile holds an
     instruction count, compile-instructions judges the count with the error
     level, and compile-cpu gives a warning, not an error, for a CPU time
-    over its error threshold.  A record with no count (a host with no exact
-    counter) keeps the error of compile-cpu.  When no record of the build
-    holds a count, compile-instructions does not apply to the build.
+    over its error threshold.  The count is that of the compiler run, also
+    through a ccache miss (cost_meter.py, A COMPILE THROUGH CCACHE), so it
+    does not change with the path of the compile.  A record with no count (a
+    host with no exact counter) keeps the error of compile-cpu.  When no
+    record of the build holds a count, compile-instructions does not apply to
+    the build.
 
     function-size and object-text read the section headers and the symbol
     table of each object (ELF64, little endian).  The largest function is the
@@ -362,8 +366,8 @@ def read_record(output: Output, step: str) -> tuple[dict[str, object] | None, st
 
 
 def instruction_count(cost: dict[str, object]) -> int | None:
-    """Return the exact user instructions of a cost block, or None when the block holds no count."""
-    count = cost.get("instructions")
+    """Return the exact user instructions of the compiler run of a cost block, or None when the block holds no count."""
+    count = cost.get(cost_meter.COMPILER_COUNT_KEY)
     return count if isinstance(count, int) and not isinstance(count, bool) and count >= 0 else None
 
 
@@ -974,10 +978,11 @@ class Scratch:
 
     def record(self, step: str, output: Path, source: Path | None, result: str, cpu_s: float,
                peak_gb: float, instructions: int | None = None) -> None:
-        """Write the record of one output with the writer of the launcher."""
+        """Write the record of one output with the writer of the launcher, as a compile with no ccache gives it."""
         run = cost_meter.Measurement(0, cpu_s, 0.0, cpu_s, int(peak_gb * cost_meter.KB_PER_GB), 1.0, 1.0, None,
                                      instructions)
-        self.launcher.write(step, str(output), None if source is None else str(source), run, result)
+        counts = self.launcher.compile_counts(run, False, None) if step == "compile" else ()
+        self.launcher.write(step, str(output), None if source is None else str(source), run, result, counts)
 
     def unit(self, name: str, *, functions: list[tuple[str, int]] | None = None, loose_text: int = 0,
              result: str | None = "built", cpu_s: float = 1.0, peak_gb: float = 0.2,

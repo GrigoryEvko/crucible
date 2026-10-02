@@ -49,6 +49,30 @@ THE INSTRUCTION COUNT
     when the environment sets CRUCIBLE_COUNT_INSTRUCTIONS to 0.  A count is
     exact or absent.
 
+A COMPILE THROUGH CCACHE
+    On a miss, ccache runs the preprocessor and then the compiler.  On a hit,
+    it runs neither.  The count of the full step then holds the preprocessor
+    run and the work of ccache: test/test_trace_ring_pop_batch.cpp ran
+    19.29 G instructions as a direct compile and 21.25 G through a miss.  So
+    a compile record gives the count of the compiler run alone, which is the
+    same in each path.  For a step whose command starts with ccache,
+    compiler_meter_environment() sets CCACHE_PREFIX to the interpreter of
+    this process and utils/scripts/compile-meter.py, and COMPILER_COUNT_ENV
+    to a file.  ccache puts the prefix only in front of the compiler run
+    (prefix_command_cpp is the prefix of the preprocessor run), also when
+    CCACHE_DISABLE is set.  ccache does not hash the prefix, so a hit stays a
+    hit.  The meter (meter_compiler) counts the compiler run with a counter
+    of its own, adds one line to the file, and exits as the compiler exited.
+    read_compiler_count() reads the file.  The meter costs approximately 57 M
+    instructions and 12 ms of CPU time for each miss.  ccache splits the
+    prefix at each space, so the launcher sets no prefix when a path holds a
+    space or when the environment already sets CCACHE_PREFIX, and the record
+    then holds no count.  CCACHE_PREFIX takes the place of a prefix_command
+    of a ccache configuration file, and the tree sets no such prefix.  The
+    negative fixtures (test/neg_compile_store.py) and the walk units of
+    utils/scripts/check-walk-units.py run the compiler directly, so their
+    counts are counts of the compiler run too.
+
 A CI RUNNER
     The thresholds of the time rows (TIME_ROWS: compile-cpu, link-time,
     test-time and fixture-cpu) apply to the build host of the tree, which has
@@ -75,13 +99,17 @@ THE RECORD
       exit          the status of the command, or minus the signal number
       cost          for each result except "hit": cpu_s, user_s, system_s,
                     wall_s, peak_rss_kb, load (the one-minute load average at
-                    the start) and end (seconds since the epoch), and
-                    instructions (the user instructions of the step) when
-                    the measurement holds an exact count
+                    the start) and end (seconds since the epoch).  A compile
+                    also has compiler_instructions, the exact user
+                    instructions of the compiler run, when the host gives
+                    the count (A COMPILE THROUGH CCACHE).  A ccache miss also
+                    has ccache_instructions, the instructions of the rest of
+                    the step: the preprocessor run, ccache and the meter
       last_cost     for "hit": the cost block of the earlier record, when it
                     had one, so a hit does not erase the last real measure
     cost_block() writes the cost block, and carried_cost() reads it back as
-    text, with no JSON parser.
+    text, with no JSON parser.  A cost block of an earlier format holds the
+    key instructions, the count of the full step, and no reader takes it.
 
 THE BUDGET TABLE AND THE LEDGERS
     budget_rows() reads the two thresholds of some rows of
@@ -129,6 +157,16 @@ PERF_READ_TIMES = 0x1 | 0x2
 # disabled, inherit, exclude_kernel, exclude_hv, enable_on_exec.
 PERF_ATTR_FLAGS = (1 << 0) | (1 << 1) | (1 << 5) | (1 << 6) | (1 << 12)
 PERF_FLAG_FD_CLOEXEC = 8
+# The keys of the counts in the cost block of a compile record (THE RECORD).
+COMPILER_COUNT_KEY = "compiler_instructions"
+CCACHE_COUNT_KEY = "ccache_instructions"
+# The variable that names the file of the counts of the compiler runs of one ccache call, the suffix of that file
+# beside the object, and the line of a run whose count is not exact (A COMPILE THROUGH CCACHE).
+COMPILER_COUNT_ENV = "CRUCIBLE_COMPILER_COUNT"
+COMPILER_COUNT_SUFFIX = ".compiler-count"
+INEXACT_COUNT = "-"
+CCACHE_PREFIX_ENV = "CCACHE_PREFIX"
+COMPILER_METER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "compile-meter.py")
 
 
 class Measurement:
@@ -332,6 +370,81 @@ def measure(command: list[str], environment: dict[str, str] | None = None, cpu_l
                        applied_limit, instructions)
 
 
+def compiler_meter_environment(environment: dict[str, str], count_path: str) -> dict[str, str] | None:
+    """Return the environment of a ccache call that counts its compiler run, or None when the call cannot count it.
+
+    A COMPILE THROUGH CCACHE in the module docstring gives the rules.
+
+    Args:
+        environment: The environment of the ccache call
+        count_path: The file that the meter adds the count of each compiler run to
+
+    Returns:
+        The environment with CCACHE_PREFIX and COMPILER_COUNT_ENV, or None when the environment already sets
+        CCACHE_PREFIX or a word of the prefix holds a space
+    """
+    words = (sys.executable, COMPILER_METER)
+    if environment.get(CCACHE_PREFIX_ENV) or not all(word and " " not in word for word in words):
+        return None
+    return dict(environment, **{CCACHE_PREFIX_ENV: " ".join(words), COMPILER_COUNT_ENV: count_path})
+
+
+def read_compiler_count(count_path: str) -> tuple[bool, int | None]:
+    """Read the counts that the meter added to a file for the compiler runs of one ccache call, and remove the file.
+
+    Args:
+        count_path: The file
+
+    Returns:
+        Whether a compiler run added a line, and the sum of the counts, or None when a count is not exact or a line
+        is not a count
+    """
+    try:
+        with open(count_path, encoding="ascii", errors="replace") as handle:
+            lines = handle.read().split()
+    except OSError:
+        return False, None
+    try:
+        os.unlink(count_path)
+    except OSError:
+        pass
+    if not lines:
+        return False, None
+    if not all(line.isdigit() for line in lines):
+        return True, None
+    return True, sum(int(line) for line in lines)
+
+
+def meter_compiler(command: list[str]) -> None:
+    """Run the compiler run of a ccache call, add its count to the file of COMPILER_COUNT_ENV, and end as it ended.
+
+    utils/scripts/compile-meter.py calls this function as the prefix of
+    ccache (A COMPILE THROUGH CCACHE).  ccache keeps the standard streams as
+    the output of the compiler, so the function writes to them only when the
+    command cannot start.
+
+    Args:
+        command: The compiler command that ccache gives the prefix
+    """
+    if not command:
+        print("compile-meter: give the compiler command after the script", file=sys.stderr)
+        os._exit(2)
+    try:
+        run = measure(command, None, None, count_instructions=True)
+    except OSError as error:
+        print(f"compile-meter: the command {command[0]} cannot start: {error}", file=sys.stderr)
+        os._exit(127)
+    target = os.environ.get(COMPILER_COUNT_ENV)
+    if target:
+        line = INEXACT_COUNT if run.instructions is None else str(run.instructions)
+        try:
+            with open(target, "a", encoding="ascii") as handle:
+                handle.write(f"{line}\n")
+        except OSError:
+            pass
+    end_like(run.exit_code)
+
+
 def end_like(exit_code: int) -> None:
     """End this process as the command ended: with its status, or on its signal.
 
@@ -374,12 +487,20 @@ def quote(text: str) -> str:
     return "".join(parts)
 
 
-def cost_block(run: Measurement) -> str:
-    """Return the cost block of one measurement as JSON text, with its instructions when it holds an exact count."""
-    instructions = "" if run.instructions is None else f', "instructions": {run.instructions}'
+def cost_block(run: Measurement, counts: tuple[tuple[str, int], ...] = ()) -> str:
+    """Return the cost block of one measurement as JSON text.
+
+    Args:
+        run: The measurement
+        counts: The key and the exact value of each instruction count of the block (THE RECORD)
+
+    Returns:
+        The block, with the times, the peak memory and each count
+    """
+    extra = "".join(f', "{key}": {value}' for key, value in counts)
     return (f'{{"cpu_s": {run.cpu_s:.3f}, "user_s": {run.user_s:.3f}, "system_s": {run.system_s:.3f}, '
             f'"wall_s": {run.wall_s:.3f}, "peak_rss_kb": {run.peak_rss_kb}, "load": {run.load:.2f}, '
-            f'"end": {run.end:.3f}{instructions}}}')
+            f'"end": {run.end:.3f}{extra}}}')
 
 
 def carried_cost(record_path: str) -> str | None:
