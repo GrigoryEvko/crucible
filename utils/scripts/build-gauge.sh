@@ -4,11 +4,12 @@
 # The script configures a fresh build directory with no compiler cache and
 # builds `all`.  Then it runs the tests in one ctest run, the negative-compile
 # fixtures with the other tests.  The census checks depend on the fixtures,
-# so ctest runs them after the last fixture.  For each of the two steps it
-# records the wall time, the user and system CPU time, and the largest
-# resident set of one process, from /usr/bin/time.  At the end it prints the
-# 20 compile steps that took the most time, from the ninja log of the build,
-# and the 10 tests that took the most time, from the ctest log.
+# so ctest runs them after the last fixture.  For each of the three steps
+# (the configure, the build and the test run) it records the wall time, the
+# user and system CPU time, and the largest resident set of one process,
+# from /usr/bin/time.  At the end it prints the 20 compile steps that took
+# the most time, from the ninja log of the build, and the 10 tests that took
+# the most time, from the ctest log.
 #
 # usage: utils/scripts/build-gauge.sh [option]...
 #   --jobs N          The build and test parallelism (48 without the option)
@@ -188,11 +189,14 @@ else
 fi
 {
     echo "build-gauge: host $(hostname), commit $commit ($tree_state), preset $preset, $jobs jobs"
-    echo "build-gauge: build directory $build_dir, no compiler cache"
+    echo "build-gauge: build directory $build_dir, no compiler cache in the configure and the build"
 } | tee "$report"
 
-export CCACHE_DISABLE=1
-timed_step configure cmake --preset "$preset" -B "$build_dir" -DCRUCIBLE_USE_CCACHE=OFF
+# The configure step and the build step run with CCACHE_DISABLE=1, so a
+# compiler that PATH finds through a ccache link also compiles with no cache.
+# The test step runs with the environment of the caller, because the ccache
+# self-tests need a ccache that operates.
+timed_step configure env CCACHE_DISABLE=1 cmake --preset "$preset" -B "$build_dir" -DCRUCIBLE_USE_CCACHE=OFF
 if [[ "$step_status" -ne 0 ]]; then
     echo "build-gauge: the configure failed.  Read $build_dir/gauge-configure.log." >&2
     exit 1
@@ -202,7 +206,7 @@ build_args=(--build "$build_dir" -j "$jobs")
 if [[ ${#targets[@]} -gt 0 ]]; then
     build_args+=(--target "${targets[@]}")
 fi
-timed_step build cmake "${build_args[@]}"
+timed_step build env CCACHE_DISABLE=1 cmake "${build_args[@]}"
 if [[ "$step_status" -ne 0 ]]; then
     echo "build-gauge: the build failed.  Read $build_dir/gauge-build.log." >&2
     status=1
