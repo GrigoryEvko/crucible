@@ -53,16 +53,6 @@
 // that's the minimal surface the Swiss-table invariants must uphold.
 // Canonicalization correctness is test_expr_pool's job; this fuzzer
 // is specifically a stress test on the intern Swiss table.
-//
-// ─── Why the check body lives in a free function, not the lambda ───
-//
-// GCC 16's contracts implementation (P2900R14) rejects `pre()` clauses
-// that reference non-static data members when the enclosing function
-// is instantiated inside a lambda body (observed with Arena::
-// total_allocated's `pre(offset_ <= end_offset_)`).  Moving the
-// invocation into a named function at namespace scope sidesteps that
-// parser path entirely.  The named function is called from a thin
-// lambda passed to run() — no behavioral change, just parse-site relief.
 // ═══════════════════════════════════════════════════════════════════
 
 #include "property_runner.h"
@@ -76,6 +66,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 
 namespace {
@@ -237,9 +228,7 @@ struct Resolved {
     }
 }
 
-// Core invariant check.  Pulled out of the runner lambda to keep GCC
-// 16's contract parser off the lambda-instantiation path (see header
-// comment for the full rationale).
+// The check of one plan.  The runner lambda in main calls it.
 [[nodiscard]] bool check_plan(const Plan& p) noexcept {
     using namespace crucible;
     auto test = ::foundation::effects::testing::test();
@@ -263,18 +252,8 @@ struct Resolved {
     std::array<const Expr*, kNumExprs> ptrs{};
     std::array<Resolved, kNumExprs> keys{};
 
-    // P5 (arena monotonicity) is dropped from this harness:
-    // pool.arena_bytes() routes through Arena::total_allocated which
-    // carries pre(offset_ <= end_offset_).  Under GCC 16 (P2900R14)
-    // that contract is rejected with "contract condition is not
-    // constant" when the call site is reached through this fuzzer's
-    // template-instantiation chain (lambda → free function → pool
-    // wrapper → arena query).  Moving the call into a free function
-    // — as the harness header documents — does not avoid the parser
-    // path for total_allocated specifically.  The arena monotonicity
-    // invariant is already covered by prop_arena_alloc_invariants,
-    // which calls Arena::total_allocated directly and compiles cleanly.
-    // This fuzzer keeps its full intern-identity (P1–P4) coverage.
+    // P5: the arena total before the first intern call, then after each.
+    std::size_t arena_bytes_so_far = pool.arena_bytes();
 
     for (uint8_t i = 0; i < kNumExprs; ++i) {
         const ExprSpec& s = p.specs[i];
@@ -315,6 +294,11 @@ struct Resolved {
 
         // P0: never null.
         if (e == nullptr) return false;
+
+        // P5: the bump arena never gives bytes back.
+        const std::size_t arena_bytes_now = pool.arena_bytes();
+        if (arena_bytes_now < arena_bytes_so_far) return false;
+        arena_bytes_so_far = arena_bytes_now;
 
         ptrs[i] = e;
         keys[i] = k;

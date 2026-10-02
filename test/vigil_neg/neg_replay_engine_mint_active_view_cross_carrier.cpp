@@ -30,7 +30,7 @@ static void requires_ckernel_mutable_view(crucible::CKernelTable::MutableView co
 int main() {
     crucible::ReplayEngine engine;
     // Default-constructed ReplayEngine has ops_ == nullptr, so
-    // mint_active_view()'s `pre(is_initialized())` would fire at
+    // mint_active_view()'s `CRUCIBLE_PRE(is_initialized())` would fire at
     // runtime — but this neg-compile fixture never gets to runtime.
     // GCC type-checks the requires_ckernel_mutable_view call below
     // and rejects the cross-carrier conversion at parse time.

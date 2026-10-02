@@ -240,15 +240,6 @@ def find_gates(path: Path, repo_root: Path = REPO_ROOT) -> list[Gate]:
         if statement.children:
             add("contract", statement.children[0], "true")
 
-    # A pre or post specifier of a function declarator.  Its condition field
-    # holds the predicate, so the result name of post(r: ...) stays outside
-    # the span.  A macro or an attribute between the specifier and the
-    # declarator changes nothing, because the parse places the specifier.
-    for specifier in tree.find("function_contract_specifier"):
-        condition = specifier.child_by_field("condition")
-        if condition is not None:
-            add("contract", condition, "true")
-
     for base in tree.find("base_class_clause"):
         struct = base.parent
         if struct is None or struct.type not in ("struct_specifier", "class_specifier"):

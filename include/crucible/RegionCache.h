@@ -49,12 +49,13 @@ struct RegionCache {
         contract_assert(region != nullptr);
 
         // The repeat below covers the one case the assertion does not. The
-        // semantic is a per-target build option, and one target in this tree
-        // already sets `ignore`, which erases every contract in the headers
-        // it compiles. The read on the next line would fault on its own even
-        // then, but only after this has been inlined into a caller several
-        // frames up; the named check reports the contract that was broken
-        // rather than an address.
+        // semantic is a build option of each translation unit, and
+        // CRUCIBLE_CONTRACT_IGNORE_OPTIONS sets `ignore` for some units of
+        // this tree. Under `ignore`, no contract assertion in the headers of
+        // such a unit checks. The read on the next line would fault on its
+        // own even then, but only after this has been inlined into a caller
+        // several frames up; the named check reports the contract that was
+        // broken rather than an address.
         CRUCIBLE_FATAL_INVARIANT(region != nullptr);
 
         const ContentHash hash = region->content_hash;

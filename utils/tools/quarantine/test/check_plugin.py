@@ -133,6 +133,10 @@ CONTRACT_ERRORS = (
 CONTRACT_ERROR = re.compile(r"^(?P<path>.+?):(?P<line>\d+):\d+: error: the .(?P<specifier>pre|post). contract "
                             r"specifier is not permitted in this tree", re.MULTILINE)
 OUTSIDE_HEADER = "#pragma once\nint outside_pre(int value) pre(value > 0);\n"
+# A region that a header outside the root opens and closes.  The two pragmas
+# of such a header agree: each one does nothing.
+OUTSIDE_REGION_HEADER = ("#pragma once\n#pragma crucible I_KNOW_WHAT_IM_DOING(\"a header outside the root\")\n"
+                         "inline int outside_region_value() { return 1; }\n#pragma crucible END_I_KNOW_WHAT_IM_DOING\n")
 
 
 @dataclass(frozen=True)
@@ -268,6 +272,11 @@ def run_contract_rule(checker: Checker) -> None:
     outside = checker.work / "outside"
     outside.mkdir(exist_ok=True)
     (outside / "Outside.h").write_text(OUTSIDE_HEADER, encoding="utf-8")
+    (outside / "OutsideRegion.h").write_text(OUTSIDE_REGION_HEADER, encoding="utf-8")
+    for plugin, arguments in ((CONTRACT_PLUGIN, {"root": str(HERE)}), (PLUGIN, {"root": str(HERE), "mode": "error"})):
+        compiled = checker.compile("region_outside_root.cpp", arguments, extra=("-I", str(outside)), plugin=plugin)
+        checker.expect(f"{plugin}: a region of a header outside the root is no error",
+                       compiled.returncode == 0 and "region" not in compiled.stderr, compiled.stderr[-2000:])
     extra = ("-fcontracts", "-I", str(outside))
     expected = sorted(CONTRACT_ERRORS)
     contract_reports = checker.work / "contract-reports"

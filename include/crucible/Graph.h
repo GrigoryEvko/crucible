@@ -463,12 +463,9 @@ public:
     // during buffer allocation and emission, never during a hot traversal
     // like dead-code elimination or the topological sort.
     //
-    // Every index bound in this section uses CRUCIBLE_PRE rather than a
-    // pre() clause.  These bodies are a single subscripted return, and on
-    // this toolchain a pre() predicate reading a member through `this` is
-    // silently skipped at consteval for exactly that shape.  The macro also
-    // collapses to [[assume]] under NDEBUG, which is the optimizer hint the
-    // bodies need anyway.
+    // Each index bound in this section is a CRUCIBLE_PRE.  It checks in a
+    // Debug and in a Release build.  Under the ignore semantic it gives its
+    // condition to the optimizer as an assumption.
     void set_input_slots(::foundation::effects::Alloc a, NodeId node_id, std::span<const SlotId> slots) {
         CRUCIBLE_PRE(node_id.raw() < num_nodes_.get());
         if (slots.empty()) {

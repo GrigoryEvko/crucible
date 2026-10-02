@@ -622,23 +622,25 @@ def cmd_mutate(args: argparse.Namespace) -> int:
 
 # ── the self-test ──────────────────────────────────────────────────────
 
-# PLANTED_ANNOTATION stands between noexcept and pre, as an annotation macro
-# does in the real headers.  A text scan that reads the tokens before `pre`
-# misses that specifier, and the parse does not.  The post of positive names
-# its result, so its span must hold only the condition.
+# The two macros stand for CRUCIBLE_PRE and CRUCIBLE_POST of
+# foundation/contracts/.  The parse keeps a macro body as raw text, so each
+# gate is a call in a function body.  The result name is the first argument
+# of CRUCIBLE_POST, so the span of the post of positive must hold only the
+# condition.
 PLANTED = """#pragma once
 #include <concepts>
 #include <type_traits>
-#define PLANTED_ANNOTATION
+#define CRUCIBLE_PRE(condition) contract_assert(condition)
+#define CRUCIBLE_POST(result, condition) contract_assert(condition)
 namespace planted {
 template <class T> concept Small = sizeof(T) <= 4;
 template <class T> requires Small<T> constexpr int take(T) { return 1; }
 template <class T> requires std::integral<T> constexpr int count(T) { return 2; }
 template <class T> requires(std::is_integral_v<T>) constexpr int widen(T) { return 3; }
 inline int half(int n) { contract_assert(n % 2 == 0); return n / 2; }
-inline int third(int n) noexcept PLANTED_ANNOTATION pre(n % 3 == 0) { return n / 3; }
-inline auto negate(int n) -> int pre(n < 0) { return -n; }
-inline int positive(int n) post(r: r > 0) { return n < 0 ? -n : n + 1; }
+inline int third(int n) noexcept { CRUCIBLE_PRE(n % 3 == 0); return n / 3; }
+inline auto negate(int n) -> int { CRUCIBLE_PRE(n < 0); return -n; }
+inline int positive(int n) { const int r = n < 0 ? -n : n + 1; CRUCIBLE_POST(r, r > 0); return r; }
 template <class T> struct Wide {
     T v;
     friend constexpr bool operator==(Wide const&, Wide const&) requires Small<T> { return true; }
@@ -685,8 +687,8 @@ RUNNER = """#include <contracts>
 void handle_contract_violation(const std::contracts::contract_violation&) noexcept { std::_Exit(0); }
 int main() { (void)planted::half(3); return 1; }
 """
-# A death test of the pre specifier of third: it passes only when that
-# specifier stops the call.
+# A death test of the precondition of third: it passes only when that
+# precondition stops the call.
 THIRD_RUNNER = """#include <contracts>
 #include <cstdlib>
 #include "planted.h"
@@ -735,10 +737,10 @@ def cmd_selftest(args: argparse.Namespace) -> int:
     One witness is a negative fixture, one a syntax-only compile, and two are
     tests that ninja builds and the run executes, so each tier is proved.  A
     gate written `requires(` with no space proves that its mutant parses.
-    Three pre and post specifiers prove that the parse finds a specifier after
-    an annotation macro and after a trailing return type, and that a post span
-    leaves its result name out.  A gate on an operator falls to a test that
-    names only its class.  A comment beside && keeps the split of a
+    Three CRUCIBLE_PRE and CRUCIBLE_POST calls prove that the parse finds a
+    precondition after a trailing return type, and that the span of a
+    postcondition leaves its result name out.  A gate on an operator falls to
+    a test that names only its class.  A comment beside && keeps the split of a
     constraint, and a gate in a partial specialization names its template.
     The check of the invalid outcomes is then proved on a planted invalid
     outcome, with and without an exemption.  Last, a small CMake project
@@ -803,7 +805,8 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         if killers.get(("contract", "half")) != "run:run_half":
             failures.append(f"the contract of half must fall to the run tier, not {killers.get(('contract', 'half'))!r}")
         if killers.get(("contract", "third")) != "run:run_third":
-            failures.append(f"the pre of third must fall to its death test, not {killers.get(('contract', 'third'))!r}")
+            failures.append(f"the precondition of third must fall to its death test, not "
+                            f"{killers.get(('contract', 'third'))!r}")
         if killers.get(("requires", "widen")) != "neg_widen_double":
             failures.append(f"the gate of widen must fall to its fixture, not {killers.get(('requires', 'widen'))!r}")
         if killers.get(("requires", "operator==")) != "syntax:wide_user.cpp":
@@ -813,7 +816,8 @@ def cmd_selftest(args: argparse.Namespace) -> int:
             failures.append(f"expected {len(expected) + 1} mutants, got {len(outcomes)}: {sorted(verdicts)}")
         spans = {(o.kind, o.entity): o.original for o in outcomes}
         if spans.get(("contract", "positive")) != "r > 0":
-            failures.append(f"the post of positive must span its condition only, not {spans.get(('contract', 'positive'))!r}")
+            failures.append(f"the postcondition of positive must span its condition only, not "
+                            f"{spans.get(('contract', 'positive'))!r}")
         # An invalid outcome stops the run unless an exemption names its gate.
         planted_invalid = Outcome("k", "include/planted.h", "requires", 1, "fused", "(x)", "invalid")
         if unexempted_invalid([planted_invalid], set()) != [planted_invalid]:

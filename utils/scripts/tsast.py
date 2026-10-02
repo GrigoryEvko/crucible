@@ -2208,20 +2208,6 @@ def _function_declarator(node: Node) -> Node | None:
     return current
 
 
-def contract_clauses(declarator: Node) -> list[Node]:
-    """Return the `pre` and `post` specifiers of a function, in source order.
-
-    Args:
-        declarator: A function_declarator, or a function_definition or
-            declaration that holds one
-
-    Returns:
-        The function_contract_specifier nodes
-    """
-    function = _function_declarator(declarator)
-    return [] if function is None else function.children_of_type("function_contract_specifier")
-
-
 _PARAMETER_TYPES = (
     "parameter_declaration", "optional_parameter_declaration", "variadic_parameter_declaration",
 )
@@ -3870,7 +3856,7 @@ def _self_test_helpers(
         "struct K { void m() { call(1); } void n(); };\n"
         "void K::n() { obj.f(1); a::b::g(2); x.template h<int>(3); [](){}(); }\n"
         "int top = seed(4);\n"
-        "constexpr int p(int n, int, auto... rest) noexcept pre(n > 0) post(r: r == n) { return n; }\n",
+        "constexpr int p(int n, int, auto... rest) noexcept { return n; }\n",
     )
     call_parts = [parts for parts, _node in calls(func_tree)]
     check(
@@ -3891,9 +3877,8 @@ def _self_test_helpers(
     definitions = list(func_tree.find("function_definition"))
     last = definitions[-1]
     check(
-        "contract_clauses and parameters read a function with a pack and an unnamed parameter",
-        [clause.text for clause in contract_clauses(last)] == ["pre(n > 0)", "post(r: r == n)"]
-        and [name for name, _node in parameters(last)] == ["n", "", "rest"],
+        "parameters reads a function with a pack and an unnamed parameter",
+        [name for name, _node in parameters(last)] == ["n", "", "rest"],
     )
 
     # Declarations and templates.

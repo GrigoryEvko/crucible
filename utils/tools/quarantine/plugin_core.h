@@ -411,6 +411,7 @@ inline void handle_begin_pragma(cpp_reader*) {
                  kBeginPragma, kBeginPragma);
         return;
     }
+    // A pragma of a file outside the source root opens no region.
     Place place = place_of(location);
     if (place.file == nullptr) {
         return;
@@ -440,7 +441,12 @@ inline void handle_end_pragma(cpp_reader*) {
         error_at(location, "%<#pragma crucible %s%> takes no argument", kEndPragma);
         return;
     }
+    // A pragma of a file outside the source root closes nothing, as the begin
+    // pragma of such a file opens nothing.
     Place place = place_of(location);
+    if (place.file == nullptr) {
+        return;
+    }
     if (core.regions.empty() || core.regions.back().end_line != 0) {
         error_at(location,
                  "%<#pragma crucible %s%> has no open region; open one with "

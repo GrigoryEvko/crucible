@@ -29,7 +29,7 @@ static void requires_ckernel_mutable_view(crucible::CKernelTable::MutableView co
 int main() {
     crucible::PoolAllocator pool;
     // Default-constructed PoolAllocator has ptr_table_ == nullptr, so
-    // mint_initialized_view()'s `pre(is_initialized())` would fire at
+    // mint_initialized_view()'s `CRUCIBLE_PRE(is_initialized())` would fire at
     // runtime — but this neg-compile fixture never gets to runtime.
     // GCC type-checks the requires_ckernel_mutable_view call below
     // and rejects the cross-carrier conversion at parse time.

@@ -7,10 +7,11 @@ pinned tree-sitter kit (utils/scripts/tsast.py) and counts these nodes:
   CRUCIBLE_PRE, CRUCIBLE_PRE_FAST, CRUCIBLE_PRE_MSG,
   CRUCIBLE_POST, CRUCIBLE_POST_FAST, CRUCIBLE_POST_MSG
       a call expression whose callee is that name
-  pre, post
-      a P2900 contract specifier of a function declarator
   contract_assert
       a contract_assert statement
+
+The tree has no P2900 contract specifier: each build rejects one, and
+utils/scripts/check-contract-form.py finds each one that a build cannot see.
   decide::
       a qualified name whose last scope is `decide`, as in decide::in_range
       or ::foundation::decide::positive<int>
@@ -65,11 +66,8 @@ import tsast  # noqa: E402
 ROOTS = ("include", "src")
 MACRO_CITES = ("CRUCIBLE_PRE", "CRUCIBLE_PRE_FAST", "CRUCIBLE_PRE_MSG",
                "CRUCIBLE_POST", "CRUCIBLE_POST_FAST", "CRUCIBLE_POST_MSG")
-# The counters that --check guards.  The P2900 forms are left out on
-# purpose: the tree moves vanilla pre and post clauses to the CRUCIBLE_PRE
-# and CRUCIBLE_POST macros, so p2900_pre falls by design.  A deleted clause
-# still lowers the totals, which the check guards.
-CHECKED = ("crucible_pre", "crucible_pre_fast", "crucible_pre_msg",
+# The counters that --check guards.
+CHECKED =("crucible_pre", "crucible_pre_fast", "crucible_pre_msg",
            "crucible_post", "crucible_post_fast", "crucible_post_msg",
            "contract_assert", "decide_total", "total_pre_cites", "total_post_cites", "total_contract_cites")
 TOP_FILES = 10
@@ -84,8 +82,6 @@ class Counts:
     """The counters of one scan, and the contract cites of each file."""
 
     macros: Counter = field(default_factory=Counter)
-    p2900_pre: int = 0
-    p2900_post: int = 0
     contract_assert: int = 0
     decide_total: int = 0
     procedures: dict[str, int] = field(default_factory=dict)
@@ -94,11 +90,9 @@ class Counts:
     def as_json(self) -> dict:
         """The flat JSON object: the counters, the totals, then the count of each procedure."""
         macros = {name.lower(): self.macros[name] for name in MACRO_CITES}
-        total_pre = macros["crucible_pre"] + macros["crucible_pre_fast"] + macros["crucible_pre_msg"] + self.p2900_pre
-        total_post = (macros["crucible_post"] + macros["crucible_post_fast"] + macros["crucible_post_msg"]
-                      + self.p2900_post)
-        return {**macros, "p2900_pre": self.p2900_pre, "p2900_post": self.p2900_post,
-                "contract_assert": self.contract_assert, "decide_total": self.decide_total,
+        total_pre = macros["crucible_pre"] + macros["crucible_pre_fast"] + macros["crucible_pre_msg"]
+        total_post = macros["crucible_post"] + macros["crucible_post_fast"] + macros["crucible_post_msg"]
+        return {**macros, "contract_assert": self.contract_assert, "decide_total": self.decide_total,
                 "total_pre_cites": total_pre, "total_post_cites": total_post,
                 "total_contract_cites": total_pre + total_post + self.contract_assert,
                 "decide_per_procedure": dict(self.procedures)}
@@ -129,17 +123,6 @@ def count_tree(tree: tsast.Tree, counts: Counts, shown: str) -> None:
         if callee is not None and callee.type == "identifier" and callee.text in MACRO_CITES and is_in_use(call):
             counts.macros[callee.text] += 1
             counts.per_file[shown] += 1
-    for specifier in tree.find("function_contract_specifier"):
-        if not is_in_use(specifier):
-            continue
-        keyword = specifier.tokens()[0]
-        if keyword == "pre":
-            counts.p2900_pre += 1
-        elif keyword == "post":
-            counts.p2900_post += 1
-        else:
-            raise AuditError(f"{shown}:{specifier.line}: a contract specifier opens with {keyword!r}, not pre or post")
-        counts.per_file[shown] += 1
     for statement in tree.find("contract_assert_statement"):
         if is_in_use(statement):
             counts.contract_assert += 1
@@ -194,7 +177,7 @@ def print_human(counts: Counts) -> None:
     rows = [("CRUCIBLE_PRE", "crucible_pre"), ("CRUCIBLE_PRE_FAST", "crucible_pre_fast"),
             ("CRUCIBLE_PRE_MSG", "crucible_pre_msg"), ("CRUCIBLE_POST", "crucible_post"),
             ("CRUCIBLE_POST_FAST", "crucible_post_fast"), ("CRUCIBLE_POST_MSG", "crucible_post_msg"),
-            ("pre (P2900)", "p2900_pre"), ("post (P2900)", "p2900_post"), ("contract_assert", "contract_assert"),
+            ("contract_assert", "contract_assert"),
             ("decide:: cites", "decide_total"), ("Total pre cites", "total_pre_cites"),
             ("Total post cites", "total_post_cites"), ("Total contract cites", "total_contract_cites")]
     for label, key in rows:
@@ -283,10 +266,6 @@ inline void planted_macro_forms(int n) {
     CRUCIBLE_POST_MSG(r, r > 0, "synthetic");
     contract_assert(n > 0);
 }
-inline int planted_p2900_forms(int const n)
-    pre (n > 0)
-    post (r: r > 0)
-{ return n; }
 inline void planted_decide_cites(int n) {
 """
 FIXTURE_TAIL = "}\n}  // namespace crucible::planted\n"
@@ -332,9 +311,9 @@ inline bool real_use(int n) {
 """
 
 # Each shape here fooled the text count that this audit replaces: a macro
-# definition read as two cites, a cite split after `decide::` read as none,
-# and a function named pre read as two P2900 clauses.  A cite inside a
-# block comment and a string must stay at zero.
+# definition read as two cites, and a cite split after `decide::` read as
+# none.  A function named pre or post is no cite.  A cite inside a block
+# comment and a string must stay at zero.
 TRAPS_FIXTURE = """#pragma once
 #define CRUCIBLE_PRE(condition) contract_assert(condition)
 namespace crucible::traps {
@@ -391,7 +370,7 @@ def self_test() -> int:
         cites = "".join(f"    decide::{name}(n);\n" * 2 for name in PLANTED_CATALOG)
         _plant(planted, {"include/selftest_cites.h": FIXTURE_HEAD + cites + FIXTURE_TAIL})
         data = scan(planted).as_json()
-        want = {name.lower(): 1 for name in MACRO_CITES} | {"p2900_pre": 1, "p2900_post": 1, "contract_assert": 1,
+        want = {name.lower(): 1 for name in MACRO_CITES} | {"contract_assert": 1,
                                                              "decide_total": 2 * len(PLANTED_CATALOG)}
         for key, value in want.items():
             expect(f"the planted tree reports {key}={value}, not {data[key]}", data[key] == value)
@@ -415,7 +394,7 @@ def self_test() -> int:
         alias = tmp / "alias"
         _plant(alias, {"include/alias_cites.h": ALIAS_FIXTURE})
         data = scan(alias).as_json()
-        for key, value in {"decide_total": 1, "crucible_pre": 1, "contract_assert": 0, "p2900_pre": 0,
+        for key, value in {"decide_total": 1, "crucible_pre": 1, "contract_assert": 0,
                            "total_contract_cites": 1}.items():
             expect(f"the alias tree reports {key}={value}, not {data[key]}", data[key] == value)
         expect(f"the alias tree has one coprime cite, not {data['decide_per_procedure']['coprime']}",
@@ -424,7 +403,7 @@ def self_test() -> int:
         traps = tmp / "traps"
         _plant(traps, {"include/traps.h": TRAPS_FIXTURE})
         data = scan(traps).as_json()
-        for key, value in {"crucible_pre": 1, "contract_assert": 0, "p2900_pre": 0, "p2900_post": 0,
+        for key, value in {"crucible_pre": 1, "contract_assert": 0, "total_contract_cites": 1,
                            "decide_total": 1}.items():
             expect(f"the trap tree reports {key}={value}, not {data[key]}", data[key] == value)
         expect(f"the split cite counts for alpha: {data['decide_per_procedure']}",
