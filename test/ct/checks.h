@@ -188,6 +188,7 @@ int run_control(Leak&& leak) noexcept {
 template <typename Checks>
 int run(int argc, char** argv, Checks&& run_checks) noexcept {
     require_valgrind();
+    require_no_debuginfod();
     if (argc == 2) {
         std::string_view const mode{argv[1]};
         if (mode == "--control-branch") return run_control(control_branch_on_secret);

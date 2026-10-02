@@ -78,6 +78,11 @@ set(CRUCIBLE_CT_TAINT_FLAGS
 # One taint test per source and optimization level.  The same binary also
 # runs the two leaking controls, which pass only when memcheck reports the
 # leak, so a blind harness fails.
+#
+# When DEBUGINFOD_URLS names a server, valgrind asks that server for the
+# debug information of each loaded object that has none on the host.  A
+# lookup goes over the network and can take seconds.  So each taint test
+# runs with no DEBUGINFOD_URLS, and the harness refuses a run that has one.
 function(ct_taint_test source opt)
   set(name ${source}_${opt})
   add_executable(${name} ${source}.cpp ${CMAKE_SOURCE_DIR}/src/foundation/ContractHandler.cpp)
@@ -92,7 +97,7 @@ function(ct_taint_test source opt)
   add_test(NAME ${name}_control_index
     COMMAND ${_valgrind} $<TARGET_FILE:${name}> --control-index)
   set_tests_properties(${name} ${name}_control_branch ${name}_control_index
-    PROPERTIES LABELS "ct_taint")
+    PROPERTIES LABELS "ct_taint" ENVIRONMENT_MODIFICATION "DEBUGINFOD_URLS=unset:")
 endfunction()
 
 ct_taint_test(test_ct_taint_fixy O2)

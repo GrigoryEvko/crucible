@@ -34,6 +34,22 @@ inline void require_valgrind() noexcept {
     }
 }
 
+// Stops the run when DEBUGINFOD_URLS names a server.  valgrind reads the
+// variable at its start, and it asks each server for the debug information
+// of each loaded object that has none on the host.  A test must not depend
+// on the network: one lookup can take seconds.  test/ct/CMakeLists.txt
+// removes the variable from the environment of each taint test.  Called in
+// main after require_valgrind().
+inline void require_no_debuginfod() noexcept {
+    char const* const servers = std::getenv("DEBUGINFOD_URLS");
+    if (servers != nullptr && servers[0] != '\0') {
+        std::fputs("ct_taint: DEBUGINFOD_URLS names a server, so valgrind asked the network for debug information "
+                   "at its start.  Unset DEBUGINFOD_URLS for this test.\n",
+                   stderr);
+        std::exit(2);
+    }
+}
+
 // Marks the bytes of `value` as undefined, which is how this harness
 // spells "secret".  The value itself is unchanged.
 template <typename T>
