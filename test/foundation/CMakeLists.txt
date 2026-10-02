@@ -1890,6 +1890,34 @@ foundation_neg_compile_test(neg_core_cache_line_borrow_of_temporary
   "use of deleted function .T& foundation::core::CacheLine<T>::get\\(\\) && \\[with T = int\\]."
   "a borrow of a temporary CacheLine dangles at the end of the full expression")
 
+# ── The Region family: View, copy and fill ────────────────────────────
+#
+# A View borrows a run of objects with a fixed or a dynamic extent.  A
+# const is never dropped, and copy and fill write only an element whose
+# assignment is a byte copy.  test/fixy/test_core_region.cpp runs the
+# operations over a mapping, because a mapping is the owner of a View.
+foundation_neg_compile_test(neg_core_view_reference_element
+  "template constraint failure for .template<class T, long unsigned int Extent>  requires \\(ViewElement<T>\\) && \\(ViewExtent<T, Extent>\\) class foundation::core::View."
+  "the expression .is_object_v<T> \\[with T = int&\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_view_zero_extent
+  "template constraint failure for .template<class T, long unsigned int Extent>  requires \\(ViewElement<T>\\) && \\(ViewExtent<T, Extent>\\) class foundation::core::View."
+  "required for the satisfaction of .ViewExtent<T, Extent>. \\[with T = int; Extent = 0\\]")
+foundation_neg_compile_test(neg_core_view_mutable_from_const
+  "conversion from .View<const int>. to non-scalar type .View<int>. requested"
+  "In function .void write_through\\(foundation::core::View<const int>\\).")
+foundation_neg_compile_test(neg_core_copy_extent_mismatch
+  "could not convert .source. from .View<\\[...\\],8>. to .View<\\[...\\],4>."
+  "In function .void copy_four_from_eight\\(foundation::core::View<int, 4>, foundation::core::View<const int, 8>\\).")
+foundation_neg_compile_test(neg_core_copy_into_const
+  "no matching function for call to .copy\\(foundation::core::View<const int>&, foundation::core::View<const int>&\\)."
+  "required for the satisfaction of .RegionCopyElement<T>. .with T = const int.")
+foundation_neg_compile_test(neg_core_copy_not_byte_copyable
+  "no matching function for call to .copy\\(foundation::core::View<Counted>&, foundation::core::View<const Counted>&\\)."
+  "the expression .is_trivially_copyable_v<T> \\[with T = Counted\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_fill_const
+  "no matching function for call to .fill\\(foundation::core::View<const int>&, int\\)."
+  "required for the satisfaction of .RegionCopyElement<T>. .with T = const int.")
+
 # ── Hard errors in a body ─────────────────────────────────────────────
 #
 # Neither template has a constraint.  The refusal is an error in the body

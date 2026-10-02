@@ -261,6 +261,10 @@ EXTENSION_POINTS: dict[QualifiedName, tuple[tuple[str, ...], str]] = {
         IN_THE_LAYERS, "a lattice states its canonical identity beside its definition, for the row hash"),
     ("foundation", "diag", "insight_provider"): (
         IN_THE_LAYERS, "the diagnostic text of a category.  It changes a message and grants nothing"),
+    ("foundation", "core", "niche"): (
+        IN_THE_LAYERS, "a payload type states its empty value beside its definition.  The niche selects only the "
+                       "storage form of an Option, and a payload equal to the empty value fails the precondition "
+                       "of the slot"),
     ("fixy", "concurrent", "is_stage_inline_safe"): (
         ("include/*", "src/*", "bench/*"), "a stage author claims inline dispatch beside the stage.  Pipeline.h "
                                            "refuses the claim unless the stage states its working set"),

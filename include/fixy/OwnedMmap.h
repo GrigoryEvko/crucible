@@ -33,7 +33,10 @@
 #include <fixy/atoms/Os.h>
 #include <fixy/os/AtomPack.h>
 #include <foundation/Brand.h>
+#include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
+#include <foundation/contracts/Pre.h>
+#include <foundation/core/Region.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
@@ -189,6 +192,16 @@ concept CtxFitsRegionMint =
     MappedProt<Prot> && PrimaryShare<Share> && (RegionModifier<Modifiers> && ...) && ModifiersAreDistinct<Modifiers...>
     && ExecIsLicensed<Prot, Modifiers...> && CtxAdmitsMapping<Ctx, Prot, Share, Modifiers...>;
 
+// The gate of OwnedMmap::view.  The view starts the lifetime of its
+// elements over the bytes of the mapping, so each subobject of an element
+// is an implicit-lifetime type.  A page is aligned to at least 4096 bytes,
+// so an element of a larger alignment is refused.  A view that writes
+// needs a protection that writes.
+template <typename Prot, typename T>
+concept MappingViewElement = MappedProt<Prot> && ::foundation::core::ViewElement<T>
+                          && ::foundation::lifetime::ImplicitLifetimeThroughout<std::remove_const_t<T>>
+                          && (alignof(T) <= 4096) && (std::is_const_v<T> || (prot_bits_of(^^Prot) & PROT_WRITE) != 0);
+
 }  // namespace mmap
 
 template <typename Tag, typename Prot, typename Share, typename Brand = ::foundation::brand::DefaultBrand>
@@ -270,6 +283,32 @@ public:
     [[nodiscard]] std::size_t size() const noexcept { return len_; }
     [[nodiscard]] bool is_mapped() const noexcept { return addr_ != MAP_FAILED && addr_ != nullptr; }
 
+    // The bytes of the mapping as a View of T, with the count from the
+    // length of the mapping.  The call starts the lifetime of the elements
+    // over the bytes that the mapping holds, so each element has the value
+    // that its bytes give.  The length is a whole number of elements.  An
+    // empty region gives an empty View.
+    //
+    // The View borrows the mapping and must not outlive it.  The overloads
+    // for an rvalue are deleted, so no View of a temporary mapping exists.
+    // A const mapping gives only a View of const elements.
+    template <typename T>
+        requires mmap::MappingViewElement<Prot, T>
+    [[nodiscard]] ::foundation::core::View<T> view() & noexcept {
+        return view_of_<T>();
+    }
+
+    template <typename T>
+        requires mmap::MappingViewElement<Prot, T> && std::is_const_v<T>
+    [[nodiscard]] ::foundation::core::View<T> view() const& noexcept {
+        return view_of_<T>();
+    }
+
+    template <typename T>
+    void view() && = delete("a View of a temporary mapping dangles when the mapping unmaps");
+    template <typename T>
+    void view() const&& = delete("a View of a temporary mapping dangles when the mapping unmaps");
+
     // Hands the region to something that will unmap it on its own
     // schedule, such as a subsystem the kernel takes over.  Almost
     // every transfer of ownership is a move instead.
@@ -289,6 +328,15 @@ public:
     }
 
 private:
+    template <typename T>
+    [[nodiscard]] ::foundation::core::View<T> view_of_() const noexcept {
+        if (!is_mapped()) return ::foundation::core::View<T>{};
+        CRUCIBLE_PRE(len_ % sizeof(T) == 0);
+        std::size_t const count = len_ / sizeof(T);
+        T* const first = ::foundation::lifetime::start_as_array<std::remove_const_t<T>>(addr_, count).data();
+        return ::foundation::core::detail::view_over_<T>(first, count);
+    }
+
     void release_() noexcept {
         if (is_mapped()) {
             ::munmap(addr_, len_);

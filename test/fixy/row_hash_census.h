@@ -861,6 +861,10 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::CasOutcome, kPayload},
     {^^::foundation::core::CacheLine, "a layout wrapper: it aligns its cell and makes no claim about the cell"},
     {^^::foundation::core::Tally, kDescriptor},
+    {^^::foundation::core::View,
+     "a borrow of a run of elements: it owns nothing and makes no claim about what the elements hold"},
+    {^^::foundation::core::ViewCursor,
+     "the position of a loop over a View: it lives inside the loop, and it is never a value in a signature"},
 
     {^^fa::is_graded_specialization, kMetafunction},
     {^^fa::graded_modality, kMetafunction},

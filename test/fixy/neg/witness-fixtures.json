@@ -147,6 +147,16 @@
       "constructor": "\\bOptionCursor\\("
     },
     {
+      "name": "neg_witness_core_view_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bView\\("
+    },
+    {
+      "name": "neg_witness_core_viewcursor_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bViewCursor\\("
+    },
+    {
       "name": "neg_witness_cpupinned_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bCpuPinned\\("

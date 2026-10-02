@@ -92,15 +92,20 @@ private:
 //   static constexpr bool is_empty(T const&) noexcept;
 //
 // The primary template has no members, so a type with no specialization
-// has no niche.
+// has no niche.  A niche payload has trivial copy and move constructors and
+// a trivial destructor, so the ABI passes the Option in registers.  Its
+// assignment can be user-provided, as the assignment of a type that holds
+// a byte seal is.
 template <class T>
 struct niche {};
 
 template <class T>
-concept HasNiche = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T> && requires(T const& value) {
-    { niche<T>::empty() } noexcept -> std::same_as<T>;
-    { niche<T>::is_empty(value) } noexcept -> std::same_as<bool>;
-};
+concept HasNiche =
+    std::is_trivially_copy_constructible_v<T> && std::is_trivially_move_constructible_v<T>
+    && std::is_trivially_destructible_v<T> && std::is_nothrow_copy_assignable_v<T> && requires(T const& value) {
+           { niche<T>::empty() } noexcept -> std::same_as<T>;
+           { niche<T>::is_empty(value) } noexcept -> std::same_as<bool>;
+       };
 
 namespace detail {
 
@@ -258,10 +263,12 @@ class [[nodiscard]] Option {
     constexpr Option(detail::SomeTag tag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
         : slot_{tag, static_cast<U&&>(value)} {}
 
-    // A cold arm, so that a passing expect() costs one branch.
-    [[noreturn]] CRUCIBLE_COLD static void expect_failed_(ExpectWhy const& why) noexcept {
-        ::foundation::detail::contract_failed_msg("expect: the Option holds no value", why.file_, why.line_,
-                                                  why.function_, why.reason_);
+    // A cold arm, so that a passing expect() costs one branch.  The fields
+    // go in registers, so the caller builds no object on its stack, and the
+    // stack protector adds no canary to the hot path.
+    [[noreturn]] CRUCIBLE_COLD static void expect_failed_(char const* reason, char const* file, int line,
+                                                          char const* function) noexcept {
+        ::foundation::detail::contract_failed_msg("expect: the Option holds no value", file, line, function, reason);
     }
 
 public:
@@ -293,7 +300,7 @@ public:
     // and the place of the call, and ends the process.
     [[nodiscard]] constexpr T expect(ExpectWhy why) && noexcept {
         if (!slot_.holds_()) [[unlikely]] {
-            expect_failed_(why);
+            expect_failed_(why.reason_, why.file_, why.line_, why.function_);
         }
         T taken(static_cast<T&&>(slot_.payload_()));
         slot_.clear_();

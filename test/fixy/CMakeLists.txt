@@ -4468,6 +4468,27 @@ fixy_neg_compile_test(neg_owned_mmap_forged_address
   "is private within this context"
   "OwnedMmap\\(void\\*, std::size_t\\)")
 
+# ── The View of a mapping ────────────────────────────────────────────
+#
+# view<T>() gives the bytes of a mapping as a View of T.  It starts the
+# lifetime of each element, so each element is an implicit-lifetime type
+# at each depth.  A View that writes needs a mapping that writes and a
+# mutable borrow of it, and no View of a temporary mapping exists.
+fixy_test(test_core_region)
+
+fixy_neg_compile_test(neg_owned_mmap_view_of_temporary
+  "use of deleted function .void fixy::OwnedMmap<Tag, Prot, Share, Brand>::view\\(\\) && .with T = int"
+  "a View of a temporary mapping dangles when the mapping unmaps")
+fixy_neg_compile_test(neg_owned_mmap_view_proof_element
+  "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadWrite, fixy::mmap::share::Anonymous, \\{anonymous\\}::RegionBrand>::view<foundation::lifetime::detail::HoldsProof>\\(\\)."
+  "required for the satisfaction of .ImplicitLifetimeThroughout<typename std::remove_const<T>::type>. .with T = foundation::lifetime::detail::HoldsProof.")
+fixy_neg_compile_test(neg_owned_mmap_view_writes_a_read_only_mapping
+  "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private, \\{anonymous\\}::RegionBrand>::view<int>\\(\\)."
+  "required for the satisfaction of .MappingViewElement<Prot, T>. \\[with Prot = fixy::mmap::prot::ReadOnly; T = int\\]")
+fixy_neg_compile_test(neg_owned_mmap_view_writes_through_a_const_mapping
+  "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadWrite, fixy::mmap::share::Anonymous, \\{anonymous\\}::RegionBrand>::view<int>\\(\\) const."
+  "the expression .is_const_v<T> \\[with T = int\\]. evaluated to .false.")
+
 fixy_neg_compile_test(neg_owned_mmap_forged_through_mint_linear
   "no matching function for call"
   "mint_linear<.*::Region>\\(void\\*, long unsigned int\\)")

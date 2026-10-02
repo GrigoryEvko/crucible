@@ -17,6 +17,7 @@
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Ref.h>
+#include <foundation/core/Region.h>
 
 namespace fixy {
 
@@ -31,5 +32,10 @@ using ::foundation::core::Atomic;
 using ::foundation::core::CacheLine;
 using ::foundation::core::CasOutcome;
 using ::foundation::core::Tally;
+
+using ::foundation::core::copy;
+using ::foundation::core::dynamic_extent;
+using ::foundation::core::fill;
+using ::foundation::core::View;
 
 }  // namespace fixy

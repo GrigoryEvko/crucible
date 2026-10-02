@@ -16,5 +16,7 @@ static_assert(std::is_same_v<::fixy::Atomic<int>, ::foundation::core::Atomic<int
 static_assert(std::is_same_v<::fixy::CacheLine<int>, ::foundation::core::CacheLine<int>>);
 static_assert(std::is_same_v<::fixy::CasOutcome<int>, ::foundation::core::CasOutcome<int>>);
 static_assert(std::is_same_v<::fixy::Tally, ::foundation::core::Tally>);
+static_assert(std::is_same_v<::fixy::View<int, 4>, ::foundation::core::View<int, 4>>);
+static_assert(::fixy::dynamic_extent == ::foundation::core::dynamic_extent);
 
 }  // namespace fixy::detail::core_checks
