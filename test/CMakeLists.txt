@@ -400,12 +400,15 @@ set_tests_properties(lifetime_twin lifetime_twin_self_test PROPERTIES
 # A substrate trait or a fail-closed relation is specialized only beside
 # the declarations it names.  utils/scripts/check-trait-injection.py reads each
 # specialization and each reopening of a relation namespace from the parse
-# tree.  Exit 3 when the kit is absent reports a skip.
+# tree.  It also refuses a gate that reads a template that a translation
+# unit can specialize, and each read of a gate of include/crucible that the
+# ledger admits gives a warning.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME trait_guard_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-trait-injection.py
           --self-test)
 add_test(NAME trait_guard
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-trait-injection.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-trait-injection.py
+          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 set_tests_properties(trait_guard trait_guard_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)

@@ -1,15 +1,36 @@
 # utils/scripts/open-gate-reads.txt — the open reads of each template that a gate of
-# include/foundation or include/fixy reads, read by utils/scripts/check-trait-injection.py
-# (Family E).  A gate is a concept definition or a requires clause, in a header or in the
-# check file of a header (test/layer/checks/foundation, test/layer/checks/fixy).  An open read
-# names a variable template, a function template, or a class template for its value
-# or its type: a translation unit can specialize each, and the specialization changes
-# the answer of the gate.
+# include/foundation, include/fixy or include/crucible reads, read by
+# utils/scripts/check-trait-injection.py (Family E).  A gate is a concept definition or a
+# requires clause, in a header or in the check file of a header (test/layer/checks/).  An
+# open read names a variable template, a function template, or a class template for its
+# value or its type: a translation unit can specialize each, and the specialization
+# changes the answer of the gate.
 #
 #   <template> | <count>             reads that wait for a fix.  The count only shrinks.
+#   <template> | <count> | <reason>  the same, with the reason that the reads stay.
 #   <template> | open | <reason>     a template that stays open on purpose.
 #
+# The row of a template that a gate of include/crucible reads gives a reason.  Each such
+# read that a count row admits gives a warning.
+#
 # Run check-trait-injection.py --refresh in the commit that removes a read.
+crucible::canopy::admit_gossiped | open | the requires-expression of Crdt asks only whether a call of the function compiles.  An explicit specialization keeps the type of the call, so it can delete the call and refuse a type, but it cannot admit one
+crucible::cipher::can_demote_tier_v | 1 | a specialization admits a tier move that foundation::decide::tier_replaces refuses.  DemotableTier can call tier_replaces itself, and then the read closes
+crucible::cipher::can_promote_tier_v | 1 | a specialization admits a tier move that foundation::decide::tier_replaces refuses.  PromotableTier can call tier_replaces itself, and then the read closes
+crucible::cipher::content_hash_projection | open | a restorable payload states its hash projection with a specialization beside its definition, so the trait is an extension point by design.  RestorableHashed asks only for that projection
+crucible::cog::caps_for | 1 | a specialization gives a capability schema to a cog kind that TargetCaps.h does not map, so HasCaps admits the kind.  A table of reflections in a function that is not a template closes the read
+crucible::cog::cog_family_v | 2 | a specialization moves a cog kind into a different family, so IsMimicSubstrate or IsComputeKind admits it.  A consteval function from the kind to its family closes the read
+crucible::cog::cog_max_capacity | 1 | a specialization gives a capacity to a cog kind that FitsCog.h does not map, so HasCogCapacity admits the kind.  A consteval function from the kind to its capacity closes the read
+crucible::cog::detail::row_fits_cog_v | 1 | a specialization admits a row whose demand is more than the capacity of the cog kind.  FitsCog can call a consteval function over the reflections of the row and the kind
+crucible::cog::opcodes_for | 1 | a specialization gives an opcode catalog to a cog kind that OpcodeLatencyTable.h does not map.  A table of reflections in a function that is not a template closes the read
+crucible::forge::_wip::phases::comm::pattern_accepts_kind_pair | 1 | only tests include this sketch of the communication phase.  A specialization admits a kind pair that the fusion pattern refuses.  A function that is not a template closes the read
+crucible::mimic::_wip::network::backend_accepts_cog_kind | 1 | only tests include this sketch of the network backend.  A specialization admits a cog kind that the vendor does not drive.  A function that is not a template closes the read
+crucible::mimic::_wip::network::ir001_network_kernel_kind_v | 1 | only tests include this sketch of the network backend.  A specialization admits an operation kind that is no network kernel.  A concept over the operation kind closes the read
+crucible::mimic::detail::caps_class_projection | 1 | a specialization gives a cache-class fold to a cog kind that CogMimic.h does not map, so HasCogMimicProjection admits the kind.  A table of reflections in a function that is not a template closes the read
+crucible::singleton_init_graph::detail::edges_name_registered_ | 1 | a specialization admits an edge to a singleton that the registry does not hold.  A consteval function over the reflections of the registry and the edges closes the read
+crucible::singleton_init_graph::detail::is_acyclic_ | 1 | a specialization admits an init graph with a cycle.  A consteval function over the reflections of the registry and the edges closes the read
+crucible::singleton_init_graph::detail::is_registry_ | 1 | a specialization admits a registry with an entry that is no singleton atom, or with an entry that occurs two times.  A consteval function over the reflection of the registry closes the read
+crucible::singleton_init_graph::detail::is_tuple_ | 2 | a specialization makes a type that is no std::tuple pass as a registry or as a list of edges.  A concept over the reflection of the type closes the read
 fixy::ClockSource::satisfies | 1
 fixy::SchedClass::runnable_on | 1
 fixy::atom::detail::effect_grade_row_ | 1
@@ -62,7 +83,7 @@ fixy::fs::detail::all_atom_tags_known_v | 1
 fixy::io::detail::all_ring_flags_known_v | 1
 fixy::io::detail::cq_entries_is_pow2_or_default_v | 1
 fixy::io::detail::sq_entries_is_pow2_v | 1
-fixy::is_band_of_v | 2
+fixy::is_band_of_v | 3 | the two reads of include/fixy/Collision.h wait for a fix.  LifetimePinnedRegion of include/crucible/Cipher.h asks whether a region carries a lifetime band, and a specialization admits a type with no band
 fixy::is_fn_v | 3
 fixy::is_owned_region_v | 1
 fixy::is_stale_v | 2
@@ -81,6 +102,7 @@ fixy::mmap::detail::region_mint_admits_v | 1
 fixy::refined::bound_fits | 1
 fixy::relax | 1
 fixy::sanitize::path_traversal::sanitize_path_no_dotdot | 1
+fixy::satisfies_v | 1 | LifetimePinnedRegion of include/crucible/Cipher.h asks whether the lifetime band of a region is at least its scope, and a specialization admits a narrower band.  A concept over the lattice closes the read
 fixy::select_fresher | 2
 fixy::session::config::detail::entry_of | 1
 fixy::session::config::is_configuration_v | 5
@@ -132,3 +154,4 @@ foundation::permissions::with_read_view | open | the reads are self-test concept
 foundation::reflect::any_component_satisfies | 1
 foundation::reflect::arity_v | 2
 foundation::reflect::bits_to_string | 1
+foundation::reflect::enumerator_name | 1 | SemaphoreBackend of include/crucible/mimic/Semaphore.h asks for the name of the backend.  An explicit specialization for VendorBackend can name a value that no enumerator holds.  A function that is not a template closes the read

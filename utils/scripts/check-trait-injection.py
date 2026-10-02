@@ -75,11 +75,13 @@ FAMILY D: THE ORPHAN RULE OF THE TWO LAYERS
 
 FAMILY E: A GATE READS NO OPEN TEMPLATE
     Family D sees only the files that git tracks, and the language admits a
-    specialization in any file.  So a gate of the two layers must not read a
-    template that a translation unit can specialize.  A gate is a concept
-    definition or a requires clause in a header of the two layers, or in
-    the check file of such a header.  An open read in a gate is a name that
-    resolves to a layer template of one of three kinds:
+    specialization in any file.  So a gate must not read a template that a
+    translation unit can specialize.  A gate is a concept definition or a
+    requires clause in a header of include/foundation, include/fixy or
+    include/crucible, or in the check file of such a header.  An open read
+    in a gate is a name that resolves to a template of one of three kinds.
+    The template is a layer template, or for a gate of include/crucible
+    also a template that a header of include/crucible declares:
       * a variable template: `template <> inline constexpr bool X_v<Fake> =
         true;` changes the answer
       * a function template: an explicit specialization of a function
@@ -99,7 +101,13 @@ FAMILY E: A GATE READS NO OPEN TEMPLATE
     does not name, or a count above its row, fails.  A count below its row,
     or a row that no gate reads, is stale and fails until --refresh writes
     the new count.  A row whose second field is `open` stays open on purpose,
-    and its third field gives the reason.
+    and its third field gives the reason.  A count row can also give a
+    reason in a third field.
+    The row of a template that a gate of include/crucible reads must give a
+    reason, and a row without one fails.  Each such read that a count row
+    admits gives a warning in the format of utils/scripts/check_report.py,
+    so the debt stays in the output.  A read that an open row admits gives
+    no warning.
 
 THE CHECK FILES
     test/layer/checks/<layer>/<path>.cpp holds the self-test namespaces and
@@ -108,9 +116,10 @@ THE CHECK FILES
     its header: the check file may specialize what its header owns, a glob
     of an authoring set or of an extension point admits it when the glob
     admits its header, and it takes no exemption of test/.  A gate of the
-    check file of a header of the two layers is a gate of Family E, so an
-    open read that moves from a header to its check file keeps its count.
-    The layer templates are still the templates that the headers define.
+    check file of a header of include/foundation, include/fixy or
+    include/crucible is a gate of Family E, so an open read that moves from
+    a header to its check file keeps its count.  The layer templates are
+    still the templates that the headers define.
 
 WHAT READS THE SITES
     The parse tree of the pinned tree-sitter kit (utils/scripts/tsast.py), over each
@@ -152,18 +161,20 @@ AUTHORING SETS ARE PER RELATION
     header does, and the glob test/* does not admit it.
 
 Usage
-    check-trait-injection.py              scan the tree
-    check-trait-injection.py --refresh    write the counts of the gate ledger
-    check-trait-injection.py --self-test  plant each forgery and each exemption
+    check-trait-injection.py [--warnings-dir DIR]  scan the tree, and write the warnings to DIR/trait-guard.txt
+    check-trait-injection.py --refresh             write the counts of the gate ledger
+    check-trait-injection.py --self-test           plant each forgery and each exemption
 
-Exit 0 clean, 1 on a forged specialization, an open read above its ledger
-row or a file the parser cannot read, 2 on a stale extension point, a stale
+Exit 0 clean or with warnings only, 1 on a forged specialization, an open
+read above its ledger row, a read of a gate of include/crucible whose row
+gives no reason or a file the parser cannot read, 2 on a stale extension point, a stale
 ledger row, a bad invocation or a failed self-test, 3 when the kit is not
 installed.
 """
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import fnmatch
 import io
@@ -177,10 +188,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import throwaway_repo  # noqa: E402  (the path insert above has to come first)
+import check_report  # noqa: E402  (the path insert above has to come first)
+import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 
 LAYER_ROOTS = ("include/foundation/", "include/fixy/")
+# The runtime layer.  Family D does not read it.  Family E reads its gates,
+# and a gate of it can read a template that it declares.
+CRUCIBLE_ROOT = "include/crucible/"
+GATE_ROOTS = (*LAYER_ROOTS, CRUCIBLE_ROOT)
+# The check name of the warnings of Family E, for utils/scripts/check_report.py.
+CHECK = "trait-guard"
 TEST_TREE = "test/"
 # The directory under test/ that takes no exemption of test/: the fuzz harnesses.
 FUZZ_TREE = "test/fuzz/"
@@ -259,15 +277,19 @@ GATE_NAMES = ("template_function", "template_type", "qualified_identifier", "ide
 OPEN_MARK = "open"
 LEDGER_HEADER = (
     "# utils/scripts/open-gate-reads.txt — the open reads of each template that a gate of\n"
-    "# include/foundation or include/fixy reads, read by utils/scripts/check-trait-injection.py\n"
-    "# (Family E).  A gate is a concept definition or a requires clause, in a header or in the\n"
-    "# check file of a header (test/layer/checks/foundation, test/layer/checks/fixy).  An open read\n"
-    "# names a variable template, a function template, or a class template for its value\n"
-    "# or its type: a translation unit can specialize each, and the specialization changes\n"
-    "# the answer of the gate.\n"
+    "# include/foundation, include/fixy or include/crucible reads, read by\n"
+    "# utils/scripts/check-trait-injection.py (Family E).  A gate is a concept definition or a\n"
+    "# requires clause, in a header or in the check file of a header (test/layer/checks/).  An\n"
+    "# open read names a variable template, a function template, or a class template for its\n"
+    "# value or its type: a translation unit can specialize each, and the specialization\n"
+    "# changes the answer of the gate.\n"
     "#\n"
     "#   <template> | <count>             reads that wait for a fix.  The count only shrinks.\n"
+    "#   <template> | <count> | <reason>  the same, with the reason that the reads stay.\n"
     "#   <template> | open | <reason>     a template that stays open on purpose.\n"
+    "#\n"
+    "# The row of a template that a gate of include/crucible reads gives a reason.  Each such\n"
+    "# read that a count row admits gives a warning.\n"
     "#\n"
     "# Run check-trait-injection.py --refresh in the commit that removes a read.\n")
 
@@ -421,9 +443,12 @@ class Orphans:
         declared: The files of the two layers that declare each primary, by qualified name
         by_last_name: The layer templates of each last name
         used_extensions: The extension points that admitted a site
-        kinds: The kind of each layer template, `class`, `variable` or
-            `function`, for the gate walk of Family E
+        kinds: The kind of each layer template and of each template of
+            include/crucible, `class`, `variable` or `function`, for the gate
+            walk of Family E
         function_last_name: The layer function templates of each last name
+        crucible_last_name: The templates of include/crucible of each last
+            name, of each kind.  Only a gate of include/crucible reads them
     """
 
     extension_points: dict[QualifiedName, tuple[tuple[str, ...], str]] = field(default_factory=dict)
@@ -434,9 +459,14 @@ class Orphans:
     used_extensions: set[QualifiedName] = field(default_factory=set)
     kinds: dict[QualifiedName, str] = field(default_factory=dict)
     function_last_name: dict[str, set[QualifiedName]] = field(default_factory=dict)
+    crucible_last_name: dict[str, set[QualifiedName]] = field(default_factory=dict)
 
     def learn(self, tree: tsast.Tree, rel: str) -> None:
-        """Add the declarations of one header, and the layer templates it declares."""
+        """Add the declarations of one header, the layer templates it declares, and the templates of include/crucible.
+
+        A template of include/crucible enters only the facts of Family E, so
+        Family D does not read it.
+        """
         if rel.startswith("include/"):
             self.index.add(tree, share_aliases=True)
         if rel.startswith(LAYER_ROOTS):
@@ -450,6 +480,14 @@ class Orphans:
             for qualified in function_templates(tree):
                 self.kinds.setdefault(qualified, "function")
                 self.function_last_name.setdefault(qualified[-1], set()).add(qualified)
+        elif rel.startswith(CRUCIBLE_ROOT):
+            for primary in tsast.template_primaries(tree.root):
+                qualified = tsast.scope_levels(primary.template)[0] + (primary.name,)
+                self.kinds.setdefault(qualified, primary.kind)
+                self.crucible_last_name.setdefault(primary.name, set()).add(qualified)
+            for qualified in function_templates(tree):
+                self.kinds.setdefault(qualified, "function")
+                self.crucible_last_name.setdefault(qualified[-1], set()).add(qualified)
 
     def owners(self, qualified: QualifiedName) -> set[str]:
         """Return the files that own one layer template."""
@@ -603,11 +641,13 @@ class GateRead:
     """One gate that reads one open template.
 
     template is the qualified name of the template, joined with `::`.
+    is_crucible is true for a gate of include/crucible or of its check files.
     """
 
     template: str
     path: str
     line: int
+    is_crucible: bool = False
 
 
 def innermost_qualified(node: tsast.Node) -> tsast.Node:
@@ -645,16 +685,27 @@ def read_target(node: tsast.Node) -> tuple[tsast.Node, bool] | None:
 
 
 def gate_templates(gate: tsast.Node, orphans: Orphans, aliases: list[tsast.NamespaceAlias],
-                   usings: list[tsast.UsingDecl], extra: frozenset[QualifiedName]) -> set[QualifiedName]:
-    """Return the open layer templates that one gate reads.
+                   usings: list[tsast.UsingDecl], extra: frozenset[QualifiedName],
+                   is_crucible: bool = False) -> set[QualifiedName]:
+    """Return the open templates that one gate reads.
 
     A name that lookup resolves counts for the templates that it names.  A
-    qualified name whose head lookup does not know counts for each layer
-    template of its last name, so an unknown case is refused.  A class
-    template counts only when the gate reads its value or its type.
+    qualified name whose head lookup does not know counts for each
+    candidate template of its last name, so an unknown case is refused.  A
+    class template counts only when the gate reads its value or its type.
+    The candidates are the layer templates, and for a gate of
+    include/crucible also the templates of include/crucible.
 
     Complexity: linear in the nodes of the gate, times the scopes of each
     name for its lookup.
+
+    Args:
+        gate: The concept definition or the requires clause
+        orphans: The facts of the scan
+        aliases: The namespace aliases of the file of the gate
+        usings: The using declarations of the file of the gate
+        extra: The names that lookup also knows
+        is_crucible: True for a gate of include/crucible or of its check files
     """
     found: set[QualifiedName] = set()
     for node in [gate, *gate.descendants(*GATE_NAMES)]:
@@ -671,6 +722,8 @@ def gate_templates(gate: tsast.Node, orphans: Orphans, aliases: list[tsast.Names
             continue
         is_global, parts = path
         candidates = orphans.by_last_name.get(parts[-1], set()) | orphans.function_last_name.get(parts[-1], set())
+        if is_crucible:
+            candidates = candidates | orphans.crucible_last_name.get(parts[-1], set())
         if not candidates:
             continue
         site = tsast.lookup_site_of_parts(gate, is_global, parts, aliases, usings)
@@ -681,28 +734,34 @@ def gate_templates(gate: tsast.Node, orphans: Orphans, aliases: list[tsast.Names
 
 
 def gate_reads(trees: list[tuple[str, tsast.Tree]], orphans: Orphans) -> list[GateRead]:
-    """Return each open read of each gate of the two layers and of their check files, in path and line order.
+    """Return each open read of each gate of the three layers and of their check files, in path and line order.
 
-    Complexity: linear in the size of the headers and the check files of the two layers.
+    Complexity: linear in the size of the headers and the check files of the three layers.
     """
     functions = frozenset(qualified for qualified, kind in orphans.kinds.items() if kind == "function")
     reads: list[GateRead] = []
     for rel, tree in trees:
-        if not read_as(rel).startswith(LAYER_ROOTS):
+        header = read_as(rel)
+        if not header.startswith(GATE_ROOTS):
             continue
+        is_crucible = header.startswith(CRUCIBLE_ROOT)
         aliases, usings = tsast.namespace_aliases(tree), tsast.using_names(tree)
         local = tsast.NameIndex()
         local.add(tree)
         extra = frozenset(local.names) | functions
         for gate in tree.find(*GATE_NODES):
-            reads += [GateRead("::".join(template), rel, gate.line)
-                      for template in sorted(gate_templates(gate, orphans, aliases, usings, extra))]
+            reads += [GateRead("::".join(template), rel, gate.line, is_crucible)
+                      for template in sorted(gate_templates(gate, orphans, aliases, usings, extra, is_crucible))]
     return reads
 
 
 @dataclass(frozen=True)
 class LedgerRow:
-    """One row of the gate ledger: a count that waits for a fix, or an open template with its reason."""
+    """One row of the gate ledger: a count that waits for a fix, or an open template with its reason.
+
+    A count row can give a reason too.  count is None for an open row, and
+    reason is empty for a count row that gives none.
+    """
 
     template: str
     count: int | None
@@ -722,13 +781,16 @@ def read_ledger(path: Path) -> tuple[dict[str, LedgerRow], list[str]]:
         if not raw.strip() or raw.startswith("#"):
             continue
         fields = [part.strip() for part in raw.split("|", 2)]
-        if len(fields) == 2 and fields[1].isdigit() and int(fields[1]) > 0:
+        is_count = len(fields) >= 2 and fields[1].isdigit() and int(fields[1]) > 0
+        if len(fields) == 2 and is_count:
             row = LedgerRow(fields[0], int(fields[1]), "")
+        elif len(fields) == 3 and is_count and fields[2]:
+            row = LedgerRow(fields[0], int(fields[1]), fields[2])
         elif len(fields) == 3 and fields[1] == OPEN_MARK and fields[2]:
             row = LedgerRow(fields[0], None, fields[2])
         else:
-            errors.append(f"trait_guard[gate ledger]: {path.name}:{number} is neither `<template> | <count>` nor "
-                          f"`<template> | open | <reason>`")
+            errors.append(f"trait_guard[gate ledger]: {path.name}:{number} is not `<template> | <count>`, "
+                          f"`<template> | <count> | <reason>` or `<template> | open | <reason>`")
             continue
         if row.template in rows:
             errors.append(f"trait_guard[gate ledger]: {path.name}:{number} names {row.template} a second time")
@@ -737,11 +799,17 @@ def read_ledger(path: Path) -> tuple[dict[str, LedgerRow], list[str]]:
     return rows, errors
 
 
-def check_ledger(reads: list[GateRead], rows: dict[str, LedgerRow]) -> tuple[list[str], list[str]]:
-    """Compare the open reads with the ledger, and return the reads above it and the stale rows.
+def check_ledger(reads: list[GateRead], rows: dict[str, LedgerRow]
+                 ) -> tuple[list[str], list[str], list[check_report.Finding]]:
+    """Compare the open reads with the ledger, and return the reads above it, the stale rows and the warnings.
 
     A template that the ledger does not name, and a count above its row, are
-    above it.  A count below its row and a row that no gate reads are stale.
+    above it.  So is a template that a gate of include/crucible reads, when
+    its row gives no reason.  A count below its row and a row that no gate
+    reads are stale.  Each read of a gate of include/crucible that a count
+    row admits gives one warning.
+
+    Complexity: O(n log n) for n reads, because of the sort.
     """
     counts: dict[str, int] = {}
     where: dict[str, list[GateRead]] = {}
@@ -749,14 +817,25 @@ def check_ledger(reads: list[GateRead], rows: dict[str, LedgerRow]) -> tuple[lis
         counts[read.template] = counts.get(read.template, 0) + 1
         where.setdefault(read.template, []).append(read)
     above: list[str] = []
+    warnings: list[check_report.Finding] = []
     for template in sorted(counts):
         row = rows.get(template)
-        if row is not None and (row.count is None or counts[template] <= row.count):
-            continue
-        allowed = "no row" if row is None else f"a row of {row.count}"
+        crucible_reads = [read for read in where[template] if read.is_crucible]
         sites = ", ".join(f"{read.path}:{read.line}" for read in where[template])
-        above.append(f"trait_guard[gate]: {counts[template]} gate(s) read the open template {template}, and the "
-                     f"ledger holds {allowed}: {sites}")
+        if row is None or (row.count is not None and counts[template] > row.count):
+            allowed = "no row" if row is None else f"a row of {row.count}"
+            above.append(f"trait_guard[gate]: {counts[template]} gate(s) read the open template {template}, and "
+                         f"the ledger holds {allowed}: {sites}")
+            continue
+        if crucible_reads and not row.reason:
+            above.append(f"trait_guard[gate ledger]: a gate of {CRUCIBLE_ROOT} reads the open template {template}, "
+                         f"and its row gives no reason: {sites}.  Give the reason in a third field")
+            continue
+        if row.count is not None:
+            warnings += [check_report.Finding(
+                "warning", read.path, read.line, CHECK,
+                f"the gate reads the open template {template}, and a translation unit can specialize it.  The "
+                f"ledger holds the read as debt: {row.reason}") for read in crucible_reads]
     stale: list[str] = []
     for template, row in sorted(rows.items()):
         count = counts.get(template, 0)
@@ -765,15 +844,15 @@ def check_ledger(reads: list[GateRead], rows: dict[str, LedgerRow]) -> tuple[lis
         elif row.count is not None and count < row.count:
             stale.append(f"trait_guard[gate ledger]: {count} gate(s) read {template}, and its row says {row.count}.  "
                          f"Run --refresh in this commit")
-    return above, stale
+    return above, stale, warnings
 
 
 def refreshed_ledger(reads: list[GateRead], rows: dict[str, LedgerRow]) -> str:
     """Return the ledger text with the count of each row lowered to the current reads.
 
-    A row that no gate reads goes.  An open row keeps its reason.  A template
-    with no row, or a count above its row, is not written: a refresh only
-    shrinks the ledger.
+    A row that no gate reads goes.  An open row and a count row keep their
+    reasons.  A template with no row, or a count above its row, is not
+    written: a refresh only shrinks the ledger.
     """
     counts: dict[str, int] = {}
     for read in reads:
@@ -785,6 +864,8 @@ def refreshed_ledger(reads: list[GateRead], rows: dict[str, LedgerRow]) -> str:
             continue
         if row.count is None:
             lines.append(f"{template} | {OPEN_MARK} | {row.reason}\n")
+        elif row.reason:
+            lines.append(f"{template} | {min(row.count, counts[template])} | {row.reason}\n")
         else:
             lines.append(f"{template} | {min(row.count, counts[template])}\n")
     return "".join(lines)
@@ -844,12 +925,20 @@ def scan(root: Path, extension_points: dict[QualifiedName, tuple[tuple[str, ...]
     return forged, unread, stale
 
 
-def run(root: Path, extension_points: dict[QualifiedName, tuple[tuple[str, ...], str]] | None = None) -> int:
-    """Scan, print each finding, and return the exit code."""
+def run(root: Path, extension_points: dict[QualifiedName, tuple[tuple[str, ...], str]] | None = None,
+        warnings_dir: Path | None = None) -> int:
+    """Scan, print each finding, and return the exit code.
+
+    Args:
+        root: The root of the tree
+        extension_points: The extension points, or None for EXTENSION_POINTS
+        warnings_dir: The warnings directory of utils/scripts/check_report.py, or None to write no file
+    """
     gates: list[GateRead] = []
     forged, unread, stale = scan(root, extension_points, gates)
     rows, ledger_errors = read_ledger(root / GATE_LEDGER)
-    above, stale_rows = check_ledger(gates, rows)
+    above, stale_rows, warnings = check_ledger(gates, rows)
+    check_report.emit(warnings, CHECK, warnings_dir)
     for site in forged:
         relation = BY_LABEL.get(site.label)
         print(f"trait_guard[{site.label}]: forbidden specialization at {site.path}:{site.line}", file=sys.stderr)
@@ -878,9 +967,11 @@ def run(root: Path, extension_points: dict[QualifiedName, tuple[tuple[str, ...],
         return 1
     if stale or stale_rows:
         return 2
+    crucible_reads = sum(read.is_crucible for read in gates)
     print(f"check-trait-injection: clean — {len(RELATIONS)} relations and the orphan rule of include/foundation "
           f"and include/fixy, each specialization inside its authoring set, and {len(gates)} open gate reads, "
-          f"each on its ledger row.", file=sys.stderr)
+          f"each on its ledger row.  {crucible_reads} of the reads are in gates of {CRUCIBLE_ROOT}, and "
+          f"{len(warnings)} of them give a warning.", file=sys.stderr)
     return 0
 
 
@@ -894,7 +985,7 @@ def refresh(root: Path) -> int:
     scan(root, None, gates)
     path = root / GATE_LEDGER
     rows, errors = read_ledger(path)
-    above, _stale = check_ledger(gates, rows)
+    above, _stale, _warnings = check_ledger(gates, rows)
     for line in errors + above:
         print(line, file=sys.stderr)
     if errors or above:
@@ -1276,42 +1367,125 @@ def self_test_gates(expect: Callable[..., None], captured: Callable[[Callable[[]
         expect("a refresh does not write a template with no row", code == 1 and
                ledger.read_text(encoding="utf-8") == before, True)
 
-        # A gate that moves to the check file of its header stays a gate.  A
-        # check file of include/crucible holds no gate of the two layers.
+        # A gate that moves to the check file of its header stays a gate.
         moved = root / "test" / "layer" / "checks" / "foundation" / "gates.cpp"
         moved.parent.mkdir(parents=True)
         moved.write_text("#include <foundation/gates.h>\nnamespace foundation::gates {\n"
                          "template <class T> concept MovedReadsVariable = open_v<T>;\n}\n", encoding="utf-8")
-        outside = root / "test" / "layer" / "checks" / "crucible" / "gates.cpp"
-        outside.parent.mkdir(parents=True)
-        outside.write_text("namespace foundation::gates {\ntemplate <class T> concept OutsideReadsVariable = open_v<T>;\n}\n",
-                           encoding="utf-8")
         gates = []
         scan(root, {}, gates)
-        expect("a gate in the check file of a layer header is an open read, and a gate in the check file of a "
-               "crucible header is not",
-               [(read.path, read.line) for read in gates if read.path.startswith("test/")]
-               == [("test/layer/checks/foundation/gates.cpp", 3)])
+        expect("a gate in the check file of a layer header is an open read",
+               [(read.path, read.line, read.is_crucible) for read in gates if read.path.startswith("test/")]
+               == [("test/layer/checks/foundation/gates.cpp", 3, False)])
         ledger.write_text(exact, encoding="utf-8")
         code, report = captured(lambda: run(root, {}))
         expect("an open read in a check file above its ledger row fails",
                code == 1 and "3 gate(s) read the open template foundation::gates::open_v" in report, True)
+        moved.unlink()
+
+        self_test_crucible_gates(expect, captured, root, exact)
+
+
+def self_test_crucible_gates(expect: Callable[..., None], captured: Callable[[Callable[[], int]], tuple[int, str]],
+                             root: Path, exact: str) -> None:
+    """Plant gates of include/crucible over the planted layer header of self_test_gates, and examine the verdicts.
+
+    A gate of include/crucible, and of its check file, reads a template of
+    include/crucible and a layer template.  Its row must give a reason, and
+    each read that a count row admits gives one warning.
+
+    Args:
+        expect: The recorder of one case
+        captured: The runner that returns the code and the stderr of an action
+        root: The planted tree, which holds include/foundation/gates.h
+        exact: The ledger text that holds each count of the layer reads
+    """
+    header = root / "include" / "crucible" / "gates.h"
+    header.parent.mkdir(parents=True)
+    header.write_text("namespace crucible::gates {\n"
+                      "template <class T> inline constexpr bool runtime_open_v = false;\n"
+                      "template <class T> concept ReadsRuntime = runtime_open_v<T>;\n"
+                      "template <class T> concept ReadsLayer = ::foundation::gates::open_v<T>;\n"
+                      "template <class T> concept ReadsLayerConcept = ::foundation::gates::Closed<T>;\n"
+                      "}\n", encoding="utf-8")
+    check_file = root / "test" / "layer" / "checks" / "crucible" / "gates.cpp"
+    check_file.parent.mkdir(parents=True)
+    check_file.write_text("#include <crucible/gates.h>\nnamespace crucible::gates {\n"
+                          "template <class T> concept CheckReadsRuntime = runtime_open_v<T>;\n}\n", encoding="utf-8")
+    gates: list[GateRead] = []
+    scan(root, {}, gates)
+    found = sorted((read.template, read.path, read.line) for read in gates if read.is_crucible)
+    expect("a gate of a crucible header and of its check file reads a template of include/crucible and a layer "
+           "template, and a concept is closed",
+           found == [("crucible::gates::runtime_open_v", "include/crucible/gates.h", 3),
+                     ("crucible::gates::runtime_open_v", "test/layer/checks/crucible/gates.cpp", 3),
+                     ("foundation::gates::open_v", "include/crucible/gates.h", 4)], True)
+    expect("a gate of the two layers is not a crucible read",
+           not any(read.is_crucible for read in gates if read.path.startswith(LAYER_ROOTS)))
+
+    ledger = root / GATE_LEDGER
+    code, report = captured(lambda: run(root, {}))
+    expect("a crucible read with no ledger row fails",
+           code == 1 and "read the open template crucible::gates::runtime_open_v" in report, True)
+    ledger.write_text(exact.replace("open_v | 2", "open_v | 3") + "crucible::gates::runtime_open_v | 2\n",
+                      encoding="utf-8")
+    code, report = captured(lambda: run(root, {}))
+    expect("a crucible read whose row gives no reason fails",
+           code == 1 and "reads the open template crucible::gates::runtime_open_v, and its row gives no reason" in report
+           and "reads the open template foundation::gates::open_v, and its row gives no reason" in report, True)
+
+    with_reasons = (exact.replace("open_v | 2", "open_v | 3 | a planted layer read")
+                    + "crucible::gates::runtime_open_v | 2 | a planted runtime read\n")
+    ledger.write_text(with_reasons, encoding="utf-8")
+    warnings_dir = root / "build" / check_report.WARNINGS_SUBDIR
+    with check_report.github_actions(False), contextlib.redirect_stdout(io.StringIO()) as printed:
+        code, _report = captured(lambda: run(root, {}, warnings_dir))
+    lines = printed.getvalue().splitlines()
+    written = warnings_dir / f"{CHECK}.txt"
+    expect("each crucible read that a count row admits gives one warning, and the run passes",
+           code == 0 and len(lines) == 3 and all(check_report.parse_line(line) is not None for line in lines)
+           and written.is_file() and written.read_text(encoding="utf-8").splitlines() == lines)
+    expect("the warning names the gate, the template and the reason",
+           any(line.startswith("include/crucible/gates.h:3: warning: [trait-guard] ") and "runtime_open_v" in line
+               and line.endswith("a planted runtime read") for line in lines))
+
+    ledger.write_text(with_reasons.replace("runtime_open_v | 2 | a planted runtime read",
+                                           "runtime_open_v | open | a planted extension point"), encoding="utf-8")
+    with check_report.github_actions(False), contextlib.redirect_stdout(io.StringIO()) as printed:
+        code, _report = captured(lambda: run(root, {}, warnings_dir))
+    expect("a crucible read that an open row admits gives no warning",
+           code == 0 and "runtime_open_v" not in printed.getvalue() and len(printed.getvalue().splitlines()) == 1)
+
+    ledger.write_text(with_reasons.replace("runtime_open_v | 2 |", "runtime_open_v | 3 |"), encoding="utf-8")
+    with check_report.github_actions(False), contextlib.redirect_stdout(io.StringIO()):
+        code, _report = captured(lambda: run(root, {}))
+    expect("a crucible count below its row is stale", code == 2, True)
+    expect("a refresh lowers the row and keeps its reason",
+           captured(lambda: refresh(root))[0] == 0
+           and "crucible::gates::runtime_open_v | 2 | a planted runtime read\n" in ledger.read_text(encoding="utf-8"))
+    header.unlink()
+    check_file.unlink()
 
 
 def main(argv: list[str]) -> int:
     """Run one mode."""
+    parser = argparse.ArgumentParser(description="A trait or a relation is specialized only where it is declared, "
+                                                 "and a gate reads no template that a translation unit can "
+                                                 "specialize.")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--self-test", action="store_true", help="plant each forgery and each exemption")
+    mode.add_argument("--refresh", action="store_true", help="write the counts of the gate ledger")
+    check_report.add_arguments(parser)
+    options = parser.parse_args(argv)
     try:
-        if argv == []:
-            return run(tsast.REPO_ROOT)
-        if argv == ["--self-test"]:
+        if options.self_test:
             return self_test()
-        if argv == ["--refresh"]:
+        if options.refresh:
             return refresh(tsast.REPO_ROOT)
+        return run(tsast.REPO_ROOT, warnings_dir=options.warnings_dir)
     except tsast.KitMissing as exc:
         print(f"check-trait-injection: {exc}", file=sys.stderr)
         return 3
-    print("usage: check-trait-injection.py [--self-test | --refresh]", file=sys.stderr)
-    return 2
 
 
 if __name__ == "__main__":
