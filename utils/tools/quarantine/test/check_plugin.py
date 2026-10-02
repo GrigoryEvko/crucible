@@ -212,6 +212,9 @@ PRAGMA_ERRORS = (
     ("raw_pragma.cpp", "comes only from the macro"),
     ("own_region_macro.cpp", "comes only from the macro"),
     ("reason_without_class.cpp", "starts with its class"),
+    ("region_macro_reason.cpp", "as one plain string literal in the call"),
+    ("region_wrapper.cpp", "is used inside another macro"),
+    ("region_end_wrapper.cpp", "is used inside another macro"),
 )
 
 # (file, line, specifier): each error of the contract rule for contracts.cpp.

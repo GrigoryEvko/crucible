@@ -14,4 +14,5 @@ utils/tools/quarantine/test/contracts.cpp | PROBE: the test needs the specifier
 utils/tools/quarantine/test/opt_out.cpp | PROBE: the test needs a raw buffer
 utils/tools/quarantine/test/own_region_macro.cpp | PROBE: an own macro
 utils/tools/quarantine/test/reason_without_class.cpp | a reason with no class
+utils/tools/quarantine/test/region_end_wrapper.cpp | PROBE: a region that a macro closes
 utils/tools/quarantine/test/unclosed_region.cpp | PROBE: a region that nothing closes

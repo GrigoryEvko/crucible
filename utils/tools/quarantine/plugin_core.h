@@ -67,9 +67,12 @@
 //     opens a region, and CRUCIBLE_END_I_KNOW_WHAT_IM_DOING closes it.  The
 //     macros expand to #pragma quarantine I_KNOW_WHAT_IM_DOING("CLASS: reason")
 //     and #pragma quarantine END_I_KNOW_WHAT_IM_DOING.  The plugin refuses such a
-//     pragma of a file under the root that the macros do not make, and a
-//     reason that does not start with its class.  A finding inside a region is
-//     reported as opted_out and is not an error.
+//     pragma of a file under the root that the macros do not make, a use of a
+//     macro inside another macro, a reason that is not one plain string
+//     literal in the call, and a reason that does not start with its class.
+//     utils/scripts/check-quarantine-regions.py reads each region of that form
+//     from the source.  A finding inside a region is reported as opted_out
+//     and is not an error.
 //
 // quarantine.cpp includes this header after the standard headers that the
 // plugin uses, because the headers of GCC rename some functions of the C
@@ -95,6 +98,8 @@
 #include "cp/contracts.h"
 #include "c-family/c-pragma.h"
 #include "diagnostic-core.h"
+#include "diagnostic.h"
+#include "diagnostics/file-cache.h"
 #include "input.h"
 #include "stringpool.h"
 
@@ -636,14 +641,17 @@ inline location_t region_macro_expansion(location_t location, const char* macro)
 // The place of a region pragma at LOCATION: the place where the file uses
 // MACRO.  A pragma of a file outside the source root gives no place and no
 // error.  A pragma of a file under the root that MACRO does not make is an
-// error, which the function reports.  Returns a place with no file when
-// the pragma opens or closes nothing.
-inline Place region_place(location_t location, const char* macro, const char* pragma) {
+// error, which the function reports.  A use of MACRO inside another macro is
+// an error too: the place of the region would then be the definition of that
+// macro, and the ledger of the regions, which reads the source, would not see
+// the region or its end.  EXPANSION gets the expansion point of MACRO.
+// Returns a place with no file when the pragma opens or closes nothing.
+inline Place region_place(location_t location, const char* macro, const char* pragma, location_t& expansion) {
     Place place = place_of(location, Scope::tree);
     if (place.file == nullptr) {
         return place;
     }
-    location_t expansion = region_macro_expansion(location, macro);
+    expansion = region_macro_expansion(location, macro);
     if (expansion == UNKNOWN_LOCATION) {
         error_at(location,
                  "%<#pragma quarantine %s%> comes only from the macro %qs of %<foundation/Quarantine.h%>; use the "
@@ -651,7 +659,43 @@ inline Place region_place(location_t location, const char* macro, const char* pr
                  pragma, macro);
         return Place{};
     }
+    if (linemap_location_from_macro_expansion_p(line_table, expansion)) {
+        error_at(expansion,
+                 "the macro %qs is used inside another macro.  Write it directly in the file, so that the ledger of "
+                 "the regions sees the region and its end",
+                 macro);
+        return Place{};
+    }
     return place_of(expansion, Scope::tree);
+}
+
+// True when the source spells the call of the begin macro at EXPANSION as
+// CRUCIBLE_I_KNOW_WHAT_IM_DOING("REASON") on one line, with only spaces and
+// tabs between the tokens.  The ledger of the regions reads a region of this
+// form from the parse tree, and no other form, so each region that the plugin
+// opens has a row of the ledger.  Complexity: O(length of the line).
+inline bool is_plain_region_call(location_t expansion, const std::string& reason) {
+    expanded_location where = expand_location(expansion);
+    if (where.file == nullptr || where.line <= 0 || where.column <= 0) {
+        return false;
+    }
+    diagnostics::char_span line = global_dc->get_file_cache().get_source_line(where.file, where.line);
+    if (!line) {
+        return false;
+    }
+    std::string text(line.get_buffer(), line.length());
+    std::size_t at = static_cast<std::size_t>(where.column - 1);
+    auto take = [&text, &at](const std::string& word) {
+        while (at < text.size() && (text[at] == ' ' || text[at] == '\t')) {
+            ++at;
+        }
+        if (text.compare(at, word.size(), word) != 0) {
+            return false;
+        }
+        at += word.size();
+        return true;
+    };
+    return take(kBeginMacro) && take("(") && take("\"" + reason + "\"") && take(")");
 }
 
 inline bool has_reason_class(const std::string& reason) {
@@ -688,8 +732,17 @@ inline void handle_begin_pragma(cpp_reader*) {
     }
     // A pragma of a file outside the source root opens no region.  A pragma
     // of a generated file opens one, because the contract rule applies there.
-    Place place = region_place(location, kBeginMacro, kBeginPragma);
+    location_t expansion = UNKNOWN_LOCATION;
+    Place place = region_place(location, kBeginMacro, kBeginPragma, expansion);
     if (place.file == nullptr) {
+        return;
+    }
+    if (!is_plain_region_call(expansion, reason)) {
+        error_at(expansion,
+                 "write the reason of a region as one plain string literal in the call: "
+                 "%<CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"CLASS: reason\")%>.  The ledger of the regions reads only this "
+                 "form, and the reason is %qs",
+                 reason.c_str());
         return;
     }
     if (!has_reason_class(reason)) {
@@ -725,7 +778,8 @@ inline void handle_end_pragma(cpp_reader*) {
     }
     // A pragma of a file outside the source root closes nothing, as the begin
     // pragma of such a file opens nothing.
-    Place place = region_place(location, kEndMacro, kEndPragma);
+    location_t expansion = UNKNOWN_LOCATION;
+    Place place = region_place(location, kEndMacro, kEndPragma, expansion);
     if (place.file == nullptr) {
         return;
     }

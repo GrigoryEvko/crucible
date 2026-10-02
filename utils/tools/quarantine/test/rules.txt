@@ -41,8 +41,11 @@ quarantine pending.cpp
 quarantine plant_std.cpp
 quarantine raw_pragma.cpp
 quarantine reason_without_class.cpp
+quarantine region_end_wrapper.cpp
+quarantine region_macro_reason.cpp
 quarantine region_outside_root.cpp
 quarantine region_without_reason.cpp
+quarantine region_wrapper.cpp
 quarantine reopened_std.cpp
 quarantine system_marked.cpp
 quarantine unclosed_region.cpp
