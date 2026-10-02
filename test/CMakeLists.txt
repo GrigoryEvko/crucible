@@ -1052,8 +1052,14 @@ crucible_test(test_ledger)
 # needs.  Same include-path dependency crucible_hwprobe has, and an include
 # path only: this is not a bench target and takes none of the bench tree's
 # -O3 -march=native.
-crucible_test(test_ledger_probes)
-target_include_directories(test_ledger_probes PRIVATE ${CMAKE_SOURCE_DIR}/bench)
+# The refresh policy and each probe family have a test and a translation
+# unit of their own, so the streaming measurement of the vector width runs
+# beside the other tests and not after them, and no unit compiles every probe.
+foreach(_ledger_probe_test test_ledger_probes test_ledger_probes_refresh test_ledger_probes_cache_tier
+        test_ledger_probes_huge_page test_ledger_probes_vector_width)
+  crucible_test(${_ledger_probe_test})
+  target_include_directories(${_ledger_probe_test} PRIVATE ${CMAKE_SOURCE_DIR}/bench)
+endforeach()
 crucible_test(test_topology_discovery)
 crucible_test(test_topology_graph)
 crucible_test(test_topology_health)

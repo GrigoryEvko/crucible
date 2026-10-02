@@ -1,75 +1,38 @@
-// The probe layer of the hardware-capability ledger: the contract the
-// three probes share, the evidence a ratio verdict carries, and the
-// policy of the background refresh.
+// The probe layer of the hardware-capability ledger, the part that no probe
+// family owns: the contract that the probes share, the evidence that a ratio
+// verdict carries, and the names of the verdicts.
 //
-// What is settled at compile time is settled there — every header in
-// ledger/ and ledger/probes/ carries a self-test block, and including
-// them here is what puts those blocks in a build that runs. What is left
-// for this file is the behaviour a static_assert cannot reach: whether
-// the kernel honours a page policy, whether the memo really shares one
-// measurement, whether an unfit host really goes unprobed, and whether a
-// ratio that does not reproduce is really refused.
+// The refresh policy and each probe family have a test of their own:
+// test_ledger_probes_refresh, test_ledger_probes_cache_tier,
+// test_ledger_probes_huge_page and test_ledger_probes_vector_width.  This
+// file tests the behavior that a static_assert cannot reach: whether the
+// memo shares one measurement, and whether a ratio that does not reproduce
+// is refused.
 //
 // Each group states the claim and then breaks it. A test that only ever
 // sees the passing case cannot tell a working gate from an absent one.
 
-#include <crucible/ledger/RefreshDaemon.h>
-#include <crucible/ledger/probes/CacheTier.h>
-#include <crucible/ledger/probes/HugePage.h>
-#include <crucible/ledger/probes/VectorWidth.h>
-
-#include <fixy/Ctx.h>
-#include <fixy/os/Sched.h>
+#include <crucible/ledger/ProbeSupport.h>
 
 #include "test_assert.h"
+#include "test_ledger_probes_fixtures.h"
 
-#include <algorithm>
-#include <array>
+#include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
-#include <expected>
-#include <span>
-#include <thread>
-#include <vector>
-
-#include <sched.h>
-#include <sys/syscall.h>
-#include <unistd.h>
 
 using namespace crucible;
-using crucible::ledger::CompetenceReport;
-using crucible::ledger::CycleResult;
 using crucible::ledger::EvidenceFault;
 using crucible::ledger::LedgerError;
 using crucible::ledger::VerdictEvidence;
 using crucible::ledger::VerdictId;
+using ledger_probe_fixtures::fit_host;
+using ledger_probe_fixtures::probe_ctx;
 
 namespace {
 
 // ── Fixtures ──────────────────────────────────────────────────────────
-
-[[nodiscard]] CompetenceReport fit_host() noexcept {
-    CompetenceReport report{};
-    report.isolated_core_count = 8;
-    report.online_sibling_count = 0;
-    report.load_average_milli = 1000;
-    report.allowed_cpu_count = 384;
-    report.machine_cpu_count = 384;
-    report.perf_event_paranoid = 2;
-    report.scaling_min_freq_khz = 4510205;
-    report.scaling_max_freq_khz = 4510205;
-    report.governor_is_performance = false;
-    report.defects = ledger::derive_defects(report, true);
-    return report;
-}
-
-[[nodiscard]] CompetenceReport unfit_host() noexcept {
-    CompetenceReport report = fit_host();
-    report.online_sibling_count = 4;  // an isolated core shares its pipeline
-    report.defects = ledger::derive_defects(report, true);
-    return report;
-}
 
 // A bench report with a chosen median and a sample set wide enough for
 // Mann-Whitney to have something to rank. The samples are laid out around
@@ -181,9 +144,6 @@ void test_ratio_evidence_catches_an_unreproducible_ratio() {
     std::printf("  test_ratio_evidence_catches_an_unreproducible_ratio: PASSED\n");
 }
 
-// A probe maps and pins under the context of the store.
-constexpr ledger::LedgerIoCtx probe_ctx{::foundation::effects::testing::bg()};
-
 void test_scratch_region_is_aligned_and_faultable() {
     auto region = ledger::ProbeRegion::create(probe_ctx, 4u * 1024u * 1024u, ledger::PagePolicy::BasePages);
     assert(region.has_value());
@@ -214,40 +174,6 @@ void test_scratch_region_is_aligned_and_faultable() {
     std::printf("  test_scratch_region_is_aligned_and_faultable: PASSED\n");
 }
 
-void test_page_policy_is_verified_against_the_kernel() {
-    // The claim: a probe finds out what the kernel actually did rather
-    // than trusting that madvise recording the advice means the fault path
-    // honoured it.
-    const std::size_t bytes = 8u * 1024u * 1024u;
-
-    auto base = ledger::ProbeRegion::create(probe_ctx, bytes, ledger::PagePolicy::BasePages);
-    assert(base.has_value());
-    (void)base->fault_in(1u);
-    assert(ledger::probes::huge_page_detail::verify_page_policy_took(*base, ledger::PagePolicy::BasePages));
-    // Break it: the same base-page region must NOT pass the huge-page
-    // check, or the verifier is answering true to everything.
-    assert(!ledger::probes::huge_page_detail::verify_page_policy_took(*base, ledger::PagePolicy::HugePages));
-
-    if (::fixy::concurrent::Topology::instance().hugepage_2mb_available()) {
-        auto huge = ledger::ProbeRegion::create(probe_ctx, bytes, ledger::PagePolicy::HugePages);
-        assert(huge.has_value());
-        (void)huge->fault_in(1u);
-        // Not asserted as true: a host whose memory is fragmented enough
-        // can refuse the advice, and that refusal is precisely what the
-        // probe checks for before reporting a hugepage number. What IS
-        // asserted is that the two policies cannot both be reported for
-        // one region.
-        const bool took_huge =
-            ledger::probes::huge_page_detail::verify_page_policy_took(*huge, ledger::PagePolicy::HugePages);
-        const bool took_base =
-            ledger::probes::huge_page_detail::verify_page_policy_took(*huge, ledger::PagePolicy::BasePages);
-        assert(!(took_huge && took_base));
-        std::printf("    (hugepage advice %s on this host)\n", took_huge ? "took" : "was refused");
-    }
-
-    std::printf("  test_page_policy_is_verified_against_the_kernel: PASSED\n");
-}
-
 int g_memo_call_count = 0;
 
 void test_memo_shares_one_measurement() {
@@ -275,422 +201,6 @@ void test_memo_shares_one_measurement() {
     assert(g_memo_call_count == 2);
 
     std::printf("  test_memo_shares_one_measurement:          PASSED\n");
-}
-
-// ── The refresh policy ────────────────────────────────────────────────
-
-int g_stub_probe_calls = 0;
-
-[[nodiscard]] std::expected<ledger::VerdictMeasurement, LedgerError> stub_probe(ledger::LedgerIoCtx const&,
-                                                                                CompetenceReport const&) noexcept {
-    ++g_stub_probe_calls;
-    VerdictEvidence evidence{};
-    evidence.quantiles = cog::LatencyQuantiles{20u, 24u, 40u};
-    evidence.sample_count = 100000;
-    evidence.within_run_cv_ppm = 12000;
-    evidence.run_to_run_spread_ppm = 4000;
-    return ledger::VerdictMeasurement{.value = ledger::VerdictValue{20u}, .evidence = evidence};
-}
-
-constexpr ledger::ProbeRegistration kStubRegistry[] = {
-    {.id = VerdictId::TimerFloorNanos, .run = &stub_probe},
-};
-constexpr VerdictId kStubWanted[] = {VerdictId::TimerFloorNanos};
-
-void test_an_unfit_host_is_never_probed() {
-    // The claim: an unfit host is a reason to skip, not a reason to
-    // measure and grade low. Measuring costs the host load it cannot
-    // afford, in exchange for a number the default reader refuses anyway.
-    ledger::Ledger ledger{};
-    g_stub_probe_calls = 0;
-    const ledger::CycleReport skipped =
-        ledger::refresh_when_fit(probe_ctx, ledger, kStubWanted, kStubRegistry, unfit_host(), 10000u);
-    assert(skipped.result == CycleResult::SkippedUnfitHost);
-    assert(skipped.queued_count == 1u);
-    assert(g_stub_probe_calls == 0);
-    assert(ledger.entries.empty());
-
-    // Unbreak it: the very same call on a fit host does run the probe and
-    // does admit the result, so the gate is the competence and not an
-    // unconditional refusal.
-    g_stub_probe_calls = 0;
-    const ledger::CycleReport ran =
-        ledger::refresh_when_fit(probe_ctx, ledger, kStubWanted, kStubRegistry, fit_host(), 10000u);
-    assert(ran.result == CycleResult::Admitted);
-    assert(g_stub_probe_calls == 1);
-    assert(ledger.entries.size() == 1u);
-    assert(ledger.entries.front().confidence == ledger::Confidence::High);
-
-    // And a second cycle on the same fresh ledger has nothing to do, so a
-    // served verdict is not re-measured every period.
-    g_stub_probe_calls = 0;
-    const ledger::CycleReport idle =
-        ledger::refresh_when_fit(probe_ctx, ledger, kStubWanted, kStubRegistry, fit_host(), 10001u);
-    assert(idle.result == CycleResult::NothingToDo);
-    assert(g_stub_probe_calls == 0);
-
-    std::printf("  test_an_unfit_host_is_never_probed:        PASSED\n");
-}
-
-// A measurement shared by three sibling verdicts, in the shape the real
-// probes use: one memo, three probe functions that all read it.
-ledger::MeasurementMemo<int> g_sibling_memo{};
-int g_sibling_measure_count = 0;
-
-[[nodiscard]] int shared_sibling_measurement() noexcept {
-    return g_sibling_memo.get_or_measure([] { return ++g_sibling_measure_count; });
-}
-
-[[nodiscard]] std::expected<ledger::VerdictMeasurement, LedgerError> sibling_probe(ledger::LedgerIoCtx const&,
-                                                                                   CompetenceReport const&) noexcept {
-    const int shared = shared_sibling_measurement();
-    VerdictEvidence evidence{};
-    evidence.quantiles = cog::LatencyQuantiles{20u, 24u, 40u};
-    evidence.sample_count = 100000;
-    evidence.within_run_cv_ppm = 12000;
-    evidence.run_to_run_spread_ppm = 4000;
-    return ledger::VerdictMeasurement{.value = ledger::VerdictValue{static_cast<std::uint64_t>(shared)},
-                                      .evidence = evidence};
-}
-
-constexpr ledger::ProbeRegistration kSiblingRegistry[] = {
-    {.id = VerdictId::TimerFloorNanos, .run = &sibling_probe},
-    {.id = VerdictId::VectorWidthPreferredBits, .run = &sibling_probe},
-    {.id = VerdictId::VectorWidthComputeGainPercent, .run = &sibling_probe},
-};
-constexpr VerdictId kSiblingWanted[] = {
-    VerdictId::TimerFloorNanos,
-    VerdictId::VectorWidthPreferredBits,
-    VerdictId::VectorWidthComputeGainPercent,
-};
-
-void test_sibling_verdicts_share_one_measurement() {
-    // The claim, and the regression it pins.
-    //
-    // Two of the three real probes answer several verdicts from one
-    // measurement. The memo is what shares it, and the memo has a
-    // lifetime. That lifetime was five seconds first, and the hugepage
-    // measurement takes about twenty, so each sibling expired the memo and
-    // measured again — under the load the previous measurement had just
-    // created. The two hugepage fault verdicts came out at 40.3 and 43.7
-    // microseconds per mebibyte in one run of crucible-hwprobe, describing
-    // a machine that had not changed.
-    //
-    // What must hold is that one refresh cycle takes one measurement,
-    // whatever the siblings are. That is asserted by the count, and the
-    // values agreeing is the same fact seen from the other side.
-    ledger::Ledger ledger{};
-    g_sibling_memo.forget();
-    g_sibling_measure_count = 0;
-
-    const ledger::CycleReport report =
-        ledger::refresh_when_fit(probe_ctx, ledger, kSiblingWanted, kSiblingRegistry, fit_host(), 10000u);
-    assert(report.result == CycleResult::Admitted);
-    assert(report.outcome.measured_count == 3u);
-    assert(report.outcome.admitted_count == 3u);
-    assert(g_sibling_measure_count == 1);
-
-    assert(ledger.entries.size() == 3u);
-    for (ledger::LedgerEntry const& entry : ledger.entries) {
-        assert(entry.value.value().raw() == 1u);
-    }
-
-    // Break it: a memo that expires between siblings measures once per
-    // sibling and the three verdicts stop agreeing. Forcing the expiry by
-    // hand is what the five-second lifetime did by itself.
-    ledger::Ledger second{};
-    g_sibling_memo.forget();
-    g_sibling_measure_count = 0;
-    for (const VerdictId id : kSiblingWanted) {
-        g_sibling_memo.forget();  // stands in for the lifetime running out
-        const VerdictId one[] = {id};
-        (void)ledger::refresh_when_fit(probe_ctx, second, one, kSiblingRegistry, fit_host(), 10000u);
-    }
-    assert(g_sibling_measure_count == 3);
-    assert(second.entries.size() == 3u);
-    assert(second.entries[0].value.value().raw() != second.entries[2].value.value().raw());
-
-    // And the bound that keeps the fix from overshooting: a memo may not
-    // outlive the shortest time to live in the ledger, or a cycle could
-    // serve a verdict the ledger has already called stale.
-    static_assert(ledger::kMemoLifetimeSeconds < ledger::kFragmentationTtlSeconds);
-
-    std::printf("  test_sibling_verdicts_share_one_measurement: PASSED\n");
-}
-
-void test_backoff_grows_only_when_nothing_was_admitted() {
-    const ledger::RefreshSchedule schedule{
-        .idle_period_seconds = 3600,
-        .initial_backoff_seconds = 60,
-        .max_backoff_seconds = 480,
-        .backoff_multiplier = 2,
-    };
-    assert(schedule.is_well_formed());
-    assert(schedule.next_backoff(0) == 60u);
-    assert(schedule.next_backoff(60) == 120u);
-    assert(schedule.next_backoff(480) == 480u);
-
-    // Break it: a schedule that does not back off is not well formed, and
-    // the mint's precondition is what refuses it.
-    assert(!ledger::RefreshSchedule{.backoff_multiplier = 1}.is_well_formed());
-
-    // Only an outcome that got somewhere resets the wait. A skipped cycle
-    // on an unfit host must back off, or an unfit host is looked at every
-    // idle period forever.
-    assert(ledger::outcome_resets_backoff(CycleResult::Admitted));
-    assert(ledger::outcome_resets_backoff(CycleResult::NothingToDo));
-    assert(!ledger::outcome_resets_backoff(CycleResult::SkippedUnfitHost));
-    assert(!ledger::outcome_resets_backoff(CycleResult::AllRefused));
-    assert(!ledger::outcome_resets_backoff(CycleResult::CommitFailed));
-
-    std::printf("  test_backoff_grows_only_when_nothing_was_admitted: PASSED\n");
-}
-
-void test_daemon_publishes_a_view_a_reader_can_use() {
-    constexpr ledger::LedgerIoCtx ctx{::foundation::effects::testing::bg()};
-    ledger::RefreshDaemonConfig config{};
-    config.wanted = kStubWanted;
-    config.registry = kStubRegistry;
-    config.probe_settings = ledger::ProbeSettings{.sample_count = 64, .pin_core = -1};
-
-    auto daemon = ledger::mint_refresh_daemon(ctx, config);
-    assert(daemon != nullptr);
-
-    // A reader before any cycle gets a view, not a null pointer. Every
-    // lookup on it misses, so every consumer takes its conservative path.
-    const std::shared_ptr<const ledger::LedgerView> before = daemon->current_view();
-    assert(before != nullptr);
-    const auto miss = before->lookup(VerdictId::ParallelKneeBytes);
-    assert(!miss.is_known());
-    assert(miss.value_or_conservative(ledger::VerdictValue{4242u}) == ledger::VerdictValue{4242u});
-
-    // One cycle on the calling thread, which is the same code the loop
-    // runs, so the test exercises the real thing.
-    g_stub_probe_calls = 0;
-    const ledger::CycleReport report = daemon->run_one_cycle();
-    assert(daemon->completed_cycle_count() == 1u);
-    assert(daemon->last_result() == report.result);
-
-    // What the outcome is depends on whether the machine running the test
-    // is fit to measure, and both answers are correct. What must hold
-    // either way is that a published view is always readable and that a
-    // skipped cycle ran no probe.
-    if (report.result == CycleResult::SkippedUnfitHost) {
-        assert(g_stub_probe_calls == 0);
-    } else {
-        assert(report.result == CycleResult::Admitted || report.result == CycleResult::CommitFailed
-               || report.result == CycleResult::NothingToDo);
-    }
-    const std::shared_ptr<const ledger::LedgerView> after = daemon->current_view();
-    assert(after != nullptr);
-
-    std::printf("  test_daemon_publishes_a_view_a_reader_can_use: PASSED (%.*s)\n",
-                static_cast<int>(ledger::cycle_result_name(report.result).size()),
-                ledger::cycle_result_name(report.result).data());
-}
-
-void test_daemon_thread_starts_and_stops() {
-    constexpr ledger::LedgerIoCtx ctx{::foundation::effects::testing::bg()};
-    ledger::RefreshDaemonConfig config{};
-    config.wanted = kStubWanted;
-    config.registry = kStubRegistry;
-    // A long idle period on purpose: stop() must not wait it out, and a
-    // test that passed only because the period was short would prove
-    // nothing about the wake-up.
-    config.schedule.idle_period_seconds = 6u * 3600u;
-    config.probe_settings = ledger::ProbeSettings{.sample_count = 64, .pin_core = -1};
-
-    auto daemon = ledger::mint_refresh_daemon(ctx, config);
-    daemon->start();
-    // The first cycle happens before the first sleep, so waiting for one
-    // completed cycle needs no timer.
-    while (daemon->completed_cycle_count() == 0u) {
-        CRUCIBLE_SPIN_PAUSE;
-    }
-    daemon->stop();
-    assert(daemon->completed_cycle_count() >= 1u);
-    // Idempotent: stopping twice, and destroying after a stop, must not
-    // join a thread that is already gone.
-    daemon->stop();
-
-    std::printf("  test_daemon_thread_starts_and_stops:       PASSED\n");
-}
-
-// ── The probes themselves ─────────────────────────────────────────────
-
-// The streaming shape is bound by DRAM only when its buffer is several
-// times the last-level cache that the measuring thread can fill.  So a
-// sized buffer is at least kMinStreamCacheMultiple times that cache, and
-// a cache that the scratch ceiling cannot outgrow is refused.
-void test_stream_buffer_outgrows_the_reachable_cache() {
-    using ledger::probes::kMaxStreamBytes;
-    using ledger::probes::kMinStreamBytes;
-    using ledger::probes::kMinStreamCacheMultiple;
-    using ledger::probes::stream_bytes_for;
-    constexpr std::size_t MiB = std::size_t{1} << 20;
-
-    constexpr std::array<std::size_t, 9> reaches{0,         MiB,       32 * MiB,  96 * MiB,       128 * MiB,
-                                                 129 * MiB, 504 * MiB, 768 * MiB, ~std::size_t{0}};
-    for (const std::size_t reach : reaches) {
-        const std::expected<std::size_t, LedgerError> sized = stream_bytes_for(reach);
-        if (sized.has_value()) {
-            assert(*sized >= kMinStreamBytes && *sized <= kMaxStreamBytes);
-            assert(*sized / kMinStreamCacheMultiple >= reach);
-        } else {
-            assert(sized.error() == LedgerError::NotApplicableOnThisHost);
-            assert(reach > kMaxStreamBytes / kMinStreamCacheMultiple);
-        }
-    }
-
-    // The bench host: one L3 instance of 32 MiB, and a buffer eight times
-    // that.
-    assert(stream_bytes_for(32 * MiB) == 256 * MiB);
-
-    // Break it: a part whose one L3 is 504 MiB.  The ceiling would give a
-    // buffer of 512 MiB, which that cache holds almost whole, so the pass
-    // would measure the cache and not DRAM.
-    assert(!stream_bytes_for(504 * MiB).has_value());
-
-    // This host, through the same rule.
-    const std::size_t host_reach = ledger::probes::reachable_last_level_bytes(::fixy::concurrent::Topology::instance());
-    const std::expected<std::size_t, LedgerError> host_sized = ledger::probes::stream_bytes_for_host();
-    assert(host_sized.has_value() == stream_bytes_for(host_reach).has_value());
-    if (host_sized.has_value()) {
-        assert(*host_sized / kMinStreamCacheMultiple >= host_reach);
-    }
-
-    std::printf("  test_stream_buffer_outgrows_the_reachable_cache: PASSED\n");
-}
-
-// The first touch of a probe region comes from the CPU that the probe
-// measures on, so each page is on the node of that CPU, and the pin to that
-// CPU holds until the probe restores it.  The worker starts on a CPU of the
-// second node and asks for a CPU of the first node.  A first touch from the
-// CPU of the worker puts each page on the second node.
-void test_first_touch_comes_from_the_measuring_cpu() {
-    const auto& topology = ::fixy::concurrent::Topology::instance();
-    const std::span<const int> nodes = topology.numa_node_ids();
-    if (nodes.size() < 2 || topology.cores_on_node(nodes[0]).empty() || topology.cores_on_node(nodes[1]).empty()) {
-        std::printf("  test_first_touch_comes_from_the_measuring_cpu: SKIPPED (fewer than two NUMA nodes with CPUs, "
-                    "so each page is on the node of each CPU)\n");
-        return;
-    }
-    const int measuring_node = nodes[0];
-    const int measuring_cpu = topology.cores_on_node(measuring_node).front();
-    const int worker_cpu = topology.cores_on_node(nodes[1]).front();
-
-    const char* skip_reason = nullptr;
-    std::jthread worker{[&skip_reason, measuring_node, measuring_cpu, worker_cpu] {
-        const ::fixy::BgLoadCtx background{::foundation::effects::testing::bg()};
-        const auto start = ::fixy::sched::apply_affinity_to_cpu(background, worker_cpu);
-        if (!start.has_value()) {
-            skip_reason = "the cpuset refuses the CPU of the second node";
-            return;
-        }
-        auto region = ledger::ProbeRegion::create(probe_ctx, 2u * 1024u * 1024u, ledger::PagePolicy::BasePages);
-        assert(region.has_value());
-        bench::Run::PinResult pin = ledger::probes::cache_tier_detail::fault_in_from_cpu(*region, measuring_cpu);
-        if (!pin.prior.has_value()) {
-            skip_reason = "the cpuset refuses the CPU of the first node";
-            return;
-        }
-        assert(::sched_getcpu() == measuring_cpu);
-
-        // move_pages in query mode: no target nodes, so the status of each
-        // page is the node that holds it.
-        const std::size_t page_count = region->size() / ledger::ProbeRegion::kBasePageBytes;
-        std::vector<void*> pages(page_count, nullptr);
-        std::vector<int> page_nodes(page_count, -1);
-        auto* first_byte = static_cast<unsigned char*>(region->data());
-        for (std::size_t i = 0; i < page_count; ++i) {
-            pages[i] = first_byte + (i * ledger::ProbeRegion::kBasePageBytes);
-        }
-        const long queried = ::syscall(SYS_move_pages, 0, page_count, pages.data(), nullptr, page_nodes.data(), 0);
-        if (queried != 0) {
-            (void)pin.restore();
-            skip_reason = "the kernel refuses move_pages";
-            return;
-        }
-        assert(std::all_of(page_nodes.begin(), page_nodes.end(),
-                           [measuring_node](int node) { return node == measuring_node; }));
-
-        // The restore gives the worker back its one CPU.  The calls stay
-        // outside assert, so a build with NDEBUG still makes them.
-        [[maybe_unused]] const bool was_restored = pin.restore().has_value();
-        assert(was_restored);
-        cpu_set_t affinity;
-        CPU_ZERO(&affinity);
-        [[maybe_unused]] const int affinity_status = ::sched_getaffinity(0, sizeof(affinity), &affinity);
-        assert(affinity_status == 0);
-        assert(CPU_COUNT(&affinity) == 1 && CPU_ISSET(static_cast<std::size_t>(worker_cpu), &affinity));
-    }};
-    worker.join();
-
-    if (skip_reason != nullptr) {
-        std::printf("  test_first_touch_comes_from_the_measuring_cpu: SKIPPED (%s)\n", skip_reason);
-        return;
-    }
-    std::printf("  test_first_touch_comes_from_the_measuring_cpu: PASSED\n");
-}
-
-void test_vector_width_probe_answers_or_declines() {
-    // Cheap settings: the probe is exercised for its structure — the two
-    // shapes, the memo, the guard that keeps a 512-bit kernel off a host
-    // without one — and not for a number worth storing. The numbers this
-    // host actually produces come from crucible-hwprobe, which measures at
-    // the sample counts the verdicts want.
-    ledger::set_probe_settings(ledger::ProbeSettings{.sample_count = 64, .pin_core = -1});
-    ledger::probes::vector_width_detail::g_memo.forget();
-
-    const auto preferred = ledger::probes::probe_vector_width_preferred_bits(probe_ctx, fit_host());
-
-    if constexpr (ledger::kBuildIsInstrumented) {
-        // The claim: an instrumented build declines rather than reporting
-        // numbers about its own instrumentation. This is not a tolerated
-        // skip, it is the assertion — the same probe under
-        // AddressSanitizer once reported the streaming shape at 190% where
-        // an ordinary build reports 101%, because a sanitizer charges one
-        // shadow check per load and a 512-bit load moves twice the bytes
-        // of a 256-bit one.
-        assert(!preferred.has_value());
-        assert(preferred.error() == LedgerError::NotApplicableOnThisHost);
-        assert(!ledger::probes::probe_vector_width_compute_gain(probe_ctx, fit_host()).has_value());
-        assert(!ledger::probes::probe_vector_width_memory_gain(probe_ctx, fit_host()).has_value());
-        std::printf("  test_vector_width_probe_answers_or_declines: PASSED (instrumented build declines)\n");
-        return;
-    }
-
-    if (!preferred.has_value()) {
-        // The only declines an uninstrumented host produces: no wide unit
-        // to compare against or a last-level cache too large for the
-        // streaming buffer, no memory for the buffer, or a streaming run
-        // whose pin failed.
-        assert(preferred.error() == LedgerError::NotApplicableOnThisHost
-               || preferred.error() == LedgerError::StorePathUnavailable
-               || preferred.error() == LedgerError::ConfidenceBelowBar);
-        std::printf("  test_vector_width_probe_answers_or_declines: PASSED (declined)\n");
-        return;
-    }
-
-    const std::uint64_t width = preferred->value.raw();
-    assert(width == ledger::probes::kNarrowWidthBits || width == ledger::probes::kWideWidthBits);
-
-    // The two margins come from the SAME measurement, because the memo is
-    // what shares it. If they did not, each verdict would describe a
-    // different moment of a machine that had not changed.
-    const auto compute = ledger::probes::probe_vector_width_compute_gain(probe_ctx, fit_host());
-    const auto memory = ledger::probes::probe_vector_width_memory_gain(probe_ctx, fit_host());
-    assert(compute.has_value());
-    assert(memory.has_value());
-
-    // The rule the probe applies, restated: the wide width is preferred
-    // only when it won the compute shape outright.
-    if (width == ledger::probes::kWideWidthBits) {
-        assert(compute->value.raw() > 100u + ledger::kPracticalMarginPercent);
-    }
-    std::printf("  test_vector_width_probe_answers_or_declines: PASSED (%llu bits, compute=%llu%%, memory=%llu%%)\n",
-                static_cast<unsigned long long>(width), static_cast<unsigned long long>(compute->value.raw()),
-                static_cast<unsigned long long>(memory->value.raw()));
 }
 
 void test_every_verdict_id_has_a_name_and_a_trait() {
@@ -723,33 +233,13 @@ void test_every_verdict_id_has_a_name_and_a_trait() {
 }  // namespace
 
 int main() {
-    // The daemon commits to the store, and the store's root comes from the
-    // environment. Without this the test would write a stub verdict into
-    // whatever real ledger the machine is using and the next process to
-    // read it would be served a fabricated twenty nanoseconds. setenv
-    // rather than a parameter, so the path sanitizer the discovery runs
-    // through is still exercised.
-    char directory_template[] = "/tmp/crucible-probe-test-XXXXXX";
-    const char* directory = ::mkdtemp(directory_template);
-    assert(directory != nullptr);
-    assert(::setenv("XDG_CACHE_HOME", directory, 1) == 0);
-
     std::printf("test_ledger_probes:\n");
     test_gain_percent_states_its_direction();
     test_ab_rule_needs_both_tests();
     test_ratio_evidence_catches_an_unreproducible_ratio();
     test_scratch_region_is_aligned_and_faultable();
-    test_page_policy_is_verified_against_the_kernel();
     test_memo_shares_one_measurement();
-    test_an_unfit_host_is_never_probed();
-    test_sibling_verdicts_share_one_measurement();
-    test_backoff_grows_only_when_nothing_was_admitted();
-    test_daemon_publishes_a_view_a_reader_can_use();
-    test_daemon_thread_starts_and_stops();
-    test_stream_buffer_outgrows_the_reachable_cache();
-    test_first_touch_comes_from_the_measuring_cpu();
-    test_vector_width_probe_answers_or_declines();
     test_every_verdict_id_has_a_name_and_a_trait();
-    std::printf("test_ledger_probes: 15 groups, all passed\n");
+    std::printf("test_ledger_probes: 6 groups, all passed\n");
     return 0;
 }
