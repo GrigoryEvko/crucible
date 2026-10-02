@@ -3,6 +3,7 @@
 
 #include "vigil_dispatch.h"
 
+#include <crucible/CKernel.h>
 #include <crucible/SchemaTable.h>
 #include <crucible/Vigil.h>
 #include "test_harness.h"

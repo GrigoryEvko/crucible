@@ -10,9 +10,11 @@
 // through a caller-supplied lookup at load time.
 
 #include <crucible/Arena.h>
+#include <crucible/CKernelId.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/PoolAllocator.h>
+#include <crucible/TraceRing.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>

@@ -130,6 +130,16 @@ enum class Layout : int8_t {
     SparseBsc = 5,
 };
 
+// The phase of the training step that recorded an operation.  The op flags
+// of a ring entry carry it in two bits (op_flag::PHASE_MASK in
+// crucible/TraceRing.h).
+enum class TrainingPhase : uint8_t {
+    FORWARD = 0,
+    BACKWARD = 1,
+    OPTIMIZER = 2,
+    OTHER = 3,
+};
+
 // Distinct index types that cannot be passed for one another. Arithmetic is
 // deliberately absent: a caller unwraps, computes, and wraps the result back,
 // which makes every place one index is derived from another one visible.

@@ -70,13 +70,6 @@ inline constexpr uint8_t SCALAR4_TYPE_MASK = 0x3 << 6;
 inline constexpr uint8_t SCALAR4_TYPE_SHIFT = 6;
 }  // namespace op_flag
 
-enum class TrainingPhase : uint8_t {
-    FORWARD = 0,
-    BACKWARD = 1,
-    OPTIMIZER = 2,
-    OTHER = 3,
-};
-
 // How to read back an inline scalar slot. Every scalar is stored as an int64
 // bit pattern, and a double bit-cast to int64 is indistinguishable from the
 // integer holding the same bits, so the tag is the only thing that recovers

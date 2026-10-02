@@ -1,15 +1,13 @@
 #pragma once
 
 #include <crucible/Arena.h>
-#include <crucible/CKernel.h>
+#include <crucible/CKernelId.h>
 #include <crucible/DimHash.h>
 #include <crucible/Expr.h>
-#include <crucible/IterationDetector.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Reflect.h>
 #include <crucible/StorageNbytes.h>
 #include <crucible/TensorMeta.h>
-#include <crucible/TraceRing.h>
 #include <crucible/Types.h>
 #include <fixy/Bands.h>
 #include <fixy/Borrowed.h>
@@ -24,7 +22,7 @@
 #include <foundation/effects/Effect.h>
 
 #include <array>
-#include <cmath>
+#include <bit>
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
@@ -328,7 +326,7 @@ struct RegionNode : TraceNode {
 
     void set_measured_ms(float ms) noexcept {
         CRUCIBLE_PRE(ms >= 0.0f);  // >= also rejects NaN
-        CRUCIBLE_PRE(!std::isinf(ms));
+        CRUCIBLE_PRE(!__builtin_isinf(ms));
         measured_ms = ms;
     }
 
@@ -762,9 +760,10 @@ private:
     // termination hash — so two loops that agree on everything, including on
     // having no usable threshold, would land in different cache slots.
     //
-    // isfinite rejects the infinities on the same grounds: a threshold of
-    // +Inf converges on the first iteration whatever the distance, which is
-    // not a threshold, and a threshold of -Inf never converges.
+    // The finite test rejects the infinities on the same grounds: a threshold
+    // of +Inf converges on the first iteration whatever the distance, which
+    // is not a threshold, and a threshold of -Inf never converges.  The test
+    // is the builtin, so this header does not include <cmath> for it.
     //
     // This is the third layer of CLAUDE.md §XII — an anonymous expression —
     // because neither layer above it reaches a float.  There is no Refined
@@ -773,7 +772,7 @@ private:
     // predicate has no NaN case to get wrong, which is the whole content of
     // this guard.  Lifting it is a one-name change once a second float
     // boundary wants the same test.
-    CRUCIBLE_PRE(std::isfinite(epsilon));
+    CRUCIBLE_PRE(__builtin_isfinite(epsilon));
     CRUCIBLE_PRE(epsilon >= 0.0f);
     // An UNTIL loop counts the iterations that were observed, and observing
     // convergence means running the body and measuring its output, so the
