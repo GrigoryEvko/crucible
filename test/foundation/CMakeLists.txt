@@ -285,6 +285,13 @@ foundation_neg_compile_test(neg_resource_tag_refuses_a_lookalike
   "no matching function for call to .admit_tag<LookalikeSmBudget>\\(\\)."
   "nested requirement .is_axis_tag_<T>\\(\\). is not satisfied")
 
+# The check file of Resources.h asks each class template in namespace
+# resource for a top-level alias of its name.  The fixture plants a class
+# template with no alias and includes the check file after it.
+foundation_neg_compile_test(neg_resource_tag_template_without_an_alias
+  "static assertion failed: A tag template in namespace resource has no top-level alias of its name in foundation::effects"
+  "layer/checks/foundation/effects/Resources\\.cpp:[0-9]+:[0-9]+: error: static assertion failed")
+
 # A mask built during constant evaluation from a bit that names no
 # effect atom reaches the trap in from_raw.  The location regex proves
 # the trap came from Row.h rather than from the fixture.

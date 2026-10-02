@@ -36,20 +36,25 @@ static_assert(every_axis_has_one_tag_template(),
               "no resource tags.  Define exactly one with CRUCIBLE_DEFINE_RESOURCE_TAG.");
 
 // The alias must name the tag it is spelled after, at a budget of zero.
+// The walk reads the members of foundation::effects one time.  Each
+// alias template that names a tag removes the tag from the list, and a
+// class template that stays on the list has no alias.
 [[nodiscard]] consteval bool every_tag_template_has_an_alias() noexcept {
     const auto context = std::meta::access_context::current();
-    for (const auto tag : std::meta::members_of(^^resource, context)) {
-        if (!std::meta::is_class_template(tag)) continue;
-        const auto zero_tag = std::meta::substitute(tag, {zero_budget_()});
-        bool aliased = false;
-        for (const auto alias : std::meta::members_of(^^::foundation::effects, context)) {
-            if (!std::meta::is_alias_template(alias)
-                || std::meta::identifier_of(alias) != std::meta::identifier_of(tag)) {
-                continue;
+    auto unaliased = std::meta::members_of(^^resource, context);
+    for (const auto alias : std::meta::members_of(^^::foundation::effects, context)) {
+        if (!std::meta::is_alias_template(alias)) continue;
+        const auto alias_name = std::meta::identifier_of(alias);
+        for (auto& tag : unaliased) {
+            if (!std::meta::is_class_template(tag) || std::meta::identifier_of(tag) != alias_name) continue;
+            if (std::meta::dealias(std::meta::substitute(alias, {zero_budget_()}))
+                == std::meta::substitute(tag, {zero_budget_()})) {
+                tag = ^^void;
             }
-            aliased = aliased || std::meta::dealias(std::meta::substitute(alias, {zero_budget_()})) == zero_tag;
         }
-        if (!aliased) return false;
+    }
+    for (const auto tag : unaliased) {
+        if (std::meta::is_class_template(tag)) return false;
     }
     return true;
 }
