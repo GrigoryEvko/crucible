@@ -118,19 +118,55 @@ CONCURRENCY
     the first one wrote.  The workers take the units in a random order and
     first pass over a unit that another process holds, so guards that start
     cold together divide the units between them.  Each write is atomic.
-    Each process holds a shared lock on the store, and an eviction needs the
-    exclusive lock, so an eviction never runs while a guard reads.
+    No reader waits for an eviction, and no eviction waits for a reader
+    (THE GENERATIONS).
 
 THE BOUND
-    A file under units/ that is not a manifest of this version, or a lock
-    with no manifest, goes first, at most GARBAGE_PER_TURN of them for each
-    eviction.  A manifest and a result that no run used for
-    cache_dir.MAX_AGE go next.  Then the oldest go until the store is under
-    STORE_BYTES.  A chunk that no remaining manifest names goes with them.
-    One process each day does this, when it can get the exclusive lock at
-    once.  A process that gets the turn and not the lock, or that leaves
-    garbage for the next turn, keeps the turn due, so the next run tries
-    again.
+    The store stays under its row of cache_dir.LIMITS.  The eviction turn is
+    due each day, and also when a sample of the store is over the limit
+    (utils/scripts/cache_dir.py, THE TURN).  An eviction first removes the
+    garbage: each file under units/ that is not a manifest of this version,
+    and each lock with no manifest.  Then it removes each manifest, result
+    and chunk with no use for cache_dir.MAX_AGE.  Then the entries with the
+    oldest use go until the store is under cache_dir.EVICT_TO of its limit.
+    A turn takes at most EVICT_SECONDS.  A turn that leaves work keeps the
+    turn due, so the next run continues the work.
+
+    The mtime of each entry is the time of its last use.  A lookup that
+    touches a manifest also touches each chunk of its variant, and a fill
+    touches each chunk that it finds in the store.  So the chunks of a used
+    manifest are not older than the manifest.  A lock with no manifest and a
+    temporary file are garbage only after cache_dir.STALE_AFTER with no
+    change, because a fill in progress can hold them.
+
+THE GENERATIONS
+    A manifest and a result are read whole, so no reader needs one after it
+    read it, and an eviction removes them at once.  A reader can read a chunk
+    long after its lookup.  So an eviction moves each chunk that it removes
+    to retired/G/, and it deletes retired/G/ only when no reader that can
+    need those chunks is alive:
+      - Each reader holds a shared lock of generation.lock for its whole run.
+      - An eviction that moves chunks first links generation.lock to
+        retired/G.lock.  Then it moves the chunks.  Then it puts a new file
+        at generation.lock, so each later reader locks a new generation.
+      - An eviction deletes retired/G/ and retired/G.lock only after it got
+        the exclusive lock of retired/G.lock at once, and after it deleted
+        each older generation.  So the oldest live reader keeps its own
+        generation and each later one.
+      - A reader that does not find a chunk under chunks/ reads it from
+        retired/, the newest generation first.  A lookup reads only chunks/,
+        so a reader of a later generation never needs a retired chunk.
+
+THE WORK TREES OF OTHER VERSIONS
+    Each work tree runs its own copy of this module against the one store.
+    A copy that keeps no generation lock holds a shared lock of store.lock
+    while it reads.  It removes chunks only under the exclusive lock of
+    store.lock, and only when the stamp `evicted` is one day old.  So:
+      - An eviction moves chunks only while it holds the exclusive lock of
+        store.lock, and it does not wait for that lock.
+      - Each reader keeps the stamp `evicted` younger than one day, so such
+        a copy never takes an eviction turn.  The turn of this module has
+        the stamp TURN_STAMP.
 
 FAILURE
     A unit that the preprocessor rejects gives a failure and no variant, so
@@ -193,11 +229,21 @@ STORE_VERSION = 3
 # from STORE_VERSION, because a new manifest format leaves each expansion key
 # and each chunk text as it was.
 RESULTS_VERSION = 2
-# The name of the store in utils/scripts/cache_dir.py.
+# The name of the store in utils/scripts/cache_dir.py.  Its row of
+# cache_dir.LIMITS is the size limit of the store.
 STORE_CACHE = "preprocessed"
-# The size limit of the store.  One build directory of this tree takes about
-# 300 MB.
-STORE_BYTES = 4 << 30
+# The lock that each reader holds, shared, for its whole run (THE GENERATIONS).
+GENERATION_LOCK = "generation.lock"
+# The directory of the retired chunks and of the locks of their generations.
+RETIRED = "retired"
+# The lock and the stamp of a copy of this module that keeps no generation
+# lock (THE WORK TREES OF OTHER VERSIONS).
+SHARED_LOCK = "store.lock"
+SHARED_STAMP = "evicted"
+# The stamp of the eviction turn of this module.
+TURN_STAMP = "turn"
+# The longest time of one eviction turn, in seconds.  A turn that leaves work keeps the turn due.
+EVICT_SECONDS = 15.0
 # The variants that one manifest keeps, the most recent first.
 MAX_VARIANTS = 8
 # The environment variables that change what the preprocessor reads or what it writes.
@@ -218,8 +264,6 @@ MANIFEST_TAG = ("crucible-preprocessed", STORE_VERSION, marshal.version)
 MISSING = bytes(32)
 # The array type code of a chunk line in a record: an unsigned 32-bit integer.
 LINE_TYPE = "I"
-# The files under units/ that one eviction removes as garbage, at most.
-GARBAGE_PER_TURN = 50_000
 # A unit gets no variant when a file that it read changed in this period
 # before the start of the preprocessor run, or later (THE SETTLE PERIOD).
 SETTLE_NS = 1_000_000_000
@@ -651,7 +695,17 @@ class _Chunks:
         """
         self.directory = directory
         self.known: set[str] | None = None if listed else set()
+        self.touched: set[str] = set()
         self.lock = threading.Lock()
+
+    def touch(self, digest: str) -> None:
+        """Give a chunk that this process uses the time of its use, one time for each process (THE BOUND)."""
+        with self.lock:
+            if digest in self.touched:
+                return
+            self.touched.add(digest)
+        with contextlib.suppress(OSError):
+            os.utime(self.directory / digest[:2] / digest)
 
     def has(self, digest: str) -> bool:
         """Return whether the store holds a chunk."""
@@ -717,6 +771,14 @@ class _Reader:
             self.present[digests] = known
         return known
 
+    def touch_variant(self, variant: Variant) -> None:
+        """Give each chunk of a variant and its blob of outside files the time of a use (THE BOUND)."""
+        self.chunks.touch(variant[2])
+        for record in variant[3]:
+            digests = record[3]
+            for at in range(0, len(digests), 32):
+                self.chunks.touch(digests[at:at + 32].hex())
+
     def valid_variant(self, variants: tuple) -> Variant | None:
         """Return the first variant whose files have their recorded contents and whose chunks all exist."""
         for variant in variants:
@@ -754,8 +816,21 @@ def _chunk_path(store: Path, digest: str) -> Path:
     return store / "chunks" / digest[:2] / digest
 
 
+def _retired_path(store: Path, digest: str) -> Path | None:
+    """Return the path of a retired chunk, from the newest generation that holds it, or None (THE GENERATIONS)."""
+    try:
+        generations = sorted((name for name in os.listdir(store / RETIRED) if name.isdigit()), key=int, reverse=True)
+    except FileNotFoundError:
+        return None
+    for generation in generations:
+        path = store / RETIRED / generation / digest
+        if path.is_file():
+            return path
+    return None
+
+
 def blob_bytes(store: Path, digest: str) -> bytes:
-    """Return the bytes of one chunk or blob of a store, read from its file.
+    """Return the bytes of one chunk or blob of a store, from chunks/ or else from a retired generation.
 
     Args:
         store: The directory of the store
@@ -770,7 +845,15 @@ def blob_bytes(store: Path, digest: str) -> bytes:
     """
     path = _chunk_path(store, digest)
     try:
-        data = zlib.decompress(path.read_bytes())
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        retired = _retired_path(store, digest)
+        if retired is None:
+            raise
+        path = retired
+        raw = path.read_bytes()
+    try:
+        data = zlib.decompress(raw)
         if hashlib.sha256(data).hexdigest() != digest:
             raise ValueError("the bytes do not match their name")
     except (zlib.error, ValueError) as exc:
@@ -798,9 +881,11 @@ def chunk_text(store: Path, digest: str) -> str:
 
 
 def _write_blob(store: Path, data: bytes, chunks: _Chunks) -> str:
-    """Store bytes under their hash, when the store does not hold them yet, and return the hash."""
+    """Store bytes under their hash, or touch the chunk when the store holds them, and return the hash."""
     digest = hashlib.sha256(data).hexdigest()
-    if not chunks.has(digest):
+    if chunks.has(digest):
+        chunks.touch(digest)
+    else:
         cache_dir.write_atomic(_chunk_path(store, digest), zlib.compress(data, 1))
         chunks.add(digest)
     return digest
@@ -1087,9 +1172,8 @@ class Store:
         self._environment = [(name, os.environ.get(name)) for name in ENVIRONMENT]
         self._texts: dict[str, str] = {}
         self._lock = threading.Lock()
-        # The units of the last pass, whose chunks an eviction of this run keeps.
-        self._units: list[Unit] = []
-        self._shared_lock = self._hold_shared()
+        self._generation_lock = self._hold_generation()
+        self._keep_shared_stamp()
         # The number of preprocessor runs this store started, for the self-test.
         self.runs = 0
         # The units of the last pass, and how many of them came from the store.
@@ -1099,11 +1183,26 @@ class Store:
         self.failed: list[Unit] = []
         self.failures: list[str] = []
 
-    def _hold_shared(self):
-        """Take the shared lock of the store, which keeps an eviction out while this process reads."""
-        holder = open(self.directory / "store.lock", "a")
+    def _hold_generation(self):
+        """Take the shared lock of the current generation, which keeps each chunk that this process can read (THE GENERATIONS)."""
+        holder = open(self.directory / GENERATION_LOCK, "a")
         fcntl.flock(holder, fcntl.LOCK_SH)
         return holder
+
+    def _keep_shared_stamp(self) -> None:
+        """Keep the stamp SHARED_STAMP younger than one day (THE WORK TREES OF OTHER VERSIONS)."""
+        stamp = self.directory / SHARED_STAMP
+        try:
+            cache_dir.mark_used(stamp, stamp.stat().st_mtime)
+        except FileNotFoundError:
+            stamp.touch()
+
+    def close(self) -> None:
+        """Release the generation lock, so an eviction can delete the generations that this process kept.
+
+        The store reads no chunk after this call.
+        """
+        self._generation_lock.close()
 
     def file_hash(self, relative: str) -> str | None:
         """Return the SHA-256 of a file under the root, calculated one time for each run.
@@ -1187,7 +1286,8 @@ class Store:
             variant = self._reader.valid_variant(_read_variants(manifest))
             if variant is not None:
                 with contextlib.suppress(OSError):
-                    cache_dir.mark_used(manifest, manifest.stat().st_mtime)
+                    if cache_dir.mark_used(manifest, manifest.stat().st_mtime):
+                        self._reader.touch_variant(variant)
                 return _unit_of(plan.file, variant, True)
         return None
 
@@ -1227,7 +1327,6 @@ class Store:
             found[index] = unit
             self.runs += ran
         units = [unit for unit in found if unit is not None]
-        self._units = units
         self.unit_count = len(units)
         self.cached_count = sum(unit.from_cache for unit in units)
         self.failed = [unit for unit in units if unit.failure is not None]
@@ -1298,135 +1397,186 @@ class Store:
         return _results_in(self.directory, guard, identity)
 
     def _evict(self) -> None:
-        """Hold the store under its size and age limits, when the turn is due and no other process reads.
+        """Hold the store under its limits when its turn is due (THE BOUND).
 
-        A process that gets the turn and not the exclusive lock, or that
-        leaves garbage for the next turn, gives the stamp its last time
-        again, so the turn stays due for the next run.
+        A turn that leaves work gives the stamp its last time again, so the
+        turn stays due for the next run.
         """
-        stamp = self.directory / "evicted"
+        stamp = self.directory / TURN_STAMP
         try:
             last = stamp.stat().st_mtime
         except FileNotFoundError:
             last = None
-        with cache_dir.eviction_turn(self.directory) as has_turn:
+        limit = cache_dir.LIMITS[STORE_CACHE]
+        with cache_dir.eviction_turn(self.directory, max_bytes=limit, stamp_name=TURN_STAMP) as has_turn:
             if not has_turn:
                 return
-            self._shared_lock.close()
             is_done = False
             try:
-                with open(self.directory / "store.lock", "a") as exclusive:
-                    try:
-                        fcntl.flock(exclusive, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    except BlockingIOError:
-                        return
-                    # A unit of this run with no variant has chunks that no
-                    # manifest names, and the guard reads them after this.
-                    live = {record[3][at:at + 32].hex() for unit in self._units for record in unit.records
-                            for at in range(0, len(record[3]), 32)}
-                    is_done = evict_store(self.directory, STORE_BYTES, keep=frozenset(live))
+                is_done = evict_store(self.directory, limit)
             finally:
                 if not is_done:
                     if last is None:
                         stamp.unlink(missing_ok=True)
                     else:
-                        os.utime(stamp, (last, last))
-                self._shared_lock = self._hold_shared()
+                        with contextlib.suppress(OSError):
+                            os.utime(stamp, (last, last))
 
 
-def _remove_garbage(units: Path, limit: int) -> bool:
-    """Remove each file under units/ that is not a manifest of this version, and each lock with no manifest.
+def _remove_garbage(directory: Path, moment: float, deadline: float) -> bool:
+    """Remove the garbage of a store until a deadline, and return whether none remains (THE BOUND).
 
-    The caller holds the exclusive lock of the store, so no process fills a
-    unit and a lock with no manifest is free.
+    The garbage is each file under units/ that is not a manifest of this
+    version or the lock of one, and each temporary file of the store.  A lock
+    with no manifest, a temporary file and an empty directory of the results
+    go only after cache_dir.STALE_AFTER with no change.  The function looks
+    at the clock after each directory of units/ where it removed a file.
+
+    Complexity: one listing of each directory of the store, and one stat of
+    each lock with no manifest and of each temporary file.
 
     Args:
-        units: The units directory of a store
-        limit: The largest number of files to remove
+        directory: The directory of the store
+        moment: The time of the eviction
+        deadline: The value of time.monotonic() at which the function stops
 
     Returns:
         Whether no garbage remains
     """
-    removed = 0
+    expired = moment - cache_dir.STALE_AFTER
     with contextlib.suppress(FileNotFoundError):
-        for fan in os.scandir(units):
+        for fan in os.scandir(directory / "units"):
             if not fan.is_dir(follow_symlinks=False):
                 continue
-            with os.scandir(fan.path) as listing:
-                names = {item.name for item in listing}
+            try:
+                with os.scandir(fan.path) as listing:
+                    names = {item.name for item in listing}
+            except FileNotFoundError:
+                continue
+            removed = 0
             for name in names:
-                if name.endswith(MANIFEST_SUFFIX) or name.startswith("."):
+                is_lock = name.endswith(".lock")
+                if name.endswith(MANIFEST_SUFFIX) or (is_lock and f"{name[:-5]}{MANIFEST_SUFFIX}" in names):
                     continue
-                if name.endswith(".lock") and f"{name[:-len('.lock')]}{MANIFEST_SUFFIX}" in names:
-                    continue
-                if removed >= limit:
-                    return False
+                path = os.path.join(fan.path, name)
                 with contextlib.suppress(FileNotFoundError):
-                    os.unlink(os.path.join(fan.path, name))
-                removed += 1
+                    if (is_lock or name.startswith(".")) and os.stat(path).st_mtime >= expired:
+                        continue
+                    os.unlink(path)
+                    removed += 1
+            if removed and time.monotonic() >= deadline:
+                return False
+    cache_dir.remove_stale(directory / "chunks", moment)
+    results = directory / "results"
+    with contextlib.suppress(FileNotFoundError):
+        for folder in os.scandir(results):
+            if folder.is_dir(follow_symlinks=False):
+                cache_dir.remove_stale(Path(folder.path), moment)
+    cache_dir.remove_stale(results, moment)
+    return True
+
+
+def _finalize_retired(directory: Path) -> None:
+    """Delete each retired generation that no live reader keeps, the oldest first (THE GENERATIONS).
+
+    The function stops at the first generation whose lock a reader holds,
+    because that reader can need each later generation too.
+    """
+    retired = directory / RETIRED
+    try:
+        names = os.listdir(retired)
+    except FileNotFoundError:
+        return
+    for generation in sorted({int(name.split(".")[0]) for name in names if name.split(".")[0].isdigit()}):
+        lock = retired / f"{generation}.lock"
+        if not lock.exists():
+            shutil.rmtree(retired / str(generation), ignore_errors=True)
+            continue
+        with open(lock, "a") as holder:
+            try:
+                fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return
+            shutil.rmtree(retired / str(generation), ignore_errors=True)
+            lock.unlink(missing_ok=True)
+
+
+def _retire(directory: Path, chunks: list[cache_dir.Entry]) -> bool:
+    """Move chunks to a new retired generation, and give the next readers a new generation lock (THE GENERATIONS).
+
+    The move holds the exclusive lock of SHARED_LOCK, which the function
+    takes at once or not at all (THE WORK TREES OF OTHER VERSIONS).
+
+    Args:
+        directory: The directory of the store
+        chunks: The chunks to retire
+
+    Returns:
+        Whether the function moved the chunks
+    """
+    with open(directory / SHARED_LOCK, "a") as shared:
+        try:
+            fcntl.flock(shared, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False
+        generation = str(time.time_ns())
+        retired = directory / RETIRED
+        retired.mkdir(exist_ok=True)
+        current = directory / GENERATION_LOCK
+        current.touch()
+        os.link(current, retired / f"{generation}.lock")
+        target = retired / generation
+        target.mkdir()
+        for entry in chunks:
+            with contextlib.suppress(FileNotFoundError):
+                os.rename(entry.path, target / entry.path.name)
+        fresh = directory / f".{GENERATION_LOCK}.{os.getpid()}.tmp"
+        fresh.touch()
+        os.replace(fresh, current)
     return True
 
 
 def evict_store(directory: Path, max_bytes: int, max_age: float = cache_dir.MAX_AGE,
-                now: float | None = None, garbage_limit: int = GARBAGE_PER_TURN,
-                keep: frozenset[str] = frozenset()) -> bool:
-    """Remove the garbage, the old manifests and the old results of a store, then each chunk that no manifest names.
+                now: float | None = None, seconds: float = EVICT_SECONDS) -> bool:
+    """Hold a store under its limits: remove the garbage, then the entries past the age limit, then the oldest (THE BOUND).
 
-    The caller holds the exclusive lock of the store.  Complexity: one read
-    of each remaining manifest, and one listing of each entry.
+    A manifest and a result go at once.  A chunk goes to a retired
+    generation, which a later eviction deletes when no reader keeps it (THE
+    GENERATIONS).  The caller holds the eviction turn of the store.
+
+    Complexity: one listing of each entry and a sort, O(n log n) for n entries.
 
     Args:
         directory: The directory of the store
         max_bytes: The size limit
         max_age: The age limit of an entry with no use
         now: The time of the eviction, or None for the clock
-        garbage_limit: The largest number of garbage files to remove
-        keep: The chunks that the caller still reads, which stay with the
-            chunks that a manifest names
+        seconds: The longest time of the eviction
 
     Returns:
-        Whether no garbage remains for the next turn
+        Whether the eviction left no work for the next turn
     """
     moment = time.time() if now is None else now
-    is_clean = _remove_garbage(directory / "units", garbage_limit)
-
-    def owners() -> list[cache_dir.Entry]:
-        """Return each manifest and each result of the store."""
-        results = [entry for folder in (directory / "results").iterdir() if folder.is_dir()
-                   for entry in cache_dir.entries(folder, ".json")]
-        return cache_dir.entries(directory / "units", MANIFEST_SUFFIX) + results
-
-    def drop(chosen: list[cache_dir.Entry]) -> int:
-        """Remove manifests and results, then each chunk that no remaining manifest names.
-
-        Returns:
-            The bytes that the store still holds
-        """
-        cache_dir.remove(chosen)
-        for entry in chosen:
-            entry.path.with_suffix(".lock").unlink(missing_ok=True)
-        named: set[str] = set(keep)
-        for manifest in cache_dir.entries(directory / "units", MANIFEST_SUFFIX):
-            for variant in _read_variants(manifest.path):
-                with contextlib.suppress(TypeError, ValueError, IndexError):
-                    named.add(variant[2])
-                    for record in variant[3]:
-                        digests = record[3]
-                        named.update(digests[at:at + 32].hex() for at in range(0, len(digests), 32))
-        chunks = cache_dir.entries(directory / "chunks")
-        cache_dir.remove([entry for entry in chunks if entry.path.name not in named])
-        return (sum(entry.size for entry in owners())
-                + sum(entry.size for entry in chunks if entry.path.name in named))
-
-    held = drop([entry for entry in owners() if moment - entry.used > max_age])
-    # While the store is over its size, each round removes the older half of
-    # the manifests and results, so the loop ends.
-    while held > max_bytes:
-        remaining = sorted(owners(), key=lambda entry: entry.used)
-        if not remaining:
-            break
-        held = drop(remaining[:max(1, len(remaining) // 2)])
-    return is_clean
+    deadline = time.monotonic() + seconds
+    _finalize_retired(directory)
+    if not _remove_garbage(directory, moment, deadline):
+        return False
+    owned = cache_dir.entries(directory / "units", MANIFEST_SUFFIX)
+    with contextlib.suppress(FileNotFoundError):
+        for folder in os.scandir(directory / "results"):
+            if folder.is_dir(follow_symlinks=False):
+                owned += cache_dir.entries(Path(folder.path), ".json")
+    chunks = cache_dir.entries(directory / "chunks")
+    chunk_ids = set(map(id, chunks))
+    chosen = cache_dir.victims(owned + chunks, max_bytes, max_age, moment)
+    retiring = [entry for entry in chosen if id(entry) in chunk_ids]
+    removing = [entry for entry in chosen if id(entry) not in chunk_ids]
+    is_done = not retiring or _retire(directory, retiring)
+    for start in range(0, len(removing), 1024):
+        if time.monotonic() >= deadline:
+            return False
+        cache_dir.remove(removing[start:start + 1024])
+    return is_done
 
 
 def files_of(unit: Unit) -> dict[str, tuple[str, list[Chunk]]]:
@@ -1857,20 +2007,25 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     expect("a damaged result counts as a miss", results.get("k" * 64) is None)
 
     old = time.time() - 2 * cache_dir.MAX_AGE
+    limit = cache_dir.LIMITS[STORE_CACHE]
     write_db(root, ["b.cpp"])
     list(Store(database, root).units())
-    kept_store = Store(database, root)
-    kept = [kept_store._plan(entry) for entry in json.loads(database.read_text())]
-    for manifest in (store_dir / "units").rglob(f"*{MANIFEST_SUFFIX}"):
-        if manifest.stem not in {kept[0].shared_key, kept[0].rooted_key}:
-            os.utime(manifest, (old, old))
+    # Each manifest and chunk gets an old use.  The next lookup of b.cpp
+    # touches its manifest and each chunk of its variant.
+    for path in [*(store_dir / "units").rglob(f"*{MANIFEST_SUFFIX}"), *chunk_files()]:
+        os.utime(path, (old, old))
     results.put("r" * 64, [1])
     os.utime(results.directory / "rr" / f"{'r' * 64}.json", (old, old))
+    used = list(Store(database, root).units())
     named_before = len(chunk_files())
-    garbage = [store_dir / "units" / "ab" / "abandoned.json", store_dir / "units" / "ab" / "orphan.lock"]
-    for path in garbage:
+    garbage = [store_dir / "units" / fan / f"{name}-{fan}{suffix}" for fan in ("ab", "cd")
+               for name, suffix in (("abandoned", ".json"), ("orphan", ".lock"))]
+    young_lock = store_dir / "units" / "ef" / "filling.lock"
+    for path in [*garbage, young_lock]:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("{}")
+        if path != young_lock:
+            os.utime(path, (old, old))
 
     def garbage_count() -> int:
         """Return the number of files under units/ that are not a manifest or the lock of one."""
@@ -1879,45 +2034,17 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
                    and not (name.endswith(".lock") and f"{name[:-len('.lock')]}{MANIFEST_SUFFIX}" in names))
 
     before = garbage_count()
-    expect("an eviction with a small garbage limit removes part of the garbage and says that some remains",
-           before >= 2 and not evict_store(store_dir, STORE_BYTES, garbage_limit=1) and garbage_count() == before - 1)
-    expect("the next eviction removes the rest of the garbage", evict_store(store_dir, STORE_BYTES)
-           and not any(p.exists() for p in garbage))
+    expect("an eviction past its deadline removes the garbage of one directory and says that some remains",
+           used[0].from_cache and not evict_store(store_dir, limit, seconds=0) and garbage_count() == before - 2)
+    expect("the next eviction removes the rest of the garbage, and keeps a young lock that a fill can hold",
+           evict_store(store_dir, limit) and not any(path.exists() for path in garbage) and young_lock.exists())
     left = list(Store(database, root).units())
-    expect("an eviction removes old manifests, old results and their chunks, and keeps the used ones",
+    expect("an eviction removes old manifests, old results and old chunks, and keeps the ones that a lookup used",
            left[0].from_cache and len(chunk_files()) < named_before and results.get("r" * 64) is None)
 
-    # The stores above still hold their shared locks, so the turn cases use
-    # a store of their own.
+    # Each store above holds its generation, so these cases use a store of their own.
     with cache_dir.scratch_root() as turn_caches:
-        (root / "unsettled.h").write_text("int unsettled_value;\n")
-        (root / "unsettled.cpp").write_text('#include "unsettled.h"\n')
-        write_db(root, ["unsettled.cpp"])
-        # The change time of the new header is the latest start, so the unit gets no variant.
-        evicting = Store(database, root, latest_start_ns=(root / "unsettled.h").stat().st_ctime_ns)
-        unsettled = list(evicting.units())
-        try:
-            readable = "unsettled_value" in joined(evicting, files_of(unsettled[0])["unsettled.h"][1])
-        except FileNotFoundError:
-            readable = False
-        expect("an eviction keeps the chunks of a unit of its own run that got no variant",
-               (turn_caches / STORE_CACHE / "evicted").is_file() and not unsettled[0].from_cache and readable)
-        del evicting, unsettled
-        write_db(root, ["b.cpp"])
-        list(Store(database, root).units())
-        stamp = turn_caches / STORE_CACHE / "evicted"
-        stale = time.time() - 2 * cache_dir.EVICT_INTERVAL
-        os.utime(stamp, (stale, stale))
-        with open(turn_caches / STORE_CACHE / "store.lock", "a") as reader_lock:
-            fcntl.flock(reader_lock, fcntl.LOCK_SH)
-            list(Store(database, root).units())
-        expect("a turn that cannot get the store from another reader stays due",
-               abs(stamp.stat().st_mtime - stale) < 1.0)
-        list(Store(database, root).units())
-        expect("the next run with no other reader takes the turn", time.time() - stamp.stat().st_mtime < 60)
-    evict_store(store_dir, 1)
-    expect("a size limit removes manifests until the store fits",
-           not list((store_dir / "units").rglob(f"*{MANIFEST_SUFFIX}")))
+        _self_test_turns(expect, turn_caches / STORE_CACHE, root, write_db)
 
     saved_root = os.environ[cache_dir.ROOT_VARIABLE]
     os.environ[cache_dir.ROOT_VARIABLE] = "off"
@@ -1949,6 +2076,125 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
            staged.failure is None and any(c.path == "include/upper/upper.h" for c in staged.chunks))
     expect("a directory that holds a file is not a staged root, and keeps its include path",
            plain_unit.failure is not None)
+
+
+def _self_test_turns(expect, store_dir: Path, root: Path, write_db) -> None:
+    """Run the cases of the eviction turn and of the generations against a store that no other case holds.
+
+    Args:
+        expect: The recorder of the self-test
+        store_dir: The directory of the store, under a scratch root of the caches
+        root: The scratch tree of the sources
+        write_db: Writes the compile database of the named sources of a tree, and returns its path
+    """
+    database = root / "build" / "compile_commands.json"
+
+    def files_under(part: str) -> list[Path]:
+        """Return each file under one directory of the store whose name does not start with a dot."""
+        return [path for path in (store_dir / part).rglob("*") if path.is_file() and not path.name.startswith(".")]
+
+    def plant_garbage(count: int) -> list[Path]:
+        """Plant manifests of an earlier format and locks with no manifest, each with an old change, and return them."""
+        planted: list[Path] = []
+        stale = time.time() - 2 * cache_dir.STALE_AFTER
+        for index in range(count):
+            key = hashlib.sha256(f"garbage-{index}-{time.time_ns()}".encode()).hexdigest()
+            for name, data in ((f"{key}.json", bytes(8192)), (f"{key}.lock", b"")):
+                path = store_dir / "units" / key[:2] / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+                os.utime(path, (stale, stale))
+                planted.append(path)
+        return planted
+
+    def turn_with_limit(small: int, store: Store | None = None) -> None:
+        """Run the eviction turn of one lookup pass with a small size limit of the store."""
+        saved = cache_dir.LIMITS[STORE_CACHE]
+        cache_dir.LIMITS[STORE_CACHE] = small
+        try:
+            list((store if store is not None else Store(database, root)).units())
+        finally:
+            cache_dir.LIMITS[STORE_CACHE] = saved
+
+    (root / "unsettled.h").write_text("int unsettled_value;\n")
+    (root / "unsettled.cpp").write_text('#include "unsettled.h"\n')
+    write_db(root, ["unsettled.cpp"])
+    # The change time of the new header is the latest start, so the unit gets no variant.
+    evicting = Store(database, root, latest_start_ns=(root / "unsettled.h").stat().st_ctime_ns)
+    unsettled = list(evicting.units())
+    evict_store(store_dir, 1)
+    try:
+        readable = "unsettled_value" in joined(evicting, files_of(unsettled[0])["unsettled.h"][1])
+    except FileNotFoundError:
+        readable = False
+    expect("an eviction keeps each chunk that a reader of its generation reads, also of a unit that got no variant",
+           (store_dir / TURN_STAMP).is_file() and not unsettled[0].from_cache and readable and not files_under("chunks"))
+    evicting.close()
+
+    # Another reader is alive, and the store holds garbage over its limit.
+    # One turn removes the garbage, and the other reader still reads its text.
+    write_db(root, ["b.cpp"])
+    other = Store(database, root)
+    other_units = list(other.units())
+    garbage = plant_garbage(64)
+    small = 256 << 10
+    over = cache_dir.estimated_bytes(store_dir)
+    stale_turn = time.time() - 2 * cache_dir.EVICT_INTERVAL
+    os.utime(store_dir / TURN_STAMP, (stale_turn, stale_turn))
+    turn_with_limit(small)
+    expect("one eviction turn with another reader alive removes the garbage and holds the store under its limit",
+           over > 2 * small and not any(path.exists() for path in garbage)
+           and cache_dir.estimated_bytes(store_dir) <= small
+           and "struct Shared" in joined(other, files_of(other_units[0])["shared.h"][1]))
+
+    # A recent turn, and a store that grows over its limit: the turn waits
+    # for the next sample of the size, and then it is due.
+    os.utime(store_dir / TURN_STAMP)
+    (store_dir / f"{TURN_STAMP}.probed").touch()
+    garbage = plant_garbage(64)
+    turn_with_limit(small)
+    expect("a store over its limit after a recent turn and a recent sample waits for the next sample",
+           all(path.exists() for path in garbage))
+    stale_probe = time.time() - 2 * cache_dir.PROBE_INTERVAL
+    os.utime(store_dir / f"{TURN_STAMP}.probed", (stale_probe, stale_probe))
+    turn_with_limit(small)
+    expect("a store over its limit takes its turn at the next sample, also after a recent turn",
+           not any(path.exists() for path in garbage) and cache_dir.estimated_bytes(store_dir) <= small)
+
+    # The generations: a reader of an earlier generation reads the chunks
+    # that an eviction retired, and a reader of a later one does not need them.
+    write_db(root, ["a.cpp"])
+    holder = Store(database, root)
+    held = list(holder.units())
+    evict_store(store_dir, 1)
+    expect("a size limit removes each manifest and retires each chunk",
+           not list((store_dir / "units").rglob(f"*{MANIFEST_SUFFIX}")) and not files_under("chunks"))
+    expect("a reader that holds an earlier generation reads a chunk that an eviction retired",
+           "struct Shared" in joined(holder, files_of(held[0])["shared.h"][1]))
+    newer = Store(database, root)
+    renewed = list(newer.units())
+    expect("a reader of a later generation misses the retired chunks, and preprocesses its unit again",
+           not renewed[0].from_cache and "struct Shared" in joined(newer, files_of(renewed[0])["shared.h"][1]))
+    evict_store(store_dir, cache_dir.LIMITS[STORE_CACHE])
+    expect("an eviction keeps each retired generation that a live reader holds", bool(files_under(RETIRED)))
+    holder.close()
+    other.close()
+    evict_store(store_dir, cache_dir.LIMITS[STORE_CACHE])
+    expect("an eviction deletes each retired generation after its readers closed", not files_under(RETIRED))
+    newer.close()
+
+    # A copy of this module that keeps no generation lock reads under a shared lock of store.lock.
+    with open(store_dir / SHARED_LOCK, "a") as shared:
+        fcntl.flock(shared, fcntl.LOCK_SH)
+        is_done = evict_store(store_dir, 1)
+        expect("an eviction retires no chunk while a reader holds store.lock, and says that work remains",
+               not is_done and bool(files_under("chunks")) and not list((store_dir / "units").rglob(f"*{MANIFEST_SUFFIX}")))
+    expect("the next eviction with no such reader retires the chunks",
+           evict_store(store_dir, 1) and not files_under("chunks"))
+    os.utime(store_dir / SHARED_STAMP, (stale_turn, stale_turn))
+    Store(database, root).close()
+    expect("each reader keeps the stamp of a copy that keeps no generation lock younger than one day",
+           time.time() - (store_dir / SHARED_STAMP).stat().st_mtime < cache_dir.EVICT_INTERVAL)
 
 
 def fill_main(compile_db: Path, shard: int, count: int) -> int:
