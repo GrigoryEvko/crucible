@@ -6,6 +6,7 @@ layer low 0 include/fixy/
 layer high 1 include/fixy/high/
 
 allow low <cstddef>
+allow low <cstring>
 allow low <source_location>
 allow low <vector>
 allow high <cstdint>
@@ -16,6 +17,7 @@ admit std::nullptr_t in include/fixy/high/Language.h | the type of nullptr, admi
 admit std::source_location until Report | the place of a call
 
 quarantine deep_language_user.cpp
+quarantine language_gap_user.cpp
 quarantine language_user.cpp
 
-language low include/fixy/high/Language.h include/fixy/high/Deep.h
+language low include/fixy/high/Language.h include/fixy/high/Deep.h include/fixy/high/LanguageGap.h

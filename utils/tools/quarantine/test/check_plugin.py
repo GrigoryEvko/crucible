@@ -404,6 +404,7 @@ def run(checker: Checker, rules: Path) -> list[Section]:
         run_library_names,
         run_provenance,
         run_depth,
+        run_known_gaps,
         run_restrictions,
         run_language,
         lambda section: run_tree_plants(section, rules),
@@ -889,6 +890,46 @@ def run_depth(section: Section) -> None:
         hits = [f for f in findings[fixture] if f.file == fixture and f.line == line and f.kind == kind]
         section.expect(f"{kind} {text} at {fixture}:{line}", any(text in f.entity for f in hits),
                        "; ".join(map(str, hits)))
+
+
+# The known gaps of the plugin: (fixture, table, file, line, reason).  The line
+# names a library entity, and the plugin gives no finding there.  A row fails
+# when the plugin gives a finding on its line, so a change that closes a gap
+# removes its row and adds the finding to the expectations.  The list only
+# becomes shorter.
+KNOWN_GAPS = (
+    ("known_gaps.cpp", TEST_RULES, "known_gaps.cpp", 17,
+     "the temporary std::vector goes to a template, whose instantiation the plugin does not read, and the front "
+     "end keeps no mark that tells an explicit temporary from an implicit conversion"),
+    ("known_gaps.cpp", TEST_RULES, "known_gaps.cpp", 19,
+     "the front end folds the unevaluated operand of sizeof to a constant, and keeps no tree of std::string"),
+    ("known_gaps.cpp", TEST_RULES, "known_gaps.cpp", 21,
+     "the front end folds the call of strlen in the initializer to a constant before the plugin reads it"),
+    ("known_gaps.cpp", TEST_RULES, "known_gaps.cpp", 23,
+     "a using-declaration of namespace scope is a binding of the namespace, with no tree that has a location"),
+    ("language_gap_user.cpp", HERE / "language.txt", "include/fixy/high/LanguageGap.h", 11,
+     "the rule of the language reads each declaration type and each include, and not a call.  An extension needs "
+     "a decision of the owner: the language files name std::nothrow and the std::vector of std::meta"),
+)
+
+
+def run_known_gaps(section: Section) -> None:
+    """Compile each fixture of KNOWN_GAPS in report mode, and judge that each pinned line has no finding."""
+    fixtures = sorted({(fixture, table) for fixture, table, _, _, _ in KNOWN_GAPS})
+    calls: list[tuple[object, ...]] = []
+    for index, (fixture, table) in enumerate(fixtures):
+        arguments = {"root": str(HERE), "mode": "report", "rules": str(table),
+                     "out": str(section.work / f"gaps-{index}")}
+        calls.append((fixture, arguments))
+    findings: dict[str, list[Finding]] = {}
+    for index, ((fixture, _), compiled) in enumerate(zip(fixtures, section.compile_all(calls), strict=True)):
+        section.expect(f"{fixture} compiles in report mode", compiled.returncode == 0, compiled.stderr[-2000:])
+        findings[fixture] = read_reports(section.work / f"gaps-{index}")
+    for fixture, _, file, line, reason in KNOWN_GAPS:
+        hits = [f for f in findings[fixture] if f.file == file and f.line == line]
+        section.expect(f"the known gap at {file}:{line} stays open: {reason}", not hits,
+                       "the gap is closed; remove its row and add the finding to the expectations: "
+                       + "; ".join(map(str, hits)))
 
 
 # (the macro of the plant of a restriction, the kind, a text in the entity)

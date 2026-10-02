@@ -32,6 +32,7 @@ quarantine gapsother/
 quarantine header_exact.cpp
 quarantine include_exact.cpp
 quarantine isystem_user.cpp
+quarantine known_gaps.cpp
 quarantine line_directive.cpp
 quarantine line_marker.cpp
 quarantine low_includes_high.cpp

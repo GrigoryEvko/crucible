@@ -156,15 +156,17 @@
 //
 // The plugin cannot see what the front end keeps as no tree, or as a tree with
 // no source location: a use in an unevaluated operand, a dependent member of a
-// template and a using-declaration.  The
-// front end folds the initializer of a variable while it parses, when a call
-// of a constexpr function in it gives a constant.  Such a call is no finding.
-// The libstdc++ assertions of the Debug, TSan and UBSan-strict presets stop
-// some of these folds, so a call such as std::optional::operator-> in an
-// initializer can be a finding in those presets and not in Release.  A
-// constructor, a destructor and a conversion function of a library class are
-// not findings: the compiler calls them for an object that the plugin reports
-// where the code declares it.
+// template and a using-declaration.  The front end folds the initializer of a
+// variable while it parses, when a call in it gives a constant, also a call of
+// a builtin such as strlen.  Such a call is no finding.  The libstdc++
+// assertions of the Debug, TSan and UBSan-strict presets stop some of these
+// folds, so a call such as std::optional::operator-> in an initializer can be
+// a finding in those presets and not in Release.  A constructor, a destructor
+// and a conversion function of a library class are not findings: the compiler
+// calls them for an object that the plugin reports where the code declares
+// it, so a temporary that the code passes to a template is no finding.
+// KNOWN_GAPS of test/check_plugin.py pins each such gap on a line of a
+// fixture, and the list only becomes shorter.
 
 #include <algorithm>
 #include <cerrno>
