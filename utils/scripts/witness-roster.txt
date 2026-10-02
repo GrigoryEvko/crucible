@@ -69,6 +69,11 @@ foundation::permissions::LentPermission<foundation::permissions::tag::HugePageTa
 # parks: there is no pool without the evidence.
 foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag> | foundation/permissions/Permission.h | foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag>{} | no-match | closed
 
+# -- Fail-closed relations -------------------------------------------
+# Only the walk of a relation builds its cells, so a specialization of
+# relation_cells_at cannot put an edge in a relation.
+foundation::fail_closed::detail::relation_cells<1> | foundation/diag/FailClosed.h | foundation::fail_closed::detail::relation_cells<1>{} | private | closed
+
 # -- Session and channel handles: the owner hands them out -----------
 fixy::session::SessionHandle<fixy::session::End, int*> | fixy/session/Handle.h | fixy::session::SessionHandle<fixy::session::End, int*>{forge::rvalue<int*>(), forge::lvalue<fixy::session::watch::session_ref>(), forge::lvalue<std::source_location>()} | no-match | closed
 fixy::session::CrashWatched<fixy::session::SessionHandle<fixy::session::End, int*>, int, long, fixy::session::ReliableSet<>, int> | fixy/session/CrashTransport.h | fixy::session::CrashWatched<fixy::session::SessionHandle<fixy::session::End, int*>, int, long, fixy::session::ReliableSet<>, int>{forge::rvalue<fixy::session::SessionHandle<fixy::session::End, int*>>(), forge::lvalue<const fixy::session::PeerCrashCell>(), forge::lvalue<fixy::session::PeerCrashCell>(), forge::lvalue<const int>()} | private | closed

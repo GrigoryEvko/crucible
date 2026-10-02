@@ -18,7 +18,6 @@ include/fixy/Bands.h — walks the band namespace to derive the band roster
 include/fixy/Collision.h — walks the members of rules_of<void> to derive the collision rule set
 include/fixy/Corpus.h — walks the secret-policy namespace to derive the corpus of policies
 include/fixy/Secret.h — walks the admitted declassification policies to seal the policy relation
-include/fixy/Tagged.h — walks the admitted retags to seal the retag relation
 include/fixy/atoms/Os.h — walks the OS atom namespaces to derive their rosters
 include/foundation/algebra/Transition.h — walks a transition registry to derive its edges
 include/foundation/contracts/Armed.h — walks a scope to derive the armed-predicate roster

@@ -56,7 +56,6 @@ fixy::corpus::internal_bg_without_declassify::matches | 1
 fixy::corpus::internal_io_without_declassify::matches | 1
 fixy::corpus::is_in_corpus_v | 1
 fixy::corpus::staleness_secret_without_declassify::matches | 1
-fixy::detail::earned_tag::is_earned | 1
 fixy::detail::reject::first_duplicated_axis_ | 1
 fixy::detail::role::is_accepted_fn | 1
 fixy::detail::thread_name_extract::is_thread_named_v | 1

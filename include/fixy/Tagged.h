@@ -208,16 +208,14 @@ namespace detail::earned_tag {
 // false claim.
 //
 // The answer is read off the catalog by reflection, so a new discharge
-// edge makes its target earned with no second list to keep in step.
-// Complexity: linear in the number of members of the catalog.
-template <typename Tag>
-[[nodiscard]] consteval bool is_earned() noexcept {
-    ::foundation::fail_closed::require_seal_holds(^^tags::admitted_retags);
-    const std::meta::info tag = std::meta::dealias(^^Tag);
-    for (const std::meta::info member :
-         std::meta::members_of(^^tags::admitted_retags, std::meta::access_context::unchecked())) {
-        if (!::foundation::fail_closed::is_edge(member)) continue;
-        const ::foundation::fail_closed::edge_ends ends = ::foundation::fail_closed::ends_of(member);
+// edge makes its target earned with no second list to keep in step.  The
+// function is not a template, so no translation unit can specialize an
+// answer.  Complexity: linear in the number of edges of the catalog.
+[[nodiscard]] consteval bool is_earned(std::meta::info tag_type) {
+    const ::foundation::fail_closed::edge_list edges = ::foundation::fail_closed::edges_of(^^tags::admitted_retags);
+    const std::meta::info tag = std::meta::dealias(tag_type);
+    for (std::size_t index = 0; index < edges.size(); ++index) {
+        const ::foundation::fail_closed::edge_ends ends = edges[index];
         if (ends.to != tag || ends.from == tag) continue;
         const bool reparameterizes_one_template = std::meta::has_template_arguments(ends.from)
                                                && std::meta::has_template_arguments(ends.to)
@@ -235,7 +233,7 @@ template <typename Tag>
 // discharge edge, so every value under it passed through a retag call
 // that names the edge.
 template <typename Tag>
-concept MintableTag = ValidTaggedTag<Tag> && (!detail::earned_tag::is_earned<Tag>());
+concept MintableTag = ValidTaggedTag<Tag> && (!detail::earned_tag::is_earned(^^Tag));
 
 template <typename T, typename Tag>
 class Tagged;

@@ -831,6 +831,27 @@ foundation_neg_compile_test(neg_fail_closed_every_edge_is_admitted_after_the_sea
   "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
   "in .constexpr. expansion of .foundation::fail_closed::every_edge_is_admitted<\\^\\^\\{anonymous\\}::ingest>\\(\\).")
 
+# A query reads one walk for each count of the members of a relation, so
+# a member added after a read changes the count, and the next read walks
+# again and finds the member outside the seal.
+foundation_neg_compile_test(neg_fail_closed_edge_after_a_read
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
+  "in .constexpr. expansion of .foundation::fail_closed::admits\\(\\^\\^\\{anonymous\\}::ingest, \\^\\^\\{anonymous\\}::Checked, \\^\\^\\{anonymous\\}::Stored\\).")
+
+# The walk of a relation is the value of a variable template, which a
+# translation unit can specialize.  A specialization cannot build or copy
+# the cells or the view of a walk, and a view of the cells of another walk
+# names another namespace, which the read refuses.
+foundation_neg_compile_test(neg_fail_closed_state_forged_by_copy
+  "relation_state::relation_state\\(const foundation::fail_closed::detail::relation_state&\\). is private within this context"
+  "neg_fail_closed_state_forged_by_copy\\.cpp:34:[0-9]+: error:")
+foundation_neg_compile_test(neg_fail_closed_state_views_other_cells
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_relation_state_stands_for_another_reading\\(\\)."
+  "in .constexpr. expansion of .foundation::fail_closed::admits\\(\\^\\^\\{anonymous\\}::ingest, \\^\\^\\{anonymous\\}::Checked, \\^\\^\\{anonymous\\}::Raw\\).")
+foundation_neg_compile_test(neg_fail_closed_cells_forged_by_copy
+  "relation_cells<Capacity>::relation_cells\\(const foundation::fail_closed::detail::relation_cells<Capacity>&\\) \\[with long unsigned int Capacity = 1\\]. is private within this context"
+  "neg_fail_closed_cells_forged_by_copy\\.cpp:35:[0-9]+: error:")
+
 # unique_target reads a relation as a function of its From, so it
 # refuses a From with no edge and a From with two.
 foundation_neg_compile_test(neg_fail_closed_unique_target_without_an_edge

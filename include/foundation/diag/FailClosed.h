@@ -52,13 +52,34 @@
 // error and never a different answer.  A relation with no seal stays
 // open, and the census in test/fixy/test_armed_roster.cpp names every
 // open relation under foundation and fixy with the reason it is open.
+//
+// ── One walk for each state of a relation ─────────────────────────────
+//
+// GCC keeps no answer of a call that walks a namespace, because the
+// answer depends on the point where the call stands.  A namespace only
+// grows, so the number of its members names its state.  Each query below
+// counts the members and reads the relation_state of that count.  The
+// walk is the value of the variable template relation_cells_at, so GCC
+// walks the namespace one time for each state.  Each later query at that
+// state reads the walk through a pointer.  A member added after a read
+// changes the count, so the next read walks again and finds the member.
+//
+// A translation unit can specialize a variable template, and two facts
+// make a specialization harmless.  The constructors of the cells are
+// private, and the walk is their one friend, so no specialization builds
+// or copies cells.  A specialization of relation_state_at can only view
+// the cells of another walk, and each read compares the namespace and the
+// count of the view with its own, so that view stops the build.
 
 #include <foundation/Platform.h>
 
+#include <array>
 #include <cstddef>
 #include <meta>
+#include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace foundation::fail_closed {
 
@@ -91,28 +112,38 @@ struct seal_reading {
     return std::meta::is_variable(m) && std::meta::remove_cvref(std::meta::type_of(m)) == ^^seal;
 }
 
-// Reads the seal of a relation and counts its members now.  A namespace
-// with no seal is open and has no fault.  Complexity: linear in the
-// members of the namespace.
-[[nodiscard]] consteval seal_reading read_seal(std::meta::info ns) {
-    seal_reading reading{};
-    std::size_t seals = 0;
-    for (const auto m : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
-        if (is_seal(m)) {
-            ++seals;
-            reading.is_sealed = true;
-            reading.sealed = std::meta::extract<seal>(m).members;
-        } else {
-            ++reading.found;
-        }
-    }
-    if (seals > 1) {
-        reading.fault = seal_fault::sealed_twice;
-    } else if (reading.is_sealed && reading.found != reading.sealed) {
-        reading.fault = seal_fault::count_differs;
-    }
-    return reading;
+// True when m reflects a variable of type edge<From, To> for some
+// From and To.  The kind is settled before the type is read, because
+// type_of is defined for a variable and not for every member kind.
+[[nodiscard]] consteval bool is_edge(std::meta::info m) noexcept {
+    if (!std::meta::is_variable(m)) return false;
+    const auto type = std::meta::remove_cvref(std::meta::type_of(m));
+    return std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^edge;
 }
+
+// The two ends of an edge variable, each read through its aliases.
+struct edge_ends {
+    std::meta::info from;
+    std::meta::info to;
+};
+
+[[nodiscard]] consteval edge_ends ends_of(std::meta::info edge_variable) noexcept {
+    const auto args = std::meta::template_arguments_of(std::meta::remove_cvref(std::meta::type_of(edge_variable)));
+    return edge_ends{std::meta::dealias(args[0]), std::meta::dealias(args[1])};
+}
+
+// The edges of one reading of a relation, in the order of declaration.
+// Edge i has its From at ends[2 i] and its To at ends[2 i + 1], each read
+// through its aliases.  The list views one array of reflections, which
+// the cells of a walk keep in static storage.
+struct edge_list {
+    std::span<const std::meta::info> ends{};
+
+    [[nodiscard]] consteval std::size_t size() const noexcept { return ends.size() / 2; }
+    [[nodiscard]] consteval edge_ends operator[](std::size_t index) const noexcept {
+        return edge_ends{ends.data()[2 * index], ends.data()[(2 * index) + 1]};
+    }
+};
 
 namespace detail {
 
@@ -121,18 +152,184 @@ namespace detail {
 void a_member_stands_outside_the_seal_of_its_relation() noexcept;
 void a_relation_holds_two_seals() noexcept;
 void admits_reads_the_reflection_of_a_namespace() noexcept;
+void a_relation_state_stands_for_another_reading() noexcept;
+
+template <std::size_t Capacity>
+class relation_cells;
+
+// Walks the namespace one time.  It reads the seal, counts the members
+// and keeps each edge.  A namespace with no seal is open and has no
+// fault.  Capacity is the member count of the key.  A walk that finds
+// another count keeps no edge, and the read refuses its state.
+// Complexity: linear in the members of the namespace.
+template <std::size_t Capacity>
+[[nodiscard]] consteval relation_cells<Capacity> walk_relation(std::meta::info ns);
+
+// What one walk of a relation found, at one count of its members.  The
+// cells are the value of relation_cells_at, so they stay in static
+// storage, and no template parameter object holds them.  The two
+// constructors are private and user-provided, and the walk is their one
+// friend.  So a specialization of relation_cells_at can only hold the
+// cells of a walk of another relation, which the read refuses.  No
+// std::bit_cast or std::start_lifetime_as builds cells.
+template <std::size_t Capacity>
+class relation_cells {
+private:
+    constexpr relation_cells() noexcept {}
+    constexpr relation_cells(const relation_cells& other) noexcept
+        : relation_{other.relation_},
+          members_{other.members_},
+          reading_{other.reading_},
+          edge_count_{other.edge_count_},
+          ends_{other.ends_},
+          types_{other.types_} {}
+
+    std::meta::info relation_{};
+    std::size_t members_ = 0;
+    seal_reading reading_{};
+    std::size_t edge_count_ = 0;
+    // Edge i has its From at ends_[2 i] and its To at ends_[2 i + 1].  One
+    // cell more than the capacity keeps each array above size zero.
+    std::array<std::meta::info, (2 * Capacity) + 1> ends_{};
+    std::array<std::meta::info, Capacity + 1> types_{};
+
+    template <std::size_t C>
+    friend consteval relation_cells<C> walk_relation(std::meta::info ns);
+    friend class relation_state;
+};
+
+template <std::size_t Capacity>
+[[nodiscard]] consteval relation_cells<Capacity> walk_relation(std::meta::info ns) {
+    const std::vector<std::meta::info> members = std::meta::members_of(ns, std::meta::access_context::unchecked());
+    relation_cells<Capacity> cells{};
+    cells.relation_ = ns;
+    cells.members_ = members.size();
+    if (members.size() != Capacity) return cells;
+    std::size_t seals = 0;
+    for (const std::meta::info* member = members.data(); member != members.data() + members.size(); ++member) {
+        if (is_seal(*member)) {
+            ++seals;
+            cells.reading_.is_sealed = true;
+            cells.reading_.sealed = std::meta::extract<seal>(*member).members;
+            continue;
+        }
+        ++cells.reading_.found;
+        if (!is_edge(*member)) continue;
+        const edge_ends pair = ends_of(*member);
+        cells.ends_.data()[2 * cells.edge_count_] = pair.from;
+        cells.ends_.data()[(2 * cells.edge_count_) + 1] = pair.to;
+        cells.types_.data()[cells.edge_count_] = std::meta::remove_cvref(std::meta::type_of(*member));
+        ++cells.edge_count_;
+    }
+    if (seals > 1) {
+        cells.reading_.fault = seal_fault::sealed_twice;
+    } else if (cells.reading_.is_sealed && cells.reading_.found != cells.reading_.sealed) {
+        cells.reading_.fault = seal_fault::count_differs;
+    }
+    return cells;
+}
+
+// A view of the cells of one walk, so that the queries read each count
+// through one type.  A view names the cells of a variable, so it has no
+// constructor that takes a span from a caller.  The copy is private and
+// user-provided, so a specialization of relation_state_at can only view
+// the cells of another walk, and the read refuses that view.
+class relation_state {
+public:
+    [[nodiscard]] consteval std::meta::info relation() const noexcept { return relation_; }
+    [[nodiscard]] consteval std::size_t members() const noexcept { return members_; }
+    [[nodiscard]] consteval seal_reading reading() const noexcept { return reading_; }
+    [[nodiscard]] consteval edge_list edges() const noexcept { return edge_list{ends_}; }
+    // The type edge<From, To> of each edge, at the index of its ends.
+    [[nodiscard]] consteval std::span<const std::meta::info> edge_types() const noexcept { return edge_types_; }
+
+    // The view of cells that a walk made.  Only the walk makes cells, so
+    // a view of some walk is all that a caller can build here.
+    template <std::size_t Capacity>
+    [[nodiscard]] static consteval relation_state of(const relation_cells<Capacity>& cells) noexcept {
+        return relation_state{cells.relation_, cells.members_, cells.reading_,
+                              std::span<const std::meta::info>{cells.ends_.data(), 2 * cells.edge_count_},
+                              std::span<const std::meta::info>{cells.types_.data(), cells.edge_count_}};
+    }
+
+private:
+    consteval relation_state(std::meta::info relation, std::size_t members, seal_reading reading,
+                             std::span<const std::meta::info> ends,
+                             std::span<const std::meta::info> edge_types) noexcept
+        : relation_{relation}, members_{members}, reading_{reading}, ends_{ends}, edge_types_{edge_types} {}
+    consteval relation_state(const relation_state& other) noexcept
+        : relation_{other.relation_},
+          members_{other.members_},
+          reading_{other.reading_},
+          ends_{other.ends_},
+          edge_types_{other.edge_types_} {}
+
+    std::meta::info relation_{};
+    std::size_t members_ = 0;
+    seal_reading reading_{};
+    std::span<const std::meta::info> ends_{};
+    std::span<const std::meta::info> edge_types_{};
+};
+
+// The cells and the view of the relation Ns when it has Members members.
+// GCC evaluates each initializer one time for each key.
+template <std::meta::info Ns, std::size_t Members>
+inline constexpr relation_cells<Members> relation_cells_at = walk_relation<Members>(Ns);
+
+template <std::meta::info Ns, std::size_t Members>
+inline constexpr relation_state relation_state_at = relation_state::of(relation_cells_at<Ns, Members>);
+
+// The state of ns at its member count now.  A state that names another
+// namespace or another count views the walk of another relation, which a
+// specialization put in the place of this walk, and the read stops the
+// build.
+[[nodiscard]] consteval const relation_state& read_relation_(std::meta::info ns) {
+    const std::size_t members = std::meta::members_of(ns, std::meta::access_context::unchecked()).size();
+    const relation_state& state = std::meta::extract<const relation_state&>(std::meta::substitute(
+        ^^relation_state_at, {std::meta::reflect_constant(ns), std::meta::reflect_constant(members)}));
+    if (state.relation() != ns || state.members() != members) a_relation_state_stands_for_another_reading();
+    return state;
+}
+
+// The state of ns, after a check that a seal holds.  Each query below
+// reads its relation here.
+[[nodiscard]] consteval const relation_state& checked_relation_(std::meta::info ns) {
+    const relation_state& state = read_relation_(ns);
+    if (state.reading().fault == seal_fault::sealed_twice) a_relation_holds_two_seals();
+    if (state.reading().fault == seal_fault::count_differs) a_member_stands_outside_the_seal_of_its_relation();
+    return state;
+}
+
+// A query below that reads a namespace refuses another reflection by a
+// throw, and the diagnostic prints the message.
+consteval void require_a_namespace(std::meta::info ns, std::string_view query) {
+    if (std::meta::is_namespace(ns)) return;
+    std::string text{"fail_closed::"};
+    text += query;
+    text += ": the first argument must be the reflection of a namespace, written ^^name.";
+    throw std::meta::exception(text, ns);
+}
 
 }  // namespace detail
 
+// Reads the seal of a relation and counts its members now.  A namespace
+// with no seal is open and has no fault.
+[[nodiscard]] consteval seal_reading read_seal(std::meta::info ns) { return detail::read_relation_(ns).reading(); }
+
 // Stops the build when a read of a sealed relation finds a fault.  Every
-// query below calls it first.  A header whose own walk reads a sealed
-// relation calls it at the start of each query.  A static assertion on
-// Sealed does not do that work: a condition that names no template
+// query below does this check first.  A header whose own walk reads a
+// sealed relation calls it at the start of each query.  A static assertion
+// on Sealed does not do that work: a condition that names no template
 // parameter is checked one time, where the template is defined.
-consteval void require_seal_holds(std::meta::info ns) {
-    const seal_reading reading = read_seal(ns);
-    if (reading.fault == seal_fault::sealed_twice) detail::a_relation_holds_two_seals();
-    if (reading.fault == seal_fault::count_differs) detail::a_member_stands_outside_the_seal_of_its_relation();
+consteval void require_seal_holds(std::meta::info ns) { (void)detail::checked_relation_(ns); }
+
+// The edges of the relation ns in the order of declaration, each read
+// through its aliases, after a check that a seal holds.  A header that
+// reads the edges of a relation reads them here, so GCC walks the
+// namespace one time for each state of the namespace.
+[[nodiscard]] consteval edge_list edges_of(std::meta::info ns) {
+    detail::require_a_namespace(ns, "edges_of");
+    return detail::checked_relation_(ns).edges();
 }
 
 // True when Ns holds one seal and exactly the members it counts.
@@ -143,15 +340,13 @@ concept Sealed = read_seal(Ns).is_sealed && read_seal(Ns).fault == seal_fault::n
 // member of ns is skipped: a function, a nested type, a nested namespace,
 // a template, or a variable of any other type.  A nested namespace is not
 // opened, so an edge one level down does not count.  Complexity: linear
-// in the members of ns.
+// in the edges of ns.
 [[nodiscard]] consteval bool admits(std::meta::info ns, std::meta::info from, std::meta::info to) {
     if (!std::meta::is_namespace(ns)) detail::admits_reads_the_reflection_of_a_namespace();
-    require_seal_holds(ns);
+    const std::span<const std::meta::info> types = detail::checked_relation_(ns).edge_types();
     const std::meta::info admitted = std::meta::substitute(^^edge, {from, to});
-    for (const std::meta::info m : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
-        // type_of is defined for a variable and not for every member kind,
-        // so the kind is settled before the type is read.
-        if (std::meta::is_variable(m) && std::meta::remove_cvref(std::meta::type_of(m)) == admitted) return true;
+    for (const std::meta::info* type = types.data(); type != types.data() + types.size(); ++type) {
+        if (*type == admitted) return true;
     }
     return false;
 }
@@ -173,26 +368,6 @@ concept Admitted = admits(Ns, ^^From, ^^To);
 // written against `using Alias = Concrete;` is the same edge as one
 // written against Concrete.
 
-// True when m reflects a variable of type edge<From, To> for some
-// From and To.  The kind is settled before the type is read, because
-// type_of is defined for a variable and not for every member kind.
-[[nodiscard]] consteval bool is_edge(std::meta::info m) noexcept {
-    if (!std::meta::is_variable(m)) return false;
-    const auto type = std::meta::remove_cvref(std::meta::type_of(m));
-    return std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^edge;
-}
-
-// The two ends of an edge variable, each read through its aliases.
-struct edge_ends {
-    std::meta::info from;
-    std::meta::info to;
-};
-
-[[nodiscard]] consteval edge_ends ends_of(std::meta::info edge_variable) noexcept {
-    const auto args = std::meta::template_arguments_of(std::meta::remove_cvref(std::meta::type_of(edge_variable)));
-    return edge_ends{std::meta::dealias(args[0]), std::meta::dealias(args[1])};
-}
-
 // The namespace that declares a type.  A template specialization is
 // placed where its template is declared, so `Pinned<X86>` and
 // `Pinned<Arm>` share a family with the template `Pinned`.
@@ -210,12 +385,7 @@ template <std::meta::info Ns>
 [[nodiscard]] consteval std::size_t edge_count() noexcept {
     static_assert(std::meta::is_namespace(Ns), "fail_closed::edge_count<Ns>: Ns must be the reflection of a "
                                                "namespace, written ^^name.");
-    require_seal_holds(Ns);
-    std::size_t count = 0;
-    for (const auto m : std::meta::members_of(Ns, std::meta::access_context::unchecked())) {
-        if (is_edge(m)) ++count;
-    }
-    return count;
+    return detail::checked_relation_(Ns).edges().size();
 }
 
 // True when Ns admits (A, B) and (B, A) only for A == B.  A relation
@@ -226,16 +396,13 @@ template <std::meta::info Ns>
 [[nodiscard]] consteval bool is_antisymmetric() noexcept {
     static_assert(std::meta::is_namespace(Ns), "fail_closed::is_antisymmetric<Ns>: Ns must be the reflection of "
                                                "a namespace, written ^^name.");
-    require_seal_holds(Ns);
-    const auto members = std::meta::members_of(Ns, std::meta::access_context::unchecked());
-    for (const auto m : members) {
-        if (!is_edge(m)) continue;
-        const auto ends = ends_of(m);
-        if (ends.from == ends.to) continue;
-        for (const auto other : members) {
-            if (!is_edge(other)) continue;
-            const auto other_ends = ends_of(other);
-            if (other_ends.from == ends.to && other_ends.to == ends.from) return false;
+    const edge_list edges = detail::checked_relation_(Ns).edges();
+    for (std::size_t index = 0; index < edges.size(); ++index) {
+        const edge_ends edge = edges[index];
+        if (edge.from == edge.to) continue;
+        for (std::size_t other_index = 0; other_index < edges.size(); ++other_index) {
+            const edge_ends other = edges[other_index];
+            if (other.from == edge.to && other.to == edge.from) return false;
         }
     }
     return true;
@@ -249,11 +416,10 @@ template <std::meta::info Ns>
 [[nodiscard]] consteval bool is_intra_namespace() noexcept {
     static_assert(std::meta::is_namespace(Ns), "fail_closed::is_intra_namespace<Ns>: Ns must be the reflection "
                                                "of a namespace, written ^^name.");
-    require_seal_holds(Ns);
-    for (const auto m : std::meta::members_of(Ns, std::meta::access_context::unchecked())) {
-        if (!is_edge(m)) continue;
-        const auto ends = ends_of(m);
-        if (family_of(ends.from) != family_of(ends.to)) return false;
+    const edge_list edges = detail::checked_relation_(Ns).edges();
+    for (std::size_t index = 0; index < edges.size(); ++index) {
+        const edge_ends edge = edges[index];
+        if (family_of(edge.from) != family_of(edge.to)) return false;
     }
     return true;
 }
@@ -264,12 +430,17 @@ template <std::meta::info Ns>
 // evaluation that asked stops, and the diagnostic prints the message.
 namespace detail {
 
-consteval void require_a_namespace(std::meta::info ns, std::string_view query) {
-    if (std::meta::is_namespace(ns)) return;
-    std::string text{"fail_closed::"};
-    text += query;
-    text += ": the first argument must be the reflection of a namespace, written ^^name.";
-    throw std::meta::exception(text, ns);
+// The number of edges in ns whose From is type, or whose To is type when
+// is_to is true.  Complexity: linear in the edges of ns.
+[[nodiscard]] consteval std::size_t edges_at_end(std::meta::info ns, std::meta::info type, bool is_to) {
+    const edge_list edges = checked_relation_(ns).edges();
+    const std::meta::info wanted = std::meta::dealias(type);
+    std::size_t count = 0;
+    for (std::size_t index = 0; index < edges.size(); ++index) {
+        const edge_ends edge = edges[index];
+        if ((is_to ? edge.to : edge.from) == wanted) ++count;
+    }
+    return count;
 }
 
 }  // namespace detail
@@ -277,32 +448,19 @@ consteval void require_a_namespace(std::meta::info ns, std::string_view query) {
 // True when ns holds an edge whose From is type, for any To.
 [[nodiscard]] consteval bool has_edge_from(std::meta::info ns, std::meta::info type) {
     detail::require_a_namespace(ns, "has_edge_from");
-    require_seal_holds(ns);
-    for (const auto m : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
-        if (is_edge(m) && ends_of(m).from == std::meta::dealias(type)) return true;
-    }
-    return false;
+    return detail::edges_at_end(ns, type, false) != 0;
 }
 
 // True when ns holds an edge whose To is type, for any From.
 [[nodiscard]] consteval bool has_edge_to(std::meta::info ns, std::meta::info type) {
     detail::require_a_namespace(ns, "has_edge_to");
-    require_seal_holds(ns);
-    for (const auto m : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
-        if (is_edge(m) && ends_of(m).to == std::meta::dealias(type)) return true;
-    }
-    return false;
+    return detail::edges_at_end(ns, type, true) != 0;
 }
 
 // The number of edges in ns whose From is type.
 [[nodiscard]] consteval std::size_t edge_count_from(std::meta::info ns, std::meta::info type) {
     detail::require_a_namespace(ns, "edge_count_from");
-    require_seal_holds(ns);
-    std::size_t count = 0;
-    for (const auto m : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
-        if (is_edge(m) && ends_of(m).from == std::meta::dealias(type)) ++count;
-    }
-    return count;
+    return detail::edges_at_end(ns, type, false);
 }
 
 // The To of the one edge in ns whose From is type, for a relation that is
@@ -310,7 +468,17 @@ consteval void require_a_namespace(std::meta::info ns, std::string_view query) {
 // undeclared pair, and two is a relation that answers twice.  Each one
 // stops the build here, and no primary template answers for the author.
 [[nodiscard]] consteval std::meta::info unique_target(std::meta::info ns, std::meta::info type) {
-    const std::size_t count = edge_count_from(ns, type);
+    detail::require_a_namespace(ns, "unique_target");
+    const edge_list edges = detail::checked_relation_(ns).edges();
+    const std::meta::info wanted = std::meta::dealias(type);
+    std::size_t count = 0;
+    std::meta::info target = ^^void;
+    for (std::size_t index = 0; index < edges.size(); ++index) {
+        const edge_ends edge = edges[index];
+        if (edge.from != wanted) continue;
+        if (count == 0) target = edge.to;
+        ++count;
+    }
     if (count == 0) {
         throw std::meta::exception(u8"fail_closed::unique_target: the relation declares no edge from the type.  "
                                    u8"Declare `inline constexpr edge<T, To> name{};` in the namespace of the "
@@ -322,10 +490,7 @@ consteval void require_a_namespace(std::meta::info ns, std::string_view query) {
                                    u8"the type, so it is not a function of the type.  Remove all but one.",
                                    type);
     }
-    for (const auto m : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
-        if (is_edge(m) && ends_of(m).from == std::meta::dealias(type)) return ends_of(m).to;
-    }
-    return ^^void;
+    return target;
 }
 
 template <std::meta::info Ns, class T>
@@ -348,16 +513,15 @@ template <std::meta::info Ns, std::meta::info TagNs, EdgeEnd End, class... Exclu
     static_assert(std::meta::is_namespace(Ns) && std::meta::is_namespace(TagNs),
                   "fail_closed::every_class_in_has_edge<Ns, TagNs, End, Excluded...>: Ns and TagNs "
                   "must be reflections of namespaces, written ^^name.");
-    require_seal_holds(Ns);
+    const edge_list edges = detail::checked_relation_(Ns).edges();
     for (const auto m : std::meta::members_of(TagNs, std::meta::access_context::unchecked())) {
         if (!std::meta::is_type(m) || std::meta::is_type_alias(m) || !std::meta::is_class_type(m)) continue;
         if (((m == std::meta::dealias(^^Excluded)) || ... || false)) continue;
         bool found = false;
-        for (const auto candidate : std::meta::members_of(Ns, std::meta::access_context::unchecked())) {
-            if (!is_edge(candidate)) continue;
-            const auto ends = ends_of(candidate);
-            const bool at_from = End != EdgeEnd::To && ends.from == m;
-            const bool at_to = End != EdgeEnd::From && ends.to == m;
+        for (std::size_t index = 0; index < edges.size(); ++index) {
+            const edge_ends edge = edges[index];
+            const bool at_from = End != EdgeEnd::To && edge.from == m;
+            const bool at_to = End != EdgeEnd::From && edge.to == m;
             if (at_from || at_to) {
                 found = true;
                 break;
@@ -369,17 +533,17 @@ template <std::meta::info Ns, std::meta::info TagNs, EdgeEnd End, class... Exclu
 }
 
 // True when admits answers yes for every edge declared in Ns.  The
-// enumeration above and the admission check read the namespace by two
-// different routes, and this is the witness that the two agree.
+// enumeration reads the two ends of each edge from its template
+// arguments, and admits compares the type of each edge with a type that
+// it substitutes.  This is the witness that the two routes agree.
 template <std::meta::info Ns>
 [[nodiscard]] consteval bool every_edge_is_admitted() noexcept {
     static_assert(std::meta::is_namespace(Ns), "fail_closed::every_edge_is_admitted<Ns>: Ns must be the "
                                                "reflection of a namespace, written ^^name.");
-    require_seal_holds(Ns);
-    for (const std::meta::info m : std::meta::members_of(Ns, std::meta::access_context::unchecked())) {
-        if (!is_edge(m)) continue;
-        const edge_ends ends = ends_of(m);
-        if (!admits(Ns, ends.from, ends.to)) return false;
+    const edge_list edges = detail::checked_relation_(Ns).edges();
+    for (std::size_t index = 0; index < edges.size(); ++index) {
+        const edge_ends edge = edges[index];
+        if (!admits(Ns, edge.from, edge.to)) return false;
     }
     return true;
 }

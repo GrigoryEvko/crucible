@@ -217,6 +217,11 @@
       "constructor": "\\bTest\\("
     },
     {
+      "name": "neg_witness_fail_closed_detail_relation_cells_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\brelation_cells\\("
+    },
+    {
       "name": "neg_witness_fn_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bfn\\("
