@@ -121,6 +121,8 @@ MALFORMED_TABLES = (
     ("an arity of a header", "admit <utility> arity 1 | a cast\n"),
     ("`concepts` of a name", "admit std::move concepts | a cast\n"),
     ("`parameters` of a header", "admit <initializer_list> parameters | a list\n"),
+    ("`plain-result` of a header", "admit <bit> plain-result | the bits\n"),
+    ("`plain-result` two times", "admit std::bit_cast plain-result plain-result | the bits\n"),
     ("`unless` with no identifier", "admit <meta> unless 1DEBUG | reflection\n"),
     ("`in` with no path", "layer one 0 a/\nadmit std::move in | a cast\n"),
     ("an `in` path outside the base", "layer one 0 a/\nquarantine b/\nadmit std::move in b/ | a cast\n"),
@@ -676,6 +678,16 @@ LIBRARY_NAMES = (
     ("gaps.cpp", (), 41, "inline_asm", "asm"),
     ("gaps.cpp", (), 45, "assert_expansion", "assert"),
     ("gaps.cpp", ("-DNDEBUG",), 45, "assert_expansion", "assert"),
+    ("pending.cpp", (), 11, "replace_pending:std::bit_cast", "std::bit_cast"),
+    ("pending.cpp", (), 13, "std_entity", "std::bit_cast"),
+    ("pending.cpp", (), 17, "replace_pending:std::bit_cast", "std::bit_cast"),
+    ("pending.cpp", (), 22, "std_entity", "std::bit_cast"),
+    ("pending.cpp", (), 25, "replace_pending:std::source_location", "std::source_location"),
+    ("pending.cpp", (), 26, "replace_pending:std::source_location", "std::source_location::line"),
+    ("pending.cpp", (), 29, "replace_pending:<limits>", "std::numeric_limits::max"),
+    ("pending.cpp", (), 33, "replace_pending:<limits>", "std::numeric_limits::max"),
+    ("pending.cpp", (), 36, "replace_pending:std::unreachable", "std::unreachable"),
+    ("pending.cpp", (), 41, "replace_pending:std::bit_cast", "std::bit_cast"),
 )
 # (fixture, line): no finding of any kind there.
 LIBRARY_NAMES_ABSENT = (
@@ -689,6 +701,10 @@ LIBRARY_NAMES_ABSENT = (
 LIBRARY_KINDS_ABSENT = (
     ("gaps.cpp", (), 45, "c_library_call"),  # assert_expansion stands for __assert_fail
     ("gaps.cpp", (), 45, "compiler_builtin"),  # and for __builtin_FILE and __builtin_LINE
+    ("pending.cpp", (), 11, "std_entity"),  # plain-result admits a result of unsigned long
+    ("pending.cpp", (), 13, "replace_pending:std::bit_cast"),  # a refused use is no pending use
+    ("pending.cpp", (), 22, "replace_pending:std::bit_cast"),  # a dependent result fails closed
+    ("pending.cpp", (), 41, "std_entity"),  # a pointer to a dependent type holds no bool
 )
 
 
@@ -696,7 +712,9 @@ def run_library_names(section: Section) -> None:
     """Compile the fixtures of the library names that are not classes, of the exact headers and of the gaps.
 
     gaps.cpp holds the paths around the rules: a typedef of fixy, a variable
-    of the C library, builtins, va_arg and asm.  Each compile writes its
+    of the C library, builtins, va_arg and asm.  pending.cpp holds the uses
+    that an admit row with `until` admits, and the uses of std::bit_cast that
+    the restriction plain-result refuses.  Each compile writes its
     report to a directory of its own, and the part compares each report with
     LIBRARY_NAMES and LIBRARY_NAMES_ABSENT.
     """
@@ -738,6 +756,12 @@ RESTRICTION_PLANTS = (
     ("PLANT_TO_INTEGER", "std_entity", "std::to_integer"),
     ("PLANT_BYTE_OPERATOR", "std_entity", "std::operator<<"),
     ("PLANT_ALIGNMENT", "std_object", "std::align_val_t"),
+    ("PLANT_BIT_CAST_BOOL", "std_entity", "std::bit_cast"),
+    ("PLANT_BIT_CAST_ENUM", "std_entity", "std::bit_cast"),
+    ("PLANT_BIT_CAST_MEMBER", "std_entity", "std::bit_cast"),
+    ("PLANT_BIT_CAST_BASE", "std_entity", "std::bit_cast"),
+    ("PLANT_BIT_CAST_ARRAY", "std_entity", "std::bit_cast"),
+    ("PLANT_BIT_CAST_DEPENDENT", "std_entity", "std::bit_cast"),
 )
 
 
@@ -792,7 +816,9 @@ def run_table_readers(section: Section) -> None:
     until_table.write_text("admit <type_traits> | traits\nadmit std::move until Scalar | a cast\n"
                            "quarantine plant_std.cpp\n", encoding="utf-8")
     until = section.compile("plant_std.cpp", {"root": str(HERE), "mode": "error", "rules": str(until_table)})
-    section.expect("an admit row with `until` still admits its entry", until.returncode == 0, until.stderr[-2000:])
+    section.expect("the mode error refuses a use that an admit row with `until` admits",
+                   until.returncode != 0 and quarantine_errors(until.stderr, "replace_pending:std::move")
+                   and not quarantine_errors(until.stderr, "std_entity"), until.stderr[-2000:])
     for name, path in (("the test table", TEST_RULES), ("the tree table", layer_rules.TABLE)):
         try:
             layer_rules.load(path)

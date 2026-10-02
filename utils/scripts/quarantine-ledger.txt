@@ -103,6 +103,7 @@ examples/fn/example_cntp_frame.cpp std_object 3
 examples/fn/example_custom_kernel.cpp c_array_object 4
 examples/fn/example_custom_kernel.cpp c_library_call 2
 examples/fn/example_custom_kernel.cpp raw_pointer_object 3
+examples/fn/example_custom_kernel.cpp replace_pending:std::bit_cast 2
 examples/fn/example_custom_optimizer.cpp c_array_object 5
 examples/fn/example_custom_optimizer.cpp c_library_call 2
 examples/fn/example_custom_optimizer.cpp raw_pointer_object 4
@@ -111,11 +112,13 @@ examples/fn/example_forge_phase.cpp c_library_call 2
 examples/fn/example_mimic_backend_hook.cpp c_library_call 2
 include/crucible/Arena.h c_library_call 5
 include/crucible/Arena.h raw_pointer_object 7
+include/crucible/Arena.h replace_pending:std::bit_cast 2
 include/crucible/Arena.h std_entity 4
 include/crucible/Arena.h std_object 1
 include/crucible/BackgroundThread.h c_array_object 7
 include/crucible/BackgroundThread.h raw_function_pointer 3
 include/crucible/BackgroundThread.h raw_pointer_object 29
+include/crucible/BackgroundThread.h replace_pending:std::bit_cast 1
 include/crucible/BackgroundThread.h std_entity 18
 include/crucible/BackgroundThread.h std_object 10
 include/crucible/CKernel.h c_array_object 1
@@ -136,16 +139,20 @@ include/crucible/CrucibleContext.h c_library_call 1
 include/crucible/CrucibleContext.h raw_pointer_object 8
 include/crucible/Expr.h c_array_object 1
 include/crucible/Expr.h raw_pointer_object 2
+include/crucible/Expr.h replace_pending:std::bit_cast 2
 include/crucible/ExprPool.h c_array_object 37
 include/crucible/ExprPool.h c_library_call 5
 include/crucible/ExprPool.h compiler_builtin 1
 include/crucible/ExprPool.h raw_new_delete 1
 include/crucible/ExprPool.h raw_pointer_object 79
+include/crucible/ExprPool.h replace_pending:<limits> 3
+include/crucible/ExprPool.h replace_pending:std::bit_cast 6
 include/crucible/ExprPool.h std_entity 124
 include/crucible/ExprPool.h std_object 11
 include/crucible/Graph.h c_library_call 26
 include/crucible/Graph.h raw_new_delete 1
 include/crucible/Graph.h raw_pointer_object 75
+include/crucible/Graph.h replace_pending:std::bit_cast 3
 include/crucible/Graph.h std_entity 51
 include/crucible/Graph.h std_object 16
 include/crucible/IterationDetector.h c_array_object 1
@@ -163,11 +170,13 @@ include/crucible/MerkleDag.h c_library_call 2
 include/crucible/MerkleDag.h compiler_builtin 1
 include/crucible/MerkleDag.h raw_new_delete 5
 include/crucible/MerkleDag.h raw_pointer_object 58
+include/crucible/MerkleDag.h replace_pending:std::bit_cast 2
 include/crucible/MerkleDag.h std_entity 21
 include/crucible/MerkleDag.h std_object 8
 include/crucible/MetaLog.h c_library_call 7
 include/crucible/MetaLog.h compiler_builtin 3
 include/crucible/MetaLog.h raw_pointer_object 6
+include/crucible/NumericalRecipe.h replace_pending:std::bit_cast 1
 include/crucible/PermissionedMetaLog.h raw_pointer_object 2
 include/crucible/PermissionedMetaLog.h std_entity 1
 include/crucible/PermissionedMetaLog.h std_object 1
@@ -184,6 +193,7 @@ include/crucible/RecipeRegistry.h std_object 22
 include/crucible/Reflect.h c_library_call 13
 include/crucible/Reflect.h c_library_object 4
 include/crucible/Reflect.h raw_pointer_object 4
+include/crucible/Reflect.h replace_pending:std::bit_cast 6
 include/crucible/Reflect.h std_entity 9
 include/crucible/Reflect.h std_object 2
 include/crucible/RegionCache.h raw_pointer_object 4
@@ -196,12 +206,15 @@ include/crucible/ReplayEngine.h raw_pointer_object 10
 include/crucible/SchemaTable.h c_array_object 1
 include/crucible/SchemaTable.h c_library_call 10
 include/crucible/SchemaTable.h raw_pointer_object 8
+include/crucible/SchemaTable.h replace_pending:<limits> 1
+include/crucible/SchemaTable.h replace_pending:std::bit_cast 2
 include/crucible/SchemaTable.h std_entity 22
 include/crucible/SchemaTable.h std_object 6
 include/crucible/Serialize.h c_array_object 6
 include/crucible/Serialize.h c_library_call 2
 include/crucible/Serialize.h raw_new_delete 2
 include/crucible/Serialize.h raw_pointer_object 10
+include/crucible/Serialize.h replace_pending:<limits> 1
 include/crucible/Serialize.h std_entity 26
 include/crucible/Serialize.h std_object 9
 include/crucible/SingletonInitGraph.h raw_pointer_object 6
@@ -210,7 +223,11 @@ include/crucible/SingletonInitGraph.h std_object 8
 include/crucible/StorageNbytes.h compiler_builtin 11
 include/crucible/SwissTable.h compiler_builtin 4
 include/crucible/SwissTable.h raw_pointer_object 1
+include/crucible/SwissTable.h replace_pending:<limits> 1
+include/crucible/SwissTable.h replace_pending:std::bit_cast 6
 include/crucible/SwissTable.h std_entity 1
+include/crucible/SymbolTable.h replace_pending:<limits> 2
+include/crucible/SymbolTable.h replace_pending:std::bit_cast 2
 include/crucible/SymbolTable.h std_entity 11
 include/crucible/SymbolTable.h std_object 1
 include/crucible/TensorMeta.h c_array_object 1
@@ -236,25 +253,31 @@ include/crucible/Transaction.h std_object 2
 include/crucible/Vigil.h raw_pointer_object 19
 include/crucible/Vigil.h std_entity 19
 include/crucible/Vigil.h std_object 10
+include/crucible/canopy/Crdt.h replace_pending:<limits> 2
 include/crucible/canopy/Crdt.h std_entity 7
 include/crucible/canopy/Crdt.h std_object 5
 include/crucible/canopy/Hlc.h c_library_call 1
 include/crucible/canopy/Hlc.h c_library_object 1
 include/crucible/canopy/Hlc.h inline_asm 2
+include/crucible/canopy/Hlc.h replace_pending:<limits> 4
 include/crucible/canopy/HyParView.h std_entity 20
 include/crucible/canopy/HyParView.h std_object 25
 include/crucible/canopy/Lifeguard.h raw_pointer_object 9
 include/crucible/canopy/Lifeguard.h std_entity 7
 include/crucible/canopy/Lifeguard.h std_object 14
+include/crucible/canopy/Plumtree.h replace_pending:<limits> 1
 include/crucible/canopy/Plumtree.h std_entity 7
 include/crucible/canopy/Plumtree.h std_object 16
 include/crucible/canopy/Scuttlebutt.h raw_pointer_object 2
+include/crucible/canopy/Scuttlebutt.h replace_pending:<limits> 2
 include/crucible/canopy/Scuttlebutt.h std_entity 9
 include/crucible/canopy/Scuttlebutt.h std_object 16
 include/crucible/canopy/SlotTable.h std_entity 2
 include/crucible/canopy/SlotTable.h std_object 2
+include/crucible/canopy/Swim.h replace_pending:<limits> 1
 include/crucible/canopy/Swim.h std_entity 3
 include/crucible/canopy/Swim.h std_object 12
+include/crucible/canopy/VectorClock.h replace_pending:<limits> 1
 include/crucible/canopy/VectorClock.h std_entity 7
 include/crucible/canopy/VectorClock.h std_object 7
 include/crucible/cipher/CipherTierPromotion.h std_object 1
@@ -263,14 +286,18 @@ include/crucible/cipher/ComputationCache.h std_object 2
 include/crucible/cipher/ComputationCacheFederation.h std_entity 14
 include/crucible/cipher/ComputationCacheFederation.h std_object 16
 include/crucible/cipher/FederationProtocol.h c_library_call 3
+include/crucible/cipher/FederationProtocol.h replace_pending:<limits> 1
 include/crucible/cipher/FederationProtocol.h std_entity 24
 include/crucible/cipher/FederationProtocol.h std_object 19
 include/crucible/cntp/AfXdp.h raw_pointer_object 2
+include/crucible/cntp/AfXdp.h replace_pending:<limits> 1
+include/crucible/cntp/AfXdp.h replace_pending:std::bit_cast 2
 include/crucible/cntp/AfXdp.h std_entity 4
 include/crucible/cntp/AfXdp.h std_object 13
 include/crucible/cntp/Backpressure.h std_entity 6
 include/crucible/cntp/Backpressure.h std_object 10
 include/crucible/cntp/BackpressureRuntime.h raw_pointer_object 3
+include/crucible/cntp/BackpressureRuntime.h replace_pending:<limits> 1
 include/crucible/cntp/BackpressureRuntime.h std_entity 6
 include/crucible/cntp/BackpressureRuntime.h std_object 13
 include/crucible/cntp/CongestionControl.h std_entity 15
@@ -280,19 +307,23 @@ include/crucible/cntp/ConnectionPoolRuntime.h raw_pointer_object 1
 include/crucible/cntp/ConnectionPoolRuntime.h std_object 6
 include/crucible/cntp/Fec.h c_library_call 3
 include/crucible/cntp/Fec.h raw_pointer_object 8
+include/crucible/cntp/Fec.h replace_pending:<limits> 1
 include/crucible/cntp/Fec.h std_entity 48
 include/crucible/cntp/Fec.h std_object 25
 include/crucible/cntp/Fountain.h c_library_call 4
 include/crucible/cntp/Fountain.h raw_pointer_object 3
+include/crucible/cntp/Fountain.h replace_pending:<limits> 1
 include/crucible/cntp/Fountain.h std_entity 20
 include/crucible/cntp/Fountain.h std_object 35
 include/crucible/cntp/GossipMulticast.h std_entity 10
 include/crucible/cntp/GossipMulticast.h std_object 19
 include/crucible/cntp/IncastControl.h std_object 8
 include/crucible/cntp/IncastControlRuntime.h raw_pointer_object 4
+include/crucible/cntp/IncastControlRuntime.h replace_pending:<limits> 1
 include/crucible/cntp/IncastControlRuntime.h std_object 7
 include/crucible/cntp/Integrity.h c_library_call 6
 include/crucible/cntp/Integrity.h raw_pointer_object 8
+include/crucible/cntp/Integrity.h replace_pending:<limits> 1
 include/crucible/cntp/Integrity.h std_entity 36
 include/crucible/cntp/Integrity.h std_object 13
 include/crucible/cntp/MtlsTransport.h std_entity 30
@@ -301,13 +332,16 @@ include/crucible/cntp/OverlayMulticast.h std_entity 4
 include/crucible/cntp/OverlayMulticast.h std_object 14
 include/crucible/cntp/Pacing.h std_entity 7
 include/crucible/cntp/Pacing.h std_object 15
+include/crucible/cntp/PathSwap.h replace_pending:<limits> 1
 include/crucible/cntp/PathSwap.h std_entity 6
 include/crucible/cntp/PathSwap.h std_object 16
+include/crucible/cntp/RoceConfig.h replace_pending:<limits> 1
 include/crucible/cntp/RoceConfig.h std_entity 26
 include/crucible/cntp/RoceConfig.h std_object 26
 include/crucible/cntp/Tcam.h std_entity 9
 include/crucible/cntp/Tcam.h std_object 28
 include/crucible/cntp/_wip/GpuDirect.h raw_pointer_object 1
+include/crucible/cntp/_wip/GpuDirect.h replace_pending:std::bit_cast 1
 include/crucible/cntp/_wip/GpuDirect.h std_entity 9
 include/crucible/cntp/_wip/GpuDirect.h std_object 27
 include/crucible/cntp/_wip/Sharp.h std_entity 9
@@ -317,6 +351,7 @@ include/crucible/cntp/dataplane/TcEbpf.h std_object 11
 include/crucible/cntp/dataplane/Xdp.h std_entity 7
 include/crucible/cntp/dataplane/Xdp.h std_object 16
 include/crucible/cog/AuditFindings.h std_entity 1
+include/crucible/cog/Calibrate.h replace_pending:<limits> 2
 include/crucible/cog/Calibrate.h std_object 16
 include/crucible/cog/CogIdentity.h c_array_object 1
 include/crucible/cog/CogIdentity.h raw_pointer_object 1
@@ -361,6 +396,7 @@ include/crucible/ledger/ProbeSettings.h std_entity 4
 include/crucible/ledger/ProbeSettings.h std_object 1
 include/crucible/ledger/ProbeSupport.h c_library_call 1
 include/crucible/ledger/ProbeSupport.h raw_pointer_object 4
+include/crucible/ledger/ProbeSupport.h replace_pending:std::bit_cast 2
 include/crucible/ledger/ProbeSupport.h std_entity 21
 include/crucible/ledger/ProbeSupport.h std_object 3
 include/crucible/ledger/RefreshDaemon.h std_entity 27
@@ -376,11 +412,13 @@ include/crucible/ledger/probes/HugePage.h c_array_object 1
 include/crucible/ledger/probes/HugePage.h c_library_call 5
 include/crucible/ledger/probes/HugePage.h c_library_object 1
 include/crucible/ledger/probes/HugePage.h raw_pointer_object 12
+include/crucible/ledger/probes/HugePage.h replace_pending:std::bit_cast 1
 include/crucible/ledger/probes/HugePage.h std_entity 25
 include/crucible/ledger/probes/HugePage.h std_object 8
 include/crucible/ledger/probes/VectorWidth.h c_array_object 2
 include/crucible/ledger/probes/VectorWidth.h compiler_builtin 6
 include/crucible/ledger/probes/VectorWidth.h raw_pointer_object 11
+include/crucible/ledger/probes/VectorWidth.h replace_pending:std::bit_cast 2
 include/crucible/ledger/probes/VectorWidth.h std_entity 12
 include/crucible/ledger/probes/VectorWidth.h std_object 8
 include/crucible/mimic/CogMimic.h raw_pointer_object 1
@@ -431,6 +469,7 @@ include/crucible/perf/WorkloadProfiler.h raw_pointer_object 4
 include/crucible/perf/detail/BpfHub.h c_library_call 37
 include/crucible/perf/detail/BpfHub.h c_library_object 12
 include/crucible/perf/detail/BpfHub.h raw_pointer_object 32
+include/crucible/perf/detail/BpfHub.h replace_pending:std::bit_cast 4
 include/crucible/perf/detail/BpfHub.h std_entity 10
 include/crucible/perf/detail/BpfHub.h std_object 8
 include/crucible/perf/detail/BpfLoader.h c_array_object 1
@@ -451,6 +490,7 @@ include/crucible/topology/Discovery.h std_entity 8
 include/crucible/topology/Discovery.h std_object 35
 include/crucible/topology/Health.h c_library_call 1
 include/crucible/topology/Health.h raw_pointer_object 10
+include/crucible/topology/Health.h replace_pending:<limits> 10
 include/crucible/topology/Health.h std_entity 3
 include/crucible/topology/Health.h std_object 8
 include/crucible/topology/Pingmesh.h std_entity 10
@@ -469,6 +509,7 @@ include/crucible/vis/BlockDetector.h std_object 12
 include/crucible/vis/LiveTraceVisualizer.h raw_pointer_object 1
 include/crucible/vis/LiveTraceVisualizer.h std_entity 8
 include/crucible/vis/LiveTraceVisualizer.h std_object 9
+include/crucible/vis/NetworkSimplex.h replace_pending:<limits> 1
 include/crucible/vis/NetworkSimplex.h std_object 3
 include/crucible/vis/SugiyamaLayout.h std_object 4
 include/crucible/vis/SvgRenderer.h std_entity 2
@@ -479,6 +520,7 @@ include/crucible/warden/CpuTopology.h c_array_object 6
 include/crucible/warden/CpuTopology.h c_library_call 13
 include/crucible/warden/CpuTopology.h c_library_object 1
 include/crucible/warden/CpuTopology.h raw_pointer_object 3
+include/crucible/warden/CpuTopology.h replace_pending:<limits> 1
 include/crucible/warden/CpuTopology.h std_entity 68
 include/crucible/warden/CpuTopology.h std_object 29
 include/crucible/warden/DeadlineWatchdog.h raw_pointer_object 4
@@ -486,6 +528,7 @@ include/crucible/warden/DeadlineWatchdog.h std_object 1
 include/crucible/warden/Hardening.h c_library_call 30
 include/crucible/warden/Hardening.h door_header 1
 include/crucible/warden/Hardening.h raw_pointer_object 14
+include/crucible/warden/Hardening.h replace_pending:std::bit_cast 4
 include/crucible/warden/Hardening.h std_entity 35
 include/crucible/warden/Hardening.h std_object 11
 include/crucible/warden/Policy.h std_object 8
@@ -495,6 +538,7 @@ include/crucible/warden/Quarantine.h std_object 6
 include/crucible/warden/Registry.h c_array_object 2
 include/crucible/warden/Registry.h c_library_call 1
 include/crucible/warden/Registry.h raw_pointer_object 16
+include/crucible/warden/Registry.h replace_pending:std::bit_cast 1
 include/crucible/warden/Registry.h std_entity 56
 include/crucible/warden/Registry.h std_object 15
 include/fixy/Atom.h layer_header 4
@@ -708,6 +752,7 @@ src/BackgroundThread.cpp std_object 21
 src/Cipher.cpp c_array_object 14
 src/Cipher.cpp c_library_call 30
 src/Cipher.cpp raw_pointer_object 11
+src/Cipher.cpp replace_pending:<limits> 3
 src/Cipher.cpp std_entity 204
 src/Cipher.cpp std_object 71
 src/Vigil.cpp raw_pointer_object 6
@@ -762,6 +807,7 @@ src/perf/SchedTpBtf.cpp std_object 2
 src/perf/SenseHub.cpp c_array_object 1
 src/perf/SenseHub.cpp compiler_builtin 1
 src/perf/SenseHub.cpp raw_pointer_object 2
+src/perf/SenseHub.cpp replace_pending:std::bit_cast 2
 src/perf/SenseHub.cpp std_entity 20
 src/perf/SenseHub.cpp std_object 3
 src/perf/Senses.cpp std_entity 46
@@ -775,6 +821,7 @@ src/perf/SyscallTpBtf.cpp std_object 2
 src/topology/CongestionTelemetry.cpp c_library_call 2
 src/topology/CongestionTelemetry.cpp c_library_object 5
 src/topology/CongestionTelemetry.cpp door_header 1
+src/topology/CongestionTelemetry.cpp replace_pending:<limits> 2
 src/topology/CongestionTelemetry.cpp std_entity 25
 src/topology/CongestionTelemetry.cpp std_object 6
 src/topology/Discovery.cpp raw_pointer_object 2
@@ -791,14 +838,18 @@ src/topology/Telemetry.cpp std_entity 98
 src/topology/Telemetry.cpp std_object 30
 src/vis/BlockDetector.cpp c_library_call 2
 src/vis/BlockDetector.cpp raw_pointer_object 2
+src/vis/BlockDetector.cpp replace_pending:std::bit_cast 2
 src/vis/BlockDetector.cpp std_entity 67
 src/vis/BlockDetector.cpp std_object 20
+src/vis/NetworkSimplex.cpp replace_pending:<limits> 1
 src/vis/NetworkSimplex.cpp std_entity 177
 src/vis/NetworkSimplex.cpp std_object 30
+src/vis/SugiyamaLayout.cpp replace_pending:<limits> 4
 src/vis/SugiyamaLayout.cpp std_entity 304
 src/vis/SugiyamaLayout.cpp std_object 37
 src/vis/SvgRenderer.cpp c_array_object 2
 src/vis/SvgRenderer.cpp c_library_call 1
+src/vis/SvgRenderer.cpp replace_pending:std::bit_cast 2
 src/vis/SvgRenderer.cpp std_entity 235
 src/vis/SvgRenderer.cpp std_object 14
 src/vis/TraceVisualizer.cpp c_array_object 3
@@ -830,6 +881,7 @@ test/fixy/hw_axis_pins.h std_object 19
 test/fixy/owned_region.h c_array_object 1
 test/fixy/owned_region.h c_library_call 3
 test/fixy/owned_region.h raw_pointer_object 2
+test/fixy/owned_region.h replace_pending:std::bit_cast 2
 test/fixy/owned_region.h std_entity 4
 test/fixy/owned_region.h std_object 2
 test/fixy/rejections_generated.cpp c_library_call 6
@@ -895,6 +947,7 @@ test/fixy/test_channel_moved_from.cpp std_object 15
 test/fixy/test_cheat_probe.cpp std_entity 8
 test/fixy/test_cheat_probe.cpp std_object 39
 test/fixy/test_checked.cpp c_library_call 2
+test/fixy/test_checked.cpp replace_pending:<limits> 7
 test/fixy/test_checked.cpp std_entity 15
 test/fixy/test_checked.cpp std_object 6
 test/fixy/test_collision.cpp std_entity 16
@@ -918,6 +971,7 @@ test/fixy/test_concurrent_swmr_session.cpp std_entity 77
 test/fixy/test_concurrent_swmr_session.cpp std_object 27
 test/fixy/test_constant_time.cpp c_array_object 4
 test/fixy/test_constant_time.cpp std_entity 6
+test/fixy/test_core_region.cpp replace_pending:std::bit_cast 1
 test/fixy/test_corpus.cpp std_entity 17
 test/fixy/test_corpus.cpp std_object 8
 test/fixy/test_endpoint.cpp c_library_call 5
@@ -926,6 +980,7 @@ test/fixy/test_endpoint.cpp std_entity 65
 test/fixy/test_endpoint.cpp std_object 31
 test/fixy/test_federation.cpp std_entity 48
 test/fixy/test_federation.cpp std_object 19
+test/fixy/test_fixed_array.cpp replace_pending:std::bit_cast 1
 test/fixy/test_fixed_array.cpp std_entity 8
 test/fixy/test_fixed_array.cpp std_object 1
 test/fixy/test_fn.cpp std_entity 5
@@ -937,10 +992,12 @@ test/fixy/test_forgeable_proofs.cpp std_entity 128
 test/fixy/test_forgeable_proofs.cpp std_object 24
 test/fixy/test_fp_canonicalize.cpp c_array_object 2
 test/fixy/test_fp_canonicalize.cpp c_library_call 4
+test/fixy/test_fp_canonicalize.cpp replace_pending:std::bit_cast 3
 test/fixy/test_fp_polynomial.cpp c_array_object 3
 test/fixy/test_fp_polynomial.cpp c_library_call 27
 test/fixy/test_fp_polynomial.cpp raw_function_pointer 2
 test/fixy/test_fp_polynomial.cpp raw_pointer_object 3
+test/fixy/test_fp_polynomial.cpp replace_pending:std::bit_cast 5
 test/fixy/test_fp_polynomial.cpp std_entity 8
 test/fixy/test_fp_polynomial.cpp std_object 4
 test/fixy/test_fs.cpp c_array_object 6
@@ -1012,11 +1069,13 @@ test/fixy/test_owned_file.cpp std_object 6
 test/fixy/test_owned_mmap.cpp c_array_object 1
 test/fixy/test_owned_mmap.cpp c_library_call 7
 test/fixy/test_owned_mmap.cpp raw_pointer_object 4
+test/fixy/test_owned_mmap.cpp replace_pending:std::bit_cast 1
 test/fixy/test_owned_mmap.cpp std_entity 20
 test/fixy/test_owned_mmap.cpp std_object 11
 test/fixy/test_owned_region.cpp c_array_object 7
 test/fixy/test_owned_region.cpp c_library_call 12
 test/fixy/test_owned_region.cpp raw_pointer_object 4
+test/fixy/test_owned_region.cpp replace_pending:std::bit_cast 2
 test/fixy/test_owned_region.cpp std_entity 16
 test/fixy/test_owned_region.cpp std_object 6
 test/fixy/test_owned_region_split.cpp raw_pointer_object 1
@@ -1065,6 +1124,7 @@ test/fixy/test_row_hash_translation_units_shifted.cpp std_object 2
 test/fixy/test_row_hash_wrappers.cpp c_library_call 16
 test/fixy/test_row_hash_wrappers.cpp raw_pointer_object 2
 test/fixy/test_saturate.cpp c_library_call 5
+test/fixy/test_saturate.cpp replace_pending:<limits> 2
 test/fixy/test_scoped_view.cpp c_library_call 15
 test/fixy/test_scoped_view.cpp raw_pointer_object 1
 test/fixy/test_scoped_view.cpp std_entity 8
@@ -1134,6 +1194,7 @@ test/fixy/test_session_global_crash.cpp std_object 3
 test/fixy/test_session_handle.cpp c_library_call 88
 test/fixy/test_session_handle.cpp raw_function_pointer 1
 test/fixy/test_session_handle.cpp raw_pointer_object 5
+test/fixy/test_session_handle.cpp replace_pending:std::source_location 1
 test/fixy/test_session_handle.cpp std_entity 93
 test/fixy/test_session_handle.cpp std_object 45
 test/fixy/test_session_handle_attacks.cpp c_array_object 5
@@ -1172,6 +1233,7 @@ test/fixy/test_session_projected_value.cpp raw_pointer_object 2
 test/fixy/test_session_projected_value.cpp std_entity 12
 test/fixy/test_session_projected_value.cpp std_object 10
 test/fixy/test_session_protocol.cpp c_library_call 14
+test/fixy/test_session_protocol.cpp replace_pending:std::source_location 3
 test/fixy/test_session_recording.cpp raw_function_pointer 1
 test/fixy/test_session_recording.cpp raw_pointer_object 1
 test/fixy/test_session_recording.cpp std_entity 37
@@ -1230,11 +1292,13 @@ test/fixy/test_topology.cpp std_object 25
 test/fixy/test_version_attacks.cpp c_array_object 1
 test/fixy/test_version_attacks.cpp c_library_call 3
 test/fixy/test_version_attacks.cpp raw_pointer_object 1
+test/fixy/test_version_attacks.cpp replace_pending:<limits> 1
 test/fixy/test_version_attacks.cpp std_entity 4
 test/fixy/test_version_attacks.cpp std_object 4
 test/fixy/test_versioned_budgeted.cpp c_array_object 1
 test/fixy/test_versioned_budgeted.cpp c_library_call 5
 test/fixy/test_versioned_budgeted.cpp raw_pointer_object 1
+test/fixy/test_versioned_budgeted.cpp replace_pending:<limits> 1
 test/fixy/test_versioned_budgeted.cpp std_entity 6
 test/fixy/test_versioned_budgeted.cpp std_object 5
 test/fixy/test_versioned_budgeted_attacks.cpp c_array_object 1
@@ -1253,6 +1317,7 @@ test/fixy/test_wrapper_verification.cpp std_object 2
 test/foundation/abort_probe.h c_array_object 1
 test/foundation/abort_probe.h c_library_call 11
 test/foundation/abort_probe.h c_library_object 4
+test/foundation/decide_oracle.h replace_pending:<limits> 2
 test/foundation/decide_oracle.h std_entity 2
 test/foundation/decide_oracle.h std_object 3
 test/foundation/producer_claim_libraries.h raw_pointer_object 1
@@ -1260,9 +1325,11 @@ test/foundation/producer_claim_owner.cpp raw_new_delete 2
 test/foundation/producer_claim_owner.cpp raw_pointer_object 1
 test/foundation/test_algebra_core.cpp c_library_call 2
 test/foundation/test_algebra_core.cpp raw_function_pointer 1
+test/foundation/test_algebra_core.cpp replace_pending:std::source_location 3
 test/foundation/test_algebra_core.cpp std_entity 3
 test/foundation/test_algebra_core.cpp std_object 2
 test/foundation/test_aligned_buffer.cpp raw_pointer_object 1
+test/foundation/test_aligned_buffer.cpp replace_pending:std::bit_cast 1
 test/foundation/test_aligned_buffer.cpp std_entity 30
 test/foundation/test_brand.cpp c_library_call 2
 test/foundation/test_brand.cpp std_entity 3
@@ -1275,6 +1342,8 @@ test/foundation/test_contract_handler.cpp c_library_object 3
 test/foundation/test_contract_handler.cpp raw_pointer_object 2
 test/foundation/test_contract_handler.cpp std_entity 14
 test/foundation/test_contract_handler.cpp std_object 3
+test/foundation/test_core_atomic.cpp replace_pending:std::bit_cast 5
+test/foundation/test_core_box.cpp replace_pending:std::bit_cast 1
 test/foundation/test_counter_clock_attacks.cpp c_array_object 1
 test/foundation/test_counter_clock_attacks.cpp c_library_call 7
 test/foundation/test_counter_clock_attacks.cpp raw_pointer_object 2
@@ -1283,6 +1352,7 @@ test/foundation/test_counter_clock_attacks.cpp std_object 19
 test/foundation/test_decide.cpp c_array_object 44
 test/foundation/test_decide.cpp c_library_call 126
 test/foundation/test_decide.cpp raw_pointer_object 4
+test/foundation/test_decide.cpp replace_pending:<limits> 3
 test/foundation/test_decide.cpp std_entity 2
 test/foundation/test_decide.cpp std_object 3
 test/foundation/test_decide_fuzz.cpp c_array_object 4
@@ -1319,13 +1389,18 @@ test/foundation/test_lattices_bands.cpp c_library_call 24
 test/foundation/test_lattices_bands.cpp std_entity 23
 test/foundation/test_lattices_bands.cpp std_object 9
 test/foundation/test_lattices_core.cpp c_library_call 3
+test/foundation/test_lattices_core.cpp replace_pending:<limits> 5
+test/foundation/test_lattices_core.cpp replace_pending:std::bit_cast 2
+test/foundation/test_lattices_core.cpp replace_pending:std::source_location 3
 test/foundation/test_lattices_counters.cpp c_library_call 5
 test/foundation/test_lattices_counters.cpp raw_pointer_object 2
+test/foundation/test_lattices_counters.cpp replace_pending:<limits> 1
 test/foundation/test_lattices_counters.cpp std_entity 3
 test/foundation/test_lattices_counters.cpp std_object 4
 test/foundation/test_lifetime_start.cpp c_array_object 4
 test/foundation/test_lifetime_start.cpp c_library_call 1
 test/foundation/test_lifetime_start.cpp raw_pointer_object 5
+test/foundation/test_lifetime_start.cpp replace_pending:std::bit_cast 1
 test/foundation/test_lifetime_start.cpp std_entity 10
 test/foundation/test_lifetime_start.cpp std_object 2
 test/foundation/test_permission_shared.cpp c_library_call 14
@@ -1369,6 +1444,7 @@ test/foundation/test_read_view_lend_needs_a_share.cpp std_object 3
 test/foundation/test_reflect.cpp c_array_object 6
 test/foundation/test_reflect.cpp c_library_call 46
 test/foundation/test_reflect.cpp raw_function_pointer 1
+test/foundation/test_reflect.cpp replace_pending:std::bit_cast 1
 test/foundation/test_reflect.cpp std_entity 28
 test/foundation/test_reflect.cpp std_object 12
 test/foundation/test_row_hash.cpp c_library_call 14
@@ -1378,6 +1454,7 @@ test/foundation/test_row_mismatch.cpp raw_pointer_object 1
 test/foundation/test_row_mismatch.cpp std_entity 28
 test/foundation/test_row_mismatch.cpp std_object 5
 test/foundation/test_saturate.cpp c_library_call 5
+test/foundation/test_saturate.cpp replace_pending:<limits> 2
 test/foundation/test_saturate.cpp std_entity 3
 test/foundation/test_share_pool_double_deposit_aborts.cpp c_array_object 2
 test/foundation/test_share_pool_double_deposit_aborts.cpp c_library_call 13
@@ -1396,8 +1473,10 @@ test/foundation/test_signature.cpp raw_pointer_object 1
 test/foundation/test_stable_id_function_local.cpp c_library_call 8
 test/foundation/test_swiss_table_buffer.cpp c_array_object 1
 test/foundation/test_swiss_table_buffer.cpp raw_pointer_object 1
+test/foundation/test_swiss_table_buffer.cpp replace_pending:std::bit_cast 2
 test/foundation/test_swiss_table_buffer.cpp std_entity 16
 test/foundation/test_swiss_table_buffer.cpp std_object 1
+test/foundation/test_thread_local_ref.cpp replace_pending:std::bit_cast 1
 test/foundation/test_thread_local_ref.cpp std_object 1
 test/foundation/test_transition.cpp c_array_object 2
 test/foundation/test_transition.cpp c_library_call 2
@@ -1405,6 +1484,7 @@ test/foundation/test_transition.cpp std_entity 3
 test/foundation/test_transition.cpp std_object 1
 test/layer/admitted_flag_matrix.cpp door_header 1
 test/layer/checks/crucible/SingletonInitGraph.cpp std_entity 1
+test/layer/checks/crucible/Types.cpp replace_pending:std::source_location 1
 test/layer/checks/crucible/Types.cpp std_entity 18
 test/layer/checks/crucible/Types.cpp std_object 3
 test/layer/checks/crucible/canopy/VectorClock.cpp std_entity 7
@@ -1441,6 +1521,7 @@ test/layer/checks/fixy/OwnedRegion.cpp std_object 1
 test/layer/checks/fixy/Refined.cpp std_entity 8
 test/layer/checks/fixy/Refined.cpp std_object 2
 test/layer/checks/fixy/Reject.cpp std_entity 1
+test/layer/checks/fixy/Saturated.cpp replace_pending:<limits> 7
 test/layer/checks/fixy/Secret.cpp std_entity 7
 test/layer/checks/fixy/SelfContained.cpp c_array_object 1
 test/layer/checks/fixy/SelfContained.cpp raw_pointer_object 4
@@ -1457,11 +1538,13 @@ test/layer/checks/fixy/concurrent/PayloadRow.cpp raw_pointer_object 2
 test/layer/checks/fixy/concurrent/Pipeline.cpp std_entity 1
 test/layer/checks/fixy/concurrent/Stage.cpp std_entity 1
 test/layer/checks/fixy/concurrent/StageShape.cpp std_object 1
+test/layer/checks/fixy/fp/Polynomial.cpp replace_pending:std::bit_cast 1
 test/layer/checks/fixy/os/AtomPack.cpp c_array_object 2
 test/layer/checks/foundation/Lifetime.cpp c_array_object 2
 test/layer/checks/foundation/Lifetime.cpp raw_pointer_object 1
 test/layer/checks/foundation/algebra/Transition.cpp std_entity 2
 test/layer/checks/foundation/algebra/Transition.cpp std_object 1
+test/layer/checks/foundation/algebra/lattices/AffinityLattice.cpp replace_pending:<limits> 1
 test/layer/checks/foundation/algebra/lattices/AffinityLattice.cpp std_entity 14
 test/layer/checks/foundation/algebra/lattices/BarrierStrengthLattice.cpp std_object 1
 test/layer/checks/foundation/algebra/lattices/ChainLattice.cpp std_object 1
@@ -1612,9 +1695,11 @@ test/test_abort_probe.h c_library_call 7
 test/test_abort_probe.h c_library_object 4
 test/test_arena.cpp c_library_call 2
 test/test_arena.cpp raw_pointer_object 12
+test/test_arena.cpp replace_pending:std::bit_cast 2
 test/test_arena.cpp std_entity 1
 test/test_arena_alloc_class.cpp c_library_call 13
 test/test_arena_alloc_class.cpp raw_pointer_object 11
+test/test_arena_alloc_class.cpp replace_pending:std::bit_cast 5
 test/test_assert.h c_library_call 5
 test/test_assert.h raw_pointer_object 2
 test/test_assert.h std_entity 4
@@ -1623,12 +1708,14 @@ test/test_asymmetric_failure.cpp std_entity 1
 test/test_asymmetric_failure.cpp std_object 1
 test/test_background_thread_run_in_row.cpp c_library_call 7
 test/test_background_thread_run_in_row.cpp raw_pointer_object 1
+test/test_background_thread_run_in_row.cpp replace_pending:std::bit_cast 1
 test/test_background_thread_run_in_row_drain.cpp c_library_call 4
 test/test_background_thread_run_in_row_drain.cpp std_entity 38
 test/test_background_thread_run_in_row_drain.cpp std_object 15
 test/test_background_thread_run_in_row_meta.cpp c_array_object 4
 test/test_background_thread_run_in_row_meta.cpp c_library_call 5
 test/test_background_thread_run_in_row_meta.cpp raw_pointer_object 5
+test/test_background_thread_run_in_row_meta.cpp replace_pending:std::bit_cast 1
 test/test_background_thread_run_in_row_meta.cpp std_entity 66
 test/test_background_thread_run_in_row_meta.cpp std_object 14
 test/test_background_thread_run_in_row_publish.cpp c_library_call 4
@@ -1644,13 +1731,16 @@ test/test_bench_harness.cpp c_library_call 13
 test/test_bench_harness.cpp c_library_object 1
 test/test_bench_harness.cpp raw_new_delete 2
 test/test_bench_harness.cpp raw_pointer_object 2
+test/test_bench_harness.cpp replace_pending:std::bit_cast 2
 test/test_bench_harness.cpp std_entity 63
 test/test_bench_harness.cpp std_object 31
 test/test_bit_exact_replay_invariant.cpp c_array_object 2
 test/test_bit_exact_replay_invariant.cpp c_library_call 16
 test/test_bit_exact_replay_invariant.cpp raw_pointer_object 7
+test/test_bit_exact_replay_invariant.cpp replace_pending:std::bit_cast 1
 test/test_calibrate.cpp assert_expansion 71
 test/test_calibrate.cpp c_library_call 7
+test/test_calibrate.cpp replace_pending:<limits> 2
 test/test_calibrate.cpp std_entity 74
 test/test_calibrate.cpp std_object 33
 test/test_call_site_table.cpp c_library_call 8
@@ -1762,6 +1852,7 @@ test/test_cntp_path_swap.cpp std_entity 100
 test/test_cntp_path_swap.cpp std_object 33
 test/test_cntp_roce_config.cpp assert_expansion 66
 test/test_cntp_roce_config.cpp c_library_call 9
+test/test_cntp_roce_config.cpp replace_pending:<limits> 1
 test/test_cntp_roce_config.cpp std_entity 69
 test/test_cntp_roce_config.cpp std_object 28
 test/test_cntp_sharp.cpp assert_expansion 49
@@ -1770,6 +1861,7 @@ test/test_cntp_sharp.cpp std_entity 74
 test/test_cntp_sharp.cpp std_object 28
 test/test_cntp_tcam.cpp assert_expansion 96
 test/test_cntp_tcam.cpp c_library_call 9
+test/test_cntp_tcam.cpp replace_pending:<limits> 1
 test/test_cntp_tcam.cpp std_entity 147
 test/test_cntp_tcam.cpp std_object 42
 test/test_cog_identity.cpp c_array_object 1
@@ -1780,6 +1872,7 @@ test/test_cog_mimic.cpp c_library_call 11
 test/test_cold_suggestion_off.cpp c_library_call 2
 test/test_computation_cache.cpp c_library_call 12
 test/test_computation_cache.cpp raw_pointer_object 25
+test/test_computation_cache.cpp replace_pending:std::bit_cast 1
 test/test_computation_cache.cpp std_entity 58
 test/test_computation_cache.cpp std_object 20
 test/test_computation_cache_federation.cpp c_library_call 26
@@ -1787,6 +1880,7 @@ test/test_computation_cache_federation.cpp std_entity 70
 test/test_computation_cache_federation.cpp std_object 40
 test/test_computation_cache_integration.cpp c_library_call 39
 test/test_computation_cache_integration.cpp raw_pointer_object 20
+test/test_computation_cache_integration.cpp replace_pending:std::bit_cast 1
 test/test_computation_cache_integration.cpp std_object 3
 test/test_computation_cache_invalidation.cpp c_array_object 1
 test/test_computation_cache_invalidation.cpp c_library_call 17
@@ -1825,6 +1919,7 @@ test/test_crucible_context_migration.cpp std_entity 1
 test/test_end_to_end.cpp c_array_object 2
 test/test_end_to_end.cpp c_library_call 2
 test/test_end_to_end.cpp raw_pointer_object 5
+test/test_end_to_end.cpp replace_pending:std::bit_cast 1
 test/test_end_to_end_multi_iteration.cpp c_array_object 1
 test/test_end_to_end_multi_iteration.cpp c_library_call 1
 test/test_end_to_end_multi_iteration.cpp raw_new_delete 4
@@ -1861,6 +1956,7 @@ test/test_forge_comm_phase.cpp c_library_call 5
 test/test_forge_comm_phase.cpp std_entity 21
 test/test_forge_comm_phase.cpp std_object 10
 test/test_fp_strict_floor.cpp c_library_call 9
+test/test_fp_strict_floor.cpp replace_pending:std::bit_cast 2
 test/test_gcc_memchr_fold.cpp c_library_call 7
 test/test_gcc_memchr_fold.cpp raw_pointer_object 13
 test/test_gcc_memchr_fold.cpp std_entity 4
@@ -1890,6 +1986,7 @@ test/test_iteration_detector.cpp c_library_call 15
 test/test_iteration_detector.cpp std_entity 83
 test/test_iteration_detector.cpp std_object 29
 test/test_kernel_cache_key.cpp c_library_call 13
+test/test_kernel_cache_key.cpp replace_pending:std::bit_cast 2
 test/test_kernel_cache_key.cpp std_entity 4
 test/test_kernel_cache_key.cpp std_object 2
 test/test_kernel_cache_levels.cpp c_library_call 1
@@ -1903,6 +2000,7 @@ test/test_ledger.cpp std_entity 164
 test/test_ledger.cpp std_object 53
 test/test_ledger_probes.cpp c_library_call 8
 test/test_ledger_probes.cpp raw_pointer_object 2
+test/test_ledger_probes.cpp replace_pending:std::bit_cast 1
 test/test_ledger_probes.cpp std_entity 14
 test/test_ledger_probes.cpp std_object 3
 test/test_ledger_probes_cache_tier.cpp c_library_call 10
@@ -1937,6 +2035,8 @@ test/test_merkle_dag.cpp c_array_object 30
 test/test_merkle_dag.cpp c_library_call 10
 test/test_merkle_dag.cpp inline_asm 1
 test/test_merkle_dag.cpp raw_pointer_object 34
+test/test_merkle_dag.cpp replace_pending:<limits> 3
+test/test_merkle_dag.cpp replace_pending:std::bit_cast 1
 test/test_merkle_dag.cpp std_entity 30
 test/test_merkle_dag.cpp std_object 11
 test/test_merkle_dag_visualizer.cpp c_array_object 1
@@ -1948,6 +2048,7 @@ test/test_merkle_dag_visualizer.cpp std_object 2
 test/test_meta_log.cpp c_array_object 7
 test/test_meta_log.cpp c_library_call 12
 test/test_meta_log.cpp raw_pointer_object 1
+test/test_meta_log.cpp replace_pending:std::bit_cast 15
 test/test_meta_log.cpp std_entity 23
 test/test_meta_log.cpp std_object 10
 test/test_metalog_session.cpp c_array_object 1
@@ -1966,6 +2067,7 @@ test/test_mimic_semaphore.cpp std_object 5
 test/test_mlp_trace.cpp c_library_call 25
 test/test_mlp_trace.cpp raw_pointer_object 2
 test/test_mlp_trace_ops.cpp raw_pointer_object 7
+test/test_mlp_trace_ops.cpp replace_pending:std::bit_cast 6
 test/test_mlp_trace_replay.cpp c_library_call 12
 test/test_mlp_trace_replay.cpp raw_pointer_object 3
 test/test_network_recipe.cpp assert_expansion 33
@@ -1994,6 +2096,7 @@ test/test_observe_metrics_swmr.cpp std_entity 10
 test/test_observe_metrics_swmr.cpp std_object 3
 test/test_observe_sdc_detect.cpp c_library_call 12
 test/test_observe_sdc_detect.cpp raw_pointer_object 1
+test/test_observe_sdc_detect.cpp replace_pending:<limits> 1
 test/test_observe_sdc_detect.cpp std_entity 20
 test/test_observe_sdc_detect.cpp std_object 6
 test/test_opcode_latency_table.cpp c_library_call 7
@@ -2036,10 +2139,12 @@ test/test_philox.cpp std_entity 64
 test/test_philox.cpp std_object 38
 test/test_philox_box_muller_polynomial.cpp c_array_object 1
 test/test_philox_box_muller_polynomial.cpp c_library_call 13
+test/test_philox_box_muller_polynomial.cpp replace_pending:std::bit_cast 2
 test/test_philox_box_muller_polynomial.cpp std_entity 17
 test/test_philox_box_muller_polynomial.cpp std_object 8
 test/test_philox_det.cpp c_array_object 9
 test/test_philox_det.cpp c_library_call 10
+test/test_philox_det.cpp replace_pending:std::bit_cast 8
 test/test_philox_det.cpp std_entity 15
 test/test_philox_det.cpp std_object 17
 test/test_philox_simd.cpp c_library_call 12
@@ -2056,12 +2161,15 @@ test/test_plumtree.cpp std_object 23
 test/test_pool_allocator.cpp c_array_object 12
 test/test_pool_allocator.cpp c_library_call 18
 test/test_pool_allocator.cpp raw_pointer_object 12
+test/test_pool_allocator.cpp replace_pending:std::bit_cast 3
 test/test_pool_allocator_alloc_class.cpp c_array_object 7
 test/test_pool_allocator_alloc_class.cpp c_library_call 1
 test/test_pool_allocator_alloc_class.cpp raw_pointer_object 9
+test/test_pool_allocator_alloc_class.cpp replace_pending:std::bit_cast 4
 test/test_process_wide_across_libraries.cpp c_library_call 21
 test/test_process_wide_across_libraries.cpp raw_function_pointer 12
 test/test_process_wide_across_libraries.cpp raw_pointer_object 10
+test/test_process_wide_across_libraries.cpp replace_pending:std::bit_cast 1
 test/test_process_wide_across_libraries.cpp std_entity 2
 test/test_quarantine.cpp c_library_call 8
 test/test_quarantine.cpp raw_pointer_object 3
@@ -2104,6 +2212,7 @@ test/test_region_cache.cpp c_array_object 2
 test/test_region_cache.cpp c_library_call 4
 test/test_region_cache.cpp raw_new_delete 1
 test/test_region_cache.cpp raw_pointer_object 10
+test/test_region_cache.cpp replace_pending:std::bit_cast 1
 test/test_region_cache_migration.cpp c_library_call 2
 test/test_region_cache_migration.cpp raw_pointer_object 1
 test/test_region_cache_repeated.cpp c_library_call 1
@@ -2116,6 +2225,7 @@ test/test_replay_engine.cpp raw_pointer_object 7
 test/test_resnet.cpp c_library_call 4
 test/test_resnet.cpp raw_pointer_object 1
 test/test_resnet.cpp std_entity 2
+test/test_resnet_model.cpp replace_pending:std::bit_cast 2
 test/test_resnet_model.cpp std_entity 12
 test/test_resnet_model.cpp std_object 2
 test/test_resnet_replay.cpp c_library_call 4
@@ -2133,6 +2243,7 @@ test/test_scuttlebutt.cpp std_object 24
 test/test_serialize.cpp c_array_object 9
 test/test_serialize.cpp c_library_call 11
 test/test_serialize.cpp raw_pointer_object 3
+test/test_serialize.cpp replace_pending:std::bit_cast 1
 test/test_serialize.cpp std_entity 33
 test/test_serialize.cpp std_object 12
 test/test_serialize_release_gate.cpp c_array_object 3
@@ -2142,6 +2253,7 @@ test/test_serialize_release_gate.cpp std_entity 3
 test/test_serialize_release_gate.cpp std_object 2
 test/test_simd.cpp c_library_call 13
 test/test_simd.cpp raw_pointer_object 3
+test/test_simd.cpp replace_pending:std::bit_cast 3
 test/test_simd.cpp std_entity 20
 test/test_simd.cpp std_object 9
 test/test_singleton_init_graph.cpp std_entity 1
@@ -2151,6 +2263,7 @@ test/test_sriov.cpp std_entity 104
 test/test_sriov.cpp std_object 39
 test/test_storage_nbytes_simd.cpp c_library_call 27
 test/test_storage_nbytes_simd.cpp raw_pointer_object 4
+test/test_storage_nbytes_simd.cpp replace_pending:std::bit_cast 3
 test/test_storage_nbytes_simd.cpp std_entity 10
 test/test_storage_nbytes_simd.cpp std_object 9
 test/test_stub_discipline.cpp c_library_call 7
@@ -2165,12 +2278,15 @@ test/test_swiss_table.cpp c_library_call 7
 test/test_swiss_table.cpp std_entity 1
 test/test_symbol_table.cpp c_array_object 2
 test/test_symbol_table.cpp c_library_call 10
+test/test_symbol_table.cpp replace_pending:std::bit_cast 6
 test/test_symbol_table.cpp std_entity 4
 test/test_symbol_table.cpp std_object 1
 test/test_synthetic_probe.cpp c_library_call 8
+test/test_synthetic_probe.cpp replace_pending:std::bit_cast 2
 test/test_synthetic_probe.cpp std_entity 11
 test/test_synthetic_probe.cpp std_object 1
 test/test_target_caps.cpp c_library_call 12
+test/test_target_caps.cpp replace_pending:std::bit_cast 2
 test/test_target_caps.cpp std_entity 5
 test/test_target_caps.cpp std_object 4
 test/test_topology_discovery.cpp c_library_call 9
@@ -2180,10 +2296,12 @@ test/test_topology_discovery.cpp std_object 13
 test/test_topology_graph.cpp c_array_object 4
 test/test_topology_graph.cpp c_library_call 10
 test/test_topology_graph.cpp raw_pointer_object 3
+test/test_topology_graph.cpp replace_pending:std::bit_cast 2
 test/test_topology_graph.cpp std_entity 5
 test/test_topology_health.cpp c_library_call 9
 test/test_topology_health.cpp std_entity 1
 test/test_topology_pingmesh.cpp c_library_call 8
+test/test_topology_pingmesh.cpp replace_pending:std::bit_cast 2
 test/test_topology_pingmesh.cpp std_entity 39
 test/test_topology_pingmesh.cpp std_object 5
 test/test_topology_ptp.cpp c_library_call 11
@@ -2204,6 +2322,7 @@ test/test_trace_loader.cpp c_library_call 70
 test/test_trace_loader.cpp c_library_object 2
 test/test_trace_loader.cpp door_header 1
 test/test_trace_loader.cpp raw_pointer_object 7
+test/test_trace_loader.cpp replace_pending:<limits> 1
 test/test_trace_loader.cpp std_entity 110
 test/test_trace_loader.cpp std_object 53
 test/test_trace_ring.cpp c_array_object 24
@@ -2229,9 +2348,11 @@ test/test_transaction_owner.cpp c_array_object 1
 test/test_transaction_owner.cpp c_library_call 9
 test/test_transaction_owner.cpp raw_function_pointer 1
 test/test_transaction_owner.cpp raw_pointer_object 2
+test/test_transaction_owner.cpp replace_pending:std::bit_cast 1
 test/test_transaction_owner.cpp std_entity 14
 test/test_transaction_owner.cpp std_object 6
 test/test_types.cpp c_library_call 10
+test/test_types.cpp replace_pending:std::bit_cast 3
 test/test_types.cpp std_entity 4
 test/test_vector_clock.cpp assert_expansion 20
 test/test_vector_clock.cpp std_entity 4
@@ -2239,6 +2360,7 @@ test/test_vector_clock.cpp std_object 2
 test/test_vessel_api_typed.cpp c_array_object 2
 test/test_vessel_api_typed.cpp c_library_call 13
 test/test_vessel_api_typed.cpp raw_pointer_object 10
+test/test_vessel_api_typed.cpp replace_pending:std::bit_cast 9
 test/test_vessel_api_typed.cpp std_entity 14
 test/test_vessel_api_typed.cpp std_object 10
 test/test_vigil.cpp c_array_object 5
@@ -2250,6 +2372,7 @@ test/test_vigil_deadline_watchdog.cpp c_array_object 2
 test/test_vigil_deadline_watchdog.cpp c_library_call 1
 test/test_vigil_dispatch.cpp c_library_call 2
 test/test_vigil_dispatch.cpp raw_pointer_object 1
+test/test_vigil_dispatch.cpp replace_pending:std::bit_cast 1
 test/test_vigil_dispatch_pool.cpp c_library_call 4
 test/test_vigil_dispatch_pool.cpp raw_pointer_object 4
 test/test_vigil_dispatch_pure.cpp c_library_call 1
@@ -2262,21 +2385,26 @@ test/test_vigil_dispatch_threads.cpp std_entity 4
 test/test_vigil_dispatch_threads.cpp std_object 4
 test/test_vigil_divergence.cpp c_library_call 2
 test/test_vigil_divergence.cpp raw_pointer_object 1
+test/test_vigil_divergence.cpp replace_pending:std::bit_cast 1
 test/test_vigil_metadata.cpp c_array_object 1
 test/test_vigil_metadata.cpp c_library_call 6
 test/test_vigil_metadata.cpp raw_pointer_object 2
+test/test_vigil_metadata.cpp replace_pending:std::bit_cast 3
 test/test_vigil_metadata.cpp std_entity 5
 test/test_vigil_metadata.cpp std_object 4
 test/test_vigil_producer.cpp c_library_call 2
 test/test_vigil_producer.cpp std_entity 1
 test/test_vigil_producer.cpp std_object 1
+test/test_vigil_unrepeated_prefix.cpp replace_pending:std::bit_cast 1
 test/test_vis_layout.cpp c_library_call 5
 test/test_vis_layout.cpp raw_pointer_object 15
+test/test_vis_layout.cpp replace_pending:<limits> 2
 test/test_vis_layout.cpp std_entity 88
 test/test_vis_layout.cpp std_object 42
 test/test_vit.cpp c_library_call 12
 test/test_vit.cpp raw_pointer_object 2
 test/test_vit_ops.cpp c_array_object 3
+test/test_vit_ops.cpp replace_pending:std::bit_cast 2
 test/test_vit_replay.cpp c_library_call 7
 test/test_vit_replay.cpp raw_pointer_object 1
 test/test_vit_replay.cpp std_entity 5
@@ -2329,10 +2457,13 @@ vessel/torch/vessel_api.cpp std_object 2
 vessel/torch/vessel_api.h c_array_object 3
 vessel/torch/vessel_api.h raw_pointer_object 24
 vessel/torch/vessel_api_typed.h raw_pointer_object 8
+vessel/torch/vessel_api_typed.h replace_pending:std::bit_cast 4
 vessel/torch/vessel_api_typed.h std_entity 3
 vessel/torch/vessel_api_typed.h std_object 1
+release include/crucible/SwissTable.h replace_pending:std::bit_cast -1
 release include/crucible/cntp/Fec.h compiler_builtin +2
 release include/crucible/cntp/Fec.h raw_pointer_object +7
+release include/crucible/cntp/Fec.h replace_pending:std::bit_cast +12
 release include/crucible/cntp/Fec.h std_entity +11
 release include/crucible/cntp/Fec.h std_object +2
 release test/foundation/test_permission_shared.cpp std_entity -1
@@ -2377,6 +2508,7 @@ bench-fuzz bench/bench_diag_emission.cpp std_object +2
 bench-fuzz bench/bench_dispatch.cpp c_array_object +12
 bench-fuzz bench/bench_dispatch.cpp c_library_call +21
 bench-fuzz bench/bench_dispatch.cpp raw_pointer_object +13
+bench-fuzz bench/bench_dispatch.cpp replace_pending:std::bit_cast +1
 bench-fuzz bench/bench_dispatch.cpp std_entity +31
 bench-fuzz bench/bench_dispatch.cpp std_object +2
 bench-fuzz bench/bench_expr_pool.cpp c_array_object +7
@@ -2400,12 +2532,14 @@ bench-fuzz bench/bench_merkle_dag.cpp c_library_call +20
 bench-fuzz bench/bench_merkle_dag.cpp inline_asm +1
 bench-fuzz bench/bench_merkle_dag.cpp raw_new_delete +3
 bench-fuzz bench/bench_merkle_dag.cpp raw_pointer_object +12
+bench-fuzz bench/bench_merkle_dag.cpp replace_pending:std::bit_cast +4
 bench-fuzz bench/bench_merkle_dag.cpp std_entity +82
 bench-fuzz bench/bench_merkle_dag.cpp std_object +13
 bench-fuzz bench/bench_meta_log.cpp c_array_object +6
 bench-fuzz bench/bench_meta_log.cpp c_library_call +18
 bench-fuzz bench/bench_meta_log.cpp raw_new_delete +2
 bench-fuzz bench/bench_meta_log.cpp raw_pointer_object +2
+bench-fuzz bench/bench_meta_log.cpp replace_pending:std::bit_cast +2
 bench-fuzz bench/bench_meta_log.cpp std_entity +28
 bench-fuzz bench/bench_meta_log.cpp std_object +7
 bench-fuzz bench/bench_meta_zero.cpp c_array_object +1
@@ -2467,10 +2601,12 @@ bench-fuzz bench/bench_record_leaf.cpp c_array_object +6
 bench-fuzz bench/bench_record_leaf.cpp c_library_call +32
 bench-fuzz bench/bench_record_leaf.cpp c_library_object +2
 bench-fuzz bench/bench_record_leaf.cpp raw_pointer_object +11
+bench-fuzz bench/bench_record_leaf.cpp replace_pending:std::bit_cast +1
 bench-fuzz bench/bench_record_leaf.cpp std_entity +53
 bench-fuzz bench/bench_record_leaf.cpp std_object +9
 bench-fuzz bench/bench_reflect.cpp c_array_object +5
 bench-fuzz bench/bench_reflect.cpp c_library_call +20
+bench-fuzz bench/bench_reflect.cpp replace_pending:std::bit_cast +1
 bench-fuzz bench/bench_reflect.cpp std_entity +9
 bench-fuzz bench/bench_reflect.cpp std_object +1
 bench-fuzz bench/bench_region_cache.cpp c_array_object +3
@@ -2528,6 +2664,7 @@ bench-fuzz bench/render_trace.cpp raw_pointer_object +8
 bench-fuzz bench/render_trace.cpp std_entity +36
 bench-fuzz bench/render_trace.cpp std_object +17
 bench-fuzz include/crucible/SwissTable.h compiler_builtin +2
+bench-fuzz include/crucible/SwissTable.h replace_pending:std::bit_cast +2
 bench-fuzz test/fuzz/boundary/entry.h std_object +1
 bench-fuzz test/fuzz/boundary/fuzz_main.cpp raw_pointer_object +1
 bench-fuzz test/fuzz/boundary/fuzz_main.cpp std_object +1
@@ -2561,7 +2698,7 @@ bench-fuzz test/fuzz/boundary/harnesses/fountain.h std_entity +12
 bench-fuzz test/fuzz/boundary/harnesses/fountain.h std_object +7
 bench-fuzz test/fuzz/boundary/harnesses/ledger.h std_entity +5
 bench-fuzz test/fuzz/boundary/harnesses/ledger.h std_object +5
-bench-fuzz test/fuzz/boundary/harnesses/recipe.h std_entity +7
+bench-fuzz test/fuzz/boundary/harnesses/recipe.h std_entity +8
 bench-fuzz test/fuzz/boundary/harnesses/recipe.h std_object +5
 bench-fuzz test/fuzz/boundary/harnesses/region.h compiler_builtin +1
 bench-fuzz test/fuzz/boundary/harnesses/region.h raw_pointer_object +9
@@ -2596,6 +2733,7 @@ bench-fuzz test/fuzz/property/prop_callsite_table_dedup.cpp std_entity +3
 bench-fuzz test/fuzz/property/prop_callsite_table_dedup.cpp std_object +5
 bench-fuzz test/fuzz/property/prop_checked_arith.cpp c_array_object +1
 bench-fuzz test/fuzz/property/prop_checked_arith.cpp raw_pointer_object +2
+bench-fuzz test/fuzz/property/prop_checked_arith.cpp replace_pending:<limits> +9
 bench-fuzz test/fuzz/property/prop_checked_arith.cpp std_entity +19
 bench-fuzz test/fuzz/property/prop_checked_arith.cpp std_object +9
 bench-fuzz test/fuzz/property/prop_compute_storage_nbytes_saturation.cpp raw_pointer_object +2
@@ -2651,6 +2789,7 @@ bench-fuzz test/fuzz/property/prop_integrity_xxhash.cpp std_entity +10
 bench-fuzz test/fuzz/property/prop_integrity_xxhash.cpp std_object +2
 bench-fuzz test/fuzz/property/prop_is_power_of_two_le.cpp c_array_object +1
 bench-fuzz test/fuzz/property/prop_is_power_of_two_le.cpp raw_pointer_object +2
+bench-fuzz test/fuzz/property/prop_is_power_of_two_le.cpp replace_pending:<limits> +2
 bench-fuzz test/fuzz/property/prop_is_power_of_two_le.cpp std_entity +1
 bench-fuzz test/fuzz/property/prop_iteration_detector.cpp c_array_object +1
 bench-fuzz test/fuzz/property/prop_iteration_detector.cpp raw_pointer_object +1
@@ -2672,6 +2811,7 @@ bench-fuzz test/fuzz/property/prop_philox_simd_equivalence.cpp raw_pointer_objec
 bench-fuzz test/fuzz/property/prop_philox_simd_equivalence.cpp std_entity +2
 bench-fuzz test/fuzz/property/prop_philox_simd_equivalence.cpp std_object +2
 bench-fuzz test/fuzz/property/prop_ptp_degradation.cpp raw_pointer_object +1
+bench-fuzz test/fuzz/property/prop_ptp_degradation.cpp replace_pending:<limits> +2
 bench-fuzz test/fuzz/property/prop_recipe_hashed_idempotent.cpp raw_pointer_object +1
 bench-fuzz test/fuzz/property/prop_recipe_pool_intern.cpp raw_pointer_object +1
 bench-fuzz test/fuzz/property/prop_recipe_pool_intern.cpp std_entity +16
@@ -2686,6 +2826,7 @@ bench-fuzz test/fuzz/property/prop_reflect_avalanche.cpp compiler_builtin +1
 bench-fuzz test/fuzz/property/prop_reflect_avalanche.cpp raw_pointer_object +1
 bench-fuzz test/fuzz/property/prop_saturate_math_invariants.cpp compiler_builtin +3
 bench-fuzz test/fuzz/property/prop_saturate_math_invariants.cpp raw_pointer_object +2
+bench-fuzz test/fuzz/property/prop_saturate_math_invariants.cpp replace_pending:<limits> +11
 bench-fuzz test/fuzz/property/prop_scuttlebutt_compare.cpp raw_pointer_object +1
 bench-fuzz test/fuzz/property/prop_scuttlebutt_compare.cpp std_entity +28
 bench-fuzz test/fuzz/property/prop_scuttlebutt_compare.cpp std_object +6
@@ -2693,7 +2834,8 @@ bench-fuzz test/fuzz/property/prop_scuttlebutt_digest.cpp raw_pointer_object +1
 bench-fuzz test/fuzz/property/prop_scuttlebutt_digest.cpp std_entity +11
 bench-fuzz test/fuzz/property/prop_scuttlebutt_digest.cpp std_object +2
 bench-fuzz test/fuzz/property/prop_sdc_tolerance.cpp raw_pointer_object +3
-bench-fuzz test/fuzz/property/prop_sdc_tolerance.cpp std_entity +3
+bench-fuzz test/fuzz/property/prop_sdc_tolerance.cpp replace_pending:<limits> +10
+bench-fuzz test/fuzz/property/prop_sdc_tolerance.cpp std_entity +5
 bench-fuzz test/fuzz/property/prop_storage_nbytes_simd_equivalence.cpp c_library_call +10
 bench-fuzz test/fuzz/property/prop_storage_nbytes_simd_equivalence.cpp raw_pointer_object +1
 bench-fuzz test/fuzz/property/prop_swim_membership.cpp raw_pointer_object +1

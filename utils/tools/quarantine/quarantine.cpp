@@ -25,6 +25,11 @@
 //                           A typedef or an alias template of namespace std that
 //                           the type of a declaration names is one too, such as
 //                           std::size_t
+//     replace_pending:ENTRY a use that the admit row of ENTRY admits, when the
+//                           row has `until FAMILY`, such as std::bit_cast.  Each
+//                           such row has a kind of its own, so the ratchet holds
+//                           the uses of each entry in each file and a new use of
+//                           one entry cannot pass behind a removed use of another
 //     std_object            a variable, data member, parameter or return type whose
 //                           type holds a class or an enumeration of the standard
 //                           library, also through a typedef of fixy, such as
@@ -255,6 +260,27 @@ struct PendingInclude {
     bool is_next = false;  // an #include_next directive
 };
 
+// The library classes and enumerations that a type holds: the first one that
+// no admit row admits, and the first one that a row with `until` admits, with
+// that row.
+struct LibraryClasses {
+    tree refused = NULL_TREE;
+    tree pending = NULL_TREE;
+    const AdmitRow* pending_row = nullptr;
+
+    // Keeps the first refused and the first pending class of the two.
+    void add(const LibraryClasses& other) {
+        if (refused == NULL_TREE) {
+            refused = other.refused;
+        }
+        if (pending == NULL_TREE) {
+            pending = other.pending;
+            pending_row = other.pending_row;
+        }
+    }
+    [[nodiscard]] bool is_full() const { return refused != NULL_TREE && pending != NULL_TREE; }
+};
+
 using IncludeCallback = void (*)(cpp_reader*, location_t, const unsigned char*, const char*, int, const cpp_token**);
 using MacroCallback = void (*)(cpp_reader*, location_t, cpp_hashnode*);
 
@@ -287,8 +313,8 @@ struct State {
     // its address, so each collection clears them.  Nothing depends on them
     // for correctness: a finding is recorded one time for each place.
     // The first two hold one map for each Use.
-    std::unordered_map<tree, tree> library_class_of[2];
-    std::unordered_map<tree, bool> admitted_of[2];
+    std::unordered_map<tree, LibraryClasses> library_class_of[2];
+    std::unordered_map<tree, const AdmitRow*> admitting_row_of[2];
     std::unordered_map<tree, bool> default_argument_of;
     std::unordered_set<tree> walked;
 };
@@ -314,17 +340,16 @@ bool is_worth_a_walk(location_t location) {
 
 // One finding for each kind and place.  Two names at one place, such as a type
 // and its member function in one expression, are two findings, and so are two
-// headers that one place includes.
-void add_finding(Kind kind, const Place& place, const std::string& entity) {
-    bool is_name = kind == Kind::std_entity || kind == Kind::c_library_call || kind == Kind::compiler_builtin
-                || kind == Kind::layer_header || kind == Kind::door_header || kind == Kind::upward_include;
-    std::string key = std::string(kind_name(kind)) + ' ' + place.file->relative + ':' + std::to_string(place.line) + ':'
+// headers that one place includes.  KIND must live as long as the unit: a
+// kind_name() text or the pending kind of an admit row.
+void add_finding(const char* kind, bool is_name, const Place& place, const std::string& entity) {
+    std::string key = std::string(kind) + ' ' + place.file->relative + ':' + std::to_string(place.line) + ':'
                     + std::to_string(place.column) + (is_name ? ' ' + entity : std::string{});
     if (!core.finding_keys.insert(key).second) {
         return;
     }
     Finding finding;
-    finding.kind = kind_name(kind);
+    finding.kind = kind;
     finding.file = place.file;
     finding.line = place.line;
     finding.column = place.column;
@@ -359,15 +384,33 @@ bool is_inside_system_assert(location_t location) {
     return false;
 }
 
+bool is_name_kind(Kind kind) {
+    return kind == Kind::std_entity || kind == Kind::c_library_call || kind == Kind::compiler_builtin
+        || kind == Kind::layer_header || kind == Kind::door_header || kind == Kind::upward_include;
+}
+
+void add_finding(Kind kind, const Place& place, const std::string& entity) {
+    add_finding(kind_name(kind), is_name_kind(kind), place, entity);
+}
+
 // A finding of the quarantine rule, at a place in a quarantined file.
-void record(Kind kind, location_t location, const std::string& entity) {
+void record_kind(const char* kind, bool is_name, location_t location, const std::string& entity) {
     if (is_inside_system_assert(location)) {
         return;
     }
     Place place = place_of(location, Scope::quarantine);
     if (place.file_class == FileClass::quarantined) {
-        add_finding(kind, place, entity);
+        add_finding(kind, is_name, place, entity);
     }
+}
+
+void record(Kind kind, location_t location, const std::string& entity) {
+    record_kind(kind_name(kind), is_name_kind(kind), location, entity);
+}
+
+// A use of ENTITY that ROW admits with `until FAMILY`.
+void record_pending(const AdmitRow& row, location_t location, const std::string& entity) {
+    record_kind(row.pending_kind.c_str(), true, location, entity);
 }
 
 // ── Names ───────────────────────────────────────────────────────────────
@@ -513,10 +556,75 @@ int parameter_count(tree decl) {
     return DECL_IOBJ_MEMBER_FUNCTION_P(decl) ? count - 1 : count;
 }
 
+// True when TYPE holds a bool or an enumeration: the type itself, an element
+// of an array, a vector or a complex type, or a data member or a base of a
+// class or a union.  A pointer holds an address, so the walk does not follow
+// it, also when its target is dependent.  Each other dependent type and an
+// incomplete class count as types that hold them, so the restriction
+// plain-result fails closed.  Complexity: O(size of the type tree).
+bool holds_bool_or_enumeration(tree type, int depth) {
+    if (type == NULL_TREE || type == error_mark_node || depth > 64) {
+        return true;
+    }
+    switch (TREE_CODE(type)) {
+        case POINTER_TYPE:
+        case OFFSET_TYPE:
+            return false;
+        case BOOLEAN_TYPE:
+        case ENUMERAL_TYPE:
+            return true;
+        case ARRAY_TYPE:
+        case VECTOR_TYPE:
+        case COMPLEX_TYPE:
+            return holds_bool_or_enumeration(TREE_TYPE(type), depth + 1);
+        case RECORD_TYPE:
+        case UNION_TYPE: {
+            tree main_type = TYPE_MAIN_VARIANT(type);
+            if (TYPE_PTRMEMFUNC_P(main_type)) {
+                return false;
+            }
+            if (uses_template_parms(main_type) || !COMPLETE_TYPE_P(main_type)) {
+                return true;
+            }
+            for (tree field = TYPE_FIELDS(main_type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+                if (TREE_CODE(field) == FIELD_DECL && holds_bool_or_enumeration(TREE_TYPE(field), depth + 1)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        default:
+            return uses_template_parms(type);
+    }
+}
+
+// The result type of a call of the function template FUNCTION with the
+// explicit template ARGUMENTS of a template-id, such as std::bit_cast<To>(x)
+// in a template.  It is known when the result type is one template parameter
+// of the innermost level and an explicit argument gives that parameter.
+// Returns null otherwise.
+tree result_of_explicit_arguments(tree function, tree arguments) {
+    if (arguments == NULL_TREE || TREE_CODE(arguments) != TREE_VEC || DECL_LANG_SPECIFIC(function) == nullptr
+        || DECL_TEMPLATE_INFO(function) == NULL_TREE) {
+        return NULL_TREE;
+    }
+    tree result = TREE_TYPE(TREE_TYPE(function));
+    tree template_decl = DECL_TI_TEMPLATE(function);
+    if (result == NULL_TREE || TREE_CODE(result) != TEMPLATE_TYPE_PARM || template_decl == NULL_TREE
+        || TREE_CODE(template_decl) != TEMPLATE_DECL
+        || TEMPLATE_TYPE_LEVEL(result) != TMPL_PARMS_DEPTH(DECL_TEMPLATE_PARMS(template_decl))
+        || TEMPLATE_TYPE_IDX(result) >= TREE_VEC_LENGTH(arguments)) {
+        return NULL_TREE;
+    }
+    tree argument = TREE_VEC_ELT(arguments, TEMPLATE_TYPE_IDX(result));
+    return argument != NULL_TREE && TYPE_P(argument) ? argument : NULL_TREE;
+}
+
 // A row admits DECL with its restrictions.  The plugin reads no base file, and
 // each path after `in` is a base path, so a row with `in` admits nothing in a
-// quarantined file.
-bool row_admits(const AdmitRow& row, tree decl, bool is_exact, Use use) {
+// quarantined file.  RESULT is the result type of the call when explicit
+// template arguments give it, or null.
+bool row_admits(const AdmitRow& row, tree decl, bool is_exact, Use use, tree result) {
     if (!row.in_paths.empty()) {
         return false;
     }
@@ -526,47 +634,90 @@ bool row_admits(const AdmitRow& row, tree decl, bool is_exact, Use use) {
     if (row.is_parameters_only && is_exact && use != Use::parameter) {
         return false;
     }
+    if (row.is_plain_result) {
+        tree function = TREE_CODE(decl) == TEMPLATE_DECL ? DECL_TEMPLATE_RESULT(decl) : decl;
+        if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
+            return false;
+        }
+        tree type = result != NULL_TREE ? result : TREE_TYPE(TREE_TYPE(function));
+        if (holds_bool_or_enumeration(type, 0)) {
+            return false;
+        }
+    }
     return !row.is_concepts_only || concept_definition_p(decl);
 }
 
-// A dependent qualified name, which names no declaration yet.  A restriction
-// that needs the declaration cannot apply, so only a row with `in` refuses it.
-bool is_admitted_name(const std::string& name) {
+// The row that admits a dependent qualified name, which names no declaration
+// yet, or null.  A restriction that needs the declaration cannot apply, so
+// only a row with `in` refuses it.
+const AdmitRow* admitting_row_of_name(const std::string& name) {
     bool is_exact = false;
     const AdmitRow* row = admit_row_of_name(name, is_exact);
-    return row != nullptr && row->in_paths.empty();
+    return row != nullptr && row->in_paths.empty() ? row : nullptr;
 }
 
-// A name entry admits the entity that it names and each name nested in it,
-// so std::tuple_size admits std::tuple_size<T>::value.  It admits no other
-// entity whose name starts with the same text: std::tuple_size_v and
+const AdmitRow* find_admitting_row(tree decl, Use use, tree result) {
+    bool is_exact = false;
+    const AdmitRow* row = admit_row_of_name(qualified_name(decl), is_exact);
+    if (row != nullptr && row_admits(*row, decl, is_exact, use, result)) {
+        return row;
+    }
+    const char* file = DECL_SOURCE_FILE(decl);
+    auto header = file != nullptr ? state.admitted_header_paths.find(classify_file(file).real)
+                                  : state.admitted_header_paths.end();
+    if (header != state.admitted_header_paths.end() && row_admits(*header->second, decl, false, use, result)) {
+        return header->second;
+    }
+    return nullptr;
+}
+
+// The row that admits DECL, or null when no row admits it.  A name entry
+// admits the entity that it names and each name nested in it, so
+// std::tuple_size admits std::tuple_size<T>::value.  It admits no other entity
+// whose name starts with the same text: std::tuple_size_v and
 // std::tuple_element_t need their own entries.  A header entry admits each
 // entity that the header itself declares: the file that an #include of that
 // exact name enters, and not a header of the same last name in a different
 // directory, such as experimental/type_traits.  A restriction of the row
-// narrows what it admits (row_admits).
-bool is_admitted(tree decl, Use use = Use::other) {
-    std::unordered_map<tree, bool>& cache = state.admitted_of[static_cast<int>(use)];
+// narrows what it admits (row_admits).  RESULT is the result type that the
+// explicit template arguments of a call give, or null.
+const AdmitRow* admitting_row(tree decl, Use use = Use::other, tree result = NULL_TREE) {
+    if (result != NULL_TREE) {
+        return find_admitting_row(decl, use, result);
+    }
+    std::unordered_map<tree, const AdmitRow*>& cache = state.admitting_row_of[static_cast<int>(use)];
     auto cached = cache.find(decl);
     if (cached != cache.end()) {
         return cached->second;
     }
-    bool is_exact = false;
-    const AdmitRow* row = admit_row_of_name(qualified_name(decl), is_exact);
-    bool is_listed = row != nullptr && row_admits(*row, decl, is_exact, use);
-    if (!is_listed) {
-        const char* file = DECL_SOURCE_FILE(decl);
-        auto header = file != nullptr ? state.admitted_header_paths.find(classify_file(file).real)
-                                      : state.admitted_header_paths.end();
-        is_listed = header != state.admitted_header_paths.end() && row_admits(*header->second, decl, false, use);
+    const AdmitRow* row = find_admitting_row(decl, use, NULL_TREE);
+    cache.emplace(decl, row);
+    return row;
+}
+
+bool is_plainly_admitted(const AdmitRow* row) { return row != nullptr && row->pending_kind.empty(); }
+
+// The finding of a use of the standard library entity DECL at LOCATION, as the
+// admitted list decides it: none when a row admits it, the kind of the row
+// when a row with `until` admits it, and std_entity when no row admits it.
+// Returns true when it made a finding.
+bool record_standard_use(tree decl, location_t location, const std::string& entity, Use use = Use::other,
+                         tree result = NULL_TREE) {
+    const AdmitRow* row = admitting_row(decl, use, result);
+    if (row == nullptr) {
+        record(Kind::std_entity, location, entity);
+        return true;
     }
-    cache.emplace(decl, is_listed);
-    return is_listed;
+    if (row->pending_kind.empty()) {
+        return false;
+    }
+    record_pending(*row, location, entity);
+    return true;
 }
 
 // ── The library class inside a type ─────────────────────────────────────
 
-tree library_class_in(tree type, int depth, Use use = Use::other);
+LibraryClasses library_class_in(tree type, int depth, Use use = Use::other);
 
 // The most general template of a class template specialization, or null.
 tree general_template_of(tree class_type) {
@@ -596,39 +747,44 @@ bool matches_default(tree argument, tree default_argument) {
     return false;
 }
 
-tree library_class_in_argument(tree argument, int depth) {
+LibraryClasses library_class_in_argument(tree argument, int depth) {
+    LibraryClasses found;
     if (argument == NULL_TREE || argument == error_mark_node) {
-        return NULL_TREE;
+        return found;
     }
     if (ARGUMENT_PACK_P(argument)) {
         tree arguments = ARGUMENT_PACK_ARGS(argument);
-        for (int index = 0; index < TREE_VEC_LENGTH(arguments); ++index) {
-            if (tree found = library_class_in_argument(TREE_VEC_ELT(arguments, index), depth + 1)) {
-                return found;
-            }
+        for (int index = 0; index < TREE_VEC_LENGTH(arguments) && !found.is_full(); ++index) {
+            found.add(library_class_in_argument(TREE_VEC_ELT(arguments, index), depth + 1));
         }
-        return NULL_TREE;
+        return found;
     }
     if (TYPE_P(argument)) {
         return library_class_in(argument, depth + 1);
     }
-    if (TREE_CODE(argument) == TEMPLATE_DECL && library_of(argument) != Library::none && !is_admitted(argument)) {
-        tree result = DECL_TEMPLATE_RESULT(argument);
-        if (result != NULL_TREE && TREE_CODE(result) == TYPE_DECL) {
-            return TREE_TYPE(result);
-        }
+    tree result = TREE_CODE(argument) == TEMPLATE_DECL ? DECL_TEMPLATE_RESULT(argument) : NULL_TREE;
+    if (result == NULL_TREE || TREE_CODE(result) != TYPE_DECL || library_of(argument) == Library::none) {
+        return found;
     }
-    return NULL_TREE;
+    const AdmitRow* row = admitting_row(argument);
+    if (row == nullptr) {
+        found.refused = TREE_TYPE(result);
+    } else if (!row->pending_kind.empty()) {
+        found.pending = TREE_TYPE(result);
+        found.pending_row = row;
+    }
+    return found;
 }
 
 // The template arguments of a class that is not a library class.  An
 // argument equal to the default of its parameter is skipped: the declaration
 // did not write it, so a fixy default such as the storage of AppendOnly is not
 // a finding at each object.
-tree library_class_in_template_arguments(tree class_type, int depth) {
+LibraryClasses library_class_in_template_arguments(tree class_type, int depth) {
+    LibraryClasses found;
     tree info = CLASSTYPE_TEMPLATE_INFO(class_type);
     if (TI_ARGS(info) == NULL_TREE) {
-        return NULL_TREE;
+        return found;
     }
     tree arguments = INNERMOST_TEMPLATE_ARGS(TI_ARGS(info));
     tree parameters = NULL_TREE;
@@ -640,9 +796,9 @@ tree library_class_in_template_arguments(tree class_type, int depth) {
         }
     }
     if (arguments == NULL_TREE || TREE_CODE(arguments) != TREE_VEC) {
-        return NULL_TREE;
+        return found;
     }
-    for (int index = 0; index < TREE_VEC_LENGTH(arguments); ++index) {
+    for (int index = 0; index < TREE_VEC_LENGTH(arguments) && !found.is_full(); ++index) {
         tree argument = TREE_VEC_ELT(arguments, index);
         if (parameters != NULL_TREE && index < TREE_VEC_LENGTH(parameters)) {
             tree parameter = TREE_VEC_ELT(parameters, index);
@@ -651,30 +807,30 @@ tree library_class_in_template_arguments(tree class_type, int depth) {
                 continue;
             }
         }
-        if (tree found = library_class_in_argument(argument, depth)) {
-            return found;
-        }
+        found.add(library_class_in_argument(argument, depth));
     }
-    return NULL_TREE;
+    return found;
 }
 
 // The first class or enumeration of the standard library or of a C header
-// that TYPE holds.  The walk looks through typedefs, pointers, references,
-// arrays, template arguments and the enclosing class, and stops at an
-// admitted class or enumeration.  So a typedef of fixy that names
-// std::memory_order gives an object of a library type.  A function type is not
-// read: a callback that takes a std::string is not an object of that type.
-// USE applies to the class at the outer level, through pointers and
-// references.  A template argument and an enclosing class are other uses.
-tree library_class_in(tree type, int depth, Use use) {
+// that TYPE holds, and that no admit row admits, and the first one that a row
+// with `until` admits.  The walk looks through typedefs, pointers, references,
+// arrays, template arguments and the enclosing class, and stops at a library
+// class or enumeration.  So a typedef of fixy that names std::memory_order
+// gives an object of a library type.  A function type is not read: a callback
+// that takes a std::string is not an object of that type.  USE applies to the
+// class at the outer level, through pointers and references.  A template
+// argument and an enclosing class are other uses.
+LibraryClasses library_class_in(tree type, int depth, Use use) {
+    LibraryClasses found;
     if (type == NULL_TREE || type == error_mark_node || depth > 64) {
-        return NULL_TREE;
+        return found;
     }
     switch (TREE_CODE(type)) {
         case POINTER_TYPE:
         case REFERENCE_TYPE:
             if (FUNC_OR_METHOD_TYPE_P(TREE_TYPE(type))) {
-                return NULL_TREE;
+                return found;
             }
             return library_class_in(TREE_TYPE(type), depth + 1, use);
         case ARRAY_TYPE:
@@ -688,29 +844,34 @@ tree library_class_in(tree type, int depth, Use use) {
         case ENUMERAL_TYPE:
             break;
         default:
-            return NULL_TREE;
+            return found;
     }
     if (TYPE_PTRMEMFUNC_P(type)) {
-        return NULL_TREE;
+        return found;
     }
     tree main_type = TYPE_MAIN_VARIANT(type);
-    std::unordered_map<tree, tree>& cache = state.library_class_of[static_cast<int>(use)];
+    std::unordered_map<tree, LibraryClasses>& cache = state.library_class_of[static_cast<int>(use)];
     auto cached = cache.find(main_type);
     if (cached != cache.end()) {
         return cached->second;
     }
-    tree found = NULL_TREE;
     tree decl = TYPE_MAIN_DECL(main_type);
     if (decl != NULL_TREE && !LAMBDA_TYPE_P(main_type)) {
         if (library_of(decl) != Library::none) {
-            found = is_admitted(decl, use) ? NULL_TREE : main_type;
+            const AdmitRow* row = admitting_row(decl, use);
+            if (row == nullptr) {
+                found.refused = main_type;
+            } else if (!row->pending_kind.empty()) {
+                found.pending = main_type;
+                found.pending_row = row;
+            }
         } else {
             if (CLASS_TYPE_P(main_type) && CLASSTYPE_TEMPLATE_INFO(main_type) != NULL_TREE) {
                 found = library_class_in_template_arguments(main_type, depth);
             }
             tree context = CP_TYPE_CONTEXT(main_type);
-            if (found == NULL_TREE && context != NULL_TREE && TYPE_P(context)) {
-                found = library_class_in(context, depth + 1);
+            if (!found.is_full() && context != NULL_TREE && TYPE_P(context)) {
+                found.add(library_class_in(context, depth + 1));
             }
         }
     }
@@ -724,9 +885,10 @@ tree library_class_in(tree type, int depth, Use use) {
 // pointers, references and arrays, and it stops at a typedef that is not of
 // the library: a project alias of std::size_t names no library entity where
 // the code uses it, because the type itself is a fundamental type.  Returns
-// the declaration of the alias template or of the typedef, or null when the
-// table admits it.  A template argument loses its typedef, so a typedef inside
-// a template argument is no finding.  library_class_in finds an enumeration.
+// the declaration of the alias template or of the typedef, or null when a row
+// without `until` admits it.  A template argument loses its typedef, so a
+// typedef inside a template argument is no finding.  library_class_in finds an
+// enumeration.
 tree library_type_name_in(tree type, int depth) {
     if (type == NULL_TREE || type == error_mark_node || depth > 64) {
         return NULL_TREE;
@@ -743,9 +905,37 @@ tree library_type_name_in(tree type, int depth) {
         if (tree info = TYPE_ALIAS_TEMPLATE_INFO(type); info != NULL_TREE && TI_TEMPLATE(info) != NULL_TREE) {
             decl = TI_TEMPLATE(info);
         }
-        return library_of(decl) == Library::standard && !is_admitted(decl) ? decl : NULL_TREE;
+        return library_of(decl) == Library::standard && !is_plainly_admitted(admitting_row(decl)) ? decl : NULL_TREE;
     }
     return NULL_TREE;
+}
+
+bool is_standard_class(tree type) {
+    return type != NULL_TREE && library_of(TYPE_MAIN_DECL(type)) == Library::standard;
+}
+
+// The finding of a class that CLASSES gives as pending, at LOCATION.  SUFFIX
+// follows the name of the class in the entity, such as the member of a
+// qualified name.
+void record_pending_class(const LibraryClasses& classes, location_t location, const std::string& suffix = {}) {
+    if (classes.pending != NULL_TREE && classes.pending_row != nullptr) {
+        record_pending(*classes.pending_row, location, qualified_name(classes.pending) + suffix);
+    }
+}
+
+// The library entities that TYPE names, where the source spells TYPE: a class
+// of namespace std inside it, or else the library name at its outer level,
+// and each class that a row with `until` admits.
+void record_named_entities(tree type, location_t location) {
+    LibraryClasses classes = library_class_in(type, 0);
+    if (classes.refused != NULL_TREE) {
+        if (is_standard_class(classes.refused)) {
+            record(Kind::std_entity, location, qualified_name(TYPE_MAIN_DECL(classes.refused)));
+        }
+    } else if (tree named = library_type_name_in(type, 0)) {
+        record_standard_use(named, location, qualified_name(named));
+    }
+    record_pending_class(classes, location);
 }
 
 // ── The checks of a declaration ─────────────────────────────────────────
@@ -770,22 +960,14 @@ void check_object(tree decl, Role role) {
             record(Kind::c_array_object, location, type_text(type));
         }
     }
-    if (tree found = library_class_in(type, 0, role == Role::parameter ? Use::parameter : Use::other)) {
+    LibraryClasses classes = library_class_in(type, 0, role == Role::parameter ? Use::parameter : Use::other);
+    if (tree found = classes.refused) {
         Kind kind = library_of(TYPE_MAIN_DECL(found)) == Library::c_library ? Kind::c_library_object : Kind::std_object;
         record(kind, location, qualified_name(found) + " (" + type_text(type) + ")");
     } else if (tree named = library_type_name_in(type, 0)) {
-        record(Kind::std_entity, location, qualified_name(named));
+        record_standard_use(named, location, qualified_name(named));
     }
-}
-
-// A library entity that TYPE names: a class of namespace std inside it, or else
-// the library name at its outer level.  Returns null when it names none.
-tree std_entity_in(tree type) {
-    tree found = library_class_in(type, 0);
-    if (found != NULL_TREE) {
-        return library_of(TYPE_MAIN_DECL(found)) == Library::standard ? TYPE_MAIN_DECL(found) : NULL_TREE;
-    }
-    return library_type_name_in(type, 0);
+    record_pending_class(classes, location);
 }
 
 void check_alias(tree decl) {
@@ -793,9 +975,7 @@ void check_alias(tree decl) {
     if (aliased == NULL_TREE || !is_quarantined(DECL_SOURCE_LOCATION(decl))) {
         return;
     }
-    if (tree named = std_entity_in(aliased)) {
-        record(Kind::std_entity, DECL_SOURCE_LOCATION(decl), qualified_name(named));
-    }
+    record_named_entities(aliased, DECL_SOURCE_LOCATION(decl));
 }
 
 bool has_lang_template_info(tree decl) {
@@ -915,8 +1095,10 @@ bool check_builtin_use(tree function, location_t location) {
     return true;
 }
 
-// One function that the code names.  Returns true when it made a finding.
-bool check_function_use(tree function, location_t location) {
+// One function that the code names.  EXPLICIT_ARGUMENTS are the explicit
+// template arguments of a template-id that names it, or null.  Returns true
+// when it made a finding.
+bool check_function_use(tree function, location_t location, tree explicit_arguments = NULL_TREE) {
     if (TREE_CODE(function) == TEMPLATE_DECL) {
         function = DECL_TEMPLATE_RESULT(function);
     }
@@ -943,11 +1125,8 @@ bool check_function_use(tree function, location_t location) {
     }
     switch (library_of(function)) {
         case Library::standard:
-            if (is_admitted(function)) {
-                return false;
-            }
-            record(Kind::std_entity, location, qualified_name(function));
-            return true;
+            return record_standard_use(function, location, qualified_name(function), Use::other,
+                                       result_of_explicit_arguments(function, explicit_arguments));
         case Library::c_library:
             record(Kind::c_library_call, location, qualified_name(function));
             return true;
@@ -987,17 +1166,17 @@ bool takes_argument_count(tree function, int arguments) {
 // dependent call, and ARGUMENTS gives the argument count of that call, or -1.
 // Only a candidate that can take the count counts: std::move(value) then names
 // the cast of one argument and not the algorithm of three.
-void check_overload_use(tree overload, location_t location, int arguments = -1) {
+void check_overload_use(tree overload, location_t location, int arguments = -1, tree explicit_arguments = NULL_TREE) {
     for (ovl_iterator candidate(overload, true); candidate; ++candidate) {
         tree function = *candidate;
         if (TREE_CODE(function) == OVERLOAD) {
-            check_overload_use(function, location, arguments);
+            check_overload_use(function, location, arguments, explicit_arguments);
             return;
         }
         if (arguments >= 0 && !takes_argument_count(function, arguments)) {
             continue;
         }
-        if (check_function_use(function, location)) {
+        if (check_function_use(function, location, explicit_arguments)) {
             return;
         }
     }
@@ -1020,9 +1199,7 @@ void check_variable_use(tree variable, location_t location) {
     }
     switch (library_of(variable)) {
         case Library::standard:
-            if (!is_admitted(variable)) {
-                record(Kind::std_entity, location, qualified_name(variable));
-            }
+            record_standard_use(variable, location, qualified_name(variable));
             break;
         case Library::c_library:
             record(Kind::c_library_call, location, qualified_name(variable));
@@ -1032,14 +1209,14 @@ void check_variable_use(tree variable, location_t location) {
     }
 }
 
-void check_template_use(tree template_decl, location_t location) {
+void check_template_use(tree template_decl, location_t location, tree explicit_arguments = NULL_TREE) {
     tree result = DECL_TEMPLATE_RESULT(template_decl);
     if (result != NULL_TREE && TREE_CODE(result) == FUNCTION_DECL) {
-        check_function_use(template_decl, location);
+        check_function_use(template_decl, location, explicit_arguments);
         return;
     }
-    if (library_of(template_decl) == Library::standard && !is_admitted(template_decl)) {
-        record(Kind::std_entity, location, qualified_name(template_decl));
+    if (library_of(template_decl) == Library::standard) {
+        record_standard_use(template_decl, location, qualified_name(template_decl));
     }
 }
 
@@ -1072,27 +1249,27 @@ void check_scope_use(tree scope_ref, location_t location) {
     if (TREE_CODE(scope) == NAMESPACE_DECL) {
         if (top_namespace(scope) == std_node || scope == std_node) {
             std::string name = qualified_name(scope) + "::" + member;
-            if (!is_admitted_name(name)) {
+            const AdmitRow* row = admitting_row_of_name(name);
+            if (row == nullptr) {
                 record(Kind::std_entity, location, name);
+            } else if (!row->pending_kind.empty()) {
+                record_pending(*row, location, name);
             }
         }
         return;
     }
     if (TYPE_P(scope)) {
-        tree found = library_class_in(scope, 0);
-        if (found != NULL_TREE && library_of(TYPE_MAIN_DECL(found)) == Library::standard) {
-            record(Kind::std_entity, location, qualified_name(found) + "::" + member);
+        LibraryClasses classes = library_class_in(scope, 0);
+        if (is_standard_class(classes.refused)) {
+            record(Kind::std_entity, location, qualified_name(classes.refused) + "::" + member);
         }
+        record_pending_class(classes, location, "::" + member);
     }
 }
 
 // A type that a template names: the type of a cast, an explicit template
 // argument, a compound literal.
-void check_type_use(tree type, location_t location) {
-    if (tree named = std_entity_in(type)) {
-        record(Kind::std_entity, location, qualified_name(named));
-    }
-}
+void check_type_use(tree type, location_t location) { record_named_entities(type, location); }
 
 void check_new_expression(tree expression, location_t location) {
     bool is_placement = TREE_OPERAND(expression, 0) != NULL_TREE;
@@ -1218,22 +1395,24 @@ bool walk_call_without_immediate_defaults(tree call, BodyWalk& walk) {
 // One declaration that the code names, at the location of the expression that
 // holds it.
 // ARGUMENTS is the argument count when NAMED is the callee of a call, or -1.
-void check_named(tree named, location_t location, int arguments = -1) {
+// EXPLICIT_ARGUMENTS are the explicit template arguments when a template-id
+// names NAMED, or null.
+void check_named(tree named, location_t location, int arguments = -1, tree explicit_arguments = NULL_TREE) {
     switch (TREE_CODE(named)) {
         case FUNCTION_DECL:
-            check_function_use(named, location);
+            check_function_use(named, location, explicit_arguments);
             break;
         case VAR_DECL:
             check_variable_use(named, location);
             break;
         case TEMPLATE_DECL:
-            check_template_use(named, location);
+            check_template_use(named, location, explicit_arguments);
             break;
         case OVERLOAD:
-            check_overload_use(named, location, arguments);
+            check_overload_use(named, location, arguments, explicit_arguments);
             break;
         case BASELINK:
-            check_overload_use(BASELINK_FUNCTIONS(named), location, arguments);
+            check_overload_use(BASELINK_FUNCTIONS(named), location, arguments, explicit_arguments);
             break;
         default:
             break;
@@ -1283,9 +1462,11 @@ void check_named_operands(tree node, location_t location) {
     if (EXPR_P(node)) {
         tree callee = TREE_CODE(node) == CALL_EXPR ? CALL_EXPR_FN(node) : NULL_TREE;
         int arguments = callee != NULL_TREE ? call_expr_nargs(node) : -1;
+        tree explicit_arguments = TREE_CODE(node) == TEMPLATE_ID_EXPR ? TREE_OPERAND(node, 1) : NULL_TREE;
         for (int index = 0; index < TREE_OPERAND_LENGTH(node); ++index) {
             if (tree operand = TREE_OPERAND(node, index)) {
-                check_named(operand, location, operand == callee ? arguments : -1);
+                check_named(operand, location, operand == callee ? arguments : -1,
+                            index == 0 ? explicit_arguments : NULL_TREE);
             }
         }
     } else if (TREE_CODE(node) == TREE_LIST) {
@@ -1500,10 +1681,11 @@ void walk_class(tree type, bool is_pattern) {
     if (tree binfo = TYPE_BINFO(main_type)) {
         for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
             tree base = BINFO_TYPE(BINFO_BASE_BINFO(binfo, index));
-            tree found = library_class_in(base, 0);
-            if (found != NULL_TREE && library_of(TYPE_MAIN_DECL(found)) == Library::standard) {
-                record(Kind::std_entity, class_location, qualified_name(found));
+            LibraryClasses classes = library_class_in(base, 0);
+            if (is_standard_class(classes.refused)) {
+                record(Kind::std_entity, class_location, qualified_name(classes.refused));
             }
+            record_pending_class(classes, class_location);
         }
     }
     for (tree member = TYPE_FIELDS(main_type); member != NULL_TREE; member = DECL_CHAIN(member)) {
@@ -1574,13 +1756,16 @@ void check_template_defaults(tree template_decl) {
             continue;
         }
         tree default_argument = TREE_PURPOSE(parameter);
-        tree found = library_class_in_argument(default_argument, 0);
-        tree named = found != NULL_TREE ? (library_of(TYPE_MAIN_DECL(found)) == Library::standard ? found : NULL_TREE)
-                   : TYPE_P(default_argument) ? library_type_name_in(default_argument, 0)
-                                              : NULL_TREE;
-        if (named != NULL_TREE) {
-            record(Kind::std_entity, DECL_SOURCE_LOCATION(TREE_VALUE(parameter)), qualified_name(named));
+        location_t location = DECL_SOURCE_LOCATION(TREE_VALUE(parameter));
+        LibraryClasses classes = library_class_in_argument(default_argument, 0);
+        if (classes.refused != NULL_TREE) {
+            if (is_standard_class(classes.refused)) {
+                record(Kind::std_entity, location, qualified_name(classes.refused));
+            }
+        } else if (tree named = TYPE_P(default_argument) ? library_type_name_in(default_argument, 0) : NULL_TREE) {
+            record_standard_use(named, location, qualified_name(named));
         }
+        record_pending_class(classes, location);
     }
 }
 
@@ -2068,7 +2253,7 @@ void on_finish(void*, void*) {
 void on_collection(void*, void*) {
     for (int use = 0; use < 2; ++use) {
         state.library_class_of[use].clear();
-        state.admitted_of[use].clear();
+        state.admitting_row_of[use].clear();
     }
     state.default_argument_of.clear();
     state.walked.clear();

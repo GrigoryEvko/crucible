@@ -12,5 +12,6 @@ admit std::move arity 1 | a cast to an rvalue reference
 admit std::initializer_list parameters | the type of a braced list
 admit std::byte | the type with the aliasing right
 admit std::align_val_t in include/fixy/ | the alignment argument of the allocation functions
+admit std::bit_cast plain-result | a copy of the bits into a type that holds no bool and no enumeration
 
 quarantine restricted.cpp

@@ -31,10 +31,16 @@
 #                       row goes when that family lands, and `rg 'until
 #                       FAMILY'` finds the rows of one family.
 #                       utils/scripts/check-admitted-audit.py makes sure that
-#                       each such row has the verdict REPLACE of that family
+#                       each such row has the verdict REPLACE of that family.
+#                       Each use that the row admits is a finding of the kind
+#                       replace_pending:ENTRY, so the ratchet refuses a new use
 #         arity N       The entry admits only a function with N parameters
 #         parameters    The entry admits its class only as the type of a
 #                       parameter.  The names in the class stay admitted
+#         plain-result  The entry admits only a function whose result type
+#                       holds no bool and no enumeration: not the type itself,
+#                       not an element of an array and not a member or a base
+#                       of a class.  A dependent result type is refused
 #         concepts      A header admits only the concepts that it declares
 #         unless MACRO  The plugin refuses each unit that defines MACRO
 #         in PATH...    The entry admits only in the files under the PATHs.
@@ -101,7 +107,7 @@ admit std::move arity 1 | a cast to an rvalue reference, and not the algorithm o
 admit std::forward | a cast that keeps the value category, and it makes no object
 admit std::as_const | a cast to a const reference, and it makes no object
 admit std::to_underlying | a cast of an enumerator to the integer of its enumeration
-admit std::bit_cast until Scalar | a copy of the bits into the type that the declaration of the result checks
+admit std::bit_cast until Scalar plain-result | a copy of the bits into a type that holds no bool and no enumeration
 admit std::declval | an unevaluated operand only
 admit std::integer_sequence | a pack of compile-time integers, with no data
 admit std::make_integer_sequence | an alias of std::integer_sequence
@@ -110,7 +116,6 @@ admit std::make_index_sequence | an alias of std::integer_sequence
 admit std::index_sequence_for | an alias of std::integer_sequence
 admit std::tuple_size in include/foundation/core/ | the tuple protocol for the structured bindings of a family type
 admit std::tuple_element in include/foundation/core/ | the tuple protocol for the structured bindings of a family type
-admit std::unreachable until Report | a hint to the optimizer, and it makes no object
 admit std::source_location until Report | the place of a call, which the compiler gives at compile time
 admit std::size_t | a typedef of unsigned long on the two targets
 admit std::ptrdiff_t | a typedef of long on the two targets

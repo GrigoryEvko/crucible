@@ -147,15 +147,23 @@ struct EnforceRow {
     bool is_error = false;
 };
 
+// The kind of a use that a row with `until FAMILY` admits starts with this
+// text, and the entry of the row as the table spells it follows.
+inline constexpr const char* kPendingKindPrefix = "replace_pending:";
+
 // One admit row and its restrictions, as the head comment of the table gives
-// them.  `until FAMILY` changes nothing in the plugin, so the row does not keep
-// it.
+// them.  A row with `until FAMILY` admits each use of its entry with a finding
+// of its own kind, so the ratchet holds the count of the uses of each such
+// entry in each file.
 struct AdmitRow {
     std::string entry;  // a qualified name, or the name inside the angle brackets of a header
     bool is_header = false;
+    std::string until;  // the family that replaces the entry, or empty
+    std::string pending_kind;  // kPendingKindPrefix and the spelled entry, for a row with `until`
     int arity = -1;  // the parameter count of each admitted function, or -1
     bool is_concepts_only = false;
     bool is_parameters_only = false;
+    bool is_plain_result = false;  // the result type of the function holds no bool and no enumeration
     std::string unless_macro;
     std::vector<std::string> in_paths;
 };
@@ -814,7 +822,11 @@ inline bool parse_admit(const std::vector<std::string>& args, AdmitRow& row) {
         seen.push_back(word);
         std::string value = index + 1 < args.size() ? args[index + 1] : std::string{};
         if (word == "until" && !value.empty()) {
+            row.until = value;
             index += 2;
+        } else if (word == "plain-result" && !row.is_header) {
+            row.is_plain_result = true;
+            index += 1;
         } else if (word == "arity" && is_digits(value) && !row.is_header) {
             row.arity = 0;
             for (char digit : value) {
@@ -841,6 +853,9 @@ inline bool parse_admit(const std::vector<std::string>& args, AdmitRow& row) {
         } else {
             return false;
         }
+    }
+    if (!row.until.empty()) {
+        row.pending_kind = std::string(kPendingKindPrefix) + args[0];
     }
     return true;
 }
@@ -950,8 +965,8 @@ inline bool load_rule_table(const std::string& path) {
             AdmitRow admit;
             if (args.empty() || reason.empty() || !parse_admit(args, admit)) {
                 refuse("an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until "
-                       "FAMILY', 'arity N' and 'parameters' of a name, 'concepts' of a header, 'unless MACRO' and 'in "
-                       "PATH...', each one time, and the reason is necessary");
+                       "FAMILY', 'arity N', 'parameters' and 'plain-result' of a name, 'concepts' of a header, "
+                       "'unless MACRO' and 'in PATH...', each one time, and the reason is necessary");
                 continue;
             }
             for (const std::string& in_path : admit.in_paths) {

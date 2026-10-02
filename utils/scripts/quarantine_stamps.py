@@ -57,19 +57,25 @@ def facts_text(table: layer_rules.RuleTable) -> str:
     """Return the canonical text of the rows of TABLE that decide a finding.
 
     The order of the rows, the order of the paths in a row, a reason, a comment
-    and the `until` family of an admit row change nothing in the text.
+    and the family of an `until` restriction change nothing in the text.  A row
+    with `until` gives each use of its entry a finding, so the text holds the
+    word `until` of such a row.
     """
     lines = [f"layer {layer.name} {layer.rank} {' '.join(sorted(layer.paths))}" for layer in table.layers]
     lines += [f"allow {layer} {header}" for layer, header in table.allows]
     lines += [f"door {header} {owner}" for header, owner in table.doors]
     for admit in table.admits:
         words = [admit.entry]
+        if admit.until:
+            words.append("until")
         if admit.arity >= 0:
             words.append(f"arity {admit.arity}")
         if admit.concepts:
             words.append("concepts")
         if admit.parameters:
             words.append("parameters")
+        if admit.plain_result:
+            words.append("plain-result")
         if admit.unless:
             words.append(f"unless {admit.unless}")
         if admit.in_paths:

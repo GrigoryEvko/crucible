@@ -17,6 +17,10 @@ door <sys/socket.h> src/fixy/SocketDoor.cpp
 admit <type_traits> | a type trait is a compile-time query
 admit std::move | a cast to an rvalue reference
 admit std::tuple_size | a compile-time trait of the tuple protocol
+admit <limits> until Scalar | the limits of the fundamental types
+admit std::bit_cast until Scalar plain-result | a copy of the bits into a type that holds no bool and no enumeration
+admit std::source_location until Report | the place of a call
+admit std::unreachable until Report | a hint to the optimizer
 
 quarantine contracts.cpp
 quarantine end_without_region.cpp
@@ -30,6 +34,7 @@ quarantine meta_info.cpp
 quarantine nonclass.cpp
 quarantine opt_out.cpp
 quarantine own_region_macro.cpp
+quarantine pending.cpp
 quarantine plant_std.cpp
 quarantine raw_pragma.cpp
 quarantine reason_without_class.cpp
