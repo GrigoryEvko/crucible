@@ -844,7 +844,7 @@ At the end of the migration, the families of §XXII replace each row of these ta
 | Annotations for reflection | P3394R4 | Tag fields for custom codegen |
 | Splicing a base class subobject | P3293R3 | Reflect across hierarchy |
 | Function parameter reflection | P3096R12 | Auto-generate dispatch from schema |
-| `define_static_{string,object,array}` | P3491R3 | Compile-time constexpr static arrays (CKernelId tables) |
+| `define_static_{string,object,array}` | P3491R3 | `define_static_array` makes the result of a reflection query a static array, and a `template for` can read each element of it (`fixy/Collision.h`, `foundation/algebra/lattices/ChainLattice.h`). `define_static_string` makes a text of a constant evaluation static (`fixy/Reject.h`). The tree does not use `define_static_object` |
 | Error handling in reflection | P3560R2 | Structured compile-time errors |
 | Expansion statements (`template for`) | P1306R5 | Iterate reflected members without macros |
 | `constexpr` exceptions | P3068R5 | IR verifier throws at compile time, zero runtime cost |
@@ -1298,7 +1298,7 @@ Rule: prefetch 8-16 iterations ahead; `locality = 0` for streaming reads (don't 
 
 1. `[[likely]]` / `[[unlikely]]` on predictable branches.
 2. `__builtin_expect_with_probability(x, v, p)` for explicit probabilities.
-3. **Predication**: replace `if (x < 0) x = 0` with `x = std::max(x, 0)` — compiler emits `cmov`.
+3. **Predication**: replace `if (x > limit) x = limit` with `x = fixy::min(x, limit)`. The compiler then gives a `cmov`. `fixy::min` is part of the Scalar family, which is planned (§XXII).
 4. **Switch on small dense enum** — compiler generates jump table; one indirect branch.
 5. A switch that handles each enumerator also has a `default` arm (`-Werror=switch-default`). The arm calls `fixy::unreachable()`, which ends the process in each build, and it does not call `std::unreachable()` (§IV).
 6. **Branchless bit tricks** where appropriate: `x & -cond` for conditional zeroing.
@@ -1965,8 +1965,8 @@ Nothing throws. Not because a flag forbids it — `-fno-exceptions` is not in th
 | Class | Mechanism | Runtime cost | Example |
 |---|---|---|---|
 | **Impossible** (contract violation) | `CRUCIBLE_PRE` / `CRUCIBLE_POST` / `contract_assert` | Debug and Release do the check, and both end the process, because the handler aborts. Its cost is 0 ns only in a TU that takes `CRUCIBLE_CONTRACT_IGNORE_OPTIONS` | Null pointer, OOB index, invariant violation |
-| **Expected-but-rare** | `std::expected<T, E>` return | ~1 ns (branch on `.has_value()`) | Parse error, shape out of bucket, peer timeout |
-| **Catastrophic** | a cold `[[noreturn]]` helper that prints the diagnostic and calls `std::abort()` | — | OOM, hardware fault, corrupt state, FLR failure |
+| **Expected-but-rare** | a return value of type `fixy::Result<T, E>` (`foundation::core::Result` in the base) | ~1 ns (one branch on the tag of the `Result`) | Parse error, shape out of bucket, peer timeout |
+| **Catastrophic** | `fixy::fatal("reason")` of the Report family (`foundation::core::fatal` in the base). It writes the text and the place of the call, and it ends the process | — | OOM, hardware fault, corrupt state, FLR failure |
 
 ### Contract semantics per TU
 
@@ -2048,10 +2048,10 @@ Test executables compile with `-UNDEBUG` (`test/CMakeLists.txt`,
 a Release library or vessel binary. A green Release test run says less about
 production than it appears to.
 
-### The canonical `std::expected` flow
+### The canonical `Result` flow
 
 ```cpp
-enum class CompileError : uint8_t {
+enum class CompileError : std::uint8_t {
     SchemaHashMismatch,
     ShapeOutOfBucket,
     RecipeNotInFleet,
@@ -2059,28 +2059,29 @@ enum class CompileError : uint8_t {
     BudgetExceeded,
 };
 
-[[nodiscard]] std::expected<CompiledKernel, CompileError>
+[[nodiscard]] fixy::Result<CompiledKernel, CompileError>
 compile_kernel(::foundation::effects::Bg const& bg, Arena& arena,
                const KernelNode& k, const TargetCaps& caps)
 {
     CRUCIBLE_PRE(k.recipe != nullptr);
     CRUCIBLE_PRE(k.tile != nullptr);
     if (!fleet_supports(k.recipe, caps)) [[unlikely]]
-        return std::unexpected(CompileError::RecipeNotInFleet);
+        return fixy::err(CompileError::RecipeNotInFleet);
     // ...
     return CompiledKernel{ ... };
 }
 
-// Caller:
-auto r = compile_kernel(bg, arena, node, caps);
-if (!r) [[unlikely]] {
-    log_compile_failure(r.error(), node);
-    return fall_back_to_reference_eager(node);
-}
-const auto& ck = *r;  // happy path
+// Caller: the match takes one arm for the value and one arm for the error.
+// A call with one arm does not compile.  Each caller must handle the error.
+return compile_kernel(bg, arena, node, caps).match(
+    [&](CompiledKernel kernel) { return launch(kernel); },
+    [&](CompileError error) {
+        log_compile_failure(error, node);
+        return fall_back_to_reference_eager(node);
+    });
 ```
 
-`std::expected` is a union + discriminator tag (≤ 24 B for most errors). Can't be silently ignored (`[[nodiscard]]`). No heap, no exception tables.
+A `Result` is a union and a tag. Its error is a scoped enum or a trivially copyable class of at most 16 bytes, so an error never allocates. The type is `[[nodiscard]]`, and it has no heap memory and no exception table. The other operations of a `Result` are `is_ok()`, `is_err()`, `ok()`, `err()`, `value_or()` and `expect(reason)`, the fatal unwrap (`include/foundation/core/Choice.h`).
 
 ### Assertion macro quartet
 
@@ -2178,7 +2179,7 @@ Full per-axiom enforcement story for `CRUCIBLE_PRE` / `CRUCIBLE_POST` lives in `
 }
 ```
 
-Each abort site has its own helper of this shape. The tree has no shared abort function. `CRUCIBLE_COLD` expands to `[[gnu::cold, gnu::noinline]]`, so the helper lives in a cold section and does not pollute hot icache. The helper prints one diagnostic and calls `std::abort()`.
+Some abort sites of the base have a helper of their own with this shape. The Report family gives one fatal exit that each site can call: `foundation::core::fatal` in the base, and `fixy::fatal` in the other code (`include/foundation/core/Report.h`). `CRUCIBLE_COLD` expands to `[[gnu::cold, gnu::noinline]]`, so the helper lives in a cold section and does not pollute hot icache. The helper prints one diagnostic and calls `std::abort()`.
 
 ### Logging and tracing on hot path — banned
 
@@ -2231,10 +2232,11 @@ TEST(Axiom_InitSafe, TensorSlot_DefaultIsWellDefined) {
     ASSERT_TRUE(s.slot_id.is_none());
     ASSERT_EQ(s.dtype, ScalarType::Undefined);
 
-    // Padding is zero (NSDMI + P2795R5 guarantee)
-    const auto* raw = reinterpret_cast<const std::byte*>(&s);
-    for (size_t i = offsetof(TensorSlot, pad); i < sizeof(TensorSlot); ++i)
-        ASSERT_EQ(std::to_integer<uint8_t>(raw[i]), 0u);
+    // Each padding byte is a member (§XV "Compile time", rule 7), and the
+    // NSDMI of pad makes each byte of it zero.
+    crucible::test::expect_no_padding_byte<^^TensorSlot>();
+    for (std::uint8_t const byte : s.pad)
+        ASSERT_EQ(byte, 0u);
 }
 
 // Axiom TypeSafe: strong IDs reject silent swap
@@ -2988,7 +2990,28 @@ At this time, `#pragma crucible I_KNOW_WHAT_IM_DOING("reason")` opens a region, 
 
 When a quarantined line must use a primitive that the base does not have, the base gets the primitive. One owner changes `include/foundation/core/` and `include/fixy/Core.h`. Send that owner the operation and its call site.
 
-The owner adds the primitive to `include/foundation/core/`, and `include/fixy/Core.h` gives its name in namespace `fixy` through a using-declaration. The primitive is part of one of the eight families of plan §11: Choice, Record, Region, Ref, Atomic, Scalar, Report and Os. It uses the shared verbs of plan §11.1, and it gets only the operations that the tree calls. Do not write a std type, a std function, a raw pointer or a C array in its place.
+The owner adds the primitive to `include/foundation/core/`, and `include/fixy/Core.h` gives its name in namespace `fixy` through a using-declaration. The primitive is part of one of the eight families of plan §11: Choice, Record, Region, Ref, Atomic, Scalar, Report and Os. Do not write a std type, a std function, a raw pointer or a C array in its place.
+
+### The design bar of the base
+
+The base (`foundation` and `fixy`) is a language in C++. All the code of Crucible will use this language, and no other language. Each family gets its full design, and not only the operations that the tree calls at this time. This decision of the owner (2026-10-02) replaces the rule of the plan that a type gets only the operations that the tree calls (R9, plan §10.2 and §17).
+
+Each type of the base has these properties:
+- **One interface.** The families use the shared verbs of plan §11.1. One meaning has the same name in each family, and no two names have almost the same meaning.
+- **Safe.** Code that compiles cannot cause undefined behavior through the base. An operation that has no result for some inputs gives an `Option` or a `Result`, or it takes a proof value. Examples of a proof value are an index of an index type, an extent and a brand. No behavior changes with a flag, an optimization level or a preset.
+- **No effect that the call site does not show.** An allocation takes the `Alloc` capability. The base has no global state, no locale, no `errno` and no exception path. The same inputs give the same results.
+- **Zero cost.** Each hot-path operation compiles to the same instructions as the code that it replaces, and the disassembly shows it. The proof of safety is in a type, and not in a branch.
+- **A minimum of dependencies.** The base uses only the header allowance of R2 and the builtins of R3, and it includes no other header. A std item can add a header, a runtime symbol or a meaning that changes with a flag. Then the base makes its own version of the item.
+- **The methods that are known as safe in 2026.** The base uses ownership and borrows, typestate, capabilities, and checked and saturating arithmetic. Its sum types have a match that must handle each case, and its types hold their bounds.
+
+### The families on main
+
+`include/foundation/core/` holds the first part of five families: Choice, Region, Ref, Atomic and Report. `include/fixy/Core.h` gives their public names in namespace `fixy`. Record, Scalar and Os are planned. The other types of the five families are planned too. If the code and plan §11 do not agree, the code is correct:
+- `Option` has no `consume()`. Its fatal unwrap is `expect(reason)`. A loop of zero or one turns, `match()` and `value_or()` are the other operations that read the payload.
+- `cas_acq_rel(expected, desired)` of `Atomic` gives a `Result<Unit, CasRefusal<T>>`. The error holds the value that the cell held.
+- `Atomic<T>` accepts only a value that is trivially copyable, has one bit pattern for each value, and has lock-free atomic operations. `Atomic` rejects a type with padding and a floating-point type.
+- `Atomic` has no relaxed operation. The only thread that writes a cell keeps its own copy of the value, and it publishes each change with `store_release`. A relaxed read of its own cell, `load_owned` of plan §11.6, needs a proof type that shows that the thread is the only writer. That type does not exist at this time.
+- Each run-time check of a family calls `fatal()`, and `fatal()` ends the process in each build. The contract semantic has no effect on it, also in a unit that takes `CRUCIBLE_CONTRACT_IGNORE_OPTIONS`.
 
 ### Clean cuts (R10)
 
