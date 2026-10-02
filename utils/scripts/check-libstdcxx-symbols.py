@@ -140,6 +140,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build_census  # noqa: E402
 import check_report  # noqa: E402
 import cost_meter  # noqa: E402
+import elf_file  # noqa: E402
 from repo_root import REPO_ROOT  # noqa: E402
 
 CHECK = "libstdcxx-symbols"
@@ -383,10 +384,9 @@ def libstdcxx_exports(compiler: str) -> frozenset[str]:
     if not path.is_absolute() or not path.is_file():
         raise InputError(f"{compiler} -print-file-name=libstdc++.so gives {named!r}, which is not a file")
     resolved = path.resolve()
-    with open(resolved, "rb") as stream:
-        if stream.read(4) != b"\x7fELF":
-            raise InputError(f"{resolved} is not an ELF shared library.  The check reads only an ELF libstdc++, and "
-                             f"not a linker script")
+    if not elf_file.is_elf(resolved):
+        raise InputError(f"{resolved} is not an ELF shared library.  The check reads only an ELF libstdc++, and "
+                         f"not a linker script")
     names = frozenset(fields[2].split("@", 1)[0]
                       for fields in map(str.split, tool_output(["nm", "-D", "--defined-only", str(resolved)])
                                         .splitlines())

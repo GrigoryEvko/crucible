@@ -93,7 +93,6 @@ import argparse
 import fcntl
 import hashlib
 import json
-import mmap
 import os
 import re
 import shutil
@@ -109,6 +108,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import check_report  # noqa: E402
+import elf_file  # noqa: E402
 import loop_history  # noqa: E402
 
 # ── Constants ──────────────────────────────────────────────────────────────
@@ -129,14 +129,6 @@ ENVIRONMENT_PROPERTIES = ("ENVIRONMENT", "ENVIRONMENT_MODIFICATION")
 DIAGNOSTIC_SUFFIXES = (".h", ".hh", ".hpp", ".hxx", ".c", ".cc", ".cpp", ".cxx", ".inc", ".ipp", ".tpp")
 SHARED_LIBRARY = re.compile(r"\.so(\.[0-9]+)*$")
 PATH_BYTES = rb"[A-Za-z0-9_./+@-]"
-ELF_MAGIC = b"\x7fELF"
-ELF_CLASS_64 = 2
-ELF_DATA_LITTLE = 1
-SHF_ALLOC = 0x2
-SHF_EXECINSTR = 0x4
-SHT_NOBITS = 8
-ELF_HEADER_SIZE = 64
-SECTION_HEADER_SIZE = 64
 
 KIND_FIXTURE = "fixture"
 KIND_SCRIPT = "script"
@@ -335,46 +327,15 @@ def source_paths_in(text: str, trees: Trees) -> list[str]:
     return found
 
 
-def is_elf(path: str) -> bool:
-    """Return True when `path` is a regular file that starts with the ELF magic."""
-    try:
-        with open(path, "rb") as handle:
-            return handle.read(4) == ELF_MAGIC
-    except OSError:
-        return False
+def data_sections(elf: elf_file.ElfFile) -> list[tuple[int, int]]:
+    """Return the byte span of each allocated section that holds no code.  O(number of sections).
 
-
-def data_sections(data: mmap.mmap | bytes) -> list[tuple[int, int]] | None:
-    """Return the byte span of each allocated section that holds no code, or None for a file it cannot read.
-
-    The file must be an ELF64 file in little-endian order with a section
-    header table.  O(number of sections).
+    Raises:
+        elf_file.ElfError: If the file has no section header table, or a data section is outside the file
     """
-    if len(data) < ELF_HEADER_SIZE or data[:4] != ELF_MAGIC:
-        return None
-    if data[4] != ELF_CLASS_64 or data[5] != ELF_DATA_LITTLE:
-        return None
-    (table_offset,) = struct.unpack_from("<Q", data, 0x28)
-    entry_size, count, _names = struct.unpack_from("<HHH", data, 0x3A)
-    if table_offset == 0 or entry_size < SECTION_HEADER_SIZE:
-        return None
-    if count == 0:
-        # Extended numbering: the size field of section 0 holds the count.
-        if table_offset + SECTION_HEADER_SIZE > len(data):
-            return None
-        (count,) = struct.unpack_from("<Q", data, table_offset + 0x20)
-    if table_offset + count * entry_size > len(data):
-        return None
-    spans: list[tuple[int, int]] = []
-    for index in range(count):
-        base = table_offset + index * entry_size
-        _name, kind, flags, _address, offset, size = struct.unpack_from("<IIQQQQ", data, base)
-        if not flags & SHF_ALLOC or flags & SHF_EXECINSTR or kind == SHT_NOBITS:
-            continue
-        if offset + size > len(data):
-            return None
-        spans.append((offset, offset + size))
-    return spans
+    if not elf.sections:
+        raise elf_file.ElfError(f"{elf.where}: the file has no section header table")
+    return [elf.span(section) for section in elf.sections if section.is_data]
 
 
 def name_pattern(trees: Trees) -> re.Pattern[bytes]:
@@ -388,16 +349,13 @@ def name_pattern(trees: Trees) -> re.Pattern[bytes]:
 def scan_elf(path: str, trees: Trees) -> Scan:
     """Return the input names of one ELF file.  O(size of its data sections)."""
     try:
-        with open(path, "rb") as handle:
-            if os.fstat(handle.fileno()).st_size == 0:
-                return Scan(always_reason=f"{path} is empty")
-            with mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) as mapped:
-                spans = data_sections(mapped)
-                if spans is None:
-                    return Scan(always_reason=f"{path} is not an ELF64 file with a section header table")
-                pattern = name_pattern(trees)
-                names = {match.group(0).decode("utf-8", "surrogateescape")
-                         for start, end in spans for match in pattern.finditer(mapped, start, end)}
+        with elf_file.ElfFile.mapped(path) as elf:
+            spans = data_sections(elf)
+            pattern = name_pattern(trees)
+            names = {match.group(0).decode("utf-8", "surrogateescape")
+                     for start, end in spans for match in pattern.finditer(elf.buffer, start, end)}
+    except elf_file.ElfError as error:
+        return Scan(always_reason=f"{path} is not an ELF64 file with a section header table: {error}")
     except OSError as error:
         return Scan(always_reason=f"the script cannot read {path}: {error.strerror}")
     scan = Scan()
@@ -518,7 +476,7 @@ class Planner:
         program = real(test.command[index]) if os.path.isabs(test.command[index]) else test.command[index]
         if not os.path.isabs(program) or not trees.is_in_build(program):
             return Decision(test, KIND_SCRIPT, REASON_SCRIPT)
-        if os.path.exists(program) and not is_elf(program):
+        if os.path.exists(program) and not elf_file.is_elf(program):
             return Decision(test, KIND_SCRIPT, REASON_SCRIPT)
         start, launcher = launcher_prefix(test.command)
         always = self.always_reason(test, start)
@@ -531,7 +489,7 @@ class Planner:
             inputs.update(self.launcher_inputs(launcher))
         directories: set[str] = set()
         for item in sorted(inputs):
-            if not is_elf(item):
+            if not elf_file.is_elf(item):
                 continue
             scan = self.scan(item)
             if scan.always_reason:
@@ -780,22 +738,10 @@ def synthetic_elf(allocated: bytes, other: bytes = b"", executable: bytes = b"")
 
     The file is not a program.  The scan reads only its section headers.
     """
-    body = allocated + executable + other
-    table = ELF_HEADER_SIZE + len(body)
-    header = bytearray(ELF_HEADER_SIZE)
-    header[:4] = ELF_MAGIC
-    header[4], header[5], header[6] = ELF_CLASS_64, ELF_DATA_LITTLE, 1
-    struct.pack_into("<HHIQQQIHHHHHH", header, 16, 3, 0x3E, 1, 0, 0, table, 0, ELF_HEADER_SIZE, 0, 0,
-                     SECTION_HEADER_SIZE, 4, 0)
-
-    def section(kind: int, flags: int, offset: int, size: int) -> bytes:
-        return struct.pack("<IIQQQQIIQQ", 0, kind, flags, 0, offset, size, 0, 0, 1, 0)
-
-    sections = section(0, 0, 0, 0)
-    sections += section(1, SHF_ALLOC, ELF_HEADER_SIZE, len(allocated))
-    sections += section(1, SHF_ALLOC | SHF_EXECINSTR, ELF_HEADER_SIZE + len(allocated), len(executable))
-    sections += section(1, 0, ELF_HEADER_SIZE + len(allocated) + len(executable), len(other))
-    return bytes(header) + body + sections
+    return elf_file.make_file([elf_file.Planted(b".data", allocated, flags=elf_file.SHF_ALLOC),
+                               elf_file.Planted(b".text", executable,
+                                                flags=elf_file.SHF_ALLOC | elf_file.SHF_EXECINSTR),
+                               elf_file.Planted(b".comment", other)])
 
 
 class SelfTest:
@@ -816,7 +762,8 @@ class SelfTest:
         self.library = self.build_dir / "lib" / "libnamed.so"
         self.library.write_bytes(b"library one")
         true_program, false_program = shutil.which("true"), shutil.which("false")
-        if true_program is None or false_program is None or not is_elf(true_program) or not is_elf(false_program):
+        if (true_program is None or false_program is None or not elf_file.is_elf(true_program)
+                or not elf_file.is_elf(false_program)):
             raise RunnerError("the self-test needs `true` and `false` as ELF programs in PATH")
         for name in ("ok", "ok_named", "ok_source_dir", "ok_fixtures", "ok_environment", "ok_diagnostic",
                      "ok_launched"):
@@ -891,12 +838,23 @@ def self_test() -> int:
 
     # The scan of an ELF file: each kind of section, and a file that is not an ELF64 file.
     trees = Trees(source_root="/s", build_root="/s/b")
-    spans = data_sections(synthetic_elf(allocated=b"A", other=b"B", executable=b"C"))
-    expect("data_sections finds one allocated data section", spans == [(ELF_HEADER_SIZE, ELF_HEADER_SIZE + 1)])
-    expect("data_sections refuses a file that is not ELF", data_sections(b"#!/bin/sh\n" + b"\0" * 80) is None)
+    def is_refused(data: bytes) -> bool:
+        try:
+            data_sections(elf_file.ElfFile(data, "planted"))
+        except elf_file.ElfError:
+            return True
+        return False
+
+    spans = data_sections(elf_file.ElfFile(synthetic_elf(allocated=b"A", other=b"B", executable=b"C"), "planted"))
+    expect("data_sections finds one allocated data section",
+           spans == [(elf_file.HEADER_SIZE, elf_file.HEADER_SIZE + 1)])
+    expect("data_sections refuses a file that is not ELF", is_refused(b"#!/bin/sh\n" + b"\0" * 80))
     damaged = bytearray(synthetic_elf(allocated=b"A"))
     struct.pack_into("<Q", damaged, 0x28, len(damaged) + 100)
-    expect("data_sections refuses a section table outside the file", data_sections(bytes(damaged)) is None)
+    expect("data_sections refuses a section table outside the file", is_refused(bytes(damaged)))
+    no_table = bytearray(synthetic_elf(allocated=b"A"))
+    struct.pack_into("<Q", no_table, 0x28, 0)
+    expect("data_sections refuses a file with no section header table", is_refused(bytes(no_table)))
     expect("program_index skips cmake -E env", program_index(("/x/cmake", "-E", "env", "A=1", "/b/t")) == 4)
     expect("program_index skips valgrind options", program_index(("/v/valgrind", "-q", "/b/t", "x")) == 2)
     launched = ("/usr/bin/python3", "-S", f"/s/scripts/{TEST_LAUNCHER}", "--warnings-dir", "/s/b/w", "/s/b/t")

@@ -13,11 +13,9 @@ THE SECTION
     out= holds the same finding lines.
 
 THE OBJECT
-    read_section() reads an ELF64 object of a little-endian target, as each
-    target of the tree is (CLAUDE.md section XIV).  It reads the section
-    header table and the section names, and it follows the extended numbering
-    of an object with 65,280 sections or more.  It reads no other part of the
-    object.
+    read_section() reads the section table of an ELF64 little-endian object
+    with utils/scripts/elf_file.py, and then the bytes of each section with
+    the name.
 
 Run this file with the paths of objects to print their finding lines, or with
 --self-test to do a test of the module.
@@ -28,11 +26,13 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import io
-import struct
 import sys
 import tempfile
-from array import array
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import elf_file  # noqa: E402
 
 SECTION_NAME = b".crucible.quarantine"
 HEAD_PREFIX = "# crucible-quarantine "
@@ -42,13 +42,6 @@ OPTED_OUT = "opted_out"
 # A line of this kind is an opt-out region with its reason, and no finding.
 REGION = "region"
 NOT_FINDINGS = frozenset((OPTED_OUT, REGION))
-
-ELF_MAGIC = b"\x7fELF"
-ELF_CLASS_64 = 2
-ELF_LITTLE_ENDIAN = 1
-ELF_HEADER_SIZE = 64
-SECTION_HEADER_SIZE = 64
-SHN_XINDEX = 0xFFFF
 
 
 class SectionError(ValueError):
@@ -126,103 +119,23 @@ def read_section(path: Path) -> bytes | None:
     bytes one after the other.  Complexity: linear in the number of sections.
 
     Raises:
-        SectionError: If the file is not an ELF64 little-endian object, or its tables are cut short
+        SectionError: If the file is not an ELF64 little-endian object, or a table or the section is outside it
         OSError: If the file cannot be read
     """
-    with open(path, "rb") as stream:
-        header = stream.read(ELF_HEADER_SIZE)
-        if len(header) < ELF_HEADER_SIZE or header[:4] != ELF_MAGIC:
-            raise SectionError(f"{path}: the file is not an ELF object")
-        if header[4] != ELF_CLASS_64 or header[5] != ELF_LITTLE_ENDIAN:
-            raise SectionError(f"{path}: the object is not ELF64 little-endian")
-        (table_offset,) = struct.unpack_from("<Q", header, 0x28)
-        entry_size, count, names_index = struct.unpack_from("<HHH", header, 0x3A)
-        if table_offset == 0:
-            return None
-        if entry_size != SECTION_HEADER_SIZE:
-            raise SectionError(f"{path}: a section header has {entry_size} bytes, not {SECTION_HEADER_SIZE}")
-        stream.seek(table_offset)
-        first = stream.read(SECTION_HEADER_SIZE)
-        if len(first) < SECTION_HEADER_SIZE:
-            raise SectionError(f"{path}: the section header table is cut short")
-        if count == 0:
-            (count,) = struct.unpack_from("<Q", first, 0x20)
-        if names_index == SHN_XINDEX:
-            (names_index,) = struct.unpack_from("<I", first, 0x28)
-        stream.seek(table_offset)
-        table = stream.read(count * SECTION_HEADER_SIZE)
-        if len(table) < count * SECTION_HEADER_SIZE or names_index >= count:
-            raise SectionError(f"{path}: the section header table is cut short")
-        names_offset, names_size = struct.unpack_from("<QQ", table, names_index * SECTION_HEADER_SIZE + 0x18)
-        stream.seek(names_offset)
-        names = stream.read(names_size)
-        wanted = SECTION_NAME + b"\0"
-        offsets: set[int] = set()
-        start = names.find(wanted)
-        while start >= 0:
-            offsets.add(start)
-            start = names.find(wanted, start + 1)
-        if not offsets:
-            return None
-        # sh_name is the first word of each 64-byte header.
-        name_words = array("I")
-        name_words.frombytes(table)
-        if sys.byteorder != "little":
-            name_words.byteswap()
-        parts: list[bytes] = []
-        for index, name in enumerate(name_words[::SECTION_HEADER_SIZE // 4]):
-            if name in offsets:
-                offset, size = struct.unpack_from("<QQ", table, index * SECTION_HEADER_SIZE + 0x18)
-                stream.seek(offset)
-                data = stream.read(size)
-                if len(data) < size:
-                    raise SectionError(f"{path}: the section {SECTION_NAME.decode()} is cut short")
-                parts.append(data)
-        return b"".join(parts) if parts else None
+    try:
+        with elf_file.ElfFile.mapped(path) as elf:
+            parts = [elf.data(section) for section in elf.named(SECTION_NAME)]
+    except elf_file.ElfError as problem:
+        raise SectionError(str(problem)) from None
+    return b"".join(parts) if parts else None
 
 
 # ── The self-test ──────────────────────────────────────────────────
 
 
-def make_object(sections: list[tuple[bytes, bytes]], extended: bool = False) -> bytes:
-    """Return an ELF64 little-endian object with the named sections, for the self-test.
-
-    With EXTENDED, the object uses the extended numbering of a large object:
-    e_shnum and e_shstrndx are 0 and SHN_XINDEX, and section 0 holds them.
-    """
-    named = [(b"", b""), *sections, (b".shstrtab", b"")]
-    names = b"\0"
-    name_offsets = []
-    for name, _ in named:
-        if name:
-            name_offsets.append(len(names))
-            names += name + b"\0"
-        else:
-            name_offsets.append(0)
-    payloads = [data for _, data in named[:-1]] + [names]
-    body = b""
-    data_offsets = []
-    for data in payloads:
-        data_offsets.append(ELF_HEADER_SIZE + len(body))
-        body += data
-    table_offset = ELF_HEADER_SIZE + len(body)
-    count = len(named)
-    names_index = count - 1
-    header = bytearray(ELF_HEADER_SIZE)
-    header[:6] = ELF_MAGIC + bytes([ELF_CLASS_64, ELF_LITTLE_ENDIAN])
-    struct.pack_into("<Q", header, 0x28, table_offset)
-    struct.pack_into("<HHH", header, 0x3A, SECTION_HEADER_SIZE, 0 if extended else count,
-                     SHN_XINDEX if extended else names_index)
-    table = b""
-    for index in range(count):
-        entry = bytearray(SECTION_HEADER_SIZE)
-        struct.pack_into("<I", entry, 0, name_offsets[index])
-        struct.pack_into("<QQ", entry, 0x18, data_offsets[index] if index else 0, len(payloads[index]))
-        if index == 0 and extended:
-            struct.pack_into("<Q", entry, 0x20, count)
-            struct.pack_into("<I", entry, 0x28, names_index)
-        table += entry
-    return bytes(header) + body + table
+def planted_object(sections: list[tuple[bytes, bytes]], extended: bool = False) -> bytes:
+    """Return an object with the named sections and their bytes, for a self-test."""
+    return elf_file.make_file([elf_file.Planted(name, data) for name, data in sections], extended)
 
 
 def self_test() -> int:
@@ -270,26 +183,29 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory(prefix="quarantine-sections-") as scratch_text:
         scratch = Path(scratch_text)
         plain = scratch / "plain.o"
-        plain.write_bytes(make_object([(b".text", b"\x90"), (SECTION_NAME, text)]))
+        plain.write_bytes(planted_object([(b".text", b"\x90"), (SECTION_NAME, text)]))
         expect("read_section finds the section", read_section(plain) == text)
         extended = scratch / "extended.o"
-        extended.write_bytes(make_object([(b".text", b"\x90"), (SECTION_NAME, text)], extended=True))
+        extended.write_bytes(planted_object([(b".text", b"\x90"), (SECTION_NAME, text)], extended=True))
         expect("read_section follows the extended numbering", read_section(extended) == text)
         absent = scratch / "absent.o"
-        absent.write_bytes(make_object([(b".text", b"\x90"), (b".data", b"x")]))
+        absent.write_bytes(planted_object([(b".text", b"\x90"), (b".data", b"x")]))
         expect("read_section gives None for an object with no section", read_section(absent) is None)
         suffix = scratch / "suffix.o"
-        suffix.write_bytes(make_object([(b".text", b"\x90"), (b".rela.crucible.quarantine", b"r")]))
+        suffix.write_bytes(planted_object([(b".text", b"\x90"), (b".rela.crucible.quarantine", b"r")]))
         expect("read_section does not take a longer name that ends with the name", read_section(suffix) is None)
         joined = scratch / "joined.o"
-        joined.write_bytes(make_object([(SECTION_NAME, b"one\n"), (SECTION_NAME, b"two\n")]))
+        joined.write_bytes(planted_object([(SECTION_NAME, b"one\n"), (SECTION_NAME, b"two\n")]))
         expect("read_section joins two sections with the name", read_section(joined) == b"one\ntwo\n")
         foreign = scratch / "foreign.o"
         foreign.write_bytes(b"!<arch>\n" + b"\0" * 64)
         refuses("read_section refuses a file that is not ELF", lambda: read_section(foreign))
         short = scratch / "short.o"
-        short.write_bytes(make_object([(SECTION_NAME, text)])[:-10])
+        short.write_bytes(planted_object([(SECTION_NAME, text)])[:-10])
         refuses("read_section refuses a cut table", lambda: read_section(short))
+        empty = scratch / "empty.o"
+        empty.write_bytes(b"")
+        refuses("read_section refuses an empty file", lambda: read_section(empty))
         with contextlib.redirect_stdout(io.StringIO()) as printed, contextlib.redirect_stderr(io.StringIO()):
             status = print_objects([str(plain)])
             absent_status = print_objects([str(absent)])

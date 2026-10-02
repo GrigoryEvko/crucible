@@ -813,7 +813,7 @@ class Scratch:
             text = "".join(f"{line}\n" for line in [f"# crucible-quarantine 1 stamp={stamp}", *lines])
             sections = [(b".text", b"\x90")] + ([(quarantine_sections.SECTION_NAME, text.encode())]
                                                 if has_section else [])
-            (self.build / f"{name}.o").write_bytes(quarantine_sections.make_object(sections))
+            (self.build / f"{name}.o").write_bytes(quarantine_sections.planted_object(sections))
             rows.append({"directory": str(self.build), "file": str(self.root / f"{name}.cpp"), "output": f"{name}.o",
                          "command": f"g++ -fplugin=q.so {PLUGIN_ARGUMENT}stamp={STAMP_VALUE} -c {name}.cpp"})
         (self.build / "compile_commands.json").write_text(json.dumps(rows), encoding="utf-8")

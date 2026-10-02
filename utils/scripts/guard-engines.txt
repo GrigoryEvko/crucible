@@ -33,7 +33,7 @@ utils/scripts/check-build-order.py | json,text | build.ninja of the build direct
 utils/scripts/check-cache-size.py | text | the budget table and the sizes of the files under the root of the caches
 utils/scripts/check-ci-guard-labels.py | json | the test list of ctest --show-only=json-v1
 utils/scripts/check-clang-format.sh | text | the diagnostics of clang-format, the file list of fd and the cache of the hashes of clean files
-utils/scripts/check-compile-cost.py | compiler,json,text | the records of the build launcher, the ELF tables of the objects, the file API reply, the ninja dependency log, the ledger rows and the budget table
+utils/scripts/check-compile-cost.py | compiler,json,text | the records of the build launcher, the ELF tables of the objects through elf_file.py, the file API reply, the ninja dependency log, the ledger rows and the budget table
 utils/scripts/check-contract-form.py | tsast,text | the allowlist rows
 utils/scripts/check-contract-semantic.py | json,text | the compile commands of the compile database
 utils/scripts/check-ct-disassembly.py | tsast,compiler,text | the objdump disassembly of the compiled wrappers
@@ -93,6 +93,7 @@ utils/scripts/compile-meter.py | none |
 utils/scripts/cost_meter.py | compiler,text | the ccache stats log of a compile, the counts of the compile meter, the records, the budget table and the ledger rows
 utils/scripts/decide_catalog.py | tsast |
 utils/scripts/edit-loop-gauge.py | tsast,git,json,text | the exit status and the logs of the configure, the build and ctest of its copy, /proc/meminfo and the budget table
+utils/scripts/elf_file.py | text | the ELF header, the section header table, the section names and the symbol tables of an ELF file
 utils/scripts/gen-aten-op-table.py | tsast,python-ast,text | native_functions.yaml through a YAML parser, and each schema string through torchgen
 utils/scripts/gen-mint-inventory.py | tsast,text | misc/mint-inventory.md and the HS14 floor allowlist
 utils/scripts/install-ast-grep.sh | text,json | the release checksum, the version line and the matches of its fixture
@@ -104,13 +105,13 @@ utils/scripts/mintmodel.py | tsast |
 utils/scripts/ninja_files.py | text | build.ninja and the ninja log of a build directory
 utils/scripts/pgo-bootstrap.sh | cmake-api,git |
 utils/scripts/preprocessed.py | kit |
-utils/scripts/quarantine_sections.py | text | the section headers, the section names and the section .crucible.quarantine of an ELF object
+utils/scripts/quarantine_sections.py | text | the section .crucible.quarantine of an ELF object, through elf_file.py
 utils/scripts/quarantine_stamps.py | text | the rule table utils/scripts/layer-rules.txt and the names of the files under its rows
 utils/scripts/refresh-derived.sh | git |
 utils/scripts/repo_root.py | none |
 utils/scripts/repo_root.sh | none |
 utils/scripts/report-check-warnings.py | json,text | the warnings files of the checks, the records of the test launcher, the census of utils/scripts/build_census.py and the budget table
-utils/scripts/run-affected-tests.py | json,text | the test list of ctest --show-only=json-v1, the JUnit report of ctest, CMakeCache.txt and the section headers and data sections of each ELF file of a test
+utils/scripts/run-affected-tests.py | json,text | the test list of ctest --show-only=json-v1, the JUnit report of ctest, CMakeCache.txt and the data sections of each ELF file of a test, through elf_file.py
 utils/scripts/session-oracle.sh | git,text | the switch list that opam prints
 utils/scripts/test-launcher.py | text | the budget table, the build kind, the ledger rows of test-time and test-memory, the variable CRUCIBLE_TEST_CORES, and the records and warnings files that it writes
 utils/scripts/throwaway_repo.py | git |

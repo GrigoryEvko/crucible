@@ -5667,6 +5667,12 @@ add_test(NAME budget_history_self_test
 set_tests_properties(budget_history budget_history_self_test PROPERTIES LABELS "ci_guard")
 set_tests_properties(budget_history PROPERTIES SKIP_RETURN_CODE 3)
 
+# elf_file_self_test — utils/scripts/elf_file.py is the one reader of ELF
+# headers of the scripts.  The self-test plants files with each kind of section,
+# the extended numbering, a symbol table, and tables outside the file.
+add_test(NAME elf_file_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/elf_file.py --self-test)
+set_tests_properties(elf_file_self_test PROPERTIES LABELS "ci_guard")
 # quarantine_sections_self_test — utils/scripts/quarantine_sections.py reads the
 # findings of the quarantine plugin from the section .crucible.quarantine of an
 # object.  The self-test plants objects with and without the section.

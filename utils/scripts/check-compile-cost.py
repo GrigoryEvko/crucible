@@ -60,7 +60,8 @@ THE INSTRUCTION COUNT HOLDS THE ERROR LEVEL OF A COMPILE
     the build.
 
     function-size and object-text read the section headers and the symbol
-    table of each object (ELF64, little endian).  The largest function is the
+    table of each object with utils/scripts/elf_file.py (ELF64, little
+    endian).  The largest function is the
     largest STT_FUNC symbol.  A ccache hit gives the same machine code as a
     compile, so these two checks read each object.
 
@@ -137,10 +138,8 @@ import contextlib
 import importlib.util
 import io
 import json
-import mmap
 import os
 import re
-import struct
 import subprocess
 import sys
 import tempfile
@@ -152,6 +151,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import check_report  # noqa: E402
 import cost_meter  # noqa: E402
+import elf_file  # noqa: E402
 from repo_root import REPO_ROOT  # noqa: E402
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -177,10 +177,6 @@ KIND = re.compile(r"[a-z0-9_]+(?:-[a-z0-9_]+)*")
 DEPS_HEADER = re.compile(r"(?P<target>.+?): (?:#deps \d+, deps mtime \d+ \((?P<state>[A-Z]+)\)|deps not found)")
 KB = 1024
 MB = 1024 * 1024
-SHF_ALLOC = 0x2
-SHF_EXECINSTR = 0x4
-SHT_SYMTAB = 2
-STT_FUNC = 2
 NOT_APPLICABLE = 3
 
 
@@ -458,47 +454,11 @@ def read_object_code(path: Path) -> ObjectCode:
         The sum of the executable sections and the largest function
 
     Raises:
-        ValueError: If the file is not an ELF64 little-endian object, or a table is outside the file
+        elf_file.ElfError: If the file is empty or is not an ELF64 little-endian object, or a table is outside it
     """
-    with open(path, "rb") as handle:
-        try:
-            data = mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ)
-        except ValueError:
-            raise ValueError("the file is empty") from None
-    with data:
-        if len(data) < 64 or data[:4] != b"\x7fELF" or data[4] != 2 or data[5] != 1:
-            raise ValueError("the file is not an ELF64 little-endian object")
-        (section_offset,) = struct.unpack_from("<Q", data, 0x28)
-        entry_size, count = struct.unpack_from("<HH", data, 0x3A)
-        if count == 0 and section_offset:
-            (count,) = struct.unpack_from("<Q", data, section_offset + 0x20)
-        end = section_offset + count * entry_size
-        if entry_size != 64 or end > len(data):
-            raise ValueError("the section header table is outside the file")
-        headers = list(struct.iter_unpack("<IIQQQQIIQQ", data[section_offset:end]))
-        text_bytes = 0
-        symtab = None
-        for (_name, kind, flags, _address, offset, size, link, _info, _align, _entry) in headers:
-            if flags & (SHF_ALLOC | SHF_EXECINSTR) == SHF_ALLOC | SHF_EXECINSTR:
-                text_bytes += size
-            if kind == SHT_SYMTAB:
-                symtab = (offset, size, link)
-        largest = 0
-        largest_name = ""
-        if symtab is not None:
-            offset, size, link = symtab
-            if offset + size > len(data) or link >= len(headers):
-                raise ValueError("the symbol table is outside the file")
-            name_offset = 0
-            for (name, info, _other, _section, _value, symbol_size) in struct.iter_unpack(
-                    "<IBBHQQ", data[offset:offset + size - size % 24]):
-                if info & 0xF == STT_FUNC and symbol_size > largest:
-                    largest, name_offset = symbol_size, name
-            if largest:
-                strings = headers[link][4]
-                stop = data.find(b"\0", strings + name_offset)
-                largest_name = data[strings + name_offset:stop].decode("utf-8", errors="replace")
-    return ObjectCode(text_bytes, largest, largest_name)
+    with elf_file.ElfFile.mapped(path) as elf:
+        largest, largest_name = elf.largest_function()
+        return ObjectCode(sum(section.size for section in elf.sections if section.is_code), largest, largest_name)
 
 
 def demangled(names: Iterable[str]) -> dict[str, str]:
@@ -539,7 +499,7 @@ def code_measures(context: Context, outputs: list[Output]) -> tuple[list[Measure
     for output in outputs:
         try:
             codes.append((output, read_object_code(output.path)))
-        except (OSError, ValueError, struct.error) as problem:
+        except (OSError, elf_file.ElfError) as problem:
             findings.append(error_at(context.check, shown_path(output.source or output.path, context.root),
                                      f"the object {shown_path(output.path, context.build_dir)} cannot be read: "
                                      f"{problem}"))
@@ -915,31 +875,15 @@ def plant_object(path: Path, functions: list[tuple[str, int]], loose_text: int =
         functions: The name and the size of each function
         loose_text: The size of one more executable section with no symbol
     """
-    section_names = b"\0.symtab\0.strtab\0.shstrtab\0.text\0"
-    strings = b"\0" + b"".join(name.encode() + b"\0" for name, _ in functions)
-    symbols = bytes(24)
-    position = 1
-    for index, (name, size) in enumerate(functions):
-        symbols += struct.pack("<IBBHQQ", position, 0x12, 0, 4 + index, 0, size)
-        position += len(name) + 1
-    strings_at = 64
-    names_at = strings_at + len(strings)
-    symbols_at = (names_at + len(section_names) + 7) // 8 * 8
-    headers_at = symbols_at + len(symbols)
-    headers = [bytes(64),
-               struct.pack("<IIQQQQIIQQ", 1, SHT_SYMTAB, 0, 0, symbols_at, len(symbols), 2, 1, 8, 24),
-               struct.pack("<IIQQQQIIQQ", 9, 3, 0, 0, strings_at, len(strings), 0, 0, 1, 0),
-               struct.pack("<IIQQQQIIQQ", 17, 3, 0, 0, names_at, len(section_names), 0, 0, 1, 0)]
-    for _, size in functions:
-        headers.append(struct.pack("<IIQQQQIIQQ", 27, 1, SHF_ALLOC | SHF_EXECINSTR, 0, 0, size, 0, 0, 16, 0))
+    symbols, strings = elf_file.function_symbols(functions)
+    code = elf_file.SHF_ALLOC | elf_file.SHF_EXECINSTR
+    sections = [elf_file.Planted(b".symtab", symbols, elf_file.SHT_SYMTAB, link=2, entry_size=elf_file.SYMBOL_SIZE),
+                elf_file.Planted(b".strtab", strings, elf_file.SHT_STRTAB)]
+    sections += [elf_file.Planted(b".text", flags=code, size=size) for _, size in functions]
     if loose_text:
-        headers.append(struct.pack("<IIQQQQIIQQ", 27, 1, SHF_ALLOC | SHF_EXECINSTR, 0, 0, loose_text, 0, 0, 16, 0))
-    elf_header = (b"\x7fELF\x02\x01\x01" + bytes(9)
-                  + struct.pack("<HHIQQQIHHHHHH", 1, 62, 1, 0, 0, headers_at, 0, 64, 0, 0, 64, len(headers), 3))
-    body = strings + section_names
-    padding = bytes(symbols_at - names_at - len(section_names))
+        sections.append(elf_file.Planted(b".text", flags=code, size=loose_text))
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(elf_header + body + padding + symbols + b"".join(headers))
+    path.write_bytes(elf_file.make_file(sections))
 
 
 class Scratch:
