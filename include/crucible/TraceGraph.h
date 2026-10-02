@@ -74,9 +74,9 @@ struct TraceGraph {
 
     ContentHash content_hash;
 
-    // The highest metadata-log index this trace reads. The owner of that log
-    // may only advance its tail once every read here has finished, because
-    // the reads point into the log rather than copying out of it.
+    // The end of the run of the metadata log that this trace read.  The ops
+    // hold a copy of that run in the arena.  The owner of the log can release
+    // the run after the build.
     BuiltCount max_meta_end = ::fixy::mint_write_once<uint32_t>();
     uint32_t pad_tg = 0;
 

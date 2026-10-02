@@ -204,11 +204,6 @@ public:
             return ch_->log_.at(index);
         }
 
-        [[nodiscard]] value_type* try_contiguous(std::uint32_t start, std::uint32_t count) const
-            CRUCIBLE_LIFETIMEBOUND {
-            return ch_->log_.try_contiguous(start, count);
-        }
-
         void advance_tail(std::uint32_t new_tail) { ch_->log_.advance_tail(new_tail); }
 
         [[nodiscard]] std::uint32_t head_index() const { return ch_->log_.head.get(); }

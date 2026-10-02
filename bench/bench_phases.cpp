@@ -14,6 +14,7 @@
 // Phases measured:
 //   P0  Pre-scan       count inputs/outputs/scalars, check MetaLog
 //   P1  Alloc+init     arena allocs, PtrMap gen bump, memset scratch
+//   P1b Meta copy      the run of the MetaLog into a new arena
 //   P2a Copy fields    schema/shape/scope/callsite + meta ptrs + aux ptrs
 //   P2b Content hash   fmix64 chain over all tensor dims for streaming hash
 //   P2c PtrMap lookup  DFG edge building (input ptr_map_lookup)
@@ -375,6 +376,39 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         ns_p1 += static_cast<double>(t1 - t0) * nspc;
     }
 
+    // ── P1b: Copy the run of the metadata log into the arena ──────
+    // The arena is new in each iteration.  The arena of a running pipeline
+    // also gives each region memory that no region used before.  The time
+    // holds the first touch of each page of the copy.
+    double ns_p1b = 0;
+    {
+        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
+        repopulate();
+        uint32_t max_meta_end = 0, first_meta = UINT32_MAX;
+        for (uint32_t i = 0; i < count; i++) {
+            const MetaIndex ms = bg.current_meta_starts[i];
+            if (ms.is_valid()) {
+                if (first_meta == UINT32_MAX) first_meta = ms.raw();
+                const uint32_t end = ms.raw() + trace.entries[i].num_inputs + trace.entries[i].num_outputs;
+                if (end > max_meta_end) max_meta_end = end;
+            }
+        }
+        const uint32_t total_metas = (first_meta != UINT32_MAX) ? max_meta_end - first_meta : 0;
+
+        for (uint32_t iter = 0; iter < iters; iter++) {
+            bg.arena.~Arena();
+            new(&bg.arena) Arena{arena_bytes};
+
+            const uint64_t t0 = bench::rdtsc_start();
+            TensorMeta* meta_base = bg.arena.alloc_array<TensorMeta>(A, total_metas);
+            meta_log.copy_run(first_meta, total_metas, meta_base);
+            const uint64_t t1 = bench::rdtsc_end();
+
+            bench::do_not_optimize(meta_base);
+            ns_p1b += static_cast<double>(t1 - t0) * nspc;
+        }
+    }
+
     // ── P2a: Copy fields (no hash, no PtrMap) ─────────────────────
     double ns_p2a = 0;
     for (uint32_t iter = 0; iter < iters; iter++) {
@@ -408,12 +442,8 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
         auto* ops = bg.arena.alloc_array<TraceEntry>(A, count);
         const uint32_t total_metas = (first_meta != UINT32_MAX) ? max_meta_end - first_meta : 0;
-        TensorMeta* meta_base = (total_metas > 0) ? meta_log.try_contiguous(first_meta, total_metas) : nullptr;
-        if (!meta_base && total_metas > 0) {
-            meta_base = bg.arena.alloc_array<TensorMeta>(A, total_metas);
-            for (uint32_t m = 0; m < total_metas; m++)
-                std::construct_at(&meta_base[m], meta_log.at(first_meta + m));
-        }
+        TensorMeta* meta_base = bg.arena.alloc_array<TensorMeta>(A, total_metas);
+        meta_log.copy_run(first_meta, total_metas, meta_base);
         const size_t aux_bytes =
             static_cast<size_t>(total_scalars) * sizeof(int64_t) + static_cast<size_t>(total_inputs) * sizeof(OpIndex)
             + static_cast<size_t>(total_inputs) * sizeof(SlotId) + static_cast<size_t>(total_outputs) * sizeof(SlotId);
@@ -660,15 +690,16 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     }
 
     PhaseTiming phases[] = {
-        {"P0  pre-scan", ns_p0, iters},      {"P1  alloc+memset", ns_p1, iters},   {"P2a copy fields", ns_p2a, iters},
-        {"P2b content hash", ns_p2b, iters}, {"P2c PtrMap lookup", ns_p2c, iters}, {"P2d PtrMap insert", ns_p2d, iters},
-        {"P3  slot copy", ns_p3, iters},
+        {"P0  pre-scan", ns_p0, iters},         {"P1  alloc+memset", ns_p1, iters},
+        {"P1b metadata copy", ns_p1b, iters},   {"P2a copy fields", ns_p2a, iters},
+        {"P2b content hash", ns_p2b, iters},    {"P2c PtrMap lookup", ns_p2c, iters},
+        {"P2d PtrMap insert", ns_p2d, iters},   {"P3  slot copy", ns_p3, iters},
     };
 
     double sum = 0;
     for (auto& p : phases)
         sum += p.total_ns;
-    print_phase_table(phases, 7, sum, iters);
+    print_phase_table(phases, 8, sum, iters);
 }
 
 // Default trace baked at configure time — see bench/CMakeLists.txt.
@@ -686,8 +717,8 @@ constexpr const char* kDefaultTrace = nullptr;
 //   bench::run Report  (500 samples × 3.3 ms)                 ≈ 1.7 s
 //   Top-level measure  (1200 iters × 2.0 ms)                  ≈ 2.4 s
 //   build_csr + plan   (1200 × 460 µs)                        ≈ 0.5 s
-//   Phase 2 sub-parts  (7 × 1200 × [measured + ~1.5 ms setup]) ≈ 4.5 s
-// Total ≈ 9 s. Smaller traces (resnet18, vit_b) finish in a fraction.
+//   Phase 2 sub-parts  (8 × 1200 × [measured + ~1.5 ms setup]) ≈ 5 s
+// Total ≈ 10 s. Smaller traces (resnet18, vit_b) finish in a fraction.
 // Override explicitly: `./bench_phases <trace> <iters>`.
 constexpr uint32_t kDefaultIters = 1200;
 

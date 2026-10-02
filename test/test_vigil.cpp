@@ -6,6 +6,8 @@
 //   ..._divergence.cpp            the rig, and a divergence that drops what
 //                                 the foreground has not observed
 //   ..._producer.cpp              the producer role and its surface
+//   ..._metadata.cpp              a region keeps its tensor metadata after
+//                                 the foreground writes over the log
 
 #include "vigil_rig.h"
 
@@ -64,6 +66,7 @@ int main() {
     test_vigil::test_divergence_drops_a_half_finished_alignment();
     test_vigil::test_record_op_claims_the_producer_role();
     test_vigil::test_producer_surface_takes_the_claim_context();
+    test_vigil::test_region_keeps_its_metadata_after_the_log_wraps();
 
     char tmpdir[] = "/tmp/crucible_vigil_XXXXXX";
     char* dir = mkdtemp(tmpdir);

@@ -240,20 +240,29 @@ struct CRUCIBLE_OWNER MetaLog {
         return entries[idx & MASK];
     }
 
-    // A pointer straight into the buffer when the requested run does not wrap
-    // the end of it, saving the consumer a copy. A run that wraps yields no
-    // pointer and the caller reads it element by element instead.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TensorMeta* try_contiguous(uint32_t start, uint32_t count) const
-        CRUCIBLE_LIFETIMEBOUND CRUCIBLE_NO_THREAD_SAFETY {
-        if (count == 0) [[unlikely]]
-            return nullptr;
-        uint32_t const start_pos = start & MASK;
-        TensorMeta* const result = (start_pos + count <= CAPACITY) ? &entries[start_pos] : nullptr;
-        // The pointer, when there is one, aliases the slice starting at the
-        // masked position. Dropping the mask or missing it by one would hand
-        // the consumer a different block with nothing to signal the mistake.
-        CRUCIBLE_POST(result, result == nullptr || result == &entries[start_pos]);
-        return result;
+    // Copies the run of count records that starts at index start into dst.
+    // A run that passes the end of the buffer takes two copies.  The tail
+    // moves past a run when the consumer releases it.  The producer then
+    // writes new records over those slots.  A reader that keeps the records
+    // after the release keeps this copy, and no pointer into the buffer.  The
+    // consumer copies a run before it releases the run, and the producer
+    // writes no slot of that run while the copy operates.
+    CRUCIBLE_UNSAFE_BUFFER_USAGE void copy_run(uint32_t start, uint32_t count, TensorMeta* dst) const
+        CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(count, std::uint32_t{0}, CAPACITY));
+        CRUCIBLE_PRE(::foundation::decide::valid_span(count, dst));
+        if (count == 0) return;
+        const uint32_t start_pos = start & MASK;
+        const uint32_t first_chunk = (count <= CAPACITY - start_pos) ? count : CAPACITY - start_pos;
+        std::memcpy(dst, &entries[start_pos], first_chunk * sizeof(TensorMeta));
+        if (count > first_chunk) {
+            std::memcpy(dst + first_chunk, &entries[0], (count - first_chunk) * sizeof(TensorMeta));
+        }
+        // The first and the last record of the copy are the records at the
+        // two ends of the run.  A start without the mask, or a split of the
+        // run at the wrong slot, puts a different record at one end.
+        CRUCIBLE_POST(0, std::memcmp(&dst[0], &entries[start_pos], sizeof(TensorMeta)) == 0);
+        CRUCIBLE_POST(0, std::memcmp(&dst[count - 1], &entries[(start + count - 1) & MASK], sizeof(TensorMeta)) == 0);
     }
 
     // The consumer is the one writer of tail, so its relaxed load reads its

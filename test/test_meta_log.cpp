@@ -3,6 +3,7 @@
 #include <fixy/Aliases.h>
 #include <foundation/Platform.h>
 
+#include "test_abort_probe.h"
 #include "test_assert.h"
 
 #include <atomic>
@@ -62,11 +63,11 @@ static void test_batch_append_and_monotonic() {
     assert(idx2.raw() == 3);
     assert(log.size().peek() == 8);
 
-    // A fresh buffer has not wrapped, so the whole range is contiguous.
-    const TensorMeta* span = log.try_contiguous(0, 8);
-    assert(span != nullptr);
+    // The copy of the two appends is the eight records in their order.
+    TensorMeta copied[8]{};
+    log.copy_run(0, 8, copied);
     for (int i = 0; i < 8; ++i) {
-        assert(raw_data_ptr(span[i]) == raw_data_ptr(batch[static_cast<size_t>(i)]));
+        assert(raw_data_ptr(copied[i]) == raw_data_ptr(batch[static_cast<size_t>(i)]));
     }
     std::printf("  test_batch_monotonic:           PASSED\n");
 }
@@ -99,7 +100,7 @@ static void test_reset_zeroes_both_pointers() {
     std::printf("  test_reset:                     PASSED\n");
 }
 
-static void test_try_contiguous_wrap_returns_null() {
+static void test_copy_run_across_the_end() {
     MetaLog log;
     // Filling and then draining leaves the head three slots from the
     // end of the ring, which is the only way to reach the wrap without
@@ -113,19 +114,37 @@ static void test_try_contiguous_wrap_returns_null() {
 
     // Five entries into three remaining slots: the batch straddles the
     // end of the ring.
-    std::vector<TensorMeta> tail5(5, m);
-    auto idx = log.try_append(tail5.data(), 5);
+    TensorMeta tail5[5]{};
+    for (uint32_t i = 0; i < 5; ++i) {
+        tail5[i] = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x5000 + i * 0x100)));
+    }
+    auto idx = log.try_append(tail5, 5);
     assert(idx.is_valid());
     assert(idx.raw() == near_end);
 
-    // A straddling range has no single pointer, so the caller has to
-    // copy instead.
-    const TensorMeta* span = log.try_contiguous(near_end, 5);
-    assert(span == nullptr);
+    // The copy joins the three records at the end of the buffer and the two
+    // at its start, in the order of the append.
+    TensorMeta copied[5]{};
+    log.copy_run(near_end, 5, copied);
+    for (uint32_t i = 0; i < 5; ++i) {
+        assert(raw_data_ptr(copied[i]) == raw_data_ptr(tail5[i]));
+    }
 
-    const TensorMeta* span2 = log.try_contiguous(0, 2);
-    assert(span2 != nullptr);
-    std::printf("  test_wrap:                      PASSED\n");
+    // A run that does not pass the end is one copy.
+    TensorMeta head2[2]{};
+    log.copy_run(near_end + 3, 2, head2);
+    assert(raw_data_ptr(head2[0]) == raw_data_ptr(tail5[3]));
+    assert(raw_data_ptr(head2[1]) == raw_data_ptr(tail5[4]));
+    std::printf("  test_copy_run_across_the_end:   PASSED\n");
+}
+
+// A run longer than the buffer holds records that the producer wrote over.
+// The copy refuses such a run before it reads a slot.
+static void test_copy_run_refuses_a_run_longer_than_the_buffer() {
+    MetaLog log;
+    TensorMeta destination[1]{};
+    assert(crucible::test::aborts([&] { log.copy_run(0, MetaLog::CAPACITY + 1, destination); }));
+    std::printf("  test_copy_run_refuses_long_run: PASSED\n");
 }
 
 // The producer reads its own head relaxed and publishes with a release
@@ -323,10 +342,11 @@ int main() {
     test_batch_append_and_monotonic();
     test_tail_advance_frees_capacity();
     test_reset_zeroes_both_pointers();
-    test_try_contiguous_wrap_returns_null();
+    test_copy_run_across_the_end();
+    test_copy_run_refuses_a_run_longer_than_the_buffer();
     test_spsc_concurrent_integrity();
     test_try_append_pure();
     test_try_append_pure_concurrent();
-    std::printf("test_meta_log: 9 groups, all passed\n");
+    std::printf("test_meta_log: 10 groups, all passed\n");
     return 0;
 }

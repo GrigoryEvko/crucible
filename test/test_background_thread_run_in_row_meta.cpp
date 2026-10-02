@@ -1,4 +1,5 @@
-// The release of the metadata log in test_background_thread_run_in_row.
+// The release of the metadata log in test_background_thread_run_in_row, and
+// the copy of its records that a built graph holds.
 //
 // The foreground appends the tensor metadata of each op to the metadata log.
 // The pipeline releases the metadata of an iteration when it is done with it,
@@ -23,10 +24,12 @@
 #include <foundation/effects/Effect.h>
 #include "test_assert.h"
 
+#include <atomic>
 #include <bit>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <memory>
 
 using crucible::BackgroundThread;
@@ -241,6 +244,54 @@ void test_pipeline_releases_after_overflow() {
     assert(metalog->tail.get() == overflow_end && "the publish stage did not apply the release of the last iteration");
 
     std::printf("  pipeline_releases_after_overflow:          PASSED (tail=%u)\n", metalog->tail.get());
+}
+
+// The ops of a built graph hold a copy of the run of the metadata log that
+// the build read.  The publish stage releases the run when it publishes the
+// region.  The foreground then writes new records over the run.  The region
+// lives as long as the arena, and no op points into the buffer of the log.
+void test_built_graph_owns_its_metadata() {
+    using namespace meta_rig;
+    seal_global_tables();
+
+    BackgroundThread bt;
+    auto metalog = std::make_unique<MetaLog>();
+    bt.meta_log.set(metalog.get());
+    const auto test = ::foundation::effects::testing::test();
+    const auto bg = ::foundation::effects::testing::bg();
+
+    constexpr uint32_t OPS = 4;
+    Work work;
+    for (uint32_t op = 0; op < OPS; ++op)
+        (void)work.push_op_with_meta(*metalog, op);
+
+    const BackgroundThread::TraceBuild built =
+        bt.build_trace_from(test.alloc, work.count, work.trace, work.meta_starts, work.scope_hashes,
+                            work.callsite_hashes);
+    assert(built.has_value() && *built != nullptr);
+
+    const std::less<const crucible::TensorMeta*> before{};
+    const crucible::TensorMeta* const log_begin = metalog->entries;
+    const crucible::TensorMeta* const log_end = log_begin + MetaLog::CAPACITY;
+    for (uint32_t op = 0; op < OPS; ++op) {
+        const crucible::TensorMeta* const metas = (*built)->ops[op].output_metas;
+        assert(metas != nullptr);
+        assert((before(metas, log_begin) || !before(metas, log_end))
+               && "an op of the graph points into the buffer of the metadata log");
+        assert(crucible::raw_data_ptr(metas[0]) == crucible::raw_data_ptr(output_meta(op)));
+        assert(crucible::raw_tensor_dim(metas[0].sizes[0]) == 64);
+    }
+
+    // The region of the publish holds the same ops, and the release moves
+    // the tail past the run.
+    bt.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
+        bt.publish_trace_graph(bg, stage, *built);
+    });
+    const crucible::RegionNode* const region = bt.active_region.load(std::memory_order_acquire);
+    assert(region != nullptr && region->ops == (*built)->ops);
+    assert(metalog->tail.get() == OPS);
+
+    std::printf("  built_graph_owns_its_metadata:             PASSED\n");
 }
 
 }  // namespace test_background_thread_run_in_row

@@ -28,10 +28,11 @@ void test_rearm_cycle();
 void test_reset_drops_inflight_regions();
 void test_callback_runs_outside_arena_gate();
 
-// The release of the metadata log
-// (test_background_thread_run_in_row_meta.cpp).
+// The release of the metadata log, and the copy of its records that a built
+// graph holds (test_background_thread_run_in_row_meta.cpp).
 void test_overflow_build_leaves_tail();
 void test_publish_stage_releases_in_order();
 void test_pipeline_releases_after_overflow();
+void test_built_graph_owns_its_metadata();
 
 }  // namespace test_background_thread_run_in_row

@@ -678,19 +678,17 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
 
     auto* ops = arena.alloc_array<TraceEntry>(a, count);
 
-    // Point straight into the metadata log's circular buffer instead of
-    // copying.  These pointers stay valid until the publish stage releases
-    // this metadata, which is after every read below.  A buffer wrap makes
-    // the contiguous view unavailable and falls back to an arena copy.
+    // The ops keep their tensor metadata in the arena, beside their other
+    // arrays.  A published region lives as long as the arena.  Activation,
+    // the region cache and the store read its ops after the publish stage
+    // releases this run of the metadata log.  The foreground then writes new
+    // records over the run.  The build copies the run, and no op points into
+    // the log.  Each read below reads the copy.
     TensorMeta* meta_base = nullptr;
     if (first_meta != UINT32_MAX) {
-        uint32_t total_metas = max_meta_end - first_meta;
-        meta_base = meta_log.get()->try_contiguous(first_meta, total_metas);
-        if (!meta_base) [[unlikely]] {
-            meta_base = arena.alloc_array<TensorMeta>(a, total_metas);
-            for (uint32_t meta_idx = 0; meta_idx < total_metas; meta_idx++)
-                meta_base[meta_idx] = meta_log.get()->at(first_meta + meta_idx);
-        }
+        const uint32_t total_metas = max_meta_end - first_meta;
+        meta_base = arena.alloc_array<TensorMeta>(a, total_metas);
+        meta_log.get()->copy_run(first_meta, total_metas, meta_base);
     }
 
     // One auxiliary block holds scalars, trace indices and slot ids.

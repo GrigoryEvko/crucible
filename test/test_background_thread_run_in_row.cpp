@@ -17,7 +17,8 @@
 //   ..._drain.cpp                       the drain loop behind run_in_row
 //   ..._publish.cpp                     the divergence reset and the
 //                                       publish stage
-//   ..._meta.cpp                        the release of the metadata log
+//   ..._meta.cpp                        the release of the metadata log, and
+//                                       the copy of its records
 
 #include "background_thread_run_in_row.h"
 
@@ -184,7 +185,8 @@ int main() {
     test_overflow_build_leaves_tail();
     test_publish_stage_releases_in_order();
     test_pipeline_releases_after_overflow();
+    test_built_graph_owns_its_metadata();
 
-    std::printf("test_background_thread_run_in_row: 14 groups, all passed\n");
+    std::printf("test_background_thread_run_in_row: 15 groups, all passed\n");
     return 0;
 }

@@ -68,4 +68,8 @@ void test_divergence_drops_a_half_finished_alignment();
 void test_record_op_claims_the_producer_role();
 void test_producer_surface_takes_the_claim_context();
 
+// A region keeps the tensor metadata that the foreground recorded, after the
+// foreground writes over the metadata log (test_vigil_metadata.cpp).
+void test_region_keeps_its_metadata_after_the_log_wraps();
+
 }  // namespace test_vigil
