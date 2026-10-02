@@ -3178,8 +3178,10 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
 
 // The operator structs, paired with their table index, for register.cpp to
 // expand. A type cannot be spelled as data, so this is the one place the
-// generator emits tokens rather than values.
-#define CRUCIBLE_ATEN_OP_LIST(X) \
+// generator emits tokens rather than values. Each part macro holds at most
+// 128 entries. The parser of the guard tools reads one long macro
+// body slowly, and it reads each part quickly.
+#define CRUCIBLE_ATEN_OP_LIST_0(X) \
     X(0, _adaptive_avg_pool2d_backward) \
     X(1, _adaptive_avg_pool2d_backward_out) \
     X(2, _adaptive_avg_pool2d) \
@@ -3307,7 +3309,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(124, _dyn_quant_pack_4bit_weight) \
     X(125, _efficient_attention_backward) \
     X(126, _efficient_attention_forward) \
-    X(127, _efficientzerotensor) \
+    X(127, _efficientzerotensor)
+
+#define CRUCIBLE_ATEN_OP_LIST_1(X) \
     X(128, _efficientzerotensor_out) \
     X(129, _embedding_bag_backward) \
     X(130, _embedding_bag_dense_backward) \
@@ -3435,7 +3439,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(252, _foreach_erf) \
     X(253, _foreach_erf_) \
     X(254, _foreach_erf_out) \
-    X(255, _foreach_erfc) \
+    X(255, _foreach_erfc)
+
+#define CRUCIBLE_ATEN_OP_LIST_2(X) \
     X(256, _foreach_erfc_) \
     X(257, _foreach_erfc_out) \
     X(258, _foreach_exp) \
@@ -3563,7 +3569,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(380, _foreach_tanh) \
     X(381, _foreach_tanh_) \
     X(382, _foreach_tanh_out) \
-    X(383, _foreach_trunc) \
+    X(383, _foreach_trunc)
+
+#define CRUCIBLE_ATEN_OP_LIST_3(X) \
     X(384, _foreach_trunc_) \
     X(385, _foreach_trunc_out) \
     X(386, _foreach_zero_) \
@@ -3691,7 +3699,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(508, _native_multi_head_attention_out) \
     X(509, _neg_view_copy) \
     X(510, _neg_view_copy_out) \
-    X(511, _neg_view) \
+    X(511, _neg_view)
+
+#define CRUCIBLE_ATEN_OP_LIST_4(X) \
     X(512, _nested_compute_contiguous_strides_offsets) \
     X(513, _nested_from_padded_and_nested_example) \
     X(514, _nested_from_padded_and_nested_example_out) \
@@ -3819,7 +3829,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(636, _sparse_addmm_out) \
     X(637, _sparse_broadcast_to_copy) \
     X(638, _sparse_broadcast_to_copy_out) \
-    X(639, _sparse_broadcast_to) \
+    X(639, _sparse_broadcast_to)
+
+#define CRUCIBLE_ATEN_OP_LIST_5(X) \
     X(640, _sparse_bsc_tensor_unsafe) \
     X(641, _sparse_bsr_tensor_unsafe) \
     X(642, _sparse_compressed_tensor_unsafe) \
@@ -3947,7 +3959,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(764, _unsafe_masked_index_put_accumulate) \
     X(765, _unsafe_view) \
     X(766, _unsafe_view_out) \
-    X(767, _upsample_bicubic2d_aa_backward_grad_input) \
+    X(767, _upsample_bicubic2d_aa_backward_grad_input)
+
+#define CRUCIBLE_ATEN_OP_LIST_6(X) \
     X(768, _upsample_bicubic2d_aa_backward) \
     X(769, _upsample_bicubic2d_aa_vec) \
     X(770, _upsample_bicubic2d_aa_out) \
@@ -4075,7 +4089,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(892, allclose) \
     X(893, alpha_dropout) \
     X(894, alpha_dropout_) \
-    X(895, amax) \
+    X(895, amax)
+
+#define CRUCIBLE_ATEN_OP_LIST_7(X) \
     X(896, amax_out) \
     X(897, amin) \
     X(898, amin_out) \
@@ -4203,7 +4219,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(1020, binary_cross_entropy) \
     X(1021, binary_cross_entropy_out) \
     X(1022, binary_cross_entropy_with_logits) \
-    X(1023, binary_cross_entropy_with_logits_out) \
+    X(1023, binary_cross_entropy_with_logits_out)
+
+#define CRUCIBLE_ATEN_OP_LIST_8(X) \
     X(1024, bincount) \
     X(1025, bincount_out) \
     X(1026, binomial) \
@@ -4331,7 +4349,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(1148, column_stack_out) \
     X(1149, combinations) \
     X(1150, complex) \
-    X(1151, complex_out) \
+    X(1151, complex_out)
+
+#define CRUCIBLE_ATEN_OP_LIST_9(X) \
     X(1152, concat) \
     X(1153, concat_out) \
     X(1154, concatenate) \
@@ -4459,7 +4479,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(1276, diagonal_copy_out) \
     X(1277, diagonal) \
     X(1278, diagonal_scatter) \
-    X(1279, diagonal_scatter_out) \
+    X(1279, diagonal_scatter_out)
+
+#define CRUCIBLE_ATEN_OP_LIST_10(X) \
     X(1280, diff) \
     X(1281, diff_out) \
     X(1282, digamma_) \
@@ -4587,7 +4609,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(1404, fft_fft2) \
     X(1405, fft_fft2_out) \
     X(1406, fft_fft) \
-    X(1407, fft_fft_out) \
+    X(1407, fft_fft_out)
+
+#define CRUCIBLE_ATEN_OP_LIST_11(X) \
     X(1408, fft_fftfreq) \
     X(1409, fft_fftfreq_out) \
     X(1410, fft_fftn) \
@@ -4715,7 +4739,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(1532, geqrf) \
     X(1533, ger) \
     X(1534, ger_out) \
-    X(1535, get_device) \
+    X(1535, get_device)
+
+#define CRUCIBLE_ATEN_OP_LIST_12(X) \
     X(1536, glu_backward_jvp) \
     X(1537, glu_backward_jvp_out) \
     X(1538, glu_backward_grad_input) \
@@ -4843,7 +4869,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(1660, index_fill_int_Scalar) \
     X(1661, index_fill__int_Tensor) \
     X(1662, index_fill_int_Tensor) \
-    X(1663, index_fill_int_Scalar_out) \
+    X(1663, index_fill_int_Scalar_out)
+
+#define CRUCIBLE_ATEN_OP_LIST_13(X) \
     X(1664, index_fill_int_Tensor_out) \
     X(1665, index_Tensor) \
     X(1666, index_Tensor_out) \
@@ -4971,7 +4999,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(1788, linalg_cross_out) \
     X(1789, linalg_det) \
     X(1790, linalg_det_out) \
-    X(1791, linalg_diagonal) \
+    X(1791, linalg_diagonal)
+
+#define CRUCIBLE_ATEN_OP_LIST_14(X) \
     X(1792, linalg_eig) \
     X(1793, linalg_eig_out) \
     X(1794, linalg_eigh) \
@@ -5099,7 +5129,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(1916, logaddexp2_out) \
     X(1917, logaddexp2) \
     X(1918, logaddexp_out) \
-    X(1919, logaddexp) \
+    X(1919, logaddexp)
+
+#define CRUCIBLE_ATEN_OP_LIST_15(X) \
     X(1920, logcumsumexp) \
     X(1921, logcumsumexp_out) \
     X(1922, logdet) \
@@ -5227,7 +5259,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(2044, miopen_convolution_add_relu) \
     X(2045, miopen_convolution) \
     X(2046, miopen_convolution_out) \
-    X(2047, miopen_convolution_relu) \
+    X(2047, miopen_convolution_relu)
+
+#define CRUCIBLE_ATEN_OP_LIST_16(X) \
     X(2048, miopen_convolution_transpose) \
     X(2049, miopen_convolution_transpose_out) \
     X(2050, miopen_ctc_loss) \
@@ -5355,7 +5389,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(2172, native_group_norm_out) \
     X(2173, native_layer_norm_backward) \
     X(2174, native_layer_norm_backward_out) \
-    X(2175, native_layer_norm) \
+    X(2175, native_layer_norm)
+
+#define CRUCIBLE_ATEN_OP_LIST_17(X) \
     X(2176, native_layer_norm_out) \
     X(2177, native_norm) \
     X(2178, native_norm_ScalarOpt_dim_dtype) \
@@ -5483,7 +5519,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(2300, pow_Tensor_Scalar) \
     X(2301, pow__Scalar) \
     X(2302, pow__Tensor) \
-    X(2303, prelu) \
+    X(2303, prelu)
+
+#define CRUCIBLE_ATEN_OP_LIST_18(X) \
     X(2304, prod) \
     X(2305, prod_dim_int) \
     X(2306, prod_int_out) \
@@ -5611,7 +5649,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(2428, remainder_Tensor_out) \
     X(2429, remainder_Tensor) \
     X(2430, remainder__Tensor) \
-    X(2431, remainder_Scalar_Tensor) \
+    X(2431, remainder_Scalar_Tensor)
+
+#define CRUCIBLE_ATEN_OP_LIST_19(X) \
     X(2432, remainder_Scalar_Tensor_out) \
     X(2433, renorm_out) \
     X(2434, renorm) \
@@ -5739,7 +5779,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(2556, set__source_Tensor_storage_offset) \
     X(2557, set__source_Tensor) \
     X(2558, set_) \
-    X(2559, set_source_Storage_out) \
+    X(2559, set_source_Storage_out)
+
+#define CRUCIBLE_ATEN_OP_LIST_20(X) \
     X(2560, set_source_Storage) \
     X(2561, set_source_Storage_storage_offset_out) \
     X(2562, set_source_Storage_storage_offset) \
@@ -5867,7 +5909,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(2684, special_chebyshev_polynomial_u_out) \
     X(2685, special_chebyshev_polynomial_u_x_scalar_out) \
     X(2686, special_chebyshev_polynomial_u_n_scalar_out) \
-    X(2687, special_chebyshev_polynomial_v) \
+    X(2687, special_chebyshev_polynomial_v)
+
+#define CRUCIBLE_ATEN_OP_LIST_21(X) \
     X(2688, special_chebyshev_polynomial_v_x_scalar) \
     X(2689, special_chebyshev_polynomial_v_n_scalar) \
     X(2690, special_chebyshev_polynomial_v_out) \
@@ -5995,7 +6039,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(2812, special_sinc) \
     X(2813, special_sinc_out) \
     X(2814, special_softmax) \
-    X(2815, special_spherical_bessel_j0) \
+    X(2815, special_spherical_bessel_j0)
+
+#define CRUCIBLE_ATEN_OP_LIST_22(X) \
     X(2816, special_spherical_bessel_j0_out) \
     X(2817, special_xlog1py) \
     X(2818, special_xlog1py_self_scalar) \
@@ -6123,7 +6169,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(2940, to_dtype_layout) \
     X(2941, to_device) \
     X(2942, to_dtype) \
-    X(2943, to_other) \
+    X(2943, to_other)
+
+#define CRUCIBLE_ATEN_OP_LIST_23(X) \
     X(2944, to_padded_tensor) \
     X(2945, to_padded_tensor_out) \
     X(2946, to_sparse_bsc) \
@@ -6251,7 +6299,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(3068, view_as_complex_copy) \
     X(3069, view_as_complex_copy_out) \
     X(3070, view_as_complex) \
-    X(3071, view_as) \
+    X(3071, view_as)
+
+#define CRUCIBLE_ATEN_OP_LIST_24(X) \
     X(3072, view_as_real_copy) \
     X(3073, view_as_real_copy_out) \
     X(3074, view_as_real) \
@@ -6290,5 +6340,32 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(3107, zeros_like_out) \
     X(3108, zeros) \
     X(3109, zeros_out)
+
+#define CRUCIBLE_ATEN_OP_LIST(X) \
+    CRUCIBLE_ATEN_OP_LIST_0(X) \
+    CRUCIBLE_ATEN_OP_LIST_1(X) \
+    CRUCIBLE_ATEN_OP_LIST_2(X) \
+    CRUCIBLE_ATEN_OP_LIST_3(X) \
+    CRUCIBLE_ATEN_OP_LIST_4(X) \
+    CRUCIBLE_ATEN_OP_LIST_5(X) \
+    CRUCIBLE_ATEN_OP_LIST_6(X) \
+    CRUCIBLE_ATEN_OP_LIST_7(X) \
+    CRUCIBLE_ATEN_OP_LIST_8(X) \
+    CRUCIBLE_ATEN_OP_LIST_9(X) \
+    CRUCIBLE_ATEN_OP_LIST_10(X) \
+    CRUCIBLE_ATEN_OP_LIST_11(X) \
+    CRUCIBLE_ATEN_OP_LIST_12(X) \
+    CRUCIBLE_ATEN_OP_LIST_13(X) \
+    CRUCIBLE_ATEN_OP_LIST_14(X) \
+    CRUCIBLE_ATEN_OP_LIST_15(X) \
+    CRUCIBLE_ATEN_OP_LIST_16(X) \
+    CRUCIBLE_ATEN_OP_LIST_17(X) \
+    CRUCIBLE_ATEN_OP_LIST_18(X) \
+    CRUCIBLE_ATEN_OP_LIST_19(X) \
+    CRUCIBLE_ATEN_OP_LIST_20(X) \
+    CRUCIBLE_ATEN_OP_LIST_21(X) \
+    CRUCIBLE_ATEN_OP_LIST_22(X) \
+    CRUCIBLE_ATEN_OP_LIST_23(X) \
+    CRUCIBLE_ATEN_OP_LIST_24(X)
 
 }  // namespace crucible::vessel
