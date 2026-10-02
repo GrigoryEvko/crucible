@@ -440,6 +440,10 @@ def run(build: Path, log: Path | None, ctest: str, warnings_dir: Path | None, sh
         return 0
     findings = evaluate(run_log.times, places, run_log.launched, ledger, budget, kind, display(ledger_path))
     code = check_report.emit(findings, CHECK, warnings_dir)
+    # A run with no test, such as `ctest --show-only=json-v1`, prints nothing.  ctest 4.3 runs this command after
+    # that run too, and it writes the output of the command after the JSON on its standard output.
+    if not run_log.times and not findings:
+        return code
     judged = [item for item in run_log.times if item.name not in run_log.launched]
     slowest = max(judged, key=lambda item: item.seconds) if judged else None
     print(f"check-test-time: {len(judged)} tests without the launcher"
@@ -557,6 +561,24 @@ def self_test_cases(cmake: str, ctest: str) -> int:
         expect("read_log finds the tests of the launcher from their command", run_log.launched == {"launched"})
         (root / "empty.log").write_text("Start testing: x\nEnd testing: x\n", encoding="utf-8")
         expect("a log with no test gives no time", read_log(root / "empty.log").times == [])
+        quiet_build, quiet_ledgers = root / "quiet", root / "quiet-ledgers"
+        quiet_build.mkdir()
+        quiet_ledgers.mkdir()
+        (quiet_build / cost_meter.KIND_FILE).write_text(f"{kind}\n", encoding="utf-8")
+        (quiet_ledgers / LEDGER_NAME).write_text("# kind | test | value | reason\n", encoding="utf-8")
+        earlier_ledgers = os.environ.get(LEDGERS_ENV)
+        os.environ[LEDGERS_ENV] = str(quiet_ledgers)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as printed, \
+                    contextlib.redirect_stderr(io.StringIO()) as complained:
+                status = run(quiet_build, root / "empty.log", ctest, None, False)
+        finally:
+            if earlier_ledgers is None:
+                os.environ.pop(LEDGERS_ENV, None)
+            else:
+                os.environ[LEDGERS_ENV] = earlier_ledgers
+        expect("a run with no test, such as `ctest --show-only=json-v1` under ctest 4.3, prints nothing",
+               status == 0 and printed.getvalue() == "" and complained.getvalue() == "")
         try:
             read_log(root / "missing.log")
             expect("read_log refuses a missing log", False)
