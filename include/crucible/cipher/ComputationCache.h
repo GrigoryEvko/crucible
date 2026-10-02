@@ -23,8 +23,6 @@
 #include <foundation/reflect/Hash.h>
 
 #include <atomic>
-#include <bit>
-#include <chrono>
 #include <cstdint>
 #include <meta>
 #include <string_view>
@@ -184,86 +182,7 @@ void insert_computation_cache_in_row(CompiledBody* body) noexcept {
     detail::publish_slot<FnPtr, Row, Args...>(body);
 }
 
-// This evicts nothing. A slot lives as long as the program does, and
+// Nothing evicts a slot. A slot lives as long as the program does, and
 // there is no registry through which to reach one.
-
-inline void drain_computation_cache([[maybe_unused]] std::chrono::seconds max_age) noexcept {}
-
-namespace detail {
-
-// The probe functions of computation_cache_smoke_test, which the check
-// file of this header also keys.  Each signature differs, so each probe
-// keys a slot of its own.
-inline void p_unary(int) noexcept {}
-inline void p_binary(int, double) noexcept {}
-inline void p_void() noexcept {}
-inline void p_throwing(int) {}
-inline void p_noexcept(int) noexcept {}
-
-}  // namespace detail
-
-// This runs once per process and refuses to run twice. The slots it
-// reads are program-lifetime globals, so the checks that a lookup
-// misses before its insert hold on the first call only. A second call
-// would find those slots already full, so it reports failure rather
-// than let a miss quietly become a hit.
-
-inline bool computation_cache_smoke_test() noexcept {
-    using detail::p_binary;
-    using detail::p_noexcept;
-    using detail::p_throwing;
-    using detail::p_unary;
-    using detail::p_void;
-
-    static std::atomic<int> call_counter{0};
-    if (call_counter.fetch_add(1, std::memory_order_relaxed) > 0) {
-        return false;
-    }
-
-    // These addresses are never dereferenced. The cache holds a
-    // pointer opaquely, so all the test needs is distinct non-null
-    // bit patterns.
-    auto* body_a = std::bit_cast<CompiledBody*>(static_cast<std::uintptr_t>(0x1));
-    auto* body_b = std::bit_cast<CompiledBody*>(static_cast<std::uintptr_t>(0x2));
-
-    bool ok = true;
-
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, int>() == nullptr);
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, float>() == nullptr);
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_binary, int, double>() == nullptr);
-
-    ::crucible::cipher::insert_computation_cache<&p_unary, int>(body_a);
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, int>() == body_a);
-
-    ::crucible::cipher::insert_computation_cache<&p_unary, int>(body_b);
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, int>() == body_a);
-
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, float>() == nullptr);
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_binary, int, double>() == nullptr);
-
-    ::crucible::cipher::drain_computation_cache(std::chrono::seconds{0});
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, int>() == body_a);
-
-    // An empty argument pack must still reach a slot of its own, and
-    // must still instantiate as a template rather than collapse onto
-    // a plain function.
-    auto* body_c = std::bit_cast<CompiledBody*>(static_cast<std::uintptr_t>(0x3));
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_void>() == nullptr);
-    ::crucible::cipher::insert_computation_cache<&p_void>(body_c);
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_void>() == body_c);
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, int>() == body_a);
-
-    // Only the throwing slot is filled. The noexcept one must still
-    // miss, because the two function-pointer types are distinct and
-    // must not be folded onto one symbol.
-    auto* body_d = std::bit_cast<CompiledBody*>(static_cast<std::uintptr_t>(0x4));
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_throwing, int>() == nullptr);
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_noexcept, int>() == nullptr);
-    ::crucible::cipher::insert_computation_cache<&p_throwing, int>(body_d);
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_throwing, int>() == body_d);
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_noexcept, int>() == nullptr);
-
-    return ok;
-}
 
 }  // namespace crucible::cipher

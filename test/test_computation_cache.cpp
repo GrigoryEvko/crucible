@@ -1,7 +1,7 @@
-// The cache header ships its own smoke test, which this file calls
-// first.  Every test below it uses function and argument tuples the
-// smoke test never touches, so the two sets of slots are independent
-// and running them in sequence cannot corrupt each other.
+// The smoke test below runs first.  Every test after it uses function
+// and argument tuples the smoke test never touches, so the two sets of
+// slots are independent and running them in sequence cannot corrupt
+// each other.
 //
 // Several tests here do depend on each other's slot state, and each
 // says so where it does.
@@ -93,6 +93,14 @@ inline void cr_fn_t3(int) noexcept {}
 // first-writer test starts from a slot known to be empty.
 inline int cr_contention_fn(int) noexcept { return 0; }
 
+// The probe functions of the smoke test.  Each signature differs, so
+// each probe keys a slot of its own.
+inline void p_unary(int) noexcept {}
+inline void p_binary(int, double) noexcept {}
+inline void p_void() noexcept {}
+inline void p_throwing(int) {}
+inline void p_noexcept(int) noexcept {}
+
 }  // namespace test_computation_cache_functions
 
 namespace {
@@ -104,6 +112,57 @@ using namespace test_computation_cache_functions;
 
 cipher::CompiledBody* make_stub(std::uintptr_t v) noexcept { return std::bit_cast<cipher::CompiledBody*>(v); }
 
+// This runs once per process and refuses to run twice. The slots it
+// reads are program-lifetime globals, so the checks that a lookup
+// misses before its insert hold on the first call only. A second call
+// would find those slots already full, so it reports failure rather
+// than let a miss quietly become a hit.
+bool computation_cache_smoke_test() noexcept {
+    static std::atomic<int> call_counter{0};
+    if (call_counter.fetch_add(1, std::memory_order_relaxed) > 0) {
+        return false;
+    }
+
+    auto* body_a = make_stub(0x1);
+    auto* body_b = make_stub(0x2);
+
+    bool ok = true;
+
+    ok = ok && (cipher::lookup_computation_cache<&p_unary, int>() == nullptr);
+    ok = ok && (cipher::lookup_computation_cache<&p_unary, float>() == nullptr);
+    ok = ok && (cipher::lookup_computation_cache<&p_binary, int, double>() == nullptr);
+
+    cipher::insert_computation_cache<&p_unary, int>(body_a);
+    ok = ok && (cipher::lookup_computation_cache<&p_unary, int>() == body_a);
+
+    cipher::insert_computation_cache<&p_unary, int>(body_b);
+    ok = ok && (cipher::lookup_computation_cache<&p_unary, int>() == body_a);
+
+    ok = ok && (cipher::lookup_computation_cache<&p_unary, float>() == nullptr);
+    ok = ok && (cipher::lookup_computation_cache<&p_binary, int, double>() == nullptr);
+
+    // An empty argument pack must still reach a slot of its own, and
+    // must still instantiate as a template rather than collapse onto
+    // a plain function.
+    auto* body_c = make_stub(0x3);
+    ok = ok && (cipher::lookup_computation_cache<&p_void>() == nullptr);
+    cipher::insert_computation_cache<&p_void>(body_c);
+    ok = ok && (cipher::lookup_computation_cache<&p_void>() == body_c);
+    ok = ok && (cipher::lookup_computation_cache<&p_unary, int>() == body_a);
+
+    // Only the throwing slot is filled. The noexcept one must still
+    // miss, because the two function-pointer types are distinct and
+    // must not be folded onto one symbol.
+    auto* body_d = make_stub(0x4);
+    ok = ok && (cipher::lookup_computation_cache<&p_throwing, int>() == nullptr);
+    ok = ok && (cipher::lookup_computation_cache<&p_noexcept, int>() == nullptr);
+    cipher::insert_computation_cache<&p_throwing, int>(body_d);
+    ok = ok && (cipher::lookup_computation_cache<&p_throwing, int>() == body_d);
+    ok = ok && (cipher::lookup_computation_cache<&p_noexcept, int>() == nullptr);
+
+    return ok;
+}
+
 }  // namespace
 
 int main() {
@@ -113,10 +172,10 @@ int main() {
     // thereafter.  All three calls live in one body on purpose: as
     // separate sub-tests a reordering would make the second call the
     // first invocation and quietly swap the expected results.
-    run_test("header_smoke_test_then_guard_rejects_reinvocation", [] {
-        EXPECT_TRUE(cipher::computation_cache_smoke_test() == true);
-        EXPECT_TRUE(cipher::computation_cache_smoke_test() == false);
-        EXPECT_TRUE(cipher::computation_cache_smoke_test() == false);
+    run_test("smoke_test_then_guard_rejects_reinvocation", [] {
+        EXPECT_TRUE(computation_cache_smoke_test() == true);
+        EXPECT_TRUE(computation_cache_smoke_test() == false);
+        EXPECT_TRUE(computation_cache_smoke_test() == false);
     });
 
     run_test("lookup_before_insert_returns_nullptr", [] {
@@ -185,16 +244,6 @@ int main() {
         constexpr std::uint64_t k_e_zeta_void = cipher::computation_cache_key<&hd_fn_alpha, int>;
         EXPECT_TRUE(k_d != 0);
         EXPECT_TRUE(k_d != k_e_zeta_void);
-    });
-
-    run_test("drain_is_phase5_stub_noop", [] {
-        auto* original_a = cipher::lookup_computation_cache<&test_fn_a, int>();
-        EXPECT_TRUE(original_a != nullptr);
-
-        cipher::drain_computation_cache(std::chrono::seconds{0});
-
-        // Draining leaves the slot exactly as it was.
-        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_a, int>() == original_a);
     });
 
     run_test("hash_distribution_sanity", [] {

@@ -10,7 +10,6 @@
 # fills again.
 
 include/crucible/cipher/ComputationCache.h | crucible::cipher::detail::compiled_body_slot | a template variable, so the marker cannot reach it. A lookup in a second library misses, and that library fills its own slot of the cache
-include/crucible/cipher/ComputationCache.h | crucible::cipher::computation_cache_smoke_test()::call_counter | the smoke test runs at most one time in each library, and each run reads the slots of its own library
 
 include/crucible/ledger/probes/CacheTier.h | crucible::ledger::probes::cache_tier_detail::g_sweep_memo | a cache of one measurement: a second library measures again and stores its own result
 include/crucible/ledger/probes/CacheTier.h | crucible::ledger::probes::cache_tier_detail::g_numa_memo | a cache of one measurement: a second library measures again and stores its own result

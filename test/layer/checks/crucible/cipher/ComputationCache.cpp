@@ -6,6 +6,13 @@ namespace crucible::cipher {
 
 namespace detail::computation_cache_self_test {
 
+// The probe functions that the checks below key.  Each signature differs,
+// so each probe keys a slot of its own.
+inline void p_unary(int) noexcept {}
+inline void p_binary(int, double) noexcept {}
+inline void p_void() noexcept {}
+inline void p_throwing(int) {}
+inline void p_noexcept(int) noexcept {}
 inline int p_returning(int) noexcept { return 0; }
 
 static_assert(::crucible::cipher::computation_cache_key<&p_unary, int>
