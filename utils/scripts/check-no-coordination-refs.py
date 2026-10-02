@@ -48,7 +48,8 @@ THE ENGINE
       * Every other file (shell, CMake, YAML, allowlists, JSON, Markdown) has
         no parser here, and its text is read line by line.
     The store of utils/scripts/preprocessed.py keeps the references of each
-    file under a hash of its bytes, so a warm run parses no file.
+    file under a hash of its bytes, so a warm run parses no file.  The C++
+    files that the store does not hold go to worker processes, at most 16.
 
 EXIT STATUS
     0  clean
@@ -61,6 +62,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
 import re
 import subprocess
 import sys
@@ -73,7 +75,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cache_dir  # noqa: E402
 import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
-from preprocessed import text_results  # noqa: E402
+from preprocessed import map_batches, text_results  # noqa: E402
 
 # The scan reads every tracked file, except the paths below.  This file plants
 # references in its self-test.  The notes under misc/ are out of scope, and the
@@ -81,33 +83,44 @@ from preprocessed import text_results  # noqa: E402
 SKIPPED_FILES = frozenset({"utils/scripts/check-no-coordination-refs.py"})
 SKIPPED_DIRS = ("misc/",)
 
-# One branch for each family.  The first lookbehind on the task branch refuses
-# an HTML entity (&#123;), the shell argument count ($#), a printf flag (%#08x),
-# a regex bracket ([#0-9]), an escape (\#) and token pasting (##).  The second
-# refuses the pull request of an upstream project (PR #1367).
+# One branch for each family, and one for each word of the AUDIT family and
+# of the "at A9" family.  Each branch starts with a literal character or a
+# character class, so the regex engine skips each position whose character
+# no branch can start with.  The word boundary or the lookbehind of a branch
+# follows its first character: `F(?<!\wF)` is `\bF`.  This form scans a text
+# seven times faster than a branch that starts with an assertion, and it
+# gives the same verdict on each line of the tree.  The first lookbehind on
+# the task branch refuses an HTML entity (&#123;), the shell argument count
+# ($#), a printf flag (%#08x), a regex bracket ([#0-9]), an escape (\#) and
+# token pasting (##).  The second refuses the pull request of an upstream
+# project (PR #1367).
 BRANCHES = (
-    r"(?<![&\w$%{\[\\#])(?<!\bPR )#[0-9]{2,4}\b",
-    r"\bFIXY-(?:U|V|FOUND)-[0-9]",
-    r"\bFIXY-[0-9]",
-    r"\bFOUND[-_](?:[A-Z][0-9]*|[0-9]+)\b",
-    r"\bGAPS[-_][0-9]",
-    r"\bSEPLOG-[A-Z]?[0-9]",
-    r"\bCONTRACT-[0-9]",
-    r"\bMETX-[A-Z0-9]",
-    r"\bWRAP-(?:\*|[0-9]+\b|[A-Z][A-Za-z]*(?:-[A-Za-z]+)*-[0-9]+)",
-    r"\b(?:AUDIT|audit)-[A-Z]\b",
-    r"\b[A-Z][0-9]{2}-AUDIT\b",
-    r"\bBC-[0-9]+\b",
-    r"\bPERF-[0-9]",
-    r"\bCR-[0-9]{2}\b",
-    r"\bfixy-[A-Z]+[0-9]*-(?:[0-9]+\b|\*|X{3}\b)",
-    r"\bfix-[0-9]+\b",
-    r"(?<![\w-])[UV]-[0-9]{3}[a-z]?\b",
-    r"(?<![\w.\-/])A[0-9]{1,2}(?:\.(?:[0-9]+|x))+(?![\w\-])",
-    r"\bStage\s+[A-D](?:[0-9]{1,2}(?:\.[0-9]+)*)?\b",
-    r"\b(?:at|task|tasks|since|until)\s+A[0-9]{1,2}\b",
-    r"\bPhase\s+[A-Z][0-9]+\b",
-    r"\bAgent\s+[0-9]+\b",
+    r"#(?<![&\w$%{\[\\#]#)(?<!\bPR #)[0-9]{2,4}\b",
+    r"F(?<!\wF)IXY-(?:U|V|FOUND)-[0-9]",
+    r"F(?<!\wF)IXY-[0-9]",
+    r"F(?<!\wF)OUND[-_](?:[A-Z][0-9]*|[0-9]+)\b",
+    r"G(?<!\wG)APS[-_][0-9]",
+    r"S(?<!\wS)EPLOG-[A-Z]?[0-9]",
+    r"C(?<!\wC)ONTRACT-[0-9]",
+    r"M(?<!\wM)ETX-[A-Z0-9]",
+    r"W(?<!\wW)RAP-(?:\*|[0-9]+\b|[A-Z][A-Za-z]*(?:-[A-Za-z]+)*-[0-9]+)",
+    r"A(?<!\wA)UDIT-[A-Z]\b",
+    r"a(?<!\wa)udit-[A-Z]\b",
+    r"[A-Z](?<!\w[A-Z])[0-9]{2}-AUDIT\b",
+    r"B(?<!\wB)C-[0-9]+\b",
+    r"P(?<!\wP)ERF-[0-9]",
+    r"C(?<!\wC)R-[0-9]{2}\b",
+    r"f(?<!\wf)ixy-[A-Z]+[0-9]*-(?:[0-9]+\b|\*|X{3}\b)",
+    r"f(?<!\wf)ix-[0-9]+\b",
+    r"[UV](?<![\w-][UV])-[0-9]{3}[a-z]?\b",
+    r"A(?<![\w.\-/]A)[0-9]{1,2}(?:\.(?:[0-9]+|x))+(?![\w\-])",
+    r"S(?<!\wS)tage\s+[A-D](?:[0-9]{1,2}(?:\.[0-9]+)*)?\b",
+    r"a(?<!\wa)t\s+A[0-9]{1,2}\b",
+    r"t(?<!\wt)asks?\s+A[0-9]{1,2}\b",
+    r"s(?<!\ws)ince\s+A[0-9]{1,2}\b",
+    r"u(?<!\wu)ntil\s+A[0-9]{1,2}\b",
+    r"P(?<!\wP)hase\s+[A-Z][0-9]+\b",
+    r"A(?<!\wA)gent\s+[0-9]+\b",
 )
 REFERENCE = re.compile("|".join(BRANCHES))
 
@@ -232,17 +245,52 @@ def result_key(kind: str, data: bytes) -> str:
     return hashlib.sha256(kind.encode() + b"\0" + data).hexdigest()
 
 
+def file_references(items: list[tuple[str, str, str]]) -> list[tuple[str, list[list]]]:
+    """Read files, and return the result key and the references of each file, in input order.
+
+    preprocessed.map_batches runs this function in a worker process.  The
+    C++ files of the batch go to one parse, which comes from the tree cache
+    of tsast when the cache holds it.
+
+    Complexity: linear in the bytes of each file and in the nodes of each parse.
+
+    Args:
+        items: (absolute path, repo-relative path, kind) for each file, where
+            the kind is "cpp", "python" or "text"
+
+    Returns:
+        (result key, references) for each file
+
+    Raises:
+        tsast.ParseError: If a C++ file that UNPARSEABLE does not list reports an error
+        Unreadable: If a Python file does not tokenize
+    """
+    found: dict[int, tuple[str, list[list]]] = {}
+    cpp = [index for index, (_path, _relative, kind) in enumerate(items) if kind == "cpp"]
+    for index, tree in zip(cpp, tsast.parse([Path(items[index][0]) for index in cpp]), strict=True):
+        found[index] = (result_key("cpp", tree.source), references(cpp_prose(tree)))
+    for index, (path, relative, kind) in enumerate(items):
+        if kind == "cpp":
+            continue
+        data = Path(path).read_bytes()
+        lines = python_prose(Path(relative), data) if kind == "python" else text_lines(data)
+        found[index] = (result_key(kind, data), references(lines))
+    return [found[index] for index in range(len(items))]
+
+
 def scan(root: Path) -> tuple[int, list[str]]:
     """Report every coordination reference in the prose of the files in scope.
 
     The store of utils/scripts/preprocessed.py keeps the references of each
     file under a hash of its bytes and of the way the scan reads it, and
     under a name that hashes this guard and the parser.  So a warm run reads
-    and hashes each file, and parses none.  A file that the scan cannot read
-    gets no stored result, so each run reports it again.
+    and hashes each file, and parses none.  The files that the store does not
+    hold go to worker processes.  A file that the scan cannot read gets no
+    stored result, so each run reports it again.
 
-    Complexity: O(total bytes in scope) plus one parse of each C++ file that
-    the store does not hold.
+    Complexity: O(total bytes in scope) plus one read of each file that the
+    store does not hold and one parse of each such C++ file, spread over at
+    most 16 workers.
 
     Args:
         root: The repository root
@@ -258,7 +306,7 @@ def scan(root: Path) -> tuple[int, list[str]]:
     targets = [(link, 1, str((root / link).readlink())) for link in sorted(links)]
     hits: list[tuple[Path, int, str]] = [hit for hit in targets if REFERENCE.search(hit[2])]
     results = text_results("no-coordination-refs", Path(__file__), tsast.parser_identity())
-    missed_cpp: list[Path] = []
+    missed: list[tuple[Path, str]] = []
     try:
         for relative in files:
             if relative in links:
@@ -272,19 +320,15 @@ def scan(root: Path) -> tuple[int, list[str]]:
                 kind = "python" if relative.suffix == ".py" else "text"
             stored = None if results is None else results.get(result_key(kind, data))
             if isinstance(stored, list):
-                found = stored
-            elif kind == "cpp":
-                missed_cpp.append(relative)
-                continue
+                hits.extend((relative, line, text) for line, text in stored)
             else:
-                found = references(python_prose(relative, data) if kind == "python" else text_lines(data))
-                if results is not None:
-                    results.put(result_key(kind, data), found)
-            hits.extend((relative, line, text) for line, text in found)
-        for relative, tree in zip(missed_cpp, tsast.parse([root / f for f in missed_cpp]), strict=True):
-            found = references(cpp_prose(tree))
+                missed.append((relative, kind))
+        jobs = min(16, os.cpu_count() or 1)
+        read = map_batches(file_references, [(str(root / relative), str(relative), kind) for relative, kind in missed],
+                           jobs)
+        for (relative, _kind), (key, found) in zip(missed, read, strict=True):
             if results is not None:
-                results.put(result_key("cpp", tree.source), found)
+                results.put(key, found)
             hits.extend((relative, line, text) for line, text in found)
     except tsast.ParseError as exc:
         return 2, [f"check-no-coordination-refs: cannot read a file in scope: {exc}"]
@@ -477,6 +521,18 @@ def self_test() -> int:
         track(root)
         expect("a symbolic link is read as the path of its target, and a linked file under its own name only",
                root, 1, ["CLAUDE.md:1:", "planted-link.md:1:"], ["AGENTS.md"])
+
+        # Many C++ files that the store does not hold go to worker
+        # processes.  A reference in one of them is reported, and a second
+        # run, from the store, gives the same report.
+        for index in range(80):
+            write(root, f"include/fixy/many/Clean{index}.h", f"#pragma once\n// Clean file {index}.\n")
+        write(root, "include/fixy/many/Planted.h", "#pragma once\n// Folded at #147.\n")
+        track(root)
+        expect("a reference in one of many new C++ files is reported from the worker processes", root, 1,
+               ["include/fixy/many/Planted.h:2:"], ["include/fixy/many/Clean"])
+        expect("a second run gives the same report from the store", root, 1,
+               ["include/fixy/many/Planted.h:2:"], ["include/fixy/many/Clean"])
 
     if failures:
         print(f"check-no-coordination-refs --self-test: FAILED, {len(failures)} case(s) did not hold")
