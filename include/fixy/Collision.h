@@ -2179,6 +2179,9 @@ namespace detail {
 template <class = void>
 [[nodiscard]] consteval bool every_ok_member_has_a_verdict_row_() noexcept {
     bool all_rowed = true;
+    // The list of codes is read one time, before the walk.  A call inside
+    // the expansion statement builds the list again for each member.
+    constexpr std::string_view every_live_code = live_rules<>::every_code();
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : std::define_static_array(
@@ -2190,7 +2193,7 @@ template <class = void>
                 // inside a longer one.
                 std::string wanted{id.substr(0, id.size() - 3)};
                 wanted += ' ';
-                if (!::fixy::detail::text_contains(live_rules<>::every_code(), wanted)) all_rowed = false;
+                if (!::fixy::detail::text_contains(every_live_code, wanted)) all_rowed = false;
             }
         }
     }
