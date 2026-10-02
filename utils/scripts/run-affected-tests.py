@@ -756,6 +756,10 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
               f"{counts['notrun'] + counts['disabled']} did not run.")
         print(f"run-affected-tests: {len(skipped)} tests skipped, because {REASON_SAME} "
               f"({state_dir / 'skipped.txt'}).  The script reports no skipped test as passed.")
+        if status != 0 and counts["fail"] == 0 and counts["notrun"] == 0:
+            print(f"run-affected-tests: ctest exited with status {status} after its tests.  A command of "
+                  f"CTestCustom.cmake in the build directory failed, for example check-test-time.py: read its "
+                  f"lines above.")
         save_history(recorder, build_dir)
         return 0 if status == 0 and counts["fail"] == 0 else 1
 

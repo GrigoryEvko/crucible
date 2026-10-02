@@ -9,8 +9,9 @@ in front of each test whose command is an executable target:
 The name of the test is the file name of the executable.  CMake gives a
 launcher no test name, and each executable test of the tree has the name of
 its target.  A test whose command is a script, for example a guard or a
-negative fixture, gets no launcher, and utils/scripts/check-test-time.py
-reads its wall time from the JUnit report of the run.
+negative fixture, gets no launcher.  After the tests of each run, ctest runs
+utils/scripts/check-test-time.py, which reads its wall time from the log of
+the run.
 
 WHAT THE SCRIPT DOES
     It runs the command through utils/scripts/cost_meter.py, with the same

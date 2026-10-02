@@ -5473,16 +5473,15 @@ set_tests_properties(reconfigure_noop_self_test PROPERTIES LABELS "ci_guard")
 # The test launcher (cmake/TestLauncher.cmake) runs in front of each test whose
 # command is an executable target, and it holds the rows test-time and
 # test-memory of utils/scripts/budgets.txt while the test runs.  CMake gives
-# no launcher to a script test, so check-test-time.py reads the wall time of
-# those tests from the JUnit report of a run:
-#     ctest --test-dir BUILD_DIR -j16 --output-junit ctest-junit.xml
-#     python3 utils/scripts/check-test-time.py --build-dir BUILD_DIR
-# The CI build job runs it after the tests of each leg.  A test cannot measure
-# the run that it is part of, so only the two self-tests are tests.
+# no launcher to a script test.  A test cannot measure the run that it is part
+# of.  ctest runs check-test-time.py after the tests of each run, as the
+# command of the CTestCustom.cmake that cmake/TestLauncher.cmake writes.  Only
+# the two self-tests are tests.
 add_test(NAME test_launcher_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 -S ${CMAKE_SOURCE_DIR}/utils/scripts/test-launcher.py --self-test)
 add_test(NAME test_time_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-test-time.py --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-test-time.py --self-test
+          --cmake ${CMAKE_COMMAND} --ctest ${CMAKE_CTEST_COMMAND})
 set_tests_properties(test_launcher_self_test test_time_self_test PROPERTIES LABELS "ci_guard")
 
 # cmake/BuildLauncher.cmake puts utils/scripts/build-launcher.py in front of
