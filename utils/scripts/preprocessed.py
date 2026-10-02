@@ -21,7 +21,8 @@ THE KEY OF A UNIT
     items:
       - The preprocessor command: the compile command with -E in place of its
         output and dependency-file flags, and with -fmacro-prefix-map, which
-        makes each __FILE__ relative to the root
+        makes each __FILE__ relative to the root.  The command has no plugin
+        flag and no -fdebug-prefix-map (THE FLAGS THAT THE PASS DROPS)
       - The directory of the command
       - The path, the size and the mtime of the compiler driver and of cc1plus
       - Each environment variable that changes what the preprocessor reads
@@ -40,6 +41,19 @@ THE KEY OF A UNIT
     through a -D value.  Then the variant goes under a second name that also
     hashes the root, and only the same root reads it.  So a variant under the
     shared name holds no text that depends on the root.
+
+THE FLAGS THAT THE PASS DROPS
+    A flag of these two families holds the root of the work tree, or the
+    stamp that changes with each change of the plugin sources.  The output of
+    -E does not depend on such a flag.  So the run and the name have no such
+    flag, and two work trees and two versions of a plugin share the name of
+    a unit.
+      - The plugin flags (-fplugin=, -fplugin-arg-).  A plugin of the tree
+        registers its pragmas without macro expansion, and GCC registers no
+        such pragma under -E.  The run loads no plugin, so its output cannot
+        depend on a plugin.
+      - -fdebug-prefix-map, which changes the paths in the debug information
+        only.
 
 THE SETTLE PERIOD
     A variant records each file as the preprocessor read it, so a file that
@@ -305,7 +319,10 @@ def record_chunks(record: Record) -> tuple[Chunk, ...]:
 
 
 def preprocess_argv(argv: list[str]) -> list[str]:
-    """Return the compile command with -E, and without its output and dependency-file flags.
+    """Return the compile command with -E, and without its output, dependency-file, plugin and debug-map flags.
+
+    The module text (THE FLAGS THAT THE PASS DROPS) tells why the output of
+    -E does not depend on a plugin flag or on -fdebug-prefix-map.
 
     Args:
         argv: The compile command of one database entry
@@ -330,10 +347,10 @@ def preprocess_argv(argv: list[str]) -> list[str]:
 
 # The flags that preprocess_argv drops, the flags that it drops with the
 # argument after them, and the prefixes of the attached forms of the second
-# set.
+# set, of the plugin flags and of the debug maps.
 _DROPPED_FLAGS = frozenset({"-c", "-MD", "-MMD", "-MP"})
 _DROPPED_WITH_VALUE = frozenset({"-o", "-MF", "-MT", "-MQ"})
-_DROPPED_PREFIXES = ("-o", "-MF", "-MT", "-MQ")
+_DROPPED_PREFIXES = ("-o", "-MF", "-MT", "-MQ", "-fplugin=", "-fplugin-arg-", "-fdebug-prefix-map=")
 
 
 def is_staged_root(directory: Path, include: Path) -> bool:
@@ -1516,6 +1533,8 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     (root / "watch.cpp").write_text('#include "watched.h"\nint watch_only;\n')
     (root / "saved.h").write_text("int seen_old;\n")
     (root / "saving.cpp").write_text('#include "saved.h"\n')
+    (root / "plugged.h").write_text("int plugged_old;\n")
+    (root / "plugged.cpp").write_text('#include "plugged.h"\nint plugged_unit;\n')
     for name in ("duo_a", "duo_b"):
         (root / f"{name}.cpp").write_text(f'#include "shared.h"\nint {name};\n')
     sets = {stage: [f"{stage}{index}.cpp" for index in range(PARALLEL_MISSES + 2)]
@@ -1620,6 +1639,30 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     expect("a second work tree with the same files reads the variants of the first",
            [u.from_cache for u in shared_units] == [True, True]
            and [u.chunks for u in shared_units] == [u.chunks for u in cold])
+
+    # The plugin flags and the debug maps of a work tree hold its root, and a
+    # new stamp comes with each change of the plugin sources.  The plugin
+    # file does not exist, so a run that loaded it would fail.
+    def plugin_flags(base: Path, stamp: str) -> str:
+        """Return the plugin flags and the debug maps that a build directory under ``base`` gives."""
+        return (f"-fplugin={base}/build/quarantine/absent_plugin.so -fplugin-arg-absent_plugin-root={base} "
+                f"-fplugin-arg-absent_plugin-build={base}/build -fplugin-arg-absent_plugin-stamp={stamp} "
+                f"-fdebug-prefix-map={base}=.. -fdebug-prefix-map={base}/build=.")
+
+    plugged_first = list(Store(write_db(root, ["plugged.cpp"], plugin_flags(root, "1")), root).units())
+    expect("the preprocessor run loads no plugin, so a plugin that does not exist fails no unit",
+           plugged_first[0].failure is None and not plugged_first[0].from_cache)
+    plugged_store = Store(write_db(second, ["plugged.cpp"], plugin_flags(second, "2")), second)
+    plugged_second = list(plugged_store.units())
+    expect("a work tree with its own plugin flags, debug maps and stamp reads the variant of the first",
+           plugged_second[0].from_cache and plugged_store.runs == 0
+           and plugged_second[0].chunks == plugged_first[0].chunks)
+    (second / "plugged.h").write_text("int plugged_new;\n")
+    plugged_store = Store(write_db(second, ["plugged.cpp"], plugin_flags(second, "3")), second)
+    plugged_changed = list(plugged_store.units())
+    expect("with the plugin flags out of the name, a changed header still makes the unit stale",
+           not plugged_changed[0].from_cache
+           and "plugged_new" in joined(plugged_store, files_of(plugged_changed[0]).get("plugged.h", ("", []))[1]))
     write_db(root, ["rooted.cpp"], f'-DHOME_PATH=\\"{root}/home\\"')
     rooted_plan = Store(database, root)._plan(json.loads(database.read_text())[0])
     rooted_first = list(Store(database, root).units())
