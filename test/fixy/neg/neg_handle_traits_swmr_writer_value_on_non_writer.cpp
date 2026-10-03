@@ -23,8 +23,9 @@ struct both_swmr_poles {
     [[nodiscard]] int load() const noexcept { return 0; }
 };
 
-// Declared and never used, for the reason given in the sibling fixture.
-using forged = ::fixy::concurrent::swmr_writer_value_t<both_swmr_poles>;
+// The requirement is the one use of the alias, for the reason given in the
+// sibling fixture.
+static_assert(requires { typename ::fixy::concurrent::swmr_writer_value_t<both_swmr_poles>; });
 
 }  // namespace
 

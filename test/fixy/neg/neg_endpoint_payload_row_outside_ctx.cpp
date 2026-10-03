@@ -26,15 +26,14 @@ inline auto channel_root() noexcept {
 using Channel = c::spsc_channel_t<IoWork, 8, decltype(channel_root())>;
 }  // namespace endpoint_row_fixture
 
+// The ring of the channel builds each slot from an empty initializer, and
+// a computation has no such constructor, so no channel of this payload is
+// built.  The handle comes from declval in an unevaluated operand, and the
+// size of the call is its one use, so the refused mint is the only error.
 int main() {
     using namespace endpoint_row_fixture;
-    namespace perm = ::foundation::permissions;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
-    Channel channel{};
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
-    (void)consumer_perm;
-    auto endpoint = c::mint_endpoint<Channel, c::Direction::Producer>(ctx, channel.producer(std::move(producer_perm)));
-    (void)endpoint;
+    static_cast<void>(
+        sizeof(c::mint_endpoint<Channel, c::Direction::Producer>(ctx, std::declval<Channel::ProducerHandle>())));
     return 0;
 }

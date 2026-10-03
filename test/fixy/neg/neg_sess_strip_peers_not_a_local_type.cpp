@@ -11,7 +11,9 @@ namespace s = ::fixy::session;
 
 struct Unknown {};
 
-using Refused = s::strip_peers_t<Unknown>;
+// The requirement is the one use of the alias, so the refusal is the only
+// error.
+static_assert(requires { typename s::strip_peers_t<Unknown>; });
 
 }  // namespace
 

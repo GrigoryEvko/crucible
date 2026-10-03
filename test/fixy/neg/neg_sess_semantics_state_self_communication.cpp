@@ -12,7 +12,9 @@ struct M {};
 namespace g = ::fixy::session::global;
 
 using SelfSend = g::State<g::Roles<>, g::Msg<P, P, M, int, g::End>>;
-using Labels = g::state_enabled_t<SelfSend, ::fixy::session::EveryRoleReliable>;
+// The requirement is the one use of the labels, so the refusal is the only
+// error.
+static_assert(requires { typename g::state_enabled_t<SelfSend, ::fixy::session::EveryRoleReliable>; });
 
 }  // namespace neg_sess_semantics_state_self_communication_types
 

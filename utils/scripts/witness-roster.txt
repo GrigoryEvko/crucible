@@ -69,13 +69,17 @@ foundation::permissions::LentPermission<foundation::permissions::tag::HugePageTa
 # parks: there is no pool without the evidence.
 foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag> | foundation/permissions/Permission.h | foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag>{} | no-match | closed
 # Only the walk of a tag builds the cell that holds its row, so a
-# specialization of row_cell_at cannot give a tag a lighter row.
-foundation::permissions::detail::row_cell | foundation/permissions/Permission.h | foundation::permissions::detail::row_cell{} | private | closed
+# specialization of row_cell_at cannot give a tag a lighter row.  The
+# cell holds a reflection, and a runtime variable of it is a second
+# error.  So the expression asks for the size of the construction.
+foundation::permissions::detail::row_cell | foundation/permissions/Permission.h | sizeof(foundation::permissions::detail::row_cell{}) | private | closed
 
 # -- Fail-closed relations -------------------------------------------
 # Only the walk of a relation builds its cells, so a specialization of
-# relation_cells_at cannot put an edge in a relation.
-foundation::fail_closed::detail::relation_cells<1> | foundation/diag/FailClosed.h | foundation::fail_closed::detail::relation_cells<1>{} | private | closed
+# relation_cells_at cannot put an edge in a relation.  The cells hold
+# reflections, and a runtime variable of them is a second error.  So the
+# expression asks for the size of the construction.
+foundation::fail_closed::detail::relation_cells<1> | foundation/diag/FailClosed.h | sizeof(foundation::fail_closed::detail::relation_cells<1>{}) | private | closed
 
 # -- Session and channel handles: the owner hands them out -----------
 fixy::session::SessionHandle<fixy::session::End, int*> | fixy/session/Handle.h | fixy::session::SessionHandle<fixy::session::End, int*>{forge::rvalue<int*>(), forge::lvalue<fixy::session::watch::session_ref>(), forge::lvalue<std::source_location>()} | no-match | closed

@@ -29,7 +29,8 @@ inline void body(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 using Stage = cc::Stage<&body, fixy::HotFgCtx>;
 using CyclicGraph = cc::StageGraph<cc::StagePack<Stage, Stage>, cc::EdgePack<cc::StageEdge<1, 0>>>;
 
-using Bad = cc::PipelineDag<CyclicGraph>;
+// The size is the one use of the dag, so the refusal is the only error.
+[[maybe_unused]] constexpr auto bad_dag_size = sizeof(cc::PipelineDag<CyclicGraph>);
 
 }  // namespace
 

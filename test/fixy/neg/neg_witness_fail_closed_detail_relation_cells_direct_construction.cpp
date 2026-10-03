@@ -26,6 +26,6 @@ template <class T> [[gnu::noinline]] T&& rvalue() noexcept { std::abort(); }
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = foundation::fail_closed::detail::relation_cells<1>{};
+    [[maybe_unused]] auto forged = sizeof(foundation::fail_closed::detail::relation_cells<1>{});
     return 0;
 }

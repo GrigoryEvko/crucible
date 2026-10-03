@@ -10,7 +10,9 @@ namespace s = ::fixy::session;
 
 struct Alice {};
 
-using Refused = s::project_t<s::Send<int, s::End>, Alice>;
+// The requirement is the one use of the projection, so the refusal is the
+// only error.
+static_assert(requires { typename s::project_t<s::Send<int, s::End>, Alice>; });
 
 }  // namespace
 

@@ -11,6 +11,9 @@ template <class T>
 struct OpaqueFrame;
 }  // namespace
 
-static_assert(sess::is_plain_payload_v<OpaqueFrame<int>*>);
+// The trait is read and not asserted.  The gate of the trait stops the
+// build, and an assertion on its value gives a second error for the same
+// cause.
+[[maybe_unused]] constexpr bool is_plain = sess::is_plain_payload_v<OpaqueFrame<int>*>;
 
 int main() { return 0; }

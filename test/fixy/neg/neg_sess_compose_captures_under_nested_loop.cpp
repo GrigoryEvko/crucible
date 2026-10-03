@@ -16,4 +16,8 @@ using Again = s::Send<Retry, s::Continue>;
 
 }  // namespace
 
-int main() { return sizeof(s::compose_t<Session, Again>) == 0 ? 1 : 0; }
+// The requirement is the one use of the composition.  A refused
+// composition names void, so a size of it gives a second error.
+static_assert(requires { typename s::compose_t<Session, Again>; });
+
+int main() { return 0; }

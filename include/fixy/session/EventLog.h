@@ -657,6 +657,11 @@ public:
 
     explicit SessionEventLog(SessionTagId id = {}) noexcept : session_id_{id} {}
 
+    // The deletion states its reason, so a copy gives one error.  An
+    // implicit deletion would also list each member that cannot copy.
+    SessionEventLog(const SessionEventLog&) =
+        delete("the step counter is the ordering identity of a session event log, and a copy would fork the counter");
+
     // Atomic, so several threads may mint.  An append is not atomic.
     [[nodiscard]] StepId next_step() noexcept {
         const std::uint64_t prior = step_counter_.bump();

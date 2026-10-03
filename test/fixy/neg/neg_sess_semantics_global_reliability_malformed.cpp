@@ -10,7 +10,9 @@ struct P {};
 
 namespace g = ::fixy::session::global;
 
-using Labels = g::state_enabled_t<g::State<g::Roles<>, g::End>, g::Roles<P>>;
+// The requirement is the one use of the labels, so the refusal is the only
+// error.
+static_assert(requires { typename g::state_enabled_t<g::State<g::Roles<>, g::End>, g::Roles<P>>; });
 
 }  // namespace neg_sess_semantics_global_reliability_malformed_types
 

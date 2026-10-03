@@ -14,10 +14,11 @@ namespace {
 
 void not_a_stage(int, int) noexcept {}
 
-// The alias is declared and never used.  Naming it in an expression
-// would fail a second time, at the use, and a fixture that rejects at
-// two of its own lines cannot say which rejection its regexes witnessed.
-using forged = ::fixy::concurrent::pipeline_stage_input_value_t<&not_a_stage>;
+// The requirement is the one use of the alias.  An alias declaration
+// gives a second error at the declaration, and a second use gives a
+// second error at the use.  A fixture that rejects at two places cannot
+// say which rejection its regexes witnessed.
+static_assert(requires { typename ::fixy::concurrent::pipeline_stage_input_value_t<&not_a_stage>; });
 
 }  // namespace
 

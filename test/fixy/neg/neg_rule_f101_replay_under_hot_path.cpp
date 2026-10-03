@@ -10,8 +10,11 @@
 #include <fixy/Fn.h>
 
 int main() {
-    [[maybe_unused]] ::fixy::fn<
-        ::fixy::HotPath<::fixy::HotPathTier_v::Hot, ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>,
-        ::fixy::atom::fp::mode<::fixy::atom::fp::FpReassociate::UnrestrictedRewrite>> refused{};
+    // The size instantiates the class, and a band payload has no default
+    // constructor.  So the size and not a default binding is the use, and
+    // the refusal of the class body is the only error.
+    static_cast<void>(sizeof(
+        ::fixy::fn<::fixy::HotPath<::fixy::HotPathTier_v::Hot, ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>,
+                   ::fixy::atom::fp::mode<::fixy::atom::fp::FpReassociate::UnrestrictedRewrite>>));
     return 0;
 }

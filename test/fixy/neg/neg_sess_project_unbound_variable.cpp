@@ -16,7 +16,9 @@ struct Tick {};
 
 using Dangling = g::Msg<Alice, Bob, Tick, int, g::Var>;
 
-using Refused = s::project_t<Dangling, Alice>;
+// The requirement is the one use of the projection, so the refusal is the
+// only error.
+static_assert(requires { typename s::project_t<Dangling, Alice>; });
 
 }  // namespace
 

@@ -12,7 +12,11 @@ struct M {};
 namespace g = ::fixy::session::global;
 
 using Twice = g::State<g::Roles<P, P>, g::Msg<Q, P, M, int, g::End>>;
-using Next = g::state_step_t<Twice, g::SendAction<Q, P, M, int>, ::fixy::session::ReliableSet<>>;
+// The requirement is the one use of the step, so the refusal is the only
+// error.
+static_assert(requires {
+    typename g::state_step_t<Twice, g::SendAction<Q, P, M, int>, ::fixy::session::ReliableSet<>>;
+});
 
 }  // namespace neg_sess_semantics_state_crashed_twice_types
 

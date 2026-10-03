@@ -3,8 +3,9 @@
 // gate, and the handle would then get stuck at the choice.  The walk
 // refuses the unknown node and names it.
 //
-// The assertion below is the attack.  A walk that answered false for an
-// unknown node would satisfy it.
+// The constant below is the attack.  A walk that answered false for an
+// unknown node would compile it.  An assertion on the constant gives a
+// second error for the same cause, when the walk refuses the node.
 
 #include <fixy/session/Protocol.h>
 
@@ -18,6 +19,6 @@ struct Detour {};
 
 }  // namespace
 
-static_assert(!s::is_empty_choice_v<s::Send<int, Detour<s::Select<>>>>);
+[[maybe_unused]] constexpr bool is_admitted = !s::is_empty_choice_v<s::Send<int, Detour<s::Select<>>>>;
 
 int main() { return 0; }

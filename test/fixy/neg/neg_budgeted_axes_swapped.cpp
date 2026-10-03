@@ -11,6 +11,9 @@ int main() {
     namespace fe = ::foundation::effects;
     fe::ExecCtx<fe::Init, fe::Row<fe::Effect::Init, fe::Effect::IO>> const init{fe::testing::init()};
     fixy::BudgetAuthority authority = fixy::mint_budget_authority(init);
-    fixy::Budgeted<int> const swapped{1, authority.grant(fixy::PeakBytesBound{4096}, fixy::BitsBudgetBound{8})};
-    return swapped.peek();
+    // The grant is the one use of the two bounds.  A Budgeted built from a
+    // refused grant gives a second error for the same cause.
+    [[maybe_unused]] fixy::BudgetStamp const swapped =
+        authority.grant(fixy::PeakBytesBound{4096}, fixy::BitsBudgetBound{8});
+    return 0;
 }

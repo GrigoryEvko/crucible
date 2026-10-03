@@ -2,11 +2,11 @@
 // answer of true would let a gate that needs the involution admit an
 // unknown combinator.  The dual of a type that is not a registered
 // combinator stops the build with a message that names the type, so the
-// round trip has no answer to give.
+// round trip has no answer to give.  The first dual of the round trip is
+// the one use, because a second dual of a refused dual gives a second
+// error for the same cause.
 
 #include <fixy/session/Protocol.h>
-
-#include <type_traits>
 
 namespace {
 
@@ -18,6 +18,6 @@ struct Teleport {};
 
 }  // namespace
 
-static_assert(std::is_same_v<s::dual_of_t<s::dual_of_t<Teleport<int, s::End>>>, Teleport<int, s::End>>);
+static_assert(requires { typename s::dual_of_t<Teleport<int, s::End>>; });
 
 int main() { return 0; }

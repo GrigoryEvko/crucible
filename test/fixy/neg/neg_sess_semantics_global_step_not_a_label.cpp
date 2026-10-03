@@ -7,7 +7,11 @@ namespace neg_sess_semantics_global_step_not_a_label_types {
 
 namespace g = ::fixy::session::global;
 
-using Next = g::state_step_t<g::State<g::Roles<>, g::End>, int, ::fixy::session::EveryRoleReliable>;
+// The requirement is the one use of the step, so the refusal is the only
+// error.
+static_assert(requires {
+    typename g::state_step_t<g::State<g::Roles<>, g::End>, int, ::fixy::session::EveryRoleReliable>;
+});
 
 }  // namespace neg_sess_semantics_global_step_not_a_label_types
 

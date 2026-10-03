@@ -11,7 +11,9 @@ struct P {};
 namespace s = ::fixy::session;
 
 using Bare = s::TypingContext<s::RoleState<P, s::OutQueue<>, s::Recv<int, s::End>>>;
-using Labels = s::config::enabled_t<Bare, s::EveryRoleReliable>;
+// The requirement is the one use of the labels, so the refusal is the only
+// error.
+static_assert(requires { typename s::config::enabled_t<Bare, s::EveryRoleReliable>; });
 
 }  // namespace neg_sess_semantics_config_bare_payload_types
 

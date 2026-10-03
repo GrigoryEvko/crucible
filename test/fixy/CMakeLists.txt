@@ -797,7 +797,8 @@ fixy_neg_compile_test(neg_fn_tier4_duplicate_axis
 #   reference is the only way to walk around the policy tag.
 fixy_neg_compile_test(neg_fn_ctad_attempt
   "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 0\\]"
-  "fn_ctad_blocked_use_mint_fn>::tier0_not_ctad_sentinel_.+ evaluates to false")
+  "fn_ctad_blocked_use_mint_fn>::tier0_not_ctad_sentinel_.+ evaluates to false"
+  "no matching function for call to .fixy::fn<fixy::detail::ctad::fn_ctad_blocked_use_mint_fn>::fn\\(")
 
 # Four payload shapes against one tier.  The second regex is what makes
 # them four fixtures rather than four copies: each floors on the OFFENDING
@@ -943,6 +944,7 @@ fixy_neg_compile_test(neg_atom_refined_with_closure_predicate
 # IsAtom calls the refusal function itself, so a translation unit cannot
 # put a verdict of no refusal in front of the reads for a closure atom.
 fixy_neg_compile_test(neg_atom_verdict_forged
+  "neg_atom_verdict_forged\\.cpp:[0-9]+:[0-9]+: error: expected initializer before .<. token"
   "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 2\\]: every entry in the pack must be an atom of the closed catalog"
   "refused because an argument names a closure type, an unnamed class or an entity with internal linkage")
 fixy_neg_compile_test(neg_atom_from_source_internal_linkage
@@ -1083,13 +1085,19 @@ fixy_neg_compile_test(neg_refined_chain_wrong_direction
 # Two distinct predicates that imply each other through steps that do
 # not narrow are two names for one predicate.  The walk of the header
 # runs the closure from each edge, and the search stops on the cycle, of
-# two steps or of three.  Each fixture calls the walk.
+# two steps or of three.  Each fixture calls the walk.  A planted edge
+# also stands outside the seal of the relation, so each query of the
+# walk also stops at the seal, and the last two regexes pin that refusal.
 fixy_neg_compile_test(neg_refined_implication_cycle_edges
   "call to non-.constexpr. function .void fixy::refined::implication_cycle_between_two_names_for_one_predicate\\(\\)."
-  "in .constexpr. expansion of .fixy::refined::predicate_implies\\(\\^\\^planted::<lambda\\(auto:[0-9]+\\)>, \\^\\^fixy::detail::refined_edge_walk::unreachable_conclusion\\).")
+  "in .constexpr. expansion of .fixy::refined::predicate_implies\\(\\^\\^planted::<lambda\\(auto:[0-9]+\\)>, \\^\\^fixy::detail::refined_edge_walk::unreachable_conclusion\\)."
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
+  "in .constexpr. expansion of .foundation::fail_closed::require_seal_holds\\(\\^\\^fixy::refined::admitted_implications\\).")
 fixy_neg_compile_test(neg_refined_implication_cycle_ring
   "call to non-.constexpr. function .void fixy::refined::implication_cycle_between_two_names_for_one_predicate\\(\\)."
-  "in .constexpr. expansion of .fixy::refined::predicate_implies\\(\\^\\^planted::<lambda\\(auto:[0-9]+\\)>, \\^\\^fixy::detail::refined_edge_walk::unreachable_conclusion\\).")
+  "in .constexpr. expansion of .fixy::refined::predicate_implies\\(\\^\\^planted::<lambda\\(auto:[0-9]+\\)>, \\^\\^fixy::detail::refined_edge_walk::unreachable_conclusion\\)."
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
+  "in .constexpr. expansion of .foundation::fail_closed::require_seal_holds\\(\\^\\^fixy::refined::admitted_implications\\).")
 
 # A predicate with a base class borrows none of its base's places in
 # the relation, as a premise or as a conclusion.
@@ -2549,6 +2557,7 @@ fixy_neg_compile_test(neg_sess_mint_session_delegated_region_outside_ctx
   "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. .with Ctx = .*Proto = fixy::session::Recv<fixy::session::DelegatedSession<fixy::session::End, delegated_region_fixture::Wire, "
   "is_subrow\\(.*\\^\\^ typename Ctx::row_type\\) .with Proto = fixy::session::Recv<fixy::session::DelegatedSession<")
 fixy_neg_compile_test(neg_sess_mint_session_delivered_region_without_row
+  "no matching function for call to .mint_session<region_without_row_fixture::Proto>"
   "uncaught exception of type .std::meta::exception.. .what\\(\\).: .fixy::session::diagnostic \\[Delivered_Region_Without_Row\\]: a receive of the protocol delivers a permission of the region region_without_row_fixture::BareRegion, and its tag declares no permission row"
   "using fixy::session::protocol_delivered_permission_row_t = .* \\[with Proto = fixy::session::Recv<fixy::session::Transferable<int, region_without_row_fixture::BareRegion>, fixy::session::End>\\]")
 # The context-bound with_session lends its Resource for the body only.
@@ -2897,7 +2906,7 @@ fixy_neg_compile_test(neg_sess_event_forged
 
 fixy_neg_compile_test(neg_sess_event_log_copied
   "use of deleted function .fixy::session::SessionEventLog::SessionEventLog\\(const fixy::session::SessionEventLog&\\)"
-  "Pinned<T>: stable address")
+  "the step counter is the ordering identity of a session event log, and a copy would fork the counter")
 
 # No byte route builds an event: the event is not trivially copyable and
 # not an implicit-lifetime type, so the decoder is the one door.

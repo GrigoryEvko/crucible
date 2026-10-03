@@ -6,6 +6,8 @@
 // deduction guide", which names no remedy; fn ships a guide that routes
 // every deduction to a blocked sentinel type instead, so the attempt
 // reaches the tier-0 assertion and that assertion names the factories.
+// The sentinel binding also has no constructor from the value, so the
+// construction of the deduced type is refused too.
 //
 // This is the one tier whose fixture cannot also be a payload or a pack
 // case: the sentinel is an ordinary empty class, so every later tier

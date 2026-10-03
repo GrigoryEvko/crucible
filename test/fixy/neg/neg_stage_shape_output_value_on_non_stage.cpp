@@ -34,8 +34,9 @@ struct fake_producer {
 // the shape checks except the order is satisfied.
 void producer_first(fake_producer<int>&&, fake_consumer<int>&&) noexcept {}
 
-// Declared and never used, for the reason given in the sibling fixture.
-using forged = ::fixy::concurrent::pipeline_stage_output_value_t<&producer_first>;
+// The requirement is the one use of the alias, for the reason given in the
+// sibling fixture.
+static_assert(requires { typename ::fixy::concurrent::pipeline_stage_output_value_t<&producer_first>; });
 
 }  // namespace
 

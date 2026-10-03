@@ -14,7 +14,9 @@ namespace g = ::fixy::session::global;
 namespace s = ::fixy::session;
 
 using Spins = s::TypingContext<s::RoleState<P, s::OutQueue<>, s::Loop<s::Continue>>>;
-using Next = s::config::step_t<Spins, g::SendAction<P, Q, M, int>, s::EveryRoleReliable>;
+// The requirement is the one use of the step, so the refusal is the only
+// error.
+static_assert(requires { typename s::config::step_t<Spins, g::SendAction<P, Q, M, int>, s::EveryRoleReliable>; });
 
 }  // namespace neg_sess_semantics_config_unguarded_loop_types
 

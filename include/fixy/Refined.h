@@ -1420,10 +1420,13 @@ template <class From, class To>
     return true;
 }
 
-// Walks admitted_implications once.  is_edge and ends_of are the
+// Walks admitted_implications two times.  is_edge and ends_of are the
 // relation's own readers, so an edge is whatever the relation calls
-// one.  A member that is neither an edge, a narrowing edge, a rule nor
-// the seal is refused, because the relation would ignore it.
+// one.  The first pass refuses a member that is neither an edge, a
+// narrowing edge, a rule nor the seal, because the relation would
+// ignore it.  The second pass checks each step, and it runs only when
+// each member is known.  Each step queries the relation, each query
+// reads the seal, and the seal refuses the same member again.
 //
 // The template parameter defers the walk to the first call.  A
 // translation unit that includes this header and does not call the walk
@@ -1434,19 +1437,33 @@ template <class Site = void>
     static constexpr auto members =
         std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
             std::meta::members_of(^^refined::admitted_implications, std::meta::access_context::unchecked())));
+    constexpr bool is_each_member_known = [] consteval {
+        for (std::meta::info const member : members) {
+            if (!::foundation::fail_closed::is_edge(member) && !refined::is_narrowing_edge(member)
+                && !::foundation::fail_closed::is_seal(member) && !refined::is_rule(member))
+                return false;
+        }
+        return true;
+    }();
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto m : members) {
-        if constexpr (::foundation::fail_closed::is_edge(m)) {
-            constexpr auto ends = ::foundation::fail_closed::ends_of(m);
-            static_assert(atomic_step_holds<typename[:ends.from:], typename[:ends.to:]>());
-        } else if constexpr (refined::is_narrowing_edge(m)) {
-            constexpr auto ends = refined::narrowing_ends_of(m);
-            static_assert(atomic_step_holds<typename[:ends.from:], typename[:ends.to:]>());
-        } else if constexpr (!::foundation::fail_closed::is_seal(m)) {
+        if constexpr (!::foundation::fail_closed::is_edge(m) && !refined::is_narrowing_edge(m)
+                      && !::foundation::fail_closed::is_seal(m)) {
             static_assert(refined::is_rule(m), "a member of admitted_implications is an edge, a narrowing edge, "
                                                "the seal, or a rule of type refined::rule_signature.  A class, a "
                                                "template or a function of another type decides nothing there");
+        }
+    }
+    if constexpr (is_each_member_known) {
+        template for (constexpr auto m : members) {
+            if constexpr (::foundation::fail_closed::is_edge(m)) {
+                constexpr auto ends = ::foundation::fail_closed::ends_of(m);
+                static_assert(atomic_step_holds<typename[:ends.from:], typename[:ends.to:]>());
+            } else if constexpr (refined::is_narrowing_edge(m)) {
+                constexpr auto ends = refined::narrowing_ends_of(m);
+                static_assert(atomic_step_holds<typename[:ends.from:], typename[:ends.to:]>());
+            }
         }
     }
 #pragma GCC diagnostic pop

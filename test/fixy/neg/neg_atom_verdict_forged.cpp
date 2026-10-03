@@ -8,8 +8,9 @@
 // The gate calls the refusal function itself, and a concept has no
 // specialization, so tier 2 of fixy::fn refuses the atom.
 //
-// Expected diagnostic: the tier-2 assertion of fixy::fn names the atom
-// and the identity read that refuses it.
+// Expected diagnostics: the parser refuses the specialization, because
+// the namespace declares no such template.  The tier-2 assertion of
+// fixy::fn names the atom and the identity read that refuses it.
 
 #include <fixy/Fn.h>
 

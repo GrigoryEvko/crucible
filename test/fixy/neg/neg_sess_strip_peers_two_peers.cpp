@@ -20,7 +20,9 @@ using Ring =
 
 using AliceLocal = typename s::project_t<Ring, Alice>::local;
 
-using Refused = s::strip_peers_t<AliceLocal>;
+// The requirement is the one use of the alias, so the refusal is the only
+// error.
+static_assert(requires { typename s::strip_peers_t<AliceLocal>; });
 
 }  // namespace
 
