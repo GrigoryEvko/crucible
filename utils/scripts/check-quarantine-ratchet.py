@@ -78,7 +78,10 @@ THE CONFIGURATION
     on a host with no AVX512BW it compiles the AVX2 arm.  The name of a configuration is its
     build kind, with -bench when CRUCIBLE_BENCH is on and -fuzz when
     CRUCIBLE_FUZZ is on, for example x86_64-debug-asan or
-    x86_64-debug-asan-bench-fuzz.
+    x86_64-debug-asan-bench-fuzz.  CRUCIBLE_SENSE_HUB_V2 is no key: each
+    build compiles the SenseHub v2 sources in two object libraries, with and
+    without CRUCIBLE_SENSE_HUB_EXTENDED, so that option changes no counted
+    line.
 
 THE VERDICT
     * A count above its ledger count is an error.  A change can only lower

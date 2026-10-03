@@ -756,6 +756,20 @@ if (CRUCIBLE_HAVE_BPF)
   # at link time without an extra `target_link_libraries` call.
   target_link_libraries(crucible PUBLIC crucible_perf)
   target_compile_definitions(crucible PUBLIC CRUCIBLE_HAVE_BPF=1)
+
+  # The quarantine ratchet (utils/scripts/check-quarantine-ratchet.py)
+  # counts only the code that a counted configuration compiles, and no
+  # configuration of its ledger turns on CRUCIBLE_SENSE_HUB_V2.  These two
+  # object libraries compile the SenseHub v2 sources in each build: one with
+  # CRUCIBLE_SENSE_HUB_EXTENDED and one without it.  So the ratchet counts
+  # each preprocessor arm of the two sources and of their headers, and each
+  # build does a compile check of the code.  No target links them.
+  foreach(_census sense_hub_v2_census sense_hub_v2_extended_census)
+    add_library(crucible_${_census} OBJECT src/perf/SenseHubV2.cpp src/perf/ProcGauges.cpp)
+    target_include_directories(crucible_${_census} PRIVATE include/)
+    target_link_libraries(crucible_${_census} PRIVATE PkgConfig::LIBBPF foundation)
+  endforeach()
+  target_compile_definitions(crucible_sense_hub_v2_extended_census PRIVATE CRUCIBLE_SENSE_HUB_EXTENDED=1)
 else()
   target_compile_definitions(crucible PUBLIC CRUCIBLE_HAVE_BPF=0)
 endif()
