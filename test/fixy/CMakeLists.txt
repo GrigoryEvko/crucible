@@ -4429,6 +4429,10 @@ fixy_neg_compile_test(neg_os_mmap_anon_non_ctx
 # start, a shared region, and two contexts that do not own IO and Block.
 fixy_test(test_os_numa_placement)
 
+# The census of the node of each page of a range, and the allocation
+# counters of a node, run against the kernel.
+fixy_test(test_os_numa_query)
+
 fixy_neg_compile_test(neg_os_numa_placement_default_ctor
   "use of deleted function"
   "would claim a binding that nobody made")

@@ -386,6 +386,8 @@ target_link_libraries(crucible PUBLIC foundation)
 
 add_library(fixy STATIC
   src/fixy/concurrent/Topology.cpp
+  src/fixy/os/NumaCounters.cpp
+  src/fixy/os/NumaPlacement.cpp
   src/fixy/os/ThreadTasks.cpp
 )
 target_include_directories(fixy PUBLIC include/)

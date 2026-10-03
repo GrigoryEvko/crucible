@@ -34,7 +34,18 @@
 // A placement has two halves.  The affinity half is fixy::CpuPinned,
 // which mint_affinity builds after sched_setaffinity.  The node half is
 // here.
+//
+// census_page_nodes asks the kernel where the pages of a range are.  A
+// first touch is a preference of the kernel and not a guarantee: when
+// the node of the CPU has fewer free pages than its low watermark, the
+// kernel takes the pages from another node and reports no error.  So a
+// caller that touches a range to place it asks the census afterwards.
+// The census reads the kernel and changes nothing, and its body is in
+// src/fixy/os/NumaPlacement.cpp.  fixy/os/NumaCounters.h gives the
+// allocation counters of a node, which show when the kernel fell back.
 
+#include <fixy/Core.h>
+#include <fixy/FixedArray.h>
 #include <fixy/OwnedMmap.h>
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Os.h>
@@ -51,6 +62,7 @@
 #include <cerrno>
 #include <climits>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <system_error>
 #include <type_traits>
@@ -217,6 +229,133 @@ mint_numa_placement(Ctx const&, ::fixy::Linear<::fixy::NumaBindableRegion<Tag, P
         return std::unexpected{std::error_code{error, std::system_category()}};
     }
     return ::fixy::NumaPlacement<Tag, Prot, Brand>{std::move(owned), node};
+}
+
+// ── The census of the pages of a range ─────────────────────────────────
+
+// The step of a NUMA query that failed.
+enum class NumaQueryStep : std::uint8_t {
+    PageQuery = 0,  // move_pages(2) refused the query of the pages
+    CounterPath = 1,  // the counter file of the node has no valid path
+    CounterOpen = 2,  // the counter file of the node does not open
+    CounterRead = 3,  // the read of the counter file failed
+    CounterFormat = 4,  // the counter file does not hold each counter
+    NodeNotConcrete = 5,  // the node is None or Any, which name no counter file
+};
+
+// The refusal of a NUMA query: the step that failed, and the errno that
+// the kernel gave for it.  The errno is 0 when the step made no call.
+struct NumaQueryError {
+    NumaQueryStep step = NumaQueryStep::PageQuery;
+    int error_number = 0;
+};
+
+// The concrete node that the index names, or no value for an index that
+// no NumaNodeId names.  fixy::concurrent::Topology names a node by an
+// int, so a caller that has a node of the topology gets its id here.
+[[nodiscard]] constexpr Option<NumaNodeId> concrete_numa_node(int index) noexcept {
+    if (index < 0 || index >= static_cast<int>(std::to_underlying(NumaNodeId::None))) {
+        return none;
+    }
+    return Option<NumaNodeId>::some(static_cast<NumaNodeId>(index));
+}
+
+class PageNodeCensus;
+
+}  // namespace numa
+
+namespace detail {
+
+// Counts into census the node of each page that holds one of the `bytes`
+// bytes that start at `first`.  Returns 0, or the errno of the query that
+// the kernel refused.  The body is in src/fixy/os/NumaPlacement.cpp, and
+// census_page_nodes is its caller.
+[[nodiscard]] int census_page_nodes_(void const* first, std::size_t bytes, numa::PageNodeCensus& census) noexcept;
+
+}  // namespace detail
+
+namespace numa {
+
+// The count of the pages of a range on each node.  One query of the
+// kernel gives the node of each page, so the census holds the count of
+// each node at the cost of the count of one node.  A caller that placed
+// a range on a node reads pages_on and pages_off of that node, and a
+// caller that looks for the node of most of the range reads each count.
+//
+// The census covers each page that holds a byte of the range, so a range
+// that is not page-aligned counts its first page and its last page.  A
+// page with no node is a page that the range maps with no frame yet, the
+// shared zero page of a range that was only read, or a page on a node
+// past 253, which no NumaNodeId names.
+class PageNodeCensus {
+public:
+    // The census of an empty range, with no page.
+    constexpr PageNodeCensus() noexcept = default;
+
+    // The count of the pages that hold a byte of the range.
+    [[nodiscard]] constexpr std::size_t pages() const noexcept { return pages_; }
+
+    // The count of the pages on the node.  0 for None and Any.
+    [[nodiscard]] constexpr std::size_t pages_on(NumaNodeId node) const noexcept {
+        return is_concrete_numa_node(node) ? on_node_[std::to_underlying(node)] : 0;
+    }
+
+    // The count of the pages on a node other than the node.
+    [[nodiscard]] constexpr std::size_t pages_off(NumaNodeId node) const noexcept {
+        return pages_ - without_node_ - pages_on(node);
+    }
+
+    // The count of the pages that no NumaNodeId names a node for.
+    [[nodiscard]] constexpr std::size_t pages_without_node() const noexcept { return without_node_; }
+
+    // True when the range has a page, and each page is on the node.
+    [[nodiscard]] constexpr bool is_all_on(NumaNodeId node) const noexcept {
+        return pages_ != 0 && pages_on(node) == pages_;
+    }
+
+private:
+    friend int detail::census_page_nodes_(void const*, std::size_t, PageNodeCensus&) noexcept;
+
+    // Counts one page with the status that move_pages gave it: the node
+    // of the page, or a negative errno when the page has no node.
+    constexpr void count_page_(int status) noexcept {
+        ++pages_;
+        if (status >= 0 && status < static_cast<int>(concrete_node_count_)) {
+            ++on_node_[static_cast<std::size_t>(status)];
+        } else {
+            ++without_node_;
+        }
+    }
+
+    static constexpr std::size_t concrete_node_count_ = std::to_underlying(NumaNodeId::None);
+
+    FixedArray<std::size_t, concrete_node_count_> on_node_{};
+    std::size_t without_node_ = 0;
+    std::size_t pages_ = 0;
+};
+
+// The query takes the read lock of the address space, so it can park the
+// caller, and the gate is the gate of the binding: IO and Block.
+template <typename Ctx>
+concept CtxFitsNumaQuery =
+    ::foundation::effects::CtxOwnsAllOf<Ctx, ::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
+
+// The node of each page that holds a byte of the range, as a census.  The
+// kernel refuses the query only for a reason of the machine, such as a
+// kernel with no NUMA support, and the error then holds its errno.
+//
+// Not a mint: the census reads the kernel and synthesizes no authority.
+// Complexity: one query of the kernel for each 512 pages, O(pages).
+template <typename T, std::size_t Extent, ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsNumaQuery<Ctx>
+[[nodiscard]] Result<PageNodeCensus, NumaQueryError> census_page_nodes(Ctx const&, View<T, Extent> range) noexcept {
+    PageNodeCensus census{};
+    int const error = ::fixy::detail::census_page_nodes_(::foundation::core::detail::first_of_(range),
+                                                         range.size() * sizeof(T), census);
+    if (error != 0) {
+        return err(NumaQueryError{NumaQueryStep::PageQuery, error});
+    }
+    return census;
 }
 
 }  // namespace numa

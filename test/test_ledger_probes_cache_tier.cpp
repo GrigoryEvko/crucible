@@ -4,32 +4,72 @@
 
 #include <crucible/ledger/probes/CacheTier.h>
 
+#include <fixy/Core.h>
+#include <fixy/concurrent/Topology.h>
+#include <fixy/os/NumaCounters.h>
+#include <fixy/os/NumaPlacement.h>
 #include <fixy/os/Sched.h>
 
 #include "test_assert.h"
 #include "test_ledger_probes_fixtures.h"
 
-#include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <span>
 #include <thread>
-#include <vector>
+#include <utility>
 
 #include <sched.h>
-#include <sys/syscall.h>
-#include <unistd.h>
 
 using namespace crucible;
 using ledger_probe_fixtures::probe_ctx;
 
 namespace {
 
+// The numa_foreign counter of the node: the allocations that preferred the
+// node and got a page of another node.  No value when the kernel gives no
+// counter for the node.
+[[nodiscard]] ::fixy::Option<std::uint64_t> foreign_allocations_of(int node) noexcept {
+    ::fixy::Option<::fixy::NumaNodeId> concrete = ::fixy::numa::concrete_numa_node(node);
+    if (concrete.is_none()) return ::fixy::none;
+    auto counters = ::fixy::numa::read_allocation_counters(probe_ctx, std::move(concrete).expect("the node has an id"));
+    if (counters.is_err()) return ::fixy::none;
+    return ::fixy::Option<std::uint64_t>::some(std::move(counters).expect("the kernel gave the counters").foreign);
+}
+
+// True when the two reads each give a count, and the count did not move.
+[[nodiscard]] bool counts_agree(::fixy::Option<std::uint64_t> before, ::fixy::Option<std::uint64_t> after) noexcept {
+    if (before.is_none() || after.is_none()) return false;
+    return std::move(before).expect("the count is present") == std::move(after).expect("the count is present");
+}
+
+// A census with no page, and a census of the region read for a node that
+// holds none of its pages, each give the placement fault.
+void test_a_wrong_census_refuses_the_placement() {
+    constexpr std::size_t region_pages = 8;
+    const ::fixy::NumaNodeId node_zero = ::fixy::numa::concrete_numa_node(0).expect("node 0 has an id");
+    assert(
+        ledger::probes::cache_tier_detail::placement_fault_of(::fixy::numa::PageNodeCensus{}, node_zero, region_pages)
+        == ledger::LedgerError::ConfidenceBelowBar);
+    assert(ledger::probes::cache_tier_detail::placement_fault_of(::fixy::numa::PageNodeCensus{}, node_zero, 0)
+           == ledger::LedgerError::ConfidenceBelowBar);
+    assert(::fixy::numa::concrete_numa_node(-1).is_none() && ::fixy::numa::concrete_numa_node(254).is_none());
+    crucible::test::pass("  test_a_wrong_census_refuses_the_placement: PASSED\n");
+}
+
 // The first touch of a probe region comes from the CPU that the probe
 // measures on, so each page is on the node of that CPU, and the pin to that
 // CPU holds until the probe restores it.  The worker starts on a CPU of the
 // second node and asks for a CPU of the first node.  A first touch from the
 // CPU of the worker puts each page on the second node.
+//
+// A first touch places a page only when the node has free pages above its
+// low watermark.  Under memory pressure the kernel takes the pages from
+// another node, and the node of a page then does not show the CPU of its
+// first touch.  The numa_foreign counters of the two nodes show each such
+// fallback, so the test reads them before and after the touch, and it
+// cannot measure when one of them moved.
 void test_first_touch_comes_from_the_measuring_cpu() {
     const auto& topology = ::fixy::concurrent::Topology::instance();
     const std::span<const int> nodes = topology.numa_node_ids();
@@ -52,34 +92,41 @@ void test_first_touch_comes_from_the_measuring_cpu() {
         }
         auto region = ledger::ProbeRegion::create(probe_ctx, 2u * 1024u * 1024u, ledger::PagePolicy::BasePages);
         assert(region.has_value());
-        bench::Run::PinResult pin = ledger::probes::cache_tier_detail::fault_in_from_cpu(*region, measuring_cpu);
-        if (!pin.prior.has_value()) {
+        const int worker_node = ::fixy::concurrent::Topology::instance()
+                                    .numa_node_of_cpu(worker_cpu)
+                                    .expect("the topology gives the node of a CPU that it lists for a node");
+        const ::fixy::Option<std::uint64_t> measuring_fallbacks = foreign_allocations_of(measuring_node);
+        const ::fixy::Option<std::uint64_t> worker_fallbacks = foreign_allocations_of(worker_node);
+        ledger::probes::cache_tier_detail::FirstTouch touch =
+            ledger::probes::cache_tier_detail::fault_in_from_cpu(probe_ctx, *region, measuring_cpu);
+        if (!touch.pin.prior.has_value()) {
             skip_reason = "the cpuset refuses the CPU of the first node";
             return;
         }
         assert(::sched_getcpu() == measuring_cpu);
 
-        // move_pages in query mode: no target nodes, so the status of each
-        // page is the node that holds it.
-        const std::size_t page_count = region->size() / ledger::ProbeRegion::kBasePageBytes;
-        std::vector<void*> pages(page_count, nullptr);
-        std::vector<int> page_nodes(page_count, -1);
-        auto* first_byte = static_cast<unsigned char*>(region->data());
-        for (std::size_t i = 0; i < page_count; ++i) {
-            pages[i] = first_byte + (i * ledger::ProbeRegion::kBasePageBytes);
-        }
-        const long queried = ::syscall(SYS_move_pages, 0, page_count, pages.data(), nullptr, page_nodes.data(), 0);
-        if (queried != 0) {
-            (void)pin.restore();
-            skip_reason = "the kernel refuses move_pages";
+        // A counter that moved, or that the kernel does not give, leaves the
+        // node of a page with no meaning for the CPU of its first touch.
+        const bool is_steady = counts_agree(measuring_fallbacks, foreign_allocations_of(measuring_node))
+                            && counts_agree(worker_fallbacks, foreign_allocations_of(worker_node));
+        if (!is_steady) {
+            (void)touch.pin.restore();
+            skip_reason = "the kernel took a page of another node for an allocation that preferred a node of the test";
             return;
         }
-        assert(std::all_of(page_nodes.begin(), page_nodes.end(),
-                           [measuring_node](int node) { return node == measuring_node; }));
+        assert(touch.placement == ledger::LedgerError::None);
+
+        // The census of the region holds no page on the node of the worker,
+        // so a placement on that node is refused.
+        const ::fixy::NumaNodeId worker_node_id =
+            ::fixy::numa::concrete_numa_node(worker_node).expect("the topology names each node below 254");
+        assert(ledger::probes::cache_tier_detail::placement_fault_of(
+                   touch.census, worker_node_id, (2u * 1024u * 1024u) / ledger::ProbeRegion::kBasePageBytes)
+               == ledger::LedgerError::ConfidenceBelowBar);
 
         // The restore gives the worker back its one CPU.  The calls stay
         // outside assert, so a build with NDEBUG still makes them.
-        [[maybe_unused]] const bool was_restored = pin.restore().has_value();
+        [[maybe_unused]] const bool was_restored = touch.pin.restore().has_value();
         assert(was_restored);
         cpu_set_t affinity;
         CPU_ZERO(&affinity);
@@ -136,7 +183,8 @@ static_assert((kSweepFloorBytes * kSweepStepNumerator) / kSweepStepDenominator >
 
 int main() {
     std::printf("test_ledger_probes_cache_tier:\n");
+    test_a_wrong_census_refuses_the_placement();
     test_first_touch_comes_from_the_measuring_cpu();
-    std::printf("test_ledger_probes_cache_tier: 1 group, all passed\n");
+    crucible::test::pass("test_ledger_probes_cache_tier: 2 groups, all passed\n");
     return 0;
 }

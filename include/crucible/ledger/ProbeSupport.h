@@ -50,7 +50,9 @@
 
 #include <crucible/ledger/Ledger.h>
 #include <crucible/ledger/ProbeSettings.h>
+#include <fixy/Core.h>
 #include <fixy/OwnedMmap.h>
+#include <fixy/os/NumaPlacement.h>
 #include <fixy/os/Sched.h>
 #include <foundation/Platform.h>
 
@@ -399,6 +401,14 @@ public:
     [[nodiscard]] void* data() const noexcept { return usable_; }
     [[nodiscard]] std::size_t size() const noexcept { return usable_bytes_; }
     [[nodiscard]] bool is_mapped() const noexcept { return mapping_.is_mapped() && usable_ != nullptr; }
+
+    // The node of each page of the mapping.  The mapping holds the region
+    // and the slack around it, and nothing touches the slack, so its pages
+    // have no node.  A region that is not mapped gives an empty census.
+    [[nodiscard]] ::fixy::Result<::fixy::numa::PageNodeCensus, ::fixy::numa::NumaQueryError>
+    node_census(LedgerIoCtx const& ctx) const noexcept {
+        return ::fixy::numa::census_page_nodes(ctx, mapping_.view<std::byte const>().expect("a mapping holds bytes"));
+    }
 
     // Writes to every page so the measurement that follows is not timing
     // page faults. Returns the number of bytes touched.

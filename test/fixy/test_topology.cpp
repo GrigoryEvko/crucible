@@ -377,6 +377,12 @@ void test_sparse_numa_node_ids() {
     CRUCIBLE_TEST_REQUIRE(!topo.numa_distance(1, 0).has_value());
     CRUCIBLE_TEST_REQUIRE(!topo.numa_distance(0, 1).has_value());
     CRUCIBLE_TEST_REQUIRE(!topo.numa_distance(1, 1).has_value());
+
+    // Each CPU gives the id of the node that lists it, and a CPU that no
+    // node lists gives no node.
+    assert(topo.numa_node_of_cpu(0).value_or(-1) == 0 && topo.numa_node_of_cpu(1).value_or(-1) == 0);
+    assert(topo.numa_node_of_cpu(2).value_or(-1) == 2 && topo.numa_node_of_cpu(3).value_or(-1) == 2);
+    assert(topo.numa_node_of_cpu(4).is_none() && topo.numa_node_of_cpu(-1).is_none());
 }
 
 // A distance row whose length is not the node count is malformed, and it

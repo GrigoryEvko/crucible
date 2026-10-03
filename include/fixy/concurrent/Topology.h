@@ -14,6 +14,7 @@
 // reads and the three parsers below, is in src/fixy/concurrent/Topology.cpp
 // in the library fixy, so an includer compiles none of it.
 
+#include <fixy/Core.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
@@ -186,6 +187,17 @@ public:
         const std::optional<std::size_t> position = numa_position_(node);
         if (!position.has_value()) return {};
         return {cores_on_node_[*position].data(), cores_on_node_[*position].size()};
+    }
+
+    // The id of the node whose CPUs hold the CPU, or no value when no node
+    // of this host holds it.  Complexity: O(CPUs of the host).
+    [[nodiscard]] Option<int> numa_node_of_cpu(int cpu) const noexcept {
+        for (std::size_t position = 0; position < numa_node_ids_.size(); ++position) {
+            for (const int core : cores_on_node_[position]) {
+                if (core == cpu) return Option<int>::some(numa_node_ids_[position]);
+            }
+        }
+        return none;
     }
 
     [[nodiscard]] Source source() const noexcept { return source_; }

@@ -60,7 +60,9 @@
 // contracts at `observe` and the handler does not return.
 
 #include <crucible/ledger/ProbeSupport.h>
+#include <fixy/Core.h>
 #include <fixy/concurrent/Topology.h>
+#include <fixy/os/NumaPlacement.h>
 
 #include <algorithm>
 #include <atomic>
@@ -353,27 +355,78 @@ private:
     return current;
 }
 
-// Pins the calling thread to cpu, and then faults the region in, so
-// first-touch puts each page on the node of cpu.  The pin holds when the
-// call returns, so the reads that follow come from the same core.  The
-// caller restores the pin after its last read.  A negative cpu or a pin
-// that fails leaves the region as it was, and the result holds no prior
-// affinity.
+// The fault of a placement on the node wanted: None when no page of the
+// census is on another node and the node holds at least region_pages
+// pages, and ConfidenceBelowBar otherwise.  The census covers the slack of
+// the mapping too, and those pages have no node, so the count of the node
+// is compared with the pages of the region and not with all the pages.
+[[nodiscard]] constexpr LedgerError placement_fault_of(::fixy::numa::PageNodeCensus const& census,
+                                                       ::fixy::NumaNodeId wanted, std::size_t region_pages) noexcept {
+    bool const holds_region =
+        region_pages != 0u && census.pages_off(wanted) == 0u && census.pages_on(wanted) >= region_pages;
+    return holds_region ? LedgerError::None : LedgerError::ConfidenceBelowBar;
+}
+
+// The pin of a first touch, the node of each page after it, and the fault
+// of the placement.  A first touch is a preference of the kernel and not a
+// guarantee: when the node of the CPU has fewer free pages than its low
+// watermark, the kernel takes the pages from another node and reports no
+// error.  A measurement over those pages is not about the node that it
+// names, so a probe refuses it with the placement fault.
+struct FirstTouch {
+    bench::Run::PinResult pin{};
+    ::fixy::numa::PageNodeCensus census{};
+    LedgerError placement = LedgerError::ConfidenceBelowBar;
+};
+
+// Takes the census of the region into touch, and sets the fault of its
+// placement on the node of cpu.  A host with one node holds each page on
+// that node, so its placement has no fault, also on a kernel with no NUMA
+// support, which refuses the census.
+inline void record_placement(LedgerIoCtx const& ctx, ProbeRegion const& region, int cpu, FirstTouch& touch) noexcept {
+    ::fixy::concurrent::Topology const& topology = ::fixy::concurrent::Topology::instance();
+    if (topology.numa_nodes() <= 1u) {
+        touch.placement = LedgerError::None;
+        return;
+    }
+    auto census = region.node_census(ctx);
+    ::fixy::Option<int> node = topology.numa_node_of_cpu(cpu);
+    if (census.is_err() || node.is_none()) {
+        touch.placement = LedgerError::ConfidenceBelowBar;
+        return;
+    }
+    touch.census = std::move(census).expect("the kernel gave the node of each page");
+    ::fixy::Option<::fixy::NumaNodeId> wanted =
+        ::fixy::numa::concrete_numa_node(std::move(node).expect("the topology gave the node of the CPU"));
+    if (wanted.is_none()) {
+        touch.placement = LedgerError::ConfidenceBelowBar;
+        return;
+    }
+    touch.placement = placement_fault_of(touch.census, std::move(wanted).expect("the node has a NumaNodeId"),
+                                         region.size() / ProbeRegion::kBasePageBytes);
+}
+
+// Pins the calling thread to cpu, faults the region in, and then asks the
+// kernel where the pages are.  The pin holds when the call returns, so the
+// reads that follow come from the same core.  The caller restores the pin
+// after its last read.  A negative cpu or a pin that fails leaves the
+// region as it was, and the result holds no prior affinity.
 //
 // A thread that is not pinned can move between the read of its CPU and
 // the first touch, and first-touch then puts the pages on the node that
 // the thread moved to.
-[[nodiscard]] inline bench::Run::PinResult fault_in_from_cpu(ProbeRegion& region, int cpu) noexcept {
+[[nodiscard]] inline FirstTouch fault_in_from_cpu(LedgerIoCtx const& ctx, ProbeRegion& region, int cpu) noexcept {
     if (cpu < 0) {
-        return bench::Run::PinResult{};
+        return FirstTouch{};
     }
     bench::Run placement{"ledger.placement"};
     (void)placement.core(cpu);
-    bench::Run::PinResult pin = placement.pin_calling_thread();
-    if (pin.prior.has_value()) {
+    FirstTouch touch{.pin = placement.pin_calling_thread()};
+    if (touch.pin.prior.has_value()) {
         (void)region.fault_in(1u);
+        record_placement(ctx, region, cpu, touch);
     }
-    return pin;
+    return touch;
 }
 
 }  // namespace cache_tier_detail
@@ -577,17 +630,23 @@ struct SweepPass {
     // sweep reads DRAM.  Its pages are on the node of self_cpu, and the
     // thread stays on self_cpu until the last pass, so that end measures
     // local DRAM.
-    bench::Run::PinResult measuring_pin = fault_in_from_cpu(*region, self_cpu);
-    if (!measuring_pin.prior.has_value()) {
+    FirstTouch measuring_touch = fault_in_from_cpu(ctx, *region, self_cpu);
+    if (!measuring_touch.pin.prior.has_value()) {
         worker.stop();
         result.fault = LedgerError::NotApplicableOnThisHost;
+        return result;
+    }
+    if (measuring_touch.placement != LedgerError::None) {
+        (void)measuring_touch.pin.restore();
+        worker.stop();
+        result.fault = measuring_touch.placement;
         return result;
     }
 
     const SweepPass first = run_one_sweep(worker, *region, self_cpu);
     const SweepPass second = run_one_sweep(worker, *region, self_cpu);
     worker.stop();
-    (void)measuring_pin.restore();
+    (void)measuring_touch.pin.restore();
     return fold_sweeps(first, second);
 }
 
@@ -627,17 +686,25 @@ struct SweepPass {
     // region, so first-touch puts it on the node of self_cpu.  The pin holds
     // until the last read of the two regions, so each local read and each
     // remote read comes from self_cpu.
-    bench::Run::PinResult measuring_pin = fault_in_from_cpu(*local_region, self_cpu);
-    if (!measuring_pin.prior.has_value()) {
+    FirstTouch measuring_touch = fault_in_from_cpu(ctx, *local_region, self_cpu);
+    if (!measuring_touch.pin.prior.has_value()) {
         result.fault = LedgerError::NotApplicableOnThisHost;
+        return result;
+    }
+    if (measuring_touch.placement != LedgerError::None) {
+        (void)measuring_touch.pin.restore();
+        result.fault = measuring_touch.placement;
         return result;
     }
 
     // A thread pinned to a CPU of the farthest node touches the other
     // region, so first-touch puts it on that node.  It exists only to fault
     // the pages.  The measuring thread reads both regions from self_cpu, so
-    // the two reads differ only in the node of the pages.
+    // the two reads differ only in the node of the pages.  The kernel can
+    // take those pages from another node too, so the census of the region
+    // decides whether the remote read is remote.
     bool remote_placed = false;
+    FirstTouch remote_touch{};
     {
         ProbeRegion* target = &*remote_region;
         std::thread toucher{[target, ctx, remote_cpu, &remote_placed] {
@@ -648,10 +715,16 @@ struct SweepPass {
             remote_placed = true;
         }};
         toucher.join();
+        record_placement(ctx, *target, remote_cpu, remote_touch);
     }
     if (!remote_placed) {
-        (void)measuring_pin.restore();
+        (void)measuring_touch.pin.restore();
         result.fault = LedgerError::NotApplicableOnThisHost;
+        return result;
+    }
+    if (remote_touch.placement != LedgerError::None) {
+        (void)measuring_touch.pin.restore();
+        result.fault = remote_touch.placement;
         return result;
     }
 
@@ -680,7 +753,7 @@ struct SweepPass {
     const bench::Report local_second = measure_region("ledger.numa.local.run2", *local_region);
     const bench::Report remote_second = measure_region("ledger.numa.remote.run2", *remote_region);
     bench::do_not_optimize(sink);
-    (void)measuring_pin.restore();
+    (void)measuring_touch.pin.restore();
 
     // Cost, not gain: what the remote read costs as a percentage of the
     // local one, so a host where the hop is free answers 100 and one

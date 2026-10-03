@@ -1,0 +1,92 @@
+#pragma once
+
+// The allocation counters of one NUMA node, from the file
+// /sys/devices/system/node/nodeN/numastat.
+//
+// The kernel counts each page that it allocates.  numa_foreign counts each
+// allocation that preferred the node and got a page of another node: the
+// fallback that a first touch does not report.  A caller that reads the
+// counters of a node before and after it touches a range knows that no
+// allocation that preferred the node fell back in that time when
+// numa_foreign stayed the same.  The counters belong to the whole host, so
+// a change can also come from another process.
+//
+// The read goes through the file door of fixy/os/Fs.h with the context of
+// the caller, so the gate is the gate of the census: IO and Block.  The
+// path and the parse are in src/fixy/os/NumaCounters.cpp.
+
+#include <fixy/Core.h>
+#include <fixy/Path.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <fixy/os/Fs.h>
+#include <fixy/os/NumaPlacement.h>
+#include <foundation/effects/Ctx.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+
+namespace fixy::numa {
+
+// The six counters of a node.  Each one counts pages since the boot.
+struct NodeAllocationCounters {
+    std::uint64_t hit = 0;  // numa_hit: the node gave a page to an allocation that preferred it
+    std::uint64_t miss = 0;  // numa_miss: the node gave a page to an allocation that preferred another node
+    std::uint64_t foreign = 0;  // numa_foreign: an allocation preferred the node and got a page of another node
+    std::uint64_t interleave_hit = 0;  // interleave_hit: an interleaved allocation got a page of the node it chose
+    std::uint64_t local = 0;  // local_node: a process on a CPU of the node got a page of the node
+    std::uint64_t other = 0;  // other_node: a process on a CPU of another node got a page of the node
+};
+
+// The counters in the text of a numastat file: one line for each counter,
+// a name and a decimal count.  A line with another name is skipped, so a
+// counter that a later kernel adds changes nothing.  The error has the step
+// CounterFormat when a counter is missing, when a counter has two lines, or
+// when a line has no count or a count past the range of 64 bits.
+// Complexity: O(characters).
+[[nodiscard]] Result<NodeAllocationCounters, NumaQueryError> parse_allocation_counters(TextView text) noexcept;
+
+namespace detail {
+
+// The bytes that a read of a numastat file takes.  The file of a node has
+// six lines of at most 36 characters.
+inline constexpr std::size_t allocation_counter_file_bytes = 512;
+
+// The path of the numastat file of a concrete node.
+[[nodiscard]] std::filesystem::path allocation_counter_path_(NumaNodeId node) noexcept;
+
+}  // namespace detail
+
+// The counters of the node.  The node of a host that has no such node, and
+// a kernel with no NUMA support, give the step CounterOpen with the errno
+// of the open.
+//
+// Not a mint: the read synthesizes no authority.
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsNumaQuery<Ctx>
+[[nodiscard]] Result<NodeAllocationCounters, NumaQueryError> read_allocation_counters(Ctx const& ctx,
+                                                                                      NumaNodeId node) noexcept {
+    if (!is_concrete_numa_node(node)) {
+        return err(NumaQueryError{NumaQueryStep::NodeNotConcrete, 0});
+    }
+    auto path = ::fixy::sanitize_path(
+        ::fixy::mint_tagged<::fixy::tags::source::External>(detail::allocation_counter_path_(node)));
+    if (!path) {
+        return err(NumaQueryError{NumaQueryStep::CounterPath, 0});
+    }
+    auto file = ::fixy::fs::mint_file<::fixy::fs::read_only>(ctx, std::move(*path));
+    if (!file) {
+        return err(NumaQueryError{NumaQueryStep::CounterOpen, file.error().value()});
+    }
+    FixedText<detail::allocation_counter_file_bytes> text{};
+    std::span<char> const characters{::foundation::core::detail::text_bytes_(text), text.capacity};
+    auto read = ::fixy::fs::read_full(ctx, file->peek(), std::as_writable_bytes(characters));
+    if (!read) {
+        return err(NumaQueryError{NumaQueryStep::CounterRead, read.error().value()});
+    }
+    ::foundation::core::detail::text_resize_(text, *read);
+    return parse_allocation_counters(text.view());
+}
+
+}  // namespace fixy::numa
