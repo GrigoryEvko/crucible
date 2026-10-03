@@ -163,6 +163,7 @@ bench/bench_harness.h std_entity 1 std::basic_string_view::begin
 bench/bench_harness.h std_entity 1 std::basic_string_view::end
 bench/bench_harness.h std_entity 1 std::basic_string_view::value_type
 bench/bench_harness.h std_entity 2 std::binary_search
+bench/bench_harness.h std_entity 1 std::chrono
 bench/bench_harness.h std_entity 1 std::chrono::duration
 bench/bench_harness.h std_entity 2 std::chrono::duration::count
 bench/bench_harness.h std_entity 2 std::chrono::duration_cast
@@ -5286,7 +5287,7 @@ test/layer/checks/fixy/Secret.cpp std_entity 1 std::vector::begin
 test/layer/checks/fixy/Secret.cpp std_entity 1 std::vector::end
 test/layer/checks/fixy/SelfContained.cpp c_array_object 1
 test/layer/checks/fixy/SelfContained.cpp raw_pointer_object 4
-test/layer/checks/fixy/Stale.cpp std_entity 1 std::__exception_ptr::swap
+test/layer/checks/fixy/Stale.cpp std_entity 1 std::swap
 test/layer/checks/fixy/Throws.cpp std_entity 1 std::tuple
 test/layer/checks/fixy/Throws.cpp std_object 1 std::tuple
 test/layer/checks/fixy/atoms/Simd.cpp std_entity 1 std::array
@@ -8169,6 +8170,7 @@ x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +1 std
 x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +2 std::span
 x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +2 std::span::subspan
 x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +6 std::tuple
+x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +1 std::tuple::operator=
 x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +1 std::vector::operator[]
 x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +1 std::vector::resize
 x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +1 std::vector::size

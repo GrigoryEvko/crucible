@@ -11,3 +11,4 @@
 unsigned long gap_folded = std::strlen("abc") + alignof(std::string) + noexcept(std::string{});
 
 using std::swap;
+using namespace std::pmr;

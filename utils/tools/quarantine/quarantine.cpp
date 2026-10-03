@@ -172,8 +172,11 @@
 // a reflection of an entity that the source does not spell.
 //
 // The plugin cannot see what the front end keeps as no tree, or as a tree with
-// no source location: a dependent member of a template and a
-// using-declaration.  Outside a template, the front end folds a constant
+// no source location: a dependent member of a template, and a
+// using-declaration and a using-directive of namespace scope.  A
+// using-declaration in a function body or in a class names its entity
+// (check_using), and a using-directive in a function body names its
+// namespace.  Outside a template, the front end folds a constant
 // expression while it parses: an alignof, a noexcept, a type trait, a
 // requires-expression, a static_assert, and the initializer of a variable when
 // a call in it gives a constant, also a call of a builtin such as strlen.
@@ -1621,6 +1624,22 @@ std::string member_name_text(tree name) {
     }
 }
 
+// The library name that a member of the namespace NS gives, or NS itself
+// when MEMBER is empty, as an admit row spells it: a qualified name that a
+// template does not resolve, or the namespace of a using-directive.
+void record_namespace_name(tree ns, const std::string& member, location_t location) {
+    if (ns != std_node && top_namespace(ns) != std_node) {
+        return;
+    }
+    std::string name = member.empty() ? qualified_name(ns) : qualified_name(ns) + "::" + member;
+    const AdmitRow* row = admitting_row_of_name(name);
+    if (row == nullptr) {
+        record(Kind::std_entity, location, name);
+    } else if (!row->pending_kind.empty()) {
+        record_pending(*row, location, name);
+    }
+}
+
 // A qualified name in a template, such as std::sort before the arguments
 // are known, or std::numeric_limits<T>::max.
 void check_scope_use(tree scope_ref, location_t location) {
@@ -1630,15 +1649,7 @@ void check_scope_use(tree scope_ref, location_t location) {
         return;
     }
     if (TREE_CODE(scope) == NAMESPACE_DECL) {
-        if (top_namespace(scope) == std_node || scope == std_node) {
-            std::string name = qualified_name(scope) + "::" + member;
-            const AdmitRow* row = admitting_row_of_name(name);
-            if (row == nullptr) {
-                record(Kind::std_entity, location, name);
-            } else if (!row->pending_kind.empty()) {
-                record_pending(*row, location, name);
-            }
-        }
+        record_namespace_name(scope, member, location);
         return;
     }
     if (TYPE_P(scope)) {
@@ -1683,6 +1694,70 @@ void check_temporary(tree target) {
     record_pending_class(classes, location);
 }
 
+// A using-declaration in a function body or in a class: the library entity
+// that it brings into scope.  The front end keeps a using-declaration of
+// namespace scope as a binding of the namespace, with no tree that has a
+// location (KNOWN_GAPS of test/check_plugin.py).
+void check_using(tree decl) {
+    location_t location = DECL_SOURCE_LOCATION(decl);
+    tree scope = USING_DECL_SCOPE(decl);
+    if (scope == NULL_TREE || !is_quarantined(location)) {
+        return;
+    }
+    std::string member = DECL_NAME(decl) != NULL_TREE ? member_name_text(DECL_NAME(decl)) : std::string{};
+    if (TYPE_P(scope)) {
+        LibraryClasses classes = library_class_in(scope, 0);
+        if (is_standard_class(classes.refused)) {
+            record(Kind::std_entity, location, qualified_name(classes.refused) + "::" + member);
+        }
+        record_pending_class(classes, location, "::" + member);
+        return;
+    }
+    if (TREE_CODE(scope) != NAMESPACE_DECL) {
+        return;
+    }
+    // A function or a variable of the C library keeps its kind.  Each other
+    // target is the qualified name that the source spells.  The declaration
+    // brings each overload of the set into scope, so a row admits it only
+    // when a row admits each library declaration of the set, also through its
+    // header.
+    tree targets = USING_DECL_DECLS(decl);
+    if (targets == NULL_TREE) {
+        record_namespace_name(scope, member, location);
+        return;
+    }
+    tree first = TREE_CODE(targets) == OVERLOAD ? OVL_FIRST(targets) : targets;
+    if ((TREE_CODE(first) == FUNCTION_DECL || VAR_P(first)) && library_of(first) == Library::c_library) {
+        record(Kind::c_library_call, location, qualified_name(first));
+        return;
+    }
+    const AdmitRow* pending = nullptr;
+    bool is_refused = false;
+    for (lkp_iterator candidate(targets); candidate; ++candidate) {
+        // A call names the function of a function template, which has the
+        // location of its definition, so the set is read the same way.
+        tree entity = *candidate;
+        if (TREE_CODE(entity) == TEMPLATE_DECL && DECL_TEMPLATE_RESULT(entity) != NULL_TREE
+            && TREE_CODE(DECL_TEMPLATE_RESULT(entity)) == FUNCTION_DECL) {
+            entity = DECL_TEMPLATE_RESULT(entity);
+        }
+        if (library_of(entity) == Library::none) {
+            continue;
+        }
+        const AdmitRow* row = admitting_row(entity);
+        is_refused = is_refused || row == nullptr;
+        if (row != nullptr && !row->pending_kind.empty() && pending == nullptr) {
+            pending = row;
+        }
+    }
+    std::string spelled = qualified_name(scope) + "::" + member;
+    if (is_refused) {
+        record(Kind::std_entity, location, spelled);
+    } else if (pending != nullptr) {
+        record_pending(*pending, location, spelled);
+    }
+}
+
 void check_new_expression(tree expression, location_t location) {
     bool is_placement = TREE_OPERAND(expression, 0) != NULL_TREE;
     tree type = TREE_OPERAND(expression, 1);
@@ -1714,6 +1789,10 @@ void check_local_decl(tree decl, BodyWalk& walk) {
             walk_expression(&DECL_INITIAL(decl), walk);
             walk.last = saved;
         }
+        return;
+    }
+    if (TREE_CODE(decl) == USING_DECL) {
+        check_using(decl);
         return;
     }
     if (TREE_CODE(decl) == TYPE_DECL && !DECL_ARTIFICIAL(decl)) {
@@ -1933,6 +2012,16 @@ tree visit_body_node(tree* node_pointer, int* walk_subtrees, void* data) {
         case IMPLICIT_CONV_EXPR:
             check_named_operands(node, walk.last);
             walk_expression(&TREE_OPERAND(node, 0), walk);
+            *walk_subtrees = 0;
+            return NULL_TREE;
+        // A using-directive in a function body names its namespace.  The front
+        // end also keeps a USING_STMT for each target of a using-declaration
+        // that is no template, for the debug information, and check_using
+        // reads the using-declaration itself.
+        case USING_STMT:
+            if (tree used = USING_STMT_NAMESPACE(node); used != NULL_TREE && TREE_CODE(used) == NAMESPACE_DECL) {
+                record_namespace_name(used, std::string{}, walk.last);
+            }
             *walk_subtrees = 0;
             return NULL_TREE;
         // A declaration is read where an expression names it as an operand.
@@ -2178,6 +2267,9 @@ void walk_class(tree type, bool is_pattern) {
                 break;
             case TEMPLATE_DECL:
                 walk_template(member);
+                break;
+            case USING_DECL:
+                check_using(member);
                 break;
             default:
                 break;

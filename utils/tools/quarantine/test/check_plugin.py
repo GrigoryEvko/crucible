@@ -759,6 +759,11 @@ LIBRARY_NAMES = (
     ("temporaries.cpp", (), 22, "std_entity", "std::vector"),
     ("temporaries.cpp", (), 23, "std_entity", "std::basic_string"),
     ("temporaries.cpp", (), 24, "std_entity", "std::vector"),
+    ("usings.cpp", (), 12, "std_entity", "std::basic_string::size"),
+    ("usings.cpp", (), 16, "std_entity", "std::swap"),
+    ("usings.cpp", (), 22, "std_entity", "std::swap"),
+    ("usings.cpp", (), 27, "std_entity", "std::pmr"),
+    ("usings.cpp", (), 31, "c_library_call", "memcpy"),
 )
 # The header of a library outside the source root that no system flag marks.
 # run_library_names writes it in its scratch directory, and each compile of the
@@ -941,6 +946,8 @@ KNOWN_GAPS = (
      "to constants while it parses, and keeps no tree of the names"),
     ("known_gaps.cpp", TEST_RULES, "known_gaps.cpp", 13,
      "a using-declaration of namespace scope is a binding of the namespace, with no tree that has a location"),
+    ("known_gaps.cpp", TEST_RULES, "known_gaps.cpp", 14,
+     "a using-directive of namespace scope is a list of the namespace, with no tree that has a location"),
     ("language_gap_user.cpp", HERE / "language.txt", "include/fixy/high/LanguageGap.h", 11,
      "the rule of the language reads each declaration type and each include, and not a call.  An extension needs "
      "a decision of the owner: the language files name std::nothrow and the std::vector of std::meta"),

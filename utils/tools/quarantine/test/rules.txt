@@ -59,6 +59,7 @@ quarantine temporaries.cpp
 quarantine type_walks.cpp
 quarantine unclosed_region.cpp
 quarantine unevaluated.cpp
+quarantine usings.cpp
 quarantine violations.cpp
 quarantine fixy/
 quarantine foundation/
