@@ -4790,6 +4790,7 @@ crucible_neg_compile_test(neg_computation_cache_closure_argument
 # concept, so a translation unit cannot put a verdict of a stable identity
 # in front of the walk for the static invoker of a closure.
 crucible_neg_compile_test(neg_computation_cache_forged_function_identity
+  "neg_computation_cache_forged_function_identity\\.cpp:[0-9]+:[0-9]+: error: expected initializer before .<. token"
   "computation_cache_key: the function, its signature or an argument type has no stable identity"
   "required for the satisfaction of .HasStableFunctionIdentity<FnPtr>. .with FnPtr = &closure_key::")
 

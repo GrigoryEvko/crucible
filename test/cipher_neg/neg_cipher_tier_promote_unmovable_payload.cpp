@@ -16,7 +16,11 @@ struct ImmovablePayload {
     ImmovablePayload& operator=(ImmovablePayload&&) = delete;
 };
 
-using BadMint = decltype(::crucible::cipher::mint_promote<::fixy::CipherTierTag_v::Cold, ::fixy::CipherTierTag_v::Warm>(
-    std::declval<::fixy::cipher_tier::Cold<ImmovablePayload>>()));
-
-int main() { return sizeof(BadMint); }
+// The size of the call is its one use, so the refused call is the only
+// error.
+int main() {
+    static_cast<void>(
+        sizeof(::crucible::cipher::mint_promote<::fixy::CipherTierTag_v::Cold, ::fixy::CipherTierTag_v::Warm>(
+            std::declval<::fixy::cipher_tier::Cold<ImmovablePayload>>())));
+    return 0;
+}

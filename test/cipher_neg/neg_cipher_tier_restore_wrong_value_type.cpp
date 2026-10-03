@@ -9,7 +9,10 @@
 
 #include <utility>
 
-using BadMint = decltype(::crucible::cipher::mint_restore<::crucible::ContentHash>(
-    std::declval<::fixy::cipher_tier::Cold<int>>(), std::declval<::crucible::ContentHash>()));
-
-int main() { return sizeof(BadMint); }
+// The size of the call is its one use, so the refused call is the only
+// error.
+int main() {
+    static_cast<void>(sizeof(::crucible::cipher::mint_restore<::crucible::ContentHash>(
+        std::declval<::fixy::cipher_tier::Cold<int>>(), std::declval<::crucible::ContentHash>())));
+    return 0;
+}

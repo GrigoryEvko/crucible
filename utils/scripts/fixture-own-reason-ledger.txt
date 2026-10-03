@@ -10,14 +10,6 @@
 # of the error.
 neg_atom_verdict_forged | an error that no regex matches: expected initializer before ‘<’ token
 neg_budgeted_axes_swapped | an error that no regex matches: no matching function for call to ‘fixy::Budgeted<int>::Budgeted(<brace-enclosed initializer list>)’
-neg_cipher_tier_demote_unmovable_payload | an error that no regex matches: ‘BadMint’ was not declared in this scope
-neg_cipher_tier_promote_unmovable_payload | an error that no regex matches: ‘BadMint’ was not declared in this scope
-neg_cipher_tier_restore_no_hash_projection | an error that no regex matches: ‘BadMint’ was not declared in this scope
-neg_cipher_tier_restore_unmovable_payload | an error that no regex matches: ‘BadMint’ was not declared in this scope
-neg_cipher_tier_restore_wrong_value_type | an error that no regex matches: ‘BadMint’ was not declared in this scope
-neg_computation_cache_closure_argument | an error that no regex matches: static assertion failed: foundation::reflect: a stable id refuses the type const closure_key::<lambda(int)>, because its part closure_key::<lambda(...
-neg_computation_cache_closure_invoker | an error that no regex matches: static assertion failed: stable_function_name_id: the function has no stable identity.  A static invoker of a closure or a function with internal l...
-neg_computation_cache_forged_function_identity | 2 errors that no regex matches, the first: expected initializer before ‘<’ token
 neg_endpoint_payload_row_outside_ctx | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘foundation::effects::Computation<foundation::e...
 neg_exec_ctx_forged_specialization | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘const foundation::effects::ExecCtx<foundation:...
 neg_fail_closed_admits_of_a_class | an error that no regex matches: ‘{anonymous}::NotARelation::raw_to_checked’ defined but not used [-Werror=unused-const-variable=]

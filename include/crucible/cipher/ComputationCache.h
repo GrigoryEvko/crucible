@@ -116,16 +116,24 @@ struct RowBlind {};
 // The combiner is order-sensitive, so the row step moves every
 // row-aware key away from the row-blind key, even for a row that
 // contributes zero.
+//
+// The refusal stops the fold.  The ids of the fold have static
+// assertions of their own, so a fold after the refusal gives one more
+// error for the same cause.
 template <auto FnPtr, typename RowOrBlind, typename... Args>
 [[nodiscard]] consteval std::uint64_t cache_key_fold() noexcept {
-    static_assert(::crucible::cipher::HasStableKeyIdentity<FnPtr, Args...>, kUnstableKeyIdentity);
-    std::uint64_t k = ::foundation::reflect::stable_function_name_id<FnPtr>;
-    k = ::foundation::reflect::combine_ids(k, ::foundation::reflect::stable_function_id<FnPtr>);
-    if constexpr (!std::is_same_v<RowOrBlind, RowBlind>) {
-        k = ::foundation::reflect::combine_ids(k, ::foundation::diag::row_hash_contribution_v<RowOrBlind>);
+    if constexpr (::crucible::cipher::HasStableKeyIdentity<FnPtr, Args...>) {
+        std::uint64_t k = ::foundation::reflect::stable_function_name_id<FnPtr>;
+        k = ::foundation::reflect::combine_ids(k, ::foundation::reflect::stable_function_id<FnPtr>);
+        if constexpr (!std::is_same_v<RowOrBlind, RowBlind>) {
+            k = ::foundation::reflect::combine_ids(k, ::foundation::diag::row_hash_contribution_v<RowOrBlind>);
+        }
+        ((k = ::foundation::reflect::combine_ids(k, ::foundation::reflect::stable_type_id<Args>)), ...);
+        return k;
+    } else {
+        static_assert(::crucible::cipher::HasStableKeyIdentity<FnPtr, Args...>, kUnstableKeyIdentity);
+        return 0;
     }
-    ((k = ::foundation::reflect::combine_ids(k, ::foundation::reflect::stable_type_id<Args>)), ...);
-    return k;
 }
 
 template <auto FnPtr, typename RowOrBlind, typename... Args>

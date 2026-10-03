@@ -8,8 +8,10 @@
 // foundation::reflect.  No such template exists.  The gate of the key
 // calls the walk through a concept, and the key refuses the invoker.
 //
-// Expected diagnostic: the static assertion of the key refuses the
-// function, and the unsatisfied clause is the identity of the function.
+// Expected diagnostics: the parser refuses the specialization, because
+// the namespace declares no such template.  The static assertion of the
+// key refuses the function, and the unsatisfied clause is the identity
+// of the function.
 
 #include <crucible/cipher/ComputationCache.h>
 

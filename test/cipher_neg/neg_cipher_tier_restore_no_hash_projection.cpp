@@ -21,7 +21,10 @@ struct ProductionPayload {
     ProductionPayload& operator=(const ProductionPayload&) = delete;
 };
 
-using BadMint = decltype(::crucible::cipher::mint_restore<ProductionPayload>(
-    std::declval<::fixy::cipher_tier::Cold<ProductionPayload>>(), std::declval<::crucible::ContentHash>()));
-
-int main() { return sizeof(BadMint); }
+// The size of the call is its one use, so the refused call is the only
+// error.
+int main() {
+    static_cast<void>(sizeof(::crucible::cipher::mint_restore<ProductionPayload>(
+        std::declval<::fixy::cipher_tier::Cold<ProductionPayload>>(), std::declval<::crucible::ContentHash>())));
+    return 0;
+}
