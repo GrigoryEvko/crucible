@@ -13,7 +13,7 @@ The method is the one that Stage A to Stage D used: stages, units in worktrees, 
 
 ## 1. Decisions
 
-The owner approved these decisions on 2026-09-30 and 2026-10-01.
+The owner approved these decisions on 2026-09-30, 2026-10-01 and 2026-10-03.
 
 | Id | Decision |
 |---|---|
@@ -27,6 +27,10 @@ The owner approved these decisions on 2026-09-30 and 2026-10-01.
 | D8 | The families physically live in `include/foundation/core/`, in namespace `foundation::core`, because the foundation algebra must use them too. `include/fixy/Core.h` re-exports them into namespace `fixy`. The re-export is the public surface, not a shim. |
 | D9 | 2026-10-01: the Debug build type drops `-fharden-compares`, `-fharden-conditional-branches` and `-fharden-control-flow-redundancy`. These flags defend a binary against fault injection and find no defect in a test. Every other build type keeps the first two. `-fharden-control-flow-redundancy` was in Debug only, so no build has it after this change. |
 | D10 | 2026-10-01: build speed comes from how the tree uses C++, not from a changed compiler. No GCC rebuild in Stage 0. ccache stays at its present limit (one Debug build fills about 0.2 GB). |
+| D11 | 2026-10-03: the local guard run and the local test runs are the only gates. Nobody watches GitHub CI after a landing. Main goes to GitHub in one sync about once a day, and after each sync one person reads the last run. |
+| D12 | 2026-10-03: a thin base. This decision makes D2 narrower. glibc keeps only the thread start, signals, `dlopen`, the `mem*` functions that GCC calls, `clock_gettime`, and `malloc` behind one allocation door of the Ref family. Each other door uses Linux UAPI headers and one syscall primitive for each architecture (R4, R5). |
+| D13 | 2026-10-03: no replacement of the C runtime inside the process. The base writes no general-purpose `malloc`, no vDSO parser, and no thread or TLS setup of its own, because the vessel shares one process with Python and PyTorch. A binary with no glibc is possible only as a separate daemon, later (section 17). |
+| D14 | 2026-10-03: fast hardware access has one shape. The kernel does the control plane one time: mappings, queues and the IOMMU. User space does the data plane: ring writes, doorbell writes and polls, with no syscall for each operation. The IOMMU stays on. A user-space driver through VFIO is only for a device that Crucible owns alone. AF_XDP is out of scope, because the networking scope is the scope of NCCL. |
 
 ---
 
@@ -37,8 +41,15 @@ These rules hold for the whole migration and after it.
 - **R1. Two regions.** The base is `include/foundation` and `include/fixy`, plus their source files in `src/foundation` and `src/fixy`. Every other C++ file in the repository is quarantined.
 - **R2. The base depends only on the compiler.** A base header can include only the headers that the rule table (Stage 1, unit 1a) allows for its layer. The first allowance for every layer is: `<cstddef>`, `<cstdint>`, `<type_traits>`, `<concepts>`, `<utility>` (casts, `declval` and index sequences only), `<compare>`, `<initializer_list>`, `<new>`, `<meta>`. The audit in unit 1b can make this list shorter. It cannot make it longer without an owner decision.
 - **R3. Builtins before headers.** When a builtin gives a thing, the base uses the builtin and not a header: `__atomic_*`, `__builtin_memcpy`, `__builtin_memmove`, `__builtin_memset`, `__builtin_add_overflow` and its family, `__builtin_bit_cast`, `__builtin_ia32_pause`, `__builtin_ia32_rdtsc`, `__builtin_thread_pointer`, `__builtin_FILE`, `__builtin_LINE`, `__builtin_FUNCTION`, `__builtin_unreachable` (only inside the fatal exit), vector extensions.
-- **R4. One door for each kernel subsystem.** Only `include/fixy/os` and `src/fixy/os` can include a system header, a Linux UAPI header, or a glibc header. Each such header has exactly one owner file (the door). No system type crosses a public signature of a door.
-- **R5. Zero libstdc++ runtime use.** No object in `libcrucible.a` and no binary other than the vessel library references a libstdc++ symbol outside a short allowlist. A link-level guard proves this.
+- **R4. One door for each kernel subsystem.** Only `include/fixy/os` and `src/fixy/os` can include a system header, a Linux UAPI header, or a glibc header. Each such header has exactly one owner file (the door). No system type crosses a public signature of a door. These parts were added on 2026-10-03 (D12):
+  - A door uses the Linux UAPI headers (`<linux/*.h>`, `<asm/unistd.h>`) and the syscall primitive of its architecture (x86_64 and aarch64). It does not use a glibc header, except for the calls that D12 keeps in glibc.
+  - One door unit includes UAPI headers or glibc headers, never both, because some of their declarations conflict.
+  - A door uses only the system calls that both architectures have: the `*at` and `p*` forms, for example `openat`, `fstatat`, `ppoll` and `dup3`.
+  - A deny list in the rule table holds each system call that the base never issues raw, because glibc owns its state: `rt_sigaction` and the other signal calls, `clone` and `clone3`, `set_robust_list`, `set_tid_address`, `arch_prctl` and each call that sets the TLS register, and `exit`. The plugin refuses a raw call of a denied number.
+  - The platform floor states a minimum kernel version. A start-up check refuses an older kernel with a clear message, because a raw system call has no glibc fallback.
+- **R5. Zero runtime library use.** No object in `libcrucible.a` and no binary other than the vessel library references a libstdc++ symbol outside a short allowlist. A link-level guard proves this. On 2026-10-03 the rule grew to libc (D12). The symbol ledger holds the libc symbols and the libstdc++ symbols of `libfoundation.a`, `libfixy.a` and `libcrucible.a`, with one allowlist for each library:
+  - `libfoundation.a` references only the `mem*` functions that GCC calls (`memcpy`, `memmove`, `memset`, `memcmp`), the libgcc helpers (for example `__udivti3`), `__stack_chk_fail` and `__tls_get_addr`.
+  - `libfixy.a` adds only the calls that D12 keeps in glibc, and each of them is in its door.
 - **R6. The quarantine rule.** In a quarantined file, the plugin refuses:
   - an object of a std type
   - a use of a std name that the admitted list does not hold
@@ -51,7 +62,7 @@ These rules hold for the whole migration and after it.
 - **R8. Extend, do not escape.** When the base does not support a thing, a unit sends a request to the extension lane (section 17). The new primitive joins one of the eight families, uses the shared verbs, and comes from a real call site. An opt-out region is never a way around a missing primitive.
 - **R9. A small, uniform surface.** Eight families: Choice, Record, Region, Ref, Atomic, Scalar, Report, Os. Ten shared verbs (section 11.1). We do not copy the std API. Each type gets only the operations that the tree calls.
 - **R10. Clean cuts.** Each change moves every producer and every consumer at once. No shim, no alias for an old name, no deprecated path. Each commit builds and passes.
-- **R11. The ratchet.** From Stage 1, the count of violations in each directory can only fall. A change that raises a count fails CI.
+- **R11. The ratchet.** From Stage 1, the count of violations can only fall. The ledger counts each file, kind and entity, and the findings that each opt-out region covers. A change that raises a count fails the local test run (D11).
 - **R12. Zero hot-path cost.** A family operation on the hot path compiles to the same instructions as the code it replaces. The proof comes from a type (an index type, a fixed extent, a memory order in the operation name), not from a branch at each access.
 
 The rules R13 to R17 keep compile time low. Stage 0 applies them to the tree, and every later stage obeys them.
@@ -61,6 +72,12 @@ The rules R13 to R17 keep compile time low. Stage 0 applies them to the tree, an
 - **R15. No heavy inline body in a header.** A non-template inline function is analyzed in each includer. A body that is cold or large goes to a source file.
 - **R16. Builtins before headers.** A base header does not include an intrinsics header, `<thread>` or `<chrono>` for one function. Rule R3 gives the builtins.
 - **R17. No giant translation unit and no giant function.** A generated file comes out as shards. A test file that compiles for more than 60 s at `-j1` is split by subject. A function large enough to make the debug-information passes explode is split.
+
+The rules R18 to R20 keep the base thin and keep it a good guest in a process that it shares with Python and PyTorch (D12, D13). The owner added them on 2026-10-03.
+
+- **R18. One code path under the sanitizers.** A door has the same code path in each build. A sanitizer cannot see a raw system call, so the door tells it what the call did: `__tsan_acquire` and `__tsan_release` on the futex door, and ASan poisoning of the free space in each arena. There is one exception. A call that can block goes through the intercepted glibc function in a TSan build, because TSan delivers a deferred signal only at an intercepted call, and a raw blocking call can then hang.
+- **R19. A static TLS budget.** The base holds only small `thread_local` data. A budget row of `utils/scripts/budgets.txt` holds the size of `.tbss` and `.tdata` of each base object. A hot path takes its context as a parameter and reads no TLS, because in a shared library a TLS read is either a call of `__tls_get_addr` or a use of the static TLS block, which `dlopen` can find full.
+- **R20. A door changes no process-wide state.** No door changes signal dispositions, resource limits, the CPU affinity of the whole process, the environment, or the current directory. A door can change the affinity of a thread that the base started.
 
 ---
 
@@ -541,7 +558,7 @@ The plugin admits only KEEP rows, KEEP-RESTRICTED rows, and REPLACE rows until t
 1. **Reports that ccache can store.** In REPORT mode, the plugin writes its findings to a file next to the object, and QPLUG turned ccache off for that reason. Change the plugin to write the findings into a section of the object file (`.crucible.quarantine`). ccache then stores the findings with the object, and REPORT mode no longer needs a full build. A script reads the section from each object.
 2. **The ledger.** `utils/scripts/quarantine-ledger.txt` holds one row for each directory and kind: the count on main. Generate it from a REPORT build.
 3. **The check.** A ci_guard test builds in REPORT mode, reads the sections, and compares each count with the ledger. A count above the ledger fails. A count below the ledger fails too, with a message to regenerate the ledger in the same commit, so the ledger never keeps slack.
-4. **CI.** Add a CI job that runs the check on each push.
+4. **CI.** Add a CI job that runs the check on each push. Since D11, the local test runs are the gate, and the CI step runs after the daily sync.
 5. **Witness.** A plant of one std object in a quarantined file raises one count and fails the check. The removal of one finding fails until the ledger is regenerated.
 
 ### 8.4 Unit 1d: the pragma macro, the fixture rule, the assert kind
@@ -581,15 +598,21 @@ Add a section on the quarantine: rules R1 to R12, the layers, the door rule, the
 
 ### 9.1 Units
 
-**2a, the floor.** `include/foundation/Platform.h` keeps the platform checks, attributes and macros. The debugger probe and the body of `fail_invariant` move to `src/foundation/Platform.cpp`, and the header keeps a `[[noreturn]]` declaration. Remove `<fcntl.h>`, `<unistd.h>`, `<cstdio>`, `<cstdlib>` and `<cstring>` from the header.
+**2a, the floor.** `include/foundation/Platform.h` keeps the platform checks, attributes and macros. The debugger probe and the body of `fail_invariant` move to `src/foundation/Platform.cpp`, and the header keeps a `[[noreturn]]` declaration. Remove `<fcntl.h>`, `<unistd.h>`, `<cstdio>`, `<cstdlib>` and `<cstring>` from the header. Two more parts (R5, R19):
+- The symbol ledger of `utils/scripts/check-libstdcxx-symbols.py` also holds the libc symbols of `libfoundation.a`, `libfixy.a` and `libcrucible.a`, with the allowlist of each library from R5. The ledger keeps today's symbols as ratchet rows, so each later unit can only remove them.
+- A budget row holds the size of `.tbss` and `.tdata` of each base object, read with `utils/scripts/elf_file.py`. The large thread-local buffer of `src/foundation/DiagRuntime.cpp` moves out of static TLS in this unit, because the vessel library loads only with a glibc tunable while it stays.
 
 **2b, OS code into fixy/os.**
 - Move `fixy/OwnedFile.h`, `fixy/OwnedMmap.h`, `fixy/Path.h` and `fixy/concurrent/Topology.h` into `include/fixy/os/`.
 - The sysfs probe of Topology moves to `src/fixy/os/Topology.cpp`.
 - The signal, `atexit`, `pthread` and clock code of `fixy/session/Watch.h` moves to `src/fixy/session/Watch.cpp`.
 - Every caller moves in the same commit.
+- The syscall primitive lands first: one inline-assembly system call for x86_64 and one for aarch64, in one door file, with the numbers from `<asm/unistd.h>`. The deny list of R4 goes into the rule table, and the plugin refuses a raw call of a denied number. The platform floor gets the minimum kernel version and its start-up check.
+- The Topology probe reads sysfs with raw `openat` and `read` through the file door, and it parses the CPU lists itself. Each error is a `Result`. Its eight `try`/`catch` sites go, and with them the use of `std::filesystem`, `ifstream`, `std::set` and `std::map` (about 40 libstdc++ symbols of `libfixy.a`). This part of slice 4.6 moves here.
 
-**2c, thread start into concurrent.** Move `fixy/os/Spawn.h` to `include/fixy/concurrent/`. Move the thread half of `foundation/permissions/PermissionFork.h` to `include/fixy/concurrent/`. Foundation starts no thread after this unit.
+**2c, thread start into concurrent.** Move `fixy/os/Spawn.h` to `include/fixy/concurrent/`. Move the thread half of `foundation/permissions/PermissionFork.h` to `include/fixy/concurrent/`. Foundation starts no thread after this unit. Two more parts:
+- The thread door of `fixy/os/ThreadTasks.h` calls `pthread_create` and `pthread_join` directly, with the stack size, the guard page, the thread name and the affinity of the new thread. It uses no `std::thread`, so the libstdc++ thread symbols go, and so does the `_State_impl` row of the no-RTTI allowlist. The base uses no mutex, condition variable, cancellation, `detach` or thread key.
+- A futex door gives the waits: wait on a word with an optional deadline, and wake one or all waiters. It carries the TSan annotations of R18. The blocking lock `arena_alloc_gate_` of the background pipeline moves onto it.
 
 **2d, the include edges.** Fix the eleven edges that QLAYER found:
 1. `foundation/contracts/Decide.h` includes `effects/Row.h` for one predicate. Move `row_subset` into effects.
@@ -629,6 +652,9 @@ Add a section on the quarantine: rules R1 to R12, the layers, the door rule, the
 - No base header includes a header outside the allowance of its layer, except the runtime std headers that Stage 4 removes. Those stay on a ledger that can only shrink.
 - The layer order has no upward edge.
 - The gauge shows no slowdown against the S0 numbers.
+- `libfoundation.a` references no symbol outside its R5 allowlist. The ledger of `libfixy.a` and `libcrucible.a` holds ratchet rows only, with no new symbol.
+- The static TLS budget holds, and the vessel library loads with the default glibc tunables.
+- Each door of 2b and 2c uses UAPI headers and the syscall primitive, except the calls that D12 keeps in glibc. The thread door and the futex door pass their tests under TSan with no suppression.
 
 ---
 
@@ -673,6 +699,15 @@ These defects from QDESIGN (task list 404) get their fix in the unit of their fa
 - `AlignedBuffer::allocate` leaves heap memory uninitialized. The Region family zero-fills or takes a fill value.
 - CLAUDE.md describes an arena with `start_lifetime_as` and a reset. Correct the text in the Ref unit.
 - `TscMode::SteadyClockFallback` reads the TSC. Delete the enumerator in the Os unit.
+
+### 10.3a Parts that the thin base adds (2026-10-03)
+
+These parts come from D12 to D14 and the rules R18 to R20. Each one gets its witness in the unit of its group.
+- **G3, Ref: one allocation door.** All base allocation goes through one door of the Ref family. At first the door calls glibc `malloc`, so a later change of the allocator is a change of one door. Hot memory and bulk memory come from arenas. Each arena poisons its free space for ASan (R18), so ASan still sees an overflow out of an arena object. The `until` row of `std::nothrow` in `Ref.h` goes when this door lands.
+- **G5, Report: a prefix map.** The build gives `-ffile-prefix-map` and `-fmacro-prefix-map`, so `Site` and `__FILE__` hold a path relative to the source root. Two checkouts then give the same report text. gdb needs `set substitute-path` one time.
+- **G6, Os: the I/O door on `io_uring`.** Files and sockets go through one I/O door on `io_uring`, with registered buffers and registered files. A plain-syscall fallback serves each host where `io_uring` is off, for example under the default seccomp profile of Docker or with the `io_uring_disabled` sysctl. A start-up probe chooses the path one time. SQPOLL is an option only, because it takes a core.
+- **G6, Os: counter reads with `rdpmc`.** A counter door maps the perf page of each event one time and reads the counter with `rdpmc`, with no system call. When `perf_event_paranoid` refuses, the door reports no exact count, as the cost meter does today.
+- **G6, Os: time.** The hot path reads `rdtsc` (`cntvct_el0` on aarch64). A wall-clock door calls glibc `clock_gettime`, which uses the vDSO.
 
 ### 10.4 The extension lane opens
 
@@ -821,7 +856,9 @@ A verb that no family needs is not added. A new operation that no verb covers us
 | `std::filesystem::exists(p)` | `fixy::os::exists(ctx, p)` | mechanical (the context must reach the site) |
 | `::pread(fd, buf, n, off)` | `fixy::os::read_at(ctx, fd, view, off)` | mechanical |
 | `opendir` and `readdir` loop | `for_each_entry` | judgment |
-| `std::jthread` | `mint_permission_fork` or `fixy::os::Thread` | judgment |
+| `std::jthread` | `mint_permission_fork` or `fixy::os::Thread`, which start through the thread door of unit 2c | judgment |
+| `std::mutex`, `std::condition_variable`, a spin with `sleep_for` | the futex door of unit 2c | judgment |
+| `::read`, `::write`, `::pread` in a loop | the I/O door of G6 (`io_uring`, or its fallback) | judgment (registered buffers) |
 | `std::chrono::steady_clock::now()` | the `MonotonicClock` reader | mechanical |
 | `std::getenv("X")` | `fixy::os::env(init_ctx, "X")` | judgment (the context) |
 | `std::error_code` | `fixy::os::Errno` | mechanical |
@@ -871,7 +908,7 @@ A slice migrates one base API group and every caller in the whole tree, in one c
 | 4.3 Region in the wrappers | `FixedArray` loses `operator[](size_t)`, `data()` and raw iterators. `Borrowed` becomes `View`. `OwnedRegion` and `SharedRegion` give `View`. `foundation::simd` loads and stores take `View<T const, Lanes>`. `CyclicBuffer` indexes through `Index<N>`. `AppendOnly` stores a `GrowList` | every caller of those accessors |
 | 4.4 Atomic in the base | `AtomicMonotonic`, `MpscRing`, `OneShotFlag`, `PublishOnce`, `PublishCommit`, `Once`, `SpinLock`, `CpuPinned`, `session/Watch.h` move to `Atomic`. `ChaseLevDeque` keeps its relaxed and seq_cst operations as cited `detail` code inside the base | few callers outside |
 | 4.5 Report in the base | `fail_invariant`, the diag runtime sink, `JsonEmitter`, and every `std::source_location` in a public API move to `Site` and the Report sink | few callers outside |
-| 4.6 Os internals | Topology stops using `ifstream`, `filesystem`, `set`, `vector`. `Path` stops using `std::filesystem::path`. `std::jthread` in PermissionFork and Spawn moves to the thread-start primitive. All nine `try`/`catch` sites go | callers of Path and Topology |
+| 4.6 Os internals | `Path` stops using `std::filesystem::path`. Each `try`/`catch` site that unit 2b did not remove goes. Unit 2b moves Topology off `ifstream`, `filesystem`, `set` and `map`, and unit 2c moves `std::jthread` to the thread door | callers of Path |
 | 4.7 Record in the base | `pair` and `tuple` in base APIs and in the stage and pipeline runners become `Record` or `Pack` | few callers outside |
 | 4.8 Foundation remainder | the other runtime uses in foundation (233 runtime, 367 constexpr data, 36 in src/foundation) | none outside |
 | 4.9 Fixy remainder | the other runtime uses in fixy, one unit for each directory: concurrent, session, os, handle, top level | none outside |
@@ -896,6 +933,7 @@ A slice migrates one base API group and every caller in the whole tree, in one c
 - The plugin enforces the full include allowance of every base layer as errors, with an empty ledger.
 - A reflection test walks every base namespace and refuses a std runtime type in any public signature or data member.
 - The link guard (R5) passes for `libcrucible.a`. Its first allowlist: `__cxa_guard_acquire`, `__cxa_guard_release`, `__cxa_guard_abort`, `__cxa_atexit`, `__gxx_personality_v0`, and `operator new` and `operator delete` only if the Ref family uses them.
+- The libc rows of the symbol ledger (R5) hold no ratchet row for `libfixy.a`. Each libc symbol of `libfixy.a` is a call that D12 keeps in glibc, in its door.
 - The full suite passes in every preset.
 
 ---
@@ -1010,6 +1048,13 @@ The extension lane is one unit that stays open from the S3 gate until Stage 6. I
 - A new operation obeys section 10.2 in full.
 - The lane lands at most one change for each request, so migrating units can merge often.
 
+### 17.1 Notes for later extensions (2026-10-03)
+
+These two items are not units of this plan. They are recorded here, so that no change of this plan closes them.
+
+- **The device-queue family.** Each fast device has one shape (D14): a submission ring, a completion ring and a doorbell in mapped memory. The family would hold `DmaRegion` (pinned memory with a device address, opaque and linear), `Mmio<T>` (register access with explicit fences that the compiler cannot remove or reorder), `Doorbell` (an MMIO write with its write barrier) and typed rings. The ownership of a DMA buffer is a session: a submission consumes the permission of the buffer, and its completion gives the permission back. A use after submit, or a lost completion, then fails to compile. Design the family only when its first two real users exist: the RDMA data path of CNTP and the pushbuffer of the Mimic runtime.
+- **A daemon with no glibc.** Each access to the kernel goes through a door, and no door holds glibc state. A separate daemon, for example the Keeper, can then have its own `_start`, threads from `clone`, its own TLS set-up, its own static constructors, `__cxa_guard_*`, `__cxa_atexit` and `__dso_handle`, as a second implementation of the doors. The rest of the base does not change. The vessel can never use this, because it shares a process with Python and PyTorch (D13).
+
 ---
 
 ## 18. Sync points
@@ -1041,8 +1086,8 @@ The extension lane is one unit that stays open from the S3 gate until Stage 6. I
 
 | Situation | Units at the same time | Jobs for each unit |
 |---|---|---|
-| one unit alone on the host | 1 | -j64 |
-| a wave of heavy units | at most 6 | -j16, for builds and for ctest |
+| one unit alone on the host | 1 | 96 jobs or more |
+| a wave of heavy units | at most 6 | 96 jobs or more, for builds and for ctest (the owner set 96 as the default on 2026-10-02) |
 | a wave with read-only units | the heavy limit plus any number of read-only units | read-only units run no build |
 
 Before each heavy command, run `free -g`. Wait while the "available" column is below 64 GB.
@@ -1081,6 +1126,23 @@ Before each heavy command, run `free -g`. Wait while the "available" column is b
 | Agents collide on shared files | Lost work | Ownership tables, `--replace` pairs, merges before landing, compare-and-swap landings |
 | Notification floods | The owner gets spam | Blocking commands only, no Monitors, one final report for each unit |
 | The migration stops halfway | Two styles in one tree | The ratchet and the directory switch keep each finished directory finished. A stop leaves some directories in report mode, which is safe |
+| A raw system call is invisible to a sanitizer | TSan reports a false race, a raw blocking call hangs under TSan, ASan misses a bad buffer | R18: annotations in one code path, and the intercepted call only for a blocking call under TSan |
+| A host turns `io_uring` off | The I/O door fails on that host | The plain-syscall fallback of G6, chosen by a probe at start-up |
+| A raw system call is missing on an old kernel | `ENOSYS`, because glibc gave a fallback and the door gives none | The minimum kernel version of R4, checked at start-up |
+| An aarch64 defect stays hidden | No local build covers aarch64, so a defect shows only after a daily sync | One person reads the run after each sync (D11). Optional: a local aarch64 cross-compiler that only compiles and runs the ratchet |
+| A wrong futex protocol | Lost wakeups or wakeups with no cause in the base waits | One futex door, tested under load and under TSan |
+
+### 20.1 Options that the owner decided against (2026-10-03)
+
+| Option | Why not |
+|---|---|
+| A general-purpose `malloc` of our own on `mmap` | Years of tuning to match glibc or jemalloc, and ASan loses its heap checks. The allocation door of G3 keeps the option open at no cost |
+| A vDSO parser of our own | glibc `clock_gettime` already reads the vDSO, and the hot path reads `rdtsc` |
+| Threads from `clone`, or a TLS set-up of our own, inside the process | glibc keeps a thread block for each thread, and any glibc call on a thread that `clone` made crashes. The vessel shares the process with Python and PyTorch (D13) |
+| `-fno-exceptions` for the base before Stage 4 | libstdc++ headers change their code when exceptions are off. While a base header includes run-time libstdc++ code, one inline function gets two definitions (an ODR risk). The decision point DP3 stays in Stage 6 |
+| A different code path for sanitizer builds | The sanitizer builds would then test a path that production does not run. R18 uses annotations |
+| User-space drivers through VFIO for shared devices | VFIO takes the device away from its kernel driver. Only a device that Crucible owns alone qualifies (D14). NVMe passthrough through `io_uring` covers most needs |
+| AF_XDP | Out of scope: the networking scope is the scope of NCCL (D14) |
 
 **Stop criteria:**
 - The S0 gate misses its targets after every Stage 0 unit has landed, and the owner declines the modules spike (DP1).
