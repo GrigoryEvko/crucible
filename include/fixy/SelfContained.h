@@ -416,11 +416,11 @@ template <EqualityByMembers T>
         }(std::make_index_sequence<std::variant_size_v<U>>{});
     } else {
         constexpr std::meta::info bare = std::meta::dealias(^^U);
-        static constexpr auto bases = std::define_static_array(
-            static_cast<::foundation::reflect::anchored_t<bare, std::vector<std::meta::info>>>(
+        static constexpr auto bases =
+            std::define_static_array(static_cast<::foundation::reflect::anchored_t<bare, std::vector<std::meta::info>>>(
                 std::meta::bases_of(bare, std::meta::access_context::unchecked())));
-        static constexpr auto members = std::define_static_array(
-            static_cast<::foundation::reflect::anchored_t<bare, std::vector<std::meta::info>>>(
+        static constexpr auto members =
+            std::define_static_array(static_cast<::foundation::reflect::anchored_t<bare, std::vector<std::meta::info>>>(
                 std::meta::nonstatic_data_members_of(bare, std::meta::access_context::unchecked())));
         bool same = true;
 #pragma GCC diagnostic push

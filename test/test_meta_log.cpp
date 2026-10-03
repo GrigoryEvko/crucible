@@ -146,7 +146,7 @@ static void test_copy_run_across_the_end() {
 static void test_counters_pass_two_to_the_32() {
     MetaLog log;
     // No other thread uses the log, which is the condition of the reset.
-    constexpr uint32_t BELOW_WRAP = 0xFFFF'FFF0u;
+    constexpr uint32_t BELOW_WRAP = 0xFFFFFFF0u;
     log.head.reset_under_quiescence(BELOW_WRAP);
     log.tail.reset_under_quiescence(BELOW_WRAP);
     log.cached_tail_.reset_under_quiescence(BELOW_WRAP);

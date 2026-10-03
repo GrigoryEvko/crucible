@@ -802,8 +802,8 @@ template <class Atom, class Enum>
 template <class Roster, class Enum>
     requires std::is_scoped_enum_v<Enum>
 [[nodiscard]] consteval bool every_enumerator_has_exactly_one_atom_() noexcept {
-    static constexpr auto enumerators = std::define_static_array(
-        static_cast<::foundation::reflect::anchored_t<^^Enum, std::vector<std::meta::info>>>(
+    static constexpr auto enumerators =
+        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Enum, std::vector<std::meta::info>>>(
             std::meta::enumerators_of(^^Enum)));
     std::array<std::size_t, enumerators.size()> claims{};
     bool exact = true;

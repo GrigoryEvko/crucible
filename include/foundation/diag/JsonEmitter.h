@@ -80,8 +80,8 @@ inline constexpr std::array<std::string_view, 8> json_record_fields{
 // The members of Record, in declaration order, are exactly `expected`.
 template <typename Record, std::size_t N>
 [[nodiscard]] consteval bool record_fields_are(std::array<std::string_view, N> const& expected) noexcept {
-    static constexpr auto members = std::define_static_array(
-        static_cast<::foundation::reflect::anchored_t<^^Record, std::vector<std::meta::info>>>(
+    static constexpr auto members =
+        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Record, std::vector<std::meta::info>>>(
             std::meta::nonstatic_data_members_of(^^Record, std::meta::access_context::current())));
     if (members.size() != N) return false;
     std::size_t index = 0;

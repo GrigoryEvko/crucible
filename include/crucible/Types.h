@@ -149,27 +149,27 @@ enum class TrainingPhase : uint8_t {
 //
 // Word is an unsigned integer type.  Its largest value is the none value.
 
-#define CRUCIBLE_STRONG_ID(Name, Word)                                                            \
-    struct Name {                                                                                 \
-    private:                                                                                      \
-        /* Private, so the explicit constructor is the only way in. A public */                   \
-        /* field would let a plain assignment bypass it and rewrite an */                         \
-        /* identifier in place. */                                                                \
-        Word v;                                                                                   \
-        static constexpr Word none_word = std::numeric_limits<Word>::max();                       \
-                                                                                                  \
-    public:                                                                                       \
-        constexpr Name() noexcept : v(none_word) {}                                               \
-        constexpr explicit Name(Word val) noexcept : v(val) {}                                    \
-        /* The named form for building one identifier kind out of another, */                     \
-        /* which is where a silent mix-up happens. Naming it makes every */                       \
-        /* such crossing findable by one search. */                                               \
-        [[nodiscard]] static constexpr Name from_raw(Word val) noexcept { return Name{val}; }     \
-        [[nodiscard]] static constexpr Name none() noexcept { return Name{none_word}; }           \
-        [[nodiscard]] constexpr bool is_valid() const noexcept { return v != none_word; }         \
-        [[nodiscard]] constexpr explicit operator bool() const noexcept { return is_valid(); }    \
-        [[nodiscard]] constexpr Word raw() const noexcept { return v; }                           \
-        constexpr auto operator<=>(const Name&) const noexcept = default;                         \
+#define CRUCIBLE_STRONG_ID(Name, Word)                                                         \
+    struct Name {                                                                              \
+    private:                                                                                   \
+        /* Private, so the explicit constructor is the only way in. A public */                \
+        /* field would let a plain assignment bypass it and rewrite an */                      \
+        /* identifier in place. */                                                             \
+        Word v;                                                                                \
+        static constexpr Word none_word = std::numeric_limits<Word>::max();                    \
+                                                                                               \
+    public:                                                                                    \
+        constexpr Name() noexcept : v(none_word) {}                                            \
+        constexpr explicit Name(Word val) noexcept : v(val) {}                                 \
+        /* The named form for building one identifier kind out of another, */                  \
+        /* which is where a silent mix-up happens. Naming it makes every */                    \
+        /* such crossing findable by one search. */                                            \
+        [[nodiscard]] static constexpr Name from_raw(Word val) noexcept { return Name{val}; }  \
+        [[nodiscard]] static constexpr Name none() noexcept { return Name{none_word}; }        \
+        [[nodiscard]] constexpr bool is_valid() const noexcept { return v != none_word; }      \
+        [[nodiscard]] constexpr explicit operator bool() const noexcept { return is_valid(); } \
+        [[nodiscard]] constexpr Word raw() const noexcept { return v; }                        \
+        constexpr auto operator<=>(const Name&) const noexcept = default;                      \
     }
 
 CRUCIBLE_STRONG_ID(OpIndex, uint32_t);

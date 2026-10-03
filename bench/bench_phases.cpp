@@ -660,10 +660,9 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     }
 
     PhaseTiming phases[] = {
-        {"P0  pre-scan", ns_p0, iters},         {"P1  alloc+memset", ns_p1, iters},
-        {"P1b metadata copy", ns_p1b, iters},   {"P2a copy fields", ns_p2a, iters},
-        {"P2b content hash", ns_p2b, iters},    {"P2c PtrMap lookup", ns_p2c, iters},
-        {"P2d PtrMap insert", ns_p2d, iters},   {"P3  slot copy", ns_p3, iters},
+        {"P0  pre-scan", ns_p0, iters},       {"P1  alloc+memset", ns_p1, iters},  {"P1b metadata copy", ns_p1b, iters},
+        {"P2a copy fields", ns_p2a, iters},   {"P2b content hash", ns_p2b, iters}, {"P2c PtrMap lookup", ns_p2c, iters},
+        {"P2d PtrMap insert", ns_p2d, iters}, {"P3  slot copy", ns_p3, iters},
     };
 
     double sum = 0;

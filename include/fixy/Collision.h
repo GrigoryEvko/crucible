@@ -123,8 +123,8 @@ namespace detail {
 // also walks the pack through this helper.
 template <class... Atoms>
 [[nodiscard]] consteval auto pack_entries_() {
-    using entry_list = ::foundation::reflect::anchored_t<std::meta::reflect_constant(sizeof...(Atoms)),
-                                                         std::vector<std::meta::info>>;
+    using entry_list =
+        ::foundation::reflect::anchored_t<std::meta::reflect_constant(sizeof...(Atoms)), std::vector<std::meta::info>>;
     return std::define_static_array(entry_list{^^Atoms...});
 }
 
@@ -735,8 +735,8 @@ template <class Roster, class Population = all_atom_roster>
 template <class Site>
 [[nodiscard]] consteval std::string_view roster_declared_but_not_joined() {
     ::foundation::reflect::anchored_t<^^Site, std::string> offenders;
-    static constexpr auto members = std::define_static_array(
-        static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
+    static constexpr auto members =
+        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
             std::meta::members_of(^^::fixy::atom::detail, std::meta::access_context::current())));
     template for (constexpr auto member : members) {
         if constexpr (std::meta::is_type_alias(member)) {
@@ -762,8 +762,8 @@ template <class Site>
 template <class Site>
 [[nodiscard]] consteval std::string_view sample_set_wrongly_joined() {
     ::foundation::reflect::anchored_t<^^Site, std::string> offenders;
-    static constexpr auto members = std::define_static_array(
-        static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
+    static constexpr auto members =
+        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
             std::meta::members_of(^^::fixy::atom::detail, std::meta::access_context::current())));
     template for (constexpr auto member : members) {
         if constexpr (std::meta::is_type_alias(member)) {

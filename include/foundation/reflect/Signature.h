@@ -27,8 +27,8 @@ struct signature_traits {
     // The query returns a vector, whose allocation is not a constant
     // expression in the context an expansion statement needs.  Landing it
     // in static storage first is what makes the elements spliceable.
-    static constexpr auto params = std::define_static_array(
-        static_cast<anchored_t<function_reflection, std::vector<std::meta::info>>>(
+    static constexpr auto params =
+        std::define_static_array(static_cast<anchored_t<function_reflection, std::vector<std::meta::info>>>(
             std::meta::parameters_of(function_reflection)));
 
     static constexpr std::size_t arity = params.size();

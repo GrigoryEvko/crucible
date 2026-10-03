@@ -595,8 +595,8 @@ concept AxisIsClassified = (TakesDefaultTraits<A> == axis_takes_defaults<A>);
 // and each call between the walks passes Anchor on.
 template <class Anchor = void>
 [[nodiscard]] consteval bool every_axis_has_traits() noexcept {
-    static constexpr auto axes = std::define_static_array(
-        static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
+    static constexpr auto axes =
+        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
             std::meta::enumerators_of(^^Axis)));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -629,8 +629,8 @@ template <class Anchor = void>
 
 template <class Anchor = void>
 [[nodiscard]] consteval std::size_t count_axes_of_shape(Shape shape) noexcept {
-    static constexpr auto axes = std::define_static_array(
-        static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
+    static constexpr auto axes =
+        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
             std::meta::enumerators_of(^^Axis)));
     std::size_t count = 0;
 #pragma GCC diagnostic push
@@ -656,8 +656,8 @@ namespace detail {
 
 template <class Anchor = void>
 [[nodiscard]] consteval std::string axes_whose_pole_is_not_the_weakest_claim_() {
-    static constexpr auto axes = std::define_static_array(
-        static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
+    static constexpr auto axes =
+        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
             std::meta::enumerators_of(^^Axis)));
     std::string offenders;
 #pragma GCC diagnostic push

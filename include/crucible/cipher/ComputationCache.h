@@ -61,10 +61,9 @@ concept IsCacheableFunction =
 // clause is a concept, so no translation unit can specialize a verdict
 // in front of the walk.
 template <auto FnPtr, typename... Args>
-concept HasStableKeyIdentity =
-    IsCacheableFunction<FnPtr> && ::foundation::reflect::HasStableFunctionIdentity<FnPtr>
-    && ::foundation::reflect::HasStableIdentity<std::remove_pointer_t<decltype(FnPtr)>>
-    && (::foundation::reflect::HasStableIdentity<Args> && ...);
+concept HasStableKeyIdentity = IsCacheableFunction<FnPtr> && ::foundation::reflect::HasStableFunctionIdentity<FnPtr>
+                            && ::foundation::reflect::HasStableIdentity<std::remove_pointer_t<decltype(FnPtr)>>
+                            && (::foundation::reflect::HasStableIdentity<Args> && ...);
 
 namespace detail {
 

@@ -86,8 +86,7 @@ void fill_released_slots(crucible::MetaLog& log) {
     constexpr uint32_t CHUNK = 4096;
     const std::vector<crucible::TensorMeta> chunk(CHUNK, meta_at(overwrite_ptr(), 3));
     for (uint32_t count = CHUNK; count > 0; count /= 2) {
-        while (log.try_append(chunk.data(), count).is_valid()) {
-        }
+        while (log.try_append(chunk.data(), count).is_valid()) {}
     }
     assert(log.size().peek() == crucible::MetaLog::CAPACITY);
 }
@@ -142,9 +141,9 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
     assert(bytes_after == bytes_before);
     assert(std::memcmp(serialized_after.data(), serialized_before.data(), bytes_before) == 0);
     crucible::Arena load_arena{std::size_t{1} << 16};
-    const auto loaded = crucible::deserialize_region(
-        ::foundation::effects::testing::test().alloc,
-        std::span<const uint8_t>{serialized_after.data(), bytes_after}, load_arena);
+    const auto loaded =
+        crucible::deserialize_region(::foundation::effects::testing::test().alloc,
+                                     std::span<const uint8_t>{serialized_after.data(), bytes_after}, load_arena);
     assert(loaded.has_value());
 
     // The activation registers the data pointer of the parameter, which it
@@ -157,8 +156,7 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
     assert(vigil.context().is_compiled());
     for (uint32_t op = K; op < NUM_OPS; ++op) {
         const divrig::OpData replayed = op_with_parameter(3, op);
-        const auto result =
-            crucible::test::dispatch_synthetic(vigil, replayed.entry, replayed.metas, replayed.n_metas);
+        const auto result = crucible::test::dispatch_synthetic(vigil, replayed.entry, replayed.metas, replayed.n_metas);
         assert(result.action == DispatchResult::Action::COMPILED);
     }
     const divrig::OpData next_head = op_with_parameter(4, 0);

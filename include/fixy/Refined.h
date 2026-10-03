@@ -1270,7 +1270,8 @@ struct step_view {
             items{};
         const std::meta::info* const source = found.data();
         std::meta::info* const target = items.data();
-        for (std::size_t index = 0; index < items.size(); ++index) target[index] = source[index];
+        for (std::size_t index = 0; index < items.size(); ++index)
+            target[index] = source[index];
         return items;
     }();
     step_view view{};
@@ -1430,8 +1431,8 @@ template <class From, class To>
 // do test/fixy/test_refined.cpp and the fixtures that plant a cycle.
 template <class Site = void>
 [[nodiscard]] consteval bool every_edge_holds() noexcept {
-    static constexpr auto members = std::define_static_array(
-        static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
+    static constexpr auto members =
+        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
             std::meta::members_of(^^refined::admitted_implications, std::meta::access_context::unchecked())));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"

@@ -384,7 +384,8 @@ template <class T>
 template <class T>
 struct payload_row {
     static constexpr detail::PayloadRowWalk walked = detail::walk_payload_row(^^T);
-    static_assert(!walked.is_refused, detail::payload_row_refusal<::foundation::reflect::anchored_t<^^T, void>>(walked));
+    static_assert(!walked.is_refused,
+                  detail::payload_row_refusal<::foundation::reflect::anchored_t<^^T, void>>(walked));
     using type = detail::row_of_effect_mask_t<walked.effect_mask>;
 };
 
@@ -401,7 +402,8 @@ struct payload_row_under {
                   "fixy/concurrent/PayloadRow.h names, or two rules name one family.  A rule must not change "
                   "an answer of the rosters, so give each family one rule, outside the rosters.");
     static constexpr detail::PayloadRowWalk walked = detail::walk_payload_row(^^T, LayerRules);
-    static_assert(!walked.is_refused, detail::payload_row_refusal<::foundation::reflect::anchored_t<^^T, void>>(walked));
+    static_assert(!walked.is_refused,
+                  detail::payload_row_refusal<::foundation::reflect::anchored_t<^^T, void>>(walked));
     using type = detail::row_of_effect_mask_t<walked.effect_mask>;
 };
 

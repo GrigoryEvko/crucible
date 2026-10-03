@@ -284,9 +284,8 @@ static_assert(has_stable_identity(^^identity_test::Named) && !has_stable_identit
 static_assert(identity_of_type(^^identity_test::Box<identity_test::Box<identity_test::Internal>>).culprit
               == ^^identity_test::Internal);
 static_assert(identity_of_type(^^identity_test::Internal).fault == identity_fault::internal_linkage);
-static_assert(
-    identity_of_type(^^identity_test::Box<identity_test::Box<decltype(identity_test::plain_closure)>>).culprit
-    == std::meta::dealias(std::meta::remove_cv(^^decltype(identity_test::plain_closure))));
+static_assert(identity_of_type(^^identity_test::Box<identity_test::Box<decltype(identity_test::plain_closure)>>).culprit
+              == std::meta::dealias(std::meta::remove_cv(^^decltype(identity_test::plain_closure))));
 static_assert(identity_of_type(^^decltype(identity_test::plain_closure)).fault == identity_fault::no_declared_name);
 
 }  // namespace detail::stable_name_self_test

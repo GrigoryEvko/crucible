@@ -111,8 +111,8 @@ template <Axis A, class... Atoms>
 template <class... Atoms>
 [[nodiscard]] consteval std::size_t first_duplicated_axis_() noexcept {
     std::size_t offender = ::fixy::axis_count;
-    using axis_list = ::foundation::reflect::anchored_t<std::meta::reflect_constant(sizeof...(Atoms)),
-                                                        std::vector<std::meta::info>>;
+    using axis_list =
+        ::foundation::reflect::anchored_t<std::meta::reflect_constant(sizeof...(Atoms)), std::vector<std::meta::info>>;
     template for (constexpr auto axis_member :
                   std::define_static_array(static_cast<axis_list>(std::meta::enumerators_of(^^Axis)))) {
         constexpr Axis axis = [:axis_member:];

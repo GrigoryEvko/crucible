@@ -464,8 +464,8 @@ struct alias_probe {};
 template <std::meta::info Ns, std::meta::info EnumInfo>
 [[nodiscard]] consteval bool every_tier_has_an_alias() noexcept {
     using Enum = [:EnumInfo:];
-    static constexpr auto tiers = std::define_static_array(
-        static_cast<::foundation::reflect::anchored_t<EnumInfo, std::vector<std::meta::info>>>(
+    static constexpr auto tiers =
+        std::define_static_array(static_cast<::foundation::reflect::anchored_t<EnumInfo, std::vector<std::meta::info>>>(
             std::meta::enumerators_of(EnumInfo)));
     static constexpr auto members =
         std::define_static_array(static_cast<::foundation::reflect::anchored_t<Ns, std::vector<std::meta::info>>>(

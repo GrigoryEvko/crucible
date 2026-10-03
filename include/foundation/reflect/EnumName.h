@@ -59,7 +59,8 @@ namespace detail {
 consteval void copy_enumerators(std::meta::info enumeration, std::meta::info* target, std::size_t count) {
     const std::vector<std::meta::info> found = std::meta::enumerators_of(enumeration);
     const std::meta::info* const source = found.data();
-    for (std::size_t index = 0; index < count; ++index) target[index] = source[index];
+    for (std::size_t index = 0; index < count; ++index)
+        target[index] = source[index];
 }
 
 }  // namespace detail
@@ -147,8 +148,10 @@ template <ScopedEnum E>
         const char* const head = prefix.data();
         const char* const tail = name.data();
         char* const target = chars.data();
-        for (std::size_t index = 0; index < prefix.size(); ++index) target[index] = head[index];
-        for (std::size_t index = 0; index < name.size(); ++index) target[prefix.size() + index] = tail[index];
+        for (std::size_t index = 0; index < prefix.size(); ++index)
+            target[index] = head[index];
+        for (std::size_t index = 0; index < name.size(); ++index)
+            target[prefix.size() + index] = tail[index];
         target[prefix.size() + name.size()] = '>';
         return chars;
     }();

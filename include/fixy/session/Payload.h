@@ -479,7 +479,8 @@ inline constexpr std::meta::info payload_type_erasure_families[] = {
 
 // True when one of the `count` types at `types` is `type`.  Complexity:
 // linear in `count`.
-[[nodiscard]] consteval bool holds_type(const std::meta::info* types, std::size_t count, std::meta::info type) noexcept {
+[[nodiscard]] consteval bool holds_type(const std::meta::info* types, std::size_t count,
+                                        std::meta::info type) noexcept {
     for (std::size_t place = 0; place < count; ++place) {
         if (types[place] == type) return true;
     }
@@ -654,8 +655,8 @@ consteval void note_carrier(PayloadWalk& walk, std::optional<DelegationCarrier> 
 // Records one tag that the payload moves, lends or releases, and refuses
 // a tag that the payload names already.  A refused payload changes no
 // set, so the walk records nothing after a refusal.
-consteval void record_payload_tag(PayloadWalk& walk, stack<std::meta::info> PayloadCensus::* into,
-                                  std::meta::info tag, std::meta::info at) {
+consteval void record_payload_tag(PayloadWalk& walk, stack<std::meta::info> PayloadCensus::* into, std::meta::info tag,
+                                  std::meta::info at) {
     if (walk.census.refusal != PayloadRefusal::None) return;
     const std::meta::info bare_tag = std::meta::dealias(tag);
     for (const auto held : {&PayloadCensus::moved, &PayloadCensus::lent, &PayloadCensus::released}) {
@@ -780,8 +781,7 @@ consteval std::meta::info visit_payload_node(PayloadWalk& walk, PayloadNode node
                 refl::node_reached_indirectly(member_type, refl::SpecializationRead::Instantiating);
             parts.items[parts.top++] = PayloadNode{reached.type, reached.may_read_members, alias_reach};
         } else {
-            parts.items[parts.top++] =
-                PayloadNode{refl::bare_type(member_type), true, part_reach, node.in_ct_carrier};
+            parts.items[parts.top++] = PayloadNode{refl::bare_type(member_type), true, part_reach, node.in_ct_carrier};
         }
     }
     return parts.top - first;

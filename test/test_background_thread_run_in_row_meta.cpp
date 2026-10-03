@@ -266,9 +266,8 @@ void test_built_graph_owns_its_metadata() {
     for (uint32_t op = 0; op < OPS; ++op)
         (void)work.push_op_with_meta(*metalog, op);
 
-    const BackgroundThread::TraceBuild built =
-        bt.build_trace_from(test.alloc, work.count, work.trace, work.meta_starts, work.scope_hashes,
-                            work.callsite_hashes);
+    const BackgroundThread::TraceBuild built = bt.build_trace_from(test.alloc, work.count, work.trace, work.meta_starts,
+                                                                   work.scope_hashes, work.callsite_hashes);
     assert(built.has_value() && *built != nullptr);
 
     const std::less<const crucible::TensorMeta*> before{};
@@ -285,9 +284,8 @@ void test_built_graph_owns_its_metadata() {
 
     // The region of the publish holds the same ops, and the release moves
     // the tail past the run.
-    bt.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
-        bt.publish_trace_graph(bg, stage, *built);
-    });
+    bt.run_on_publish_stage(
+        [&](BackgroundThread::PublishStage const& stage) noexcept { bt.publish_trace_graph(bg, stage, *built); });
     const crucible::RegionNode* const region = bt.active_region.load(std::memory_order_acquire);
     assert(region != nullptr && region->ops == (*built)->ops);
     assert(metalog->tail.get() == OPS);
@@ -309,7 +307,7 @@ void test_build_and_release_pass_two_to_the_32() {
     const auto bg = ::foundation::effects::testing::bg();
 
     // No other thread uses the log, which is the condition of the reset.
-    constexpr uint32_t BELOW_WRAP = 0xFFFF'FFFEu;
+    constexpr uint32_t BELOW_WRAP = 0xFFFFFFFEu;
     metalog->head.reset_under_quiescence(BELOW_WRAP);
     metalog->tail.reset_under_quiescence(BELOW_WRAP);
     metalog->cached_tail_.reset_under_quiescence(BELOW_WRAP);
@@ -321,9 +319,8 @@ void test_build_and_release_pass_two_to_the_32() {
         run_end = work.push_op_with_meta(*metalog, op);
     assert(run_end == uint64_t{BELOW_WRAP} + OPS);
 
-    const BackgroundThread::TraceBuild built =
-        bt.build_trace_from(test.alloc, work.count, work.trace, work.meta_starts, work.scope_hashes,
-                            work.callsite_hashes);
+    const BackgroundThread::TraceBuild built = bt.build_trace_from(test.alloc, work.count, work.trace, work.meta_starts,
+                                                                   work.scope_hashes, work.callsite_hashes);
     assert(built.has_value() && *built != nullptr);
     for (uint32_t op = 0; op < OPS; ++op) {
         const crucible::TensorMeta* const metas = (*built)->ops[op].output_metas;
@@ -331,9 +328,8 @@ void test_build_and_release_pass_two_to_the_32() {
         assert(crucible::raw_data_ptr(metas[0]) == crucible::raw_data_ptr(output_meta(op)));
     }
 
-    bt.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
-        bt.publish_trace_graph(bg, stage, *built);
-    });
+    bt.run_on_publish_stage(
+        [&](BackgroundThread::PublishStage const& stage) noexcept { bt.publish_trace_graph(bg, stage, *built); });
     assert(metalog->tail.get() == run_end && "the release did not move the tail past 2^32");
 
     crucible::test::pass("  build_and_release_pass_two_to_the_32:      PASSED\n");

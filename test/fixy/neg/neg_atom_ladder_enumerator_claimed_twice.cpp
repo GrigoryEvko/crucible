@@ -16,8 +16,7 @@
 #include <tuple>
 
 int main() {
-    using warm_twice_roster =
-        std::tuple<fixy::atom::regime::hot, fixy::atom::regime::warm, fixy::atom::regime::warm>;
+    using warm_twice_roster = std::tuple<fixy::atom::regime::hot, fixy::atom::regime::warm, fixy::atom::regime::warm>;
     constexpr bool claims_each_tier_once =
         fixy::atom::detail::every_enumerator_has_exactly_one_atom_<warm_twice_roster,
                                                                    foundation::algebra::lattices::HotPathTier>();

@@ -32,7 +32,8 @@ struct tag_base {
 // constructor is not a template, so the fields of different lengths share
 // one instantiation.
 struct tag_text_literal : std::string_view {
-    consteval tag_text_literal(const char (&literal)[]) noexcept : std::string_view{literal, __builtin_strlen(literal)} {}
+    consteval tag_text_literal(const char (&literal)[]) noexcept
+        : std::string_view{literal, __builtin_strlen(literal)} {}
 };
 
 // Error and Fatal behave identically at compile time. They differ in
