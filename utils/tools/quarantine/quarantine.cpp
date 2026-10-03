@@ -45,18 +45,21 @@
 //                           type holds a class or an enumeration of the standard
 //                           library, also through a typedef of fixy, such as
 //                           std::memory_order
-//     c_library_object      the same, for a C struct, union or enumeration of a
-//                           system header
+//     c_library_object      the same, for a struct, union or enumeration in the
+//                           global namespace of a library header: a header
+//                           outside the source root, such as a C header or the
+//                           header of a third-party library that -I names
 //     raw_pointer_object    a variable, data member or parameter of type T*
 //     raw_function_pointer  the same, for a pointer to a function or to a member
 //     c_array_object        a variable or data member of type T[N]
 //     raw_new_delete        a new-expression or a delete-expression, and a
 //                           declaration of an allocation function that is not
 //                           deleted, such as a replacement of operator new
-//     c_library_call        a use of a function or a variable of a system header
-//                           in the global namespace, such as memcpy or optind,
-//                           and a call of a builtin that has a function of the C
-//                           library behind it, such as __builtin_memcpy.  A use
+//     c_library_call        a use of a function or a variable in the global
+//                           namespace of a library header, such as memcpy or
+//                           optind, and a call of a builtin that has a function
+//                           of the C library behind it, such as
+//                           __builtin_memcpy.  A use
 //                           of a foreign symbol of the tree is one too: a
 //                           function or a variable that a file of the root
 //                           declares with an asm label or the attribute
@@ -603,9 +606,10 @@ tree top_namespace(tree decl) {
 }
 
 // A declaration of namespace std is standard, wherever it is.  Any other
-// declaration of a system header outside the root is standard when a
-// namespace holds it, as __gnu_cxx does, and part of the C library when it is
-// global.
+// declaration of a library file (in_library_file_at), a header outside the
+// root, is standard when a namespace holds it, as __gnu_cxx does, and part of
+// the C library when it is global.  A header of a third-party library is a
+// library file too, also when no system flag marks it.
 Library library_of(tree decl) {
     if (decl == NULL_TREE || !DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl)) {
         return Library::none;

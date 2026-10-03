@@ -738,7 +738,13 @@ LIBRARY_NAMES = (
     ("foreign_symbols.cpp", (), 22, "inline_asm", "asm register held"),
     ("allocation.cpp", (), 8, "raw_new_delete", "declaration of operator new"),
     ("allocation.cpp", (), 12, "raw_new_delete", "declaration of operator delete"),
+    ("outside_user.cpp", (), 9, "c_library_object", "OutsideType (OutsideType)"),
+    ("outside_user.cpp", (), 10, "c_library_call", "outside_value"),
 )
+# The header of a library outside the source root that no system flag marks.
+# run_library_names writes it in its scratch directory, and each compile of the
+# part names that directory with -I.
+OUTSIDE_LIBRARY_HEADER = "#pragma once\nstruct OutsideType {\n    int value = 0;\n};\ninline int outside_value() { return 1; }\n"
 # (fixture, line): no finding of any kind there.
 LIBRARY_NAMES_ABSENT = (
     ("nonclass.cpp", 18),  # <type_traits> admits std::remove_cvref_t
@@ -768,16 +774,20 @@ def run_library_names(section: Section) -> None:
     gaps.cpp holds the paths around the rules: a typedef of fixy, a variable
     of the C library, builtins, va_arg and asm.  pending.cpp holds the uses
     that an admit row with `until` admits, and the uses of std::bit_cast that
-    the restriction plain-result refuses.  Each compile writes its
+    the restriction plain-result refuses.  outside_user.cpp uses a library
+    header outside the root with no system flag.  Each compile writes its
     report to a directory of its own, and the part compares each report with
     LIBRARY_NAMES and LIBRARY_NAMES_ABSENT.
     """
+    outside = section.work / "outside-library"
+    outside.mkdir(exist_ok=True)
+    (outside / "OutsideLibrary.h").write_text(OUTSIDE_LIBRARY_HEADER, encoding="utf-8")
     fixtures = sorted({(fixture, extra) for fixture, extra, _, _, _ in LIBRARY_NAMES})
     calls: list[tuple[object, ...]] = []
     for index, (fixture, extra) in enumerate(fixtures):
         out = section.work / f"library-names-{index}"
         calls.append((fixture, {"root": str(HERE), "mode": "report", "rules": str(TEST_RULES), "out": str(out)},
-                      ("-S", "-o", os.devnull), extra))
+                      ("-S", "-o", os.devnull), (*extra, "-I", str(outside))))
     # include_exact.cpp: the second directive of fixy/GapsUser.h enters no
     # file, and the plugin resolves it as libcpp does.
     calls.append(("include_exact.cpp", {"root": str(HERE), "mode": "error", "rules": str(TEST_RULES)}))
@@ -913,25 +923,17 @@ KNOWN_GAPS = (
     ("language_gap_user.cpp", HERE / "language.txt", "include/fixy/high/LanguageGap.h", 11,
      "the rule of the language reads each declaration type and each include, and not a call.  An extension needs "
      "a decision of the owner: the language files name std::nothrow and the std::vector of std::meta"),
-    ("outside_user.cpp", TEST_RULES, "outside_user.cpp", 9,
-     "a header outside the root that is not a system header is no library, so its class is no library class"),
-    ("outside_user.cpp", TEST_RULES, "outside_user.cpp", 10,
-     "a header outside the root that is not a system header is no library, so its function is no library call"),
 )
-OUTSIDE_LIBRARY_HEADER = "#pragma once\nstruct OutsideType {\n    int value = 0;\n};\ninline int outside_value() { return 1; }\n"
 
 
 def run_known_gaps(section: Section) -> None:
     """Compile each fixture of KNOWN_GAPS in report mode, and judge that each pinned line has no finding."""
-    outside = section.work / "outside-library"
-    outside.mkdir(exist_ok=True)
-    (outside / "OutsideLibrary.h").write_text(OUTSIDE_LIBRARY_HEADER, encoding="utf-8")
     fixtures = sorted({(fixture, table) for fixture, table, _, _, _ in KNOWN_GAPS})
     calls: list[tuple[object, ...]] = []
     for index, (fixture, table) in enumerate(fixtures):
         arguments = {"root": str(HERE), "mode": "report", "rules": str(table),
                      "out": str(section.work / f"gaps-{index}")}
-        calls.append((fixture, arguments, ("-S", "-o", os.devnull), ("-I", str(outside))))
+        calls.append((fixture, arguments, ("-S", "-o", os.devnull)))
     findings: dict[str, list[Finding]] = {}
     for index, ((fixture, _), compiled) in enumerate(zip(fixtures, section.compile_all(calls), strict=True)):
         section.expect(f"{fixture} compiles in report mode", compiled.returncode == 0, compiled.stderr[-2000:])

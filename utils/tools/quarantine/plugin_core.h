@@ -370,17 +370,23 @@ inline const FileEntry& classify_file(const char* file) {
     return *entry;
 }
 
-// True when the token at LOCATION is spelled in a system header outside the
-// source root.  A file under the root is never a library file: -isystem and
-// #pragma GCC system_header do not make it one, so the rules and the walks
-// read it as each other file of the tree.
+// True when the token at LOCATION is spelled in a library file: a file outside
+// the source root, also a header that -I names and no system flag marks, such
+// as the header of a third-party library.  A file under the root is never a
+// library file: -isystem and #pragma GCC system_header do not make it one, so
+// the rules and the walks read it as each other file of the tree.  A scratch
+// buffer, <built-in> and <command-line> have no real path, and they are
+// library files only in a system header, so a token that a macro of the tree
+// pastes stays a token of the tree.
 inline bool in_library_file_at(location_t location) {
-    if (!in_system_header_at(location)) {
-        return false;
+    const line_map_ordinary* map = nullptr;
+    linemap_resolve_location(line_table, location, LRK_SPELLING_LOCATION, &map);
+    const char* file = map != nullptr ? ORDINARY_MAP_FILE_NAME(map) : nullptr;
+    const FileEntry* entry = file != nullptr ? &classify_file(file) : nullptr;
+    if (entry != nullptr && entry->file_class == FileClass::outside && !entry->real.empty()) {
+        return true;
     }
-    location_t spelled = linemap_resolve_location(line_table, location, LRK_SPELLING_LOCATION, nullptr);
-    expanded_location where = expand_location(spelled);
-    return where.file == nullptr || classify_file(where.file).file_class == FileClass::outside;
+    return (entry == nullptr || entry->file_class == FileClass::outside) && in_system_header_at(location);
 }
 
 // An error for each file of the root that the unit read and that no row of

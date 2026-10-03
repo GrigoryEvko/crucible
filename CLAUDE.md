@@ -2967,6 +2967,8 @@ In a quarantined file, each line that you write or change holds only objects of 
 
 The plugin examines each use at its spelling location. A token that a macro of a system header spells counts at the place where the quarantined file uses the macro. A base template that a quarantined file instantiates gives no finding. The lines that a change does not touch can stay as they are. A new quarantined file has no finding.
 
+Each header outside the source root is a library header, also a header of a third-party library that `-I` names with no system flag. A class, a function or a variable in the global namespace of such a header is part of the C library for the rule above, and a name in a namespace of it counts as a std name.
+
 ### Callers of a changed API
 
 This rule applies to a quarantined caller that changes only because a base API changed. In that caller, change only the lines that the API change makes necessary. Such a line can keep a std type or a std name that no base type replaces at this time. The finding count of the file must not increase. The report of the change lists each such line.
