@@ -183,7 +183,9 @@
 // a finding in those presets and not in Release.  A constructor, a destructor
 // and a conversion function of a library class are not findings: the compiler
 // calls them for an object that the plugin reports where the code declares
-// it, so a temporary that the code passes to a template is no finding.
+// it.  An explicit temporary, such as std::vector<int>{1, 2} that the code
+// passes to a template, names its class where the source spells it, and it
+// is a std_entity there (check_temporary).
 // KNOWN_GAPS of test/check_plugin.py pins each such gap on a line of a
 // fixture, and the list only becomes shorter.
 
@@ -1281,19 +1283,27 @@ bool is_identifier_byte(char byte) {
     return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') || (byte >= '0' && byte <= '9') || byte == '_';
 }
 
+// An identifier that the source spells, and the first character after it that
+// is not a space or a tab, or '\0' at the end of the line.
+struct SpelledName {
+    std::string identifier;
+    char next = '\0';
+};
+
 // The identifier that the source spells at the start of the range of
 // LOCATION, after each space, '(' and ':' there, or "" when none.  The
 // spelling location decides, so a macro of a system header gives the
 // identifier of its definition.  Complexity: O(length of the line).
-std::string identifier_spelled_at(location_t location) {
+SpelledName spelled_name_at(location_t location) {
+    SpelledName spelled;
     location_t start = linemap_resolve_location(line_table, get_start(location), LRK_SPELLING_LOCATION, nullptr);
     expanded_location from = expand_location(start);
     if (from.file == nullptr || from.line <= 0 || from.column <= 0) {
-        return {};
+        return spelled;
     }
     diagnostics::char_span line = global_dc->get_file_cache().get_source_line(from.file, from.line);
     if (!line) {
-        return {};
+        return spelled;
     }
     std::string text(line.get_buffer(), line.length());
     std::size_t at = static_cast<std::size_t>(from.column - 1);
@@ -1304,7 +1314,35 @@ std::string identifier_spelled_at(location_t location) {
     while (end < text.size() && is_identifier_byte(text[end])) {
         ++end;
     }
-    return text.substr(at, end - at);
+    spelled.identifier = text.substr(at, end - at);
+    std::size_t after = end;
+    while (after < text.size() && (text[after] == ' ' || text[after] == '\t')) {
+        ++after;
+    }
+    spelled.next = after < text.size() ? text[after] : '\0';
+    return spelled;
+}
+
+std::string identifier_spelled_at(location_t location) { return spelled_name_at(location).identifier; }
+
+// True when the source spells the class CLASS_TYPE, or an alias of it in its
+// namespace, at the start of the range of LOCATION, and a '(', a '{' or a '<'
+// follows the name.  An explicit temporary, such as std::vector<int>{1, 2} or
+// std::string("abc"), starts at the name of its type.  An implicit conversion
+// starts at the expression that it converts.
+bool spells_class_at(location_t location, tree class_type) {
+    SpelledName spelled = spelled_name_at(location);
+    if (spelled.identifier.empty() || (spelled.next != '(' && spelled.next != '{' && spelled.next != '<')) {
+        return false;
+    }
+    tree decl = TYPE_MAIN_DECL(TYPE_MAIN_VARIANT(class_type));
+    if (decl == NULL_TREE || spelled.identifier == simple_name(decl)) {
+        return decl != NULL_TREE;
+    }
+    tree found = lookup_qualified_name(top_namespace(decl), get_identifier(spelled.identifier.c_str()),
+                                       LOOK_want::TYPE, false);
+    return found != NULL_TREE && found != error_mark_node && TREE_CODE(found) == TYPE_DECL
+        && TYPE_MAIN_VARIANT(TREE_TYPE(found)) == TYPE_MAIN_VARIANT(class_type);
 }
 
 // A builtin of GCC that the code calls.  The front end makes some calls of a
@@ -1616,6 +1654,35 @@ void check_scope_use(tree scope_ref, location_t location) {
 // argument, a compound literal.
 void check_type_use(tree type, location_t location) { record_named_entities(type, location); }
 
+// An explicit temporary, such as one that the code passes to a template: a
+// TARGET_EXPR that a constructor initializes, whose range starts at the name
+// of its class (spells_class_at).  The source names the class there, and each
+// library class that the class holds is a std_entity, as a functional cast in
+// a template is.  An implicit list initialization has the flag
+// TARGET_EXPR_LIST_INIT_P, and a call that returns a class calls no
+// constructor, so neither is a finding.  A TARGET_EXPR with no location of
+// its own is no finding either.
+void check_temporary(tree target) {
+    if (TARGET_EXPR_LIST_INIT_P(target) || TARGET_EXPR_INITIAL(target) == NULL_TREE || !EXPR_HAS_LOCATION(target)) {
+        return;
+    }
+    location_t location = EXPR_LOCATION(target);
+    tree callee = cp_get_callee_fndecl_nofold(TARGET_EXPR_INITIAL(target));
+    if (callee == NULL_TREE || TREE_CODE(callee) != FUNCTION_DECL || !DECL_CONSTRUCTOR_P(callee)) {
+        return;
+    }
+    LibraryClasses classes = library_class_in(TREE_TYPE(target), 0);
+    bool is_refused = is_standard_class(classes.refused);
+    if ((!is_refused && classes.pending == NULL_TREE) || !is_quarantined(location)
+        || !spells_class_at(location, TREE_TYPE(target))) {
+        return;
+    }
+    if (is_refused) {
+        record(Kind::std_entity, location, qualified_name(TYPE_MAIN_DECL(classes.refused)));
+    }
+    record_pending_class(classes, location);
+}
+
 void check_new_expression(tree expression, location_t location) {
     bool is_placement = TREE_OPERAND(expression, 0) != NULL_TREE;
     tree type = TREE_OPERAND(expression, 1);
@@ -1901,6 +1968,9 @@ tree visit_body_node(tree* node_pointer, int* walk_subtrees, void* data) {
         case NEW_EXPR:
         case VEC_NEW_EXPR:
             check_new_expression(node, walk.last);
+            return NULL_TREE;
+        case TARGET_EXPR:
+            check_temporary(node);
             return NULL_TREE;
         case DELETE_EXPR:
         case VEC_DELETE_EXPR:

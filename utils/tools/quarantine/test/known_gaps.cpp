@@ -7,14 +7,6 @@
 #include <cstring>
 #include <string>
 #include <utility>
-#include <vector>
-
-template <class T>
-void gap_sink(T&& value) {
-    static_cast<void>(value);
-}
-
-void gap_temporary() { gap_sink(std::vector<int>{1, 2}); }
 
 unsigned long gap_folded = std::strlen("abc") + alignof(std::string) + noexcept(std::string{});
 

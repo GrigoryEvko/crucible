@@ -756,6 +756,9 @@ LIBRARY_NAMES = (
     ("deduced.cpp", (), 13, "std_object", "std::vector (deduced)"),
     ("deduced.cpp", (), 19, "std_object", "std::vector (deduced)"),
     ("deduced.cpp", (), 33, "std_object", "std::vector (std::vector<int, std::allocator<int> >)"),
+    ("temporaries.cpp", (), 22, "std_entity", "std::vector"),
+    ("temporaries.cpp", (), 23, "std_entity", "std::basic_string"),
+    ("temporaries.cpp", (), 24, "std_entity", "std::vector"),
 )
 # The header of a library outside the source root that no system flag marks.
 # run_library_names writes it in its scratch directory, and each compile of the
@@ -773,6 +776,10 @@ LIBRARY_NAMES_ABSENT = (
     ("foreign_symbols.cpp", 19),  # the definition
     ("deduced.cpp", 25),  # a template parameter gives the type, and the call spells no library name
     ("deduced.cpp", 34),  # the call deduces the template argument from an object with a finding of its own
+    ("temporaries.cpp", 25),  # an implicit list initialization of a parameter names no class
+    ("temporaries.cpp", 26),  # an implicit conversion of a variable names no class
+    ("temporaries.cpp", 27),  # an implicit conversion of a literal names no class
+    ("temporaries.cpp", 28),  # a temporary of a class of the source
 )
 # (fixture, extra flags, line, kind): no finding of that kind there.
 LIBRARY_KINDS_ABSENT = (
@@ -929,13 +936,10 @@ def run_depth(section: Section) -> None:
 # removes its row and adds the finding to the expectations.  The list only
 # becomes shorter.
 KNOWN_GAPS = (
-    ("known_gaps.cpp", TEST_RULES, "known_gaps.cpp", 17,
-     "the temporary std::vector goes to a template, whose instantiation the plugin does not read, and the front "
-     "end keeps no mark that tells an explicit temporary from an implicit conversion"),
-    ("known_gaps.cpp", TEST_RULES, "known_gaps.cpp", 19,
+    ("known_gaps.cpp", TEST_RULES, "known_gaps.cpp", 11,
      "outside a template, the front end folds the call of strlen in the initializer, the alignof and the noexcept "
      "to constants while it parses, and keeps no tree of the names"),
-    ("known_gaps.cpp", TEST_RULES, "known_gaps.cpp", 21,
+    ("known_gaps.cpp", TEST_RULES, "known_gaps.cpp", 13,
      "a using-declaration of namespace scope is a binding of the namespace, with no tree that has a location"),
     ("language_gap_user.cpp", HERE / "language.txt", "include/fixy/high/LanguageGap.h", 11,
      "the rule of the language reads each declaration type and each include, and not a call.  An extension needs "
