@@ -7,7 +7,9 @@
 # for a region with no row and for a row with no region.  The number of rows can
 # only fall: the commit that removes a region writes the ledger again with
 # --write, and only a region of a reason class of CLAUDE.md section XXII gets a
-# new row, with --write --admit.
+# new row, with --write --admit.  utils/scripts/quarantine-ledger.txt holds the
+# findings that each region covers, so a region that covers more fails the test
+# quarantine_ratchet until check-quarantine-ratchet.py --write --admit.
 
 test/foundation/test_core_scalar.cpp | PROBE: decode walks a C array of enumerations, the array form of a quarantined type
 test/shape/core_shapes.cpp | ORACLE: the raw form that the shape of each family probe is compared with

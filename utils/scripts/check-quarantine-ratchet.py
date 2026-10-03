@@ -8,10 +8,20 @@ THE FINDINGS
     each object of the target all of one build (utils/scripts/build_census.py,
     objects_of_all) whose compile loads the quarantine plugin.  A finding is
     one distinct finding line.  The same line from two objects, as a finding
-    of a header that two units include, counts one time.  A finding of the
-    kind opted_out is not counted, and a line of the kind region is no
-    finding: utils/scripts/check-quarantine-regions.py and its ledger hold
-    each opt-out region.
+    of a header that two units include, counts one time.  A line of the kind
+    region is no finding: utils/scripts/check-quarantine-regions.py and its
+    ledger hold each opt-out region.
+
+THE OPT-OUT REGIONS
+    A finding inside an opt-out region has the kind opted_out (CLAUDE.md
+    section XXII, R7).  Its row holds the reason of its region, so the
+    ledger holds what each region covers.  A line of the kind region gives
+    the file, the first line and the reason of each region of a unit.  The
+    plugin refuses a region that opens inside another region, and a region
+    that another file closes.  So the region of an opted_out finding is the
+    region of its file with the last first line at or before its line.  A
+    region that covers more raises a count of opted_out, and the check
+    refuses it until --write --admit writes it.
 
 THE ENTITY
     The ledger counts the findings of each file, kind and entity.  The entity
@@ -23,6 +33,8 @@ THE ENTITY
         entity.  Their text is a type of the code, and an alias in another
         file can change that text in a file that no change touched
       * raw_new_delete: the operator without the type of the expression
+      * opted_out: "REASON | KIND ENTITY", the reason of the region, and the
+        kind and the entity of the finding inside it
       * each other kind: the whole text, for example std::span::operator[],
         memcpy, or the header of an include
     The entity holds no line, so a change that only moves code keeps each
@@ -35,7 +47,7 @@ THE LEDGER
     sorted and each row holds one fact, so the resolution of a merge conflict
     is a new --write.  The rows after the head comment:
 
-        format 3
+        format 4
         configuration NAME KEY VALUE   One row for each key of the
                                        configuration NAME
         FILE KIND COUNT ENTITY         The count of the base configuration.
@@ -48,9 +60,10 @@ THE LEDGER
     The first configuration of the ledger is the base.  The count of another
     configuration is the base count plus its difference, so a change that
     lowers a count in each configuration writes only the base rows.
-    parse_ledger also reads the rows of format 1 (a directory and a kind)
-    and of format 2 (a file and a kind), with no entity, for the history
-    that utils/scripts/check-budget-history.py reads.
+    parse_ledger also reads the rows of format 1 (a directory and a kind),
+    of format 2 (a file and a kind, with no entity) and of format 3 (no row
+    of opted_out), for the history that utils/scripts/check-budget-history.py
+    reads.
 
 THE CONFIGURATION
     A configuration is the build kind and the target tier of
@@ -77,6 +90,8 @@ THE VERDICT
     * A count below its ledger count is an error too.  The commit that
       removes a finding writes the ledger again (--write), so the ledger
       keeps no slack.
+    * An opted_out finding of a file with no region line is an error, because
+      the check cannot give it its region.
     * Each directory gives one warning, so the findings that stay in the
       quarantine are in the output of each run.  The directory of a file is
       the longest path of a layer row or a quarantine row of the rule table
@@ -95,7 +110,11 @@ WRITE THE LEDGER
     configurations and their rows.  It refuses a count above its row: remove
     the new finding.  --raise writes such a count too.  Use it only when the
     plugin or the rule table changed what the plugin reports, and give the
-    reason in the commit.
+    reason in the commit.  --admit writes a count of opted_out above its row,
+    and no other count.  Use it only for a region of a reason class of
+    CLAUDE.md section XXII that must cover more, and give the reason in the
+    commit.  utils/scripts/check-budget-history.py gives a warning for each
+    such count on each run.
     * A file that git reports as moved (`git diff --find-renames HEAD`, after
       `git mv` or `git add`) takes the rows of its old path in each
       configuration.
@@ -130,7 +149,7 @@ NOT APPLICABLE
 
 Usage
     check-quarantine-ratchet.py --build-dir DIR [--warnings-dir DIR]
-    check-quarantine-ratchet.py --build-dir DIR --write [--raise] [--add-configuration]
+    check-quarantine-ratchet.py --build-dir DIR --write [--raise | --admit] [--add-configuration]
     check-quarantine-ratchet.py --build-dir DIR --list [FILE|DIRECTORY [KIND]]
     check-quarantine-ratchet.py --import LOG
     check-quarantine-ratchet.py --self-test
@@ -142,6 +161,7 @@ or a failed self-test, 3 when the check does not apply to the build.
 from __future__ import annotations
 
 import argparse
+import bisect
 import contextlib
 import io
 import json
@@ -170,9 +190,9 @@ CHECK = "quarantine-ratchet"
 LEDGER = "utils/scripts/quarantine-ledger.txt"
 RULES = "utils/scripts/layer-rules.txt"
 NOT_APPLICABLE = build_target.NOT_APPLICABLE
-FORMAT = 3
+FORMAT = 4
 # The formats that parse_ledger reads.  The check and --write use only FORMAT.
-READ_FORMATS = (2, FORMAT)
+READ_FORMATS = (2, 3, FORMAT)
 FORMAT_ROW = "format"
 CONFIGURATION_ROW = "configuration"
 KIND_KEY = "kind"
@@ -194,6 +214,8 @@ NAME_KINDS = frozenset(("std_object", "c_library_object"))
 # The kinds whose entity is a type of the code: a row has no entity.
 TYPE_KINDS = frozenset(("raw_pointer_object", "raw_function_pointer", "c_array_object"))
 NEW_DELETE_KIND = "raw_new_delete"
+# The separator between the reason of a region and the finding inside it, in the entity of an opted_out row.
+REASON_SEPARATOR = " | "
 # The operators of a new-expression, the longest first.  The type after the operator is not part of the entity.
 NEW_OPERATORS = ("placement new", "new")
 
@@ -252,11 +274,17 @@ class Ledger:
 
 @dataclass(slots=True)
 class Census:
-    """The distinct findings of the objects of all, and the problems of the objects."""
+    """The distinct findings of the objects of all, the opt-out regions, and the problems of the objects.
+
+    `regions` holds the first line and the reason of each region of each file.  `reasons` gives each opted_out
+    finding the reason of its region (THE OPT-OUT REGIONS).
+    """
 
     findings: set[quarantine_sections.Finding] = field(default_factory=set)
     objects: int = 0
     problems: list[check_report.Finding] = field(default_factory=list)
+    regions: dict[str, list[tuple[int, str]]] = field(default_factory=dict)
+    reasons: dict[quarantine_sections.Finding, str] = field(default_factory=dict)
 
 
 # ── The ledger ─────────────────────────────────────────────────────
@@ -494,6 +522,8 @@ def read_census(objects: list[tuple[Path, str, str]], build_dir: Path) -> Census
 
     with ThreadPoolExecutor(max_workers=READERS) as pool:
         results = list(pool.map(read_one, objects))
+    # The file, the first line and the reason of each region of each unit.
+    regions: set[tuple[str, int, str]] = set()
     for path, stamp, section, problem in results:
         shown = build_census.shown(path, build_dir)
         if problem:
@@ -508,9 +538,35 @@ def read_census(objects: list[tuple[Path, str, str]], build_dir: Path) -> Census
                 f"has the stamp {stamp!r}.  The compiler cache gave the findings of another plugin or rule table: "
                 f"its key must hold the stamp argument"))
         else:
-            census.findings.update(item for item in section.findings
-                                   if item.kind not in quarantine_sections.NOT_FINDINGS)
+            for item in section.findings:
+                if item.kind == quarantine_sections.REGION:
+                    regions.add((item.file, item.line, " ".join(item.entity.split())))
+                else:
+                    census.findings.add(item)
+    for file, line, reason in sorted(regions):
+        census.regions.setdefault(file, []).append((line, reason))
+    give_reasons(census)
     return census
+
+
+def give_reasons(census: Census) -> None:
+    """Give each opted_out finding the reason of its region, and an error to each one with no region.
+
+    Complexity: O(f log r) for f opted_out findings and r regions of a file.
+    """
+    for item in sorted(census.findings):
+        if item.kind != quarantine_sections.OPTED_OUT:
+            continue
+        starts = census.regions.get(item.file, [])
+        index = bisect.bisect_right(starts, (item.line, chr(0x10FFFF))) - 1
+        if index < 0:
+            census.problems.append(check_report.Finding(
+                "error", item.file, item.line, CHECK,
+                f"the finding {item.text()!r} is opted out, and no section gives a region of {item.file} at or "
+                f"before its line.  The plugin writes a line of the kind region for each region: compile the unit "
+                f"again"))
+            continue
+        census.reasons[item] = starts[index][1]
 
 
 def directory_rows(table: layer_rules.RuleTable) -> list[str]:
@@ -545,9 +601,26 @@ def entity_key(kind: str, entity: str) -> str:
     return text
 
 
-def count_findings(findings: Iterable[quarantine_sections.Finding]) -> Counter[Key]:
-    """Return the number of findings of each file, kind and entity.  Complexity: linear in the findings."""
-    return Counter((item.file, item.kind, entity_key(item.kind, item.entity)) for item in findings)
+def opted_out_key(reason: str, entity: str) -> str:
+    """Return the entity of the row of an opted_out finding: the reason of its region, the inner kind and entity."""
+    inner, _, rest = " ".join(entity.split()).partition(" ")
+    return row_text(f"{' '.join(reason.split())}{REASON_SEPARATOR}{inner}", entity_key(inner, rest))
+
+
+def count_findings(findings: Iterable[quarantine_sections.Finding],
+                   reasons: dict[quarantine_sections.Finding, str]) -> Counter[Key]:
+    """Return the number of findings of each file, kind and entity.
+
+    An opted_out finding counts with the reason of its region from `reasons`.  One with no reason gives a problem of
+    the census (give_reasons) and no count.  Complexity: linear in the findings.
+    """
+    counts: Counter[Key] = Counter()
+    for item in findings:
+        if item.kind != quarantine_sections.OPTED_OUT:
+            counts[(item.file, item.kind, entity_key(item.kind, item.entity))] += 1
+        elif item in reasons:
+            counts[(item.file, item.kind, opted_out_key(reasons[item], item.entity))] += 1
+    return counts
 
 
 def described(kind: str, entity: str) -> str:
@@ -604,7 +677,14 @@ def evaluate(counts: Counter[Key], ledger: Ledger, name: str, rows: list[str], l
         line = ledger.line_of(name, key)
         listing = f"`{script} --list {file} {kind}`"
         what = described(kind, entity)
-        if measured > admitted and file not in held:
+        if measured > admitted and kind == quarantine_sections.OPTED_OUT:
+            findings.append(check_report.Finding(
+                "error", ledger_shown, line, CHECK,
+                f"{file} has {measured} findings of {what}, and the ledger admits {admitted}.  The region covers "
+                f"more, and a region can only shrink.  List them with {listing}, and move the code out of the "
+                f"region.  If the reason class of the region (CLAUDE.md section XXII) needs the code, write the "
+                f"ledger with `{script} --write --admit` and give the reason in the commit"))
+        elif measured > admitted and file not in held:
             findings.append(check_report.Finding(
                 "error", ledger_shown, line, CHECK,
                 f"{file} has {measured} findings of {what}, and the ledger holds no row of the file.  A new file has "
@@ -648,6 +728,8 @@ class Request:
     allow_raise: bool = False
     add_configuration: bool = False
     listed: list[str] | None = None
+    # With write: also write a count of opted_out above its row (WRITE THE LEDGER).
+    admit: bool = False
 
 
 def run(build_dir: Path, root: Path, ledger_path: Path, rules_path: Path, warnings_dir: Path | None,
@@ -690,7 +772,7 @@ def run(build_dir: Path, root: Path, ledger_path: Path, rules_path: Path, warnin
                                  warnings_dir)
     census = read_census(objects, build_dir)
     rows = directory_rows(table)
-    counts = count_findings(census.findings)
+    counts = count_findings(census.findings, census.reasons)
     if request.listed is not None:
         return list_findings(census, request.listed)
     is_held = ledger.configurations.get(name) == configuration
@@ -833,9 +915,13 @@ def write_ledger(root: Path, ledger_path: Path, ledger: Ledger, held: str | None
         for (file, kind, entity), count, admitted in rises:
             words = "a file that the ledger does not hold" if file not in held else f"rises from {admitted}"
             print(f"{CHECK}: {file} has {count} findings of {described(kind, entity)}, {words}", file=sys.stderr)
-        if rises and not request.allow_raise:
-            print(f"{CHECK}: the ledger is not written: {len(rises)} counts rose.  Remove the new findings.  Give "
-                  f"--raise only when the plugin or the rule table changed what it reports", file=sys.stderr)
+        # --admit writes a region that covers more, and --raise writes each count.
+        refused = [rise for rise in rises if not request.allow_raise
+                   and not (request.admit and rise[0][1] == quarantine_sections.OPTED_OUT)]
+        if refused:
+            print(f"{CHECK}: the ledger is not written: {len(refused)} counts rose.  Remove the new findings.  Give "
+                  f"--admit only for a region that must cover more, and --raise only when the plugin or the rule "
+                  f"table changed what it reports", file=sys.stderr)
             return 1
         move_rows(ledger, moves)
     base = ledger.base
@@ -902,6 +988,7 @@ RULES_TEXT = ("layer base 0 include/fixy/ include/fixy/session/\n"
               "quarantine include/crucible/\nquarantine src/\nquarantine test/\n")
 HEAD = "# a planted ledger\n"
 STAMP_VALUE = "0123abcd"
+PROBE_REASON = "PROBE: a planted region"
 # A fake compiler: -Q --help=target prints the -march value of the file march.txt beside it, or of native.txt for
 # -march=native.
 FAKE_COMPILER = """\
@@ -960,6 +1047,7 @@ class Scratch:
         header = "quarantine: std_object include/crucible/Vigil.h:10:5 std::vector (std::vector<int>)"
         self.add("a", [header, "quarantine: c_library_call test/fixy/test_a.cpp:4:3 memcpy",
                        "quarantine: std_object test/fixy/test_b.cpp:6:5 std::span (std::span<int>)",
+                       f"quarantine: region test/fixy/test_a.cpp:8:1 {PROBE_REASON}",
                        "quarantine: opted_out test/fixy/test_a.cpp:9:1 raw_pointer_object char*"])
         self.add("b", [header, "quarantine: raw_pointer_object src/canopy/Lifeguard.cpp:7:9 char*",
                        "quarantine: upward_include include/fixy/session/Handle.h:3:0 include/crucible/X.h"])
@@ -998,9 +1086,9 @@ class Scratch:
         (self.build / "inputs.txt").write_text("".join(f"{name}.o\n" for name in self.objects), encoding="utf-8")
 
     def run(self, write: bool = False, allow_raise: bool = False, add_configuration: bool = False,
-            listed: list[str] | None = None) -> tuple[int, list[check_report.Finding], str]:
+            listed: list[str] | None = None, admit: bool = False) -> tuple[int, list[check_report.Finding], str]:
         """Run the check on the scratch build, and return the status, the findings and the printed text."""
-        request = Request(write, allow_raise, add_configuration, listed)
+        request = Request(write, allow_raise, add_configuration, listed, admit)
         with contextlib.redirect_stdout(io.StringIO()) as printed, contextlib.redirect_stderr(io.StringIO()) as said:
             status = run(self.build, self.root, self.ledger, self.rules, None, request)
         text = printed.getvalue() + said.getvalue()
@@ -1011,6 +1099,11 @@ class Scratch:
         """Return the first sentence of each error of a check run."""
         _, findings, _ = self.run()
         return [item.message.split(".  ")[0] for item in findings if item.level == "error"]
+
+    def counts(self) -> Counter[Key]:
+        """Return the count of each file, kind and entity of the planted objects."""
+        census = read_census(plugin_objects(self.build, self.root), self.build)
+        return count_findings(census.findings, census.reasons)
 
 
 def directory_totals(counts: dict[Key, int], rows: list[str]) -> Counter[tuple[str, str]]:
@@ -1057,7 +1150,7 @@ def self_test() -> int:
     for text in ("format 3\nconfiguration b machine x\nx.cpp std_object -1 std::vector\n",
                  "format 3\nconfiguration b machine x\nconfiguration r machine y\nb x.cpp std_object +1 std::vector\n",
                  "format 3\nconfiguration b machine x\nconfiguration r machine y\nx.cpp k 1 e\nr x.cpp k -2 e\n",
-                 "format 3\nx.cpp std_object 1 std::vector\n", "format 4\n",
+                 "format 3\nx.cpp std_object 1 std::vector\n", "format 5\n",
                  "format 3\nconfiguration b machine x\nx.cpp std_object 1  std::vector\n",
                  "format 3\nconfiguration b machine x\nx.cpp std_object 1 std::vector\n"
                  "x.cpp std_object 2 std::vector\n",
@@ -1105,6 +1198,8 @@ def self_test() -> int:
                                                    "include/crucible/X.h"): 1,
                                                   ("src/canopy/Lifeguard.cpp", "raw_pointer_object", ""): 1,
                                                   ("test/fixy/test_a.cpp", "c_library_call", "memcpy"): 1,
+                                                  ("test/fixy/test_a.cpp", "opted_out",
+                                                   f"{PROBE_REASON} | raw_pointer_object"): 1,
                                                   ("test/fixy/test_b.cpp", "std_object", "std::span"): 1,
                                                   ("test/test_arena.cpp", "std_entity", "std::swap"): 1},
                written.counts)
@@ -1116,19 +1211,62 @@ def self_test() -> int:
         status, findings, text = scratch.run()
         expect("an equal build passes, with one warning for each directory",
                status == 0 and all(item.level == "warning" for item in findings) and len(findings) == 5, text)
-        expect("a header finding of two objects counts one time, and opted_out is not counted",
-               "6 findings in 6 rows of 6 files" in text, text)
+        expect("a header finding of two objects counts one time, and the region line is no finding",
+               "7 findings in 7 rows of 6 files" in text, text)
         first_text = scratch.ledger.read_text()
         status, _, _ = scratch.run(write=True)
         expect("a second --write gives the same text", status == 0 and scratch.ledger.read_text() == first_text,
                scratch.ledger.read_text())
+
+        # The opt-out regions: a region that covers more fails until --write --admit writes it.
+        lines_a = scratch.objects["a"][0]
+        region_rows = {key: count for key, count in read_ledger(scratch.ledger).counts.items() if key[1] == "opted_out"}
+        scratch.add("a", [*lines_a, "quarantine: opted_out test/fixy/test_a.cpp:10:1 c_library_call memset"])
+        memset_row = ("test/fixy/test_a.cpp", "opted_out", f"{PROBE_REASON} | c_library_call memset")
+        expect("a region that covers one more finding fails, with the reason of the region in the row",
+               scratch.errors() == [f"test/fixy/test_a.cpp has 1 findings of the kind opted_out and the entity "
+                                    f"{memset_row[2]}, and the ledger admits 0"], scratch.errors())
+        status, _, text = scratch.run(write=True)
+        expect("--write refuses the growth of a region", status == 1 and "--admit" in text, text)
+        status, _, text = scratch.run(write=True, admit=True)
+        grown = read_ledger(scratch.ledger).counts
+        expect("--write --admit writes the growth of a region, and the check passes",
+               status == 0 and grown.get(memset_row) == 1 and scratch.errors() == [], text)
+        scratch.add("a", [*lines_a, "quarantine: c_library_call test/fixy/test_a.cpp:4:9 memset"])
+        status, _, text = scratch.run(write=True, admit=True)
+        expect("--admit writes no rise of another kind", status == 1 and read_ledger(scratch.ledger).counts == grown,
+               text)
+        scratch.add("a", lines_a)
+        expect("a region that covers less fails until the ledger is written again",
+               any("opted_out" in error and "holds 1" in error for error in scratch.errors()), scratch.errors())
+        status, _, _ = scratch.run(write=True)
+        expect("--write writes the shrink of a region", status == 0 and scratch.errors() == [])
+        scratch.add("a", [line.replace("test_a.cpp:9:1", "test_a.cpp:11:1").replace("test_a.cpp:8:1", "test_a.cpp:10:1")
+                          for line in lines_a])
+        expect("a region that moves with its code keeps its rows", scratch.errors() == [], scratch.errors())
+        other = "ABI: a planted boundary"
+        scratch.add("a", [*lines_a[:3], f"quarantine: region test/fixy/test_a.cpp:8:1 {other}", lines_a[4]])
+        expect("a finding under a region of another reason fails: the row holds the reason of its region",
+               sorted(scratch.errors()) == [f"test/fixy/test_a.cpp has 0 findings of the kind opted_out and the entity "
+                                            f"{PROBE_REASON} | raw_pointer_object, and the ledger holds 1",
+                                            f"test/fixy/test_a.cpp has 1 findings of the kind opted_out and the entity "
+                                            f"{other} | raw_pointer_object, and the ledger admits 0"], scratch.errors())
+        scratch.add("a", [*lines_a[:3], f"quarantine: region test/fixy/test_a.cpp:30:1 {PROBE_REASON}", lines_a[4]])
+        status, findings, text = scratch.run()
+        expect("an opted_out finding before each region of its file is an error, and --write refuses it",
+               status == 1 and any(item.path == "test/fixy/test_a.cpp" and "no section gives a region" in item.message
+                                   for item in findings) and scratch.run(write=True)[0] == 1, text)
+        scratch.add("a", lines_a)
+        expect("the ledger keeps the rows of the region", {key: count for key, count in
+                                                           read_ledger(scratch.ledger).counts.items()
+                                                           if key[1] == "opted_out"} == region_rows)
 
         # The hole of a count for each directory: one std object in, one std object out of the same directory.
         before = read_ledger(scratch.ledger).counts
         lines_a = scratch.objects["a"][0]
         scratch.add("a", [line for line in lines_a if "test_b.cpp" not in line]
                     + ["quarantine: std_object test/fixy/test_a.cpp:12:5 std::array (std::array<int, 2>)"])
-        planted = count_findings(read_census(plugin_objects(scratch.build, scratch.root), scratch.build).findings)
+        planted = scratch.counts()
         expect("the swap keeps each count of a directory and kind, so a count for each directory passes it",
                directory_totals(dict(planted), rows) == directory_totals(before, rows), planted)
         expect("the swap fails the count for each file: test_a rises and test_b falls",
@@ -1144,7 +1282,7 @@ def self_test() -> int:
         lines_a = scratch.objects["a"][0]
         scratch.add("a", [line.replace("std::span (std::span<int>)", "std::map (std::map<int, int>)")
                           for line in lines_a])
-        planted = count_findings(read_census(plugin_objects(scratch.build, scratch.root), scratch.build).findings)
+        planted = scratch.counts()
         expect("the entity swap keeps each count of a file and kind, so a count for each file passes it",
                file_totals(dict(planted)) == file_totals(before), planted)
         expect("the entity swap fails: std::map rises and std::span falls",
@@ -1362,6 +1500,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--write", action="store_true", help="write the rows of the configuration of the build")
     parser.add_argument("--raise", dest="allow_raise", action="store_true",
                         help="with --write, also write a count above its row")
+    parser.add_argument("--admit", action="store_true",
+                        help="with --write, also write a count of opted_out above its row: a region that covers more")
     parser.add_argument("--add-configuration", dest="add_configuration", action="store_true",
                         help="with --write, write the configuration of the build under its name")
     parser.add_argument("--list", dest="listed", nargs="*", metavar="WORD",
@@ -1377,12 +1517,12 @@ def main(argv: list[str]) -> int:
     if args.import_path is not None:
         return import_rows(root / LEDGER, args.import_path)
     if (args.build_dir is None or (args.listed is not None and len(args.listed) > 2)
-            or ((args.allow_raise or args.add_configuration) and not args.write)):
+            or ((args.allow_raise or args.admit or args.add_configuration) and not args.write)):
         parser.print_usage(sys.stderr)
         return 2
     throwaway_repo.isolate()
     return run(args.build_dir.resolve(), root, root / LEDGER, root / RULES, args.warnings_dir,
-               Request(args.write, args.allow_raise, args.add_configuration, args.listed))
+               Request(args.write, args.allow_raise, args.add_configuration, args.listed, args.admit))
 
 
 if __name__ == "__main__":

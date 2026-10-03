@@ -5716,7 +5716,8 @@ add_test(NAME quarantine_sections_self_test
 # quarantine_ratchet — utils/scripts/check-quarantine-ratchet.py counts the
 # distinct findings of the sections of the objects of all in each file, kind and
 # entity, against utils/scripts/quarantine-ledger.txt.  A count above or below its row
-# fails, and so does a finding in a file that the ledger does not hold.  It exits
+# fails, and so does a finding in a file that the ledger does not hold.  A finding
+# inside an opt-out region counts with the reason of its region.  It exits
 # 3 for a build whose compiles do not load the quarantine plugin, for a build of
 # a configuration that the ledger does not have, and for a build that made only
 # some targets.

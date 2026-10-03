@@ -36,8 +36,12 @@ THE FINDINGS
       neither the plugin of utils/tools/quarantine/ nor the rule table
       utils/scripts/layer-rules.txt, gives an error.  A row of the admission
       ledger with the row name quarantine-ledger and the column error changes
-      the error to a warning.  Each raised count that stays above its count
-      before the commit gives a warning on each run, which names the commit.
+      the error to a warning.  A raised count of the kind opted_out, a region
+      that covers more, gives no error: only `check-quarantine-ratchet.py
+      --write --admit` writes it, and its commit gives the reason.  Each
+      raised count that stays above its count before the commit gives a
+      warning on each run, which names the commit.  A count of opted_out is
+      no rise in a version after one that does not count opted_out.
       A change from or to format 1, which counts directories, raises no
       count if no total of a kind rises, and it starts a new history of each
       count.  A version of format 2 and a version with entities compare the
@@ -570,9 +574,13 @@ def evaluate_ledgers(history: History, budgets: dict[str, Row]) -> list[check_re
 # The configuration, the file, the kind and the entity of one count of the quarantine ledger.  A count of a ledger of
 # format 1 or 2 has an empty entity.
 CountKey = tuple[str, str, str, str]
-# The first format of the quarantine ledger whose rows count files, and the first whose rows have an entity.
+# The first format of the quarantine ledger whose rows count files, the first whose rows have an entity, and the
+# first that counts the findings inside each opt-out region.
 FILE_FORMAT = 2
 ENTITY_FORMAT = 3
+OPTED_OUT_FORMAT = 4
+# The kind of a finding inside an opt-out region.  `check-quarantine-ratchet.py --write --admit` writes its rise.
+OPTED_OUT = "opted_out"
 
 
 @dataclass(frozen=True, slots=True)
@@ -666,6 +674,7 @@ def ledger_rises(before: Any, after: Any, moves: dict[str, str], peaks: dict[Cou
     * A count of a configuration other than the base rises only when its difference from the base rises, so a
       raise of a base count is one rise.  Such a count that comes back to a value of its history, `peaks`, is no
       rise.  A CI leg or a later --write can write such a configuration after a commit that lowered the base rows.
+    * A count of opted_out is new coverage, and no rise, when the old version does not count opted_out.
 
     Complexity: O(r log r) for r counts, and O(r * d) for d difference rows when the versions compare by file.
     """
@@ -674,6 +683,7 @@ def ledger_rises(before: Any, after: Any, moves: dict[str, str], peaks: dict[Cou
         return [LedgerRise(after.base, TOTAL, kind, "", old_totals.get(kind, 0), count)
                 for kind, count in sorted(new_totals.items()) if count > old_totals.get(kind, 0)]
     keyed = has_entities(before, after)
+    counts_opted_out = before.format >= OPTED_OUT_FORMAT
     # A new name of the base keeps the history of the base.
     old_counts = {(after.base if name == before.base else name, file, kind, entity): count
                   for (name, file, kind, entity), count in absolute_counts(before, keyed).items()}
@@ -682,7 +692,8 @@ def ledger_rises(before: Any, after: Any, moves: dict[str, str], peaks: dict[Cou
     for key in sorted(new_counts):
         name, file, kind, entity = key
         new, old = new_counts[key], old_counts.get(key, 0)
-        if new <= old or (name not in before.configurations and name != after.base):
+        if (new <= old or (name not in before.configurations and name != after.base)
+                or (kind == OPTED_OUT and not counts_opted_out)):
             continue
         source = moves.get(file)
         if (source is not None and old == 0 and new_counts.get((name, source, kind, entity), 0) == 0
@@ -714,7 +725,8 @@ def evaluate_quarantine(history: History, admissions: list[Admission], used: set
     """Read each raise of the quarantine ledger in the history and in the working tree.
 
     * A commit that raised a count and that changes neither the plugin nor the rule table gives an error, unless a
-      row of the admission ledger with the row name quarantine-ledger names the commit.
+      row of the admission ledger with the row name quarantine-ledger names the commit.  A raised count of
+      opted_out gives no error, because only `--write --admit` writes it: it gives the warning of the next item.
     * A configuration other than the base is stale after a commit of the plugin or the rule table that did not
       write its rows.  A raise of a stale configuration is no error, and the commit that writes its rows makes it
       current again.  A CI leg writes the rows of an aarch64 configuration only after the change of the plugin.
@@ -770,7 +782,10 @@ def evaluate_quarantine(history: History, admissions: list[Admission], used: set
         later = {name for name in after.configurations if name != after.base}
         written = {name for name in later if before is None or after.deltas.get(name) != before.deltas.get(name)
                    or after.configurations[name] != before.configurations.get(name)}
-        blocking = [rise for rise in rises if rise.configuration not in stale or rise.configuration == after.base]
+        # A region that covers more is no error: `--write --admit` wrote it, and the commit gives the reason.  Its
+        # count stays in `standing`, which gives a warning on each run.
+        blocking = [rise for rise in rises if rise.kind != OPTED_OUT
+                    and (rise.configuration not in stale or rise.configuration == after.base)]
         stale = (stale - written) | (later - written if changes_machinery(change) else set())
         known = later
         if not blocking or changes_machinery(change):
@@ -917,10 +932,16 @@ def quarantine_text(base: dict[str, int], deltas: dict[str, dict[str, int]] | No
     return "\n".join(lines) + "\n"
 
 
-def entity_text(base: dict[tuple[str, str], int]) -> str:
-    """Return a format 3 quarantine ledger with base counts of the kind std_object, each keyed by file and entity."""
-    lines = ["# a planted ledger", "format 3", "configuration default machine x86_64"]
-    lines += [f"{file} std_object {count} {entity}" for (file, entity), count in sorted(base.items()) if count]
+def entity_text(base: dict[tuple[str, str], int], ledger_format: int = 3,
+                regions: dict[tuple[str, str], int] | None = None) -> str:
+    """Return a quarantine ledger with base counts of the kind std_object, each keyed by file and entity.
+
+    `regions` gives the counts of the kind opted_out of a format 4 ledger, each keyed by file and entity.
+    """
+    lines = ["# a planted ledger", f"format {ledger_format}", "configuration default machine x86_64"]
+    rows = [(file, "std_object", entity, count) for (file, entity), count in base.items() if count]
+    rows += [(file, OPTED_OUT, entity, count) for (file, entity), count in (regions or {}).items() if count]
+    lines += [f"{file} {kind} {count} {entity}" for file, kind, entity, count in sorted(rows)]
     return "\n".join(lines) + "\n"
 
 
@@ -1055,6 +1076,22 @@ def quarantine_cases(expect: Any, scratch: Path) -> None:
            status == 1 and any(swapped[:9] in f.message and "test/a.cpp std_object std::map in default from 0 to 1"
                                in f.message for f in errors_of(found))
            and any("std_object std::map" in f.message and swapped[:9] in f.message for f in standing_of(found)))
+
+    covered = Scratch(scratch / "quarantine-regions")
+    span = {("test/a.cpp", "std::span"): 1}
+    covered.write(QUARANTINE_LEDGER, entity_text(span))
+    covered.commit("Count each entity", "The first counts.")
+    covered.write(QUARANTINE_LEDGER, entity_text(span, 4, {("test/a.cpp", "PROBE: a region | std_object std::map"): 2}))
+    covered.commit("Count the findings of each region", "The format counts what each region covers.")
+    status, found, _ = covered.run()
+    expect("the first version that counts the findings of each region raises no count",
+           status == 0 and not errors_of(found) and not standing_of(found))
+    covered.write(QUARANTINE_LEDGER, entity_text(span, 4, {("test/a.cpp", "PROBE: a region | std_object std::map"): 3}))
+    admitted = covered.commit("Admit a region that covers more", "The probe needs one more object.")
+    status, found, _ = covered.run()
+    expect("a region that covers more is no error, and its row gives a warning that names the commit",
+           status == 0 and not errors_of(found) and any(admitted[:9] in f.message and OPTED_OUT in f.message
+                                                        for f in standing_of(found)))
 
 
 def self_test() -> int:

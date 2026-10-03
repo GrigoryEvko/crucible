@@ -25,7 +25,9 @@ THE LEDGER
     utils/scripts/quarantine-region-ledger.txt holds one row for each region:
     "FILE | REASON".  Two regions of one file with one reason are two equal
     rows.  The plugin refuses a reason that does not start with its class in
-    each compile.
+    each compile.  utils/scripts/quarantine-ledger.txt holds the findings
+    that each region covers, and utils/scripts/check-quarantine-ratchet.py
+    refuses a region that covers more (THE OPT-OUT REGIONS there).
 
 THE VERDICT
     * A region with no row is an error.  The number of regions can only fall.

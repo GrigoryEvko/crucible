@@ -11,7 +11,7 @@
 # On a merge conflict in this file, take the version of main, build, and write the rows again.
 #
 # THE ROWS
-#   format 3                       The format of the rows.
+#   format 4                       The format of the rows.
 #   configuration NAME KEY VALUE   A build that counts: the build kind and the target tier of
 #                                  utils/scripts/build_target.py, and each cache variable that changes
 #                                  the objects of all or their preprocessor arms.  NAME is the build
@@ -23,9 +23,17 @@
 #                                  gives the kinds, and THE ENTITY of
 #                                  utils/scripts/check-quarantine-ratchet.py gives the entity of each
 #                                  kind.  The entity holds no line, so a move of code keeps each row.
-#                                  A finding of the kind opted_out is not counted.
 #   NAME FILE KIND DELTA ENTITY    The count of the configuration NAME, as a difference from the
 #                                  base count (+N or -N).
+#
+# THE OPT-OUT REGIONS
+#   A finding inside an opt-out region has the kind opted_out, and its entity is "REASON | KIND
+#   ENTITY": the reason of the region, and the kind and the entity of the finding.  So these rows
+#   hold what each region covers.  A region that covers more fails the test until
+#       python3 utils/scripts/check-quarantine-ratchet.py --build-dir build --write --admit
+#   writes the new count.  Use --admit only for a region of a reason class of CLAUDE.md section
+#   XXII, and give the reason in the commit.  The test budget_history gives a warning for each such
+#   count on each run.  utils/scripts/quarantine-region-ledger.txt holds the regions themselves.
 #
 # THE TIER
 #   The tier names the target of the build flags.  When a compile of the objects of all has its own
@@ -54,7 +62,7 @@
 #   The vessel units that need PyTorch compile only when TORCH_DIR is set.  No configuration sets
 #   TORCH_DIR, so the check does not apply to such a build, and the ledger does not count those
 #   units.
-format 3
+format 4
 configuration x86_64-debug-asan kind x86_64-debug-asan
 configuration x86_64-debug-asan tier x86-64-eb53fd1c+znver5-f612fd24
 configuration x86_64-debug-asan CMAKE_BUILD_TYPE Debug
@@ -4585,6 +4593,7 @@ test/foundation/test_contract_handler.cpp std_object 1 std::basic_string
 test/foundation/test_contract_handler.cpp std_object 2 std::basic_string_view
 test/foundation/test_core_atomic.cpp replace_pending:std::bit_cast 5 std::bit_cast
 test/foundation/test_core_box.cpp replace_pending:std::bit_cast 1 std::bit_cast
+test/foundation/test_core_scalar.cpp opted_out 2 PROBE: decode walks a C array of enumerations, the array form of a quarantined type | c_array_object
 test/foundation/test_counter_clock_attacks.cpp c_array_object 1
 test/foundation/test_counter_clock_attacks.cpp c_library_call 2 abort
 test/foundation/test_counter_clock_attacks.cpp c_library_call 2 fprintf
@@ -5421,6 +5430,26 @@ test/session_oracle/wire_driver.h std_object 2 std::optional
 test/session_oracle/wire_driver.h std_object 2 std::span
 test/session_oracle/wire_driver.h std_object 2 std::thread
 test/session_oracle/wire_driver.h std_object 1 std::unique_lock
+test/shape/core_shapes.cpp opted_out 1 ORACLE: the raw form that the shape of each family probe is compared with | c_library_call memcpy
+test/shape/core_shapes.cpp opted_out 1 ORACLE: the raw form that the shape of each family probe is compared with | c_library_call memset
+test/shape/core_shapes.cpp opted_out 7 ORACLE: the raw form that the shape of each family probe is compared with | raw_pointer_object
+test/shape/core_shapes.cpp opted_out 1 ORACLE: the raw form that the shape of each family probe is compared with | std_entity std::__atomic_base::compare_exchange_strong
+test/shape/core_shapes.cpp opted_out 1 ORACLE: the raw form that the shape of each family probe is compared with | std_entity std::__atomic_base::exchange
+test/shape/core_shapes.cpp opted_out 2 ORACLE: the raw form that the shape of each family probe is compared with | std_entity std::__atomic_base::fetch_add
+test/shape/core_shapes.cpp opted_out 1 ORACLE: the raw form that the shape of each family probe is compared with | std_entity std::__atomic_base::fetch_and
+test/shape/core_shapes.cpp opted_out 1 ORACLE: the raw form that the shape of each family probe is compared with | std_entity std::__atomic_base::fetch_max
+test/shape/core_shapes.cpp opted_out 1 ORACLE: the raw form that the shape of each family probe is compared with | std_entity std::__atomic_base::fetch_min
+test/shape/core_shapes.cpp opted_out 1 ORACLE: the raw form that the shape of each family probe is compared with | std_entity std::__atomic_base::fetch_or
+test/shape/core_shapes.cpp opted_out 1 ORACLE: the raw form that the shape of each family probe is compared with | std_entity std::__atomic_base::fetch_sub
+test/shape/core_shapes.cpp opted_out 2 ORACLE: the raw form that the shape of each family probe is compared with | std_entity std::__atomic_base::load
+test/shape/core_shapes.cpp opted_out 1 ORACLE: the raw form that the shape of each family probe is compared with | std_entity std::__atomic_base::store
+test/shape/core_shapes.cpp opted_out 1 ORACLE: the raw form that the shape of each family probe is compared with | std_entity std::atomic::compare_exchange_strong
+test/shape/core_shapes.cpp opted_out 1 ORACLE: the raw form that the shape of each family probe is compared with | std_entity std::optional::operator*
+test/shape/core_shapes.cpp opted_out 1 ORACLE: the raw form that the shape of each family probe is compared with | std_entity std::unique_ptr::operator->
+test/shape/core_shapes.cpp opted_out 1 ORACLE: the raw form that the shape of each family probe is compared with | std_entity std::unreachable
+test/shape/core_shapes.cpp opted_out 13 ORACLE: the raw form that the shape of each family probe is compared with | std_object std::atomic
+test/shape/core_shapes.cpp opted_out 1 ORACLE: the raw form that the shape of each family probe is compared with | std_object std::optional
+test/shape/core_shapes.cpp opted_out 1 ORACLE: the raw form that the shape of each family probe is compared with | std_object std::unique_ptr
 test/test_abort_probe.h c_array_object 1
 test/test_abort_probe.h c_library_call 1 _exit
 test/test_abort_probe.h c_library_call 1 _setjmp
