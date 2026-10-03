@@ -9,8 +9,11 @@
 #   starts with '#' is a comment, and an empty line is no row.  A row can end
 #   with '| REASON'.  An admit row must have a reason.  A PATH is relative to
 #   the source root.  A PATH that ends with '/' is a directory, and each other
-#   PATH is one file.  A HEADER is a name in angle brackets, as an #include
-#   directive spells it.
+#   PATH is one file.  A PATH that starts with @build/ names a file that the
+#   build writes, such as a generated header, by its path inside the build
+#   directory.  The name is the same in each build directory, and only a
+#   quarantine row and an enforce row can hold it.  A HEADER is a name in
+#   angle brackets, as an #include directive spells it.
 #
 # THE ROWS
 #   layer NAME RANK PATH...
@@ -85,9 +88,9 @@
 # THE LONGEST PATH
 #   When the PATHs of two rows hold one file, the longer PATH decides.  A
 #   layer row and a quarantine row decide the class of a file in this way.
-#   The plugin gives an error for a file under the source root that no layer
-#   row and no quarantine row holds.  A file that no enforce row holds has
-#   report mode.
+#   The plugin gives an error for a file under the source root or in the
+#   build directory that no layer row and no quarantine row holds.  A file
+#   that no enforce row holds has report mode.
 
 layer F0_floor 0 include/foundation/Platform.h include/foundation/Pinned.h include/foundation/Quarantine.h
 layer F0_core 1 include/foundation/reflect/ include/foundation/contracts/ include/foundation/Brand.h include/foundation/Lifetime.h include/foundation/ByteSeal.h include/foundation/diag/FailClosed.h include/foundation/NoObject.h
@@ -166,6 +169,7 @@ admit std::is_neq | a constexpr and noexcept test of an ordering value
 admit std::is_lt | a constexpr and noexcept test of an ordering value
 admit std::is_gt | a constexpr and noexcept test of an ordering value
 
+quarantine @build/
 quarantine bench/
 quarantine cmake/
 quarantine examples/
@@ -175,6 +179,7 @@ quarantine test/
 quarantine utils/tools/
 quarantine vessel/
 
+enforce @build/ report
 enforce bench/ report
 enforce cmake/ report
 enforce examples/ report

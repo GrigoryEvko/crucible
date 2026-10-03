@@ -17,19 +17,22 @@
 //     Each file has one class, from its real path:
 //         base          a file that a layer row of the table holds
 //         quarantined   a file that a quarantine row of the table holds
-//         generated     a file of the build directory, which the build writes
-//         unclassified  a file under the source root that no row holds
+//         unclassified  a file under the source root or in the build
+//                       directory that no row holds
 //         outside       a system header, a file outside the source root, or
 //                       a scratch buffer
 //     The longest path of a layer row or a quarantine row decides.  The
 //     plugin gives an error for each unclassified file that a unit reads.
 //     The contract rule and the opt-out regions apply to each file under the
-//     source root.  The quarantine rule applies to a quarantined file only, and
-//     its rule for the type of a declaration also applies to a base file of the
-//     language.
-//     A place of the quarantine rule falls through a generated file to the
-//     point where its macro expands, as it falls through a system header.
-//     The plugin takes the build directory as build=PATH.
+//     source root and in the build directory.  The quarantine rule applies to
+//     a quarantined file only, and its rule of the library names also applies
+//     to a base file of the language.
+//     The plugin takes the build directory as build=PATH.  A file that the
+//     build writes there, such as a generated header or a unit that xxd
+//     writes, has the path kBuildPrefix and its path inside the build
+//     directory, such as @build/test/layer/walk_headers/walk_headers.h.  So a
+//     generated file has the same name in each build directory, also in one
+//     outside the source root, and a quarantine row with that prefix holds it.
 //     The real path decides the class, and the system flag of a line map
 //     does not: a file under the root that -isystem or #pragma GCC
 //     system_header marks is not a library file (in_library_file_at).  A file
@@ -118,11 +121,16 @@ inline constexpr int kTypeDepth = 4096;
 // The class of a file, as THE FILES above gives it.
 enum class FileClass : std::uint8_t {
     outside,
-    generated,
     base,
     quarantined,
     unclassified,
 };
+
+// The prefix of the path of a file of the build directory.  The rule table
+// and each report name such a file by this prefix and its path inside the
+// build directory.  Only a quarantine row and an enforce row can hold such a
+// path, because the build writes no base file.
+inline constexpr const char* kBuildPrefix = "@build/";
 
 struct FileEntry {
     FileClass file_class = FileClass::outside;
@@ -146,7 +154,6 @@ inline bool owns_place(FileClass file_class, Scope scope) {
         case FileClass::base:
         case FileClass::quarantined:
             return true;
-        case FileClass::generated:
         case FileClass::unclassified:
             return scope == Scope::tree;
         case FileClass::outside:
@@ -290,8 +297,8 @@ inline bool row_holds(const std::string& path, const std::string& relative) {
     return !path.empty() && path.back() == '/' ? has_prefix(relative, path) : relative == path;
 }
 
-// The class, the layer and the enforce mode of a file of the root that is not
-// generated.  The longest path decides.  Complexity: O(rows).
+// The class, the layer and the enforce mode of a file of the root or of the
+// build directory.  The longest path decides.  Complexity: O(rows).
 inline void classify_by_table(FileEntry& entry) {
     std::size_t best_length = 0;
     bool is_found = false;
@@ -337,6 +344,14 @@ inline void classify_by_table(FileEntry& entry) {
     }
 }
 
+// True when RESOLVED is a file of the build directory.  A build directory that
+// holds the source root, or is the root, names no generated file, because
+// each file of the root would be one.
+inline bool is_build_file(const std::string& resolved) {
+    return !core.build.empty() && !resolved.empty() && has_prefix(resolved, core.build + "/")
+        && !has_prefix(core.root + "/", core.build + "/");
+}
+
 // The entry of one real path, made and kept on the first request.
 inline const FileEntry& entry_of_real_path(const std::string& resolved) {
     auto found = core.entries.find(resolved);
@@ -345,13 +360,12 @@ inline const FileEntry& entry_of_real_path(const std::string& resolved) {
     }
     FileEntry entry;
     entry.real = resolved;
-    if (!resolved.empty() && has_prefix(resolved, core.root + "/")) {
+    if (is_build_file(resolved)) {
+        entry.relative = std::string(kBuildPrefix) + resolved.substr(core.build.size() + 1);
+        classify_by_table(entry);
+    } else if (!resolved.empty() && has_prefix(resolved, core.root + "/")) {
         entry.relative = resolved.substr(core.root.size() + 1);
-        if (!core.build.empty() && has_prefix(resolved, core.build + "/")) {
-            entry.file_class = FileClass::generated;
-        } else {
-            classify_by_table(entry);
-        }
+        classify_by_table(entry);
     }
     const FileEntry& stored = core.entries.emplace(resolved, std::move(entry)).first->second;
     if (stored.file_class == FileClass::unclassified) {
@@ -404,7 +418,8 @@ inline void report_unclassified() {
 // spells it owns no place in SCOPE, as a system header owns none, the place is
 // the expansion point of that macro, one level at a time.  A macro of fixy
 // therefore owns what it spells, and a quarantined file owns each system macro
-// that it uses.  A generated file owns a place only in the scope of the tree.
+// that it uses.  An unclassified file owns a place only in the scope of the
+// tree.
 inline Place place_of(location_t location, Scope scope) {
     Place place;
     if (location == UNKNOWN_LOCATION || location <= BUILTINS_LOCATION) {
@@ -745,8 +760,9 @@ inline void handle_begin_pragma(cpp_reader*) {
                  kBeginMacro);
         return;
     }
-    // A pragma of a file outside the source root opens no region.  A pragma
-    // of a generated file opens one, because the contract rule applies there.
+    // A pragma of a file outside the source root and the build directory
+    // opens no region.  A pragma of a generated file opens one, because the
+    // contract rule applies there.
     location_t expansion = UNKNOWN_LOCATION;
     Place place = region_place(location, kBeginMacro, kBeginPragma, expansion);
     if (place.file == nullptr) {
@@ -1050,6 +1066,10 @@ inline bool load_rule_table(const std::string& path) {
                     refuse("a path must be relative to the source root, with no '.', '..' or empty component");
                     continue;
                 }
+                if (has_prefix(args[index], kBuildPrefix)) {
+                    refuse("a layer row holds no path of the build directory, because the build writes no base file");
+                    continue;
+                }
                 add_class_path(args[index], "the layer " + layer.name);
                 layer.paths.push_back(args[index]);
             }
@@ -1062,8 +1082,10 @@ inline bool load_rule_table(const std::string& path) {
             allow_layers.emplace_back(args[0], line_number);
             allow_headers.push_back(args[1].substr(1, args[1].size() - 2));
         } else if (kind == "door") {
-            if (args.size() != 2 || !is_header(args[0]) || !is_plain_path(args[1]) || args[1].back() == '/') {
-                refuse("a door row is 'door HEADER OWNER', with a HEADER in angle brackets and one OWNER file");
+            if (args.size() != 2 || !is_header(args[0]) || !is_plain_path(args[1]) || args[1].back() == '/'
+                || has_prefix(args[1], kBuildPrefix)) {
+                refuse("a door row is 'door HEADER OWNER', with a HEADER in angle brackets and one OWNER file of the "
+                       "source root");
                 continue;
             }
             DoorRow door{args[0].substr(1, args[0].size() - 2), args[1]};
@@ -1197,8 +1219,8 @@ inline bool set_root(const std::string& root_argument) {
 }
 
 // Records the build directory, whose files are generated.  A plugin with no
-// build directory gives no file the generated class.  Returns false, after an
-// error, when the path does not exist.
+// build directory gives no file a path with kBuildPrefix.  Returns false,
+// after an error, when the path does not exist.
 inline bool set_build(const std::string& build_argument) {
     core.build = real_path(build_argument.c_str());
     if (core.build.empty()) {

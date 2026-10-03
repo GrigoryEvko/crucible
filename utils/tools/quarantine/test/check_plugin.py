@@ -48,10 +48,12 @@ stamp alone carries the table into the key of the cache, and that a key
 without the stamp gives a section whose stamp is not the stamp of the
 command, which utils/scripts/check-quarantine-ratchet.py refuses.
 
-A generated file of the build directory follows one rule: the contract rule
-and the opt-out regions apply to it, and the quarantine rule does not.  The
-test writes a source root with a build directory in its scratch directory,
-and compiles a unit of that root in each mode.
+A generated file of the build directory has the name @build/ and its path in
+the build directory, and the row `quarantine @build/` quarantines it.  The
+contract rule and the opt-out regions apply to it too.  The test writes a
+source root with a build directory in its scratch directory, and compiles a
+unit of that root in each mode.  A build directory outside the root gives the
+same name, and a table with no row for @build/ refuses the generated file.
 
 A type walk and a walk of a macro expansion read a deep nesting to its end, so
 a library type behind 70 template wrappers and a C library token behind 70
@@ -127,6 +129,9 @@ MALFORMED_TABLES = (
     ("an allow row of no layer", "allow none <cstdint>\n"),
     ("a header with no angle brackets", "layer one 0 a/\nallow one cstdint\n"),
     ("a door whose owner is a directory", "door <x.h> a/\n"),
+    ("a door whose owner is a file of the build directory", "door <x.h> @build/x.cpp\n"),
+    ("a layer row with a path of the build directory", "layer one 0 @build/\n"),
+    ("a language path in the build directory", "layer one 0 a/\nquarantine @build/\nlanguage one @build/x.h\n"),
     ("a header with two doors", "door <x.h> a.cpp\ndoor <x.h> b.cpp\n"),
     ("an admit row with no reason", "admit std::move\n"),
     ("an admit row with `until` and no family", "admit std::move until | a cast\n"),
@@ -278,9 +283,10 @@ BASE_FINDINGS = (
 
 # A source root in the scratch directory, with a build directory.  The
 # generated header opts out the specifier on line 3, and the specifier on line
-# 5 stays an error.  The pointer on line 6 is no finding, because a generated
-# file is not quarantined.  The macro on line 7 spells a pointer, and the
-# place of that finding falls through to the unit that expands the macro.
+# 5 stays an error.  The row `quarantine @build/` of rules.txt holds the
+# generated header, so the pointer on line 6 is a finding of
+# @build/Generated.h.  The macro on line 7 spells a pointer, and the generated
+# header owns the place of that finding too.
 GENERATED_HEADER = ("#include <foundation/Quarantine.h>\n"
                     "CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"PROBE: a generated header that the test needs\")\n"
                     "int generated_opted(int value) pre(value > 0);\n"
@@ -545,12 +551,19 @@ def contract_errors(stderr: str, root: Path = HERE) -> list[tuple[str, int, str]
 
 
 def run_generated_files(section: Section) -> None:
-    """Compile a unit that includes a generated header in each mode, and compare what each mode gives."""
+    """Compile a unit that includes a generated header in each mode, and compare what each mode gives.
+
+    The build directory is in the scratch root in one compile, and outside it in
+    another.  The two compiles name the generated header @build/Generated.h.
+    A table with no row for @build/ refuses the generated header.
+    """
     tree = section.work / "tree"
     build = tree / "build"
-    build.mkdir(parents=True, exist_ok=True)
-    (build / "Generated.h").write_text(GENERATED_HEADER, encoding="utf-8")
-    (build / "Unclosed.h").write_text(UNCLOSED_GENERATED_HEADER, encoding="utf-8")
+    outside_build = section.work / "outside-build"
+    for directory in (build, outside_build):
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "Generated.h").write_text(GENERATED_HEADER, encoding="utf-8")
+        (directory / "Unclosed.h").write_text(UNCLOSED_GENERATED_HEADER, encoding="utf-8")
     unit = tree / "generated_unit.cpp"
     unit.write_text(GENERATED_UNIT, encoding="utf-8")
     unclosed = tree / "unclosed_unit.cpp"
@@ -558,6 +571,7 @@ def run_generated_files(section: Section) -> None:
     places = {"root": str(tree), "build": str(build)}
     test_rules = {"rules": str(TEST_RULES)}
     generated_reports = section.work / "generated-reports"
+    outside_reports = section.work / "generated-outside-reports"
     runs = (
         ("mode=error", {**places, "mode": "error", **test_rules}),
         ("mode=report", {**places, "mode": "report", "out": str(generated_reports), **test_rules}),
@@ -576,20 +590,40 @@ def run_generated_files(section: Section) -> None:
     missing = section.compile(str(unit), {"root": str(tree), "build": str(tree / "missing"), **test_rules})
     section.expect("a build directory that does not exist is an error",
                    missing.returncode != 0 and "does not exist" in missing.stderr, missing.stderr[-2000:])
+    # The second unit includes the header of the build directory outside the
+    # root through -iquote.
+    outside_unit = tree / "outside_generated_unit.cpp"
+    outside_unit.write_text("#include \"outside-build/Generated.h\"\n", encoding="utf-8")
+    outside = section.compile(str(outside_unit), {"root": str(tree), "build": str(outside_build), "mode": "report",
+                                                  "out": str(outside_reports), **test_rules},
+                              extra=("-fcontracts", "-iquote", str(section.work)))
+    unrowed_rules = section.work / "rules-without-build.txt"
+    unrowed_rules.write_text("".join(line for line in TEST_RULES.read_text(encoding="utf-8").splitlines(True)
+                                     if line.strip() != "quarantine @build/"), encoding="utf-8")
+    unrowed = section.compile(str(unit), {**places, "mode": "report", "rules": str(unrowed_rules)},
+                              extra=("-fcontracts",))
+    section.expect("a generated file that no row of the table holds is an error",
+                   unrowed.returncode != 0 and "no quarantine row of the rule table holds '@build/Generated.h'"
+                   in ascii_quotes(unrowed.stderr), unrowed.stderr[-2000:])
     found = read_reports(generated_reports)
     section.expect("the region of the generated file turns the specifier on line 3 into opted_out",
-                   any(f.kind == "opted_out" and f.file == "build/Generated.h" and f.line == 3
+                   any(f.kind == "opted_out" and f.file == "@build/Generated.h" and f.line == 3
                        and f.entity == "contract_specifier pre" for f in found), "; ".join(map(str, found)))
-    section.expect("a generated file is not quarantined",
-                   not any(f.file.startswith("build/") and f.kind not in ("opted_out", "contract_specifier", "region")
-                           for f in found), "; ".join(map(str, found)))
+    section.expect("the row quarantine @build/ quarantines the generated file under its path in the build directory",
+                   any(f.kind == "raw_pointer_object" and f.file == "@build/Generated.h" and f.line == 6
+                       for f in found), "; ".join(map(str, found)))
     section.expect("the report holds the region of the generated file with its reason",
-                   any(f.kind == "region" and f.file == "build/Generated.h" and f.line == 2
+                   any(f.kind == "region" and f.file == "@build/Generated.h" and f.line == 2
                        and f.entity == "PROBE: a generated header that the test needs" for f in found),
                    "; ".join(map(str, found)))
-    section.expect("a place in a generated macro falls through to the unit that expands it",
-                   any(f.kind == "raw_pointer_object" and f.file == "generated_unit.cpp" and f.line == 3
+    section.expect("a place in a generated macro is a place of the generated file",
+                   any(f.kind == "raw_pointer_object" and f.file == "@build/Generated.h" and f.line == 7
                        for f in found), "; ".join(map(str, found)))
+    outside_found = read_reports(outside_reports)
+    section.expect("a build directory outside the root names its generated file @build/Generated.h too",
+                   any(f.kind == "raw_pointer_object" and f.file == "@build/Generated.h" and f.line == 6
+                       for f in outside_found),
+                   outside.stderr[-2000:] + "; ".join(map(str, outside_found)))
 
 
 def run_contract_rule(section: Section) -> None:

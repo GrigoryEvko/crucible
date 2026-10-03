@@ -119,6 +119,42 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_HAVE_BPF on
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-asan-bench-fuzz TORCH_DIR unset
+@build/canopy_gossip_fanout_sample_bpf_bytecode.c c_array_object 1
+@build/canopy_gossip_xdp_tx_bpf_bytecode.c c_array_object 1
+@build/canopy_peer_liveness_probe_bpf_bytecode.c c_array_object 1
+@build/cntp_af_xdp_redirect_bpf_bytecode.c c_array_object 1
+@build/cntp_dp_fq_budget_bpf_bytecode.c c_array_object 1
+@build/cntp_dp_pacing_budget_bpf_bytecode.c c_array_object 1
+@build/cntp_dp_queue_backlog_bpf_bytecode.c c_array_object 1
+@build/cntp_dp_tc_egress_classify_bpf_bytecode.c c_array_object 1
+@build/cntp_dp_tc_ingress_classify_bpf_bytecode.c c_array_object 1
+@build/cntp_ecn_ce_mark_sample_bpf_bytecode.c c_array_object 1
+@build/cntp_sk_msg_credit_gate_bpf_bytecode.c c_array_object 1
+@build/cntp_sock_ops_telemetry_bpf_bytecode.c c_array_object 1
+@build/cntp_tc_egress_mark_bpf_bytecode.c c_array_object 1
+@build/cntp_wip_ack_clock_sample_bpf_bytecode.c c_array_object 1
+@build/cntp_wip_bbr_model_sample_bpf_bytecode.c c_array_object 1
+@build/cntp_wip_fq_pacing_sample_bpf_bytecode.c c_array_object 1
+@build/cntp_wip_loss_recovery_sample_bpf_bytecode.c c_array_object 1
+@build/cntp_xdp_flow_filter_bpf_bytecode.c c_array_object 1
+@build/cog_nic_cog_probe_bpf_bytecode.c c_array_object 1
+@build/cog_offload_cap_probe_bpf_bytecode.c c_array_object 1
+@build/lock_contention_bpf_bytecode.c c_array_object 1
+@build/observe_ecn_sample_bpf_bytecode.c c_array_object 1
+@build/observe_packet_loss_sample_bpf_bytecode.c c_array_object 1
+@build/observe_tcp_flow_sample_bpf_bytecode.c c_array_object 1
+@build/pmu_sample_bpf_bytecode.c c_array_object 1
+@build/sched_switch_bpf_bytecode.c c_array_object 1
+@build/sched_tp_btf_bpf_bytecode.c c_array_object 1
+@build/sense_hub_bpf_bytecode.c c_array_object 1
+@build/syscall_latency_bpf_bytecode.c c_array_object 1
+@build/syscall_tp_btf_bpf_bytecode.c c_array_object 1
+@build/test/fixy/armed_roster/witness_roster.h c_array_object 1
+@build/topology_lldp_rx_sample_bpf_bytecode.c c_array_object 1
+@build/topology_napi_pressure_probe_bpf_bytecode.c c_array_object 1
+@build/topology_qdisc_backlog_probe_bpf_bytecode.c c_array_object 1
+@build/topology_xdp_rx_timestamp_probe_bpf_bytecode.c c_array_object 1
+@build/warden_socket_lifecycle_bpf_bytecode.c c_array_object 1
 bench/bench_harness.h c_array_object 16
 bench/bench_harness.h c_library_call 1 abort
 bench/bench_harness.h c_library_call 4 fclose

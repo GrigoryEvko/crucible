@@ -133,7 +133,10 @@
 //
 // THE ARGUMENTS (-fplugin-arg-crucible_quarantine-NAME=VALUE)
 //     root=PATH      the source root (necessary)
-//     build=PATH     a build directory under the root, whose files are generated
+//     build=PATH     the build directory, whose files are generated.  The rule
+//                    table and the report name such a file by the prefix
+//                    @build/ and its path in the build directory (THE FILES
+//                    in plugin_core.h)
 //     rules=PATH     the rule table (necessary)
 //     mode=report    each finding is a line of the section of the object, a
 //                    line of the report file of out=, or else a note.  A

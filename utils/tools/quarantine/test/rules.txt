@@ -64,6 +64,8 @@ quarantine violations.cpp
 quarantine fixy/
 quarantine foundation/
 quarantine generated_unit.cpp
+quarantine outside_generated_unit.cpp
 quarantine unclosed_unit.cpp
+quarantine @build/
 
 enforce enforced.cpp error

@@ -2954,6 +2954,8 @@ This section states each rule one time. The other sections refer to it. Some rul
 
 The base is `include/foundation`, `include/fixy`, `src/foundation` and `src/fixy`. Each other C++ file of the repository is quarantined. `utils/scripts/layer-rules.txt` (the rule table) gives the layers, the doors, the admitted names and the quarantined directories in rows. Its `layer` rows give the base files, and its `quarantine` rows give the quarantined directories. The longest path of a row decides the class of a file. The quarantine plugin gives an error for a file under the source root that no `layer` row and no `quarantine` row holds.
 
+A C++ file that the build writes is quarantined too, such as a generated header or a unit that `xxd` writes. The rule table and each finding name it by `@build/` and its path in the build directory, also when the build directory is outside the source root. The row `quarantine @build/` holds each such file, and the ratchet counts its findings under that name. The plugin gives an error for a file of the build directory that no row holds.
+
 ### The rule for each new line (R6)
 
 In a quarantined file, each line that you write or change holds only objects of base types. The quarantine plugin gives a finding for each of these items in a quarantined file:

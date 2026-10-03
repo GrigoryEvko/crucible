@@ -19,6 +19,10 @@ from pathlib import Path
 TABLE = Path(__file__).resolve().parent / "layer-rules.txt"
 MODES = ("report", "error")
 ROW_KINDS = ("layer", "allow", "door", "admit", "quarantine", "enforce", "language")
+# The prefix of a path of the build directory.  A file that the build writes
+# has this prefix and its path inside the build directory, as kBuildPrefix of
+# utils/tools/quarantine/plugin_core.h gives it.
+BUILD_PREFIX = "@build/"
 
 
 class TableError(ValueError):
@@ -220,6 +224,9 @@ def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
                 raise TableError(f"{where}: the rank {args[1]} belongs to a second layer")
             for path in args[2:]:
                 _check_path(path, where)
+                if path.startswith(BUILD_PREFIX):
+                    raise TableError(f"{where}: a layer row holds no path of the build directory ({BUILD_PREFIX}), "
+                                     f"because the build writes no base file")
                 if path in class_paths:
                     raise TableError(f"{where}: the path {path} is also in {class_paths[path]}")
                 class_paths[path] = f"the layer {args[0]}"
@@ -231,8 +238,9 @@ def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
             allows.append((args[0], args[1]))
             allow_lines.append((args[0], where))
         elif kind == "door":
-            if len(args) != 2 or args[1].endswith("/"):
-                raise TableError(f"{where}: a door row is 'door HEADER OWNER', and OWNER is one file")
+            if len(args) != 2 or args[1].endswith("/") or args[1].startswith(BUILD_PREFIX):
+                raise TableError(f"{where}: a door row is 'door HEADER OWNER', and OWNER is one file of the source "
+                                 f"root")
             _check_header(args[0], where)
             _check_path(args[1], where)
             if any(header == args[0] for header, _ in doors):
