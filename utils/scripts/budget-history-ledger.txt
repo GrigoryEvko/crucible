@@ -10,3 +10,5 @@
 # measurement that the commit body did not give.  A rise with a row gives a warning on each run.  A row
 # that names no such rise is an error.  The history cannot change.  A row stays while its row of the
 # budget table stays.
+
+fd5f25863 | quarantine-ledger | error | Each build compiles the SenseHub v2 sources, and no configuration compiled them before. The 143 new findings were in the tree, and the commit adds no code to a quarantined file
