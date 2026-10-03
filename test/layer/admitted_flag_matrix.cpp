@@ -24,11 +24,12 @@
 //
 // The properties hold on x86_64 and on aarch64 Linux with glibc, the two
 // targets of the tree.  The file names standard library entities only in
-// static_assert conditions, in helper types and in helper concepts.  The front
-// end evaluates a static_assert at namespace scope outside a template and keeps
-// no tree of it, so the quarantine plugin reads no static_assert condition of
-// this file.  The plugin reads the helper concepts, and the ledger of the
-// ratchet holds each name in them that the rule table does not admit.
+// static_assert conditions, in helper types, in helper concepts and in one
+// helper function.  The front end evaluates a static_assert at namespace scope
+// outside a template and keeps no tree of it, so the quarantine plugin reads
+// no static_assert condition of this file.  The plugin reads the helper
+// concepts and the helper function, and the ledger of the ratchet holds each
+// name in them that the rule table does not admit.
 
 #include <bit>
 #include <compare>
@@ -79,6 +80,18 @@ concept as_const_takes_rvalue = requires { std::as_const(std::declval<T>()); };
 // True when std::tuple_size<T> is complete.
 template <typename T>
 concept has_tuple_size = requires { std::tuple_size<T>::value; };
+
+// Reads the data member INDEX of Plain from the std::vector that a std::meta
+// query returns.
+consteval bool reads_member(std::size_t index) {
+    return std::meta::is_nonstatic_data_member(
+        std::meta::nonstatic_data_members_of(^^Plain, std::meta::access_context::current())[index]);
+}
+
+// True when the read of the data member Index of Plain is a constant
+// expression.
+template <std::size_t Index>
+concept member_read_is_constant = requires { typename std::integral_constant<bool, reads_member(Index)>; };
 
 // A namespace with two members, for the reflection queries.
 namespace walked {
@@ -428,5 +441,20 @@ static_assert(std::is_same_v<std::underlying_type_t<std::align_val_t>, std::size
 // name: std::nothrow_t
 static_assert(std::is_empty_v<std::nothrow_t>);
 static_assert(std::is_trivially_default_constructible_v<std::nothrow_t>);
+
+// name: std::nothrow
+static_assert(std::is_same_v<decltype(std::nothrow), const std::nothrow_t>);
+static_assert(noexcept(::operator new(1, std::align_val_t{8}, std::nothrow)));
+
+// name: std::vector
+// A std::meta query returns a std::vector of std::meta::info.  With and
+// without -D_GLIBCXX_ASSERTIONS, which adds a bounds check to operator[], a
+// read past its end is no constant expression.
+static_assert(
+    std::is_same_v<decltype(std::meta::nonstatic_data_members_of(^^Plain, std::meta::access_context::current())),
+                   std::vector<std::meta::info>>);
+static_assert(std::meta::nonstatic_data_members_of(^^Plain, std::meta::access_context::current()).size() == 2);
+static_assert(member_read_is_constant<1>);
+static_assert(!member_read_is_constant<2>);
 
 }  // namespace

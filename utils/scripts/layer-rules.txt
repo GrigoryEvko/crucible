@@ -41,6 +41,12 @@
 #                       holds no bool and no enumeration: not the type itself,
 #                       not an element of an array and not a member or a base
 #                       of a class.  A dependent result type is refused
+#         consteval-only
+#                       The entry admits only a consteval-only class and the
+#                       members of one: a class that holds a std::meta::info,
+#                       such as std::vector<std::meta::info>.  The language
+#                       permits such a class only in a constant evaluation.
+#                       A dependent type and a dependent name are refused
 #         concepts      A header admits only the concepts that it declares
 #         unless MACRO  The plugin refuses each unit that defines MACRO
 #         in PATH...    The entry admits only in the files under the PATHs.
@@ -67,11 +73,14 @@
 #       a header outside the source root only if the allow rows give it to
 #       LAYER or a lower layer, and to its own layer.  The type of each
 #       declaration in it, also a local one, uses no library class,
-#       enumeration or typedef that no admit row admits there.  A row with `in`
-#       admits in a file of the language under one of its paths, and a row
-#       with `until` admits nothing there.  Each finding in a file of the
-#       language is a compile error in each build.  A PATH is in one language
-#       row at most, and it must be a path of the base
+#       enumeration or typedef that no admit row admits there.  Each
+#       expression in it, also an unevaluated operand, names no library entity
+#       that no admit row admits there.  A row with `in` admits in a file of
+#       the language under one of its paths.  A row with `until` admits there
+#       only with `in`, and each such use is a finding of its pending kind.
+#       Each other finding in a file of the language is a compile error in
+#       each build.  A PATH is in one language row at most, and it must be a
+#       path of the base
 #
 # THE LONGEST PATH
 #   When the PATHs of two rows hold one file, the longer PATH decides.  A
@@ -144,8 +153,10 @@ admit std::uintmax_t | a typedef of unsigned long on the two targets
 admit std::uint_least32_t | a typedef of unsigned int on the two targets
 admit std::nullptr_t | the type of nullptr, with the size of a pointer
 admit std::meta::info | the type of a reflection, and the language refuses an object of it at run time
+admit std::vector consteval-only in include/foundation/core/ include/fixy/Core.h | the result of a reflection query, which the language holds only in a constant evaluation
 admit std::byte | the type with the aliasing right, and not std::to_integer or the byte operators, which are other names
 admit std::align_val_t in include/foundation/core/Ref.h | the alignment argument of the allocation functions, in the door of the Ref family
+admit std::nothrow until Ref in include/foundation/core/Ref.h | the tag of the allocation function that gives a null pointer and no exception, in mint_box, the allocation door of the Ref family
 admit std::initializer_list parameters | the type of a braced list, which outlives a parameter and not a data member
 admit std::contracts::contract_violation in src/foundation/ContractHandler.cpp | the parameter of the contract violation handler
 admit std::strong_ordering | the result of the operator <=>

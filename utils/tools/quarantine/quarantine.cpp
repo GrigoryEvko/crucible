@@ -16,15 +16,17 @@
 // rows give its layer.  A door header can have only its door as includer.
 //
 // A base file that a language row of the table holds is a file of the
-// language.  The rule for the type of a declaration applies to it: a
-// variable, a data member, a parameter, a return type, a base, a default
-// template argument and an alias get std_object, c_library_object or
-// std_entity when the type holds a library class, an enumeration or a typedef
-// that no admit row admits there.  A row with `in` admits in a file of the
-// language under one of its paths, and a row with `until` admits nothing
-// there.  An outside header must be in the allowance of the layer of the
-// language row too.  Each finding in a file of the language is an error in
-// each build, so the language stays clean.
+// language.  The rule of the library names applies to it.  A variable, a data
+// member, a parameter, a return type, a base, a default template argument and
+// an alias get std_object, c_library_object or std_entity when the type holds
+// a library class, an enumeration or a typedef that no admit row admits there.
+// An expression, also an unevaluated operand, gets std_entity or
+// c_library_call when it names a library entity that no admit row admits
+// there.  A row with `in` admits in a file of the language under one of its
+// paths.  A row with `until` admits there only with `in`, and each such use is
+// a finding of its pending kind.  An outside header must be in the allowance
+// of the layer of the language row too.  Each other finding in a file of the
+// language is an error in each build, so the language stays clean.
 //
 // The plugin also applies the contract rule of the tree, from plugin_core.h,
 // in each mode: each P2900 contract specifier that no region opts out is an
@@ -421,11 +423,13 @@ bool is_quarantined(location_t location) {
     return place_of(location, Scope::quarantine).file_class == FileClass::quarantined;
 }
 
-// The file of the language that holds the place of LOCATION, or null.
-const FileEntry* language_file_of(location_t location) {
-    Place place = place_of(location, Scope::quarantine);
+// The file of the language that holds PLACE, or null.
+const FileEntry* language_of(const Place& place) {
     return place.file != nullptr && place.file->language_layer >= 0 ? place.file : nullptr;
 }
+
+// The file of the language that holds the place of LOCATION, or null.
+const FileEntry* language_file_of(location_t location) { return language_of(place_of(location, Scope::quarantine)); }
 
 // A quarantined file and a file of the language get a walk.  A declaration
 // that a macro expansion makes can hold tokens that a quarantined file
@@ -515,9 +519,33 @@ void record(Kind kind, location_t location, const std::string& entity) {
     record_kind(kind_name(kind), is_name_kind(kind), location, entity);
 }
 
+// A finding of the rule of the library names: a use of a library entity that
+// no admit row admits, or that a row with `until` admits.  It counts in a
+// quarantined file and in a file of the language.  Each other kind is no
+// finding in a file of the language, because the base holds the raw pointers,
+// the arrays and the builtins of its families.  The caller decides the
+// admission with the admit rows of the file that holds LOCATION.
+void record_library_kind(const char* kind, bool is_name, location_t location, const std::string& entity) {
+    if (is_inside_system_assert(location)) {
+        return;
+    }
+    Place place = place_of(location, Scope::quarantine);
+    if (place.file_class == FileClass::quarantined || language_of(place) != nullptr) {
+        add_finding(kind, is_name, place, entity);
+    }
+}
+
+void record_library(Kind kind, location_t location, const std::string& entity) {
+    record_library_kind(kind_name(kind), is_name_kind(kind), location, entity);
+}
+
 // A use of ENTITY that ROW admits with `until FAMILY`.
 void record_pending(const AdmitRow& row, location_t location, const std::string& entity) {
-    record_kind(row.pending_kind.c_str(), true, location, entity);
+    record_library_kind(row.pending_kind.c_str(), true, location, entity);
+}
+
+bool is_pending_kind(const char* kind) {
+    return std::strncmp(kind, kPendingKindPrefix, std::strlen(kPendingKindPrefix)) == 0;
 }
 
 // A finding of the rule for the type of a declaration.  LANGUAGE is null in a
@@ -752,6 +780,17 @@ tree result_of_explicit_arguments(tree function, tree arguments) {
     return argument != NULL_TREE && TYPE_P(argument) ? argument : NULL_TREE;
 }
 
+// True when DECL is a class that only a constant evaluation can hold, or a
+// member of one: a class that holds a std::meta::info, such as
+// std::vector<std::meta::info>.  The language permits an object of such a
+// class only in a consteval context.  The general template of a class is no
+// such class, and consteval_only_p says false for a dependent type, so the
+// restriction consteval-only fails closed.
+bool is_consteval_only_entity(tree decl) {
+    tree type = TREE_CODE(decl) == TYPE_DECL && DECL_IMPLICIT_TYPEDEF_P(decl) ? TREE_TYPE(decl) : CP_DECL_CONTEXT(decl);
+    return type != NULL_TREE && CLASS_TYPE_P(type) && consteval_only_p(type);
+}
+
 // A row admits DECL with its restrictions.  Each path after `in` is a base
 // path, so a row with `in` admits nothing in a quarantined file, and admits in
 // a file of the language under one of its paths.  RESULT is the result type of
@@ -773,6 +812,9 @@ bool row_admits(const AdmitRow& row, tree decl, bool is_exact, Use use, tree res
     if (row.is_parameters_only && is_exact && use != Use::parameter) {
         return false;
     }
+    if (row.is_consteval_only && !is_consteval_only_entity(decl)) {
+        return false;
+    }
     if (row.is_plain_result) {
         tree function = TREE_CODE(decl) == TEMPLATE_DECL ? DECL_TEMPLATE_RESULT(decl) : decl;
         if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
@@ -787,16 +829,28 @@ bool row_admits(const AdmitRow& row, tree decl, bool is_exact, Use use, tree res
 }
 
 // The row that admits a dependent qualified name, which names no declaration
-// yet, or null.  A restriction that needs the declaration cannot apply, so
-// only a row with `in` refuses it.
-const AdmitRow* admitting_row_of_name(const std::string& name) {
+// yet, or null.  A row with `consteval-only` needs the declaration, so it
+// refuses the name, and the other restrictions of a declaration do not apply.
+// A row with `in` admits only in a file of the language under one of its
+// paths.  LANGUAGE names the file of the language of the use, or is null.  In
+// a file of the language, a row with `until` admits only with `in`.
+const AdmitRow* admitting_row_of_name(const std::string& name, const FileEntry* language = nullptr) {
     bool is_exact = false;
     const AdmitRow* row = admit_row_of_name(name, is_exact);
-    return row != nullptr && row->in_paths.empty() ? row : nullptr;
+    if (row == nullptr || row->is_consteval_only) {
+        return nullptr;
+    }
+    bool is_held = row->in_paths.empty();
+    for (const std::string& in_path : row->in_paths) {
+        is_held = is_held || (language != nullptr && row_holds(in_path, language->relative));
+    }
+    bool is_replaced_name = language != nullptr && !row->pending_kind.empty() && row->in_paths.empty();
+    return is_held && !is_replaced_name ? row : nullptr;
 }
 
-// In a file of the language, a row with `until` admits nothing: the base does
-// not use a name that one of its families replaces.
+// In a file of the language, a row with `until` admits only with `in`: the
+// base does not use a name that one of its families replaces, except in the
+// files that the row names, such as the door of the family.
 const AdmitRow* find_admitting_row(tree decl, Use use, tree result, const FileEntry* language) {
     bool is_exact = false;
     const AdmitRow* row = admit_row_of_name(qualified_name(decl), is_exact);
@@ -812,7 +866,9 @@ const AdmitRow* find_admitting_row(tree decl, Use use, tree result, const FileEn
             found = header->second;
         }
     }
-    return language != nullptr && found != nullptr && !found->pending_kind.empty() ? nullptr : found;
+    bool is_replaced_name =
+        language != nullptr && found != nullptr && !found->pending_kind.empty() && found->in_paths.empty();
+    return is_replaced_name ? nullptr : found;
 }
 
 // The row that admits DECL, or null when no row admits it.  A name entry
@@ -847,11 +903,20 @@ bool is_plainly_admitted(const AdmitRow* row) { return row != nullptr && row->pe
 // The finding of a use of the standard library entity DECL at LOCATION, as the
 // admitted list decides it: none when a row admits it, the kind of the row
 // when a row with `until` admits it, and std_entity when no row admits it.
-// LANGUAGE names the file of the language of a declaration, or is null.
-// Returns true when it made a finding.
+// LANGUAGE names the file of the language of a declaration, or is null.  When
+// it is null and no row plainly admits DECL, a use in a file of the language
+// takes the answer of that file: a row with `in` admits there, and a row with
+// `until` refuses there unless it has `in`.  Returns true when it made a
+// finding.
 bool record_standard_use(tree decl, location_t location, const std::string& entity, Use use = Use::other,
                          tree result = NULL_TREE, const FileEntry* language = nullptr) {
     const AdmitRow* row = admitting_row(decl, use, result, language);
+    if (language == nullptr && !is_plainly_admitted(row)) {
+        language = language_file_of(location);
+        if (language != nullptr) {
+            row = admitting_row(decl, use, result, language);
+        }
+    }
     if (row == nullptr) {
         record_declared(Kind::std_entity, location, entity, language);
         return true;
@@ -1104,15 +1169,31 @@ void record_pending_class(const LibraryClasses& classes, location_t location, co
     }
 }
 
+// The library classes of TYPE for a use at LOCATION.  The answer of a
+// quarantined file comes first, because the cache holds it, and a type with no
+// refused and no pending class there has none in a file of the language
+// either.  Otherwise a use in a file of the language takes the answer of that
+// file, whose admit rows differ (row_admits), and LANGUAGE names that file.
+LibraryClasses library_classes_at(tree type, location_t location, Use use, const FileEntry*& language) {
+    LibraryClasses classes = library_class_in(type, 0, use);
+    if (classes.refused == NULL_TREE && classes.pending == NULL_TREE) {
+        return classes;
+    }
+    language = language_file_of(location);
+    return language != nullptr ? library_class_in(type, 0, use, language) : classes;
+}
+
 // The library entities that TYPE names, where the source spells TYPE: a class
 // of namespace std inside it, or else the library name at its outer level,
 // and each class that a row with `until` admits.  LANGUAGE names the file of
-// the language of a declaration, or is null.
+// the language of a declaration, or is null, and then the file that holds
+// LOCATION decides.
 void record_named_entities(tree type, location_t location, const FileEntry* language = nullptr) {
-    LibraryClasses classes = library_class_in(type, 0, Use::other, language);
+    LibraryClasses classes = language != nullptr ? library_class_in(type, 0, Use::other, language)
+                                                 : library_classes_at(type, location, Use::other, language);
     if (classes.refused != NULL_TREE) {
         if (is_standard_class(classes.refused)) {
-            record_declared(Kind::std_entity, location, qualified_name(TYPE_MAIN_DECL(classes.refused)), language);
+            record_library(Kind::std_entity, location, qualified_name(TYPE_MAIN_DECL(classes.refused)));
         }
     } else if (tree named = library_type_name_in(type, 0, language)) {
         record_standard_use(named, location, qualified_name(named), Use::other, NULL_TREE, language);
@@ -1342,8 +1423,8 @@ bool spells_class_at(location_t location, tree class_type) {
     if (decl == NULL_TREE || spelled.identifier == simple_name(decl)) {
         return decl != NULL_TREE;
     }
-    tree found = lookup_qualified_name(top_namespace(decl), get_identifier(spelled.identifier.c_str()),
-                                       LOOK_want::TYPE, false);
+    tree found =
+        lookup_qualified_name(top_namespace(decl), get_identifier(spelled.identifier.c_str()), LOOK_want::TYPE, false);
     return found != NULL_TREE && found != error_mark_node && TREE_CODE(found) == TYPE_DECL
         && TYPE_MAIN_VARIANT(TREE_TYPE(found)) == TYPE_MAIN_VARIANT(class_type);
 }
@@ -1513,7 +1594,7 @@ bool check_function_use(tree function, location_t location, tree explicit_argume
             return record_standard_use(function, location, qualified_name(function), Use::other,
                                        result_of_explicit_arguments(function, explicit_arguments));
         case Library::c_library:
-            record(Kind::c_library_call, location, qualified_name(function));
+            record_library(Kind::c_library_call, location, qualified_name(function));
             return true;
         case Library::none:
             return check_foreign_use(function, location);
@@ -1587,7 +1668,7 @@ void check_variable_use(tree variable, location_t location) {
             record_standard_use(variable, location, qualified_name(variable));
             break;
         case Library::c_library:
-            record(Kind::c_library_call, location, qualified_name(variable));
+            record_library(Kind::c_library_call, location, qualified_name(variable));
             break;
         case Library::none:
             check_foreign_use(variable, location);
@@ -1633,8 +1714,13 @@ void record_namespace_name(tree ns, const std::string& member, location_t locati
     }
     std::string name = member.empty() ? qualified_name(ns) : qualified_name(ns) + "::" + member;
     const AdmitRow* row = admitting_row_of_name(name);
+    if (!is_plainly_admitted(row)) {
+        if (const FileEntry* language = language_file_of(location)) {
+            row = admitting_row_of_name(name, language);
+        }
+    }
     if (row == nullptr) {
-        record(Kind::std_entity, location, name);
+        record_library(Kind::std_entity, location, name);
     } else if (!row->pending_kind.empty()) {
         record_pending(*row, location, name);
     }
@@ -1653,9 +1739,10 @@ void check_scope_use(tree scope_ref, location_t location) {
         return;
     }
     if (TYPE_P(scope)) {
-        LibraryClasses classes = library_class_in(scope, 0);
+        const FileEntry* language = nullptr;
+        LibraryClasses classes = library_classes_at(scope, location, Use::other, language);
         if (is_standard_class(classes.refused)) {
-            record(Kind::std_entity, location, qualified_name(classes.refused) + "::" + member);
+            record_library(Kind::std_entity, location, qualified_name(classes.refused) + "::" + member);
         }
         record_pending_class(classes, location, "::" + member);
     }
@@ -1682,14 +1769,15 @@ void check_temporary(tree target) {
     if (callee == NULL_TREE || TREE_CODE(callee) != FUNCTION_DECL || !DECL_CONSTRUCTOR_P(callee)) {
         return;
     }
-    LibraryClasses classes = library_class_in(TREE_TYPE(target), 0);
+    const FileEntry* language = nullptr;
+    LibraryClasses classes = library_classes_at(TREE_TYPE(target), location, Use::other, language);
     bool is_refused = is_standard_class(classes.refused);
-    if ((!is_refused && classes.pending == NULL_TREE) || !is_quarantined(location)
+    if ((!is_refused && classes.pending == NULL_TREE) || (language == nullptr && !is_quarantined(location))
         || !spells_class_at(location, TREE_TYPE(target))) {
         return;
     }
     if (is_refused) {
-        record(Kind::std_entity, location, qualified_name(TYPE_MAIN_DECL(classes.refused)));
+        record_library(Kind::std_entity, location, qualified_name(TYPE_MAIN_DECL(classes.refused)));
     }
     record_pending_class(classes, location);
 }
@@ -1701,14 +1789,19 @@ void check_temporary(tree target) {
 void check_using(tree decl) {
     location_t location = DECL_SOURCE_LOCATION(decl);
     tree scope = USING_DECL_SCOPE(decl);
-    if (scope == NULL_TREE || !is_quarantined(location)) {
+    if (scope == NULL_TREE) {
+        return;
+    }
+    Place place = place_of(location, Scope::quarantine);
+    const FileEntry* language = language_of(place);
+    if (language == nullptr && place.file_class != FileClass::quarantined) {
         return;
     }
     std::string member = DECL_NAME(decl) != NULL_TREE ? member_name_text(DECL_NAME(decl)) : std::string{};
     if (TYPE_P(scope)) {
-        LibraryClasses classes = library_class_in(scope, 0);
+        LibraryClasses classes = library_class_in(scope, 0, Use::other, language);
         if (is_standard_class(classes.refused)) {
-            record(Kind::std_entity, location, qualified_name(classes.refused) + "::" + member);
+            record_library(Kind::std_entity, location, qualified_name(classes.refused) + "::" + member);
         }
         record_pending_class(classes, location, "::" + member);
         return;
@@ -1728,7 +1821,7 @@ void check_using(tree decl) {
     }
     tree first = TREE_CODE(targets) == OVERLOAD ? OVL_FIRST(targets) : targets;
     if ((TREE_CODE(first) == FUNCTION_DECL || VAR_P(first)) && library_of(first) == Library::c_library) {
-        record(Kind::c_library_call, location, qualified_name(first));
+        record_library(Kind::c_library_call, location, qualified_name(first));
         return;
     }
     const AdmitRow* pending = nullptr;
@@ -1744,7 +1837,7 @@ void check_using(tree decl) {
         if (library_of(entity) == Library::none) {
             continue;
         }
-        const AdmitRow* row = admitting_row(entity);
+        const AdmitRow* row = admitting_row(entity, Use::other, NULL_TREE, language);
         is_refused = is_refused || row == nullptr;
         if (row != nullptr && !row->pending_kind.empty() && pending == nullptr) {
             pending = row;
@@ -1752,7 +1845,7 @@ void check_using(tree decl) {
     }
     std::string spelled = qualified_name(scope) + "::" + member;
     if (is_refused) {
-        record(Kind::std_entity, location, spelled);
+        record_library(Kind::std_entity, location, spelled);
     } else if (pending != nullptr) {
         record_pending(*pending, location, spelled);
     }
@@ -2108,9 +2201,10 @@ void walk_root(tree* root, location_t location, bool is_pattern) {
 }
 
 // The return type, each parameter and each default argument of FUNCTION.  A
-// default argument that a quarantined file spells is a use there, also when no
-// call uses it.  A call copies a default with its own place, so the place of
-// a finding stays the same.  IS_PATTERN is true for a template pattern.
+// default argument that a quarantined file or a file of the language spells is
+// a use there, also when no call uses it.  A call copies a default with its
+// own place, so the place of a finding stays the same.  IS_PATTERN is true for
+// a template pattern.
 void check_signature(tree function, bool is_pattern) {
     if (!DECL_CONSTRUCTOR_P(function) && !DECL_DESTRUCTOR_P(function)) {
         check_object(function, Role::return_value);
@@ -2121,7 +2215,8 @@ void check_signature(tree function, bool is_pattern) {
         }
     }
     location_t location = DECL_SOURCE_LOCATION(function);
-    if (!is_quarantined(location)) {
+    Place place = place_of(location, Scope::quarantine);
+    if (place.file_class != FileClass::quarantined && language_of(place) == nullptr) {
         return;
     }
     for (tree type = TYPE_ARG_TYPES(TREE_TYPE(function)); type != NULL_TREE; type = TREE_CHAIN(type)) {
@@ -2329,7 +2424,8 @@ void check_template_defaults(tree template_decl) {
         record_pending_class(classes, location);
         // The default of a non-type parameter is an expression, such as
         // &std::strlen, and the walk of a body reads it.
-        if (!TYPE_P(default_argument) && TREE_CODE(default_argument) != TEMPLATE_DECL && is_quarantined(location)) {
+        if (!TYPE_P(default_argument) && TREE_CODE(default_argument) != TEMPLATE_DECL
+            && (language != nullptr || is_quarantined(location))) {
             walk_root(&TREE_PURPOSE(parameter), location, true);
         }
     }
@@ -2633,15 +2729,18 @@ void report(bool can_add_dependencies) {
         std::string entity = is_out ? std::string(finding.kind) + " " + finding.entity : finding.entity;
         lines.push_back("quarantine: " + kind + " " + finding.file->relative + ":" + std::to_string(finding.line) + ":"
                         + std::to_string(finding.column) + " " + entity);
-        bool is_language = finding.file->language_layer >= 0;
+        // A use that a row with `until` and `in` admits in a file of the
+        // language is a finding and no error, as it is in a quarantined file.
+        bool is_language = finding.file->language_layer >= 0 && !is_pending_kind(finding.kind);
         bool is_error = state.is_error_mode || finding.file->is_error_mode || is_language;
         // The contract rule gives an error in each mode.
         if (finding.kind == kContractKind && !is_out) {
             report_contract(finding);
         } else if (is_language && !is_out && !is_include_kind(finding.kind)) {
             error_at(finding.spelling,
-                     "quarantine: %s %s; a language row of the rule table holds this file, so the type of each "
-                     "declaration uses only a type of the base or a name that an admit row admits",
+                     "quarantine: %s %s; a language row of the rule table holds this file, so each declaration "
+                     "and each expression names only a type or an entity of the base, or a name that an admit row "
+                     "admits there",
                      kind.c_str(), entity.c_str());
         } else if (is_error && !is_out && is_include_kind(finding.kind)) {
             error_at(finding.spelling,

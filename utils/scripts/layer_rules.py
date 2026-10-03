@@ -52,6 +52,7 @@ class Admit:
     unless: str = ""
     in_paths: tuple[str, ...] = ()
     plain_result: bool = False
+    consteval_only: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -150,7 +151,7 @@ def parse_admit(args: list[str], reason: str, number: int, where: str) -> Admit:
         elif word == "concepts" and is_header:
             fields[word] = True
             index += 1
-        elif word in ("parameters", "plain-result") and not is_header:
+        elif word in ("parameters", "plain-result", "consteval-only") and not is_header:
             fields[word] = True
             index += 1
         elif word == "unless" and value.isascii() and value.isidentifier():
@@ -163,12 +164,13 @@ def parse_admit(args: list[str], reason: str, number: int, where: str) -> Admit:
             index = len(args)
         else:
             raise TableError(f"{where}: {word!r} is no restriction of this entry.  The restrictions are 'until "
-                             f"FAMILY', 'arity N', 'parameters' and 'plain-result' of a name, 'concepts' of a header, "
-                             f"'unless MACRO' and 'in PATH...', each one time")
+                             f"FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, "
+                             f"'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time")
     return Admit(entry, str(fields.get("until", "")), reason, number, int(fields.get("arity", -1)),
                  bool(fields.get("concepts", False)), bool(fields.get("parameters", False)),
                  str(fields.get("unless", "")), tuple(fields.get("in_paths", ())),  # type: ignore[arg-type]
-                 plain_result=bool(fields.get("plain-result", False)))
+                 plain_result=bool(fields.get("plain-result", False)),
+                 consteval_only=bool(fields.get("consteval-only", False)))
 
 
 def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:

@@ -138,6 +138,8 @@ MALFORMED_TABLES = (
     ("`parameters` of a header", "admit <initializer_list> parameters | a list\n"),
     ("`plain-result` of a header", "admit <bit> plain-result | the bits\n"),
     ("`plain-result` two times", "admit std::bit_cast plain-result plain-result | the bits\n"),
+    ("`consteval-only` of a header", "admit <vector> consteval-only | a list\n"),
+    ("`consteval-only` two times", "admit std::vector consteval-only consteval-only | a list\n"),
     ("`unless` with no identifier", "admit <meta> unless 1DEBUG | reflection\n"),
     ("`in` with no path", "layer one 0 a/\nadmit std::move in | a cast\n"),
     ("an `in` path outside the base", "layer one 0 a/\nquarantine b/\nadmit std::move in b/ | a cast\n"),
@@ -948,9 +950,6 @@ KNOWN_GAPS = (
      "a using-declaration of namespace scope is a binding of the namespace, with no tree that has a location"),
     ("known_gaps.cpp", TEST_RULES, "known_gaps.cpp", 14,
      "a using-directive of namespace scope is a list of the namespace, with no tree that has a location"),
-    ("language_gap_user.cpp", HERE / "language.txt", "include/fixy/high/LanguageGap.h", 11,
-     "the rule of the language reads each declaration type and each include, and not a call.  An extension needs "
-     "a decision of the owner: the language files name std::nothrow and the std::vector of std::meta"),
 )
 
 
@@ -1030,25 +1029,55 @@ LANGUAGE_PLANTS = (
     ("PLANT_LANGUAGE_TYPEDEF", "std_entity", "std::ptrdiff_t"),
     ("PLANT_LANGUAGE_BASE", "std_entity", "std::vector"),
     ("PLANT_LANGUAGE_TEMPLATE", "std_object", "std::vector"),
+    ("PLANT_LANGUAGE_STD_CALL", "std_entity", "std::swap"),
+    ("PLANT_LANGUAGE_RUNTIME_VECTOR", "std_entity", "std::vector::size"),
+)
+
+# (the line of fixy/high/LanguageOther.h, the kind of its error, a text in the
+# entity): a call in a file of the language, and a name that a row with `in`
+# admits only in a different file of the language.
+LANGUAGE_OTHER_ERRORS = (
+    (14, "c_library_call", "memset"),
+    (16, "std_entity", "std::nothrow"),
 )
 
 
 def run_language(section: Section) -> None:
-    """Compile language_user.cpp in report mode with language.txt, with no plant and with each plant.
+    """Compile the two includers of the files of the language in report mode with language.txt.
 
     The included fixy/high/Language.h is a file of the language.  With no
-    plant it has no finding, also for its raw pointer, its array and the name
-    that a row with `in` admits there.  Each plant is an error in report mode,
-    in the file of the language.
+    plant it has no error and one finding: the use of std::nothrow, which a
+    row with `until` and `in` admits there.  Its raw pointer, its array, the
+    name that a row with `in` admits there and the members of a std::vector of
+    std::meta::info that a row with `consteval-only` admits give no finding.
+    Each plant is an error in report mode, in the file of the language.  Each
+    body of fixy/high/LanguageOther.h is an error too.
     """
     report_mode = {"root": str(HERE), "mode": "report", "rules": str(HERE / "language.txt")}
-    calls: list[tuple[object, ...]] = [("language_user.cpp", report_mode)]
-    calls += [("language_user.cpp", report_mode, ("-S", "-o", os.devnull), (f"-D{macro}",))
+    reflection = ("-freflection",)
+    out = section.work / "language"
+    calls: list[tuple[object, ...]] = [("language_user.cpp", report_mode, ("-S", "-o", os.devnull), reflection),
+                                       ("language_user.cpp", {**report_mode, "out": str(out)},
+                                        ("-S", "-o", os.devnull), reflection),
+                                       ("language_other_user.cpp", report_mode, ("-S", "-o", os.devnull))]
+    calls += [("language_user.cpp", report_mode, ("-S", "-o", os.devnull), (*reflection, f"-D{macro}"))
               for macro, _, _ in LANGUAGE_PLANTS]
     results = iter(section.compile_all(calls))
     clean = next(results)
     section.expect("a file of the language with no plant compiles with no error and no note",
                    clean.returncode == 0 and "quarantine:" not in clean.stderr, clean.stderr[-2000:])
+    reported = next(results)
+    findings = read_reports(out) if reported.returncode == 0 else []
+    expected = [Finding("replace_pending:std::nothrow", "include/fixy/high/Language.h", 52, "std::nothrow")]
+    section.expect("the use of std::nothrow in fixy/high/Language.h is its one finding, and no error",
+                   reported.returncode == 0 and findings == expected,
+                   reported.stderr[-2000:] + "; ".join(map(str, findings)))
+    other = next(results)
+    for line, kind, text in LANGUAGE_OTHER_ERRORS:
+        errors = [row for row in quarantine_errors(other.stderr, kind)
+                  if f"include/fixy/high/LanguageOther.h:{line}:" in row]
+        section.expect(f"fixy/high/LanguageOther.h:{line} fails in report mode with a {kind} of {text}",
+                       other.returncode != 0 and len(errors) == 1 and text in errors[0], other.stderr[-2000:])
     for macro, kind, text in LANGUAGE_PLANTS:
         planted = next(results)
         errors = [row for row in quarantine_errors(planted.stderr, kind) if "include/fixy/high/Language.h:" in row]

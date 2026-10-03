@@ -195,6 +195,7 @@ struct AdmitRow {
     bool is_concepts_only = false;
     bool is_parameters_only = false;
     bool is_plain_result = false;  // the result type of the function holds no bool and no enumeration
+    bool is_consteval_only = false;  // the entity is a consteval-only class or a member of one
     std::string unless_macro;
     std::vector<std::string> in_paths;
 };
@@ -933,6 +934,9 @@ inline bool parse_admit(const std::vector<std::string>& args, AdmitRow& row) {
         } else if (word == "plain-result" && !row.is_header) {
             row.is_plain_result = true;
             index += 1;
+        } else if (word == "consteval-only" && !row.is_header) {
+            row.is_consteval_only = true;
+            index += 1;
         } else if (word == "arity" && is_digits(value) && !row.is_header) {
             row.arity = 0;
             for (char digit : value) {
@@ -1073,8 +1077,8 @@ inline bool load_rule_table(const std::string& path) {
             AdmitRow admit;
             if (args.empty() || reason.empty() || !parse_admit(args, admit)) {
                 refuse("an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until "
-                       "FAMILY', 'arity N', 'parameters' and 'plain-result' of a name, 'concepts' of a header, "
-                       "'unless MACRO' and 'in PATH...', each one time, and the reason is necessary");
+                       "FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' "
+                       "of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary");
                 continue;
             }
             for (const std::string& in_path : admit.in_paths) {

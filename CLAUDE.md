@@ -3062,7 +3062,14 @@ To get the findings of a change, build the targets that compile the changed file
 
 The `enforce` rows of the rule table give each quarantined directory a mode, `report` or `error`. A file that no `enforce` row holds has the mode `report`. In each build, a finding in a file with the mode `error` is a compile error.
 
-The `language` row of the rule table holds `include/foundation/core/` and `include/fixy/Core.h`, the files of the language. In each build and each mode, the plugin gives a compile error in such a file for an include outside the allowance of the layer F0 primitives, for a system header, and for a declaration whose type holds a library type that no `admit` row admits there. The head comment of the rule table gives the rule. At this time, each `enforce` row has the mode `report`. A directory changes to `error` when it has no finding outside the opt-out ledger. A change of the mode of a file compiles again only the units with a finding in that file, and a change of a reason or of a comment compiles nothing. `utils/scripts/quarantine_stamps.py` writes the inputs that make this so.
+The `language` row of the rule table holds `include/foundation/core/` and `include/fixy/Core.h`, the files of the language. In each build and each mode, the plugin gives a compile error in such a file for each of these items:
+- An include outside the allowance of the layer F0 primitives, and a system header
+- A declaration whose type holds a library type that no `admit` row admits there
+- An expression, also an unevaluated operand, that names a library entity that no `admit` row admits there.
+
+An `admit` row with `in` admits in a file of the language under one of its paths. A row with `until` admits there only with `in`. Each such use is a finding of its pending kind and no error, as `std::nothrow` in `include/foundation/core/Ref.h` is. The restriction `consteval-only` admits only a class that holds a `std::meta::info`, and the members of such a class. The compiler permits such a class, such as the `std::vector` that a `std::meta` query returns, only in a constant evaluation. The head comment of the rule table gives the rules.
+
+At this time, each `enforce` row has the mode `report`. A directory changes to `error` when it has no finding outside the opt-out ledger. A change of the mode of a file compiles again only the units with a finding in that file, and a change of a reason or of a comment compiles nothing. `utils/scripts/quarantine_stamps.py` writes the inputs that make this so.
 
 ### The ratchet (R11)
 

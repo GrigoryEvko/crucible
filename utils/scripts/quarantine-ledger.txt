@@ -2084,6 +2084,7 @@ include/foundation/contracts/ArmedRoster.h layer_header 1 <string_view> in the l
 include/foundation/contracts/ArmedRoster.h layer_header 1 <vector> in the layer F0_core
 include/foundation/contracts/Decide.h layer_header 1 <span> in the layer F0_core
 include/foundation/contracts/Decide.h upward_include 1 include/foundation/effects/Row.h (the layer F1_algebra) from the layer F0_core
+include/foundation/core/Ref.h replace_pending:std::nothrow 1 std::nothrow
 include/foundation/diag/Catalog.h layer_header 1 <array> in the layer F1_algebra
 include/foundation/diag/Catalog.h layer_header 1 <string_view> in the layer F1_algebra
 include/foundation/diag/Catalog.h layer_header 1 <tuple> in the layer F1_algebra
@@ -5184,6 +5185,7 @@ test/foundation/test_transition.cpp std_entity 1 std::size
 test/foundation/test_transition.cpp std_object 1 std::basic_string_view
 test/layer/admitted_flag_matrix.cpp door_header 1 <contracts> has the door src/foundation/ContractHandler.cpp
 test/layer/admitted_flag_matrix.cpp std_entity 1 std::tuple_size::value
+test/layer/admitted_flag_matrix.cpp std_entity 1 std::vector::operator[]
 test/layer/checks/crucible/SingletonInitGraph.cpp std_entity 1 std::tuple
 test/layer/checks/crucible/Types.cpp replace_pending:std::source_location 1 std::source_location::file_name
 test/layer/checks/crucible/Types.cpp std_entity 2 __gnu_cxx::__normal_iterator

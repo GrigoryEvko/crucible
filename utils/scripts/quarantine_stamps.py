@@ -77,6 +77,8 @@ def facts_text(table: layer_rules.RuleTable) -> str:
             words.append("parameters")
         if admit.plain_result:
             words.append("plain-result")
+        if admit.consteval_only:
+            words.append("consteval-only")
         if admit.unless:
             words.append(f"unless {admit.unless}")
         if admit.in_paths:
