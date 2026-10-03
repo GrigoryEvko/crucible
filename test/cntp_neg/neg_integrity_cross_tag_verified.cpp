@@ -13,7 +13,11 @@
 
 using Payload = std::array<std::byte, 8>;
 
+namespace {
+
 void requires_verified(crucible::cntp::IntegrityVerifiedPayload<Payload> payload) noexcept { (void)payload; }
+
+}  // namespace
 
 int main() {
     auto external = ::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::mint_linear<Payload>(Payload{}));

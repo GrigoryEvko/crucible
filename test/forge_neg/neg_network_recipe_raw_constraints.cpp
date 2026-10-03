@@ -4,7 +4,11 @@
 
 namespace net = crucible::forge::recipes;
 
+namespace {
+
 void consume(net::DeclaredNetworkRecipeConstraints) {}
+
+}  // namespace
 
 int main() {
     net::NetworkRecipeConstraints raw{};

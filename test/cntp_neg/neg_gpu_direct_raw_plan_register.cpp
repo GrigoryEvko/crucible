@@ -6,6 +6,10 @@
 
 #include <crucible/cntp/_wip/GpuDirect.h>
 
+// The register path is a stub, and its deprecation is not the error under
+// test.
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace gd = crucible::cntp::_wip::gpu_direct;
 
 int main() {

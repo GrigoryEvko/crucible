@@ -10,7 +10,11 @@
 
 using Payload = std::array<std::byte, 8>;
 
+namespace {
+
 void requires_verified(crucible::cntp::IntegrityVerifiedPayload<Payload> payload) noexcept { (void)payload; }
+
+}  // namespace
 
 int main() {
     Payload payload{};

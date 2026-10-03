@@ -8,6 +8,10 @@
 
 #include <array>
 
+// The dispatch path is a stub, and its deprecation is not the error under
+// test.
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace shp = crucible::cntp::_wip::sharp;
 
 int main() {

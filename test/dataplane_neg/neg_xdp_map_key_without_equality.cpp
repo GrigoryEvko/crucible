@@ -9,6 +9,6 @@ struct Value {
 };
 
 int main() {
-    crucible::cntp::dataplane::BpfMapImage<Key, Value, 4> map{};
-    return static_cast<int>(map.size());
+    [[maybe_unused]] crucible::cntp::dataplane::BpfMapImage<Key, Value, 4> map{};
+    return 0;
 }

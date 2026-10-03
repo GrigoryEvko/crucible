@@ -6,7 +6,9 @@
 // context cannot issue incast credits.  The foreground context is taken as
 // a parameter, because no context builds from nothing.
 
-void issue_from_foreground(::fixy::HotFgCtx const& fg) {
+namespace {
+
+[[maybe_unused]] void issue_from_foreground(::fixy::HotFgCtx const& fg) {
     ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
     auto controller = crucible::cntp::mint_incast_controller<1>(init);
     auto fd = crucible::cntp::admit_socket_fd(3);
@@ -16,5 +18,7 @@ void issue_from_foreground(::fixy::HotFgCtx const& fg) {
     auto result = controller.issue_credit(fg, *fd, *credit, 1);
     (void)result;
 }
+
+}  // namespace
 
 int main() { return 0; }

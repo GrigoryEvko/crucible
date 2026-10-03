@@ -4,7 +4,11 @@
 
 namespace ir = crucible::forge::ir001;
 
+namespace {
+
 void consume(ir::DeclaredIr001Node<ir::AllReduceOp>) {}
+
+}  // namespace
 
 int main() {
     ir::AllReduceOp raw{};

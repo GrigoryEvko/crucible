@@ -4,6 +4,10 @@
 // raw config cannot drive the transport identity of a federation peer.
 // Every other argument comes from its door, so the tag is the only refusal.
 
+// The connect path is a stub, and its deprecation is not the error under
+// test.
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 int main() {
     using namespace crucible::cntp;
     MtlsConfig raw{
