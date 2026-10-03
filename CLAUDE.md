@@ -2971,6 +2971,8 @@ Each header outside the source root is a library header, also a header of a thir
 
 An unevaluated operand is code too, and each item of the list above in it is a finding: the operand of `sizeof`, `alignof`, `noexcept` and `decltype`, a type trait, a requires-expression, the condition of a `static_assert` in a template, a concept and a requires-clause. Outside a template, the front end folds an `alignof`, a `noexcept`, a type trait, a requires-expression, a `static_assert` and a constant initializer while it parses, so the plugin cannot see the names in them. `KNOWN_GAPS` of `utils/tools/quarantine/test/check_plugin.py` pins each such gap.
 
+A placeholder in a template, such as `auto mapped = mint(owner);` with a dependent initializer, declares an object of the type that each instantiation deduces. When that type holds a library class, the finding is at the placeholder, as it is outside a template. A type that a template parameter gives is no finding in the instantiation, because the code spells it where it names the template.
+
 ### Callers of a changed API
 
 This rule applies to a quarantined caller that changes only because a base API changed. In that caller, change only the lines that the API change makes necessary. Such a line can keep a std type or a std name that no base type replaces at this time. The finding count of the file must not increase. The report of the change lists each such line.

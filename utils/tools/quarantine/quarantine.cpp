@@ -95,11 +95,16 @@
 // THE HOOKS
 //     PLUGIN_PRE_GENERICIZE  the body of each function that is not a template:
 //                            local objects, calls, uses of variables, new and
-//                            delete.  A template instantiation is skipped, because
-//                            its pattern is read instead: a dependent name that
-//                            only the instantiation resolves is not a named
-//                            reference in the source.  The function of the
-//                            dynamic initializers of the unit is read too.
+//                            delete.  The body of a template instantiation is
+//                            not read, because its pattern is read instead: a
+//                            dependent name that only the instantiation
+//                            resolves is not a named reference in the source.
+//                            An instantiation of a template of a quarantined
+//                            file gives only the types that it deduces for the
+//                            placeholders of its template: the return type and
+//                            each local that `auto` declares with a dependent
+//                            initializer (check_instantiation).  The function
+//                            of the dynamic initializers of the unit is read too.
 //     PLUGIN_FINISH_UNIT     one walk of every namespace that a system header does
 //                            not own: namespace-scope objects, classes and their
 //                            data members, bases, aliases, function signatures,
@@ -393,6 +398,9 @@ struct State {
     std::unordered_map<tree, const AdmitRow*> admitting_row_of[2];
     // The answer of holds_bool_or_enumeration for each class and union.
     std::unordered_map<tree, bool> holds_bool_of;
+    // The locations of the local variables that a placeholder declares in
+    // each function pattern (placeholder_locals_of).
+    std::unordered_map<tree, std::unordered_set<location_t>> placeholder_locals;
     std::unordered_map<tree, bool> default_argument_of;
     std::unordered_set<tree> walked;
 };
@@ -1166,6 +1174,35 @@ void check_object(tree decl, Role role) {
         }
     } else if (tree named = library_type_name_in(type, 0, language)) {
         record_standard_use(named, location, qualified_name(named), use, NULL_TREE, language);
+    }
+    record_pending_class(classes, location);
+}
+
+// The type that an instantiation deduces for a declaration whose template
+// spells a placeholder, such as `auto held = make(value);` with a dependent
+// initializer.  The code holds an object of that type, as it holds one that a
+// placeholder declares outside a template.  The entity names the class or the
+// kind of the pointer, and not the template arguments of one instantiation,
+// so each instantiation gives the same finding.  The walk of a quarantined
+// file only calls it.
+void check_deduced_object(tree decl, Role role) {
+    tree type = role == Role::return_value ? TREE_TYPE(TREE_TYPE(decl)) : TREE_TYPE(decl);
+    if (type == NULL_TREE || type == error_mark_node || type_uses_auto(type) != NULL_TREE) {
+        return;
+    }
+    location_t location = DECL_SOURCE_LOCATION(decl);
+    if (role != Role::return_value && TREE_CODE(type) == POINTER_TYPE) {
+        bool is_function = FUNC_OR_METHOD_TYPE_P(TREE_TYPE(type));
+        record(is_function ? Kind::raw_function_pointer : Kind::raw_pointer_object, location,
+               is_function ? "deduced function pointer" : "deduced pointer");
+    } else if (role != Role::return_value && TYPE_PTRMEM_P(type)) {
+        record(Kind::raw_function_pointer, location, "deduced member pointer");
+    }
+    LibraryClasses classes = library_class_in(type, 0, Use::other);
+    if (classes.refused != NULL_TREE && !classes.is_refused_name) {
+        bool is_c_library = library_of(TYPE_MAIN_DECL(classes.refused)) == Library::c_library;
+        record(is_c_library ? Kind::c_library_object : Kind::std_object, location,
+               qualified_name(classes.refused) + " (deduced)");
     }
     record_pending_class(classes, location);
 }
@@ -2714,11 +2751,83 @@ void on_include_file(void* gcc_data, void*) {
     }
 }
 
+// ── The types that an instantiation deduces ─────────────────────────────
+
+tree find_placeholder_local(tree* node_pointer, int*, void* data) {
+    tree node = *node_pointer;
+    if (TREE_CODE(node) == DECL_EXPR && VAR_P(DECL_EXPR_DECL(node))
+        && type_uses_auto(TREE_TYPE(DECL_EXPR_DECL(node))) != NULL_TREE) {
+        static_cast<std::unordered_set<location_t>*>(data)->insert(DECL_SOURCE_LOCATION(DECL_EXPR_DECL(node)));
+    }
+    return NULL_TREE;
+}
+
+// The locations of the local variables of the function pattern PATTERN whose
+// declared type uses a placeholder.  A pattern keeps the placeholder when the
+// initializer is dependent, and an instantiation gives its local the location
+// of the local of the pattern.  The answer is kept for each pattern.
+// Complexity: O(nodes of the body of the pattern), one time for each pattern.
+std::unordered_set<location_t>& placeholder_locals_of(tree pattern) {
+    auto cached = state.placeholder_locals.find(pattern);
+    if (cached != state.placeholder_locals.end()) {
+        return cached->second;
+    }
+    std::unordered_set<location_t>& locals = state.placeholder_locals[pattern];
+    if (tree body = DECL_SAVED_TREE(pattern)) {
+        cp_walk_tree_without_duplicates(&body, find_placeholder_local, &locals);
+    }
+    return locals;
+}
+
+tree check_deduced_local(tree* node_pointer, int*, void* data) {
+    tree node = *node_pointer;
+    tree decl = TREE_CODE(node) == DECL_EXPR ? DECL_EXPR_DECL(node) : NULL_TREE;
+    const auto& placeholders = *static_cast<const std::unordered_set<location_t>*>(data);
+    if (decl != NULL_TREE && VAR_P(decl) && placeholders.count(DECL_SOURCE_LOCATION(decl)) != 0
+        && !(DECL_DECOMPOSITION_P(decl) && !DECL_DECOMP_IS_BASE(decl))) {
+        check_deduced_object(decl, Role::variable);
+    }
+    return NULL_TREE;
+}
+
+// The instantiation FUNCTION of a template of a quarantined file: its return
+// type and each local variable whose declaration in the template spells a
+// placeholder get the type that the instantiation deduces.  The walk of the
+// pattern reads each other part, so the rest of the instantiation stays
+// unread: a type that a template parameter gives is spelled where the code
+// names the template.
+void check_instantiation(tree function) {
+    if (DECL_LANG_SPECIFIC(function) == nullptr || DECL_TEMPLATE_INFO(function) == NULL_TREE
+        || TREE_CODE(DECL_TI_TEMPLATE(function)) != TEMPLATE_DECL || !is_quarantined(DECL_SOURCE_LOCATION(function))) {
+        return;
+    }
+    tree template_decl = template_for_substitution(function);
+    tree pattern = template_decl != NULL_TREE && TREE_CODE(template_decl) == TEMPLATE_DECL
+                     ? DECL_TEMPLATE_RESULT(template_decl)
+                     : NULL_TREE;
+    if (pattern == NULL_TREE || TREE_CODE(pattern) != FUNCTION_DECL) {
+        return;
+    }
+    if (!DECL_CONSTRUCTOR_P(function) && !DECL_DESTRUCTOR_P(function)
+        && type_uses_auto(TREE_TYPE(TREE_TYPE(pattern))) != NULL_TREE) {
+        check_deduced_object(function, Role::return_value);
+    }
+    std::unordered_set<location_t>& placeholders = placeholder_locals_of(pattern);
+    if (!placeholders.empty() && DECL_SAVED_TREE(function) != NULL_TREE) {
+        tree body = DECL_SAVED_TREE(function);
+        cp_walk_tree_without_duplicates(&body, check_deduced_local, &placeholders);
+    }
+}
+
 // ── The callbacks ───────────────────────────────────────────────────────
 
 void on_pre_genericize(void* gcc_data, void*) {
     tree function = static_cast<tree>(gcc_data);
-    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || is_in_instantiation(function)) {
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
+        return;
+    }
+    if (is_in_instantiation(function)) {
+        check_instantiation(function);
         return;
     }
     walk_body(function, false);
@@ -2759,6 +2868,7 @@ void on_collection(void*, void*) {
         state.admitting_row_of[use].clear();
     }
     state.holds_bool_of.clear();
+    state.placeholder_locals.clear();
     state.default_argument_of.clear();
     state.walked.clear();
     core.contract_walked.clear();

@@ -24,6 +24,7 @@ admit std::unreachable until Report | a hint to the optimizer
 
 quarantine allocation.cpp
 quarantine contracts.cpp
+quarantine deduced.cpp
 quarantine deep_nesting.cpp
 quarantine end_without_region.cpp
 quarantine enforced.cpp

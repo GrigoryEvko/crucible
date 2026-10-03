@@ -753,6 +753,9 @@ LIBRARY_NAMES = (
     ("unevaluated.cpp", (), 43, "std_entity", "std::vector"),
     ("unevaluated.cpp", (), 46, "std_entity", "std::vector"),
     ("unevaluated.cpp", (), 50, "std_entity", "std::vector"),
+    ("deduced.cpp", (), 13, "std_object", "std::vector (deduced)"),
+    ("deduced.cpp", (), 19, "std_object", "std::vector (deduced)"),
+    ("deduced.cpp", (), 33, "std_object", "std::vector (std::vector<int, std::allocator<int> >)"),
 )
 # The header of a library outside the source root that no system flag marks.
 # run_library_names writes it in its scratch directory, and each compile of the
@@ -768,6 +771,8 @@ LIBRARY_NAMES_ABSENT = (
     ("foreign_symbols.cpp", 11),  # the unit defines the function of C language linkage later
     ("foreign_symbols.cpp", 17),  # a call before the definition of the unit
     ("foreign_symbols.cpp", 19),  # the definition
+    ("deduced.cpp", 25),  # a template parameter gives the type, and the call spells no library name
+    ("deduced.cpp", 34),  # the call deduces the template argument from an object with a finding of its own
 )
 # (fixture, extra flags, line, kind): no finding of that kind there.
 LIBRARY_KINDS_ABSENT = (
