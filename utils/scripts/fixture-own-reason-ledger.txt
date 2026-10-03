@@ -8,8 +8,6 @@
 # visible.  A fixture with a row whose compile gives no error that no regex matches fails its test.
 # Remove the row in the commit that gives each error of the fixture a regex, or that removes the cause
 # of the error.
-neg_alloc_class_heap_at_pool_fence | an error that no regex matches: no matching function for call to ‘foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::AllocClas...
-neg_asymmetric_failure_record_fg_ctx | an error that no regex matches: ‘refused’ was not declared in this scope
 neg_atom_verdict_forged | an error that no regex matches: expected initializer before ‘<’ token
 neg_budgeted_axes_swapped | an error that no regex matches: no matching function for call to ‘fixy::Budgeted<int>::Budgeted(<brace-enclosed initializer list>)’
 neg_cipher_tier_demote_unmovable_payload | an error that no regex matches: ‘BadMint’ was not declared in this scope
@@ -20,7 +18,6 @@ neg_cipher_tier_restore_wrong_value_type | an error that no regex matches: ‘Ba
 neg_computation_cache_closure_argument | an error that no regex matches: static assertion failed: foundation::reflect: a stable id refuses the type const closure_key::<lambda(int)>, because its part closure_key::<lambda(...
 neg_computation_cache_closure_invoker | an error that no regex matches: static assertion failed: stable_function_name_id: the function has no stable identity.  A static invoker of a closure or a function with internal l...
 neg_computation_cache_forged_function_identity | 2 errors that no regex matches, the first: expected initializer before ‘<’ token
-neg_dim_hash_cross_family | an error that no regex matches: no matching function for call to ‘foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::DetSafeLa...
 neg_endpoint_payload_row_outside_ctx | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘foundation::effects::Computation<foundation::e...
 neg_exec_ctx_forged_specialization | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘const foundation::effects::ExecCtx<foundation:...
 neg_fail_closed_admits_of_a_class | an error that no regex matches: ‘{anonymous}::NotARelation::raw_to_checked’ defined but not used [-Werror=unused-const-variable=]
@@ -41,7 +38,6 @@ neg_integrity_cross_tag_verified | an error that no regex matches: no previous d
 neg_integrity_raw_payload_as_verified | an error that no regex matches: no previous declaration for ‘void requires_verified(crucible::cntp::IntegrityVerifiedPayload<std::array<std::byte, 8> >)’ [-Werror=missing-declarat...
 neg_ir001_comm_raw_node | an error that no regex matches: no previous declaration for ‘void consume(crucible::forge::ir001::DeclaredIr001Node<crucible::forge::ir001::Ir001Node<crucible::forge::ir001::Ir001...
 neg_lattice_bottom_above_top | an error that no regex matches: expected type-specifier
-neg_mimic_semaphore_backend_portable | 3 errors that no regex matches, the first: expected type-specifier
 neg_mtls_raw_config_connect | an error that no regex matches: ‘std::expected<crucible::cntp::MtlsConnection, crucible::cntp::MtlsError> crucible::cntp::connect_mtls(SocketFd, const DeclaredMtlsConfig&, MtlsDns...
 neg_network_recipe_raw_constraints | an error that no regex matches: no previous declaration for ‘void consume(crucible::forge::recipes::DeclaredNetworkRecipeConstraints)’ [-Werror=missing-declarations]
 neg_perm_set_union_shared_tag | an error that no regex matches: expected type-specifier
@@ -50,7 +46,6 @@ neg_permission_row_edge_for_a_derived_tag | an error that no regex matches: expe
 neg_permission_row_member_for_a_derived_tag | an error that no regex matches: expected type-specifier before ‘::’ token
 neg_permission_row_not_a_row | an error that no regex matches: template argument 1 is invalid
 neg_permission_row_t_undeclared_tag | an error that no regex matches: template argument 1 is invalid
-neg_pingmesh_record_fg_ctx | an error that no regex matches: ‘refused’ was not declared in this scope
 neg_pipeline_dag_cyclic_graph | an error that no regex matches: expected type-specifier
 neg_pipeline_dag_unreachable_stage | an error that no regex matches: expected type-specifier
 neg_read_view_body_returns_a_type_erased_callable | an error that no regex matches: noexcept-expression evaluates to ‘false’ because of a call to ‘main()::<lambda(const auto:6&)>::<lambda()>’ [-Werror=noexcept]
@@ -66,7 +61,6 @@ neg_rule_s011_capability_replay_pure | an error that no regex matches: could not
 neg_rule_v101_replay_pinned_isa | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘fixy::fn<foundation::algebra::Graded<foundatio...
 neg_rule_v101_replay_under_alloc_class | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘fixy::fn<foundation::algebra::Graded<foundatio...
 neg_rule_v203_replay_tsc | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘fixy::fn<foundation::algebra::Graded<foundatio...
-neg_sdc_detect_run_hot_ctx | an error that no regex matches: ‘Refused’ was not declared in this scope
 neg_sess_compose_at_branch_captures_continue | an error that no regex matches: invalid application of ‘sizeof’ to a void type [-Werror=pointer-arith]
 neg_sess_compose_captures_continue | an error that no regex matches: invalid application of ‘sizeof’ to a void type [-Werror=pointer-arith]
 neg_sess_compose_captures_under_nested_loop | an error that no regex matches: invalid application of ‘sizeof’ to a void type [-Werror=pointer-arith]
@@ -94,9 +88,6 @@ neg_stable_identity_verdict_forged | 2 errors that no regex matches, the first: 
 neg_stage_shape_input_value_on_non_stage | an error that no regex matches: expected type-specifier before ‘::’ token
 neg_stage_shape_output_value_on_non_stage | an error that no regex matches: expected type-specifier before ‘::’ token
 neg_substrate_session_payload_row_outside_ctx | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘foundation::effects::Computation<foundation::e...
-neg_topology_health_update_fg_ctx | an error that no regex matches: ‘refused’ was not declared in this scope
-neg_transaction_log_zero_capacity | an error that no regex matches: static assertion failed: N must be at least 4: a claim keeps the slots of the active transaction and the rollback target, and N is a power of 2
-neg_types_hash_family_unspecialized | 3 errors that no regex matches, the first: expected type-specifier before ‘::’ token
 neg_witness_fail_closed_detail_relation_cells_direct_construction | an error that no regex matches: consteval-only variable ‘forged’ not declared ‘constexpr’ used outside a constant-evaluated context
 neg_witness_permissions_detail_row_cell_direct_construction | an error that no regex matches: consteval-only variable ‘forged’ not declared ‘constexpr’ used outside a constant-evaluated context
 neg_xdp_map_key_without_equality | an error that no regex matches: request for member ‘size’ in ‘map’, which is of non-class type ‘int’

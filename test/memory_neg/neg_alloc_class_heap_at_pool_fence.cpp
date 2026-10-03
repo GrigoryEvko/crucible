@@ -42,7 +42,7 @@ int main() {
     // Pinned at Heap: the origin is malloc.  The band carries the tier,
     // and the consumer's requires clause sees that Heap does not satisfy
     // Pool and excludes the overload.
-    ::fixy::alloc_class::Heap<int*> heap_value{&storage, {}};
+    auto heap_value = ::fixy::mint_band<::fixy::alloc_class::Heap<int*>>(&storage);
 
     void* result = hot_path_slot_consumer(std::move(heap_value));
     (void)result;

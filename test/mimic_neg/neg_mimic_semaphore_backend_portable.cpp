@@ -6,9 +6,8 @@
 
 #include <crucible/mimic/Semaphore.h>
 
-using PortableSemaphore = crucible::mimic::DeviceSemaphore<crucible::mimic::VendorBackend::Portable>;
-
 int main() {
-    const PortableSemaphore* semaphore = nullptr;
-    return semaphore == nullptr ? 0 : 1;
+    // The size is the one use of the class, so the refusal is the only error.
+    static_cast<void>(sizeof(crucible::mimic::DeviceSemaphore<crucible::mimic::VendorBackend::Portable>));
+    return 0;
 }

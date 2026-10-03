@@ -2,7 +2,8 @@
 //
 // The foreground hot-path context cannot change probe or witness state.
 // A foreground context is built only from the producer claim, so the
-// refused call names it in a decltype operand.
+// refused call names it in an unevaluated operand.  The size of the call
+// is its one use, so the refused call is the only error.
 
 #include <crucible/topology/AsymmetricFailure.h>
 
@@ -14,6 +15,6 @@ int main() {
     crucible::cog::CogIdentity peer{};
     peer.uuid = crucible::cog::Uuid{0x127, 0x1};
 
-    using refused = decltype(detector.record_outbound(std::declval<::fixy::HotFgCtx const&>(), peer, true, 1));
-    return sizeof(refused) == 0 ? 1 : 0;
+    static_cast<void>(sizeof(detector.record_outbound(std::declval<::fixy::HotFgCtx const&>(), peer, true, 1)));
+    return 0;
 }

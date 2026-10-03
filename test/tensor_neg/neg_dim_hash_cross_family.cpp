@@ -15,6 +15,7 @@ using FamilyADetHash = ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, FamilyAHash>
 static void consume_dim_hash(crucible::DimHashDet) {}
 
 int main() {
-    FamilyADetHash persistent{::fixy::mint_tagged<crucible::hash_family::FamilyA>(uint64_t{0x1234}), {}};
+    auto persistent =
+        ::fixy::mint_band<FamilyADetHash>(::fixy::mint_tagged<crucible::hash_family::FamilyA>(uint64_t{0x1234}));
     consume_dim_hash(persistent);
 }

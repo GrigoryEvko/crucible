@@ -27,9 +27,8 @@
 
 int main() {
     // Should FAIL: `int` has no hash_family_of specialization;
-    // hash_family_of_t<int> hits the incomplete primary template.
-    using NoFamily = ::crucible::hash_family_of_t<int>;
-    NoFamily probe{};
-    (void)probe;
+    // hash_family_of_t<int> hits the incomplete primary template.  The
+    // size is the one use of the family, so the refusal is the only error.
+    static_cast<void>(sizeof(::crucible::hash_family_of_t<int>));
     return 0;
 }

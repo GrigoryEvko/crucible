@@ -2,7 +2,8 @@
 //
 // The foreground hot-path context cannot change the pingmesh histograms.
 // A foreground context is built only from the producer claim, so the
-// refused call names it in a decltype operand.
+// refused call names it in an unevaluated operand.  The size of the call
+// is its one use, so the refused call is the only error.
 
 #include <crucible/topology/Pingmesh.h>
 
@@ -14,6 +15,6 @@ int main() {
     auto const measurement =
         ::fixy::mint_tagged<::fixy::tags::source::Pingmesh>(crucible::topology::PingmeshMeasurement{});
 
-    using refused = decltype(mesh.record_measurement(std::declval<::fixy::HotFgCtx const&>(), measurement));
-    return sizeof(refused) == 0 ? 1 : 0;
+    static_cast<void>(sizeof(mesh.record_measurement(std::declval<::fixy::HotFgCtx const&>(), measurement)));
+    return 0;
 }

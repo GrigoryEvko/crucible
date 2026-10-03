@@ -9,10 +9,10 @@
 //   * The class-body static_assert((N & (N - 1)) == 0, ...) PASSES for
 //     N = 0, because `0 & (0u - 1u)` is 0.
 //   * The class-body static_assert(N >= 4, ...) refuses N = 0.  The
-//     capacity fixtures pin that gate.
+//     capacity fixtures also pin that gate.
 //   * CyclicBuffer<Transaction, 0>'s requires-clause
 //     `(N > 0 && (N & (N - 1)) == 0)` also refuses N = 0, so the `Ring`
-//     alias is ill-formed.  This fixture pins the requires-clause.
+//     alias is ill-formed.  This fixture pins the two refusals.
 //
 // Companion: neg_transaction_log_non_power_of_two.cpp (the non-power-of-two
 // edge, caught by the power-of-two gate and the requires-clause).
