@@ -240,6 +240,7 @@ include/crucible/Arena.h std_entity 1 __gnu_cxx::__normal_iterator
 include/crucible/Arena.h std_entity 1 __gnu_cxx::__normal_iterator::operator*
 include/crucible/Arena.h std_entity 1 __gnu_cxx::__normal_iterator::operator++
 include/crucible/Arena.h std_entity 1 __gnu_cxx::operator==
+include/crucible/Arena.h std_entity 1 std::has_single_bit
 include/crucible/Arena.h std_object 1 std::array
 include/crucible/BackgroundThread.h c_array_object 7
 include/crucible/BackgroundThread.h raw_function_pointer 3
@@ -576,10 +577,11 @@ include/crucible/Vigil.h std_entity 7 std::unique_ptr::operator->
 include/crucible/Vigil.h std_object 4 std::atomic
 include/crucible/Vigil.h std_object 1 std::basic_string
 include/crucible/Vigil.h std_object 5 std::unique_ptr
-include/crucible/canopy/Crdt.h replace_pending:<limits> 1 std::numeric_limits::max
+include/crucible/canopy/Crdt.h replace_pending:<limits> 2 std::numeric_limits::max
 include/crucible/canopy/Crdt.h replace_pending:<limits> 1 std::numeric_limits::min
 include/crucible/canopy/Crdt.h std_entity 4 std::nullopt
 include/crucible/canopy/Crdt.h std_entity 3 std::optional::operator*
+include/crucible/canopy/Crdt.h std_entity 1 std::three_way_comparable
 include/crucible/canopy/Crdt.h std_object 5 std::optional
 include/crucible/canopy/Hlc.h c_library_call 1 clock_gettime
 include/crucible/canopy/Hlc.h c_library_object 1 timespec
@@ -610,7 +612,7 @@ include/crucible/canopy/Plumtree.h std_entity 2 std::span::size
 include/crucible/canopy/Plumtree.h std_object 13 std::expected
 include/crucible/canopy/Plumtree.h std_object 3 std::span
 include/crucible/canopy/Scuttlebutt.h raw_pointer_object 2
-include/crucible/canopy/Scuttlebutt.h replace_pending:<limits> 2 std::numeric_limits::max
+include/crucible/canopy/Scuttlebutt.h replace_pending:<limits> 5 std::numeric_limits::max
 include/crucible/canopy/Scuttlebutt.h std_entity 1 std::basic_string_view
 include/crucible/canopy/Scuttlebutt.h std_entity 1 std::basic_string_view::begin
 include/crucible/canopy/Scuttlebutt.h std_entity 1 std::basic_string_view::empty
@@ -622,6 +624,7 @@ include/crucible/canopy/Scuttlebutt.h std_object 2 std::basic_string_view
 include/crucible/canopy/Scuttlebutt.h std_object 9 std::expected
 include/crucible/canopy/Scuttlebutt.h std_object 2 std::optional
 include/crucible/canopy/Scuttlebutt.h std_object 3 std::span
+include/crucible/canopy/SlotTable.h replace_pending:<limits> 1 std::numeric_limits::max
 include/crucible/canopy/SlotTable.h std_entity 1 std::nullopt
 include/crucible/canopy/SlotTable.h std_entity 1 std::span
 include/crucible/canopy/SlotTable.h std_object 1 std::optional
@@ -631,7 +634,7 @@ include/crucible/canopy/Swim.h std_entity 3 std::nullopt
 include/crucible/canopy/Swim.h std_object 7 std::expected
 include/crucible/canopy/Swim.h std_object 2 std::optional
 include/crucible/canopy/Swim.h std_object 3 std::span
-include/crucible/canopy/VectorClock.h replace_pending:<limits> 1 std::numeric_limits::max
+include/crucible/canopy/VectorClock.h replace_pending:<limits> 2 std::numeric_limits::max
 include/crucible/canopy/VectorClock.h std_entity 2 std::__atomic_base::compare_exchange_weak
 include/crucible/canopy/VectorClock.h std_entity 2 std::__atomic_base::load
 include/crucible/canopy/VectorClock.h std_entity 1 std::in_place
@@ -684,10 +687,11 @@ include/crucible/cntp/Backpressure.h std_entity 2 std::expected::operator*
 include/crucible/cntp/Backpressure.h std_object 1 std::basic_string_view
 include/crucible/cntp/Backpressure.h std_object 9 std::expected
 include/crucible/cntp/BackpressureRuntime.h raw_pointer_object 3
-include/crucible/cntp/BackpressureRuntime.h replace_pending:<limits> 1 std::numeric_limits::max
+include/crucible/cntp/BackpressureRuntime.h replace_pending:<limits> 2 std::numeric_limits::max
 include/crucible/cntp/BackpressureRuntime.h std_entity 2 std::__atomic_base::compare_exchange_weak
 include/crucible/cntp/BackpressureRuntime.h std_entity 1 std::__atomic_base::fetch_add
 include/crucible/cntp/BackpressureRuntime.h std_entity 3 std::__atomic_base::load
+include/crucible/cntp/BackpressureRuntime.h std_entity 1 std::array
 include/crucible/cntp/BackpressureRuntime.h std_object 2 std::array
 include/crucible/cntp/BackpressureRuntime.h std_object 4 std::atomic
 include/crucible/cntp/BackpressureRuntime.h std_object 6 std::expected
@@ -710,6 +714,7 @@ include/crucible/cntp/CongestionControl.h std_object 14 std::expected
 include/crucible/cntp/ConnectionPool.h std_object 3 std::basic_string_view
 include/crucible/cntp/ConnectionPool.h std_object 5 std::expected
 include/crucible/cntp/ConnectionPoolRuntime.h raw_pointer_object 1
+include/crucible/cntp/ConnectionPoolRuntime.h replace_pending:<limits> 1 std::numeric_limits::max
 include/crucible/cntp/ConnectionPoolRuntime.h std_object 2 std::array
 include/crucible/cntp/ConnectionPoolRuntime.h std_object 3 std::expected
 include/crucible/cntp/ConnectionPoolRuntime.h std_object 1 std::optional
@@ -722,10 +727,10 @@ include/crucible/cntp/Fec.h std_entity 12 std::array::operator[]
 include/crucible/cntp/Fec.h std_entity 1 std::array::size
 include/crucible/cntp/Fec.h std_entity 1 std::as_bytes
 include/crucible/cntp/Fec.h std_entity 1 std::as_writable_bytes
-include/crucible/cntp/Fec.h std_entity 2 std::data
+include/crucible/cntp/Fec.h std_entity 4 std::data
 include/crucible/cntp/Fec.h std_entity 1 std::min
 include/crucible/cntp/Fec.h std_entity 2 std::operator^=
-include/crucible/cntp/Fec.h std_entity 2 std::size
+include/crucible/cntp/Fec.h std_entity 3 std::size
 include/crucible/cntp/Fec.h std_entity 7 std::span::data
 include/crucible/cntp/Fec.h std_entity 3 std::span::empty
 include/crucible/cntp/Fec.h std_entity 1 std::span::operator[]
@@ -737,7 +742,7 @@ include/crucible/cntp/Fec.h std_object 8 std::span
 include/crucible/cntp/Fountain.h c_library_call 1 memcmp
 include/crucible/cntp/Fountain.h c_library_call 3 memcpy
 include/crucible/cntp/Fountain.h raw_pointer_object 3
-include/crucible/cntp/Fountain.h replace_pending:<limits> 1 std::numeric_limits::max
+include/crucible/cntp/Fountain.h replace_pending:<limits> 2 std::numeric_limits::max
 include/crucible/cntp/Fountain.h std_entity 3 std::array::operator[]
 include/crucible/cntp/Fountain.h std_entity 3 std::countr_zero
 include/crucible/cntp/Fountain.h std_entity 1 std::min
@@ -775,9 +780,9 @@ include/crucible/cntp/Integrity.h replace_pending:<limits> 1 std::numeric_limits
 include/crucible/cntp/Integrity.h std_entity 9 std::array::data
 include/crucible/cntp/Integrity.h std_entity 4 std::array::operator[]
 include/crucible/cntp/Integrity.h std_entity 1 std::as_bytes
-include/crucible/cntp/Integrity.h std_entity 1 std::data
+include/crucible/cntp/Integrity.h std_entity 3 std::data
 include/crucible/cntp/Integrity.h std_entity 12 std::rotl
-include/crucible/cntp/Integrity.h std_entity 1 std::size
+include/crucible/cntp/Integrity.h std_entity 2 std::size
 include/crucible/cntp/Integrity.h std_entity 2 std::span::data
 include/crucible/cntp/Integrity.h std_entity 1 std::span::empty
 include/crucible/cntp/Integrity.h std_entity 5 std::span::size
@@ -862,6 +867,7 @@ include/crucible/cntp/dataplane/TcEbpf.h std_entity 1 std::nullopt
 include/crucible/cntp/dataplane/TcEbpf.h std_object 4 std::basic_string_view
 include/crucible/cntp/dataplane/TcEbpf.h std_object 6 std::expected
 include/crucible/cntp/dataplane/TcEbpf.h std_object 1 std::optional
+include/crucible/cntp/dataplane/Xdp.h replace_pending:<limits> 1 std::numeric_limits::max
 include/crucible/cntp/dataplane/Xdp.h std_entity 1 std::as_bytes
 include/crucible/cntp/dataplane/Xdp.h std_entity 1 std::expected
 include/crucible/cntp/dataplane/Xdp.h std_entity 1 std::has_single_bit
@@ -1209,6 +1215,7 @@ include/crucible/mimic/Fence.h raw_pointer_object 1
 include/crucible/mimic/Semaphore.h raw_pointer_object 1
 include/crucible/mimic/Semaphore.h std_entity 1 std::__atomic_base::load
 include/crucible/mimic/Semaphore.h std_entity 1 std::__atomic_base::store
+include/crucible/mimic/Semaphore.h std_entity 1 std::basic_string_view::empty
 include/crucible/mimic/Semaphore.h std_object 5 std::atomic
 include/crucible/mimic/_wip/network/Backend.h std_object 3 std::basic_string_view
 include/crucible/mimic/_wip/network/Backend.h std_object 2 std::expected
@@ -1233,6 +1240,7 @@ include/crucible/observe/Metrics.h std_object 3 std::optional
 include/crucible/observe/MetricsSample.h std_object 1 std::array
 include/crucible/observe/SdcDetect.h c_library_call 1 memcmp
 include/crucible/observe/SdcDetect.h raw_pointer_object 1
+include/crucible/observe/SdcDetect.h replace_pending:<limits> 1 std::numeric_limits::max
 include/crucible/observe/SdcDetect.h std_entity 3 std::addressof
 include/crucible/observe/SdcDetect.h std_entity 1 std::fabs
 include/crucible/observe/SdcDetect.h std_entity 2 std::span
@@ -1352,7 +1360,7 @@ include/crucible/perf/detail/BpfLoader.h std_entity 1 std::basic_string_view::en
 include/crucible/perf/detail/BpfLoader.h std_object 1 std::basic_string
 include/crucible/perf/detail/BpfLoader.h std_object 1 std::basic_string_view
 include/crucible/topology/AsymmetricFailure.h raw_pointer_object 7
-include/crucible/topology/AsymmetricFailure.h std_entity 2 std::addressof
+include/crucible/topology/AsymmetricFailure.h std_entity 3 std::addressof
 include/crucible/topology/AsymmetricFailure.h std_entity 1 std::max
 include/crucible/topology/AsymmetricFailure.h std_entity 1 std::span
 include/crucible/topology/AsymmetricFailure.h std_object 6 std::array
@@ -1361,7 +1369,7 @@ include/crucible/topology/AsymmetricFailure.h std_object 1 std::span
 include/crucible/topology/CongestionTelemetry.h std_object 5 std::expected
 include/crucible/topology/CongestionTelemetry.h std_object 3 std::span
 include/crucible/topology/CongestionTelemetryWorker.h raw_pointer_object 3
-include/crucible/topology/CongestionTelemetryWorker.h std_entity 1 std::addressof
+include/crucible/topology/CongestionTelemetryWorker.h std_entity 2 std::addressof
 include/crucible/topology/CongestionTelemetryWorker.h std_entity 2 std::array
 include/crucible/topology/CongestionTelemetryWorker.h std_entity 2 std::array::operator[]
 include/crucible/topology/CongestionTelemetryWorker.h std_entity 1 std::array::size
@@ -1384,7 +1392,8 @@ include/crucible/topology/Discovery.h std_object 5 std::span
 include/crucible/topology/Health.h c_library_call 1 log
 include/crucible/topology/Health.h raw_pointer_object 10
 include/crucible/topology/Health.h replace_pending:<limits> 10 std::numeric_limits::max
-include/crucible/topology/Health.h std_entity 2 std::addressof
+include/crucible/topology/Health.h std_entity 4 std::addressof
+include/crucible/topology/Health.h std_entity 2 std::begin
 include/crucible/topology/Health.h std_entity 1 std::span
 include/crucible/topology/Health.h std_object 4 std::array
 include/crucible/topology/Health.h std_object 3 std::basic_string_view
@@ -2832,6 +2841,7 @@ test/fixy/hw_axis_pins.h std_entity 1 std::basic_string
 test/fixy/hw_axis_pins.h std_entity 3 std::basic_string::empty
 test/fixy/hw_axis_pins.h std_entity 4 std::basic_string::operator+=
 test/fixy/hw_axis_pins.h std_entity 1 std::basic_string_view
+test/fixy/hw_axis_pins.h std_entity 1 std::basic_string_view::empty
 test/fixy/hw_axis_pins.h std_entity 10 std::operator+
 test/fixy/hw_axis_pins.h std_object 8 std::array
 test/fixy/hw_axis_pins.h std_object 8 std::basic_string
@@ -2862,6 +2872,7 @@ test/fixy/rejections_generated.cpp std_entity 1 std::basic_string_view::size
 test/fixy/rejections_generated.cpp std_entity 4 std::span::size
 test/fixy/rejections_generated.cpp std_object 1 std::array
 test/fixy/rejections_generated.h std_entity 1 std::basic_string_view
+test/fixy/rejections_generated.h std_entity 1 std::basic_string_view::empty
 test/fixy/rejections_generated.h std_entity 1 std::basic_string_view::operator[]
 test/fixy/rejections_generated.h std_entity 1 std::basic_string_view::size
 test/fixy/rejections_generated.h std_entity 4 std::span::size
@@ -3202,7 +3213,7 @@ test/fixy/test_endpoint.cpp std_entity 13 std::pair
 test/fixy/test_endpoint.cpp std_object 16 std::optional
 test/fixy/test_endpoint.cpp std_object 14 std::pair
 test/fixy/test_endpoint.cpp std_object 1 std::tuple
-test/fixy/test_federation.cpp std_entity 2 std::array
+test/fixy/test_federation.cpp std_entity 3 std::array
 test/fixy/test_federation.cpp std_entity 2 std::array::begin
 test/fixy/test_federation.cpp std_entity 2 std::array::end
 test/fixy/test_federation.cpp std_entity 1 std::array::operator[]
@@ -3242,7 +3253,7 @@ test/fixy/test_forgeable_proofs.cpp std_entity 13 __gnu_cxx::__normal_iterator
 test/fixy/test_forgeable_proofs.cpp std_entity 15 __gnu_cxx::__normal_iterator::operator*
 test/fixy/test_forgeable_proofs.cpp std_entity 15 __gnu_cxx::__normal_iterator::operator++
 test/fixy/test_forgeable_proofs.cpp std_entity 15 __gnu_cxx::operator==
-test/fixy/test_forgeable_proofs.cpp std_entity 2 std::array
+test/fixy/test_forgeable_proofs.cpp std_entity 3 std::array
 test/fixy/test_forgeable_proofs.cpp std_entity 1 std::array::begin
 test/fixy/test_forgeable_proofs.cpp std_entity 1 std::array::end
 test/fixy/test_forgeable_proofs.cpp std_entity 2 std::array::operator[]
@@ -3256,6 +3267,8 @@ test/fixy/test_forgeable_proofs.cpp std_entity 1 std::basic_string_view::begin
 test/fixy/test_forgeable_proofs.cpp std_entity 1 std::basic_string_view::empty
 test/fixy/test_forgeable_proofs.cpp std_entity 1 std::basic_string_view::end
 test/fixy/test_forgeable_proofs.cpp std_entity 1 std::basic_string_view::value_type
+test/fixy/test_forgeable_proofs.cpp std_entity 3 std::bit_cast
+test/fixy/test_forgeable_proofs.cpp std_entity 1 std::construct_at
 test/fixy/test_forgeable_proofs.cpp std_entity 5 std::operator+
 test/fixy/test_forgeable_proofs.cpp std_entity 1 std::operator==
 test/fixy/test_forgeable_proofs.cpp std_entity 5 std::span
@@ -3615,7 +3628,7 @@ test/fixy/test_path.cpp std_entity 1 std::expected::operator*
 test/fixy/test_path.cpp std_entity 1 std::expected::operator->
 test/fixy/test_path.cpp std_entity 1 std::filesystem
 test/fixy/test_path.cpp std_entity 1 std::filesystem::operator==
-test/fixy/test_path.cpp std_entity 1 std::filesystem::path
+test/fixy/test_path.cpp std_entity 3 std::filesystem::path
 test/fixy/test_path.cpp std_object 2 std::basic_string
 test/fixy/test_path.cpp std_object 6 std::expected
 test/fixy/test_payload_row.cpp c_library_call 2 fprintf
@@ -4036,6 +4049,7 @@ test/fixy/test_session_handle.cpp c_library_call 37 fprintf
 test/fixy/test_session_handle.cpp c_library_call 37 stderr
 test/fixy/test_session_handle.cpp c_library_call 2 waitpid
 test/fixy/test_session_handle.cpp raw_function_pointer 1
+test/fixy/test_session_handle.cpp raw_new_delete 1 new
 test/fixy/test_session_handle.cpp raw_pointer_object 5
 test/fixy/test_session_handle.cpp replace_pending:std::source_location 1 std::source_location
 test/fixy/test_session_handle.cpp std_entity 1 __gnu_cxx::__normal_iterator
@@ -4205,15 +4219,18 @@ test/fixy/test_session_ownership_attacks.cpp raw_pointer_object 4
 test/fixy/test_session_ownership_attacks.cpp std_entity 4 std::__atomic_base::fetch_add
 test/fixy/test_session_ownership_attacks.cpp std_entity 1 std::__atomic_base::fetch_sub
 test/fixy/test_session_ownership_attacks.cpp std_entity 3 std::__atomic_base::load
+test/fixy/test_session_ownership_attacks.cpp std_entity 1 std::array
 test/fixy/test_session_ownership_attacks.cpp std_entity 4 std::atomic
 test/fixy/test_session_ownership_attacks.cpp std_entity 4 std::atomic::load
 test/fixy/test_session_ownership_attacks.cpp std_entity 6 std::atomic::store
+test/fixy/test_session_ownership_attacks.cpp std_entity 1 std::bit_cast
 test/fixy/test_session_ownership_attacks.cpp std_entity 1 std::chrono::duration::count
 test/fixy/test_session_ownership_attacks.cpp std_entity 1 std::chrono::operator+
 test/fixy/test_session_ownership_attacks.cpp std_entity 1 std::chrono::operator<=>
 test/fixy/test_session_ownership_attacks.cpp std_entity 2 std::chrono::steady_clock::now
 test/fixy/test_session_ownership_attacks.cpp std_entity 28 std::get
 test/fixy/test_session_ownership_attacks.cpp std_entity 1 std::operator>
+test/fixy/test_session_ownership_attacks.cpp std_entity 1 std::optional
 test/fixy/test_session_ownership_attacks.cpp std_entity 6 std::optional::has_value
 test/fixy/test_session_ownership_attacks.cpp std_entity 4 std::optional::operator*
 test/fixy/test_session_ownership_attacks.cpp std_entity 13 std::pair
@@ -4636,6 +4653,7 @@ test/foundation/test_counter_clock_attacks.cpp std_entity 1 std::array
 test/foundation/test_counter_clock_attacks.cpp std_entity 41 std::array::operator[]
 test/foundation/test_counter_clock_attacks.cpp std_entity 2 std::array::size
 test/foundation/test_counter_clock_attacks.cpp std_entity 1 std::array::value_type
+test/foundation/test_counter_clock_attacks.cpp std_entity 1 std::bit_cast
 test/foundation/test_counter_clock_attacks.cpp std_entity 4 std::expected::error
 test/foundation/test_counter_clock_attacks.cpp std_entity 1 std::expected::has_value
 test/foundation/test_counter_clock_attacks.cpp std_entity 1 std::expected::operator->
@@ -5036,6 +5054,7 @@ test/foundation/test_transition.cpp std_entity 1 std::basic_string_view::size
 test/foundation/test_transition.cpp std_entity 1 std::size
 test/foundation/test_transition.cpp std_object 1 std::basic_string_view
 test/layer/admitted_flag_matrix.cpp door_header 1 <contracts> has the door src/foundation/ContractHandler.cpp
+test/layer/admitted_flag_matrix.cpp std_entity 1 std::tuple_size::value
 test/layer/checks/crucible/SingletonInitGraph.cpp std_entity 1 std::tuple
 test/layer/checks/crucible/Types.cpp replace_pending:std::source_location 1 std::source_location::file_name
 test/layer/checks/crucible/Types.cpp std_entity 2 __gnu_cxx::__normal_iterator
@@ -5096,6 +5115,7 @@ test/layer/checks/fixy/FixedArray.cpp std_entity 1 __gnu_cxx::__normal_iterator
 test/layer/checks/fixy/FixedArray.cpp std_entity 1 __gnu_cxx::__normal_iterator::operator*
 test/layer/checks/fixy/FixedArray.cpp std_entity 1 __gnu_cxx::__normal_iterator::operator++
 test/layer/checks/fixy/FixedArray.cpp std_entity 1 __gnu_cxx::operator==
+test/layer/checks/fixy/FixedArray.cpp std_entity 1 std::in_place
 test/layer/checks/fixy/FixedArray.cpp std_entity 1 std::span
 test/layer/checks/fixy/FixedArray.cpp std_entity 1 std::span::begin
 test/layer/checks/fixy/FixedArray.cpp std_entity 1 std::span::end
@@ -5113,6 +5133,7 @@ test/layer/checks/fixy/OwnedRegion.cpp raw_pointer_object 1
 test/layer/checks/fixy/OwnedRegion.cpp std_entity 1 std::array::data
 test/layer/checks/fixy/OwnedRegion.cpp std_entity 1 std::array::size
 test/layer/checks/fixy/OwnedRegion.cpp std_object 1 std::array
+test/layer/checks/fixy/Path.cpp std_entity 1 std::filesystem::path
 test/layer/checks/fixy/Refined.cpp std_entity 1 __gnu_cxx::__normal_iterator
 test/layer/checks/fixy/Refined.cpp std_entity 1 __gnu_cxx::__normal_iterator::operator*
 test/layer/checks/fixy/Refined.cpp std_entity 1 __gnu_cxx::__normal_iterator::operator++
@@ -5129,6 +5150,7 @@ test/layer/checks/fixy/Secret.cpp std_entity 1 __gnu_cxx::__normal_iterator
 test/layer/checks/fixy/Secret.cpp std_entity 1 __gnu_cxx::__normal_iterator::operator*
 test/layer/checks/fixy/Secret.cpp std_entity 1 __gnu_cxx::__normal_iterator::operator++
 test/layer/checks/fixy/Secret.cpp std_entity 1 __gnu_cxx::operator==
+test/layer/checks/fixy/Secret.cpp std_entity 1 std::array
 test/layer/checks/fixy/Secret.cpp std_entity 1 std::vector
 test/layer/checks/fixy/Secret.cpp std_entity 1 std::vector::begin
 test/layer/checks/fixy/Secret.cpp std_entity 1 std::vector::end
@@ -5230,6 +5252,7 @@ test/layer/checks/foundation/effects/Row.cpp std_entity 1 std::vector::end
 test/layer/checks/foundation/effects/Row.cpp std_entity 1 std::vector::push_back
 test/layer/checks/foundation/effects/Row.cpp std_object 1 std::span
 test/layer/checks/foundation/effects/Row.cpp std_object 1 std::vector
+test/layer/checks/foundation/permissions/Permission.cpp raw_new_delete 1 new
 test/layer/checks/foundation/permissions/Permission.cpp std_entity 3 std::get
 test/layer/checks/foundation/permissions/Permission.cpp std_entity 1 std::optional
 test/layer/checks/foundation/permissions/Permission.cpp std_entity 1 std::tuple
@@ -6971,7 +6994,7 @@ test/test_simd.cpp std_entity 1 std::array::value_type
 test/test_simd.cpp std_entity 1 std::construct_at
 test/test_simd.cpp std_entity 1 std::destroy_at
 test/test_simd.cpp std_object 9 std::array
-test/test_singleton_init_graph.cpp std_entity 1 std::tuple
+test/test_singleton_init_graph.cpp std_entity 2 std::tuple
 test/test_sriov.cpp std_entity 1 std::array::operator[]
 test/test_sriov.cpp std_entity 24 std::expected::error
 test/test_sriov.cpp std_entity 11 std::expected::has_value
@@ -7923,7 +7946,7 @@ x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +7 std
 x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +1 std::array::size
 x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +2 std::span
 x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +2 std::span::subspan
-x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +4 std::tuple
+x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +6 std::tuple
 x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +1 std::vector::operator[]
 x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +1 std::vector::resize
 x86_64-debug-asan-bench-fuzz bench/bench_pipeline_dispatch.cpp std_entity +1 std::vector::size

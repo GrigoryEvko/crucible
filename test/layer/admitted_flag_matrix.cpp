@@ -24,9 +24,11 @@
 //
 // The properties hold on x86_64 and on aarch64 Linux with glibc, the two
 // targets of the tree.  The file names standard library entities only in
-// static_assert conditions, in helper types and in helper concepts.  A
-// static_assert makes no object at run time, so the quarantine plugin reads no
-// static_assert condition.
+// static_assert conditions, in helper types and in helper concepts.  The front
+// end evaluates a static_assert at namespace scope outside a template and keeps
+// no tree of it, so the quarantine plugin reads no static_assert condition of
+// this file.  The plugin reads the helper concepts, and the ledger of the
+// ratchet holds each name in them that the rule table does not admit.
 
 #include <bit>
 #include <compare>

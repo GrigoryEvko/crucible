@@ -56,6 +56,7 @@ quarantine system_marked.cpp
 quarantine struct_tree.cpp
 quarantine type_walks.cpp
 quarantine unclosed_region.cpp
+quarantine unevaluated.cpp
 quarantine violations.cpp
 quarantine fixy/
 quarantine foundation/

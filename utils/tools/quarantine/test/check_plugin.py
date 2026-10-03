@@ -740,6 +740,19 @@ LIBRARY_NAMES = (
     ("allocation.cpp", (), 12, "raw_new_delete", "declaration of operator delete"),
     ("outside_user.cpp", (), 9, "c_library_object", "OutsideType (OutsideType)"),
     ("outside_user.cpp", (), 10, "c_library_call", "outside_value"),
+    ("unevaluated.cpp", (), 8, "std_entity", "std::basic_string"),
+    ("unevaluated.cpp", (), 11, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 14, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 17, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 20, "std_entity", "std::basic_string"),
+    ("unevaluated.cpp", (), 23, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 27, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 32, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 38, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 39, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 43, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 46, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 50, "std_entity", "std::vector"),
 )
 # The header of a library outside the source root that no system flag marks.
 # run_library_names writes it in its scratch directory, and each compile of the
@@ -915,10 +928,9 @@ KNOWN_GAPS = (
      "the temporary std::vector goes to a template, whose instantiation the plugin does not read, and the front "
      "end keeps no mark that tells an explicit temporary from an implicit conversion"),
     ("known_gaps.cpp", TEST_RULES, "known_gaps.cpp", 19,
-     "the front end folds the unevaluated operand of sizeof to a constant, and keeps no tree of std::string"),
+     "outside a template, the front end folds the call of strlen in the initializer, the alignof and the noexcept "
+     "to constants while it parses, and keeps no tree of the names"),
     ("known_gaps.cpp", TEST_RULES, "known_gaps.cpp", 21,
-     "the front end folds the call of strlen in the initializer to a constant before the plugin reads it"),
-    ("known_gaps.cpp", TEST_RULES, "known_gaps.cpp", 23,
      "a using-declaration of namespace scope is a binding of the namespace, with no tree that has a location"),
     ("language_gap_user.cpp", HERE / "language.txt", "include/fixy/high/LanguageGap.h", 11,
      "the rule of the language reads each declaration type and each include, and not a call.  An extension needs "

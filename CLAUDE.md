@@ -2969,6 +2969,8 @@ The plugin examines each use at its spelling location. A token that a macro of a
 
 Each header outside the source root is a library header, also a header of a third-party library that `-I` names with no system flag. A class, a function or a variable in the global namespace of such a header is part of the C library for the rule above, and a name in a namespace of it counts as a std name.
 
+An unevaluated operand is code too, and each item of the list above in it is a finding: the operand of `sizeof`, `alignof`, `noexcept` and `decltype`, a type trait, a requires-expression, the condition of a `static_assert` in a template, a concept and a requires-clause. Outside a template, the front end folds an `alignof`, a `noexcept`, a type trait, a requires-expression, a `static_assert` and a constant initializer while it parses, so the plugin cannot see the names in them. `KNOWN_GAPS` of `utils/tools/quarantine/test/check_plugin.py` pins each such gap.
+
 ### Callers of a changed API
 
 This rule applies to a quarantined caller that changes only because a base API changed. In that caller, change only the lines that the API change makes necessary. Such a line can keep a std type or a std name that no base type replaces at this time. The finding count of the file must not increase. The report of the change lists each such line.

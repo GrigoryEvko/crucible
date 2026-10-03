@@ -159,11 +159,20 @@
 //     PLUGIN_FINISH_UNIT, which runs before the end of the assembler output.
 //     A unit that writes no object (-fsyntax-only, -E) has no section.
 //
+// An unevaluated operand makes no object, and each library name in it is a
+// use: the operand of a sizeof, an alignof, a noexcept, a decltype, a type
+// trait and a requires-expression, the condition of a static_assert, the
+// definition of a concept and each requires-clause.  The walk does not read
+// the operand of a reflection, because a query that the front end folds gives
+// a reflection of an entity that the source does not spell.
+//
 // The plugin cannot see what the front end keeps as no tree, or as a tree with
-// no source location: a use in an unevaluated operand, a dependent member of a
-// template and a using-declaration.  The front end folds the initializer of a
-// variable while it parses, when a call in it gives a constant, also a call of
-// a builtin such as strlen.  Such a call is no finding.  The libstdc++
+// no source location: a dependent member of a template and a
+// using-declaration.  Outside a template, the front end folds a constant
+// expression while it parses: an alignof, a noexcept, a type trait, a
+// requires-expression, a static_assert, and the initializer of a variable when
+// a call in it gives a constant, also a call of a builtin such as strlen.
+// Such a use is no finding.  The libstdc++
 // assertions of the Debug, TSan and UBSan-strict presets stop some of these
 // folds, so a call such as std::optional::operator-> in an initializer can be
 // a finding in those presets and not in Release.  A constructor, a destructor
@@ -1100,6 +1109,23 @@ void record_named_entities(tree type, location_t location, const FileEntry* lang
 
 // ── The checks of a declaration ─────────────────────────────────────────
 
+void walk_root(tree* root, location_t location, bool is_pattern);
+
+// The expression of a decltype that TYPE spells at its outer level, through
+// pointers, references and arrays, as a template keeps it.  The expression
+// is an unevaluated operand, and the walk reads its names as a pattern.
+void walk_decltype(tree type, location_t location) {
+    for (int depth = 0; type != NULL_TREE && depth < kTypeDepth; ++depth) {
+        if (TREE_CODE(type) != POINTER_TYPE && TREE_CODE(type) != REFERENCE_TYPE && TREE_CODE(type) != ARRAY_TYPE) {
+            break;
+        }
+        type = TREE_TYPE(type);
+    }
+    if (type != NULL_TREE && TREE_CODE(type) == DECLTYPE_TYPE) {
+        walk_root(&DECLTYPE_TYPE_EXPR(type), location, true);
+    }
+}
+
 // The type of a declaration.  In a quarantined file, each rule of the type
 // applies.  In a file of the language, only the rule of the library types
 // applies: the base holds the raw pointers and the arrays of its families.
@@ -1113,6 +1139,7 @@ void check_object(tree decl, Role role) {
     if (language == nullptr && !is_quarantined(location)) {
         return;
     }
+    walk_decltype(type, location);
     if (language == nullptr && role != Role::return_value) {
         if (TREE_CODE(type) == POINTER_TYPE) {
             bool is_function = FUNC_OR_METHOD_TYPE_P(TREE_TYPE(type));
@@ -1150,6 +1177,7 @@ void check_alias(tree decl) {
     if (aliased == NULL_TREE || (language == nullptr && !is_quarantined(location))) {
         return;
     }
+    walk_decltype(aliased, location);
     record_named_entities(aliased, location, language);
 }
 
@@ -1774,15 +1802,27 @@ tree visit_body_node(tree* node_pointer, int* walk_subtrees, void* data) {
         walk.last = EXPR_LOCATION(node);
     }
     switch (TREE_CODE(node)) {
-        // An unevaluated operand makes no object and calls nothing.
+        // An unevaluated operand makes no object and calls nothing, but each
+        // library name in it is a use of that name.  cp_walk_tree walks the
+        // operand of a sizeof, an alignof, a noexcept, a type trait, a
+        // requires-expression and a static_assert, so the walk continues.  A
+        // sizeof of a type outside a template keeps the type only as the type
+        // of its operand.
         case SIZEOF_EXPR:
-        case ALIGNOF_EXPR:
-        case NOEXCEPT_EXPR:
-        case REQUIRES_EXPR:
-        case TRAIT_EXPR:
-        case REFLECT_EXPR:
-        case STATIC_ASSERT:
+            if (SIZEOF_EXPR_TYPE_P(node)) {
+                check_type_use(TREE_TYPE(TREE_OPERAND(node, 0)), walk.last);
+                *walk_subtrees = 0;
+                return NULL_TREE;
+            }
+            break;
+        // The operand of a decltype is an expression, and cp_walk_tree walks it.
         case DECLTYPE_TYPE:
+            return NULL_TREE;
+        // A reflection is the operand of a query of <meta>.  A query that the
+        // front end folds also gives a reflection, of an entity that the
+        // source does not spell, so the walk reads the query and not its
+        // operand.
+        case REFLECT_EXPR:
             *walk_subtrees = 0;
             return NULL_TREE;
         // The type of an implicit conversion is not a name in the source.
@@ -1908,6 +1948,19 @@ bool is_static_initializer(tree function) {
     return text.rfind("__static_initialization_and_destruction_", 0) == 0 || text == "__tls_init";
 }
 
+// The constraints of the templated entity DECL: the requires-clause of its
+// template head, with each constraint of a template parameter, and its
+// trailing requires-clause.  A constraint is an unevaluated operand, and the
+// walk reads its names as a pattern.
+void walk_constraints(tree decl) {
+    tree info = get_constraints(decl);
+    if (info == NULL_TREE || TREE_CODE(info) != CONSTRAINT_INFO) {
+        return;
+    }
+    walk_root(&CI_TEMPLATE_REQS(info), DECL_SOURCE_LOCATION(decl), true);
+    walk_root(&CI_DECLARATOR_REQS(info), DECL_SOURCE_LOCATION(decl), true);
+}
+
 // The signature, and the body when IS_PATTERN or when the plugin reads it
 // from PLUGIN_PRE_GENERICIZE.  The body of a static initializer has places in
 // each file, so it gets no location gate.
@@ -1929,6 +1982,9 @@ void walk_body(tree function, bool is_pattern) {
         return;
     }
     check_signature(function, is_pattern);
+    if (is_pattern) {
+        walk_constraints(function);
+    }
     if (DECL_LANG_SPECIFIC(function) != nullptr && DECL_DEFAULTED_FN(function)) {
         return;
     }
@@ -2020,10 +2076,16 @@ void walk_class(tree type, bool is_pattern) {
                 break;
         }
     }
-    // A friend that a class template defines is not a member.
+    // A friend that a class template defines is not a member, and the list of
+    // a class template also holds each of its static_asserts.  The condition
+    // of a static_assert is an unevaluated operand.
     if (is_pattern) {
         for (tree entry = CLASSTYPE_DECL_LIST(main_type); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
             tree befriended = TREE_VALUE(entry);
+            if (befriended != NULL_TREE && TREE_CODE(befriended) == STATIC_ASSERT) {
+                walk_root(&STATIC_ASSERT_CONDITION(befriended), STATIC_ASSERT_SOURCE_LOCATION(befriended), true);
+                continue;
+            }
             if (TREE_PURPOSE(entry) != NULL_TREE || befriended == NULL_TREE) {
                 continue;
             }
@@ -2113,18 +2175,25 @@ void walk_template(tree template_decl) {
     check_template_defaults(template_decl);
     switch (TREE_CODE(result)) {
         case TYPE_DECL:
+            walk_constraints(result);
             if (is_class_template) {
                 walk_class(TREE_TYPE(result), true);
             } else {
                 check_alias(result);
             }
             break;
+        // walk_body reads the constraints of a function.
         case FUNCTION_DECL:
             walk_body(result, true);
             break;
         case VAR_DECL:
+            walk_constraints(result);
             check_object(result, Role::variable);
             walk_initializer(result, true);
+            break;
+        // The definition of a concept is a constraint, an unevaluated operand.
+        case CONCEPT_DECL:
+            walk_root(&DECL_INITIAL(result), DECL_SOURCE_LOCATION(result), true);
             break;
         default:
             break;

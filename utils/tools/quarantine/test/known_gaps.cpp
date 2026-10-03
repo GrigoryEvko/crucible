@@ -16,8 +16,6 @@ void gap_sink(T&& value) {
 
 void gap_temporary() { gap_sink(std::vector<int>{1, 2}); }
 
-unsigned long gap_size() { return sizeof(std::string); }
-
-unsigned long gap_folded = std::strlen("abc");
+unsigned long gap_folded = std::strlen("abc") + alignof(std::string) + noexcept(std::string{});
 
 using std::swap;
