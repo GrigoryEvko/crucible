@@ -9,8 +9,8 @@
 int main() {
     namespace fa = ::foundation::algebra;
     namespace fl = ::foundation::algebra::lattices;
-    using Authority = fa::detail::self_test_authority;
-    fa::Graded<fa::ModalityKind::Absolute, fl::DetSafeLattice, int> const read{
-        Authority::key(), 5, fl::DetSafeTier::NonDeterministicSyscall};
-    return read.peek();
+    // The size is the one use of the type.  The template head refuses the
+    // type, so a construction would give a second error for the same cause.
+    static_cast<void>(sizeof(fa::Graded<fa::ModalityKind::Absolute, fl::DetSafeLattice, int>));
+    return 0;
 }

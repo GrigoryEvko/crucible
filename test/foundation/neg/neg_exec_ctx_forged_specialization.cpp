@@ -28,7 +28,9 @@ using ForgedRow = fe::Row<fe::Effect::Init, fe::Effect::Alloc, fe::Effect::IO>;
 }  // namespace
 
 int main() {
-    constexpr fe::ExecCtx<fe::Init, ForgedRow> forged{};
+    // The variable is not constexpr: a constexpr variable gives a second
+    // error for the same failed construction.
+    fe::ExecCtx<fe::Init, ForgedRow> const forged{};
     static_cast<void>(forged);
     return 0;
 }

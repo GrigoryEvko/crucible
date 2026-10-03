@@ -26,7 +26,7 @@ int main() {
     using read_view_type_erased_fixture::Region;
     auto lent = ::foundation::permissions::with_read_view(
         ::foundation::permissions::mint_permission_root<Region>(),
-        [](auto const& view) { return std::function<void()>{[&view] { (void)view; }}; });
+        [](auto const& view) { return std::function<void()>{[&view]() noexcept { (void)view; }}; });
     (void)lent;
     return 0;
 }

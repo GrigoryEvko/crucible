@@ -3,15 +3,13 @@
 // unique_target reads a relation as a function of its From.  A From with
 // no edge has no target, and the relation must not answer for it.
 // Without the check that counts the edges from the type, the search finds
-// no edge and falls through to void, and the alias below names void as
-// the target of Stored.
+// no edge and falls through to void, and the requirement below accepts
+// void as the target of Stored.
 //
 // Expected diagnostic: the refusal in unique_target that asks for an edge
 // from the type.
 
 #include <foundation/diag/FailClosed.h>
-
-#include <type_traits>
 
 namespace {
 
@@ -25,7 +23,9 @@ namespace ingest {
 inline constexpr ffc::edge<Raw, Checked> raw_to_checked{};
 }  // namespace ingest
 
-[[maybe_unused]] constexpr bool target_is_void = std::is_void_v<ffc::unique_target_t<^^ingest, Stored>>;
+// The requirement is the one use of the target, so the refusal is the only
+// error.
+static_assert(requires { typename ffc::unique_target_t<^^ingest, Stored>; });
 
 }  // namespace
 

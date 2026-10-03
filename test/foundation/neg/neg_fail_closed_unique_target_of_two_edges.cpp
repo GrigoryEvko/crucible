@@ -11,8 +11,6 @@
 
 #include <foundation/diag/FailClosed.h>
 
-#include <type_traits>
-
 namespace {
 
 namespace ffc = ::foundation::fail_closed;
@@ -26,7 +24,9 @@ inline constexpr ffc::edge<Raw, Checked> raw_to_checked{};
 inline constexpr ffc::edge<Raw, Stored> raw_to_stored{};
 }  // namespace ingest
 
-[[maybe_unused]] constexpr bool target_is_checked = std::is_same_v<ffc::unique_target_t<^^ingest, Raw>, Checked>;
+// The requirement is the one use of the target, so the refusal is the only
+// error.
+static_assert(requires { typename ffc::unique_target_t<^^ingest, Raw>; });
 
 }  // namespace
 

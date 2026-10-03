@@ -18,8 +18,9 @@ namespace {
 
 void witness_nullary() noexcept {}
 
-// Declared and never used, for the reason given in the sibling fixture.
-using no_such_param = ::foundation::reflect::param_type_t<&witness_nullary, 0>;
+// The requirement is the one use of the parameter type, for the reason
+// given in the sibling fixture.
+static_assert(requires { typename ::foundation::reflect::param_type_t<&witness_nullary, 0>; });
 
 }  // namespace
 

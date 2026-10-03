@@ -7,8 +7,10 @@
 // fault in front of the walk, through a variable template of the detail
 // namespace.  No such template exists, and the gate refuses the closure.
 //
-// Expected diagnostic: the static assertion of the stable name refuses
-// the closure type, because the closure has no declared name.
+// Expected diagnostics: the parser refuses the specialization, because
+// the namespace declares no such template.  The static assertion of the
+// stable name refuses the closure type, because the closure has no
+// declared name.
 
 #include <foundation/reflect/Hash.h>
 
@@ -19,7 +21,7 @@ using Closure = decltype(closure);
 
 template <>
 inline constexpr foundation::reflect::detail::identity_verdict
-    foundation::reflect::detail::identity_verdict_of<Closure> = {};
+    foundation::reflect::detail::identity_verdict_of<Closure> = foundation::reflect::detail::identity_verdict();
 
 [[maybe_unused]] inline constexpr std::uint64_t forged_id = foundation::reflect::stable_type_id<Closure>;
 

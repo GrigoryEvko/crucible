@@ -11,29 +11,11 @@
 neg_atom_verdict_forged | an error that no regex matches: expected initializer before ‘<’ token
 neg_budgeted_axes_swapped | an error that no regex matches: no matching function for call to ‘fixy::Budgeted<int>::Budgeted(<brace-enclosed initializer list>)’
 neg_endpoint_payload_row_outside_ctx | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘foundation::effects::Computation<foundation::e...
-neg_exec_ctx_forged_specialization | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘const foundation::effects::ExecCtx<foundation:...
-neg_fail_closed_admits_of_a_class | an error that no regex matches: ‘{anonymous}::NotARelation::raw_to_checked’ defined but not used [-Werror=unused-const-variable=]
-neg_fail_closed_unique_target_of_two_edges | an error that no regex matches: template argument 1 is invalid
-neg_fail_closed_unique_target_without_an_edge | an error that no regex matches: template argument 1 is invalid
 neg_fn_ctad_attempt | an error that no regex matches: no matching function for call to ‘fixy::fn<fixy::detail::ctad::fn_ctad_blocked_use_mint_fn>::fn(<brace-enclosed initializer list>)’
-neg_graded_stored_grade_in_a_stronger_up_chain | an error that no regex matches: scalar object ‘read’ requires one element in initializer
-neg_graded_stored_grade_in_an_unstated_order | an error that no regex matches: scalar object ‘graded’ requires one element in initializer
-neg_graded_use_counter_dual | an error that no regex matches: scalar object ‘measured’ requires one element in initializer
-neg_graded_version_counter_in_product | an error that no regex matches: scalar object ‘value’ requires one element in initializer
-neg_graded_version_counter_numeric_order | an error that no regex matches: scalar object ‘stale’ requires one element in initializer
 neg_handle_traits_consumer_value_on_non_handle | an error that no regex matches: expected type-specifier before ‘::’ token
 neg_handle_traits_swmr_writer_value_on_non_writer | an error that no regex matches: expected type-specifier before ‘::’ token
-neg_happens_before_merge_overflows | an error that no regex matches: ‘__builtin_trap()’ is not a constant expression
-neg_lattice_bottom_above_top | an error that no regex matches: expected type-specifier
-neg_perm_set_union_shared_tag | an error that no regex matches: expected type-specifier
-neg_permission_make_unique | an error that no regex matches: use of deleted function ‘static void foundation::permissions::Permission<Tag, Brand>::operator delete(void*) [with Tag = {anonymous}::Region; Brand...
-neg_permission_row_edge_for_a_derived_tag | an error that no regex matches: expected type-specifier before ‘::’ token
-neg_permission_row_member_for_a_derived_tag | an error that no regex matches: expected type-specifier before ‘::’ token
-neg_permission_row_not_a_row | an error that no regex matches: template argument 1 is invalid
-neg_permission_row_t_undeclared_tag | an error that no regex matches: template argument 1 is invalid
 neg_pipeline_dag_cyclic_graph | an error that no regex matches: expected type-specifier
 neg_pipeline_dag_unreachable_stage | an error that no regex matches: expected type-specifier
-neg_read_view_body_returns_a_type_erased_callable | an error that no regex matches: noexcept-expression evaluates to ‘false’ because of a call to ‘main()::<lambda(const auto:6&)>::<lambda()>’ [-Werror=noexcept]
 neg_refined_class_in_the_relation | 20 errors that no regex matches, the first: non-constant condition for static assertion
 neg_refined_implication_cycle_edges | 24 errors that no regex matches, the first: non-constant condition for static assertion
 neg_refined_implication_cycle_ring | 26 errors that no regex matches, the first: non-constant condition for static assertion
@@ -66,9 +48,6 @@ neg_sess_strip_peers_two_peers | an error that no regex matches: expected type-s
 neg_sess_unregistered_combinator_empty_choice | an error that no regex matches: non-constant condition for static assertion
 neg_sess_unregistered_combinator_involutive | 2 errors that no regex matches, the first: template argument 1 is invalid
 neg_session_payload_declared_template_behind_pointer | an error that no regex matches: static assertion failed
-neg_signature_param_index_on_nullary | an error that no regex matches: expected type-specifier before ‘::’ token
-neg_signature_param_index_overflow | an error that no regex matches: expected type-specifier before ‘::’ token
-neg_stable_identity_verdict_forged | 2 errors that no regex matches, the first: expected initializer before ‘<’ token
 neg_stage_shape_input_value_on_non_stage | an error that no regex matches: expected type-specifier before ‘::’ token
 neg_stage_shape_output_value_on_non_stage | an error that no regex matches: expected type-specifier before ‘::’ token
 neg_substrate_session_payload_row_outside_ctx | an error that no regex matches: could not convert ‘<brace-enclosed initializer list>()’ from ‘<brace-enclosed initializer list>’ to ‘foundation::effects::Computation<foundation::e...

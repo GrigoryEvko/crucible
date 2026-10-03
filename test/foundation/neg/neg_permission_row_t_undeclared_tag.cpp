@@ -10,10 +10,12 @@
 
 #include <foundation/permissions/Permission.h>
 
-#include <type_traits>
-
 namespace {
 struct Undeclared {};
 }  // namespace
 
-int main() { return static_cast<int>(std::is_void_v<::foundation::permissions::permission_row_t<Undeclared>>); }
+// The requirement is the one use of the row, so the refusal is the only
+// error.
+static_assert(requires { typename ::foundation::permissions::permission_row_t<Undeclared>; });
+
+int main() { return 0; }

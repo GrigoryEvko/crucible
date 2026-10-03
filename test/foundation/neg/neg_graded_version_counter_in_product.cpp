@@ -12,8 +12,8 @@ int main() {
     namespace fa = ::foundation::algebra;
     namespace fl = ::foundation::algebra::lattices;
     using HalfTurned = fl::ProductLattice<fl::DualLattice<fl::EpochLattice>, fl::GenerationLattice>;
-    using Authority = fa::detail::self_test_authority;
-    fa::Graded<fa::ModalityKind::Absolute, HalfTurned, int> const value{
-        Authority::key(), 1, {fl::EpochLattice::bottom(), fl::GenerationLattice::bottom()}};
-    return value.peek();
+    // The size is the one use of the type.  The template head refuses the
+    // type, so a construction would give a second error for the same cause.
+    static_cast<void>(sizeof(fa::Graded<fa::ModalityKind::Absolute, HalfTurned, int>));
+    return 0;
 }

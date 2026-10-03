@@ -16,6 +16,8 @@ struct shard {
 };
 }  // namespace user_code
 
-using laundered_row = ::foundation::permissions::permission_row_t<user_code::shard>;
+// The requirement is the one use of the row, so the refusal is the only
+// error.
+static_assert(requires { typename ::foundation::permissions::permission_row_t<user_code::shard>; });
 
 int main() { return 0; }

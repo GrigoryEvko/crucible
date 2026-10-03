@@ -18,7 +18,7 @@ struct Raw {};
 struct Checked {};
 
 struct NotARelation {
-    static constexpr ffc::edge<Raw, Checked> raw_to_checked{};
+    [[maybe_unused]] static constexpr ffc::edge<Raw, Checked> raw_to_checked{};
 };
 
 [[maybe_unused]] constexpr auto answer = ffc::admits(^^NotARelation, ^^Raw, ^^Checked);

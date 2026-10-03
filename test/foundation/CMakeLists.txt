@@ -382,7 +382,8 @@ foundation_neg_compile_test(neg_happens_before_slot_out_of_range
 foundation_neg_compile_test(neg_happens_before_merge_overflows
   "non-constant condition for static assertion"
   "in .constexpr. expansion of .foundation::algebra::lattices::HappensBeforeLattice<2>::causal_merge\\(local, received, 0\\)."
-  "in .constexpr. expansion of .foundation::algebra::lattices::HappensBeforeLattice<2>::successor_at\\(")
+  "in .constexpr. expansion of .foundation::algebra::lattices::HappensBeforeLattice<2>::successor_at\\("
+  "foundation/algebra/lattices/HappensBefore\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 # A clock that exists cannot be edited in place.
 foundation_neg_compile_test(neg_happens_before_clock_is_private
   "is private within this context"
@@ -1223,7 +1224,8 @@ foundation_neg_compile_test(neg_permission_heap_new
   "a Permission lives in a scope or a handle, not on the heap")
 foundation_neg_compile_test(neg_permission_make_unique
   "use of deleted function .static void\\* foundation::permissions::Permission<Tag, Brand>::operator new\\(std::size_t\\)"
-  "a Permission lives in a scope or a handle, not on the heap")
+  "a Permission lives in a scope or a handle, not on the heap"
+  "use of deleted function .static void foundation::permissions::Permission<Tag, Brand>::operator delete\\(void\\*\\)")
 foundation_neg_compile_test(neg_shared_permission_guard_heap_new
   "use of deleted function .static void\\* foundation::permissions::SharedPermissionGuard<Tag, Brand>::operator new\\(std::size_t\\)"
   "a SharedPermissionGuard lives in the scope that holds its share, not on the heap")
@@ -1765,6 +1767,7 @@ foundation_neg_compile_test(neg_stable_id_refuses_a_union_value
 # The gate calls the identity walk itself, so a translation unit cannot
 # put a verdict of no fault in front of the walk for a closure type.
 foundation_neg_compile_test(neg_stable_identity_verdict_forged
+  "neg_stable_identity_verdict_forged\\.cpp:[0-9]+:[0-9]+: error: expected initializer before .<. token"
   "static assertion failed: foundation::reflect: a stable id refuses the type const<lambda\\(\\)>"
   "because its part <lambda\\(\\)> has no declared name")
 

@@ -11,7 +11,10 @@ struct Beta {};
 
 namespace perm = foundation::permissions;
 
-using Overlap =
-    perm::perm_set_union_t<perm::PermSet<user_code::Alpha, user_code::Beta>, perm::PermSet<user_code::Alpha>>;
+// The requirement is the one use of the union, so the refusal is the only
+// error.
+static_assert(requires {
+    typename perm::perm_set_union_t<perm::PermSet<user_code::Alpha, user_code::Beta>, perm::PermSet<user_code::Alpha>>;
+});
 
 int main() { return 0; }

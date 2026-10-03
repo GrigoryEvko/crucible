@@ -14,10 +14,11 @@ namespace {
 
 void witness_binary(int, double) noexcept {}
 
-// The alias is declared and never used.  Naming it in an expression
-// would fail a second time, at the use, and a fixture that rejects at
-// two of its own lines cannot say which rejection its regexes witnessed.
-using past_the_end = ::foundation::reflect::param_type_t<&witness_binary, 2>;
+// The requirement is the one use of the parameter type.  An alias
+// declaration gives a second error at the declaration, and a second use
+// of the type gives a second error at the use.  A fixture that rejects at
+// two places cannot say which rejection its regexes witnessed.
+static_assert(requires { typename ::foundation::reflect::param_type_t<&witness_binary, 2>; });
 
 }  // namespace
 

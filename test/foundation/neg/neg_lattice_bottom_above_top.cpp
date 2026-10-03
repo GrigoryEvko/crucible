@@ -7,6 +7,7 @@
 namespace fa = ::foundation::algebra;
 using Exchanged = fa::detail::ExchangedBounds;
 
-using Carrier = fa::Graded<fa::ModalityKind::Absolute, Exchanged, int>;
+// The size is the one use of the carrier, so the refusal is the only error.
+[[maybe_unused]] constexpr auto carrier_size = sizeof(fa::Graded<fa::ModalityKind::Absolute, Exchanged, int>);
 
 int main() { return 0; }
