@@ -165,12 +165,21 @@ public:
 
     // Order matches the starter table's declaration order and is stable for
     // the lifetime of the registry.
+    //
+    // The view points into a member of the registry.  A temporary registry
+    // releases that member at the end of the statement, and the deleted
+    // `const&&` twin refuses the read.
     template <typename CallerRow = pure_projection_row>
         requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
-    [[nodiscard, gnu::pure]] Entries entries() const noexcept CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard, gnu::pure]] Entries entries() const& noexcept {
         return ::fixy::mint_tagged<::fixy::tags::source::JsonRegistry>(
             std::span<const Entry>{entries_.data(), STARTER_COUNT});
     }
+
+    template <typename CallerRow = pure_projection_row>
+        requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
+    auto entries() const&& = delete("a temporary registry releases its entries at the end of the statement. Use a "
+                                    "registry that has a name");
 
     [[nodiscard, gnu::const]] static constexpr std::size_t size() noexcept { return STARTER_COUNT; }
 

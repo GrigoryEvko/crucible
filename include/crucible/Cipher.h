@@ -399,7 +399,13 @@ public:
 
     [[nodiscard]] ContentHash head() const { return head_; }
     [[nodiscard]] bool empty() const { return !head_; }
-    [[nodiscard]] const std::string& root() const CRUCIBLE_LIFETIMEBOUND { return root_str(); }
+
+    // The text of the root is a member of the store.  The deleted `const&&`
+    // twin refuses a read of the root of a temporary store, because the
+    // store releases that text at the end of the statement.
+    [[nodiscard]] const std::string& root() const& { return root_str(); }
+    auto root() const&& = delete("a temporary store releases its root at the end of the statement. Read the root "
+                                 "of a store that has a name");
 
     // The content hash that names a session-event batch and its index
     // line.  Anyone who writes the store can compute it, so it proves

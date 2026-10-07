@@ -70,9 +70,7 @@ struct Expr {
 
     [[nodiscard]] double as_float() const { return std::bit_cast<double>(payload); }
 
-    [[nodiscard]] const char* as_symbol_name() const noexcept CRUCIBLE_LIFETIMEBOUND {
-        return std::bit_cast<const char*>(payload);
-    }
+    [[nodiscard]] const char* as_symbol_name() const noexcept { return std::bit_cast<const char*>(payload); }
 
     [[nodiscard, gnu::pure]] constexpr bool is_integer() const { return flags & ExprFlags::IS_INTEGER; }
     [[nodiscard, gnu::pure]] constexpr bool is_real() const { return flags & ExprFlags::IS_REAL; }
@@ -96,7 +94,7 @@ struct Expr {
 
     [[nodiscard, gnu::pure]] constexpr bool is_zero_int() const { return op == Op::INTEGER && payload == 0; }
 
-    [[nodiscard]] const Expr* arg(uint8_t i) const CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] const Expr* arg(uint8_t i) const {
         // The first guard is not redundant with the second. On a node with no
         // children the subtraction below wraps to the largest uint8_t and the
         // range check then admits every index.

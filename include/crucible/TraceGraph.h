@@ -79,10 +79,11 @@ struct TraceGraph {
     // arena.  The owner of the log can release the run after the build.
     ::fixy::WriteOnce<uint64_t> max_meta_end = ::fixy::mint_write_once<uint64_t>();
 
-    [[nodiscard, gnu::pure]] const Edge* fwd_begin(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND {
+    // The arrays are in the arena, and not in this struct.
+    [[nodiscard, gnu::pure]] const Edge* fwd_begin(OpIndex i) const noexcept {
         return fwd_edges + fwd_offsets[checked_index_(i)];
     }
-    [[nodiscard, gnu::pure]] const Edge* fwd_end(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard, gnu::pure]] const Edge* fwd_end(OpIndex i) const noexcept {
         return fwd_edges + fwd_offsets[checked_index_(i) + 1];
     }
     [[nodiscard, gnu::pure]] uint32_t out_degree(OpIndex i) const noexcept {
@@ -90,10 +91,10 @@ struct TraceGraph {
         return fwd_offsets[index + 1] - fwd_offsets[index];
     }
 
-    [[nodiscard, gnu::pure]] const Edge* rev_begin(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard, gnu::pure]] const Edge* rev_begin(OpIndex i) const noexcept {
         return rev_edges + rev_offsets[checked_index_(i)];
     }
-    [[nodiscard, gnu::pure]] const Edge* rev_end(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard, gnu::pure]] const Edge* rev_end(OpIndex i) const noexcept {
         return rev_edges + rev_offsets[checked_index_(i) + 1];
     }
     [[nodiscard, gnu::pure]] uint32_t in_degree(OpIndex i) const noexcept {
@@ -101,9 +102,7 @@ struct TraceGraph {
         return rev_offsets[index + 1] - rev_offsets[index];
     }
 
-    [[nodiscard, gnu::pure]] const TraceEntry& op(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND {
-        return ops[checked_index_(i)];
-    }
+    [[nodiscard, gnu::pure]] const TraceEntry& op(OpIndex i) const noexcept { return ops[checked_index_(i)]; }
 
     // The precondition refuses a graph with no ops, where the fold
     // legitimately produces a zero hash. A caller that tolerates that
@@ -126,10 +125,15 @@ private:
     }
 };
 
-[[nodiscard]] inline TraceGraph* alloc_trace_graph(::foundation::effects::Alloc a, Arena& arena) noexcept
-    CRUCIBLE_LIFETIMEBOUND {
+[[nodiscard]] inline TraceGraph* alloc_trace_graph(::foundation::effects::Alloc a,
+                                                   Arena& arena CRUCIBLE_LIFETIMEBOUND) noexcept {
     return ::new(arena.alloc_obj<TraceGraph>(a)) TraceGraph{};
 }
+
+// The graph is in the arena, and a temporary arena releases it at the end of
+// the statement.  This twin refuses a temporary arena.
+TraceGraph* alloc_trace_graph(::foundation::effects::Alloc, Arena&&) =
+    delete("a temporary arena releases the graph at the end of the statement. Use an arena that has a name");
 
 // Counting sort into both adjacency arrays, linear in ops plus edges. The
 // caller owns the graph struct. Only the arrays inside it are allocated here.

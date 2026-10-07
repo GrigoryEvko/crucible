@@ -454,4 +454,9 @@ using ValidDrainCount = ::fixy::Refined<::fixy::bounded_above<TraceRing::CAPACIT
     return ::fixy::mint_tagged<::fixy::tags::vessel_trust::FromPytorch>(&e);
 }
 
+// The tagged pointer points at the entry.  The lifetime of a temporary entry
+// stops at the end of the statement, and this twin refuses it.
+TraceRing::FromPytorchEntryPtr mint_ffi_entry(const TraceRing::Entry&&) =
+    delete("the lifetime of a temporary entry stops at the end of the statement. Tag an entry that has a name");
+
 }  // namespace crucible

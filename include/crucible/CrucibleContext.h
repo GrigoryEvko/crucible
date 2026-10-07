@@ -115,15 +115,26 @@ struct CrucibleContext {
     }
 
     // Binds one of the operation's tensors to its slot in the memory plan.
-    [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
+    //
+    // Each pointer points into the pool, and the pool is a member of this
+    // context.  A temporary context releases its pool at the end of the
+    // statement.  A deleted `const&&` twin refuses each call on a temporary
+    // context.
+    [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j) const& {
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
         return engine_.output_ptr(j);
     }
 
-    [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
+    void* output_ptr(uint16_t) const&& =
+        delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
+
+    [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j) const& {
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
         return engine_.input_ptr(j);
     }
+
+    void* input_ptr(uint16_t) const&& =
+        delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
     // Safe to call part-way through an iteration.
     [[nodiscard]] bool switch_region(const RegionNode* alt, uint32_t div_pos) CRUCIBLE_NO_THREAD_SAFETY {
@@ -203,15 +214,21 @@ struct CrucibleContext {
         return advance_(schema_hash, shape_hash);
     }
 
-    [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j, CompiledView const&) const CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j, CompiledView const&) const& {
         auto av = engine_.active_view_();
         return engine_.output_ptr(j, av);
     }
 
-    [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j, CompiledView const&) const CRUCIBLE_LIFETIMEBOUND {
+    void* output_ptr(uint16_t, CompiledView const&) const&& =
+        delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
+
+    [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j, CompiledView const&) const& {
         auto av = engine_.active_view_();
         return engine_.input_ptr(j, av);
     }
+
+    void* input_ptr(uint16_t, CompiledView const&) const&& =
+        delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
     CRUCIBLE_INLINE void register_external(SlotId sid, ::fixy::NonNull<void*> ptr, CompiledView const&) {
         auto pv = pool_.initialized_view_();
@@ -220,10 +237,16 @@ struct CrucibleContext {
 
     [[nodiscard]] uint32_t compiled_iterations() const { return compiled_iterations_.get(); }
     [[nodiscard]] uint32_t diverged_count() const { return diverged_count_.get(); }
-    [[nodiscard]] const RegionNode* active_region() const CRUCIBLE_LIFETIMEBOUND { return active_region_.value(); }
+    // The Vigil owns the region, and this context only points at it.  The
+    // pointer does not point into this context, and it has no twin.
+    [[nodiscard]] const RegionNode* active_region() const { return active_region_.value(); }
 
-    [[nodiscard]] const ReplayEngine& engine() const CRUCIBLE_LIFETIMEBOUND { return engine_; }
-    [[nodiscard]] const PoolAllocator& pool() const CRUCIBLE_LIFETIMEBOUND { return pool_; }
+    [[nodiscard]] const ReplayEngine& engine() const& { return engine_; }
+    const ReplayEngine& engine() const&& =
+        delete("a temporary context releases its engine at the end of the statement. Use a context that has a name");
+    [[nodiscard]] const PoolAllocator& pool() const& { return pool_; }
+    const PoolAllocator& pool() const&& =
+        delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
 private:
     // The bitset below is sized at this bound, so a plan with more slots than

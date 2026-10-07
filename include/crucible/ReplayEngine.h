@@ -142,8 +142,9 @@ struct ReplayEngine {
         return ReplayStatus::MATCH;
     }
 
-    // The pointer for one of the last matched operation's outputs.
-    [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
+    // The pointer for one of the last matched operation's outputs.  It points
+    // into the pool, and the engine does not own the pool.
+    [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j) const {
         CRUCIBLE_PRE(current_ != nullptr);
         CRUCIBLE_PRE(current_->output_slot_ids != nullptr);
         // The count guard is not redundant with the range check: at a count of
@@ -162,7 +163,7 @@ struct ReplayEngine {
     }
 
     // The same for one of the inputs.
-    [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j) const {
         CRUCIBLE_PRE(current_ != nullptr);
         CRUCIBLE_PRE(current_->input_slot_ids != nullptr);
         CRUCIBLE_PRE(current_->num_inputs > 0u);
@@ -174,7 +175,8 @@ struct ReplayEngine {
         return result;
     }
 
-    [[nodiscard]] const TraceEntry& current_entry() const CRUCIBLE_LIFETIMEBOUND {
+    // The entry is in the region, and the engine only points at it.
+    [[nodiscard]] const TraceEntry& current_entry() const {
         // Debug-only: current_ is null only before the first advance
         // returns MATCH, which is a caller-sequencing mistake rather than
         // untrusted input. The dereference on the next line faults on its
@@ -238,13 +240,9 @@ struct ReplayEngine {
         return advance(schema_hash, shape_hash);
     }
 
-    [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j, ActiveView const&) const CRUCIBLE_LIFETIMEBOUND {
-        return output_ptr(j);
-    }
+    [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j, ActiveView const&) const { return output_ptr(j); }
 
-    [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j, ActiveView const&) const CRUCIBLE_LIFETIMEBOUND {
-        return input_ptr(j);
-    }
+    [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j, ActiveView const&) const { return input_ptr(j); }
 
     CRUCIBLE_INLINE void reset(ActiveView const&) { reset(); }
 

@@ -439,15 +439,26 @@ public:
     // after dispatch_op returned COMPILED with a matching or complete
     // status, which is what the minted view's precondition checks.  The
     // context proves that the caller holds this Vigil's producer claim.
-    [[nodiscard]] void* output_ptr(VigilFgCtx const& fg, uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
+    //
+    // Each pointer and each reference that the members that follow return
+    // points into a member of this Vigil.  A temporary Vigil releases its
+    // members at the end of the statement.  A deleted twin refuses each call
+    // on a temporary Vigil.
+    [[nodiscard]] void* output_ptr(VigilFgCtx const& fg, uint16_t j) const& {
         auto compiled_view = ctx_.mint_compiled_view(fg);
         return ctx_.output_ptr(j, compiled_view);
     }
 
-    [[nodiscard]] void* input_ptr(VigilFgCtx const& fg, uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
+    void* output_ptr(VigilFgCtx const&, uint16_t) const&& =
+        delete("a temporary Vigil releases its pool at the end of the statement. Use a Vigil that has a name");
+
+    [[nodiscard]] void* input_ptr(VigilFgCtx const& fg, uint16_t j) const& {
         auto compiled_view = ctx_.mint_compiled_view(fg);
         return ctx_.input_ptr(j, compiled_view);
     }
+
+    void* input_ptr(VigilFgCtx const&, uint16_t) const&& =
+        delete("a temporary Vigil releases its pool at the end of the statement. Use a Vigil that has a name");
 
     void register_external(VigilFgCtx const& fg, SlotId sid, ::fixy::NonNull<void*> ptr) {
         auto compiled_view = ctx_.mint_compiled_view(fg);
@@ -456,22 +467,30 @@ public:
 
     [[nodiscard]] uint32_t compiled_iterations() const { return ctx_.compiled_iterations(); }
     [[nodiscard]] uint32_t diverged_count() const { return ctx_.diverged_count(); }
-    [[nodiscard]] const CrucibleContext& context() const CRUCIBLE_LIFETIMEBOUND { return ctx_; }
-    [[nodiscard]] const RegionCache& region_cache() const CRUCIBLE_LIFETIMEBOUND { return region_cache_; }
+    [[nodiscard]] const CrucibleContext& context() const& { return ctx_; }
+    const CrucibleContext& context() const&& =
+        delete("a temporary Vigil releases its context at the end of the statement. Use a Vigil that has a name");
+    [[nodiscard]] const RegionCache& region_cache() const& { return region_cache_; }
+    const RegionCache& region_cache() const&& =
+        delete("a temporary Vigil releases its cache at the end of the statement. Use a Vigil that has a name");
 
     // These two hand out the producer surface of the ring and of the
     // metadata log.  A caller that appends through one of them is the
     // producer, so each asks for the context of this Vigil's producer claim,
     // as record_op and dispatch_op do.  No op path calls them, so each also
     // checks the calling thread against the claim at run time.
-    [[nodiscard]] TraceRing& ring(VigilFgCtx const&) CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] TraceRing& ring(VigilFgCtx const&) & {
         CRUCIBLE_FATAL_INVARIANT(producer_claim_.is_claimable_by_caller());
         return *ring_;
     }
-    [[nodiscard]] MetaLog& meta_log(VigilFgCtx const&) CRUCIBLE_LIFETIMEBOUND {
+    TraceRing& ring(VigilFgCtx const&) && =
+        delete("a temporary Vigil releases its ring at the end of the statement. Use a Vigil that has a name");
+    [[nodiscard]] MetaLog& meta_log(VigilFgCtx const&) & {
         CRUCIBLE_FATAL_INVARIANT(producer_claim_.is_claimable_by_caller());
         return *meta_log_;
     }
+    MetaLog& meta_log(VigilFgCtx const&) && =
+        delete("a temporary Vigil releases its log at the end of the statement. Use a Vigil that has a name");
 
     // Counters that any thread can read with no context.  Each value is a
     // snapshot, and it can be stale by the time the caller reads it.

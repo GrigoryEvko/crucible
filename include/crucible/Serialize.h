@@ -756,4 +756,12 @@ template <typename Resolve>
     return deserialize_branch(a, buf, arena, [](MerkleHash) noexcept -> TraceNode* { return nullptr; });
 }
 
+// The twin of the two deserialize_branch overloads above.  The node is in
+// the arena, and a temporary arena releases it at the end of the statement.
+// The deduced parameters hold the other arguments, and no parameter of the
+// twin has a type of the standard library.
+template <class Buffer, class... Rest>
+BranchNode* deserialize_branch(::foundation::effects::Alloc, Buffer&&, Arena&&, Rest&&...) =
+    delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
+
 }  // namespace crucible

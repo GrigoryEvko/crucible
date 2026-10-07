@@ -2581,6 +2581,11 @@ crucible_neg_compile_test(neg_ckernel_singleton_raw_pointer
 crucible_neg_compile_test(neg_ckernel_singleton_cross_tag
   "could not convert .external. from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
   "to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Singleton>.")
+# The readers keep the address of the published table, and the deleted twin
+# of publish_static_ckernel_table refuses a temporary table.
+crucible_neg_compile_test(neg_publish_static_ckernel_table_temporary
+  "use of deleted function .void crucible::publish_static_ckernel_table\\(const StaticCKernelTable&&\\)."
+  "the lifetime of a temporary table stops at the end of the statement")
 
 # SchemaTable::SizeCounter is BoundedMonotonic<uint32_t, SCHEMA_TABLE_CAP>,
 # and the door mint_bounded_monotonic refuses a value past the bound in
@@ -4740,6 +4745,12 @@ crucible_neg_compile_test(neg_alloc_class_heap_at_pool_fence
   "no matching function for call to .hot_path_slot_consumer"
   "the expression .satisfies_v<Slot, foundation::algebra::lattices::AllocClassTag::Pool> \\[with Slot = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::AllocClassLattice::At<foundation::algebra::lattices::AllocClassTag::Heap>, int\\*>\\]. evaluated to .false.")
 
+# An allocation has the lifetime of its arena, and the deleted `&&` twin of
+# each allocating member refuses a call on a temporary arena.
+crucible_neg_compile_test(neg_arena_alloc_on_temporary
+  "use of deleted function .T\\* crucible::Arena::alloc_obj\\(foundation::effects::Alloc\\) && \\[with T = int. foundation::effects::Alloc = foundation::effects::cap::Alloc\\]."
+  "a temporary arena releases this memory at the end of the statement")
+
 # ─── IsCacheableFunction concept rejection ────────────────────────
 # `auto FnPtr` accepts ANY structural NTTP — without the concept
 # fence the dispatcher cache would silently produce nonsense slots
@@ -5174,22 +5185,24 @@ crucible_neg_compile_test(neg_pool_allocator_initialized_view_unbranded_ctx
 crucible_neg_compile_test(neg_pool_allocator_initialized_view_other_brand
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_pool_allocator_initialized_view_other_brand.cpp:15")
+# Each of these members has a deleted `&&` twin.  A call with the wrong
+# context then finds no match, and a note names the refused conversion.
 crucible_neg_compile_test(neg_vigil_output_ptr_unbranded_ctx
-  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "no known conversion for argument 1 from .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_vigil_output_ptr_unbranded_ctx.cpp:11")
 # ring() and meta_log() hand out the producer surface of the ring and of the
 # metadata log, so each asks for the context of the Vigil's producer claim.
 crucible_neg_compile_test(neg_vigil_ring_unbranded_ctx
-  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "no known conversion for argument 1 from .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_vigil_ring_unbranded_ctx.cpp:11")
 crucible_neg_compile_test(neg_vigil_ring_other_brand
-  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "no known conversion for argument 1 from .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_vigil_ring_other_brand.cpp:15")
 crucible_neg_compile_test(neg_vigil_meta_log_unbranded_ctx
-  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "no known conversion for argument 1 from .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_vigil_meta_log_unbranded_ctx.cpp:11")
 crucible_neg_compile_test(neg_vigil_meta_log_other_brand
-  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "no known conversion for argument 1 from .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_vigil_meta_log_other_brand.cpp:15")
 crucible_neg_compile_test(neg_vigil_mint_producer_context_const
   "passing .const crucible::Vigil. as .this. argument discards qualifiers"

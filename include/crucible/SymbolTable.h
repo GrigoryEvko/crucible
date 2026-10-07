@@ -123,7 +123,12 @@ public:
 
     void set_size_like(SymbolId id) { entry_at_mut(id).sym_flags.set(SymFlags::IS_SIZE_LIKE); }
 
-    [[nodiscard]] const SymbolEntry& operator[](SymbolId id) const CRUCIBLE_LIFETIMEBOUND { return entry_at(id); }
+    // The entry is an element of a member of the table.  The deleted
+    // `const&&` twin refuses a read from a temporary table, because the
+    // table releases its entries at the end of the statement.
+    [[nodiscard]] const SymbolEntry& operator[](SymbolId id) const& { return entry_at(id); }
+    const SymbolEntry& operator[](SymbolId) const&& =
+        delete("a temporary table releases its entries at the end of the statement. Use a table that has a name");
 
     [[nodiscard, gnu::pure]] bool has_hint(SymbolId id) const noexcept {
         return entry_at(id).sym_flags.test(SymFlags::HAS_HINT);

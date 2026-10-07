@@ -280,7 +280,7 @@ struct GraphNode {
 
     // The positive-nred precondition is what keeps the size + ndim offset
     // inside the reduction tail instead of one past the array end.
-    [[nodiscard]] const Expr** reduction_ranges() const CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] const Expr** reduction_ranges() const {
         CRUCIBLE_PRE(kind == NodeKind::REDUCTION);
         CRUCIBLE_PRE(::foundation::decide::positive(nred));
         return size + ndim;
@@ -302,13 +302,13 @@ struct GraphNode {
         return kind == NodeKind::EXTERN || kind == NodeKind::TEMPLATE;
     }
 
-    [[nodiscard]] ComputeBody* compute_body() const CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] ComputeBody* compute_body() const {
         CRUCIBLE_PRE(has_compute_body());
         CRUCIBLE_PRE(body != nullptr);
         return static_cast<ComputeBody*>(body);
     }
 
-    [[nodiscard]] ExternInfo* extern_info() const CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] ExternInfo* extern_info() const {
         CRUCIBLE_PRE(has_extern_info());
         CRUCIBLE_PRE(body != nullptr);
         return static_cast<ExternInfo*>(body);
@@ -494,15 +494,25 @@ public:
         CRUCIBLE_POST(0, output_slots_[node_id.raw()] != nullptr);
     }
 
-    [[nodiscard]] const SlotId* input_slots(NodeId node_id) const CRUCIBLE_LIFETIMEBOUND {
+    // The arena of the graph holds each slot list.  A temporary graph
+    // releases its arena at the end of the statement.  A deleted `const&&`
+    // twin refuses each read from a temporary graph, here and in the members
+    // that follow.
+    [[nodiscard]] const SlotId* input_slots(NodeId node_id) const& {
         CRUCIBLE_PRE(node_id.raw() < num_nodes_.get());
         return input_slots_[node_id.raw()];
     }
 
-    [[nodiscard]] const SlotId* output_slots(NodeId node_id) const CRUCIBLE_LIFETIMEBOUND {
+    const SlotId* input_slots(NodeId) const&& =
+        delete("a temporary graph releases its arena at the end of the statement. Use a graph that has a name");
+
+    [[nodiscard]] const SlotId* output_slots(NodeId node_id) const& {
         CRUCIBLE_PRE(node_id.raw() < num_nodes_.get());
         return output_slots_[node_id.raw()];
     }
+
+    const SlotId* output_slots(NodeId) const&& =
+        delete("a temporary graph releases its arena at the end of the statement. Use a graph that has a name");
 
     // Scans every live node, patches its inputs array and adjusts the use
     // counts on both nodes.
@@ -768,29 +778,40 @@ public:
         return live_count;
     }
 
-    [[nodiscard, gnu::pure]] GraphNode* node(NodeId id) const noexcept CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard, gnu::pure]] GraphNode* node(NodeId id) const& noexcept {
         CRUCIBLE_PRE(id.raw() < num_nodes_.get());
         return nodes_[id.raw()];
     }
 
-    [[nodiscard, gnu::pure]] GraphNode* node(uint32_t id) const noexcept CRUCIBLE_LIFETIMEBOUND {
+    GraphNode* node(NodeId) const&& =
+        delete("a temporary graph releases its arena at the end of the statement. Use a graph that has a name");
+
+    [[nodiscard, gnu::pure]] GraphNode* node(uint32_t id) const& noexcept {
         CRUCIBLE_PRE(id < num_nodes_.get());
         return nodes_[id];
     }
 
+    GraphNode* node(uint32_t) const&& =
+        delete("a temporary graph releases its arena at the end of the statement. Use a graph that has a name");
+
     [[nodiscard, gnu::pure]] uint32_t num_nodes() const noexcept { return num_nodes_.get(); }
     [[nodiscard, gnu::pure]] uint32_t num_graph_inputs() const noexcept { return num_inputs_; }
     [[nodiscard, gnu::pure]] uint32_t num_graph_outputs() const noexcept { return num_outputs_; }
-    [[nodiscard, gnu::pure]] const NodeId* graph_input_ids() const noexcept CRUCIBLE_LIFETIMEBOUND {
-        return input_ids_;
-    }
-    [[nodiscard, gnu::pure]] const NodeId* graph_output_ids() const noexcept CRUCIBLE_LIFETIMEBOUND {
-        return output_ids_;
-    }
+    [[nodiscard, gnu::pure]] const NodeId* graph_input_ids() const& noexcept { return input_ids_; }
+    const NodeId* graph_input_ids() const&& =
+        delete("a temporary graph releases its arena at the end of the statement. Use a graph that has a name");
+    [[nodiscard, gnu::pure]] const NodeId* graph_output_ids() const& noexcept { return output_ids_; }
+    const NodeId* graph_output_ids() const&& =
+        delete("a temporary graph releases its arena at the end of the statement. Use a graph that has a name");
 
-    [[nodiscard, gnu::pure]] ExprPool* pool() const noexcept CRUCIBLE_LIFETIMEBOUND { return pool_; }
-    [[nodiscard, gnu::pure]] SymbolTable* tab() const noexcept CRUCIBLE_LIFETIMEBOUND { return tab_; }
-    [[nodiscard]] Arena& arena() noexcept CRUCIBLE_LIFETIMEBOUND { return arena_; }
+    // The caller owns the pool and the symbol table, and the graph only
+    // points at them.  These two pointers do not point into the graph, and
+    // they have no twin.
+    [[nodiscard, gnu::pure]] ExprPool* pool() const noexcept { return pool_; }
+    [[nodiscard, gnu::pure]] SymbolTable* tab() const noexcept { return tab_; }
+    [[nodiscard]] Arena& arena() & noexcept { return arena_; }
+    Arena& arena() && =
+        delete("a temporary graph releases its arena at the end of the statement. Use a graph that has a name");
 
 private:
     GraphNode* alloc_node_(::foundation::effects::Alloc a) {

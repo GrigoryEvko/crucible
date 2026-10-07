@@ -260,6 +260,13 @@ inline void publish_static_ckernel_table(const StaticCKernelTable& table CRUCIBL
     detail::static_ckernel_table_.store(&table, std::memory_order_release);
 }
 
+// The lifetime of a temporary table stops at the end of the statement, but
+// each reader of the process keeps its address.  This twin refuses a
+// temporary table.
+void publish_static_ckernel_table(const StaticCKernelTable&&) = delete(
+    "the lifetime of a temporary table stops at the end of the statement, but the readers keep its address. "
+    "Publish a table with static storage duration");
+
 // OPAQUE when no adapter has published, which is every build that links no
 // framework adapter, and OPAQUE when the published array does not name this
 // schema. Both answers are the same answer the run-time table gives on a

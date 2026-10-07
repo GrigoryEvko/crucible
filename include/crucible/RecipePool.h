@@ -58,9 +58,11 @@ public:
     // Two calls return the same pointer exactly when their arguments agree
     // on every field but the hash. The hash of the argument is ignored: the
     // pool computes and owns that field.
+    //
+    // The recipe is in the arena, and not in the pool.
     [[nodiscard, gnu::returns_nonnull]] const NumericalRecipe* intern(::foundation::effects::Alloc a,
                                                                       const NumericalRecipe& fields)
-        CRUCIBLE_LIFETIMEBOUND CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_NO_THREAD_SAFETY {
         const RecipeHash h = compute_recipe_hash(fields);
         const uint64_t hv = h.raw();
 

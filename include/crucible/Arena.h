@@ -51,9 +51,15 @@ public:
     // gnu::alloc_size and gnu::alloc_align cannot be applied here: they take
     // the index of a scalar size_t parameter, and both parameters are class
     // wrappers. The size invariant is carried by the parameter type instead.
+    //
+    // An allocation has the lifetime of its arena, and a temporary arena
+    // releases its memory at the end of the statement.  Each allocating
+    // member is `&`-qualified, and its deleted `&&` twin refuses a call on a
+    // temporary arena.  No compiler of this tree reads a lifetime attribute,
+    // but each compiler reads this pair.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::malloc, gnu::returns_nonnull]]
     CRUCIBLE_INLINE void* alloc(::foundation::effects::Alloc, ::fixy::Positive<size_t> size,
-                                ::fixy::PowerOfTwo<size_t> align) noexcept CRUCIBLE_LIFETIMEBOUND {
+                                ::fixy::PowerOfTwo<size_t> align) & noexcept {
         const size_t s = size.value();
         const size_t a = align.value();
         // The parameter types already hold these. Restating them as
@@ -73,34 +79,45 @@ public:
         return alloc_slow_(s, a);
     }
 
-    [[nodiscard, gnu::malloc, gnu::returns_nonnull]] CRUCIBLE_INLINE void* alloc(::foundation::effects::Alloc a,
-                                                                                 ::fixy::Positive<size_t> size) noexcept
-        CRUCIBLE_LIFETIMEBOUND {
+    void* alloc(::foundation::effects::Alloc, ::fixy::Positive<size_t>, ::fixy::PowerOfTwo<size_t>) && =
+        delete("a temporary arena releases this memory at the end of the statement. Use an arena that has a name");
+
+    [[nodiscard, gnu::malloc, gnu::returns_nonnull]] CRUCIBLE_INLINE void*
+    alloc(::foundation::effects::Alloc a, ::fixy::Positive<size_t> size) & noexcept {
         return alloc(a, size, ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(std::max_align_t)}));
     }
+
+    void* alloc(::foundation::effects::Alloc, ::fixy::Positive<size_t>) && =
+        delete("a temporary arena releases this memory at the end of the statement. Use an arena that has a name");
 
     // Returns storage only. A T that needs construction must be
     // placement-new'd by the caller.
     template <typename T>
-    [[nodiscard, gnu::returns_nonnull]] CRUCIBLE_INLINE T* alloc_obj(::foundation::effects::Alloc a) noexcept
-        CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard, gnu::returns_nonnull]] CRUCIBLE_INLINE T* alloc_obj(::foundation::effects::Alloc a) & noexcept {
         static_assert(sizeof(T) > 0, "alloc_obj<T> requires complete T");
         static_assert(std::has_single_bit(alignof(T)), "alignof(T) must be a power of two");
         return static_cast<T*>(alloc(a, ::fixy::mint_refined<::fixy::positive>(size_t{sizeof(T)}),
                                      ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(T)})));
     }
 
+    template <typename T>
+    T* alloc_obj(::foundation::effects::Alloc) && =
+        delete("a temporary arena releases this memory at the end of the statement. Use an arena that has a name");
+
     // An overflowing element count saturates to SIZE_MAX, which makes the
     // eventual malloc fail and abort rather than wrap to a small block.
     template <typename T>
-    [[nodiscard]] CRUCIBLE_INLINE T* alloc_array(::foundation::effects::Alloc a, size_t n) noexcept
-        CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] CRUCIBLE_INLINE T* alloc_array(::foundation::effects::Alloc a, size_t n) & noexcept {
         if (n == 0) [[unlikely]]
             return nullptr;
         const size_t nbytes = ::foundation::sat::mul_sat(n, sizeof(T));
         return static_cast<T*>(alloc(a, ::fixy::mint_refined<::fixy::positive>(nbytes),
                                      ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(T)})));
     }
+
+    template <typename T>
+    T* alloc_array(::foundation::effects::Alloc, size_t) && =
+        delete("a temporary arena releases this memory at the end of the statement. Use an arena that has a name");
 
     // A caller that already knows the count is nonzero uses this instead of
     // guarding a call to alloc_array. Splitting the guard between caller and
@@ -109,13 +126,16 @@ public:
     // paired with null.
     template <typename T>
     [[nodiscard, gnu::returns_nonnull]] CRUCIBLE_INLINE T* alloc_array_nonzero(::foundation::effects::Alloc a,
-                                                                               size_t n) noexcept
-        CRUCIBLE_LIFETIMEBOUND {
+                                                                               size_t n) & noexcept {
         CRUCIBLE_PRE(::foundation::decide::positive(n));
         const size_t nbytes = ::foundation::sat::mul_sat(n, sizeof(T));
         return static_cast<T*>(alloc(a, ::fixy::mint_refined<::fixy::positive>(nbytes),
                                      ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(T)})));
     }
+
+    template <typename T>
+    T* alloc_array_nonzero(::foundation::effects::Alloc, size_t) && =
+        delete("a temporary arena releases this memory at the end of the statement. Use an arena that has a name");
 
     // The pinned variants exist alongside the raw ones rather than replacing
     // them: only a call site that wants the allocation tier fixed in the type
@@ -123,24 +143,37 @@ public:
     // else.
     template <typename T>
     [[nodiscard]] CRUCIBLE_INLINE ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>
-    alloc_obj_pinned(::foundation::effects::Alloc a) noexcept CRUCIBLE_LIFETIMEBOUND {
+    alloc_obj_pinned(::foundation::effects::Alloc a) & noexcept {
         return ::fixy::mint_band<::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>>(alloc_obj<T>(a));
     }
 
     template <typename T>
+    ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*> alloc_obj_pinned(::foundation::effects::Alloc) && =
+        delete("a temporary arena releases this memory at the end of the statement. Use an arena that has a name");
+
+    template <typename T>
     [[nodiscard]] CRUCIBLE_INLINE ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>
-    alloc_array_pinned(::foundation::effects::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND {
+    alloc_array_pinned(::foundation::effects::Alloc a, size_t n) & noexcept {
         return ::fixy::mint_band<::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>>(alloc_array<T>(a, n));
     }
 
     template <typename T>
+    ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*> alloc_array_pinned(::foundation::effects::Alloc, size_t) && =
+        delete("a temporary arena releases this memory at the end of the statement. Use an arena that has a name");
+
+    template <typename T>
     [[nodiscard]] CRUCIBLE_INLINE ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>
-    alloc_array_nonzero_pinned(::foundation::effects::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND {
+    alloc_array_nonzero_pinned(::foundation::effects::Alloc a, size_t n) & noexcept {
         CRUCIBLE_PRE(::foundation::decide::positive(n));
         return ::fixy::mint_band<::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>>(alloc_array_nonzero<T>(a, n));
     }
 
-    [[nodiscard]] const char* copy_string(::foundation::effects::Alloc a, const char* src) CRUCIBLE_LIFETIMEBOUND {
+    template <typename T>
+    ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*> alloc_array_nonzero_pinned(::foundation::effects::Alloc,
+                                                                                      size_t) && =
+        delete("a temporary arena releases this memory at the end of the statement. Use an arena that has a name");
+
+    [[nodiscard]] const char* copy_string(::foundation::effects::Alloc a, const char* src) & {
         if (src == nullptr) return nullptr;
         const size_t len = std::strlen(src) + 1;
         auto* dst = static_cast<char*>(alloc(a, ::fixy::mint_refined<::fixy::positive>(len),
@@ -148,6 +181,12 @@ public:
         std::memcpy(dst, src, len);
         return dst;
     }
+
+    // The twin deduces the type of the source, and it declares no raw
+    // pointer parameter.
+    template <typename Source>
+    const char* copy_string(::foundation::effects::Alloc, Source&&) && =
+        delete("a temporary arena releases this memory at the end of the statement. Use an arena that has a name");
 
     // Counts the full size of every block, including the whole of a block
     // that was sized for one oversized request, and subtracts only the unused

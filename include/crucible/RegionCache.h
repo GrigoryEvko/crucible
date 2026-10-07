@@ -104,9 +104,11 @@ struct RegionCache {
     // goes through the slot's own pointer rather than through a flag written
     // at insert time, so a region whose plan is built after it was cached
     // becomes eligible on its own.
+    //
+    // The Vigil owns each region, and the cache only points at it.
     [[nodiscard]] const RegionNode* find_alternate(uint32_t pos, SchemaHash schema, ShapeHash shape,
-                                                   const RegionNode* exclude = nullptr) const CRUCIBLE_LIFETIMEBOUND
-    CRUCIBLE_NO_THREAD_SAFETY {
+                                                   const RegionNode* exclude = nullptr) const
+        CRUCIBLE_NO_THREAD_SAFETY {
         for (uint32_t i = 0; i < count_.get(); i++) {
             const uint32_t idx = head_.index_back(i);
 
@@ -123,7 +125,7 @@ struct RegionCache {
         return nullptr;
     }
 
-    [[nodiscard]] const RegionNode* find(ContentHash hash) const CRUCIBLE_LIFETIMEBOUND CRUCIBLE_NO_THREAD_SAFETY {
+    [[nodiscard]] const RegionNode* find(ContentHash hash) const CRUCIBLE_NO_THREAD_SAFETY {
         for (uint32_t i = 0; i < count_.get(); i++) {
             const uint32_t idx = head_.index_back(i);
             if (content_hashes_[idx] == hash) return regions_[idx].try_get();

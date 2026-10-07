@@ -168,35 +168,35 @@ struct TraceEntry {
     SlotId* input_slot_ids = nullptr;
     SlotId* output_slot_ids = nullptr;
 
-    [[nodiscard]] ::fixy::Borrowed<const TensorMeta, TraceEntry> input_span() const CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] ::fixy::Borrowed<const TensorMeta, TraceEntry> input_span() const {
         return input_metas ? ::fixy::Borrowed<const TensorMeta, TraceEntry>{input_metas, num_inputs}
                            : ::fixy::Borrowed<const TensorMeta, TraceEntry>{};
     }
-    [[nodiscard]] ::fixy::Borrowed<TensorMeta, TraceEntry> input_span() CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] ::fixy::Borrowed<TensorMeta, TraceEntry> input_span() {
         return input_metas ? ::fixy::Borrowed<TensorMeta, TraceEntry>{input_metas, num_inputs}
                            : ::fixy::Borrowed<TensorMeta, TraceEntry>{};
     }
-    [[nodiscard]] ::fixy::Borrowed<const TensorMeta, TraceEntry> output_span() const CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] ::fixy::Borrowed<const TensorMeta, TraceEntry> output_span() const {
         return output_metas ? ::fixy::Borrowed<const TensorMeta, TraceEntry>{output_metas, num_outputs}
                             : ::fixy::Borrowed<const TensorMeta, TraceEntry>{};
     }
-    [[nodiscard]] ::fixy::Borrowed<TensorMeta, TraceEntry> output_span() CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] ::fixy::Borrowed<TensorMeta, TraceEntry> output_span() {
         return output_metas ? ::fixy::Borrowed<TensorMeta, TraceEntry>{output_metas, num_outputs}
                             : ::fixy::Borrowed<TensorMeta, TraceEntry>{};
     }
-    [[nodiscard]] ::fixy::Borrowed<const int64_t, TraceEntry> scalar_span() const CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] ::fixy::Borrowed<const int64_t, TraceEntry> scalar_span() const {
         return scalar_args ? ::fixy::Borrowed<const int64_t, TraceEntry>{scalar_args, num_scalar_args}
                            : ::fixy::Borrowed<const int64_t, TraceEntry>{};
     }
-    [[nodiscard]] ::fixy::Borrowed<const OpIndex, TraceEntry> trace_index_span() const CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] ::fixy::Borrowed<const OpIndex, TraceEntry> trace_index_span() const {
         return input_trace_indices ? ::fixy::Borrowed<const OpIndex, TraceEntry>{input_trace_indices, num_inputs}
                                    : ::fixy::Borrowed<const OpIndex, TraceEntry>{};
     }
-    [[nodiscard]] ::fixy::Borrowed<const SlotId, TraceEntry> input_slot_span() const CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] ::fixy::Borrowed<const SlotId, TraceEntry> input_slot_span() const {
         return input_slot_ids ? ::fixy::Borrowed<const SlotId, TraceEntry>{input_slot_ids, num_inputs}
                               : ::fixy::Borrowed<const SlotId, TraceEntry>{};
     }
-    [[nodiscard]] ::fixy::Borrowed<const SlotId, TraceEntry> output_slot_span() const CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] ::fixy::Borrowed<const SlotId, TraceEntry> output_slot_span() const {
         return output_slot_ids ? ::fixy::Borrowed<const SlotId, TraceEntry>{output_slot_ids, num_outputs}
                                : ::fixy::Borrowed<const SlotId, TraceEntry>{};
     }
@@ -395,7 +395,8 @@ struct LoopNode : TraceNode {
     float epsilon = 0.0f;  // convergence threshold, UNTIL only
     float measured_body_ms = 0.0f;
 
-    [[nodiscard]] std::span<const FeedbackEdge> feedback_span() const CRUCIBLE_LIFETIMEBOUND {
+    // The edges are in the arena, and not in the node.
+    [[nodiscard]] std::span<const FeedbackEdge> feedback_span() const {
         return feedback_edges ? std::span{feedback_edges, num_feedback} : std::span<const FeedbackEdge>{};
     }
 
@@ -717,6 +718,14 @@ private:
     return node;
 }
 
+// The twin of the three make_region overloads above.  The node is in the
+// arena, and a temporary arena releases it at the end of the statement.  The
+// pack holds the other arguments, and the twin declares no raw pointer
+// parameter.
+template <class... Rest>
+RegionNode* make_region(::foundation::effects::Alloc, Arena&&, Rest&&...) =
+    delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
+
 [[nodiscard]] inline TraceNode* make_terminal(::foundation::effects::Alloc a, Arena& arena) noexcept {
     auto* node = new(arena.alloc_obj<TraceNode>(a)) TraceNode{};
     node->kind = TraceNodeKind::TERMINAL;
@@ -787,6 +796,13 @@ private:
     CRUCIBLE_POST(node, node->repeat_count == repeat_count);
     return node;
 }
+
+// The twin of make_loop above.  The node is in the arena, and a temporary
+// arena releases it at the end of the statement.  The pack holds the other
+// arguments, and the twin declares no raw pointer parameter.
+template <class... Rest>
+LoopNode* make_loop(::foundation::effects::Alloc, Arena&&, Rest&&...) =
+    delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
 
 // Children are recomputed first, because a node's hash folds in the hashes of
 // its arms, its body and its continuation.

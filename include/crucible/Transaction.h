@@ -284,14 +284,21 @@ public:
     }
 
     // Not const: the caller may need to change the transaction it returns.
-    [[nodiscard]] Transaction* active(Owner const&) CRUCIBLE_LIFETIMEBOUND { return active_tx_.value(); }
+    //
+    // The transaction is a slot of the ring, and the ring is a member of this
+    // log.  A temporary log releases the ring at the end of the statement.  A
+    // deleted `&&` twin refuses each call on a temporary log, here and in
+    // previous().
+    [[nodiscard]] Transaction* active(Owner const&) & { return active_tx_.value(); }
+    Transaction* active(Owner const&) && =
+        delete("a temporary log releases its ring at the end of the statement. Use a log that has a name");
 
     // Returns the rollback target, or null when no transaction in the ring is
     // superseded.  The target is the superseded transaction with the newest
     // displacement.  A caller can activate an older transaction after a
     // newer one, so the order of the claims does not give the target.  The
     // scan is O(N) in the ring capacity.
-    [[nodiscard]] Transaction* previous(Owner const&) CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] Transaction* previous(Owner const&) & {
         Transaction* target = nullptr;
         for (typename Ring::size_type i = 0; i < ring_.size(); i++) {
             Transaction& entry = ring_.recent(i);
@@ -314,6 +321,9 @@ public:
         CRUCIBLE_POST(target, target == nullptr || target->displacement_order.get() != 0);
         return target;
     }
+
+    Transaction* previous(Owner const&) && =
+        delete("a temporary log releases its ring at the end of the statement. Use a log that has a name");
 
     [[nodiscard]] uint32_t size(Owner const&) const {
         // The fill saturates at the capacity, which is far below what the

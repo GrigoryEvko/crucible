@@ -210,8 +210,12 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // There is deliberately no non-null promise. An external slot that has not
     // been registered returns null and callers test for it, so promising
     // non-null would make that legitimate path undefined.
+    //
+    // The pool owns its memory and its table, and a temporary pool releases
+    // the two at the end of the statement.  A deleted `const&&` twin refuses
+    // each read from a temporary pool, here and in the members that follow.
     [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline, gnu::assume_aligned(ALIGNMENT)]]
-    inline void* slot_ptr(SlotId sid, InitializedView const&) const noexcept CRUCIBLE_LIFETIMEBOUND {
+    inline void* slot_ptr(SlotId sid, InitializedView const&) const& noexcept {
         // The count guard is not redundant with the range check: at a count of
         // zero the upper bound below underflows to the largest value and the
         // range admits everything. The view already proves the count is
@@ -220,6 +224,9 @@ struct CRUCIBLE_OWNER PoolAllocator {
         CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(sid.raw(), 0u, num_slots_ - 1u));
         return ptr_table_[sid.raw()];
     }
+
+    void* slot_ptr(SlotId, InitializedView const&) const&& =
+        delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
 
     CRUCIBLE_INLINE void register_external(SlotId sid, ::fixy::NonNull<void*> ptr, InitializedView const&) noexcept {
         CRUCIBLE_PRE(num_slots_ > 0u);
@@ -233,14 +240,19 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // the caller owns those on every dereference from then on. The view is
     // required so that the escape is at least gated on the pool being live.
     [[nodiscard, gnu::pure, gnu::returns_nonnull]] CRUCIBLE_INLINE void* const*
-    table(InitializedView const&) const noexcept CRUCIBLE_LIFETIMEBOUND {
+    table(InitializedView const&) const& noexcept {
         // What the view already proves, restated for the optimiser so it
         // matches the non-null promise on the return type.
         [[assume(ptr_table_ != nullptr)]];
         return ptr_table_;
     }
 
-    [[nodiscard, gnu::pure]] void* pool_base() const noexcept CRUCIBLE_LIFETIMEBOUND { return pool_; }
+    void* const* table(InitializedView const&) const&& =
+        delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
+
+    [[nodiscard, gnu::pure]] void* pool_base() const& noexcept { return pool_; }
+    void* pool_base() const&& =
+        delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
     [[nodiscard, gnu::pure]] uint64_t pool_bytes() const noexcept { return pool_bytes_; }
     [[nodiscard, gnu::pure]] uint32_t num_slots() const noexcept { return num_slots_; }
     [[nodiscard, gnu::pure]] uint32_t num_external() const noexcept { return num_external_; }
@@ -256,24 +268,32 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // the pool claim holds either way. The huge-page variant below states the
     // stronger one and fences the small case out with a precondition.
     [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline]]
-    inline ::fixy::alloc_class::Pool<void*> slot_ptr_pinned(SlotId sid, InitializedView const& view) const noexcept
-        CRUCIBLE_LIFETIMEBOUND {
+    inline ::fixy::alloc_class::Pool<void*> slot_ptr_pinned(SlotId sid, InitializedView const& view) const& noexcept {
         return ::fixy::mint_band<::fixy::alloc_class::Pool<void*>>(slot_ptr(sid, view));
     }
 
+    ::fixy::alloc_class::Pool<void*> slot_ptr_pinned(SlotId, InitializedView const&) const&& =
+        delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
+
     // Null when the pool has no bytes, so the caller inspects the result.
     [[nodiscard, gnu::pure]]
-    inline ::fixy::alloc_class::Pool<void*> pool_base_pinned() const noexcept CRUCIBLE_LIFETIMEBOUND {
+    inline ::fixy::alloc_class::Pool<void*> pool_base_pinned() const& noexcept {
         return ::fixy::mint_band<::fixy::alloc_class::Pool<void*>>(pool_);
     }
+
+    ::fixy::alloc_class::Pool<void*> pool_base_pinned() const&& =
+        delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
 
     // The precondition is what makes the stronger claim true: it is exactly
     // the condition under which initialisation chose the huge-page alignment.
     [[nodiscard, gnu::pure]]
-    inline ::fixy::alloc_class::HugePage<void*> pool_base_huge_pinned() const noexcept CRUCIBLE_LIFETIMEBOUND {
+    inline ::fixy::alloc_class::HugePage<void*> pool_base_huge_pinned() const& noexcept {
         CRUCIBLE_PRE(pool_bytes_ >= crucible::warden::kHugePageBytes);
         return ::fixy::mint_band<::fixy::alloc_class::HugePage<void*>>(pool_);
     }
+
+    ::fixy::alloc_class::HugePage<void*> pool_base_huge_pinned() const&& =
+        delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
 
     // Found by argument-dependent lookup from the view factory.
     [[nodiscard]] friend constexpr bool view_ok(PoolAllocator const& p,

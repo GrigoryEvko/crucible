@@ -1011,9 +1011,15 @@ public:
     [[nodiscard]] size_t intern_size() const { return intern_count_.get(); }
     [[nodiscard]] size_t intern_capacity() const { return capacity_.value(); }
     [[nodiscard]] size_t arena_bytes() const { return arena_.total_allocated(); }
-    [[nodiscard]] const char* symbol_name(SymbolId id) const CRUCIBLE_LIFETIMEBOUND {
+
+    // The arena of the pool holds the name.  A temporary pool releases its
+    // arena at the end of the statement, and the deleted `const&&` twin
+    // refuses a read of a name from a temporary pool.
+    [[nodiscard]] const char* symbol_name(SymbolId id) const& {
         return (id.raw() < symbol_names_.size()) ? symbol_names_[id.raw()] : nullptr;
     }
+    const char* symbol_name(SymbolId) const&& =
+        delete("a temporary pool releases its names at the end of the statement. Use a pool that has a name");
 
 private:
     // The cache bounds are inclusive on both ends, so the range size is a
