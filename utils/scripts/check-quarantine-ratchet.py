@@ -121,8 +121,11 @@ WRITE THE LEDGER
     * A file that git reports as moved (`git diff --find-renames HEAD`, after
       `git mv` or `git add`) takes the rows of its old path in each
       configuration.
-    * A file that the tree no longer holds loses its rows in each
-      configuration, because no build compiles it.
+    * A source file that the tree does not hold loses its rows in each
+      configuration, because no build compiles it.  A file of the build
+      directory keeps its rows, because a build of a different configuration
+      can write it.  The check of that build compares those rows as it
+      compares each other row.
     * --add-configuration writes the configuration of the build under its
       name, in place of the keys and rows of a configuration with the same
       name that is not the base.  The first configuration of an empty ledger
@@ -966,11 +969,19 @@ def move_rows(ledger: Ledger, moves: dict[str, str]) -> None:
 
 
 def drop_gone_files(ledger: Ledger, root: Path, counts: Counter[Key]) -> None:
-    """Remove the difference rows of each file that the tree no longer holds, and keep each count at 0 or above."""
+    """Remove the difference rows of each source file that the tree does not hold, and keep each count at 0 or above.
+
+    A file of the build directory (layer_rules.BUILD_PREFIX) is in no source tree.  A write of the base cannot know
+    if a build of a different configuration writes the file.  The rows of the file stay, and the check of that
+    configuration compares them as it compares each other row.  When a build of the configuration does not write the
+    file, its check fails on the row until its own --write removes the row.  Complexity: linear in the difference
+    rows.
+    """
     for table in ledger.deltas.values():
         for key, delta in list(table.items()):
             base = ledger.counts.get(key, 0)
-            if key not in counts and not (root / key[0]).exists():
+            is_source_gone = not key[0].startswith(layer_rules.BUILD_PREFIX) and not (root / key[0]).exists()
+            if key not in counts and is_source_gone:
                 del table[key]
             elif base + delta < 0:
                 table[key] = -base
@@ -988,7 +999,7 @@ build = Path(sys.argv[sys.argv.index("-C") + 1])
 sys.stdout.write((build / "inputs.txt").read_text())
 """
 RULES_TEXT = ("layer base 0 include/fixy/ include/fixy/session/\n"
-              "quarantine include/crucible/\nquarantine src/\nquarantine test/\n")
+              "quarantine include/crucible/\nquarantine src/\nquarantine test/\nquarantine @build/\n")
 HEAD = "# a planted ledger\n"
 STAMP_VALUE = "0123abcd"
 PROBE_REASON = "PROBE: a planted region"
@@ -1357,15 +1368,19 @@ def self_test() -> int:
                and f"It holds {BASE_NAME} on x86-64-" in text, text)
         (scratch.compiler.parent / "native.txt").write_text("znver5\n", encoding="utf-8")
         door = "<sys/socket.h> has the door include/fixy/os/Socket.h"
+        # Only the second configuration writes the generated file.  The tree holds no file test_gone.cpp.
+        generated = (f"{layer_rules.BUILD_PREFIX}gen/table.c", "c_array_object", "")
+        gone = ("test/fixy/test_gone.cpp", "std_entity", "std::swap")
         lines_e = ["quarantine: compiler_builtin include/crucible/Vigil.h:30:7 __builtin_ia32_pause",
-                   f"quarantine: door_header include/fixy/session/Handle.h:5:0 {door}"]
-        scratch.add("e", lines_e)
+                   f"quarantine: door_header include/fixy/session/Handle.h:5:0 {door}",
+                   f"quarantine: c_array_object {generated[0]}:3:1 int [4]"]
+        scratch.add("e", [*lines_e, f"quarantine: std_entity {gone[0]}:2:1 std::swap"])
         status, _, _ = scratch.run(write=True, add_configuration=True)
         release = read_ledger(scratch.ledger)
         expect("--add-configuration writes the differences of a second configuration",
                status == 0 and release.deltas.get(RELEASE_NAME)
                == {("include/crucible/Vigil.h", "compiler_builtin", "__builtin_ia32_pause"): 1,
-                   ("include/fixy/session/Handle.h", "door_header", door): 1}
+                   ("include/fixy/session/Handle.h", "door_header", door): 1, generated: 1, gone: 1}
                and release.configurations[RELEASE_NAME][TIER_KEY].startswith("znver5-"), release.deltas)
         expect("the second configuration passes", scratch.run()[0] == 0)
         (scratch.compiler.parent / "native.txt").write_text("znver3\n", encoding="utf-8")
@@ -1379,8 +1394,14 @@ def self_test() -> int:
         lines_a = scratch.objects["a"][0]
         scratch.add("a", [line for line in lines_a if "memcpy" not in line])
         status, _, _ = scratch.run(write=True)
+        lowered = read_ledger(scratch.ledger).deltas.get(RELEASE_NAME, {})
         expect("a change that lowers a count in each configuration writes only the base rows",
-               status == 0 and read_ledger(scratch.ledger).deltas == release.deltas)
+               status == 0 and {key: delta for key, delta in lowered.items() if key[0] in SOURCES}
+               == {key: delta for key, delta in release.deltas[RELEASE_NAME].items() if key[0] in SOURCES}, lowered)
+        expect("a --write of the base removes the difference row of a source file that the tree does not hold",
+               gone not in lowered, lowered)
+        expect("a --write of the base keeps the difference row of a file that a build of the configuration writes",
+               lowered.get(generated) == 1, lowered)
         scratch.configure(RELEASE_NAME, "Release", "-O1 -march=native -DNDEBUG")
         scratch.add("e", lines_e)
         expect("the second configuration still passes after the base rows fell", scratch.run()[0] == 0,
@@ -1391,7 +1412,15 @@ def self_test() -> int:
                status == 1 and f"{ROW_MARK}{RELEASE_NAME} include/crucible/Vigil.h std_entity +1 std::swap" in text,
                text)
         del scratch.objects["g"]
-        scratch.flush()
+        lines_e = lines_e[:2]
+        scratch.add("e", lines_e)
+        expect("a build of the configuration that does not write the generated file fails on its row",
+               scratch.errors() == [f"{generated[0]} has 0 findings of the kind c_array_object, and the ledger holds "
+                                    f"1"], scratch.errors())
+        status, _, text = scratch.run(write=True)
+        expect("a --write of that configuration removes the row, and the build then passes",
+               status == 0 and generated not in read_ledger(scratch.ledger).deltas.get(RELEASE_NAME, {})
+               and scratch.errors() == [], text)
 
         # A configuration that only CI builds: the check prints its rows, and they go through a log.
         scratch.configure("aarch64-debug-asan", "Debug")
