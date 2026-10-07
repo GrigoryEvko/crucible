@@ -47,9 +47,6 @@ static_assert(sizeof(crucible::perf::TimelineHeader) == 64,
               "TimelineHeader must be exactly one cache line. The events array "
               "starts at offset 64 and the kernel-side layout pins that");
 
-static_assert(crucible::perf::TIMELINE_CAPACITY == 4096, "TIMELINE_CAPACITY mirrors the kernel-side capacity. A "
-                                                         "userspace-only bump is a wire-contract violation");
-
 static_assert(crucible::perf::TIMELINE_MASK == 4095, "TIMELINE_MASK = TIMELINE_CAPACITY - 1 and assumes a power-of-two "
                                                      "capacity, so slot = idx & mask is one bitwise AND");
 

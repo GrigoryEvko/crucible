@@ -20,7 +20,17 @@ WHAT COUNTS AS A PIN
     integer.  The name reaches the declaration of its innermost enclosing
     scope, as the compiler looks it up: a namespace, a class or a function
     body, above or below, at any distance.  A name that a template parameter
-    binds reaches no constant.  An initializer and a literal count as the
+    binds reaches no constant.
+
+    The declaration can be in the file of the pin, or in a header that the
+    pin can see.  The check file test/layer/checks/<layer>/<path>.cpp sees
+    its header include/<layer>/<path>.h.  Each file sees each header of the
+    scope that an #include of its parse tree names, as include/<path> for an
+    angle-bracket path and beside the file for a quoted path.  A header that
+    the file reaches only through another header is not read.  A qualifier
+    that starts with a namespace alias does not resolve.  A constant of
+    a function body or of an unnamed class of a header is local to that
+    header, so no other file sees it.  An initializer and a literal count as the
     same integer through a suffix, a digit separator, a base prefix,
     parentheses, a static_cast, a braced initializer and a builtin-type
     conversion.  A different literal, a derived operand, a call and a
@@ -55,7 +65,8 @@ import re
 import sys
 import tempfile
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -67,6 +78,14 @@ ALLOWLIST = "utils/scripts/derived-pins-allowlist.txt"
 FIXTURE_DIR = re.compile(r"^test/[^/]+_neg/")
 COMPARISONS = frozenset({"=="})
 SEPARATOR = " — "
+# The directory of the check files, and the directory of their headers.
+CHECK_FILES = "test/layer/checks/"
+CHECKED_HEADERS = "include/"
+# The scope parts of a function body and of an unnamed class (scope_of).
+LOCAL_SCOPE_PREFIXES = ("(function@", "(class@")
+
+# A constant: its scope and its name, then each literal value with the file that declares it.
+Constants = dict[tuple[tuple[str, ...], str], set[tuple[int, str]]]
 
 
 def literal_of(node: tsast.Node | None) -> int | None:
@@ -151,9 +170,14 @@ def bound_names(node: tsast.Node) -> set[str]:
     return names
 
 
-def literal_constants(tree: tsast.Tree) -> dict[tuple[tuple[str, ...], str], set[int]]:
-    """Return each constexpr variable of the file whose initializer is an integer literal, by scope and name."""
-    found: dict[tuple[tuple[str, ...], str], set[int]] = defaultdict(set)
+def literal_constants(tree: tsast.Tree, rel: str) -> Constants:
+    """Return each constexpr variable of the file whose initializer is an integer literal, by scope and name.
+
+    Args:
+        tree: The parse tree of the file
+        rel: The path of the file, relative to the scan root, which each value names as its origin
+    """
+    found: Constants = defaultdict(set)
     for node in tree.find("declaration", "field_declaration"):
         if not any(child.text == "constexpr" for child in node.children
                    if child.type in ("type_qualifier", "storage_class_specifier")):
@@ -168,7 +192,44 @@ def literal_constants(tree: tsast.Tree) -> dict[tuple[tuple[str, ...], str], set
             else:
                 continue
             if named is not None and named.type in ("identifier", "field_identifier") and value is not None:
-                found[(scope_of(node), named.text)].add(value)
+                found[(scope_of(node), named.text)].add((value, rel))
+    return found
+
+
+def exported(constants: Constants) -> Constants:
+    """Return the constants of a header that another file can see: each one outside a function body and an
+    unnamed class.  The scope parts of those two name a line of the header, which means nothing in another file."""
+    return {key: values for key, values in constants.items()
+            if not any(part.startswith(LOCAL_SCOPE_PREFIXES) for part in key[0])}
+
+
+def header_of_check_file(rel: str) -> str | None:
+    """Return the header of a check file, test/layer/checks/<layer>/<path>.cpp, or None for another file."""
+    if not rel.startswith(CHECK_FILES) or not rel.endswith(".cpp"):
+        return None
+    return CHECKED_HEADERS + rel[len(CHECK_FILES):-len(".cpp")] + ".h"
+
+
+def included_headers(tree: tsast.Tree, rel: str, root: Path) -> list[str]:
+    """Return each file of the scan root that an #include of the parse tree names, relative to the root.
+
+    An angle-bracket path names include/<path>.  A quoted path names the
+    file beside the including file, and then include/<path>.  A path that
+    names no file of the root is not a header of the scope.
+    """
+    found: list[str] = []
+    for include in tree.find("preproc_include"):
+        target = include.child_by_field("path")
+        if target is None or target.type not in ("system_lib_string", "string_literal"):
+            continue
+        inner = tsast.prose_text(target).strip()[1:-1].strip()
+        places = [f"{CHECKED_HEADERS}{inner}"]
+        if target.type == "string_literal":
+            places.insert(0, (Path(rel).parent / inner).as_posix())
+        for place in places:
+            if (root / place).is_file():
+                found.append(os.path.normpath(place))
+                break
     return found
 
 
@@ -198,30 +259,41 @@ def spelled_name(node: tsast.Node | None) -> tuple[bool, list[str], str] | None:
     return (is_global, qualifier, current.text) if current is not None and current.type == "identifier" else None
 
 
-def lookup(constants: dict[tuple[tuple[str, ...], str], set[int]], node: tsast.Node,
-           spelling: tuple[bool, list[str], str]) -> set[int]:
-    """Return the literal values of the declaration that a name reaches from a node, innermost scope first.
+@dataclass(frozen=True, slots=True)
+class Comparison:
+    """An `==` in a static_assert between a name and an integer literal, with the facts of its lookup."""
 
-    A name that a template parameter binds reaches no constant.
+    row: int
+    is_global: bool
+    qualifier: tuple[str, ...]
+    name: str
+    value: int
+    scope: tuple[str, ...]
+    is_template_parameter: bool
+
+
+def lookup(constants: Constants, comparison: Comparison) -> set[tuple[int, str]]:
+    """Return the values and the origins of the declaration that the name of a comparison reaches.
+
+    The innermost scope comes first.  A name that a template parameter
+    binds reaches no constant.
     """
-    is_global, qualifier, name = spelling
-    if not qualifier and not is_global and name in bound_names(node):
+    if comparison.is_template_parameter:
         return set()
-    scope = scope_of(node)
-    depths = [0] if is_global else range(len(scope), -1, -1)
+    scope = comparison.scope
+    depths = [0] if comparison.is_global else range(len(scope), -1, -1)
     for depth in depths:
-        key = (tuple(scope[:depth]) + tuple(qualifier), name)
+        key = (tuple(scope[:depth]) + comparison.qualifier, comparison.name)
         if key in constants:
             return constants[key]
     return set()
 
 
-def pins(tree: tsast.Tree) -> Iterator[tuple[int, str, int]]:
-    """Yield each vacuous pin of a parsed file, as (row, name, literal).
+def comparisons(tree: tsast.Tree) -> Iterator[Comparison]:
+    """Yield each `==` in a static_assert of a parsed file between a name and an integer literal.
 
     Complexity: linear in the number of nodes of the file.
     """
-    constants = literal_constants(tree)
     for assertion in tree.find("static_assert_declaration"):
         condition = assertion.child_by_field("condition")
         if condition is None:
@@ -234,8 +306,20 @@ def pins(tree: tsast.Tree) -> Iterator[tuple[int, str, int]]:
             left, right = node.child_by_field("left"), node.child_by_field("right")
             for name_side, literal_side in ((left, right), (right, left)):
                 spelling, value = spelled_name(name_side), literal_of(literal_side)
-                if spelling is not None and value is not None and value in lookup(constants, node, spelling):
-                    yield node.start[0], spelling[2], value
+                if spelling is None or value is None:
+                    continue
+                is_global, qualifier, name = spelling
+                is_template_parameter = not qualifier and not is_global and name in bound_names(node)
+                yield Comparison(node.start[0], is_global, tuple(qualifier), name, value, scope_of(node),
+                                 is_template_parameter)
+
+
+def pins(found: Iterable[Comparison], constants: Constants) -> Iterator[tuple[int, str, int, tuple[str, ...]]]:
+    """Yield each vacuous pin of the comparisons, as (row, name, literal, the files that declare the literal)."""
+    for comparison in found:
+        origins = sorted(origin for value, origin in lookup(constants, comparison) if value == comparison.value)
+        if origins:
+            yield comparison.row, comparison.name, comparison.value, tuple(origins)
 
 
 def scope_files(root: Path) -> list[Path]:
@@ -253,23 +337,50 @@ def scope_files(root: Path) -> list[Path]:
     return sorted(found)
 
 
-def scan(root: Path) -> tuple[list[tuple[str, int, str, int]], list[str]]:
+@dataclass(frozen=True, slots=True)
+class FileFacts:
+    """What the scan reads from one file: its constants, the headers that it sees, and its comparisons."""
+
+    constants: Constants
+    headers: tuple[str, ...]
+    comparisons: tuple[Comparison, ...]
+
+
+def scan(root: Path) -> tuple[list[tuple[str, int, str, int, tuple[str, ...]]], list[str]]:
     """Find each vacuous pin in scope.
 
-    Complexity: linear in the total size of the files in scope.
+    The scan reads each file one time.  Then it looks up the name of each
+    comparison in the constants of its file and of the headers that the file
+    sees.  Complexity: linear in the total size of the files in scope, plus
+    the constants of each seen header for each file.
 
     Returns:
-        Each pin as (path, line, name, literal), and each parse failure
+        Each pin as (path, line, name, literal, the files that declare the literal), and each parse failure
     """
-    found: list[tuple[str, int, str, int]] = []
+    facts: dict[str, FileFacts] = {}
     failures: list[str] = []
     for tree in tsast.parse(scope_files(root), strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
         if tree.diagnostic is not None:
             failures.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
             continue
-        found.extend((rel, row + 1, name, value) for row, name, value in sorted(set(pins(tree))))
-    return found, failures
+        headers = included_headers(tree, rel, root)
+        checked = header_of_check_file(rel)
+        if checked is not None:
+            headers.append(checked)
+        facts[rel] = FileFacts(literal_constants(tree, rel), tuple(dict.fromkeys(headers)), tuple(comparisons(tree)))
+    shared = {rel: exported(fact.constants) for rel, fact in facts.items()}
+    found: list[tuple[str, int, str, int, tuple[str, ...]]] = []
+    for rel, fact in facts.items():
+        if not fact.comparisons:
+            continue
+        constants: Constants = defaultdict(set)
+        for source in (fact.constants, *(shared[header] for header in fact.headers if header in shared)):
+            for key, values in source.items():
+                constants[key] |= values
+        found.extend((rel, row + 1, name, value, origins)
+                     for row, name, value, origins in sorted(set(pins(fact.comparisons, constants))))
+    return sorted(found), failures
 
 
 def read_allowlist(path: Path) -> tuple[set[str], list[str]]:
@@ -300,12 +411,12 @@ def check(root: Path) -> int:
     """
     found, failures = scan(root)
     keys, problems = read_allowlist(root / ALLOWLIST)
-    live = {f"{rel}:{name}" for rel, _, name, _ in found}
+    live = {f"{rel}:{name}" for rel, _, name, _, _ in found}
     violations = [pin for pin in found if f"{pin[0]}:{pin[2]}" not in keys]
-    for rel, line, name, value in violations:
-        print(f"DERIVED-PIN violation: {rel}:{line} — `{name}` is pinned against the literal {value} that it was "
-              f"assigned, so the assertion cannot fire.  Derive one side (reflection, tuple_size_v, .size()).  "
-              f"Allowlist key: {rel}:{name}", file=sys.stderr)
+    for rel, line, name, value, origins in violations:
+        print(f"DERIVED-PIN violation: {rel}:{line} — `{name}` is pinned against the literal {value} that "
+              f"{' and '.join(origins)} assigns to it, so the assertion cannot fire.  Derive one side (reflection, "
+              f"tuple_size_v, .size()).  Allowlist key: {rel}:{name}", file=sys.stderr)
     for failure in failures:
         print(f"DERIVED-PIN parse failure: {failure}", file=sys.stderr)
     stale = sorted(keys - live)
@@ -319,6 +430,42 @@ def check(root: Path) -> int:
               "source.", file=sys.stderr)
         return 1
     return 2 if stale or problems else 0
+
+
+# A tree for the pins against a constant of another file.  The function
+# hidden() of Seen.h and the function user() of local_hidden.cpp start on
+# the same row, so their scopes have the same name.
+SEEN_HEADER_TREE = {
+    "include/fixy/Seen.h": ("#pragma once\n"
+                            "namespace fixy::seen_space {\n"
+                            "inline constexpr int seen = 12;\n"
+                            "inline void hidden() { constexpr int local_only = 4; (void)local_only; }\n"
+                            "}\n"),
+    "test/layer/checks/fixy/Seen.cpp": ("// The check file reaches its header with no #include.\n"
+                                        "namespace fixy::seen_space {\n"
+                                        "static_assert(seen == 12);\n"
+                                        "}\n"),
+    "test/includer.cpp": "#include <fixy/Seen.h>\nstatic_assert(fixy::seen_space::seen == 12);\n",
+    "test/quoted/Local.h": "#pragma once\ninline constexpr int seen = 3;\n",
+    "test/quoted/user.cpp": "#include \"Local.h\"\nstatic_assert(seen == 3);\n",
+    "test/not_included.cpp": "static_assert(fixy::seen_space::seen == 12);\n",
+    "test/other_value.cpp": "#include <fixy/Seen.h>\nstatic_assert(fixy::seen_space::seen == 13);\n",
+    "test/local_hidden.cpp": ("#include <fixy/Seen.h>\n"
+                              "namespace fixy::seen_space {\n"
+                              "// The function below starts on the row of hidden() in Seen.h.\n"
+                              "inline void user() { static_assert(local_only == 4); }\n"
+                              "}\n"),
+}
+SEEN_HEADER_PLANTS = (
+    ("test/layer/checks/fixy/Seen.cpp", "a pin in a check file against a constant of its header"),
+    ("test/includer.cpp", "a pin against a constant of a header of an angle-bracket #include"),
+    ("test/quoted/user.cpp", "a pin against a constant of a header of a quoted #include"),
+)
+SEEN_HEADER_CONTROLS = (
+    ("test/not_included.cpp", "a pin against a constant of a header that the file does not include"),
+    ("test/other_value.cpp", "a pin against another literal than the constant of a header"),
+    ("test/local_hidden.cpp", "a pin against a constant of a function body of a header"),
+)
 
 
 def self_test() -> int:
@@ -400,7 +547,7 @@ def self_test() -> int:
             (root / rel).write_text(text, encoding="utf-8")
         found, broken = scan(root)
         keys, _ = read_allowlist(root / ALLOWLIST)
-        reported = {line for rel, line, name, _ in found
+        reported = {line for rel, line, name, _, _ in found
                     if rel == "include/foundation/Planted.h" and f"{rel}:{name}" not in keys}
         for line, (_, caught, label) in enumerate(planted, start=1):
             if caught is True:
@@ -409,8 +556,8 @@ def self_test() -> int:
                 expect(f"not caught: {label}", line not in reported, True)
         expect("nothing else in the planted header is reported",
                reported <= {line for line, (_, caught, _) in enumerate(planted, start=1) if caught}, True)
-        expect("caught: a pin in src/", any(rel == "src/planted.cpp" for rel, _, _, _ in found))
-        expect("not caught: a negative fixture", not any("sample_neg" in rel for rel, _, _, _ in found), True)
+        expect("caught: a pin in src/", any(rel == "src/planted.cpp" for rel, _, _, _, _ in found))
+        expect("not caught: a negative fixture", not any("sample_neg" in rel for rel, _, _, _, _ in found), True)
         expect("the planted tree parses", not broken, True)
 
         def captured(cwd: Path) -> tuple[int, str]:
@@ -440,6 +587,20 @@ def self_test() -> int:
         (root / ALLOWLIST).write_text("include/foundation/Planted.h:allowed — a planted pin\n", encoding="utf-8")
         (root / "src/Broken.cpp").write_text("void f() { g(1) { } }\nstatic_assert(true);\n", encoding="utf-8")
         expect("a file the parser cannot read fails the check", captured(root)[0] == 1)
+    with tempfile.TemporaryDirectory() as work:
+        root = Path(work)
+        for rel, text in SEEN_HEADER_TREE.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding="utf-8")
+        found, broken = scan(root)
+        expect("the tree of the seen headers parses", not broken, True)
+        for rel, label in SEEN_HEADER_PLANTS:
+            expect(f"caught: {label}", any(pin[0] == rel and pin[2] == "seen" for pin in found))
+        for rel, label in SEEN_HEADER_CONTROLS:
+            expect(f"not caught: {label}", not any(pin[0] == rel for pin in found), True)
+        expect("the report of a pin against a constant of a header names the header",
+               any(pin[0] == "test/layer/checks/fixy/Seen.cpp" and pin[4] == ("include/fixy/Seen.h",)
+                   for pin in found))
     if failures:
         print(f"check-derived-pins --self-test: FAILED — {len(failures)} case(s) did not hold")
         return 2

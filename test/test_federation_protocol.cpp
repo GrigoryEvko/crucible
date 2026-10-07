@@ -876,7 +876,6 @@ static void test_constexpr_witnesses() {
 
 static void test_magic_collision_with_cdag() {
     static_assert(fed::FEDERATION_MAGIC == 0x44454643u);
-    static_assert(crucible::CDAG_MAGIC == 0x43444147u);
     static_assert(fed::FEDERATION_MAGIC != crucible::CDAG_MAGIC, "FEDERATION_MAGIC must not collide with CDAG_MAGIC.");
 
     // The first byte on the wire already differs, so a decoder that

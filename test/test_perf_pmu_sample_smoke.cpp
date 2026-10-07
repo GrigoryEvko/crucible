@@ -39,8 +39,6 @@ static_assert(64 % sizeof(crucible::perf::PmuSampleEvent) == 0,
               "otherwise events straddle cache-line boundaries and become "
               "torn-readable");
 
-static_assert(crucible::perf::PMU_SAMPLE_CAPACITY == 32768, "PMU_SAMPLE_CAPACITY mirrors the kernel-side capacity. A "
-                                                            "userspace-only bump is a wire-contract violation");
 static_assert(crucible::perf::PMU_SAMPLE_MASK == 32767,
               "PMU_SAMPLE_MASK = PMU_SAMPLE_CAPACITY - 1 and assumes a "
               "power-of-two capacity, so slot = idx & mask is one bitwise AND");
