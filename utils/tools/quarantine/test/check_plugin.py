@@ -816,10 +816,10 @@ LIBRARY_NAMES = (
     ("pending.cpp", (), 22, "std_entity", "std::bit_cast"),
     ("pending.cpp", (), 25, "replace_pending:std::source_location", "std::source_location"),
     ("pending.cpp", (), 26, "replace_pending:std::source_location", "std::source_location::line"),
-    ("pending.cpp", (), 29, "replace_pending:<limits>", "std::numeric_limits::max"),
-    ("pending.cpp", (), 33, "replace_pending:<limits>", "std::numeric_limits::max"),
-    ("pending.cpp", (), 36, "replace_pending:std::unreachable", "std::unreachable"),
-    ("pending.cpp", (), 41, "replace_pending:std::bit_cast", "std::bit_cast"),
+    ("pending.cpp", (), 30, "replace_pending:<limits>", "std::numeric_limits::max"),
+    ("pending.cpp", (), 34, "replace_pending:<limits>", "std::numeric_limits::max"),
+    ("pending.cpp", (), 37, "replace_pending:std::unreachable", "std::unreachable"),
+    ("pending.cpp", (), 42, "replace_pending:std::bit_cast", "std::bit_cast"),
     ("foreign_symbols.cpp", (), 7, "foreign_symbol", "abort (C linkage)"),
     ("foreign_symbols.cpp", (), 8, "foreign_symbol", "write (C linkage)"),
     ("foreign_symbols.cpp", (), 9, "foreign_symbol", "foreign_copy (asm label memcpy)"),
@@ -834,18 +834,18 @@ LIBRARY_NAMES = (
     ("outside_user.cpp", (), 9, "c_library_object", "OutsideType (OutsideType)"),
     ("outside_user.cpp", (), 10, "c_library_call", "outside_value"),
     ("unevaluated.cpp", (), 8, "std_entity", "std::basic_string"),
-    ("unevaluated.cpp", (), 11, "std_entity", "std::vector"),
-    ("unevaluated.cpp", (), 14, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 12, "std_entity", "std::vector"),
     ("unevaluated.cpp", (), 17, "std_entity", "std::vector"),
-    ("unevaluated.cpp", (), 20, "std_entity", "std::basic_string"),
-    ("unevaluated.cpp", (), 23, "std_entity", "std::vector"),
-    ("unevaluated.cpp", (), 27, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 22, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 27, "std_entity", "std::basic_string"),
     ("unevaluated.cpp", (), 32, "std_entity", "std::vector"),
-    ("unevaluated.cpp", (), 38, "std_entity", "std::vector"),
-    ("unevaluated.cpp", (), 39, "std_entity", "std::vector"),
-    ("unevaluated.cpp", (), 43, "std_entity", "std::vector"),
-    ("unevaluated.cpp", (), 46, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 37, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 42, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 48, "std_entity", "std::vector"),
     ("unevaluated.cpp", (), 50, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 55, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 58, "std_entity", "std::vector"),
+    ("unevaluated.cpp", (), 62, "std_entity", "std::vector"),
     ("deduced.cpp", (), 13, "std_object", "std::vector (deduced)"),
     ("deduced.cpp", (), 19, "std_object", "std::vector (deduced)"),
     ("deduced.cpp", (), 33, "std_object", "std::vector (std::vector<int, std::allocator<int> >)"),
@@ -855,8 +855,8 @@ LIBRARY_NAMES = (
     ("usings.cpp", (), 12, "std_entity", "std::basic_string::size"),
     ("usings.cpp", (), 16, "std_entity", "std::swap"),
     ("usings.cpp", (), 22, "std_entity", "std::swap"),
-    ("usings.cpp", (), 27, "std_entity", "std::pmr"),
-    ("usings.cpp", (), 31, "c_library_call", "memcpy"),
+    ("usings.cpp", (), 26, "std_entity", "std::pmr"),
+    ("usings.cpp", (), 29, "c_library_call", "memcpy"),
 )
 # The header of a library outside the source root that no system flag marks.
 # run_library_names writes it in its scratch directory, and each compile of the
@@ -886,7 +886,7 @@ LIBRARY_KINDS_ABSENT = (
     ("pending.cpp", (), 11, "std_entity"),  # plain-result admits a result of unsigned long
     ("pending.cpp", (), 13, "replace_pending:std::bit_cast"),  # a refused use is no pending use
     ("pending.cpp", (), 22, "replace_pending:std::bit_cast"),  # a dependent result fails closed
-    ("pending.cpp", (), 41, "std_entity"),  # a pointer to a dependent type holds no bool
+    ("pending.cpp", (), 42, "std_entity"),  # a pointer to a dependent type holds no bool
     ("allocation.cpp", (), 11, "raw_new_delete"),  # a deleted allocation function allocates nothing
 )
 

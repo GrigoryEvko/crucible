@@ -12,7 +12,9 @@
 #include <type_traits>
 #include <utility>
 
-enum class PlantColor : unsigned char { red };
+enum class PlantColor : unsigned char {
+    red
+};
 struct PlantPair {
     unsigned int low;
     unsigned int high;

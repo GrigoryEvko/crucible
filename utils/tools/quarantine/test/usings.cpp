@@ -23,9 +23,7 @@ void using_template(T& left, T& right) {
     swap(left, right);
 }
 
-void using_directive() {
-    using namespace std::pmr;
-}
+void using_directive() { using namespace std::pmr; }
 
 void using_c_function(char* target, char const* source) {
     using std::memcpy;

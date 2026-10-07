@@ -23,7 +23,8 @@ T pending_from_bits(unsigned long bits) {
 }
 
 unsigned pending_line(std::source_location where) {
-    return where.line();
+    unsigned line = where.line();  // two statements keep this call on a line of its own
+    return line;
 }
 
 int pending_most() { return std::numeric_limits<int>::max(); }

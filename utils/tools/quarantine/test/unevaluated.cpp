@@ -8,19 +8,29 @@
 unsigned long unevaluated_size() { return sizeof(std::string); }
 
 template <class T>
-unsigned long unevaluated_template_size() { return sizeof(std::vector<T>); }
+unsigned long unevaluated_template_size() {
+    return sizeof(std::vector<T>);
+}
 
 template <class T>
-unsigned long unevaluated_alignment() { return alignof(std::vector<T>); }
+unsigned long unevaluated_alignment() {
+    return alignof(std::vector<T>);
+}
 
 template <class T>
-bool unevaluated_noexcept() { return noexcept(std::vector<T>{}); }
+bool unevaluated_noexcept() {
+    return noexcept(std::vector<T>{});
+}
 
 template <class T>
-bool unevaluated_trait() { return __is_same(T, std::string); }
+bool unevaluated_trait() {
+    return __is_same(T, std::string);
+}
 
 template <class T>
-bool unevaluated_requires() { return requires(std::vector<T> items) { items.size(); }; }
+bool unevaluated_requires() {
+    return requires(std::vector<T> items) { items.size(); };
+}
 
 template <class T>
 void unevaluated_static_assert() {
@@ -36,7 +46,9 @@ void unevaluated_decltype() {
 template <class T>
 struct UnevaluatedHolder {
     static_assert(sizeof(std::vector<T>) > 0);
-    void held() requires(sizeof(std::vector<T>) > 0) {}
+    void held()
+        requires(sizeof(std::vector<T>) > 0)
+    {}
 };
 
 template <class T>
@@ -47,4 +59,6 @@ template <class T>
 void unevaluated_clause() {}
 
 template <class T>
-auto unevaluated_return() -> decltype(std::vector<T>{}) { return {}; }
+auto unevaluated_return() -> decltype(std::vector<T>{}) {
+    return {};
+}
