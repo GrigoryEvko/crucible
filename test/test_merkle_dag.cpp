@@ -890,12 +890,11 @@ namespace {
     // the child died.  The child's stderr goes to /dev/null because the
     // handler prints a diagnostic and a stack trace on the way out.
     {
-        // utils/scripts/check-banned-calls.py bans raw process spawn because a
-        // forked child carries no Permission<Tag> linearity proof and no
-        // Met(X) effect row. Neither is at stake here: the child evaluates
-        // one contract clause and dies, it owns no permission and outlives
-        // nothing. The alternative is to leave three preconditions with no
-        // test that they fire, which is a dead guard.
+        // CLAUDE.md §IX bans a raw process start, because a child gets no
+        // Permission<Tag> proof and no Met(X) effect row.  This test needs a
+        // child.  The child evaluates one contract clause and ends.  It owns
+        // no permission, and it ends before the parent continues.  Without a
+        // child, no test shows that the three preconditions fire.
         auto dies = [&](auto&& body) {
             std::fflush(nullptr);
             const pid_t child = ::fork();  // SPAWN-PROCESS-OK: observing a [[noreturn]] contract handler needs a child

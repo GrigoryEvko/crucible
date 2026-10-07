@@ -2158,7 +2158,7 @@ The 56 data files of `utils/scripts/`. A target `ledgers/NAME.txt` is the file `
 | `parse-total`, `instruction-total`, `header-fanout` ledgers | `check-parse-cost.py` | 293, 1, 30 | Total rows, file rows, header rows | `ledgers/parse-total.txt`, `ledgers/instruction-total.txt`, `ledgers/header-fanout.txt` |
 | `budget-history-ledger.txt` | `check-budget-history.py` | 1 | `COMMIT \| ROW \| COLUMN \| REASON` | `ledgers/history.txt` |
 | `contracts-baseline.json` | `audit-pre-callsite-count.py` | 1 object | JSON | `ledgers/contract-cites.txt` |
-| The 19 allowlists | Their guards | 0 to 64 each, 295 in total | 9 formats with `:`, ` — `, `\|` or spaces | The rows of the ledgers of their rules. The 3 rows of `no-reserve` are in `bench/`, which the rule `banned-calls` does not read, so they go. One of them names `ExprPool::reserve`, and the quarantine ledger holds the other two. The row of `no-spawn-process` names the ATen operator `clone` in a macro table of `vessel/torch/`. It becomes an admit row of `banned-calls`. The 16 rows of `start-lifetime` count negative fixtures, and they go (decision 9) |
+| The 19 allowlists | Their guards | 0 to 64 each, 295 in total | 9 formats with `:`, ` — `, `\|` or spaces | The rows of the ledgers of their rules. The 2 rows of `no-reserve` name `std::vector::reserve` calls of `bench/bench_mpsc_contention.cpp`. The legacy ban reads `bench/`, but the rule `banned-calls` reads only base files, and the quarantine ledger holds the two calls. So the rows go. Unit 1B.0 deleted the false row of `ExprPool::reserve`. The row of `no-spawn-process` names the ATen operator `clone` in a macro table of `vessel/torch/`. It becomes an admit row of `banned-calls`. The 16 rows of `start-lifetime` count negative fixtures, and they go (decision 9) |
 | `host-owner-roster.txt`, `witness-roster.txt` | Their guards | 4, 120 | ` — ` and `\|` | `home` and `witness` rows of the rule table |
 | `process-wide-roster.txt`, `escape-doors.txt` | Their guards | 13, 3 | `\|`, two spaces | Ledger rows of their rules |
 | `guard-engines.txt`, `budgets.txt` | `check-guard-engines.py`, `check_report.py`, `cmake/Budgets.cmake` | 114, 37 | `\|` | `utils/registry.txt`. The 114 `script` rows go (section 18.5) |
@@ -2178,7 +2178,7 @@ The inventory read each file, and it found these defects. The severities are hig
 | `check_plugin.py` | The 19 parts start more than 130 compiler processes at one time | Medium |
 | `check-banned-calls.py` | The reserve ban matches by name, so `ExprPool::reserve` is a false find. `src/` is not in the scope of the cast and reserve bans. Approximately 30 `SPAWN-PROCESS-OK` markers in `test/` have no effect, because the ban does not read `test/` | Medium |
 | `check-lifetime-twin.py` | The scope does not include `include/crucible/`, which holds approximately 80 annotations | Medium |
-| `check-ct-disassembly.py` | It compiles without the Release flags, and `-fharden-conditional-branches` can add a branch to a wrapper | Medium |
+| `check-ct-disassembly.py` | It compiles without the Release flags, and `-fharden-compares` can add a branch to a wrapper | Medium |
 | `check-syscall-grant-coverage.py` | It discards the problems of `door_issues`, so an incorrect `_sys` helper in a door header gives no finding | Medium |
 | `check-derived-pins.py` | It finds a name only in its own file, so a pin in a check file against a constant of its header passes | Medium |
 | `check-detail-namespace.py` | A second allowlist row for one key replaces the first row with no error | Low |

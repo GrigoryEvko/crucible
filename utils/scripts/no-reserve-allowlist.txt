@@ -38,38 +38,15 @@
 # Inline suppression (preferred for new code): `// NO-RESERVE-OK:
 # <reason>` on the call line exempts that single line directly.
 #
-# ── bench/ COVERAGE EXTENSION — NOT pre-approved ────────────────────
+# ── bench/ ──────────────────────────────────────────────────────────
 #
-# The entries below were NOT reviewed and NOT granted a waiver.  They
-# are the 21 pre-existing `.reserve(` sites (16 distinct content keys)
-# that the guard surfaced the moment `bench/` entered its scan set.
-# Until that change, `bench/` was invisible twice over: it was absent
-# from `scan_dirs` AND explicitly excluded by an `--glob '!bench/**'`
-# argument to rg.  Both were removed; these sites are grandfathered
-# only so the coverage extension lands green instead of reding CI on
-# code nobody has looked at yet.
-#
-# Status: benchmark-harness setup awaiting triage.  Every line here is
-# an open question, not a decision.  Triage must answer, per site:
-#   (1) Is the count known at compile time?  → std::inplace_vector<T,N>
-#   (2) Is the exact size known at construction?  → vector<T>(N) and
-#       fill by index (one allocation, no growth).
-#   (3) Is it genuinely unbounded?  → document why amortization is
-#       acceptable here and convert to an inline NO-RESERVE-OK marker
-#       carrying that reason, then delete the entry.
-#
-# Most of these look like case (1) or (2) — `reports.reserve(12)`,
-# `workloads.reserve(4)`, `reports.reserve(32)` are literal constants
-# and convert mechanically.  That is a hypothesis from reading the
-# call text, NOT a review finding.
-#
-# Mitigating context (explanation, not justification): this is
-# harness scaffolding that runs once during bench setup, outside the
-# measured region, so the §IV tail-latency and heap-churn arguments
-# bite less hard than they would on a hot path.  The ban is still
-# project-wide and these still owe a migration.
-#
-# Drain the section as sites convert.  The stale-entry gate (exit 2)
-# forces the entries out as soon as their call text changes.
+# The guard reads bench/.  The two rows that follow are std::vector
+# calls of reserve in the setup of one bench, outside the measured
+# region.  Each row waits for its migration.  A count that is known at
+# compile time becomes std::inplace_vector<T, N>.  A size that is known
+# at construction becomes vector<T>(N) with a fill by index.  The
+# quarantine plugin also reports each call, and the quarantine ledger
+# holds it.  When a call changes, the guard fails on its row (exit 2),
+# so the row must go.
 bench/bench_mpsc_contention.cpp:producers.reserve(producer_count);
 bench/bench_mpsc_contention.cpp:reports.reserve(12);

@@ -4,12 +4,12 @@
 // spawning a process to die in.
 //
 // CRUCIBLE_FATAL_INVARIANT and a violated contract end the process through
-// std::abort, so a test that wants to watch one fire has to survive it.  A
-// forked child is the usual answer, and the tree bans raw process spawn: fork
-// carries no permission token and no effect row into the child, and
-// utils/scripts/check-banned-calls.py rejects it.  The abort is therefore
-// caught where it happens: a SIGABRT handler jumps back to the arming point on
-// the same thread.
+// std::abort.  A test that monitors one must continue after it.  The usual
+// method is a child process, but the tree bans a raw process start.  A fork
+// gives the child no permission token and no effect row, and the quarantine
+// plugin refuses a fork in a test file.  This header catches the abort where
+// it occurs.  A SIGABRT handler jumps back to the arming point on the same
+// thread.
 //
 // The jump target and the arming flag are thread-local, so two threads can arm
 // independently.  The signal disposition itself is process-wide, which is why
