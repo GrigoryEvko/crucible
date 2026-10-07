@@ -13,7 +13,7 @@ The method is the one that Stage A to Stage D used: stages, units in worktrees, 
 
 ## 1. Decisions
 
-The owner approved these decisions on 2026-09-30, 2026-10-01 and 2026-10-03.
+The owner approved these decisions on 2026-09-30, 2026-10-01, 2026-10-03 and 2026-10-08.
 
 | Id | Decision |
 |---|---|
@@ -32,6 +32,7 @@ The owner approved these decisions on 2026-09-30, 2026-10-01 and 2026-10-03.
 | D13 | 2026-10-03: no replacement of the C runtime inside the process. The base writes no general-purpose `malloc`, no vDSO parser, and no thread or TLS setup of its own, because the vessel shares one process with Python and PyTorch. A binary with no glibc is possible only as a separate daemon, later (section 17). |
 | D14 | 2026-10-03: fast hardware access has one shape. The kernel does the control plane one time: mappings, queues and the IOMMU. User space does the data plane: ring writes, doorbell writes and polls, with no syscall for each operation. The IOMMU stays on. A user-space driver through VFIO is only for a device that Crucible owns alone. AF_XDP is out of scope, because the networking scope is the scope of NCCL. |
 | D15 | 2026-10-03: the utils system of section 18 is Stage 1B, a part of Stage 1 (section 8.6a). The S1 gate includes the end state of Stage 1B: `utils/` holds only the files of the new system. Stage 1B deletes each source file of the inventory, or moves it to its target path. The owner approved the decisions 0 to 22 of section 18.23. |
+| D16 | 2026-10-08: the base floor has a door directory of its own. `include/foundation/os/` holds the declarations, and `src/foundation/os/` holds the door files. The directory holds the raw system call primitive for x86_64 and aarch64. It also holds the two calls of the floor: the write of the Report sink and the read of `/proc` for the debugger probe. Each door of `fixy/os` uses that primitive. Each system header still has exactly one door file, and a header that the floor uses has its door in foundation. Rule R4 then has two door directories: `fixy/os` and `foundation/os`. Unit 2b creates the directory of foundation. |
 
 ---
 
@@ -687,8 +688,9 @@ The stream ban of `check-banned-calls.py` has no subsequent step. It reads only 
 **2b, OS code into fixy/os.**
 - Move `fixy/OwnedFile.h`, `fixy/OwnedMmap.h`, `fixy/Path.h` and `fixy/concurrent/Topology.h` into `include/fixy/os/`.
 - The sysfs probe of Topology moves to `src/fixy/os/Topology.cpp`.
-- The signal, `atexit`, `pthread` and clock code of `fixy/session/Watch.h` moves to `src/fixy/session/Watch.cpp`.
+- The signal, `atexit`, `pthread` and clock code of `fixy/session/Watch.h` moves to `src/fixy/session/Watch.cpp`. That file includes no system header. It calls the doors of `fixy/os`, such as the thread door of unit 2c, the time door and the signal door. The layer X5 session is above the layer X3 os, and a layer can include each lower layer (section 12).
 - Every caller moves in the same commit.
+- The unit creates the door directory of foundation (D16): `include/foundation/os/` for the declarations and `src/foundation/os/` for the door files. The directory holds the raw syscall primitive and the two calls of the floor. The first call is the write of the Report sink, which `src/foundation/ContractHandler.cpp` holds at this time. The second call is the read of `/proc` for the debugger probe, which `include/foundation/Platform.h` holds at this time. Each door of `fixy/os` uses that primitive.
 - The syscall primitive lands first: one inline-assembly system call for x86_64 and one for aarch64, in one door file, with the numbers from `<asm/unistd.h>`. The deny list of R4 goes into the rule table. The plugin rule `syscall-capability` (section 8.6a) gets the kind `denied-syscall`, which refuses a raw call of a denied number. Each claim of the rule for a call that moves into a door goes in the same commit. The platform floor gets the minimum kernel version and its start-up check.
 - The Topology probe reads sysfs with raw `openat` and `read` through the file door, and it parses the CPU lists itself. Each error is a `Result`. Its eight `try`/`catch` sites go, and with them the use of `std::filesystem`, `ifstream`, `std::set` and `std::map` (about 40 libstdc++ symbols of `libfixy.a`). This part of slice 4.6 moves here.
 
@@ -704,7 +706,7 @@ The stream ban of `check-banned-calls.py` has no subsequent step. It reads only 
 5. `AlignedBuffer.h` includes `diag/Catalog.h` for two tags, and `ChannelBinding.h` includes `diag/Runtime.h`. Move the tags to the tag vocabulary, or report through the base fatal exit.
 6. `fixy/Witnessed.h` includes `session/Handle.h`, and `fixy/OwnedMmap.h` includes `os/AtomPack.h`. Move each to its layer.
 7. Five concurrent headers include session headers. Move Endpoint, EndpointMint, SubstrateSessionBridge, SwmrSession and StageEndpointBridge to a new directory `include/fixy/channels/` (layer X6).
-8. `concurrent/Pipeline.h` includes `os/Sched.h`, and `os/Spawn.h` includes `concurrent/ParallelismRule.h`. Unit 2c resolves the second. Resolve the first through a door.
+8. `concurrent/Pipeline.h` includes `os/Sched.h`, and `os/Spawn.h` includes `concurrent/ParallelismRule.h`. Unit 2c resolves the second. Resolve the first through a door. The affinity read of `caller_allowed_cpus_` goes through that door too, and `Pipeline.h` then includes no `<pthread.h>` and no `<sched.h>`.
 9. `handle/LazyEstablishedChannel.h` includes session. Move it to `include/fixy/channels/`.
 10. OS code outside fixy/os. Unit 2b resolves it.
 11. Thread start in foundation. Unit 2c resolves it.
@@ -985,7 +987,7 @@ A slice migrates one base API group and every caller in the whole tree, in one c
 
 | Slice | Content | Callers |
 |---|---|---|
-| 4.1 Os results | Every `fixy::os` door returns `Result<T, os::Errno>`. One `Errno` type replaces `std::error_code` and the plain `int` of Sched | about 133 base uses, many callers in crucible and test |
+| 4.1 Os results | Every `fixy::os` door returns `Result<T, os::Errno>`. One `Errno` type replaces `std::error_code` and the plain `int` of Sched. The slice also removes each system type from the public signatures of the doors (R4). A base record replaces each struct of the kernel or of the C library, and a base type replaces each integer typedef of the C library. At this time, thirteen public signatures hold a system type. In `fixy/os/Time.h`, `PtpClockReader::caps()` holds `::ptp_clock_caps`, `nanos_from_timespec` holds `std::timespec`, and `clockid_for` holds `::clockid_t`. `mint_file`, `mint_durable_truncate_file` and `mint_durable_append_file` of `fixy/os/Fs.h` and the three mints of `fixy/os/CipherDurable.h` hold `::mode_t`. `file_size` of `fixy/os/Fs.h`, `mint_mmap` of `fixy/os/Mmap.h` and the two overloads of `zerocopy_transfer` of `fixy/os/Io.h` hold `::off_t` | about 133 base uses, many callers in crucible and test |
 | 4.2 Choice in concurrent and wrappers | `Checked.h` and `Saturate` return `Option`. The rings, channels and `AtomicSnapshot` pop into `Option`. `admit_refined` returns `Result` | the rings are on hot paths: check the disassembly |
 | 4.3 Region in the wrappers | `FixedArray` loses `operator[](size_t)`, `data()` and raw iterators. `Borrowed` becomes `View`. `OwnedRegion` and `SharedRegion` give `View`. `foundation::simd` loads and stores take `View<T const, Lanes>`. `CyclicBuffer` indexes through `Index<N>`. `AppendOnly` stores a `GrowList` | every caller of those accessors |
 | 4.4 Atomic in the base | `AtomicMonotonic`, `MpscRing`, `OneShotFlag`, `PublishOnce`, `PublishCommit`, `Once`, `SpinLock`, `CpuPinned`, `session/Watch.h` move to `Atomic`. `ChaseLevDeque` keeps its relaxed and seq_cst operations as cited `detail` code inside the base | few callers outside |
