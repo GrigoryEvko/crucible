@@ -56,7 +56,7 @@ ChildResult run_in_child(void (*attack)()) {
     int pipe_ends[2] = {-1, -1};
     if (::pipe(pipe_ends) != 0) std::abort();
     std::fflush(stderr);
-    const pid_t pid = ::fork();  // SPAWN-PROCESS-OK: death test, the refusal ends the process
+    const pid_t pid = ::fork();
     if (pid < 0) std::abort();
     if (pid == 0) {
         ::close(pipe_ends[0]);
@@ -80,7 +80,7 @@ ChildResult run_in_child(void (*attack)()) {
     }
     ::close(pipe_ends[0]);
     int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) std::abort();  // SPAWN-PROCESS-OK: reaps the child forked above
+    if (::waitpid(pid, &status, 0) != pid) std::abort();
     result.was_aborted = WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
     return result;
 }

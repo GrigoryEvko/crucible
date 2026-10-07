@@ -80,7 +80,7 @@ template <typename Body>
     ChildResult result;
     int channel[2];
     if (::pipe(channel) != 0) return result;
-    const ::pid_t child = ::fork();  // SPAWN-PROCESS-OK: a death test observes the abort in a child
+    const ::pid_t child = ::fork();
     if (child < 0) return result;
     if (child == 0) {
         ::dup2(channel[1], STDERR_FILENO);
@@ -93,7 +93,7 @@ template <typename Body>
     int status = 0;
     const ::timespec pause{0, 10000000};
     for (int tick = 0; tick < 1000; ++tick) {
-        const ::pid_t reaped = ::waitpid(child, &status, WNOHANG);  // SPAWN-PROCESS-OK: the death test reaps its child
+        const ::pid_t reaped = ::waitpid(child, &status, WNOHANG);
         if (reaped == child) {
             result.ended_in_time = true;
             break;
@@ -102,7 +102,7 @@ template <typename Body>
     }
     if (!result.ended_in_time) {
         ::kill(child, SIGKILL);
-        ::waitpid(child, &status, 0);  // SPAWN-PROCESS-OK: the death test reaps its child
+        ::waitpid(child, &status, 0);
     }
     result.ended_by_sigabrt = result.ended_in_time && WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
     char buffer[512];

@@ -98,13 +98,13 @@ int transfer_keeps_the_record_live() {
 
 int second_take_aborts() {
     std::fflush(stderr);
-    // SPAWN-PROCESS-OK: the abort of a consumed handle ends the process,
+    // The abort of a consumed handle ends the process,
     // so the attempt runs in a child that the parent observes.
-    const pid_t pid = ::fork();  // SPAWN-PROCESS-OK: see above
+    const pid_t pid = ::fork();
     if (pid < 0) return fail("fork failed");
     if (pid == 0) take_from_a_consumed_handle();
     int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) return fail("waitpid failed");  // SPAWN-PROCESS-OK: see above
+    if (::waitpid(pid, &status, 0) != pid) return fail("waitpid failed");
     if (WIFSIGNALED(status) == 0) return fail("a second transfer from one handle did not abort");
     return 0;
 }

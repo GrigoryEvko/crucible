@@ -163,9 +163,9 @@ constexpr Attack kAttacks[] = {
 
 [[nodiscard]] bool ends_the_process(void (*attack)()) {
     std::fflush(stderr);
-    // SPAWN-PROCESS-OK: a refused claim ends the process, so it runs in a
+    // A refused claim ends the process, so it runs in a
     // child that the parent observes.
-    const pid_t pid = ::fork();  // SPAWN-PROCESS-OK: death test, see above
+    const pid_t pid = ::fork();
     if (pid < 0) {
         std::fprintf(stderr, "fork failed\n");
         std::_Exit(2);
@@ -175,7 +175,7 @@ constexpr Attack kAttacks[] = {
         std::_Exit(0);
     }
     int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) {  // SPAWN-PROCESS-OK: death test, see above
+    if (::waitpid(pid, &status, 0) != pid) {
         std::fprintf(stderr, "waitpid failed\n");
         std::_Exit(2);
     }

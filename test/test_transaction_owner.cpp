@@ -190,16 +190,16 @@ void nested_job_ends_the_process() {
 
 [[nodiscard]] bool ends_the_process(void (*attack)()) {
     std::fflush(stderr);
-    // SPAWN-PROCESS-OK: a refused call ends the process, so it runs in a
+    // A refused call ends the process, so it runs in a
     // child that the parent observes.
-    const pid_t pid = ::fork();  // SPAWN-PROCESS-OK: death test, see above
+    const pid_t pid = ::fork();
     if (pid < 0) fail("fork failed");
     if (pid == 0) {
         attack();
         std::_Exit(0);
     }
     int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) fail("waitpid failed");  // SPAWN-PROCESS-OK: death test, see above
+    if (::waitpid(pid, &status, 0) != pid) fail("waitpid failed");
     return WIFSIGNALED(status) != 0;
 }
 

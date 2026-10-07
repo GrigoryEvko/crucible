@@ -897,9 +897,9 @@ void refuse_core_dump(int status) noexcept {
 
 [[nodiscard]] Outcome run_in_child(void (*attack)()) {
     std::fflush(stderr);
-    // SPAWN-PROCESS-OK: an attack that the policy catches ends the
+    // An attack that the policy catches ends the
     // process, so it runs in a child that the parent observes.
-    const pid_t pid = ::fork();  // SPAWN-PROCESS-OK: attack harness, see above
+    const pid_t pid = ::fork();
     if (pid < 0) {
         std::fprintf(stderr, "fork failed\n");
         std::_Exit(2);
@@ -908,7 +908,7 @@ void refuse_core_dump(int status) noexcept {
         attack();
     }
     int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) {  // SPAWN-PROCESS-OK: attack harness, see above
+    if (::waitpid(pid, &status, 0) != pid) {
         std::fprintf(stderr, "waitpid failed\n");
         std::_Exit(2);
     }
@@ -973,9 +973,9 @@ struct captured_end {
         std::fprintf(stderr, "pipe failed\n");
         std::_Exit(2);
     }
-    // SPAWN-PROCESS-OK: the signal ends the process, so it runs in a
+    // The signal ends the process, so it runs in a
     // child whose standard error the parent reads.
-    const pid_t pid = ::fork();  // SPAWN-PROCESS-OK: attack harness, see above
+    const pid_t pid = ::fork();
     if (pid < 0) {
         std::fprintf(stderr, "fork failed\n");
         std::_Exit(2);
@@ -996,7 +996,7 @@ struct captured_end {
     }
     ::close(channel[0]);
     int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) {  // SPAWN-PROCESS-OK: attack harness, see above
+    if (::waitpid(pid, &status, 0) != pid) {
         std::fprintf(stderr, "waitpid failed\n");
         std::_Exit(2);
     }

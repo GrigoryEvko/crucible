@@ -71,6 +71,5 @@
 #
 # Drain the section as sites convert.  The stale-entry gate (exit 2)
 # forces the entries out as soon as their call text changes.
-bench/bench_expr_pool.cpp:pool.reserve(n_inserts);
 bench/bench_mpsc_contention.cpp:producers.reserve(producer_count);
 bench/bench_mpsc_contention.cpp:reports.reserve(12);

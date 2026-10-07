@@ -58,7 +58,7 @@ struct ChildResult {
     ChildResult result;
     int channel[2];
     if (::pipe(channel) != 0) return result;
-    const ::pid_t child = ::fork();  // SPAWN-PROCESS-OK: a death test observes the abort in a child
+    const ::pid_t child = ::fork();
     if (child < 0) return result;
     if (child == 0) {
         ::dup2(channel[1], 2);
@@ -74,7 +74,7 @@ struct ChildResult {
     }
     ::close(channel[0]);
     int status = 0;
-    ::waitpid(child, &status, 0);  // SPAWN-PROCESS-OK: the parent reaps the child of the death test
+    ::waitpid(child, &status, 0);
     if (WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT) {
         result.end = ChildEnd::Aborted;
     } else if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {

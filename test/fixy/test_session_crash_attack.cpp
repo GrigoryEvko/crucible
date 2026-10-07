@@ -468,9 +468,9 @@ void on_watchdog(int) { std::_Exit(kDeadlockExit); }
 
 [[nodiscard]] Outcome run_in_child(void (*attack)()) {
     std::fflush(stderr);
-    // SPAWN-PROCESS-OK: an attack that the transport catches ends the
+    // An attack that the transport catches ends the
     // process, and a hang must end too, so each attack runs in a child.
-    const pid_t pid = ::fork();  // SPAWN-PROCESS-OK: attack harness, see above
+    const pid_t pid = ::fork();
     if (pid < 0) {
         std::fprintf(stderr, "fork failed\n");
         std::_Exit(2);
@@ -481,7 +481,7 @@ void on_watchdog(int) { std::_Exit(kDeadlockExit); }
         attack();
     }
     int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) {  // SPAWN-PROCESS-OK: attack harness, see above
+    if (::waitpid(pid, &status, 0) != pid) {
         std::fprintf(stderr, "waitpid failed\n");
         std::_Exit(2);
     }

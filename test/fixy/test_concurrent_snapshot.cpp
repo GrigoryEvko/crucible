@@ -304,9 +304,9 @@ void exit_on_linearity_violation(::foundation::diag::Category category, std::str
 }
 
 void test_two_writers_end_through_the_catalog() {
-    // SPAWN-PROCESS-OK: the child exists to die.  The two-writer check ends
+    // The child exists to die.  The two-writer check ends
     // the process that runs it, so only a parent can observe the route.
-    const pid_t pid = ::fork();  // SPAWN-PROCESS-OK: death test, see above
+    const pid_t pid = ::fork();
     CRUCIBLE_REQUIRE(pid >= 0);
     if (pid == 0) {
         (void)::foundation::diag::set_violation_sink(&exit_on_linearity_violation);
@@ -322,8 +322,7 @@ void test_two_writers_end_through_the_catalog() {
         std::_Exit(0);
     }
     int status = 0;
-    // SPAWN-PROCESS-OK: the wait belongs to the fork above.
-    CRUCIBLE_REQUIRE(::waitpid(pid, &status, 0) == pid);  // SPAWN-PROCESS-OK: death test, see above
+    CRUCIBLE_REQUIRE(::waitpid(pid, &status, 0) == pid);
     CRUCIBLE_REQUIRE(WIFEXITED(status));
     CRUCIBLE_REQUIRE(WEXITSTATUS(status) == kLinearityViolationSeen);
 }
