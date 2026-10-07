@@ -34,20 +34,31 @@ if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   return()
 endif()
 
-# The disassembly guard compiles each constant-time primitive at -O2 and
-# -O3 for three ISA levels, and refuses a conditional branch, a call, a
-# division or a data-dependent load in its body.  Its self-test plants a
-# branch, a table lookup, a call and a division, and a census escape.
+# The disassembly guard compiles each constant-time primitive with the flags
+# of each kind of build: the Debug, Release and verify flags, at their levels,
+# for three ISA levels.  It takes the flags that each build takes from the
+# compile commands of the foundation objects in the compile database.  It
+# refuses a conditional branch, a call, a division or a data-dependent load in
+# the body of a primitive.  Its self-test plants a branch, a table lookup, a
+# call, a division, a compare that only the Release flags turn into a branch,
+# and a census escape.  The guard reads the parse tree of each production file
+# that states the constant-time grade, so it waits for the tree cache.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_program(CRUCIBLE_OBJDUMP objdump REQUIRED)
+set(_ct_disassembly_arguments
+  --build-dir ${CMAKE_BINARY_DIR}
+  --base-objects $<TARGET_OBJECTS:foundation>)
 add_test(NAME check_ct_disassembly
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/utils/scripts/check-ct-disassembly.py
-          --cxx ${CMAKE_CXX_COMPILER})
+          ${_ct_disassembly_arguments}
+  COMMAND_EXPAND_LISTS)
 add_test(NAME check_ct_disassembly_self_test
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/utils/scripts/check-ct-disassembly.py
-          --cxx ${CMAKE_CXX_COMPILER} --self-test)
+          ${_ct_disassembly_arguments} --self-test
+  COMMAND_EXPAND_LISTS)
 set_tests_properties(check_ct_disassembly check_ct_disassembly_self_test
   PROPERTIES LABELS "ci_guard;ct" WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+set_tests_properties(check_ct_disassembly PROPERTIES FIXTURES_REQUIRED tsast_trees)
 
 # The dudect timing harness is evidence, not a test: a timing result
 # depends on the host and its load.  Build it on request with

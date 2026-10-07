@@ -40,6 +40,27 @@ template <std::unsigned_integral T>
     return (a & m) | (b & ~m);
 }
 
+// Returns 1 when x is zero and 0 otherwise.  For any non-zero x the
+// high bit of (x | -x) is set, and it is clear only for zero.
+template <std::unsigned_integral T>
+[[nodiscard]] constexpr T is_zero(T x) noexcept {
+    constexpr int bits = static_cast<int>(sizeof(T) * 8);
+    const T neg_x = static_cast<T>(T{0} - x);
+    return static_cast<T>((neg_x | x) >> (bits - 1) ^ T{1});
+}
+
+namespace detail {
+// Returns true when the accumulated difference of two buffers is zero.
+// The result comes from is_zero and not from a compare.  A Release build
+// takes -fharden-compares, which puts a test and a branch to a trap after
+// each compare that gives a value, and the operands of that branch are
+// the secret difference.
+template <std::unsigned_integral T>
+[[nodiscard]] constexpr bool is_zero_without_compare(T difference) noexcept {
+    return static_cast<bool>(is_zero(difference));
+}
+}  // namespace detail
+
 // Equality of two byte buffers whose timing depends only on the
 // length, which is public, and not on where the first difference is.
 //
@@ -57,24 +78,56 @@ template <std::unsigned_integral T>
     for (std::size_t i = 0; i < a.size(); ++i) {
         acc |= a[i] ^ b[i];
     }
-    return acc == std::byte{0};
+    return detail::is_zero_without_compare(static_cast<std::uint8_t>(acc));
 }
 
 namespace detail {
 // The element of a span that eq reads: a byte, const or not.
 template <class E>
 concept ByteElement = std::same_as<std::remove_const_t<E>, std::byte>;
+
+// The XOR of the word of eight bytes at index Word of two byte arrays.  A
+// byte copy reads each word, so the arrays need no alignment.
+template <std::size_t Word, ByteElement A, ByteElement B, std::size_t N>
+    requires((Word + 1) * sizeof(std::uint64_t) <= N)
+[[nodiscard]] CRUCIBLE_INLINE std::uint64_t word_difference(std::span<A, N> a, std::span<B, N> b) noexcept {
+    std::uint64_t left = 0;
+    std::uint64_t right = 0;
+    __builtin_memcpy(&left, a.data() + Word * sizeof(std::uint64_t), sizeof(std::uint64_t));
+    __builtin_memcpy(&right, b.data() + Word * sizeof(std::uint64_t), sizeof(std::uint64_t));
+    return left ^ right;
+}
 }  // namespace detail
 
 // Equality of two byte arrays whose length is part of the type.  The
-// fold below has no loop, so the body carries no branch at all.  The
-// disassembly guard checks that claim on the compiled code.
+// run-time fold below has no loop, so the compiled body carries no branch
+// at all.  The disassembly guard checks that claim on the compiled code.
+//
+// At run time, the fold reads the arrays in words of eight bytes and ORs
+// the differences of the words.  A word holds each byte in a lane of its
+// own, so the order of the bytes in a word does not change the zero test.
+// The bytes after the last full word OR into the same accumulator.  A
+// constant evaluation cannot copy bytes into a word, so it ORs the
+// difference of each byte.  The two forms give the same result.
 template <detail::ByteElement A, detail::ByteElement B, std::size_t N>
     requires(N != std::dynamic_extent)
 [[nodiscard]] constexpr bool eq(std::span<A, N> a, std::span<B, N> b) noexcept {
-    std::byte acc{0};
-    [&]<std::size_t... I>(std::index_sequence<I...>) { ((acc |= a[I] ^ b[I]), ...); }(std::make_index_sequence<N>{});
-    return acc == std::byte{0};
+    constexpr std::size_t word_bytes = sizeof(std::uint64_t);
+    constexpr std::size_t words = N / word_bytes;
+    std::uint64_t acc = 0;
+    if consteval {
+        for (std::size_t i = 0; i < N; ++i) {
+            acc |= static_cast<std::uint64_t>(a[i] ^ b[i]);
+        }
+    } else {
+        [&]<std::size_t... W>(std::index_sequence<W...>) {
+            ((acc |= detail::word_difference<W>(a, b)), ...);
+        }(std::make_index_sequence<words>{});
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            ((acc |= static_cast<std::uint64_t>(a[words * word_bytes + I] ^ b[words * word_bytes + I])), ...);
+        }(std::make_index_sequence<N % word_bytes>{});
+    }
+    return detail::is_zero_without_compare(acc);
 }
 
 // Two static extents that differ cannot name one tag, so the pair does
@@ -111,15 +164,6 @@ template <std::unsigned_integral T>
     T const diff = static_cast<T>(a - b);
     T const lt = static_cast<T>((static_cast<T>(~a) & b) | (static_cast<T>(static_cast<T>(~a) | b) & diff));
     return static_cast<T>(lt >> (bits - 1)) & T{1};
-}
-
-// Returns 1 when x is zero and 0 otherwise.  For any non-zero x the
-// high bit of (x | -x) is set, and it is clear only for zero.
-template <std::unsigned_integral T>
-[[nodiscard]] constexpr T is_zero(T x) noexcept {
-    constexpr int bits = static_cast<int>(sizeof(T) * 8);
-    const T neg_x = static_cast<T>(T{0} - x);
-    return static_cast<T>((neg_x | x) >> (bits - 1) ^ T{1});
 }
 
 // Swaps a and b when cond01 is 1 and leaves them alone when it is 0.

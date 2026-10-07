@@ -2,11 +2,12 @@
 """check-ct-disassembly.py: no secret-steered branch, call or indexed load in a compiled constant-time primitive.
 
 The taint tests run under valgrind, which cannot decode AVX-512, so they
-build for x86-64-v3.  This guard covers the code that the release build
-really emits.  It compiles one wrapper per constant-time primitive of
-fixy::ct and per unsigned width, at -O2 and -O3, for -march=native,
-x86-64-v3 and the x86-64 baseline.  Then it reads the disassembly of every
-wrapper and refuses:
+build for x86-64-v3.  This guard covers the code that each build of the
+tree really emits.  It compiles one wrapper per constant-time primitive of
+fixy::ct and per unsigned width, and one wrapper of the static-extent eq per
+length of STATIC_EQ_LENGTHS, with the flags of each variant of
+BUILD_VARIANTS, for -march=native, x86-64-v3 and the x86-64 baseline.  Then
+it reads the disassembly of every wrapper and refuses:
 
   - a conditional branch (any jcc, jrcxz, loop): its direction would leak
     the operand it tests
@@ -21,6 +22,26 @@ length, which is public, and the guard cannot tell that branch from a
 secret one.  The static-extent eq has no loop, so it is a wrapper and
 must carry no branch at all.  The taint tests cover the dynamic form.
 
+THE FLAGS
+    The guard reads the compile database of the build directory, and it
+    takes the code generation flags of the units of the foundation library.
+    It removes the flags that change with the kind of build (PER_BUILD), the
+    flags that it does not model (DROPPED), and the flags that do not change
+    the code.  The rest is the set of flags that each build takes.  Each
+    variant of BUILD_VARIANTS adds its own flags and its levels to that set.
+    So each run compiles the wrappers with the flags of each kind of build,
+    also when a preset of one kind configured the build directory.  A
+    Release build adds -fharden-compares.  That flag puts a test and a branch
+    to a trap after each compare that gives a value.
+
+    The per-build flags of the build directory, without the level and the
+    target, must be the flags of one variant.  So a flag that the tree adds
+    to one kind of build fails the guard in a build of that kind until a
+    variant has it.  A sanitizer puts a branch and a call at each load, so a
+    sanitized build is not the code that ships, and the guard drops its
+    flags.  A profile of the tree does not cover the generated wrappers, so
+    the guard drops the profile flags too.
+
 Two censuses keep the case list complete.  A reflection walk in the
 generated translation unit stops the compile when a namespace of
 primitives holds a function this guard does not wrap.  A parse-tree scan
@@ -34,20 +55,25 @@ primitives.  The map is empty, because no production function states the
 grade.
 
 Exit 0: every wrapper is clean.  Exit 1: a finding, printed per wrapper.
-Exit 2: the guard could not run (no compiler, no objdump, no pinned
-tree-sitter kit, a compile error), which is a failure, never a pass.
+Exit 2: the guard could not run (no objdump, no compile database, no row of
+a foundation object, no pinned tree-sitter kit, a compile error), which is a
+failure, never a pass.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import pathlib
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -56,9 +82,53 @@ from repo_root import REPO_ROOT  # noqa: E402
 
 WIDTHS = (("u8", "std::uint8_t"), ("u16", "std::uint16_t"), ("u32", "std::uint32_t"), ("u64", "std::uint64_t"))
 CT_NAMESPACE = "::fixy::ct"
-STATIC_EQ_LENGTHS = (16, 32)
+# 8 is the tag length of include/fixy/SipHash.h.  12 has bytes after its
+# last word of eight bytes.  16 and 32 are whole vectors of SSE and AVX.
+STATIC_EQ_LENGTHS = (8, 12, 16, 32)
 MARCHES = ("native", "x86-64-v3", "x86-64")
-OPTS = ("-O2", "-O3")
+
+
+@dataclass(frozen=True, slots=True)
+class Variant:
+    """The flags and the levels that one kind of build adds to the flags that each build takes."""
+
+    name: str
+    presets: str
+    levels: tuple[str, ...]
+    flags: tuple[str, ...]
+
+
+# The kinds of build.  The release variant also compiles at -O2, the level
+# of a build that a person can choose for a deployment.
+BUILD_VARIANTS: tuple[Variant, ...] = (
+    Variant("debug", "default, tsan, ubsan-strict and analyzer", ("-O1",),
+            ("-D_GLIBCXX_ASSERTIONS=1", "-D_GLIBCXX_SANITIZE_VECTOR=1")),
+    Variant("release", "release, bench, pgo and pgo-release", ("-O2", "-O3"),
+            ("-DNDEBUG", "-fharden-compares", "-fharden-conditional-branches",
+             "-fcontract-evaluation-semantic=observe")),
+    Variant("verify", "verify", ("-O3",),
+            ("-fharden-compares", "-fharden-conditional-branches", "-fcontract-evaluation-semantic=enforce")),
+)
+
+# The flags whose presence or value changes with the kind of build.  The
+# guard removes them from the flags of the compile database, and each
+# variant puts its own flags in their place.
+PER_BUILD = ("-O", "-march=", "-mtune=", "-mcpu=", "-fharden-", "-fno-harden-", "-fcontract-evaluation-semantic=",
+             "-DNDEBUG", "-UNDEBUG", "-D_GLIBCXX_ASSERTIONS", "-D_GLIBCXX_SANITIZE_VECTOR")
+# The per-build flags that the guard sweeps with the levels of a variant and with MARCHES.
+SWEPT = ("-O", "-march=", "-mtune=", "-mcpu=")
+# The flags that the guard does not model: the sanitizers, the profile
+# flags, the analyzer, and the define of the quarantine plugin.
+DROPPED = ("-fsanitize", "-fno-sanitize", "-fprofile-", "-fno-profile-", "-fbranch-probabilities", "-fauto-profile",
+           "-DCRUCIBLE_PGO", "-fanalyzer", "-DCRUCIBLE_QUARANTINE_ACTIVE")
+# The words of a compile command that do not change the code.  An option of
+# SEPARATE_VALUE takes the next word as its value.
+SEPARATE_VALUE = frozenset({"-o", "-c", "-MF", "-MT", "-MQ", "-I", "-isystem", "-iquote", "-include", "-x"})
+NOT_CODE_WORDS = frozenset({"-MD", "-MMD"})
+NOT_CODE_PREFIXES = ("-W", "-pedantic", "-fdiagnostics-", "-fno-diagnostics-", "-ftemplate-backtrace-limit=",
+                     "-fconstexpr-ops-limit=", "-fplugin=", "-fplugin-arg-", "-fdebug-prefix-map=",
+                     "-ffile-prefix-map=", "-fmacro-prefix-map=", "-fmessage-length=", "-g", "-I", "-isystem",
+                     "-iquote")
 
 # The functions each namespace of primitives may hold.  A new one fails the
 # reflection census until it has a wrapper below.
@@ -98,16 +168,106 @@ NAME_OWNERS = frozenset({"template_type", "template_function", "template_method"
 PREFIXES = {"rep", "repz", "repe", "repnz", "repne", "lock", "notrack", "bnd", "data16", "cs", "ds"}
 
 
-def default_compiler() -> str:
-    """Return the GCC 16 driver that the toolchain file selects."""
-    if os.environ.get("CRUCIBLE_CXX"):
-        return os.environ["CRUCIBLE_CXX"]
-    prefix = pathlib.Path(os.environ.get("CRUCIBLE_GCC16_PREFIX", pathlib.Path.home() / ".local/gcc16-patched"))
-    for name in ("g++-16p", "g++-16", "g++"):
-        candidate = prefix / "usr/bin" / name
-        if candidate.exists():
-            return str(candidate)
-    return "g++"
+class CannotRun(RuntimeError):
+    """The guard cannot run: an input is missing, or a tool failed."""
+
+
+@dataclass(frozen=True, slots=True)
+class Plan:
+    """The compiler and the flags that each build takes, from the compile database."""
+
+    compiler: str
+    base: tuple[str, ...]
+
+    def targets(self) -> Iterator[tuple[str, list[str]]]:
+        """Yield the name and the flags of each compile: each level of each variant, for each target."""
+        for variant in BUILD_VARIANTS:
+            for level in variant.levels:
+                for march in MARCHES:
+                    yield f"{variant.name} -march={march} {level}", [*self.base, *variant.flags, level,
+                                                                      f"-march={march}"]
+
+
+def code_flags(words: Iterable[str], source: str) -> list[str]:
+    """Return the words of a compile command that change the code, in order, with no compiler and no source."""
+    flags: list[str] = []
+    words = list(words)
+    index = 1
+    while index < len(words):
+        word = words[index]
+        if word in SEPARATE_VALUE:
+            index += 2
+            continue
+        index += 1
+        if word == source or word in NOT_CODE_WORDS or word.startswith(NOT_CODE_PREFIXES):
+            continue
+        flags.append(word)
+    return flags
+
+
+def split_flags(flags: Iterable[str]) -> tuple[tuple[str, ...], frozenset[str]]:
+    """Return the flags that each build takes, and the per-build flags that the guard does not sweep."""
+    flags = list(flags)
+    base = tuple(flag for flag in flags if not flag.startswith(PER_BUILD + DROPPED))
+    per_build = frozenset(flag for flag in flags if flag.startswith(PER_BUILD) and not flag.startswith(SWEPT))
+    return base, per_build
+
+
+def flag_problems(bases: list[tuple[str, ...]], per_builds: list[frozenset[str]]) -> list[str]:
+    """Return a problem for units that do not agree, and for per-build flags that no variant has.
+
+    Args:
+        bases: The flags that each build takes, of each foundation unit
+        per_builds: The per-build flags of each foundation unit
+    """
+    problems: list[str] = []
+    if any(base != bases[0] for base in bases) or any(per_build != per_builds[0] for per_build in per_builds):
+        problems.append("the foundation units do not have the same code generation flags, so the guard cannot take "
+                        "one set from them.  Give each unit of the foundation library the flags of the tree")
+    known = [variant for variant in BUILD_VARIANTS if frozenset(variant.flags) == per_builds[0]]
+    if not known:
+        kinds = "; ".join(f"{variant.name} for {variant.presets}" for variant in BUILD_VARIANTS)
+        problems.append(f"the build gives the per-build flags {sorted(per_builds[0])}, and no variant of "
+                        f"BUILD_VARIANTS has exactly these flags ({kinds}).  Add the flag to the variant of the kind "
+                        f"of build that takes it, or add a variant, so that the guard compiles the wrappers with the "
+                        f"flags of this build")
+    return problems
+
+
+def read_plan(build_dir: pathlib.Path, objects: Iterable[pathlib.Path]) -> tuple[Plan, list[str]]:
+    """Read the compile database of a build directory, and return the plan and the problems of its flags.
+
+    Complexity: O(rows) for the search of the database.
+
+    Args:
+        build_dir: The build directory
+        objects: The objects of the foundation library, as absolute paths
+
+    Raises:
+        CannotRun: If the database cannot be read, or no row writes one of the objects
+    """
+    path = build_dir / "compile_commands.json"
+    try:
+        rows = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise CannotRun(f"the compile database {path} cannot be read: {error}") from None
+    wanted = {pathlib.Path(os.path.normpath(obj)) for obj in objects}
+    commands: dict[pathlib.Path, tuple[list[str], str]] = {}
+    for row in rows:
+        directory = row.get("directory", str(build_dir))
+        output = row.get("output")
+        if output is None:
+            continue
+        written = pathlib.Path(os.path.normpath(os.path.join(directory, output)))
+        if written in wanted:
+            commands[written] = (row.get("arguments") or shlex.split(row.get("command", "")), row.get("file", ""))
+    missing = sorted(str(obj) for obj in wanted - commands.keys())
+    if not wanted or missing:
+        raise CannotRun(f"no row of the compile database {path} writes the foundation objects {missing}")
+    ordered = [commands[obj] for obj in sorted(commands)]
+    splits = [split_flags(code_flags(words, source)) for words, source in ordered]
+    problems = flag_problems([base for base, _ in splits], [per_build for _, per_build in splits])
+    return Plan(ordered[0][0][0], splits[0][0]), problems
 
 
 def census_prelude() -> str:
@@ -177,15 +337,17 @@ def wrapper_source() -> tuple[str, dict[str, bool]]:
     return "\n".join(lines) + "\n", names
 
 
-def compile_object(cxx: str, source: pathlib.Path, obj: pathlib.Path, march: str, opt: str) -> None:
-    """Compile `source` to `obj`; stop the guard with exit 2 on a compile error."""
-    cmd = [cxx, "-std=c++26", "-freflection", "-fcontracts", "-fcontract-evaluation-semantic=observe", "-DNDEBUG",
-           opt, f"-march={march}", "-fno-asynchronous-unwind-tables", f"-I{REPO_ROOT / 'include'}",
+def compile_object(compiler: str, flags: list[str], source: pathlib.Path, obj: pathlib.Path, target: str) -> None:
+    """Compile `source` to `obj` with the flags of one target.
+
+    Raises:
+        CannotRun: If the compile fails
+    """
+    cmd = [compiler, *flags, "-fno-asynchronous-unwind-tables", f"-I{REPO_ROOT / 'include'}",
            "-c", str(source), "-o", str(obj)]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        sys.stderr.write(f"check-ct-disassembly: the compile failed for -march={march} {opt}:\n{result.stderr}")
-        sys.exit(2)
+        raise CannotRun(f"the compile failed for {target}:\n{shlex.join(cmd)}\n{result.stderr}")
 
 
 class Insn:
@@ -203,12 +365,15 @@ class Insn:
 
 
 def disassemble(obj: pathlib.Path) -> dict[str, list[Insn]]:
-    """Return {function: [instruction]} for every function in `obj`, relocations attached."""
+    """Return {function: [instruction]} for every function in `obj`, relocations attached.
+
+    Raises:
+        CannotRun: If objdump fails
+    """
     result = subprocess.run(["objdump", "-dr", "--no-show-raw-insn", "-M", "intel", str(obj)],
                             capture_output=True, text=True)
     if result.returncode != 0:
-        sys.stderr.write(f"check-ct-disassembly: objdump failed:\n{result.stderr}")
-        sys.exit(2)
+        raise CannotRun(f"objdump failed:\n{result.stderr}")
     functions: dict[str, list[Insn]] = {}
     current: str | None = None
     head = re.compile(r"^[0-9a-f]+ <([^>]+)>:$")
@@ -275,22 +440,31 @@ def findings_of(name: str, body: list[Insn], takes_pointers: bool) -> list[str]:
     return out
 
 
-def check_object(cxx: str, source: pathlib.Path, expected: dict[str, bool], workdir: pathlib.Path) -> list[str]:
-    """Compile `source` for every target and return the findings, each tagged with its target."""
-    findings: list[str] = []
-    for march in MARCHES:
-        for opt in OPTS:
-            obj = workdir / f"ct_{march}_{opt[1:]}.o"
-            compile_object(cxx, source, obj, march, opt)
-            functions = disassemble(obj)
-            missing = [n for n in expected if n not in functions]
-            if missing:
-                sys.stderr.write(f"check-ct-disassembly: -march={march} {opt} emitted no code for {missing}\n")
-                sys.exit(2)
-            for name, takes_pointers in expected.items():
-                for finding in findings_of(name, functions[name], takes_pointers):
-                    findings.append(f"-march={march} {opt} {name}: {finding}")
-    return findings
+def check_object(plan: Plan, source: pathlib.Path, expected: dict[str, bool], workdir: pathlib.Path) -> list[str]:
+    """Compile `source` for every target of the plan and return the findings, each tagged with its target.
+
+    The compiles of the targets run at the same time, one thread for each.
+
+    Raises:
+        CannotRun: If a compile or objdump fails, or a target emits no code for a wrapper
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    targets = list(plan.targets())
+
+    def one_target(index: int) -> list[str]:
+        target, flags = targets[index]
+        obj = workdir / f"ct_{index}.o"
+        compile_object(plan.compiler, flags, source, obj, target)
+        functions = disassemble(obj)
+        missing = [n for n in expected if n not in functions]
+        if missing:
+            raise CannotRun(f"{target} emitted no code for {missing}")
+        return [f"{target} {name}: {finding}" for name, takes_pointers in expected.items()
+                for finding in findings_of(name, functions[name], takes_pointers)]
+
+    with ThreadPoolExecutor(max_workers=len(targets)) as pool:
+        return [finding for found in pool.map(one_target, range(len(targets))) for finding in found]
 
 
 def whole_name(leaf: tsast.Node) -> tsast.Node:
@@ -383,21 +557,25 @@ def ctcrypto_problems(repo: pathlib.Path, cases: dict[str, tuple[tuple[str, bool
     return problems
 
 
-def run_guard(cxx: str) -> int:
-    """Check every wrapper; return the exit code."""
+def run_guard(plan: Plan, problems: list[str]) -> int:
+    """Check every wrapper with the plan, and report the problems of the flags too; return the exit code.
+
+    Raises:
+        CannotRun: If a compile or objdump fails
+    """
     source_text, names = wrapper_source()
     with tempfile.TemporaryDirectory(prefix="ct-disassembly-") as tmp:
         workdir = pathlib.Path(tmp)
         source = workdir / "ct_wrappers.cpp"
         source.write_text(source_text)
-        findings = check_object(cxx, source, names, workdir)
-    problems = ctcrypto_problems(REPO_ROOT, CTCRYPTO_CASES)
+        findings = check_object(plan, source, names, workdir)
+    problems = problems + ctcrypto_problems(REPO_ROOT, CTCRYPTO_CASES)
     for line in findings + problems:
         print(f"check-ct-disassembly: {line}")
     if findings or problems:
-        print(f"check-ct-disassembly: FAIL, {len(findings)} findings, {len(problems)} case-list problems")
+        print(f"check-ct-disassembly: FAIL, {len(findings)} findings, {len(problems)} flag or case-list problems")
         return 1
-    print(f"check-ct-disassembly: clean, {len(names)} wrappers x {len(MARCHES) * len(OPTS)} targets")
+    print(f"check-ct-disassembly: clean, {len(names)} wrappers x {len(list(plan.targets()))} targets")
     return 0
 
 
@@ -414,8 +592,12 @@ extern "C" std::uint8_t ct_plant_index(std::uint32_t x) noexcept {
 }
 extern "C" std::uint32_t ct_plant_call(std::uint32_t x) noexcept { return external_sink(x) + 1u; }
 extern "C" std::uint32_t ct_plant_divide(std::uint32_t x, std::uint32_t y) noexcept { return x / (y | 1u); }
+extern "C" bool ct_plant_hardened(std::uint8_t x) noexcept { return x == 0u; }
 extern "C" std::uint32_t ct_plant_clean(std::uint32_t x, std::uint32_t y) noexcept { return (x * 5u + y) ^ 0xFFu; }
 """
+
+# The variants whose flags put a branch to a trap after the compare of ct_plant_hardened.
+HARDENED_VARIANTS = frozenset({"release", "verify"})
 
 
 def self_test_case_list() -> int:
@@ -455,32 +637,78 @@ def self_test_case_list() -> int:
     return failures
 
 
-def run_self_test(cxx: str) -> int:
-    """Plant one violation of each kind beside a clean function; each must be found, the clean one must pass."""
+def self_test_flags() -> int:
+    """Plant the flags of foundation units for each kind of flag problem; return the number of wrong verdicts."""
+    common = ["g++", "-std=c++26", "-fPIC", "-fno-plt", "-Wall", "-Iinclude", "-fplugin=q.so", "-o", "u.o", "-c",
+              "u.cpp"]
+    debug = common + ["-O1", "-D_GLIBCXX_ASSERTIONS=1", "-D_GLIBCXX_SANITIZE_VECTOR=1", "-fsanitize=address"]
+    release = common + ["-O1", "-march=native", "-DNDEBUG", "-O3", "-DNDEBUG", "-fharden-compares",
+                        "-fharden-conditional-branches", "-fcontract-evaluation-semantic=observe"]
+    verify = common + ["-O3", "-march=native", "-fharden-compares", "-fharden-conditional-branches",
+                       "-fcontract-evaluation-semantic=enforce"]
+    profiled = release + ["-fprofile-use=p", "-DCRUCIBLE_PGO=1"]
+    cases: tuple[tuple[str, list[list[str]], int], ...] = (
+        ("a Debug build with a sanitizer", [debug, debug], 0),
+        ("a Release build", [release, release], 0),
+        ("a verify build", [verify], 0),
+        ("a Release build with a profile", [profiled], 0),
+        ("a Release build with a new hardening flag", [release + ["-fharden-control-flow-redundancy"]], 1),
+        ("a Release build with no hardening", [[word for word in release if not word.startswith("-fharden-")]], 1),
+        ("two units with different base flags", [release, release + ["-fno-common"]], 1),
+    )
+    failures = 0
+    for title, commands, expected in cases:
+        splits = [split_flags(code_flags(words, "u.cpp")) for words in commands]
+        problems = flag_problems([base for base, _ in splits], [per_build for _, per_build in splits])
+        if len(problems) != expected:
+            print(f"self-test: the flag case '{title}' gave {len(problems)} problems, not {expected}: {problems}")
+            failures += 1
+    base, _ = split_flags(code_flags(release, "u.cpp"))
+    if base != ("-std=c++26", "-fPIC", "-fno-plt"):
+        print(f"self-test: the flags that each build takes are {base}, and the expectation is -std=c++26 -fPIC -fno-plt")
+        failures += 1
+    return failures
+
+
+def run_self_test(plan: Plan) -> int:
+    """Plant one violation of each kind beside a clean function; each must be found, the clean one must pass.
+
+    Raises:
+        CannotRun: If a compile or objdump fails
+    """
+    # A table read through a position-independent address is an indexed
+    # load, and a table read through an absolute address is a computed one.
     expect_flagged = {
-        "ct_plant_branch": "conditional branch",
-        "ct_plant_index": "computed address",
-        "ct_plant_call": "call",
-        "ct_plant_divide": "operand-dependent latency",
+        "ct_plant_branch": ("conditional branch",),
+        "ct_plant_index": ("computed address", "indexed load"),
+        "ct_plant_call": ("call",),
+        "ct_plant_divide": ("operand-dependent latency",),
     }
     with tempfile.TemporaryDirectory(prefix="ct-disassembly-self-") as tmp:
         workdir = pathlib.Path(tmp)
         source = workdir / "planted.cpp"
         source.write_text(PLANTED)
-        names = {name: False for name in expect_flagged} | {"ct_plant_clean": False}
-        findings = check_object(cxx, source, names, workdir)
+        names = {name: False for name in expect_flagged} | {"ct_plant_hardened": False, "ct_plant_clean": False}
+        findings = check_object(plan, source, names, workdir)
     failures = 0
-    for name, kind in expect_flagged.items():
-        for march in MARCHES:
-            for opt in OPTS:
-                tag = f"-march={march} {opt} {name}: "
-                if not any(f.startswith(tag) and kind in f for f in findings):
-                    print(f"self-test: {name} must be flagged for '{kind}' at -march={march} {opt}")
-                    failures += 1
+    for target, _ in plan.targets():
+        for name, kinds in expect_flagged.items():
+            if not any(f.startswith(f"{target} {name}: ") and any(kind in f for kind in kinds) for f in findings):
+                print(f"self-test: {name} must be flagged for one of {list(kinds)} at {target}")
+                failures += 1
+        # A compare that gives a value has a branch only under the flags of
+        # a hardened variant, so this plant tells the flags of a variant apart.
+        is_hardened = target.split()[0] in HARDENED_VARIANTS
+        is_flagged = any(f.startswith(f"{target} ct_plant_hardened: conditional branch") for f in findings)
+        if is_flagged != is_hardened:
+            print(f"self-test: ct_plant_hardened {'must' if is_hardened else 'must not'} be flagged for a "
+                  f"conditional branch at {target}")
+            failures += 1
     clean_hits = [f for f in findings if " ct_plant_clean: " in f]
     if clean_hits:
         print(f"self-test: the clean function was flagged: {clean_hits}")
         failures += 1
+    failures += self_test_flags()
     source_text, names = wrapper_source()
     if len(names) != len(WIDTHS) * 5 + len(STATIC_EQ_LENGTHS):
         print("self-test: the wrapper list lost a primitive")
@@ -497,7 +725,7 @@ def run_self_test(cxx: str) -> int:
         with tempfile.TemporaryDirectory(prefix="ct-disassembly-census-") as tmp:
             source = pathlib.Path(tmp) / "census.cpp"
             source.write_text(tu)
-            result = subprocess.run([cxx, "-std=c++26", "-freflection", "-fsyntax-only", str(source)],
+            result = subprocess.run([plan.compiler, "-std=c++26", "-freflection", "-fsyntax-only", str(source)],
                                     capture_output=True, text=True)
         fired = result.returncode != 0 and "census fired" in result.stderr
         if fired != must_fail:
@@ -511,17 +739,24 @@ def run_self_test(cxx: str) -> int:
 def main() -> int:
     """Parse the arguments and run the guard or its self-test."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--cxx", default=default_compiler(), help="the GCC 16 driver")
+    parser.add_argument("--build-dir", type=pathlib.Path, required=True,
+                        help="the build directory, with compile_commands.json")
+    parser.add_argument("--base-objects", type=pathlib.Path, nargs="+", required=True,
+                        help="the objects of the foundation library, whose compile commands give the flags")
     parser.add_argument("--self-test", action="store_true", help="check the checker on planted code")
     args = parser.parse_args()
-    if shutil.which(args.cxx) is None and not pathlib.Path(args.cxx).exists():
-        sys.stderr.write(f"check-ct-disassembly: no compiler at {args.cxx}\n")
-        return 2
     if shutil.which("objdump") is None:
         sys.stderr.write("check-ct-disassembly: objdump is missing\n")
         return 2
     try:
-        return run_self_test(args.cxx) if args.self_test else run_guard(args.cxx)
+        plan, problems = read_plan(pathlib.Path(os.path.abspath(args.build_dir)),
+                                   [pathlib.Path(os.path.abspath(obj)) for obj in args.base_objects])
+        if shutil.which(plan.compiler) is None and not pathlib.Path(plan.compiler).exists():
+            raise CannotRun(f"the compile database names the compiler {plan.compiler}, and it does not exist")
+        return run_self_test(plan) if args.self_test else run_guard(plan, problems)
+    except CannotRun as exc:
+        sys.stderr.write(f"check-ct-disassembly: the guard cannot run: {exc}\n")
+        return 2
     except tsast.KitMissing as exc:
         sys.stderr.write(f"check-ct-disassembly: the census cannot run: {exc}\n")
         return 2
