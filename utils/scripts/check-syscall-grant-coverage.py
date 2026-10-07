@@ -23,7 +23,8 @@ WHAT COUNTS AS ISSUING A SYSTEM CALL
         call it wraps.
       * A `syscall(SYS_<name>, ...)` outside a `_sys` helper.  Inside a
         helper, the SYS_ number must name the helper's own system call, or
-        the helper is a violation.
+        the helper is a violation.  This rule holds for a helper of the
+        header and for a helper of DOOR_HEADERS.
       * The same shapes in a macro body.  The body is parsed on its own
         (tsast.macro_bodies), with every fragment joined, so a block comment
         inside it cannot cut a member call away from its object.  A body
@@ -151,7 +152,7 @@ def call_of(word: str, names: frozenset[str]) -> str | None:
 
 
 def root_issued(root: tsast.Node, names: frozenset[str], problems: list[str],
-                line_of: Callable[[tsast.Node], int]) -> set[str]:
+                line_of: Callable[[tsast.Node], int], path: str = HEADER) -> set[str]:
     """Derive the system calls that the identifiers under the root of a file or a macro body issue.
 
     Complexity: linear in the number of nodes under the root.
@@ -161,6 +162,7 @@ def root_issued(root: tsast.Node, names: frozenset[str], problems: list[str],
         names: The catalog names
         problems: Each wrong helper is appended here
         line_of: The one-based file line of a node under the root
+        path: The file of the root, as the report of a wrong helper names it
 
     Returns:
         The system call names
@@ -179,7 +181,7 @@ def root_issued(root: tsast.Node, names: frozenset[str], problems: list[str],
         if helper is None:
             found.add(call)
         elif helper[: -len(HELPER_SUFFIX)] != call:
-            problems.append(f"{HEADER}:{line_of(node)}: the helper {helper} issues {text}, which is not its own "
+            problems.append(f"{path}:{line_of(node)}: the helper {helper} issues {text}, which is not its own "
                             f"system call.")
     return found
 
@@ -220,12 +222,13 @@ def issued(tree: tsast.Tree, names: frozenset[str]) -> tuple[set[str], list[str]
     return found, problems
 
 
-def door_issues(root: Path, names: frozenset[str]) -> dict[str, set[str]]:
+def door_issues(root: Path, names: frozenset[str]) -> tuple[dict[str, set[str]], list[str]]:
     """Return the system calls that each function of the door headers issues, through the calls of its body.
 
     A function issues what its body names and what each function of the
     door headers that its body calls issues.  The loop repeats until no set
-    grows.
+    grows.  A `_sys` helper of a door header obeys the rule of a helper of
+    the header: its SYS_ number names its own system call.
 
     Complexity: O(F * I) for F functions and I identifiers of the door
     headers, times the depth of the call chain, which is small.
@@ -236,13 +239,15 @@ def door_issues(root: Path, names: frozenset[str]) -> dict[str, set[str]]:
 
     Returns:
         For each unqualified function name with at least one system call,
-        the system call names
+        the system call names.  Then each wrong helper of the door headers,
+        one time, in the order of the headers and their lines
 
     Raises:
         Unreadable: When a door header is missing or does not parse
     """
     direct: dict[str, set[str]] = {}
     callees: dict[str, set[str]] = {}
+    problems: list[str] = []
     for rel in DOOR_HEADERS:
         tree = parse_one(root / rel)
         for function in tree.find("function_definition"):
@@ -251,9 +256,11 @@ def door_issues(root: Path, names: frozenset[str]) -> dict[str, set[str]]:
             if name is None or body is None:
                 continue
             short = name.split("::")[-1]
-            problems: list[str] = []
-            direct.setdefault(short, set()).update(root_issued(body, names, problems, lambda node: node.line))
+            direct.setdefault(short, set()).update(root_issued(body, names, problems, lambda node: node.line, rel))
             callees.setdefault(short, set()).update(tsast.spelled(node) for node in body.descendants("identifier"))
+    # A function that a body of the door headers defines, such as a member of
+    # a local class, is a definition of its own too, so its report comes two times.
+    problems = list(dict.fromkeys(problems))
     closure = {name: set(calls) for name, calls in direct.items()}
     grew = True
     while grew:
@@ -263,7 +270,7 @@ def door_issues(root: Path, names: frozenset[str]) -> dict[str, set[str]]:
                 if not closure[callee] <= closure[name]:
                     closure[name] |= closure[callee]
                     grew = True
-    return {name: calls for name, calls in closure.items() if calls}
+    return {name: calls for name, calls in closure.items() if calls}, problems
 
 
 def door_calls(tree: tsast.Tree, doors: dict[str, set[str]]) -> set[str]:
@@ -299,11 +306,12 @@ def check(root: Path) -> int:
     try:
         names = catalog_names(parse_one(root / CATALOG))
         header = parse_one(root / HEADER)
-        doors = door_issues(root, names)
+        doors, door_problems = door_issues(root, names)
     except Unreadable as exc:
         print(f"check-syscall-grant-coverage: {exc}", file=sys.stderr)
         return 2
     calls, problems = issued(header, names)
+    problems += door_problems
     calls |= door_calls(header, doors)
     grants = granted(header, names)
     if not grants or not calls:
@@ -317,11 +325,16 @@ def check(root: Path) -> int:
         print(f"SYSCALL-GRANT granted but never issued: {' '.join(extra)}", file=sys.stderr)
     for problem in problems:
         print(f"SYSCALL-GRANT wrong helper: {problem}", file=sys.stderr)
-    if missing or extra or problems:
+    if missing or extra:
         print(f"check-syscall-grant-coverage: {TUPLE} in {HEADER} disagrees with the call sites.  For a new "
               f"call, add per<SyscallId::<name>> to the tuple, raise the tuple_size assert in {CHECK_FILE} and "
               f"extend test/test_hardening_syscall_atoms.cpp.  For a grant with no call, remove the grant, or say "
               f"in a comment beside it which header issues the call.", file=sys.stderr)
+    if problems:
+        print(f"check-syscall-grant-coverage: a `<name>{HELPER_SUFFIX}` helper of {HEADER} or of a door header "
+              f"stands for the system call <name>, so its SYS_ number must be SYS_<name>.  Correct the number, or "
+              f"give the helper the name of the system call that it issues.", file=sys.stderr)
+    if missing or extra or problems:
         return 1
     print(f"check-syscall-grant-coverage: clean — {TUPLE} names exactly the system calls issued in {HEADER}.",
           file=sys.stderr)
@@ -457,6 +470,21 @@ def self_test() -> int:
         (root / DOOR_HEADERS[1]).write_text(door_pinned, encoding="utf-8")
         code, report = run(header(helper="SYS_mlock"))
         expect("caught: a helper that issues another system call", code == 1 and "wrong helper" in report)
+        for number in ("SYS_sched_getaffinity", "SYS_mlock"):
+            door_with_helper = ("#pragma once\nnamespace fixy::detail {\n"
+                                "inline int pin_door(int cpu) noexcept { return ::sched_setaffinity(0, cpu, nullptr); }\n"
+                                "inline int sched_getaffinity_sys(int cpu) noexcept {\n"
+                                f"    return ::syscall({number}, 0, cpu, nullptr);\n"
+                                "}\n}\n")
+            (root / DOOR_HEADERS[1]).write_text(door_with_helper, encoding="utf-8")
+            code, report = run(header())
+            if number == "SYS_mlock":
+                expect("caught: a helper of a door header that issues another system call",
+                       code == 1 and f"wrong helper: {DOOR_HEADERS[1]}:5: the helper sched_getaffinity_sys issues "
+                       f"SYS_mlock" in report)
+            else:
+                expect("not counted: a helper of a door header that issues its own system call", code == 0, True)
+        (root / DOOR_HEADERS[1]).write_text(door_pinned, encoding="utf-8")
         code, report = run(header().replace(TUPLE, "renamed_atoms"))
         expect("a tuple the guard cannot find exits 2", code == 2)
         (root / CATALOG).unlink()
@@ -486,7 +514,7 @@ def main(argv: list[str]) -> int:
         if argv == ["--list"]:
             names = catalog_names(parse_one(tsast.REPO_ROOT / CATALOG))
             tree = parse_one(tsast.REPO_ROOT / HEADER)
-            reached = issued(tree, names)[0] | door_calls(tree, door_issues(tsast.REPO_ROOT, names))
+            reached = issued(tree, names)[0] | door_calls(tree, door_issues(tsast.REPO_ROOT, names)[0])
             print("issued:  " + " ".join(sorted(reached)))
             print("granted: " + " ".join(sorted(granted(tree, names))))
             return 0
