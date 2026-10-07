@@ -21,8 +21,9 @@ compile against the rule table of the tree, in a scratch root with the paths
 of the tree: in report mode the section of the object holds the one finding of
 the plant, and in error mode the plant fails the compile.  An enforce row with the mode
 error makes a finding an error in report mode, and a file that no row holds
-is an error.  The plugin and utils/scripts/layer_rules.py get the same
-malformed tables, and each one must refuse each table.
+is an error.  The plugin and utils/scripts/layer_rules.py read each table of
+malformed-tables.txt.  Each one must refuse the table at the line of its
+case, and the plugin must give the error of the case and no other error.
 
 contracts.cpp holds each form of a P2900 contract specifier that the contract
 rule rejects, also in base code.  The test compiles it in each mode and with
@@ -118,47 +119,9 @@ PLANTS = (
     ("PLANT_STD_NAME", "plant_std.cpp", "std_entity", "std::swap"),
 )
 
-# Tables that do not obey the format.  The plugin and layer_rules.py must each
-# refuse each one.
-MALFORMED_TABLES = (
-    ("an unknown row kind", "bogus x/\n"),
-    ("a rank that is not digits", "layer low x include/\n"),
-    ("a rank of two layers", "layer one 0 a/\nlayer two 0 b/\n"),
-    ("a layer with two rows", "layer one 0 a/\nlayer one 1 b/\n"),
-    ("a path in a layer row and a quarantine row", "layer one 0 a/\nquarantine a/\n"),
-    ("an allow row of no layer", "allow none <cstdint>\n"),
-    ("a header with no angle brackets", "layer one 0 a/\nallow one cstdint\n"),
-    ("a door whose owner is a directory", "door <x.h> a/\n"),
-    ("a door whose owner is a file of the build directory", "door <x.h> @build/x.cpp\n"),
-    ("a layer row with a path of the build directory", "layer one 0 @build/\n"),
-    ("a language path in the build directory", "layer one 0 a/\nquarantine @build/\nlanguage one @build/x.h\n"),
-    ("a header with two doors", "door <x.h> a.cpp\ndoor <x.h> b.cpp\n"),
-    ("an admit row with no reason", "admit std::move\n"),
-    ("an admit row with `until` and no family", "admit std::move until | a cast\n"),
-    ("an admit row with a word that is no restriction", "admit std::move after Scalar | a cast\n"),
-    ("a restriction two times", "admit std::move arity 1 arity 1 | a cast\n"),
-    ("an arity that is not digits", "admit std::move arity one | a cast\n"),
-    ("an arity of a header", "admit <utility> arity 1 | a cast\n"),
-    ("`concepts` of a name", "admit std::move concepts | a cast\n"),
-    ("`parameters` of a header", "admit <initializer_list> parameters | a list\n"),
-    ("`plain-result` of a header", "admit <bit> plain-result | the bits\n"),
-    ("`plain-result` two times", "admit std::bit_cast plain-result plain-result | the bits\n"),
-    ("`consteval-only` of a header", "admit <vector> consteval-only | a list\n"),
-    ("`consteval-only` two times", "admit std::vector consteval-only consteval-only | a list\n"),
-    ("`unless` with no identifier", "admit <meta> unless 1DEBUG | reflection\n"),
-    ("`in` with no path", "layer one 0 a/\nadmit std::move in | a cast\n"),
-    ("an `in` path outside the base", "layer one 0 a/\nquarantine b/\nadmit std::move in b/ | a cast\n"),
-    ("an absolute path", "quarantine /a/\n"),
-    ("a path with a parent component", "quarantine a/../b/\n"),
-    ("a path with an empty component", "quarantine a//\n"),
-    ("an unknown enforce mode", "enforce a/ fatal\n"),
-    ("a path with two enforce rows", "enforce a/ error\nenforce a/ report\n"),
-    ("a language row with no path", "layer one 0 a/\nlanguage one\n"),
-    ("a language row of no layer", "layer one 0 a/\nlanguage none a/x.h\n"),
-    ("a language path outside the base", "layer one 0 a/\nquarantine b/\nlanguage one b/x.h\n"),
-    ("a path in two language rows", "layer one 0 a/\nlanguage one a/x.h\nlanguage one a/x.h\n"),
-    ("a reason with no row kind", "| a reason\n"),
-)
+# The tables that do not obey the format, with the refusal of each one.  The
+# head comment of the file gives its format.
+MALFORMED_CORPUS = HERE / "malformed-tables.txt"
 
 # (kind, fixture, line, a text that the entity holds, or '=' and the whole entity)
 PRESENT = (
@@ -309,6 +272,49 @@ class Finding:
     file: str
     line: int
     entity: str
+
+
+@dataclass(frozen=True)
+class MalformedTable:
+    """One case of malformed-tables.txt: a table and the refusal that each reader must give."""
+
+    name: str
+    line: int  # the line of the bad row in the table
+    message: str  # the message of the error of the plugin
+    text: str
+
+
+def read_malformed_tables(path: Path) -> tuple[MalformedTable, ...]:
+    """Read the cases of the corpus at PATH, in the order of the file.
+
+    The head comment of the corpus gives its format.  Complexity: linear in
+    the lines of the corpus.
+
+    Raises:
+        ValueError: When the corpus does not obey its format
+    """
+    lines = path.read_text(encoding="utf-8").split("\n")
+    starts = [index for index, line in enumerate(lines) if line.startswith("case ")]
+    cases: list[MalformedTable] = []
+    for start, end in zip(starts, [*starts[1:], len(lines)], strict=True):
+        name = lines[start][len("case "):].strip()
+        verdict = lines[start + 1] if start + 1 < end else ""
+        number, separator, message = verdict.removeprefix("refused ").partition(": ")
+        table = lines[start + 2:end]
+        while table and not table[-1]:
+            table.pop()
+        where = f"{path.name}:{start + 1}"
+        if not name or any(case.name == name for case in cases):
+            raise ValueError(f"{where}: a case needs a name that no other case has")
+        is_number = number.isascii() and number.isdigit()
+        if not verdict.startswith("refused ") or not separator or not is_number or not message:
+            raise ValueError(f"{where}: the line after `case NAME` is `refused LINE: MESSAGE`")
+        if not 1 <= int(number) <= len(table):
+            raise ValueError(f"{where}: the line {number} is not a line of the table of the case")
+        cases.append(MalformedTable(name, int(number), message, "".join(f"{row}\n" for row in table)))
+    if not cases:
+        raise ValueError(f"{path.name}: the corpus holds no case")
+    return tuple(cases)
 
 
 class Checker:
@@ -1119,27 +1125,59 @@ def run_language(section: Section) -> None:
                        planted.returncode != 0 and len(errors) == 1 and text in errors[0], planted.stderr[-2000:])
 
 
-def run_table_readers(section: Section) -> None:
-    """Give the plugin and layer_rules.py each malformed table, and the test table and the tree table.
+def table_refusals(stderr: str, table: Path) -> list[tuple[int, str]]:
+    """Return the line and the message of each error of the plugin about the rule table TABLE in STDERR."""
+    prefix = f"error: quarantine: {table}:"
+    refusals: list[tuple[int, str]] = []
+    for row in stderr.splitlines():
+        at = row.find(prefix)
+        if at >= 0:
+            number, _, message = row[at + len(prefix):].partition(": ")
+            refusals.append((int(number) if number.isascii() and number.isdigit() else 0, message))
+    return refusals
 
-    Each reader must refuse each malformed table and read each good table.
+
+def python_verdict(table: Path) -> str:
+    """Return the error of layer_rules.py for the rule table TABLE, or "accepted" when it reads the table.
+
+    The reader must refuse a table only with TableError, so the text of each
+    other exception names its type.
+    """
+    try:
+        layer_rules.load(table)
+    except layer_rules.TableError as failure:
+        return str(failure)
+    except Exception as failure:  # each other exception is a defect of the reader, and the test reports it
+        return f"{type(failure).__name__}: {failure}"
+    return "accepted"
+
+
+def run_table_readers(section: Section) -> None:
+    """Give the plugin and layer_rules.py each table of the corpus, and the test table and the tree table.
+
+    The plugin must refuse each table of the corpus when it loads, with the
+    error of the case at the line of the case and with no other error.
+    layer_rules.py must refuse the table at the same line.  Each reader must
+    read each good table.
     """
     tables = section.work / "tables"
     tables.mkdir(exist_ok=True)
+    cases = read_malformed_tables(MALFORMED_CORPUS)
+    paths = [tables / f"malformed-{index}.txt" for index in range(len(cases))]
     calls: list[tuple[object, ...]] = []
-    for index, (_, text) in enumerate(MALFORMED_TABLES):
-        path = tables / f"malformed-{index}.txt"
-        path.write_text(text, encoding="utf-8")
+    for case, path in zip(cases, paths, strict=True):
+        path.write_bytes(case.text.encode("utf-8"))
         calls.append(("plant_std.cpp", {"root": str(HERE), "mode": "report", "rules": str(path)}))
-    for (name, text), compiled in zip(MALFORMED_TABLES, section.compile_all(calls), strict=True):
-        try:
-            layer_rules.parse(text)
-            is_refused_by_python = False
-        except layer_rules.TableError:
-            is_refused_by_python = True
-        section.expect(f"layer_rules.py refuses {name}", is_refused_by_python)
-        section.expect(f"the plugin refuses {name}",
-                       compiled.returncode != 0 and "error: quarantine: " in compiled.stderr, compiled.stderr[-2000:])
+    for case, path, compiled in zip(cases, paths, section.compile_all(calls), strict=True):
+        errors = [row for row in compiled.stderr.splitlines() if "error: quarantine: " in row]
+        section.expect(f"the plugin refuses {case.name} at line {case.line} with the error of the case, and with "
+                       f"no other error",
+                       compiled.returncode != 0 and "failed to initialize plugin" in compiled.stderr
+                       and table_refusals(compiled.stderr, path) == [(case.line, case.message)] and len(errors) == 1,
+                       compiled.stderr[-2000:])
+        verdict = python_verdict(path)
+        section.expect(f"layer_rules.py refuses {case.name} at line {case.line}",
+                       verdict.startswith(f"{path.name}:{case.line}: "), verdict)
     until_table = tables / "until.txt"
     until_table.write_text("admit <type_traits> | traits\nadmit std::move until Scalar | a cast\n"
                            "quarantine plant_std.cpp\n", encoding="utf-8")

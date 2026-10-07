@@ -1,0 +1,177 @@
+# The malformed rule tables.  check_plugin.py writes each table to a file of
+# its own, and gives that file to the two readers of the rule table: the
+# quarantine plugin and utils/scripts/layer_rules.py.  Each reader must refuse
+# the table at the line of the case.  The plugin must give the error of the
+# case and no other error, and it must stop when it loads.
+#
+# THE FORMAT
+#   A line `case NAME` starts a case.  The next line is `refused LINE: MESSAGE`,
+#   with the line of the bad row in the table and the message of the plugin.
+#   Each line after it, up to the next `case` line, is a line of the table.
+#   The empty lines at the end of a case are not part of the table, and a
+#   line of a table does not start with `case `.
+
+case an unknown row kind
+refused 1: the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce and language
+bogus x/
+
+case a rank that is not digits
+refused 1: a layer row is 'layer NAME RANK PATH...', with a RANK of digits
+layer low x include/
+
+case a rank of two layers
+refused 2: the rank belongs to a second layer
+layer one 0 a/
+layer two 0 b/
+
+case a layer with two rows
+refused 2: the layer has a second row
+layer one 0 a/
+layer one 1 b/
+
+case a path in a layer row and a quarantine row
+refused 2: the path a/ is also in the layer one
+layer one 0 a/
+quarantine a/
+
+case an allow row of no layer
+refused 1: the allow row names the layer none, and no layer row gives it
+allow none <cstdint>
+
+case a header with no angle brackets
+refused 2: an allow row is 'allow LAYER HEADER', with a HEADER in angle brackets
+layer one 0 a/
+allow one cstdint
+
+case a door whose owner is a directory
+refused 1: a door row is 'door HEADER OWNER', with a HEADER in angle brackets and one OWNER file of the source root
+door <x.h> a/
+
+case a door whose owner is a file of the build directory
+refused 1: a door row is 'door HEADER OWNER', with a HEADER in angle brackets and one OWNER file of the source root
+door <x.h> @build/x.cpp
+
+case a layer row with a path of the build directory
+refused 1: a layer row holds no path of the build directory, because the build writes no base file
+layer one 0 @build/
+
+case a language path in the build directory
+refused 3: the path @build/x.h of a language row is in no layer; it must be a path of the base
+layer one 0 a/
+quarantine @build/
+language one @build/x.h
+
+case a header with two doors
+refused 2: the header has a second door
+door <x.h> a.cpp
+door <x.h> b.cpp
+
+case an admit row with no reason
+refused 1: an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+admit std::move
+
+case an admit row with `until` and no family
+refused 1: an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+admit std::move until | a cast
+
+case an admit row with a word that is no restriction
+refused 1: an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+admit std::move after Scalar | a cast
+
+case a restriction two times
+refused 1: an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+admit std::move arity 1 arity 1 | a cast
+
+case an arity that is not digits
+refused 1: an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+admit std::move arity one | a cast
+
+case an arity of a header
+refused 1: an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+admit <utility> arity 1 | a cast
+
+case `concepts` of a name
+refused 1: an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+admit std::move concepts | a cast
+
+case `parameters` of a header
+refused 1: an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+admit <initializer_list> parameters | a list
+
+case `plain-result` of a header
+refused 1: an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+admit <bit> plain-result | the bits
+
+case `plain-result` two times
+refused 1: an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+admit std::bit_cast plain-result plain-result | the bits
+
+case `consteval-only` of a header
+refused 1: an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+admit <vector> consteval-only | a list
+
+case `consteval-only` two times
+refused 1: an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+admit std::vector consteval-only consteval-only | a list
+
+case `unless` with no identifier
+refused 1: an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+admit <meta> unless 1DEBUG | reflection
+
+case `in` with no path
+refused 2: an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+layer one 0 a/
+admit std::move in | a cast
+
+case an `in` path outside the base
+refused 3: the path b/ of an in restriction is in no layer; it must be a path of the base
+layer one 0 a/
+quarantine b/
+admit std::move in b/ | a cast
+
+case an absolute path
+refused 1: a quarantine row is 'quarantine PATH', with a PATH relative to the source root
+quarantine /a/
+
+case a path with a parent component
+refused 1: a quarantine row is 'quarantine PATH', with a PATH relative to the source root
+quarantine a/../b/
+
+case a path with an empty component
+refused 1: a quarantine row is 'quarantine PATH', with a PATH relative to the source root
+quarantine a//
+
+case an unknown enforce mode
+refused 1: an enforce row is 'enforce PATH MODE', and MODE is report or error
+enforce a/ fatal
+
+case a path with two enforce rows
+refused 2: the path has a second enforce row
+enforce a/ error
+enforce a/ report
+
+case a language row with no path
+refused 2: a language row is 'language LAYER PATH...'
+layer one 0 a/
+language one
+
+case a language row of no layer
+refused 2: the language row names the layer none, and no layer row gives it
+layer one 0 a/
+language none a/x.h
+
+case a language path outside the base
+refused 3: the path b/x.h of a language row is in no layer; it must be a path of the base
+layer one 0 a/
+quarantine b/
+language one b/x.h
+
+case a path in two language rows
+refused 3: the path has a second language row
+layer one 0 a/
+language one a/x.h
+language one a/x.h
+
+case a reason with no row kind
+refused 1: the row has a reason and no kind
+| a reason
