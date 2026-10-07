@@ -24,11 +24,12 @@ THE RULE
 
 WHAT READS THE DECLARATIONS
     The parse tree of the pinned tree-sitter kit (utils/scripts/tsast.py), over the
-    headers of include/foundation and include/fixy.  The kit reads the macro
-    as an attribute of the parameter.  The line scan it replaces matched a
-    deleted overload by name alone, so a twin with another arity, or with the
-    rvalue reference at another position, or over an unrelated type,
-    satisfied it while the annotated parameter stayed open.
+    headers of include/foundation, include/fixy and include/crucible.  A file
+    that tsast.UNPARSEABLE lists is not C++, and the guard does not read it.
+    The kit reads the macro as an attribute of the parameter.  The line scan
+    it replaces matched a deleted overload by name alone, so a twin with
+    another arity, or with the rvalue reference at another position, or over
+    an unrelated type, satisfied it while the annotated parameter stayed open.
 
 WHAT IT DOES NOT CHECK
     The types of the other parameters of the twin, and a twin in another
@@ -60,7 +61,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tsast  # noqa: E402  (the path insert above has to come first)
 
 REPO = tsast.REPO_ROOT
-ROOTS = (REPO / "include" / "foundation", REPO / "include" / "fixy")
+ROOTS = (REPO / "include" / "foundation", REPO / "include" / "fixy", REPO / "include" / "crucible")
 TOKEN = "CRUCIBLE_LIFETIMEBOUND"
 PARAMETERS = ("parameter_declaration", "optional_parameter_declaration", "variadic_parameter_declaration")
 FUNCTIONS = ("function_definition", "declaration", "field_declaration")
@@ -240,11 +241,17 @@ def verdicts_of(tree: tsast.Tree, shown: str) -> list[Verdict]:
     return verdicts
 
 
+def shown_of(path: Path) -> str:
+    """Return the path of a file relative to the repository, or its absolute path outside it."""
+    return path.relative_to(REPO).as_posix() if path.is_relative_to(REPO) else path.as_posix()
+
+
 def collect(roots: tuple[Path, ...] | list[Path]) -> tuple[list[Verdict], list[str]]:
     """Return the verdict of each site under the roots, and each header the parser cannot read.
 
     Every C++ file under the roots is parsed, with no text test first, so a
-    file whose token a line splice or a macro hides is still read.
+    file whose token a line splice or a macro hides is still read.  A file
+    that tsast.UNPARSEABLE lists is not C++, so the guard does not read it.
 
     Complexity: linear in the size of the files under the roots.
 
@@ -252,12 +259,11 @@ def collect(roots: tuple[Path, ...] | list[Path]) -> tuple[list[Verdict], list[s
         tsast.KitMissing: If the pinned kit is not installed
     """
     files = sorted(path for root in roots if root.is_dir() for path in root.rglob("*")
-                   if path.is_file() and path.name.endswith(tsast.CPP_SUFFIXES))
+                   if path.is_file() and tsast.is_in_cpp_scope(shown_of(path)))
     verdicts: list[Verdict] = []
     unread: list[str] = []
     for tree in tsast.parse(files, strict=False):
-        path = Path(tree.path)
-        shown = path.relative_to(REPO).as_posix() if path.is_relative_to(REPO) else path.as_posix()
+        shown = shown_of(Path(tree.path))
         if tree.diagnostic is not None:
             unread.append(f"UNREADABLE {shown} does not parse, so its claims are unknown.\n  {tree.diagnostic}")
             continue
@@ -389,6 +395,37 @@ def self_test() -> int:
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             code = run([root])
         expect("a fully twinned set exits 0", code == 0)
+
+        # The roots of the guard, moved into a scratch tree.  A claim in a
+        # header of include/crucible is in the scope, as a claim in the base is.
+        tree = Path(work) / "tree"
+        crucible = tree / "include" / "crucible"
+        crucible.mkdir(parents=True)
+        (crucible / "Plant.h").write_text(
+            "#pragma once\nstruct Arena {};\nint* plant(Arena& arena CRUCIBLE_LIFETIMEBOUND) noexcept;\n",
+            encoding="utf-8")
+        (crucible / "Control.h").write_text(
+            "#pragma once\nstruct Arena {};\nint* control(Arena& arena CRUCIBLE_LIFETIMEBOUND) noexcept;\n"
+            "int* control(Arena&&) = delete(\"the twin\");\n", encoding="utf-8")
+        scoped, _ = collect([tree / root.relative_to(REPO) for root in ROOTS])
+        found = {verdict.name: verdict.status for verdict in scoped}
+        expect("refused: a claim in include/crucible with no twin", found.get("plant") == "missing", True)
+        expect("a claim in include/crucible with its twin passes", found.get("control") == "ok")
+
+        # A file that tsast.UNPARSEABLE lists is not C++.  The guard does not
+        # read it, and a file that the roster does not list stays unreadable.
+        broken = Path(work) / "roster"
+        broken.mkdir()
+        (broken / "Generated.h").write_text("#pragma once\nstruct record { int operator; };\n", encoding="utf-8")
+        _, unlisted = collect([broken])
+        key = shown_of(broken / "Generated.h")
+        tsast.UNPARSEABLE[key] = "a plant of the self-test"
+        try:
+            _, listed = collect([broken])
+        finally:
+            del tsast.UNPARSEABLE[key]
+        expect("refused: a header that does not parse and that the roster does not list", len(unlisted) == 1, True)
+        expect("a header that the roster lists is not read", not listed)
 
     if failures:
         print(f"check-lifetime-twin --self-test: FAILED — {len(failures)} case(s) did not hold")
