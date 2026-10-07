@@ -43,7 +43,7 @@ These rules hold for the whole migration and after it.
 - **R1. Two regions.** The base is `include/foundation` and `include/fixy`, plus their source files in `src/foundation` and `src/fixy`. Every other C++ file in the repository is quarantined.
 - **R2. The base depends only on the compiler.** A base header can include only the headers that the rule table (Stage 1, unit 1a) allows for its layer. The first allowance for every layer is: `<cstddef>`, `<cstdint>`, `<type_traits>`, `<concepts>`, `<utility>` (casts, `declval` and index sequences only), `<compare>`, `<initializer_list>`, `<new>`, `<meta>`. The audit in unit 1b can make this list shorter. It cannot make it longer without an owner decision.
 - **R3. Builtins before headers.** When a builtin gives a thing, the base uses the builtin and not a header: `__atomic_*`, `__builtin_memcpy`, `__builtin_memmove`, `__builtin_memset`, `__builtin_add_overflow` and its family, `__builtin_bit_cast`, `__builtin_ia32_pause`, `__builtin_ia32_rdtsc`, `__builtin_thread_pointer`, `__builtin_FILE`, `__builtin_LINE`, `__builtin_FUNCTION`, `__builtin_unreachable` (only inside the fatal exit), vector extensions.
-- **R4. One door for each kernel subsystem.** Only `include/fixy/os` and `src/fixy/os` can include a system header, a Linux UAPI header, or a glibc header. Each such header has exactly one owner file (the door). No system type crosses a public signature of a door. These parts were added on 2026-10-03 (D12):
+- **R4. One door for each kernel subsystem.** Only the files of the two door directories can include a system header, a Linux UAPI header, or a glibc header. The directories are `include/fixy/os` with `src/fixy/os`, and `include/foundation/os` with `src/foundation/os` (D16, unit 2b). Each such header has exactly one owner file (the door). No system type crosses a public signature of a door. These parts were added on 2026-10-03 (D12):
   - A door uses the Linux UAPI headers (`<linux/*.h>`, `<asm/unistd.h>`) and the syscall primitive of its architecture (x86_64 and aarch64). It does not use a glibc header, except for the calls that D12 keeps in glibc.
   - One door unit includes UAPI headers or glibc headers, never both, because some of their declarations conflict.
   - A door uses only the system calls that both architectures have: the `*at` and `p*` forms, for example `openat`, `fstatat`, `ppoll` and `dup3`.
@@ -688,7 +688,7 @@ The stream ban of `check-banned-calls.py` has no subsequent step. It reads only 
 **2b, OS code into fixy/os.**
 - Move `fixy/OwnedFile.h`, `fixy/OwnedMmap.h`, `fixy/Path.h` and `fixy/concurrent/Topology.h` into `include/fixy/os/`.
 - The sysfs probe of Topology moves to `src/fixy/os/Topology.cpp`.
-- The signal, `atexit`, `pthread` and clock code of `fixy/session/Watch.h` moves to `src/fixy/session/Watch.cpp`. That file includes no system header. It calls the doors of `fixy/os`, such as the thread door of unit 2c, the time door and the signal door. The layer X5 session is above the layer X3 os, and a layer can include each lower layer (section 12).
+- The signal, `atexit`, `pthread` and clock code of `fixy/session/Watch.h` moves to `src/fixy/session/Watch.cpp`. That file includes no system header. It calls the doors of `fixy/os`, such as the thread door of unit 2c, the time door and the signal door. The layer X5 session is above the layer X3 os, and a layer can include each lower layer (section 12). Watch also uses `::write`, `std::atexit` and `::pthread_atfork`, so the doors must give these calls too. Its `sigaction` handlers change the signal dispositions of the process, and R20 refuses that change in a door. Unit 2b brings this conflict to the owner before it moves the code.
 - Every caller moves in the same commit.
 - The unit creates the door directory of foundation (D16): `include/foundation/os/` for the declarations and `src/foundation/os/` for the door files. The directory holds the raw syscall primitive and the two calls of the floor. The first call is the write of the Report sink, which `src/foundation/ContractHandler.cpp` holds at this time. The second call is the read of `/proc` for the debugger probe, which `include/foundation/Platform.h` holds at this time. Each door of `fixy/os` uses that primitive.
 - The syscall primitive lands first: one inline-assembly system call for x86_64 and one for aarch64, in one door file, with the numbers from `<asm/unistd.h>`. The deny list of R4 goes into the rule table. The plugin rule `syscall-capability` (section 8.6a) gets the kind `denied-syscall`, which refuses a raw call of a denied number. Each claim of the rule for a call that moves into a door goes in the same commit. The platform floor gets the minimum kernel version and its start-up check.
@@ -955,6 +955,7 @@ A verb that no family needs is not added. A new operation that no verb covers us
 |---|---|---|
 | F0 floor | `foundation/Platform.h`, `foundation/Pinned.h`, `foundation/Quarantine.h` | the base allowance (R2) |
 | F0 core | `foundation/reflect/`, `foundation/contracts/`, `foundation/Brand.h`, `foundation/Lifetime.h`, `foundation/ByteSeal.h`, `foundation/diag/FailClosed.h` | the base allowance |
+| F0 os | `foundation/os/`, `src/foundation/os/` (D16, unit 2b) | the base allowance, plus each system header that the floor uses, through its one door. The rank is below F0 primitives, so that the families and each higher layer can use the syscall primitive. Unit 2b writes the `layer` row |
 | F0 primitives | `foundation/core/` (the families), `foundation/Simd.h`, `foundation/Saturate.h`, `foundation/AlignedBuffer.h`, `foundation/SwissTableBuffer.h`, `foundation/ThreadLocalRef.h` | the base allowance. No system header in a header. Cold code goes to `src/foundation/` |
 | F1 algebra | `foundation/algebra/`, `foundation/effects/`, `foundation/diag/` (other files), `foundation/permissions/` | the base allowance. Runtime std names only in `consteval` context |
 | X1 wrappers | `fixy/` top-level wrapper headers, `fixy/fp/` | the base allowance |
@@ -970,7 +971,7 @@ A layer can include a lower layer and itself. It cannot include a higher layer.
 
 **The admission rule for a new header.** A header joins the allowance of a layer only if all these conditions hold:
 1. A member of the layer needs a declaration from it, and no lower layer and no builtin gives the declaration.
-2. Exactly one door owns it. No std or C type crosses the door's public signatures, except the integer spellings.
+2. Exactly one door owns it. No std or C type crosses the door's public signatures, except an integer of a fixed width or a base type. A typedef of the C library, such as `::off_t` or `::mode_t`, is a system type (owner, 2026-10-08).
 3. It adds no runtime state: no static initializer, no locale, no stream, no throw path.
 4. Its preprocessed cost is measured and recorded in the rule table. More than 5,000 lines needs owner approval.
 5. A cold call goes to a source file, not to a header.
