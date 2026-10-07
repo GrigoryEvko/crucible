@@ -64,7 +64,7 @@ find_program(CRUCIBLE_PYTHON3 NAMES python3 REQUIRED)
 
 # The flags that build the plugin.  GCC is built without RTTI, and the plugin
 # loads into cc1plus, so it finds the libstdc++ of the compiler through an
-# rpath.  The test below builds its own copy with the same flags.
+# rpath.
 execute_process(
   COMMAND "${CRUCIBLE_REAL_CXX}" -print-file-name=plugin
   OUTPUT_VARIABLE _crucible_quarantine_gcc_plugin_dir
@@ -79,16 +79,6 @@ set(CRUCIBLE_QUARANTINE_PLUGIN_FLAGS
   -isystem "${_crucible_quarantine_gcc_plugin_dir}/include"
   "-Wl,-rpath,${_crucible_quarantine_library_dir}")
 
-# The test of the plugin.  It builds its own copy in a temporary directory,
-# and it takes the compile command of one object of this build.
-add_test(NAME quarantine_plugin
-  COMMAND "${CRUCIBLE_PYTHON3}" "${CMAKE_CURRENT_LIST_DIR}/test/check_plugin.py"
-          --cxx "${CRUCIBLE_REAL_CXX}"
-          --source "${CRUCIBLE_QUARANTINE_SOURCE}"
-          --rules "${CRUCIBLE_RULE_TABLE}"
-          --build-dir "${CMAKE_BINARY_DIR}"
-          -- ${CRUCIBLE_QUARANTINE_PLUGIN_FLAGS})
-set_tests_properties(quarantine_plugin PROPERTIES LABELS "ci_guard")
 add_test(NAME quarantine_stamps_self_test
   COMMAND "${CRUCIBLE_PYTHON3}" "${CRUCIBLE_QUARANTINE_STAMPS_SCRIPT}" --self-test)
 set_tests_properties(quarantine_stamps_self_test PROPERTIES LABELS "ci_guard")
@@ -158,6 +148,22 @@ if(NOT EXISTS "${CRUCIBLE_QUARANTINE_PLUGIN}" OR NOT _crucible_quarantine_record
   endif()
   file(WRITE "${CRUCIBLE_QUARANTINE_PLUGIN}.key" "${_crucible_quarantine_key}")
 endif()
+
+# The test of the plugin.  It loads the plugin that this configure builds, and
+# it takes the compile command of one object of this build.  At most
+# _crucible_quarantine_test_jobs compilers of the test run at one time, and the
+# test asks ctest for the same number of processors.  So ctest -j counts each
+# compiler of the test.  With 16, the test took 1.4 s on the build host, and
+# with no bound it took 1.0 s.
+set(_crucible_quarantine_test_jobs 16)
+add_test(NAME quarantine_plugin
+  COMMAND "${CRUCIBLE_PYTHON3}" "${CMAKE_CURRENT_LIST_DIR}/test/check_plugin.py"
+          --cxx "${CRUCIBLE_REAL_CXX}"
+          --plugin "${CRUCIBLE_QUARANTINE_PLUGIN}"
+          --rules "${CRUCIBLE_RULE_TABLE}"
+          --jobs ${_crucible_quarantine_test_jobs}
+          --build-dir "${CMAKE_BINARY_DIR}")
+set_tests_properties(quarantine_plugin PROPERTIES LABELS "ci_guard" PROCESSORS ${_crucible_quarantine_test_jobs})
 
 # The facts, the enforce rows and the mode stamps of the rule table.
 execute_process(

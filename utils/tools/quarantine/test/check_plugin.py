@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """check_plugin — the quarantine plugin finds each class of finding, only where the location rule puts it.
 
-The test builds the quarantine plugin from its source with the flags that
-CMake gives, compiles each fixture of this directory with the plugin loaded,
-and compares what the plugin reports with the expectations below.  This
+The test loads the quarantine plugin that the configure step built, compiles
+each fixture of this directory with the plugin loaded, and compares what the
+plugin reports with the expectations below.  This
 directory is the source root of the test, and rules.txt is its rule table:
 include/fixy/, src/foundation/ and src/fixy/ hold base code, and the
 quarantine rows name each other fixture.
@@ -69,19 +69,20 @@ the root each fail the compile.  A file of the root that -isystem marks stays
 a file of the root, and a library namespace that a quarantined file opens
 again gets the walk of each other namespace.
 
-The plugin builds first.  Then the parts of the test run at the same time:
-the findings, the base files, the malformed regions, the modes, the contract
-rule, the generated files, the include rules, the library names, the
-provenance, the restrictions, the readers of the table, the section, the
-dependencies, the enforce modes through ccache and the flags of the build.
-Each part writes its own files, and main prints the verdicts of the parts in
-that order.
+The parts of the test run at the same time: the findings, the base files, the
+malformed regions, the modes, the contract rule, the generated files, the
+include rules, the library names, the provenance, the restrictions, the
+readers of the table, the section, the dependencies, the enforce modes through
+ccache and the flags of the build.  Each part writes its own files, and main
+prints the verdicts of the parts in that order.  At most JOBS compiler
+processes of all parts run at one time, and utils/tools/quarantine/
+Quarantine.cmake gives the test the same number of ctest processors.  So a
+ctest run with -j counts each compiler of the test.
 
-usage: check_plugin.py --cxx CXX --source QUARANTINE.cpp --rules TABLE [--build-dir BUILD]
-                       -- BUILD_FLAGS...
+usage: check_plugin.py --cxx CXX --plugin PLUGIN.so --rules TABLE --jobs JOBS [--build-dir BUILD]
 
 Exit 0 when each expectation holds, 1 when one fails, 2 on a usage error or a
-plugin that does not build.
+plugin that does not exist.
 """
 
 from __future__ import annotations
@@ -95,6 +96,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -353,20 +355,33 @@ def white_space_cases() -> tuple[TableCase, ...]:
 
 
 class Checker:
-    """Build the plugin one time, then compile fixtures with it.
+    """Compile fixtures with the quarantine plugin of the build.
 
-    compile is safe to call from many threads, because each compile is its own
-    process.
+    The configure step builds the plugin with the flags of the tree, and each
+    compile of the build loads it, so the test loads the same file.  At most
+    JOBS compiler processes of the test run at one time, and ctest gives the
+    test JOBS processors.  compile and run_compiler are safe to call from many
+    threads, because each compiler is its own process.
     """
 
-    def __init__(self, cxx: str, source: Path, flags: list[str], work: Path, build_dir: Path | None) -> None:
+    def __init__(self, cxx: str, plugin: Path, work: Path, build_dir: Path | None, jobs: int) -> None:
+        if not plugin.is_file():
+            raise RuntimeError(f"the plugin {plugin} does not exist.  Configure the build directory: the configure "
+                               f"step builds the plugin")
         self.cxx = cxx
         self.work = work
         self.build_dir = build_dir
-        self.plugin = work / f"{PLUGIN}.so"
-        build = subprocess.run([cxx, *flags, "-o", str(self.plugin), str(source)], capture_output=True, text=True)
-        if build.returncode != 0:
-            raise RuntimeError(f"the plugin {PLUGIN} did not build:\n{build.stderr}")
+        self.plugin = plugin
+        self.slots = threading.BoundedSemaphore(jobs)
+
+    def run_compiler(self, command: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+        """Run one compiler COMMAND when a slot is free, with the OPTIONS of subprocess.run.
+
+        Each compiler process of the test goes through this gate, so the
+        processors that ctest gives the test bound the processes.
+        """
+        with self.slots:
+            return subprocess.run(command, capture_output=True, text=True, **options)  # type: ignore[call-overload]
 
     def compile(self, fixture: str, arguments: dict[str, str],
                 stage: tuple[str, ...] = ("-S", "-o", os.devnull),
@@ -384,7 +399,7 @@ class Checker:
         command += [f"-fplugin-arg-{PLUGIN}-{key}={value}" for key, value in arguments.items()]
         command += ["-fdiagnostics-color=never", *stage, str(HERE / fixture)]
         try:
-            return subprocess.run(command, capture_output=True, text=True, env=env, timeout=timeout)
+            return self.run_compiler(command, env=env, timeout=timeout)
         except subprocess.TimeoutExpired:
             return subprocess.CompletedProcess(command, -9, "", "timeout")
 
@@ -399,6 +414,7 @@ class Section:
     def __init__(self, checker: Checker) -> None:
         self.work = checker.work
         self.compile = checker.compile
+        self.run_compiler = checker.run_compiler
         self.plugin = checker.plugin
         self.cxx = checker.cxx
         self.build_dir = checker.build_dir
@@ -505,9 +521,9 @@ def run_pragma_errors(section: Section) -> None:
                        compiled.stderr[-2000:])
     plain = [section.cxx, "-std=c++26", "-I", str(HERE / "include"), "-I", str(REPO / "include"), "-Wall", "-Werror",
              "-fdiagnostics-color=never", "-fsyntax-only", str(HERE / "opt_out.cpp")]
-    without = subprocess.run(plain, capture_output=True, text=True)
+    without = section.run_compiler(plain)
     section.expect("the region macros compile with no plugin", without.returncode == 0, without.stderr[-2000:])
-    leaked = subprocess.run([*plain, "-DCRUCIBLE_QUARANTINE_ACTIVE"], capture_output=True, text=True)
+    leaked = section.run_compiler([*plain, "-DCRUCIBLE_QUARANTINE_ACTIVE"])
     section.expect("CRUCIBLE_QUARANTINE_ACTIVE with no plugin fails on the unknown pragma",
                    leaked.returncode != 0 and "pragma" in leaked.stderr, leaked.stderr[-2000:])
 
@@ -1566,7 +1582,7 @@ def run_build_flags(section: Section) -> None:
             else:
                 argv.append(arg)
         argv += ["-fdiagnostics-color=never", "-o", str(section.work / f"build-plant-{table.stem}.o"), str(plant)]
-        return subprocess.run(argv, capture_output=True, text=True, cwd=directory)
+        return section.run_compiler(argv, cwd=directory)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         failed, passed = pool.map(compile_plant, (error_table, tree_table))
@@ -1578,17 +1594,20 @@ def run_build_flags(section: Section) -> None:
 
 
 def main(argv: list[str]) -> int:
-    """Parse the arguments, build the plugin and run every case."""
+    """Parse the arguments, and run every case with the plugin of the build."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--cxx", required=True, help="the compiler that loads the plugin")
-    parser.add_argument("--source", required=True, type=Path, help="the source of the quarantine plugin")
+    parser.add_argument("--plugin", required=True, type=Path, help="the quarantine plugin that the configure built")
     parser.add_argument("--rules", required=True, type=Path, help="the rule table of the tree")
+    parser.add_argument("--jobs", required=True, type=int,
+                        help="the most compiler processes at one time: the PROCESSORS of the ctest test")
     parser.add_argument("--build-dir", type=Path, help="a build directory with compile_commands.json")
-    parser.add_argument("flags", nargs="*", help="the flags that build the plugin, after --")
     args = parser.parse_args(argv)
+    if args.jobs < 1:
+        parser.error(f"--jobs is {args.jobs}, and it must be 1 or more")
     with tempfile.TemporaryDirectory(prefix="quarantine-plugin-") as scratch:
         try:
-            checker = Checker(args.cxx, args.source, args.flags, Path(scratch), args.build_dir)
+            checker = Checker(args.cxx, args.plugin, Path(scratch), args.build_dir, args.jobs)
         except RuntimeError as error:
             print(f"check_plugin: {error}", file=sys.stderr)
             return 2
