@@ -1,15 +1,18 @@
-# The malformed rule tables.  check_plugin.py writes each table to a file of
-# its own, and gives that file to the two readers of the rule table: the
-# quarantine plugin and utils/scripts/layer_rules.py.  Each reader must refuse
-# the table at the line of the case.  The plugin must give the error of the
-# case and no other error, and it must stop when it loads.
+# The rule tables of the two readers.  check_plugin.py writes each table to a
+# file of its own, and gives that file to the two readers of the rule table:
+# the quarantine plugin and utils/scripts/layer_rules.py.  Most tables are
+# malformed, and each reader must refuse such a table at the line of the
+# case.  The plugin must give the error of the case and no other error, and it
+# must stop when it loads.  Each reader must accept each other table, which
+# is at the edge of a rule.  check_plugin.py adds the tables of each
+# white-space character.
 #
 # THE FORMAT
 #   A line `case NAME` starts a case.  The next line is `refused LINE: MESSAGE`,
-#   with the line of the bad row in the table and the message of the plugin.
-#   Each line after it, up to the next `case` line, is a line of the table.
-#   The empty lines at the end of a case are not part of the table, and a
-#   line of a table does not start with `case `.
+#   with the line of the bad row in the table and the message of the plugin,
+#   or `accepted`.  Each line after it, up to the next `case` line, is a line
+#   of the table.  The empty lines at the end of a case are not part of the
+#   table, and a line of a table does not start with `case `.
 
 case an unknown row kind
 refused 1: the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce and language
@@ -175,3 +178,58 @@ language one a/x.h
 case a reason with no row kind
 refused 1: the row has a reason and no kind
 | a reason
+
+case a rank that is more than the largest number
+refused 1: the number 2147483648 is more than 2147483647, the largest number of a rank or an arity
+layer one 2147483648 a/
+
+case a rank with more digits than each integer type
+refused 1: the number 99999999999999999999999 is more than 2147483647, the largest number of a rank or an arity
+layer one 99999999999999999999999 a/
+
+case an arity that is more than the largest number
+refused 1: the number 4294967297 is more than 2147483647, the largest number of a rank or an arity
+admit std::move arity 4294967297 | a cast
+
+case a rank of Arabic-Indic digits
+refused 1: a layer row is 'layer NAME RANK PATH...', with a RANK of digits
+layer one ٣ a/
+
+case a rank of a superscript digit
+refused 1: a layer row is 'layer NAME RANK PATH...', with a RANK of digits
+layer one ² a/
+
+case an arity of Arabic-Indic digits
+refused 1: an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+admit std::move arity ٣ | a cast
+
+case two admit rows of one name
+refused 2: the entry std::move has a second admit row, and its first admit row is on line 1
+admit std::move | a cast
+admit std::move arity 1 | a cast
+
+case two admit rows of one header
+refused 3: the entry <utility> has a second admit row, and its first admit row is on line 1
+admit <utility> | the casts
+quarantine plant_std.cpp
+admit <utility> concepts | the concepts
+
+case the largest rank
+accepted
+layer one 2147483647 a/
+quarantine plant_std.cpp
+
+case the largest rank with zeros before it
+accepted
+layer one 0002147483647 a/
+quarantine plant_std.cpp
+
+case a tab between two words
+accepted
+quarantine	plant_std.cpp
+
+case one entry as a header and as a name
+accepted
+admit <utility> | the header
+admit utility | a name with the same text
+quarantine plant_std.cpp

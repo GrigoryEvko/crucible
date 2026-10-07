@@ -5,9 +5,12 @@
 # utils/scripts/layer_rules.py.  So each rule has one source.
 #
 # THE FORMAT
-#   One row on each line.  Spaces separate the words of a row.  A line that
-#   starts with '#' is a comment, and an empty line is no row.  A row can end
-#   with '| REASON'.  An admit row must have a reason.  A PATH is relative to
+#   One row on each line.  A space or a tab divides the words of a row, and a
+#   row holds no other white-space character.  A line that starts with '#' is
+#   a comment, and an empty line is no row.  A row can end with '| REASON'.
+#   An admit row must have a reason, and an ENTRY has one admit row at most.
+#   A RANK and an arity N are runs of the digits 0 to 9, with a value of at
+#   most 2147483647.  A PATH is relative to
 #   the source root.  A PATH that ends with '/' is a directory, and each other
 #   PATH is one file.  A PATH that starts with @build/ names a file that the
 #   build writes, such as a generated header, by its path inside the build

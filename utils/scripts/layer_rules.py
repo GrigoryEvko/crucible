@@ -4,7 +4,13 @@ utils/scripts/layer-rules.txt holds the table, and its head comment gives the
 format and the meaning of each row.  The quarantine plugin of
 utils/tools/quarantine/ reads the same file in C++, and it refuses each table
 that load() refuses.  utils/tools/quarantine/test/check_plugin.py compares the
-two readers on the same malformed tables.
+two readers on the tables of utils/tools/quarantine/test/table-cases.txt and
+on a table for each white-space character.
+
+The two readers divide the lines only at '\\n' and the words only at a space
+and a tab.  Python str.splitlines() and str.split() also divide at '\\v', '\\f'
+and the Unicode spaces, so this reader does not use them.  A row that holds a
+different white-space character is an error in the two readers.
 
 The layer guard (check-layer-boundary.py) reads the layer rows.  It names the
 project roots at the granularity of a directory under include/, so
@@ -23,6 +29,11 @@ ROW_KINDS = ("layer", "allow", "door", "admit", "quarantine", "enforce", "langua
 # has this prefix and its path inside the build directory, as kBuildPrefix of
 # utils/tools/quarantine/plugin_core.h gives it.
 BUILD_PREFIX = "@build/"
+# The two characters that divide the words of a row.
+WORD_DIVIDERS = " \t"
+# The largest number of a rank or an arity: the largest value of the `int` of
+# the reader of plugin_core.h.
+MAX_NUMBER = 2**31 - 1
 
 
 class TableError(ValueError):
@@ -126,6 +137,38 @@ def _check_header(header: str, where: str) -> None:
         raise TableError(f"{where}: the header {header!r} must be a name in angle brackets, for example <cstdint>")
 
 
+def white_space_message(character: str) -> str:
+    """Return the error of a row that holds CHARACTER, a white-space character that is not a space or a tab.
+
+    plugin_core.h gives the same text, and check_plugin.py compares the two.
+    """
+    return (f"the row holds the white-space character U+{ord(character):04X}.  Only a space and a tab divide the "
+            f"words of a row")
+
+
+def is_number(text: str) -> bool:
+    """Say whether TEXT is a number: a run of the ASCII digits 0 to 9.
+
+    str.isdigit() alone also gives True for a digit of a different script and
+    for a superscript digit.
+    """
+    return text.isascii() and text.isdigit()
+
+
+def number_value(text: str, where: str) -> int:
+    """Return the value of the number TEXT.
+
+    Raises:
+        TableError: When the value is more than MAX_NUMBER.  plugin_core.h
+            gives the same text
+    """
+    digits = text.lstrip("0") or "0"
+    if len(digits) > len(str(MAX_NUMBER)) or int(digits) > MAX_NUMBER:
+        raise TableError(f"{where}: the number {text} is more than {MAX_NUMBER}, the largest number of a rank or an "
+                         f"arity")
+    return int(digits)
+
+
 def parse_admit(args: list[str], reason: str, number: int, where: str) -> Admit:
     """Parse the words of one admit row after the row kind.
 
@@ -149,8 +192,8 @@ def parse_admit(args: list[str], reason: str, number: int, where: str) -> Admit:
         if word == "until" and value:
             fields[word] = value
             index += 2
-        elif word == "arity" and value.isdigit() and not is_header:
-            fields[word] = int(value)
+        elif word == "arity" and is_number(value) and not is_header:
+            fields[word] = number_value(value, where)
             index += 2
         elif word == "concepts" and is_header:
             fields[word] = True
@@ -202,25 +245,31 @@ def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
     in_path_lines: list[tuple[str, str]] = []
     language_lines: list[tuple[str, str]] = []
     language_paths: list[tuple[str, str]] = []
-    for number, line in enumerate(text.splitlines(), start=1):
-        content = line.strip()
+    admit_lines: dict[str, int] = {}  # the entry of each admit row, and its line
+    for number, line in enumerate(text.split("\n"), start=1):
+        content = line.strip(WORD_DIVIDERS)
         if not content or content.startswith("#"):
             continue
         where = f"{name}:{number}"
+        white_space = next((character for character in content
+                            if character.isspace() and character not in WORD_DIVIDERS), None)
+        if white_space is not None:
+            raise TableError(f"{where}: {white_space_message(white_space)}")
         words_text, _, reason = content.partition("|")
-        words = words_text.split()
-        reason = reason.strip()
+        words = [word for word in words_text.replace("\t", " ").split(" ") if word]
+        reason = reason.strip(WORD_DIVIDERS)
         if not words:
             raise TableError(f"{where}: the row has a reason and no kind")
         kind, args = words[0], words[1:]
         if kind not in ROW_KINDS:
             raise TableError(f"{where}: the row kind {kind!r} is unknown; the kinds are {', '.join(ROW_KINDS)}")
         if kind == "layer":
-            if len(args) < 3 or not args[1].isdigit():
+            if len(args) < 3 or not is_number(args[1]):
                 raise TableError(f"{where}: a layer row is 'layer NAME RANK PATH...', with a RANK of digits")
+            rank = number_value(args[1], where)
             if any(layer.name == args[0] for layer in layers):
                 raise TableError(f"{where}: the layer {args[0]} has a second row")
-            if any(layer.rank == int(args[1]) for layer in layers):
+            if any(layer.rank == rank for layer in layers):
                 raise TableError(f"{where}: the rank {args[1]} belongs to a second layer")
             for path in args[2:]:
                 _check_path(path, where)
@@ -230,7 +279,7 @@ def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
                 if path in class_paths:
                     raise TableError(f"{where}: the path {path} is also in {class_paths[path]}")
                 class_paths[path] = f"the layer {args[0]}"
-            layers.append(Layer(args[0], int(args[1]), tuple(args[2:])))
+            layers.append(Layer(args[0], rank, tuple(args[2:])))
         elif kind == "allow":
             if len(args) != 2:
                 raise TableError(f"{where}: an allow row is 'allow LAYER HEADER'")
@@ -251,6 +300,12 @@ def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
                 raise TableError(f"{where}: an admit row is 'admit ENTRY [RESTRICTION...] | REASON', and the reason "
                                  f"is necessary")
             admit = parse_admit(args, reason, number, where)
+            # The plugin keeps the first row of an entry, so a second row
+            # would make the order of the rows decide the findings.
+            if admit.entry in admit_lines:
+                raise TableError(f"{where}: the entry {admit.entry} has a second admit row, and its first admit row "
+                                 f"is on line {admit_lines[admit.entry]}")
+            admit_lines[admit.entry] = number
             admits.append(admit)
             in_path_lines.extend((path, where) for path in admit.in_paths)
         elif kind == "quarantine":
@@ -300,11 +355,15 @@ def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
 def load(path: Path = TABLE) -> RuleTable:
     """Read and parse the rule table at PATH.
 
+    The bytes of the file go to parse() as the plugin reads them.
+    Path.read_text() would change each '\\r\\n' and each '\\r' to '\\n'.
+
     Raises:
         TableError: When the table does not obey its format
         OSError: When the file cannot be read
+        UnicodeDecodeError: When the file is not UTF-8
     """
-    return parse(path.read_text(encoding="utf-8"), path.name)
+    return parse(path.read_bytes().decode("utf-8"), path.name)
 
 
 def guard_layers(table: RuleTable) -> tuple[tuple[tuple[str, str], ...], dict[str, frozenset[str]]]:

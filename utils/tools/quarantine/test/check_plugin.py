@@ -22,8 +22,10 @@ of the tree: in report mode the section of the object holds the one finding of
 the plant, and in error mode the plant fails the compile.  An enforce row with the mode
 error makes a finding an error in report mode, and a file that no row holds
 is an error.  The plugin and utils/scripts/layer_rules.py read each table of
-malformed-tables.txt.  Each one must refuse the table at the line of its
-case, and the plugin must give the error of the case and no other error.
+table-cases.txt and a table for each white-space character of Python.  Each
+one must refuse a malformed table at the line of its case, and the plugin must
+give the error of the case and no other error.  Each one must accept each
+other table.
 
 contracts.cpp holds each form of a P2900 contract specifier that the contract
 rule rejects, also in base code.  The test compiles it in each mode and with
@@ -119,9 +121,9 @@ PLANTS = (
     ("PLANT_STD_NAME", "plant_std.cpp", "std_entity", "std::swap"),
 )
 
-# The tables that do not obey the format, with the refusal of each one.  The
-# head comment of the file gives its format.
-MALFORMED_CORPUS = HERE / "malformed-tables.txt"
+# The rule tables of the two readers, with the verdict of each one.  The head
+# comment of the file gives its format.
+TABLE_CORPUS = HERE / "table-cases.txt"
 
 # (kind, fixture, line, a text that the entity holds, or '=' and the whole entity)
 PRESENT = (
@@ -275,16 +277,16 @@ class Finding:
 
 
 @dataclass(frozen=True)
-class MalformedTable:
-    """One case of malformed-tables.txt: a table and the refusal that each reader must give."""
+class TableCase:
+    """One rule table and the verdict that each of its two readers must give."""
 
     name: str
-    line: int  # the line of the bad row in the table
-    message: str  # the message of the error of the plugin
+    line: int  # the line of the bad row in the table, or 0 when each reader must accept the table
+    message: str  # the message of the error of the plugin, or "" for a table that each reader accepts
     text: str
 
 
-def read_malformed_tables(path: Path) -> tuple[MalformedTable, ...]:
+def read_table_cases(path: Path) -> tuple[TableCase, ...]:
     """Read the cases of the corpus at PATH, in the order of the file.
 
     The head comment of the corpus gives its format.  Complexity: linear in
@@ -295,7 +297,7 @@ def read_malformed_tables(path: Path) -> tuple[MalformedTable, ...]:
     """
     lines = path.read_text(encoding="utf-8").split("\n")
     starts = [index for index, line in enumerate(lines) if line.startswith("case ")]
-    cases: list[MalformedTable] = []
+    cases: list[TableCase] = []
     for start, end in zip(starts, [*starts[1:], len(lines)], strict=True):
         name = lines[start][len("case "):].strip()
         verdict = lines[start + 1] if start + 1 < end else ""
@@ -306,14 +308,47 @@ def read_malformed_tables(path: Path) -> tuple[MalformedTable, ...]:
         where = f"{path.name}:{start + 1}"
         if not name or any(case.name == name for case in cases):
             raise ValueError(f"{where}: a case needs a name that no other case has")
-        is_number = number.isascii() and number.isdigit()
-        if not verdict.startswith("refused ") or not separator or not is_number or not message:
-            raise ValueError(f"{where}: the line after `case NAME` is `refused LINE: MESSAGE`")
-        if not 1 <= int(number) <= len(table):
-            raise ValueError(f"{where}: the line {number} is not a line of the table of the case")
-        cases.append(MalformedTable(name, int(number), message, "".join(f"{row}\n" for row in table)))
+        if verdict == "accepted":
+            number, message = "0", ""
+        elif (not verdict.startswith("refused ") or not separator or not message
+              or not (number.isascii() and number.isdigit() and 1 <= int(number) <= len(table))):
+            raise ValueError(f"{where}: the line after `case NAME` is `accepted`, or `refused LINE: MESSAGE` with "
+                             f"the number of a line of the table")
+        if not table:
+            raise ValueError(f"{where}: the case has no table")
+        cases.append(TableCase(name, int(number), message, "".join(f"{row}\n" for row in table)))
     if not cases:
         raise ValueError(f"{path.name}: the corpus holds no case")
+    return tuple(cases)
+
+
+def white_space_cases() -> tuple[TableCase, ...]:
+    """Return the tables of each white-space character that is not a space, a tab or a newline.
+
+    Python str.isspace() gives the characters, so the plugin must refuse each
+    character at which the Python reader could divide.  Each character gets a
+    table that holds it between two words and a table that holds it in a
+    reason, which each reader must refuse, and a table that holds it in a
+    comment, which each reader must accept.  A table with the line ends
+    '\\r\\n' is refused at its first row.  Complexity: linear in the code
+    points of Unicode.
+    """
+    cases: list[TableCase] = []
+    for code in range(0x110000):
+        character = chr(code)
+        if not character.isspace() or character in " \t\n":
+            continue
+        message = layer_rules.white_space_message(character)
+        cases += [
+            TableCase(f"U+{code:04X} between two words", 2, message,
+                      f"quarantine plant_std.cpp\nquarantine{character}a/\n"),
+            TableCase(f"U+{code:04X} in a reason", 1, message, f"admit std::move | a{character}cast\n"
+                                                                "quarantine plant_std.cpp\n"),
+            TableCase(f"U+{code:04X} in a comment", 0, "",
+                      f"# a comment{character}with a white-space character\nquarantine plant_std.cpp\n"),
+        ]
+    cases.append(TableCase("the line ends \\r\\n", 1, layer_rules.white_space_message("\r"),
+                           "quarantine plant_std.cpp\r\n# a comment\r\n"))
     return tuple(cases)
 
 
@@ -1153,29 +1188,34 @@ def python_verdict(table: Path) -> str:
 
 
 def run_table_readers(section: Section) -> None:
-    """Give the plugin and layer_rules.py each table of the corpus, and the test table and the tree table.
+    """Give the plugin and layer_rules.py each table of the corpus and each white-space table.
 
-    The plugin must refuse each table of the corpus when it loads, with the
-    error of the case at the line of the case and with no other error.
-    layer_rules.py must refuse the table at the same line.  Each reader must
-    read each good table.
+    The plugin must refuse each refused table when it loads, with the error of
+    the case at the line of the case and with no other error.  layer_rules.py
+    must refuse the table at the same line.  Each reader must accept each
+    accepted table, and read the test table and the tree table.
     """
     tables = section.work / "tables"
     tables.mkdir(exist_ok=True)
-    cases = read_malformed_tables(MALFORMED_CORPUS)
-    paths = [tables / f"malformed-{index}.txt" for index in range(len(cases))]
+    cases = read_table_cases(TABLE_CORPUS) + white_space_cases()
+    paths = [tables / f"table-{index}.txt" for index in range(len(cases))]
     calls: list[tuple[object, ...]] = []
     for case, path in zip(cases, paths, strict=True):
         path.write_bytes(case.text.encode("utf-8"))
         calls.append(("plant_std.cpp", {"root": str(HERE), "mode": "report", "rules": str(path)}))
     for case, path, compiled in zip(cases, paths, section.compile_all(calls), strict=True):
+        verdict = python_verdict(path)
+        if case.line == 0:
+            section.expect(f"the plugin accepts {case.name}",
+                           compiled.returncode == 0 and "error:" not in compiled.stderr, compiled.stderr[-2000:])
+            section.expect(f"layer_rules.py accepts {case.name}", verdict == "accepted", verdict)
+            continue
         errors = [row for row in compiled.stderr.splitlines() if "error: quarantine: " in row]
         section.expect(f"the plugin refuses {case.name} at line {case.line} with the error of the case, and with "
                        f"no other error",
                        compiled.returncode != 0 and "failed to initialize plugin" in compiled.stderr
                        and table_refusals(compiled.stderr, path) == [(case.line, case.message)] and len(errors) == 1,
                        compiled.stderr[-2000:])
-        verdict = python_verdict(path)
         section.expect(f"layer_rules.py refuses {case.name} at line {case.line}",
                        verdict.startswith(f"{path.name}:{case.line}: "), verdict)
     until_table = tables / "until.txt"

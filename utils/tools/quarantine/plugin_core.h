@@ -853,23 +853,79 @@ inline void report_open_regions() {
 }
 
 // ── The reader of the rule table ────────────────────────────────────────
+//
+// The reader divides the lines only at '\n' and the words only at a space and
+// a tab, as utils/scripts/layer_rules.py does.  A row that holds a different
+// white-space character is an error, because Python divides at it.
+
+// The two characters that divide the words of a row.
+inline constexpr const char* kWordDividers = " \t";
 
 inline std::string trimmed(const std::string& text) {
-    std::size_t first = text.find_first_not_of(" \t\r");
+    std::size_t first = text.find_first_not_of(kWordDividers);
     if (first == std::string::npos) {
         return {};
     }
-    std::size_t last = text.find_last_not_of(" \t\r");
+    std::size_t last = text.find_last_not_of(kWordDividers);
     return text.substr(first, last - first + 1);
+}
+
+// The code point of the first white-space character of TEXT that is not a
+// space or a tab, or -1 when TEXT holds no such character.  The characters are
+// the characters of Python str.isspace(): the ASCII control characters 0x0B to
+// 0x0D and 0x1C to 0x1F, and the UTF-8 encodings of U+0085, U+00A0, U+1680,
+// U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F and U+3000.  A lead byte of
+// UTF-8 is never a continuation byte, so a byte sequence below names its code
+// point only.  Complexity: linear in the length of TEXT.
+inline long white_space_code(const std::string& text) {
+    auto byte_at = [&text](std::size_t index) -> unsigned {
+        return index < text.size() ? static_cast<unsigned char>(text[index]) : 0U;
+    };
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        unsigned lead = byte_at(index);
+        unsigned second = byte_at(index + 1);
+        unsigned third = byte_at(index + 2);
+        if ((lead >= 0x0BU && lead <= 0x0DU) || (lead >= 0x1CU && lead <= 0x1FU)) {
+            return static_cast<long>(lead);
+        }
+        if (lead == 0xC2U && (second == 0x85U || second == 0xA0U)) {
+            return static_cast<long>(second);
+        }
+        if (lead == 0xE1U && second == 0x9AU && third == 0x80U) {
+            return 0x1680L;
+        }
+        bool is_general_space =
+            (third >= 0x80U && third <= 0x8AU) || third == 0xA8U || third == 0xA9U || third == 0xAFU;
+        if (lead == 0xE2U && second == 0x80U && is_general_space) {
+            return 0x2000L + static_cast<long>(third - 0x80U);
+        }
+        if (lead == 0xE2U && second == 0x81U && third == 0x9FU) {
+            return 0x205FL;
+        }
+        if (lead == 0xE3U && second == 0x80U && third == 0x80U) {
+            return 0x3000L;
+        }
+    }
+    return -1;
+}
+
+// The error of a row that holds the white-space character CODE.
+// layer_rules.white_space_message() gives the same text.
+inline std::string white_space_message(long code) {
+    std::string hex;  // at least four upper-case digits, as the format U+%04X gives
+    for (long rest = code; rest > 0 || hex.size() < 4; rest >>= 4) {
+        hex.insert(hex.begin(), "0123456789ABCDEF"[rest & 0xF]);
+    }
+    return "the row holds the white-space character U+" + hex + ".  Only a space and a tab divide the words of a row";
 }
 
 inline std::vector<std::string> split_words(const std::string& text) {
     std::vector<std::string> words;
-    std::size_t start = text.find_first_not_of(" \t");
+    std::size_t start = text.find_first_not_of(kWordDividers);
     while (start != std::string::npos) {
-        std::size_t end = text.find_first_of(" \t", start);
+        std::size_t end = text.find_first_of(kWordDividers, start);
         words.push_back(text.substr(start, end == std::string::npos ? std::string::npos : end - start));
-        start = end == std::string::npos ? end : text.find_first_not_of(" \t", end);
+        start = end == std::string::npos ? end : text.find_first_not_of(kWordDividers, end);
     }
     return words;
 }
@@ -908,6 +964,38 @@ inline bool is_digits(const std::string& text) {
     return true;
 }
 
+// The largest number of a rank or an arity.  layer_rules.MAX_NUMBER gives the
+// same value.
+inline constexpr int kMaxNumber = INT_MAX;
+
+// Reads the number TEXT, a run of digits (is_digits), into VALUE.  Returns
+// false when the value is more than kMaxNumber, and the check comes before
+// each step, so no step overflows.
+inline bool number_value(const std::string& text, int& value) {
+    value = 0;
+    for (char character : text) {
+        int digit = character - '0';
+        if (value > (kMaxNumber - digit) / 10) {
+            return false;
+        }
+        value = value * 10 + digit;
+    }
+    return true;
+}
+
+// The error of a number that is more than kMaxNumber.  layer_rules.number_value()
+// gives the same text.
+inline std::string number_message(const std::string& text) {
+    return "the number " + text + " is more than " + std::to_string(kMaxNumber)
+         + ", the largest number of a rank or an arity";
+}
+
+// The error of an admit row that does not obey the format of its words.
+inline constexpr const char* kAdmitFormat =
+    "an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', "
+    "'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and "
+    "'in PATH...', each one time, and the reason is necessary";
+
 inline bool is_identifier(const std::string& text) {
     if (text.empty() || (text[0] >= '0' && text[0] <= '9')) {
         return false;
@@ -923,15 +1011,16 @@ inline bool is_identifier(const std::string& text) {
 }
 
 // The words of one admit row after the row kind: ENTRY, then each restriction
-// one time at most, in any order, and `in PATH...` last.  Returns false when a
-// restriction is unknown, repeated, malformed or does not fit the entry.
-inline bool parse_admit(const std::vector<std::string>& args, AdmitRow& row) {
+// one time at most, in any order, and `in PATH...` last.  Returns the error of
+// the row when a restriction is unknown, repeated, malformed or does not fit
+// the entry, and an empty text when the row obeys the format.
+inline std::string parse_admit(const std::vector<std::string>& args, AdmitRow& row) {
     row.entry = args[0];
     row.is_header = is_header(args[0]);
     if (row.is_header) {
         row.entry = args[0].substr(1, args[0].size() - 2);
     } else if (!args[0].empty() && args[0][0] == '<') {
-        return false;
+        return kAdmitFormat;
     }
     std::vector<std::string> seen;
     std::size_t index = 1;
@@ -939,7 +1028,7 @@ inline bool parse_admit(const std::vector<std::string>& args, AdmitRow& row) {
         const std::string& word = args[index];
         for (const std::string& known : seen) {
             if (known == word) {
-                return false;
+                return kAdmitFormat;
             }
         }
         seen.push_back(word);
@@ -954,9 +1043,8 @@ inline bool parse_admit(const std::vector<std::string>& args, AdmitRow& row) {
             row.is_consteval_only = true;
             index += 1;
         } else if (word == "arity" && is_digits(value) && !row.is_header) {
-            row.arity = 0;
-            for (char digit : value) {
-                row.arity = row.arity * 10 + (digit - '0');
+            if (!number_value(value, row.arity)) {
+                return number_message(value);
             }
             index += 2;
         } else if (word == "concepts" && row.is_header) {
@@ -971,24 +1059,26 @@ inline bool parse_admit(const std::vector<std::string>& args, AdmitRow& row) {
         } else if (word == "in" && !value.empty()) {
             for (std::size_t path = index + 1; path < args.size(); ++path) {
                 if (!is_plain_path(args[path])) {
-                    return false;
+                    return kAdmitFormat;
                 }
                 row.in_paths.push_back(args[path]);
             }
             index = args.size();
         } else {
-            return false;
+            return kAdmitFormat;
         }
     }
     if (!row.until.empty()) {
         row.pending_kind = std::string(kPendingKindPrefix) + args[0];
     }
-    return true;
+    return {};
 }
 
 // Reads the rule table at PATH into core.table.  The format and each check
-// are those of utils/scripts/layer_rules.py, and check_plugin.py gives the two
-// readers the same malformed tables.  Returns false after an error.
+// are those of utils/scripts/layer_rules.py.  check_plugin.py gives the two
+// readers the tables of test/table-cases.txt and a table for each
+// white-space character, and each reader must give the same verdict.  Returns
+// false after an error.
 inline bool load_rule_table(const std::string& path) {
     FILE* stream = fopen(path.c_str(), "r");
     if (stream == nullptr) {
@@ -1008,10 +1098,12 @@ inline bool load_rule_table(const std::string& path) {
     std::vector<std::pair<std::string, int>> in_path_lines;  // each path after `in`, and its line
     std::vector<std::pair<std::string, int>> language_layers;  // the layer name of each language row, and its line
     std::vector<std::pair<std::string, int>> language_path_lines;  // each path of a language row, and its line
+    // The entry of each admit row as the table spells it, and its line.
+    std::vector<std::pair<std::string, int>> admit_lines;
     bool is_valid = true;
     int line_number = 0;
-    auto refuse = [&](const char* message) {
-        error("quarantine: %s:%d: %s", path.c_str(), line_number, message);
+    auto refuse = [&](const std::string& message) {
+        error("quarantine: %s:%d: %s", path.c_str(), line_number, message.c_str());
         is_valid = false;
     };
     auto add_class_path = [&](const std::string& class_path, const std::string& row) {
@@ -1035,6 +1127,11 @@ inline bool load_rule_table(const std::string& path) {
         if (content.empty() || content[0] == '#') {
             continue;
         }
+        long white_space = white_space_code(content);
+        if (white_space >= 0) {
+            refuse(white_space_message(white_space));
+            continue;
+        }
         std::size_t bar = content.find('|');
         std::vector<std::string> words = split_words(content.substr(0, bar));
         std::string reason = bar == std::string::npos ? std::string{} : trimmed(content.substr(bar + 1));
@@ -1051,8 +1148,9 @@ inline bool load_rule_table(const std::string& path) {
             }
             LayerRow layer;
             layer.name = args[0];
-            for (char digit : args[1]) {
-                layer.rank = layer.rank * 10 + (digit - '0');
+            if (!number_value(args[1], layer.rank)) {
+                refuse(number_message(args[1]));
+                continue;
             }
             for (const LayerRow& known : table.layers) {
                 if (known.name == layer.name) {
@@ -1097,12 +1195,23 @@ inline bool load_rule_table(const std::string& path) {
             table.doors.push_back(std::move(door));
         } else if (kind == "admit") {
             AdmitRow admit;
-            if (args.empty() || reason.empty() || !parse_admit(args, admit)) {
-                refuse("an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until "
-                       "FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' "
-                       "of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary");
+            std::string problem = args.empty() || reason.empty() ? std::string(kAdmitFormat) : parse_admit(args, admit);
+            if (!problem.empty()) {
+                refuse(problem);
                 continue;
             }
+            // The plugin keeps the first row of an entry (plugin_init), so a
+            // second row would make the order of the rows decide the findings.
+            int first_line = 0;
+            for (const auto& [entry, entry_line] : admit_lines) {
+                first_line = entry == args[0] ? entry_line : first_line;
+            }
+            if (first_line > 0) {
+                refuse("the entry " + args[0] + " has a second admit row, and its first admit row is on line "
+                       + std::to_string(first_line));
+                continue;
+            }
+            admit_lines.emplace_back(args[0], line_number);
             for (const std::string& in_path : admit.in_paths) {
                 in_path_lines.emplace_back(in_path, line_number);
             }

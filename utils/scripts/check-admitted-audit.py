@@ -143,7 +143,7 @@ def read_admitted(root: Path, admitted: Path) -> tuple[dict[str, layer_rules.Adm
         Each admit row by its entry, and one finding when the table does not obey its format
     """
     try:
-        table = layer_rules.parse((root / admitted).read_text(encoding="utf-8"), admitted.name)
+        table = layer_rules.load(root / admitted)
     except layer_rules.TableError as failure:
         return {}, [error(admitted, 0, f"the rule table does not obey its format: {failure}.  Correct the row.")]
     return {admit.entry: admit for admit in table.admits}, []
