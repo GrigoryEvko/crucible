@@ -979,6 +979,8 @@ inline bool is_family_kind(Kind kind) {
         case Rule::permission_storage:
         case Rule::escape_doors:
         case Rule::stub_discipline:
+        case Rule::process_wide_state:
+        case Rule::lifetime_twin:
         case Rule::witness_roster:
         case Rule::proof_routes:
         case Rule::padded_list:

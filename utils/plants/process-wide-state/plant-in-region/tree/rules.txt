@@ -1,0 +1,3 @@
+# The rule table of the plant of a static object in an opt-out region: src/ is
+# quarantined.  The rule process-wide-state reads src/.
+quarantine src/

@@ -1,0 +1,16 @@
+// A lifetime claim with no deleted twin in an opt-out region.  A region opts
+// out only the findings of the quarantine rule, and the rule lifetime-twin
+// still gives its finding.
+#include <foundation/Quarantine.h>
+
+#define CRUCIBLE_LIFETIMEBOUND [[quarantine::lifetimebound]]
+
+namespace quarantined {
+
+struct Arena {};
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the plant opens a region around a lifetime claim")
+int plant(Arena& arena CRUCIBLE_LIFETIMEBOUND) noexcept;
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+}  // namespace quarantined

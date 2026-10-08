@@ -1,0 +1,3 @@
+# The rule table of the plant of a lifetime claim in an opt-out region:
+# region.cpp is quarantined.
+quarantine region.cpp

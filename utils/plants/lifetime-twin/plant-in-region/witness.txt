@@ -1,0 +1,12 @@
+# A lifetime claim with no deleted twin in an opt-out region.  A region opts
+# out only the findings of the quarantine rule (CLAUDE.md section XXII, R7).
+# The rule lifetime-twin is a rule of the family declaration property, so the
+# region does not cover its finding, and the mode error makes the finding an
+# error.
+compile report region.cpp
+exit report pass
+finding report quarantine region region.cpp:12:1 | ABI: the plant opens a region around a lifetime claim
+finding report lifetime-twin missing-twin region.cpp:13:18 | quarantined::plant(quarantined::Arena&) parameter 1
+compile error region.cpp mode=error findings=report
+exit error fail
+error error region.cpp:13 | quarantine: missing-twin quarantined::plant(quarantined::Arena&) parameter 1;

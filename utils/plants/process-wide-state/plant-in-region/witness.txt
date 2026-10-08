@@ -1,0 +1,12 @@
+# A static object with no marker in an opt-out region.  A region opts out
+# only the findings of the quarantine rule (CLAUDE.md section XXII, R7).  The
+# rule process-wide-state is a rule of the family declaration property, so
+# the region does not cover its finding, and the mode error makes the finding
+# an error.
+compile report src/region.cpp
+exit report pass
+finding report quarantine region src/region.cpp:8:1 | ABI: the plant opens a region around a static object
+finding report process-wide-state unmarked-static src/region.cpp:9:5 | quarantined::counter
+compile error src/region.cpp mode=error findings=report
+exit error fail
+error error src/region.cpp:9 | quarantine: unmarked-static quarantined::counter;

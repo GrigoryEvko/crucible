@@ -1,0 +1,12 @@
+// A static object with no marker in an opt-out region.  A region opts out
+// only the findings of the quarantine rule, and the rule process-wide-state
+// still gives its finding.
+#include <foundation/Quarantine.h>
+
+namespace quarantined {
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the plant opens a region around a static object")
+int counter = 0;
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+}  // namespace quarantined
