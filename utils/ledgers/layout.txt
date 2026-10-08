@@ -3,6 +3,4 @@
 format 1
 rule layout
 utils/scripts/check-allowlist-keys.sh | command | admit | utils/scripts/check-allowlist-keys.sh | A shell script of today has a shebang and mode 755.  The change that makes the shell scripts modules of the package removes this row
-utils/scripts/check-atom-roster-joined.sh | command | admit | utils/scripts/check-atom-roster-joined.sh | A shell script of today has a shebang and mode 755.  The change that makes the shell scripts modules of the package removes this row
-utils/scripts/check-clang-format.sh | command | admit | utils/scripts/check-clang-format.sh | A shell script of today has a shebang and mode 755.  The change that makes the shell scripts modules of the package removes this row
 utils/scripts/check-no-throw-no-rtti.sh | command | admit | utils/scripts/check-no-throw-no-rtti.sh | A shell script of today has a shebang and mode 755.  The change that makes the shell scripts modules of the package removes this row

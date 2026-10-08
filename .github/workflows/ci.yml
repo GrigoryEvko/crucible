@@ -152,8 +152,8 @@ jobs:
         continue-on-error: true
         run: |
           clang-format --version
-          bash utils/scripts/check-clang-format.sh --self-test
-          bash utils/scripts/check-clang-format.sh
+          python3 utils/bin/guard check --rule clang-format --self-test
+          python3 utils/bin/guard check --rule clang-format
 
       # parse_clean owns the question every AST gate depends on: does the file
       # parse. A file that does not parse is a silent hole in all of them at

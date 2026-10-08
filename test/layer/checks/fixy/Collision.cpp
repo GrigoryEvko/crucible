@@ -14,11 +14,12 @@ static_assert(::fixy::every_axis_has_traits(),
               "must be classified: it carries a hand-written specialization, or it is named on "
               "Axis.h's defaulted_axes roster as a Fact axis whose pole claims nothing.");
 
-// The vantage point of fixy/Collision.h.  It covers the families that
-// the header includes and no others; utils/scripts/check-atom-roster-joined.sh
-// instantiates the same two templates from a sentinel that includes every
-// header under fixy/ and so covers the rest.  The tag is never defined —
-// it is an identity for the instantiation point, not a type anyone uses.
+// The vantage point of fixy/Collision.h.  Alone, this file covers the
+// families that the header includes.  The walk units compile it again after
+// each header that can add to fixy::atom::detail
+// (test/layer/walk-checks.txt), and there the two checks cover the rest.
+// The tag is never defined — it is an identity for the instantiation
+// point, not a type anyone uses.
 struct collision_header_site;
 
 static_assert(roster_join_diagnostic<collision_header_site>().empty(), roster_join_diagnostic<collision_header_site>());

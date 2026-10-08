@@ -8,6 +8,7 @@ utils/registry.txt | no-plant | admit | brand-drain | The rule has no plants in 
 utils/registry.txt | no-plant | admit | build-order | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | build-peak-memory | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | cache-size | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
+utils/registry.txt | no-plant | admit | clang-format | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | compile-cpu | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | compile-first | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | compile-instructions | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row

@@ -663,9 +663,12 @@ template <class Anchor = void>
 //
 // The walk sees what its translation unit has included, so this file's
 // own assertion covers the families this file includes and no more.  The
-// complete answer needs a sentinel over every header that can declare a
-// roster; utils/scripts/check-atom-roster-joined.sh builds one from the
-// directory rather than from a list, and calls the same two functions.
+// complete answer needs a vantage point after every header that can declare
+// a roster: the walk units of test/layer/walks_across_headers.cpp compile
+// the check file of this header after each such header
+// (test/layer/walk-checks.txt), and the check file calls the same two
+// functions.  The fixtures neg_atom_roster_declared_not_joined and
+// neg_atom_roster_sample_set_joined show that each check fires.
 // Both this file and the check that every atom has a consumer read this
 // derivation rather than building a second set.
 //
@@ -798,7 +801,12 @@ template <class Site>
         "fixy/Collision.h: the atom-population relation: declared in fixy::atom::detail and NOT joined into "
         "fixy::collision::all_atom_roster, so their atoms sit outside the population that every axis-coverage "
         "and collision-rule check reads: ";
-    message += offenders;
+    // One character at a time.  The offenders are in a static string, and an
+    // append of its pointer compares that pointer with null.  Under
+    // -fno-delete-null-pointer-checks, GCC cannot fold that compare in a
+    // constant evaluation, and the check then gives no message.
+    for (const char letter : offenders)
+        message += letter;
     message += ".  Join each at the all_atom_roster alias in include/fixy/Collision.h.  If one is representative "
                "instantiations for a local self-test rather than a family population, rename it to end in "
                "_atom_samples instead — that spelling says so, and sample_set_wrongly_joined() holds it to it.";
@@ -812,7 +820,9 @@ template <class Site>
     ::foundation::reflect::anchored_t<^^Site, std::string> message =
         "fixy/Collision.h: the atom-population relation: these sample sets ARE joined into "
         "fixy::collision::all_atom_roster: ";
-    message += offenders;
+    // One character at a time, for the reason in roster_join_diagnostic().
+    for (const char letter : offenders)
+        message += letter;
     message += ".  A sample set is a set of INSTANTIATIONS of a parametric family, kept outside the population "
                "because the family has no finite membership and no list can enumerate it; the instantiations are "
                "placeholders chosen to instantiate a local self-test, not grades anybody writes.  A family whose "

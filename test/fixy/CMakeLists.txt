@@ -901,6 +901,18 @@ fixy_neg_compile_test(neg_atom_family_namespace_unrostered
   "static assertion failed: fixy/atoms/Ctrl\\.h: an atom declared in fixy::atom::ctrl is missing from ctrl_atom_roster"
   "static assertion failed: fixy/atoms/Stack\\.h: an atom declared in fixy::atom::stack is missing from stack_atom_roster")
 
+# The check file of fixy/Collision.h holds the relation between the rosters
+# and all_atom_roster in two checks, and the walk units compile it after each
+# header (test/layer/walk-checks.txt).  Each fixture plants one offender and
+# one look-alike before the check file.  The diagnostic must name the
+# offender and only the offender.
+fixy_neg_compile_test(neg_atom_roster_declared_not_joined
+  "static assertion failed: fixy/Collision\\.h: the atom-population relation: declared in fixy::atom::detail and NOT joined"
+  "check reads: probe_orphan_atom_roster\\.  Join each at the all_atom_roster alias in include/fixy/Collision\\.h")
+fixy_neg_compile_test(neg_atom_roster_sample_set_joined
+  "static assertion failed: fixy/Collision\\.h: the atom-population relation: these sample sets ARE joined"
+  "fixy::collision::all_atom_roster: probe_wrong_atom_samples\\.  A sample set is a set of INSTANTIATIONS")
+
 # A ladder family gives one atom to each enumerator of its enum, and the
 # walk in fixy/Atom.h counts the claims on each enumerator.  The roster of
 # the fixture has one atom for each enumerator, but it names warm two

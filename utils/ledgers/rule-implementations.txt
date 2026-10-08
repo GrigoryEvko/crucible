@@ -28,6 +28,7 @@ utils/registry.txt | legacy | admit | banned-calls | The rule has no module of i
 utils/registry.txt | legacy | admit | brand-drain | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | build-order | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | cache-size | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
+utils/registry.txt | legacy | admit | clang-format | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | compile-cpu | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | compile-first | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | compile-instructions | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
