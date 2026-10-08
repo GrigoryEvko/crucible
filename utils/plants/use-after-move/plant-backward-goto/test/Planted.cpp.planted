@@ -1,0 +1,11 @@
+// A plant of use-after-move: the goto jumps back to the label, and the move of t occurs two times.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+bool pick();
+
+void must_catch_backward_goto(Token t) {
+again:
+    take(std::move(t));
+    if (pick()) goto again;
+}

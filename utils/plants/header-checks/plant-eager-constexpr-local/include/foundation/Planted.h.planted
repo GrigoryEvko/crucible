@@ -1,0 +1,8 @@
+#pragma once
+namespace foundation {
+struct Holder {};
+inline void local_walk() {
+    static constexpr auto members = std::meta::members_of(^^Holder, ctx).size();
+    (void)members;
+}
+}  // namespace foundation

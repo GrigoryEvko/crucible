@@ -1,0 +1,6 @@
+#pragma once
+namespace foundation {
+// static_assert(false); in a comment
+inline const char* text = "static_assert(false);";
+static_assert(true);
+}  // namespace foundation

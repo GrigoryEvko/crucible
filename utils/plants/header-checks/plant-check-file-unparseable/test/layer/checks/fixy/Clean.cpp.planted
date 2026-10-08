@@ -1,0 +1,3 @@
+#include <fixy/Clean.h>
+
+void f() { g(1) { } }

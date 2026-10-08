@@ -1,0 +1,8 @@
+// A control of use-after-move: the goto jumps over the move to the read, and the path with the move returns.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+bool pick();
+
+void must_accept_goto_skips_move(Token t) { if (pick()) goto skip; take(std::move(t)); return; skip: read(t); }

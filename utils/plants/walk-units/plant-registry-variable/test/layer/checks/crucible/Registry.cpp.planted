@@ -1,0 +1,5 @@
+// The checks of crucible/Registry.h.
+#include <crucible/Registry.h>
+
+// A variable at namespace scope holds the reflection of a namespace, and a helper walks it.
+static_assert(::foundation::row_count() == 1);

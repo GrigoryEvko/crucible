@@ -1,0 +1,4 @@
+#pragma once
+namespace foundation {
+inline constexpr int probe = [] { static_assert(2 == 2); return 0; }();
+}  // namespace foundation

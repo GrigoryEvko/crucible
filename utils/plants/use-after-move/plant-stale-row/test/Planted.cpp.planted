@@ -1,0 +1,7 @@
+// A plant of use-after-move: the ledger has a row for a function that has no finding, and the row is stale.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_use(Token t) { take(std::move(t)); read(t); }

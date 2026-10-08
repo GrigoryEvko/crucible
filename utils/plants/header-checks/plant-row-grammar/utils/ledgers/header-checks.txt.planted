@@ -1,0 +1,4 @@
+# The ledger of the plant: a row with no separators.
+format 1
+rule header-checks
+include/fixy/Clean.h 1 1

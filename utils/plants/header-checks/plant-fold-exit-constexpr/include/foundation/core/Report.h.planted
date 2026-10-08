@@ -1,0 +1,2 @@
+#pragma once
+namespace foundation::core { constexpr void unreachable() noexcept {} }

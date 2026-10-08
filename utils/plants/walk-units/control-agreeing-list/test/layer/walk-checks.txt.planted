@@ -1,0 +1,15 @@
+# A planted list that agrees with the tree: a row for each check file that joins, with its namespaces, and no row for
+# a check file that does not join.
+crucible/Concept.cpp | 0.1 | ::foundation::rows
+crucible/Defaulted.cpp | 0.1 | ::foundation::rows
+crucible/Klass.cpp | 0.1 | unknown
+crucible/Lambda.cpp | 0.1 | unknown
+crucible/Macro.cpp | 0.1 | ::foundation::tags
+crucible/MemberCall.cpp | 0.1 | ::foundation::tags
+crucible/NoReflection.cpp | 0.1 | ::foundation::tags
+crucible/Operator.cpp | 0.1 | ::foundation::tags
+crucible/Pushed.cpp | 0.1 | ::foundation::tags
+crucible/Registry.cpp | 0.1 | ::foundation::rows
+crucible/Substitute.cpp | 0.1 | ::foundation::rows
+crucible/Unknown.cpp | 0.1 | unknown
+fixy/Uses.cpp | 2.5 | ::foundation::tags

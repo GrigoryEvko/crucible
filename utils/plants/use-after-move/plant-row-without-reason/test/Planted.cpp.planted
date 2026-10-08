@@ -1,0 +1,7 @@
+// A plant of use-after-move: the row of the ledger that admits the read of t gives no reason.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_use(Token t) { take(std::move(t)); read(t); }

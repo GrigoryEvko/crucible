@@ -1,0 +1,4 @@
+// The checks of crucible/Lambda.h.
+#include <crucible/Lambda.h>
+
+static_assert([](std::meta::info ns) consteval { return std::meta::members_of(ns, std::meta::access_context::unchecked()).size(); }(^^::foundation::tags) == 1);

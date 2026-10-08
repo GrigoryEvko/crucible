@@ -1,0 +1,7 @@
+// A control of use-after-move: t.swap(u) gives the live value of u to t, and the read of t reads a live value.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} void swap(Token&); };
+void take(Token&&);
+void read(Token const&);
+
+void must_accept_member_swap(Token t, Token u) { take(std::move(t)); t.swap(u); read(t); }

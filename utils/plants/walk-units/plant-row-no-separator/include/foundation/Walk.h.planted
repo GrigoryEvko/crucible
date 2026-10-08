@@ -1,0 +1,7 @@
+#pragma once
+#include <meta>
+namespace foundation::tags { struct First {}; }
+namespace foundation {
+template <std::meta::info Ns>
+consteval std::size_t count_of() { return std::meta::members_of(Ns, std::meta::access_context::unchecked()).size(); }
+}  // namespace foundation

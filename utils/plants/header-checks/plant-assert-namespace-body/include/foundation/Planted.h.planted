@@ -1,0 +1,4 @@
+#pragma once
+namespace foundation {
+static_assert(sizeof(int) == 4);
+}  // namespace foundation

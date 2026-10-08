@@ -1,0 +1,22 @@
+#pragma once
+namespace foundation {
+template <class T> consteval auto plant_anchored() {
+    return std::define_static_array(static_cast<anchored_t<^^T, std::vector<std::meta::info>>>(std::meta::enumerators_of(^^T)));
+}
+template <class T> consteval auto plant_span(std::span<const T> values) { return std::define_static_array(values); }
+template <class T> consteval auto plant_called() { return std::define_static_string(text_of<T>()); }
+template <class T> consteval auto plant_local() { anchored_t<^^T, std::string> text; return std::define_static_string(text); }
+template <class T> consteval auto plant_value() {
+    constexpr std::meta::info bare = ^^T;
+    return std::define_static_array(static_cast<anchored_t<bare, std::vector<std::meta::info>>>(std::meta::members_of(bare, ctx)));
+}
+template <class... Ts> consteval auto plant_pack() {
+    using list = anchored_t<std::meta::reflect_constant(sizeof...(Ts)), std::vector<std::meta::info>>;
+    return std::define_static_array(list{^^Ts...});
+}
+template <class T> struct PlantMember {
+    using item_type = T;
+    static constexpr auto item = ^^item_type;
+    static constexpr auto list = std::define_static_array(static_cast<anchored_t<item, std::vector<std::meta::info>>>(std::meta::members_of(item, ctx)));
+};
+}  // namespace foundation

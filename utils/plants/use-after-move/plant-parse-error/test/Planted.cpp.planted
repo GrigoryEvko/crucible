@@ -1,0 +1,2 @@
+// A plant of use-after-move: the rule cannot read a file that does not parse, and the file is an error.
+void f( { take(std::move(t)); read(t);

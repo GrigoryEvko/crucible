@@ -1,0 +1,6 @@
+// A plant of use-after-move: push is not a try_ function, and the second iteration moves a spent t.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+struct Ring { bool push(Token&&); };
+
+void must_catch_plain_call_loop(Ring& r, Token t) { while (!r.push(std::move(t))) {} }

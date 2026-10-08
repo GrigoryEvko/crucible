@@ -1,0 +1,6 @@
+// A control of use-after-move: each iteration declares a new t, and each move spends a different object.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+
+void must_accept_fresh_in_loop() { for (int i = 0; i < 2; ++i) { Token t; take(std::move(t)); } }

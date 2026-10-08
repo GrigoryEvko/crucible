@@ -1,0 +1,4 @@
+#pragma once
+namespace foundation {
+extern "C++" { static_assert(4 == 4); }
+}  // namespace foundation

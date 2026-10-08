@@ -1,0 +1,4 @@
+# The ledger of the plant: a row that tries to admit a bad check file.
+format 1
+rule header-checks
+test/layer/checks/fixy/Notes.txt | check-file | 1 | - | the planted reason

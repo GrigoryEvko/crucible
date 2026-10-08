@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation {
+struct Holder {};
+consteval bool plant_asserted() { static_assert(std::meta::members_of(^^Holder, ctx).size() > 0); return true; }
+}  // namespace foundation

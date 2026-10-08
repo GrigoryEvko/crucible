@@ -1,0 +1,2 @@
+// A control of use-after-move: the replacement list of the macro does not move.
+#define must_accept_macro_plain(x) (x)

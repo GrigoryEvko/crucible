@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation {
+template <class T> void special() {}
+template <> inline void special<int>() { static_assert(12 == 12); }
+}  // namespace foundation

@@ -1,0 +1,4 @@
+// The checks of crucible/Friend.h.
+#include <crucible/Friend.h>
+
+static_assert(sizeof(::foundation::Friendly<int>) == 1);

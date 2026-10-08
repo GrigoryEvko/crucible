@@ -1,0 +1,7 @@
+// A control of use-after-move: the program does not evaluate the operand of a `requires` expression, and it is not
+// a use.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} int size = 0; };
+void take(Token&&);
+
+void must_accept_requires(Token t) { take(std::move(t)); if constexpr (requires { t.size; }) {} }

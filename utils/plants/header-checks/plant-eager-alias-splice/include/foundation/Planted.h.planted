@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation {
+template <class T> struct Box {};
+using Spliced = [:std::meta::substitute(^^Box, {^^int}):];
+}  // namespace foundation

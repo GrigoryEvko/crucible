@@ -1,0 +1,4 @@
+// The checks of crucible/Pushed.h.
+#include <crucible/Pushed.h>
+
+static_assert(::foundation::pushed() == 1);

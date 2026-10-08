@@ -1,0 +1,4 @@
+// The checks of crucible/Eager.h.
+#include <crucible/Eager.h>
+
+static_assert(::foundation::eager_count == 1);

@@ -1,0 +1,10 @@
+// A control of use-after-move: the move spends the member a, and the read of this->b reads a different member.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+struct This {
+    Token a; Token b;
+    void must_accept_this_other_member() { take(std::move(this->a)); read(this->b); }
+};

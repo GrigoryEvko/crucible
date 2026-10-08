@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation {
+enum class Kind { one };
+constinit unsigned bound = std::meta::enumerators_of(^^Kind).size();
+}  // namespace foundation

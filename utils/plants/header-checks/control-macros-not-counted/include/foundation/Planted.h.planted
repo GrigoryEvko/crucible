@@ -1,0 +1,11 @@
+#pragma once
+#define PLANTED_PAIR(T) static_assert(sizeof(T) > 0, #T); static_assert(alignof(T) > 0)
+#define PLANTED_TRUE(T) struct T##_tag {}; static_assert(true, "a semicolon at the call site")
+#define PLANTED_IN_CLASS(T) struct T##_holder { static_assert(sizeof(T) > 0); }
+#define PLANTED_UNUSED static_assert(1 == 1)
+namespace foundation {
+PLANTED_TRUE(planted);
+PLANTED_IN_CLASS(char);
+struct Macro { PLANTED_PAIR(int); };
+inline void macro_body() { PLANTED_PAIR(int); }
+}  // namespace foundation

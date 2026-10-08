@@ -1,0 +1,4 @@
+// The checks of fixy/FreeOp.h.
+#include <fixy/FreeOp.h>
+
+static_assert(sizeof(::fixy::Pair) == 1);

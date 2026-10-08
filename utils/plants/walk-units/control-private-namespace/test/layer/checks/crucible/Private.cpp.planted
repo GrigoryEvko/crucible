@@ -1,0 +1,6 @@
+// The checks of crucible/Private.h.
+#include <crucible/Private.h>
+
+// Only a check file opens the namespace that the check walks, so no header can add to it.
+namespace crucible::private_test { struct Mine {}; }
+static_assert(::foundation::count_of<^^::crucible::private_test>() == 1);

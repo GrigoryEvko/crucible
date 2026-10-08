@@ -1,0 +1,6 @@
+// A plant of use-after-move: the first argument moves t, and the second argument of the same call reads it.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void consume(Token&&, Token const&);
+
+void must_catch_self_argument(Token t) { consume(std::move(t), t); }

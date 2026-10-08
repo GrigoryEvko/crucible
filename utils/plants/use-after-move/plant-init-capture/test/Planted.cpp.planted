@@ -1,0 +1,6 @@
+// A plant of use-after-move: the init-capture moves t where the lambda is, and the code after it reads t.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void read(Token const&);
+
+void must_catch_init_capture(Token t) { auto f = [u = std::move(t)] {}; read(t); }

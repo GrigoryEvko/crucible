@@ -1,0 +1,8 @@
+// A control of use-after-move: `auto [bound] = h;` copies h, and the move of bound does not spend h.
+#include <utility>
+struct Token { Token() = default; Token(Token const&); Token(Token&&) {} };
+struct Holder { Token token; };
+void take(Token&&);
+void read(Token const&);
+
+void must_accept_by_value_binding(Holder h) { auto [bound] = h; take(std::move(bound)); read(h.token); }

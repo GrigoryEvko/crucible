@@ -1,0 +1,5 @@
+// The checks of crucible/Unknown.h.
+#include <crucible/Unknown.h>
+
+// The walk reads the result of a function, which the analysis cannot read, so the walk is unknown.
+static_assert(::foundation::count_in(::foundation::pick()) == 1);

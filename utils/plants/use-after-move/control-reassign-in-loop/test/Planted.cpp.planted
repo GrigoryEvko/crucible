@@ -1,0 +1,7 @@
+// A control of use-after-move: each iteration gives t a new value after its move, and the next move moves a live t.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} Token& operator=(Token&&); };
+void take(Token&&);
+bool pick();
+
+void must_accept_reassign_in_loop(Token t) { while (pick()) { take(std::move(t)); t = Token{}; } }

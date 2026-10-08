@@ -1,0 +1,4 @@
+// The checks of crucible/MemberCall.h.
+#include <crucible/MemberCall.h>
+
+static_assert(::foundation::Box{}.tags() == 1);

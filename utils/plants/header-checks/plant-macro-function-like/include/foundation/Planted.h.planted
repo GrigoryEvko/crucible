@@ -1,0 +1,5 @@
+#pragma once
+#define PLANTED_PAIR(T) static_assert(sizeof(T) > 0, #T); static_assert(alignof(T) > 0)
+namespace foundation {
+PLANTED_PAIR(int);
+}  // namespace foundation

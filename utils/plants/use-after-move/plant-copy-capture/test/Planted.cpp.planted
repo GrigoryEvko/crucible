@@ -1,0 +1,6 @@
+// A plant of use-after-move: the lambda copies the t that a move spent before the lambda.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+
+void must_catch_copy_capture(Token t) { take(std::move(t)); auto f = [t] {}; }

@@ -1,0 +1,7 @@
+// A plant of use-after-move: the branch where try_take succeeds reads the t that try_take took.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+bool try_take(Token&&);
+void read(Token const&);
+
+void must_catch_try_if(Token t) { if (try_take(std::move(t))) { read(t); } }

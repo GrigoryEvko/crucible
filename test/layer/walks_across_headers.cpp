@@ -17,8 +17,8 @@
 // namespace of foundation or fixy.  This unit includes it, and then the
 // check files of walk_checks.h.  test/layer/CMakeLists.txt divides the check
 // files of test/layer/walk-checks.txt into several units by their measured
-// weights, and utils/assay/guard/legacy/check_walk_units.py derives that list from the
-// parse tree:
+// weights, and `loop derive walk-units --write` (utils/assay/loop/derive/walk_units.py)
+// derives that list from the parse tree:
 // each check file whose checks can call members_of on the reflection of a
 // namespace that a header opens.  The include of the header at the top of a
 // check file then adds nothing, and its checks run with every member in

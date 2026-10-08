@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation {
+struct Holder {};
+inline const char* const fixed_name = name_of(^^Holder);
+}  // namespace foundation

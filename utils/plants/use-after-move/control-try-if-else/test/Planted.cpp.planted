@@ -1,0 +1,7 @@
+// A control of use-after-move: the else branch runs only when try_take did not succeed, and such a try_ call keeps t.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+bool try_take(Token&&);
+void read(Token const&);
+
+void must_accept_try_if_else(Token t) { if (try_take(std::move(t))) { return; } else { read(t); } }

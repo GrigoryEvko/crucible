@@ -1,0 +1,3 @@
+#pragma once
+// A header that adds a member to a namespace that a check walks changes no row of the list.
+namespace foundation::tags { struct Planted {}; }

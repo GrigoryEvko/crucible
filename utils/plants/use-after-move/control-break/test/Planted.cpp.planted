@@ -1,0 +1,6 @@
+// A control of use-after-move: the break after the move stops the loop, and the move occurs one time.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+
+void must_accept_break(Token t) { for (;;) { take(std::move(t)); break; } }

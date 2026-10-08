@@ -1,0 +1,7 @@
+// A control of use-after-move: the assignment makes t live again before the read.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} Token& operator=(Token&&); };
+void take(Token&&);
+void read(Token const&);
+
+void must_accept_reassign(Token t) { take(std::move(t)); t = Token{}; read(t); }

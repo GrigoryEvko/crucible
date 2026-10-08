@@ -1,0 +1,8 @@
+// A control of use-after-move: the branch that moves t returns, and no path reads the spent t.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+bool pick();
+
+void must_accept_return(Token t) { if (pick()) { take(std::move(t)); return; } read(t); }

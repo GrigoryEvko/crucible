@@ -1,0 +1,2 @@
+#pragma once
+static_assert(7 == 7, "global scope");

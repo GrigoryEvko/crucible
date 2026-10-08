@@ -1,0 +1,7 @@
+// A plant of use-after-move: the argument moves t, and the lambda body that the call gets moves t again.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+template <class Body> void lend(Token&&, Body&&);
+
+void must_catch_door(Token t) { lend(std::move(t), [&](auto const&) { take(std::move(t)); }); }

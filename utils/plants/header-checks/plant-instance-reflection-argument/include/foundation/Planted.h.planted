@@ -1,0 +1,4 @@
+#pragma once
+namespace foundation {
+template <class T> consteval auto plant_list() { return std::define_static_array(std::meta::enumerators_of(^^T)); }
+}  // namespace foundation

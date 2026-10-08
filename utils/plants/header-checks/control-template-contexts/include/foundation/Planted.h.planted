@@ -1,0 +1,11 @@
+#pragma once
+namespace foundation {
+struct Holder { static_assert(sizeof(Holder*) == 8); };
+template <class T> struct Box { static_assert(sizeof(T) > 0); };
+template <class T> void generic() { static_assert(13 == 13); }
+template <class T> struct Shell { void act() { static_assert(14 == 14); } };
+inline auto generic_lambda = [](auto value) { static_assert(15 == 15); return value; };
+inline auto listed_lambda = []<class T>(T value) { static_assert(16 == 16); return value; };
+inline void abbreviated(auto value) { static_assert(17 == 17); (void)value; }
+inline void constrained() requires true { static_assert(18 == 18); }
+}  // namespace foundation

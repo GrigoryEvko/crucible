@@ -1,0 +1,10 @@
+// A control of use-after-move: the assignment to o gives o a new object, and *o is live again.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+using Opt = std::optional<Token>;
+Opt make();
+void take(Token&&);
+void read(Token const&);
+
+void must_accept_deref_rebind(Opt o) { take(std::move(*o)); o = make(); read(*o); }

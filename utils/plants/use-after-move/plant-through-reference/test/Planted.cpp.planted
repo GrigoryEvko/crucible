@@ -1,0 +1,7 @@
+// A plant of use-after-move: the reference alias names token, and the move of alias spends token.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_through_reference(Token& token) { Token& alias = token; take(std::move(alias)); read(token); }

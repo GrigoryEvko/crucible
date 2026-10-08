@@ -112,10 +112,11 @@ struct split_mint_t {};
 //
 //   A copied receipt.  The type is move-only, and the copy is deleted
 //   with its reason.  A second move of one receipt compiles, because a
-//   moved-from receipt is still an object.  utils/assay/guard/legacy/check_use_after_move.py
-//   refuses that second move.  The shards of the first recombine are
-//   then empty at a null base, so the whole that a second recombine
-//   rebuilds from them covers no byte.
+//   moved-from receipt is still an object.  The rule use-after-move
+//   (utils/assay/guard/engines/tsast/use_after_move.py) refuses that second
+//   move.  The shards of the first recombine are then empty at a null
+//   base, so the whole that a second recombine rebuilds from them covers
+//   no byte.
 //
 //   A receipt from the wrong split.  The tag, the brand of the region
 //   that was split, the arity and the name of the split site are all

@@ -1,0 +1,7 @@
+// A plant of use-after-move: ::std::move with the global qualifier is std::move.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_global_qualified(Token t) { take(::std::move(t)); read(t); }

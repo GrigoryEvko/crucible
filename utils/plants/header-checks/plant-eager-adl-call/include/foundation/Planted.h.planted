@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation {
+struct Holder {};
+inline constexpr unsigned adl_walked = nonstatic_data_members_of(^^Holder, ctx).size();
+}  // namespace foundation

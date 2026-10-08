@@ -1,0 +1,5 @@
+// The checks of crucible/MemberCall.h.
+#include <crucible/MemberCall.h>
+
+// A member call on an object of a class that the check file names.
+static_assert(::foundation::Box{}.tags() == 1);

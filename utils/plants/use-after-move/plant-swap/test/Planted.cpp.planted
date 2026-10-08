@@ -1,0 +1,7 @@
+// A plant of use-after-move: std::swap gives the spent state of t to u, and the code after it reads u.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_swap(Token t, Token u) { take(std::move(t)); std::swap(t, u); read(u); }

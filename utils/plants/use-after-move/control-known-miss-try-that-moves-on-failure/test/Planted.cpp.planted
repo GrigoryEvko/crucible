@@ -1,0 +1,14 @@
+// A known miss of use-after-move.  try_keep takes its argument by value, and it moves token also when it does not
+// succeed.  The read in that branch is then a use after move.  The rule of the try_ calls thinks that a try_ call that
+// does not succeed keeps its argument.  When the rule learns to refuse this shape, this control fails, and it becomes
+// a plant.
+#include <utility>
+struct Token { int value; };
+void read(Token const&);
+bool try_keep(Token token);
+
+void evade_try_that_moves_on_failure(Token token) {
+    if (!try_keep(std::move(token))) {
+        read(token);
+    }
+}

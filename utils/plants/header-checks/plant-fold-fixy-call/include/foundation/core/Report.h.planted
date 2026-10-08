@@ -1,0 +1,2 @@
+#pragma once
+namespace foundation::core { void unreachable() noexcept; }

@@ -1,0 +1,9 @@
+// A plant of use-after-move: a member function with qualifiers, noexcept and a `requires` clause moves t two times.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+
+struct Into {
+    Token t;
+    Token must_catch_into() && noexcept(true) requires (sizeof(Token) > 0) { take(std::move(t)); return std::move(t); }
+};

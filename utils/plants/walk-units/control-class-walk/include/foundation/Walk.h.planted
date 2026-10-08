@@ -1,0 +1,6 @@
+#pragma once
+#include <meta>
+namespace foundation {
+struct Shape { int field = 0; };
+consteval std::size_t shape_members() { return std::meta::members_of(^^Shape, std::meta::access_context::unchecked()).size(); }
+}  // namespace foundation

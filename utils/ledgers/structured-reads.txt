@@ -13,7 +13,6 @@ utils/assay/guard/legacy/check_ct_disassembly.py | regex-call | 2 | <module> | A
 utils/assay/guard/legacy/check_ct_disassembly.py | regex-call | 4 | disassemble | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_detail_namespace.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_fixy_dim_prose.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_header_checks.py | regex-call | 1 | mentions | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_header_constexpr_ops.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_header_constexpr_ops.py | regex-call | 1 | c_identifier | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_host_owners.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
@@ -41,8 +40,6 @@ utils/assay/guard/legacy/check_syscall_grant_coverage.py | regex-call | 1 | self
 utils/assay/guard/legacy/check_test_time.py | format-read | 1 | --show-only=json-v1 | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_test_time.py | regex-call | 4 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_trait_injection.py | node-text-variable | 2 | closing_angle | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_use_after_move.py | node-text-variable | 1 | fixtures | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_walk_units.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_witness_roster.py | regex-call | 4 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_witness_roster.py | regex-call | 3 | self_test | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_witness_roster.py | regex-call | 1 | slug | A read of today.  The change that moves the read into its reader lowers the count

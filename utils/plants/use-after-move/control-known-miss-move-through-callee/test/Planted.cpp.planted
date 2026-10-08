@@ -1,0 +1,12 @@
+// A known miss of use-after-move.  steal takes Token& and moves the token in its body.  The read after the call is
+// then a use after move.  The call does not say std::move, and the rule reads one body at a time.  The rule then
+// accepts the read.  When the rule learns to refuse this shape, this control fails, and it becomes a plant.
+#include <utility>
+struct Token { int value; };
+void read(Token const&);
+void steal(Token& token);
+
+void evade_move_through_callee(Token token) {
+    steal(token);
+    read(token);
+}

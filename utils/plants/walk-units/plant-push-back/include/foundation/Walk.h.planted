@@ -1,0 +1,12 @@
+#pragma once
+#include <meta>
+#include <vector>
+namespace foundation::tags { struct First {}; }
+namespace foundation {
+consteval std::size_t count_in(std::meta::info ns) { return std::meta::members_of(ns, std::meta::access_context::unchecked()).size(); }
+consteval std::size_t pushed() {
+    std::vector<std::meta::info> found{};
+    found.push_back(^^::foundation::tags);
+    return count_in(found[0]);
+}
+}  // namespace foundation

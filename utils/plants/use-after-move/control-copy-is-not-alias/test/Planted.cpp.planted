@@ -1,0 +1,7 @@
+// A control of use-after-move: copy is a new object, and its move does not spend token.
+#include <utility>
+struct Token { Token() = default; Token(Token const&); Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_accept_copy_is_not_alias(Token& token) { Token copy = token; take(std::move(copy)); read(token); }

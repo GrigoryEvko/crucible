@@ -1,0 +1,3 @@
+#pragma once
+#include <foundation/Walk.h>
+namespace fixy { consteval std::size_t shadow_walk() { return ::foundation::count_in(^^::foundation::tags); } }

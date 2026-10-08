@@ -1,0 +1,4 @@
+// The checks of crucible/Defaulted.h.
+#include <crucible/Defaulted.h>
+
+static_assert(::foundation::defaulted<>());

@@ -1,0 +1,5 @@
+// The checks of crucible/Macro.h.
+#include <crucible/Macro.h>
+
+// A macro of a header walks a namespace.
+FOUNDATION_WALK_TAGS();

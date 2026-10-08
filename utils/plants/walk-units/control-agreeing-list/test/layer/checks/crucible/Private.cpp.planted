@@ -1,0 +1,5 @@
+// The checks of crucible/Private.h.
+#include <crucible/Private.h>
+
+namespace crucible::private_test { struct Mine {}; }
+static_assert(::foundation::count_of<^^::crucible::private_test>() == 1);

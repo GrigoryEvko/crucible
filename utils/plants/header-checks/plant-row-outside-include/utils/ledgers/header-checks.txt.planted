@@ -1,0 +1,4 @@
+# The ledger of the plant: a row of a path outside include/.
+format 1
+rule header-checks
+fixy/Clean.h | function-static_assert | 1 | key | the planted reason

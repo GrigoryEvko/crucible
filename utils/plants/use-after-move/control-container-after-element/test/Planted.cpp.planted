@@ -1,0 +1,12 @@
+// A control of use-after-move: the move spends an element of v, and the calls on v use the container and not the
+// element.
+#include <utility>
+#include <vector>
+struct Token { Token() = default; Token(Token&&) {} };
+using Vec = std::vector<Token>;
+
+void must_accept_container_after_element(Vec& v, int i) {
+    auto x = std::move(v[i]);
+    v.erase(v.begin() + i);
+    v.push_back(std::move(x));
+}

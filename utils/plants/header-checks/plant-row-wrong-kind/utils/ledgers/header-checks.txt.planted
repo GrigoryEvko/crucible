@@ -1,0 +1,4 @@
+# The ledger of the plant: a row of a kind that is not one of the six kinds.
+format 1
+rule header-checks
+include/fixy/Clean.h | constexpr | 1 | key | the planted reason

@@ -1,0 +1,4 @@
+// The checks of crucible/Unknown.h.
+#include <crucible/Unknown.h>
+
+static_assert(::foundation::count_in(::foundation::pick()) == 1);

@@ -1,0 +1,9 @@
+// A plant of use-after-move: the move of ts.at(i) can spend each element, and the read of ts[1] is a use after move.
+#include <array>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+using Arr = std::array<Token, 2>;
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_move_through_at(Arr& ts, int i) { take(std::move(ts.at(i))); read(ts[1]); }

@@ -1,0 +1,7 @@
+// A plant of use-after-move: the move of ts[i] can spend each element, and the read of ts[1] is a use after move.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_array_any_index(Token (&ts)[2], int i) { take(std::move(ts[i])); read(ts[1]); }

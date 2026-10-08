@@ -1,0 +1,4 @@
+# The ledger of the plant: a configuration row, which a ledger of header-checks does not have.
+format 1
+rule header-checks
+configuration debug kind debug

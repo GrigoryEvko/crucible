@@ -1,0 +1,13 @@
+// A control of use-after-move: std::destroy_at and std::construct_at build t again before the read.
+#include <memory>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_accept_rebuild(Token t) {
+    take(std::move(t));
+    std::destroy_at(&t);
+    std::construct_at(&t);
+    read(t);
+}

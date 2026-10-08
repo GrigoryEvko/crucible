@@ -1,0 +1,3 @@
+#pragma once
+#define PLANTED_CHECK static_assert(8 == 8)
+PLANTED_CHECK;

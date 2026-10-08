@@ -1,0 +1,5 @@
+// The checks of crucible/Pushed.h.
+#include <crucible/Pushed.h>
+
+// push_back puts the reflection of a namespace into a local container, and a helper walks an element of it.
+static_assert(::foundation::pushed() == 1);

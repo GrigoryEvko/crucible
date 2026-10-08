@@ -1,0 +1,7 @@
+// A plant of use-after-move: n > t reads t, and the > compares two values and does not end a template list.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+bool operator>(int, Token const&);
+void take(Token&&);
+
+void must_catch_compare_after_move(Token t, int n) { take(std::move(t)); bool less = n > t; }

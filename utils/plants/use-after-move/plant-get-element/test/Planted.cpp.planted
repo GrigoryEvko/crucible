@@ -1,0 +1,9 @@
+// A plant of use-after-move: std::get<0>(p) reads the element that the move of std::get<0>(p) spent.
+#include <tuple>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+using Tuple = std::tuple<Token, Token>;
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_get_element(Tuple& p) { take(std::move(std::get<0>(p))); read(std::get<0>(p)); }

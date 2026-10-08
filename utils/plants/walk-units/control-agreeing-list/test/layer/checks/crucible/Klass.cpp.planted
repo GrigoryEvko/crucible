@@ -1,0 +1,4 @@
+// The checks of crucible/Klass.h.
+#include <crucible/Klass.h>
+
+constexpr ::foundation::Walker<^^::foundation::tags> walker{};

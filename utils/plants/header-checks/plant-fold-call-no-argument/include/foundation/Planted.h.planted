@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation {
+consteval bool plant_every();
+consteval bool plant_fold_call() { return plant_every(); }
+}  // namespace foundation

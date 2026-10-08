@@ -1,0 +1,14 @@
+// A known miss of use-after-move.  alias is a reference to the token that same returns.  The read of alias after the
+// move of token is then a use after move.  The rule gives a reference a key only for a plain path, and the result of
+// a call is not one.  When the rule learns to refuse this shape, this control fails, and it becomes a plant.
+#include <utility>
+struct Token { int value; };
+void sink(Token&&);
+void read(Token const&);
+Token& same(Token& token);
+
+void evade_use_through_returned_reference(Token token) {
+    Token& alias = same(token);
+    sink(std::move(token));
+    read(alias);
+}

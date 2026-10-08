@@ -1,0 +1,43 @@
+#pragma once
+#include <meta>
+#include <vector>
+namespace foundation::tags { struct First {}; }
+namespace foundation::rows { struct Row {}; }
+namespace foundation {
+template <std::meta::info Ns>
+consteval std::size_t count_of() { return std::meta::members_of(Ns, std::meta::access_context::unchecked()).size(); }
+consteval std::size_t count_in(std::meta::info ns) { return std::meta::members_of(ns, std::meta::access_context::unchecked()).size(); }
+template <class = void>
+consteval bool every_tag_is_empty() { return count_in(^^::foundation::tags) > 0; }
+inline constexpr std::meta::info row_registry = ^^::foundation::rows;
+consteval std::size_t row_count() { return count_in(row_registry); }
+template <std::meta::info Ns>
+concept Populated = count_of<Ns>() > 0;
+template <std::meta::info Ns = ^^::foundation::rows>
+consteval bool defaulted() { return count_of<Ns>() > 0; }
+struct Shape { int field = 0; };
+consteval std::size_t shape_members() { return std::meta::members_of(^^Shape, std::meta::access_context::unchecked()).size(); }
+inline constexpr std::size_t eager_count = count_in(^^::foundation::tags);
+consteval std::meta::info pick() { return ^^::foundation::tags; }
+template <std::meta::info Ns>
+struct Walker { constexpr Walker() { (void)count_of<Ns>(); } };
+#define FOUNDATION_WALK_TAGS() static_assert(::foundation::count_in(^^::foundation::tags) > 0)
+template <std::meta::info Ns>
+inline constexpr std::size_t count_v = count_of<Ns>();
+consteval std::size_t substituted() { return std::meta::extract<std::size_t>(std::meta::substitute(
+    ^^count_v, {std::meta::reflect_constant(^^::foundation::rows)})); }
+consteval std::size_t pushed() {
+    std::vector<std::meta::info> found{};
+    found.push_back(^^::foundation::tags);
+    return count_in(found[0]);
+}
+struct Box { consteval std::size_t tags() const { return count_in(^^::foundation::tags); } };
+struct Ordered { consteval bool operator<(Ordered) const { return count_in(^^::foundation::tags) > 0; } };
+struct Walking { consteval std::size_t size() const { return count_in(^^::foundation::tags); } };
+template <class T>
+struct Friendly {
+    template <class U>
+        requires Populated<^^::foundation::rows>
+    friend void befriend(U);
+};
+}  // namespace foundation

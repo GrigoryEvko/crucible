@@ -1,0 +1,6 @@
+// A plant of use-after-move: the read of a member of t after the move of t.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} int size = 0; };
+void take(Token&&);
+
+void must_catch_member(Token t) { take(std::move(t)); auto n = t.size; }

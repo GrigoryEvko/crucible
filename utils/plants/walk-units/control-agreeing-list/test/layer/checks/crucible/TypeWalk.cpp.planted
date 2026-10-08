@@ -1,0 +1,4 @@
+// The checks of crucible/TypeWalk.h.
+#include <crucible/TypeWalk.h>
+
+static_assert(::foundation::shape_members() == 1);

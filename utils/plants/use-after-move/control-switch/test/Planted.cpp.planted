@@ -1,0 +1,9 @@
+// A control of use-after-move: case 0 moves t and breaks, and case 1 reads a live t.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_accept_switch(Token t, int k) {
+    switch (k) { case 0: take(std::move(t)); break; case 1: read(t); break; }
+}

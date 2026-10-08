@@ -1,0 +1,8 @@
+// A plant of use-after-move: the first initializer moves t, and the second initializer reads a member of t.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} int size = 0; };
+
+struct must_catch_ctor {
+    Token a; int n;
+    must_catch_ctor(Token t) : a{std::move(t)}, n{t.size} {}
+};

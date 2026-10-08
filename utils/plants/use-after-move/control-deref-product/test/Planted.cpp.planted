@@ -1,0 +1,9 @@
+// A control of use-after-move: n * o reads o, and the move spent *o and not o.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+using Opt = std::optional<Token>;
+int operator*(int, Opt const&);
+void take(Token&&);
+
+void must_accept_deref_product(Opt o, int n) { take(std::move(*o)); auto z = n * o; }

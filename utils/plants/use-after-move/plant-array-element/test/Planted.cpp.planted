@@ -1,0 +1,7 @@
+// A plant of use-after-move: the read of ts[0] after the move of ts[0].
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_array_element(Token (&ts)[2]) { take(std::move(ts[0])); read(ts[0]); }

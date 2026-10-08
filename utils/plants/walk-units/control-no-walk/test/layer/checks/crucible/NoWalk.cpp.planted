@@ -1,0 +1,5 @@
+// The checks of crucible/NoWalk.h.
+#include <crucible/NoWalk.h>
+
+// No check walks a namespace.
+static_assert(sizeof(::fixy::Uses) == 1);

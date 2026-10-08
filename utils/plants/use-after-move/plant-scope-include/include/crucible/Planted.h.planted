@@ -1,0 +1,8 @@
+// A plant of use-after-move: a header of include/ is in the scope of the rule.
+#pragma once
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+inline void header_reads_a_moved_token(Token t) { take(std::move(t)); read(t); }

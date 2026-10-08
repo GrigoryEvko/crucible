@@ -1,0 +1,7 @@
+// A control of use-after-move: the subscript by a name with a qualifier reads no spent key, and the move comes after it.
+#include <utility>
+namespace ns { inline int index = 0; }
+struct Table { int cells[4]; };
+void take(Table&&);
+
+void must_accept_global_subscript(Table s) { s.cells[::ns::index] = 1; take(std::move(s)); }

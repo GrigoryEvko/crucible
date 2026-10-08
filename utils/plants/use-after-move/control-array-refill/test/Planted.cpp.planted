@@ -1,0 +1,7 @@
+// A control of use-after-move: the assignment to ts[0] makes the element that the move spent live again.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} Token& operator=(Token&&); };
+void take(Token&&);
+void read(Token const&);
+
+void must_accept_array_refill(Token (&ts)[2]) { take(std::move(ts[0])); ts[0] = Token{}; read(ts[0]); }

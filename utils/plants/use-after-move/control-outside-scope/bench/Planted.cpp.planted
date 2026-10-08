@@ -1,0 +1,7 @@
+// A control of use-after-move: bench/ is out of the scope of the rule, and the rule does not read this file.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void bench_reads_a_moved_token(Token t) { take(std::move(t)); read(t); }

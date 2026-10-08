@@ -1,0 +1,12 @@
+// A plant of use-after-move: after the base assignment, a move of all of other is a use after move.
+#include <utility>
+struct Base { Base& operator=(Base&&); };
+template <class T> void consume(T&&);
+
+struct must_catch_whole_after_base_assignment : Base {
+    must_catch_whole_after_base_assignment& operator=(must_catch_whole_after_base_assignment&& other) {
+        Base::operator=(std::move(other));
+        consume(std::move(other));
+        return *this;
+    }
+};

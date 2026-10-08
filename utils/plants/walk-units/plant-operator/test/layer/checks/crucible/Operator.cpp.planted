@@ -1,0 +1,5 @@
+// The checks of crucible/Operator.h.
+#include <crucible/Operator.h>
+
+// An object of the class runs its operator with no name.
+static_assert(!(::foundation::Ordered{} < ::foundation::Ordered{}));

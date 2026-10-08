@@ -1,0 +1,14 @@
+# The ledger of the control: one row for each item of the header, with the exact kind and key of the item.
+format 1
+rule header-checks
+include/crucible/Kept.h | eager-evaluation | 1 | crucible::Counted::count | the planted reason
+include/crucible/Kept.h | eager-evaluation | 1 | crucible::expand::template for(items) | the planted reason
+include/crucible/Kept.h | eager-evaluation | 1 | crucible::kept_value | the planted reason
+include/crucible/Kept.h | eager-evaluation | 1 | crucible::local_walk::members | the planted reason
+include/crucible/Kept.h | eager-fold | 1 | crucible::kept_fold::std::meta::members_of(^^Holder,ctx) | the planted reason
+include/crucible/Kept.h | eager-instantiation | 1 | crucible::kept_text::std::define_static_string(text) | the planted reason
+include/crucible/Kept.h | function-static_assert | 1 | sizeof(char)==1 | the planted reason
+include/crucible/Kept.h | function-static_assert | 1 | std::meta::members_of(^^Holder,ctx).size()>0 | the planted reason
+include/crucible/Kept.h | namespace | 1 | crucible::detail::kept_self_test | the planted reason
+include/crucible/Kept.h | static_assert | 1 | PLANTED_CHECK | the planted reason
+include/crucible/Kept.h | static_assert | 1 | sizeof(long)==8 | the planted reason

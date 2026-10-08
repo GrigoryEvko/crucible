@@ -1,0 +1,6 @@
+// A plant of use-after-move: a function with a trailing `requires` clause has a body that the rule reads.
+#include <utility>
+void take(auto&&);
+void read(auto const&);
+
+template <class T> void must_catch_trailing_requires(T t) requires (sizeof(T) > 1) { take(std::move(t)); read(t); }

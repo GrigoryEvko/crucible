@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation {
+struct Holder {};
+const unsigned table_size = edge_count<^^Holder>();
+}  // namespace foundation

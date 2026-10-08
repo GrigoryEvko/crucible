@@ -1,0 +1,4 @@
+// The checks of crucible/Concept.h.
+#include <crucible/Concept.h>
+
+static_assert(::foundation::Populated<^^::foundation::rows>);

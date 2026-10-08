@@ -1,0 +1,16 @@
+#pragma once
+#define PLANTED_CHECK static_assert(8 == 8)
+namespace crucible {
+struct Holder {};
+static_assert(sizeof(long) == 8);
+PLANTED_CHECK;
+namespace detail::kept_self_test { struct Probe {}; }
+inline void kept_body() { static_assert(sizeof(char) == 1); }
+inline constexpr auto kept_value = std::meta::members_of(^^Holder, ctx).size();
+struct Counted { static constexpr auto count = std::meta::bases_of(^^Holder, ctx).size(); };
+inline void local_walk() { static constexpr auto members = std::meta::members_of(^^Holder, ctx).size(); (void)members; }
+consteval bool expand() { template for (constexpr auto item : items) { (void)item; } return true; }
+inline void kept_text() { std::string text; (void)std::define_static_string(text); }
+consteval std::size_t kept_fold() { return std::meta::members_of(^^Holder, ctx).size(); }
+consteval bool kept_asserted() { static_assert(std::meta::members_of(^^Holder, ctx).size() > 0); return true; }
+}  // namespace crucible

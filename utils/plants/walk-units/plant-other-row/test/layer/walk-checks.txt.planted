@@ -1,0 +1,2 @@
+# A planted list whose row names a namespace that the check file does not walk.
+fixy/Uses.cpp | 2.5 | ::foundation::rows

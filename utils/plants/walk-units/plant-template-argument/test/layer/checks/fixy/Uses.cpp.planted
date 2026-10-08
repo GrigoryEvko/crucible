@@ -1,0 +1,5 @@
+// The checks of fixy/Uses.h.
+#include <fixy/Uses.h>
+
+// A template argument `^^namespace` gets to a walk of its parameter.
+static_assert(::foundation::count_of<^^::foundation::tags>() == 1);

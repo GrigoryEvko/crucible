@@ -1,0 +1,5 @@
+# planted
+format 1
+rule use-after-move
+test/Planted.cpp | use-after-move | 1 | must_catch_use(Token): t | Probe: the test reads t after the move on purpose.
+test/Planted.cpp | use-after-move | 1 | must_catch_use(Token): t | Probe: the test reads t after the move on purpose.

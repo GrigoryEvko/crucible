@@ -1,0 +1,9 @@
+// A control of use-after-move: the assignment to *o makes the object that o holds live again before the read.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} Token& operator=(Token&&); };
+using Opt = std::optional<Token>;
+void take(Token&&);
+void read(Token const&);
+
+void must_accept_deref_refill(Opt o) { take(std::move(*o)); *o = Token{}; read(*o); }

@@ -1,0 +1,11 @@
+// A plant of use-after-move: the assignment to ts[i] can fill a different element, and ts[0] stays spent.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_refill_through_any_index(Token (&ts)[2], int i) {
+    take(std::move(ts[0]));
+    ts[i] = Token{};
+    read(ts[0]);
+}

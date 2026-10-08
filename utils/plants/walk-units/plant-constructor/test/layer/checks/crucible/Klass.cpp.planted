@@ -1,0 +1,5 @@
+// The checks of crucible/Klass.h.
+#include <crucible/Klass.h>
+
+// A use of the class calls its constructor with no name, and the constructor walks the parameter of the class.
+constexpr ::foundation::Walker<^^::foundation::tags> walker{};

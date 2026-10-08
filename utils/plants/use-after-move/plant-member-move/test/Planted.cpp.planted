@@ -1,0 +1,7 @@
+// A plant of use-after-move: a member function moves the member a and then reads it.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+struct Member { Token a; Token b; void must_catch_member_move() { take(std::move(a)); read(a); } };

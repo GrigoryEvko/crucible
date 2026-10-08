@@ -1,0 +1,9 @@
+// A plant of use-after-move: two initializers of the move constructor move the same member other.a.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+
+struct must_catch_move_ctor_member_twice {
+    Token a; Token b;
+    must_catch_move_ctor_member_twice(must_catch_move_ctor_member_twice&& other)
+        : a{std::move(other.a)}, b{std::move(other.a)} {}
+};

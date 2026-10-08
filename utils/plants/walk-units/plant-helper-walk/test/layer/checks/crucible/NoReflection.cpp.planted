@@ -1,0 +1,5 @@
+// The checks of crucible/NoReflection.h.
+#include <crucible/NoReflection.h>
+
+// A helper walks a namespace of its own, and the check file holds no reflection.
+static_assert(::foundation::every_tag_is_empty<>());

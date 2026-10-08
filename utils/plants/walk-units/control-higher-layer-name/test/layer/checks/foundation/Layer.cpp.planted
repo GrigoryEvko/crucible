@@ -1,0 +1,5 @@
+// The checks of foundation/Layer.h.
+#include <foundation/Layer.h>
+
+// Only a header of a higher layer declares the name, and a file names only its own layer and the layers below it.
+namespace foundation { static_assert(shadow_walk() == 1); }

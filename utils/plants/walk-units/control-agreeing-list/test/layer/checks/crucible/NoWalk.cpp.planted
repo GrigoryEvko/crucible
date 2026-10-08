@@ -1,0 +1,4 @@
+// The checks of crucible/NoWalk.h.
+#include <crucible/NoWalk.h>
+
+static_assert(sizeof(::fixy::Uses) == 1);

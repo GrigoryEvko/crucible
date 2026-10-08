@@ -1,0 +1,6 @@
+#pragma once
+namespace foundation {
+namespace testing { struct Witness; }
+namespace contest { struct Entry {}; }
+namespace effects::testing { struct Probe {}; }
+}  // namespace foundation

@@ -71,8 +71,8 @@ A COMPILE THROUGH CCACHE
     then holds no count.  CCACHE_PREFIX takes the place of a prefix_command
     of a ccache configuration file, and the tree sets no such prefix.  The
     negative fixtures (utils/assay/loop/fixture/store.py) and the walk units
-    of the rule walk-units run the compiler directly, so their counts are
-    counts of the compiler run too.
+    that `loop derive walk-units --measure` measures run the compiler
+    directly, so their counts are counts of the compiler run too.
 
 A CI RUNNER
     The thresholds of the time rules (TIME_ROWS: compile-cpu, link-time,

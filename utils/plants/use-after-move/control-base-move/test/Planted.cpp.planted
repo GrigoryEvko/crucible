@@ -1,0 +1,9 @@
+// A control of use-after-move: the base initializer moves only the base part.  The next initializer reads a live other.r.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+struct Base { Base() = default; Base(Base&&); };
+
+struct must_accept_base_move : Base {
+    Token r;
+    must_accept_base_move(must_accept_base_move&& other) : Base(std::move(other)), r{std::move(other.r)} {}
+};

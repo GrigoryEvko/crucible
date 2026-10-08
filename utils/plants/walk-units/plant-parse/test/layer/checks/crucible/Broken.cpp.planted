@@ -1,0 +1,5 @@
+// The checks of crucible/Broken.h.
+#include <crucible/Broken.h>
+
+// The kit cannot parse this file, so the analysis cannot read its walks.
+static_assert(1 == 1;

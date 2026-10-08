@@ -1,0 +1,4 @@
+#pragma once
+namespace foundation {
+consteval bool walk() { static_assert(11 == 11); return true; }
+}  // namespace foundation

@@ -27,7 +27,7 @@ THE TARGETS
 
     mint-inventory    misc/mint-inventory.md and the HS14 floor (--write, --check, --check-floor)
     witness-fixtures  the negative fixtures of the witness roster (--write, --check)
-    walk-units        test/layer/walk-checks.txt (--write, --check)
+    walk-units        test/layer/walk-checks.txt (--write, --check, --measure BUILD_DIR, --explain CHECK_FILE)
     mint-model        print the mint model of include/, one line for each mint
     aten-ops          vessel/torch/aten_op_table.h, from the PyTorch tree of TORCH_DIR
     session-oracle    test/session_oracle/golden.csv and the tests that it gives: the modes regenerate, derive and
@@ -73,7 +73,7 @@ class Target:
 TARGETS = {
     "mint-inventory": Target("assay.loop.derive.mint_inventory", (), ("--write",), ("--check",)),
     "witness-fixtures": Target("assay.guard.check", ("--rule", "witness-roster"), ("--gen",), ("--check",)),
-    "walk-units": Target("assay.guard.check", ("--rule", "walk-units"), ("--write",), ()),
+    "walk-units": Target("assay.loop.derive.walk_units", (), ("--write",), ("--check",)),
     "mint-model": Target("assay.loop.derive.mint_model"),
     "aten-ops": Target("assay.loop.derive.aten_ops"),
     "session-oracle": Target("assay.oracle.runner"),
@@ -201,7 +201,7 @@ def self_test() -> int:
 
     expect("--write and --check give the words of the target, and each other word stays",
            TARGETS["witness-fixtures"].translate(["--write"]) == ["--rule", "witness-roster", "--gen"]
-           and TARGETS["walk-units"].translate(["--check"]) == ["--rule", "walk-units"]
+           and TARGETS["walk-units"].translate(["--check"]) == ["--check"]
            and TARGETS["mint-inventory"].translate(["--check-floor"]) == ["--check-floor"]
            and TARGETS["session-oracle"].translate(["emit"]) == ["emit"])
     expect("each target of the refresh has a write and a check",

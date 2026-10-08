@@ -1,0 +1,8 @@
+// A plant of use-after-move: the name bound of `auto& [bound] = h;` names a member of h, and the move spent h.token.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+struct Holder { Token token; };
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_binding_after_move(Holder& h) { auto& [bound] = h; take(std::move(h.token)); read(bound); }

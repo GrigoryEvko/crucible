@@ -1,0 +1,9 @@
+// A control of use-after-move: the move spends ts[0], and ts.at(1) reads a different element.
+#include <array>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+using Arr = std::array<Token, 2>;
+void take(Token&&);
+void read(Token const&);
+
+void must_accept_at_other_element(Arr& ts) { take(std::move(ts[0])); read(ts.at(1)); }

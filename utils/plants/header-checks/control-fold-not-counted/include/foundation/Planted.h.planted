@@ -1,0 +1,9 @@
+#pragma once
+namespace foundation {
+struct Holder {};
+void plant_stub() noexcept;
+consteval bool plant_error(std::meta::info type) { if (type == ^^void) plant_stub(); return std::meta::is_type(type); }
+template <class T> consteval std::size_t plant_lazy_fold() { return std::meta::members_of(^^Holder, ctx).size(); }
+consteval int plant_current() { return use(std::meta::access_context::current()); }
+constexpr std::size_t plant_constexpr() { return std::meta::members_of(^^Holder, ctx).size(); }
+}  // namespace foundation

@@ -1,0 +1,7 @@
+// A control of use-after-move: the door gives the value back as back, and the code reads back and not t.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+template <class Body> Token lend(Token&&, Body&&);
+void read(Token const&);
+
+void must_accept_door(Token t) { auto back = lend(std::move(t), [](auto const&) {}); read(back); }

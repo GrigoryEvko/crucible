@@ -1,0 +1,9 @@
+#pragma once
+namespace foundation {
+struct Holder {};
+consteval int plant_loop() {
+    int total = 0;
+    for (auto member : std::meta::members_of(^^Holder, ctx)) total += member == ^^int;
+    return total;
+}
+}  // namespace foundation

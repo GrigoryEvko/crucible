@@ -1,0 +1,5 @@
+// The checks of crucible/TypeWalk.h.
+#include <crucible/TypeWalk.h>
+
+// A walk of a class does not make the check file join.
+static_assert(::foundation::shape_members() == 1);

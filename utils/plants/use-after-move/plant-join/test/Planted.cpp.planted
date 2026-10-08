@@ -1,0 +1,8 @@
+// A plant of use-after-move: one branch of the if moves t, and the code after the if reads t.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+bool pick();
+
+void must_catch_join(Token t) { if (pick()) { take(std::move(t)); } read(t); }

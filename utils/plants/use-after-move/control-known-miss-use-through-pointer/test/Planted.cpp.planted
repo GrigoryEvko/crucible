@@ -1,0 +1,13 @@
+// A known miss of use-after-move.  alias holds the address of token.  The read of *alias after the move of token is
+// then a use after move.  The rule does not record what a pointer points at, and *alias is a key that the move did
+// not spend.  When the rule learns to refuse this shape, this control fails, and it becomes a plant.
+#include <utility>
+struct Token { int value; };
+void sink(Token&&);
+void read(Token const&);
+
+void evade_use_through_pointer(Token token) {
+    Token* alias = &token;
+    sink(std::move(token));
+    read(*alias);
+}

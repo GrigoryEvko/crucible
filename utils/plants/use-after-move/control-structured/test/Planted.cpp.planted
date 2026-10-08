@@ -1,0 +1,9 @@
+// A control of use-after-move: `auto [t2, u] = pair();` declares the new name t2, and the code reads t2.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+struct Pair { Token first; Token second; };
+Pair pair();
+void take(Token&&);
+void read(Token const&);
+
+void must_accept_structured(Token t) { take(std::move(t)); auto [t2, u] = pair(); read(t2); }

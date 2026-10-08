@@ -1,0 +1,4 @@
+#pragma once
+namespace foundation {
+inline void run() { static_assert(1 == 1); }
+}  // namespace foundation

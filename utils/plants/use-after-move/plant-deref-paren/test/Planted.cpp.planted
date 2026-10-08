@@ -1,0 +1,8 @@
+// A plant of use-after-move: std::move(*o) spends the object that o holds, and (*o).size reads a member of it.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} int size = 0; };
+using Opt = std::optional<Token>;
+void take(Token&&);
+
+void must_catch_deref_paren(Opt o) { take(std::move(*o)); auto n = (*o).size; }

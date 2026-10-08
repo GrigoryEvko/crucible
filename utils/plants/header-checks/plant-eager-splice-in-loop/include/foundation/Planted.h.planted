@@ -1,0 +1,4 @@
+#pragma once
+namespace foundation {
+inline constexpr int looped = [] { int total = 0; for (auto item : items) total += [:item:]; return total; }();
+}  // namespace foundation

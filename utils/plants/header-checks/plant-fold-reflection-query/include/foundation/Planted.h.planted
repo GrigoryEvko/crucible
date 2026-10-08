@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation {
+struct Holder {};
+consteval std::size_t plant_fold() { return std::meta::members_of(^^Holder, ctx).size(); }
+}  // namespace foundation

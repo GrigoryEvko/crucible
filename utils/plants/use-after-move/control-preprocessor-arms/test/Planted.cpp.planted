@@ -1,0 +1,12 @@
+// A control of use-after-move: the build compiles one of the two arms, and the two moves are on two different paths.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+
+void must_accept_preprocessor_arms(Token t) {
+#if defined(ARM_A)
+    take(std::move(t));
+#else
+    take(std::move(t));
+#endif
+}

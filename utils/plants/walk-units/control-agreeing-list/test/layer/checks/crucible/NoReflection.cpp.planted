@@ -1,0 +1,4 @@
+// The checks of crucible/NoReflection.h.
+#include <crucible/NoReflection.h>
+
+static_assert(::foundation::every_tag_is_empty<>());

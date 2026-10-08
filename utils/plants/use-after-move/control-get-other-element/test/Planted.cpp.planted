@@ -1,0 +1,9 @@
+// A control of use-after-move: the move spends the element 0 of p, and get<1> reads the element 1.
+#include <tuple>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+using Tuple = std::tuple<Token, Token>;
+void take(Token&&);
+void read(Token const&);
+
+void must_accept_get_other_element(Tuple& p) { take(std::move(std::get<0>(p))); read(std::get<1>(p)); }

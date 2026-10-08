@@ -1,0 +1,5 @@
+// The checks of crucible/Lambda.h.
+#include <crucible/Lambda.h>
+
+// A lambda walks its parameter, which the analysis cannot read.
+static_assert([](std::meta::info ns) consteval { return std::meta::members_of(ns, std::meta::access_context::unchecked()).size(); }(^^::foundation::tags) == 1);

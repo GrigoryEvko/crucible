@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation {
+struct Holder {};
+inline constexpr unsigned walked = std::meta::members_of(^^Holder, ctx).size();
+}  // namespace foundation

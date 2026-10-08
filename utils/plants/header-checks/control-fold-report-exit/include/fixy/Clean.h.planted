@@ -1,0 +1,8 @@
+#pragma once
+namespace fixy {
+consteval int clean_exit(int value) {
+    if (value < 0) ::fixy::unreachable();
+    if (value > 9) ::foundation::core::unreachable();
+    return value;
+}
+}  // namespace fixy

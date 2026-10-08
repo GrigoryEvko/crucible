@@ -1,0 +1,4 @@
+// The checks of crucible/Registry.h.
+#include <crucible/Registry.h>
+
+static_assert(::foundation::row_count() == 1);

@@ -1,0 +1,5 @@
+// The checks of crucible/NoWalk.h.
+#include <crucible/NoWalk.h>
+
+// No check file joins, and the tree has no list.
+static_assert(sizeof(::fixy::Uses) == 1);

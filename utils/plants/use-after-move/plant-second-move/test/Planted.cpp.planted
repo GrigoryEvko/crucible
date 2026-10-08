@@ -1,0 +1,6 @@
+// A plant of use-after-move: the second move of t is a use after move.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+
+void must_catch_second_move(Token t) { take(std::move(t)); take(std::move(t)); }

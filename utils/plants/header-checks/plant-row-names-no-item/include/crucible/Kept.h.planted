@@ -1,0 +1,4 @@
+#pragma once
+namespace crucible {
+static_assert(sizeof(long) == 8);
+}  // namespace crucible

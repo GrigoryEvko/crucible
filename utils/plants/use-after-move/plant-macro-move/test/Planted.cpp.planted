@@ -1,0 +1,5 @@
+// A plant of use-after-move: the replacement list of the macro calls std::move, and each use of the macro hides a move.
+#include <utility>
+
+#define must_catch_macro_move(x) \
+    std::move(x)

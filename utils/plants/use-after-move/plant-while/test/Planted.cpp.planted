@@ -1,0 +1,8 @@
+// A plant of use-after-move: the second iteration of the loop reads the t that the first iteration moved.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+bool pick();
+
+void must_catch_while(Token t) { while (pick()) { read(t); take(std::move(t)); } }

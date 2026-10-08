@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation {
+inline constexpr int items[] = {1, 2};
+consteval bool expand() { template for (constexpr auto item : items) { (void)item; } return true; }
+}  // namespace foundation

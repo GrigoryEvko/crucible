@@ -1,0 +1,6 @@
+// A control of use-after-move: static_cast<int&&> keeps x, because a scalar has no moved-from state.
+#include <utility>
+void take_int(int&&);
+void read(int);
+
+void must_accept_scalar_cast(int x) { take_int(static_cast<int&&>(x)); read(x); }

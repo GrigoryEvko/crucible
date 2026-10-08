@@ -1,0 +1,4 @@
+# planted
+format 1
+rule use-after-move
+test/Planted.cpp | use-after-move | 1 | must_catch_repeated_reads(Token): t | Probe: one move gives one finding, also with three reads after it.

@@ -1,0 +1,7 @@
+// A control of use-after-move: m.move(t) calls a member function named move, which is not std::move.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+struct Mover { void move(Token&); };
+void read(Token const&);
+
+void must_accept_member_move_call(Mover m, Token t) { m.move(t); read(t); }

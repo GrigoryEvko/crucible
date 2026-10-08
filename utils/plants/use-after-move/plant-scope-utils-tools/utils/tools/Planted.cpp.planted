@@ -1,0 +1,7 @@
+// A plant of use-after-move: a C++ tool of utils/tools/ is in the scope of the rule.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void tool_reads_a_moved_token(Token t) { take(std::move(t)); read(t); }

@@ -1,0 +1,8 @@
+// A plant of use-after-move: three reads of t after one move.  A control with a ledger row of one finding holds the
+// count of the findings at one.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_repeated_reads(Token t) { take(std::move(t)); read(t); read(t); read(t); }

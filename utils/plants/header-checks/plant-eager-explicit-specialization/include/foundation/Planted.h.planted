@@ -1,0 +1,6 @@
+#pragma once
+namespace foundation {
+enum class Kind { one };
+template <class T> inline constexpr int lazy = 0;
+template <> inline constexpr int lazy<int> = enum_count(^^Kind);
+}  // namespace foundation

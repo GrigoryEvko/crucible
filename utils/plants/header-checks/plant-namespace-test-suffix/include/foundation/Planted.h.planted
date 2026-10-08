@@ -1,0 +1,4 @@
+#pragma once
+namespace foundation {
+namespace fn_test { inline void f0() {} }
+}  // namespace foundation

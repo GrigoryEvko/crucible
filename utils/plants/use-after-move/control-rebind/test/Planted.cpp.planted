@@ -1,0 +1,7 @@
+// A control of use-after-move: the assignment of the result of consume makes t live again.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} Token& operator=(Token&&); };
+Token consume(Token&&);
+void read(Token const&);
+
+void must_accept_rebind(Token t) { t = consume(std::move(t)); read(t); }

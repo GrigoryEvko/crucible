@@ -1,0 +1,5 @@
+#pragma once
+#define PLANTED_SELF_TEST namespace planted_macro_self_test { static_assert(9 == 9); }
+namespace foundation {
+PLANTED_SELF_TEST;
+}  // namespace foundation

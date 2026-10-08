@@ -1,0 +1,7 @@
+// A control of use-after-move: the lambda captures t by reference before the move, and the code does not call it.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_accept_reference_capture(Token t) { auto f = [&t] { read(t); }; take(std::move(t)); }

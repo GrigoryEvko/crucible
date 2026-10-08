@@ -1,0 +1,4 @@
+# The ledger of the plant: a row whose key names no item of the header.
+format 1
+rule header-checks
+include/crucible/Kept.h | static_assert | 1 | sizeof(long)==4 | the planted reason

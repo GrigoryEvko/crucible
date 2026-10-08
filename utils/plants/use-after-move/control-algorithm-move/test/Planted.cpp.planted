@@ -1,0 +1,7 @@
+// A control of use-after-move: the algorithm std::move with three arguments moves the elements of a range, not a name.
+#include <algorithm>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} Token& operator=(Token&&); };
+void read(Token const&);
+
+void must_accept_algorithm_move(Token* first, Token* last, Token* out) { std::move(first, last, out); read(*first); }

@@ -1,0 +1,5 @@
+// The checks of crucible/OtherSize.h.
+#include <crucible/OtherSize.h>
+
+struct Mine { constexpr int size() const { return 2; } };
+static_assert(Mine{}.size() == 2);

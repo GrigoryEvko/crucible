@@ -1,0 +1,8 @@
+#pragma once
+#include <meta>
+namespace foundation::rows { struct Row {}; }
+namespace foundation {
+consteval std::size_t count_in(std::meta::info ns) { return std::meta::members_of(ns, std::meta::access_context::unchecked()).size(); }
+inline constexpr std::meta::info row_registry = ^^::foundation::rows;
+consteval std::size_t row_count() { return count_in(row_registry); }
+}  // namespace foundation

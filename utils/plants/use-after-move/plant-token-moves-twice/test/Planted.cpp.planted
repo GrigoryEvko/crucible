@@ -1,0 +1,9 @@
+// A plant of use-after-move: two initializers move the same token, and two values own one token.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+struct Transferable { int id; Token token; };
+
+void must_catch_token_moves_twice(Token& token) {
+    auto first = Transferable{1, std::move(token)};
+    auto second = Transferable{2, std::move(token)};
+}

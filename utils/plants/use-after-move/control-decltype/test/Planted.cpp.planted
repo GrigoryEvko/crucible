@@ -1,0 +1,6 @@
+// A control of use-after-move: the program does not evaluate the operand of decltype, and it is not a use.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+
+void must_accept_decltype(Token t) { take(std::move(t)); using T = decltype(t); }

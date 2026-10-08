@@ -1,0 +1,8 @@
+// A plant of use-after-move: the second std::move(*o) moves the object that the first move spent.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+using Opt = std::optional<Token>;
+void take(Token&&);
+
+void must_catch_deref_second_move(Opt o) { take(std::move(*o)); take(std::move(*o)); }

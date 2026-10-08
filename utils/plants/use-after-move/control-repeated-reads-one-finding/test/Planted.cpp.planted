@@ -1,0 +1,8 @@
+// A control of use-after-move: three reads of t after one move give one finding, and the ledger admits one.  A
+// second finding or none is an error of the ledger.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_repeated_reads(Token t) { take(std::move(t)); read(t); read(t); read(t); }

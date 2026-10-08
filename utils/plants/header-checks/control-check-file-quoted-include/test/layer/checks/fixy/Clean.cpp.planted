@@ -1,0 +1,4 @@
+// The checks of fixy/Clean.h.
+#include "fixy/Clean.h"
+
+namespace fixy { static_assert(sizeof(Clean) == 1); }

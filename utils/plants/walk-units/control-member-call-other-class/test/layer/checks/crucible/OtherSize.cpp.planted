@@ -1,0 +1,7 @@
+// The checks of crucible/OtherSize.h.
+#include <crucible/OtherSize.h>
+
+// A member function of a header has the name size and a walk.  The check file calls size on a class of its own, and
+// it does not name the class of the header.
+struct Mine { constexpr int size() const { return 2; } };
+static_assert(Mine{}.size() == 2);

@@ -1,0 +1,4 @@
+// The checks of crucible/Substitute.h.
+#include <crucible/Substitute.h>
+
+static_assert(::foundation::substituted() == 1);

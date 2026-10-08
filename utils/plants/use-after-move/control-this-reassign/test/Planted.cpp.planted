@@ -1,0 +1,10 @@
+// A control of use-after-move: the assignment to this->a makes the member a live again before the read.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} Token& operator=(Token&&); };
+void take(Token&&);
+void read(Token const&);
+
+struct This {
+    Token a; Token b;
+    void must_accept_this_reassign() { take(std::move(a)); this->a = Token{}; read(a); }
+};

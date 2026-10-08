@@ -1,0 +1,7 @@
+// A control of use-after-move: the try block and the handler read t, and the move comes after them.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_accept_try(Token t) { try { read(t); } catch (...) { read(t); } take(std::move(t)); }

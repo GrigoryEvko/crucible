@@ -1,0 +1,7 @@
+// A plant of use-after-move: the lambda body reads the t that a move spent before the lambda.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_lambda_body(Token t) { take(std::move(t)); auto f = [&] { read(t); }; }

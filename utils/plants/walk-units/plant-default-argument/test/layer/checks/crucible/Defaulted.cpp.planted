@@ -1,0 +1,5 @@
+// The checks of crucible/Defaulted.h.
+#include <crucible/Defaulted.h>
+
+// A default template argument names the namespace that the template walks.
+static_assert(::foundation::defaulted<>());

@@ -1,0 +1,5 @@
+// The checks of crucible/Friend.h.
+#include <crucible/Friend.h>
+
+// An instantiation of the class does not evaluate the constraint of its friend declaration.
+static_assert(sizeof(::foundation::Friendly<int>) == 1);

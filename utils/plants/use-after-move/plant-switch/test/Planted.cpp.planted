@@ -1,0 +1,7 @@
+// A plant of use-after-move: case 0 moves t and has no break, and case 1 reads the spent t.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_switch(Token t, int k) { switch (k) { case 0: take(std::move(t)); case 1: read(t); break; } }

@@ -1,0 +1,9 @@
+// A plant of use-after-move: the constructor takes a Pair and not its own class.  The move of p is then no base move.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+struct Pair { int size = 0; };
+
+struct must_catch_converting_ctor {
+    Token a; int n;
+    must_catch_converting_ctor(Pair&& p) : a{std::move(p)}, n{p.size} {}
+};

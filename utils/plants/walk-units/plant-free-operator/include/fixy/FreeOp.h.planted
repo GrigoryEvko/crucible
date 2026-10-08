@@ -1,0 +1,7 @@
+#pragma once
+#include <foundation/Walk.h>
+namespace fixy {
+struct Pair {};
+// A free operator walks a namespace, and a use calls it with no name.
+consteval bool operator==(Pair, Pair) { return ::foundation::count_in(^^::foundation::tags) > 0; }
+}  // namespace fixy

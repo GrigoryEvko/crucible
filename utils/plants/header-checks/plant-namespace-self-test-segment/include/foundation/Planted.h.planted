@@ -1,0 +1,6 @@
+#pragma once
+namespace foundation {
+namespace detail::planted_self_test {
+struct Probe {};
+}  // namespace detail::planted_self_test
+}  // namespace foundation

@@ -1,0 +1,4 @@
+// The checks of fixy/Uses.h.
+#include <fixy/Uses.h>
+
+static_assert(::foundation::count_of<^^::foundation::tags>() == 1);

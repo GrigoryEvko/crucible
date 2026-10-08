@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation {
+struct Holder {};
+struct Counted { static constexpr auto count = std::meta::bases_of(^^Holder, ctx).size(); };
+}  // namespace foundation

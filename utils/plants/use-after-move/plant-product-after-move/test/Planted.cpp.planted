@@ -1,0 +1,7 @@
+// A plant of use-after-move: n * t reads t, and the * is a multiplication and not a dereference.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+int operator*(int, Token const&);
+void take(Token&&);
+
+void must_catch_product_after_move(Token t, int n) { take(std::move(t)); auto z = n * t; }

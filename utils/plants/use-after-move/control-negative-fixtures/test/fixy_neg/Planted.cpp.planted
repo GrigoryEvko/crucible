@@ -1,0 +1,7 @@
+// A control of use-after-move: a directory NAME_neg holds negative-compile fixtures, and the rule does not read it.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void fixture_reads_a_moved_token(Token t) { take(std::move(t)); read(t); }

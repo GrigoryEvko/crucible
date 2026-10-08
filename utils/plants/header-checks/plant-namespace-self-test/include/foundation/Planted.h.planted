@@ -1,0 +1,4 @@
+#pragma once
+namespace foundation {
+namespace self_test { struct Probe {}; }
+}  // namespace foundation

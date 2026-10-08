@@ -26,8 +26,9 @@
 # namespace-scope static_asserts of include/<layer>/<path>.h, and its first
 # line of code includes that header.  One translation unit evaluates those
 # checks one time, and an includer of the header does not evaluate them
-# again.  utils/assay/guard/legacy/check_header_checks.py keeps the checks out of the
-# headers and examines the first line of each check file.  This file refuses
+# again.  The rule header-checks (utils/assay/guard/engines/tsast/header_checks.py)
+# keeps the checks out of the headers and examines the first line of each
+# check file.  This file refuses
 # a check file that has no header.
 #
 # Each header also compiles alone in a one-line unit, with
@@ -45,7 +46,7 @@
 # `<layer>/<path>.h | limit | reason`, gives one header a higher limit, and
 # the test header_constexpr_ops refuses a row that its header no longer
 # needs.  GCC gives no warning form of the limit, so the limit is an error
-# only.  The guard header_checks gives the warnings: it finds each eager
+# only.  The rule header-checks gives the warnings: it finds each eager
 # evaluation in the parse tree.
 #
 # The two negative fixtures show that the sentinel fails: a foundation
@@ -304,14 +305,15 @@ endforeach()
 # each check file of walk_checks.h.  walk-checks.txt lists each check file
 # whose checks can call members_of on the reflection of a namespace that a
 # header opens, one row `<layer>/<path>.cpp | weight | namespaces` each.
-# utils/assay/guard/legacy/check_walk_units.py writes the list from the parse tree, and
-# the test walk_units fails when the list and the tree disagree.  Each build
-# compiles the units, so a refused member stops the build.  file(CONFIGURE)
-# rewrites a list only when its text changes.
+# `loop derive walk-units --write` (utils/assay/loop/derive/walk_units.py)
+# writes the list from the parse tree, and the test guard_walk_units fails
+# when the list and the tree disagree.  Each build compiles the units, so a
+# refused member stops the build.  file(CONFIGURE) rewrites a list only when
+# its text changes.
 #
 # The weight of a row is the share of its check file in a unit, in units of
-# 10^9 user instructions.  `guard check --rule walk-units --measure BUILD_DIR` writes the
-# weights.  A row with no measured weight gets the mean weight of the measured
+# 10^9 user instructions.  `loop derive walk-units --measure BUILD_DIR` writes
+# the weights.  A row with no measured weight gets the mean weight of the measured
 # rows.  When no row has a measured weight, each row weighs 1.0.  The number
 # of units is the total weight divided by _walk_weight_per_unit, rounded up.
 #
@@ -351,7 +353,7 @@ foreach(_row IN LISTS _walk_rows)
   if(NOT _row MATCHES "^([^ |]+) [|] (([0-9]+)[.]([0-9])|unmeasured) [|] [^|]+$")
     message(FATAL_ERROR "test/layer/walk-checks.txt: the row `${_row}` is malformed.  A row is "
                         "`<layer>/<path>.cpp | weight | namespaces`, and a weight is a number with one decimal or "
-                        "unmeasured.  Write the list again: python3 utils/bin/guard check --rule walk-units --write")
+                        "unmeasured.  Write the list again: python3 utils/bin/loop derive walk-units --write")
   endif()
   set(_check "${CMAKE_MATCH_1}")
   set(_weight "${CMAKE_MATCH_2}")
@@ -359,11 +361,11 @@ foreach(_row IN LISTS _walk_rows)
   set(_weight_tenths "${CMAKE_MATCH_4}")
   if(NOT _check IN_LIST _check_files)
     message(FATAL_ERROR "test/layer/walk-checks.txt: ${_check} is not a check file under test/layer/checks.  Write "
-                        "the list again: python3 utils/bin/guard check --rule walk-units --write")
+                        "the list again: python3 utils/bin/loop derive walk-units --write")
   endif()
   if(_check IN_LIST _walk_checks)
     message(FATAL_ERROR "test/layer/walk-checks.txt: ${_check} has two rows.  Write the list again: python3 "
-                        "utils/bin/guard check --rule walk-units --write")
+                        "utils/bin/loop derive walk-units --write")
   endif()
   list(APPEND _walk_checks "${_check}")
   if(_weight STREQUAL "unmeasured")
@@ -377,7 +379,7 @@ endforeach()
 list(LENGTH _walk_checks _walk_count)
 if(_walk_count EQUAL 0)
   message(FATAL_ERROR "test/layer/walk-checks.txt lists no check file, so the walks of the check files run with no "
-                      "header in view.  Write the list again: python3 utils/bin/guard check --rule walk-units --write")
+                      "header in view.  Write the list again: python3 utils/bin/loop derive walk-units --write")
 endif()
 set(_walk_mean_weight 10)
 if(_walk_measured_count GREATER 0)
@@ -530,12 +532,12 @@ set_tests_properties(admitted_audit PROPERTIES FIXTURES_REQUIRED tsast_trees)
 # command comes from the compile database, so the test needs no target of
 # its own, and no unit that fails to preprocess enters the database.
 add_test(NAME layer_not_standalone
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-checks
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-standalone
           --standalone ${CMAKE_BINARY_DIR})
-set_tests_properties(layer_not_standalone PROPERTIES LABELS "ci_guard;substrate" SKIP_RETURN_CODE 3)
-# The rule header-checks reads the parse trees, so this test also requires the
-# tests that fill the tree cache.
-set_tests_properties(layer_not_standalone PROPERTIES FIXTURES_REQUIRED tsast_trees)
+add_test(NAME layer_not_standalone_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-standalone
+          --self-test)
+set_tests_properties(layer_not_standalone layer_not_standalone_self_test PROPERTIES LABELS "ci_guard;substrate")
 
 # Each one-line unit has its operation limit, and each row of
 # header-constexpr-ops.txt is still necessary: its header compiles alone at

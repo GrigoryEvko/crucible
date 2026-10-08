@@ -1,0 +1,8 @@
+// A control of use-after-move: the move spends *o and not o, and o.has_value() reads a live object.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+using Opt = std::optional<Token>;
+void take(Token&&);
+
+void must_accept_deref_engaged(Opt o) { take(std::move(*o)); if (o.has_value()) {} }

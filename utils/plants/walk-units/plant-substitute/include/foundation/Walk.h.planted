@@ -1,0 +1,11 @@
+#pragma once
+#include <meta>
+namespace foundation::rows { struct Row {}; }
+namespace foundation {
+template <std::meta::info Ns>
+consteval std::size_t count_of() { return std::meta::members_of(Ns, std::meta::access_context::unchecked()).size(); }
+template <std::meta::info Ns>
+inline constexpr std::size_t count_v = count_of<Ns>();
+consteval std::size_t substituted() { return std::meta::extract<std::size_t>(std::meta::substitute(
+    ^^count_v, {std::meta::reflect_constant(^^::foundation::rows)})); }
+}  // namespace foundation

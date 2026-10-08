@@ -1,0 +1,8 @@
+// A control of use-after-move: each base initializer moves only its own base part of other.
+#include <utility>
+struct Left { Left() = default; Left(Left&&); };
+struct Right { Right() = default; Right(Right&&); };
+
+struct must_accept_two_bases : Left, Right {
+    must_accept_two_bases(must_accept_two_bases&& other) : Left{std::move(other)}, Right{std::move(other)} {}
+};

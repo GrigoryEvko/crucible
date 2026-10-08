@@ -1,0 +1,8 @@
+// A plant of use-after-move: the two calls of get<1> move the same element of t.
+#include <tuple>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+using Tuple = std::tuple<Token, Token>;
+void take(Token&&);
+
+void must_catch_same_element(Tuple t) { take(std::get<1>(std::move(t))); take(std::get<1>(std::move(t))); }

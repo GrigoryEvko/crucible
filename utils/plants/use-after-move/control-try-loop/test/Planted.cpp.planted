@@ -1,0 +1,7 @@
+// A control of use-after-move: the loop body runs only when try_push did not succeed, and such a try_ call keeps t.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+struct Ring { bool try_push(Token&&); };
+void read(Token const&);
+
+void must_accept_try_loop(Ring* r, Token t) { while (!r->try_push(std::move(t))) { read(t); } }

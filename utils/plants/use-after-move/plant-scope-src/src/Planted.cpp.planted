@@ -1,0 +1,7 @@
+// A plant of use-after-move: a source file of src/ is in the scope of the rule.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void source_reads_a_moved_token(Token t) { take(std::move(t)); read(t); }

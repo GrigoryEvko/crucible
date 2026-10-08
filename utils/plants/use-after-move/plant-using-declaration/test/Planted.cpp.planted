@@ -1,0 +1,7 @@
+// A plant of use-after-move: after a using-declaration, move(t) with no qualifier is std::move(t).
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_using_declaration(Token t) { using std::move; take(move(t)); read(t); }

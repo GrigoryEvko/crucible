@@ -1,0 +1,7 @@
+// A plant of use-after-move: static_cast<Token&&> spends t, and the code after it reads t.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_static_cast(Token t) { take(static_cast<Token&&>(t)); read(t); }

@@ -1,0 +1,21 @@
+#pragma once
+namespace foundation {
+struct Holder {};
+enum class Kind { one };
+template <class T> struct Box { T first; T second; };
+inline constexpr int eager_call = compute();
+constinit int plain_bound = compute();
+inline constexpr Color red = Color::hex(0xff0000);
+using Plain = [:pick_type():];
+inline void plain_local() { constexpr auto total = compute(); (void)total; }
+inline constexpr int literal = 3 + 4 * 2;
+inline constexpr int casts = static_cast<int>(Kind::one) + int(2) + unsigned(3) + sizeof(Holder);
+inline constexpr auto bits = std::bit_cast<unsigned>(1.0f);
+inline constexpr bool unevaluated = noexcept(compute()) && sizeof(std::meta::members_of(^^Holder, ctx)) > 0;
+inline constexpr bool required = requires { std::meta::members_of(^^Holder, ctx); };
+inline constexpr auto deferred = [] { return std::meta::members_of(^^Holder, ctx).size(); };
+inline constexpr auto reflected = ^^Holder;
+inline constexpr Box<int> braced{1, 2};
+inline void runtime_local() { const auto value = std::meta::members_of(^^Holder, ctx).size(); (void)value; }
+inline const char* moving_name = name_of(^^Holder);
+}  // namespace foundation

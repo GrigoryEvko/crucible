@@ -1,0 +1,4 @@
+// The checks of foundation/Layer.h.
+#include <foundation/Layer.h>
+
+namespace foundation { static_assert(shadow_walk() == 1); }

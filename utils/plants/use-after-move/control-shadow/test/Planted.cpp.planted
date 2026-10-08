@@ -1,0 +1,7 @@
+// A control of use-after-move: the inner t is a new object that hides the spent t.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_accept_shadow(Token t) { take(std::move(t)); { Token t; read(t); } }

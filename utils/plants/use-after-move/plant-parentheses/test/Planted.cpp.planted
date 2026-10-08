@@ -1,0 +1,7 @@
+// A plant of use-after-move: the parentheses around t do not change the name that the move spends.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_parentheses(Token t) { take(std::move((t))); read(t); }

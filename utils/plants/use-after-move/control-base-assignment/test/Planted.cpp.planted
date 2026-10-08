@@ -1,0 +1,17 @@
+// A control of use-after-move: each base assignment takes only its own base part, and other.r stays live.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} Token& operator=(Token&&); };
+struct Left { Left& operator=(Left&&); };
+struct Right { Right& operator=(Right&&); };
+
+template <class R>
+struct must_accept_base_assignment : Left, Right {
+    Token r;
+    must_accept_base_assignment& operator=(must_accept_base_assignment&& other) noexcept requires (sizeof(R) > 0) {
+        if (this == &other) return *this;
+        Left::operator=(std::move(other));
+        this->Right::operator=(std::move(other));
+        r = std::move(other.r);
+        return *this;
+    }
+};

@@ -1,0 +1,5 @@
+// The checks of crucible/Eager.h.
+#include <crucible/Eager.h>
+
+// The header evaluates the variable where it defines it, so a read of it walks nothing.
+static_assert(::foundation::eager_count == 1);

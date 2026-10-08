@@ -1,0 +1,10 @@
+// A plant of use-after-move: (*this).a is the member a that the move of this->a spent.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+struct This {
+    Token a; Token b;
+    void must_catch_this_dereference() { take(std::move(this->a)); read((*this).a); }
+};

@@ -1,0 +1,7 @@
+// A control of use-after-move: the parameter t of the lambda hides the spent t of the function.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_accept_lambda_param(Token t) { take(std::move(t)); auto f = [](Token t) { read(t); }; }

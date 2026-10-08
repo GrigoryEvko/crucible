@@ -1,0 +1,5 @@
+// The checks of crucible/Concept.h.
+#include <crucible/Concept.h>
+
+// A concept walks its parameter.
+static_assert(::foundation::Populated<^^::foundation::rows>);

@@ -1,0 +1,2 @@
+// A control of use-after-move: the macro calls a member function named move, which is not std::move.
+#define must_accept_macro_member(x) (x).move(1)

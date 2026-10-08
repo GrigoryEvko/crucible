@@ -1,0 +1,4 @@
+// The checks of crucible/Macro.h.
+#include <crucible/Macro.h>
+
+FOUNDATION_WALK_TAGS();

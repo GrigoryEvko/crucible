@@ -1,0 +1,5 @@
+// The checks of crucible/Substitute.h.
+#include <crucible/Substitute.h>
+
+// std::meta::substitute instantiates a variable template with the reflection of a namespace.
+static_assert(::foundation::substituted() == 1);

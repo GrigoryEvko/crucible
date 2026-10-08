@@ -1,0 +1,6 @@
+// A plant of use-after-move: the second iteration of the loop moves t again.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+
+void must_catch_loop(Token t) { for (int i = 0; i < 2; ++i) take(std::move(t)); }

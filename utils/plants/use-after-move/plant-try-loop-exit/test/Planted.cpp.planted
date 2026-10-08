@@ -1,0 +1,7 @@
+// A plant of use-after-move: the loop stops when try_push succeeds, and the code after the loop reads a spent t.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+struct Ring { bool try_push(Token&&); };
+void read(Token const&);
+
+void must_catch_try_loop_exit(Ring& r, Token t) { while (!r.try_push(std::move(t))) {} read(t); }

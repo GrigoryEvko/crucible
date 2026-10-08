@@ -1,0 +1,6 @@
+// A control of use-after-move: the program does not evaluate the `requires` expression of a concept, and its two
+// moves are not a use after move.
+#include <utility>
+void take(auto&&);
+
+template <class T> concept Moves = requires(T& t) { take(std::move(t)); take(std::move(t)); };

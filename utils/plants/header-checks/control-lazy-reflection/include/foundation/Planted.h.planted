@@ -1,0 +1,8 @@
+#pragma once
+namespace foundation {
+template <class T> inline constexpr auto lazy = std::meta::members_of(^^T, ctx).size();
+template <class T> struct Lazy { static constexpr auto count = std::meta::members_of(^^T, ctx).size(); };
+template <class T> void lazy_local() { constexpr auto total = std::meta::members_of(^^T, ctx).size(); (void)total; }
+inline auto lazy_expand = [](auto pack) { template for (constexpr auto item : pack) { (void)item; } };
+template <class T> consteval std::size_t plant_lazy_fold() { return std::meta::members_of(^^T, ctx).size(); }
+}  // namespace foundation

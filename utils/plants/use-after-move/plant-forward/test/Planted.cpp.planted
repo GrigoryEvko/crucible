@@ -1,0 +1,7 @@
+// A plant of use-after-move: std::forward spends t, and the code after it reads t.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void take(Token&&);
+void read(Token const&);
+
+void must_catch_forward(Token t) { take(std::forward<Token>(t)); read(t); }

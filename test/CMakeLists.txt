@@ -672,28 +672,6 @@ add_test(NAME cache_size_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule cache-size --self-test)
 set_tests_properties(cache_size cache_size_self_test PROPERTIES
     LABELS "ci_guard")
-# A linear token is an empty class, so a moved-from token looks live, and
-# a second std::move of one Permission gives two owners of one region.
-# sizeof(Permission) stays 1, so no byte records the move.
-# utils/assay/guard/legacy/check_use_after_move.py walks each control-flow path of each
-# function body and refuses a read of a name after a move spends it, unless
-# an assignment or a reset builds the value again first.  The reviewed and
-# counted exceptions are in utils/ledgers/use-after-move.txt.  The
-# self-test plants the uses that the guard must catch and the correct code
-# that it must accept.
-add_test(NAME use_after_move_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule use-after-move --self-test)
-add_test(NAME use_after_move
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule use-after-move)
-set_tests_properties(use_after_move use_after_move_self_test PROPERTIES
-    LABELS "ci_guard")
-# The uses after move that the guard does not read, one function each, on
-# a shrink-only ledger.  A shape the guard learns turns this test red, and
-# the tree-wide guard red with it, until the row leaves the ledger.
-add_test(NAME use_after_move_attacks
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule use-after-move-attacks ${CMAKE_SOURCE_DIR})
-set_tests_properties(use_after_move_attacks PROPERTIES
-    LABELS "ci_guard")
 # A splice of a private data member has no access check, so
 # access_context::unchecked() is the one door to a proof's private state.
 # utils/assay/guard/legacy/check_no_unchecked_access.py admits it only in the files that
@@ -5295,52 +5273,36 @@ if(neg_unregistered_sources)
     "delete the file.")
 endif()
 
-# ── The substrate and its two guards ──────────────────────────────
+# ── The substrate and its guards ──────────────────────────────────
 #
 # include/foundation/ and include/fixy/ are the canonical substrate.  These
-# guards hold it to its rules, and cmake/Guards.cmake registers the tests of
-# the tsast rules, such as guard_derived_pins: a cardinality static_assert
-# must have a derived operand, because a literal pinned to itself cannot fail.
+# guards hold it to its rules.  cmake/Guards.cmake registers the tests of the
+# tsast rules, such as guard_derived_pins, guard_header_checks and
+# guard_walk_units.
 #
-#   layer_boundary — foundation < fixy < crucible; a file names only its
-#                    own layer and the layers below it.  No allowlist.
-#   header_checks  — a header holds no self-test namespace, no
-#                    namespace-scope static_assert, no static_assert in a
-#                    function that is not a template, and no reflection
-#                    walk outside a template.  Each check lives in the
-#                    check file of its header under test/layer/checks,
-#                    each such walk is lazy, and
-#                    utils/ledgers/header-checks.txt holds the items
-#                    that remain.  Each item of the ledger gives a warning,
-#                    and the counts can only decrease.
-#   walk_units     — test/layer/walk-checks.txt lists each check file whose
-#                    checks can call members_of on the reflection of a
-#                    namespace that a header opens, and no other file.  The
-#                    walk units of test/layer compile each listed file after
-#                    each header that can add to such a namespace.  Each row
-#                    holds a weight, and a row with no measured weight gives
-#                    a warning.
+#   layer_boundary      — foundation < fixy < crucible; a file names only its
+#                         own layer and the layers below it.  No allowlist.
+#   guard_header_checks — a header holds no self-test namespace, no
+#                         namespace-scope static_assert, no static_assert in
+#                         a function that is not a template, and no
+#                         reflection walk outside a template.  Each check
+#                         lives in the check file of its header under
+#                         test/layer/checks, each such walk is lazy, and
+#                         utils/ledgers/header-checks.txt holds the items
+#                         that remain.  Each header with rows in the ledger
+#                         gives a warning, and the counts can only decrease.
+#   guard_walk_units    — test/layer/walk-checks.txt lists each check file
+#                         whose checks can call members_of on the reflection
+#                         of a namespace that a header opens, and no other
+#                         file.  The walk units of test/layer compile each
+#                         listed file after each header that can add to such
+#                         a namespace.  Each row holds a weight, and a row
+#                         with no measured weight gives a warning.
 add_test(NAME layer_boundary_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule layer-boundary --self-test)
 add_test(NAME layer_boundary
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule layer-boundary)
 set_tests_properties(layer_boundary layer_boundary_self_test PROPERTIES
-    LABELS "ci_guard;substrate"
-    SKIP_RETURN_CODE 3)
-add_test(NAME header_checks_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-checks --self-test)
-add_test(NAME header_checks
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-checks
-          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-set_tests_properties(header_checks header_checks_self_test PROPERTIES
-    LABELS "ci_guard;substrate"
-    SKIP_RETURN_CODE 3)
-add_test(NAME walk_units_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule walk-units --self-test)
-add_test(NAME walk_units
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule walk-units
-          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-set_tests_properties(walk_units walk_units_self_test PROPERTIES
     LABELS "ci_guard;substrate"
     SKIP_RETURN_CODE 3)
 
@@ -5753,15 +5715,15 @@ endforeach()
 # of the rows grammar, the registry, the ledgers, the rule history, the
 # process module, the git module, the paths, the run of the cases, the reader
 # of the compile database, the Python reader, the reader of the reports of
-# mypy and ruff, the package scope and the STE table plant their input in
-# throwaway trees.  The test of the import
+# mypy and ruff, the package scope, the STE table and the writer of the walk
+# list plant their input in throwaway trees.  The test of the import
 # closure imports the module of each hidden subcommand of the masters in a
 # new interpreter.
 crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR})
 foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test_proc core.test_git
         core.test_paths core.test_testing readers.test_compdb readers.test_python readers.test_tool_reports
         guard.test_history guard.test_import_closure guard.engines.meta.test_package
-        guard.engines.meta.test_ste_dictionary)
+        guard.engines.meta.test_ste_dictionary loop.derive.test_walk_units)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   add_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})

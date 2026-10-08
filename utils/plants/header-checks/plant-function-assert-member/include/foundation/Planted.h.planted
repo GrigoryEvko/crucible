@@ -1,0 +1,4 @@
+#pragma once
+namespace foundation {
+struct Member { void act() const { static_assert(10 == 10); } };
+}  // namespace foundation

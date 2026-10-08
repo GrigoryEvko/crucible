@@ -1,0 +1,7 @@
+// A control of use-after-move: `reset` makes t live again before the read.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} void reset(); };
+void take(Token&&);
+void read(Token const&);
+
+void must_accept_reset(Token t) { take(std::move(t)); t.reset(); read(t); }

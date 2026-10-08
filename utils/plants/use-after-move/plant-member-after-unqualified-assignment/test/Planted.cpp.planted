@@ -1,0 +1,13 @@
+// A plant of use-after-move: operator= with no qualifier gives a value to all of the object.  other.r is then spent.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+void read(Token const&);
+
+struct must_catch_member_after_unqualified_assignment {
+    Token r;
+    must_catch_member_after_unqualified_assignment& operator=(must_catch_member_after_unqualified_assignment&& other) {
+        operator=(std::move(other));
+        read(other.r);
+        return *this;
+    }
+};

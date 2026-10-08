@@ -1,0 +1,4 @@
+# The ledger of the control: one row for the self-test namespace, which holds each check inside it.
+format 1
+rule header-checks
+include/foundation/Planted.h | namespace | 1 | foundation::detail::planted_self_test | the planted reason

@@ -1,0 +1,12 @@
+// A control of use-after-move: the assignment makes t live again before the goto jumps back to the move.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} Token& operator=(Token&&); };
+void take(Token&&);
+bool pick();
+
+void must_accept_goto_reassign(Token t) {
+again:
+    take(std::move(t));
+    t = Token{};
+    if (pick()) goto again;
+}

@@ -1,0 +1,4 @@
+// The checks of crucible/Operator.h.
+#include <crucible/Operator.h>
+
+static_assert(!(::foundation::Ordered{} < ::foundation::Ordered{}));

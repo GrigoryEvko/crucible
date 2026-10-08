@@ -1,0 +1,4 @@
+#pragma once
+namespace foundation {
+template <class T> consteval auto plant_string() { std::string text; return std::define_static_string(text); }
+}  // namespace foundation

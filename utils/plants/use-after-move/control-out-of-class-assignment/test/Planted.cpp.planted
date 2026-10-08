@@ -1,0 +1,15 @@
+// A control of use-after-move: a move assignment with its body after its class takes the base part first.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} Token& operator=(Token&&); };
+struct Base { Base& operator=(Base&&); };
+
+struct must_accept_out_of_class_assignment : Base {
+    Token r;
+    must_accept_out_of_class_assignment& operator=(must_accept_out_of_class_assignment&& other);
+};
+must_accept_out_of_class_assignment& must_accept_out_of_class_assignment::operator=(
+        must_accept_out_of_class_assignment&& other) {
+    Base::operator=(std::move(other));
+    r = std::move(other.r);
+    return *this;
+}
