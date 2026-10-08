@@ -406,23 +406,23 @@ public:
 private:
     void release_() noexcept {
         if (sqes_ != MAP_FAILED && sqes_ != nullptr) {
-            ::munmap(sqes_, sqes_size_);  // SYSCALL-CAP-OK: IoUringRing destructor, releases what the mint acquired
+            ::munmap(sqes_, sqes_size_);
             sqes_ = MAP_FAILED;
             sqes_size_ = 0;
         }
         // cq_size_ == 0 marks IORING_FEAT_SINGLE_MMAP (cq aliases sq).
         if (cq_size_ != 0 && cq_ring_ != MAP_FAILED && cq_ring_ != nullptr) {
-            ::munmap(cq_ring_, cq_size_);  // SYSCALL-CAP-OK: IoUringRing destructor, releases what the mint acquired
+            ::munmap(cq_ring_, cq_size_);
         }
         cq_ring_ = MAP_FAILED;
         cq_size_ = 0;
         if (sq_ring_ != MAP_FAILED && sq_ring_ != nullptr) {
-            ::munmap(sq_ring_, sq_size_);  // SYSCALL-CAP-OK: IoUringRing destructor, releases what the mint acquired
+            ::munmap(sq_ring_, sq_size_);
             sq_ring_ = MAP_FAILED;
             sq_size_ = 0;
         }
         if (ring_fd_ >= 0) {
-            ::close(ring_fd_);  // SYSCALL-CAP-OK: IoUringRing destructor, releases what the mint acquired
+            ::close(ring_fd_);
             ring_fd_ = -1;
         }
         sq_entries_n_ = 0;
@@ -444,9 +444,7 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
         params.flags |= IORING_SETUP_CQSIZE;
     }
 
-    const long setup =
-        ::syscall(__NR_io_uring_setup,  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
-                  static_cast<unsigned int>(sq_n), &params);
+    const long setup = ::syscall(__NR_io_uring_setup, static_cast<unsigned int>(sq_n), &params);
     if (setup < 0) {
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
@@ -460,11 +458,11 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
 
     const std::size_t sqes_array_size = static_cast<std::size_t>(params.sq_entries) * sizeof(::io_uring_sqe);
 
-    void* const sq_ring = ::mmap(  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
-        nullptr, sq_ring_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQ_RING);
+    void* const sq_ring =
+        ::mmap(nullptr, sq_ring_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQ_RING);
     if (sq_ring == MAP_FAILED) {
         const int failure = errno;
-        ::close(fd);  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
+        ::close(fd);
         return std::unexpected{std::error_code{failure, std::system_category()}};
     }
 
@@ -476,26 +474,26 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
         // size is what tells the destructor not to unmap the second one.
         cq_ring = sq_ring;
     } else {
-        cq_ring = ::mmap(  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
-            nullptr, cq_ring_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_CQ_RING);
+        cq_ring =
+            ::mmap(nullptr, cq_ring_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_CQ_RING);
         if (cq_ring == MAP_FAILED) {
             const int failure = errno;
-            ::munmap(sq_ring, sq_ring_size);  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
-            ::close(fd);  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
+            ::munmap(sq_ring, sq_ring_size);
+            ::close(fd);
             return std::unexpected{std::error_code{failure, std::system_category()}};
         }
         cq_size_for_dtor = cq_ring_size;
     }
 
-    void* const sqes = ::mmap(  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
-        nullptr, sqes_array_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQES);
+    void* const sqes =
+        ::mmap(nullptr, sqes_array_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQES);
     if (sqes == MAP_FAILED) {
         const int failure = errno;
         if (cq_size_for_dtor != 0) {
-            ::munmap(cq_ring, cq_ring_size);  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
+            ::munmap(cq_ring, cq_ring_size);
         }
-        ::munmap(sq_ring, sq_ring_size);  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
-        ::close(fd);  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
+        ::munmap(sq_ring, sq_ring_size);
+        ::close(fd);
         return std::unexpected{std::error_code{failure, std::system_category()}};
     }
 
@@ -550,8 +548,7 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
 zerocopy_transfer(Ctx const&, ::fixy::fs::OwnedFd const& source, ::fixy::fs::OwnedFd const& destination,
                   std::size_t length, ::off_t source_offset = 0) noexcept {
     return detail::transfer_all(source, destination, length, [&, offset = source_offset](std::size_t rest) mutable {
-        return ::sendfile(destination.get(), source.get(), &offset,
-                          rest);  // SYSCALL-CAP-OK: zerocopy_transfer ctx-gate (CtxFitsSendfileTransfer, IO+Block)
+        return ::sendfile(destination.get(), source.get(), &offset, rest);
     });
 }
 
@@ -565,9 +562,7 @@ zerocopy_transfer(Ctx const&, ::fixy::fs::OwnedFd const& source, ::fixy::fs::Own
     return detail::transfer_all(
         source, destination, length,
         [&, in_offset = source_offset, out_offset = destination_offset](std::size_t rest) mutable {
-            return ::
-                copy_file_range(  // SYSCALL-CAP-OK: zerocopy_transfer ctx-gate (CtxFitsCopyRangeTransfer, IO+Block)
-                    source.get(), &in_offset, destination.get(), &out_offset, rest, 0);
+            return ::copy_file_range(source.get(), &in_offset, destination.get(), &out_offset, rest, 0);
         });
 }
 

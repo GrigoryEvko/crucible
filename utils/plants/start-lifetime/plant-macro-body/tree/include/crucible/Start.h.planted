@@ -1,0 +1,6 @@
+// A quarantined header with a macro body that starts a lifetime.
+#pragma once
+
+#include <memory>
+
+#define CRUCIBLE_PLANT_START(bytes) std::start_lifetime_as<int>(bytes)

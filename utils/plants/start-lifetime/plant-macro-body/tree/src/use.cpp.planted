@@ -1,0 +1,8 @@
+// A quarantined unit that expands the macro of crucible/Start.h.
+#include <crucible/Start.h>
+
+namespace planted {
+
+int* view(void* bytes) { return CRUCIBLE_PLANT_START(bytes); }
+
+}  // namespace planted

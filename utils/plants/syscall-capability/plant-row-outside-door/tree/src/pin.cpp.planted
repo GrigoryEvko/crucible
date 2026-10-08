@@ -1,0 +1,9 @@
+// A quarantined unit that sets the affinity of the calling thread outside the
+// door.
+#include <sched.h>
+
+namespace planted {
+
+int pin(const cpu_set_t& set) { return ::sched_setaffinity(0, sizeof(set), &set); }
+
+}  // namespace planted

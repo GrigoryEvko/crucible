@@ -1,0 +1,8 @@
+// A bench with a raw system call.  A bench is outside the claim trees.
+#include <unistd.h>
+
+namespace planted {
+
+int process_id() { return ::getpid(); }
+
+}  // namespace planted

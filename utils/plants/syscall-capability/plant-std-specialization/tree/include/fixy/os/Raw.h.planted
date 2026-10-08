@@ -1,0 +1,35 @@
+// A base header that adds two specializations of std::hash to the namespace
+// std, which a library file opens.  The partial specialization issues getpid
+// in a member of its pattern, and the explicit specialization issues getpid
+// in a default member initializer.
+#pragma once
+
+#include <cstddef>
+#include <functional>
+#include <unistd.h>
+
+namespace planted {
+
+template <typename Value>
+struct Box {
+    Value held;
+};
+
+struct Plain {
+    int held;
+};
+
+}  // namespace planted
+
+template <typename Value>
+struct std::hash<planted::Box<Value>> {
+    std::size_t operator()(const planted::Box<Value>&) const noexcept { return static_cast<std::size_t>(::getpid()); }
+};
+
+template <>
+struct std::hash<planted::Plain> {
+    int seed = ::getpid();
+    std::size_t operator()(const planted::Plain& plain) const noexcept {
+        return static_cast<std::size_t>(plain.held + seed);
+    }
+};

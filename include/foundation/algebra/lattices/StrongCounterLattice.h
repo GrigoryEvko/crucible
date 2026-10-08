@@ -50,8 +50,8 @@
 // passes a count in a register: the assignments do not decide how a call
 // passes its argument.  That trivial constructor also makes a count an
 // implicit-lifetime type, so the class carries the annotation that
-// foundation::lifetime::start_as_array refuses, and a direct
-// std::start_lifetime_as is refused by utils/assay/guard/legacy/check_start_lifetime.py.
+// foundation::lifetime::start_as_array refuses, and the rule start-lifetime
+// of the quarantine plugin refuses a direct std::start_lifetime_as.
 //
 // The order knows nothing about which events happened.  A count is the
 // number of successor steps in its own derivation.  Whether each step

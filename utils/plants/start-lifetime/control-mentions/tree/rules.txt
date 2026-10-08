@@ -1,0 +1,14 @@
+# The rule table of this plant.  The headers of include/foundation/ and
+# include/fixy/ are base files, and each other file is quarantined.  The owner
+# rows give the checked start as the one site of the two library names.
+
+layer floor 0 include/foundation/ include/fixy/
+
+allow floor <memory>
+allow floor <cstddef>
+
+quarantine include/crucible/
+quarantine src/
+
+owner start-lifetime lifetime-start std::start_lifetime_as include/foundation/Lifetime.h | the checked start of the plant
+owner start-lifetime lifetime-start std::start_lifetime_as_array include/foundation/Lifetime.h | the checked start of the plant

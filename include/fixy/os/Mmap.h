@@ -376,8 +376,7 @@ template <typename Advice, typename Tag, typename Prot, typename Share, typename
     if (!region.is_mapped()) {
         return std::unexpected{std::error_code{EINVAL, std::system_category()}};
     }
-    if (::madvise(region.data(), region.size(), advice_value_of(^^Advice))
-        < 0) {  // SYSCALL-CAP-OK: advise ctx-gate (CtxFitsSafeAdvise: CtxAdmitsAdvise, effects::IO+Block)
+    if (::madvise(region.data(), region.size(), advice_value_of(^^Advice)) < 0) {
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
     return {};
@@ -418,8 +417,7 @@ advise_release_aware(Ctx const&, OwnedMmap<Tag, Prot, Share, Brand>& region,
     if (!region.is_mapped()) {
         return std::unexpected{std::error_code{EINVAL, std::system_category()}};
     }
-    if (::madvise(region.data(), region.size(), advice_value_of(^^Advice))
-        < 0) {  // SYSCALL-CAP-OK: advise_release_aware ctx-gate (CtxFitsReleaseAwareAdvise: IO+Block + the Permission of this mapping)
+    if (::madvise(region.data(), region.size(), advice_value_of(^^Advice)) < 0) {
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
     return {};

@@ -1,0 +1,9 @@
+# Three patterns of a base header issue getpid, and no unit instantiates them.
+# The sentinel unit of the header reads each pattern at the end of the unit.
+
+compile sentinel src/use.cpp sentinel=include/fixy/os/Raw.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:13:20 | planted::template_process_id(Value): getpid
+finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:18:46 | planted::Holder::member_process_id(): getpid
+finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:24:43 | planted::local_process_id::Local::process_id(): getpid

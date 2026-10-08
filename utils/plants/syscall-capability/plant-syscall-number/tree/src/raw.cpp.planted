@@ -1,0 +1,9 @@
+// A quarantined unit of src/ that issues a system call by its number.
+#include <sys/syscall.h>
+#include <unistd.h>
+
+namespace planted {
+
+long thread_id() { return ::syscall(SYS_gettid); }
+
+}  // namespace planted

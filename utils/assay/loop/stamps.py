@@ -11,6 +11,8 @@ files under the directory OUT:
                   the header costs that moves no header between heavy and
                   light then compiles nothing.  A witness row gives only the
                   name of its class.  A new expression then compiles nothing.
+                  An owner row gives its rule, kind, entity, paths and
+                  function, and a syscall row gives each of its names.
                   The lines are sorted.  The stamp of each compile command
                   holds the hash of this file, so a change of a fact compiles
                   each unit again, and a change of a reason compiles nothing.
@@ -99,6 +101,11 @@ def facts_text(table: layer_rules.RuleTable) -> str:
         for home in table.homes
     ]
     lines += [f"witness {witness.name}" for witness in table.witnesses]
+    lines += [
+        f"owner {owner.rule} {owner.kind} {owner.entity} {' '.join(sorted(owner.paths))} by={owner.function}"
+        for owner in table.owners
+    ]
+    lines += [f"syscall {name}" for name in table.syscalls]
     return "".join(f"{line}\n" for line in sorted(lines))
 
 

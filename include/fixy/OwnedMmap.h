@@ -251,9 +251,7 @@ public:
                 std::size_t length, ::off_t offset) noexcept {
         constexpr int protection = mmap::prot_bits_of(^^Prot);
         constexpr int flags = (mmap::share_flags_of(^^Share) | ... | mmap::detail::modifier_flags<Modifiers>());
-        void* const address =
-            ::mmap(nullptr, length, protection, flags, fd,
-                   offset);  // SYSCALL-CAP-OK: OwnedMmap::mint_region ctx-gate (CtxFitsRegionMint, IO+Block)
+        void* const address = ::mmap(nullptr, length, protection, flags, fd, offset);
         if (address == MAP_FAILED) {
             return std::unexpected{std::error_code{errno, std::system_category()}};
         }

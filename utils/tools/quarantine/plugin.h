@@ -9,7 +9,8 @@
 //         rule_table.cpp   the reader of the rule table, on rows.h
 //         regions.cpp      the opt-out regions and their two pragmas
 //         library.cpp      the library entities and the admitted list
-//         owner.cpp        the family owner: each named reference of the code
+//         owner.cpp        the family owner: each named reference of the code,
+//                          and the rules start-lifetime and syscall-capability
 //         declaration.cpp  the family declaration property: the walk of the
 //                          namespaces, the classes and the templates
 //         expression.cpp   the family expression shape: the walk of a body
@@ -250,6 +251,19 @@
 //     not in the file that defines each of its arguments, and at-home.  The
 //     rule trait-guard also has open-read: a gate that reads a template that a
 //     unit can specialize.
+//     The rules of the family owner (owner.cpp, THE OWNER ROWS and THE CLAIMS)
+//     read where the code uses an entity.  A finding of such a rule is an
+//     error only in the mode error, no opt-out region covers it, and the
+//     module of its rule judges it against the ledger of the rule
+//     (is_family_kind).  The rule start-lifetime:
+//     lifetime-start        a use of an entity of an owner row of the rule
+//                           outside the sites of the row
+//     The rule syscall-capability:
+//     raw-syscall           a call of a system call of a syscall row, or a call
+//                           of syscall() with the number of a macro SYS_NAME,
+//                           in a file of the claim trees
+//     outside-door          a use of an entity of an owner row of the rule
+//                           outside the sites of the row
 //
 // THE SENTINEL
 //     The argument sentinel=PATH names a header of include/, relative to the
@@ -498,6 +512,8 @@ enum class Rule : std::uint8_t {
     no_combine_ids_duplicate,
     splits_orphan,
     trait_guard,
+    start_lifetime,
+    syscall_capability,
 };
 
 // One home row or home-args row of the family home (home.cpp, THE ROWS).  The
@@ -508,6 +524,22 @@ struct HomeRow {
     bool is_one_name = false;  // the entity names each namespace of that name
     bool is_args = false;  // a home-args row
     std::vector<std::string> paths;
+    int line = 0;
+};
+
+// The kinds of a finding, which the table below gives.
+enum class Kind : std::uint8_t;
+
+// One owner row of the family owner (owner.cpp, THE OWNER ROWS): a use of
+// ENTITY stands only at a site of the row, and each other use is the kind KIND
+// of the rule RULE.  The entity is a qualified name, or the name of a function
+// of the global namespace.
+struct OwnerRow {
+    Rule rule = Rule::syscall_capability;
+    Kind kind{};
+    std::string entity;
+    std::vector<std::string> paths;
+    std::string function;  // the qualified name of the function of by=, or empty
     int line = 0;
 };
 
@@ -527,6 +559,8 @@ struct RuleTable {
     std::vector<GrantRow> grants;
     std::vector<HomeRow> homes;
     std::vector<WitnessRow> witnesses;
+    std::vector<OwnerRow> owners;
+    std::vector<std::string> syscalls;  // each name of a syscall row (owner.cpp, THE CLAIMS)
 };
 
 // The kinds of a finding (THE RULES AND THE KINDS above).  opted-out and
@@ -607,6 +641,10 @@ enum class Kind : std::uint8_t {
     trait_outside_home,
     trait_open_read,
     trait_at_home,
+    // The family owner (owner.cpp).
+    lifetime_start,
+    raw_syscall,
+    outside_door,
 };
 
 inline const char* rule_name(Rule rule) {
@@ -659,6 +697,10 @@ inline const char* rule_name(Rule rule) {
             return "splits-orphan";
         case Rule::trait_guard:
             return "trait-guard";
+        case Rule::start_lifetime:
+            return "start-lifetime";
+        case Rule::syscall_capability:
+            return "syscall-capability";
     }
     return "unknown";
 }
@@ -666,6 +708,9 @@ inline const char* rule_name(Rule rule) {
 // The rules of the family home, in the order of the enumeration.
 inline constexpr Rule kHomeRules[] = {Rule::federation_admission, Rule::host_owners, Rule::no_combine_ids_duplicate,
                                       Rule::splits_orphan, Rule::trait_guard};
+
+// The rules of the family owner, in the order of the enumeration.
+inline constexpr Rule kOwnerRules[] = {Rule::start_lifetime, Rule::syscall_capability};
 
 inline const char* kind_name(Kind kind) {
     switch (kind) {
@@ -810,6 +855,12 @@ inline const char* kind_name(Kind kind) {
             return "away-from-arguments";
         case Kind::trait_open_read:
             return "open-read";
+        case Kind::lifetime_start:
+            return "lifetime-start";
+        case Kind::raw_syscall:
+            return "raw-syscall";
+        case Kind::outside_door:
+            return "outside-door";
     }
     return "unknown";
 }
@@ -900,6 +951,11 @@ inline Rule rule_of(Kind kind) {
         case Kind::trait_open_read:
         case Kind::trait_at_home:
             return Rule::trait_guard;
+        case Kind::lifetime_start:
+            return Rule::start_lifetime;
+        case Kind::raw_syscall:
+        case Kind::outside_door:
+            return Rule::syscall_capability;
         default:
             return Rule::quarantine;
     }
@@ -911,11 +967,11 @@ inline bool is_each_mode_kind(Kind kind) {
     return kind == Kind::contract_specifier || kind == Kind::contract_semantic || kind == Kind::fast_math_override;
 }
 
-// True when a rule of the families declaration property (declaration.cpp) and
-// expression shape (expression.cpp) gives the kind.  Such a finding is an
-// error only in the mode error, no opt-out region covers it, and no enforce
-// mode changes it.  The module of its rule judges it against the ledger of
-// the rule.
+// True when a rule of the families declaration property (declaration.cpp),
+// expression shape (expression.cpp) and owner (owner.cpp) gives the kind.
+// Such a finding is an error only in the mode error, no opt-out region covers
+// it, and no enforce mode changes it.  The module of its rule judges it
+// against the ledger of the rule.
 inline bool is_family_kind(Kind kind) {
     switch (rule_of(kind)) {
         case Rule::mint_pattern:
@@ -928,6 +984,8 @@ inline bool is_family_kind(Kind kind) {
         case Rule::padded_list:
         case Rule::refined_pre_subsumption:
         case Rule::syscall_grant_coverage:
+        case Rule::start_lifetime:
+        case Rule::syscall_capability:
             return true;
         default:
             return false;
@@ -1049,6 +1107,9 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"trait-guard", "outside-home"},
     {"trait-guard", "open-read"},
     {"trait-guard", "at-home"},
+    {"start-lifetime", "lifetime-start"},
+    {"syscall-capability", "raw-syscall"},
+    {"syscall-capability", "outside-door"},
 };
 
 // True when the entity is part of the key of a finding: two findings of such
@@ -1642,6 +1703,45 @@ inline void record_declared(Kind kind, location_t location, const std::string& e
     }
 }
 
+// ── The macros ──────────────────────────────────────────────────────────
+
+// The value of the object-like macro NAME, through each macro that its one
+// token names, as libcpp holds it.  The families expression shape and owner
+// read the number of a system call from its macro SYS_NAME this way.
+// Complexity: O(depth of the chain), at most 8 macros.
+inline bool macro_number(const std::string& name, int depth, long long& number) {
+    if (depth > 8 || !cpp_defined(parse_in, reinterpret_cast<const unsigned char*>(name.c_str()),
+                                  static_cast<int>(name.size()))) {
+        return false;
+    }
+    cpp_hashnode* node = cpp_lookup(parse_in, reinterpret_cast<const unsigned char*>(name.c_str()),
+                                    static_cast<unsigned>(name.size()));
+    if (node == nullptr || !cpp_user_macro_p(node) || node->value.macro == nullptr) {
+        return false;
+    }
+    const cpp_macro* macro = node->value.macro;
+    if (macro->fun_like || macro->kind != cmk_macro || macro->count != 1) {
+        return false;
+    }
+    const cpp_token& token = macro->exp.tokens[0];
+    if (token.type == CPP_NAME) {
+        return macro_number(reinterpret_cast<const char*>(NODE_NAME(token.val.node.node)), depth + 1, number);
+    }
+    if (token.type != CPP_NUMBER || token.val.str.len == 0) {
+        return false;
+    }
+    long long value = 0;
+    for (unsigned index = 0; index < token.val.str.len; ++index) {
+        unsigned char digit = token.val.str.text[index];
+        if (digit < '0' || digit > '9' || value > (LLONG_MAX - 9) / 10) {
+            return false;
+        }
+        value = value * 10 + (digit - '0');
+    }
+    number = value;
+    return true;
+}
+
 // ── The interface of each source ────────────────────────────────────────
 
 // rule_table.cpp: reads the rule table at PATH into state.table.  Returns
@@ -1693,6 +1793,12 @@ void record_namespace_name(tree ns, const std::string& member, location_t locati
 void check_scope_use(tree scope_ref, location_t location);
 void check_type_use(tree type, location_t location);
 void check_using(tree decl);
+// The owner rules (owner.cpp, THE OWNER ROWS and THE CLAIMS): each use of an
+// entity of an owner row at NODE, and each call of a system call, in the walk
+// of a body of FUNCTION, or of an initializer when FUNCTION is null.
+void check_owned_node(tree node, location_t location, tree function);
+void register_owner(const char* plugin_name);
+void walk_owner();
 
 // declaration.cpp: the family declaration property, the walk of the
 // declarations.
@@ -1748,5 +1854,87 @@ void report_home(const Finding& finding, std::vector<std::string>& lines, bool h
 
 // plugin.cpp: the report of the unit.
 void report(bool can_add_dependencies);
+
+// ── The callees of a call ───────────────────────────────────────────────
+
+// Calls VISIT for each function that the callee CALLEE of a call can name:
+// the function itself, each candidate of an overload set and the function of
+// a template.  A template keeps the set of a dependent call.  The families
+// expression shape and owner read a call this way.
+template <typename Visit>
+void for_each_function(tree callee, Visit&& visit, int depth = 0) {
+    if (callee == NULL_TREE || depth > 8) {
+        return;
+    }
+    switch (TREE_CODE(callee)) {
+        case FUNCTION_DECL:
+            visit(callee);
+            return;
+        case TEMPLATE_DECL:
+            if (tree result = DECL_TEMPLATE_RESULT(callee); result != NULL_TREE && TREE_CODE(result) == FUNCTION_DECL) {
+                visit(result);
+            }
+            return;
+        case ADDR_EXPR:
+        case TEMPLATE_ID_EXPR:
+            for_each_function(TREE_OPERAND(callee, 0), visit, depth + 1);
+            return;
+        case COMPONENT_REF:
+            for_each_function(TREE_OPERAND(callee, 1), visit, depth + 1);
+            return;
+        case BASELINK:
+            for_each_function(BASELINK_FUNCTIONS(callee), visit, depth + 1);
+            return;
+        case OVERLOAD:
+            for (ovl_iterator candidate(callee, true); candidate; ++candidate) {
+                for_each_function(*candidate, visit, depth + 1);
+            }
+            return;
+        default:
+            return;
+    }
+}
+
+// The callee tree of a call: the function of a CALL_EXPR or of an
+// AGGR_INIT_EXPR.
+inline tree callee_of(tree call) {
+    return TREE_CODE(call) == AGGR_INIT_EXPR ? AGGR_INIT_EXPR_FN(call) : CALL_EXPR_FN(call);
+}
+
+inline int argument_count(tree call) {
+    return TREE_CODE(call) == AGGR_INIT_EXPR ? aggr_init_expr_nargs(call) : call_expr_nargs(call);
+}
+
+inline tree argument_at(tree call, int index) {
+    return TREE_CODE(call) == AGGR_INIT_EXPR ? AGGR_INIT_EXPR_ARG(call, index) : CALL_EXPR_ARG(call, index);
+}
+
+// True when FUNCTION is a function of the global namespace of a library
+// header named NAME.
+inline bool is_library_function(tree function, tree name) {
+    return DECL_NAME(function) == name && library_of(function) == Library::c_library;
+}
+
+// The number of the first argument of a call of syscall(), through its
+// location wrappers and conversions.
+inline bool syscall_number_of(tree call, long long& number) {
+    if (argument_count(call) == 0) {
+        return false;
+    }
+    tree argument = argument_at(call, 0);
+    for (int depth = 0; argument != NULL_TREE && depth < kTypeDepth; ++depth) {
+        argument = tree_strip_any_location_wrapper(argument);
+        if (TREE_CODE(argument) != NOP_EXPR && TREE_CODE(argument) != CONVERT_EXPR
+            && TREE_CODE(argument) != NON_LVALUE_EXPR) {
+            break;
+        }
+        argument = TREE_OPERAND(argument, 0);
+    }
+    if (argument == NULL_TREE || TREE_CODE(argument) != INTEGER_CST || !tree_fits_shwi_p(argument)) {
+        return false;
+    }
+    number = tree_to_shwi(argument);
+    return true;
+}
 
 }  // namespace crucible_plugin

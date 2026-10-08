@@ -227,9 +227,7 @@ private:
     // bits of nanoseconds gives the maximum.
     [[nodiscard]] static std::uint64_t read_realtime_ns_() noexcept {
         ::timespec reading{};
-        const int status = ::clock_gettime(
-            CLOCK_REALTIME,
-            &reading);  // SYSCALL-CAP-OK: Hlc::read_realtime_ns_, sole builder mint_hlc takes the init context
+        const int status = ::clock_gettime(CLOCK_REALTIME, &reading);
         if (status != 0) [[unlikely]] {
             return std::uint64_t{1};
         }

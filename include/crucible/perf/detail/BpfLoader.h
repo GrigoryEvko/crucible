@@ -36,8 +36,7 @@ using Fd = ::fixy::Tagged<int, source::BpfMap>;
 }
 
 [[nodiscard]] inline Tid current_tid() noexcept {
-    return ::fixy::mint_tagged<source::Kernel>(static_cast<uint32_t>(::syscall(
-        SYS_gettid)));  // SYSCALL-CAP-OK: a load under an Init context calls it, and gettid only reads the thread id
+    return ::fixy::mint_tagged<source::Kernel>(static_cast<uint32_t>(::syscall(SYS_gettid)));
 }
 
 [[nodiscard]] inline Fd map_fd(bpf_map* m) noexcept { return ::fixy::mint_tagged<source::BpfMap>(bpf_map__fd(m)); }
@@ -108,13 +107,11 @@ CRUCIBLE_PROCESS_WIDE inline void install_libbpf_log_cb_once() noexcept {
     std::string path = "/sys/kernel/tracing/events/";
     path.append(category_slash_event);
     path.append("/id");
-    if (::faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS) == 0)
-        return true;  // SYSCALL-CAP-OK: a load under an Init context probes that the file exists, with the effective capabilities
+    if (::faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS) == 0) return true;
     path.assign("/sys/kernel/debug/tracing/events/");
     path.append(category_slash_event);
     path.append("/id");
-    return ::faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS)
-        == 0;  // SYSCALL-CAP-OK: a load under an Init context probes the debugfs path, with the effective capabilities
+    return ::faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS) == 0;
 }
 
 // A load fails for the whole object when any one program names a

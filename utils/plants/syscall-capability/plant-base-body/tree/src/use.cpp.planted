@@ -1,0 +1,8 @@
+// A quarantined unit that includes the base header fixy/os/Raw.h.
+#include <fixy/os/Raw.h>
+
+namespace planted {
+
+int call_process_id() { return process_id(); }
+
+}  // namespace planted

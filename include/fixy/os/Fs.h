@@ -325,9 +325,7 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
     // it otherwise, so it is passed unconditionally.  Returns the errno on
     // failure and no handle.
     [[nodiscard]] static std::expected<OwnedFd, int> open_path_(const char* path, int flags, ::mode_t perms) noexcept {
-        const int fd =
-            ::open(path, flags,
-                   perms);  // SYSCALL-CAP-OK: FileDoor::open_path_, sole caller mint_file ctx-gate (CtxFitsFileMint)
+        const int fd = ::open(path, flags, perms);
         if (fd < 0) {
             return std::unexpected{errno};
         }
@@ -338,10 +336,7 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
     // that stands in for the directory, and the descriptor is what a later
     // fsync flushes the entry through.
     [[nodiscard]] static std::expected<OwnedFd, int> open_directory_(const char* dir_path) noexcept {
-        const int fd = ::open(
-            dir_path,
-            O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
-                | O_RDONLY);  // SYSCALL-CAP-OK: FileDoor::open_directory_, sole caller open_dirfd ctx-gate (CtxAdmitsFs)
+        const int fd = ::open(dir_path, O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC | O_RDONLY);
         if (fd < 0) {
             return std::unexpected{errno};
         }
@@ -370,11 +365,11 @@ template <typename SyncOp, eff::IsExecCtx Ctx>
     }
     int rc = 0;
     if constexpr (std::is_same_v<SyncOp, sync_op::Fdatasync>) {
-        rc = ::fdatasync(handle.get());  // SYSCALL-CAP-OK: sync<SyncOp> ctx-gate (CtxFitsSync)
+        rc = ::fdatasync(handle.get());
     } else {
         // Fsync, and FsyncParentDir on a directory descriptor, which is
         // the call that flushes the directory entry.
-        rc = ::fsync(handle.get());  // SYSCALL-CAP-OK: sync<SyncOp> ctx-gate (CtxFitsSync)
+        rc = ::fsync(handle.get());
     }
     if (rc < 0) {
         return std::unexpected{std::error_code{errno, std::system_category()}};
@@ -405,12 +400,9 @@ template <typename Atomicity, eff::IsExecCtx Ctx>
                                                                         Path<tags::source::Sanitized> target) noexcept {
     int rc = 0;
     if constexpr (std::is_same_v<Atomicity, atomicity::Rename>) {
-        rc = ::rename(
-            tmp.value().c_str(),
-            target.value().c_str());  // SYSCALL-CAP-OK: commit_atomic<Atomicity> ctx-gate (CtxFitsCommitAtomic)
+        rc = ::rename(tmp.value().c_str(), target.value().c_str());
     } else {
-        rc = ::renameat2(AT_FDCWD, tmp.value().c_str(), AT_FDCWD, target.value().c_str(),
-                         RENAME_NOREPLACE);  // SYSCALL-CAP-OK: commit_atomic<Atomicity> ctx-gate (CtxFitsCommitAtomic)
+        rc = ::renameat2(AT_FDCWD, tmp.value().c_str(), AT_FDCWD, target.value().c_str(), RENAME_NOREPLACE);
     }
     if (rc < 0) {
         return std::unexpected{std::error_code{errno, std::system_category()}};
@@ -446,9 +438,7 @@ template <eff::IsExecCtx Ctx>
     }
     std::size_t total = 0;
     while (total < buffer.size()) {
-        const ::ssize_t transferred =
-            ::read(handle.get(), buffer.data() + total,
-                   buffer.size() - total);  // SYSCALL-CAP-OK: read_full ctx-gate (CtxAdmitsFs)
+        const ::ssize_t transferred = ::read(handle.get(), buffer.data() + total, buffer.size() - total);
         if (transferred == 0) break;
         if (transferred < 0) {
             if (errno == EINTR) continue;
@@ -468,9 +458,7 @@ template <eff::IsExecCtx Ctx>
     }
     std::size_t total = 0;
     while (total < buffer.size()) {
-        const ::ssize_t transferred =
-            ::write(handle.get(), buffer.data() + total,
-                    buffer.size() - total);  // SYSCALL-CAP-OK: write_full ctx-gate (CtxAdmitsFs)
+        const ::ssize_t transferred = ::write(handle.get(), buffer.data() + total, buffer.size() - total);
         if (transferred < 0) {
             if (errno == EINTR) continue;
             return std::unexpected{std::error_code{errno, std::system_category()}};
@@ -487,7 +475,7 @@ template <eff::IsExecCtx Ctx>
         return std::unexpected{std::error_code{EBADF, std::system_category()}};
     }
     struct ::stat status{};
-    if (::fstat(handle.get(), &status) < 0) {  // SYSCALL-CAP-OK: file_size ctx-gate (CtxAdmitsFs)
+    if (::fstat(handle.get(), &status) < 0) {
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
     return status.st_size;

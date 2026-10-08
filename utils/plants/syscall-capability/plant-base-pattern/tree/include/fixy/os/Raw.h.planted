@@ -1,0 +1,29 @@
+// A base header with three patterns that no unit instantiates: a function
+// template, a member of a class template, and a member of a local class of a
+// function template.  The plugin reads each pattern in the sentinel unit of
+// the header.
+#pragma once
+
+#include <unistd.h>
+
+namespace planted {
+
+template <typename Value>
+int template_process_id(Value) {
+    return ::getpid();
+}
+
+template <typename Value>
+struct Holder {
+    int member_process_id() { return ::getpid(); }
+};
+
+template <typename Value>
+int local_process_id() {
+    struct Local {
+        int process_id() { return ::getpid(); }
+    };
+    return 0;
+}
+
+}  // namespace planted

@@ -1,0 +1,18 @@
+// A base header with the affinity door of the plant.  The legacy marker on
+// the call is a comment, and the plugin reads no comment.
+#pragma once
+
+#include <sched.h>
+
+namespace fixy::detail {
+
+inline int set_calling_thread_affinity(const cpu_set_t& set) noexcept {
+    return ::sched_setaffinity(0, sizeof(set), &set);  // SYSCALL-CAP-OK: the affinity door of the plant
+}
+
+inline int pin_through_door(const cpu_set_t& set) noexcept {
+    auto through_lambda = [&set] { return set_calling_thread_affinity(set); };
+    return through_lambda();
+}
+
+}  // namespace fixy::detail

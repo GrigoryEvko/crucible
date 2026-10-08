@@ -84,8 +84,7 @@ void write_sink_(Sink sink, char const* bytes, std::size_t count) noexcept {
     // a report has no road for the error.  The fatal exit aborts next in any
     // case.
     while (written < count) {
-        ::ssize_t const taken =  // SYSCALL-CAP-OK: an async-signal-safe report from any context, a signal handler too
-            ::write(descriptor, bytes + written, count - written);
+        ::ssize_t const taken = ::write(descriptor, bytes + written, count - written);
         if (taken > 0) {
             written += static_cast<std::size_t>(taken);
         } else if (taken < 0 && errno == EINTR) {

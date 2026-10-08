@@ -1,0 +1,12 @@
+// A quarantined unit of src/ with two calls of close in one function.
+#include <unistd.h>
+
+namespace planted {
+
+int release_two(int first, int second) {
+    int status = ::close(first);
+    status |= ::close(second);
+    return status;
+}
+
+}  // namespace planted

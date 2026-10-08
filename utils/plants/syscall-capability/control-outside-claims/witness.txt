@@ -1,0 +1,19 @@
+# Raw system calls in test/, in bench/ and in a test directory under src/.
+# These files are outside the claim trees, so the calls give no finding of the
+# rule.  The quarantine rule refuses each call of the C library.
+
+compile test test/raw.cpp stage=c
+exit test pass
+judge test
+finding test quarantine c-library-call test/raw.cpp:6:45 | close
+finding test quarantine c-library-call test/raw.cpp:8:35 | getpid
+
+compile bench bench/raw.cpp stage=c
+exit bench pass
+judge bench
+finding bench quarantine c-library-call bench/raw.cpp:6:35 | getpid
+
+compile nested src/test/raw.cpp stage=c
+exit nested pass
+judge nested
+finding nested quarantine c-library-call src/test/raw.cpp:7:45 | close

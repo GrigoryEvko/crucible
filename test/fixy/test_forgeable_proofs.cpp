@@ -715,9 +715,9 @@ static_assert(is_proof_shape(^^fe::ExecCtx<>) && !is_forgeable(^^fe::ExecCtx<>),
 // They still compile: std::start_lifetime_as over an array of proofs,
 // std::start_lifetime_as_array over proofs, and std::start_lifetime_as
 // over an aggregate or a std::array that holds a proof.  Each one names
-// std::start_lifetime_as, and utils/assay/guard/legacy/check_start_lifetime.py refuses
-// that name outside a reviewed list whose element types are
-// implicit-lifetime types.  Its self-test plants each of the four routes.
+// std::start_lifetime_as or std::start_lifetime_as_array, and the rule
+// start-lifetime of the quarantine plugin refuses the two names outside
+// foundation/Lifetime.h, whatever the type argument.
 // foundation::lifetime::start_as_array, which new code uses, refuses the
 // same four routes at compile time.  The assertions below pin that
 // refusal for each proof type of the ledger.

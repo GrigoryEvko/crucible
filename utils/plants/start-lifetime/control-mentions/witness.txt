@@ -1,0 +1,5 @@
+# A comment and a string literal that name std::start_lifetime_as are no use.
+
+compile note src/note.cpp stage=c
+exit note pass
+judge note

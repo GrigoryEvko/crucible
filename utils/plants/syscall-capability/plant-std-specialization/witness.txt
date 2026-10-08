@@ -1,0 +1,11 @@
+# A base header adds two specializations of std::hash to the namespace std.
+# The walk of the declarations does not read a namespace that a library file
+# opens, so the hook of a finished class keeps the two classes, and the
+# sentinel unit reads them at the end of the unit.  The default member
+# initializer has the holder namespace-scope.
+
+compile sentinel src/use.cpp sentinel=include/fixy/os/Raw.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:26:113 | std::hash::operator()(const planted::Box<Value>&) const: getpid
+finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:31:24 | namespace-scope: getpid

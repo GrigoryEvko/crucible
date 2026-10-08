@@ -1,0 +1,9 @@
+# A base header sets the affinity outside the door.  The call is the kind
+# outside-door, which no ledger row admits, and the kind raw-syscall, because
+# include/ is a claim tree.
+
+compile sentinel src/use.cpp sentinel=include/fixy/os/Other.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel syscall-capability outside-door include/fixy/os/Other.h:9:75 | fixy::other::pin(const cpu_set_t&): sched_setaffinity
+finding sentinel syscall-capability raw-syscall include/fixy/os/Other.h:9:75 | fixy::other::pin(const cpu_set_t&): sched_setaffinity

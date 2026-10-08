@@ -1,0 +1,5 @@
+quarantine plant_std.cpp
+owner start-lifetime lifetime-start std::start_lifetime_as include/foundation/Lifetime.h | the door
+owner syscall-capability outside-door sched_setaffinity include/fixy/os/CpuPinned.h by=fixy::detail::pin | the door
+owner syscall-capability outside-door pthread_setaffinity_np | no site
+syscall read write syscall | three system calls

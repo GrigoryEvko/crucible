@@ -125,9 +125,7 @@ struct sched_attr_abi {
     attr.sched_runtime = runtime_ns;
     attr.sched_deadline = deadline_ns;
     attr.sched_period = period_ns;
-    return static_cast<int>(::syscall(
-        SYS_sched_setattr, 0, &attr,
-        0u));  // SYSCALL-CAP-OK: detail helper for mint_scheduler_policy ctx-gate (CtxFitsSchedPolicyMint, effects::Init)
+    return static_cast<int>(::syscall(SYS_sched_setattr, 0, &attr, 0u));
 }
 
 template <SchedulerPolicy_v Policy>
@@ -138,9 +136,7 @@ template <SchedulerPolicy_v Policy>
     } else {
         sched_param param{};
         param.sched_priority = rt_priority;
-        return ::sched_setscheduler(
-            0, sched_policy_constant(Policy),
-            &param);  // SYSCALL-CAP-OK: detail helper for mint_scheduler_policy ctx-gate (CtxFitsSchedPolicyMint)
+        return ::sched_setscheduler(0, sched_policy_constant(Policy), &param);
     }
 }
 
@@ -275,8 +271,7 @@ template <int Nice, eff::IsExecCtx Ctx>
     requires CtxFitsPriorityMint<Ctx, Nice>
 [[nodiscard]] std::expected<SchedPriority<Nice>, int> mint_priority(Ctx const&) noexcept {
     errno = 0;
-    if (::setpriority(PRIO_PROCESS, 0, Nice) != 0 && errno != 0)
-        [[unlikely]] {  // SYSCALL-CAP-OK: mint_priority body, CtxFitsPriorityMint ctx-gate
+    if (::setpriority(PRIO_PROCESS, 0, Nice) != 0 && errno != 0) [[unlikely]] {
         return std::unexpected(errno);
     }
     return SchedProofDoor::priority_proof_<Nice>();
@@ -364,8 +359,7 @@ template <eff::IsExecCtx Ctx>
     if (mask == AffinityMask{}) return PriorAffinity{};
     cpu_set_t prior;
     CPU_ZERO(&prior);
-    if (::sched_getaffinity(0, sizeof(prior), &prior) != 0)
-        [[unlikely]] {  // SYSCALL-CAP-OK: apply_affinity_to_mask body, CtxFitsRuntimeAffinity ctx-gate
+    if (::sched_getaffinity(0, sizeof(prior), &prior) != 0) [[unlikely]] {
         return std::unexpected(errno);
     }
     const auto pin_event = sf::detail::pin_calling_thread(mask);

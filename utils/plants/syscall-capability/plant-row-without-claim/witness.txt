@@ -1,0 +1,8 @@
+# A ledger row that counts the call and gives no capability claim is an
+# error.
+
+compile raw src/raw.cpp stage=c
+exit raw pass
+judge raw
+finding raw quarantine c-library-call src/raw.cpp:6:45 | close
+finding raw syscall-capability raw-syscall src/raw.cpp:6:45 | planted::release(int): close

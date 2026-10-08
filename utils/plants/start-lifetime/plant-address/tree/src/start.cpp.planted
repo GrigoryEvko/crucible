@@ -1,0 +1,14 @@
+// A quarantined unit that takes the address of std::start_lifetime_as and
+// calls it through the pointer.
+#include <memory>
+
+namespace planted {
+
+using view_function = int* (*)(void*) noexcept;
+
+int* view(void* bytes) {
+    view_function function = &std::start_lifetime_as<int>;
+    return function(bytes);
+}
+
+}  // namespace planted

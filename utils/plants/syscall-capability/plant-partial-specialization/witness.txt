@@ -1,0 +1,9 @@
+# A sentinel base header holds a partial specialization of a template of a
+# different base header.  The walk reads the specializations of each template
+# of each namespace, so it finds the call in the member of the specialization.
+
+compile sentinel src/use.cpp sentinel=include/fixy/Special.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel syscall-capability raw-syscall include/fixy/Special.h:12:40 | planted::Reader::read(): getpid
+finding sentinel trait-guard outside-home include/fixy/Special.h:11:8 | planted::Reader

@@ -1,0 +1,9 @@
+# The door calls sched_setaffinity, and its owner row admits the call there,
+# so the call is no finding of the kind outside-door.  include/ is a claim
+# tree, so the call is a raw system call.  The control does not judge it,
+# because the tree of the control holds no ledger.
+
+compile sentinel src/use.cpp sentinel=include/fixy/os/CpuPinned.h stage=c
+exit sentinel pass
+finding sentinel quarantine c-library-object src/use.cpp:6:26 | cpu_set_t (const cpu_set_t&)
+finding sentinel syscall-capability raw-syscall include/fixy/os/CpuPinned.h:10:31 | fixy::detail::set_calling_thread_affinity(const cpu_set_t&): sched_setaffinity

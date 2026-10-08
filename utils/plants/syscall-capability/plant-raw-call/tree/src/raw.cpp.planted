@@ -1,0 +1,8 @@
+// A quarantined unit of src/ with a raw system call and no claim.
+#include <unistd.h>
+
+namespace planted {
+
+int release(int descriptor) { return ::close(descriptor); }
+
+}  // namespace planted

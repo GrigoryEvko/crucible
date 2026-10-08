@@ -1,0 +1,8 @@
+// A quarantined unit that starts a lifetime through the checked start.
+#include <foundation/Lifetime.h>
+
+namespace planted {
+
+int* view(void* bytes) { return foundation::lifetime::start_as_array<int>(bytes, 1); }
+
+}  // namespace planted

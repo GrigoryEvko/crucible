@@ -1,0 +1,18 @@
+// A quarantined unit with functions and members that have the names of
+// system calls.  No function of the C library is called.
+namespace planted {
+
+int close(int descriptor) { return descriptor; }
+
+int read() { return 0; }
+
+struct File {
+    int mmap() const { return 1; }
+};
+
+int use() {
+    File file;
+    return close(3) + read() + file.mmap();
+}
+
+}  // namespace planted

@@ -1,0 +1,12 @@
+# A base header issues getpid in the body of a function that is not a
+# template.  The sentinel unit of the header gives the finding.  The unit with
+# no sentinel argument reads the header and gives no finding.
+
+compile sentinel src/use.cpp sentinel=include/fixy/os/Raw.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:9:42 | planted::process_id(): getpid
+
+compile plain src/use.cpp stage=c
+exit plain pass
+judge plain

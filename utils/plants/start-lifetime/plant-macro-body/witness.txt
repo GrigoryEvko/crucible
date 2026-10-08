@@ -1,0 +1,9 @@
+# A macro body names std::start_lifetime_as, and a unit expands the macro.
+# The finding stands in the macro body, with the holder "macro NAME".
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use quarantine raw-pointer-object src/use.cpp:6:17 | void*
+finding use quarantine std-entity include/crucible/Start.h:6:64 | std::start_lifetime_as
+finding use start-lifetime lifetime-start include/crucible/Start.h:6:64 | macro CRUCIBLE_PLANT_START: std::start_lifetime_as

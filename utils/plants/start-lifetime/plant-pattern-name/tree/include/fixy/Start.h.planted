@@ -1,0 +1,15 @@
+// A base header with a pattern that names start_lifetime_as with no
+// qualification.  Argument-dependent lookup can resolve the name in an
+// instantiation, so the pattern holds an unresolved name.
+#pragma once
+
+#include <memory>
+
+namespace planted {
+
+template <typename Value, typename Buffer>
+Value* view(Buffer* bytes) {
+    return start_lifetime_as<Value>(bytes);
+}
+
+}  // namespace planted

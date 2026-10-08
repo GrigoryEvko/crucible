@@ -1,0 +1,11 @@
+// A base header that sets the affinity of the calling thread outside the door
+// of fixy/os/CpuPinned.h.
+#pragma once
+
+#include <sched.h>
+
+namespace fixy::other {
+
+inline int pin(const cpu_set_t& set) noexcept { return ::sched_setaffinity(0, sizeof(set), &set); }
+
+}  // namespace fixy::other

@@ -1,0 +1,10 @@
+// A quarantined unit that sets the affinity of a thread with
+// pthread_setaffinity_np, outside the door.
+#include <pthread.h>
+#include <sched.h>
+
+namespace planted {
+
+int pin(pthread_t thread, const cpu_set_t& set) { return ::pthread_setaffinity_np(thread, sizeof(set), &set); }
+
+}  // namespace planted

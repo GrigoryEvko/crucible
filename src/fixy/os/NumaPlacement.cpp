@@ -39,9 +39,7 @@ int census_page_nodes_(void const* first, std::size_t bytes, numa::PageNodeCensu
         for (std::size_t index = 0; index < count; ++index) {
             pages[index] = __builtin_bit_cast(void const*, first_page + ((done + index) * page_bytes));
         }
-        long const queried = ::syscall(
-            SYS_move_pages, 0, count, pages, nullptr, statuses,
-            0);  // SYSCALL-CAP-OK: detail helper for census_page_nodes ctx-gate (CtxFitsNumaQuery: effects::IO+Block)
+        long const queried = ::syscall(SYS_move_pages, 0, count, pages, nullptr, statuses, 0);
         if (queried != 0) {
             // A query moves nothing, so a count of pages that did not move
             // is not a possible answer.  It refuses the census as EIO.

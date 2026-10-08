@@ -10,8 +10,8 @@
 #   One row on each line.  A space or a tab divides the words of a row, and a
 #   row holds no other white-space character.  A line that starts with '#' is
 #   a comment, and an empty line is no row.  A row can end with '| REASON'.
-#   An admit row and a home row must have a reason, and an ENTRY has one admit
-#   row at most.
+#   An admit row, a home row, an owner row and a syscall row must have a
+#   reason, and an ENTRY has one admit row at most.
 #   A RANK and an arity N are runs of the digits 0 to 9, with a value of at
 #   most 2147483647.  A PATH is relative to
 #   the source root.  A PATH that ends with '/' is a directory, and each other
@@ -156,6 +156,25 @@
 #       witness-roster refuses a class of the base with a door shape and no
 #       row.  The full name of TYPE with no template arguments has one witness
 #       row at most
+#   owner RULE KIND ENTITY [PATH...] [by=FUNCTION] | REASON
+#       The sites of ENTITY in the rule RULE of the family owner of the plugin
+#       (utils/tools/quarantine/owner.cpp): a use of ENTITY, or of a
+#       declaration inside it, stands only in a file under a PATH, and only in
+#       the body of FUNCTION when the row names one.  A row with no PATH and no
+#       FUNCTION admits no site.  Each other use is a finding of the kind KIND.
+#       A use is a call, an address, or a candidate of a dependent call, also a
+#       call of syscall() with the number of the macro SYS_ENTITY.  ENTITY and
+#       FUNCTION are qualified names, and a function of the C library has its
+#       own name.  An ENTITY has one owner row of a rule at most, and the
+#       reason is necessary.  A ledger row admits no finding of KIND
+#   syscall NAME... | REASON
+#       Each NAME is a function of the C library that issues one system call.
+#       A call of NAME, and a call of syscall(), is a finding of the kind
+#       raw-syscall of the rule syscall-capability in a file under include/,
+#       src/ or vessel/, outside each directory named test, bench, examples,
+#       third_party, external or vendor, and each directory whose name starts
+#       with build.  The ledger of the rule gives the capability claim of each
+#       such call.  A NAME has one syscall row at most
 #
 # THE LONGEST PATH
 #   When the PATHs of two rows hold one file, the longer PATH decides.  A
@@ -330,6 +349,23 @@ cite fixy::BoundedAbove in_range bounded_above
 cite fixy::BoundedBelow in_range bounded_below
 
 grant include/crucible/warden/Hardening.h crucible::warden::hardening_syscall_atoms fixy::atom::syscall::SyscallId include/fixy/os/Sched.h include/fixy/os/CpuPinned.h
+
+# The owner rows of the rules start-lifetime and syscall-capability.
+owner start-lifetime lifetime-start std::start_lifetime_as include/foundation/Lifetime.h | an array of proofs, an aggregate that holds a proof and an array start each give a pointer to a proof whose lifetime never started, and only the checked start of foundation/Lifetime.h refuses the three routes at compile time
+owner start-lifetime lifetime-start std::start_lifetime_as_array include/foundation/Lifetime.h | the library puts no mandate on the element type, so a start of an array of proofs gives a pointer to a proof whose lifetime never started, and only the checked start of foundation/Lifetime.h refuses it at compile time
+owner syscall-capability outside-door sched_setaffinity include/fixy/os/CpuPinned.h by=fixy::detail::set_calling_thread_affinity | the door records a pin event, and a pin proof stays in force across a pin that goes around the door
+owner syscall-capability outside-door pthread_setaffinity_np include/fixy/os/CpuPinned.h by=fixy::detail::set_calling_thread_affinity | the call changes the same mask as sched_setaffinity, and its door is the same function, which does not call it
+
+# The system calls of the rule syscall-capability, and the call syscall()
+# with the number of a system call.
+syscall socket socketpair bind listen connect accept accept4 send sendto sendmsg recv recvfrom recvmsg shutdown setsockopt getsockopt | a call that makes, configures or uses a socket of the kernel
+syscall mmap munmap mremap mprotect madvise mincore mlock mlock2 munlock mlockall munlockall brk sbrk mbind set_mempolicy get_mempolicy memfd_create membarrier | a call that maps, locks, places or advises memory, or a memory barrier of the kernel
+syscall sched_setaffinity sched_getaffinity pthread_setaffinity_np sched_setattr sched_getattr sched_setscheduler sched_getscheduler sched_yield setpriority getpriority prctl getrlimit setrlimit | a call that reads or changes the scheduling, the priority, the limits or the attributes of a thread or a process
+syscall epoll_create1 epoll_ctl epoll_wait eventfd timerfd_create poll select pselect futex | a call that waits for an event, or makes a descriptor of an event or a timer
+syscall open openat close read write pread pwrite readv writev fsync fdatasync stat fstat lstat statx ioctl fcntl flock dup dup2 dup3 pipe pipe2 ftruncate fallocate copy_file_range sendfile splice | a call that opens, reads, writes, syncs, controls or copies a file descriptor
+syscall unlink unlinkat rename renameat renameat2 mkdir mkdirat rmdir linkat chmod fchmod chown fchown access faccessat | a call that changes or reads the file system tree or the mode of a file
+syscall fork vfork clone execve waitpid kill sigaction signal sigprocmask getpid gettid bpf | a call that makes, replaces, waits for or signals a process, reads its identity, or loads a program of the kernel
+syscall clock_gettime clock_settime nanosleep clock_nanosleep gettimeofday getrandom | a call that reads or sets a clock of the kernel, sleeps, or reads random bytes of the kernel
 
 # The witness rows.  Each class of the base that attests to a fact that it
 # cannot see, and the door that it keeps.  Edit a row, and then write the

@@ -1,0 +1,9 @@
+# A raw system call in a file of the claim trees, with no ledger row.  The
+# call of close is a finding of the kind raw-syscall, with the holder of the
+# call.
+
+compile raw src/raw.cpp stage=c
+exit raw pass
+judge raw
+finding raw quarantine c-library-call src/raw.cpp:6:45 | close
+finding raw syscall-capability raw-syscall src/raw.cpp:6:45 | planted::release(int): close

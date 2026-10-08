@@ -1,0 +1,10 @@
+// A test with raw system calls.  A test is outside the claim trees.
+#include <unistd.h>
+
+namespace planted {
+
+int release(int descriptor) { return ::close(descriptor); }
+
+int process_id() { return ::getpid(); }
+
+}  // namespace planted

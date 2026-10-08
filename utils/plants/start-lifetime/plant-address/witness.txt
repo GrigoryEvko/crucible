@@ -1,0 +1,10 @@
+# A quarantined unit takes the address of std::start_lifetime_as.  An address
+# is a use, and the call through the pointer starts the lifetime.
+
+compile start src/start.cpp stage=c
+exit start pass
+judge start
+finding start quarantine raw-function-pointer src/start.cpp:10:19 | planted::view_function
+finding start quarantine raw-pointer-object src/start.cpp:9:17 | void*
+finding start quarantine std-entity src/start.cpp:10:30 | std::start_lifetime_as
+finding start start-lifetime lifetime-start src/start.cpp:10:30 | planted::view(void*): std::start_lifetime_as

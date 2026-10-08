@@ -148,7 +148,7 @@ int check_release_hands_the_region_back() {
     if (r.is_mapped()) return 22;
 
     // Ownership left the wrapper, so the unmap is ours.
-    if (::munmap(out_addr, out_len) != 0) return 23;  // SYSCALL-CAP-OK: the test owns the region after release
+    if (::munmap(out_addr, out_len) != 0) return 23;
     return 0;
 }
 

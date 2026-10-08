@@ -1,0 +1,5 @@
+# The ledger of the plant.  The row admits one call of close, and the
+# function holds two.
+format 1
+rule syscall-capability
+src/raw.cpp | raw-syscall | 1 | planted::release_two(int, int): close | effects::IO of the plant

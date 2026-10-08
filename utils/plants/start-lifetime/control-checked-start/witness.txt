@@ -1,0 +1,10 @@
+# A quarantined caller starts a lifetime through the door of the checked
+# start, and names no library name.  The checked start starts the lifetime
+# with no call of the two names, so its sentinel unit gives no finding of the
+# rule.
+
+compile sentinel src/use.cpp sentinel=include/foundation/Lifetime.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel escape-doors bare-door include/foundation/Lifetime.h:10:8 | foundation::lifetime::start_as_array(void*, std::size_t)
+finding sentinel quarantine raw-pointer-object src/use.cpp:6:17 | void*

@@ -1,0 +1,11 @@
+# A test sets the affinity outside the door.  A pin proof stays in force
+# across a pin that goes around the door, also in a test, so the call is the
+# kind outside-door.  test/ is outside the claim trees, so the call gives no
+# finding of the kind raw-syscall.
+
+compile pin test/pin.cpp stage=c
+exit pin pass
+judge pin
+finding pin quarantine c-library-call test/pin.cpp:7:59 | sched_setaffinity
+finding pin quarantine c-library-object test/pin.cpp:7:26 | cpu_set_t (const cpu_set_t&)
+finding pin syscall-capability outside-door test/pin.cpp:7:59 | planted::pin(const cpu_set_t&): sched_setaffinity

@@ -1,0 +1,11 @@
+// A base header with the body of a function that is not a template.  The
+// plugin reads the body only in the sentinel unit of the header.
+#pragma once
+
+#include <unistd.h>
+
+namespace planted {
+
+inline int process_id() { return ::getpid(); }
+
+}  // namespace planted

@@ -1,0 +1,9 @@
+# A default argument of a base header issues getpid.  The walk of the
+# declarations reads the default argument, and the walk of the quarantined
+# caller reads the copy of it in the call.  The two uses have the place of
+# the declaration and the holder namespace-scope, so they give one finding.
+
+compile sentinel src/use.cpp sentinel=include/fixy/os/Raw.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:8:53 | namespace-scope: getpid

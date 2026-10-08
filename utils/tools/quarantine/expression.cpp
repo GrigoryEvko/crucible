@@ -261,63 +261,6 @@ void record_route(Kind kind, location_t location, const std::string& key) {
     }
 }
 
-// ── The callees of a call ───────────────────────────────────────────────
-
-// Calls VISIT for each function that the callee CALLEE of a call can name:
-// the function itself, each candidate of an overload set and the function of
-// a template.  A template keeps the set of a dependent call.
-template <typename Visit>
-void for_each_function(tree callee, Visit&& visit, int depth = 0) {
-    if (callee == NULL_TREE || depth > 8) {
-        return;
-    }
-    switch (TREE_CODE(callee)) {
-        case FUNCTION_DECL:
-            visit(callee);
-            return;
-        case TEMPLATE_DECL:
-            if (tree result = DECL_TEMPLATE_RESULT(callee); result != NULL_TREE && TREE_CODE(result) == FUNCTION_DECL) {
-                visit(result);
-            }
-            return;
-        case ADDR_EXPR:
-        case TEMPLATE_ID_EXPR:
-            for_each_function(TREE_OPERAND(callee, 0), visit, depth + 1);
-            return;
-        case COMPONENT_REF:
-            for_each_function(TREE_OPERAND(callee, 1), visit, depth + 1);
-            return;
-        case BASELINK:
-            for_each_function(BASELINK_FUNCTIONS(callee), visit, depth + 1);
-            return;
-        case OVERLOAD:
-            for (ovl_iterator candidate(callee, true); candidate; ++candidate) {
-                for_each_function(*candidate, visit, depth + 1);
-            }
-            return;
-        default:
-            return;
-    }
-}
-
-// The callee tree of a call: the function of a CALL_EXPR or of an
-// AGGR_INIT_EXPR.
-tree callee_of(tree call) { return TREE_CODE(call) == AGGR_INIT_EXPR ? AGGR_INIT_EXPR_FN(call) : CALL_EXPR_FN(call); }
-
-int argument_count(tree call) {
-    return TREE_CODE(call) == AGGR_INIT_EXPR ? aggr_init_expr_nargs(call) : call_expr_nargs(call);
-}
-
-tree argument_at(tree call, int index) {
-    return TREE_CODE(call) == AGGR_INIT_EXPR ? AGGR_INIT_EXPR_ARG(call, index) : CALL_EXPR_ARG(call, index);
-}
-
-// True when FUNCTION is a function of the global namespace of a library
-// header named NAME.
-bool is_library_function(tree function, tree name) {
-    return DECL_NAME(function) == name && library_of(function) == Library::c_library;
-}
-
 // ── The proof types (THE PROOF ROUTES) ──────────────────────────────────
 
 // A passkey chain is at most a key, a token that takes the key, and a carrier
@@ -984,28 +927,6 @@ std::string helper_name_of(tree function) {
     return name.size() > 4 && name.compare(name.size() - 4, 4, "_sys") == 0 ? name : std::string{};
 }
 
-// The number of the first argument of a call of syscall(), through its
-// location wrappers and conversions.
-bool syscall_number_of(tree call, long long& number) {
-    if (argument_count(call) == 0) {
-        return false;
-    }
-    tree argument = argument_at(call, 0);
-    for (int depth = 0; argument != NULL_TREE && depth < kTypeDepth; ++depth) {
-        argument = tree_strip_any_location_wrapper(argument);
-        if (TREE_CODE(argument) != NOP_EXPR && TREE_CODE(argument) != CONVERT_EXPR
-            && TREE_CODE(argument) != NON_LVALUE_EXPR) {
-            break;
-        }
-        argument = TREE_OPERAND(argument, 0);
-    }
-    if (argument == NULL_TREE || TREE_CODE(argument) != INTEGER_CST || !tree_fits_shwi_p(argument)) {
-        return false;
-    }
-    number = tree_to_shwi(argument);
-    return true;
-}
-
 struct FactsWalk {
     BodyFacts* facts = nullptr;
     std::string helper;
@@ -1505,6 +1426,7 @@ tree visit_body_node(tree* node_pointer, int* walk_subtrees, void* data) {
         // The type of an implicit conversion is not a name in the source.
         case IMPLICIT_CONV_EXPR:
             check_named_operands(node, walk.last);
+            check_owned_node(node, walk.last, walk.function);
             walk_expression(&TREE_OPERAND(node, 0), walk);
             *walk_subtrees = 0;
             return NULL_TREE;
@@ -1532,6 +1454,7 @@ tree visit_body_node(tree* node_pointer, int* walk_subtrees, void* data) {
     }
     check_named_operands(node, walk.last);
     check_expression_rules(node, walk);
+    check_owned_node(node, walk.last, walk.function);
     if (walk.grant == nullptr && !grant_units.empty() && EXPR_P(node)) {
         collect_macro_facts(node, walk.last);
     }
@@ -1768,41 +1691,6 @@ tree lookup_qualified(const std::string& qualified) {
         scope = found;
         start = end + 2;
     }
-}
-
-// The value of the object-like macro NAME, through each macro that its one
-// token names, as libcpp holds it.
-bool macro_number(const std::string& name, int depth, long long& number) {
-    if (depth > 8 || !cpp_defined(parse_in, reinterpret_cast<const unsigned char*>(name.c_str()),
-                                  static_cast<int>(name.size()))) {
-        return false;
-    }
-    cpp_hashnode* node = cpp_lookup(parse_in, reinterpret_cast<const unsigned char*>(name.c_str()),
-                                    static_cast<unsigned>(name.size()));
-    if (node == nullptr || !cpp_user_macro_p(node) || node->value.macro == nullptr) {
-        return false;
-    }
-    const cpp_macro* macro = node->value.macro;
-    if (macro->fun_like || macro->kind != cmk_macro || macro->count != 1) {
-        return false;
-    }
-    const cpp_token& token = macro->exp.tokens[0];
-    if (token.type == CPP_NAME) {
-        return macro_number(reinterpret_cast<const char*>(NODE_NAME(token.val.node.node)), depth + 1, number);
-    }
-    if (token.type != CPP_NUMBER || token.val.str.len == 0) {
-        return false;
-    }
-    long long value = 0;
-    for (unsigned index = 0; index < token.val.str.len; ++index) {
-        unsigned char digit = token.val.str.text[index];
-        if (digit < '0' || digit > '9' || value > (LLONG_MAX - 9) / 10) {
-            return false;
-        }
-        value = value * 10 + (digit - '0');
-    }
-    number = value;
-    return true;
 }
 
 // The enumerators of ENUMERATION that TYPE names: each constant of a

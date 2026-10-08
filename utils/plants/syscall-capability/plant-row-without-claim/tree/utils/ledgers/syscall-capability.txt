@@ -1,0 +1,4 @@
+# The ledger of the plant.  The row counts the call and gives no claim.
+format 1
+rule syscall-capability
+src/raw.cpp | raw-syscall | 1 | planted::release(int): close | -

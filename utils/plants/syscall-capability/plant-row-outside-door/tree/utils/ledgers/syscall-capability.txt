@@ -1,0 +1,6 @@
+# The ledger of the plant.  The first row admits the raw system call, and the
+# second row tries to admit the call outside the door, which no row can admit.
+format 1
+rule syscall-capability
+src/pin.cpp | raw-syscall | 1 | planted::pin(const cpu_set_t&): sched_setaffinity | effects::Init of the plant
+src/pin.cpp | outside-door | 1 | planted::pin(const cpu_set_t&): sched_setaffinity | a row that tries to admit a pin around the door

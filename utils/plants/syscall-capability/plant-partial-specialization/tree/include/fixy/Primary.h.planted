@@ -1,0 +1,11 @@
+// A base header with a primary template, and no system call.
+#pragma once
+
+namespace planted {
+
+template <typename Value>
+struct Reader {
+    static int read() { return 0; }
+};
+
+}  // namespace planted

@@ -1,0 +1,11 @@
+# pthread_setaffinity_np changes the mask that sched_setaffinity changes, and
+# its owner row gives the same door.  A call outside that door is the kind
+# outside-door, and a raw system call.
+
+compile pin src/pin.cpp stage=c
+exit pin pass
+judge pin
+finding pin quarantine c-library-call src/pin.cpp:8:82 | pthread_setaffinity_np
+finding pin quarantine c-library-object src/pin.cpp:8:44 | cpu_set_t (const cpu_set_t&)
+finding pin syscall-capability outside-door src/pin.cpp:8:82 | planted::pin(pthread_t, const cpu_set_t&): pthread_setaffinity_np
+finding pin syscall-capability raw-syscall src/pin.cpp:8:82 | planted::pin(pthread_t, const cpu_set_t&): pthread_setaffinity_np

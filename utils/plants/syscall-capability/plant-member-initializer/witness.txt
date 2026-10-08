@@ -1,0 +1,10 @@
+# A default member initializer issues getpid, and each of two constructors
+# copies it.  Each copy has the place of the initializer, which lies outside
+# the definition of the constructor, so the finding has the holder
+# namespace-scope and the unit gives one finding.
+
+compile holder src/holder.cpp stage=c
+exit holder pass
+judge holder
+finding holder quarantine c-library-call src/holder.cpp:8:30 | getpid
+finding holder syscall-capability raw-syscall src/holder.cpp:8:30 | namespace-scope: getpid

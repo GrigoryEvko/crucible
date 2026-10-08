@@ -18,8 +18,6 @@ utils/assay/guard/legacy/check_ctx_init_door.py | no-test | 1 | assay.guard.lega
 utils/assay/guard/legacy/check_ctx_testing_boundary.py | no-test | 1 | assay.guard.legacy.check_ctx_testing_boundary | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_detail_namespace.py | no-test | 1 | assay.guard.legacy.check_detail_namespace | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_no_unchecked_access.py | no-test | 1 | assay.guard.legacy.check_no_unchecked_access | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/guard/legacy/check_start_lifetime.py | no-test | 1 | assay.guard.legacy.check_start_lifetime | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/guard/legacy/check_syscall_capability.py | no-test | 1 | assay.guard.legacy.check_syscall_capability | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/listing.py | no-test | 1 | assay.guard.listing | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/preprocessed.py | no-test | 1 | assay.guard.preprocessed | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/selftest.py | no-test | 1 | assay.guard.selftest | A module of today with no test module.  The change that writes the test module removes the row

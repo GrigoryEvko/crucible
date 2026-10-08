@@ -111,10 +111,7 @@ class SocketDoor final : ::foundation::NoObject<SocketDoor> {
     template <MappedSocketKind Kind>
     [[nodiscard]] static std::expected<::fixy::fs::OwnedFd, int> open_() noexcept {
         constexpr detail::socket_triple triple = socket_triple_of(^^Kind);
-        const int fd = ::socket(
-            triple.domain, triple.type | SOCK_CLOEXEC,
-            triple
-                .protocol);  // SYSCALL-CAP-OK: SocketDoor::open_, sole caller mint_socket ctx-gate (CtxFitsSocketMint)
+        const int fd = ::socket(triple.domain, triple.type | SOCK_CLOEXEC, triple.protocol);
         if (fd < 0) {
             return std::unexpected{errno};
         }

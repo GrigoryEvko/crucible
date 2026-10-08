@@ -1,0 +1,12 @@
+// A base header that starts the lifetime of an array outside the checked
+// start.
+#pragma once
+
+#include <cstddef>
+#include <memory>
+
+namespace planted {
+
+inline int* view_array(void* bytes, std::size_t count) { return std::start_lifetime_as_array<int>(bytes, count); }
+
+}  // namespace planted

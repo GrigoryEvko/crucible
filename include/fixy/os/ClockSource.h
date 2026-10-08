@@ -83,7 +83,8 @@ public:
     // trivially copyable: std::bit_cast refuses to stamp a raw integer
     // with a source, and -Wclass-memaccess refuses a memcpy into one.
     // The annotation on the class refuses the checked lifetime start over
-    // bytes, and utils/assay/guard/legacy/check_start_lifetime.py refuses the raw one.
+    // bytes, and the rule start-lifetime of the quarantine plugin refuses
+    // the raw one.
     constexpr ClockSource(const ClockSource&) = default;
     constexpr ClockSource(ClockSource&&) = default;
     constexpr ClockSource& operator=(const ClockSource& other) noexcept(std::is_nothrow_copy_assignable_v<T>) {

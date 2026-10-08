@@ -1,0 +1,8 @@
+# A call of syscall() with the number of the macro SYS_gettid, with no ledger
+# row.  The shape of the finding is syscall(SYS_gettid).
+
+compile raw src/raw.cpp stage=c
+exit raw pass
+judge raw
+finding raw quarantine c-library-call src/raw.cpp:7:36 | syscall
+finding raw syscall-capability raw-syscall src/raw.cpp:7:36 | planted::thread_id(): syscall(SYS_gettid)

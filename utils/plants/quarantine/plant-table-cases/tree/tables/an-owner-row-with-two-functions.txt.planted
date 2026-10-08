@@ -1,0 +1,1 @@
+owner syscall-capability outside-door sched_setaffinity by=fixy::detail::pin by=fixy::detail::unpin | two functions

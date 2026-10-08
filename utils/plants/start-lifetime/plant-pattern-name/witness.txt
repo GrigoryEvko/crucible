@@ -1,0 +1,9 @@
+# A pattern names start_lifetime_as with no qualification, and no unit
+# instantiates it.  The unresolved name of the call is a use of each entity
+# with that last name, so the sentinel unit of the header gives the finding.
+
+compile sentinel src/use.cpp sentinel=include/fixy/Start.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel escape-doors bare-door include/fixy/Start.h:11:8 | planted::view(Buffer*)
+finding sentinel start-lifetime lifetime-start include/fixy/Start.h:12:36 | planted::view(Buffer*): std::start_lifetime_as

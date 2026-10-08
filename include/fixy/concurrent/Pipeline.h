@@ -552,7 +552,7 @@ template <class Ctx>
 #if CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY
     cpu_set_t mask;
     CPU_ZERO(&mask);
-    if (::sched_getaffinity(0, sizeof(mask), &mask) != 0) {  // SYSCALL-CAP-OK: CtxStartsStageThreads gate (Bg|Init)
+    if (::sched_getaffinity(0, sizeof(mask), &mask) != 0) {
         return cpus;
     }
     for (std::size_t cpu = 0; cpu < CPU_SETSIZE; ++cpu) {

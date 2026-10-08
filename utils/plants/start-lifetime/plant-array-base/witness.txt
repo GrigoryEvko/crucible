@@ -1,0 +1,8 @@
+# A base header calls std::start_lifetime_as_array outside the checked start.
+# The sentinel unit of the header gives the finding.
+
+compile sentinel src/use.cpp sentinel=include/fixy/Start.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel escape-doors bare-door include/fixy/Start.h:10:13 | planted::view_array(void*, std::size_t)
+finding sentinel start-lifetime lifetime-start include/fixy/Start.h:10:98 | planted::view_array(void*, std::size_t): std::start_lifetime_as_array

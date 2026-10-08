@@ -144,7 +144,7 @@ struct PerfFds : ::foundation::NonMovable<PerfFds> {
 
     ~PerfFds() {
         for (const PerfFd fd : fds) {
-            ::close(fd.value());  // SYSCALL-CAP-OK: closes the fds that a load under an Init context opened
+            ::close(fd.value());
         }
     }
 };
@@ -248,7 +248,7 @@ std::optional<PmuSample> PmuSample::load(::fixy::InitLoadCtx const& ctx) noexcep
         bpf_link* const link = bpf_program__attach_perf_event(prog, perf_fd.value());
         if (!state->object.settle(link)) {
             const long err = libbpf_get_error(link);
-            ::close(perf_fd.value());  // SYSCALL-CAP-OK: closes the fd of an event whose attach failed
+            ::close(perf_fd.value());
             if (verbose()) {
                 std::fprintf(stderr, "[crucible::perf] pmu_sample %s attach failed (%s)\n", event.friendly_name,
                              std::strerror(err != 0 ? static_cast<int>(-err) : errno));

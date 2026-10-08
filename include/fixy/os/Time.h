@@ -174,8 +174,7 @@ namespace detail {
 // off the replay-bound foreground path.
 [[nodiscard]] inline std::expected<std::uint64_t, std::error_code> read_clock_nanos(::clockid_t clock) noexcept {
     std::timespec now{};
-    if (::clock_gettime(clock, &now) != 0)
-        [[unlikely]] {  // SYSCALL-CAP-OK: detail helper of ClockReader::read and PtpClockReader::read, whose builders the CtxFitsClockReaderMint and CtxFitsPtpClockReaderMint gates admit
+    if (::clock_gettime(clock, &now) != 0) [[unlikely]] {
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
     return nanos_from_timespec(now);
@@ -469,8 +468,7 @@ struct PtpClockReader final {
     // query names a device that is still open.
     [[nodiscard]] std::expected<::ptp_clock_caps, std::error_code> caps() const noexcept {
         ::ptp_clock_caps kernel_caps{};
-        if (::ioctl(fd_.get(), PTP_CLOCK_GETCAPS2, &kernel_caps)
-            != 0) {  // SYSCALL-CAP-OK: PtpClockReader::caps, sole builder mint_ptp_clock_reader ctx-gate (CtxFitsPtpClockReaderMint)
+        if (::ioctl(fd_.get(), PTP_CLOCK_GETCAPS2, &kernel_caps) != 0) {
             return std::unexpected{std::error_code{errno, std::system_category()}};
         }
         return kernel_caps;
@@ -518,10 +516,7 @@ class PtpDeviceDoor final : ::foundation::NoObject<PtpDeviceDoor> {
         }
         path[length] = '\0';
 
-        const int fd = ::open(
-            path.data(),
-            O_RDONLY
-                | O_CLOEXEC);  // SYSCALL-CAP-OK: PtpDeviceDoor::open_, sole caller mint_ptp_clock_reader ctx-gate (CtxFitsPtpClockReaderMint)
+        const int fd = ::open(path.data(), O_RDONLY | O_CLOEXEC);
         if (fd < 0) {
             return std::unexpected{errno};
         }
@@ -573,8 +568,7 @@ struct BoundedSleeper final {
         CRUCIBLE_PRE(nanos <= MaxNanos);
         constexpr std::uint64_t nanos_per_second = 1000000000ULL;
         std::timespec deadline{};
-        if (::clock_gettime(CLOCK_MONOTONIC, &deadline) != 0)
-            [[unlikely]] {  // SYSCALL-CAP-OK: BoundedSleeper::sleep_for, sole builder mint_bounded_sleep ctx-gate (CtxFitsBoundedSleepMint)
+        if (::clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) [[unlikely]] {
             return std::unexpected{std::error_code{errno, std::system_category()}};
         }
         const std::uint64_t total_nanos = static_cast<std::uint64_t>(deadline.tv_nsec) + nanos;
@@ -582,9 +576,7 @@ struct BoundedSleeper final {
         deadline.tv_nsec = static_cast<long>(total_nanos % nanos_per_second);
         int failure = 0;
         do {
-            failure = ::clock_nanosleep(
-                CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline,
-                nullptr);  // SYSCALL-CAP-OK: BoundedSleeper::sleep_for, sole builder mint_bounded_sleep ctx-gate (CtxFitsBoundedSleepMint)
+            failure = ::clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, nullptr);
         } while (failure == EINTR);
         if (failure != 0) [[unlikely]] {
             return std::unexpected{std::error_code{failure, std::system_category()}};

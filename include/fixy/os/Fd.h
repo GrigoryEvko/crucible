@@ -96,7 +96,7 @@ public:
 private:
     void close_() noexcept {
         if (fd_ >= 0) {
-            ::close(fd_);  // SYSCALL-CAP-OK: OwnedFd destructor, releases what a factory acquired
+            ::close(fd_);
             fd_ = -1;
         }
     }

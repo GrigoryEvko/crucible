@@ -331,6 +331,80 @@ std::string parse_home(const std::vector<std::string>& args, bool is_args, HomeR
     return {};
 }
 
+// The errors of an owner row and of a syscall row that do not obey the format
+// of their words.  ruletable.OWNER_FORMAT and ruletable.SYSCALL_FORMAT give the
+// same texts.
+constexpr const char* kOwnerFormat =
+    "an owner row is 'owner RULE KIND ENTITY [PATH...] [by=FUNCTION] | REASON'.  RULE is a rule of the family owner, "
+    "KIND is its kind of a use outside the sites, ENTITY and FUNCTION are qualified names, and the reason is "
+    "necessary";
+constexpr const char* kSyscallFormat =
+    "a syscall row is 'syscall NAME... | REASON', with the name of each function of the C library that issues one "
+    "system call, and the reason is necessary";
+
+// The kind of a use outside the sites of an owner row of RULE, as the row
+// spells it, or false when RULE has no such kind.
+bool owner_kind_of(Rule rule, const std::string& text, Kind& kind) {
+    struct OwnerKind {
+        Rule rule;
+        Kind kind;
+    };
+    constexpr OwnerKind kOwnerKinds[] = {
+        {Rule::start_lifetime, Kind::lifetime_start},
+        {Rule::syscall_capability, Kind::outside_door},
+    };
+    for (const OwnerKind& known : kOwnerKinds) {
+        if (known.rule == rule && text == kind_name(known.kind)) {
+            kind = known.kind;
+            return true;
+        }
+    }
+    return false;
+}
+
+// The words of one owner row after the row kind: RULE, KIND, ENTITY, the paths
+// and the field by=FUNCTION.  Returns the error of the row, or an empty text
+// when the row obeys the format.
+std::string parse_owner(const std::vector<std::string>& args, OwnerRow& row) {
+    if (args.size() < 3) {
+        return kOwnerFormat;
+    }
+    bool is_rule = false;
+    for (Rule rule : kOwnerRules) {
+        if (args[0] == rule_name(rule)) {
+            row.rule = rule;
+            is_rule = true;
+        }
+    }
+    if (!is_rule) {
+        return "the rule " + args[0] + " is no rule of the family owner; the rules are start-lifetime and "
+               "syscall-capability";
+    }
+    if (!owner_kind_of(row.rule, args[1], row.kind)) {
+        return "the kind " + args[1] + " is no kind of a use outside the sites of an owner row of the rule " + args[0];
+    }
+    row.entity = args[2];
+    if (!is_qualified_name(row.entity)) {
+        return "the entity " + row.entity + " is not a qualified name: each part is an identifier";
+    }
+    for (std::size_t index = 3; index < args.size(); ++index) {
+        const std::string& word = args[index];
+        if (has_prefix(word, "by=")) {
+            if (!row.function.empty() || !is_qualified_name(word.substr(3))) {
+                return kOwnerFormat;
+            }
+            row.function = word.substr(3);
+            continue;
+        }
+        if (!is_plain_path(word) || has_prefix(word, kBuildPrefix)) {
+            return "a path of an owner row must be relative to the source root, with no '.', '..' or empty "
+                   "component, and not in the build directory";
+        }
+        row.paths.push_back(word);
+    }
+    return {};
+}
+
 // The namespace of a sealed PREFIX: its path after include/, one name for each
 // directory.  Returns an empty list when PREFIX is no directory under include/
 // or a part is no identifier.  ruletable.seal_namespace() gives the same
@@ -410,6 +484,8 @@ bool load_rule_table(const std::string& path) {
     // The entity of each home row and home-args row, and its line.
     crucible_rows::KeyLines home_lines;
     crucible_rows::KeyLines witness_lines;  // the class name of each witness row, and its line
+    crucible_rows::KeyLines owner_lines;  // the rule and the entity of each owner row, and its line
+    crucible_rows::KeyLines syscall_lines;  // each name of a syscall row, and its line
     bool is_valid = true;
     int line_number = 0;
     auto refuse = [&](const std::string& message) {
@@ -435,8 +511,8 @@ bool load_rule_table(const std::string& path) {
             continue;
         }
         if (row.cells.size() > 1 && row.words[0] != "witness") {
-            refuse("a row has at most one cell: the reason of an admit row or of a home row, or the measure of a heavy "
-                   "or a light row.  Only a witness row has two cells");
+            refuse("a row has at most one cell: the reason of an admit row, a home row, an owner row or a syscall row, "
+                   "or the measure of a heavy or a light row.  Only a witness row has two cells");
             continue;
         }
         const std::string& kind = row.words[0];
@@ -654,9 +730,46 @@ bool load_rule_table(const std::string& path) {
             }
             home.line = line_number;
             table.homes.push_back(std::move(home));
+        } else if (kind == "owner") {
+            OwnerRow owner;
+            std::string problem = reason.empty() ? std::string(kOwnerFormat) : parse_owner(args, owner);
+            if (!problem.empty()) {
+                refuse(problem);
+                continue;
+            }
+            // One row gives the sites of an entity in a rule.  With a second
+            // row, the sequence of the rows can change the findings.
+            std::string key = args[0] + " " + owner.entity;
+            if (int first_line = owner_lines.add(key, line_number); first_line > 0) {
+                refuse("the entity " + owner.entity + " has a second owner row of the rule " + args[0]
+                       + ", and its first owner row is on line " + std::to_string(first_line));
+                continue;
+            }
+            owner.line = line_number;
+            table.owners.push_back(std::move(owner));
+        } else if (kind == "syscall") {
+            bool is_valid_row = !args.empty() && !reason.empty();
+            for (const std::string& name : args) {
+                is_valid_row = is_valid_row && is_identifier(name);
+            }
+            if (!is_valid_row) {
+                refuse(kSyscallFormat);
+                continue;
+            }
+            for (const std::string& name : args) {
+                if (int first_line = syscall_lines.add(name, line_number); first_line > 0) {
+                    refuse("the system call " + name + " has a second syscall row, and its first syscall row is on line "
+                           + std::to_string(first_line));
+                    is_valid_row = false;
+                    break;
+                }
+            }
+            if (is_valid_row) {
+                table.syscalls.insert(table.syscalls.end(), args.begin(), args.end());
+            }
         } else {
             refuse("the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce, language, "
-                   "seal, heavy, light, cite, grant, home, home-args and witness");
+                   "seal, heavy, light, cite, grant, home, home-args, witness, owner and syscall");
         }
     }
     for (std::size_t index = 0; index < allow_layers.size(); ++index) {

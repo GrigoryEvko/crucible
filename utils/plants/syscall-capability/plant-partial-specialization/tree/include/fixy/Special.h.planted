@@ -1,0 +1,15 @@
+// A base header with a partial specialization of the template of
+// fixy/Primary.h.  A member of the specialization issues getpid.
+#pragma once
+
+#include <fixy/Primary.h>
+#include <unistd.h>
+
+namespace planted {
+
+template <typename Value>
+struct Reader<Value*> {
+    static int read() { return ::getpid(); }
+};
+
+}  // namespace planted

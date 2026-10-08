@@ -393,7 +393,7 @@ public:
             // usable, just at whatever page size the kernel chose. The
             // probe that cares reads back /proc/self/smaps to find out
             // what it actually got rather than trusting this call.
-            (void)::madvise(address, bytes, advice);  // SYSCALL-CAP-OK: ctx owns IO and Block, the row of madvise
+            (void)::madvise(address, bytes, advice);
         }
         return region;
     }

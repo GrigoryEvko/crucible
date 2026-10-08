@@ -1,0 +1,2 @@
+syscall read write | the first row
+syscall close read | the second row

@@ -1,65 +1,106 @@
-# The ledger of the rule syscall-capability: the bare syscall sites of the
-# past that no SYSCALL-CAP-OK marker covers.  `python3 utils/bin/guard explain
-# syscall-capability` tells the rule.
-#
-# One row is `PATH | - | admit | CALL TEXT | REASON`.  CALL TEXT is the line
-# that holds the call, with each comment on it removed, trimmed.  It is not a
-# line number, so an edit above the call moves nothing.  A row becomes stale
-# only when the call changes or goes, and a stale row fails the rule with
-# exit 2.  So the file drains with the code.  Two calls with the same text in
-# one file share one row, and its reason covers the two.
-#
-# `python3 utils/bin/guard check --rule syscall-capability --emit-keys` prints
-# a template row for each live site that has no row and no marker, with the
-# syscalls that the line calls.  Write the capability and the function into
-# the reason by hand.  A site that a `// SYSCALL-CAP-OK:` marker in its
-# statement covers has no row.
-#
-# The REASON is the audit surface, and the rule holds it to the sites that
-# the key names.  It names a syscall that the line calls.  Each
-# SHOUTING_SNAKE word in it is an identifier or a macro token of that file,
-# not only a comment.  Its `via <function>` clause names the function that
-# holds each call: the namespaces and the classes are optional, and the word
-# `and` joins more names.  Write what the line does, not what the subsystem
-# around it does.
+# The ledger of the rule syscall-capability: the raw system calls of each file and entity, counted.
+#   PATH | raw-syscall | N | HOLDER: SHAPE | CLAIM
+#       N calls of the system call SHAPE in HOLDER.  HOLDER is a function with the types of its
+#       parameters, "macro NAME" or namespace-scope, and SHAPE is the name of a function of the C
+#       library, or syscall(SYS_NAME).  CLAIM is the effects::* capability claim of the calls, and a
+#       row with no claim is an error
+# No row admits a finding of the kind outside-door.  Each count only falls.
+# `python3 utils/bin/guard explain syscall-capability` tells the rule, and
+# `python3 utils/bin/guard write --rule syscall-capability --build-dir DIR` writes this file in the
+# commit that lowers a count.
 format 1
 rule syscall-capability
-include/crucible/ledger/LedgerStore.h | - | admit | static_cast<unsigned long long>(fingerprint.policy.raw()), ::getpid()); | effects::IO via temp_filename (getpid names the temporary file of one ledger write, so two concurrent writers never share it; the ledger write that calls it runs under IO)
-include/crucible/perf/detail/BpfLoader.h | - | admit | return ::fixy::mint_tagged<source::Kernel>(static_cast<uint32_t>(::getpid())); | effects::Init via current_tgid (getpid reads the thread-group id that the BPF loader writes into its filter at load time)
-include/crucible/warden/CpuTopology.h | - | admit | if (::access(path, F_OK) == 0) return n; | fixy::CtxFitsFileOpen (IO and Block) via numa_node_of (access on /sys/devices/system/cpu/cpuN/nodeM to find which node link exists)
-include/crucible/warden/CpuTopology.h | - | admit | if (::sched_getaffinity(0, sizeof(set), &set) == 0) { | fixy::CtxFitsFileOpen (IO and Block) via allowed_cpus_fallback (sched_getaffinity, the fallback taken when procfs is unreadable)
-include/crucible/warden/Hardening.h | - | admit | (void)::munlock(r.addr, r.len); | effects::Init via AppliedPolicy::revert (munlock, one per region apply locked)
-include/crucible/warden/Hardening.h | - | admit | (void)::prctl(PR_SET_THP_DISABLE, 0, 0, 0, 0); | effects::Init via AppliedPolicy::revert (prctl THP re-enable)
-include/crucible/warden/Hardening.h | - | admit | if (::madvise(target, aligned_len, MADV_COLLAPSE) == 0) return true; | effects::Init via Hardening::collapse_hugepage (madvise MADV_COLLAPSE)
-include/crucible/warden/Hardening.h | - | admit | if (::madvise(target, aligned_len, MADV_HUGEPAGE) == 0) return true; | effects::Init via Hardening::hint_hugepage (madvise MADV_HUGEPAGE)
-include/crucible/warden/Hardening.h | - | admit | if (::mlock(addr, len) == 0) { | effects::Init via Hardening::lock_region (mlock fallback)
-include/crucible/warden/Hardening.h | - | admit | if (::prctl(PR_SET_THP_DISABLE, 1, 0, 0, 0) == 0) { | effects::Init via Hardening::apply (prctl THP disable)
-include/crucible/warden/Hardening.h | - | admit | return static_cast<int>(::syscall(SYS_mlock2, addr, len, flags)); | effects::Init via mlock2_sys (raw syscall SYS_mlock2)
-include/crucible/warden/Hardening.h | - | admit | return static_cast<int>(::syscall(SYS_sched_getattr, pid, attr, size, flags)); | effects::Init via sched_getattr_sys (raw syscall SYS_sched_getattr; reads the prior scheduling attributes so AppliedPolicy can restore them)
-include/crucible/warden/Hardening.h | - | admit | return static_cast<int>(::syscall(SYS_sched_setattr, pid, attr, flags)); | effects::Init via sched_setattr_sys (raw syscall SYS_sched_setattr; the only caller is Hardening::apply, which is ctx-bound through mint_hardening)
-include/fixy/OwnedMmap.h | - | admit | ::munmap(addr_, len_); | effects::IO via OwnedMmap::release_ (munmap on RAII drop / move-assign)
-include/foundation/Platform.h | - | admit | ::close(fd); | effects::Init via foundation::detail::is_debugger_present (close /proc/self/status)
-include/foundation/Platform.h | - | admit | int fd = ::open("/proc/self/status", O_RDONLY \| O_CLOEXEC); | effects::Init via foundation::detail::is_debugger_present (open /proc/self/status to read TracerPid on an assertion failure)
-include/foundation/Platform.h | - | admit | ssize_t n = ::read(fd, buf, sizeof(buf) - 1); | effects::Init via foundation::detail::is_debugger_present (read /proc/self/status)
-src/Cipher.cpp | - | admit | ::unlinkat(parent_dirfd, tmp_relpath.c_str(), 0); | effects::IO via atomic_write_at_ (unlinkat removes the partial tmp file after a failed write, fdatasync or renameat; three sites, one key; the CtxFitsCipherPersistence gate of the open view holds the capability)
-src/Cipher.cpp | - | admit | rrc = ::renameat(parent_dirfd, tmp_relpath.c_str(), parent_dirfd, relpath.c_str()); | effects::IO via atomic_write_at_ (renameat swaps the flushed tmp file over the target, both names anchored at one dirfd, under the CtxFitsCipherPersistence gate of the open view)
-src/cntp/CongestionControl.cpp | - | admit | ::setsockopt(fd.value(), IPPROTO_TCP, TCP_CONGESTION, optname.data(), static_cast<socklen_t>(name.size() + 1u)); | effects::IO+Block via detail::set_cc_for_socket_keyed (setsockopt TCP_CONGESTION, the key comes only from the CtxFitsSocketOption gate of set_cc_for_socket)
-src/cntp/CongestionControl.cpp | - | admit | const int rc = ::getsockopt(fd.value(), IPPROTO_TCP, TCP_CONGESTION, optname.data(), &len); | effects::IO+Block via detail::query_cc_selection_for_socket_keyed (getsockopt TCP_CONGESTION, the key comes only from a CtxFitsSocketOption gate)
-src/cntp/IncastControl.cpp | - | admit | const int rc = ::setsockopt(fd.value(), IPPROTO_TCP, TCP_RTO_MIN_US, &value, static_cast<socklen_t>(sizeof(value))); | effects::IO+Block via detail::set_socket_rto_min_usec_keyed (setsockopt TCP_RTO_MIN_US, the key comes only from the CtxFitsSocketOption gate of set_socket_rto_min_usec)
-src/cntp/Pacing.cpp | - | admit | ::setsockopt(fd.value(), SOL_SOCKET, SO_MAX_PACING_RATE, &value, static_cast<socklen_t>(sizeof(value))); | effects::IO+Block via detail::set_socket_pacing_rate_keyed (setsockopt SO_MAX_PACING_RATE, the key comes only from the CtxFitsSocketOption gate of set_socket_pacing_rate)
-src/cntp/Pacing.cpp | - | admit | const auto received = ::recv(nl.get(), buffer.data(), buffer.size(), 0); | effects::IO+Block via detail::query_active_qdisc_over (NETLINK recv, SO_RCVTIMEO-bounded)
-src/cntp/Pacing.cpp | - | admit | const auto sent = ::send(nl.get(), &request, sizeof(request), 0); | effects::IO via detail::query_active_qdisc_over (NETLINK send RTM_GETQDISC dump)
-src/cntp/Pacing.cpp | - | admit | if (::bind(nl.get(), static_cast<sockaddr const*>(static_cast<void const*>(&bind_addr)), | effects::IO via detail::query_active_qdisc_over (bind nl_pid=0 kernel-assigned PID)
-src/cntp/Pacing.cpp | - | admit | if (::setsockopt(nl.get(), SOL_SOCKET, SO_RCVTIMEO, &rcv_timeout, static_cast<socklen_t>(sizeof(rcv_timeout))) | effects::IO via detail::query_active_qdisc_over (setsockopt SO_RCVTIMEO bounded recv)
-src/fixy/concurrent/Topology.cpp | - | admit | if (::sched_getaffinity(0, sizeof(mask), &mask) == 0) { | effects::Init via probe_process_cpu_count_ (sched_getaffinity, surfaced by the unqualified-call branch)
-src/perf/PmuSample.cpp | - | admit | return ::syscall(SYS_perf_event_open, attr, pid, cpu, group_fd, flags); | effects::Init via perf_event_open_syscall (raw SYS_perf_event_open)
-src/perf/ProcGauges.cpp | - | admit | fd = ::open(path, O_RDONLY \| O_CLOEXEC); | effects::Bg via open_ro (open /proc gauge O_RDONLY\|O_CLOEXEC)
-src/perf/ProcGauges.cpp | - | admit | n = ::pread(fd, buf, sizeof(buf) - 1, 0); | effects::Bg via ProcGauges::read_block_queue_depth_max_ and ProcGauges::read_pressure_avg10_x100_ (pread one /proc or block-stats gauge; two sites, one key)
-src/perf/ProcGauges.cpp | - | admit | n = ::pread(fd_loadavg_.raw(), buf, sizeof(buf) - 1, 0); | effects::Bg via ProcGauges::read_loadavg_x100_ (pread /proc/loadavg)
-src/perf/ProcGauges.cpp | - | admit | r = ::close(fd_); | effects::Bg via ScopedFd::close_ (close on RAII drop)
-src/perf/ProcGauges.cpp | - | admit | r = ::pread(fd, buf, n - 1, 0); | effects::Bg via pread_full (pread /proc gauge, EINTR-retried)
-src/topology/CongestionTelemetry.cpp | - | admit | const int cc_rc = ::getsockopt(fd.value(), IPPROTO_TCP, TCP_CC_INFO, &cc_info, &cc_len); | effects::IO+Block via topology::detail::harvest_socket_keyed (getsockopt TCP_CC_INFO, the key comes only from the CtxFitsSocketOption gate of harvest_socket)
-src/topology/CongestionTelemetry.cpp | - | admit | const int tcp_rc = ::getsockopt(fd.value(), IPPROTO_TCP, TCP_INFO, &info, &info_len); | effects::IO+Block via topology::detail::harvest_socket_keyed (getsockopt TCP_INFO, the key comes only from the CtxFitsSocketOption gate of harvest_socket)
-src/topology/Ptp.cpp | - | admit | ::setsockopt(socket.value(), SOL_SOCKET, SO_TIMESTAMPING, &flags, static_cast<socklen_t>(sizeof(flags))); | effects::IO via enable_socket_timestamping (setsockopt SO_TIMESTAMPING)
-src/topology/Ptp.cpp | - | admit | const auto nread = ::recvmsg(socket.value(), &msg, MSG_DONTWAIT); | effects::IO via recv_with_hw_timestamp (recvmsg MSG_DONTWAIT + SCM_TIMESTAMPING)
-src/topology/Ptp.cpp | - | admit | const int rc = ::ioctl(control_socket.value(), SIOCSHWTSTAMP, &request); | effects::IO via configure_hardware_timestamping (SIOCSHWTSTAMP ioctl, IFNAMSIZ bounded)
+include/crucible/canopy/Hlc.h | raw-syscall | 1 | crucible::canopy::Hlc::read_realtime_ns_(): clock_gettime | effects::Init.  Only mint_hlc builds a clock, and it takes the init context.  The read gives the physical part of a hybrid logical time
+include/crucible/ledger/LedgerStore.h | raw-syscall | 1 | crucible::ledger::store_detail::temp_filename(crucible::ledger::HostFingerprint): getpid | effects::IO.  The process id names the temporary file of one ledger write, so two writers never share a file.  The ledger write that calls it holds IO
+include/crucible/ledger/ProbeSupport.h | raw-syscall | 1 | crucible::ledger::ProbeRegion::create(const crucible::ledger::LedgerIoCtx&, std::size_t, crucible::ledger::PagePolicy): madvise | effects::IO and effects::Block of the context of the probe.  The advice is a hint, and a kernel with no huge page support refuses it with no damage to the region
+include/crucible/perf/detail/BpfLoader.h | raw-syscall | 1 | crucible::perf::detail::current_tgid(): getpid | effects::Init.  The BPF loader writes the thread group id into its filter when it loads under an init context
+include/crucible/perf/detail/BpfLoader.h | raw-syscall | 1 | crucible::perf::detail::current_tid(): syscall(SYS_gettid) | effects::Init.  A load under an init context reads the id of the thread, and the call changes nothing
+include/crucible/perf/detail/BpfLoader.h | raw-syscall | 2 | crucible::perf::detail::tracepoint_exists(const char*): faccessat | effects::Init.  A load under an init context makes sure that a tracepoint file exists, at the tracefs path and at the debugfs path.  AT_EACCESS keeps the effective capabilities of the process
+include/crucible/warden/CpuTopology.h | raw-syscall | 1 | crucible::warden::detail::allowed_cpus_fallback(const Ctx&): sched_getaffinity | effects::IO and effects::Block of the gate fixy::CtxFitsFileOpen.  The call reads the affinity of the process when procfs cannot be read
+include/crucible/warden/CpuTopology.h | raw-syscall | 1 | crucible::warden::numa_node_of(const Ctx&, int): access | effects::IO and effects::Block of the gate fixy::CtxFitsFileOpen.  The call finds which node link of /sys/devices/system/cpu/cpuN exists
+include/crucible/warden/Hardening.h | raw-syscall | 1 | crucible::warden::AppliedPolicy::revert(): munlock | effects::Init.  The revert unlocks each region that the apply locked, one call for each region
+include/crucible/warden/Hardening.h | raw-syscall | 1 | crucible::warden::AppliedPolicy::revert(): prctl | effects::Init.  The revert enables transparent huge pages again
+include/crucible/warden/Hardening.h | raw-syscall | 1 | crucible::warden::Hardening::apply(const Ctx&, const crucible::warden::Policy&): prctl | effects::Init.  The apply disables transparent huge pages, and only mint_hardening builds its context
+include/crucible/warden/Hardening.h | raw-syscall | 1 | crucible::warden::Hardening::collapse_hugepage(void*, size_t): madvise | effects::Init.  MADV_COLLAPSE asks the kernel to make huge pages of a region
+include/crucible/warden/Hardening.h | raw-syscall | 1 | crucible::warden::Hardening::hint_hugepage(void*, size_t): madvise | effects::Init.  MADV_HUGEPAGE asks the kernel for huge pages in a region
+include/crucible/warden/Hardening.h | raw-syscall | 1 | crucible::warden::Hardening::lock_region(crucible::warden::AppliedPolicy&, void*, size_t): mlock | effects::Init.  The call locks a region when mlock2 is not available
+include/crucible/warden/Hardening.h | raw-syscall | 1 | crucible::warden::mlock2_sys(const void*, size_t, unsigned int): syscall(SYS_mlock2) | effects::Init.  The helper issues mlock2 by its number for the lock of a region
+include/crucible/warden/Hardening.h | raw-syscall | 1 | crucible::warden::sched_getattr_sys(pid_t, crucible::warden::sched_attr_t*, unsigned int, unsigned int): syscall(SYS_sched_getattr) | effects::Init.  The helper reads the scheduling attributes before the apply, so AppliedPolicy can put them back
+include/crucible/warden/Hardening.h | raw-syscall | 1 | crucible::warden::sched_setattr_sys(pid_t, const crucible::warden::sched_attr_t*, unsigned int): syscall(SYS_sched_setattr) | effects::Init.  The helper sets the scheduling attributes, and its one caller is Hardening::apply, which has the context of mint_hardening
+include/fixy/OwnedMmap.h | raw-syscall | 1 | fixy::OwnedMmap::mint_region(const Ctx&, const foundation::permissions::Permission<Tag, Brand>&, int, std::size_t, off_t): mmap | effects::IO and effects::Block of the gate CtxFitsRegionMint.  The mint maps the region that the mapping owns
+include/fixy/OwnedMmap.h | raw-syscall | 1 | fixy::OwnedMmap::release_(): munmap | effects::IO.  The release unmaps the region that the mint mapped, when the owner is dropped or replaced
+include/fixy/concurrent/Pipeline.h | raw-syscall | 1 | fixy::concurrent::detail::caller_allowed_cpus_(const Ctx&): sched_getaffinity | effects::Bg or effects::Init of the gate CtxStartsStageThreads.  The call reads the CPUs of the caller before the stage threads start
+include/fixy/os/CpuPinned.h | raw-syscall | 1 | fixy::detail::set_calling_thread_affinity(const cpu_set_t&): sched_setaffinity | The affinity door.  The gates CtxFitsAffinityMint and CtxFitsRuntimeAffinity admit each caller, and the door records a pin event
+include/fixy/os/Fd.h | raw-syscall | 1 | fixy::fs::OwnedFd::close_(): close | The release of a descriptor that a mint opened under its gate, when the owner is dropped
+include/fixy/os/Fs.h | raw-syscall | 1 | fixy::fs::FileDoor::open_directory_(const char*): open | effects::IO and effects::Block of the gate CtxAdmitsFs.  The one caller is open_dirfd
+include/fixy/os/Fs.h | raw-syscall | 1 | fixy::fs::FileDoor::open_path_(const char*, int, mode_t): open | effects::IO and effects::Block of the gate CtxFitsFileMint.  The one caller is mint_file
+include/fixy/os/Fs.h | raw-syscall | 1 | fixy::fs::commit_atomic(const Ctx&, fixy::Path<fixy::tags::source::Sanitized>, fixy::Path<fixy::tags::source::Sanitized>): rename | effects::IO and effects::Block of the gate CtxFitsCommitAtomic.  The rename of the atomicity Rename
+include/fixy/os/Fs.h | raw-syscall | 1 | fixy::fs::commit_atomic(const Ctx&, fixy::Path<fixy::tags::source::Sanitized>, fixy::Path<fixy::tags::source::Sanitized>): renameat2 | effects::IO and effects::Block of the gate CtxFitsCommitAtomic.  RENAME_NOREPLACE refuses to replace the target
+include/fixy/os/Fs.h | raw-syscall | 1 | fixy::fs::file_size(const Ctx&, const fixy::fs::OwnedFd&): fstat | effects::IO and effects::Block of the gate CtxAdmitsFs
+include/fixy/os/Fs.h | raw-syscall | 1 | fixy::fs::read_full(const Ctx&, const fixy::fs::OwnedFd&, std::span<std::byte>): read | effects::IO and effects::Block of the gate CtxAdmitsFs
+include/fixy/os/Fs.h | raw-syscall | 1 | fixy::fs::sync(const Ctx&, const fixy::fs::OwnedFd&): fdatasync | effects::IO and effects::Block of the gate CtxFitsSync.  The flush of the operation Fdatasync
+include/fixy/os/Fs.h | raw-syscall | 1 | fixy::fs::sync(const Ctx&, const fixy::fs::OwnedFd&): fsync | effects::IO and effects::Block of the gate CtxFitsSync.  The flush of the operations Fsync and FsyncParentDir
+include/fixy/os/Fs.h | raw-syscall | 1 | fixy::fs::write_full(const Ctx&, const fixy::fs::OwnedFd&, std::span<const std::byte>): write | effects::IO and effects::Block of the gate CtxAdmitsFs
+include/fixy/os/Io.h | raw-syscall | 1 | fixy::io::IoUringRing::release_(): close | The release of the ring that mint_io_uring_ring made under its gate, when the ring is dropped
+include/fixy/os/Io.h | raw-syscall | 3 | fixy::io::IoUringRing::release_(): munmap | The release of the three mappings of the ring that mint_io_uring_ring made under its gate
+include/fixy/os/Io.h | raw-syscall | 3 | fixy::io::mint_io_uring_ring(const Ctx&): close | effects::IO and effects::Block of the gate CtxFitsIoUringMint.  The mint closes the ring descriptor when a mapping fails
+include/fixy/os/Io.h | raw-syscall | 3 | fixy::io::mint_io_uring_ring(const Ctx&): mmap | effects::IO and effects::Block of the gate CtxFitsIoUringMint.  The mint maps the submission ring, the completion ring and the submission entries
+include/fixy/os/Io.h | raw-syscall | 3 | fixy::io::mint_io_uring_ring(const Ctx&): munmap | effects::IO and effects::Block of the gate CtxFitsIoUringMint.  The mint unmaps each ring that it mapped when a subsequent mapping fails
+include/fixy/os/Io.h | raw-syscall | 1 | fixy::io::mint_io_uring_ring(const Ctx&): syscall(SYS_io_uring_setup) | effects::IO and effects::Block of the gate CtxFitsIoUringMint.  The mint makes the ring, and the C library has no function for io_uring_setup
+include/fixy/os/Io.h | raw-syscall | 1 | fixy::io::zerocopy_transfer(const Ctx&, const fixy::fs::OwnedFd&, const fixy::fs::OwnedFd&, std::size_t, off_t): sendfile | effects::IO and effects::Block of the gate CtxFitsSendfileTransfer
+include/fixy/os/Io.h | raw-syscall | 1 | fixy::io::zerocopy_transfer(const Ctx&, const fixy::fs::OwnedFd&, const fixy::fs::OwnedFd&, std::size_t, off_t, off_t): copy_file_range | effects::IO and effects::Block of the gate CtxFitsCopyRangeTransfer
+include/fixy/os/Mmap.h | raw-syscall | 1 | fixy::mmap::advise(const Ctx&, fixy::OwnedMmap<Tag, Prot, Share, Brand>&): madvise | effects::IO and effects::Block of the gate CtxFitsSafeAdvise
+include/fixy/os/Mmap.h | raw-syscall | 1 | fixy::mmap::advise_release_aware(const Ctx&, fixy::OwnedMmap<Tag, Prot, Share, Brand>&, const Proof&): madvise | effects::IO and effects::Block of the gate CtxFitsReleaseAwareAdvise, with the exclusive permission of the mapping
+include/fixy/os/NumaPlacement.h | raw-syscall | 1 | fixy::detail::bind_range_to_node(void*, std::size_t, foundation::algebra::lattices::NumaNodeId): syscall(SYS_mbind) | effects::IO and effects::Block of the gate CtxFitsNumaBind of mint_numa_placement
+include/fixy/os/Sched.h | raw-syscall | 1 | fixy::sched::apply_affinity_to_mask(const Ctx&, foundation::algebra::lattices::AffinityMask): sched_getaffinity | The gate CtxFitsRuntimeAffinity.  The call reads the mask that the pin replaces, for PriorAffinity
+include/fixy/os/Sched.h | raw-syscall | 1 | fixy::sched::detail::apply_deadline(uint64_t, uint64_t, uint64_t): syscall(SYS_sched_setattr) | effects::Init of the gate CtxFitsSchedPolicyMint of mint_scheduler_policy.  The helper sets the deadline policy
+include/fixy/os/Sched.h | raw-syscall | 1 | fixy::sched::detail::apply_scheduler_policy(int, uint64_t, uint64_t, uint64_t): sched_setscheduler | The gate CtxFitsSchedPolicyMint of mint_scheduler_policy
+include/fixy/os/Sched.h | raw-syscall | 1 | fixy::sched::mint_priority(const Ctx&): setpriority | The gate CtxFitsPriorityMint
+include/fixy/os/Socket.h | raw-syscall | 1 | fixy::net::SocketDoor::open_(): socket | effects::IO of the gate CtxFitsSocketMint.  The one caller is mint_socket
+include/fixy/os/Time.h | raw-syscall | 1 | fixy::time::BoundedSleeper::sleep_for(uint64_t) const: clock_gettime | effects::Block of the gate CtxFitsBoundedSleepMint.  Only mint_bounded_sleep builds a sleeper, and the read gives the start of the deadline
+include/fixy/os/Time.h | raw-syscall | 1 | fixy::time::BoundedSleeper::sleep_for(uint64_t) const: clock_nanosleep | effects::Block of the gate CtxFitsBoundedSleepMint.  The sleep has the bound of the sleeper
+include/fixy/os/Time.h | raw-syscall | 1 | fixy::time::PtpClockReader::caps() const: ioctl | The gate CtxFitsPtpClockReaderMint.  Only mint_ptp_clock_reader builds a reader, and the query names its open device
+include/fixy/os/Time.h | raw-syscall | 1 | fixy::time::PtpDeviceDoor::open_(fixy::time::PtpDeviceIndex): open | The gate CtxFitsPtpClockReaderMint.  The one caller is mint_ptp_clock_reader
+include/fixy/os/Time.h | raw-syscall | 1 | fixy::time::detail::read_clock_nanos(clockid_t): clock_gettime | The gates CtxFitsClockReaderMint and CtxFitsPtpClockReaderMint admit the builders of the two readers that call it
+include/fixy/session/Watch.h | raw-syscall | 2 | fixy::session::watch::detail::install_signal_handlers(): sigaction | The first claim of a session installs the report of a fatal signal one time.  A signal that the process ignored stays ignored
+include/fixy/session/Watch.h | raw-syscall | 1 | fixy::session::watch::detail::monotonic_ns(): clock_gettime | The gate of the session mint.  Only wait_scope reads the clock, on a wait that the transport of a session handle declares
+include/fixy/session/Watch.h | raw-syscall | 1 | fixy::session::watch::detail::on_fatal_signal(int, siginfo_t*, void*): sigaction | The handler of a fatal signal puts back the action that the watch replaced
+include/fixy/session/Watch.h | raw-syscall | 1 | fixy::session::watch::detail::write_raw(std::string_view): write | The report of a fatal signal writes with write(2), which is safe in a signal handler
+include/foundation/Platform.h | raw-syscall | 1 | foundation::detail::is_debugger_present(): close | effects::Init.  An assertion failure closes /proc/self/status after the read
+include/foundation/Platform.h | raw-syscall | 1 | foundation::detail::is_debugger_present(): open | effects::Init.  An assertion failure opens /proc/self/status one time to read TracerPid
+include/foundation/Platform.h | raw-syscall | 1 | foundation::detail::is_debugger_present(): read | effects::Init.  An assertion failure reads /proc/self/status one time
+src/Cipher.cpp | raw-syscall | 1 | crucible::(anonymous namespace)::AnchoredFd::~AnchoredFd(): close | effects::IO.  The owner closes the descriptor that open_at_ opened under the gate CtxFitsCipherPersistence of the open view
+src/Cipher.cpp | raw-syscall | 1 | crucible::(anonymous namespace)::atomic_append_at_(int, const std::string&, std::span<const unsigned char>): fdatasync | effects::IO and effects::Block of the gate CtxFitsCipherPersistence of the open view.  The flush of an appended record
+src/Cipher.cpp | raw-syscall | 1 | crucible::(anonymous namespace)::atomic_append_at_(int, const std::string&, std::span<const unsigned char>): fsync | effects::IO and effects::Block of the gate CtxFitsCipherPersistence of the open view.  The flush of the directory entry of the first record
+src/Cipher.cpp | raw-syscall | 1 | crucible::(anonymous namespace)::atomic_append_at_(int, const std::string&, std::span<const unsigned char>): write | effects::IO of the gate CtxFitsCipherPersistence of the open view.  The write of one record with O_APPEND
+src/Cipher.cpp | raw-syscall | 1 | crucible::(anonymous namespace)::atomic_write_at_(int, const std::string&, std::span<const unsigned char>): fdatasync | effects::IO and effects::Block of the gate CtxFitsCipherPersistence of the open view.  The flush of the temporary file
+src/Cipher.cpp | raw-syscall | 1 | crucible::(anonymous namespace)::atomic_write_at_(int, const std::string&, std::span<const unsigned char>): fsync | effects::IO and effects::Block of the gate CtxFitsCipherPersistence of the open view.  The flush of the parent directory after the rename
+src/Cipher.cpp | raw-syscall | 1 | crucible::(anonymous namespace)::atomic_write_at_(int, const std::string&, std::span<const unsigned char>): renameat | effects::IO of the gate CtxFitsCipherPersistence of the open view.  The rename puts the flushed temporary file over the target, with the two names at one directory descriptor
+src/Cipher.cpp | raw-syscall | 3 | crucible::(anonymous namespace)::atomic_write_at_(int, const std::string&, std::span<const unsigned char>): unlinkat | effects::IO of the gate CtxFitsCipherPersistence of the open view.  The call removes the temporary file after a failed write, flush or rename
+src/Cipher.cpp | raw-syscall | 1 | crucible::(anonymous namespace)::atomic_write_at_(int, const std::string&, std::span<const unsigned char>): write | effects::IO of the gate CtxFitsCipherPersistence of the open view.  The write of the bytes of the temporary file
+src/Cipher.cpp | raw-syscall | 1 | crucible::(anonymous namespace)::fdatasync_at_(int, const std::string&): fdatasync | effects::IO and effects::Block of the gate CtxFitsCipherPersistence of the open view.  The flush of a stored object, also on the path that finds the object stored
+src/Cipher.cpp | raw-syscall | 1 | crucible::(anonymous namespace)::open_at_(int, const char*, int, mode_t): openat | effects::IO of the gate CtxFitsCipherPersistence of the open view, which each caller of the helpers holds on the persistence thread
+src/cntp/CongestionControl.cpp | raw-syscall | 1 | crucible::cntp::detail::query_cc_selection_for_socket_keyed(const crucible::cntp::detail::SocketOptionKey&, crucible::cntp::SocketFd): getsockopt | effects::IO and effects::Block.  The key comes only from a CtxFitsSocketOption gate.  The call reads TCP_CONGESTION
+src/cntp/CongestionControl.cpp | raw-syscall | 1 | crucible::cntp::detail::set_cc_for_socket_keyed(const crucible::cntp::detail::SocketOptionKey&, crucible::cntp::SocketFd, crucible::cntp::DeclaredCcChoice): setsockopt | effects::IO and effects::Block.  The key comes only from the CtxFitsSocketOption gate of set_cc_for_socket.  The call sets TCP_CONGESTION
+src/cntp/IncastControl.cpp | raw-syscall | 1 | crucible::cntp::detail::set_socket_rto_min_usec_keyed(const crucible::cntp::detail::SocketOptionKey&, crucible::cntp::SocketFd, crucible::cntp::PositiveRtoMinUsec): setsockopt | effects::IO and effects::Block.  The key comes only from the CtxFitsSocketOption gate of set_socket_rto_min_usec.  The call sets TCP_RTO_MIN_US
+src/cntp/Pacing.cpp | raw-syscall | 1 | crucible::cntp::detail::query_active_qdisc_over(const fixy::fs::OwnedFd&, crucible::cntp::NicInterfaceName): bind | effects::IO.  The netlink socket binds with a port id that the kernel gives
+src/cntp/Pacing.cpp | raw-syscall | 1 | crucible::cntp::detail::query_active_qdisc_over(const fixy::fs::OwnedFd&, crucible::cntp::NicInterfaceName): recv | effects::IO and effects::Block.  The netlink receive has the bound of SO_RCVTIMEO
+src/cntp/Pacing.cpp | raw-syscall | 1 | crucible::cntp::detail::query_active_qdisc_over(const fixy::fs::OwnedFd&, crucible::cntp::NicInterfaceName): send | effects::IO.  The netlink send asks for a dump of RTM_GETQDISC
+src/cntp/Pacing.cpp | raw-syscall | 1 | crucible::cntp::detail::query_active_qdisc_over(const fixy::fs::OwnedFd&, crucible::cntp::NicInterfaceName): setsockopt | effects::IO.  SO_RCVTIMEO gives the netlink receive a bound
+src/cntp/Pacing.cpp | raw-syscall | 1 | crucible::cntp::detail::set_socket_pacing_rate_keyed(const crucible::cntp::detail::SocketOptionKey&, crucible::cntp::SocketFd, crucible::cntp::PositivePacingRate): setsockopt | effects::IO and effects::Block.  The key comes only from the CtxFitsSocketOption gate of set_socket_pacing_rate.  The call sets SO_MAX_PACING_RATE
+src/fixy/concurrent/Topology.cpp | raw-syscall | 1 | fixy::concurrent::topology_detail::(anonymous namespace)::probe_process_cpu_count_(): sched_getaffinity | effects::Init.  The probe reads the number of CPUs of the process one time
+src/fixy/os/NumaPlacement.cpp | raw-syscall | 1 | fixy::detail::census_page_nodes_(const void*, std::size_t, fixy::numa::PageNodeCensus&): syscall(SYS_move_pages) | effects::IO and effects::Block of the gate CtxFitsNumaQuery of census_page_nodes.  The query moves no page
+src/foundation/ContractHandler.cpp | raw-syscall | 1 | foundation::core::detail::write_sink_(foundation::core::Sink, const char*, std::size_t): write | A report that is safe in a signal handler and in each other context
+src/perf/PmuSample.cpp | raw-syscall | 1 | crucible::perf::(anonymous namespace)::PerfFds::~PerfFds(): close | effects::Init.  The owner closes the descriptors that a load under an init context opened
+src/perf/PmuSample.cpp | raw-syscall | 1 | crucible::perf::(anonymous namespace)::perf_event_open_syscall(perf_event_attr*, pid_t, int, int, long unsigned int): syscall(SYS_perf_event_open) | effects::Init.  The C library has no function for perf_event_open, and a load under an init context calls the helper
+src/perf/PmuSample.cpp | raw-syscall | 1 | crucible::perf::PmuSample::load(const fixy::InitLoadCtx&): close | effects::Init.  The load closes the descriptor of an event whose attach failed
+src/perf/ProcGauges.cpp | raw-syscall | 1 | crucible::perf::(anonymous namespace)::open_ro(const char*): open | effects::Bg.  The call opens one /proc gauge read-only
+src/perf/ProcGauges.cpp | raw-syscall | 1 | crucible::perf::(anonymous namespace)::pread_full(int, char*, size_t): pread | effects::Bg.  The call reads one /proc gauge, and it tries again after EINTR
+src/perf/ProcGauges.cpp | raw-syscall | 1 | crucible::perf::ProcGauges::read_block_queue_depth_max_() const: pread | effects::Bg.  The call reads one block statistics gauge
+src/perf/ProcGauges.cpp | raw-syscall | 1 | crucible::perf::ProcGauges::read_loadavg_x100_(uint64_t&, uint64_t&, uint64_t&) const: pread | effects::Bg.  The call reads /proc/loadavg
+src/perf/ProcGauges.cpp | raw-syscall | 1 | crucible::perf::ProcGauges::read_pressure_avg10_x100_(int, const char*) const: pread | effects::Bg.  The call reads one pressure gauge of /proc
+src/perf/ProcGauges.cpp | raw-syscall | 1 | crucible::perf::ScopedFd::close_(): close | effects::Bg.  The owner closes its descriptor when it is dropped
+src/topology/CongestionTelemetry.cpp | raw-syscall | 2 | crucible::topology::detail::harvest_socket_keyed(const crucible::cntp::detail::SocketOptionKey&, crucible::cntp::SocketFd): getsockopt | effects::IO and effects::Block.  The key comes only from the CtxFitsSocketOption gate of harvest_socket.  The calls read TCP_INFO and TCP_CC_INFO
+src/topology/Ptp.cpp | raw-syscall | 1 | crucible::topology::configure_hardware_timestamping(crucible::cntp::SocketFd, crucible::cntp::NicInterfaceName): ioctl | effects::IO.  SIOCSHWTSTAMP, with an interface name of at most IFNAMSIZ bytes
+src/topology/Ptp.cpp | raw-syscall | 1 | crucible::topology::enable_socket_timestamping(crucible::cntp::SocketFd): setsockopt | effects::IO.  The call sets SO_TIMESTAMPING
+src/topology/Ptp.cpp | raw-syscall | 1 | crucible::topology::recv_with_hw_timestamp(crucible::cntp::SocketFd, std::span<std::byte>): recvmsg | effects::IO.  MSG_DONTWAIT, and the control data gives SCM_TIMESTAMPING

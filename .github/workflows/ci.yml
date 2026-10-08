@@ -173,11 +173,6 @@ jobs:
           python3 utils/bin/guard check --rule brand-drain --self-test
           python3 utils/bin/guard check --rule brand-drain
 
-      - name: syscall capability admission (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule syscall-capability --self-test
-          python3 utils/bin/guard check --rule syscall-capability
-
       - name: mint inventory (self-test + drift check + HS14 floor)
         run: |
           python3 utils/bin/guard selftest loop.derive.mint_inventory

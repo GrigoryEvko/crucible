@@ -45,8 +45,7 @@ public:
 
     ~AnchoredFd() {
         if (fd_ >= 0) {
-            ::close(
-                fd_);  // SYSCALL-CAP-OK: AnchoredFd releases the descriptor that open_at_ acquired under the CtxFitsCipherPersistence gate of the open view
+            ::close(fd_);
         }
     }
 
@@ -55,10 +54,7 @@ public:
 };
 
 [[nodiscard]] AnchoredFd open_at_(int parent_dirfd, const char* relpath, int flags, ::mode_t perms) noexcept {
-    return AnchoredFd{::openat(
-        parent_dirfd,
-        relpath,  // SYSCALL-CAP-OK: Cipher cold-tier anchored open — effects::IO, held by the CtxFitsCipherPersistence gate of the open view that every caller of these helpers holds on the persistence thread
-        flags, perms)};
+    return AnchoredFd{::openat(parent_dirfd, relpath, flags, perms)};
 }
 
 // Re-opens `relpath` relative to `parent_dirfd` read-only and
@@ -83,9 +79,7 @@ public:
     if (!guard.is_open()) return false;
     int rc;
     do {
-        rc = ::fdatasync(
-            guard
-                .get());  // SYSCALL-CAP-OK: Cipher cold-tier durable flush blocks on disk — effects::IO + effects::Block, held by the CtxFitsCipherPersistence gate of the open view
+        rc = ::fdatasync(guard.get());
     } while (rc < 0 && errno == EINTR);
     return rc == 0;
 }
@@ -129,10 +123,7 @@ public:
 
         std::size_t off = 0;
         while (off < bytes.size()) {
-            const ssize_t r = ::write(
-                write_guard
-                    .get(),  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace bytes write — effects::IO, held by the CtxFitsCipherPersistence gate of the open view
-                bytes.data() + off, bytes.size() - off);
+            const ssize_t r = ::write(write_guard.get(), bytes.data() + off, bytes.size() - off);
             if (r < 0) {
                 if (errno == EINTR) continue;
                 ::unlinkat(parent_dirfd, tmp_relpath.c_str(), 0);
@@ -143,9 +134,7 @@ public:
 
         int frc;
         do {
-            frc = ::fdatasync(
-                write_guard
-                    .get());  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace flush blocks on disk — effects::IO + effects::Block, held by the CtxFitsCipherPersistence gate of the open view
+            frc = ::fdatasync(write_guard.get());
         } while (frc < 0 && errno == EINTR);
         if (frc != 0) {
             ::unlinkat(parent_dirfd, tmp_relpath.c_str(), 0);
@@ -168,8 +157,7 @@ public:
     // the fsync needs no re-open of the parent path.
     int drc;
     do {
-        drc = ::fsync(
-            parent_dirfd);  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace parent-dir fsync blocks on disk — effects::IO + effects::Block, held by the CtxFitsCipherPersistence gate of the open view
+        drc = ::fsync(parent_dirfd);
     } while (drc < 0 && errno == EINTR);
     return drc == 0;
 }
@@ -206,10 +194,7 @@ public:
         // kernel-atomic O_APPEND write.
         std::size_t off = 0;
         while (off < bytes.size()) {
-            const ssize_t r = ::write(
-                guard
-                    .get(),  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append record write — effects::IO, held by the CtxFitsCipherPersistence gate of the open view
-                bytes.data() + off, bytes.size() - off);
+            const ssize_t r = ::write(guard.get(), bytes.data() + off, bytes.size() - off);
             if (r < 0) {
                 if (errno == EINTR) continue;
                 return false;
@@ -219,9 +204,7 @@ public:
 
         int frc;
         do {
-            frc = ::fdatasync(
-                guard
-                    .get());  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append flush blocks on disk — effects::IO + effects::Block, held by the CtxFitsCipherPersistence gate of the open view
+            frc = ::fdatasync(guard.get());
         } while (frc < 0 && errno == EINTR);
         if (frc != 0) return false;
     }
@@ -229,8 +212,7 @@ public:
     // Makes the file's existence durable for the first record.
     int drc;
     do {
-        drc = ::fsync(
-            parent_dirfd);  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append parent-dir fsync blocks on disk — effects::IO + effects::Block, held by the CtxFitsCipherPersistence gate of the open view
+        drc = ::fsync(parent_dirfd);
     } while (drc < 0 && errno == EINTR);
     return drc == 0;
 }

@@ -1,0 +1,22 @@
+# The rule table of this plant.  The headers of include/fixy/ are base files,
+# and each other file is quarantined.  The owner rows give the door of the two
+# affinity system calls, and the syscall row gives the system calls.
+
+layer floor 0 include/fixy/
+
+allow floor <unistd.h>
+allow floor <sys/syscall.h>
+allow floor <sched.h>
+allow floor <pthread.h>
+allow floor <functional>
+allow floor <cstddef>
+
+quarantine include/crucible/
+quarantine src/
+quarantine test/
+quarantine bench/
+
+owner syscall-capability outside-door sched_setaffinity include/fixy/os/CpuPinned.h by=fixy::detail::set_calling_thread_affinity | the door of the plant
+owner syscall-capability outside-door pthread_setaffinity_np include/fixy/os/CpuPinned.h by=fixy::detail::set_calling_thread_affinity | the door of the plant, which does not call it
+
+syscall close getpid gettid sched_setaffinity pthread_setaffinity_np | the system calls of the plant

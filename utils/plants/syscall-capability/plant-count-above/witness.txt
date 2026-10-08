@@ -1,0 +1,10 @@
+# One function holds two calls of close, and its row admits one.  The count of
+# the file and the entity is more than its row, so each call is an error.
+
+compile raw src/raw.cpp stage=c
+exit raw pass
+judge raw
+finding raw quarantine c-library-call src/raw.cpp:7:25 | close
+finding raw quarantine c-library-call src/raw.cpp:8:22 | close
+finding raw syscall-capability raw-syscall src/raw.cpp:7:25 | planted::release_two(int, int): close
+finding raw syscall-capability raw-syscall src/raw.cpp:8:22 | planted::release_two(int, int): close

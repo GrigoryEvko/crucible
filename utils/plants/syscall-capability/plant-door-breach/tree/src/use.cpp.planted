@@ -1,0 +1,8 @@
+// A quarantined unit that includes the base header fixy/os/Other.h.
+#include <fixy/os/Other.h>
+
+namespace planted {
+
+int nothing() { return 0; }
+
+}  // namespace planted

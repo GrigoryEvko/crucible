@@ -1,0 +1,8 @@
+// A quarantined unit that pins through the door of fixy/os/CpuPinned.h.
+#include <fixy/os/CpuPinned.h>
+
+namespace planted {
+
+int pin(const cpu_set_t& set) { return fixy::detail::pin_through_door(set); }
+
+}  // namespace planted

@@ -333,6 +333,7 @@ void on_finish_unit(void*, void*) {
     walk_declarations();
     finish_expression_rules();
     walk_home();
+    walk_owner();
     report(true);
 }
 
@@ -345,6 +346,7 @@ void on_finish(void*, void*) {
         walk_declarations();
         finish_expression_rules();
         walk_home();
+        walk_owner();
     }
     report(false);
 }
@@ -552,6 +554,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     register_expressions(plugin_info->base_name);
     register_declarations(plugin_info->base_name);
     register_home(plugin_info->base_name);
+    register_owner(plugin_info->base_name);
     register_callback(plugin_info->base_name, PLUGIN_FINISH_UNIT, on_finish_unit, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_FINISH, on_finish, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_GGC_START, on_collection, nullptr);

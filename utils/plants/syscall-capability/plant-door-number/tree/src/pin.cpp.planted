@@ -1,0 +1,10 @@
+// A quarantined unit that sets the affinity with the number of the system
+// call, outside the door.
+#include <sys/syscall.h>
+#include <unistd.h>
+
+namespace planted {
+
+long pin(void* mask) { return ::syscall(SYS_sched_setaffinity, 0, 128, mask); }
+
+}  // namespace planted

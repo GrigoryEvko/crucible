@@ -1,0 +1,7 @@
+// A quarantined unit that mentions std::start_lifetime_as in a comment and in
+// a string literal, and starts no lifetime.
+namespace planted {
+
+const char* advice() { return "call foundation::lifetime::start_as_array, not std::start_lifetime_as"; }
+
+}  // namespace planted

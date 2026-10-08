@@ -1,0 +1,19 @@
+// A quarantined unit with a default member initializer that issues getpid,
+// and two constructors that each copy it.
+#include <unistd.h>
+
+namespace planted {
+
+struct Holder {
+    int process_id = ::getpid();
+    Holder() {}
+    explicit Holder(int) {}
+};
+
+int make() {
+    Holder first;
+    Holder second{1};
+    return first.process_id + second.process_id;
+}
+
+}  // namespace planted

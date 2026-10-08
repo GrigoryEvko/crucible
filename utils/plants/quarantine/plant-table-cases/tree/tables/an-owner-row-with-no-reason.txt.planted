@@ -1,0 +1,1 @@
+owner syscall-capability outside-door sched_setaffinity include/fixy/os/CpuPinned.h

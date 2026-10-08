@@ -1,0 +1,7 @@
+// A quarantined header of a claim tree with a macro body that issues a system
+// call.  The body holds the call in each file that expands the macro.
+#pragma once
+
+#include <unistd.h>
+
+#define CRUCIBLE_PLANT_PID() ::getpid()

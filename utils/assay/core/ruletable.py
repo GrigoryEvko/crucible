@@ -20,7 +20,9 @@ heavy and light rows from a measure (assay.loop.derive.header_costs).  The
 cite rows give the rule refined-pre-subsumption, and the grant rows give the
 rule syscall-grant-coverage.  The witness rows give the rule witness-roster and
 the negative fixtures that `loop derive witness-fixtures` writes
-(assay.loop.derive.witness_fixtures).
+(assay.loop.derive.witness_fixtures).  The owner rows give the rules
+start-lifetime and syscall-capability, and the syscall rows give the system
+calls of the rule syscall-capability.
 """
 
 from __future__ import annotations
@@ -49,6 +51,8 @@ ROW_KINDS = (
     "home",
     "home-args",
     "witness",
+    "owner",
+    "syscall",
 )
 # The refusal that the negative fixture of a witness row must see, as the row names it.
 REFUSALS = ("private", "deleted", "no-match")
@@ -76,9 +80,25 @@ SEAL_FORMAT = (
 )
 # The error of a row other than a witness row with two cells.  rule_table.cpp gives the same text.
 CELLS_MESSAGE = (
-    "a row has at most one cell: the reason of an admit row or of a home row, or the measure of a heavy or a light "
-    "row.  Only a witness row has two cells"
+    "a row has at most one cell: the reason of an admit row, a home row, an owner row or a syscall row, or the measure "
+    "of a heavy or a light row.  Only a witness row has two cells"
 )
+# The rules of the family owner of the plugin (utils/tools/quarantine/owner.cpp) that the owner rows name.  Each rule
+# gives one kind to a use that is not at a site of its owner row.
+OWNER_KINDS = {"start-lifetime": "lifetime-start", "syscall-capability": "outside-door"}
+# The errors of an owner row and of a syscall row that do not obey the format of their words.  rule_table.cpp gives
+# the same texts.
+OWNER_FORMAT = (
+    "an owner row is 'owner RULE KIND ENTITY [PATH...] [by=FUNCTION] | REASON'.  RULE is a rule of the family owner, "
+    "KIND is its kind of a use outside the sites, ENTITY and FUNCTION are qualified names, and the reason is "
+    "necessary"
+)
+SYSCALL_FORMAT = (
+    "a syscall row is 'syscall NAME... | REASON', with the name of each function of the C library that issues one "
+    "system call, and the reason is necessary"
+)
+# The prefix of the field of an owner row that names the function of its sites.
+BY_PREFIX = "by="
 # The rules of the family home of the plugin (utils/tools/quarantine/home.cpp),
 # which the home rows and the home-args rows name.
 HOME_RULES = ("federation-admission", "host-owners", "no-combine-ids-duplicate", "splits-orphan", "trait-guard")
@@ -213,6 +233,23 @@ class Home:
         return "::" not in self.entity
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class Owner:
+    """One owner row of the family owner: the rule, the kind, the entity, its sites, the reason and the line.
+
+    A use of the entity is permitted only at a site: in a file in one of `paths`, and in the body of `function` when
+    the row names one.  A row with no path and no function admits no site.
+    """
+
+    rule: str
+    kind: str
+    entity: str
+    paths: tuple[str, ...]
+    function: str
+    reason: str
+    line: int
+
+
 @dataclasses.dataclass(frozen=True)
 class RuleTable:
     """The rows of one rule table, in the order of the file."""
@@ -232,6 +269,9 @@ class RuleTable:
     grants: tuple[Grant, ...] = ()
     homes: tuple[Home, ...] = ()
     witnesses: tuple[Witness, ...] = ()
+    owners: tuple[Owner, ...] = ()
+    # The name of each function of the C library that a syscall row names, in the sequence of the file.
+    syscalls: tuple[str, ...] = ()
 
     def homes_of(self, rule: str) -> tuple[Home, ...]:
         """Return the home rows of one rule, in the sequence of the file."""
@@ -308,6 +348,38 @@ def parse_home(args: list[str], is_args: bool, reason: str, number: int, where: 
             f"component, and not in the build directory"
         )
     return Home(rule, entity, is_args, paths, reason, number)
+
+
+def parse_owner(args: list[str], reason: str, number: int, where: str) -> Owner:
+    """Parse the words of one owner row after the row kind: RULE, KIND, ENTITY, the paths and the field by=FUNCTION.
+
+    Raises:
+        TableError: When the row does not obey its format.  rule_table.cpp gives the same texts
+    """
+    if len(args) < 3 or not reason:
+        raise TableError(f"{where}: {OWNER_FORMAT}")
+    rule, kind, entity = args[0], args[1], args[2]
+    if rule not in OWNER_KINDS:
+        raise TableError(f"{where}: the rule {rule} is no rule of the family owner; the rules are start-lifetime and "
+                         f"syscall-capability")
+    if kind != OWNER_KINDS[rule]:
+        raise TableError(f"{where}: the kind {kind} is no kind of a use outside the sites of an owner row of the rule "
+                         f"{rule}")
+    if not is_qualified_name(entity):
+        raise TableError(f"{where}: the entity {entity} is not a qualified name: each part is an identifier")
+    paths: list[str] = []
+    function = ""
+    for word in args[3:]:
+        if word.startswith(BY_PREFIX):
+            if function or not is_qualified_name(word.removeprefix(BY_PREFIX)):
+                raise TableError(f"{where}: {OWNER_FORMAT}")
+            function = word.removeprefix(BY_PREFIX)
+            continue
+        if not is_plain_path(word) or word.startswith(BUILD_PREFIX):
+            raise TableError(f"{where}: a path of an owner row must be relative to the source root, with no '.', '..' "
+                             f"or empty component, and not in the build directory")
+        paths.append(word)
+    return Owner(rule, kind, entity, tuple(paths), function, reason, number)
 
 
 def _check_header(header: str, where: str) -> None:
@@ -532,6 +604,10 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
     cost_lines: dict[str, int] = {}  # the header of each heavy and light row, and its line
     homes: list[Home] = []
     home_lines: dict[str, int] = {}  # the entity of each home row, and its line
+    owners: list[Owner] = []
+    owner_lines: dict[str, int] = {}  # the rule and the entity of each owner row, and its line
+    syscalls: list[str] = []
+    syscall_lines: dict[str, int] = {}  # each name of a syscall row, and its line
     for row in rows:
         number = row.line
         where = f"{name}:{number}"
@@ -686,6 +762,25 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
                 )
             witness_lines[class_name] = number
             witnesses.append(Witness(args[0], args[1], row.cells[0], class_name, row.cells[1], number))
+        elif kind == "owner":
+            owner = parse_owner(args, reason, number, where)
+            # One row gives the sites of an entity in a rule.  With a second row, the sequence of the rows can change
+            # the findings.
+            owner_key = f"{args[0]} {owner.entity}"
+            if owner_key in owner_lines:
+                raise TableError(f"{where}: the entity {owner.entity} has a second owner row of the rule {args[0]}, and "
+                                 f"its first owner row is on line {owner_lines[owner_key]}")
+            owner_lines[owner_key] = number
+            owners.append(owner)
+        elif kind == "syscall":
+            if not args or not reason or not all(map(is_identifier, args)):
+                raise TableError(f"{where}: {SYSCALL_FORMAT}")
+            for syscall_name in args:
+                if syscall_name in syscall_lines:
+                    raise TableError(f"{where}: the system call {syscall_name} has a second syscall row, and its first "
+                                     f"syscall row is on line {syscall_lines[syscall_name]}")
+                syscall_lines[syscall_name] = number
+            syscalls.extend(args)
         else:
             if len(args) != 2 or args[1] not in MODES:
                 raise TableError(f"{where}: an enforce row is 'enforce PATH MODE', and MODE is report or error")
@@ -710,7 +805,7 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
                              f"language must be a path of the base")
     return RuleTable(tuple(layers), tuple(allows), tuple(doors), tuple(admits), tuple(quarantines),
                      tuple(enforces), tuple(languages), tuple(seals), tuple(header_costs), tuple(cites),
-                     tuple(grants), tuple(homes), tuple(witnesses))
+                     tuple(grants), tuple(homes), tuple(witnesses), tuple(owners), tuple(syscalls))
 
 
 def load(path: Path = TABLE) -> RuleTable:

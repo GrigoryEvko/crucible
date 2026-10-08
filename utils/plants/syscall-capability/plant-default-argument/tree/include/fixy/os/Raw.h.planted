@@ -1,0 +1,10 @@
+// A base header with a default argument that issues getpid.
+#pragma once
+
+#include <unistd.h>
+
+namespace planted {
+
+inline int echo_process_id(int process_id = ::getpid()) { return process_id; }
+
+}  // namespace planted

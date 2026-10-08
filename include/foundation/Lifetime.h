@@ -40,8 +40,9 @@
 // does not include <memory>.  It gives the same guarantee with a builtin and
 // the barrier of libstdc++.  The comment on start_as_array tells how.
 //
-// utils/assay/guard/legacy/check_start_lifetime.py refuses a direct use of the two library
-// functions outside a reviewed list.  New code uses start_as_array.
+// The rule start-lifetime of the quarantine plugin refuses each use of the two
+// library functions in a file that a build compiles, other than this header.
+// New code uses start_as_array.
 
 #include <foundation/ByteSeal.h>
 #include <foundation/reflect/TypeComponents.h>

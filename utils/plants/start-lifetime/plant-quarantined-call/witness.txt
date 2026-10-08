@@ -1,0 +1,9 @@
+# A quarantined unit calls std::start_lifetime_as outside the checked start.
+# The call is the kind lifetime-start.
+
+compile start src/start.cpp stage=c
+exit start pass
+judge start
+finding start quarantine raw-pointer-object src/start.cpp:6:17 | void*
+finding start quarantine std-entity src/start.cpp:6:60 | std::start_lifetime_as
+finding start start-lifetime lifetime-start src/start.cpp:6:60 | planted::view(void*): std::start_lifetime_as

@@ -1,0 +1,8 @@
+// A quarantined unit that expands the macro of crucible/Raw.h.
+#include <crucible/Raw.h>
+
+namespace planted {
+
+int process_id() { return CRUCIBLE_PLANT_PID(); }
+
+}  // namespace planted

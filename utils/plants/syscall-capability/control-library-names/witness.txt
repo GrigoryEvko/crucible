@@ -1,0 +1,6 @@
+# A function of the tree and a member with the name of a system call are no
+# function of the C library, so a call of them is no finding.
+
+compile names src/names.cpp stage=c
+exit names pass
+judge names

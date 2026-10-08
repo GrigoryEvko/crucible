@@ -44,14 +44,6 @@ utils/assay/guard/legacy/check_no_unchecked_access.py | print | 3 | check | A us
 utils/assay/guard/legacy/check_no_unchecked_access.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | print | 5 | planted_cases | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | print | 1 | planted_cases.expect | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_start_lifetime.py | argparse | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_start_lifetime.py | print | 11 | check | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_start_lifetime.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_start_lifetime.py | print | 2 | planted_cases | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_syscall_capability.py | print | 12 | check | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_syscall_capability.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_syscall_capability.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_syscall_capability.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/listing.py | print | 5 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/preprocessed.py | print | 2 | fill_main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/preprocessed.py | print | 1 | main | A use of today.  The change that calls the owner of the job lowers the count

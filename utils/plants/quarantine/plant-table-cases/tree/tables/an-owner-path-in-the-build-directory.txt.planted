@@ -1,0 +1,1 @@
+owner syscall-capability outside-door sched_setaffinity @build/generated.h | a file of the build directory

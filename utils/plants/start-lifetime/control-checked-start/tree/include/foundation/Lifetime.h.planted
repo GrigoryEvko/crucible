@@ -1,0 +1,15 @@
+// The checked start of the plant.  As the checked start of the tree, it starts
+// a lifetime with no call of the two library names.
+#pragma once
+
+#include <cstddef>
+
+namespace foundation::lifetime {
+
+template <typename Value>
+Value* start_as_array(void* bytes, std::size_t count) noexcept {
+    static_cast<void>(count);
+    return static_cast<Value*>(bytes);
+}
+
+}  // namespace foundation::lifetime

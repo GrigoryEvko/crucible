@@ -417,23 +417,6 @@ crucible_script_test(NAME brand_drain
 set_tests_properties(brand_drain brand_drain_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# std::start_lifetime_as over an array of proofs, over an aggregate that
-# holds one, and std::start_lifetime_as_array over proofs each give a
-# pointer to a proof whose lifetime never started, and no property of a
-# type refuses them.  utils/assay/guard/legacy/check_start_lifetime.py refuses each use of
-# the two library names outside a reviewed and counted list.  The guard
-# reads the compile database of this build, so a generated source and a
-# source with an unusual suffix are in scope.  The self-test plants each
-# route and each known bypass.  Exit 3 (the pinned tree-sitter kit is
-# absent) is a skip.
-crucible_script_test(NAME start_lifetime_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule start-lifetime --self-test)
-crucible_script_test(NAME start_lifetime
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule start-lifetime
-          --build-dir ${CMAKE_BINARY_DIR})
-set_tests_properties(start_lifetime start_lifetime_self_test PROPERTIES
-    LABELS "ci_guard"
-    SKIP_RETURN_CODE 3)
 # utils/assay/guard/preprocessed.py preprocesses each unit of the compile database
 # one time for every guard that reads the preprocessed output, in a store that
 # every build directory and every work tree share.  The self-test proves that
@@ -492,22 +475,6 @@ crucible_script_test(NAME ctx_init_door
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ctx-init-door)
 set_tests_properties(ctx_init_door ctx_init_door_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
-# Each direct Linux syscall call in include/, src/ and vessel/ carries a
-# `// SYSCALL-CAP-OK: <reason>` comment in its statement or a row in
-# utils/ledgers/syscall-capability.txt with its effects::* capability
-# claim.  utils/assay/guard/legacy/check_syscall_capability.py reads the calls from the
-# parse tree, and an entry that matches no live call is stale.  The guard
-# also holds the prose of each entry to its sites: the syscall, the
-# constants the file spells, and the function that holds each call.  Exit 3
-# when the kit is absent reports a skip.
-crucible_script_test(NAME syscall_capability_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule syscall-capability
-          --self-test)
-crucible_script_test(NAME syscall_capability
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule syscall-capability)
-set_tests_properties(syscall_capability syscall_capability_self_test PROPERTIES
-    LABELS "ci_guard"
-    SKIP_RETURN_CODE 3)
 
 # The testing door of either tree mints a context with no key, and a context
 # is what every ctx-bound mint checks for.  utils/assay/guard/legacy/check_ctx_testing_boundary.py
@@ -687,7 +654,7 @@ foreach(crucible_store_shard RANGE ${crucible_last_store_shard})
       LABELS "ci_guard"
       FIXTURES_SETUP preprocessed_store)
 endforeach()
-set_tests_properties(start_lifetime no_unchecked_access PROPERTIES
+set_tests_properties(no_unchecked_access PROPERTIES
     FIXTURES_REQUIRED preprocessed_store)
 
 crucible_test(test_vessel_api_typed)
@@ -5138,7 +5105,7 @@ set_tests_properties(selftest_mutation PROPERTIES LABELS "ci_guard" SKIP_RETURN_
 # runs a rule whose module reads the parse trees, when the test does not
 # require the fixture.  These tests read the trees and their registrations
 # give no label ast, so they get the label here.
-set_property(TEST brand_drain start_lifetime syscall_capability mint_inventory_check_floor guard_plugin
+set_property(TEST brand_drain mint_inventory_check_floor guard_plugin
     APPEND PROPERTY LABELS ast)
 crucible_tsast_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} 8)
 set_property(TEST guard_parse_proof_routes APPEND PROPERTY FIXTURES_REQUIRED preprocessed_store)

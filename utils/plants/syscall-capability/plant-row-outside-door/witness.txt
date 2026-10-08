@@ -1,0 +1,10 @@
+# A ledger row of the kind outside-door is an error, and the call outside the
+# door stays an error.  A row admits the raw system call.
+
+compile pin src/pin.cpp stage=c
+exit pin pass
+judge pin
+finding pin quarantine c-library-call src/pin.cpp:7:59 | sched_setaffinity
+finding pin quarantine c-library-object src/pin.cpp:7:26 | cpu_set_t (const cpu_set_t&)
+finding pin syscall-capability outside-door src/pin.cpp:7:59 | planted::pin(const cpu_set_t&): sched_setaffinity
+finding pin syscall-capability raw-syscall src/pin.cpp:7:59 | planted::pin(const cpu_set_t&): sched_setaffinity

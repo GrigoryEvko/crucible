@@ -1,0 +1,9 @@
+// A quarantined unit that calls the function of fixy/os/Raw.h with its
+// default argument, so the call copies the default argument.
+#include <fixy/os/Raw.h>
+
+namespace planted {
+
+int call_echo() { return echo_process_id(); }
+
+}  // namespace planted

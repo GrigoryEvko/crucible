@@ -28,11 +28,10 @@
 // sched_setaffinity call, a call from another thread that names this
 // thread, and a taskset from outside the process move the thread with no
 // record, and a proof then stays in force for a mask the thread no
-// longer has.  utils/assay/guard/legacy/check_syscall_capability.py refuses the first
-// two in include/, src/ and vessel/: a sched_setaffinity or a
-// pthread_setaffinity_np outside detail::set_calling_thread_affinity is a
-// violation that no marker and no allowlist line admits.  Nothing refuses
-// the third.
+// longer has.  The rule syscall-capability of the quarantine plugin refuses
+// the first two in each file that a build compiles: a sched_setaffinity or
+// a pthread_setaffinity_np outside detail::set_calling_thread_affinity is a
+// finding that no ledger row admits.  Nothing refuses the third.
 //
 // Posture is a parameter of the mint rather than a fact the syscall
 // reports, because the syscall reports only success.  Asking for
@@ -139,8 +138,7 @@ CRUCIBLE_PROCESS_WIDE inline constinit thread_local std::uint64_t tls_pin_event 
 // PriorAffinity::restore in fixy/os/Sched.h.  apply_affinity_to_cpu calls
 // apply_affinity_to_mask.
 [[nodiscard]] inline std::expected<std::uint64_t, int> set_calling_thread_affinity(::cpu_set_t const& set) noexcept {
-    if (::sched_setaffinity(0, sizeof(set), &set) != 0)
-        [[unlikely]] {  // SYSCALL-CAP-OK: the affinity door, reached through the ctx-gates CtxFitsAffinityMint and CtxFitsRuntimeAffinity
+    if (::sched_setaffinity(0, sizeof(set), &set) != 0) [[unlikely]] {
         return std::unexpected{errno};
     }
     const std::uint64_t event = pin_event_count.fetch_add(1, std::memory_order_acq_rel) + 1;
