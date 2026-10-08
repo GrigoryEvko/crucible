@@ -14,7 +14,8 @@ synchronous.  The properties the harness asks for:
                     fires, and a crash detection counts as the firing of
                     an input from the crashed role
 
-This module downloads the pinned commit into the cache of rocq.py, builds
+This module downloads the commit of the pin mpstk-crash-stop of
+utils/pins.txt into the cache of rocq.py (assay.oracle.sources), builds
 it with sbt, and runs its verifier.  The toolchain is a Java 17 runtime,
 sbt, and the mCRL2 tools mcrl22lps, lps2pbes and pbes2bool.
 utils/assay/setup/oracle.py installs a pinned release of each into the same
@@ -30,21 +31,18 @@ import hashlib
 import io
 import logging
 import shutil
-import tarfile
 import tempfile
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from assay.core import proc
+from assay.oracle import sources
 from assay.oracle.model import LBranch, LChoice, LEnd, LMsg, LRec, LVar, Local
-from assay.oracle.rocq import OracleError, answer_cache_path, cache_root, load_answers, save_answers
+from assay.oracle.rocq import OracleError, answer_cache_path, load_answers, save_answers
 from assay.setup import oracle as toolchain
 
 LOG = logging.getLogger("session_oracle.mpstk")
 
-REPO = "alcestes/mpstk-crash-stop"
-COMMIT = "3104e4ddfdc03385f68f53325908136c4a18b421"
 PROPERTIES = ("safety", "deadlock-freedom", "liveness+")
 BATCH = 24
 
@@ -62,25 +60,8 @@ def _tool(name: str) -> str:
 
 
 def fetch() -> Path:
-    """Download and unpack the pinned commit.  Return its root."""
-    root = cache_root() / f"mpstk-crash-stop-{COMMIT}"
-    if (root / "build.sbt").is_file():
-        return root
-    root.parent.mkdir(parents=True, exist_ok=True)
-    url = f"https://github.com/{REPO}/archive/{COMMIT}.tar.gz"
-    LOG.info("fetching %s", url)
-    try:
-        with urllib.request.urlopen(url, timeout=120) as resp:
-            data = resp.read()
-    except OSError as exc:
-        raise OracleError(f"cannot download {url}: {exc}") from exc
-    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
-        prefix = f"mpstk-crash-stop-{COMMIT}/"
-        members = [m for m in tar.getmembers() if m.name.startswith(prefix)]
-        tar.extractall(root.parent, members=members, filter="data")
-    if not (root / "build.sbt").is_file():
-        raise OracleError(f"{root}: the archive has no build.sbt")
-    return root
+    """Download and unpack the pinned commit of the pin mpstk-crash-stop (assay.oracle.sources).  Return its root."""
+    return sources.fetch(sources.source(sources.MPSTK), "build.sbt")
 
 
 def build(root: Path) -> str:
@@ -189,7 +170,7 @@ def verify(texts: list[str], workers: int = 16) -> list[dict[str, bool]]:
     run in batches of BATCH, one verifier process per batch.  A tool
     failure raises OracleError, so a missing verdict never passes.
     """
-    cache_path = answer_cache_path("mpstk", COMMIT)
+    cache_path = answer_cache_path("mpstk", sources.source(sources.MPSTK).commit)
     cache = load_answers(cache_path)
     keys = [hashlib.sha256(f"{','.join(PROPERTIES)}\n{text}".encode()).hexdigest() for text in texts]
     todo = list(dict.fromkeys(k for k in keys if k not in cache))

@@ -38,29 +38,25 @@ The encoding of a label as an index of the development's option lists:
 from __future__ import annotations
 
 import hashlib
-import io
 import logging
 import os
 import re
 import shlex
 import shutil
-import tarfile
 import tempfile
-import urllib.request
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import proc
+from assay.oracle import sources
 from assay.oracle.execution import _SPIN, head
 from assay.oracle.model import GBranch, GEnd, GMsg, GRec, GVar, Global, LChoice, LEnd, Local
 from assay.oracle.rocq import OracleError, answer_cache_path, cache_root, load_answers, save_answers
 
 LOG = logging.getLogger("session_oracle.keskin")
 
-REPO = "omerskeskin/mpstlive"
-COMMIT = "d96cf6842b9e8a0cc0b833cf5eb3f2e726e991dd"
 LIBRARY = Path(__file__).resolve().parent / "coq" / "LiveOracle.v"
 CHUNK = 8
 CHUNK_TIMEOUT = 900
@@ -99,25 +95,8 @@ def coqc() -> list[str]:
 
 
 def fetch() -> Path:
-    """Download and unpack the pinned commit.  Return its root."""
-    root = cache_root() / f"mpstlive-{COMMIT}"
-    if (root / "_CoqProject").is_file():
-        return root
-    root.parent.mkdir(parents=True, exist_ok=True)
-    url = f"https://github.com/{REPO}/archive/{COMMIT}.tar.gz"
-    LOG.info("fetching %s", url)
-    try:
-        with urllib.request.urlopen(url, timeout=120) as resp:
-            data = resp.read()
-    except OSError as exc:
-        raise OracleError(f"cannot download {url}: {exc}") from exc
-    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
-        prefix = f"mpstlive-{COMMIT}/"
-        members = [m for m in tar.getmembers() if m.name.startswith(prefix)]
-        tar.extractall(root.parent, members=members, filter="data")
-    if not (root / "_CoqProject").is_file():
-        raise OracleError(f"{root}: the archive has no _CoqProject")
-    return root
+    """Download and unpack the pinned commit of the pin rocq-mpstlive (assay.oracle.sources).  Return its root."""
+    return sources.fetch(sources.source(sources.KESKIN), "_CoqProject")
 
 
 def build(root: Path) -> None:
@@ -140,7 +119,7 @@ def library(root: Path) -> Path:
     so a changed library is compiled again and never mixed with an old one.
     """
     text = LIBRARY.read_text(encoding="utf-8")
-    digest = hashlib.sha256((COMMIT + text).encode()).hexdigest()[:16]
+    digest = hashlib.sha256((sources.source(sources.KESKIN).commit + text).encode()).hexdigest()[:16]
     out = cache_root() / f"keskin-library-{digest}"
     if (out / "LiveOracle.vo").is_file():
         return out
@@ -695,7 +674,7 @@ def decide(instances: list[Instance], workers: int = 8) -> list[tuple[bool, str]
                               "counts")
     certs = [certificate(f"K{i}", inst) for i, inst in enumerate(instances)]
     keys = [hashlib.sha256((lib_text + _HEAD + certificate("K", inst)).encode()).hexdigest() for inst in instances]
-    cache_path = answer_cache_path("keskin", COMMIT)
+    cache_path = answer_cache_path("keskin", sources.source(sources.KESKIN).commit)
     cache = load_answers(cache_path)
     results: dict[int, tuple[bool, str]] = {i: (True, "") for i, k in enumerate(keys) if cache.get(k) is True}
     todo = [i for i in range(len(instances)) if i not in results]

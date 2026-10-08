@@ -1,0 +1,4 @@
+// A planted test of the tree that calls fits and does not hold its requires clause.
+#include "planted/bare.h"
+
+int main() { return planted::fits(1) - 1; }

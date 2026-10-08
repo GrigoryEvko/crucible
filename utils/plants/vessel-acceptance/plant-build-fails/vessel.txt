@@ -1,0 +1,4 @@
+# The build of the vessel targets gives a compile error.
+format 1
+program programs/cmake | echo 'register.cpp:1:1: error: expected declaration' | exit 1
+program programs/python | PYTHONPATH={root}/site-packages PYTHONDONTWRITEBYTECODE=1 exec {python} "$@"

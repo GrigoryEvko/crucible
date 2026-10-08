@@ -1,75 +1,67 @@
-"""Run the gate mutants of a header against the tests that can witness them.
+"""The run of the gate mutants of a header against the tests that can witness them.
 
-A mutant weakens one gate (see gates.py).  The mutant is killed when a test
-that passes on the original header fails on the mutant.  A mutant that no
-such test kills marks a gate with no witness.
+THE MUTANTS
+    A mutant weakens one gate (assay.mutation.gates).  A test that passes on
+    the header and fails on the mutant kills the mutant.  A mutant that no
+    test kills shows a gate with no witness.  The run writes each mutant into
+    the header of the source tree of the build, and it puts the header back
+    after each mutant.  The rule gate-mutants
+    (assay.guard.engines.buildsys.gate_mutants) runs it on a configured
+    export of the tree, and not on the tree.  The run uses the cmake and the
+    ctest that the CMake cache of the build names (assay.setup.pins).
 
-The run works on a configured export of the tree, never on the repository.
-The rule gate-mutants (`guard check --rule gate-mutants MODE ...`) has four modes:
-    deps   --build B --out O        map each compile entry to its headers
-    mutate --src S --build B --out O --header H [H ...]
-    selftest --compiler CXX [--cmake CMAKE]   one planted survivor and two kills
-    gates  H [H ...]                print the gates of each header
+THE CANDIDATES
+    The candidates of a header are in three tiers:
+    1. Each negative fixture whose compile reads the header
+    2. Each test source that reads the header, with -fsyntax-only, for a
+       static_assert in a test
+    3. Each test executable that reads the header, which the run builds and
+       runs, for a contract that only a death test calls.
+    In each tier, a candidate that names the gated entity comes first.  Then
+    a candidate that names a declaration of the header that uses the entity
+    comes, the nearest first.  A fixture usually calls the door, and not the
+    concept that the door checks.  Tier 3 builds with ninja in the build
+    directory, so it runs only for a contract gate that tiers 1 and 2 do not
+    kill.  The program checks a contract when it runs.  Each other gate
+    refuses at compile time, and a compile witnesses it.  The run first
+    records the result of each candidate on the header with no mutant.  A
+    candidate that fails on that header cannot kill a mutant.  The command of
+    a test can start with the test launcher `loop test-step`, and the
+    candidate is then the program behind the launcher.
 
-The run uses the cmake and the ctest that the CMake cache of B names, not a
-cmake or a ctest of PATH (utils/assay/setup/pins.py).
+THE PROBE
+    A mutant whose header no longer compiles alone gets its verdict from the
+    first error of a unit that only includes the header (probe_verdict()).
+    A refusal by a check of the header kills the mutant.  Each other error
+    makes it invalid, because each test that reads the header then fails for
+    a reason that is not the gate.  An invalid mutant leaves its gate with no
+    test.  A header that does not compile alone stops the run before its
+    first mutant, because no probe can then tell a mutant that does not parse
+    from a killed one.
 
-Candidates for a header, in this order:
-    1. each negative fixture whose compile reaches the header
-    2. each test source that reaches the header, compiled with -fsyntax-only,
-       so a static_assert in a test counts
-    3. each test executable that reaches the header, built and run, so a
-       contract that only a death test reaches counts
-Within each tier, a candidate that names the gated entity comes first, then
-one that names a declaration of the header that uses the entity, nearest
-first.  A fixture usually calls the door, not the concept the door checks.
-Tier 3 builds with ninja in the build dir, so it runs only for a contract
-gate that tiers 1 and 2 leave alive.  A contract is checked when the program
-runs.  Every other gate refuses at compile time, and a compile witnesses it.
-The run records a baseline of every candidate on the original header first.
-A candidate that fails on the original header can never kill a mutant.
-
-A mutant whose header does not compile on its own is recorded as invalid and
-never as killed, because every dependent test would then fail for a reason
-that says nothing about the gate.  An invalid mutant leaves its gate
-untested, so it stops the run after the header that holds it, with the gate
-named, unless a row of utils/ledgers/gate-mutants.txt admits the gate with a
-reason.  A header that does not compile on its own stops the run before its
-first mutant, because then no probe can tell a malformed mutant from a
-killed one.
-
-The ledger utils/ledgers/gate-mutants.txt has the policy admit, in format 1
-of assay.core.ledger.  A row admits the invalid mutant of one gate:
-    HEADER | GATE KIND | admit | NAME: TEXT | REASON
-NAME is the gated entity, TEXT is the gate text with its whitespace
-squeezed, and REASON says why no mutant of the gate can parse, or why other
-means witness the gate.
-
-Complexity: one baseline pass over the candidates of a header, then for each
-mutant up to one pass, in batches of --jobs compiles that stop at the first
-kill.
+Complexity: one pass over the candidates of a header with no mutant, then up
+to one pass for each mutant, in batches of `jobs` compiles that stop at the
+first kill.
 """
 
 from __future__ import annotations
 
-import argparse
 import dataclasses
 import json
 import re
 import shutil
-import signal
 import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from assay.core import ledger as rule_ledger
 from assay.core import proc
-from assay.core import rows as rows_grammar
 from assay.core.paths import LOOP, REPO_ROOT
+from assay.loop import teststep as test_launcher
 from assay.mutation import gates as gate_finder
-from assay.readers import cmake, compdb, ninja, sarif, tsast
+from assay.readers import cmake, compdb, sarif, tsast
 from assay.readers import ctest as ctest_reader
 from assay.setup import pins as cmake_pin
 
@@ -87,6 +79,10 @@ TIMEOUT_S = 600
 # The builder of tier 3.  A missing ninja makes every run candidate fail its
 # baseline, so the tier drops out and is never counted as a kill.
 NINJA = shutil.which("ninja") or "ninja"
+
+
+class RunError(Exception):
+    """The run cannot read an input of the build, or a header that it names does not compile alone."""
 
 
 @dataclass
@@ -177,28 +173,26 @@ def _headers_of(entry: compdb.CompileEntry, src_root: Path) -> tuple[str, list[s
     return str(Path(entry.file).resolve()), headers
 
 
-def cmd_deps(args: argparse.Namespace) -> int:
-    """Write the header set of every compile entry, computed with the preprocessor."""
-    build = Path(args.build).resolve()
-    src_root = Path(args.src).resolve()
+def header_sets(build: Path, src_root: Path, jobs: int) -> dict[str, list[str]]:
+    """Return the headers of include/ that each compile entry of a build reads, by its file, from the preprocessor.
+
+    Complexity: one run of the preprocessor for each compile entry, with `jobs` runs at a time.
+
+    Raises:
+        RunError: If the compile database cannot be read, or a run of the preprocessor fails
+    """
     try:
         entries = compdb.entries(build)
     except compdb.CompdbError as error:
-        print(f"mutation: {error}", file=sys.stderr)
-        return 1
-    out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
+        raise RunError(str(error)) from None
     result: dict[str, list[str]] = {}
     try:
-        with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-            for file, headers in pool.map(lambda e: _headers_of(e, src_root), entries):
-                result[file] = sorted(h for h in headers if h.startswith("include/"))
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            for file, headers in pool.map(lambda entry: _headers_of(entry, src_root), entries):
+                result[file] = sorted(header for header in headers if header.startswith("include/"))
     except proc.ToolFailed as error:
-        print(f"mutation: the header set of a compile cannot be read: {error}", file=sys.stderr)
-        return 1
-    (out / "deps.json").write_text(json.dumps(result))
-    print(f"deps: {len(result)} compile entries", file=sys.stderr)
-    return 0
+        raise RunError(f"the header set of a compile cannot be read: {error}") from None
+    return result
 
 
 # ── the candidates ─────────────────────────────────────────────────────
@@ -249,7 +243,7 @@ def _build_program(build: Path, name: str) -> str:
     try:
         return cmake_pin.configured_program(build, name)
     except cmake_pin.PinError as error:
-        raise SystemExit(f"mutation: {error}") from None
+        raise RunError(str(error)) from None
 
 
 def _ctest_commands(build: Path) -> dict[str, list[str]]:
@@ -287,7 +281,7 @@ def _target_sources(build: Path) -> dict[str, list[str]]:
     try:
         model = cmake.codemodel(build)
     except cmake.CmakeError as error:
-        raise SystemExit(f"mutation: {error}") from None
+        raise RunError(str(error)) from None
     sources: dict[str, list[str]] = {}
     for target in model.targets:
         files = [str(Path(source.path).resolve()) for source in target.sources]
@@ -305,18 +299,25 @@ def _fixture_word(command: list[str]) -> int | None:
 
 
 def load_candidates(build: Path, deps: dict[str, list[str]]) -> list[Candidate]:
-    """Every negative fixture and every test source of the configured build, as candidates."""
+    """Return the negative fixtures, the test sources and the test executables of a configured build, as candidates.
+
+    The command of a test that starts with the test launcher gives the program behind the launcher
+    (THE CANDIDATES).
+
+    Raises:
+        RunError: If the tests, the compile database or the targets of the build cannot be read
+    """
     try:
         tests = ctest_reader.tests(build)
         entries = compdb.entries(build)
     except (ctest_reader.CtestError, compdb.CompdbError) as error:
-        raise SystemExit(f"mutation: {error}") from None
+        raise RunError(str(error)) from None
     declared = _ctest_commands(build)
     by_file = {str(Path(entry.file).resolve()): entry for entry in entries}
     artifacts = _target_sources(build)
     candidates: list[Candidate] = []
     for test in tests:
-        command = list(test.command) or declared.get(test.name, [])
+        command = test_launcher.launched(list(test.command) or declared.get(test.name, []))
         env: dict[str, str] = {}
         for item in test.words_of("ENVIRONMENT"):
             key, _, value = item.partition("=")
@@ -418,7 +419,7 @@ def _rank(candidate: Candidate, names: list[str], extra: list[str],
     return min((position[word] for word in used if word in position), default=len(names)), -len(used)
 
 
-def _build_and_run(batch: list[Candidate], jobs: int) -> list[tuple[Candidate, bool]]:
+def _build_and_run(batch: list[Candidate], jobs: int, ninja_program: str = NINJA) -> list[tuple[Candidate, bool]]:
     """Build the executables of run candidates with one ninja call, then run each one.
 
     The old executable is removed first, so a target that fails to build on
@@ -431,7 +432,7 @@ def _build_and_run(batch: list[Candidate], jobs: int) -> list[tuple[Candidate, b
     for build_dir, group in by_dir.items():
         for candidate in group:
             (Path(build_dir) / candidate.target).unlink(missing_ok=True)
-        _run([NINJA, "-C", build_dir, f"-j{jobs}", "-k", "0"] + sorted({c.target for c in group}),
+        _run([ninja_program, "-C", build_dir, f"-j{jobs}", "-k", "0"] + sorted({c.target for c in group}),
              build_dir, {}, timeout=6 * TIMEOUT_S)
 
     def run_one(candidate: Candidate) -> bool:
@@ -507,12 +508,17 @@ def _probe(header_abs: Path, flags_from: Candidate | None,
 
 def run_header(header: str, src_root: Path, candidates: list[Candidate], jobs: int, neg_cap: int,
                syntax_cap: int, run_cap: int = 4, probe_argv: list[str] | None = None,
-               only_lines: set[int] | None = None) -> list[Outcome]:
+               only_lines: set[int] | None = None, ninja_program: str = NINJA) -> list[Outcome]:
     """Every mutant of one header, each with its verdict.
 
     With only_lines, only the gates on those lines run: this re-checks the
     survivors of an earlier run with larger caps.  The header in the source
-    root is restored after each mutant, also when the run stops on an error."""
+    root is restored after each mutant, also when the run stops on an error.
+    ninja_program builds the executables of tier 3.
+
+    Raises:
+        RunError: If the header does not compile alone (THE PROBE)
+    """
     header_abs = src_root / header
     original = header_abs.read_bytes()
     found = gate_finder.find_gates(header_abs, src_root)
@@ -558,15 +564,15 @@ def run_header(header: str, src_root: Path, candidates: list[Candidate], jobs: i
 
     baseline = {c.name: ok for c, ok in check_all([c for c in everything.values() if c.kind != "run"])}
     baseline.update({c.name: ok for c, ok in _build_and_run([c for c in everything.values() if c.kind == "run"],
-                                                            jobs)})
+                                                            jobs, ninja_program)})
     probe_from = next((c for c in reach if c.kind == "syntax" and c.compile_argv), None) or next(
         (c for c in reach if c.compile_argv), None)
     base_probe = _probe(header_abs, probe_from, probe_argv)[0] if (probe_from or probe_argv) else False
     if (probe_from or probe_argv) and not base_probe:
         # Without a probe that passes on the original, a mutant that does
         # not parse fails every check and would count as killed.
-        raise SystemExit(f"mutation: {header} does not compile on its own, so the run cannot tell a mutant that "
-                         f"does not parse from a killed one.  Make the header self-contained first.")
+        raise RunError(f"{header} does not compile on its own, so the run cannot tell a mutant that "
+                       f"does not parse from a killed one.  Make the header self-contained first.")
 
     outcomes: list[Outcome] = []
     try:
@@ -587,7 +593,7 @@ def run_header(header: str, src_root: Path, candidates: list[Candidate], jobs: i
             else:
                 batches = [(chosen[start:start + jobs], check_all) for start in range(0, len(chosen), jobs)]
                 if runs:
-                    batches.append((runs, lambda batch: _build_and_run(batch, jobs)))
+                    batches.append((runs, lambda batch: _build_and_run(batch, jobs, ninja_program)))
                 for batch, check in batches:
                     results = check(batch)
                     outcome.tried += len(results)
@@ -607,373 +613,6 @@ def run_header(header: str, src_root: Path, candidates: list[Candidate], jobs: i
     return outcomes
 
 
-def gate_key(header: str, kind: str, entity: str, text: str) -> str:
-    """The key of one gate in a reviewed list: header, kind, entity and the gate text, whitespace squeezed."""
-    return " | ".join((header, kind, entity, " ".join(text.split())))
-
-
-def load_exemptions(file: Path | None = None) -> set[str]:
-    """The gate keys that the rows of the ledger of gate-mutants admit.
-
-    A row is `HEADER | KIND | admit | NAME: TEXT | REASON`.  The policy
-    admit refuses a row with no reason, because a review cannot judge an
-    exemption that says nothing.  Complexity: linear in the size of the
-    file.
-
-    Args:
-        file: The file to read in place of utils/ledgers/gate-mutants.txt, for a planted ledger of a self-test
-    """
-    try:
-        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), file=file)
-    except (OSError, rule_ledger.LedgerError, rows_grammar.RowsError) as problem:
-        raise SystemExit(f"mutation: {problem}") from None
-    keys: set[str] = set()
-    for key, entry in ledger.base.items():
-        name, divider, text = key.entity.partition(ENTITY_DIVIDER)
-        if not divider or not key.path or not key.kind:
-            shown = rule_ledger.shown_path(RULE) if file is None else str(file)
-            raise SystemExit(f"{shown}:{entry.line}: a row is 'HEADER | GATE KIND | admit | NAME: TEXT | REASON'")
-        keys.add(gate_key(key.path, key.kind, name, text))
-    return keys
-
-
 def exemption_row(header: str, kind: str, entity: str, text: str) -> rule_ledger.Key:
     """Return the key of the ledger row that admits the invalid mutant of one gate."""
     return rule_ledger.Key(header, kind, f"{entity}{ENTITY_DIVIDER}{' '.join(text.split())}")
-
-
-def unexempted_invalid(outcomes: list[Outcome], exempt: set[str]) -> list[Outcome]:
-    """The invalid outcomes whose gate the reviewed list does not name."""
-    return [o for o in outcomes if o.status == "invalid" and gate_key(o.header, o.kind, o.entity, o.original)
-            not in exempt]
-
-
-def cmd_mutate(args: argparse.Namespace) -> int:
-    """Run the mutants of each named header and append one JSON line per mutant.
-
-    The run stops after a header that holds an invalid mutant the reviewed
-    list does not name, because that gate went untested."""
-    build = Path(args.build).resolve()
-    src_root = Path(args.src).resolve()
-    out = Path(args.out)
-    deps = json.loads((out / "deps.json").read_text())
-    candidates = load_candidates(build, deps)
-    exempt = load_exemptions()
-    only_lines = {int(line) for line in args.lines.split(",")} if args.lines else None
-    with (out / args.results).open("a") as sink:
-        for header in args.header:
-            outcomes = run_header(header, src_root, candidates, args.jobs, args.neg_cap, args.syntax_cap,
-                                  run_cap=args.run_cap, only_lines=only_lines)
-            for outcome in outcomes:
-                sink.write(json.dumps(asdict(outcome)) + "\n")
-                sink.flush()
-            untested = unexempted_invalid(outcomes, exempt)
-            for outcome in untested:
-                print(f"mutation: INVALID MUTANT {outcome.header}:{outcome.line} {outcome.kind} {outcome.entity}: "
-                      f"{outcome.original!r} does not parse, so the gate went untested.  Fix the mutant in "
-                      f"utils/assay/mutation/gates.py, or admit the gate with a row and a reason in "
-                      f"{rule_ledger.shown_path(RULE)}.",
-                      file=sys.stderr)
-            if untested:
-                return 1
-    return 0
-
-
-# ── the self-test ──────────────────────────────────────────────────────
-
-# The two macros stand for CRUCIBLE_PRE and CRUCIBLE_POST of
-# foundation/contracts/.  The parse keeps a macro body as raw text, so each
-# gate is a call in a function body.  The result name is the first argument
-# of CRUCIBLE_POST, so the span of the post of positive must hold only the
-# condition.
-PLANTED = """#pragma once
-#include <concepts>
-#include <type_traits>
-#define CRUCIBLE_PRE(condition) contract_assert(condition)
-#define CRUCIBLE_POST(result, condition) contract_assert(condition)
-namespace planted {
-template <class T> concept Small = sizeof(T) <= 4;
-template <class T> requires Small<T> constexpr int take(T) { return 1; }
-template <class T> requires std::integral<T> constexpr int count(T) { return 2; }
-template <class T> requires(std::is_integral_v<T>) constexpr int widen(T) { return 3; }
-inline int half(int n) { contract_assert(n % 2 == 0); return n / 2; }
-inline int third(int n) noexcept { CRUCIBLE_PRE(n % 3 == 0); return n / 3; }
-inline auto negate(int n) -> int { CRUCIBLE_PRE(n < 0); return -n; }
-inline int positive(int n) { const int r = n < 0 ? -n : n + 1; CRUCIBLE_POST(r, r > 0); return r; }
-template <class T> struct Wide {
-    T v;
-    friend constexpr bool operator==(Wide const&, Wide const&) requires Small<T> { return true; }
-};
-template <class T> requires Small<T> && /* and */ std::integral<T> constexpr int both(T) { return 4; }
-template <class T> struct Box {};
-template <class T> struct Box<std::type_identity<T>> { static_assert(sizeof(T) > 0); };
-}
-"""
-FIXTURE = """#include "planted.h"
-int main() { return planted::take(1.0L); }
-"""
-# The gate of widen is written `requires(` with no space, so a mutant that
-# writes `true` flush against it reads `requirestrue` and does not parse.
-WIDEN_FIXTURE = """#include "planted.h"
-int main() { return planted::widen(1.5); }
-"""
-USER = """#include "planted.h"
-static_assert(planted::take(1) == 1 && planted::count(1) == 2);
-int main() {}
-"""
-# A test of the gate on Wide's operator spells the class and never the
-# operator's name, as a real test does.
-WIDE_USER = """#include "planted.h"
-static_assert(!std::equality_comparable<planted::Wide<long double>>);
-int main() {}
-"""
-# A project whose tests the CTest reader and the file API must read: a
-# test with an argument that CMake writes as a bracket argument, and a test
-# in a subdirectory.
-API_PROJECT = """cmake_minimum_required(VERSION 3.20)
-project(planted_api CXX)
-enable_testing()
-add_executable(planted_test planted_test.cpp)
-add_test(NAME planted_case COMMAND planted_test "has \\"quotes\\"" plain)
-add_subdirectory(sub)
-"""
-API_SUBDIR = """add_test(NAME sub_case COMMAND planted_test second)
-"""
-# A death test in miniature: it passes only when the contract of half stops the call.
-RUNNER = """#include <contracts>
-#include <cstdlib>
-#include "planted.h"
-void handle_contract_violation(const std::contracts::contract_violation&) noexcept { std::_Exit(0); }
-int main() { (void)planted::half(3); return 1; }
-"""
-# A death test of the precondition of third: it passes only when that
-# precondition stops the call.
-THIRD_RUNNER = """#include <contracts>
-#include <cstdlib>
-#include "planted.h"
-void handle_contract_violation(const std::contracts::contract_violation&) noexcept { std::_Exit(0); }
-int main() { (void)planted::third(4); return 1; }
-"""
-NINJA_FILE = """rule cxx
-  command = {compiler} -std=c++26 -fcontracts -Iinclude $in -o $out
-build run_half: cxx run_half.cpp | include/planted.h
-build run_third: cxx run_third.cpp | include/planted.h
-"""
-
-
-def _selftest_build_model(work: Path, args: argparse.Namespace) -> list[str]:
-    """Configure a small project, and check what the CTest reader and the file API read from it.
-
-    The test with a quoted argument is the case the old regex over
-    CTestTestfile.cmake got wrong: CMake writes that argument as a bracket
-    argument, and the regex dropped it."""
-    source, build = work / "src", work / "build"
-    (source / "sub").mkdir(parents=True)
-    (source / "CMakeLists.txt").write_text(API_PROJECT)
-    (source / "sub" / "CMakeLists.txt").write_text(API_SUBDIR)
-    (source / "planted_test.cpp").write_text("int main() { return 0; }\n")
-    generator = ["-G", "Ninja", f"-DCMAKE_MAKE_PROGRAM={NINJA}"] if shutil.which(NINJA) else []
-    try:
-        cmake_program = args.cmake or cmake_pin.pinned_program("cmake")
-    except cmake_pin.PinError as error:
-        return [str(error)]
-    # The planted project has no cmake_file_api call.  Its build directory gets the query of the replies.
-    cmake.request(build)
-    configured = proc.run(proc.Command([cmake_program, "-S", str(source), "-B", str(build), *generator,
-                                        f"-DCMAKE_CXX_COMPILER={args.compiler}"], timeout_s=proc.TOOL_S))
-    if configured.exit != 0:
-        return [f"the planted project does not configure:\n{configured.err[-2000:]}"]
-    failures: list[str] = []
-    executable = str((build / "planted_test").resolve())
-    commands = _ctest_commands(build)
-    if commands.get("planted_case") != [executable, 'has "quotes"', "plain"]:
-        failures.append(f"the CTest reader reads planted_case as {commands.get('planted_case')!r}")
-    if commands.get("sub_case") != [executable, "second"]:
-        failures.append(f"the CTest reader does not follow the subdirectory: {commands.get('sub_case')!r}")
-    sources = _target_sources(build)
-    if sources.get(executable) != [str((source / "planted_test.cpp").resolve())]:
-        failures.append(f"the file API gives the sources of planted_test as {sources.get(executable)!r}")
-    return failures
-
-
-def cmd_selftest(args: argparse.Namespace) -> int:
-    """Plant a header with witnessed gates and bare gates, and check each verdict.
-
-    One witness is a negative fixture, one a syntax-only compile, and two are
-    tests that ninja builds and the run executes, so each tier is proved.  A
-    gate written `requires(` with no space proves that its mutant parses.
-    Three CRUCIBLE_PRE and CRUCIBLE_POST calls prove that the parse finds a
-    precondition after a trailing return type, and that the span of a
-    postcondition leaves its result name out.  A gate on an operator falls to
-    a test that names only its class.  A comment beside && keeps the split of a
-    constraint, and a gate in a partial specialization names its template.
-    The check of the invalid outcomes is then proved on a planted invalid
-    outcome, with and without an exemption.  Last, a small CMake project
-    proves the CTest reader and the file API."""
-    global NINJA
-    NINJA = args.ninja or NINJA
-    with tempfile.TemporaryDirectory() as tmp_name:
-        tmp = Path(tmp_name)
-        (tmp / "include").mkdir()
-        (tmp / "include" / "planted.h").write_text(PLANTED)
-        (tmp / "neg_take_large.cpp").write_text(FIXTURE)
-        (tmp / "neg_widen_double.cpp").write_text(WIDEN_FIXTURE)
-        (tmp / "user.cpp").write_text(USER)
-        (tmp / "wide_user.cpp").write_text(WIDE_USER)
-        (tmp / "run_half.cpp").write_text(RUNNER)
-        (tmp / "run_third.cpp").write_text(THIRD_RUNNER)
-        ninja.plant_graph(tmp, NINJA_FILE.format(compiler=args.compiler))
-        base = [args.compiler, "-std=c++26", "-fcontracts", f"-I{tmp / 'include'}"]
-        rows = [{"directory": str(tmp), "file": str(tmp / name), "arguments": base + ["-c", str(tmp / name),
-                 "-o", str(tmp / (name + ".o"))]}
-                for name in ("neg_take_large.cpp", "neg_widen_double.cpp", "user.cpp")]
-        compdb.plant(tmp, rows)
-        fixture = [sys.executable, str(LOOP), FIXTURE_SUBCOMMAND]
-        headers = frozenset({"include/planted.h"})
-        candidates = [
-            Candidate("neg_take_large", "neg",
-                      [*fixture, str(tmp), str(tmp / "neg_take_large.cpp"), "neg_take_large",
-                       "constraints not satisfied", "Small"],
-                      str(tmp), {}, str(tmp / "neg_take_large.cpp"), headers),
-            Candidate("neg_widen_double", "neg",
-                      [*fixture, str(tmp), str(tmp / "neg_widen_double.cpp"), "neg_widen_double",
-                       "constraints not satisfied", "is_integral_v"],
-                      str(tmp), {}, str(tmp / "neg_widen_double.cpp"), headers),
-            Candidate("syntax:user.cpp", "syntax", base + ["-fsyntax-only", str(tmp / "user.cpp")],
-                      str(tmp), {}, str(tmp / "user.cpp"), headers),
-            Candidate("syntax:wide_user.cpp", "syntax", base + ["-fsyntax-only", str(tmp / "wide_user.cpp")],
-                      str(tmp), {}, str(tmp / "wide_user.cpp"), headers),
-            Candidate("run:run_half", "run", [str(tmp / "run_half")], str(tmp), {}, str(tmp / "run_half.cpp"),
-                      headers, target="run_half", build_dir=str(tmp)),
-            Candidate("run:run_third", "run", [str(tmp / "run_third")], str(tmp), {}, str(tmp / "run_third.cpp"),
-                      headers, target="run_third", build_dir=str(tmp)),
-        ]
-        try:
-            outcomes = run_header("include/planted.h", tmp, candidates, 2, 100, 100, probe_argv=base)
-        except tsast.KitMissing as missing:
-            print(f"mutation selftest: SKIP, {missing}", file=sys.stderr)
-            return 3
-        verdicts = {(o.kind, o.entity): o.status for o in outcomes}
-        killers = {(o.kind, o.entity): o.killer for o in outcomes}
-        expected = {("concept", "Small"): "killed", ("requires", "take"): "killed",
-                    ("requires", "count"): "survived", ("requires", "widen"): "killed",
-                    ("contract", "half"): "killed", ("contract", "third"): "killed",
-                    ("contract", "negate"): "survived", ("contract", "positive"): "survived",
-                    ("requires", "operator=="): "killed", ("requires", "both"): "survived",
-                    ("static_assert", "Box"): "survived"}
-        failures = [f"{k}: expected {v}, got {verdicts.get(k)}" for k, v in expected.items() if verdicts.get(k) != v]
-        # A comment beside && must not hide the split, so both has two
-        # gates, and so one more mutant than expected has keys.
-        if sum(1 for o in outcomes if o.entity == "both") != 2:
-            failures.append(f"the constraint of both must split into 2 gates, not "
-                            f"{sum(1 for o in outcomes if o.entity == 'both')}")
-        if killers.get(("contract", "half")) != "run:run_half":
-            failures.append(f"the contract of half must fall to the run tier, not {killers.get(('contract', 'half'))!r}")
-        if killers.get(("contract", "third")) != "run:run_third":
-            failures.append(f"the precondition of third must fall to its death test, not "
-                            f"{killers.get(('contract', 'third'))!r}")
-        if killers.get(("requires", "widen")) != "neg_widen_double":
-            failures.append(f"the gate of widen must fall to its fixture, not {killers.get(('requires', 'widen'))!r}")
-        if killers.get(("requires", "operator==")) != "syntax:wide_user.cpp":
-            failures.append(f"the gate of Wide's operator must fall to the test that names Wide, not "
-                            f"{killers.get(('requires', 'operator=='))!r}")
-        if len(outcomes) != len(expected) + 1:
-            failures.append(f"expected {len(expected) + 1} mutants, got {len(outcomes)}: {sorted(verdicts)}")
-        spans = {(o.kind, o.entity): o.original for o in outcomes}
-        if spans.get(("contract", "positive")) != "r > 0":
-            failures.append(f"the postcondition of positive must span its condition only, not "
-                            f"{spans.get(('contract', 'positive'))!r}")
-        # An invalid outcome stops the run unless an exemption names its gate.
-        planted_invalid = Outcome("k", "include/planted.h", "requires", 1, "fused", "(x)", "invalid")
-        if unexempted_invalid([planted_invalid], set()) != [planted_invalid]:
-            failures.append("an invalid outcome with no exemption was not reported")
-        exemption = tmp / "gate-mutants.txt"
-        rule = rule_ledger.rule_of(RULE)
-        row = exemption_row("include/planted.h", "requires", "fused", " (x) ")
-        rule_ledger.store(dataclasses.replace(rule_ledger.empty(rule), base={
-            row: rule_ledger.Entry(row, rule_ledger.ADMIT_VALUE, "a planted reason")}), file=exemption)
-        if unexempted_invalid([planted_invalid], load_exemptions(exemption)):
-            failures.append("an invalid outcome that an exemption names was still reported")
-        for label, text in (("no reason", "include/planted.h | requires | admit | fused: (x) | -\n"),
-                            ("no divider in its entity", "include/planted.h | requires | admit | fused (x) | why\n")):
-            exemption.write_text(f"format {rule_ledger.FORMAT}\nrule {RULE}\n{text}")
-            try:
-                load_exemptions(exemption)
-                failures.append(f"a row with {label} was read")
-            except SystemExit as refusal:
-                if f"{exemption}:3:" not in str(refusal):
-                    failures.append(f"the refusal of a row with {label} names no place: {refusal}")
-        # Only a refusal by a check of the header kills a mutant at the probe.
-        probe_cases = {("static assertion failed: small",): "killed",
-                       ("call of overloaded 'take(int)' is ambiguous",): "killed",
-                       ("'requirestrue' does not name a type",): "invalid",
-                       ("expected ';' before '}' token",): "invalid",
-                       ("redeclaration of 'template<class T>  requires  true struct S' with different constraints",
-                        "static assertion failed"): "invalid",
-                       (): "invalid"}
-        for messages, verdict in probe_cases.items():
-            planted_log = sarif.Log("cc1plus", tuple(
-                sarif.Diagnostic(sarif.Kind.ERROR, None, "planted.h", 3, 1, 0, message, "", 0, False, "", ())
-                for message in messages))
-            if probe_verdict(planted_log) != verdict:
-                failures.append(f"the probe errors {messages!r} must read as {verdict}, not "
-                                f"{probe_verdict(planted_log)}")
-        if probe_verdict(None) != "invalid":
-            failures.append("a probe with no log must read as invalid")
-        if (tmp / "include" / "planted.h").read_text() != PLANTED:
-            failures.append("the planted header was not restored")
-        failures.extend(_selftest_build_model(tmp / "api", args))
-        for line in failures:
-            print(f"mutation selftest: FAIL {line}", file=sys.stderr)
-        if not failures:
-            kills = sum(1 for o in outcomes if o.status == "killed")
-            print(f"mutation selftest: {len(outcomes) - kills} survivors and {kills} kills, as planted, "
-                  "and the invalid check holds")
-        return 1 if failures else 0
-
-
-def _exit_on_term(signum: int, _frame: object) -> None:
-    """Turn SIGTERM into SystemExit, so the finally block restores the mutated header."""
-    raise SystemExit(128 + signum)
-
-
-def main(argv: list[str]) -> int:
-    """Parse the command line and run one mode (`guard check --rule gate-mutants MODE ...`).
-
-    Args:
-        argv: The mode and its options
-
-    Returns:
-        The exit status of the mode, or 2 on a usage error
-    """
-    signal.signal(signal.SIGTERM, _exit_on_term)
-    parser = argparse.ArgumentParser(prog="guard check --rule gate-mutants", description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = parser.add_subparsers(dest="mode", required=True)
-    deps = sub.add_parser("deps")
-    deps.add_argument("--src", required=True)
-    deps.add_argument("--build", required=True)
-    deps.add_argument("--out", required=True)
-    deps.add_argument("--jobs", type=int, default=6)
-    mutate = sub.add_parser("mutate")
-    mutate.add_argument("--src", required=True)
-    mutate.add_argument("--build", required=True)
-    mutate.add_argument("--out", required=True)
-    mutate.add_argument("--header", nargs="+", required=True)
-    mutate.add_argument("--jobs", type=int, default=6)
-    mutate.add_argument("--neg-cap", type=int, default=80)
-    mutate.add_argument("--syntax-cap", type=int, default=12)
-    mutate.add_argument("--run-cap", type=int, default=4, help="test executables built and run per mutant")
-    mutate.add_argument("--lines", default="", help="comma-separated gate lines to re-check")
-    mutate.add_argument("--results", default="results.jsonl", help="the file under --out to append to")
-    selftest = sub.add_parser("selftest")
-    selftest.add_argument("--compiler", required=True)
-    selftest.add_argument("--ninja", default="", help="the ninja binary, when it is not on PATH")
-    selftest.add_argument("--cmake", default="", help="the cmake of the planted project (default: the cmake of "
-                                                       "PATH at the pin, utils/assay/setup/pins.py)")
-    gates = sub.add_parser("gates")
-    gates.add_argument("header", nargs="+", help="the path of each header")
-    args = parser.parse_args(argv)
-    if args.mode == "gates":
-        return gate_finder.main(args.header)
-    return {"deps": cmd_deps, "mutate": cmd_mutate, "selftest": cmd_selftest}[args.mode](args)

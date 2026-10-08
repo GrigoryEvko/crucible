@@ -1,0 +1,3 @@
+# The CMake cache names the patched compiler.
+format 1
+cache CMAKE_CXX_COMPILER type=FILEPATH | {cxx}

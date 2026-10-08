@@ -1,0 +1,15 @@
+"""A planted probe of the sanitizer runtime of a library: the dispatch library carries the runtime of ASan."""
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class SanitizerRuntime:
+    """The planted runtime of one library."""
+
+    sanitizer: str
+
+
+def sanitizer_runtime(path: str) -> SanitizerRuntime | None:
+    """Return the runtime of ASan for the dispatch library, and None for each other library."""
+    return SanitizerRuntime("address") if path.endswith("libcrucible_dispatch.so") else None

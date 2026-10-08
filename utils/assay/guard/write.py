@@ -1,6 +1,6 @@
 """guard write — write the ledger of one rule through assay.core.ledger, with the checks of its policy.
 
-usage: guard write --rule ID [--raise | --admit] [--reason TEXT] [--root DIR] [--build-dir DIR]
+usage: guard write --rule ID [--raise | --admit] [--reason TEXT] [--root DIR] [--build-dir DIR] [--path PATH]...
        guard write --rule ID --build-dir DIR [--raise | --admit] [--reason TEXT] [--add-configuration]
                                            a rule of the engine plugin
        guard write --rule ID --import LOG  a rule of the engine plugin or elf with configurations
@@ -15,6 +15,11 @@ when the rule changed what it reports, and give the reason in the commit.
 A rule of the policy max or baseline judges its ledger itself, so its module
 writes the ledger: the function written(context, ledger, reason) of the module
 gives the new ledger, and --reason gives the reason of a changed row.
+
+--path names the paths that a rule of the engine build reads, such as the
+headers of gate-mutants (assay.guard.engines.buildsys.runner, THE PATHS).
+The command then writes only the rows of those paths, and it keeps each
+other row.  It applies to a rule of the policy count or admit.
 
 A rule of the policy none has no ledger.  Its module can write a data file
 from a build.  Then the function refresh(context) of the module writes the
@@ -42,6 +47,7 @@ does.
 """
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from assay.core import ledger as rule_ledger
@@ -50,6 +56,9 @@ from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
 from assay.guard import check
+
+# The policies with rows that --path can divide by their path.
+PARTIAL_POLICIES = (rule_registry.Policy.COUNT, rule_registry.Policy.ADMIT)
 
 
 def main(argv: list[str]) -> int:
@@ -79,12 +88,17 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--build-dir", type=Path, default=None)
     parser.add_argument("--add-configuration", dest="add_configuration", action="store_true")
     parser.add_argument("--import", dest="import_log", type=Path, default=None, metavar="LOG")
+    parser.add_argument("--path", dest="paths", action="append", default=[], metavar="PATH")
     options = parser.parse_args(argv)
     chosen = check.selected(registry, [options.rule], [])
     if isinstance(chosen, str):
         print(f"guard write: {chosen}", file=sys.stderr)
         return 2
     rule = chosen[0]
+    if options.paths and (rule.engine != rule_registry.Engine.BUILD or rule.policy not in PARTIAL_POLICIES):
+        check_report.write_line("guard write: --path applies only to a rule of the engine build with the policy count "
+                                "or admit", is_error=True)
+        return 2
     root = options.root.resolve()
     build_dir = options.build_dir.resolve() if options.build_dir is not None else None
     if rule.engine == rule_registry.Engine.PLUGIN:
@@ -121,7 +135,7 @@ def main(argv: list[str]) -> int:
     elif rule.engine == rule_registry.Engine.BUILD:
         from assay.guard.engines.buildsys import runner as build_runner
 
-        build_context = build_runner.BuildContext(root, build_dir)
+        build_context = build_runner.BuildContext(root, build_dir, paths=options.paths)
         build_context.rule = rule
         context = build_context
     try:
@@ -137,9 +151,15 @@ def main(argv: list[str]) -> int:
         if rule.policy in (rule_registry.Policy.MAX, rule_registry.Policy.BASELINE):
             written = runner.rule_module(rule).written(context, ledger, options.reason)
         else:
-            written = rule_ledger.write(rule, ledger, context.findings_of(rule),
+            named = set(options.paths)
+            judged = replace(ledger, base={key: entry for key, entry in ledger.base.items()
+                                           if not named or key.path in named})
+            written = rule_ledger.write(rule, judged, context.findings_of(rule),
                                         mode=options.mode or rule_ledger.WriteMode.LOWER, reason=options.reason,
                                         moved=git.moves(root))
+            if named:
+                kept = {key: entry for key, entry in ledger.base.items() if key.path not in named}
+                written = replace(written, base={**kept, **written.base})
     except runner.NotApplicable as reason:
         print(f"guard write: the rule {rule.id} does not apply: {reason}", file=sys.stderr)
         return 2

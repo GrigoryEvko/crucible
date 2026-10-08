@@ -1,0 +1,6 @@
+"""A planted vessel test that passes when the gate gives it the build directory."""
+
+import os
+import sys
+
+sys.exit(0 if os.environ.get("CRUCIBLE_BUILD_DIR") else 1)

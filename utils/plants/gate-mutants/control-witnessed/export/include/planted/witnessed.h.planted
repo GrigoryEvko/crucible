@@ -1,0 +1,20 @@
+// A planted header with a concept, a requires clause and a contract.
+#pragma once
+
+namespace planted {
+
+template <class T>
+concept Small = sizeof(T) <= 4;
+
+template <class T>
+    requires Small<T>
+constexpr int take(T) {
+    return 1;
+}
+
+inline int half(int value) {
+    contract_assert(value % 2 == 0);
+    return value / 2;
+}
+
+}  // namespace planted

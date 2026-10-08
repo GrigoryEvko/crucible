@@ -339,29 +339,32 @@ crucible_script_test(NAME patched_gcc_probe_self_test
 set_tests_properties(patched_gcc_probe_self_test PROPERTIES LABELS "ci_guard")
 
 # The tree configures, builds and tests only with the CMake and the ctest that
-# the rows of cmake of utils/pins.txt pin.  cmake_pin rejects a ctest of
-# another version that runs the tests, and a cmake or a ctest of another
-# version in CMakeCache.txt (`setup check`, utils/assay/setup/pins.py).  The
-# configure self-test plants each kind of pin against cmake/CMakePin.cmake,
-# and a configure of a scratch project with a pin of another version must
-# stop.  The test of the pin table plants each kind of pin row, and it makes
-# sure that each master refuses a Python older than the pin python.  The test
-# of the install plants each kind of install against
-# utils/assay/setup/install.py, and it installs a planted tool with no network.
-crucible_script_test(NAME cmake_pin
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/setup check --build-dir ${CMAKE_BINARY_DIR})
-crucible_script_test(NAME cmake_pin_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest setup.pins
-          --cmake ${CMAKE_COMMAND} --ctest ${CMAKE_CTEST_COMMAND} --make-program ${CMAKE_MAKE_PROGRAM})
+# the rows of cmake of utils/pins.txt pin.  The rule tool-pins (its test
+# guard_tool_pins, from the block of the engine build below) holds each row of
+# the pin table to its holder.  It rejects a ctest of another version that
+# runs the tests, and a cmake, a ctest or a C++ compiler of another version in
+# CMakeCache.txt.  The configure self-test plants each kind of pin against
+# cmake/CMakePin.cmake, and a configure of a scratch project with a pin of
+# another version must stop.  The test of the pin table plants each kind of
+# pin row, and it makes sure that each master refuses a Python older than the
+# pin python.  The test of the module of the rule reads the pin of CMake, the
+# programs of a build and the walk to the ctest of a run, and it runs the
+# check of a scratch build under the ctest of this build.  The test of the
+# install plants each kind of install against utils/assay/setup/install.py,
+# and it installs a planted tool with no network.
 crucible_script_test(NAME cmake_pin_configure_self_test
   COMMAND ${CMAKE_COMMAND} -DWORK=${CMAKE_CURRENT_BINARY_DIR}/cmake_pin_configure_self_test
           -DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM} -P ${CMAKE_SOURCE_DIR}/cmake/CMakePinSelfTest.cmake)
 crucible_script_test(NAME assay_core_test_pins
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.core.test_pins)
+crucible_script_test(NAME assay_setup_test_pins
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.setup.test_pins)
 crucible_script_test(NAME assay_setup_test_install
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.setup.test_install)
-set_tests_properties(cmake_pin cmake_pin_self_test cmake_pin_configure_self_test assay_core_test_pins
+set_tests_properties(cmake_pin_configure_self_test assay_core_test_pins assay_setup_test_pins
   assay_setup_test_install PROPERTIES LABELS "ci_guard")
+set_tests_properties(assay_setup_test_pins PROPERTIES
+  ENVIRONMENT "ASSAY_TEST_CMAKE=${CMAKE_COMMAND};ASSAY_TEST_CTEST=${CMAKE_CTEST_COMMAND};ASSAY_TEST_NINJA=${CMAKE_MAKE_PROGRAM}")
 
 # The tests of cmake/Ccache.cmake.  Each one configures a small project.  The
 # launcher case tries CRUCIBLE_USE_CCACHE=OFF with ccache in the environment
@@ -382,16 +385,6 @@ foreach(ccache_case launcher relocation plain_relocation wrapper)
   set_tests_properties(ccache_${ccache_case}_self_test PROPERTIES LABELS "ci_guard")
 endforeach()
 
-# GCC 16 does not keep the P2900 specifier of a template in a header unit or
-# in a precompiled header, and CRUCIBLE_PRE and CRUCIBLE_POST stay.  The test
-# requires the same contract error from an include, a header unit and a
-# precompiled header of a template in the macro form, and from a header unit
-# of fixy/Mutation.h.  Its control requires that a header unit loses the
-# specifier form, so it fails when a compiler keeps the specifier.
-crucible_script_test(NAME contract_header_unit
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule contract-header-unit
-          --cxx ${CRUCIBLE_REAL_CXX} --include ${CMAKE_SOURCE_DIR}/include)
-set_tests_properties(contract_header_unit PROPERTIES LABELS "foundation;ci_guard")
 # The witness rows.  Each type that attests to a fact that it cannot see,
 # such as a pin, a mapping, a descriptor, a permission or a context, has a
 # witness row in utils/rule-table.txt with the expression of a forger, and
@@ -529,38 +522,36 @@ set_tests_properties(ctx_testing_boundary ctx_testing_boundary_self_test
     PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 
 # Differential tests of the session relations against the projection
-# oracle of Tirore, Bengtson and Carbone (ITP 2023).  The check emits the
-# tests of test/session_oracle/ from golden.csv again and compares them
-# with the committed files.  It needs no oracle and no compiler.  The
-# self-test compiles the emitted tests, then a copy with one wrong row
-# planted in each test, which must fail on that row.  The oracle itself
+# oracle of Tirore, Bengtson and Carbone (ITP 2023).  The rule session-oracle
+# (its test guard_session_oracle, from the block of the engine build below)
+# emits the tests of test/session_oracle/ from golden.csv again and compares
+# them with the committed files.  It needs no oracle and no compiler.  The
+# group oracle of `guard selftest` (utils/assay/tests/oracle/) compiles the
+# emitted tests, then a copy with one wrong row planted in each test, which
+# must fail on that row.  It also tests the sources of the oracle and each
+# rule of the store of compiled units on scratch units.  The oracle itself
 # runs only when a person regenerates golden.csv.
 #
-# The self-test has SESSION_ORACLE_SELF_TEST_PARTS disjoint parts, and each
-# part is one test.  Part K builds each unit whose position in the list of
-# units, modulo the count of parts, is K.  The parts then hold each unit one
-# time, and no part takes much more than one compile of its largest unit.
-# The store of utils/assay/oracle/unit_store.py keeps the result of
-# each unit, so a part builds only the units whose inputs changed.  A part
-# that takes each result from the store uses one core for about 3 s.  A part
-# with no stored result runs about 25 compiles for about 6 s.  PROCESSORS 8
-# lets CTest run the three parts together at -j24: a warm run then takes
-# 6 s of wall time and not 12 s, and a cold run 9 s and not 24 s.  The store
-# self-test proves each rule of the store on scratch units.
-crucible_script_test(NAME session_oracle_check
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule session-oracle check)
-set_tests_properties(session_oracle_check PROPERTIES LABELS "ci_guard;session_oracle")
-crucible_script_test(NAME session_oracle_store_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest oracle.unit_store --cxx ${CMAKE_CXX_COMPILER})
-set_tests_properties(session_oracle_store_self_test PROPERTIES LABELS "ci_guard;session_oracle")
+# The group has SESSION_ORACLE_SELF_TEST_PARTS disjoint parts, and each part
+# is one test.  Part K builds each unit whose position in the list of units,
+# modulo the count of parts, is K, and the last part also runs the tests of
+# the group that have no parts.  The parts then hold each unit one time, and
+# no part takes much more than one compile of its largest unit.  The store of
+# utils/assay/oracle/unit_store.py keeps the result of each unit, so a part
+# builds only the units whose inputs changed.  A part that takes each result
+# from the store uses one core for about 3 s.  A part with no stored result
+# runs about 25 compiles for about 6 s.  PROCESSORS 8 lets CTest run the three
+# parts together at -j24: a warm run then takes 6 s of wall time and not
+# 12 s, and a cold run 9 s and not 24 s.
 set(SESSION_ORACLE_SELF_TEST_PARTS 3)
 math(EXPR session_oracle_last_part "${SESSION_ORACLE_SELF_TEST_PARTS} - 1")
 foreach(part RANGE ${session_oracle_last_part})
-  crucible_script_test(NAME session_oracle_self_test_${part}
-    COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule session-oracle self-test
-            --cxx ${CMAKE_CXX_COMPILER} --part ${part}/${SESSION_ORACLE_SELF_TEST_PARTS})
-  set_tests_properties(session_oracle_self_test_${part} PROPERTIES
+  crucible_script_test(NAME selftest_oracle_${part}
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest oracle
+            --part ${part}/${SESSION_ORACLE_SELF_TEST_PARTS})
+  set_tests_properties(selftest_oracle_${part} PROPERTIES
     LABELS "ci_guard;session_oracle"
+    ENVIRONMENT "ASSAY_TEST_CXX=${CRUCIBLE_REAL_CXX}"
     PROCESSORS 8)
 endforeach()
 
@@ -5052,23 +5043,22 @@ foreach(_loop_module loop.gauge_cold loop.pgo loop.bench loop.fuzz loop.derive)
   set_tests_properties(${_loop_self_test} PROPERTIES LABELS "ci_guard")
 endforeach()
 
-# vessel_acceptance is the acceptance gate of the PyTorch vessel under
-# vessel/torch.  utils/assay/guard/legacy/check_vessel_acceptance.py builds the vessel targets
-# and accepts the vessel of this build only when the vessel compiles against a
-# PyTorch with DispatchKey::Crucible at -Werror, each vessel/torch/test_*.py
-# exits 0, and replay gives the bytes of PyTorch alone.  The self-test needs no
-# PyTorch, so it is a guard of every build.
+# The rule vessel-acceptance is the acceptance gate of the PyTorch vessel
+# under vessel/torch (utils/assay/guard/engines/buildsys/vessel_acceptance.py).
+# Its test guard_vessel_acceptance, from the block of the engine build below,
+# builds the vessel targets and accepts the vessel of this build only when the
+# vessel compiles against a PyTorch with DispatchKey::Crucible at -Werror,
+# each vessel/torch/test_*.py exits 0, and replay gives the bytes of PyTorch
+# alone.  Its witness needs no PyTorch, so it is a guard of every build.
 #
-# A build that cannot operate the gate does not get a test that passes or
-# skips.  It gets vessel_acceptance_unavailable, which ctest shows as
-# "Not Run (Disabled)" with the others that did not run.  A build that must
+# A build with no TORCH_DIR does not compile the vessel, and the test of the
+# rule skips.  A build with a TORCH_DIR that cannot operate the gate gets the
+# test of the rule as a disabled test.  ctest shows it as "Not Run (Disabled)"
+# with the others that did not run.  A build that must
 # operate the gate sets CRUCIBLE_REQUIRE_VESSEL, and the configure step then
 # stops with the reason.  CRUCIBLE_VESSEL_PYTHON is the interpreter of the
 # PyTorch that TORCH_DIR names.  The default is the interpreter of the
 # virtual environment that holds TORCH_DIR, when one exists.
-crucible_script_test(NAME vessel_acceptance_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule vessel-acceptance --self-test)
-set_tests_properties(vessel_acceptance_self_test PROPERTIES LABELS "ci_guard")
 option(CRUCIBLE_REQUIRE_VESSEL
   "Fail the configure step when the build cannot operate the vessel acceptance gate" OFF)
 set(_vessel_gate_blocker "")
@@ -5081,16 +5071,18 @@ elseif(CMAKE_BUILD_TYPE STREQUAL "Debug" AND (CRUCIBLE_SANITIZE OR CRUCIBLE_TSAN
 elseif(NOT CRUCIBLE_WERROR)
   set(_vessel_gate_blocker "the build sets CRUCIBLE_WERROR to OFF, and the gate accepts only a -Werror build")
 endif()
+set(_vessel_disabled FALSE)
 if(_vessel_gate_blocker)
   if(CRUCIBLE_REQUIRE_VESSEL)
     message(FATAL_ERROR "vessel_acceptance: ${_vessel_gate_blocker}.  Set CRUCIBLE_REQUIRE_VESSEL=OFF, or "
                         "configure a build of the release or bench preset with -DTORCH_DIR=<the PyTorch fork>.")
   endif()
-  message(STATUS "vessel_acceptance: ${_vessel_gate_blocker}, so the gate is registered as disabled")
-  # The ci_guard label puts the disabled entry in the list of tests that did
-  # not run when `ctest -L ci_guard` operates, so the pre-merge gate shows it.
-  crucible_script_test(NAME vessel_acceptance_unavailable COMMAND ${CMAKE_COMMAND} -E false)
-  set_tests_properties(vessel_acceptance_unavailable PROPERTIES DISABLED TRUE LABELS "ci_guard;vessel")
+  if("${TORCH_DIR}" STREQUAL "")
+    message(STATUS "vessel_acceptance: ${_vessel_gate_blocker}, so the test of the rule skips")
+  else()
+    message(STATUS "vessel_acceptance: ${_vessel_gate_blocker}, so the test of the rule is registered as disabled")
+    set(_vessel_disabled TRUE)
+  endif()
 else()
   get_filename_component(_vessel_venv_python "${TORCH_DIR}/../../../bin/python" ABSOLUTE)
   if(EXISTS "${_vessel_venv_python}")
@@ -5100,13 +5092,6 @@ else()
   endif()
   set(CRUCIBLE_VESSEL_PYTHON "${_vessel_default_python}" CACHE FILEPATH
     "The interpreter of the PyTorch that TORCH_DIR names, for the vessel acceptance gate")
-  crucible_script_test(NAME vessel_acceptance
-    COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule vessel-acceptance
-            --build-dir ${CMAKE_BINARY_DIR} --torch-dir ${TORCH_DIR} --python ${CRUCIBLE_VESSEL_PYTHON})
-  # The gate builds the vessel targets in this build directory, so no other
-  # test operates beside it.  It invokes a script, so it carries ci_guard, and
-  # `ctest -L ci_guard` operates it in a build that has the vessel.
-  set_tests_properties(vessel_acceptance PROPERTIES LABELS "ci_guard;vessel" TIMEOUT 3600 RUN_SERIAL TRUE)
 endif()
 
 # The self-test of the parse reader, and the self-test of the mint model.
@@ -5125,23 +5110,19 @@ crucible_script_test(NAME tsast_self_test
 crucible_script_test(NAME mintmodel_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest loop.derive.mint_model)
 set_tests_properties(tsast_self_test mintmodel_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
-# The mutation tool weakens one gate of a header at a time and asks whether a
-# test notices.  Its self-test plants a header with five gates.  Negative
-# fixtures witness three of them, a test that ninja builds and runs witnesses
-# a contract, and nothing witnesses the fifth.  One witnessed gate is written
-# `requires(` with no space, so its mutant must stay apart from `requires`.
-# The tool must report four kills and one survivor, which proves that it
-# tells a witnessed gate from a bare one in each tier.  The self-test also
-# proves that an invalid mutant stops a run unless a reviewed exemption names
-# its gate.  Exit 3 (no tree-sitter kit) is a skip.
-set(_mutation_ninja "")
-if(CMAKE_GENERATOR MATCHES "Ninja")
-  set(_mutation_ninja --ninja ${CMAKE_MAKE_PROGRAM})
-endif()
-crucible_script_test(NAME mutation_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule gate-mutants selftest
-          --compiler ${CMAKE_CXX_COMPILER} --cmake ${CMAKE_COMMAND} ${_mutation_ninja})
-set_tests_properties(mutation_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
+# The rule gate-mutants weakens one gate of a header at a time and asks if a
+# test sees it.  Its test, the group mutation of `guard selftest`, plants a
+# header with gates that a negative fixture, a syntax-only compile and a death
+# test hold, and gates that no test holds.  Each mutant must get its verdict
+# and its killer, in each tier.  The group also shows that the run takes the
+# program behind the test launcher, and that `guard write --path` writes the
+# row of an invalid mutant and keeps the rows of each other header.  Exit 77
+# (no tree-sitter kit) is a skip.  The rule runs only on the headers that a
+# call names, so the block of the engine build gives it only its witness.
+crucible_script_test(NAME selftest_mutation
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest mutation)
+set_tests_properties(selftest_mutation PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 77
+  ENVIRONMENT "ASSAY_TEST_CXX=${CRUCIBLE_REAL_CXX};ASSAY_TEST_CMAKE=${CMAKE_COMMAND};ASSAY_TEST_NINJA=${CMAKE_MAKE_PROGRAM}")
 
 # Each guard test of this directory that reads the parse trees starts on a
 # full tree cache.  The rule parse-clean runs in eight parts, and each part
@@ -5173,15 +5154,34 @@ endforeach()
 # The rules of the engine build read this build directory: the compile
 # database, the replies of the CMake file API, build.ninja and the logs of
 # Ninja, the records of the build launcher and of the tests, and the census
-# (cmake/Guards.cmake).  No build rule reads the parse trees.  The rule
-# reconfigure-noop configures a build again and builds it, and a ctest test
-# cannot do that to the build that runs it.  So it gets only its witness, and
-# a step of the CI build job runs the check.  The census rules
+# (cmake/Guards.cmake).  No build rule reads the parse trees of the tree.
+# The rule reconfigure-noop configures a build again and builds it, and a
+# ctest test cannot do that to the build that runs it.  So it gets only its
+# witness, and a step of the CI build job runs the check.  The rule
+# gate-mutants runs only on the headers that a call names, so it gets only
+# its witness too.  A build with a TORCH_DIR that cannot operate the vessel
+# gate disables the test of vessel-acceptance (the block of the vessel above).
+# The label ci_guard puts the disabled test in the list of tests that did not
+# run when `ctest -L ci_guard` operates, so the pre-merge gate shows it.  In a
+# build that operates the gate, the gate builds the vessel targets in this
+# build directory, so no other test runs beside it.  The rule
+# contract-header-unit compiles headers of include/foundation and fixy, so its
+# test also has the label foundation.  The test of session-oracle has the
+# label session_oracle of the emitted tests.  The census rules
 # parse-total, header-fanout and instruction-total read the record of each
 # negative fixture.  Each fixture registration appends its name to the global
 # property CRUCIBLE_NEG_FIXTURE_TESTS, and a call at the end of the top
 # directory makes the three tests DEPEND on each fixture.
-crucible_build_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} NO_CHECK reconfigure-noop)
+crucible_build_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} NO_CHECK reconfigure-noop gate-mutants)
+set_property(TEST guard_contract_header_unit APPEND PROPERTY LABELS foundation)
+set_property(TEST guard_session_oracle APPEND PROPERTY LABELS session_oracle)
+if(_vessel_disabled)
+  set_tests_properties(guard_vessel_acceptance PROPERTIES DISABLED TRUE)
+  set_property(TEST guard_vessel_acceptance APPEND PROPERTY LABELS vessel)
+elseif(NOT _vessel_gate_blocker)
+  set_tests_properties(guard_vessel_acceptance PROPERTIES TIMEOUT 3600 RUN_SERIAL TRUE)
+  set_property(TEST guard_vessel_acceptance APPEND PROPERTY LABELS vessel)
+endif()
 function(crucible_order_census_checks)
   get_property(_fixtures GLOBAL PROPERTY CRUCIBLE_NEG_FIXTURE_TESTS)
   set_tests_properties(guard_parse_total guard_header_fanout guard_instruction_total

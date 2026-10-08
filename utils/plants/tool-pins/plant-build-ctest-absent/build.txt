@@ -1,0 +1,5 @@
+# The CMake cache names a ctest that does not exist.
+format 1
+cache CMAKE_COMMAND type=FILEPATH | {root}/programs/cmake
+cache CMAKE_CTEST_COMMAND type=FILEPATH | {root}/programs/absent-ctest
+cache CMAKE_CXX_COMPILER type=FILEPATH | {root}/programs/g++

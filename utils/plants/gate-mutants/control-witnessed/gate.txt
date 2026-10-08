@@ -1,0 +1,3 @@
+# The call names one header of the export.  A test of the export kills the mutant of each of its gates.
+format 1
+path include/planted/witnessed.h

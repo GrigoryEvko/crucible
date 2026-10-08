@@ -1,5 +1,31 @@
 """setup check — make sure that each installed tool and the cmake and the ctest of a build agree with their pins.
 
+THE ROWS OF THE TABLE (the rule tool-pins of utils/registry.txt)
+    check_table() holds each row of utils/pins.txt to its holder, and
+    holder() gives the holder of each pin name:
+      build             cmake: THE CHECK OF A BUILD, and the installed tool
+                        cmake as a tool row
+      tool              a pin of a tool of assay.setup.install, or a pin of a
+                        part of it (the lineage of the kit, the packages of
+                        mypy).  When the tools directory holds the directory of
+                        the tool for this host, that directory must meet its
+                        pin.  A tool that is not installed gives no finding
+      compiler          gcc: the C++ compiler of the CMake cache of the build
+                        gives the pinned version with -dumpfullversion
+      host              python: the interpreter of the check has the pinned
+                        version or a version after it
+      oracle-toolchain  temurin-jdk, sbt and mcrl2 (assay.setup.oracle): the
+                        directory of the toolchain holds no install of the pin
+                        that stopped (NAME-VERSION.partial)
+      oracle-source     the pins of assay.oracle.sources.SOURCES: the row is a
+                        git source on GitHub or an archive
+    A row with no holder is an error, and a new pin then gets a check before
+    it lands.  Only the row of this host gets the check of its holder.  The
+    rows of cmake give one version for each platform.  THE CHECK OF A BUILD
+    reads them all.  It runs one time when the call gives a build directory,
+    also when no row of cmake is for this host.  `setup check` with no TOOL
+    and the rule call check_table().
+
 THE PIN OF CMAKE
     The rows of the pin cmake of utils/pins.txt give one version of CMake and
     ctest, with the SHA-256 of the manylinux wheel of CMake on PyPI for each
@@ -8,9 +34,9 @@ THE PIN OF CMAKE
     and this module is the check that rejects a ctest of another version.
 
 THE INSTALLED TOOLS
-    `setup check [TOOL]...` makes sure that each installed tool of the tools
-    directory (assay.setup.install) meets its pin, by default tree-sitter,
-    ast-grep and cmake: the stamp, then the checks of the tool.  No network.
+    `setup check TOOL...` makes sure that each named tool of the tools
+    directory (assay.setup.install) is installed and meets its pin: the
+    stamp, then the checks of the tool.  No network.
 
 THE PROGRAMS OF A BUILD DIRECTORY
     The CMake cache of a configured build directory holds CMAKE_COMMAND and
@@ -26,37 +52,37 @@ THE PROGRAMS OF A BUILD DIRECTORY
     self-test outside ctest, takes the program of PATH only when that program
     gives the pinned version (pinned_program).
 
-THE CHECK OF A BUILD (`setup check --build-dir BUILD_DIR`, the test cmake_pin)
+THE CHECK OF A BUILD (`setup check --build-dir BUILD_DIR`, the rule tool-pins)
     Each of these programs must give the pinned version:
     * The ctest that runs the check: the nearest ancestor process whose name
       in /proc/PID/comm is ctest.  The check runs /proc/PID/exe --version, so
       it reads the program of that process, also when a wrapper started it.
     * CMAKE_COMMAND and CMAKE_CTEST_COMMAND of the build directory.
     A program of another version is an error.  A run with no ctest ancestor,
-    a program whose version the check cannot read and a pin table that the
-    check cannot read are errors too.  Each finding has the place of the
-    first row of the pin cmake.
+    a program whose version the check cannot read and a table with no row of
+    cmake or with two versions of it are errors too.  Each finding has the
+    place of the first row of the pin cmake.
 
 Usage
-    setup check [TOOL]...
-    setup check --build-dir BUILD_DIR [--warnings-dir DIR]
+    setup check [--build-dir BUILD_DIR] [--warnings-dir DIR]
+    setup check TOOL...
     setup check --print-program BUILD_DIR cmake|ctest
-    guard selftest setup.pins [--cmake CMAKE --ctest CTEST --make-program NINJA]
 
-Exit 0 with no error, 1 on an error of a build, 2 on a usage error or a failed
-self-test.  For the installed tools: 2 when a tool does not meet its pin, 3
-when a tool is absent, 4 when the host has no pin of a tool, and the largest
-of these when more than one tool fails.
+Exit 0 with no error, 1 on an error of the table, 2 on a usage error.  For
+the named tools, the exit is 2 when a tool does not meet its pin.  It is 3
+when a tool is not installed, and 4 when the host has no pin of a tool.
+When more than one tool fails, the exit is the largest of these.
+`guard selftest tests.setup.test_pins` does a test of the module, and the
+plants of the rule tool-pins are the tests of check_table().
 """
 
 from __future__ import annotations
 
+import enum
 import functools
 import os
 import shutil
 import sys
-import tempfile
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -64,10 +90,10 @@ from assay.core import pins as pin_table
 from assay.core import proc
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
-from assay.core.paths import REPO_ROOT, SETUP
+from assay.core.paths import REPO_ROOT
 from assay.readers import cmake as cmake_reader
 
-CHECK = "cmake-pin"
+CHECK = "tool-pins"
 ROOT = REPO_ROOT
 PIN_NAME = "cmake"
 PROC = Path("/proc")
@@ -260,7 +286,8 @@ def ancestor_ctest(proc_root: Path = PROC, pid: int | None = None) -> Path | Non
 # ── The check of a build ───────────────────────────────────────────────────
 
 
-def judge_program(pin: CmakePin, name: str, program: str | Path, what: str, remedy: str) -> check_report.Finding | None:
+def judge_program(pin: CmakePin, name: str, program: str | Path, what: str, remedy: str,
+                  kind: str = "build-program", entity: str = "") -> check_report.Finding | None:
     """Return an error when a program does not give the pinned version, else None.
 
     Args:
@@ -269,13 +296,16 @@ def judge_program(pin: CmakePin, name: str, program: str | Path, what: str, reme
         program: The program to run.  A link of /proc runs the program of its process
         what: The role and the path of the program, for the message
         remedy: The sentence that tells how to correct the error
+        kind: The kind of the finding: build-program for a program of the build, run-program for the ctest of the run
+        entity: The entity of the finding, by default the name of the program
     """
     found = program_version(program)
     if found == (name, pin.version):
         return None
     shown = f"{found[0]} {found[1]}" if found else "no version on the first line of --version"
     return check_report.Finding("error", pin_table.PINS_PATH, pin.line, CHECK,
-                                f"{what} gives {shown}, but this file pins {name} {pin.version}.  {remedy}")
+                                f"{what} gives {shown}, but this file pins {name} {pin.version}.  {remedy}",
+                                kind, entity or name)
 
 
 def link_target(link: Path) -> str:
@@ -286,25 +316,18 @@ def link_target(link: Path) -> str:
         return str(link)
 
 
-def check(build_dir: Path, warnings_dir: Path | None, proc_root: Path = PROC, pid: int | None = None,
-          table: tuple[pin_table.Pin, ...] | None = None) -> int:
+def build_findings(pin: CmakePin, build_dir: Path, proc_root: Path, pid: int | None) -> list[check_report.Finding]:
     """Check the ctest that runs this process and the two programs of the build directory against the pin.
 
     Args:
+        pin: The pin of CMake
         build_dir: The build directory of the run
-        warnings_dir: The warnings directory, or None
-        proc_root: The process file system, or a copy of its shape in a self-test
-        pid: The process whose ctest ancestor the check reads, by default this process
-        table: The pins, by default the pin table of the tree
+        proc_root: The process file system, or a copy of its shape for a plant
+        pid: The process of the check, with a ctest ancestor that the check reads, by default this process
 
     Returns:
-        1 when one finding or more is an error, else 0
+        One error for each program that does not give the pinned version, at the first row of the pin
     """
-    try:
-        pin = read_pin(table)
-    except PinError as error:
-        return check_report.emit([check_report.Finding("error", pin_table.PINS_PATH, error.line, CHECK, str(error))],
-                                 CHECK, warnings_dir)
     findings: list[check_report.Finding] = []
     try:
         configured_ctest = configured_program(build_dir, "ctest")
@@ -315,23 +338,241 @@ def check(build_dir: Path, warnings_dir: Path | None, proc_root: Path = PROC, pi
         findings.append(check_report.Finding(
             "error", pin_table.PINS_PATH, pin.line, CHECK,
             f"no ctest runs this check, so it cannot read the version of the ctest of the run.  Run the test "
-            f"cmake_pin with {configured_ctest}."))
+            f"guard_tool_pins with {configured_ctest}.", "run-program", "ctest"))
     else:
         found = judge_program(pin, "ctest", runner, f"the ctest that runs the tests ({link_target(runner)})",
-                              f"Run the tests with the ctest of the build directory, {configured_ctest}.")
+                              f"Run the tests with the ctest of the build directory, {configured_ctest}.",
+                              "run-program")
         findings.extend([found] if found else [])
     for name, entry in CACHE_ENTRIES.items():
         try:
             program = configured_program(build_dir, name)
         except PinError as error:
-            findings.append(check_report.Finding("error", pin_table.PINS_PATH, pin.line, CHECK, str(error)))
+            findings.append(check_report.Finding("error", pin_table.PINS_PATH, pin.line, CHECK, str(error),
+                                                 "build-program", entry))
             continue
         found = judge_program(pin, name, program, f"{entry} of {build_dir} ({program})",
-                              f"Configure the build directory again with the pinned CMake.  {install_hint()}")
+                              f"Configure the build directory again with the pinned CMake.  {install_hint()}",
+                              "build-program", entry)
         findings.extend([found] if found else [])
+    return findings
+
+
+class Holder(enum.StrEnum):
+    """The check that holds the rows of one pin name (THE ROWS OF THE TABLE)."""
+
+    BUILD = "build"
+    TOOL = "tool"
+    COMPILER = "compiler"
+    HOST = "host"
+    ORACLE_TOOLCHAIN = "oracle-toolchain"
+    ORACLE_SOURCE = "oracle-source"
+
+
+# The pin of the minimum version of Python, which each master holds (assay.core.pins).
+PYTHON_PIN = "python"
+
+
+def tool_of(name: str) -> str | None:
+    """Return the tool of assay.setup.install that a pin is a part of: the pin of the tool, a package or the kit lineage."""
+    from assay.setup import install
+
+    for tool in install.TOOLS.values():
+        if name == tool.pin or name in tool.requires:
+            return tool.name
+    return "tree-sitter" if name in install.LINEAGE_PINS else None
+
+
+def holder(name: str) -> Holder | None:
+    """Return the holder of the rows of a pin name, or None for a pin that no check holds (THE ROWS OF THE TABLE)."""
+    from assay.oracle import sources
+    from assay.setup import gcc, oracle
+
+    if name == PIN_NAME:
+        return Holder.BUILD
+    if tool_of(name) is not None:
+        return Holder.TOOL
+    if name == gcc.PIN_NAME:
+        return Holder.COMPILER
+    if name == PYTHON_PIN:
+        return Holder.HOST
+    if name in oracle.TOOLCHAIN_PINS:
+        return Holder.ORACLE_TOOLCHAIN
+    if name in sources.SOURCES:
+        return Holder.ORACLE_SOURCE
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class TableCheck:
+    """The inputs of check_table(): the tree, the build, the tools directory, the toolchain of the oracle and the processes.
+
+    `root` is the tree with the file utils/pins.txt that the check reads.  `build_dir`
+    is None when the check reads no build.  `tools_root` and `oracle_root`
+    are None for the directories of assay.core.cache and assay.setup.oracle.
+    `proc_root` and `pid` give the process chain of THE CHECK OF A BUILD.
+    """
+
+    root: Path
+    build_dir: Path | None = None
+    tools_root: Path | None = None
+    oracle_root: Path | None = None
+    proc_root: Path = PROC
+    pid: int | None = None
+
+
+def row_error(pin: pin_table.Pin, kind: str, message: str) -> check_report.Finding:
+    """Return an error of the rule at the row of a pin."""
+    return check_report.Finding("error", pin_table.PINS_PATH, pin.line, CHECK, message, kind, pin.name)
+
+
+def tool_findings(name: str, table: tuple[pin_table.Pin, ...], tools_root: Path) -> list[check_report.Finding]:
+    """Check the installed directory of one tool for this host, when the tools directory holds it."""
+    from assay.setup import install
+
+    tool = install.TOOLS[name]
+    try:
+        pin = install.pin_of(tool, table)
+        directory = install.directory_of(tool, pin, tools_root, table)
+    except install.InstallError:
+        return []
+    if not directory.is_dir():
+        return []
+    try:
+        install.verify_installed(tool, directory, pin, table)
+    except install.InstallError as problem:
+        return [row_error(pin, "tool", f"the installed {name} of this host does not meet this row: {problem}  Run "
+                                       f"`python3 utils/bin/setup install {name}`")]
+    return []
+
+
+def compiler_findings(pin: pin_table.Pin, build_dir: Path) -> list[check_report.Finding]:
+    """Check that the C++ compiler of the CMake cache of a build gives the pinned version with -dumpfullversion."""
+    try:
+        entry = cmake_reader.cache(build_dir).get("CMAKE_CXX_COMPILER")
+    except cmake_reader.CmakeError as problem:
+        return [row_error(pin, "compiler", f"the CMake cache of {build_dir} cannot be read: {problem}")]
+    if entry is None or not entry.value.strip():
+        return []
+    compiler = entry.value.strip()
+    try:
+        done: proc.Completed | None = proc.run(proc.Command([compiler, "-dumpfullversion"],
+                                                            timeout_s=VERSION_TIMEOUT_SECONDS))
+    except proc.ToolFailed:
+        done = None
+    version = done.out.strip() if done is not None and done.exit == 0 else ""
+    if version == pin.version:
+        return []
+    return [row_error(pin, "compiler", f"the C++ compiler of {build_dir} ({compiler}) gives "
+                                       f"{version or 'no version'} with -dumpfullversion, and this row pins gcc "
+                                       f"{pin.version}.  Build the patched compiler with `python3 utils/bin/setup gcc "
+                                       f"PREFIX`, and configure the build again")]
+
+
+def host_findings(pin: pin_table.Pin) -> list[check_report.Finding]:
+    """Check that the interpreter of the check has the pinned version of Python or a version after it."""
+    parts = pin.version.split(".")
+    if not all(part.isdigit() for part in parts):
+        return [row_error(pin, "host", f"the version {pin.version} of the pin {pin.name} is not numbers with dots")]
+    wanted = tuple(int(part) for part in parts)
+    if tuple(sys.version_info[:len(wanted)]) >= wanted:
+        return []
+    shown = ".".join(str(part) for part in sys.version_info[:3])
+    return [row_error(pin, "host", f"the interpreter {sys.executable} is Python {shown}, and this row pins Python "
+                                   f"{pin.version} or a version after it")]
+
+
+def oracle_toolchain_findings(pin: pin_table.Pin, oracle_root: Path) -> list[check_report.Finding]:
+    """Check that the directory of the toolchain of the oracle holds no install of the pin that stopped."""
+    partial = oracle_root / f"{pin.name}-{pin.version}.partial"
+    if not partial.exists():
+        return []
+    return [row_error(pin, "oracle-toolchain", f"{partial} is left from an install that stopped, and "
+                                               f"`setup install oracle` refuses it.  Remove it and run the install "
+                                               f"again")]
+
+
+def oracle_source_findings(pin: pin_table.Pin) -> list[check_report.Finding]:
+    """Check that a pin of an oracle source is a git source on GitHub or an archive (assay.oracle.sources)."""
+    from assay.oracle import sources
+    from assay.oracle.rocq import OracleError
+
+    try:
+        sources.of_pin(pin)
+    except OracleError as problem:
+        return [row_error(pin, "oracle-source", str(problem))]
+    return []
+
+
+def check_table(request: TableCheck) -> list[check_report.Finding]:
+    """Hold each row of the pin table to its holder (THE ROWS OF THE TABLE), and give each error.
+
+    Complexity: linear in the rows, and one check of each holder for this host.
+
+    Args:
+        request: The tree, the build and the directories of the check
+    """
+    from assay.core import cache
+    from assay.setup import oracle
+
+    try:
+        table = pin_table.load(request.root / pin_table.PINS_PATH)
+    except (rows_grammar.RowsError, OSError) as problem:
+        return [check_report.Finding("error", pin_table.PINS_PATH, getattr(problem, "line", 0), CHECK,
+                                     f"the pin table cannot be read: {problem}", "table", "")]
+    host = pin_table.host_platform()
+    tools_root = request.tools_root if request.tools_root is not None else cache.tools_root()
+    oracle_root = request.oracle_root if request.oracle_root is not None else oracle.toolchain_root()
+    findings: list[check_report.Finding] = []
+    checked_tools: set[str] = set()
+    for pin in sorted(table, key=lambda item: item.line):
+        kind = holder(pin.name)
+        if kind is None:
+            findings.append(row_error(pin, "unheld", f"no check of the rule {CHECK} holds the pin {pin.name}.  Give "
+                                                     f"its name a holder in holder() of utils/assay/setup/pins.py, or "
+                                                     f"remove the row"))
+            continue
+        if pin_table.find(table, pin.name, host) != pin:
+            continue
+        tool = tool_of(pin.name)
+        if tool is not None and tool not in checked_tools:
+            checked_tools.add(tool)
+            findings += tool_findings(tool, table, tools_root)
+        if kind == Holder.COMPILER and request.build_dir is not None:
+            findings += compiler_findings(pin, request.build_dir)
+        elif kind == Holder.HOST:
+            findings += host_findings(pin)
+        elif kind == Holder.ORACLE_TOOLCHAIN:
+            findings += oracle_toolchain_findings(pin, oracle_root)
+        elif kind == Holder.ORACLE_SOURCE:
+            findings += oracle_source_findings(pin)
+    if request.build_dir is not None:
+        try:
+            findings += build_findings(read_pin(table), request.build_dir, request.proc_root, request.pid)
+        except PinError as problem:
+            findings.append(check_report.Finding("error", pin_table.PINS_PATH, problem.line, CHECK, str(problem),
+                                                 "build-program", PIN_NAME))
+    return findings
+
+
+def check(build_dir: Path | None, warnings_dir: Path | None, proc_root: Path = PROC, pid: int | None = None,
+          root: Path = ROOT) -> int:
+    """Hold each row of the pin table of a tree to its holder, with the build directory when one is given.
+
+    Args:
+        build_dir: The build directory of the run, or None
+        warnings_dir: The warnings directory, or None
+        proc_root: The process file system, or a copy of its shape in a self-test
+        pid: The process of the check, with a ctest ancestor that the check reads, by default this process
+        root: The tree with the pin table that the check reads
+
+    Returns:
+        1 when one finding or more is an error, else 0
+    """
+    findings = check_table(TableCheck(root, build_dir, proc_root=proc_root, pid=pid))
     if not findings:
-        print(f"cmake-pin: the ctest of the run and the cmake and the ctest of {build_dir} give {pin.version}, the "
-              f"pinned version.")
+        check_report.write_line(f"{CHECK}: each row of {pin_table.PINS_PATH} agrees with its holder"
+                                + (f" and with the build {build_dir}." if build_dir is not None else "."))
     return check_report.emit(findings, CHECK, warnings_dir)
 
 
@@ -368,19 +609,11 @@ def check_tools(names: list[str], root: Path | None = None) -> int:
     return worst
 
 
-# ── Self-test ──────────────────────────────────────────────────────────────
-
-
-def write_program(path: Path, text: str, status: int = 0) -> Path:
-    """Write a shell program that prints TEXT and exits with STATUS, and return its path."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"#!/bin/sh\nprintf '%s\\n' '{text}'\nexit {status}\n", encoding="utf-8")
-    path.chmod(0o755)
-    return path
+# ── A copy of the shape of /proc ───────────────────────────────────────────
 
 
 def write_process(proc_root: Path, pid: int, parent: int, name: str, exe: Path | None = None) -> None:
-    """Write the stat, comm and exe entries of one process into a copy of the shape of /proc."""
+    """Write the stat, comm and exe entries of one process into a copy of the shape of /proc, for a plant or a test."""
     directory = proc_root / str(pid)
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "stat").write_text(f"{pid} ({name} with ) and spaces) S {parent} {pid} 0 0\n", encoding="utf-8")
@@ -389,204 +622,14 @@ def write_process(proc_root: Path, pid: int, parent: int, name: str, exe: Path |
         (directory / "exe").symlink_to(exe)
 
 
-def planted_table(*versions: str) -> tuple[pin_table.Pin, ...]:
-    """Return a pin table with one row of cmake for each version, each for a platform of its own."""
-    platforms = ("linux-x86_64", "linux-aarch64", "darwin-x86_64")
-    rows = [f"pin cmake via=archive version={version} platform={platforms[index]} "
-            f"source=https://example.invalid/cmake.whl sha256={'0' * 64} | a planted pin"
-            for index, version in enumerate(versions)]
-    return pin_table.parse("# a planted pin table\nformat 1\n" + "".join(f"{row}\n" for row in rows), "planted")
-
-
-def self_test(cmake: str | None, ctest: str | None, make_program: str | None) -> int:
-    """Plant each kind of pin, program, cache and process chain, and check each verdict.
-
-    With CMAKE, CTEST and MAKE_PROGRAM, the self-test also runs the check
-    under a real ctest in a scratch project.
-
-    Returns:
-        0 when every case holds, 2 otherwise
-    """
-    failures: list[str] = []
-
-    def expect(name: str, holds: bool, detail: str = "") -> None:
-        """Record one case and print it."""
-        print(f"  {'ok  ' if holds else 'FAIL'} {name}")
-        if not holds:
-            failures.append(f"{name}\n{detail}" if detail else name)
-
-    def refuses(name: str, action: Callable[[], object], fragment: str) -> None:
-        """Expect ACTION to raise a PinError whose message holds FRAGMENT."""
-        try:
-            action()
-        except PinError as error:
-            expect(name, fragment in str(error), str(error))
-            return
-        expect(name, False, "no PinError")
-
-    print("setup.pins --self-test")
-    tree = read_pin()
-    numbers = tree.version.split(".")
-    expect("the pin of the tree gives one version X.Y.Z", len(numbers) == 3 and all(part.isdigit() for part in numbers))
-    expect("the pin of the tree gives a digest for linux-x86_64 and for linux-aarch64",
-           set(tree.digests) == {"linux-x86_64", "linux-aarch64"} and all(len(d) == 64 for d in tree.digests.values()))
-    expect("the first row of cmake of the tree is the place of a finding",
-           pin_table.PINS.read_text(encoding="utf-8").splitlines()[tree.line - 1].startswith("pin cmake "))
-    expect("a pin of two platforms reads", read_pin(planted_table("4.4.2", "4.4.2")).version == "4.4.2")
-    refuses("a pin of two versions is an error", lambda: read_pin(planted_table("4.4.2", "4.4.3")),
-            "two versions 4.4.2 and 4.4.3")
-    refuses("a table with no row of cmake is an error", lambda: read_pin(planted_table()), "has no row of the pin")
-
-    with tempfile.TemporaryDirectory(prefix="cmake-pin-") as directory:
-        work = Path(directory)
-        programs = work / "programs"
-        pinned_ctest = write_program(programs / "pinned" / "ctest", f"ctest version {tree.version}")
-        pinned_cmake = write_program(programs / "pinned" / "cmake", f"cmake version {tree.version}")
-        other_ctest = write_program(programs / "other" / "ctest", "ctest version 4.3.0")
-        other_cmake = write_program(programs / "other" / "cmake", "cmake version 4.3.0")
-        expect("program_version reads the first line", program_version(other_ctest) == ("ctest", "4.3.0"))
-        expect("program_version gives None for a program that fails",
-               program_version(write_program(programs / "failing", f"ctest version {tree.version}", 1)) is None)
-        expect("program_version gives None for a line of another shape",
-               program_version(write_program(programs / "shapeless", "GNU bash, version 5.2")) is None)
-        expect("program_version gives None for an absent program", program_version(programs / "absent") is None)
-
-        def build(name: str, cmake_program: Path | None, ctest_program: Path | None) -> Path:
-            build_dir = work / "builds" / name
-            build_dir.mkdir(parents=True)
-            entries = {"CMAKE_COMMAND": str(cmake_program)} if cmake_program else {}
-            entries.update({"CMAKE_CTEST_COMMAND": str(ctest_program)} if ctest_program else {})
-            cmake_reader.plant(build_dir, cache=entries)
-            return build_dir
-
-        pinned_build = build("pinned", pinned_cmake, pinned_ctest)
-        expect("configured_program reads CMAKE_CTEST_COMMAND",
-               configured_program(pinned_build, "ctest") == str(pinned_ctest))
-        refuses("a build directory with no cache is an error", lambda: configured_program(work / "absent", "cmake"),
-                "holds no index of the CMake file API")
-        refuses("a cache with no CMAKE_CTEST_COMMAND is an error",
-                lambda: configured_program(build("no_ctest", pinned_cmake, None), "ctest"),
-                "has no entry CMAKE_CTEST_COMMAND")
-        refuses("a cache that names an absent program is an error",
-                lambda: configured_program(build("absent_program", programs / "absent", pinned_ctest), "cmake"),
-                "which does not exist")
-
-        saved_path = os.environ.get("PATH", "")
-        try:
-            os.environ["PATH"] = f"{programs / 'other'}:{saved_path}"
-            pinned_program.cache_clear()
-            refuses("a ctest of another version in PATH is an error", lambda: pinned_program("ctest"),
-                    "gives ctest 4.3.0, but ")
-            os.environ["PATH"] = f"{programs / 'pinned'}:{saved_path}"
-            pinned_program.cache_clear()
-            expect("the pinned ctest in PATH is the program", pinned_program("ctest") == str(pinned_ctest))
-        finally:
-            os.environ["PATH"] = saved_path
-            pinned_program.cache_clear()
-
-        # A copy of the shape of /proc: the check (500) runs under cmake -E env
-        # (400), which runs under a ctest (300).  The ctest of a chain is the
-        # program that its exe link names.
-        def chain(name: str, runner: Path | None, runner_name: str = "ctest") -> Path:
-            proc_root = work / "proc" / name
-            write_process(proc_root, 500, 400, "python3")
-            write_process(proc_root, 400, 300, "cmake")
-            write_process(proc_root, 300, 1, runner_name, runner)
-            return proc_root
-
-        expect("the walk finds the ctest above cmake -E env",
-               ancestor_ctest(chain("found", pinned_ctest), 500) == work / "proc" / "found" / "300" / "exe")
-        expect("the walk finds no ctest in a chain with none",
-               ancestor_ctest(chain("none", None, "bash"), 500) is None)
-        looping = work / "proc" / "loop"
-        write_process(looping, 500, 400, "python3")
-        write_process(looping, 400, 500, "cmake")
-        expect("the walk stops in a chain with a loop", ancestor_ctest(looping, 500) is None)
-
-        def verdict(name: str, proc_root: Path, build_dir: Path) -> tuple[int, str]:
-            captured = work / f"{name}.out"
-            saved = sys.stdout
-            with open(captured, "w", encoding="utf-8") as handle:
-                sys.stdout = handle
-                try:
-                    with check_report.github_actions(False):
-                        status = check(build_dir, None, proc_root, 500)
-                finally:
-                    sys.stdout = saved
-            return status, captured.read_text(encoding="utf-8")
-
-        status, said = verdict("all_pinned", chain("all_pinned", pinned_ctest), pinned_build)
-        expect("the check passes when each program gives the pin", status == 0 and "error" not in said, said)
-        status, said = verdict("other_runner", chain("other_runner", other_ctest), pinned_build)
-        expect("the check reports a ctest of another version that runs the tests",
-               status == 1 and "the ctest that runs the tests" in said and "gives ctest 4.3.0" in said
-               and f"{pin_table.PINS_PATH}:{tree.line}: error: [cmake-pin]" in said, said)
-        status, said = verdict("other_cmake", chain("other_cmake", pinned_ctest),
-                               build("other_cmake", other_cmake, pinned_ctest))
-        expect("the check reports a CMAKE_COMMAND of another version",
-               status == 1 and "CMAKE_COMMAND of" in said and "gives cmake 4.3.0" in said, said)
-        status, said = verdict("other_cache_ctest", chain("other_cache_ctest", pinned_ctest),
-                               build("other_cache_ctest", pinned_cmake, other_ctest))
-        expect("the check reports a CMAKE_CTEST_COMMAND of another version",
-               status == 1 and "CMAKE_CTEST_COMMAND of" in said, said)
-        status, said = verdict("no_runner", chain("no_runner", None, "bash"), pinned_build)
-        expect("the check reports a run with no ctest", status == 1 and "no ctest runs this check" in said, said)
-        status, said = verdict("unread_runner", chain("unread_runner", programs / "shapeless"), pinned_build)
-        expect("the check reports a ctest whose version it cannot read",
-               status == 1 and "gives no version" in said, said)
-
-        if cmake and ctest and make_program:
-            real_run(work, cmake, ctest, make_program, expect)
-
-    if failures:
-        print(f"setup.pins --self-test: FAILED, {len(failures)} case(s) did not hold")
-        for failure in failures:
-            print(f"  {failure}")
-        return 2
-    print("setup.pins --self-test: every case holds.")
-    return 0
-
-
-def real_run(work: Path, cmake: str, ctest: str, make_program: str, expect: Callable[..., None]) -> None:
-    """Run the check as a test of a scratch project under a real ctest, and check that it passes.
-
-    The run shows that the walk finds a real ctest process, and that its exe
-    link gives the version of the program.
-    """
-    source, build_dir = work / "real" / "src", work / "real" / "build"
-    source.mkdir(parents=True)
-    (source / "CMakeLists.txt").write_text(
-        "cmake_minimum_required(VERSION 3.25)\nproject(cmake_pin_probe NONE)\nenable_testing()\n"
-        f'add_test(NAME probe COMMAND "{sys.executable}" "{SETUP}" check --build-dir "{build_dir}")\n',
-        encoding="utf-8")
-    # The scratch project has no cmake_file_api call.  Its build directory gets the query of the reply of the cache.
-    cmake_reader.request(build_dir)
-    try:
-        configured = proc.run(proc.Command([cmake, "-S", str(source), "-B", str(build_dir), "-G", "Ninja",
-                                            f"-DCMAKE_MAKE_PROGRAM={make_program}"], timeout_s=proc.TOOL_S))
-    except proc.ToolFailed as problem:
-        expect("the scratch project configures", False, str(problem))
-        return
-    expect("the scratch project configures", configured.exit == 0, configured.out + configured.err)
-    if configured.exit != 0:
-        return
-    try:
-        run = proc.run(proc.Command([ctest, "--test-dir", str(build_dir), "--output-on-failure"],
-                                    timeout_s=proc.TOOL_S))
-    except proc.ToolFailed as problem:
-        expect("the check passes under the ctest of the build", False, str(problem))
-        return
-    expect("the check passes under the ctest of the build", run.exit == 0, run.out + run.err)
-
-
 # ── Main ───────────────────────────────────────────────────────────────────
 
 
 def main(argv: list[str]) -> int:
-    """Parse the arguments and run the check of a build, the check of the installed tools, a print mode or the self-test.
+    """Parse the arguments and run the check of the table, the check of the installed tools or a print mode.
 
     Args:
-        argv: The words after `setup check`, or --self-test and its words
+        argv: The words after `setup check`
 
     Returns:
         The exit status of the mode
@@ -598,16 +641,10 @@ def main(argv: list[str]) -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--print-program", nargs=2, metavar=("BUILD_DIR", "PROGRAM"),
                       help="print the cmake or the ctest of a configured build directory")
-    mode.add_argument("--build-dir", type=Path, help="check the cmake and the ctest of a build directory")
-    mode.add_argument("--self-test", action="store_true", help="plant each case and check each verdict")
-    parser.add_argument("--cmake", help="the cmake of the real run of --self-test")
-    parser.add_argument("--ctest", help="the ctest of the real run of --self-test")
-    parser.add_argument("--make-program", help="the ninja of the real run of --self-test")
+    mode.add_argument("--build-dir", type=Path, help="also check the programs and the compiler of a build directory")
     parser.add_argument("tools", nargs="*", metavar="TOOL", help=f"one of {', '.join(install.TOOLS)}")
     check_report.add_arguments(parser)
     options = parser.parse_args(argv)
-    if options.self_test:
-        return self_test(options.cmake, options.ctest, options.make_program)
     unknown = [name for name in options.tools if name not in install.TOOLS]
     if unknown:
         parser.error(f"{', '.join(unknown)} is not a tool.  The tools are {', '.join(install.TOOLS)}")
@@ -621,6 +658,8 @@ def main(argv: list[str]) -> int:
             print(f"setup check: {error}", file=sys.stderr)
             return 1
         return 0
-    if options.build_dir is not None:
-        return check(options.build_dir.resolve(), options.warnings_dir)
-    return check_tools(options.tools or list(install.DEFAULT_TOOLS))
+    if options.tools:
+        if options.build_dir is not None:
+            parser.error("give TOOL or --build-dir, not the two")
+        return check_tools(options.tools)
+    return check(options.build_dir.resolve() if options.build_dir is not None else None, options.warnings_dir)

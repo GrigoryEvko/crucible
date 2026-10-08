@@ -422,14 +422,18 @@ def directory_of(tool: Tool, pin: pin_table.Pin, root: Path, table: Pins) -> Pat
 # The tree-sitter kit.
 
 
+# The pins of the runtime and of the grammar of the kit, which give its lineage.
+LINEAGE_PINS = ("tree-sitter-runtime", "tree-sitter-grammar")
+
+
 def kit_lineage(table: tuple[pin_table.Pin, ...]) -> dict[str, str]:
     """Return the lineage that MANIFEST.txt of the kit must give, from the pins of the runtime and the grammar.
 
     Raises:
         InstallError: If the table has no pin of the runtime or of the grammar
     """
-    runtime = pin_table.find(table, "tree-sitter-runtime", "")
-    grammar = pin_table.find(table, "tree-sitter-grammar", "")
+    runtime = pin_table.find(table, LINEAGE_PINS[0], "")
+    grammar = pin_table.find(table, LINEAGE_PINS[1], "")
     if runtime is None or grammar is None:
         raise InstallError(f"{pin_table.PINS_PATH} has no pin tree-sitter-runtime or tree-sitter-grammar, which give "
                            f"the lineage of the kit", UNSUPPORTED)

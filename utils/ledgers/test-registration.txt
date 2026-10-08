@@ -2,5 +2,5 @@
 # and `python3 utils/bin/guard write --rule test-registration` writes this file.
 format 1
 rule test-registration
+utils/registry.txt | no-test | admit | gate-mutants | The rule runs only on the headers that a call names with --path, so its witness and the group mutation of guard selftest are its tests
 utils/registry.txt | no-test | admit | reconfigure-noop | A step of the CI build job runs the rule, because a ctest test cannot configure the tree that runs it
-utils/registry.txt | no-test | admit | vessel-acceptance | Only a build with TORCH_DIR registers the test of the rule, and each other build registers a disabled test

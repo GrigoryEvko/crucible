@@ -35,27 +35,23 @@ development, where every action is a choice.
 from __future__ import annotations
 
 import hashlib
-import io
 import logging
 import os
 import shlex
 import shutil
-import tarfile
 import tempfile
-import urllib.request
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from assay.core import proc
+from assay.oracle import sources
 from assay.oracle.execution import _SPIN, head
 from assay.oracle.model import LChoice, LEnd, Local
-from assay.oracle.rocq import OracleError, answer_cache_path, cache_root, load_answers, save_answers
+from assay.oracle.rocq import OracleError, answer_cache_path, load_answers, save_answers
 
 LOG = logging.getLogger("session_oracle.ekici")
 
-REPO = "Apiros3/smpst-sr-smer"
-COMMIT = "583edde920ef3833382ff6c9130f0d20db90744b"
 SOURCES = ("src/sim.v", "src/header.v", "src/expr.v", "src/local.v")
 POSITIONAL_BASE = 64
 CHUNK = 12
@@ -73,32 +69,17 @@ def coqc() -> list[str]:
         return shlex.split(env)
     opam = shutil.which("opam") or str(Path.home() / ".local" / "bin" / "opam")
     if not Path(opam).is_file() and shutil.which(opam) is None:
-        raise OracleError("opam is not on PATH, and SESSION_ORACLE_COQC20 is not set.  The ITP 2025 development "
-                          "needs Coq 8.20 with mathcomp-ssreflect 2.3 and paco; THE TOOLCHAINS of "
-                          "utils/assay/oracle/runner.py says how to install them.")
+        raise OracleError(
+            "opam is not on PATH, and SESSION_ORACLE_COQC20 is not set.  The ITP 2025 development "
+            "needs Coq 8.20 with mathcomp-ssreflect 2.3 and paco; THE TOOLCHAINS of "
+            "utils/assay/oracle/runner.py says how to install them."
+        )
     return [opam, "exec", "--switch=sessoracle20", "--", "coqc"]
 
 
 def fetch() -> Path:
-    """Download and unpack the pinned commit.  Return its root."""
-    root = cache_root() / f"smpst-sr-smer-{COMMIT}"
-    if (root / "_CoqProject").is_file():
-        return root
-    root.parent.mkdir(parents=True, exist_ok=True)
-    url = f"https://github.com/{REPO}/archive/{COMMIT}.tar.gz"
-    LOG.info("fetching %s", url)
-    try:
-        with urllib.request.urlopen(url, timeout=120) as resp:
-            data = resp.read()
-    except OSError as exc:
-        raise OracleError(f"cannot download {url}: {exc}") from exc
-    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
-        prefix = f"smpst-sr-smer-{COMMIT}/"
-        members = [m for m in tar.getmembers() if m.name.startswith(prefix)]
-        tar.extractall(root.parent, members=members, filter="data")
-    if not (root / "_CoqProject").is_file():
-        raise OracleError(f"{root}: the archive has no _CoqProject")
-    return root
+    """Download and unpack the pinned commit of the pin rocq-smpst-sr-smer (assay.oracle.sources).  Return its root."""
+    return sources.fetch(sources.source(sources.EKICI), "_CoqProject")
 
 
 def build(root: Path) -> None:
@@ -107,11 +88,13 @@ def build(root: Path) -> None:
         return
     for source in SOURCES:
         LOG.info("coqc %s", source)
-        completed = proc.run(proc.Command([*coqc(), "-R", str(root), "SST", str(root / source)],
-                                          timeout_s=proc.TOOL_S, cwd=root))
+        completed = proc.run(
+            proc.Command([*coqc(), "-R", str(root), "SST", str(root / source)], timeout_s=proc.TOOL_S, cwd=root)
+        )
         if completed.exit != 0:
-            raise OracleError(f"building the ITP 2025 development failed at {source}:\n"
-                              f"{(completed.out + completed.err)[-3000:]}")
+            raise OracleError(
+                f"building the ITP 2025 development failed at {source}:\n{(completed.out + completed.err)[-3000:]}"
+            )
 
 
 # ── Certificates ─────────────────────────────────────────────────────
@@ -168,9 +151,8 @@ class _States:
         assert isinstance(state, LChoice)
         slots = self.children(state)
         width = max(slots, default=-1) + 1
-        items = "; ".join(f"Some ({_sort(slots[i][0])}, {slots[i][1]})" if i in slots else "None"
-                          for i in range(width))
-        return f"{'ltt_send' if state.send else 'ltt_recv'} \"p\" [{items}]"
+        items = "; ".join(f"Some ({_sort(slots[i][0])}, {slots[i][1]})" if i in slots else "None" for i in range(width))
+        return f'{"ltt_send" if state.send else "ltt_recv"} "p" [{items}]'
 
     def definitions(self) -> str:
         """Return one mutual CoFixpoint for every state."""
@@ -179,8 +161,11 @@ class _States:
 
     def unfolding_lemmas(self) -> str:
         """Return a lemma for each state that unfolds its constant one step (ltt_eq of src/local.v)."""
-        return "".join(f"Lemma unf_{self.names[s]} : {self.names[s]} = {self.body(s)}.\n"
-                       f"Proof. rewrite [LHS]ltt_eq; reflexivity. Qed.\n" for s in self.order)
+        return "".join(
+            f"Lemma unf_{self.names[s]} : {self.names[s]} = {self.body(s)}.\n"
+            f"Proof. rewrite [LHS]ltt_eq; reflexivity. Qed.\n"
+            for s in self.order
+        )
 
 
 def _pairing(t: _States, u: _States) -> tuple[list[tuple[str, str]], list[tuple[str, str]] | None, str]:
@@ -259,32 +244,41 @@ def certificate(key: str, t: Local, u: Local) -> tuple[str, bool, str]:
     text = [f"Module {key}.\n", st.definitions(), su.definitions(), st.unfolding_lemmas(), su.unfolding_lemmas()]
     if path is None:
         listed = "; ".join(f"({a}, {b})" for a, b in pairs)
-        cases = "".join(f"    destruct Hin as [Hin | Hin].\n"
-                        f"    {{ injection Hin as <- <-. rewrite unf_{a} unf_{b}; so_step CIH. }}\n"
-                        for a, b in pairs)
-        text.append(f"Lemma verdict : subtypeC {st.root} {su.root}.\nProof.\n"
-                    f"  assert (H : forall a b, In (a, b) [{listed}] -> paco2 subtype bot2 a b).\n"
-                    f"  {{ pcofix CIH. intros a b Hin. simpl in Hin.\n{cases}    contradiction. }}\n"
-                    f"  apply H. so_member.\nQed.\n")
+        cases = "".join(
+            f"    destruct Hin as [Hin | Hin].\n"
+            f"    {{ injection Hin as <- <-. rewrite unf_{a} unf_{b}; so_step CIH. }}\n"
+            for a, b in pairs
+        )
+        text.append(
+            f"Lemma verdict : subtypeC {st.root} {su.root}.\nProof.\n"
+            f"  assert (H : forall a b, In (a, b) [{listed}] -> paco2 subtype bot2 a b).\n"
+            f"  {{ pcofix CIH. intros a b Hin. simpl in Hin.\n{cases}    contradiction. }}\n"
+            f"  apply H. so_member.\nQed.\n"
+        )
         verdict = True
     else:
         # The path hypotheses are named Hp<depth>, because the destruct of
         # the conjunctions names its hypotheses H, H0, H1 and so on.
         steps = []
         for depth, (a, b) in enumerate(path):
-            steps.append(f"  punfold Hp{depth}; [|apply sub_mon]. rewrite unf_{a} unf_{b} in Hp{depth}.\n"
-                         f"  inversion Hp{depth}; subst; clear Hp{depth}; cbn [wfsend wfrec] in *;\n"
-                         f"  repeat match goal with Hc : _ /\\ _ |- _ => destruct Hc end;\n"
-                         f"  try contradiction; try (match goal with Hs : subsort _ _ |- _ => "
-                         f"solve [inversion Hs] end).\n")
+            steps.append(
+                f"  punfold Hp{depth}; [|apply sub_mon]. rewrite unf_{a} unf_{b} in Hp{depth}.\n"
+                f"  inversion Hp{depth}; subst; clear Hp{depth}; cbn [wfsend wfrec] in *;\n"
+                f"  repeat match goal with Hc : _ /\\ _ |- _ => destruct Hc end;\n"
+                f"  try contradiction; try (match goal with Hs : subsort _ _ |- _ => "
+                f"solve [inversion Hs] end).\n"
+            )
             if depth + 1 < len(path):
                 c, d = path[depth + 1]
                 # The right disjunct is bot2, which is False only up to
                 # conversion, so contradiction does not see it.
-                steps.append(f"  match goal with Hn : upaco2 _ _ {c} {d} |- _ => "
-                             f"destruct Hn as [Hp{depth + 1}|Hp{depth + 1}]; [|exfalso; exact Hp{depth + 1}] end.\n")
-        text.append(f"Lemma verdict : ~ subtypeC {st.root} {su.root}.\nProof.\n  intro Hp0.\n"
-                    + "".join(steps) + "Qed.\n")
+                steps.append(
+                    f"  match goal with Hn : upaco2 _ _ {c} {d} |- _ => "
+                    f"destruct Hn as [Hp{depth + 1}|Hp{depth + 1}]; [|exfalso; exact Hp{depth + 1}] end.\n"
+                )
+        text.append(
+            f"Lemma verdict : ~ subtypeC {st.root} {su.root}.\nProof.\n  intro Hp0.\n" + "".join(steps) + "Qed.\n"
+        )
         verdict = False
     text.append(f"End {key}.\n")
     return "".join(text), verdict, reason
@@ -299,8 +293,9 @@ def _check(root: Path, blocks: list[str]) -> tuple[int, str]:
         path = Path(tmp) / "EkiciCertificates.v"
         path.write_text(_HEAD + "".join(blocks), encoding="utf-8")
         try:
-            completed = proc.run(proc.Command([*coqc(), "-R", str(root), "SST", str(path)],
-                                              timeout_s=CHUNK_TIMEOUT, cwd=tmp))
+            completed = proc.run(
+                proc.Command([*coqc(), "-R", str(root), "SST", str(path)], timeout_s=CHUNK_TIMEOUT, cwd=tmp)
+            )
         except proc.TimedOut:
             return 124, f"timeout after {CHUNK_TIMEOUT} s"
         return completed.exit, completed.out + completed.err
@@ -333,7 +328,7 @@ def decide(pairs: list[tuple[Local, Local]], workers: int = 16) -> list[tuple[bo
     """
     root = fetch()
     build(root)
-    cache_path = answer_cache_path("ekici", COMMIT)
+    cache_path = answer_cache_path("ekici", sources.source(sources.EKICI).commit)
     cache = load_answers(cache_path)
     certs = []
     keys: list[str] = []
@@ -345,11 +340,11 @@ def decide(pairs: list[tuple[Local, Local]], workers: int = 16) -> list[tuple[bo
             certs.append(("", None, str(exc)))  # type: ignore[arg-type]
             keys.append("")
     results: dict[int, tuple[bool | None, str]] = {
-        i: (bool(cache[k][0]), str(cache[k][1])) for i, k in enumerate(keys) if k and k in cache}
+        i: (bool(cache[k][0]), str(cache[k][1])) for i, k in enumerate(keys) if k and k in cache
+    }
     indices = [i for i, c in enumerate(certs) if c[0] and i not in results]
-    chunks = [indices[i:i + CHUNK] for i in range(0, len(indices), CHUNK)]
-    LOG.info("%d certificates: %d from the cache, %d in %d chunks", len(pairs), len(results),
-             len(indices), len(chunks))
+    chunks = [indices[i : i + CHUNK] for i in range(0, len(indices), CHUNK)]
+    LOG.info("%d certificates: %d from the cache, %d in %d chunks", len(pairs), len(results), len(indices), len(chunks))
     try:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             outcomes = list(pool.map(lambda ch: _check(root, [certs[i][0] for i in ch]), chunks))

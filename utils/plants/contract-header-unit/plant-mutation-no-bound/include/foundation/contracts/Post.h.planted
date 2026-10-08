@@ -1,0 +1,9 @@
+// A planted macro form of the contracts.  A broken condition reaches a call that is not constant, so it stops a
+// constant evaluation, as the macros of the tree do.
+#pragma once
+
+#define CRUCIBLE_PRE(cond)                                                                                             \
+    do {                                                                                                               \
+        if (!(cond)) __builtin_trap();                                                                                 \
+    } while (0)
+#define CRUCIBLE_POST(result, cond) CRUCIBLE_PRE(cond)

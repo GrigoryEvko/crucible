@@ -1,0 +1,7 @@
+// A planted test that holds a value and does not hold the constraint of Holder.
+#include "planted/holder.h"
+
+int main() {
+    planted::Holder<int> holder{1};
+    return holder.value - 1;
+}

@@ -1,0 +1,4 @@
+# The build is a build of the tree itself, and the run would write each mutant into the tree.
+format 1
+path include/planted/bare.h
+source .

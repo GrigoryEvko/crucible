@@ -29,8 +29,7 @@ test/session_oracle/golden.csv, with the commit of each oracle and the commit
 of the measured headers.  The C++ tests that assert them are emitted from
 that file.
 
-Modes (`guard check --rule session-oracle MODE`, and `loop derive
-session-oracle MODE` for the modes that write):
+Modes (`loop derive session-oracle MODE`):
 
   regenerate  Generate the corpora, run the oracles, measure our
               relations, shrink every divergence to a minimal case, and
@@ -52,21 +51,31 @@ session-oracle MODE` for the modes that write):
               again.
   emit        Write the emitted tests from the golden file only.  Use it
               after a note in the golden file changes.
-  check       Emit into memory and compare with the committed tests.  No
-              oracle and no compiler.  CI runs this mode.
-  self-test   Compile the emitted tests, which must pass, and a copy with
-              one planted wrong row per test, which must fail and name
-              the planted case.  Needs the project compiler.  With
-              --part K/N, it does only part K of N disjoint parts.  The
-              store of unit_store.py keeps the result of each unit.
 
-  regenerate and self-test take --at REV: the tool then measures the
-  include tree of that commit, which it takes with git archive into a
-  temporary directory, and golden.csv names the full commit.  Without it,
-  the tool measures the working tree and names HEAD and any edits in the
-  session headers.  Give a commit when the working tree holds edits that do
-  not compile.  The command refuses a compiler that is not an executable
-  and a REV that names no commit, with the exit status 2.
+  Each mode ends with THE CHECK of this tree.  regenerate takes --at REV:
+  the tool then measures the include tree of that commit, which it takes
+  with git archive into a temporary directory, and golden.csv names the
+  full commit.  Without it, the tool measures the working tree and names
+  HEAD and any edits in the session headers.  Give a commit when the
+  working tree holds edits that do not compile.  The command refuses a
+  compiler that is not an executable and a REV that names no commit, with
+  the exit status 2.
+
+THE CHECK
+  problems() emits the tests of the golden file of a tree into memory, and
+  compares them with the committed tests.  It needs no oracle and no
+  compiler.  The rule session-oracle of utils/registry.txt gives each
+  problem as a finding (assay.guard.engines.buildsys.session_oracle).  The
+  kinds of problem:
+    golden  the golden file cannot be read, or it breaks its rules
+    drift   an emitted test differs from the emission, or the golden file
+            does not emit it
+    ledger  a class of semantics.SHRINK_ONLY has more rows than its bound
+    bound   a class of semantics.SHRINK_ONLY has fewer rows than its bound,
+            so the bound can go down.  It is a warning
+  The group oracle of `guard selftest` compiles the emitted tests
+  (assay.tests.oracle.test_runner).  Each clean test must pass, and a copy
+  with one planted wrong row for each test must fail and name its case.
 
   To regenerate after a relation changes:
       python3 utils/bin/loop derive session-oracle regenerate --cxx "$HOME/.local/gcc16-patched/usr/bin/g++-16p" --at HEAD
@@ -176,21 +185,17 @@ import io
 import logging
 import os
 import shutil
-import sys
 import tarfile
 import tempfile
 from collections.abc import Iterator
-from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from assay.core import git as tree_git
 from assay.core import proc
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
-from assay.oracle.emit import (SHARD_BUDGET, WIRE_FAMILIES, GoldenError, Row, emit_all, read_golden,
-                               shard_file, write_golden)
+from assay.oracle.emit import GoldenError, Row, emit_all, read_golden, write_golden
 from assay.oracle.execution import equal_up_to_unfolding, explore
 from assay.oracle.model import (GBranch, GEnd, GMsg, GRec, GVar, Global, Local,
                                 UntranslatableError, action_ok, canonical_roles, contractive, has_empty_choice,
@@ -198,11 +203,6 @@ from assay.oracle.model import (GBranch, GEnd, GMsg, GRec, GVar, Global, Local,
                                 cpp_fixy_global, cpp_fixy_local, cpp_fixy_peer_local,
                                 generate, generate_adversarial, generate_outer, local_of, roles_of, show_global,
                                 show_local, shrinks, size, size_ok)
-
-if TYPE_CHECKING:
-    # The self-test imports the store only when it runs.  Then the other modes do not import
-    # utils/assay/loop/fixture/store.py.
-    from assay.oracle.unit_store import UnitResult
 
 LOG = logging.getLogger("session_oracle")
 
@@ -1388,18 +1388,18 @@ def evaluate_sprout(rows: list[Row]) -> list[Row]:
 # writes (PeerMsg, whose label names the peer).
 
 
-def _runtime_flags(cxx: str) -> list[str]:
+def runtime_flags(cxx: str) -> list[str]:
     """Return the link flags that let a test binary find the runtime of ``cxx``."""
     lib = proc.run(proc.Command([cxx, "-print-file-name=libstdc++.so"], timeout_s=proc.QUICK_S)).out.strip()
     return ["-pthread", f"-Wl,-rpath,{Path(lib).parent}"] if lib else ["-pthread"]
 
 
-def _cxx_flags(include: Path) -> list[str]:
+def cxx_flags(include: Path) -> list[str]:
     """Return the flags of each compile of an emitted test or a measured program, with ``include`` as the include tree.
 
     The operation limit is the limit of the build, the measured rule
-    constexpr-ops of utils/registry.txt, so an emitted test compiles where the
-    build compiles it.
+    constexpr-ops of utils/registry.txt.  An emitted test then compiles where
+    the build compiles it.
     """
     ops_limit = check_report.threshold_text(check_report.read_budgets()["constexpr-ops"].error)
     return ["-std=c++26", "-freflection", "-fcontracts", f"-fconstexpr-ops-limit={ops_limit}",
@@ -1408,7 +1408,7 @@ def _cxx_flags(include: Path) -> list[str]:
 
 def compile_object(cxx: str, include: Path, source: Path, obj: Path) -> proc.Completed:
     """Compile ``source``, which can include wire_driver.h, into the object file ``obj``."""
-    return proc.run(proc.Command([cxx, *_cxx_flags(include), "-c", str(source), "-o", str(obj)],
+    return proc.run(proc.Command([cxx, *cxx_flags(include), "-c", str(source), "-o", str(obj)],
                                  timeout_s=proc.TOOL_S))
 
 
@@ -1420,7 +1420,7 @@ def link_and_run(cxx: str, objects: list[Path], binary: Path, args: list[str]) -
     """
     # -fcontracts links the library that holds the default contract violation handler.
     linked = proc.run(proc.Command([cxx, "-fcontracts", *(str(obj) for obj in objects), "-o", str(binary),
-                                    *_runtime_flags(cxx)], timeout_s=proc.TOOL_S))
+                                    *runtime_flags(cxx)], timeout_s=proc.TOOL_S))
     if linked.exit != 0:
         return linked
     return proc.run(proc.Command([str(binary), *args], timeout_s=600))
@@ -2379,16 +2379,14 @@ def _regenerate(cxx: str, workers: int, do_shrink: bool, include: Path, measured
         rows += evaluate_network(rows, env)
     rows += _derived_rows(rows)
     from assay.oracle import ekici
-    from assay.oracle import mpstk
-    from assay.oracle import sr
+    from assay.oracle import sources
+    oracles = [sources.source(name) for name in (sources.PROJECTION, sources.SUBJECT_REDUCTION, sources.EKICI,
+                                                 sources.MPSTK)]
     meta = [
         "# Differential test of our session relations against published mechanisations.",
-        f"# oracle: github.com/{rocq.PROJECTION.repo} at {rocq.PROJECTION.commit}",
-        f"# oracle: github.com/{sr.SUBJECT_REDUCTION.repo} at {sr.SUBJECT_REDUCTION.commit}",
-        f"# oracle: github.com/{ekici.REPO} at {ekici.COMMIT}",
-        f"# oracle: github.com/{mpstk.REPO} at {mpstk.COMMIT}",
+        *(f"# oracle: github.com/{oracle.repository} at {oracle.commit}" for oracle in oracles),
         *_derived_meta(),
-        f"# toolchain: {rocq.coq_version()}; for {ekici.REPO}: {ekici.coq_version()}",
+        f"# toolchain: {rocq.coq_version()}; for {sources.source(sources.EKICI).repository}: {ekici.coq_version()}",
         f"# relations measured at commit {measured}",
         f"{NETWORK_MARKER}{measured}",
         f"# fixy corpora: fr seed {FIXY_SEED}, {FIXY_COUNT} types, depth {FIXY_DEPTH}; "
@@ -2428,10 +2426,12 @@ NETWORK_MARKER = "# network verdicts measured at commit "
 def _derived_meta() -> list[str]:
     """Return the metadata lines of the derived families: the pinned oracles and their toolchains."""
     from assay.oracle import keskin
+    from assay.oracle import sources
     from assay.oracle import sprout
-    return [f"# oracle: github.com/{keskin.REPO} at {keskin.COMMIT}",
-            f"# oracle: doi {sprout.ARTIFACT}, built natively: {sprout.build()[1]}",
-            f"# toolchain for {keskin.REPO}: {keskin.coq_version()}"]
+    live = sources.source(sources.KESKIN)
+    return [f"# oracle: github.com/{live.repository} at {live.commit}",
+            f"# oracle: doi {sprout.artifact()}, built natively: {sprout.build()[1]}",
+            f"# toolchain for {live.repository}: {keskin.coq_version()}"]
 
 
 def _derived_rows(base: list[Row]) -> list[Row]:
@@ -2449,8 +2449,8 @@ def derive(cxx: str | None, workers: int) -> int:
     of the commit that the golden file names, and the network family
     (fixy.network) against the include tree of HEAD.
     """
-    from assay.oracle import keskin
     from assay.oracle import semantics
+    from assay.oracle import sources
     from assay.oracle import sprout
     meta, rows = read_golden(GOLDEN)
     base = [r for r in rows if r.family not in DERIVED_FAMILIES]
@@ -2468,8 +2468,9 @@ def derive(cxx: str | None, workers: int) -> int:
         relations = next(i for i, line in enumerate(meta) if line.startswith(marker))
         meta.insert(relations + 1, f"{NETWORK_MARKER}{network_commit}")
     cited = (*HAND_CASES, *PAPER_MULTI, *FIXY_HAND, *PAPER_FIXY)
-    ours = (f"# oracle: github.com/{keskin.REPO} ", f"# oracle: doi {sprout.ARTIFACT}",
-            f"# toolchain for {keskin.REPO}:", *(f"# {c.ident}: " for c in cited))
+    live = sources.source(sources.KESKIN).repository
+    ours = (f"# oracle: github.com/{live} ", f"# oracle: doi {sprout.artifact()}",
+            f"# toolchain for {live}:", *(f"# {c.ident}: " for c in cited))
     kept = [line for line in meta if not line.startswith(ours)]
     last_oracle = max(i for i, line in enumerate(kept) if line.startswith("# oracle: "))
     meta = (kept[:last_oracle + 1] + _derived_meta() + kept[last_oracle + 1:]
@@ -2479,7 +2480,27 @@ def derive(cxx: str | None, workers: int) -> int:
     return check()
 
 
-# ── Check and self-test ──────────────────────────────────────────────
+# ── The check of the emitted tests ──────────────────────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class Problem:
+    """One problem of the golden file or of the emitted tests of a tree (THE CHECK).
+
+    ``kind`` is golden, drift, ledger or bound.  ``path`` is the file,
+    relative to the root of the tree.  ``entity`` names the file or the
+    class that the problem is about.
+    """
+
+    kind: str
+    path: str
+    text: str
+    entity: str
+
+    @property
+    def is_error(self) -> bool:
+        """Return True for each kind but bound, which tells that a bound can go down."""
+        return self.kind != "bound"
 
 
 def drifted(files: dict[str, str], directory: Path) -> list[str]:
@@ -2496,264 +2517,39 @@ def drifted(files: dict[str, str], directory: Path) -> list[str]:
     return changed + stale
 
 
-def check() -> int:
-    """Compare the committed tests with a fresh emission.  Return the exit code."""
+def problems(root: Path) -> list[Problem]:
+    """Compare the emitted tests of the tree at ``root`` with a new emission of its golden file (THE CHECK).
+
+    Complexity: one read of the golden file, one emission, and one read of
+    each emitted test.
+    """
+    test_dir = root / TEST_DIR.relative_to(REPO_ROOT)
+    shown_dir = TEST_DIR.relative_to(REPO_ROOT).as_posix()
+    shown_golden = f"{shown_dir}/{GOLDEN.name}"
     try:
-        _, rows = read_golden(GOLDEN)
-    except (GoldenError, ValueError) as exc:
-        print(f"session_oracle check: {exc}", file=sys.stderr)
-        return 1
-    drift = drifted(emit_all(rows), TEST_DIR)
-    if drift:
-        print("session_oracle check: these files differ from what golden.csv emits, or golden.csv does not "
-              "emit them: " + ", ".join(drift) + ".  Run python3 utils/bin/loop derive session-oracle emit.",
-              file=sys.stderr)
-        return 1
+        _, rows = read_golden(test_dir / GOLDEN.name)
+    except (GoldenError, ValueError, OSError) as problem:
+        return [Problem("golden", shown_golden, f"the golden file cannot be read: {problem}", GOLDEN.name)]
+    found = [Problem("drift", f"{shown_dir}/{name}",
+                     f"this file differs from what {GOLDEN.name} emits, or {GOLDEN.name} does not emit it.  Run "
+                     f"python3 utils/bin/loop derive session-oracle emit", name)
+             for name in drifted(emit_all(rows), test_dir)]
     from assay.oracle import semantics
     try:
-        for note in semantics.check_ledger(rows):
-            print(f"session_oracle check: {note}", file=sys.stderr)
-    except RuntimeError as exc:
-        print(f"session_oracle check: {exc}", file=sys.stderr)
+        found += [Problem("bound", shown_golden, note, "SHRINK_ONLY") for note in semantics.check_ledger(rows)]
+    except RuntimeError as problem:
+        found.append(Problem("ledger", shown_golden, str(problem), "SHRINK_ONLY"))
+    return found
+
+
+def check() -> int:
+    """Write each problem of this tree after a write mode, and return 1 when one is an error, else 0."""
+    found = problems(REPO_ROOT)
+    for problem in found:
+        check_report.write_line(f"session_oracle check: {problem.path}: {problem.text}", is_error=True)
+    if any(problem.is_error for problem in found):
         return 1
-    div = sum(r.status == "divergence" for r in rows)
-    gap = sum(r.status == "gap" for r in rows)
-    print(f"session_oracle check: {len(rows)} rows, {div} recorded divergences, {gap} gaps, "
-          "tests in sync")
-    return 0
-
-
-def _plant(rows: list[Row]) -> tuple[list[Row], dict[str, str]]:
-    """Return a copy of ``rows`` with one wrong agree row in each emitted test.
-
-    The map gives, for the stem of each emitted test, the label that the
-    planted row's assertion prints.
-    """
-    planted = list(rows)
-    labels: dict[str, str] = {}
-
-    def plant(stem: str, pick, wrong) -> None:  # type: ignore[no-untyped-def]
-        for i, row in enumerate(planted):
-            if pick(row):
-                planted[i] = dataclasses.replace(row, ours=wrong(row))
-                role = f" role {row.role}" if row.role != "-" else ""
-                labels[stem] = f"session_oracle {row.family} case {row.case}{role}:"
-                return
-        raise RuntimeError(f"self-test: no agree row to plant in the test {stem}")
-
-    plant("fixy_duality",
-          lambda r: r.family == "fixy.is_dual" and r.status == "agree",
-          lambda r: "false" if r.ours == "true" else "true")
-    plant("fixy_projection",
-          lambda r: r.family == "fixy.global_wf" and r.status == "agree",
-          lambda r: "false" if r.ours == "true" else "true")
-    plant("fixy_subtype",
-          lambda r: r.family == "fixy.subtype_sync" and r.status == "agree",
-          lambda r: "false" if r.ours == "true" else "true")
-    plant("fixy_keyed_subtype",
-          lambda r: r.family == "fixy.keyed_subtype_sync" and r.status == "agree",
-          lambda r: "false" if r.ours == "true" else "true")
-    plant("fixy_keyed_projection",
-          lambda r: r.family == "fixy.keyed_live" and r.status == "agree" and r.ours in ("true", "false"),
-          lambda r: "false" if r.ours == "true" else "true")
-    plant("fixy_crash",
-          lambda r: r.family == "fixy.crash_live" and r.status == "agree",
-          lambda r: "false" if r.ours == "true" else "true")
-    plant("fixy_enroute",
-          lambda r: r.family == "fixy.enroute_live" and r.status == "agree",
-          lambda r: "false" if r.ours == "true" else "true")
-    plant("fixy_wire",
-          lambda r: r.family == "fixy.wire" and r.status == "agree",
-          lambda r: "abort")
-    missing = set(SHARD_BUDGET) - set(labels)
-    if missing:
-        raise RuntimeError(f"self-test: no planted row for {sorted(missing)}")
-    return planted, labels
-
-
-def self_test(cxx: str, at: str | None, jobs: int, part: tuple[int, int] = (0, 1)) -> int:
-    """Prove the emitted tests pass and a planted disagreement fails.
-
-    The tests compile against the tree of ``at``, the working tree by
-    default (measured_tree), with at most ``jobs`` units at one time.
-    Each planted row is compiled in a test that holds only the rows of its
-    own case, so the check costs one small compile for each emitted test.
-    ``part`` is (K, N): the self-test does only the units of part K of N
-    (_self_test_units).  The store of unit_store.py keeps the result of
-    each unit, so a unit whose inputs did not change builds nothing.
-    """
-    with measured_tree(at) as (include, _):
-        return _self_test(cxx, include, jobs, part)
-
-
-# The emitted tests whose assertions run, with the families of their rows:
-# the test is a program that fails when a row differs.  Every other emitted
-# test fails to compile.
-RUNTIME_TESTS: dict[str, tuple[str, ...]] = {"fixy_wire": WIRE_FAMILIES}
-
-# The units of one part of the self-test at one time.  A program compiles
-# its shards at the same time.  Each compile parses its headers, and the
-# longest compile sets the wall time of a part.  One compile holds at most
-# about 1 GB of memory.
-SELF_TEST_JOBS = 64
-
-
-def _wire_run_is_stable(result: UnitResult) -> bool:
-    """Return True when the run of a wire program gives the same result on the next run with the same inputs.
-
-    A run of a row that passes its time limit gives the outcome stuck
-    (wire_driver.h), and that time depends on the load of the host.  Each
-    other outcome comes from the protocol alone.
-    """
-    return " the run gives stuck," not in result.stderr
-
-
-def _drift_self_test(files: dict[str, str], copy: Path) -> list[str]:
-    """Return the failures of the drift comparison on planted drift in ``copy``.
-
-    ``files`` holds the name and the text of each file that the golden file
-    emits (emit_all).  The comparison must see a one-line change in a
-    committed file, and a generated file that the golden file does not emit.
-    """
-    copy.mkdir()
-    for name, text in files.items():
-        (copy / name).write_text(text, encoding="utf-8")
-    victim = sorted(files)[0]
-    (copy / victim).write_text((copy / victim).read_text(encoding="utf-8") + "// drift\n", encoding="utf-8")
-    stale = shard_file("fixy_stale", 0)
-    (copy / stale).write_text("// a shard that the golden file does not emit\n", encoding="utf-8")
-    if drifted(files, copy) != [victim, stale]:
-        return [f"the drift check does not report the changed {victim} and the stale {stale}"]
-    return []
-
-
-# The self-test cuts each test into shards of the size that SHARD_BUDGET
-# gives the build, so a clean static unit is a shard of the build.  Each
-# compile parses its headers, which cost 0.6 s of a static compile and
-# 1.3 s of a wire compile, so a smaller shard adds CPU time.  At the shard
-# size of the build, the longest compile takes about 5 s.  The rows and
-# their order stay as golden.csv gives them.
-
-# The measured rows of one program of a runtime test in the self-test.  A
-# program holds whole cases, links its shards and runs its rows.  Each
-# program is one unit, and the programs of one test can go to different
-# parts.
-SELF_TEST_PROGRAM_ROWS = 120
-
-
-def _runtime_programs(by_case: dict[str, list[Row]], families: tuple[str, ...]) -> Iterator[list[Row]]:
-    """Yield the rows of each runtime program: whole cases in order, about SELF_TEST_PROGRAM_ROWS measured rows each.
-
-    A measured row is a row of ``families`` that is not a gap.  A case with
-    no measured row goes to no program.  O(rows).
-    """
-    program: list[Row] = []
-    measured = 0
-    for case_rows in by_case.values():
-        count = sum(row.family in families and row.status != "gap" for row in case_rows)
-        if count == 0:
-            continue
-        if program and measured + count > SELF_TEST_PROGRAM_ROWS:
-            yield program
-            program, measured = [], 0
-        program.extend(case_rows)
-        measured += count
-    if program:
-        yield program
-
-
-def _self_test_units(rows: list[Row], planted: list[Row], labels: dict[str, str],
-                     emitted: dict[str, list[str]]) -> Iterator[tuple[str, str, list[str], str | None]]:
-    """Yield each unit of the self-test in a fixed order: its name, its stem, its shards and its label.
-
-    The label is None for a unit of clean rows, and it is the text that the
-    planted row prints for a unit of planted rows.  A static test gives one
-    unit for each shard, because each shard compiles alone, and its shards
-    go into ``emitted`` under its stem.  A runtime test gives one unit for
-    each program (_runtime_programs), because a program links and runs all
-    its shards.  The tests with the smallest shard size go first, because
-    their rows cost the most and their builds must start first.  Then each
-    planted unit holds the rows of the case of its planted row.  The order
-    depends only on golden.csv.  The parts that are cut from it are then
-    disjoint.  O(rows).
-    """
-    from assay.oracle.emit import emit_family
-    by_case: dict[str, list[Row]] = {}
-    for row in rows:
-        by_case.setdefault(row.case, []).append(row)
-    for stem in sorted(SHARD_BUDGET, key=lambda name: (SHARD_BUDGET[name], name)):
-        families = RUNTIME_TESTS.get(stem)
-        if families is None:
-            emitted[stem] = emit_family(rows, stem)
-            for index, shard in enumerate(emitted[stem]):
-                yield f"clean {stem} shard {index}", stem, [shard], None
-            continue
-        for index, program in enumerate(_runtime_programs(by_case, families)):
-            yield f"clean {stem} program {index}", stem, emit_family(program, stem), None
-    for stem, label in labels.items():
-        case = label.split(" case ", 1)[1].split()[0].rstrip(":")
-        subset = [r for r in planted if r.case == case]
-        yield f"planted {stem}", stem, emit_family(subset, stem), label
-
-
-def _self_test(cxx: str, include: Path, jobs: int, part: tuple[int, int]) -> int:
-    """Run part ``part`` = (K, N) of the self-test: each unit whose position modulo N is K.
-
-    Part 0 also checks the type grammar of the emitter and the drift
-    comparison, which are Python work, and removes the expired sources of
-    the store.  Return the exit code.
-    """
-    from assay.oracle.emit import emit_family, emit_files, emit_self_check
-    from assay.oracle.unit_store import UnitStore
-    index_of_part, count = part
-    _, rows = read_golden(GOLDEN)
-    failures: list[str] = emit_self_check() if index_of_part == 0 else []
-    planted, labels = _plant(rows)
-    emitted: dict[str, list[str]] = {}
-    units: list[tuple[str, str | None, UnitResult | Future[UnitResult]]] = []
-    with (tempfile.TemporaryDirectory(prefix="session_oracle_selftest_") as tmp,
-          ThreadPoolExecutor(max_workers=jobs) as pool):
-        root = Path(tmp)
-        store = UnitStore(cxx, _cxx_flags(include), _runtime_flags(cxx), root,
-                          caller=f"self-test-{index_of_part}-of-{count}")
-        # The lookups run in this thread, and only a unit that the store does
-        # not hold goes to the pool.  A lookup is Python work, and many of
-        # them in many threads cost more CPU time than one after the other.
-        for position, (name, stem, shards, label) in enumerate(_self_test_units(rows, planted, labels, emitted)):
-            if position % count != index_of_part:
-                continue
-            files = [(shard_file(stem, index), text) for index, text in enumerate(shards)]
-            unit = (store.program_unit(files, (), _wire_run_is_stable) if stem in RUNTIME_TESTS
-                    else store.static_unit(files))
-            stored = store.stored(unit)
-            units.append((name, label, stored if stored is not None else pool.submit(store.build, unit)))
-        # The drift comparison is Python work, so it runs while the compiles run.
-        if index_of_part == 0:
-            for stem in RUNTIME_TESTS:
-                emitted[stem] = emit_family(rows, stem)
-            failures += _drift_self_test(emit_files({stem: emitted[stem] for stem in SHARD_BUDGET}), root / "drift")
-            store.sweep_sources()
-        results = [(name, label, outcome.result() if isinstance(outcome, Future) else outcome)
-                   for name, label, outcome in units]
-        store.save_memo()
-    for name, label, result in results:
-        if label is None and result.returncode != 0:
-            failures.append(f"{name} fails:\n{(result.stdout + result.stderr)[-2000:]}")
-        elif label is not None and result.returncode == 0:
-            failures.append(f"{name} passes; the planted row is not caught")
-        elif label is not None and label not in result.stderr:
-            failures.append(f"{name} fails, but not on the planted row ({label})")
-    where = f"session_oracle self-test part {index_of_part}/{count}"
-    if failures:
-        for failure in failures:
-            print(f"{where}: FAIL: {failure}", file=sys.stderr)
-        return 1
-    planted_count = sum(label is not None for _, label, _ in results)
-    stored = sum(result.is_stored for _, _, result in results)
-    drift = ", and the drift check sees a one-line change and a stale shard" if index_of_part == 0 else ""
-    print(f"{where}: {len(results) - planted_count} clean units pass, "
-          f"{planted_count} planted rows are caught{drift}.  {stored} of the {len(results)} results come from the "
-          f"store")
+    check_report.write_line("session_oracle check: the emitted tests agree with the golden file")
     return 0
 
 
@@ -2796,7 +2592,7 @@ def activate_opam() -> None:
 
 
 def main(argv: list[str]) -> int:
-    """Parse the command line and run one mode (`guard check --rule session-oracle MODE [ARG]...`).
+    """Parse the command line and run one mode (`loop derive session-oracle MODE [ARG]...`).
 
     Args:
         argv: The mode and its options
@@ -2804,48 +2600,29 @@ def main(argv: list[str]) -> int:
     Returns:
         The exit status of the mode, or 2 on a usage error
     """
-    parser = argparse.ArgumentParser(prog="guard check --rule session-oracle", description=__doc__.split("\n\n")[0])
-    parser.add_argument("mode", choices=("regenerate", "derive", "emit", "check", "self-test"))
-    parser.add_argument("--cxx", help="the project compiler (regenerate, self-test)")
-    parser.add_argument("--jobs", type=int, default=None,
-                        help="parallel compiles of the probes (regenerate, derive; 32 without the option) or of "
-                             f"the tests (self-test; {SELF_TEST_JOBS}, or the CPU count when it is smaller)")
+    parser = argparse.ArgumentParser(prog="loop derive session-oracle", description=__doc__.split("\n\n")[0])
+    parser.add_argument("mode", choices=("regenerate", "derive", "emit"))
+    parser.add_argument("--cxx", help="the project compiler (regenerate, and derive for the semantics rows)")
+    parser.add_argument("--jobs", type=int, default=32, help="parallel compiles of the probes (regenerate, derive)")
     parser.add_argument("--no-shrink", action="store_true",
                         help="regenerate without the minimal corpus, for a quick look")
     parser.add_argument("--at", metavar="REV",
-                        help="measure (regenerate) or compile the tests against (self-test) the include "
-                             "tree of this commit; the default is the working tree")
-    parser.add_argument("--part", metavar="K/N", type=_parse_part, default=(0, 1),
-                        help="do only part K of N disjoint parts of the self-test, with 0 <= K < N; "
-                             "the default is 0/1, the full self-test")
+                        help="measure the include tree of this commit (regenerate); the default is the working tree")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
-    if args.mode in ("regenerate", "self-test") and not args.cxx:
-        parser.error(f"{args.mode} needs --cxx")
-    if args.mode != "self-test" and args.part != (0, 1):
-        parser.error("--part applies to the self-test only")
+    if args.mode == "regenerate" and not args.cxx:
+        parser.error("regenerate needs --cxx")
+    if args.mode != "regenerate" and args.at:
+        parser.error("--at applies to regenerate only")
     if args.cxx and not is_executable(args.cxx):
         parser.error(f"the compiler '{args.cxx}' is not an executable")
     if args.at and not names_commit(args.at):
         parser.error(f"'{args.at}' names no commit of this repository")
-    probe_jobs = args.jobs or 32
     if args.mode == "regenerate":
         activate_opam()
-        regenerate(args.cxx, probe_jobs, do_shrink=not args.no_shrink, at=args.at)
+        regenerate(args.cxx, args.jobs, do_shrink=not args.no_shrink, at=args.at)
         return check()
     if args.mode == "derive":
-        return derive(args.cxx, probe_jobs)
-    if args.mode == "emit":
-        _write_tests(read_golden(GOLDEN)[1])
-        return check()
-    if args.mode == "check":
-        return check()
-    return self_test(args.cxx, args.at, args.jobs or min(SELF_TEST_JOBS, os.cpu_count() or 1), args.part)
-
-
-def _parse_part(text: str) -> tuple[int, int]:
-    """Return (K, N) for the text K/N of --part.  Refuse a text that does not give 0 <= K < N."""
-    index, slash, count = text.partition("/")
-    if not (slash and index.isdigit() and count.isdigit() and int(index) < int(count)):
-        raise argparse.ArgumentTypeError(f"'{text}' is not K/N with 0 <= K < N, for example 0/6")
-    return int(index), int(count)
+        return derive(args.cxx, args.jobs)
+    _write_tests(read_golden(GOLDEN)[1])
+    return check()

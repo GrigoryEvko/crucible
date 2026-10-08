@@ -1,0 +1,7 @@
+# A build of the vessel against the planted PyTorch, with -Werror on the compile line of its source.
+format 1
+cache TORCH_DIR type=PATH | {root}/site-packages
+cache CRUCIBLE_WERROR type=BOOL | ON
+cache CMAKE_COMMAND type=FILEPATH | {root}/programs/cmake
+cache CRUCIBLE_VESSEL_PYTHON type=FILEPATH | {root}/programs/python
+compile vessel/register.o vessel/torch/register.cpp | {cxx} -Werror -c {root}/vessel/torch/register.cpp

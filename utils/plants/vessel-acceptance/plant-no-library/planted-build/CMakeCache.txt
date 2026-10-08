@@ -1,0 +1,1 @@
+# A planted cache file.  The rule reads the cache from the reply cache-v2 of the CMake file API.

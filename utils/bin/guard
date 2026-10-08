@@ -45,7 +45,7 @@ SUBCOMMANDS = {
     "list": ("assay.guard.listing", "print the rules, or the ledger rows of one file: guard list [--path FILE]"),
     "explain": ("assay.guard.explain", "print one rule and its section of CLAUDE.md: guard explain RULE"),
     "warnings": ("assay.guard.warnings", "print the warnings directory of a build: guard warnings BUILD_DIR"),
-    "selftest": ("assay.guard.selftest", "run the self-test of one module: guard selftest MODULE [ARG]..."),
+    "selftest": ("assay.guard.selftest", "run the tests of a group or a module: guard selftest GROUP|MODULE"),
     "sections": ("assay.readers.sections", "print the plugin findings of objects: guard sections OBJECT..."),
 }
 

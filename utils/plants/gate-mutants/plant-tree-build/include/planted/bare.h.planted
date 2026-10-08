@@ -1,0 +1,12 @@
+// A planted header of the tree with a requires clause that no test holds.
+#pragma once
+
+namespace planted {
+
+template <class T>
+    requires(sizeof(T) <= 8)
+constexpr int fits(T) {
+    return 1;
+}
+
+}  // namespace planted

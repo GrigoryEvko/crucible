@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from assay.oracle import rocq
+from assay.oracle import rocq, sources
 from assay.oracle.labelled import LGlobal, decode_sr_local, sr_coq_global
 from assay.oracle.model import Local
 
@@ -74,8 +74,7 @@ Definition sr_opt (o : option lType) : seq nat :=
 
 SUBJECT_REDUCTION = rocq.Development(
     name="subject_reduction",
-    repo="Tirore96/subject_reduction",
-    commit="6d5362df12b049b79b3a28b4519c28f7d0ee4831",
+    pin=sources.SUBJECT_REDUCTION,
     load_path=_sr_load_path,
     build=_build_sr,
     driver_head=_SR_HEAD,

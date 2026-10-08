@@ -1,0 +1,8 @@
+# A planted pin table of CMake for two platforms, the compiler, the minimum Python and a pin of the toolchain of the
+# oracle.
+format 1
+pin cmake via=archive version=4.4.2 platform=linux-aarch64 source=https://example.invalid/cmake-aarch64.whl sha256=0000000000000000000000000000000000000000000000000000000000000000 | a planted pin of CMake
+pin cmake via=archive version=4.4.2 platform=linux-x86_64 source=https://example.invalid/cmake-x86_64.whl sha256=0000000000000000000000000000000000000000000000000000000000000000 | a planted pin of CMake
+pin gcc via=git version=16.2.1 source=https://github.com/gcc-mirror/gcc.git commit=0000000000000000000000000000000000000000 | a planted pin of the compiler
+pin python via=host version=3.14 | a planted minimum version of Python
+pin sbt via=archive version=1.10.7 source=https://example.invalid/sbt-1.10.7.tgz sha256=0000000000000000000000000000000000000000000000000000000000000000 | a planted pin of the toolchain of the oracle

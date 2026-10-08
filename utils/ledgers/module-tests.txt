@@ -20,8 +20,6 @@ utils/assay/guard/legacy/check_detail_namespace.py | no-test | 1 | assay.guard.l
 utils/assay/guard/legacy/check_no_unchecked_access.py | no-test | 1 | assay.guard.legacy.check_no_unchecked_access | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_start_lifetime.py | no-test | 1 | assay.guard.legacy.check_start_lifetime | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_syscall_capability.py | no-test | 1 | assay.guard.legacy.check_syscall_capability | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/guard/legacy/check_vessel_acceptance.py | no-test | 1 | assay.guard.legacy.check_vessel_acceptance | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/guard/legacy/contract_header_unit_test.py | no-test | 1 | assay.guard.legacy.contract_header_unit_test | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/listing.py | no-test | 1 | assay.guard.listing | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/preprocessed.py | no-test | 1 | assay.guard.preprocessed | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/selftest.py | no-test | 1 | assay.guard.selftest | A module of today with no test module.  The change that writes the test module removes the row
@@ -44,7 +42,6 @@ utils/assay/loop/meter_compiler.py | no-test | 1 | assay.loop.meter_compiler | A
 utils/assay/loop/pgo.py | no-test | 1 | assay.loop.pgo | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/loop/stamps.py | no-test | 1 | assay.loop.stamps | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/mutation/gates.py | no-test | 1 | assay.mutation.gates | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/mutation/run.py | no-test | 1 | assay.mutation.run | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/oracle/ekici.py | no-test | 1 | assay.oracle.ekici | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/oracle/emit.py | no-test | 1 | assay.oracle.emit | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/oracle/execution.py | no-test | 1 | assay.oracle.execution | A module of today with no test module.  The change that writes the test module removes the row
@@ -54,15 +51,12 @@ utils/assay/oracle/model.py | no-test | 1 | assay.oracle.model | A module of tod
 utils/assay/oracle/mpstk.py | no-test | 1 | assay.oracle.mpstk | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/oracle/probe.py | no-test | 1 | assay.oracle.probe | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/oracle/rocq.py | no-test | 1 | assay.oracle.rocq | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/oracle/runner.py | no-test | 1 | assay.oracle.runner | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/oracle/semantics.py | no-test | 1 | assay.oracle.semantics | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/oracle/sprout.py | no-test | 1 | assay.oracle.sprout | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/oracle/sr.py | no-test | 1 | assay.oracle.sr | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/oracle/unit_store.py | no-test | 1 | assay.oracle.unit_store | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/readers/census.py | no-test | 1 | assay.readers.census | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/readers/shell.py | no-test | 1 | assay.readers.shell | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/readers/tsast.py | no-test | 1 | assay.readers.tsast | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/setup/gcc.py | no-test | 1 | assay.setup.gcc | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/setup/listing.py | no-test | 1 | assay.setup.listing | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/setup/oracle.py | no-test | 1 | assay.setup.oracle | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/setup/pins.py | no-test | 1 | assay.setup.pins | A module of today with no test module.  The change that writes the test module removes the row

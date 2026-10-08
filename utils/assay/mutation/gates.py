@@ -16,7 +16,6 @@ the header with the same bytes.
 from __future__ import annotations
 
 import re
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -280,23 +279,3 @@ def apply(source: bytes, gate: Gate) -> bytes:
     if source[gate.start:gate.end].decode("utf-8", errors="replace") != gate.original:
         raise ValueError(f"{gate.key}: the header bytes moved since the gate was found")
     return source[:gate.start] + gate.replacement.encode() + source[gate.end:]
-
-
-def main(argv: list[str]) -> int:
-    """List the gates of the headers that the command line names (`guard check --rule gate-mutants gates H...`).
-
-    Complexity: linear in the size of the parse trees of the headers.
-
-    Args:
-        argv: The path of each header
-
-    Returns:
-        0
-    """
-    total = 0
-    for name in argv:
-        for gate in find_gates(Path(name)):
-            total += 1
-            print(f"{gate.header}:{gate.line}: {gate.kind:13} {gate.entity or '-':32} {gate.original[:70]!r}")
-    print(f"{total} gates", file=sys.stderr)
-    return 0

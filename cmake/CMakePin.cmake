@@ -5,9 +5,9 @@
 # gives that version for one platform.  The root CMakeLists.txt calls
 # crucible_cmake_pin_problem() with CMAKE_VERSION before project(), so a
 # configure with a CMake of another version stops before CMake tests the
-# compiler.  The test cmake_pin rejects a ctest of another version (`setup
-# check`, utils/assay/setup/pins.py).  cmake/CMakePinSelfTest.cmake is the test
-# of this file.
+# compiler.  The rule tool-pins (the test guard_tool_pins) rejects a ctest of
+# another version (utils/assay/setup/pins.py).  cmake/CMakePinSelfTest.cmake is
+# the test of this file.
 
 # Set OUT_VAR to the pinned version of PIN_FILE, or to an empty string when the
 # file gives no version.  Set PROBLEM_VAR to an empty string, or to a message

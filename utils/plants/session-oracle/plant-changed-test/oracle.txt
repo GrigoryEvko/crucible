@@ -1,0 +1,4 @@
+# A person changed an emitted test after the emission.
+format 1
+emit
+append generated_fixy_duality_00.cpp | // a planted line that the golden file does not emit

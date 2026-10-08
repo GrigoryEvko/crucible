@@ -1,0 +1,6 @@
+// A planted test that includes the header of std::vector before the planted header.
+#include <vector>
+
+#include "planted/needs.h"
+
+int main() { return static_cast<int>(planted::one(1).size()) - 1; }

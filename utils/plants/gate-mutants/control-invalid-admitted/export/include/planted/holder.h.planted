@@ -1,0 +1,16 @@
+// A planted header whose class template carries its constraint on the declaration and on the definition.
+#pragma once
+
+namespace planted {
+
+template <class T>
+    requires(sizeof(T) <= 4)
+struct Holder;
+
+template <class T>
+    requires(sizeof(T) <= 4)
+struct Holder {
+    T value;
+};
+
+}  // namespace planted

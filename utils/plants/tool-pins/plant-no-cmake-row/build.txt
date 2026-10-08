@@ -1,0 +1,5 @@
+# The CMake cache names a cmake, a ctest and a C++ compiler.
+format 1
+cache CMAKE_COMMAND type=FILEPATH | {root}/programs/cmake
+cache CMAKE_CTEST_COMMAND type=FILEPATH | {root}/programs/ctest
+cache CMAKE_CXX_COMPILER type=FILEPATH | {root}/programs/g++

@@ -1,0 +1,3 @@
+# The planted compiler stops the evaluation that breaks the contract in each importer of the specifier form.
+format 1
+stop specifier_*_import.cpp | specifier_import.cpp:2:15: error: contract predicate is false

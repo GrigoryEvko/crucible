@@ -1,0 +1,3 @@
+# A planted golden file whose row names a family that the oracle does not know.
+family,case,role,global,oracle,ours,status,class,note
+fixy.planted,fr1,-,"msg(0,1,bool,end)","send(1,bool,end) || recv(1,bool,end)",=,agree,,

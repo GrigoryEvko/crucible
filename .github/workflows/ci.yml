@@ -200,7 +200,7 @@ jobs:
           python3 utils/bin/guard check --rule ctx-init-door
 
       - name: session oracle drift (check)
-        run: python3 utils/bin/guard check --rule session-oracle check
+        run: python3 utils/bin/guard check --rule session-oracle
 
       - name: check report format and the measured rules (self-test)
         run: python3 utils/bin/guard selftest core.report

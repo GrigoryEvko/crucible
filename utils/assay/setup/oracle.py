@@ -39,6 +39,7 @@ LOG = logging.getLogger("session_oracle.toolchain")
 JDK_PIN = "temurin-jdk"
 SBT_PIN = "sbt"
 MCRL2_PIN = "mcrl2"
+TOOLCHAIN_PINS = (JDK_PIN, SBT_PIN, MCRL2_PIN)
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,7 +110,7 @@ def install() -> Path:
     """Download, check and unpack each release that the cache lacks.  Return the toolchain root."""
     root = toolchain_root()
     root.mkdir(parents=True, exist_ok=True)
-    for pinned in (release(JDK_PIN), release(SBT_PIN), release(MCRL2_PIN)):
+    for pinned in (release(name) for name in TOOLCHAIN_PINS):
         target = root / pinned.name
         if target.is_dir():
             continue

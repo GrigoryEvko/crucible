@@ -1,0 +1,9 @@
+# The toolchain of the oracle holds an unpack of the pin of sbt that stopped.
+format 1
+program programs/cmake | cmake version 4.4.2
+program programs/ctest | ctest version 4.4.2
+program programs/g++ | 16.2.1
+process 500 400 python3
+process 400 300 cmake
+process 300 1 ctest | {root}/programs/ctest
+partial sbt 1.10.7

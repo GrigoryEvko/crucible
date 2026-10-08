@@ -1,0 +1,10 @@
+# The tools directory holds the directory of ruff for this host, and an install that did not complete left it with no
+# stamp.
+format 1
+program programs/cmake | cmake version 4.4.2
+program programs/ctest | ctest version 4.4.2
+program programs/g++ | 16.2.1
+process 500 400 python3
+process 400 300 cmake
+process 300 1 ctest | {root}/programs/ctest
+installed ruff

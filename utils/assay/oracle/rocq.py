@@ -1,18 +1,18 @@
 """Run published Rocq developments as oracles.
 
-Each development is a Development: a pinned commit of a repository, the
-build of the files that the oracle needs, and a driver head that defines
-the encoders of the answers.  A query is a Rocq expression of type
+Each development is a Development: the pin of its repository in
+utils/pins.txt (assay.oracle.sources), the build of the files that the
+oracle needs, and a driver head that defines the encoders of the answers.  A query is a Rocq expression of type
 (nat * seq nat).  The driver evaluates each query with ``vm_compute`` and
 prints the pair.  The first component is the key of the query, and the
 second is the answer as a list of naturals, because the printed form of a
 Rocq term depends on notations that change between releases.
 
 None of the repositories has an Extraction command, and two of them have
-no licence, so nothing from them enters our tree.  This module downloads
-each pinned commit as a tarball into a cache outside the repository,
-builds it there, and keeps the answers in a cache whose file name carries
-the commit.
+no licence, so nothing from them enters our tree.  assay.oracle.sources
+downloads each pinned commit as a tarball into a cache outside the
+repository.  This module builds it there, and keeps the answers in a cache
+whose file name carries the commit.
 
 The developments:
 
@@ -41,15 +41,12 @@ mathcomp-ssreflect 1.x, Equations, deriving, paco and mczify.
 
 from __future__ import annotations
 
-import io
 import json
 import logging
 import os
 import re
 import shutil
-import tarfile
 import tempfile
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -119,54 +116,28 @@ def coq_version() -> str:
 class Development:
     """One pinned Rocq development and how to build and query it.
 
-    ``load_path`` maps the unpacked root to the -Q and -R arguments of
-    coqc.  ``build`` compiles the files that the driver needs, and a
-    second call is a no-op.  ``driver_head`` is the Rocq text before the
-    queries.
+    ``pin`` names the row of utils/pins.txt that gives the repository and
+    its commit (assay.oracle.sources).  ``load_path`` maps the unpacked root
+    to the -Q and -R arguments of coqc.  ``build`` compiles the files that
+    the driver needs, and a second call is a no-op.  ``driver_head`` is the
+    Rocq text before the queries.
     """
 
     name: str
-    repo: str
-    commit: str
+    pin: str
     load_path: Callable[[Path], list[str]]
     build: Callable[["Development", Path], None]
     driver_head: str
 
-    @property
-    def tarball(self) -> str:
-        """The URL of the pinned commit's archive."""
-        return f"https://github.com/{self.repo}/archive/{self.commit}.tar.gz"
-
-    @property
-    def dirname(self) -> str:
-        """The directory that the archive unpacks into."""
-        return f"{self.repo.split('/')[1]}-{self.commit}"
-
 
 def fetch(dev: Development) -> Path:
-    """Download and unpack the pinned commit of ``dev``.  Return its root.
+    """Download and unpack the pinned commit of ``dev`` (assay.oracle.sources.fetch).  Return its root.
 
     The download happens once.  A second call finds the unpacked tree.
     """
-    root = cache_root() / dev.dirname
-    if (root / "_CoqProject").is_file():
-        return root
-    root.parent.mkdir(parents=True, exist_ok=True)
-    LOG.info("fetching %s", dev.tarball)
-    try:
-        with urllib.request.urlopen(dev.tarball, timeout=120) as resp:
-            data = resp.read()
-    except OSError as exc:
-        raise OracleError(f"cannot download {dev.tarball}: {exc}") from exc
-    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
-        prefix = f"{dev.dirname}/"
-        members = [m for m in tar.getmembers() if m.name.startswith(prefix)]
-        if not members:
-            raise OracleError(f"{dev.tarball}: no directory {prefix} in the archive")
-        tar.extractall(root.parent, members=members, filter="data")
-    if not (root / "_CoqProject").is_file():
-        raise OracleError(f"{root}: the archive has no _CoqProject")
-    return root
+    from assay.oracle import sources
+
+    return sources.fetch(sources.source(dev.pin), "_CoqProject")
 
 
 _REQUIRE = re.compile(r"(?:From\s+(\w+)\s+)?Require\s+(?:Import|Export)\s+([\w.\s]+?)\.\s", re.S)
@@ -284,8 +255,7 @@ Definition so_opt (o : option lType) : seq nat :=
 
 PROJECTION = Development(
     name="projection",
-    repo="Tirore96/projection",
-    commit="fc0d3502f3e5658e3ef9f38eb5d2572271297409",
+    pin="rocq-projection",
     load_path=_projection_load_path,
     build=_build_projection,
     driver_head=_PROJECTION_HEAD,
@@ -366,11 +336,13 @@ def evaluate(dev: Development, exprs: list[str], cache_keys: list[str],
     OracleError when coqc fails or a key is missing, so a silent partial
     answer cannot reach the golden file.
     """
+    from assay.oracle import sources
+
     root = fetch(dev)
     dev.build(dev, root)
     work = cache_root() / "work"
     work.mkdir(parents=True, exist_ok=True)
-    cache_path = answer_cache_path(dev.name, dev.commit)
+    cache_path = answer_cache_path(dev.name, sources.source(dev.pin).commit)
     cache = load_answers(cache_path)
     fresh =[i for i, k in enumerate(cache_keys) if k not in cache]
     unique: dict[str, int] = {}

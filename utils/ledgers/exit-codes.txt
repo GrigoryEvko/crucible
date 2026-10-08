@@ -13,12 +13,6 @@ utils/assay/loop/derive/aten_ops.py | exit-code | 1 | read_yaml_facts | An exit 
 utils/assay/loop/derive/aten_ops.py | exit-code | 1 | yaml_funcs | An exit of today.  The change that gives the exit a member of ExitCode lowers the count
 utils/assay/loop/step.py | exit-code | 2 | main | An exit of today.  The change that gives the exit a member of ExitCode lowers the count
 utils/assay/loop/teststep.py | exit-code | 1 | main | An exit of today.  The change that gives the exit a member of ExitCode lowers the count
-utils/assay/mutation/run.py | exit-code | 1 | _build_program | An exit of today.  The change that gives the exit a member of ExitCode lowers the count
-utils/assay/mutation/run.py | exit-code | 1 | _exit_on_term | An exit of today.  The change that gives the exit a member of ExitCode lowers the count
-utils/assay/mutation/run.py | exit-code | 1 | _target_sources | An exit of today.  The change that gives the exit a member of ExitCode lowers the count
-utils/assay/mutation/run.py | exit-code | 1 | load_candidates | An exit of today.  The change that gives the exit a member of ExitCode lowers the count
-utils/assay/mutation/run.py | exit-code | 2 | load_exemptions | An exit of today.  The change that gives the exit a member of ExitCode lowers the count
-utils/assay/mutation/run.py | exit-code | 1 | run_header | An exit of today.  The change that gives the exit a member of ExitCode lowers the count
 utils/assay/oracle/runner.py | exit-code | 2 | measured_tree | An exit of today.  The change that gives the exit a member of ExitCode lowers the count
 utils/bin/guard | exit-code | 3 | <module> | An exit of today.  The change that gives the exit a member of ExitCode lowers the count
 utils/bin/loop | exit-code | 3 | <module> | An exit of today.  The change that gives the exit a member of ExitCode lowers the count

@@ -1,0 +1,4 @@
+# The call names one header of the export.  No test holds its gate, so the mutant survives, and a survivor gives a
+# warning and no error.
+format 1
+path include/planted/bare.h

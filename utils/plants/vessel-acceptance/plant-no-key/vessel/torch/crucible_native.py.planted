@@ -1,0 +1,6 @@
+"""A planted probe of the sanitizer runtime of a library: no library carries one."""
+
+
+def sanitizer_runtime(path: str) -> None:
+    """Return None for each library."""
+    return None

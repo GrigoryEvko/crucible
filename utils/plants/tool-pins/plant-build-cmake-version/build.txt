@@ -1,0 +1,5 @@
+# The CMake cache names a cmake of a version that is not the pin.
+format 1
+cache CMAKE_COMMAND type=FILEPATH | {root}/other/cmake
+cache CMAKE_CTEST_COMMAND type=FILEPATH | {root}/programs/ctest
+cache CMAKE_CXX_COMPILER type=FILEPATH | {root}/programs/g++

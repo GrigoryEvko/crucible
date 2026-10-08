@@ -1,0 +1,4 @@
+# The cmake of the build makes the two vessel libraries, and the interpreter imports the planted PyTorch.
+format 1
+program programs/cmake | mkdir -p "$2/lib" | : > "$2/lib/libcrucible_vessel.so" | : > "$2/lib/libcrucible_dispatch.so"
+program programs/python | PYTHONPATH={root}/site-packages PYTHONDONTWRITEBYTECODE=1 exec {python} "$@"

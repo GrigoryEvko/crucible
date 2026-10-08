@@ -1,0 +1,4 @@
+# A planted ledger of the rule gate-mutants.
+format 1
+rule gate-mutants
+include/planted/holder.h | requires | admit | Holder: (sizeof(T) <= 4) | the declaration and the definition of Holder carry the gate, so a mutant of one site is a redeclaration with different constraints

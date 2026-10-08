@@ -1,0 +1,6 @@
+"""A planted vessel test whose replay does not give the bytes of PyTorch alone."""
+
+import sys
+
+print("replay gives other bytes than PyTorch alone", file=sys.stderr)
+sys.exit(1)

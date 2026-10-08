@@ -1,0 +1,4 @@
+# The CMake cache names a planted compiler that stops each importer of the header unit of the specifier form, as a
+# compiler that keeps the specifier in a header unit does.
+format 1
+cache CMAKE_CXX_COMPILER type=FILEPATH | {root}/programs/cxx

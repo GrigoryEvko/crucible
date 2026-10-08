@@ -1,0 +1,2 @@
+# The CMake cache names no C++ compiler, so the rule has no compiler to hold.
+format 1

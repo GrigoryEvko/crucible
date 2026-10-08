@@ -17,8 +17,10 @@ container image.  This module builds the two natively in the cache of
 rocq.py, with the opam switch SWITCH (THE TOOLCHAINS of utils/assay/oracle/runner.py
 says how to make it):
 
-  front end  source.zip of the artifact, checked against SOURCE_SHA256
-  MuVal      CoAR (github.com/hiroshi-unno/coar, Apache 2.0) at COAR_COMMIT.
+  front end  source.zip of the artifact, checked against the SHA-256 of the
+             pin sprout-artifact of utils/pins.txt (assay.oracle.sources)
+  MuVal      CoAR (github.com/hiroshi-unno/coar, Apache 2.0) at the commit of
+             the pin coar.
              Each of the 1,346 source and configuration files in the image's
              MuVal tree is equal, byte for byte, to the file of that commit.
              The 45 other files are menhir, ocamllex and ppx outputs, and
@@ -52,25 +54,21 @@ import logging
 import os
 import re
 import shutil
-import tarfile
 import tempfile
-import urllib.request
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from assay.core import proc
+from assay.oracle import sources
 from assay.oracle.keskin import GlobalStates, Premise
 from assay.oracle.model import Global, read_global
 from assay.oracle.rocq import OracleError, answer_cache_path, cache_root, load_answers, save_answers
 
 LOG = logging.getLogger("session_oracle.sprout")
 
-ARTIFACT = "10.5281/zenodo.19600644"
-SOURCE_URL = "https://zenodo.org/api/records/19600644/files/source.zip/content"
-SOURCE_SHA256 = "6e24c2b69ffba4872497d064e0d7e97f759b1e4e83ac07efb8fd375daf2d1520"
-COAR_REPO = "hiroshi-unno/coar"
-COAR_COMMIT = "1d49999975b00f1430b3c9d10b90ab00b561e836"
+# The DOI of the artifact is this prefix and the number of its record of Zenodo, the version of the pin sprout-artifact.
+ARTIFACT_PREFIX = "10.5281/zenodo."
 SWITCH = os.environ.get("SESSION_ORACLE_SPROUT_SWITCH", "sprout")
 NETWORKS = ("p2pbox", "mailbox", "bag")
 # The two query generators of the front end: "opt" (the optimised queries
@@ -126,29 +124,14 @@ def _in_switch(args: list[str], cwd: Path, timeout_s: float) -> proc.Completed:
     return proc.run(proc.Command([_opam(), "exec", f"--switch={SWITCH}", "--", *args], timeout_s=timeout_s, cwd=cwd))
 
 
-def _download(url: str) -> bytes:
-    LOG.info("fetching %s", url)
-    try:
-        with urllib.request.urlopen(url, timeout=300) as resp:
-            return resp.read()
-    except OSError as exc:
-        raise OracleError(f"cannot download {url}: {exc}") from exc
+def artifact() -> str:
+    """Return the DOI of the artifact of Sprout(A), from the version of the pin sprout-artifact."""
+    return f"{ARTIFACT_PREFIX}{sources.source(sources.SPROUT).version}"
 
 
 def fetch_coar() -> Path:
-    """Download and unpack CoAR at COAR_COMMIT.  Return its root."""
-    root = cache_root() / f"coar-{COAR_COMMIT}"
-    if (root / "CoAR.opam").is_file():
-        return root
-    root.parent.mkdir(parents=True, exist_ok=True)
-    data = _download(f"https://github.com/{COAR_REPO}/archive/{COAR_COMMIT}.tar.gz")
-    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
-        prefix = f"coar-{COAR_COMMIT}/"
-        members = [m for m in tar.getmembers() if m.name.startswith(prefix)]
-        tar.extractall(root.parent, members=members, filter="data")
-    if not (root / "CoAR.opam").is_file():
-        raise OracleError(f"{root}: the archive has no CoAR.opam")
-    return root
+    """Download and unpack CoAR at the commit of the pin coar (assay.oracle.sources).  Return its root."""
+    return sources.fetch(sources.source(sources.COAR), "CoAR.opam")
 
 
 def fetch_front_end(coar: Path) -> Path:
@@ -157,12 +140,13 @@ def fetch_front_end(coar: Path) -> Path:
     config.ml names the directory where the front end runs MuVal, so the
     unpacked copy points it at ``coar``.
     """
-    root = cache_root() / f"sprout-a-{SOURCE_SHA256[:16]}" / "query-generator"
+    pinned = sources.source(sources.SPROUT)
+    root = cache_root() / f"sprout-a-{pinned.digest[:16]}" / "query-generator"
     if not (root / "dune-project").is_file():
-        data = _download(SOURCE_URL)
+        data = sources.download(pinned.address)
         digest = hashlib.sha256(data).hexdigest()
-        if digest != SOURCE_SHA256:
-            raise OracleError(f"source.zip of doi {ARTIFACT} has sha256 {digest}, not {SOURCE_SHA256}")
+        if digest != pinned.digest:
+            raise OracleError(f"source.zip of doi {artifact()} has sha256 {digest}, not {pinned.digest}")
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             for name in archive.namelist():
                 if name.startswith("query-generator/") and not name.endswith("/") \
@@ -195,7 +179,8 @@ def build() -> tuple[Path, str]:
     if versions.exit != 0 or ocaml.exit != 0:
         raise OracleError(f"the opam switch '{SWITCH}' has no ocamlc or no z3 package:\n"
                           f"{versions.err}{ocaml.err}")
-    ident = (f"coar {COAR_COMMIT}, source.zip sha256 {SOURCE_SHA256}, OCaml {ocaml.out.strip()}, "
+    ident = (f"coar {sources.source(sources.COAR).commit}, source.zip sha256 {sources.source(sources.SPROUT).digest}, "
+             f"OCaml {ocaml.out.strip()}, "
              f"z3 {versions.out.strip()}, {os.uname().machine}")
     return front / "_build" / "default" / "main.exe", ident
 

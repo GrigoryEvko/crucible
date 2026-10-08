@@ -1,0 +1,4 @@
+# The tree holds a generated test that the golden file does not emit.
+format 1
+emit
+write generated_fixy_retired_00.cpp | // a planted test of a family that the golden file no longer emits

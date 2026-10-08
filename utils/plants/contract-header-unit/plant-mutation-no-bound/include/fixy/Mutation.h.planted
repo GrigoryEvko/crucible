@@ -1,0 +1,21 @@
+// A planted bounded counter whose mint does not hold its bound.
+#pragma once
+
+namespace fixy {
+
+template <class T, T Max>
+class BoundedMonotonic {
+public:
+    explicit constexpr BoundedMonotonic(T value) noexcept : value_{value} {}
+    [[nodiscard]] constexpr T get() const noexcept { return value_; }
+
+private:
+    T value_;
+};
+
+template <class T, T Max>
+[[nodiscard]] constexpr BoundedMonotonic<T, Max> mint_bounded_monotonic(T value) noexcept {
+    return BoundedMonotonic<T, Max>{value};
+}
+
+}  // namespace fixy

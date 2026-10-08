@@ -1,0 +1,8 @@
+# The rule runs under the pinned ctest, and the ctest of the build is not there.
+format 1
+program programs/cmake | cmake version 4.4.2
+program programs/ctest | ctest version 4.4.2
+program programs/g++ | 16.2.1
+process 500 400 python3
+process 400 300 cmake
+process 300 1 ctest | {root}/programs/ctest

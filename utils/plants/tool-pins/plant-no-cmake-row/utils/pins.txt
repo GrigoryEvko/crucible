@@ -1,0 +1,4 @@
+# A planted pin table with no row of CMake.
+format 1
+pin gcc via=git version=16.2.1 source=https://github.com/gcc-mirror/gcc.git commit=0000000000000000000000000000000000000000 | a planted pin of the compiler
+pin python via=host version=3.14 | a planted minimum version of Python

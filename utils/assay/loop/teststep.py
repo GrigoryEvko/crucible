@@ -112,6 +112,10 @@ CORES_KEEP = "keep"
 LAUNCHED_ENV = "CRUCIBLE_TEST_LAUNCHED"
 # The options before the command, each with one value.
 OPTIONS = ("--warnings-dir", "--build-dir", "--name")
+# The end of the path of the master, and the subcommand that this module is.  A test command can name the master of
+# an export of the tree.  A reader then finds the master by the end of its path.
+MASTER = "utils/bin/loop"
+SUBCOMMAND = "test-step"
 USAGE = (
     "usage: loop test-step [--warnings-dir DIR] [--build-dir BUILD] [--name NAME] PROGRAM [ARG]... | "
     "guard selftest tests.loop.test_teststep"
@@ -294,6 +298,19 @@ def read_options(argv: list[str]) -> tuple[Options, list[str]] | None:
         setattr(options, field, argv[index + 1])
         index += 2
     return (options, argv[index:]) if index < len(argv) else None
+
+
+def launched(command: list[str]) -> list[str]:
+    """Return the command that a test runs behind this launcher, or the command itself when no launcher runs it.
+
+    A test command of the tree is `python3 -S SRC/utils/bin/loop test-step [OPTION VALUE]... PROGRAM [ARG]...`.
+    Complexity: linear in the words of the command.
+    """
+    for index, word in enumerate(command[:-1]):
+        if word.endswith(MASTER) and command[index + 1] == SUBCOMMAND:
+            read = read_options(command[index + 2:])
+            return read[1] if read is not None else command
+    return command
 
 
 def read_budget() -> dict[str, tuple[float, float]]:

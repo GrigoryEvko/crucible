@@ -18,6 +18,12 @@ THE BUILD DIRECTORY
     the caches of the host and no build.  cache_root and cache_limits give
     the root of the caches and the limit of each one.
 
+THE PATHS
+    A call can name paths with --path.  A rule that reads only the paths
+    that a call names, such as gate-mutants, reads them from `paths`.  The
+    run then judges only the ledger rows of those paths, and `guard write`
+    writes only their rows.  With no --path, `paths` is empty.
+
 THE KIND
     kind() gives the build kind of BUILD_DIR/build-kind.txt
     (assay.core.meter).  A ledger row of a measured rule applies only to a
@@ -36,6 +42,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from assay.core import cache
+from assay.core import ledger as rule_ledger
 from assay.core import meter as cost_meter
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
@@ -67,6 +74,7 @@ class BuildContext:
         "build_dir",
         "cache_limits",
         "cache_root",
+        "paths",
         "registry",
         "root",
         "rule",
@@ -80,8 +88,9 @@ class BuildContext:
         cache_root: Path | None = None,
         cache_limits: Mapping[str, int] | None = None,
         registry: rule_registry.Registry | None = None,
+        paths: Sequence[str] = (),
     ) -> None:
-        """Keep the root, the build directory, the root and the limits of the caches, and the registry.
+        """Keep the root, the build directory, the root and the limits of the caches, the registry and the paths.
 
         Args:
             root: The root of the tree
@@ -90,9 +99,11 @@ class BuildContext:
             cache_limits: The limit of each cache, or None for LIMITS of assay.core.cache
             registry: The registry that gives the thresholds of the measured rules, or None for the registry of
                 this tree
+            paths: The paths that the call names with --path (THE PATHS)
         """
         self.root = root
         self.build_dir = build_dir
+        self.paths: tuple[str, ...] = tuple(paths)
         self.rule: rule_registry.Rule | None = None
         self.cache_root = cache_root if cache_root is not None else cache.base_root()
         self.cache_limits: Mapping[str, int] = cache_limits if cache_limits is not None else cache.LIMITS
@@ -117,6 +128,10 @@ class BuildContext:
     def shown(self, path: Path | str) -> str:
         """Return a path relative to the root when it is in the tree, else the path itself."""
         return build_census.shown(path, self.root)
+
+    def names(self, key: rule_ledger.Key) -> bool:
+        """Return True when the run judges the ledger row of a key: each row with no paths, else a row of a path."""
+        return not self.paths or key.path in self.paths
 
     def budget(self, rule_id: str) -> check_report.Budget:
         """Return the thresholds of a measured rule of the registry of the context, for check_report.classify().
@@ -217,11 +232,19 @@ class BuildContext:
 
 
 def run(
-    rules: Sequence[rule_registry.Rule], root: Path, build_dir: Path | None, warnings_dir: Path | None
+    rules: Sequence[rule_registry.Rule],
+    root: Path,
+    build_dir: Path | None,
+    warnings_dir: Path | None,
+    paths: Sequence[str] = (),
 ) -> list[int]:
-    """Run the rules on one context, and give the status of each one (assay.guard.engines.meta.runner.run())."""
-    context = BuildContext(root, build_dir)
-    return [meta_runner.run(rule, context, warnings_dir) for rule in rules]
+    """Run the rules on one context, and give the status of each one (assay.guard.engines.meta.runner.run()).
+
+    With paths, each run judges only the ledger rows of the paths (THE PATHS).
+    """
+    context = BuildContext(root, build_dir, paths=paths)
+    kept = context.names if context.paths else None
+    return [meta_runner.run(rule, context, warnings_dir, kept) for rule in rules]
 
 
 def witness(rule: rule_registry.Rule, root: Path = REPO_ROOT) -> int:

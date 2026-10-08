@@ -1,0 +1,18 @@
+// A planted test of each gate of the header.  The static assertion holds the concept and the requires clause of
+// take, and the call of half holds its contract: the test passes only when the contract stops the call.
+#include <contracts>
+#include <cstdlib>
+
+#include "planted/witnessed.h"
+
+template <class T>
+concept TakesValue = requires(T value) { planted::take(value); };
+
+static_assert(!TakesValue<long double>);
+
+void handle_contract_violation(const std::contracts::contract_violation&) noexcept { std::_Exit(0); }
+
+int main() {
+    static_cast<void>(planted::half(3));
+    return 1;
+}

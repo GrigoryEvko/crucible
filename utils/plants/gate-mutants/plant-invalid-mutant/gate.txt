@@ -1,0 +1,4 @@
+# The call names one header of the export.  The declaration and the definition of Holder carry the same gate, so
+# the mutant of one site is a redeclaration with different constraints, which does not compile.
+format 1
+path include/planted/holder.h

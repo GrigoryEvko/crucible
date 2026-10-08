@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.25)
+project(planted_export CXX)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+add_compile_options(-std=c++26 -fcontracts)
+include_directories(include)
+enable_testing()
+add_executable(test_needs test/test_needs.cpp)
+add_test(NAME test_needs COMMAND test_needs)

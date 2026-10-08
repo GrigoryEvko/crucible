@@ -1,0 +1,4 @@
+# An emitted test is not in the tree.
+format 1
+emit
+remove generated_fixy_wire_00.cpp

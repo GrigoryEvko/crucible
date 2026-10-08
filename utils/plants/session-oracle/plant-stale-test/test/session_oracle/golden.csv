@@ -1,0 +1,4 @@
+# A planted golden file of two rows of the family fixy.dual.
+family,case,role,global,oracle,ours,status,class,note
+fixy.dual,fr1,-,"msg(0,1,bool,end)","send(1,bool,end) || recv(1,bool,end)",=,agree,,
+fixy.dual,fr3,-,"branch(0,1,[end,msg(1,0,bool,end)])","select(1,[end,recv(8,bool,end)]) || offer(1,[end,send(8,bool,end)])",=,agree,,

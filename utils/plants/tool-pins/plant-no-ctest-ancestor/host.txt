@@ -1,0 +1,7 @@
+# A shell runs the rule, and no ancestor of the rule is a ctest.
+format 1
+program programs/cmake | cmake version 4.4.2
+program programs/ctest | ctest version 4.4.2
+program programs/g++ | 16.2.1
+process 500 400 python3
+process 400 1 bash

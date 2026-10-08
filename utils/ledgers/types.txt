@@ -75,7 +75,6 @@ utils/assay/guard/preprocessed.py | type-arg | 2 | compiler_identity | An error 
 utils/assay/guard/preprocessed.py | type-arg | 2 | map_batches | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/preprocessed.py | type-var | 2 | compiler_identity | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/preprocessed.py | union-attr | 1 | Store.__init__ | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/selftest.py | no-any-return | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/loop/affected.py | index | 2 | self_test | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/loop/affected.py | var-annotated | 1 | run | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/loop/derive/__init__.py | no-any-return | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
@@ -143,7 +142,6 @@ utils/assay/oracle/rocq.py | unused-ignore | 1 | evaluate | An error of mypy of 
 utils/assay/oracle/runner.py | arg-type | 1 | evaluate_crash | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/oracle/runner.py | arg-type | 2 | evaluate_multi | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/oracle/runner.py | arg-type | 4 | minimal_corpus | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/oracle/runner.py | assignment | 1 | _self_test | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/oracle/runner.py | misc | 1 | minimal_corpus | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/oracle/runner.py | no-redef | 1 | minimal_corpus | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/oracle/runner.py | no-untyped-def | 1 | _stepped_context | An error of mypy of today.  The change that gives the code its types lowers the count
@@ -158,7 +156,6 @@ utils/assay/oracle/runner.py | var-annotated | 1 | evaluate_semantics | An error
 utils/assay/oracle/semantics.py | index | 2 | probe_source | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/oracle/semantics.py | type-arg | 1 | <module> | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/oracle/sprout.py | misc | 1 | decide | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/oracle/sprout.py | no-any-return | 1 | _download | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/readers/tsast.py | arg-type | 1 | _self_test_helpers | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/readers/tsast.py | arg-type | 2 | _self_test_macros | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/readers/tsast.py | arg-type | 1 | macro_bodies | An error of mypy of today.  The change that gives the code its types lowers the count

@@ -1,0 +1,9 @@
+# The ctest that runs the rule gives a version that is not the pin, and the programs of the build give the pin.
+format 1
+program programs/cmake | cmake version 4.4.2
+program programs/ctest | ctest version 4.4.2
+program programs/g++ | 16.2.1
+program other/ctest | ctest version 4.3.0
+process 500 400 python3
+process 400 300 cmake
+process 300 1 ctest | {root}/other/ctest

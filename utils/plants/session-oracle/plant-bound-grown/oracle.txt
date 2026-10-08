@@ -1,0 +1,3 @@
+# The tests of the tree are the tests that the golden file emits, and a shrink-only class has more rows than its bound.
+format 1
+emit

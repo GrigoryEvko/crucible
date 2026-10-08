@@ -5,8 +5,6 @@ rule import-closure
 utils/assay/core/report.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_no_unchecked_access.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_start_lifetime.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/guard/legacy/check_vessel_acceptance.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/guard/legacy/contract_header_unit_test.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/preprocessed.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/preprocessed.py | module-import | 1 | multiprocessing | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/loop/affected.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
@@ -17,7 +15,6 @@ utils/assay/loop/gauge_sample.py | module-import | 1 | argparse | An import of t
 utils/assay/loop/gauge_sample.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/loop/history.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/loop/stamps.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/mutation/run.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/mutation/run.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/oracle/ekici.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/oracle/ekici.py | module-import | 1 | logging | An import of today.  The change that moves the import into the function that uses it removes the row
@@ -30,11 +27,9 @@ utils/assay/oracle/probe.py | module-import | 1 | logging | An import of today. 
 utils/assay/oracle/rocq.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/oracle/rocq.py | module-import | 1 | logging | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/oracle/runner.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/oracle/runner.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/oracle/runner.py | module-import | 1 | logging | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/oracle/sprout.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/oracle/sprout.py | module-import | 1 | logging | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/oracle/unit_store.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/oracle/unit_store.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/readers/tsast.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/readers/tsast.py | module-import | 1 | multiprocessing | An import of today.  The change that moves the import into the function that uses it removes the row

@@ -347,6 +347,28 @@ class Planted:
             )
 
 
+def launched_cases(expect: testing.Expect) -> None:
+    """Check the command that a test runs behind the launcher, which a reader of the tests of a build takes."""
+    master = "/export/utils/bin/loop"
+    launcher = [sys.executable, "-S", master, test_launcher.SUBCOMMAND]
+    executable = ["/build/test/test_planted", "1"]
+    expect(
+        "an executable test runs its program behind the launcher",
+        test_launcher.launched([*launcher, "--warnings-dir", "/w", "--build-dir", "/build", *executable]) == executable,
+    )
+    expect(
+        "a script test with a name runs its program behind the launcher",
+        test_launcher.launched([*launcher, "--name", "planted", "python3", "check.py"]) == ["python3", "check.py"],
+    )
+    expect("a command with no launcher is its own command", test_launcher.launched(executable) == executable)
+    expect(
+        "a launcher with an option and no program gives its own command",
+        test_launcher.launched([*launcher, "--name", "planted"]) == [*launcher, "--name", "planted"],
+    )
+    fixture = [sys.executable, "-S", master, "fixture", "/build", "neg.cpp", "neg", "regex"]
+    expect("the driver of a negative fixture is not the launcher", test_launcher.launched(fixture) == fixture)
+
+
 def main(argv: list[str]) -> int:
     """Run each case in a scratch directory, and write one line for each."""
     with tempfile.TemporaryDirectory(prefix="test-step-") as work:
@@ -360,5 +382,6 @@ def main(argv: list[str]) -> int:
                 planted.threshold_cases,
                 planted.ledger_cases,
                 planted.core_cases,
+                launched_cases,
             ),
         )
