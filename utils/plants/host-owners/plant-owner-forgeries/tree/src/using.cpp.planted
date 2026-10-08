@@ -1,0 +1,6 @@
+namespace foundation::effects::host {
+struct ForegroundOwner;
+}  // namespace foundation::effects::host
+
+using namespace foundation::effects;
+struct host::ForegroundOwner {};

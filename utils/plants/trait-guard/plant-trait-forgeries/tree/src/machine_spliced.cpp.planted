@@ -1,0 +1,7 @@
+#include <fixy/Machine.h>
+
+struct Spliced {};
+struct Name {};
+
+CRUCIBLE_ADMIT_\
+MACHINE_TRANSITION(Spliced, Name)

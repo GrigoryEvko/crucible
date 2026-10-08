@@ -1,0 +1,10 @@
+#include <fixy/Tagged.h>
+
+struct A {};
+struct B {};
+
+namespace fixy {
+template <>
+struct retag_\
+policy<A, B> { static constexpr bool allowed = true; };
+}  // namespace fixy

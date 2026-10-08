@@ -44,6 +44,8 @@ ROW_KINDS = (
     "light",
     "cite",
     "grant",
+    "home",
+    "home-args",
 )
 # The errors of a cite row and of a grant row that do not obey the format of their words.  rule_table.cpp gives
 # the same texts.
@@ -63,7 +65,18 @@ SEAL_FORMAT = (
     "directory under include/ whose parts are identifiers"
 )
 # The error of a row with two cells.  rule_table.cpp gives the same text.
-CELLS_MESSAGE = "a row has at most one cell: the reason of an admit row, or the measure of a heavy or a light row"
+CELLS_MESSAGE = (
+    "a row has at most one cell: the reason of an admit row or of a home row, or the measure of a heavy or a light row"
+)
+# The rules of the family home of the plugin (utils/tools/quarantine/home.cpp),
+# which the home rows and the home-args rows name.
+HOME_RULES = ("federation-admission", "host-owners", "no-combine-ids-duplicate", "splits-orphan", "trait-guard")
+# The error of a home row that does not obey its format.  rule_table.cpp gives the same text.
+HOME_FORMAT = (
+    "a home row is 'home RULE ENTITY [PATH...] | REASON', and a home-args row is 'home-args RULE ENTITY "
+    "[PATH...] | REASON'.  RULE is a rule of the family home, ENTITY is a qualified name or one name, and "
+    "the reason is necessary"
+)
 # The prefix of a path of the build directory.  A file that the build writes
 # has this prefix and its path inside the build directory, as kBuildPrefix of
 # utils/tools/quarantine/plugin.h gives it.
@@ -152,6 +165,26 @@ class Grant:
     doors: tuple[str, ...]
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class Home:
+    """One home row or home-args row of the family home: the rule, the entity, the paths, the reason and the line.
+
+    An entity of one name names each namespace of that name.
+    """
+
+    rule: str
+    entity: str
+    is_args: bool
+    paths: tuple[str, ...]
+    reason: str
+    line: int
+
+    @property
+    def is_one_name(self) -> bool:
+        """Say if the entity is one name, which names each namespace of that name."""
+        return "::" not in self.entity
+
+
 @dataclasses.dataclass(frozen=True)
 class RuleTable:
     """The rows of one rule table, in the order of the file."""
@@ -169,6 +202,11 @@ class RuleTable:
     header_costs: tuple[HeaderCost, ...] = ()
     cites: tuple[Cite, ...] = ()
     grants: tuple[Grant, ...] = ()
+    homes: tuple[Home, ...] = ()
+
+    def homes_of(self, rule: str) -> tuple[Home, ...]:
+        """Return the home rows of one rule, in the sequence of the file."""
+        return tuple(home for home in self.homes if home.rule == rule)
 
     def layer_named(self, name: str) -> Layer | None:
         """Return the layer with NAME, or None."""
@@ -215,6 +253,32 @@ def _check_path(path: str, where: str) -> None:
     if not path or path.startswith("/") or any(part in ("", ".", "..") for part in parts):
         raise TableError(f"{where}: the path {path!r} must be relative to the source root, with no '.', '..' "
                          f"or empty component")
+
+
+def parse_home(args: list[str], is_args: bool, reason: str, number: int, where: str) -> Home:
+    """Parse the words of one home row or home-args row after the row kind: RULE, ENTITY and the paths.
+
+    Raises:
+        TableError: When the row does not obey its format.  rule_table.cpp gives the same texts
+    """
+    if len(args) < 2 or not reason:
+        raise TableError(f"{where}: {HOME_FORMAT}")
+    rule, entity, paths = args[0], args[1], tuple(args[2:])
+    if rule not in HOME_RULES:
+        raise TableError(
+            f"{where}: the rule {rule} is no rule of the family home; the rules are federation-admission, "
+            f"host-owners, no-combine-ids-duplicate, splits-orphan and trait-guard"
+        )
+    if not all(part.isascii() and part.isidentifier() for part in entity.split("::")):
+        raise TableError(f"{where}: the entity {entity} is not a qualified name: each part is an identifier")
+    if is_args and "::" not in entity:
+        raise TableError(f"{where}: a home-args row names a template by its qualified name, and {entity} is one name")
+    if not all(is_plain_path(path) and not path.startswith(BUILD_PREFIX) for path in paths):
+        raise TableError(
+            f"{where}: a path of a home row must be relative to the source root, with no '.', '..' or empty "
+            f"component, and not in the build directory"
+        )
+    return Home(rule, entity, is_args, paths, reason, number)
 
 
 def _check_header(header: str, where: str) -> None:
@@ -412,6 +476,8 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
     seal_lines: dict[str, int] = {}  # the root of each seal row, and its line
     header_costs: list[HeaderCost] = []
     cost_lines: dict[str, int] = {}  # the header of each heavy and light row, and its line
+    homes: list[Home] = []
+    home_lines: dict[str, int] = {}  # the entity of each home row, and its line
     for row in rows:
         number = row.line
         where = f"{name}:{number}"
@@ -537,6 +603,15 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
                 )
             grant_lines[args[0]] = number
             grants.append(Grant(args[0], args[1], args[2], tuple(args[3:])))
+        elif kind in ("home", "home-args"):
+            home = parse_home(args, kind == "home-args", reason, number, where)
+            # One row gives the home of an entity.  With a second row, the
+            # sequence of the rows can change the findings.
+            if home.entity in home_lines:
+                raise TableError(f"{where}: the entity {home.entity} has a second home row, and its first home row "
+                                 f"is on line {home_lines[home.entity]}")
+            home_lines[home.entity] = number
+            homes.append(home)
         else:
             if len(args) != 2 or args[1] not in MODES:
                 raise TableError(f"{where}: an enforce row is 'enforce PATH MODE', and MODE is report or error")
@@ -561,7 +636,7 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
                              f"language must be a path of the base")
     return RuleTable(tuple(layers), tuple(allows), tuple(doors), tuple(admits), tuple(quarantines),
                      tuple(enforces), tuple(languages), tuple(seals), tuple(header_costs), tuple(cites),
-                     tuple(grants))
+                     tuple(grants), tuple(homes))
 
 
 def load(path: Path = TABLE) -> RuleTable:

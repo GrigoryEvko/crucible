@@ -1,0 +1,5 @@
+#include <foundation/permissions/Permission.h>
+
+namespace foundation::permissions {
+template <class Org> class FederationAdmission { public: static int grant(); };
+}  // namespace foundation::permissions

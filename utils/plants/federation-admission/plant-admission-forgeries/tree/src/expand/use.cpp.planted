@@ -1,0 +1,7 @@
+#include "forge.h"
+
+#include <foundation/permissions/Permission.h>
+
+struct Evil;
+
+FORGE_FROM(FederationAdmission);

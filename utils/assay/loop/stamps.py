@@ -93,6 +93,10 @@ def facts_text(table: layer_rules.RuleTable) -> str:
         f"grant {grant.file} {grant.alias} {grant.enumeration} {' '.join(sorted(grant.doors))}".rstrip()
         for grant in table.grants
     ]
+    lines += [
+        f"{'home-args' if home.is_args else 'home'} {home.rule} {home.entity} {' '.join(sorted(home.paths))}".rstrip()
+        for home in table.homes
+    ]
     return "".join(f"{line}\n" for line in sorted(lines))
 
 

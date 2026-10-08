@@ -1,0 +1,6 @@
+#include <foundation/permissions/Permission.h>
+
+namespace crucible { struct P; struct L; struct R; }
+
+template <> struct foundation::permissions::can_split_\
+into<crucible::P, crucible::L, crucible::R> {};

@@ -1,0 +1,8 @@
+#pragma once
+
+namespace foundation::contracts {
+
+template <auto Predicate>
+struct armed_cell;
+
+}  // namespace foundation::contracts

@@ -73,7 +73,8 @@ endif()
 # The sources of the plugin: one unit for each rule family, and the headers
 # that each unit includes.  rows_reader.cpp is the host program of the rule
 # rows-readers, and no part of the plugin.
-set(_crucible_quarantine_units plugin rule_table regions contract include unit library owner declaration expression)
+set(_crucible_quarantine_units plugin rule_table regions contract include unit library owner declaration expression
+    home)
 set(_crucible_quarantine_headers plugin.h rows.h)
 set(CRUCIBLE_QUARANTINE_SOURCES "")
 foreach(_crucible_quarantine_unit IN LISTS _crucible_quarantine_units)
@@ -263,7 +264,8 @@ string(SHA256 _crucible_quarantine_stamp
 string(SUBSTRING "${_crucible_quarantine_stamp}" 0 16 _crucible_quarantine_stamp)
 set(_crucible_quarantine_argument "-fplugin-arg-crucible_quarantine")
 # The families declaration property and expression shape read a base header
-# only in the sentinel unit of that header (THE SENTINEL of plugin.h).
+# only in the sentinel unit of that header, and the family home reads the
+# gates of each header of include/ only there (THE SENTINEL of plugin.h).
 # test/layer/CMakeLists.txt gives each sentinel unit this argument with the
 # path of its header under the root.  The path is relative to the source
 # root, so each work tree gives ccache one text.

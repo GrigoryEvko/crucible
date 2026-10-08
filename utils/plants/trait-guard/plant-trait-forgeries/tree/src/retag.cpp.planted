@@ -1,0 +1,10 @@
+#include <fixy/Tagged.h>
+
+namespace fixy {
+template <>
+struct retag_policy<tags::source::FromDb, tags::trust::Verified> { static constexpr bool allowed = true; };
+}  // namespace fixy
+// struct retag_policy<source::FromUser, trust::Verified> is prose.
+/* template <> struct retag_policy<A, B> {}; in a block comment
+   template <> struct retag_policy<C, D> {}; */
+static_assert(sizeof R"(template <> struct retag_policy<E, F> {};)" > 1);

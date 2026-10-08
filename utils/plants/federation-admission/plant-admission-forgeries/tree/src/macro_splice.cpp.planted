@@ -1,0 +1,7 @@
+#include <foundation/permissions/Permission.h>
+
+struct Evil;
+
+#define FORGE_SPLICE template <> class foundation::permissions:: \
+    FederationAdmission<Evil> {}
+FORGE_SPLICE;

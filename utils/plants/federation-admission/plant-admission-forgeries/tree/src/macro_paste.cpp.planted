@@ -1,0 +1,6 @@
+#include <foundation/permissions/Permission.h>
+
+struct BigEvil;
+
+#define FORGE_PASTE(x) template <> class foundation::permissions::FederationAdmission<x##Evil> {}
+FORGE_PASTE(Big);

@@ -8,10 +8,10 @@
 // THE SCHEMA
 //     The first word of a row is its kind, and the head comment of the table
 //     gives the words of each kind.  A row has at most one cell: the reason of
-//     an admit row.  The rows grammar divides the words only at a space and a
-//     tab, and a word or a cell that holds a different white-space character
-//     is an error, because a reader that divides at each white-space character
-//     would read different words.
+//     an admit row or of a home row.  The rows grammar divides the words only
+//     at a space and a tab, and a word or a cell that holds a different
+//     white-space character is an error, because a reader that divides at each
+//     white-space character would read different words.
 
 #include "plugin.h"
 
@@ -259,6 +259,51 @@ constexpr const char* kGrantFormat =
     "a grant row is 'grant FILE ALIAS ENUMERATION [DOOR...]', with the grant file, the qualified names of its alias "
     "and of the enumeration of the system calls, and each door file";
 
+// The error of a home row that does not obey the format of its words.
+// ruletable.HOME_FORMAT gives the same text.
+constexpr const char* kHomeFormat =
+    "a home row is 'home RULE ENTITY [PATH...] | REASON', and a home-args row is 'home-args RULE ENTITY [PATH...] | "
+    "REASON'.  RULE is a rule of the family home, ENTITY is a qualified name or one name, and the reason is "
+    "necessary";
+
+// The words of one home row or home-args row after the row kind: RULE, ENTITY
+// and the paths.  Returns the error of the row, or an empty text when the row
+// obeys the format.
+std::string parse_home(const std::vector<std::string>& args, bool is_args, HomeRow& row) {
+    if (args.size() < 2) {
+        return kHomeFormat;
+    }
+    bool is_rule = false;
+    for (Rule rule : kHomeRules) {
+        if (args[0] == rule_name(rule)) {
+            row.rule = rule;
+            is_rule = true;
+        }
+    }
+    if (!is_rule) {
+        return "the rule " + args[0]
+             + " is no rule of the family home; the rules are federation-admission, host-owners, "
+               "no-combine-ids-duplicate, splits-orphan and trait-guard";
+    }
+    row.entity = args[1];
+    row.is_args = is_args;
+    if (!is_qualified_name(row.entity)) {
+        return "the entity " + row.entity + " is not a qualified name: each part is an identifier";
+    }
+    row.is_one_name = row.entity.find("::") == std::string::npos;
+    if (row.is_one_name && is_args) {
+        return "a home-args row names a template by its qualified name, and " + row.entity + " is one name";
+    }
+    for (std::size_t index = 2; index < args.size(); ++index) {
+        if (!is_plain_path(args[index]) || has_prefix(args[index], kBuildPrefix)) {
+            return "a path of a home row must be relative to the source root, with no '.', '..' or empty "
+                   "component, and not in the build directory";
+        }
+        row.paths.push_back(args[index]);
+    }
+    return {};
+}
+
 // The namespace of a sealed PREFIX: its path after include/, one name for each
 // directory.  Returns an empty list when PREFIX is no directory under include/
 // or a part is no identifier.  ruletable.seal_namespace() gives the same
@@ -335,6 +380,8 @@ bool load_rule_table(const std::string& path) {
     crucible_rows::KeyLines cost_lines;
     crucible_rows::KeyLines cite_lines;
     crucible_rows::KeyLines grant_lines;
+    // The entity of each home row and home-args row, and its line.
+    crucible_rows::KeyLines home_lines;
     bool is_valid = true;
     int line_number = 0;
     auto refuse = [&](const std::string& message) {
@@ -360,7 +407,8 @@ bool load_rule_table(const std::string& path) {
             continue;
         }
         if (row.cells.size() > 1) {
-            refuse("a row has at most one cell: the reason of an admit row, or the measure of a heavy or a light row");
+            refuse("a row has at most one cell: the reason of an admit row or of a home row, or the measure of a heavy "
+                   "or a light row");
             continue;
         }
         const std::string& kind = row.words[0];
@@ -545,9 +593,25 @@ bool load_rule_table(const std::string& path) {
             }
             table.grants.push_back(
                 GrantRow{args[0], args[1], args[2], std::vector<std::string>(args.begin() + 3, args.end())});
+        } else if (kind == "home" || kind == "home-args") {
+            HomeRow home;
+            std::string problem = reason.empty() ? std::string(kHomeFormat) : parse_home(args, kind == "home-args", home);
+            if (!problem.empty()) {
+                refuse(problem);
+                continue;
+            }
+            // One row gives the home of an entity.  With a second row, the
+            // sequence of the rows can change the findings.
+            if (int first_line = home_lines.add(home.entity, line_number); first_line > 0) {
+                refuse("the entity " + home.entity + " has a second home row, and its first home row is on line "
+                       + std::to_string(first_line));
+                continue;
+            }
+            home.line = line_number;
+            table.homes.push_back(std::move(home));
         } else {
             refuse("the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce, language, "
-                   "seal, heavy, light, cite and grant");
+                   "seal, heavy, light, cite, grant, home and home-args");
         }
     }
     for (std::size_t index = 0; index < allow_layers.size(); ++index) {

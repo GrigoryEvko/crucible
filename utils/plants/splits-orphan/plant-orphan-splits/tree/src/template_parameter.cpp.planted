@@ -1,0 +1,14 @@
+#include <foundation/permissions/Permission.h>
+
+namespace crucible::metalog_tag {
+template <class U> struct Whole {};
+template <class U> struct Producer {};
+template <class U> struct Consumer {};
+}  // namespace crucible::metalog_tag
+
+namespace foundation::permissions {
+template <class U, class X>
+struct can_split_into<::crucible::metalog_tag::Whole<U>, X, ::crucible::metalog_tag::Consumer<U>> {
+    static constexpr bool value = true;
+};
+}  // namespace foundation::permissions

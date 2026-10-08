@@ -1,0 +1,18 @@
+# Each site at its home passes the rule trait-guard in the mode error: an
+# edge in the header of its relation, the machine macro in the header of the
+# machine, a cell of an extension point in a layer, a specialization in the
+# file that defines its template, and the same sites in the check file of
+# the header.  A read of each trait, a namespace alias, a comment and a macro
+# that only names a relation are no site.  Each site at the home of a row is
+# a record and no finding.
+compile uses src/uses.cpp mode=error
+exit uses pass
+finding uses trait-guard at-home include/fixy/Cells.h:6:31 | foundation::contracts::armed_cell
+finding uses trait-guard at-home include/fixy/Machine.h:20:1 | admitted_transitions
+finding uses trait-guard at-home include/fixy/Tagged.h:22:86 | admitted_retags
+compile ctx_check test/layer/checks/foundation/effects/Ctx.cpp mode=error
+exit ctx_check pass
+compile tagged_check test/layer/checks/fixy/Tagged.cpp mode=error
+exit tagged_check pass
+finding tagged_check trait-guard at-home include/fixy/Tagged.h:22:86 | admitted_retags
+finding tagged_check trait-guard at-home test/layer/checks/fixy/Tagged.cpp:4:83 | admitted_retags

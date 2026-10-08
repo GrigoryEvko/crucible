@@ -1,0 +1,108 @@
+# Each definition of a class of a namespace named host outside the home of
+# its owner row is a finding of the rule host-owners.  One unit holds each
+# forgery that the legacy scan refused: a qualified name, a reopened
+# namespace, nested and inline namespaces, a namespace alias with a comment,
+# a chain of aliases or an alias of another file, a using-directive, an
+# attribute, a comment and a line splice in the name, and each such shape in a
+# macro that the unit expands.  A macro that opens the namespace host defines
+# a class there, and the class has no home.
+compile qualified src/qualified.cpp mode=error
+exit qualified fail
+finding qualified host-owners outside-home src/qualified.cpp:5:35 | foundation::effects::host::InitOwner
+error qualified src/qualified.cpp:5 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile reopened src/reopened.cpp mode=error
+exit reopened fail
+finding reopened host-owners outside-home src/reopened.cpp:2:8 | foundation::effects::host::BackgroundOwner
+error reopened src/reopened.cpp:2 | quarantine: outside-home foundation::effects::host::BackgroundOwner;
+compile nested src/nested.cpp mode=error
+exit nested fail
+finding nested host-owners outside-home src/nested.cpp:2:7 | foundation::effects::host::ForegroundOwner
+error nested src/nested.cpp:2 | quarantine: outside-home foundation::effects::host::ForegroundOwner;
+compile inline_host src/inline_host.cpp mode=error
+exit inline_host fail
+finding inline_host host-owners outside-home src/inline_host.cpp:2:8 | foundation::effects::host::InitOwner
+error inline_host src/inline_host.cpp:2 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile alias src/alias.cpp mode=error
+exit alias fail
+finding alias host-owners outside-home src/alias.cpp:6:18 | foundation::effects::host::InitOwner
+error alias src/alias.cpp:6 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile alias_comment src/alias_comment.cpp mode=error
+exit alias_comment fail
+finding alias_comment host-owners outside-home src/alias_comment.cpp:6:18 | foundation::effects::host::InitOwner
+error alias_comment src/alias_comment.cpp:6 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile using src/using.cpp mode=error
+exit using fail
+finding using host-owners outside-home src/using.cpp:6:14 | foundation::effects::host::ForegroundOwner
+error using src/using.cpp:6 | quarantine: outside-home foundation::effects::host::ForegroundOwner;
+compile attribute src/attribute.cpp mode=error
+exit attribute fail
+finding attribute host-owners outside-home src/attribute.cpp:5:49 | foundation::effects::host::InitOwner
+error attribute src/attribute.cpp:5 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile commented src/commented.cpp mode=error
+exit commented fail
+finding commented host-owners outside-home src/commented.cpp:6:5 | foundation::effects::host::InitOwner
+error commented src/commented.cpp:6 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile spliced_name src/spliced_name.cpp mode=error
+exit spliced_name fail
+finding spliced_name host-owners outside-home src/spliced_name.cpp:5:35 | foundation::effects::host::InitOwner
+error spliced_name src/spliced_name.cpp:5 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile spliced_host src/spliced_host.cpp mode=error
+exit spliced_host fail
+finding spliced_host host-owners outside-home src/spliced_host.cpp:6:5 | foundation::effects::host::InitOwner
+error spliced_host src/spliced_host.cpp:6 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile spliced_namespace src/spliced_namespace.cpp mode=error
+exit spliced_namespace fail
+finding spliced_namespace host-owners outside-home src/spliced_namespace.cpp:2:13 | foundation::effects::host::InitOwner
+error spliced_namespace src/spliced_namespace.cpp:2 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile spliced_alias src/spliced_alias.cpp mode=error
+exit spliced_alias fail
+finding spliced_alias host-owners outside-home src/spliced_alias.cpp:7:12 | foundation::effects::host::InitOwner
+error spliced_alias src/spliced_alias.cpp:7 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile host_alias src/host_alias.cpp mode=error
+exit host_alias fail
+finding host_alias host-owners outside-home src/host_alias.cpp:6:11 | foundation::effects::host::InitOwner
+error host_alias src/host_alias.cpp:6 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile chain_alias src/chain_alias.cpp mode=error
+exit chain_alias fail
+finding chain_alias host-owners outside-home src/chain_alias.cpp:8:12 | foundation::effects::host::ForegroundOwner
+error chain_alias src/chain_alias.cpp:8 | quarantine: outside-home foundation::effects::host::ForegroundOwner;
+compile cross_file src/cross_file.cpp mode=error
+exit cross_file fail
+finding cross_file host-owners outside-home src/cross_file.cpp:3:12 | foundation::effects::host::InitOwner
+error cross_file src/cross_file.cpp:3 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile macro src/macro.cpp mode=error
+exit macro fail
+finding macro host-owners outside-home src/macro.cpp:6:1 | foundation::effects::host::InitOwner
+error macro src/macro.cpp:6 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile macro_alias src/macro_alias.cpp mode=error
+exit macro_alias fail
+finding macro_alias host-owners outside-home src/macro_alias.cpp:7:1 | foundation::effects::host::BackgroundOwner
+error macro_alias src/macro_alias.cpp:7 | quarantine: outside-home foundation::effects::host::BackgroundOwner;
+compile macro_namespace src/macro_namespace.cpp mode=error
+exit macro_namespace fail
+finding macro_namespace host-owners outside-home src/macro_namespace.cpp:2:1 | foundation::effects::host::InitOwner
+error macro_namespace src/macro_namespace.cpp:2 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile macro_attribute src/macro_attribute.cpp mode=error
+exit macro_attribute fail
+finding macro_attribute host-owners outside-home src/macro_attribute.cpp:6:1 | foundation::effects::host::InitOwner
+error macro_attribute src/macro_attribute.cpp:6 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile macro_splice src/macro_splice.cpp mode=error
+exit macro_splice fail
+finding macro_splice host-owners outside-home src/macro_splice.cpp:7:1 | foundation::effects::host::InitOwner
+error macro_splice src/macro_splice.cpp:7 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile macro_spliced_name src/macro_spliced_name.cpp mode=error
+exit macro_spliced_name fail
+finding macro_spliced_name host-owners outside-home src/macro_spliced_name.cpp:7:1 | foundation::effects::host::InitOwner
+error macro_spliced_name src/macro_spliced_name.cpp:7 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile macro_comment src/macro_comment.cpp mode=error
+exit macro_comment fail
+finding macro_comment host-owners outside-home src/macro_comment.cpp:7:1 | foundation::effects::host::InitOwner
+error macro_comment src/macro_comment.cpp:7 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile macro_pasted src/macro_pasted.cpp mode=error
+exit macro_pasted fail
+finding macro_pasted host-owners outside-home src/macro_pasted.cpp:6:1 | foundation::effects::host::InitOwner
+error macro_pasted src/macro_pasted.cpp:6 | quarantine: outside-home foundation::effects::host::InitOwner;
+compile macro_opens src/macro_opens.cpp mode=error
+exit macro_opens fail
+finding macro_opens host-owners outside-home src/macro_opens.cpp:5:8 | foundation::effects::host::Stranger
+error macro_opens src/macro_opens.cpp:5 | quarantine: outside-home foundation::effects::host::Stranger;

@@ -1,0 +1,7 @@
+#include <fixy/Federation.h>
+
+struct Evil;
+
+using E = foundation::permissions::FederationAdmission<Evil>;
+template <> template <> constexpr int E::mint_federation_admittance<>(Handshake const&) noexcept { return 1; }
+template <> constexpr E::FederationAdmission() noexcept {}

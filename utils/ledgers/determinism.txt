@@ -21,8 +21,6 @@ utils/assay/guard/legacy/check_clang_format.py | listing | 1 | write_cache | A f
 utils/assay/guard/legacy/check_clang_format.py | wall-clock | 1 | write_cache | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/legacy/check_ctx_testing_boundary.py | listing | 1 | scope_files | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/legacy/check_detail_namespace.py | listing | 1 | listed_files | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/guard/legacy/check_host_owners.py | listing | 1 | scope_files | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | listing | 1 | scope_files | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | listing | 1 | planted_cases | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/legacy/check_padded_lists.py | listing | 1 | run_probes | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/legacy/check_padded_lists.py | listing | 1 | select_targets | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
@@ -30,7 +28,6 @@ utils/assay/guard/legacy/check_proof_routes.py | listing | 2 | planted_cases | A
 utils/assay/guard/legacy/check_prose_paths.py | listing | 2 | documents | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/legacy/check_prose_paths.py | listing | 1 | moved_candidates | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/legacy/check_reconfigure_noop.py | listing | 1 | read_links | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/guard/legacy/check_splits_orphan.py | listing | 1 | scope_files | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | listing | 1 | scope_files | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/legacy/check_witness_roster.py | listing | 1 | generate | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/legacy/report_check_warnings.py | listing | 1 | read_build_records | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count

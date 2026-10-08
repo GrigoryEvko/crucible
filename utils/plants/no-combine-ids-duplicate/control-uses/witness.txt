@@ -1,0 +1,7 @@
+# Each use of the one body of combine_ids passes the rule
+# no-combine-ids-duplicate in the mode error: a reference, a call, a
+# using-declaration, a comment, a string, a salt with no full shape, and a
+# shift by 16.  The one body in its home is a record and no finding.
+compile uses src/uses.cpp mode=error
+exit uses pass
+finding uses no-combine-ids-duplicate at-home include/foundation/reflect/Hash.h:10:25 | foundation::reflect::combine_ids

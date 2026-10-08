@@ -1,0 +1,6 @@
+#include <fixy/Machine.h>
+
+struct Authenticated {};
+struct Disconnected {};
+
+CRUCIBLE_ADMIT_MACHINE_TRANSITION(Authenticated, Disconnected)

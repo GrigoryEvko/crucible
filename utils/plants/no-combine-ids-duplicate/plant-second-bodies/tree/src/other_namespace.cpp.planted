@@ -1,0 +1,7 @@
+namespace planted {
+
+constexpr unsigned long combine_ids(unsigned long a, unsigned long b) noexcept {
+    return a ^ b;
+}
+
+}  // namespace planted

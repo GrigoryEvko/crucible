@@ -1,0 +1,7 @@
+#include <fixy/Tagged.h>
+
+struct Probe {};
+
+#define FORGE(T) template <> struct fixy::retag_policy<T, fixy::tags::trust::Verified> { static constexpr bool allowed = true; };
+#define MENTION retag_policy is named here, and nothing is specialized
+FORGE(Probe)

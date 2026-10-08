@@ -1,0 +1,23 @@
+#pragma once
+
+namespace foundation::effects {
+
+namespace host {
+
+struct InitOwner {
+    static int key() noexcept;
+};
+
+struct BackgroundOwner;
+
+}  // namespace host
+
+struct Bg {
+    friend struct ::foundation::effects::host::BackgroundOwner;
+};
+
+struct host::BackgroundOwner final {
+    static int key() noexcept;
+};
+
+}  // namespace foundation::effects

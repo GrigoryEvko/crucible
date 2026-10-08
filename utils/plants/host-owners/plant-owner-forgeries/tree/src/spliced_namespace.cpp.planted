@@ -1,0 +1,2 @@
+namespace foundation::effects::ho\
+st { struct InitOwner {}; }

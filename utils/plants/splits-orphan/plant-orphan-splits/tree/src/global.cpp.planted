@@ -1,0 +1,5 @@
+#include <foundation/permissions/Permission.h>
+
+namespace crucible { struct P; struct L; struct R; }
+
+template <> inline constexpr bool ::foundation::permissions::can_split_into_v<crucible::P, crucible::L, crucible::R> = true;

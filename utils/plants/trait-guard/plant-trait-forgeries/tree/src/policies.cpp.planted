@@ -1,0 +1,8 @@
+#include <fixy/Secret.h>
+
+struct Plain {};
+struct Public {};
+
+namespace fixy::tags::secret_policy::admitted_policies {
+inline constexpr ::foundation::fail_closed::edge<Plain, Public> planted{};
+}  // namespace fixy::tags::secret_policy::admitted_policies

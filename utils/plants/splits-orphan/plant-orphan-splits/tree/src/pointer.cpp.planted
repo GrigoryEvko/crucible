@@ -1,0 +1,7 @@
+#include <foundation/permissions/Permission.h>
+
+struct G {};
+struct GL {};
+struct GR {};
+
+template <> struct foundation::permissions::can_split_into<::G*, ::GL, ::GR> { static constexpr bool value = true; };

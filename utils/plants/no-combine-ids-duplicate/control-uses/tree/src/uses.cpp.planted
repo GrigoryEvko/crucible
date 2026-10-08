@@ -1,0 +1,25 @@
+#include <foundation/reflect/Hash.h>
+
+namespace planted {
+
+inline constexpr auto& reference = ::foundation::reflect::combine_ids;
+
+inline unsigned long caller(unsigned long a) noexcept {
+    return ::foundation::reflect::combine_ids(a, a);
+}
+
+using ::foundation::reflect::combine_ids;
+
+// constexpr unsigned long combine_ids_in_comment(unsigned long a);
+static_assert(true, "combine_ids_in_string");
+
+inline unsigned long digest(unsigned long a) noexcept {
+    return a + 0x9e3779b97f4a7c15ULL + (a << 6);
+}
+
+inline unsigned long six_shift(unsigned long a) noexcept {
+    a ^= 0x9e3779b97f4a7c15ULL + (a << 16) + (a >> 2);
+    return foundation::reflect::fmix64(a);
+}
+
+}  // namespace planted

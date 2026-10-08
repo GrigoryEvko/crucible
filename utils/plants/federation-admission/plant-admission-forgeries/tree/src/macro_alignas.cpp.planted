@@ -1,0 +1,4 @@
+#include <foundation/permissions/Permission.h>
+
+#define FORGE_ALIGNAS template <class Org> class alignas(8) foundation::permissions::FederationAdmission {}
+FORGE_ALIGNAS;

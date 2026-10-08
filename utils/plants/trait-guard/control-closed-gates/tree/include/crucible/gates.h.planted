@@ -1,0 +1,10 @@
+#pragma once
+
+#include <foundation/gates.h>
+
+namespace crucible::gates {
+
+template <class T> concept ReadsLayerConcept = ::foundation::gates::Closed<T>;
+template <class T> requires ::foundation::gates::ReadsClosed<T> void runtime_gated(T);
+
+}  // namespace crucible::gates

@@ -1,0 +1,8 @@
+#include <fixy/Federation.h>
+
+struct Evil;
+
+extern foundation::permissions::FederationAdmission<Evil> admission;
+
+using D = decltype(admission);
+template <> template <class P, class C> constexpr D D::mint_federation_admission(C const&) noexcept { return {}; }

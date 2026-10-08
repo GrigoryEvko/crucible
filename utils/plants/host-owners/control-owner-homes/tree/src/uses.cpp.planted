@@ -1,0 +1,5 @@
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+
+int const init_key = foundation::effects::host::InitOwner::key();
+int const foreground_key = foundation::effects::host::ForegroundOwner::key();

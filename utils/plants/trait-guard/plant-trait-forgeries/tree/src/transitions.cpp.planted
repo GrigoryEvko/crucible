@@ -1,0 +1,8 @@
+#include <fixy/Machine.h>
+
+struct Idle {};
+struct Running {};
+
+namespace fixy::machine::admitted_transitions {
+inline constexpr ::foundation::fail_closed::edge<Idle, Running> planted{};
+}  // namespace fixy::machine::admitted_transitions

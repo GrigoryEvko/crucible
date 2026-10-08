@@ -1,0 +1,10 @@
+#include <foundation/reflect/Hash.h>
+
+namespace planted {
+
+inline constexpr auto lambda_copy = [](unsigned long a, unsigned long b) noexcept {
+    a ^= b + 0x9e3779b97f4a7c15ULL + (a << 6) + (a >> 2);
+    return foundation::reflect::fmix64(a);
+};
+
+}  // namespace planted

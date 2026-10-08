@@ -1,0 +1,6 @@
+#include <foundation/effects/Ctx.h>
+
+struct OwnedByTheHeader {};
+
+template <>
+inline constexpr bool foundation::effects::is_exec_ctx_v<OwnedByTheHeader> = true;

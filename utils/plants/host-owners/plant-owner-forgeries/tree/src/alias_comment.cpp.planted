@@ -1,0 +1,6 @@
+namespace foundation::effects::host {
+struct InitOwner;
+}  // namespace foundation::effects::host
+
+namespace fe = foundation:: /*c*/ effects;
+struct fe::host::InitOwner {};

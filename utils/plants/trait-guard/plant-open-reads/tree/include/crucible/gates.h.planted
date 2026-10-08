@@ -1,0 +1,12 @@
+#pragma once
+
+#include <foundation/gates.h>
+
+namespace crucible::gates {
+
+template <class T> inline constexpr bool runtime_open_v = false;
+template <class T> concept ReadsRuntime = runtime_open_v<T>;
+template <class T> concept ReadsLayer = ::foundation::gates::open_v<T>;
+template <class T> concept ReadsLayerConcept = ::foundation::gates::Closed<T>;
+
+}  // namespace crucible::gates

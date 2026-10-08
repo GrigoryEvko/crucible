@@ -1,0 +1,11 @@
+#include <fixy/Tagged.h>
+
+namespace fixy::tags::admitted_retags {
+inline constexpr ::foundation::fail_closed::edge<source::Sanitized, source::External> planted{};
+}  // namespace fixy::tags::admitted_retags
+namespace fixy::tags {
+namespace admitted_retags {
+inline constexpr ::foundation::fail_closed::edge<source::FromDb, source::External> nested{};
+}  // namespace admitted_retags
+}  // namespace fixy::tags
+namespace planted_alias = fixy::tags::admitted_retags;

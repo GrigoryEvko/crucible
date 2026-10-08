@@ -1,0 +1,93 @@
+# Each specialization of a trait outside its home, and each declaration in a
+# fail-closed namespace outside its home, is a finding of the rule
+# trait-guard.  One unit holds each shape that the legacy scan refused: a
+# substrate trait, a relation in its namespace, with an attribute, partial or
+# with a line splice in its name, the machine macro also with a line splice,
+# each fail-closed namespace qualified or nested, a forgery in a macro that a
+# unit expands, and a template of the two layers through its name, a
+# namespace alias, a class alias or a member of an instance.  A comment, a
+# string and a macro that only names a relation are no finding.
+compile substrate src/substrate.cpp mode=error
+exit substrate fail
+finding substrate trait-guard outside-home src/substrate.cpp:9:8 | foundation::algebra::is_graded_specialization
+error substrate src/substrate.cpp:9 | quarantine: outside-home foundation::algebra::is_graded_specialization;
+compile retag src/retag.cpp mode=error
+exit retag fail
+finding retag trait-guard outside-home src/retag.cpp:5:8 | fixy::retag_policy
+error retag src/retag.cpp:5 | quarantine: outside-home fixy::retag_policy;
+compile attribute src/attribute.cpp mode=error
+exit attribute fail
+finding attribute trait-guard outside-home src/attribute.cpp:4:29 | fixy::retag_policy
+error attribute src/attribute.cpp:4 | quarantine: outside-home fixy::retag_policy;
+compile machine src/machine.cpp mode=error
+exit machine fail
+finding machine trait-guard outside-home src/machine.cpp:6:1 | fixy::machine::admitted_transitions
+error machine src/machine.cpp:6 | quarantine: outside-home fixy::machine::admitted_transitions;
+compile machine_spliced src/machine_spliced.cpp mode=error
+exit machine_spliced fail
+finding machine_spliced trait-guard outside-home src/machine_spliced.cpp:6:1 | fixy::machine::admitted_transitions
+error machine_spliced src/machine_spliced.cpp:6 | quarantine: outside-home fixy::machine::admitted_transitions;
+compile partial src/partial.cpp mode=error
+exit partial fail
+finding partial trait-guard outside-home src/partial.cpp:7:8 | fixy::retag_policy
+error partial src/partial.cpp:7 | quarantine: outside-home fixy::retag_policy;
+compile retags src/retags.cpp mode=error
+exit retags fail
+finding retags trait-guard outside-home src/retags.cpp:4:87 | fixy::tags::admitted_retags
+finding retags trait-guard outside-home src/retags.cpp:8:84 | fixy::tags::admitted_retags
+error retags src/retags.cpp:4 | quarantine: outside-home fixy::tags::admitted_retags;
+error retags src/retags.cpp:8 | quarantine: outside-home fixy::tags::admitted_retags;
+compile policies src/policies.cpp mode=error
+exit policies fail
+finding policies trait-guard outside-home src/policies.cpp:7:65 | fixy::tags::secret_policy::admitted_policies
+error policies src/policies.cpp:7 | quarantine: outside-home fixy::tags::secret_policy::admitted_policies;
+compile transitions src/transitions.cpp mode=error
+exit transitions fail
+finding transitions trait-guard outside-home src/transitions.cpp:7:65 | fixy::machine::admitted_transitions
+error transitions src/transitions.cpp:7 | quarantine: outside-home fixy::machine::admitted_transitions;
+compile implications src/implications.cpp mode=error
+exit implications fail
+finding implications trait-guard outside-home src/implications.cpp:7:69 | fixy::refined::admitted_implications
+error implications src/implications.cpp:7 | quarantine: outside-home fixy::refined::admitted_implications;
+compile rows src/rows.cpp mode=error
+exit rows fail
+finding rows trait-guard outside-home src/rows.cpp:7:66 | foundation::permissions::permission_rows
+error rows src/rows.cpp:7 | quarantine: outside-home foundation::permissions::permission_rows;
+compile macro src/macro.cpp mode=error
+exit macro fail
+finding macro trait-guard outside-home src/macro.cpp:7:1 | fixy::retag_policy
+error macro src/macro.cpp:7 | quarantine: outside-home fixy::retag_policy;
+compile split src/split.cpp mode=error
+exit split fail
+finding split trait-guard outside-home src/split.cpp:7:1 | fixy::retag_policy
+error split src/split.cpp:7 | quarantine: outside-home fixy::retag_policy;
+compile spliced src/spliced.cpp mode=error
+exit spliced fail
+finding spliced trait-guard outside-home src/spliced.cpp:8:8 | fixy::retag_policy
+error spliced src/spliced.cpp:8 | quarantine: outside-home fixy::retag_policy;
+compile orphan_variable src/orphan_variable.cpp mode=error
+exit orphan_variable fail
+finding orphan_variable trait-guard outside-home src/orphan_variable.cpp:6:35 | foundation::effects::is_exec_ctx_v
+finding orphan_variable trait-guard outside-home src/orphan_variable.cpp:8:42 | foundation::effects::is_exec_ctx_v
+finding orphan_variable trait-guard outside-home src/orphan_variable.cpp:11:35 | foundation::effects::is_exec_ctx_v
+error orphan_variable src/orphan_variable.cpp:6 | quarantine: outside-home foundation::effects::is_exec_ctx_v;
+error orphan_variable src/orphan_variable.cpp:8 | quarantine: outside-home foundation::effects::is_exec_ctx_v;
+error orphan_variable src/orphan_variable.cpp:11 | quarantine: outside-home foundation::effects::is_exec_ctx_v;
+compile orphan_class src/orphan_class.cpp mode=error
+exit orphan_class fail
+finding orphan_class trait-guard outside-home src/orphan_class.cpp:13:40 | foundation::effects::ExecCtx
+finding orphan_class trait-guard outside-home src/orphan_class.cpp:14:40 | foundation::algebra::Graded
+finding orphan_class trait-guard outside-home src/orphan_class.cpp:15:24 | foundation::effects::is_planted_gate
+finding orphan_class trait-guard outside-home src/orphan_class.cpp:16:43 | foundation::contracts::armed_cell
+finding orphan_class trait-guard outside-home src/orphan_class.cpp:18:24 | foundation::effects::is_planted_gate
+error orphan_class src/orphan_class.cpp:13 | quarantine: outside-home foundation::effects::ExecCtx;
+error orphan_class src/orphan_class.cpp:14 | quarantine: outside-home foundation::algebra::Graded;
+error orphan_class src/orphan_class.cpp:15 | quarantine: outside-home foundation::effects::is_planted_gate;
+error orphan_class src/orphan_class.cpp:16 | quarantine: outside-home foundation::contracts::armed_cell;
+error orphan_class src/orphan_class.cpp:18 | quarantine: outside-home foundation::effects::is_planted_gate;
+compile orphan_macro src/orphan_macro.cpp mode=error
+exit orphan_macro fail
+finding orphan_macro trait-guard outside-home src/orphan_macro.cpp:9:1 | foundation::effects::is_exec_ctx_v
+finding orphan_macro trait-guard outside-home src/orphan_macro.cpp:10:1 | foundation::effects::is_exec_ctx_v
+error orphan_macro src/orphan_macro.cpp:9 | quarantine: outside-home foundation::effects::is_exec_ctx_v;
+error orphan_macro src/orphan_macro.cpp:10 | quarantine: outside-home foundation::effects::is_exec_ctx_v;

@@ -1,0 +1,7 @@
+namespace foundation::effects::host {
+struct InitOwner;
+}  // namespace foundation::effects::host
+
+struct foundation::effects::host::InitOwner {
+    static int key() noexcept;
+};

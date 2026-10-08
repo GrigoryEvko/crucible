@@ -1,0 +1,8 @@
+#include <foundation/permissions/Permission.h>
+
+struct tag_w;
+struct tag_l;
+struct tag_r;
+
+#define PASTE(T) template <> struct foundation::permissions::can_split_into<T##_w, T##_l, T##_r> {};
+PASTE(tag)

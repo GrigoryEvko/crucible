@@ -1,0 +1,16 @@
+#pragma once
+
+namespace foundation::algebra {
+
+template <class T>
+struct is_graded_specialization {
+    static constexpr bool is_specialized = false;
+};
+
+template <int Modality, class Lattice, class T>
+class Graded {
+public:
+    T value{};
+};
+
+}  // namespace foundation::algebra

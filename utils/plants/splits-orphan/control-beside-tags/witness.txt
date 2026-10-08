@@ -1,0 +1,8 @@
+# Each split beside its tags passes the rule splits-orphan in the mode error:
+# a specialization of each trait over tags that the file defines, with the
+# name qualified or in the namespace of the trait, a family over templates
+# that the file defines, and a read of each trait variable.
+compile beside src/beside.cpp mode=error
+exit beside pass
+compile family src/family.cpp mode=error
+exit family pass

@@ -1,0 +1,7 @@
+#pragma once
+
+namespace foundation::effects::host {
+struct InitOwner;
+}  // namespace foundation::effects::host
+
+namespace fh = foundation::effects::host;

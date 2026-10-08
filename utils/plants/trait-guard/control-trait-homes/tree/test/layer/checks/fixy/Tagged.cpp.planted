@@ -1,0 +1,5 @@
+#include <fixy/Tagged.h>
+
+namespace fixy::tags::admitted_retags {
+inline constexpr ::foundation::fail_closed::edge<source::FromDb, trust::Verified> checked{};
+}  // namespace fixy::tags::admitted_retags

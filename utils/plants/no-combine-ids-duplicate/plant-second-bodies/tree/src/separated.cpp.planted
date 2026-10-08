@@ -1,0 +1,10 @@
+#include <foundation/reflect/Hash.h>
+
+namespace planted {
+
+inline unsigned long split_salt(unsigned long a) noexcept {
+    a ^= 0x9e37'79b9'7f4a'7c15ULL + (a << 6U) + (a >> 2U);
+    return foundation::reflect::fmix64(a);
+}
+
+}  // namespace planted

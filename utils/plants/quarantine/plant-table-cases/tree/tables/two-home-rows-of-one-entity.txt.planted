@@ -1,0 +1,2 @@
+home trait-guard fixy::retag_policy | the first home
+home-args trait-guard fixy::retag_policy include/fixy/ | the second home

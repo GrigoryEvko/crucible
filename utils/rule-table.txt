@@ -10,7 +10,8 @@
 #   One row on each line.  A space or a tab divides the words of a row, and a
 #   row holds no other white-space character.  A line that starts with '#' is
 #   a comment, and an empty line is no row.  A row can end with '| REASON'.
-#   An admit row must have a reason, and an ENTRY has one admit row at most.
+#   An admit row and a home row must have a reason, and an ENTRY has one admit
+#   row at most.
 #   A RANK and an arity N are runs of the digits 0 to 9, with a value of at
 #   most 2147483647.  A PATH is relative to
 #   the source root.  A PATH that ends with '/' is a directory, and each other
@@ -126,6 +127,18 @@
 #       call of one set that the other set does not hold.  ALIAS and
 #       ENUMERATION are qualified names, and each FILE and DOOR is one file of
 #       the source root.  A FILE has one grant row at most
+#   home RULE ENTITY [PATH...] | REASON
+#       The home of ENTITY in the rule RULE of the family home of the plugin
+#       (utils/tools/quarantine/home.cpp): a definition or a specialization of
+#       ENTITY stands only in a file under a PATH.  ENTITY is a qualified name,
+#       or one name for each namespace of that name.  The row also governs
+#       each declaration inside ENTITY, and the innermost row decides.  A row
+#       with no PATH admits no file, so each declaration inside its entity
+#       needs a row of its own.  An ENTITY has one home row at most, and the
+#       reason is necessary
+#   home-args RULE ENTITY [PATH...] | REASON
+#       A home row of a template that also admits each specialization in the
+#       file that defines each of its arguments
 #
 # THE LONGEST PATH
 #   When the PATHs of two rows hold one file, the longer PATH decides.  A
@@ -232,6 +245,42 @@ enforce utils/tools/ report
 enforce vessel/ report
 
 language F0_primitives include/foundation/core/ include/fixy/Core.h
+
+home host-owners host | a class directly in a namespace named host is the owner of a context key, and only its own home row admits its definition
+home host-owners foundation::effects::host::BackgroundOwner include/foundation/effects/Effect.h | the owner of the background key, whose one member is the door to the background context
+home host-owners foundation::effects::host::InitOwner include/foundation/effects/Effect.h | the owner of the init key, whose one member is the door to the init context
+home host-owners foundation::effects::host::ForegroundOwner include/foundation/effects/Ctx.h | the builder of the foreground key, whose only friends are the producer claims
+home host-owners foundation::effects::host::ProducerClaim include/foundation/effects/Ctx.h | the producer claim that brands the foreground context, so a specialization elsewhere forges one
+home federation-admission foundation::permissions::FederationAdmission include/fixy/Federation.h | the federation door: the key of a federation peer token befriends this class template, and its definition builds the key only after a handshake verifies
+
+home no-combine-ids-duplicate foundation::reflect::combine_ids include/foundation/reflect/Hash.h | row_hash folds through one body of combine_ids, and a copy of the salt, of the shift mix or of fmix64 can drift from it with no failed check
+
+home-args splits-orphan foundation::permissions::can_split_into | a split manifest stands beside the tags that it names
+home-args splits-orphan foundation::permissions::can_split_into_pack include/fixy/OwnedRegion.h | a split manifest stands beside the tags that it names, and the region splits each parent into its slices
+home-args splits-orphan foundation::permissions::has_split_authoring_witness | the witness of a split manifest stands beside the tags that it names
+home-args splits-orphan foundation::permissions::has_split_pack_authoring_witness include/fixy/OwnedRegion.h | the witness of a split manifest stands beside the tags that it names, and the region splits each parent into its slices
+home-args splits-orphan foundation::permissions::can_split_into_v | the mints read this variable, so a specialization of it forges a split as the trait does
+home-args splits-orphan foundation::permissions::can_split_into_pack_v | the mints read this variable, so a specialization of it forges a split as the trait does
+home-args splits-orphan foundation::permissions::has_split_authoring_witness_v | the mints read this variable, so a specialization of it forges a witness as the trait does
+home-args splits-orphan foundation::permissions::has_split_pack_authoring_witness_v | the mints read this variable, so a specialization of it forges a witness as the trait does
+home-args splits-orphan foundation::permissions::well_authored_split_v | the mints read this variable, so a specialization of it forges a split
+home-args splits-orphan foundation::permissions::well_authored_split_pack_v | the mints read this variable, so a specialization of it forges a split
+
+home trait-guard foundation::algebra::is_graded_specialization | a substrate trait: a specialization gives a Graded wrapper a property that the wrapper did not prove
+home trait-guard foundation::algebra::graded_modality | a substrate trait: a specialization gives a Graded wrapper a property that the wrapper did not prove
+home trait-guard fixy::retag_policy | a fail-closed relation: a specialization adds a provenance or trust transition, and an untrusted value then gets a trusted tag
+home trait-guard admitted_retags include/fixy/Tagged.h | a fail-closed namespace: each edge of the retag relation stands in the header of the relation
+home trait-guard admitted_policies include/fixy/Secret.h | a fail-closed namespace: each declassification policy stands in the header of the relation
+home trait-guard admitted_transitions | a fail-closed namespace: each state-machine edge stands in the header of its machine, and no production header holds one at this time
+home trait-guard admitted_implications include/fixy/Refined.h | a fail-closed namespace: each implication between refinements stands in the header of the relation
+home trait-guard permission_rows include/foundation/permissions/Permission.h | a fail-closed namespace: a tag of a different header states its row with a permission_row member of its own definition
+home trait-guard foundation::contracts::armed_cell include/foundation/ include/fixy/ | an extension point: a cell holds the witnesses that a gate predicate accepts and refuses, beside the predicate.  It adds a check and gives no authority
+home trait-guard foundation::contracts::armed_instances include/foundation/ include/fixy/ | an extension point: the instances of a templated gate that the armed roster walks, beside the gate
+home trait-guard foundation::diag::row_hash_contribution include/foundation/ include/fixy/ | an extension point: a carrier states its row identity beside its definition.  A fold outside the two layers can make two carriers share one cache key
+home trait-guard foundation::diag::lattice_canonical_id include/fixy/ | an extension point: a lattice states its canonical identity beside its definition, for the row hash
+home trait-guard foundation::diag::insight_provider include/foundation/ include/fixy/ | an extension point: the diagnostic text of a category.  It changes a message and gives no authority
+home trait-guard foundation::core::niche include/foundation/ | an extension point: a payload type states its empty value beside its definition.  The niche selects only the storage form of an Option
+home trait-guard fixy::concurrent::is_stage_inline_safe bench/ | an extension point: a stage author claims inline dispatch beside the stage.  Pipeline.h refuses the claim unless the stage states its working set
 
 # The hashing path: content_hash and merkle_hash, the IR whose shape the hashes
 # read, the memory plan, the deterministic RNG, the choice of a BITEXACT recipe,

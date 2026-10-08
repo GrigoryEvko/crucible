@@ -1,0 +1,3 @@
+#include <foundation/effects/Alias.h>
+
+struct fh::InitOwner {};

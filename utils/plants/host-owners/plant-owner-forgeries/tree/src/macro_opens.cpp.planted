@@ -1,0 +1,6 @@
+#define OPEN_HOST namespace foundation::effects::host {
+#define CLOSE_HOST }
+
+OPEN_HOST
+struct Stranger {};
+CLOSE_HOST;

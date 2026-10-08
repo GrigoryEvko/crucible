@@ -18,6 +18,8 @@
 //                          root and the provenance of each place
 //         unit.cpp         the family unit fact: the contract semantic of the
 //                          unit and the optimize options of each function
+//         home.cpp         the family home: where a definition or a
+//                          specialization of an entity stands
 //         contract.cpp     the contract rule
 //
 // THE RULE TABLE
@@ -203,17 +205,38 @@
 //     unread-grant          a grant file whose alias, enumeration, grants or
 //                           calls the plugin cannot read
 //     compared              no finding: the unit compared the two sets
+//     The rules of the family home (home.cpp, THE FAMILY) read where a
+//     definition or a specialization stands.  A finding of such a rule is an
+//     error only in the mode error, and no opt-out region covers it.  Each
+//     rule has the kinds:
+//     outside-home          a definition or a specialization of an entity
+//                           outside the paths of its home row (the rules
+//                           federation-admission, host-owners,
+//                           no-combine-ids-duplicate and trait-guard)
+//     at-home               no finding: one site that a path of a home row
+//                           admits, so that the module of the rule finds a
+//                           home row with no site
+//     The rule no-combine-ids-duplicate also has:
+//     second-body           a function named combine_ids outside its home, or a
+//                           function or a lambda with the body of combine_ids
+//     derived-name          a declaration with a name that holds combine_ids
+//                           and more
+//     The rule splits-orphan has away-from-arguments, a specialization that is
+//     not in the file that defines each of its arguments, and at-home.  The
+//     rule trait-guard also has open-read: a gate that reads a template that a
+//     unit can specialize.
 //
 // THE SENTINEL
-//     The argument sentinel=PATH names a base header, relative to the source
-//     root.  Only test/layer/CMakeLists.txt gives it, to the one unit of the
-//     target all that is the sentinel of that header.  The family declaration
-//     property reads the declarations of a base file, and the family
-//     expression shape reads its bodies, only in the unit whose sentinel names
-//     it, or in the base unit whose main file it is.  The rules of the
-//     quarantine do not read a base file.  A finding of a family rule in a
-//     base file counts only in that unit.
-//     So each base file costs one walk in each build.
+//     The argument sentinel=PATH names a header of include/, relative to the
+//     source root.  Only test/layer/CMakeLists.txt gives it, to the one unit
+//     of the target all that is the sentinel of that header.  The family
+//     declaration property reads the declarations of a base file, and the
+//     family expression shape reads its bodies, only in the unit whose
+//     sentinel names it, or in the base unit whose main file it is.  The
+//     family home reads the gates of a header of include/ only in that unit
+//     too (home.cpp, THE GATES).  The rules of the quarantine do not read a
+//     base file.  A finding of a family rule in a base file counts only in
+//     that unit.  So each base file costs one walk in each build.
 //
 // THE SECTION
 //     A unit that writes an object puts its report into the section
@@ -237,6 +260,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -409,22 +433,6 @@ struct GrantRow {
     std::vector<std::string> doors;
 };
 
-// The rows of the rule table, in the order of the file.  A header keeps the
-// name inside its angle brackets.
-struct RuleTable {
-    std::vector<LayerRow> layers;
-    std::vector<std::pair<int, std::string>> allows;  // the layer index and the header
-    std::vector<DoorRow> doors;
-    std::vector<AdmitRow> admits;
-    std::vector<std::string> quarantines;
-    std::vector<EnforceRow> enforces;
-    std::vector<LanguageRow> languages;
-    std::vector<SealRow> seals;
-    std::unordered_map<std::string, HeaderCost> header_costs;  // by the name inside the angle brackets
-    std::vector<CiteRow> cites;
-    std::vector<GrantRow> grants;
-};
-
 // ── The rules and the kinds ─────────────────────────────────────────────
 
 enum class Rule : std::uint8_t {
@@ -444,6 +452,39 @@ enum class Rule : std::uint8_t {
     lifetime_twin,
     refined_pre_subsumption,
     syscall_grant_coverage,
+    federation_admission,
+    host_owners,
+    no_combine_ids_duplicate,
+    splits_orphan,
+    trait_guard,
+};
+
+// One home row or home-args row of the family home (home.cpp, THE ROWS).  The
+// entity is a qualified name, or one name for each namespace of that name.
+struct HomeRow {
+    Rule rule = Rule::trait_guard;
+    std::string entity;
+    bool is_one_name = false;  // the entity names each namespace of that name
+    bool is_args = false;  // a home-args row
+    std::vector<std::string> paths;
+    int line = 0;
+};
+
+// The rows of the rule table, in the order of the file.  A header keeps the
+// name inside its angle brackets.
+struct RuleTable {
+    std::vector<LayerRow> layers;
+    std::vector<std::pair<int, std::string>> allows;  // the layer index and the header
+    std::vector<DoorRow> doors;
+    std::vector<AdmitRow> admits;
+    std::vector<std::string> quarantines;
+    std::vector<EnforceRow> enforces;
+    std::vector<LanguageRow> languages;
+    std::vector<SealRow> seals;
+    std::unordered_map<std::string, HeaderCost> header_costs;  // by the name inside the angle brackets
+    std::vector<CiteRow> cites;
+    std::vector<GrantRow> grants;
+    std::vector<HomeRow> homes;
 };
 
 // The kinds of a finding (THE RULES AND THE KINDS above).  opted-out and
@@ -499,6 +540,20 @@ enum class Kind : std::uint8_t {
     grant_wrong_helper,
     grant_unread,
     grant_compared,
+    // The family home (home.cpp): one kind for each kind of each rule.
+    federation_outside_home,
+    federation_at_home,
+    owner_outside_home,
+    owner_at_home,
+    combine_outside_home,
+    combine_second_body,
+    combine_derived_name,
+    combine_at_home,
+    split_away_from_arguments,
+    split_at_home,
+    trait_outside_home,
+    trait_open_read,
+    trait_at_home,
 };
 
 inline const char* rule_name(Rule rule) {
@@ -535,9 +590,23 @@ inline const char* rule_name(Rule rule) {
             return "refined-pre-subsumption";
         case Rule::syscall_grant_coverage:
             return "syscall-grant-coverage";
+        case Rule::federation_admission:
+            return "federation-admission";
+        case Rule::host_owners:
+            return "host-owners";
+        case Rule::no_combine_ids_duplicate:
+            return "no-combine-ids-duplicate";
+        case Rule::splits_orphan:
+            return "splits-orphan";
+        case Rule::trait_guard:
+            return "trait-guard";
     }
     return "unknown";
 }
+
+// The rules of the family home, in the order of the enumeration.
+inline constexpr Rule kHomeRules[] = {Rule::federation_admission, Rule::host_owners, Rule::no_combine_ids_duplicate,
+                                      Rule::splits_orphan, Rule::trait_guard};
 
 inline const char* kind_name(Kind kind) {
     switch (kind) {
@@ -641,6 +710,25 @@ inline const char* kind_name(Kind kind) {
             return "unread-grant";
         case Kind::grant_compared:
             return "compared";
+        case Kind::federation_outside_home:
+        case Kind::owner_outside_home:
+        case Kind::combine_outside_home:
+        case Kind::trait_outside_home:
+            return "outside-home";
+        case Kind::federation_at_home:
+        case Kind::owner_at_home:
+        case Kind::combine_at_home:
+        case Kind::split_at_home:
+        case Kind::trait_at_home:
+            return "at-home";
+        case Kind::combine_second_body:
+            return "second-body";
+        case Kind::combine_derived_name:
+            return "derived-name";
+        case Kind::split_away_from_arguments:
+            return "away-from-arguments";
+        case Kind::trait_open_read:
+            return "open-read";
     }
     return "unknown";
 }
@@ -699,6 +787,24 @@ inline Rule rule_of(Kind kind) {
         case Kind::grant_unread:
         case Kind::grant_compared:
             return Rule::syscall_grant_coverage;
+        case Kind::federation_outside_home:
+        case Kind::federation_at_home:
+            return Rule::federation_admission;
+        case Kind::owner_outside_home:
+        case Kind::owner_at_home:
+            return Rule::host_owners;
+        case Kind::combine_outside_home:
+        case Kind::combine_second_body:
+        case Kind::combine_derived_name:
+        case Kind::combine_at_home:
+            return Rule::no_combine_ids_duplicate;
+        case Kind::split_away_from_arguments:
+        case Kind::split_at_home:
+            return Rule::splits_orphan;
+        case Kind::trait_outside_home:
+        case Kind::trait_open_read:
+        case Kind::trait_at_home:
+            return Rule::trait_guard;
         default:
             return Rule::quarantine;
     }
@@ -734,6 +840,25 @@ inline bool is_family_kind(Kind kind) {
 // records, and no finding of its rule.  The record of a mint, and the line of
 // a grant set that the unit compared.
 inline bool is_record_kind(Kind kind) { return kind == Kind::mint_record || kind == Kind::grant_compared; }
+
+// True when a rule of the family home gives the kind.  Such a finding is an
+// error only in the mode error, no opt-out region covers it, and no enforce
+// mode changes it, because the ledger of its rule judges it.
+inline bool is_home_kind(Kind kind) {
+    Rule rule = rule_of(kind);
+    for (Rule home : kHomeRules) {
+        if (rule == home) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True for a line of the family home that is no finding (at-home).
+inline bool is_home_record(Kind kind) {
+    return kind == Kind::federation_at_home || kind == Kind::owner_at_home || kind == Kind::combine_at_home
+        || kind == Kind::split_at_home || kind == Kind::trait_at_home;
+}
 
 // The two kinds of a line of the report that the rule quarantine gives for
 // each rule: a finding inside an opt-out region, and the region itself.
@@ -802,6 +927,19 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"syscall-grant-coverage", "wrong-helper"},
     {"syscall-grant-coverage", "unread-grant"},
     {"syscall-grant-coverage", "compared"},
+    {"federation-admission", "outside-home"},
+    {"federation-admission", "at-home"},
+    {"host-owners", "outside-home"},
+    {"host-owners", "at-home"},
+    {"no-combine-ids-duplicate", "outside-home"},
+    {"no-combine-ids-duplicate", "second-body"},
+    {"no-combine-ids-duplicate", "derived-name"},
+    {"no-combine-ids-duplicate", "at-home"},
+    {"splits-orphan", "away-from-arguments"},
+    {"splits-orphan", "at-home"},
+    {"trait-guard", "outside-home"},
+    {"trait-guard", "open-read"},
+    {"trait-guard", "at-home"},
 };
 
 // True when the entity is part of the key of a finding: two findings of such
@@ -826,7 +964,7 @@ inline bool is_name_kind(Kind kind) {
         case Kind::fast_math_override:
             return true;
         default:
-            return is_family_kind(kind);
+            return is_family_kind(kind) || is_home_kind(kind);
     }
 }
 
@@ -957,8 +1095,8 @@ struct State {
     std::string plugin_name;
     std::string root;  // the real path of the source root, without a final '/'
     std::string build;  // the real path of the build directory, or empty
-    // The base header of the argument sentinel, relative to the root, or
-    // empty, and the real path of the main file of the unit (THE SENTINEL).
+    // The header of include/ of the argument sentinel, relative to the root,
+    // or empty, and the real path of the main file of the unit (THE SENTINEL).
     std::string sentinel;
     std::string main_real;
     bool was_reported = false;
@@ -1167,14 +1305,29 @@ inline const FileEntry& entry_of_real_path(const std::string& resolved) {
     return stored;
 }
 
+// The entry of the file name FILE.  The line map keeps one name string for
+// each file, and successive calls usually ask one file, so the last name and
+// its entry answer most calls before the map does.  An entry stays in
+// state.entries to the end of the unit, so the last entry stays valid.
 inline const FileEntry& classify_file(const char* file) {
+    static const char* last_name = nullptr;
+    static const FileEntry* last_entry = nullptr;
+    if (file != nullptr && file == last_name) {
+        return *last_entry;
+    }
+    const FileEntry* entry = nullptr;
     auto found = state.files.find(file);
     if (found != state.files.end()) {
-        return *found->second;
+        entry = found->second;
+    } else {
+        std::string resolved = file != nullptr ? real_path(file) : std::string{};
+        entry = &entry_of_real_path(resolved);
+        state.files.emplace(file, entry);
     }
-    std::string resolved = file != nullptr ? real_path(file) : std::string{};
-    const FileEntry* entry = &entry_of_real_path(resolved);
-    state.files.emplace(file, entry);
+    if (file != nullptr) {
+        last_name = file;
+        last_entry = entry;
+    }
     return *entry;
 }
 
@@ -1477,6 +1630,11 @@ void report_unit_facts();
 void register_contract_rule(const char* plugin_name);
 void walk_contract_namespace(tree ns);
 void report_contract(const Finding& finding);
+
+// home.cpp: the family home, where a definition or a specialization stands.
+void register_home(const char* plugin_name);
+void walk_home();
+void report_home(const Finding& finding, std::vector<std::string>& lines, bool has_section);
 
 // plugin.cpp: the report of the unit.
 void report(bool can_add_dependencies);

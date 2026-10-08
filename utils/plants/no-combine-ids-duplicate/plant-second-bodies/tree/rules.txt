@@ -1,0 +1,5 @@
+# The rule table of the plant of the rule no-combine-ids-duplicate:
+# include/foundation/ is base code, and src/ is quarantined.
+layer low 0 include/foundation/
+quarantine src/
+home no-combine-ids-duplicate foundation::reflect::combine_ids include/foundation/reflect/Hash.h | the one body of the plant

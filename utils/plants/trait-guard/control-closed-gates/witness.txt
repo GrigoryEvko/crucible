@@ -1,0 +1,10 @@
+# Each gate that reads only closed names passes the rule trait-guard in the
+# mode error: a concept, a function that is not a template, a class template
+# named as a type, a requires-clause over a concept, and a gate of a crucible
+# header over a concept of the two layers.
+compile layer src/layer.cpp mode=error
+flag layer -fplugin-arg-crucible_quarantine-sentinel=include/foundation/gates.h
+exit layer pass
+compile crucible src/crucible.cpp mode=error
+flag crucible -fplugin-arg-crucible_quarantine-sentinel=include/crucible/gates.h
+exit crucible pass

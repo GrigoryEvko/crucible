@@ -1,0 +1,13 @@
+#include <foundation/reflect/Hash.h>
+
+#define PASTED_MACRO(a) a##_mix ^ 0x9e37'79b9'7f4a'7c15ULL + ((a) << 6) + ((a) >> 2) + foundation::reflect::fmix64(a)
+
+namespace planted {
+
+inline constexpr unsigned long value_mix = 1;
+
+unsigned long pasted(unsigned long value) noexcept {
+    return PASTED_MACRO(value);
+}
+
+}  // namespace planted

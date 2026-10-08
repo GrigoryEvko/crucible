@@ -1,0 +1,5 @@
+namespace foundation { namespace effects { inline namespace v1 {} namespace host {
+class ForegroundOwner
+{
+};
+} } }

@@ -216,8 +216,8 @@ concept DistinctTags = tags_are_distinct({^^Tags...});
 // Three sources, in this order of precedence:
 //   1. an edge `edge<Tag, Row<...>>` in permission_rows, the enumerable
 //      form, which every_class_in_has_edge audits for the canonical tags.
-//      Only this header, ReadView.h and test/ may open the namespace, and
-//      utils/assay/guard/legacy/check_trait_injection.py refuses it in any other file;
+//      Only this header holds a declaration in the namespace.  The rule
+//      trait-guard of the quarantine plugin refuses one in each other file;
 //   2. `using permission_row = Row<...>;` inside the tag, for a tag
 //      template such as a channel's Whole<UserTag>, whose instances
 //      cannot each be an edge;
@@ -817,10 +817,12 @@ private:
 // it for a new argument, and that definition gets the access of the
 // friend.  A reflection check cannot refuse it: GCC gives the location
 // of the primary template for an instance of a partial specialization,
-// and a #line directive moves any location.  The guard
-// utils/assay/guard/legacy/check_federation_admission.py refuses, outside
-// fixy/Federation.h, each class head of FederationAdmission and each
-// qualified definition that names one of its members.
+// and a #line directive moves any location.  The rule
+// federation-admission of the quarantine plugin refuses each definition
+// and each specialization of FederationAdmission, and each definition of
+// one of its members, in a file other than fixy/Federation.h
+// (utils/tools/quarantine/home.cpp).  The plugin also refuses a #line
+// directive in a file of the tree.
 template <typename Org>
 class FederationAdmission;
 

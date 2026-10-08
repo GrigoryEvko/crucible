@@ -1,0 +1,82 @@
+# Each specialization of a split trait away from the file that defines each
+# of its tags is a finding of the rule splits-orphan.  One unit holds each
+# shape that the legacy scan refused: tags that the file only declares, a
+# head that spans three lines, a name from the global namespace, a partial
+# specialization, a specialization with no body, a trait variable, a template
+# parameter, a pack or a pointer at the top level, a family over templates
+# that the file only declares, a specialization for every parent, a line
+# splice in the name, and each such shape in a macro that the unit expands.
+# A tag through an alias, a tag that a dead branch seems to define, and a
+# member of an instance of a template of a different file are refused too.
+compile declared_tags src/declared_tags.cpp mode=error
+exit declared_tags fail
+finding declared_tags splits-orphan away-from-arguments src/declared_tags.cpp:7:8 | foundation::permissions::can_split_into
+error declared_tags src/declared_tags.cpp:7 | quarantine: away-from-arguments foundation::permissions::can_split_into;
+compile three_lines src/three_lines.cpp mode=error
+exit three_lines fail
+finding three_lines splits-orphan away-from-arguments src/three_lines.cpp:7:30 | foundation::permissions::can_split_into_pack
+error three_lines src/three_lines.cpp:7 | quarantine: away-from-arguments foundation::permissions::can_split_into_pack;
+compile global src/global.cpp mode=error
+exit global fail
+finding global splits-orphan away-from-arguments src/global.cpp:5:35 | foundation::permissions::can_split_into_v
+error global src/global.cpp:5 | quarantine: away-from-arguments foundation::permissions::can_split_into_v;
+compile partial src/partial.cpp mode=error
+exit partial fail
+finding partial splits-orphan away-from-arguments src/partial.cpp:5:52 | foundation::permissions::can_split_into
+error partial src/partial.cpp:5 | quarantine: away-from-arguments foundation::permissions::can_split_into;
+compile no_body src/no_body.cpp mode=error
+exit no_body fail
+finding no_body splits-orphan away-from-arguments src/no_body.cpp:5:45 | foundation::permissions::has_split_pack_authoring_witness
+error no_body src/no_body.cpp:5 | quarantine: away-from-arguments foundation::permissions::has_split_pack_authoring_witness;
+compile variable src/variable.cpp mode=error
+exit variable fail
+finding variable splits-orphan away-from-arguments src/variable.cpp:5:35 | foundation::permissions::can_split_into_v
+error variable src/variable.cpp:5 | quarantine: away-from-arguments foundation::permissions::can_split_into_v;
+compile macro src/macro.cpp mode=error
+exit macro fail
+finding macro splits-orphan away-from-arguments src/macro.cpp:6:1 | foundation::permissions::can_split_into
+error macro src/macro.cpp:6 | quarantine: away-from-arguments foundation::permissions::can_split_into;
+compile macro_comment src/macro_comment.cpp mode=error
+exit macro_comment fail
+finding macro_comment splits-orphan away-from-arguments src/macro_comment.cpp:7:1 | foundation::permissions::can_split_into
+error macro_comment src/macro_comment.cpp:7 | quarantine: away-from-arguments foundation::permissions::can_split_into;
+compile macro_paste src/macro_paste.cpp mode=error
+exit macro_paste fail
+finding macro_paste splits-orphan away-from-arguments src/macro_paste.cpp:8:1 | foundation::permissions::can_split_into
+error macro_paste src/macro_paste.cpp:8 | quarantine: away-from-arguments foundation::permissions::can_split_into;
+compile splice src/splice.cpp mode=error
+exit splice fail
+finding splice splits-orphan away-from-arguments src/splice.cpp:5:45 | foundation::permissions::can_split_into
+error splice src/splice.cpp:5 | quarantine: away-from-arguments foundation::permissions::can_split_into;
+compile template_parameter src/template_parameter.cpp mode=error
+exit template_parameter fail
+finding template_parameter splits-orphan away-from-arguments src/template_parameter.cpp:11:8 | foundation::permissions::can_split_into
+error template_parameter src/template_parameter.cpp:11 | quarantine: away-from-arguments foundation::permissions::can_split_into;
+compile pack src/pack.cpp mode=error
+exit pack fail
+finding pack splits-orphan away-from-arguments src/pack.cpp:6:31 | foundation::permissions::can_split_into_pack
+error pack src/pack.cpp:6 | quarantine: away-from-arguments foundation::permissions::can_split_into_pack;
+compile pointer src/pointer.cpp mode=error
+exit pointer fail
+finding pointer splits-orphan away-from-arguments src/pointer.cpp:7:45 | foundation::permissions::can_split_into
+error pointer src/pointer.cpp:7 | quarantine: away-from-arguments foundation::permissions::can_split_into;
+compile foreign_family src/foreign_family.cpp mode=error
+exit foreign_family fail
+finding foreign_family splits-orphan away-from-arguments src/foreign_family.cpp:10:27 | foundation::permissions::can_split_into
+error foreign_family src/foreign_family.cpp:10 | quarantine: away-from-arguments foundation::permissions::can_split_into;
+compile every_parent src/every_parent.cpp mode=error
+exit every_parent fail
+finding every_parent splits-orphan away-from-arguments src/every_parent.cpp:6:8 | foundation::permissions::can_split_into_pack
+error every_parent src/every_parent.cpp:6 | quarantine: away-from-arguments foundation::permissions::can_split_into_pack;
+compile alias src/alias.cpp mode=error
+exit alias fail
+finding alias splits-orphan away-from-arguments src/alias.cpp:7:45 | foundation::permissions::can_split_into
+error alias src/alias.cpp:7 | quarantine: away-from-arguments foundation::permissions::can_split_into;
+compile dead_branch src/dead_branch.cpp mode=error
+exit dead_branch fail
+finding dead_branch splits-orphan away-from-arguments src/dead_branch.cpp:9:45 | foundation::permissions::can_split_into
+error dead_branch src/dead_branch.cpp:9 | quarantine: away-from-arguments foundation::permissions::can_split_into;
+compile member_of_instance src/member_of_instance.cpp mode=error
+exit member_of_instance fail
+finding member_of_instance splits-orphan away-from-arguments src/member_of_instance.cpp:7:45 | foundation::permissions::can_split_into
+error member_of_instance src/member_of_instance.cpp:7 | quarantine: away-from-arguments foundation::permissions::can_split_into;

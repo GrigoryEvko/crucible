@@ -1,0 +1,19 @@
+#pragma once
+
+namespace foundation::gates {
+
+template <class T> inline constexpr bool open_v = false;
+template <class T> constexpr bool open_f() { return false; }
+template <class T> struct open_trait { static constexpr bool value = false; };
+template <class T> struct Wrapper { static constexpr bool value = true; };
+template <class T> concept Closed = sizeof(T) > 0;
+consteval bool closed_answer(int) { return true; }
+template <class T> concept ReadsVariable = open_v<T>;
+template <class T> concept ReadsFunction = open_f<T>();
+template <class T> concept ReadsTrait = open_trait<T>::value;
+template <class T> concept ReadsClosed = Closed<T> && closed_answer(0) && Closed<Wrapper<T>>;
+template <class T> requires open_v<T*> void gated(T);
+template <class T> struct Holder { static consteval bool answer() { return false; } };
+template <class T> concept ReadsMember = Holder<T>::answer();
+
+}  // namespace foundation::gates

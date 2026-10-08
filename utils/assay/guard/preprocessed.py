@@ -1,8 +1,7 @@
 """One preprocessor run for each translation unit, shared by every guard, every build directory and every work tree.
 
-The rules proof-routes, start-lifetime, no-unchecked-access and
-federation-admission read the output of the preprocessor over the
-compile database.  Each guard gets that output from this module, so a
+The rules proof-routes, start-lifetime and no-unchecked-access read the
+output of the preprocessor over the compile database.  Each guard gets that output from this module, so a
 translation unit is preprocessed one time for all of them, and one time for
 every build directory and every work tree that has the same unit.
 

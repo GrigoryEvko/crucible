@@ -1,0 +1,8 @@
+#pragma once
+
+namespace foundation::fail_closed {
+
+template <class From, class To>
+struct edge {};
+
+}  // namespace foundation::fail_closed

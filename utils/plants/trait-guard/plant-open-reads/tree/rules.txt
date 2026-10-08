@@ -1,0 +1,8 @@
+# The rule table of the plant of the gates of the rule trait-guard:
+# include/foundation/ is base code, and include/crucible/, src/ and test/ are
+# quarantined.  A gate of a header or of its check file reads templates that a
+# unit can specialize.
+layer low 0 include/foundation/
+quarantine include/crucible/
+quarantine src/
+quarantine test/

@@ -1,0 +1,5 @@
+# The ledger of the rule no-combine-ids-duplicate.  `python3 utils/bin/guard explain no-combine-ids-duplicate` tells the rule and its policy,
+# and `python3 utils/bin/guard write --rule no-combine-ids-duplicate` writes this file.
+format 1
+rule no-combine-ids-duplicate
+include/crucible/Expr.h | second-body | admit | crucible::detail::combine_ids | the copy in crucible::detail that the runtime headers fold through

@@ -1,0 +1,15 @@
+# The rule table of the plant of the rule trait-guard: include/foundation/ and
+# include/fixy/ are base code, and src/ is quarantined.  A template of the two
+# layers is at home in the file that defines it.  A relation and a namespace
+# of a row are at home in the files of the row.
+layer low 0 include/foundation/
+layer high 1 include/fixy/
+quarantine src/
+home trait-guard foundation::algebra::is_graded_specialization | a substrate trait of the plant
+home trait-guard fixy::retag_policy | a fail-closed relation of the plant
+home trait-guard admitted_retags include/fixy/Tagged.h | each edge of the retag relation of the plant stands in its header
+home trait-guard admitted_policies include/fixy/Secret.h | each policy of the plant stands in its header
+home trait-guard admitted_transitions include/fixy/Machine.h | each machine edge of the plant stands in the header of the machine
+home trait-guard admitted_implications include/fixy/Refined.h | each implication of the plant stands in its header
+home trait-guard permission_rows include/foundation/permissions/Permission.h | each row edge of the plant stands in its header
+home trait-guard foundation::contracts::armed_cell include/foundation/ include/fixy/ | an extension point of the plant in the two layers

@@ -1,0 +1,9 @@
+# The rule table of the plant of the rule host-owners: include/foundation/ is
+# base code, and src/ is quarantined.  Each class of a namespace named host is
+# an owner, and each owner has one home.
+layer low 0 include/foundation/
+quarantine src/
+home host-owners host | a class of a namespace named host is an owner, and only an owner row gives it a home
+home host-owners foundation::effects::host::InitOwner include/foundation/effects/Effect.h | the init context of the plant
+home host-owners foundation::effects::host::BackgroundOwner include/foundation/effects/Effect.h | the background context of the plant
+home host-owners foundation::effects::host::ForegroundOwner include/foundation/effects/Ctx.h | the foreground context of the plant

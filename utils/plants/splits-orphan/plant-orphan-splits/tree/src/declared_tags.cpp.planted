@@ -1,0 +1,8 @@
+#include <foundation/permissions/Permission.h>
+
+namespace crucible { struct P; struct L; struct R; }
+
+namespace foundation::permissions {
+template <>
+struct can_split_into<crucible::P, crucible::L, crucible::R> { static constexpr bool value = true; };
+}  // namespace foundation::permissions

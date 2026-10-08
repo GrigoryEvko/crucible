@@ -1,0 +1,8 @@
+#include <foundation/permissions/Permission.h>
+
+struct DiskTag {};
+struct NoRow {};
+
+namespace foundation::permissions::permission_rows {
+inline constexpr ::foundation::fail_closed::edge<DiskTag, NoRow> planted{};
+}  // namespace foundation::permissions::permission_rows

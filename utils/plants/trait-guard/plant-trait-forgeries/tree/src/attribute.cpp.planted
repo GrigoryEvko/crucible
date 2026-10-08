@@ -1,0 +1,6 @@
+#include <fixy/Tagged.h>
+
+template <>
+struct [[deprecated]] fixy::retag_policy<fixy::tags::source::Sanitized, fixy::tags::trust::Verified> {
+    static constexpr bool allowed = true;
+};

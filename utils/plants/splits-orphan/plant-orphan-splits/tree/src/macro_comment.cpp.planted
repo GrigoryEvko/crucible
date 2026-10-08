@@ -1,0 +1,7 @@
+#include <foundation/permissions/Permission.h>
+
+namespace crucible { struct P; struct L; struct R; }
+
+#define FORGE2(P, L, R) template <> struct /* x */ \
+    foundation::permissions::can_split_into<P, L, R> {};
+FORGE2(crucible::P, crucible::L, crucible::R)

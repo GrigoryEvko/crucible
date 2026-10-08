@@ -1,0 +1,5 @@
+#include <foundation/permissions/Permission.h>
+
+struct Evil;
+
+template <> class foundation::permissions:: /* c */ FederationAdmission<Evil> {};

@@ -1,0 +1,13 @@
+#pragma once
+
+namespace foundation::effects {
+
+template <class T>
+inline constexpr bool is_exec_ctx_v = false;
+template <>
+inline constexpr bool is_exec_ctx_v<int> = true;
+
+template <class Cap, class Row>
+class ExecCtx {};
+
+}  // namespace foundation::effects

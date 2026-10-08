@@ -1,0 +1,51 @@
+# Each second body of combine_ids is a finding of the rule
+# no-combine-ids-duplicate.  One unit holds each shape that the legacy scan
+# refused: a name with a suffix or a prefix, the exact name in a different
+# namespace, the body under a different name, a lambda, a name in a macro
+# body, a salt with digit separators, and the body in a macro that pastes
+# tokens or not.  A macro body counts where a unit expands it.  The one body
+# in its home is a record and no finding.
+compile suffix src/suffix.cpp mode=error
+exit suffix fail
+finding suffix no-combine-ids-duplicate at-home include/foundation/reflect/Hash.h:10:25 | foundation::reflect::combine_ids
+finding suffix no-combine-ids-duplicate derived-name src/suffix.cpp:5:25 | planted::combine_ids_runtime
+finding suffix no-combine-ids-duplicate second-body src/suffix.cpp:5:25 | planted::combine_ids_runtime
+error suffix src/suffix.cpp:5 | quarantine: derived-name planted::combine_ids_runtime;
+error suffix src/suffix.cpp:5 | quarantine: second-body planted::combine_ids_runtime;
+compile prefix src/prefix.cpp mode=error
+exit prefix fail
+finding prefix no-combine-ids-duplicate derived-name src/prefix.cpp:3:25 | planted::runtime_combine_ids
+error prefix src/prefix.cpp:3 | quarantine: derived-name planted::runtime_combine_ids;
+compile other_namespace src/other_namespace.cpp mode=error
+exit other_namespace fail
+finding other_namespace no-combine-ids-duplicate second-body src/other_namespace.cpp:3:25 | planted::combine_ids
+error other_namespace src/other_namespace.cpp:3 | quarantine: second-body planted::combine_ids;
+compile renamed src/renamed.cpp mode=error
+exit renamed fail
+finding renamed no-combine-ids-duplicate at-home include/foundation/reflect/Hash.h:10:25 | foundation::reflect::combine_ids
+finding renamed no-combine-ids-duplicate second-body src/renamed.cpp:5:25 | planted::mix_pair
+error renamed src/renamed.cpp:5 | quarantine: second-body planted::mix_pair;
+compile lambda src/lambda.cpp mode=error
+exit lambda fail
+finding lambda no-combine-ids-duplicate at-home include/foundation/reflect/Hash.h:10:25 | foundation::reflect::combine_ids
+finding lambda no-combine-ids-duplicate second-body src/lambda.cpp:5:37 | planted::(lambda)
+error lambda src/lambda.cpp:5 | quarantine: second-body planted::(lambda);
+compile macro_name src/macro_name.cpp mode=error
+exit macro_name fail
+finding macro_name no-combine-ids-duplicate derived-name src/macro_name.cpp:5:15 | planted::combine_ids_macro
+error macro_name src/macro_name.cpp:5 | quarantine: derived-name planted::combine_ids_macro;
+compile separated src/separated.cpp mode=error
+exit separated fail
+finding separated no-combine-ids-duplicate at-home include/foundation/reflect/Hash.h:10:25 | foundation::reflect::combine_ids
+finding separated no-combine-ids-duplicate second-body src/separated.cpp:5:22 | planted::split_salt
+error separated src/separated.cpp:5 | quarantine: second-body planted::split_salt;
+compile separated_macro src/separated_macro.cpp mode=error
+exit separated_macro fail
+finding separated_macro no-combine-ids-duplicate at-home include/foundation/reflect/Hash.h:10:25 | foundation::reflect::combine_ids
+finding separated_macro no-combine-ids-duplicate second-body src/separated_macro.cpp:7:15 | planted::mixed
+error separated_macro src/separated_macro.cpp:7 | quarantine: second-body planted::mixed;
+compile pasted_macro src/pasted_macro.cpp mode=error
+exit pasted_macro fail
+finding pasted_macro no-combine-ids-duplicate at-home include/foundation/reflect/Hash.h:10:25 | foundation::reflect::combine_ids
+finding pasted_macro no-combine-ids-duplicate second-body src/pasted_macro.cpp:9:15 | planted::pasted
+error pasted_macro src/pasted_macro.cpp:9 | quarantine: second-body planted::pasted;

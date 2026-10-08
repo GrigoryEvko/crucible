@@ -1,0 +1,11 @@
+#include <foundation/effects/Ctx.h>
+
+struct Fake {};
+struct Token {};
+
+#define FORGE_CTX(T) template <> inline constexpr bool foundation::effects::is_exec_ctx_v<T> = true;
+#define FORGE_TOKENS(T) namespace foundation::effects { template <> inline constexpr bool is_exec_ctx_v<T> = (#T[0] != 0); }
+#define USE_TOKENS(T) static_assert(foundation::effects::is_exec_ctx_v<T>, #T)
+FORGE_CTX(Fake)
+FORGE_TOKENS(Token)
+USE_TOKENS(Fake);

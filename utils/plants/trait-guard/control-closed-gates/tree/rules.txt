@@ -1,0 +1,6 @@
+# The rule table of the control of the gates of the rule trait-guard:
+# include/foundation/ is base code, and include/crucible/ and src/ are
+# quarantined.  Each gate reads only closed names.
+layer low 0 include/foundation/
+quarantine include/crucible/
+quarantine src/

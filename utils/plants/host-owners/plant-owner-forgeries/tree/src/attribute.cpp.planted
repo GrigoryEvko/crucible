@@ -1,0 +1,5 @@
+namespace foundation::effects::host {
+struct InitOwner;
+}  // namespace foundation::effects::host
+
+struct [[nodiscard]] foundation::effects::host::InitOwner {};

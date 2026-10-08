@@ -1,0 +1,8 @@
+namespace foundation::effects::host {
+struct ForegroundOwner;
+}  // namespace foundation::effects::host
+
+namespace e = ::foundation::effects;
+namespace h2 = e::host;
+namespace h3 = h2;
+struct h3::ForegroundOwner {};

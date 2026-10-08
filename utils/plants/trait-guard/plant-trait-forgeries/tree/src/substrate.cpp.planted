@@ -1,0 +1,10 @@
+#include <foundation/algebra/Graded.h>
+
+namespace planted {
+template <class T> struct Probe {};
+}  // namespace planted
+
+namespace foundation::algebra {
+template <>
+struct is_graded_specialization<planted::Probe<int>> { static constexpr bool is_specialized = true; };
+}  // namespace foundation::algebra

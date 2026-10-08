@@ -1,0 +1,7 @@
+namespace foundation::effects::host {
+struct BackgroundOwner;
+}  // namespace foundation::effects::host
+
+namespace hm = foundation::effects::host;
+#define FORGE_ALIAS struct hm::BackgroundOwner {}
+FORGE_ALIAS;

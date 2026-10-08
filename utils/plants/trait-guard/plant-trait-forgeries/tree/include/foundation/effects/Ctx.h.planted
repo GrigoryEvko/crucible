@@ -1,0 +1,19 @@
+#pragma once
+
+namespace foundation::effects {
+
+template <class T>
+inline constexpr bool is_exec_ctx_v = false;
+
+template <class Cap, class Row>
+class ExecCtx {};
+
+template <class Wide, class Narrow>
+struct is_planted_gate {
+    static const bool value;
+};
+
+template <class Wide, class Narrow>
+const bool is_planted_gate<Wide, Narrow>::value = false;
+
+}  // namespace foundation::effects

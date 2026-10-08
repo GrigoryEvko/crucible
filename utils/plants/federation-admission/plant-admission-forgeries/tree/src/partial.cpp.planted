@@ -1,0 +1,3 @@
+#include <foundation/permissions/Permission.h>
+
+template <class T> requires true class foundation::permissions::FederationAdmission<T*> {};

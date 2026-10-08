@@ -1,0 +1,14 @@
+#include <fixy/Cells.h>
+#include <fixy/Machine.h>
+#include <fixy/Tagged.h>
+#include <foundation/effects/Ctx.h>
+
+// template <> struct fixy::retag_policy<A, B> {}; is prose.
+#define MENTION retag_policy is named here, and nothing is specialized
+namespace retags_alias = fixy::tags::admitted_retags;
+
+static_assert(!fixy::retag_policy<fixy::tags::source::FromDb, fixy::tags::trust::Verified>::allowed);
+static_assert(foundation::effects::is_exec_ctx_v<int>);
+static_assert(!foundation::effects::is_exec_ctx_v<long>);
+static_assert(sizeof(foundation::effects::ExecCtx<int, long>) == 1);
+static_assert(sizeof(retags_alias::sanitized) == 1);

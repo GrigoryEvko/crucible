@@ -1,0 +1,3 @@
+#include <crucible/gates.h>
+
+static_assert(crucible::gates::ReadsLayerConcept<int>);

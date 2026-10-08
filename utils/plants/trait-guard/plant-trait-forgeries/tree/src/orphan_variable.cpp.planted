@@ -1,0 +1,11 @@
+#include <foundation/effects/Ctx.h>
+
+struct Fake {};
+struct Other {};
+
+template <> inline constexpr bool foundation::effects::is_exec_ctx_v<Fake> = true;
+namespace foundation::effects {
+template <class T> inline constexpr bool is_exec_ctx_v<T*> = true;
+}  // namespace foundation::effects
+namespace fe = ::foundation::effects;
+template <> inline constexpr bool fe::is_exec_ctx_v<Other> = true;

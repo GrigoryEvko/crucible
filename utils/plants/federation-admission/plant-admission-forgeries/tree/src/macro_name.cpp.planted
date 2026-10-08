@@ -1,0 +1,7 @@
+#include <foundation/permissions/Permission.h>
+
+struct Evil;
+
+#define FORGE_NAME template <> class foundation::permissions::Federation\
+Admission<Evil> {}
+FORGE_NAME;

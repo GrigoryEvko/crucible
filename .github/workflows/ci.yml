@@ -171,11 +171,6 @@ jobs:
           python3 utils/bin/guard witness --engine tsast
           python3 utils/bin/guard check --engine tsast
 
-      - name: trait injection guard (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule trait-guard --self-test
-          python3 utils/bin/guard check --rule trait-guard
-
       - name: contract decide-cite ratio (self-test + scan)
         run: |
           python3 utils/bin/guard check --rule decide-cite-ratio --self-test
@@ -246,11 +241,6 @@ jobs:
           python3 utils/bin/loop derive mint-inventory --check
           python3 utils/bin/guard check --rule mint-floor
 
-      - name: split trait orphan specializations (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule splits-orphan --self-test
-          python3 utils/bin/guard check --rule splits-orphan
-
       - name: unchecked access context only in reviewed walks (self-test + scan)
         run: |
           python3 utils/bin/guard check --rule no-unchecked-access --self-test
@@ -261,20 +251,10 @@ jobs:
           python3 utils/bin/guard check --rule detail-namespace --self-test
           python3 utils/bin/guard check --rule detail-namespace
 
-      - name: each context owner defined in its one reviewed file (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule host-owners --self-test
-          python3 utils/bin/guard check --rule host-owners
-
       - name: init and background doors opened only from reviewed entry points (self-test + scan)
         run: |
           python3 utils/bin/guard check --rule ctx-init-door --self-test
           python3 utils/bin/guard check --rule ctx-init-door
-
-      - name: single combine_ids source of truth (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule no-combine-ids-duplicate --self-test
-          python3 utils/bin/guard check --rule no-combine-ids-duplicate
 
       - name: no task, stage or tracker references (self-test + scan)
         run: |

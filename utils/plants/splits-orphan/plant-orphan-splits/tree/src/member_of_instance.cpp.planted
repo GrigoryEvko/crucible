@@ -1,0 +1,9 @@
+#include <foundation/permissions/Permission.h>
+
+#include "tags.h"
+
+struct Local {};
+
+template <> struct foundation::permissions::can_split_into<::crucible::Outer<int>::Inner, ::Local, ::Local> {
+    static constexpr bool value = true;
+};

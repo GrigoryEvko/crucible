@@ -1,0 +1,2 @@
+#define FORGE namespace foundation::effects::host { struct InitOwner {}; }
+FORGE

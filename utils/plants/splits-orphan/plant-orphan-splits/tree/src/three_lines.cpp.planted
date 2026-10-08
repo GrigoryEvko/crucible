@@ -1,0 +1,8 @@
+#include <foundation/permissions/Permission.h>
+
+namespace crucible { struct P; struct L; }
+
+template <>
+struct
+    foundation::permissions::can_split_into_pack
+    <crucible::P, crucible::L> { static constexpr bool value = true; };

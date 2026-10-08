@@ -1,0 +1,8 @@
+# Each use of the admission passes the rule federation-admission in the mode
+# error: a declaration of the primary template, a friend, a call of each
+# member, prose, a string, a member of a different class with the name of a
+# member, and a macro that uses the admission or names it as a friend.  The
+# definition in the home is a record and no finding.
+compile use src/use.cpp mode=error
+exit use pass
+finding use federation-admission at-home include/fixy/Federation.h:10:7 | foundation::permissions::FederationAdmission

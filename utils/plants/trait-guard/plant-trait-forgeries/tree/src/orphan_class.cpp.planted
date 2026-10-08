@@ -1,0 +1,18 @@
+#include <foundation/algebra/Graded.h>
+#include <foundation/contracts/Armed.h>
+#include <foundation/effects/Ctx.h>
+
+struct Bg {};
+struct OddRow {};
+struct Lattice {};
+struct Payload {};
+struct Wide {};
+struct Narrow {};
+struct Wider {};
+
+template <> class foundation::effects::ExecCtx<Bg, OddRow> { public: ExecCtx() = default; };
+template <> class foundation::algebra::Graded<0, Lattice, Payload> { public: Payload anything; };
+template <> const bool foundation::effects::is_planted_gate<Wide, Narrow>::value = true;
+template <> struct foundation::contracts::armed_cell<42> {};
+using FakeGate = foundation::effects::is_planted_gate<Wider, Narrow>;
+template <> const bool FakeGate::value = true;

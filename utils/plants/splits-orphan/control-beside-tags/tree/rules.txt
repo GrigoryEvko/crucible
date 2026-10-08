@@ -1,0 +1,11 @@
+# The rule table of the control of the rule splits-orphan: include/foundation/
+# is base code, and src/ is quarantined.  A split is admitted only beside its
+# tags, so no row has a path.
+layer low 0 include/foundation/
+quarantine src/
+home-args splits-orphan foundation::permissions::can_split_into | a split is admitted only beside its tags
+home-args splits-orphan foundation::permissions::can_split_into_pack | a split is admitted only beside its tags
+home-args splits-orphan foundation::permissions::has_split_authoring_witness | a split is admitted only beside its tags
+home-args splits-orphan foundation::permissions::has_split_pack_authoring_witness | a split is admitted only beside its tags
+home-args splits-orphan foundation::permissions::can_split_into_v | a split is admitted only beside its tags
+home-args splits-orphan foundation::permissions::can_split_into_pack_v | a split is admitted only beside its tags

@@ -1,0 +1,8 @@
+#include <fixy/Tagged.h>
+
+struct PlantedNarrow {};
+
+namespace fixy {
+template <class T>
+struct retag_policy<T, PlantedNarrow> { static constexpr bool allowed = true; };
+}  // namespace fixy

@@ -1,0 +1,7 @@
+#include <foundation/permissions/Permission.h>
+
+namespace foundation::permissions {
+template <class P, class... S>
+    requires(sizeof...(S) > 0)
+struct can_split_into_pack<P, S...> { static constexpr bool value = true; };
+}  // namespace foundation::permissions

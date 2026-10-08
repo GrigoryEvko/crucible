@@ -1,0 +1,43 @@
+#include <fixy/Federation.h>
+
+struct Org {};
+struct P {};
+struct Ctx {};
+
+namespace foundation::permissions {
+template <class Org> class FederationAdmission;
+}  // namespace foundation::permissions
+
+struct Friendly {
+    template <class O> friend class foundation::permissions::FederationAdmission;
+};
+
+int admit(foundation::permissions::FederationAdmission<Org>& admission, Handshake const& handshake) noexcept {
+    auto again = foundation::permissions::FederationAdmission<Org>::mint_federation_admission<P>(Ctx{});
+    (void)again;
+    return admission.mint_federation_admittance(handshake);
+}
+
+// template <> class FederationAdmission<Evil> {}; is prose.
+static_assert(true, "template <> class FederationAdmission<Evil> {};");
+
+struct Other {
+    static int grant() noexcept;
+};
+
+int Other::grant() noexcept {
+    return 0;
+}
+
+#define LEGAL_USE(x) foundation::permissions::FederationAdmission<x>::mint_federation_admission<P>(Ctx{})
+#define LEGAL_FRIEND template <class O> friend class foundation::permissions::FederationAdmission;
+
+int use_macro() noexcept {
+    auto made = LEGAL_USE(Org);
+    (void)made;
+    return 0;
+}
+
+struct FriendlyMacro {
+    LEGAL_FRIEND
+};

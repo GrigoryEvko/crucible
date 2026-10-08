@@ -1,0 +1,9 @@
+namespace foundation::effects {
+struct Unrelated;
+struct Other;
+}  // namespace foundation::effects
+
+namespace q = foundation::effects;
+struct q::Unrelated {};
+namespace host_like = foundation::effects;
+struct host_like::Other {};

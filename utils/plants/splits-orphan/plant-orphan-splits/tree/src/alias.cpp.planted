@@ -1,0 +1,9 @@
+#include <foundation/permissions/Permission.h>
+
+#include "tags.h"
+
+using Whole = crucible::P;
+
+template <> struct foundation::permissions::can_split_into<::Whole, ::crucible::L, ::crucible::R> {
+    static constexpr bool value = true;
+};

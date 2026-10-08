@@ -1,0 +1,7 @@
+# The rule table of the plant of the rule federation-admission:
+# include/foundation/ and include/fixy/ are base code, and src/ is
+# quarantined.  The admission has one definition, in its home.
+layer low 0 include/foundation/
+layer high 1 include/fixy/
+quarantine src/
+home federation-admission foundation::permissions::FederationAdmission include/fixy/Federation.h | the one definition of the admission of the plant

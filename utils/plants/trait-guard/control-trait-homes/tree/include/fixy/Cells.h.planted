@@ -1,0 +1,6 @@
+#pragma once
+
+#include <foundation/contracts/Armed.h>
+
+template <>
+struct foundation::contracts::armed_cell<7> {};

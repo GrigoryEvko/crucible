@@ -1,0 +1,12 @@
+# The rule table of the control of the rule trait-guard: include/foundation/
+# and include/fixy/ are base code, and src/ and test/ are quarantined.  A
+# template of the two layers is at home in the file that defines it.  A
+# relation and a namespace of a row are at home in the files of the row.
+layer low 0 include/foundation/
+layer high 1 include/fixy/
+quarantine src/
+quarantine test/
+home trait-guard fixy::retag_policy | a fail-closed relation of the control
+home trait-guard admitted_retags include/fixy/Tagged.h | each edge of the retag relation of the control stands in its header
+home trait-guard admitted_transitions include/fixy/Machine.h | each machine edge of the control stands in the header of the machine
+home trait-guard foundation::contracts::armed_cell include/foundation/ include/fixy/ | an extension point of the control in the two layers

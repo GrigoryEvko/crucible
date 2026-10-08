@@ -1,0 +1,6 @@
+namespace foundation::effects::host {
+struct InitOwner;
+}  // namespace foundation::effects::host
+
+struct foundation::effects::/* hidden */host::
+    InitOwner { };

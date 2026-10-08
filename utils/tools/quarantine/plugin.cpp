@@ -55,11 +55,13 @@
 //     kinds=PATH     write the kinds of each rule (kRuleKinds in plugin.h) to
 //                    PATH, one row `kind RULE KIND`, and do no other work.  The
 //                    rule plugin-kinds compares the file with the registry
-//     sentinel=PATH  the base header, relative to the source root, whose
-//                    declarations and bodies the families declaration
-//                    property and expression shape read in this unit (THE
-//                    SENTINEL in plugin.h).  test/layer gives the sentinel
-//                    unit of each base header this argument
+//     sentinel=PATH  the header of include/, relative to the source root, whose
+//                    sentinel unit this unit is.  The families declaration
+//                    property and expression shape read the declarations and
+//                    bodies of a base header in this unit (THE SENTINEL in
+//                    plugin.h), and the family home reads the gates of a
+//                    header in this unit (home.cpp, THE GATES).  test/layer
+//                    gives the sentinel unit of each header this argument
 //
 // THE DEPENDENCIES
 //     utils/assay/loop/stamps.py writes DIR/modes/PATH for each source file of
@@ -196,8 +198,8 @@ void add_mode_dependencies() {
     std::unordered_set<const FileEntry*> files;
     bool needs_enforce = false;
     for (const Finding& finding : state.findings) {
-        if (is_each_mode_kind(finding.kind) || is_family_kind(finding.kind) || finding.file == nullptr
-            || is_opted_out(finding) || !files.insert(finding.file).second) {
+        if (is_each_mode_kind(finding.kind) || is_family_kind(finding.kind) || is_home_kind(finding.kind)
+            || finding.file == nullptr || is_opted_out(finding) || !files.insert(finding.file).second) {
             continue;
         }
         std::string stamp = state.stamps_dir + "/modes/" + finding.file->relative;
@@ -330,17 +332,19 @@ void report_unit_fact(const Finding& finding) {
 void on_finish_unit(void*, void*) {
     walk_declarations();
     finish_expression_rules();
+    walk_home();
     report(true);
 }
 
 // A unit that stopped on an error, or that -fsyntax-only compiled, does not
 // reach PLUGIN_FINISH_UNIT.  Under -fsyntax-only the trees are complete, so
-// the walk of declarations runs here.  GCC wrote the dependency file before
+// the walks of declarations run here.  GCC wrote the dependency file before
 // PLUGIN_FINISH, so the report adds no dependency.
 void on_finish(void*, void*) {
     if (!state.was_reported && flag_syntax_only && !seen_error()) {
         walk_declarations();
         finish_expression_rules();
+        walk_home();
     }
     report(false);
 }
@@ -398,6 +402,10 @@ void report(bool can_add_dependencies) {
     for (const Finding& finding : state.findings) {
         if (is_family_kind(finding.kind)) {
             report_family(finding, lines, has_section);
+            continue;
+        }
+        if (is_home_kind(finding.kind)) {
+            report_home(finding, lines, has_section);
             continue;
         }
         bool is_out = is_opted_out(finding);
@@ -523,7 +531,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
             || ::stat((state.root + "/" + state.sentinel).c_str(), &sentinel_status) != 0
             || !S_ISREG(sentinel_status.st_mode))) {
         error("quarantine: the argument %<sentinel=%s%> names no file under the source root; give the path of a "
-              "base header relative to the root",
+              "header of include/ relative to the root",
               state.sentinel.c_str());
         return 1;
     }
@@ -543,6 +551,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     register_unit_facts(plugin_info->base_name);
     register_expressions(plugin_info->base_name);
     register_declarations(plugin_info->base_name);
+    register_home(plugin_info->base_name);
     register_callback(plugin_info->base_name, PLUGIN_FINISH_UNIT, on_finish_unit, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_FINISH, on_finish, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_GGC_START, on_collection, nullptr);

@@ -1,0 +1,31 @@
+#include <foundation/permissions/Permission.h>
+
+namespace crucible {
+struct Whole {};
+struct Left {};
+struct Right {};
+struct Slice {};
+}  // namespace crucible
+
+namespace foundation::permissions {
+template <>
+struct can_split_into<::crucible::Whole, ::crucible::Left, ::crucible::Right> { static constexpr bool value = true; };
+template <>
+struct has_split_authoring_witness<::crucible::Whole, ::crucible::Left, ::crucible::Right> {
+    static constexpr bool value = true;
+};
+template <>
+struct can_split_into_pack<::crucible::Whole, ::crucible::Left, ::crucible::Right, ::crucible::Slice> {
+    static constexpr bool value = true;
+};
+template <>
+struct has_split_pack_authoring_witness<::crucible::Whole, ::crucible::Slice> { static constexpr bool value = true; };
+}  // namespace foundation::permissions
+
+template <>
+struct foundation::permissions::can_split_into<::crucible::Slice, ::crucible::Left, ::crucible::Right> {
+    static constexpr bool value = true;
+};
+
+static_assert(foundation::permissions::can_split_into_v<crucible::Whole, crucible::Left, crucible::Right>);
+static_assert(!foundation::permissions::can_split_into_v<crucible::Left, crucible::Whole, crucible::Right>);

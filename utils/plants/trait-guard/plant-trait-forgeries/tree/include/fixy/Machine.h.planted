@@ -1,0 +1,13 @@
+#pragma once
+
+#include <foundation/diag/FailClosed.h>
+
+namespace fixy::machine::admitted_transitions {}
+
+#define CRUCIBLE_MACHINE_EDGE_CAT_INNER_(left, right) left##right
+#define CRUCIBLE_MACHINE_EDGE_CAT_(left, right) CRUCIBLE_MACHINE_EDGE_CAT_INNER_(left, right)
+
+#define CRUCIBLE_ADMIT_MACHINE_TRANSITION(From, To)                                                               \
+    namespace fixy::machine::admitted_transitions {                                                               \
+    constexpr ::foundation::fail_closed::edge<From, To> CRUCIBLE_MACHINE_EDGE_CAT_(machine_edge_, __COUNTER__){}; \
+    }

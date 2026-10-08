@@ -1,0 +1,7 @@
+#include <foundation/permissions/Permission.h>
+
+struct G {};
+
+namespace foundation::permissions {
+template <class... Cs> struct can_split_into_pack<::G, Cs...> { static constexpr bool value = true; };
+}  // namespace foundation::permissions

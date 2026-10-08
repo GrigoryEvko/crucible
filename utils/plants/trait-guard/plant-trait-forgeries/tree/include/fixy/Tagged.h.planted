@@ -1,0 +1,24 @@
+#pragma once
+
+#include <foundation/diag/FailClosed.h>
+
+namespace fixy {
+
+namespace tags::source {
+struct FromDb {};
+struct Sanitized {};
+struct External {};
+}  // namespace tags::source
+
+namespace tags::trust {
+struct Verified {};
+}  // namespace tags::trust
+
+template <class From, class To>
+struct retag_policy {
+    static constexpr bool allowed = false;
+};
+
+namespace tags::admitted_retags {}
+
+}  // namespace fixy

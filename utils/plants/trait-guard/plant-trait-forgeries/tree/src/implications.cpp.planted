@@ -1,0 +1,8 @@
+#include <fixy/Refined.h>
+
+struct Positive {};
+struct NonZero {};
+
+namespace fixy::refined::admitted_implications {
+inline constexpr ::foundation::fail_closed::edge<Positive, NonZero> planted{};
+}  // namespace fixy::refined::admitted_implications

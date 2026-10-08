@@ -1,0 +1,5 @@
+#include <foundation/gates.h>
+
+namespace foundation::gates {
+template <class T> concept MovedReadsVariable = open_v<T>;
+}  // namespace foundation::gates

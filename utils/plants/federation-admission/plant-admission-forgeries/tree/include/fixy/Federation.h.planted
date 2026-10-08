@@ -1,0 +1,28 @@
+#pragma once
+
+#include <foundation/permissions/Permission.h>
+
+struct Handshake {};
+
+namespace foundation::permissions {
+
+template <class Org>
+class FederationAdmission final {
+public:
+    template <class Policy, class Ctx>
+    static constexpr FederationAdmission mint_federation_admission(Ctx const&) noexcept {
+        return {};
+    }
+
+    template <class... Explicit>
+    constexpr int mint_federation_admittance(Handshake const&) noexcept {
+        return 0;
+    }
+
+    struct Proof;
+
+private:
+    constexpr FederationAdmission() noexcept {}
+};
+
+}  // namespace foundation::permissions

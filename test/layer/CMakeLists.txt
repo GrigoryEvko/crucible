@@ -265,22 +265,21 @@ foreach(_layer foundation fixy crucible)
       set(_header_limit "${_ops_limit_of_${_header}}")
     endif()
     # A source property comes last on the compile line, so this limit wins
-    # over the limit of the whole build.  The quarantine plugin reads the
-    # declarations of a foundation or fixy header only in the sentinel of the
-    # header, which names the header with the sentinel argument.  A crucible
-    # header is quarantined, and the plugin reads it in each unit.
+    # over the limit of the whole build.  The quarantine plugin reads some
+    # facts of a header only in the sentinel of the header, which names the
+    # header with the sentinel argument: the family declaration property reads
+    # the declarations of a foundation or fixy header there, and the family
+    # home reads the gates of each header there.  A crucible header is
+    # quarantined, and the family declaration property reads it in each unit.
+    # The one-line unit of a header with a check file goes to layer_alone and
+    # does not get the argument, so each header has one sentinel unit.
     set(_sentinel_options "-fconstexpr-ops-limit=${_header_limit}")
-    set(_sentinel_argument "")
-    if(NOT _layer STREQUAL "crucible")
-      set(_sentinel_argument "${CRUCIBLE_QUARANTINE_SENTINEL_ARGUMENT}=include/${_header}")
-    endif()
+    set(_sentinel_argument "${CRUCIBLE_QUARANTINE_SENTINEL_ARGUMENT}=include/${_header}")
     string(REGEX REPLACE "\\.h$" ".cpp" _check "${_header}")
     if(EXISTS "${_layer_checks}/${_check}")
       list(APPEND _sentinels "${_layer_checks}/${_check}")
       list(APPEND _alone_units "${_sentinel}")
-      if(_sentinel_argument)
-        set_source_files_properties("${_layer_checks}/${_check}" PROPERTIES COMPILE_OPTIONS "${_sentinel_argument}")
-      endif()
+      set_source_files_properties("${_layer_checks}/${_check}" PROPERTIES COMPILE_OPTIONS "${_sentinel_argument}")
     else()
       list(APPEND _sentinels "${_sentinel}")
       list(APPEND _sentinel_options ${_sentinel_argument})

@@ -1,0 +1,5 @@
+#pragma once
+
+#include <foundation/diag/FailClosed.h>
+
+namespace foundation::permissions::permission_rows {}

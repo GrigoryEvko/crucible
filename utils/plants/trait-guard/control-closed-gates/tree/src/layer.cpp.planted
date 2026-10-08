@@ -1,0 +1,3 @@
+#include <foundation/gates.h>
+
+static_assert(foundation::gates::ReadsConcept<int>);

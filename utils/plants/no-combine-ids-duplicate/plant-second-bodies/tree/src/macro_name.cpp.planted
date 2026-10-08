@@ -1,0 +1,11 @@
+#define COMBINE_MACRO(a, b) combine_ids_macro(a, b)
+
+namespace planted {
+
+unsigned long combine_ids_macro(unsigned long a, unsigned long b) noexcept;
+
+unsigned long use_macro(unsigned long value) noexcept {
+    return COMBINE_MACRO(value, value);
+}
+
+}  // namespace planted

@@ -1,0 +1,8 @@
+#pragma once
+
+namespace crucible {
+struct P {};
+struct L {};
+struct R {};
+template <class T> struct Outer { struct Inner {}; };
+}  // namespace crucible

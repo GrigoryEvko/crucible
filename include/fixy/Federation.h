@@ -11,13 +11,11 @@
 // key of the one constructor of Permission<tag::FederatedPeer<Org>>.
 //
 // foundation/permissions/Permission.h declares FederationAdmission and
-// the key, and this header defines the admission.  The definition is
-// the whole of the door, so utils/assay/guard/legacy/check_federation_admission.py
-// refuses a definition, a specialization or a member definition of
-// FederationAdmission in any other file.  A member name of the
-// admission is therefore refused as the last name of a qualified
-// definition anywhere else in the tree, and each member name must be
-// distinctive.
+// the key, and this header holds the definition of the admission.  The
+// definition is the full door.  The rule federation-admission of the
+// quarantine plugin refuses a definition, a specialization or a member
+// definition of FederationAdmission in each other file
+// (utils/tools/quarantine/home.cpp).
 
 #include <fixy/Core.h>
 #include <fixy/SipHash.h>

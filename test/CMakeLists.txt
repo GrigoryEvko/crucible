@@ -449,21 +449,6 @@ foreach(ccache_case launcher relocation plain_relocation wrapper)
   set_tests_properties(ccache_${ccache_case}_self_test PROPERTIES LABELS "ci_guard")
 endforeach()
 
-# A substrate trait or a fail-closed relation is specialized only beside
-# the declarations it names.  utils/assay/guard/legacy/check_trait_injection.py reads each
-# specialization and each reopening of a relation namespace from the parse
-# tree.  It also refuses a gate that reads a template that a translation
-# unit can specialize, and each read of a gate of include/crucible that the
-# ledger admits gives a warning.  Exit 3 when the kit is absent reports a skip.
-crucible_script_test(NAME trait_guard_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule trait-guard
-          --self-test)
-crucible_script_test(NAME trait_guard
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule trait-guard
-          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-set_tests_properties(trait_guard trait_guard_self_test PROPERTIES
-  LABELS "ci_guard"
-  SKIP_RETURN_CODE 3)
 # The cite-ratio policy of the decide:: catalog.  Each procedure needs at
 # least 2 production cites within 180 days of the day its definition
 # entered Decide.h.  The day comes from the parse of every committed
@@ -610,17 +595,6 @@ crucible_script_test(NAME detail_namespace_self_test
 crucible_script_test(NAME detail_namespace
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule detail-namespace)
 set_tests_properties(detail_namespace detail_namespace_self_test PROPERTIES
-    LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
-# A class of the namespace foundation::effects::host is a door to a context
-# key, because its first definition in any translation unit is legal C++.
-# utils/assay/guard/legacy/check_host_owners.py refuses a definition of one outside the file
-# that utils/scripts/host-owner-roster.txt names.  Exit 3 (the pinned tree-sitter
-# kit is absent) is a skip.
-crucible_script_test(NAME host_owners_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule host-owners --self-test)
-crucible_script_test(NAME host_owners
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule host-owners)
-set_tests_properties(host_owners host_owners_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # host::InitOwner::mint_init_context() is the one production door of the
 # init context, and host::BackgroundOwner::mint_background_context() is the
@@ -790,18 +764,6 @@ set_tests_properties(mint_inventory_self_test
                      mint_inventory_check_floor PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# One combine_ids body.  utils/assay/guard/legacy/check_no_combine_ids_duplicate.py reads
-# the parse tree and fails on a second definition named combine_ids, on a
-# name with combine_ids and an affix, and on a body with the shape of
-# combine_ids under any name.  Exit 3 when the kit is absent reports a skip.
-crucible_script_test(NAME no_combine_ids_duplicate_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-combine-ids-duplicate --self-test)
-crucible_script_test(NAME no_combine_ids_duplicate
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-combine-ids-duplicate)
-set_tests_properties(no_combine_ids_duplicate
-                     no_combine_ids_duplicate_self_test PROPERTIES
-    LABELS "ci_guard"
-    SKIP_RETURN_CODE 3)
 # The cross-build row_hash determinism witness.  The test runs
 # dump_row_hashes and diffs its output against the committed golden.  A
 # mismatch says either that the fold changed on purpose, and the golden
@@ -894,40 +856,10 @@ crucible_test(test_background_thread_run_in_row test_background_thread_run_in_ro
   test_background_thread_run_in_row_meta.cpp)
 crucible_test(test_computation_cache_federation)
 
-# A specialization of a split trait, or of one of its variables, is legal
-# only in the file that defines every tag it names, or in an authoring
-# location that utils/assay/guard/legacy/check_splits_orphan.py lists with its reason.  C++
-# has no orphan rule, so a foreign TU could otherwise forge cross-region
-# authority (CLAUDE.md §IX).  The guard reads each specialization from the
-# parse tree.  Exit 2 names an authoring location that no specialization
-# needs.  Exit 3 when the kit is absent reports a skip.
-crucible_script_test(NAME splits_orphan_self_test
-         COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule splits-orphan --self-test)
-crucible_script_test(NAME splits_orphan
-         COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule splits-orphan)
-set_tests_properties(splits_orphan splits_orphan_self_test PROPERTIES
-    LABELS "forgery;ci_guard"
-    SKIP_RETURN_CODE 3)
-
-# FederationAdmission is the one friend of the key that builds a federation
-# peer token.  The guard refuses, outside fixy/Federation.h, a definition or
-# a specialization of it and a definition of one of its members, which would
-# get the same friendship.  It reads the parse tree, each macro body, and the
-# macro-expanded text of the compile database, so a macro of another file
-# cannot hide a definition.  Exit 3 when the kit is absent reports a skip.
-crucible_script_test(NAME federation_admission_self_test
-         COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule federation-admission --self-test)
-crucible_script_test(NAME federation_admission
-         COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule federation-admission
-                 --build-dir ${CMAKE_BINARY_DIR})
-set_tests_properties(federation_admission federation_admission_self_test PROPERTIES
-    LABELS "forgery;ci_guard;ast"
-    SKIP_RETURN_CODE 3)
-
-# The four guards that read the preprocessed store start on a full store.
+# The three guards that read the preprocessed store start on a full store.
 # Eight setup tests fill it, each one the entries whose index is its shard
 # modulo eight, so no one test preprocesses the whole database.  ctest adds
-# the setup tests to a run that selects one of the four guards.
+# the setup tests to a run that selects one of the three guards.
 set(CRUCIBLE_STORE_SHARDS 8)
 math(EXPR crucible_last_store_shard "${CRUCIBLE_STORE_SHARDS} - 1")
 foreach(crucible_store_shard RANGE ${crucible_last_store_shard})
@@ -939,7 +871,7 @@ foreach(crucible_store_shard RANGE ${crucible_last_store_shard})
       LABELS "ci_guard"
       FIXTURES_SETUP preprocessed_store)
 endforeach()
-set_tests_properties(start_lifetime proof_routes no_unchecked_access federation_admission PROPERTIES
+set_tests_properties(start_lifetime proof_routes no_unchecked_access PROPERTIES
     FIXTURES_REQUIRED preprocessed_store)
 
 crucible_test(test_vessel_api_typed)
@@ -5387,8 +5319,14 @@ crucible_script_test(NAME plugin_witness_self_test
 # mint-pattern reads.
 crucible_script_test(NAME plugin_declarations_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.plugin.test_declarations)
+# plugin_home_self_test — the family home of the engine plugin
+# (utils/assay/guard/engines/plugin/home.py): the paths of a home row, the
+# files of a build, the findings of a rule, a path with no site, and the
+# ledger of the rule trait-guard.
+crucible_script_test(NAME plugin_home_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.plugin.test_home)
 set_tests_properties(guard_plugin plugin_runner_self_test plugin_witness_self_test
-    plugin_declarations_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 77)
+    plugin_declarations_self_test plugin_home_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 77)
 
 # affected_tests_self_test — `loop test` (utils/assay/loop/affected.py) builds a tree
 # and runs only the tests whose inputs changed since their last pass.  It is

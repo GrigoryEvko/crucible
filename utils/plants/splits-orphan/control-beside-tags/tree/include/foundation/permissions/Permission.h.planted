@@ -1,0 +1,31 @@
+#pragma once
+
+namespace foundation::permissions {
+
+template <class P, class L, class R>
+struct can_split_into {
+    static constexpr bool value = false;
+};
+
+template <class P, class... Cs>
+struct can_split_into_pack {
+    static constexpr bool value = false;
+};
+
+template <class P, class L, class R>
+struct has_split_authoring_witness {
+    static constexpr bool value = false;
+};
+
+template <class P, class... Cs>
+struct has_split_pack_authoring_witness {
+    static constexpr bool value = false;
+};
+
+template <class P, class L, class R>
+inline constexpr bool can_split_into_v = can_split_into<P, L, R>::value;
+
+template <class P, class... Cs>
+inline constexpr bool can_split_into_pack_v = can_split_into_pack<P, Cs...>::value;
+
+}  // namespace foundation::permissions

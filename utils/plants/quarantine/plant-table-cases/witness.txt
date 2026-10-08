@@ -6,7 +6,7 @@
 
 table-unit plant_std.cpp
 
-table tables/an-unknown-row-kind.txt refused 1 | the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce, language, seal, heavy, light, cite and grant
+table tables/an-unknown-row-kind.txt refused 1 | the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce, language, seal, heavy, light, cite, grant, home and home-args
 table tables/a-rank-that-is-not-digits.txt refused 1 | a layer row is 'layer NAME RANK PATH...', with a RANK of digits
 table tables/a-rank-of-two-layers.txt refused 2 | the rank belongs to a second layer
 table tables/a-layer-with-two-rows.txt refused 2 | the layer has a second row
@@ -60,7 +60,15 @@ table tables/a-seal-root-with-two-rows.txt refused 2 | the root include/crucible
 table tables/a-heavy-row-with-no-angle-brackets.txt refused 1 | a heavy row is 'heavy HEADER [\| MEASURE]', with a HEADER in angle brackets
 table tables/a-heavy-row-with-two-headers.txt refused 1 | a heavy row is 'heavy HEADER [\| MEASURE]', with a HEADER in angle brackets
 table tables/a-header-with-a-heavy-and-a-light-row.txt refused 2 | the header <chrono> has a second heavy or light row, and its first row is on line 1
-table tables/a-light-row-with-two-cells.txt refused 1 | a row has at most one cell: the reason of an admit row, or the measure of a heavy or a light row
+table tables/a-light-row-with-two-cells.txt refused 1 | a row has at most one cell: the reason of an admit row or of a home row, or the measure of a heavy or a light row
+table tables/a-home-row-with-no-reason.txt refused 1 | a home row is 'home RULE ENTITY [PATH...] \| REASON', and a home-args row is 'home-args RULE ENTITY [PATH...] \| REASON'.  RULE is a rule of the family home, ENTITY is a qualified name or one name, and the reason is necessary
+table tables/a-home-row-with-no-entity.txt refused 1 | a home row is 'home RULE ENTITY [PATH...] \| REASON', and a home-args row is 'home-args RULE ENTITY [PATH...] \| REASON'.  RULE is a rule of the family home, ENTITY is a qualified name or one name, and the reason is necessary
+table tables/a-home-row-of-no-rule-of-the-family.txt refused 1 | the rule quarantine is no rule of the family home; the rules are federation-admission, host-owners, no-combine-ids-duplicate, splits-orphan and trait-guard
+table tables/a-home-entity-that-is-no-qualified-name.txt refused 2 | the entity fixy::::retag is not a qualified name: each part is an identifier
+table tables/a-home-args-row-of-one-name.txt refused 1 | a home-args row names a template by its qualified name, and can_split_into is one name
+table tables/a-home-path-with-a-parent.txt refused 1 | a path of a home row must be relative to the source root, with no '.', '..' or empty component, and not in the build directory
+table tables/a-home-path-in-the-build-directory.txt refused 1 | a path of a home row must be relative to the source root, with no '.', '..' or empty component, and not in the build directory
+table tables/two-home-rows-of-one-entity.txt refused 2 | the entity fixy::retag_policy has a second home row, and its first home row is on line 1
 
 # The table of each white-space character between two words, in a reason, and
 # the carriage return in a comment and in the line ends \r\n.

@@ -1,0 +1,31 @@
+# Each gate that reads a template that a unit can specialize is an open read
+# of the rule trait-guard: a gate over a variable template, a function
+# template, a class trait and a member function of a class template, and a
+# requires-clause.  A gate of a crucible header reads a template of its own
+# layer and a template of the two layers.  A gate in the check file of a
+# header is a gate of the header.  A concept, a function that is not a
+# template and a class template named as a type are closed.
+compile layer src/layer.cpp mode=error
+flag layer -fplugin-arg-crucible_quarantine-sentinel=include/foundation/gates.h
+exit layer fail
+finding layer trait-guard open-read include/foundation/gates.h:11:44 | foundation::gates::open_v
+finding layer trait-guard open-read include/foundation/gates.h:12:53 | foundation::gates::open_f
+finding layer trait-guard open-read include/foundation/gates.h:13:56 | foundation::gates::open_trait
+finding layer trait-guard open-read include/foundation/gates.h:15:29 | foundation::gates::open_v
+finding layer trait-guard open-read include/foundation/gates.h:17:59 | foundation::gates::Holder
+error layer include/foundation/gates.h:11 | quarantine: open-read foundation::gates::open_v;
+error layer include/foundation/gates.h:12 | quarantine: open-read foundation::gates::open_f;
+error layer include/foundation/gates.h:13 | quarantine: open-read foundation::gates::open_trait;
+error layer include/foundation/gates.h:15 | quarantine: open-read foundation::gates::open_v;
+error layer include/foundation/gates.h:17 | quarantine: open-read foundation::gates::Holder;
+compile crucible src/crucible.cpp mode=error
+flag crucible -fplugin-arg-crucible_quarantine-sentinel=include/crucible/gates.h
+exit crucible fail
+finding crucible trait-guard open-read include/crucible/gates.h:8:43 | crucible::gates::runtime_open_v
+finding crucible trait-guard open-read include/crucible/gates.h:9:62 | foundation::gates::open_v
+error crucible include/crucible/gates.h:8 | quarantine: open-read crucible::gates::runtime_open_v;
+error crucible include/crucible/gates.h:9 | quarantine: open-read foundation::gates::open_v;
+compile check_file test/layer/checks/foundation/gates.cpp mode=error
+exit check_file fail
+finding check_file trait-guard open-read test/layer/checks/foundation/gates.cpp:4:49 | foundation::gates::open_v
+error check_file test/layer/checks/foundation/gates.cpp:4 | quarantine: open-read foundation::gates::open_v;

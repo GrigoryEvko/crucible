@@ -1,0 +1,11 @@
+#include <foundation/reflect/Hash.h>
+
+#define SEPARATED_MACRO(a) ((a) ^ 0x9e37'79b9'7f4a'7c15ULL + ((a) << 6) + ((a) >> 2) + foundation::reflect::fmix64(a))
+
+namespace planted {
+
+unsigned long mixed(unsigned long value) noexcept {
+    return SEPARATED_MACRO(value);
+}
+
+}  // namespace planted

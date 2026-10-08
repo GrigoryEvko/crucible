@@ -1,0 +1,17 @@
+#include <foundation/effects/Effect.h>
+
+#define TEXT "struct foundation::effects::host::InitOwner {}"
+#define FRIEND friend struct ::foundation::effects::host::InitOwner;
+#define OTHER struct foundation::effects::Other {}
+
+static_assert(true, TEXT);
+
+struct Friendly {
+    FRIEND
+};
+
+namespace foundation::effects {
+struct Other;
+}  // namespace foundation::effects
+
+OTHER;

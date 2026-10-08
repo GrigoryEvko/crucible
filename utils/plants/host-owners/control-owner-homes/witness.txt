@@ -1,0 +1,16 @@
+# Each owner in the file of its owner row passes the rule host-owners in the
+# mode error, also through a qualified name in its home.  A use, a friend, a
+# class of a different namespace through an alias whose name holds host, a
+# macro string, a macro friend and a macro class of a different namespace
+# define no owner.  An owner at its home is a record and no finding.
+compile uses src/uses.cpp mode=error
+exit uses pass
+finding uses host-owners at-home include/foundation/effects/Effect.h:19:14 | foundation::effects::host::BackgroundOwner
+finding uses host-owners at-home include/foundation/effects/Effect.h:7:8 | foundation::effects::host::InitOwner
+finding uses host-owners at-home include/foundation/effects/Ctx.h:5:8 | foundation::effects::host::ForegroundOwner
+compile other_alias src/other_alias.cpp mode=error
+exit other_alias pass
+compile macro_text src/macro_text.cpp mode=error
+exit macro_text pass
+finding macro_text host-owners at-home include/foundation/effects/Effect.h:19:14 | foundation::effects::host::BackgroundOwner
+finding macro_text host-owners at-home include/foundation/effects/Effect.h:7:8 | foundation::effects::host::InitOwner

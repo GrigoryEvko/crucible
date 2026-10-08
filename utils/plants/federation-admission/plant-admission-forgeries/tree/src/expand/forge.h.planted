@@ -1,0 +1,3 @@
+#pragma once
+
+#define FORGE_FROM(N) template <> class foundation::permissions::N<Evil> {}
