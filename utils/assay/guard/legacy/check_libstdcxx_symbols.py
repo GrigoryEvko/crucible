@@ -32,8 +32,8 @@ A LIBSTDC++ SYMBOL
     It does not find which functions a link keeps.
 
 THE CLASS OF A SYMBOL
-    Each row gives the class of its symbol.  The first rule of this list that
-    the mangled name obeys gives the class:
+    The check gives the class of each symbol in its messages.  The first rule
+    of this list that the mangled name obeys gives the class:
       alloc  The global operator new or delete.  The name starts with _Znw,
              _Zna, _Zdl or _Zda.
       abi    The C++ ABI runtime.  The name starts with __cxa_ or __gxx_, or
@@ -63,17 +63,24 @@ THE ALLOWLIST
     and no row of this host names it.
 
 THE LEDGER
-    utils/scripts/libstdcxx-symbols-ledger.txt holds two types of row:
-        kind | KIND | TARGET
-        KIND | LIBRARY | MARK | CLASS | SYMBOL | DEMANGLED NAME
+    utils/ledgers/libstdcxx-symbols.txt is a ledger of the policy count, in
+    format 1 of assay.core.ledger:
+        configuration KIND kind KIND
+        configuration KIND tier TARGET
+        @build/LIBRARY | MARK | 1 | SYMBOL | -
+        @KIND | @build/LIBRARY | MARK | +1 | SYMBOL | -
     The sets depend on the build, because the inlining and the macro
-    _GLIBCXX_ASSERTIONS change the references.  KIND is the build kind and
-    TARGET is the target tier of utils/assay/core/target.py, for example
-    x86_64-debug-asan on x86-64-eb53fd1c.  A -march=native build on a
-    different processor then does not use the rows.  A kind row tells that
-    the ledger holds the sets of the kind on the target.
-    The demangled name is for the reader.  The check compares only the
-    mangled names.
+    _GLIBCXX_ASSERTIONS change the references.  A configuration is one build
+    kind: KIND is the build kind and TARGET is the target tier of
+    utils/assay/core/target.py, for example x86_64-debug-asan on
+    x86-64-eb53fd1c.  A -march=native build on a different processor then
+    does not use the rows.  LIBRARY is the file name of the archive in the
+    build directory.  The first configuration is the base, and its rows give
+    its set: each row is one symbol of one library.  A row of another
+    configuration gives a difference from the base: +1 for a symbol that only
+    that configuration uses, and -1 for a symbol of the base that it does not
+    use.  The check gives the class and the demangled name of each symbol, so
+    the ledger holds neither.
 
 THE VERDICT
     For the kind of the build:
@@ -82,9 +89,8 @@ THE VERDICT
       * A row whose library does not use its symbol is an error, until the
         same commit writes the ledger again (--write).  The ledger keeps no
         slack.
-      * A row whose mark or class is not the mark or the class of its symbol
-        is an error.  A row of a library that the inputs do not name is an
-        error too.
+      * A row whose mark is not the mark of its symbol is an error.  A row of
+        a library that the inputs do not name is an error too.
       * Each library with no error gives one warning with its counts.  The
         libstdc++ uses that stay are then in the output of each run.
     An archive that nm cannot read, an archive with no undefined reference,
@@ -92,8 +98,9 @@ THE VERDICT
     read nothing.
 
 WRITE THE LEDGER
-    --write writes the rows of the kind of the build, and it keeps the rows
-    of each other kind.  It writes a new allow symbol.  It refuses a new
+    --write writes the rows of the kind of the build, and it keeps the set of
+    each other kind: a write of the base writes the difference rows of the
+    other kinds again.  It writes a new allow symbol.  It refuses a new
     ratchet symbol: remove the use.  --raise writes a new ratchet symbol too.
     Use it only for one of these reasons, and give the reason in the commit:
       * A new toolchain changed the exports of libstdc++, or the code of a
@@ -111,10 +118,13 @@ NOT APPLICABLE
 
 A KIND THAT ONLY CI BUILDS
     No aarch64 compiler is on the build host, so only a CI leg can read the
-    sets of an aarch64 kind.  The check prints each row of the build with the
-    prefix "libstdcxx-row: " after a failure and when the ledger does not hold
-    the kind.  --import LOG puts those rows into the ledger in place of the
-    old rows of the kind.
+    sets of an aarch64 kind.  After a failure, and when the ledger does not
+    hold the kind, the check prints the configuration rows and the difference
+    rows of the build, each with the prefix "ledger-row: "
+    (assay.core.ledger.rows_of_configuration).  --import LOG puts those rows
+    into the ledger in place of the old rows of the kind.  The base kind has
+    no difference rows, so the check prints no rows of the base: write them
+    with --write.
 
 Usage
     guard check --rule libstdcxx-symbols --build-dir DIR [--warnings-dir DIR]
@@ -140,21 +150,28 @@ import sys
 import tempfile
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from collections.abc import Iterable
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
 from assay.core import meter as cost_meter
+from assay.core import registry as rule_registry
 from assay.core import report as check_report
+from assay.core import rows as rows_grammar
 from assay.core import target as build_target
 from assay.core.paths import REPO_ROOT
 from assay.readers import census as build_census
 from assay.readers import elf as elf_file
 
 CHECK = "libstdcxx-symbols"
-LEDGER = "utils/scripts/libstdcxx-symbols-ledger.txt"
 INPUTS = "libstdcxx-symbols-inputs.txt"
 NOT_APPLICABLE = build_target.NOT_APPLICABLE
-KIND_ROW = "kind"
+# The PATH of the rows of a library: the archive in the build directory.
+LIBRARY_PREFIX = "@build/"
+# The two facts of a configuration: the build kind and the target tier.
+FACT_KIND = "kind"
+FACT_TIER = "tier"
 ALLOW = "allow"
 RATCHET = "ratchet"
 MARKS = (ALLOW, RATCHET)
@@ -172,13 +189,21 @@ GNU_NAME = re.compile(rf"_Z{_SPECIAL}{_NESTED}9__gnu_cxx")
 UNDEFINED_TYPES = frozenset({"U", "w", "v"})
 # One line of `nm -A --undefined-only` for a member of an archive.
 NM_LINE = re.compile(r"(?P<archive>[^:]+):(?P<member>[^:]+):\s+(?P<type>[A-Za-z])\s+(?P<symbol>\S+)")
-ROW_MARK = "libstdcxx-row: "
 RAISE_REASONS = ("a new toolchain", "code that moved from a base header into a base source file",
                  "a new build kind or target")
 
 
 class LedgerError(ValueError):
-    """A row of the ledger does not have the format."""
+    """The ledger does not exist, or a row does not have the format.
+
+    Attributes:
+        line: The line of the row, or 0 when no row applies
+    """
+
+    def __init__(self, message: str, line: int = 0) -> None:
+        """Keep the message and the line of the row."""
+        super().__init__(message)
+        self.line = line
 
 
 class InputError(ValueError):
@@ -187,28 +212,21 @@ class InputError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class Row:
-    """One symbol row of the ledger, with the number of its line."""
+    """The symbol of one library in the set of one kind, with the line of its row."""
 
     kind: str
     library: str
     mark: str
-    symbol_class: str
     symbol: str
-    demangled: str
     line: int = 0
-
-    def text(self) -> str:
-        """Return the row as one line of the ledger, with no line break."""
-        return f"{self.kind} | {self.library} | {self.mark} | {self.symbol_class} | {self.symbol} | {self.demangled}"
 
 
 @dataclass(slots=True)
 class Ledger:
-    """The rows of the ledger: the head comment, the target and the line of each kind, and the symbol rows."""
+    """The ledger: its rows in format 1, the target of each kind, and the set of each kind as symbol rows."""
 
-    head: list[str] = field(default_factory=list)
+    table: rule_ledger.Ledger
     targets: dict[str, str] = field(default_factory=dict)
-    kind_lines: dict[str, int] = field(default_factory=dict)
     rows: dict[str, dict[str, dict[str, Row]]] = field(default_factory=dict)
 
 
@@ -253,68 +271,92 @@ def mark_of(symbol: str) -> str:
 # ── The ledger ─────────────────────────────────────────────────────
 
 
-def read_ledger(path: Path) -> Ledger:
+def read_ledger(rule: rule_registry.Rule, path: Path) -> Ledger:
     """Read the ledger file.
 
     Raises:
-        LedgerError: If a row does not have the format
+        LedgerError: If the file does not exist, or a row does not have the format
         OSError: If the file cannot be read
     """
-    return parse_ledger(path.read_text(encoding="utf-8"), str(path))
+    if not path.is_file():
+        raise LedgerError(f"{path} does not exist.  It holds the configuration rows and the symbol rows that --write "
+                          f"writes")
+    try:
+        table = rule_ledger.read(rule, file=path)
+    except rows_grammar.RowsError as problem:
+        raise LedgerError(str(problem), problem.line) from None
+    return ledger_of(table, str(path))
 
 
-def parse_ledger(text: str, path: str) -> Ledger:
-    """Read the text of a ledger.  The leading comment lines are its head.
+def ledger_of(table: rule_ledger.Ledger, shown: str) -> Ledger:
+    """Give the set of each kind of a ledger in format 1.
+
+    Complexity: O(r log r) for r rows.
 
     Raises:
-        LedgerError: If a row does not have the format, a symbol row comes before the row of its kind, or a row
-            has a second copy
+        LedgerError: If a configuration does not have the two facts kind and tier, the ledger has symbol rows and no
+            configuration, or a row does not name a library of the build directory, a mark and a symbol with the
+            count 1 in its configuration
     """
-    ledger = Ledger()
-    is_head = True
-    for number, raw in enumerate(text.splitlines(), start=1):
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("#"):
-            if is_head:
-                ledger.head.append(raw)
-            continue
-        is_head = False
-        cells = [cell.strip() for cell in stripped.split(" | ", 5)]
-        if cells[0] == KIND_ROW:
-            if len(cells) != 3 or not cells[1] or not cells[2] or cells[1] in ledger.targets:
-                raise LedgerError(f"{path}:{number}: a kind row is 'kind | KIND | TARGET', one for each kind")
-            ledger.targets[cells[1]] = cells[2]
-            ledger.kind_lines[cells[1]] = number
-            continue
-        if len(cells) != 6 or not all(cells) or cells[2] not in MARKS or cells[3] not in CLASSES:
-            raise LedgerError(f"{path}:{number}: a symbol row is 'KIND | LIBRARY | MARK | CLASS | SYMBOL | DEMANGLED "
-                              f"NAME', with a MARK of {'/'.join(MARKS)} and a CLASS of {'/'.join(CLASSES)}")
-        kind, library, mark, symbol_class, symbol, demangled = cells
-        if kind not in ledger.targets:
-            raise LedgerError(f"{path}:{number}: the row of the kind {kind} comes before the kind row of {kind}")
-        by_symbol = ledger.rows.setdefault(kind, {}).setdefault(library, {})
-        if symbol in by_symbol:
-            raise LedgerError(f"{path}:{number}: the symbol {symbol} of {library} has a second row in {kind}")
-        by_symbol[symbol] = Row(kind, library, mark, symbol_class, symbol, demangled, number)
+    ledger = Ledger(table)
+    for configuration in table.configurations:
+        facts = dict(configuration.facts)
+        if set(facts) != {FACT_KIND, FACT_TIER} or facts[FACT_KIND] != configuration.name:
+            raise LedgerError(f"{shown}: the configuration {configuration.name} has the rows 'configuration KIND kind "
+                              f"KIND' and 'configuration KIND tier TARGET', and no other")
+        ledger.targets[configuration.name] = facts[FACT_TIER]
+    if table.base and not table.configurations:
+        first = min(entry.line for entry in table.base.values())
+        raise LedgerError(f"{shown}:{first}: the ledger has symbol rows and no configuration row", first)
+    for kind in ledger.targets:
+        counts = table.expected(kind)
+        for key in sorted(counts, key=lambda each: table.line_of(each, kind)):
+            line = table.line_of(key, kind)
+            if not key.path.startswith(LIBRARY_PREFIX) or key.kind not in MARKS or not key.entity or counts[key] != 1:
+                raise LedgerError(f"{shown}:{line}: a symbol row is '@build/LIBRARY | MARK | 1 | SYMBOL | -', with a "
+                                  f"MARK of {'/'.join(MARKS)}, and a row of another kind gives the count 0 or 1 to its "
+                                  f"symbol", line)
+            library = key.path.removeprefix(LIBRARY_PREFIX)
+            by_symbol = ledger.rows.setdefault(kind, {}).setdefault(library, {})
+            if key.entity in by_symbol:
+                raise LedgerError(f"{shown}:{line}: the symbol {key.entity} of {library} has a second row in {kind}",
+                                  line)
+            by_symbol[key.entity] = Row(kind, library, key.kind, key.entity, line)
     return ledger
 
 
-def ledger_text(ledger: Ledger) -> str:
-    """Return the text of a ledger: the head and one empty line, then each kind row with the rows of its kind.
+def census_findings(census: Census) -> list[check_report.Finding]:
+    """Return one finding for each libstdc++ symbol of each library, with the key of its row."""
+    return [check_report.Finding("error", f"{LIBRARY_PREFIX}{library}", 0, CHECK, "a libstdc++ symbol",
+                                 mark_of(symbol), symbol)
+            for library, uses in census.uses.items() for symbol in uses]
 
-    The order is fixed, so a second write of the same sets gives the same text.
+
+def with_configuration(table: rule_ledger.Ledger, kind: str, target: str) -> rule_ledger.Ledger:
+    """Return the ledger with the configuration of a kind on a target: in place of its old one, or after the others."""
+    configuration = rule_ledger.Configuration(kind, ((FACT_KIND, kind), (FACT_TIER, target)))
+    configurations = [configuration if item.name == kind else item for item in table.configurations]
+    if configuration not in configurations:
+        configurations.append(configuration)
+    return replace(table, configurations=tuple(configurations))
+
+
+def keep_other_sets(written: rule_ledger.Ledger, before: rule_ledger.Ledger) -> rule_ledger.Ledger:
+    """Return a ledger after a write of its base, with the difference rows of each other kind written again.
+
+    The set of each other kind then stays the set that it had before the
+    write.  Complexity: linear in the rows of the base and of each kind.
     """
-    head = list(ledger.head)
-    while head and not head[-1].strip():
-        head.pop()
-    lines = [*head, ""] if head else []
-    for kind in sorted(ledger.targets):
-        lines.append(f"{KIND_ROW} | {kind} | {ledger.targets[kind]}")
-        libraries = ledger.rows.get(kind, {})
-        for library in sorted(libraries):
-            ordered = sorted(libraries[library].values(), key=lambda row: (row.mark, row.symbol_class, row.symbol))
-            lines += [row.text() for row in ordered]
-    return "\n".join(lines) + "\n"
+    base_counts = {key: int(entry.value) for key, entry in written.base.items()}
+    deltas: dict[str, dict[rule_ledger.Key, rule_ledger.Entry]] = {}
+    for configuration in written.configurations[1:]:
+        counts = before.expected(configuration.name)
+        old = before.deltas.get(configuration.name, {})
+        deltas[configuration.name] = {
+            key: rule_ledger.Entry(key, counts.get(key, 0) - base_counts.get(key, 0),
+                                   old[key].reason if key in old else "")
+            for key in set(counts) | set(base_counts) if counts.get(key, 0) != base_counts.get(key, 0)}
+    return replace(written, deltas=deltas)
 
 
 # ── The inputs ─────────────────────────────────────────────────────
@@ -391,12 +433,14 @@ def libstdcxx_exports(compiler: str) -> frozenset[str]:
     return names
 
 
-def read_census(inputs: Inputs) -> Census:
+def read_census(inputs: Inputs, held: Iterable[str] = ()) -> Census:
     """Read the undefined references of each archive, and keep the ones that libstdc++ defines.
 
     One nm call reads each archive, one nm call reads libstdc++, and one
-    c++filt call demangles the symbols.  Complexity: linear in the number of
-    undefined references and of libstdc++ exports.
+    c++filt call demangles the symbols and the symbols of `held`, the rows
+    of the ledger, so that a message can name a symbol that goes.
+    Complexity: linear in the number of undefined references and of
+    libstdc++ exports.
 
     Raises:
         InputError: If a tool fails, an archive gives no undefined reference, or libstdc++ cannot be read
@@ -418,7 +462,7 @@ def read_census(inputs: Inputs) -> Census:
                          f"archive that calls nothing is not an archive that uses no libstdc++ symbol")
     census.uses = {library: {symbol: members for symbol, members in symbols.items() if symbol in exports}
                    for library, symbols in references.items()}
-    symbols = sorted({symbol for uses in census.uses.values() for symbol in uses})
+    symbols = sorted({symbol for uses in census.uses.values() for symbol in uses} | set(held))
     names = tool_output(["c++filt"], "".join(f"{symbol}\n" for symbol in symbols)).splitlines() if symbols else []
     if len(names) != len(symbols):
         raise InputError("c++filt does not give one name for each symbol")
@@ -438,7 +482,6 @@ def evaluate(census: Census, ledger: Ledger, kind: str, ledger_shown: str,
     """
     findings: list[check_report.Finding] = []
     held = ledger.rows.get(kind, {})
-    kind_line = ledger.kind_lines.get(kind, 0)
     write = f"Write the ledger again in the same commit: `{write_command}`"
     for library in sorted(set(census.uses) | set(held)):
         rows = held.get(library, {})
@@ -459,22 +502,23 @@ def evaluate(census: Census, ledger: Ledger, kind: str, ledger_shown: str,
                 said = (f"{library} uses the libstdc++ symbol {shown}, of the class {classify(symbol)}, in "
                         f"{members}, and the ledger has no row for it.  A change can only remove a libstdc++ use "
                         f"(rule R5).  Use a type of fixy or foundation in its place")
-            findings.append(check_report.Finding("error", ledger_shown, kind_line, CHECK, said))
+            # A missing row has no line.  Its place is the first base row of its library, or 0.
+            line = ledger.table.line_of(rule_ledger.Key(f"{LIBRARY_PREFIX}{library}", mark_of(symbol), symbol), kind)
+            findings.append(check_report.Finding("error", ledger_shown, line, CHECK, said))
         for symbol in sorted(set(rows) - set(used)):
             row = rows[symbol]
             findings.append(check_report.Finding("error", ledger_shown, row.line, CHECK,
-                                                 f"{library} no longer uses {row.demangled} ({symbol}).  {write}"))
+                                                 f"{library} no longer uses {census.demangled[symbol]} ({symbol}).  "
+                                                 f"{write}"))
         for symbol in sorted(set(rows) & set(used)):
             row = rows[symbol]
-            wanted = (mark_of(symbol), classify(symbol))
-            if (row.mark, row.symbol_class) != wanted:
+            if row.mark != mark_of(symbol):
                 findings.append(check_report.Finding(
-                    "error", ledger_shown, row.line, CHECK, f"the row of {symbol} gives the mark {row.mark} and the "
-                    f"class {row.symbol_class}, and the symbol has the mark {wanted[0]} and the class {wanted[1]}.  "
-                    f"{write}"))
+                    "error", ledger_shown, row.line, CHECK, f"the row of {symbol} gives the mark {row.mark}, and the "
+                    f"symbol has the mark {mark_of(symbol)}.  {write}"))
         if len(findings) == errors_before and rows:
             marks = Counter(row.mark for row in rows.values())
-            classes = Counter(row.symbol_class for row in rows.values() if row.mark == RATCHET)
+            classes = Counter(classify(row.symbol) for row in rows.values() if row.mark == RATCHET)
             shown_classes = ", ".join(f"{name} {classes[name]}" for name in CLASSES if classes[name])
             findings.append(check_report.Finding(
                 "warning", ledger_shown, min(row.line for row in rows.values()), CHECK,
@@ -500,10 +544,16 @@ def run(build_dir: Path, root: Path, ledger_path: Path, warnings_dir: Path | Non
         print(f"{CHECK}: {build_shown} has no {cost_meter.KIND_FILE}.  The check does not apply")
         return NOT_APPLICABLE
     try:
-        ledger = read_ledger(ledger_path)
+        rule = rule_ledger.rule_of(CHECK)
+    except (OSError, rule_ledger.LedgerError, rows_grammar.RowsError) as problem:
+        return check_report.emit([check_report.Finding("error", rule_registry.REGISTRY_PATH, 0, CHECK, str(problem))],
+                                 CHECK, warnings_dir)
+    try:
+        ledger = read_ledger(rule, ledger_path)
         inputs = read_inputs(build_dir / INPUTS)
     except (OSError, LedgerError, InputError) as problem:
-        return check_report.emit([check_report.Finding("error", ledger_shown, 0, CHECK, str(problem))], CHECK,
+        line = problem.line if isinstance(problem, LedgerError) else 0
+        return check_report.emit([check_report.Finding("error", ledger_shown, line, CHECK, str(problem))], CHECK,
                                  warnings_dir)
     unbuilt = [build_census.shown(archive, root) for archive in inputs.archives if not archive.is_file()]
     if unbuilt:
@@ -511,15 +561,15 @@ def run(build_dir: Path, root: Path, ledger_path: Path, warnings_dir: Path | Non
         return NOT_APPLICABLE
     try:
         target = build_target.build_tier(build_dir, inputs.compiler)
-        census = read_census(inputs)
+        census = read_census(inputs, (symbol for symbols in ledger.rows.get(kind, {}).values() for symbol in symbols))
     except (OSError, InputError, build_target.TierError) as problem:
         return check_report.emit([check_report.Finding("error", build_shown, 0, CHECK, str(problem))], CHECK,
                                  warnings_dir)
     if write:
-        return write_ledger(ledger_path, ledger, kind, target, census, allow_raise)
+        return write_ledger(rule, ledger_path, ledger, kind, target, census, allow_raise)
     if ledger.targets.get(kind) != target:
         print(build_target.not_held(CHECK, f"the kind {kind}", target, sorted(ledger.targets.items())))
-        print_rows(kind, target, census)
+        print_rows(ledger, kind, target, census)
         return NOT_APPLICABLE
     write_command = f"python3 utils/bin/guard check --rule libstdcxx-symbols --build-dir {build_shown} --write"
     status = check_report.emit(evaluate(census, ledger, kind, ledger_shown, write_command), CHECK, warnings_dir)
@@ -527,53 +577,53 @@ def run(build_dir: Path, root: Path, ledger_path: Path, warnings_dir: Path | Non
     print(f"{CHECK}: {total} libstdc++ symbols in {len(census.uses)} libraries of {kind} on {target}, from "
           f"{census.references} undefined references")
     if status != 0:
-        print_rows(kind, target, census)
+        print_rows(ledger, kind, target, census)
     return status
 
 
-def kind_rows(kind: str, census: Census) -> dict[str, dict[str, Row]]:
-    """Return the rows of the libstdc++ symbols of each library of the census, as the ledger holds them."""
-    return {library: {symbol: Row(kind, library, mark_of(symbol), classify(symbol), symbol, census.demangled[symbol])
-                      for symbol in uses}
-            for library, uses in census.uses.items() if uses}
+def print_rows(ledger: Ledger, kind: str, target: str, census: Census) -> None:
+    """Print the configuration rows and the difference rows of the build, as --import reads them from a log.
 
-
-def print_rows(kind: str, target: str, census: Census) -> None:
-    """Print the kind row and the symbol rows of the build with ROW_MARK, as --import reads them from a log."""
-    ledger = Ledger(targets={kind: target}, rows={kind: kind_rows(kind, census)})
-    build_target.print_rows(ROW_MARK, ledger_text(ledger).splitlines())
+    The base kind has no difference rows, so the function prints only one
+    line that tells how to write its rows.
+    """
+    if kind == ledger.table.base_name:
+        print(f"{CHECK}: the kind {kind} is the base configuration of the ledger, and its rows have no difference "
+              f"from it.  Write its rows with --write")
+        return
+    for line in rule_ledger.rows_of_configuration(ledger.table, kind, ((FACT_KIND, kind), (FACT_TIER, target)),
+                                                  census_findings(census)):
+        print(line)
     print(f"{CHECK}: the lines above give the rows of the kind {kind}.  Import them from the log with "
           f"`python3 utils/bin/guard check --rule libstdcxx-symbols --import LOG`")
 
 
-def import_rows(ledger_path: Path, source: Path) -> int:
+def import_rows(rule: rule_registry.Rule, ledger_path: Path, source: Path) -> int:
     """Put the rows of one kind that print_rows printed into the ledger, in place of the old rows of the kind.
 
     Returns:
         0 when the ledger is written, 1 when the rows or the ledger do not have the format
     """
     try:
-        ledger = read_ledger(ledger_path)
-        imported = parse_ledger("\n".join(build_target.rows_in_log(
-            source.read_text(encoding="utf-8", errors="replace"), ROW_MARK)) + "\n", str(source))
-        if len(imported.targets) != 1:
-            raise LedgerError(f"{source}: the rows name {len(imported.targets)} kinds, and an import takes one")
-        kind, target = next(iter(imported.targets.items()))
-        ledger.targets[kind] = target
-        ledger.rows[kind] = imported.rows.get(kind, {})
-        text = ledger_text(ledger)
-        parse_ledger(text, str(source))
-    except (OSError, LedgerError) as problem:
+        ledger = read_ledger(rule, ledger_path)
+        table = rule_ledger.import_rows(ledger.table, source.read_text(encoding="utf-8", errors="replace"))
+        kind = table.configurations[-1].name
+        imported = ledger_of(table, str(source))
+    except (OSError, LedgerError, rule_ledger.LedgerError, rows_grammar.RowsError) as problem:
         print(f"{CHECK}: the ledger is not written: {problem}", file=sys.stderr)
         return 1
-    ledger_path.write_text(text, encoding="utf-8")
-    rows = sum(len(symbols) for symbols in ledger.rows[kind].values())
-    print(f"{CHECK}: imported the kind {kind} on {target}: {rows} rows, to {ledger_path}")
+    rule_ledger.store(table, file=ledger_path)
+    rows = sum(len(symbols) for symbols in imported.rows.get(kind, {}).values())
+    print(f"{CHECK}: imported the kind {kind} on {imported.targets[kind]}: {rows} rows, to {ledger_path}")
     return 0
 
 
-def write_ledger(ledger_path: Path, ledger: Ledger, kind: str, target: str, census: Census, allow_raise: bool) -> int:
+def write_ledger(rule: rule_registry.Rule, ledger_path: Path, ledger: Ledger, kind: str, target: str, census: Census,
+                 allow_raise: bool) -> int:
     """Write the rows of the kind, unless a new ratchet symbol comes and --raise is absent.
+
+    The write keeps the set of each other kind.  The first kind of an empty
+    ledger becomes its base.
 
     Returns:
         The exit status
@@ -589,10 +639,13 @@ def write_ledger(ledger_path: Path, ledger: Ledger, kind: str, target: str, cens
         return 1
     for library in sorted(set(held) - set(census.uses)):
         print(f"{CHECK}: the inputs name no archive {library}, so its rows of {kind} go", file=sys.stderr)
-    ledger.targets[kind] = target
-    ledger.rows[kind] = kind_rows(kind, census)
-    ledger_path.write_text(ledger_text(ledger), encoding="utf-8")
-    rows = sum(len(uses) for uses in ledger.rows[kind].values())
+    table = with_configuration(ledger.table, kind, target)
+    # The check refused each new ratchet symbol above, so the write takes each count of the build.
+    written = rule_ledger.write(rule, table, census_findings(census), kind, rule_ledger.WriteMode.RAISE)
+    if kind == written.base_name:
+        written = keep_other_sets(written, ledger.table)
+    rule_ledger.store(written, file=ledger_path)
+    rows = sum(len(uses) for uses in census.uses.values())
     print(f"{CHECK}: wrote {rows} rows of {kind} on {target} to {ledger_path}")
     return 0
 
@@ -624,7 +677,7 @@ SELF_TEST_UNITS = {
              "int exit_entry() { return std::atexit(crucible_symbols_at_exit); }\n",
 }
 SELF_TEST_KIND = "planted-self-test"
-SELF_TEST_HEAD = "# a planted ledger\n"
+SELF_TEST_HEAD = f"# a planted ledger\nformat {rule_ledger.FORMAT}\nrule {CHECK}\n"
 # A compiler that prints the target of an aarch64 GCC with no target flag, and runs the real compiler for each
 # other command: it has no -march value, and it gives its target through -mcpu.
 AARCH64_WRAPPER = """\
@@ -650,7 +703,7 @@ class Scratch:
         self.compiler = compiler
         self.build = root / "build"
         self.build.mkdir(parents=True)
-        self.ledger = root / "libstdcxx-symbols-ledger.txt"
+        self.ledger = root / f"{CHECK}.txt"
         self.ledger.write_text(SELF_TEST_HEAD, encoding="utf-8")
         (self.build / cost_meter.KIND_FILE).write_text(f"{SELF_TEST_KIND}\n", encoding="utf-8")
         (self.build / "CMakeCache.txt").write_text("CMAKE_BUILD_TYPE:STRING=Debug\nCMAKE_CXX_FLAGS:STRING=\n",
@@ -731,15 +784,30 @@ def self_test() -> int:
     if shutil.which(compiler) is None:
         print(f"check-libstdcxx-symbols --self-test: no compiler at {compiler}, so the self-test cannot run")
         return NOT_APPLICABLE
+    try:
+        rule = rule_ledger.rule_of(CHECK)
+    except (OSError, rule_ledger.LedgerError, rows_grammar.RowsError) as problem:
+        print(f"check-libstdcxx-symbols --self-test: FAILED, the registry gives no rule {CHECK}: {problem}")
+        return 2
+    kind_k = "configuration k kind k\nconfiguration k tier t\n"
     with tempfile.TemporaryDirectory(prefix="libstdcxx-symbols-") as scratch_text:
         root = Path(scratch_text)
-        for name, body in (("a row with five cells", "kind | k | t\nk | lib.a | ratchet | std | _ZSt9terminatev\n"),
-                           ("a row with an unknown mark", "kind | k | t\nk | lib.a | maybe | std | _Zx | x\n"),
-                           ("a symbol row before its kind row", "k | lib.a | ratchet | std | _ZSt9terminatev | x\n"),
-                           ("a second kind row", "kind | k | t\nkind | k | u\n")):
-            (root / "malformed.txt").write_text(body, encoding="utf-8")
+        for name, body in (("a row with three cells", f"{kind_k}@build/lib.a | ratchet | 1 | _ZSt9terminatev\n"),
+                           ("a row with an unknown mark", f"{kind_k}@build/lib.a | maybe | 1 | _Zx | -\n"),
+                           ("a row that names no archive of the build directory",
+                            f"{kind_k}lib.a | ratchet | 1 | _Zx | -\n"),
+                           ("a symbol row with the count 2", f"{kind_k}@build/lib.a | ratchet | 2 | _Zx | -\n"),
+                           ("a symbol row before the configuration rows",
+                            f"@build/lib.a | ratchet | 1 | _Zx | -\n{kind_k}"),
+                           ("a second tier of one kind", f"{kind_k}configuration k tier u\n"),
+                           ("a configuration with no tier", "configuration k kind k\n"),
+                           ("symbol rows and no configuration", "@build/lib.a | ratchet | 1 | _Zx | -\n"),
+                           ("a difference row that gives a symbol the count 2",
+                            f"{kind_k}configuration m kind m\nconfiguration m tier t\n"
+                            "@build/lib.a | ratchet | 1 | _Zx | -\n@m | @build/lib.a | ratchet | +1 | _Zx | -\n")):
+            (root / "malformed.txt").write_text(SELF_TEST_HEAD + body, encoding="utf-8")
             try:
-                read_ledger(root / "malformed.txt")
+                read_ledger(rule, root / "malformed.txt")
                 expect(f"read_ledger refuses {name}", False)
             except LedgerError:
                 expect(f"read_ledger refuses {name}", True)
@@ -753,12 +821,14 @@ def self_test() -> int:
         expect("--write refuses the first ratchet symbols without --raise",
                status == 1 and scratch.ledger.read_text(encoding="utf-8") == SELF_TEST_HEAD, text)
         status, _, text = scratch.run(write=True, allow_raise=True)
-        written = read_ledger(scratch.ledger)
+        written = read_ledger(rule, scratch.ledger)
         rows = written.rows.get(SELF_TEST_KIND, {})
-        thread_rows = [row for row in rows.get("libbase.a", {}).values() if "hardware_concurrency" in row.demangled]
-        expect("--write --raise writes the kind row and a ratchet row of the class std for std::thread",
-               status == 0 and SELF_TEST_KIND in written.targets and len(thread_rows) == 1
-               and (thread_rows[0].mark, thread_rows[0].symbol_class) == (RATCHET, "std"), text)
+        thread_rows = [row for row in rows.get("libbase.a", {}).values() if "hardware_concurrency" in row.symbol]
+        expect("--write --raise writes the configuration of the kind as the base, and a ratchet row of the class std "
+               "for std::thread",
+               status == 0 and written.table.base_name == SELF_TEST_KIND and len(thread_rows) == 1
+               and (thread_rows[0].mark, classify(thread_rows[0].symbol)) == (RATCHET, "std")
+               and f"configuration {SELF_TEST_KIND} kind {SELF_TEST_KIND}\n" in scratch.ledger.read_text(), text)
         expect("memcpy and atexit of glibc give no row", "libglibc.a" not in rows, rows.get("libglibc.a"))
         status, findings, text = scratch.run()
         expect("an equal build passes, with one warning for the library that keeps symbols",
@@ -791,7 +861,7 @@ def self_test() -> int:
                status == 1 and errors_of(findings) and all("allowlist" in message for message in errors_of(findings)
                                                           if "__cxa_guard" in message), text)
         status, _, text = scratch.run(write=True)
-        guard_rows = read_ledger(scratch.ledger).rows[SELF_TEST_KIND]["libbase.a"]
+        guard_rows = read_ledger(rule, scratch.ledger).rows[SELF_TEST_KIND]["libbase.a"]
         allowed = [guard_rows[name].mark for name in ("__cxa_guard_acquire", "__gxx_personality_v0")
                    if name in guard_rows]
         expect("--write writes the allowlist symbols without --raise, with the mark allow, and no row of libgcc",
@@ -800,41 +870,63 @@ def self_test() -> int:
         expect("after --write the build with the guard passes", status == 0 and not errors_of(findings), text)
 
         good = scratch.ledger.read_text(encoding="utf-8")
-        scratch.ledger.write_text(good.replace("| allow | abi | __cxa_guard_acquire",
-                                               "| ratchet | abi | __cxa_guard_acquire"), encoding="utf-8")
+        scratch.ledger.write_text(good.replace("@build/libbase.a | allow | 1 | __cxa_guard_acquire |",
+                                               "@build/libbase.a | ratchet | 1 | __cxa_guard_acquire |"),
+                                  encoding="utf-8")
         status, findings, text = scratch.run()
         expect("a row with the wrong mark is an error", status == 1 and any("has the mark allow" in message
                                                                             for message in errors_of(findings)), text)
-        scratch.ledger.write_text(good + f"{SELF_TEST_KIND} | libgone.a | ratchet | std | _ZSt9terminatev | x\n",
-                                  encoding="utf-8")
+        scratch.ledger.write_text(good + "@build/libgone.a | ratchet | 1 | _ZSt9terminatev | -\n", encoding="utf-8")
         status, findings, text = scratch.run()
         expect("a row of a library that the inputs do not name is an error",
                status == 1 and any("name no such archive" in message for message in errors_of(findings)), text)
         target = written.targets[SELF_TEST_KIND]
-        scratch.ledger.write_text(good.replace(f"kind | {SELF_TEST_KIND} | {target}",
-                                               f"kind | {SELF_TEST_KIND} | other"), encoding="utf-8")
+        scratch.ledger.write_text(good.replace(f"configuration {SELF_TEST_KIND} tier {target}\n",
+                                               f"configuration {SELF_TEST_KIND} tier other\n"), encoding="utf-8")
         status, _, text = scratch.run()
-        expect("a build of another target does not apply, and one line gives the two targets",
-               status == NOT_APPLICABLE and f"on the tier {target}" in text and f"{SELF_TEST_KIND} on other" in text,
-               text)
+        expect("a build of another target does not apply, one line gives the two targets, and the check prints no "
+               "rows of the base",
+               status == NOT_APPLICABLE and f"on the tier {target}" in text and f"{SELF_TEST_KIND} on other" in text
+               and "is the base configuration" in text and rule_ledger.ROW_MARK not in text, text)
         scratch.ledger.write_text(good, encoding="utf-8")
 
-        (scratch.build / cost_meter.KIND_FILE).write_text("planted-other\n", encoding="utf-8")
+        # The kind planted-other builds libbase.a with no guard.  Its rows are then the differences -1 of the guard
+        # symbols.
+        def set_kind(kind: str, units: list[str]) -> None:
+            (scratch.build / cost_meter.KIND_FILE).write_text(f"{kind}\n", encoding="utf-8")
+            scratch.archive("libbase.a", units)
+
+        set_kind("planted-other", ["base"])
         status, _, text = scratch.run()
-        expect("a build kind that the ledger does not hold does not apply, and the check prints its rows",
-               status == NOT_APPLICABLE and f"{ROW_MARK}kind | planted-other | {target}" in text
-               and f"{ROW_MARK}planted-other | libbase.a | allow | abi | __cxa_guard_acquire" in text, text)
+        mark = rule_ledger.ROW_MARK
+        expect("a build kind that the ledger does not hold does not apply, and the check prints its configuration "
+               "rows and its difference rows",
+               status == NOT_APPLICABLE and f"{mark}configuration planted-other tier {target}" in text
+               and f"{mark}@planted-other | @build/libbase.a | allow | -1 | __cxa_guard_acquire | -" in text, text)
         log = root / "ci.log"
         log.write_text("".join(f"build+test aarch64\tTest\t2026-10-02T21:00:00Z {line}\n"
                                for line in text.splitlines()), encoding="utf-8")
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            imported = import_rows(scratch.ledger, log)
+            imported = import_rows(rule, scratch.ledger, log)
         status, findings, text = scratch.run()
         expect("--import puts the rows of the log into the ledger, and the build of the kind then passes",
                imported == 0 and status == 0 and not errors_of(findings)
-               and SELF_TEST_KIND in read_ledger(scratch.ledger).targets, text)
+               and set(read_ledger(rule, scratch.ledger).targets) == {SELF_TEST_KIND, "planted-other"}, text)
+
+        set_kind(SELF_TEST_KIND, ["base", "threads", "guard"])
+        status, _, text = scratch.run(write=True, allow_raise=True)
+        set_kind("planted-other", ["base"])
+        status_other, findings, text = scratch.run()
+        expect("a write of the base keeps the set of the other kind",
+               status == 0 and status_other == 0 and not errors_of(findings), text)
+        set_kind("planted-other", ["base", "guard"])
+        status, _, text = scratch.run(write=True)
+        set_kind(SELF_TEST_KIND, ["base", "threads", "guard"])
+        status_base, findings, text = scratch.run()
+        expect("a write of the other kind writes its differences and keeps the set of the base",
+               status == 0 and status_base == 0 and not errors_of(findings), text)
         scratch.ledger.write_text(good, encoding="utf-8")
-        (scratch.build / cost_meter.KIND_FILE).write_text(f"{SELF_TEST_KIND}\n", encoding="utf-8")
+        set_kind(SELF_TEST_KIND, ["base", "guard"])
 
         # An aarch64 compiler prints no -march value and gives its target through -mcpu.
         wrapper = root / "aarch64-g++"
@@ -848,7 +940,7 @@ def self_test() -> int:
         status, findings, text = scratch.run()
         expect("a compiler with no -march value has a target, so the build of an aarch64 compiler is read",
                status == 0 and not errors_of(findings)
-               and read_ledger(scratch.ledger).targets[SELF_TEST_KIND].startswith("default-"), text)
+               and read_ledger(rule, scratch.ledger).targets[SELF_TEST_KIND].startswith("default-"), text)
         scratch.compiler = compiler
         scratch.write_inputs(scratch.libraries)
         scratch.ledger.write_text(good, encoding="utf-8")
@@ -889,9 +981,15 @@ def main(argv: list[str]) -> int:
     if args.self_test:
         return self_test()
     root = args.root.resolve()
+    ledger_path = rule_ledger.ledger_path(CHECK, root)
     if args.import_path is not None:
-        return import_rows(root / LEDGER, args.import_path)
+        try:
+            rule = rule_ledger.rule_of(CHECK)
+        except (OSError, rule_ledger.LedgerError, rows_grammar.RowsError) as problem:
+            print(f"{CHECK}: the ledger is not written: {problem}", file=sys.stderr)
+            return 1
+        return import_rows(rule, ledger_path, args.import_path)
     if args.build_dir is None or (args.allow_raise and not args.write):
         parser.print_usage(sys.stderr)
         return 2
-    return run(args.build_dir.resolve(), root, root / LEDGER, args.warnings_dir, args.write, args.allow_raise)
+    return run(args.build_dir.resolve(), root, ledger_path, args.warnings_dir, args.write, args.allow_raise)

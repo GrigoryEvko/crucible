@@ -25,15 +25,18 @@ WHAT THE CHECK READS
     * The measured rule test-time of utils/registry.txt: the warning
       threshold and the error threshold, in seconds.
     * The kind of the build (BUILD_DIR/build-kind.txt).
-    * utils/scripts/test-time-ledger.txt, `kind | test | value | reason`: the
-      tests that take more than the error threshold at this time.
+    * The ledger utils/ledgers/test-time.txt: the tests that take more than
+      the error threshold at this time, one row for each test and build kind,
+      '- | KIND | SECONDS | TEST | REASON' (utils/assay/core/meter.py, THE
+      REGISTRY AND THE LEDGERS).  SECONDS is the wall time of the test at the
+      last --write.  A ledger that does not exist has no row.
     * The test list of the build (ctest --show-only=json-v1), only when a
       test has a finding or the ledger has a row of the kind: the CMake file
       and the line that register each test, for the place of a finding, and
       the tests that the build registers.
     The variables CRUCIBLE_TEST_REGISTRY and CRUCIBLE_TEST_LEDGERS name
-    another registry and another directory of ledgers, as for the test
-    launcher.  Only a self-test sets them.
+    another registry and another directory of ledgers, which holds
+    test-time.txt, as for the test launcher.  Only a self-test sets them.
 
 THE LOG
     ctest writes one block for each test when the test ends:
@@ -113,12 +116,18 @@ from pathlib import Path
 from assay.core import meter as cost_meter
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
-from assay.core.paths import DATA, REPO_ROOT
+from assay.core.paths import REPO_ROOT
 from assay.setup import pins as cmake_pin
 
 CHECK = "test-time"
 ROOT = REPO_ROOT
-LEDGER_NAME = "test-time-ledger.txt"
+# The head comment of a ledger that --write makes.
+LEDGER_COMMENT = (
+    "# The ledger of the measured rule test-time of utils/registry.txt: the tests that can take more wall time\n"
+    "# than its error threshold.  A row is '- | KIND | SECONDS | TEST | REASON'.  KIND is the build kind of\n"
+    "# BUILD_DIR/build-kind.txt, and SECONDS is the wall time of the test at the last --write.  A row applies\n"
+    "# only to a build of its kind.  `python3 utils/bin/guard explain test-time` tells the rule, and\n"
+    "# `python3 utils/bin/guard check --rule test-time --build-dir DIR --write` writes this file.\n")
 REGISTRY_ENV = "CRUCIBLE_TEST_REGISTRY"
 LEDGERS_ENV = "CRUCIBLE_TEST_LEDGERS"
 TEMPORARY = Path("Testing") / "Temporary"
@@ -254,13 +263,13 @@ def read_ledger(path: Path, kind: str) -> dict[str, Row]:
         kind: The kind of the build
 
     Returns:
-        Each row of the kind, by its test
+        Each row of the kind, by its test.  A ledger that does not exist has no row
 
     Raises:
         ValueError: If a row of the ledger is malformed
-        OSError: If the ledger cannot be read
+        OSError: If the ledger exists and cannot be read
     """
-    rows, problems, _ = cost_meter.read_ledger_rows(str(path))
+    rows, problems, _ = cost_meter.read_kind_rows(CHECK, cost_meter.ITEM_NAME, str(path))
     if problems:
         number, problem = problems[0]
         raise ValueError(f"{path}:{number}: {problem}")
@@ -388,7 +397,9 @@ def write_ledger(path: Path, times: list[TestTime], launched: set[str], kind: st
     """Write the rows of the kind again for the tests that run without the launcher.
 
     A row of another kind and a row of a test that the launcher runs stay.  A
-    test that keeps its row keeps its reason.
+    test that keeps its row keeps its reason.  The ledger keeps its head
+    comment, a new ledger takes LEDGER_COMMENT, and a ledger with no row has
+    no file.
 
     Args:
         path: The ledger
@@ -397,15 +408,13 @@ def write_ledger(path: Path, times: list[TestTime], launched: set[str], kind: st
         kind: The kind of the build
         budget: The measured rule test-time
     """
-    rows, _, header = cost_meter.read_ledger_rows(str(path))
-    kept = {key: value for key, value in rows.items() if key[0] != kind or key[1] in launched}
+    rows, _, _ = cost_meter.read_kind_rows(CHECK, cost_meter.ITEM_NAME, str(path))
+    kept = {key: (value, reason) for key, (_, value, reason) in rows.items() if key[0] != kind or key[1] in launched}
     for item in times:
         if item.name not in launched and item.seconds > budget.error:
             reason = rows.get((kind, item.name), (0, 0.0, "the wall time in one ctest run"))[2]
-            kept[(kind, item.name)] = (0, item.seconds, reason)
-    lines = [f"{key[0]} | {key[1]} | {value[1]:.1f} | {value[2]}\n" for key, value in sorted(kept.items())]
-    path.write_text("\n".join(header).rstrip("\n") + "\n" + ("\n" + "".join(lines) if lines else ""),
-                    encoding="utf-8")
+            kept[(kind, item.name)] = (round(item.seconds, 1), reason)
+    cost_meter.write_kind_rows(CHECK, cost_meter.ITEM_NAME, str(path), kept, LEDGER_COMMENT)
 
 
 def run(build: Path, log: Path | None, ctest: str, warnings_dir: Path | None, should_write: bool) -> int:
@@ -422,7 +431,7 @@ def run(build: Path, log: Path | None, ctest: str, warnings_dir: Path | None, sh
         The exit code
     """
     registry = Path(os.environ.get(REGISTRY_ENV) or check_report.REGISTRY)
-    ledger_path = Path(os.environ.get(LEDGERS_ENV) or DATA) / LEDGER_NAME
+    ledger_path = Path(cost_meter.ledger_file(CHECK, os.environ.get(LEDGERS_ENV)))
     shown_log = display(log) if log is not None else display(build / TEMPORARY)
     try:
         budget = check_report.read_budgets(registry)[CHECK]
@@ -574,7 +583,6 @@ def self_test_cases(cmake: str, ctest: str) -> int:
         quiet_build.mkdir()
         quiet_ledgers.mkdir()
         (quiet_build / cost_meter.KIND_FILE).write_text(f"{kind}\n", encoding="utf-8")
-        (quiet_ledgers / LEDGER_NAME).write_text("# kind | test | value | reason\n", encoding="utf-8")
         earlier_ledgers = os.environ.get(LEDGERS_ENV)
         os.environ[LEDGERS_ENV] = str(quiet_ledgers)
         try:
@@ -606,22 +614,37 @@ def self_test_cases(cmake: str, ctest: str) -> int:
                    log_of_parent(root, os.getpid()) == (temporary / f"{LOG_PREFIX}.tmp1f2e3").resolve())
 
         ledger = root / "ledger.txt"
-        for label, body in (("three cells", "k | a | 1\n"), ("an empty reason", "k | a | 1 | \n"),
-                            ("a value that is not a number", "k | a | x | r\n")):
-            ledger.write_text(body, encoding="utf-8")
+        head = f"# a header\n\nformat 1\nrule {CHECK}\n"
+        expect("read_ledger gives no row for a ledger that does not exist", read_ledger(ledger, "k") == {})
+        for label, body in (("three cells", "- | k | 1\n"), ("an empty reason", "- | k | 1 | a | -\n"),
+                            ("a value that is not a number", "- | k | x | a | r\n"),
+                            ("a kind with an uppercase letter", "- | Debug | 1 | a | r\n"),
+                            ("a row that names a file and not a test", "test/a | k | 1 | - | r\n")):
+            ledger.write_text(head + body, encoding="utf-8")
             try:
                 read_ledger(ledger, "k")
                 expect(f"read_ledger refuses {label}", False)
-            except ValueError:
-                expect(f"read_ledger refuses {label}", True)
-        ledger.write_text("# a header\n\nother-kind | b | 40.0 | another kind\nx86_64-debug-asan | launched | 40.0 | "
-                          "the launcher\nx86_64-debug-asan | c | 21.0 | kept\n", encoding="utf-8")
+            except ValueError as problem:
+                expect(f"read_ledger refuses {label}, at its line", f"{ledger}:5: " in str(problem))
+        ledger.write_text(head + "- | other-kind | 40 | b | another kind\n- | x86_64-debug-asan | 40 | launched | "
+                          "the launcher\n- | x86_64-debug-asan | 21 | c | kept\n", encoding="utf-8")
         write_ledger(ledger, [TestTime("b", 30.0), TestTime("a", 1.0), TestTime("c", 22.0)], {"launched"}, kind,
                      budget)
         rows = read_ledger(ledger, kind)
-        expect("--write keeps a reason, adds a row above the error threshold, and keeps a row of a launched test",
-               set(rows) == {"b", "c", "launched"} and rows["c"].reason == "kept")
+        expect("--write keeps a reason, adds a row above the error threshold, keeps a row of a launched test and "
+               "keeps the head comment",
+               set(rows) == {"b", "c", "launched"} and rows["c"].reason == "kept"
+               and ledger.read_text(encoding="utf-8").startswith("# a header\n"))
         expect("--write keeps a row of another kind", set(read_ledger(ledger, "other-kind")) == {"b"})
+        fresh = root / "fresh" / "test-time.txt"
+        fresh.parent.mkdir()
+        write_ledger(fresh, [TestTime("b", 30.0)], set(), kind, budget)
+        written = fresh.read_text(encoding="utf-8")
+        expect("--write gives a new ledger its head comment and the row of the test",
+               written.startswith(LEDGER_COMMENT)
+               and f"- | {kind} | 30 | b | the wall time in one ctest run\n" in written)
+        write_ledger(fresh, [TestTime("b", 1.0)], set(), kind, budget)
+        expect("--write removes a ledger that has no row", not fresh.exists())
         expect("the repository registry has the measured rule test-time", CHECK in check_report.read_budgets())
         warnings_dir = root / "warnings"
         with contextlib.redirect_stdout(io.StringIO()) as printed:
@@ -684,7 +707,7 @@ def through_ctest(work: Path, cmake: str, ctest: str, expect: Callable[[str, boo
                               env=environment, check=False)
         return proc.returncode, proc.stdout + proc.stderr
 
-    (ledgers / LEDGER_NAME).write_text("# kind | test | value | reason\n", encoding="utf-8")
+    ledger = Path(cost_meter.ledger_file(CHECK, str(ledgers)))
     status, said = ctest_run(0, 0)
     expect("ctest fails after its tests when a script test is over the error threshold, and names the test and "
            "its place", status != 0 and "error: [test-time] the test planted_script took" in said
@@ -699,14 +722,13 @@ def through_ctest(work: Path, cmake: str, ctest: str, expect: Callable[[str, boo
     expect("a run of a part of the suite under the thresholds gives no finding and removes the warnings file",
            status == 0 and "[test-time]" not in said and "1 tests without the launcher" in said
            and not warnings_file.exists())
-    (ledgers / LEDGER_NAME).write_text("# kind | test | value | reason\n"
-                                       "x86_64-debug-asan | planted_script | 1.0 | a planted reason\n"
-                                       "x86_64-debug-asan | planted_wrapped | 1.0 | a planted reason\n",
-                                       encoding="utf-8")
+    ledger.write_text(f"# a planted ledger\nformat 1\nrule {CHECK}\n"
+                      "- | x86_64-debug-asan | 1 | planted_script | a planted reason\n"
+                      "- | x86_64-debug-asan | 1 | planted_wrapped | a planted reason\n", encoding="utf-8")
     status, said = ctest_run(0, 0)
     expect("a ledger row of the kind admits a script test over the error threshold, with a warning",
            status == 0 and said.count("a planted reason") == 2 and "error:" not in said)
-    (ledgers / LEDGER_NAME).write_text("# kind | test | value | reason\n", encoding="utf-8")
+    ledger.unlink()
     status, said = ctest_run(0, 0, GITHUB_ACTIONS="true")
     expect("on a CI runner, ctest passes with a demoted warning for a script test over the error threshold",
            status == 0 and "warning: [test-time] the test planted_script took" in said and "demoted" in said)

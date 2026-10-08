@@ -1,0 +1,4 @@
+# a planted ledger of the policy admit whose row holds a count in place of the word admit
+format 1
+rule admit-rule
+data/live.txt | kind | 3 | entity | a planted reason

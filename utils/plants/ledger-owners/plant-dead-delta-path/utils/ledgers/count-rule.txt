@@ -1,0 +1,7 @@
+# a planted ledger whose difference row names a path that the tree does not hold
+format 1
+rule count-rule
+configuration base machine x86_64
+configuration arm machine aarch64
+data/live.txt | kind | 1 | - | -
+@arm | data/gone.txt | kind | +1 | - | -

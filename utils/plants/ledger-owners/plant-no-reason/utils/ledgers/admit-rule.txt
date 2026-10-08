@@ -1,0 +1,4 @@
+# a planted ledger of the policy admit whose row gives no reason
+format 1
+rule admit-rule
+data/live.txt | kind | admit | entity | -

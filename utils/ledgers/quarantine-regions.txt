@@ -1,0 +1,23 @@
+# utils/ledgers/quarantine-regions.txt — the opt-out regions of the quarantine.
+#
+# The rule quarantine-regions reads this ledger (`python3 utils/bin/guard explain quarantine-regions`).
+# A row counts the regions that CRUCIBLE_I_KNOW_WHAT_IM_DOING("CLASS: reason") of
+# include/foundation/Quarantine.h opens in a tracked C++ file with one reason:
+#   FILE | - | N | REASON | -
+# The test quarantine_regions fails for a region with no row and for a row with no region.  The
+# number of regions can only fall: the commit that removes a region writes the ledger again with
+#   python3 utils/bin/guard check --rule quarantine-regions --write
+# Only a region of a reason class of CLAUDE.md section XXII gets a new row, with --write --admit.
+# utils/ledgers/quarantine.txt holds the findings that each region covers, so a region that covers
+# more fails the test quarantine_ratchet until
+#   python3 utils/bin/guard check --rule quarantine --build-dir build --write --admit
+format 1
+rule quarantine-regions
+test/foundation/test_core_scalar.cpp | - | 1 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
+test/shape/core_shapes.cpp | - | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
+utils/tools/quarantine/test/contracts.cpp | - | 1 | PROBE: the test needs the specifier | -
+utils/tools/quarantine/test/opt_out.cpp | - | 1 | PROBE: the test needs a raw buffer | -
+utils/tools/quarantine/test/own_region_macro.cpp | - | 1 | PROBE: an own macro | -
+utils/tools/quarantine/test/reason_without_class.cpp | - | 1 | a reason with no class | -
+utils/tools/quarantine/test/region_end_wrapper.cpp | - | 1 | PROBE: a region that a macro closes | -
+utils/tools/quarantine/test/unclosed_region.cpp | - | 1 | PROBE: a region that nothing closes | -

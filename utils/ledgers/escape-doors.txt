@@ -1,0 +1,22 @@
+# The ledger of the rule escape-doors: the escape surface that the rule locks.
+# `python3 utils/bin/guard explain escape-doors` tells the rule.
+#
+# The row `- | hatch-total | admit | N | REASON` pins the count N of the
+# discouraged, type-checked escape hatches (from_raw, from_raw_nonnull,
+# into_raw, release, declassify).  A new hatch raises the count, and the
+# rule fails until the same commit raises the pin.  So no hatch comes in
+# quietly.  The removal of a hatch lowers the count, and the pin falls in
+# the same commit.
+#
+# Each row `PATH | door | admit | NAME | REASON` admits one bare door: a
+# raw escape that is not an accessor, a mint or a hatch, but is safe for
+# the reason of the row.  The rows only become fewer: a bare door gets a
+# new class, and no row is added.
+#
+# `python3 utils/bin/guard check --rule escape-doors --refresh` writes the
+# pin again, keeps the reason of each live door, and writes this comment.
+format 1
+rule escape-doors
+- | hatch-total | admit | 1 | The count of the discouraged hatches.  A new hatch raises it, and --refresh writes the pin again in the same commit
+include/fixy/concurrent/Topology.h | door | admit | instance | singleton accessor: returns a reference to a function-static const Topology; static lifetime, cannot dangle
+include/foundation/effects/Computation.h | door | admit | extract | within-object accessor: returns a reference to the carried value; provenance is the Computation itself, so the reference lives as long as it does

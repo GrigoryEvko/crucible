@@ -237,15 +237,25 @@ def changes(root: Path, paths: Sequence[str]) -> dict[str, tuple[frozenset[str],
     return found
 
 
-def path_history(root: Path, paths: Sequence[str]) -> PathHistory:
+def path_history(root: Path, paths: Sequence[str], groups: Sequence[Sequence[str]] = ()) -> PathHistory:
     """Read each commit that changed one of the paths, and each path at each such commit, its parent, HEAD and the
     working tree.
+
+    A commit that changed one path of a group also reads each other path of
+    the group, so the state of the group is whole at the commit and at its
+    parent.  A group holds paths of `paths`.
 
     Raises:
         GitError: If git fails
     """
     found = commits(root, paths)
-    requests = [(commit.sha, path) for commit in found for path in commit.paths]
+    requests: list[tuple[str, str]] = []
+    for commit in found:
+        wanted = list(commit.paths)
+        for group in groups:
+            if any(path in commit.paths for path in group):
+                wanted += [path for path in group if path not in wanted]
+        requests += [(commit.sha, path) for path in wanted]
     names = ([f"{sha}:{path}" for sha, path in requests] + [f"{sha}^1:{path}" for sha, path in requests]
              + [f"HEAD:{path}" for path in paths])
     contents = blobs(root, names)

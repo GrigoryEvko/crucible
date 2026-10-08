@@ -1,0 +1,4 @@
+# a planted registry: a rule of the policy admit and a rule of the policy count, each with a valid ledger
+format 1
+rule admit-rule engine=meta scope=tracked ledger=admit doc=XV | a planted refusal | fix the planted file
+rule count-rule engine=meta scope=tracked ledger=count doc=XV | a planted refusal | fix the planted file

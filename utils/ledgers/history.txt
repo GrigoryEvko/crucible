@@ -1,10 +1,10 @@
 # The ledger of the rule history: the rises of the past that no measurement in a commit admits.
 # A row PATH | KIND | admit | ENTITY | REASON admits one error of the rule.  The row
 # utils/registry.txt | warn|error | admit | COMMIT RULE | REASON admits the rise of a threshold, and
-# the row utils/scripts/quarantine-ledger.txt | raise | admit | COMMIT | REASON admits a raise of the
+# the row utils/ledgers/quarantine.txt | raise | admit | COMMIT | REASON admits a raise of the
 # quarantine ledger.  COMMIT is the hash in 9 characters.  REASON gives the measurement that the commit
 # did not give.  A row that admits no finding is an error.  `python3 utils/bin/guard explain history`
 # tells the rule.
 format 1
 rule history
-utils/scripts/quarantine-ledger.txt | raise | admit | fd5f25863 | Each build compiles the SenseHub v2 sources, and no configuration compiled them before. The 143 new findings were in the tree, and the commit adds no code to a quarantined file
+utils/ledgers/quarantine.txt | raise | admit | fd5f25863 | Each build compiles the SenseHub v2 sources, and no configuration compiled them before. The 143 new findings were in the tree, and the commit adds no code to a quarantined file

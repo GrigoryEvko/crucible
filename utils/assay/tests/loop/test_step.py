@@ -160,10 +160,9 @@ class Bench:
         self.object = root / "out" / "source.o"
         self.object.parent.mkdir()
         self.record_path = Path(f"{self.object}.cost")
+        # The directory of the planted ledgers.  A ledger with no row has no file.
         self.ledgers = root / "ledgers"
         self.ledgers.mkdir()
-        for row in ("compile-memory", "link-memory"):
-            (self.ledgers / f"{row}-ledger.txt").write_text("# a planted ledger\n", encoding="utf-8")
         self.registry = root / "registry.txt"
         self.registry.write_text(QUIET, encoding="utf-8")
         self.env = dict(os.environ, CRUCIBLE_BUILD_REGISTRY=str(self.registry),
@@ -197,6 +196,11 @@ class Bench:
     def table(self, text: str) -> None:
         """Write the registry of the test."""
         self.registry.write_text(text, encoding="utf-8")
+
+    def ledger(self, rule: str, rows: str) -> None:
+        """Write the planted ledger of one rule with these rows after its head lines."""
+        Path(cost_meter.ledger_file(rule, str(self.ledgers))).write_text(
+            f"# a planted ledger\nformat 1\nrule {rule}\n{rows}", encoding="utf-8")
 
 
 class Verdicts:
@@ -325,22 +329,27 @@ def run_memory_ledger(bench: Bench, verdicts: Verdicts) -> None:
            result.returncode == 1 and not bench.object.exists() and bench.record().get("result") == "rejected"
            and found_line is not None and found_line.level == "error" and found_line.check == "compile-memory"
            and "no row of" in found_line.message)
-    (bench.ledgers / "compile-memory-ledger.txt").write_text(
-        f"# a planted ledger\n{KIND} | out/source.o | 0.01 | the test admits it\n", encoding="utf-8")
+    bench.ledger("compile-memory", f"@build/out/source.o | {KIND} | 0.01 | - | the test admits it\n")
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
-    expect("a ledger row with a reason admits the compile, with a warning",
+    expect("a ledger row with a reason admits the compile, with a warning that names the row",
            result.returncode == 0 and bench.object.exists() and bench.record().get("result") == "built"
            and found_line is not None and found_line.level == "warning" and "the test admits it" in
-           found_line.message)
-    (bench.ledgers / "compile-memory-ledger.txt").write_text(
-        "# a planted ledger\nother-kind | out/source.o | 0.01 | another kind\n", encoding="utf-8")
+           found_line.message and "compile-memory.txt:4 " in found_line.message)
+    bench.ledger("compile-memory", "@build/out/source.o | other-kind | 0.01 | - | another kind\n")
     result = bench.launch(bench.tool)
     expect("a row of another kind does not admit the compile", result.returncode == 1)
-    (bench.ledgers / "compile-memory-ledger.txt").write_text(
-        f"# a planted ledger\n{KIND} | out/source.o | 0.01 |\n", encoding="utf-8")
+    bench.ledger("compile-memory", f"out/source.o | {KIND} | 0.01 | - | not an output of the build directory\n")
     result = bench.launch(bench.tool)
-    expect("a row with no reason does not admit the compile", result.returncode == 1)
+    found_line = last_finding(result.stderr)
+    expect("a row whose PATH does not name an output of the build directory does not admit the compile, and the "
+           "error gives the line of the row",
+           result.returncode == 1 and found_line is not None and "compile-memory.txt:4: " in found_line.message)
+    bench.ledger("compile-memory", f"@build/out/source.o | {KIND} | 0.01 | - | -\n")
+    result = bench.launch(bench.tool)
+    found_line = last_finding(result.stderr)
+    expect("a row with no reason does not admit the compile, and the error gives the line of the row",
+           result.returncode == 1 and found_line is not None and "compile-memory.txt:4: " in found_line.message)
     (bench.root / "build-kind.txt").unlink()
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)

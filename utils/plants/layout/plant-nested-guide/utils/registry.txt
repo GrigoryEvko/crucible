@@ -1,0 +1,3 @@
+# a planted registry: one path row holds the registry, and two guides are outside the root
+format 1
+path utils/registry.txt | the planted registry

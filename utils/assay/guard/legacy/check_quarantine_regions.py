@@ -21,13 +21,13 @@ THE FILES
     tracked C++ files, and one parse for each file that names the macro.
 
 THE LEDGER
-    utils/scripts/quarantine-region-ledger.txt holds one row for each region:
-    "FILE | REASON".  Two regions of one file with one reason are two equal
-    rows.  The plugin refuses a reason that does not start with its class in
-    each compile.  utils/scripts/quarantine-ledger.txt holds the findings
-    that each region covers, and the rule quarantine-ratchet (`guard check
-    --rule quarantine-ratchet`) refuses a region that covers more (THE OPT-OUT
-    REGIONS there).
+    utils/ledgers/quarantine-regions.txt (assay.core.ledger, the policy count)
+    holds one row for each file and reason: "FILE | - | N | REASON | -", where
+    N is the number of regions of the file with that reason.  The plugin
+    refuses a reason that does not start with its class in each compile.
+    utils/ledgers/quarantine.txt holds the findings that each region covers,
+    and the rule quarantine (`guard check --rule quarantine`) refuses a region
+    that covers more (THE OPT-OUT REGIONS there).
 
 THE VERDICT
     * A region with no row is an error.  The number of regions can only fall.
@@ -54,17 +54,20 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import dataclasses
 import io
 import sys
 import tempfile
 from collections import Counter
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
 from assay.core import report as check_report
+from assay.core import rows as rows_grammar
 from assay.readers import tsast
 
 CHECK = "quarantine-regions"
-LEDGER = Path("utils/scripts/quarantine-region-ledger.txt")
+LEDGER = Path(rule_ledger.shown_path(CHECK))
 MACRO = "CRUCIBLE_I_KNOW_WHAT_IM_DOING"
 MACRO_BYTES = MACRO.encode()
 NOT_APPLICABLE = 3
@@ -139,40 +142,28 @@ def tree_regions(root: Path) -> tuple[Counter[tuple[str, str]], dict[tuple[str, 
     return counts, lines
 
 
-def read_ledger(root: Path) -> tuple[list[str], Counter[tuple[str, str]], dict[tuple[str, str], int],
+def read_ledger(root: Path) -> tuple[rule_ledger.Ledger, Counter[tuple[str, str]], dict[tuple[str, str], int],
                                      list[check_report.Finding]]:
-    """Read the ledger of one tree.
+    """Read the ledger of one tree through assay.core.ledger.
 
     Returns:
-        The head comment lines, the count of each (file, reason), the line of
-        the first row of each, and an error for each row that does not have the
-        format
+        The ledger, the count of each (file, reason), the line of the row of
+        each, and an error when the file does not obey the ledger schema
     """
-    path = root / LEDGER
-    head: list[str] = []
+    rule = rule_ledger.rule_of(CHECK)
     rows: Counter[tuple[str, str]] = Counter()
     lines: dict[tuple[str, str], int] = {}
-    errors: list[check_report.Finding] = []
     try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as problem:
-        errors.append(check_report.Finding("error", LEDGER.as_posix(), 0, CHECK,
-                                           f"the ledger cannot be read ({problem}).  Write it with --write"))
-        return head, rows, lines, errors
-    for number, line in enumerate(text.splitlines(), start=1):
-        if not line.strip() or line.startswith("#"):
-            if not rows:
-                head.append(line)
-            continue
-        file, separator, reason = line.partition(" | ")
-        if not separator or not file.strip() or not reason.strip():
-            errors.append(check_report.Finding("error", LEDGER.as_posix(), number, CHECK,
-                                               f"the row {line!r} is not 'FILE | REASON'"))
-            continue
-        key = (file.strip(), reason.strip())
-        rows[key] += 1
-        lines.setdefault(key, number)
-    return head, rows, lines, errors
+        ledger = rule_ledger.read(rule, root)
+    except (OSError, rows_grammar.RowsError) as problem:
+        return (rule_ledger.empty(rule), rows, lines,
+                [check_report.Finding("error", LEDGER.as_posix(), getattr(problem, "line", 0), CHECK,
+                                      f"the ledger cannot be read ({problem}).  Correct the row, or write the ledger "
+                                      f"again with --write")])
+    for key, entry in ledger.base.items():
+        rows[(key.path, key.entity)] = int(entry.value)
+        lines[(key.path, key.entity)] = entry.line
+    return ledger, rows, lines, []
 
 
 def evaluate(root: Path) -> list[check_report.Finding]:
@@ -206,7 +197,10 @@ def write(root: Path, is_admitted: bool) -> int:
         0 when it wrote the ledger, 1 when it refused a region with no row
     """
     counts, _ = tree_regions(root)
-    head, rows, _, _ = read_ledger(root)
+    ledger, rows, _, errors = read_ledger(root)
+    if errors:
+        print(f"check-quarantine-regions: the ledger is not written: {errors[0].message}", file=sys.stderr)
+        return 1
     new = sorted(key for key in counts if counts[key] > rows[key])
     if new and not is_admitted:
         for file, reason in new:
@@ -214,11 +208,11 @@ def write(root: Path, is_admitted: bool) -> int:
                   f"the ledger from growing.  Use --admit only for a reason class of CLAUDE.md section XXII",
                   file=sys.stderr)
         return 1
-    body = [f"{file} | {reason}" for (file, reason) in sorted(counts.elements())]
-    while head and not head[-1].strip():
-        head.pop()
-    (root / LEDGER).write_text("\n".join([*head, *([""] if head and body else []), *body]) + "\n", encoding="utf-8")
-    print(f"check-quarantine-regions: wrote {len(body)} row(s) to {root / LEDGER}", file=sys.stderr)
+    base = {rule_ledger.Key(file, "", reason): rule_ledger.Entry(rule_ledger.Key(file, "", reason), count, "")
+            for (file, reason), count in counts.items()}
+    rule_ledger.store(dataclasses.replace(ledger, base=base), root)
+    print(f"check-quarantine-regions: wrote {len(base)} row(s) of {sum(counts.values())} region(s) to "
+          f"{root / LEDGER}", file=sys.stderr)
     return 0
 
 
@@ -250,7 +244,8 @@ def self_test() -> int:
             "#endif\n", encoding="utf-8")
         (root / "include/Plain.cpp").write_text("int plain_value() { return 1; }\n", encoding="utf-8")
         ledger = root / LEDGER
-        ledger.write_text("# the head comment\n", encoding="utf-8")
+        head = f"# the head comment\nformat 1\nrule {CHECK}\n"
+        ledger.write_text(head, encoding="utf-8")
 
         expect("the check parses only the files whose bytes name the macro",
                naming_files(root) == ["include/Abi.cpp", "include/Quarantine.h"], naming_files(root))
@@ -260,21 +255,24 @@ def self_test() -> int:
         expect("a region with no row is an error, and a comment, a text and the definition are no region",
                len(errors) == 2 and all(item.path == "include/Abi.cpp" for item in errors), found)
         expect("--write refuses a new region", write(root, False) == 1 and "Abi.cpp" not in ledger.read_text())
+        written = ledger.read_text()
         expect("--admit writes the regions of each preprocessor arm and keeps the head comment",
-               write(root, True) == 0 and ledger.read_text().startswith("# the head comment\n")
-               and ledger.read_text().count("include/Abi.cpp | ") == 2, ledger.read_text())
+               write(root, True) == 0 and (written := ledger.read_text()).startswith(head)
+               and written.count("include/Abi.cpp | ") == 2
+               and "include/Abi.cpp | - | 1 | MEASURE: an arm that no preset compiles | -\n" in written, written)
         found = evaluate(root)
         expect("the ledger and the tree agree: each row gives a warning and no error",
                [item.level for item in found] == ["warning", "warning"], found)
 
-        ledger.write_text(ledger.read_text() + "include/Abi.cpp | ABI: the dispatcher takes a raw pointer\n",
-                          encoding="utf-8")
+        ledger.write_text(written.replace("| 1 | ABI: the dispatcher", "| 2 | ABI: the dispatcher"), encoding="utf-8")
         found = evaluate(root)
-        expect("a row with no region is an error", any(item.level == "error" and item.path == LEDGER.as_posix()
-                                                       for item in found), found)
-        ledger.write_text(ledger.read_text() + "a row with no separator\n", encoding="utf-8")
-        expect("a row that does not have the format is an error",
-               any("is not 'FILE | REASON'" in item.message for item in evaluate(root)))
+        expect("a row that admits more regions than the file has is an error",
+               any(item.level == "error" and item.path == LEDGER.as_posix() for item in found), found)
+        ledger.write_text(written + "include/Abi.cpp | a row with no value\n", encoding="utf-8")
+        expect("a row that does not obey the ledger schema is an error at its line",
+               any(item.level == "error" and item.path == LEDGER.as_posix() and item.line == written.count("\n") + 1
+                   and "cannot be read" in item.message for item in evaluate(root)))
+        expect("--write refuses a ledger that does not obey its schema", write(root, True) == 1)
 
         warnings_dir = root / "warnings"
         with check_report.github_actions(False), contextlib.redirect_stdout(io.StringIO()) as printed:

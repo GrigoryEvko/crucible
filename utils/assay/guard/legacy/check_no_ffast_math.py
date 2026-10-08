@@ -50,10 +50,11 @@ SCOPE
 
 EXEMPTIONS
     `// NO-FFAST-MATH-OK: <reason>` on the row of an override exempts it.
-    utils/scripts/no-ffast-math-allowlist.txt holds `path:key` rows, where the key
-    is the text of the row without its comments, so an edit above the site
-    does not move it.  A row that matches no live site is stale.  A banned
-    build flag has no exemption.
+    A row `PATH | - | admit | KEY | REASON` of utils/ledgers/no-ffast-math.txt
+    (policy admit) also exempts it.  KEY is the text of the row of the
+    override without its comments, so an edit above the site does not move
+    it.  A row that matches no live site is stale.  A banned build flag has
+    no exemption.
 
 USAGE
     guard check --rule no-ffast-math [--build-dir BUILD_DIR]
@@ -75,6 +76,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.guard.preprocessed import split_command
 from assay.readers import tsast
 from assay.setup import pins as cmake_pin
@@ -82,7 +85,8 @@ from assay.setup import pins as cmake_pin
 REPO_ROOT = tsast.REPO_ROOT
 SOURCE_ROOTS = ("include", "src", "vessel", "utils/tools", "test", "bench", "examples")
 EXEMPT_COMPONENTS = frozenset({"third_party", "external", "vendor"})
-ALLOWLIST = "utils/scripts/no-ffast-math-allowlist.txt"
+RULE = "no-ffast-math"
+LEDGER = rule_ledger.shown_path(RULE)
 MARKER = "NO-FFAST-MATH-OK"
 PRESETS = "CMakePresets.json"
 
@@ -418,19 +422,31 @@ def source_violations(root: Path) -> tuple[list[Violation], list[str]]:
 # ── The check ───────────────────────────────────────────────────────────
 
 
-def load_allowlist(path: Path) -> list[str]:
-    """Return the `path:key` rows of the allowlist, without comments or blank lines."""
-    if not path.is_file():
-        return []
-    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines()
-            if line.strip() and not line.strip().startswith("#")]
+def load_ledger(root: Path) -> tuple[list[str], list[str]]:
+    """Return the `path:key` key of each row of the ledger, and the read failures.
+
+    A ledger with no file has no row.  A row has no KIND, and its ENTITY is the key of its site.
+    """
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), root)
+    except (OSError, rows_grammar.RowsError, rule_ledger.LedgerError) as problem:
+        return [], [f"{LEDGER}: the ledger cannot be read: {problem}"]
+    keys: list[str] = []
+    failures: list[str] = []
+    for key, entry in sorted(ledger.base.items()):
+        if key.kind or not key.path or not key.entity:
+            failures.append(f"{LEDGER}:{entry.line}: a row is 'PATH | - | admit | KEY | REASON', with the key of "
+                            f"the site in KEY")
+            continue
+        keys.append(f"{key.path}:{key.entity}")
+    return keys, failures
 
 
 def check(root: Path, build_dir: Path | None) -> int:
     """Run every scan and print the report.
 
     Returns:
-        0 clean, 1 on a violation or a read failure, 2 on a stale allowlist row
+        0 clean, 1 on a violation or a read failure, 2 on a stale ledger row
     """
     violations: list[Violation] = []
     failures: list[str] = []
@@ -440,18 +456,19 @@ def check(root: Path, build_dir: Path | None) -> int:
     for found, lost in scans:
         violations += found
         failures += lost
-    rows = load_allowlist(root / ALLOWLIST)
+    rows, ledger_failures = load_ledger(root)
+    failures += ledger_failures
     admitted = set(rows)
     live = {violation.key for violation in violations if violation.key is not None}
     reported = [violation for violation in violations if violation.key not in admitted]
     for failure in failures:
         print(f"NO-FFAST-MATH read failure: {failure}", file=sys.stderr)
     for violation in reported:
-        suffix = f"  Allowlist key: {violation.key}" if violation.key else ""
+        suffix = f"  Ledger key: {violation.key}" if violation.key else ""
         print(f"NO-FFAST-MATH violation: {violation.where}: {violation.what}.{suffix}", file=sys.stderr)
     stale = [row for row in rows if row not in live]
     for row in stale:
-        print(f"NO-FFAST-MATH stale: {row} matches no override.  Remove it from {ALLOWLIST}.", file=sys.stderr)
+        print(f"NO-FFAST-MATH stale: {row} matches no override.  Remove its row from {LEDGER}.", file=sys.stderr)
     if reported or failures:
         print("check-no-ffast-math: the fast-math family is banned (CLAUDE.md §V).  The floor is "
               "crucible_fp_strict (cmake/FpStrict.cmake): remove the flag, or remove the override or mark its "
@@ -562,17 +579,19 @@ def self_test(cmake: str, cxx: str) -> int:
         in_test.parent.mkdir(parents=True)
         in_test.write_text('[[gnu::optimize("fast-math")]] inline double in_test(double a) { return a; }\n',
                            encoding="utf-8")
-        (root / "utils" / "scripts").mkdir(parents=True)
-        (root / ALLOWLIST).write_text(
-            "include/crucible/planted/Fast.h:[[gnu::optimize(\"fast-math\")]] inline double admitted(double a) "
-            "{ return a; }\n", encoding="utf-8")
+        ledger = root / LEDGER
+        ledger.parent.mkdir(parents=True)
+        ledger_head = f"# a planted ledger\nformat {rule_ledger.FORMAT}\nrule {RULE}\n"
+        ledger.write_text(
+            f"{ledger_head}include/crucible/planted/Fast.h | - | admit | [[gnu::optimize(\"fast-math\")]] inline "
+            "double admitted(double a) { return a; } | a planted admission\n", encoding="utf-8")
         found, lost = source_violations(root)
         rows = {int(violation.where.rsplit(":", 1)[1]) for violation in found
                 if violation.where.startswith("include/crucible/planted/Fast.h:")}
         expect("the planted sources parse", not lost)
         for row, must_report in PLANTED_ROWS:
             if row == 15:
-                expect("row 15: an allowlisted override is live, so the allowlist can admit it", row in rows)
+                expect("row 15: an admitted override is live, so a ledger row can admit it", row in rows)
                 continue
             expect(f"row {row}: {'reported' if must_report else 'not reported'}", (row in rows) == must_report)
         expect("an override in a vendored tree is out of scope",
@@ -646,8 +665,14 @@ def self_test(cmake: str, cxx: str) -> int:
         expect("the full check reports the violations", check(root, None) == 1)
         planted.write_text("#pragma once\ninline double clean(double a) { return a; }\n", encoding="utf-8")
         (root / "CMakePresets.json").unlink()
-        expect("a stale allowlist row exits 2", check(root, None) == 2)
-        (root / ALLOWLIST).unlink()
+        expect("a stale ledger row exits 2", check(root, None) == 2)
+        ledger.write_text(f"{ledger_head}include/crucible/planted/Fast.h | - | admit | admitted | -\n",
+                          encoding="utf-8")
+        expect("a row with no reason is a read failure", check(root, None) == 1)
+        ledger.write_text(f"{ledger_head}include/crucible/planted/Fast.h | marker | admit | admitted | a reason\n",
+                          encoding="utf-8")
+        expect("a row with a kind is a read failure", check(root, None) == 1)
+        ledger.unlink()
         expect("a clean tree exits 0", check(root, None) == 0)
         planted.write_text("void f() { g(1) { } }\n", encoding="utf-8")
         expect("a file the parser cannot read fails", check(root, None) == 1)

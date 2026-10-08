@@ -1,0 +1,69 @@
+# The ledger of the rule detail-namespace: the test files that can use a detail namespace of
+# foundation or fixy.
+# A row PATH | - | N | NAMESPACE | REASON admits N uses of the detail namespace NAMESPACE, for example
+# ::foundation::effects::detail, in the file PATH.  Only a file under test/ and outside test/fuzz/ can
+# have a row, and each row gives a reason.  A file with more uses than its row admits fails, and a row
+# that admits more uses than the file has is stale, so the ledger only becomes shorter.  A test that
+# can get the same fact through the public door of the layer must use the door, and its row goes.
+# A reviewer writes each row.  `python3 utils/bin/guard explain detail-namespace` tells the rule.
+format 1
+rule detail-namespace
+test/fixy/rejections_generated.h | - | 1 | ::fixy::atom::detail | reads the atom roster that the generated rejections cover
+test/fixy/rejections_generated.h | - | 2 | ::fixy::detail | reads the refusal tier of each generated rejection
+test/fixy/row_hash_census.h | - | 7 | ::fixy::concurrent::detail | hashes the row of the stage fakes
+test/fixy/row_hash_census.h | - | 3 | ::fixy::detail | hashes the row of the mapping and view probes
+test/fixy/session_crash_attack.h | - | 1 | ::foundation::effects::detail | builds a background context from its witness
+test/fixy/session_global_attack.h | - | 1 | ::fixy::session::detail | reads the projection check of each role
+test/fixy/session_recording.h | - | 1 | ::foundation::effects::detail | builds a background context from its witness
+test/fixy/test_armed_roster.cpp | - | 46 | ::fixy::collision::detail | names each armed predicate of the collision rules
+test/fixy/test_armed_roster.cpp | - | 27 | ::fixy::concurrent::detail | names each armed predicate of the stages, the stage fakes and the endpoint bridge
+test/fixy/test_armed_roster.cpp | - | 11 | ::fixy::corpus::detail | names each armed predicate of the corpus
+test/fixy/test_armed_roster.cpp | - | 2 | ::fixy::detail | names each armed predicate of the fixy root
+test/fixy/test_armed_roster.cpp | - | 6 | ::fixy::mach::detail | names each armed predicate of the machine transitions
+test/fixy/test_armed_roster.cpp | - | 10 | ::fixy::session::detail | names each armed predicate of the session core and the crash walk
+test/fixy/test_armed_roster.cpp | - | 24 | ::fixy::session::global::detail | names each armed predicate of the global types, the live en-route walk too
+test/fixy/test_armed_roster.cpp | - | 5 | ::foundation::effects::detail | names each armed predicate of the effects layer
+test/fixy/test_armed_roster.cpp | - | 8 | ::foundation::permissions::detail | names each armed predicate of the permissions layer
+test/fixy/test_atom.cpp | - | 66 | ::fixy::atom::detail | tests the roster and lift helpers of the atoms
+test/fixy/test_collision.cpp | - | 15 | ::fixy::collision::detail | tests each collision predicate on its own
+test/fixy/test_contexts.cpp | - | 5 | ::foundation::effects::detail | pins each context witness to the context it stands for
+test/fixy/test_forgeable_proofs.cpp | - | 25 | ::foundation::effects::detail | walks the context base, the mint keys and the open effect templates for a forgeable proof
+test/fixy/test_fp_polynomial.cpp | - | 1 | ::fixy::fp::detail | reads the pinned Box-Muller pair of the polynomial header
+test/fixy/test_os_numa_placement.cpp | - | 3 | ::fixy::detail | sizes a probe mask with the node-mask constants of the layer
+test/fixy/test_os_time.cpp | - | 1 | ::fixy::time::detail | checks the PTP clock-id helper, which no door reaches without a device
+test/fixy/test_owned_mmap.cpp | - | 1 | ::fixy::atom::detail | uses the sample leak rationale as a leak atom
+test/fixy/test_payload_row.cpp | - | 3 | ::fixy::concurrent::detail | pins the list of payload families that carry a row
+test/fixy/test_refined.cpp | - | 1 | ::fixy::detail | runs the edge walk of the sealed implication relation
+test/fixy/test_row_hash_wrappers.cpp | - | 3 | ::fixy::corpus::detail | hashes the row of a secret carrier
+test/fixy/test_row_hash_wrappers.cpp | - | 3 | ::fixy::detail | counts the reflected roles
+test/fixy/test_session_async_channel.cpp | - | 1 | ::foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_bridges.cpp | - | 1 | ::foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_crash_stop.cpp | - | 5 | ::fixy::session::detail | walks the crash projection helpers
+test/fixy/test_session_crash_stop.cpp | - | 1 | ::foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_entry.cpp | - | 1 | ::foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_global_crash.cpp | - | 1 | ::foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_handle.cpp | - | 26 | ::fixy::session::detail | pins the loop frames and the forms of a loop context of the session handle
+test/fixy/test_session_handle.cpp | - | 3 | ::fixy::session::watch::detail | reads the owner of a watched endpoint record, and the layout of a link of a wait-for chain, which no public door gives
+test/fixy/test_session_handle.cpp | - | 5 | ::foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_handle_attacks.cpp | - | 3 | ::fixy::session::detail | builds the forked head type that the attack uses
+test/fixy/test_session_handle_attacks.cpp | - | 1 | ::foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_node_members.cpp | - | 5 | ::fixy::session::detail | walks the node reader of the session layer and the combinators of its registry
+test/fixy/test_session_node_members.cpp | - | 2 | ::fixy::session::global::detail | walks the node reader of the global types
+test/fixy/test_session_ownership_attacks.cpp | - | 2 | ::fixy::session::detail | reads the payload refusal of the ownership check
+test/fixy/test_session_payload_seal.cpp | - | 8 | ::fixy::session::detail | specializes each gate and cache cell of the payload walk to show that no verdict changes
+test/fixy/test_session_rollback.cpp | - | 1 | ::foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_subtype_reason.cpp | - | 1 | ::fixy::session::detail | pins the bound of the async subtype search
+test/fixy/test_session_wire_word.cpp | - | 1 | ::foundation::effects::detail | builds a background context from its witness
+test/fixy/test_tagged.cpp | - | 4 | ::fixy::detail | uses the retag policy probes of the sealed retag relation
+test/foundation/test_algebra_core.cpp | - | 6 | ::foundation::algebra::detail | runs the fixtures of the algebra headers
+test/foundation/test_computation.cpp | - | 30 | ::foundation::effects::detail | pins the graded capabilities of the computation carrier
+test/foundation/test_ctx.cpp | - | 5 | ::foundation::effects::detail | builds a context from a context witness
+test/foundation/test_diag.cpp | - | 1 | ::foundation::diag::detail | makes sure that a failed write poisons the stream sink of the JSON emitter
+test/foundation/test_effects_core.cpp | - | 13 | ::foundation::effects::detail | pins the mint key of each context, and builds a lookalike on the context base
+test/foundation/test_host_owner_attacks.cpp | - | 4 | ::foundation::effects::detail | pins that no mint key has a default constructor or a trivial copy
+test/foundation/test_lattices_bands.cpp | - | 3 | ::foundation::algebra::lattices::detail | runs the fixtures of the chain, product and clock lattice headers
+test/foundation/test_lattices_core.cpp | - | 8 | ::foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
+test/foundation/test_permissions_compile.cpp | - | 1 | ::foundation::permissions::detail | runs the permission-set smoke namespace
+test/foundation/test_platform.cpp | - | 2 | ::foundation::detail | asks the layer whether a debugger is attached
+test/foundation/test_row_hash.cpp | - | 16 | ::foundation::diag::detail | tests the sort helper of the row hash
+test/foundation/test_row_mismatch.cpp | - | 3 | ::foundation::diag::detail | reads the text of a row mismatch diagnostic

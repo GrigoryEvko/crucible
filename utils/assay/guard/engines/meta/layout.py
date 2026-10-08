@@ -19,27 +19,39 @@ THE NAMING RULE
       * A data file (.txt or .json) outside utils/tools/ has a name of
         lowercase words with hyphens.
 
+THE GUIDES
+    Claude Code loads each file with the name CLAUDE.md or AGENTS.md into
+    each agent that works in its directory.  So only the root of the tree
+    holds a file with one of these names, and a tracked file with such a name
+    in another directory is an error of the kind guide-place, in each
+    directory of the tree.  A plant cannot hold such a file: plant_context()
+    gives each file of a plant whose name ends with .planted its name without
+    that suffix, in the throwaway copy only.
+
 THE KINDS
-    no-row, two-rows, empty-row, master, module-name, command and data-name.
-    During the migration of the utils system, the ledger admits each shell
-    script of today, which is a command, and the change that makes the shell
-    scripts modules removes its rows.
+    no-row, two-rows, empty-row, master, module-name, command, data-name and
+    guide-place.  During the migration of the utils system, the ledger admits
+    each shell script of today, which is a command, and the change that makes
+    the shell scripts modules removes its rows.
 
 Complexity: O(f * p) for f files and p path rows.
 """
 
 import os
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
+from assay.core import git
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
-from assay.guard.engines.meta.runner import PLANTS, MetaContext
+from assay.guard.engines.meta.runner import PLANTS, MetaContext, copy_tree
 
 RULE = "layout"
 MASTERS = "utils/bin/"
 MODULES = "utils/assay/"
 DATA_SUFFIXES = (".txt", ".json")
 SHEBANG = b"#!"
+GUIDE_NAMES = frozenset({"CLAUDE.md", "AGENTS.md"})
+PLANTED_SUFFIX = ".planted"
 
 
 def is_word(text: str, separator: str) -> bool:
@@ -78,12 +90,27 @@ def naming(context: MetaContext, path: str) -> tuple[str, str] | None:
     return None
 
 
+def guide_finding(path: str) -> check_report.Finding | None:
+    """Return the error of a file with the name of a guide in a directory other than the root, or None (THE GUIDES)."""
+    pure = PurePosixPath(path)
+    if pure.name not in GUIDE_NAMES or pure.parent == PurePosixPath("."):
+        return None
+    return check_report.Finding(
+        "error", path, 0, RULE, f"a file with the name {pure.name} is outside the root of the tree, and Claude Code "
+        f"loads it into each agent that works in {pure.parent.as_posix()}/.  Give the file another name, or move its "
+        f"text into the guide at the root", "guide-place", path)
+
+
 def findings(context: MetaContext) -> list[check_report.Finding]:
-    """Give each file with no path row or two, each path row with no file, and each file against its naming rule."""
+    """Give each file with no path row or two, each path row with no file, each file against its naming rule, and each
+    guide outside the root."""
     rows = context.registry.paths
     matched: dict[str, int] = {row.glob: 0 for row in rows}
     found: list[check_report.Finding] = []
     for path in context.tracked():
+        guide = guide_finding(path)
+        if guide is not None:
+            found.append(guide)
         if not in_scope(path):
             continue
         pure = PurePosixPath(path)
@@ -107,3 +134,16 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
                 "error", rule_registry.REGISTRY_PATH, row.line, RULE, f"the path row {row.glob} holds no file.  "
                 f"Remove it", "empty-row", row.glob))
     return found
+
+
+def plant_context(plant: Path, scratch: Path) -> MetaContext:
+    """Copy a plant to a throwaway repository, give each file NAME.planted its name NAME there, and give its context.
+
+    Complexity: linear in the files of the plant.
+    """
+    context = copy_tree(plant, scratch)
+    for planted in sorted(scratch.rglob(f"*{PLANTED_SUFFIX}")):
+        if ".git" not in planted.relative_to(scratch).parts:
+            planted.rename(planted.with_name(planted.name.removesuffix(PLANTED_SUFFIX)))
+    git.run(scratch, "add", "-A", "--", ".")
+    return context

@@ -1,0 +1,3 @@
+# a planted registry: a difference row of count-rule names a path that the tree does not hold
+format 1
+rule count-rule engine=meta scope=tracked ledger=count doc=XV | a planted refusal | fix the planted file

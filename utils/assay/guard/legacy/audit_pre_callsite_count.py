@@ -1,4 +1,4 @@
-"""pre-callsite-count — count the contract cites that the production tree uses, read from the parse tree.
+"""contract-cites — count the contract cites that the production tree uses, read from the parse tree.
 
 The production tree is include/ and src/.  The audit reads the parse of the
 pinned tree-sitter kit (utils/assay/readers/tsast.py) and counts these nodes:
@@ -32,12 +32,21 @@ The decide:: catalog comes from the parse of Decide.h
 Decide.h defines is always counted.  The cite-ratio audit reads the
 per-procedure counts from --json.
 
-Modes of `guard check --rule pre-callsite-count [MODE]`:
+Modes of `guard check --rule contract-cites [MODE]`:
   (none)           a summary for a reader
   --json           one JSON object
-  --baseline FILE  write the JSON object to FILE
-  --check FILE     compare with a baseline, and fail on a counter that fell
+  --baseline       write the counters to the baseline, utils/ledgers/contract-cites.txt
+  --check          compare with the baseline, and fail on a counter that fell
   --self-test      plant each case and check each count
+
+THE BASELINE
+    utils/ledgers/contract-cites.txt is a ledger of the policy baseline, in
+    format 1 of assay.core.ledger.  It holds one row for each counter of the
+    JSON object, and one row for the count of each decide:: procedure:
+        - | - | COUNT | COUNTER | -
+        - | decide_per_procedure | COUNT | PROCEDURE | -
+    --check reads the counters of CHECKED, and a row of a procedure is for a
+    reader.
 
 A file of the production tree that the kit cannot parse stops the audit,
 because a cite inside it would go uncounted.
@@ -55,12 +64,18 @@ import json
 import sys
 import tempfile
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
+from assay.core import registry as rule_registry
+from assay.core import rows as rows_grammar
 from assay.guard.engines.tsast import decide_catalog
 from assay.readers import tsast
 
+RULE = "contract-cites"
+# The kind of the row of the count of one decide:: procedure.
+PROCEDURE_KIND = "decide_per_procedure"
 ROOTS = ("include", "src")
 MACRO_CITES = ("CRUCIBLE_PRE", "CRUCIBLE_PRE_FAST", "CRUCIBLE_PRE_MSG",
                "CRUCIBLE_POST", "CRUCIBLE_POST_FAST", "CRUCIBLE_POST_MSG")
@@ -188,63 +203,117 @@ def print_human(counts: Counts) -> None:
         print(f"  {shown:<60} {count}")
 
 
-def check(counts: Counts, baseline_path: Path) -> int:
-    """Compare the counters with a baseline and report each one that fell.
+def read_baseline(rule: rule_registry.Rule, root: Path) -> dict:
+    """Read the baseline as the JSON object of --json: each counter, and the count of each procedure.
+
+    A whole number is an int, as in the JSON object.  A row of another form
+    keeps its value, and --check refuses it as a counter with no integer.
+
+    Raises:
+        OSError: If the ledger does not exist or cannot be read
+        rows_grammar.RowsError: If the ledger does not obey format 1
+    """
+    path = rule_ledger.ledger_path(rule.id, root)
+    if not path.is_file():
+        raise FileNotFoundError("the file does not exist.  Write it with --baseline")
+    counters: dict = {}
+    procedures: dict = {}
+    for key, entry in rule_ledger.read(rule, root).base.items():
+        value = int(entry.value) if isinstance(entry.value, float) and entry.value.is_integer() else entry.value
+        if not key.path and not key.kind:
+            counters[key.entity] = value
+        elif not key.path and key.kind == PROCEDURE_KIND:
+            procedures[key.entity] = value
+    return {**counters, "decide_per_procedure": procedures}
+
+
+def write_baseline(rule: rule_registry.Rule, root: Path, counts: Counts) -> None:
+    """Write the counters and the count of each procedure to the baseline, and keep its head comment.
+
+    Raises:
+        OSError: If the ledger cannot be read or written
+        rows_grammar.RowsError: If the ledger exists and does not obey format 1
+    """
+    data = counts.as_json()
+    procedures = data.pop("decide_per_procedure")
+    keys = [(rule_ledger.Key("", "", name), value) for name, value in data.items()]
+    keys += [(rule_ledger.Key("", PROCEDURE_KIND, name), value) for name, value in procedures.items()]
+    table = rule_ledger.read(rule, root)
+    rule_ledger.store(replace(table, base={key: rule_ledger.Entry(key, value, "") for key, value in keys}), root)
+
+
+def check(counts: Counts, rule: rule_registry.Rule, root: Path) -> int:
+    """Compare the counters with the baseline and report each one that fell.
 
     Returns:
         0 when no guarded counter fell, 1 on a regression, 2 on a bad baseline
     """
+    shown = rule_ledger.shown_path(rule.id)
     try:
-        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        print(f"audit-pre-callsite-count: cannot read the baseline {baseline_path}: {error}", file=sys.stderr)
+        baseline = read_baseline(rule, root)
+    except (OSError, rows_grammar.RowsError) as error:
+        print(f"{RULE}: cannot read the baseline {shown}: {error}", file=sys.stderr)
         return 2
     absent = [name for name in CHECKED if not isinstance(baseline.get(name), int)]
     if absent:
-        print(f"audit-pre-callsite-count: the baseline {baseline_path} has no integer for {', '.join(absent)}.  "
-              f"Write it again with --baseline.", file=sys.stderr)
+        print(f"{RULE}: the baseline {shown} has no integer for {', '.join(absent)}.  Write it again with --baseline.",
+              file=sys.stderr)
         return 2
     current = counts.as_json()
     regressed = False
     for name in CHECKED:
         if current[name] < baseline[name]:
-            print(f"audit-pre-callsite-count: REGRESSION {name}: {baseline[name]} -> {current[name]}", file=sys.stderr)
+            print(f"{RULE}: REGRESSION {name}: {baseline[name]} -> {current[name]}", file=sys.stderr)
             regressed = True
     if regressed:
-        print("audit-pre-callsite-count: a contract counter fell.  Restore the cites, or write the baseline again "
-              "with --baseline and say why in the commit.", file=sys.stderr)
+        print(f"{RULE}: a contract counter fell.  Restore the cites, or write the baseline again with --baseline and "
+              f"say why in the commit.", file=sys.stderr)
         return 1
-    print(f"audit-pre-callsite-count: no regression against {baseline_path}", file=sys.stderr)
+    print(f"{RULE}: no regression against {shown}", file=sys.stderr)
     return 0
 
 
 def run(argv: list[str], root: Path) -> int:
-    """Parse the arguments, run one mode over the tree at root, and return the exit status."""
-    parser = argparse.ArgumentParser(prog="guard check --rule pre-callsite-count",
+    """Parse the arguments, run one mode over the tree at root, and return the exit status.
+
+    The baseline is utils/ledgers/contract-cites.txt under the root.
+    """
+    parser = argparse.ArgumentParser(prog=f"guard check --rule {RULE}",
                                      description="Count the contract cites that the production tree uses.")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--json", action="store_true")
-    modes.add_argument("--baseline", type=Path, metavar="FILE")
-    modes.add_argument("--check", type=Path, metavar="FILE")
+    modes.add_argument("--baseline", action="store_true", help=f"write the baseline {rule_ledger.shown_path(RULE)}")
+    modes.add_argument("--check", action="store_true", help=f"compare with the baseline {rule_ledger.shown_path(RULE)}")
     modes.add_argument("--self-test", action="store_true")
     args = parser.parse_args(argv)
     if args.self_test:
         return self_test()
+    rule: rule_registry.Rule | None = None
+    if args.baseline or args.check:
+        try:
+            rule = rule_ledger.rule_of(RULE)
+        except (OSError, rule_ledger.LedgerError, rows_grammar.RowsError) as error:
+            print(f"{RULE}: {error}", file=sys.stderr)
+            return 2
     try:
         counts = scan(root)
     except tsast.KitMissing as missing:
-        print(f"audit-pre-callsite-count: SKIP, {missing}", file=sys.stderr)
+        print(f"{RULE}: SKIP, {missing}", file=sys.stderr)
         return 3
     except (AuditError, tsast.ParseError) as error:
-        print(f"audit-pre-callsite-count: {error}", file=sys.stderr)
+        print(f"{RULE}: {error}", file=sys.stderr)
         return 2
     if args.json:
         print(json.dumps(counts.as_json(), separators=(",", ":")))
-    elif args.baseline is not None:
-        args.baseline.write_text(json.dumps(counts.as_json(), separators=(",", ":")) + "\n", encoding="utf-8")
-        print(f"audit-pre-callsite-count: baseline written to {args.baseline}", file=sys.stderr)
-    elif args.check is not None:
-        return check(counts, args.check)
+    elif args.baseline and rule is not None:
+        try:
+            write_baseline(rule, root, counts)
+        except (OSError, rows_grammar.RowsError) as error:
+            print(f"{RULE}: the baseline is not written: {error}", file=sys.stderr)
+            return 2
+        print(f"{RULE}: baseline written to {rule_ledger.shown_path(RULE)}", file=sys.stderr)
+    elif args.check and rule is not None:
+        return check(counts, rule, root)
     else:
         print_human(counts)
     return 0
@@ -342,6 +411,13 @@ def _plant(root: Path, files: dict[str, str]) -> None:
         (root / rel).write_text(text)
 
 
+def _plant_baseline(rule: rule_registry.Rule, root: Path, counters: dict[str, int | float]) -> None:
+    """Write a planted baseline under the root with one row for each counter."""
+    keys = [rule_ledger.Key("", "", name) for name in counters]
+    base = {key: rule_ledger.Entry(key, counters[key.entity], "") for key in keys}
+    rule_ledger.store(replace(rule_ledger.empty(rule), base=base), root)
+
+
 def _quiet(action) -> tuple[int, str]:
     """Run one action with stdout and stderr captured, and return its status and its stderr."""
     err = io.StringIO()
@@ -355,7 +431,7 @@ def self_test() -> int:
     try:
         tsast.kit_dir()
     except tsast.KitMissing as missing:
-        print(f"audit-pre-callsite-count: SKIP, {missing}", file=sys.stderr)
+        print(f"{RULE}: SKIP, {missing}", file=sys.stderr)
         return 3
     failures: list[str] = []
 
@@ -376,19 +452,33 @@ def self_test() -> int:
         expect(f"every planted procedure has 2 cites: {data['decide_per_procedure']}",
                data["decide_per_procedure"] == {name: 2 for name in PLANTED_CATALOG})
 
-        high, match, low, short = (tmp / name for name in ("high.json", "match.json", "low.json", "short.json"))
-        high.write_text(json.dumps({name: 9999 for name in CHECKED}))
-        match.write_text(json.dumps(data))
-        low.write_text(json.dumps({name: 0 for name in CHECKED}))
-        short.write_text(json.dumps({name: 0 for name in CHECKED[1:]}))
-        status, report = _quiet(lambda: run(["--check", str(high)], planted))
+        rule = rule_ledger.rule_of(RULE)
+        baseline = rule_ledger.ledger_path(RULE, planted)
+        status, report = _quiet(lambda: run(["--check"], planted))
+        expect(f"a missing baseline must stop with 2, not {status}", status == 2 and "does not exist" in report)
+        status, _ = _quiet(lambda: run(["--baseline"], planted))
+        expect(f"--baseline writes the counters and the count of each procedure, not {status}",
+               status == 0 and read_baseline(rule, planted) == data)
+        expect("an equal baseline passes", _quiet(lambda: run(["--check"], planted))[0] == 0)
+        _plant_baseline(rule, planted, {name: 9999 for name in CHECKED})
+        status, report = _quiet(lambda: run(["--check"], planted))
         expect(f"a higher baseline must fail with 1, not {status}", status == 1)
         for name in CHECKED:
             expect(f"a REGRESSION line for {name}", f"REGRESSION {name}: 9999 ->" in report)
-        expect("an equal baseline passes", _quiet(lambda: run(["--check", str(match)], planted))[0] == 0)
-        expect("a lower baseline passes", _quiet(lambda: run(["--check", str(low)], planted))[0] == 0)
-        status, report = _quiet(lambda: run(["--check", str(short)], planted))
+        _plant_baseline(rule, planted, {name: 0 for name in CHECKED})
+        expect("a lower baseline passes", _quiet(lambda: run(["--check"], planted))[0] == 0)
+        _plant_baseline(rule, planted, {name: 0 for name in CHECKED[1:]})
+        status, report = _quiet(lambda: run(["--check"], planted))
         expect(f"a baseline without {CHECKED[0]} must stop with 2, not {status}", status == 2 and CHECKED[0] in report)
+        _plant_baseline(rule, planted, {name: 0.5 if name == CHECKED[0] else 0 for name in CHECKED})
+        status, report = _quiet(lambda: run(["--check"], planted))
+        expect(f"a baseline with a fraction for {CHECKED[0]} must stop with 2, not {status}",
+               status == 2 and CHECKED[0] in report)
+        baseline.write_text(baseline.read_text(encoding="utf-8") + "- | - | many | planted_counter | -\n",
+                            encoding="utf-8")
+        status, report = _quiet(lambda: run(["--check"], planted))
+        expect(f"a malformed baseline must stop with 2 at its line, not {status}",
+               status == 2 and f"{rule_ledger.shown_path(RULE)}:" in report)
 
         alias = tmp / "alias"
         _plant(alias, {"include/alias_cites.h": ALIAS_FIXTURE})
@@ -422,16 +512,16 @@ def self_test() -> int:
         _plant(unparsed, {"include/broken.h": "void f() { g(1) { } }\n"})
         expect("a file that does not parse stops the audit", _quiet(lambda: run(["--json"], unparsed))[0] == 2)
     for line in failures:
-        print(f"audit-pre-callsite-count: SELF-TEST FAILED, {line}", file=sys.stderr)
+        print(f"{RULE}: SELF-TEST FAILED, {line}", file=sys.stderr)
     if failures:
         return 2
-    print("audit-pre-callsite-count: self-test passed, every form is counted once, the traps count nothing, "
-          "and --check fails on a fall and on a short baseline", file=sys.stderr)
+    print(f"{RULE}: self-test passed, every form is counted once, the traps count nothing, --baseline writes the "
+          f"baseline, and --check fails on a fall, on a short baseline and on a malformed one", file=sys.stderr)
     return 0
 
 
 def main(argv: list[str]) -> int:
-    """Run one mode over the tree of this repository (`guard check --rule pre-callsite-count`).
+    """Run one mode over the tree of this repository (`guard check --rule contract-cites`).
 
     Args:
         argv: The words after the rule ID

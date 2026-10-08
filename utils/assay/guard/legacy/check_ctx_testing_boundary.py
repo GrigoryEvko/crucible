@@ -34,16 +34,17 @@ SCOPE
     test/layer/walks_across_headers.cpp.  So a use of the door in a check
     file reaches no code that ships.  A self-test
     that moves from a header to its check file takes its uses out of the
-    shipped header, and the entry of the header shrinks.  A file in scope
+    shipped header, and the row of the header shrinks.  A file in scope
     that the parser cannot read fails the guard, because its uses are
     unknown.
 
-THE ALLOWLIST
-    utils/scripts/ctx-testing-boundary-allowlist.txt admits the uses of a file:
-    `path xN  — reason`, where N is the number of uses the file has (1 when
-    absent).  A new use in a listed file exceeds its count and fails, and an
-    entry above the count of its file is stale and fails, so the list drains
-    with the code.
+THE LEDGER
+    utils/ledgers/ctx-testing-boundary.txt admits the uses of a file, with
+    the reader of assay.core.ledger.  A row is `PATH | - | N | - | REASON`,
+    where N is the number of uses that the file has, and each row gives a
+    reason.  A new use in a listed file is more than its count and fails, and
+    a row above the count of its file is stale and fails.  So the ledger
+    becomes shorter with the code.
 
 WHAT THE GUARD CANNOT SEE
     A name of the door that a macro builds with `##`.
@@ -51,9 +52,9 @@ WHAT THE GUARD CANNOT SEE
 USAGE
     guard check --rule ctx-testing-boundary [--self-test]
 
-Exit 0 clean, 1 on a use that no entry admits, a stale entry or a file the
-parser cannot read, 2 on a usage error or a failed self-test, 3 when the
-parser kit is missing.
+Exit 0 clean, 1 on a use that no row admits, a stale or malformed row or a
+file the parser cannot read, 2 on a usage error or a failed self-test, 3
+when the parser kit is missing.
 """
 
 from __future__ import annotations
@@ -61,23 +62,24 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import re
 import sys
 import tempfile
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import NamedTuple
 
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.readers import tsast
 
 SCAN_DIRS = ("include/foundation", "include/fixy", "include/crucible", "src", "vessel", "utils/tools", "examples")
-ALLOWLIST = "utils/scripts/ctx-testing-boundary-allowlist.txt"
+RULE = "ctx-testing-boundary"
+LEDGER = rule_ledger.shown_path(RULE)
 DOOR = "testing"
 MEMBERS = frozenset({"bg", "init", "test", "foreground", "TestWitness", "ForegroundWitness"})
 WITNESSES = frozenset({"TestWitness", "ForegroundWitness"})
 MACROS = ("preproc_def", "preproc_function_def")
 LEAVES = ("identifier", "type_identifier", "namespace_identifier", "field_identifier")
-ENTRY = re.compile(r"^(?P<path>\S+?)(?: x(?P<count>[1-9][0-9]*))?\s+—\s+\S")
 
 
 class Run(NamedTuple):
@@ -278,45 +280,48 @@ def scan(root: Path) -> tuple[dict[str, list[int]], list[str]]:
     return found, problems
 
 
-def read_allowlist(path: Path) -> tuple[dict[str, tuple[int, int]], list[str]]:
-    """Return each listed path with the number of uses it admits and its line, and each malformed row."""
+def read_ledger(root: Path) -> tuple[dict[str, tuple[int, int]], list[str]]:
+    """Return each path of the ledger with the number of uses that it admits and its line, and each malformed row.
+
+    A row is PATH | - | N | - | REASON.  A file that does not obey the rows
+    grammar, or a second row of one path, gives one problem at the place that
+    the reader names, and no row.
+    """
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), root)
+    except rows_grammar.RowsError as problem:
+        return {}, [f"{problem}."]
     entries: dict[str, tuple[int, int]] = {}
     problems: list[str] = []
-    for number, raw in enumerate(path.read_text().splitlines() if path.is_file() else [], 1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        match = ENTRY.match(line)
-        if match is None:
-            problems.append(f"{ALLOWLIST}:{number} has no path, count and reason.")
-        elif match.group("path") in entries:
-            problems.append(f"{ALLOWLIST}:{number} lists {match.group('path')} a second time.")
+    for key, entry in ledger.base.items():
+        if not key.path or key.kind or key.entity or not entry.reason:
+            problems.append(f"{LEDGER}:{entry.line} is not a row PATH | - | N | - | REASON.")
         else:
-            entries[match.group("path")] = (int(match.group("count") or 1), number)
+            entries[key.path] = (int(entry.value), entry.line)
     return entries, problems
 
 
 def check(root: Path) -> int:
-    """Compare the uses of the door with the allowlist and report.
+    """Compare the uses of the door with the ledger and report.
 
     Returns:
-        0 clean, 1 on a use that no entry admits, a stale entry, a malformed row or a file that does not parse
+        0 clean, 1 on a use that no row admits, a stale row, a malformed row or a file that does not parse
     """
     found, problems = scan(root)
-    entries, row_problems = read_allowlist(root / ALLOWLIST)
+    entries, row_problems = read_ledger(root)
     problems += row_problems
     for path, lines in sorted(found.items()):
         admitted = entries.get(path, (0, 0))[0]
         if len(lines) > admitted:
             problems.append(f"{path} uses the testing door {len(lines)} time(s) at lines "
-                            f"{', '.join(map(str, lines))}, and its entry admits {admitted}.  The door mints a "
+                            f"{', '.join(map(str, lines))}, and its row admits {admitted}.  The door mints a "
                             f"context with no key.  Code that ships takes its context from a real mint.  A "
-                            f"self-test in a header may use the door: give its file an entry with the count and a "
-                            f"sentence saying why.")
+                            f"self-test in a header may use the door: give its file a row in {LEDGER} with the "
+                            f"count and the reason.")
     for path, (admitted, number) in sorted(entries.items(), key=lambda item: item[1][1]):
         if len(found.get(path, [])) < admitted:
-            problems.append(f"{ALLOWLIST}:{number} admits {admitted} use(s) in {path}, and the file has "
-                            f"{len(found.get(path, []))}.  Lower or remove the entry.")
+            problems.append(f"{LEDGER}:{number} admits {admitted} use(s) in {path}, and the file has "
+                            f"{len(found.get(path, []))}.  Lower or remove the row.")
     for problem in problems:
         print(f"check-ctx-testing-boundary: {problem}", file=sys.stderr)
     total = sum(len(lines) for lines in found.values())
@@ -339,6 +344,12 @@ def self_test() -> int:
         if not ok:
             failures.append(name)
 
+    def planted_ledger(*rows: str) -> str:
+        """Return the text of a planted ledger of format 1 with the given rows."""
+        return f"format 1\nrule {RULE}\n" + "".join(f"{row}\n" for row in rows)
+
+    listed = "include/crucible/Listed.h | - | {count} | - | a planted self-test"
+    door_alias = "include/crucible/Door.h | - | 1 | - | the planted door alias"
     planted = {
         "include/foundation/effects/Planted.h":
             "#pragma once\ninline auto forged() noexcept { return ::foundation::effects::testing::init(); }\n"
@@ -379,8 +390,7 @@ def self_test() -> int:
             "(void)::foundation::effects::testing::test(); }\n",
         "test/t.cpp": "inline auto t() { return effects::testing::test(); }\n",
         "bench/b.cpp": "inline auto b() { return effects::testing::bg(); }\n",
-        ALLOWLIST: "include/crucible/Listed.h x2  — a planted self-test\n"
-                   "include/crucible/Door.h x1  — the planted door alias\n",
+        LEDGER: planted_ledger(door_alias, listed.format(count=2)),
     }
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
@@ -432,26 +442,27 @@ def self_test() -> int:
                     "src/commented.cpp", "src/witness.cpp", "src/macro.cpp", "src/macro_alias_use.cpp",
                     "src/macro_split.cpp", "src/spliced.cpp"):
             (root / rel).unlink()
-        with (root / "include/crucible/Listed.h").open("a", encoding="utf-8") as listed:
-            listed.write("inline void more() { (void)::foundation::effects::testing::init(); }\n")
+        with (root / "include/crucible/Listed.h").open("a", encoding="utf-8") as listed_file:
+            listed_file.write("inline void more() { (void)::foundation::effects::testing::init(); }\n")
         code, report = captured(root)
         expect("a new use in a listed file fails", code == 1 and "Listed.h uses the testing door 3 time(s)" in report)
-        (root / ALLOWLIST).write_text("include/crucible/Listed.h x4  — a planted self-test\n"
-                                      "include/crucible/Door.h x1  — the planted door alias\n"
-                                      "include/crucible/Absent.h  — never existed\n", encoding="utf-8")
+        (root / LEDGER).write_text(planted_ledger("include/crucible/Absent.h | - | 1 | - | never existed",
+                                                  door_alias, listed.format(count=4)), encoding="utf-8")
         code, report = captured(root)
-        expect("an entry above the count of its file, and an entry for a file with no use, are stale",
+        expect("a row above the count of its file, and a row for a file with no use, are stale",
                code == 1 and "admits 4 use(s) in include/crucible/Listed.h, and the file has 3" in report
                and "admits 1 use(s) in include/crucible/Absent.h, and the file has 0" in report)
-        (root / ALLOWLIST).write_text("include/crucible/Listed.h x3  — a planted self-test\n"
-                                      "include/crucible/Door.h x1  — the planted door alias\n"
-                                      "include/crucible/Door.h x1  — twice\n", encoding="utf-8")
+        (root / LEDGER).write_text(planted_ledger(door_alias, "include/crucible/Door.h | - | 1 | - | twice",
+                                                  listed.format(count=3)), encoding="utf-8")
         code, report = captured(root)
-        expect("a path listed twice fails", code == 1 and "a second time" in report)
-        (root / ALLOWLIST).write_text("include/crucible/Listed.h x3  — a planted self-test\n"
-                                      "include/crucible/Door.h x1  — the planted door alias\n",
-                                      encoding="utf-8")
-        expect("a satisfied list passes", captured(root)[0] == 0)
+        expect("a path with two rows fails", code == 1 and "has a second row" in report)
+        (root / LEDGER).write_text(planted_ledger("include/crucible/Door.h | - | 1 | - | -", listed.format(count=3)),
+                                   encoding="utf-8")
+        code, report = captured(root)
+        expect("a row with no reason fails",
+               code == 1 and f"{LEDGER}:3 is not a row PATH | - | N | - | REASON" in report)
+        (root / LEDGER).write_text(planted_ledger(door_alias, listed.format(count=3)), encoding="utf-8")
+        expect("a satisfied ledger passes", captured(root)[0] == 0)
         (root / "src/broken.cpp").write_text("void f() { g(1) { } }\n", encoding="utf-8")
         code, report = captured(root)
         expect("a file the parser cannot read fails", code == 1 and "src/broken.cpp does not parse" in report)

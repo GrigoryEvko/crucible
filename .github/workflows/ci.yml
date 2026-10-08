@@ -169,10 +169,10 @@ jobs:
           python3 utils/bin/guard check --rule trait-guard --self-test
           python3 utils/bin/guard check --rule trait-guard
 
-      - name: contract cite regression (self-test + pre-callsite count vs baseline)
+      - name: contract cite regression (self-test + contract-cites count vs baseline)
         run: |
-          python3 utils/bin/guard check --rule pre-callsite-count --self-test
-          python3 utils/bin/guard check --rule pre-callsite-count --check utils/scripts/contracts-baseline.json
+          python3 utils/bin/guard check --rule contract-cites --self-test
+          python3 utils/bin/guard check --rule contract-cites --check
 
       - name: contract decide-cite ratio (self-test + scan)
         run: |
@@ -270,7 +270,7 @@ jobs:
         run: |
           python3 utils/bin/guard selftest loop.derive.mint_inventory
           python3 utils/bin/loop derive mint-inventory --check
-          python3 utils/bin/loop derive mint-inventory --check-floor
+          python3 utils/bin/guard check --rule mint-floor
 
       - name: split trait orphan specializations (self-test + scan)
         run: |
@@ -566,7 +566,7 @@ jobs:
         run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }}
 
       # Two ledgers depend on the build kind and the target tier
-      # (utils/assay/core/target.py): the quarantine ratchet, whose findings
+      # (utils/assay/core/target.py): the rule quarantine, whose findings
       # of each file, kind and entity can only decrease, and the libstdc++ symbols of
       # the libraries.  A build that a ledger does not hold gives exit 3 with
       # one line that names its tier and the tiers of the ledger, for example
@@ -584,7 +584,7 @@ jobs:
           LEDGER_BUILD: ${{ matrix.preset == 'default' && 'build' || format('build-{0}', matrix.preset) }}
         run: |
           failed=0
-          for rule in quarantine-ratchet libstdcxx-symbols; do
+          for rule in quarantine libstdcxx-symbols; do
             status=0
             python3 utils/bin/guard check --rule "$rule" --build-dir "$LEDGER_BUILD" || status=$?
             if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then failed=1; fi
@@ -919,7 +919,7 @@ jobs:
           GITHUB_ACTIONS: "false"
         run: |
           status=0
-          python3 utils/bin/guard check --rule quarantine-ratchet --build-dir build || status=$?
+          python3 utils/bin/guard check --rule quarantine --build-dir build || status=$?
           if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then exit "$status"; fi
       - name: Save ccache
         if: always()

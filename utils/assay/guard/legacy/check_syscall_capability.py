@@ -2,19 +2,19 @@
 
 A direct call of a Linux syscall, or of its thin libc wrapper, in production
 code (include/, src/ and vessel/) either carries a `// SYSCALL-CAP-OK: <reason>`
-comment in its statement or has an entry in
-utils/scripts/syscall-capability-allowlist.txt.  Each entry is
+comment in its statement or has a row in utils/ledgers/syscall-capability.txt
+(assay.core.ledger).  Each row is
 
-    path:<call text>  — <effects::* capability claim> via <function> (<note>)
+    PATH | - | admit | CALL TEXT | <effects::* capability claim> via <function> (<note>)
 
-where <call text> is the line that holds the syscall name, with each comment
+where CALL TEXT is the line that holds the syscall name, with each comment
 node on it removed, trimmed (tsast.site_key).  A `//` inside a string literal
-stays in the key.  The key is the content of the line, so an edit above the
-call does not move it.  An entry that matches no live site is stale.
+stays in the text.  The key of a row is the content of the line, so an edit
+above the call does not move it.  A row that matches no live site is stale.
 
 THE PROSE
-    The text after the em dash is the audit surface, so the guard holds it
-    to the code of the sites that the key names:
+    The REASON of a row is the audit surface, so the guard holds it to the
+    code of the sites that the key names:
       * (B) It names a syscall that one of the sites calls.  For
         `::syscall(SYS_x, ...)` that is x, read from the call node, so the
         number can sit on a later line than the key.
@@ -41,7 +41,7 @@ THE SITES
 THE DOORS
     A syscall of DOOR_ONLY has one door: a function of one file.  A call of
     that syscall outside its door is a violation that no marker and no
-    allowlist entry admits.  sched_setaffinity is one of them: the door in
+    ledger row admits.  sched_setaffinity is one of them: the door in
     include/fixy/os/CpuPinned.h records a pin event, and a pin proof stays
     in force across a pin that goes around the door.  pthread_setaffinity_np
     changes the same mask, and its door is the same function, which does not
@@ -66,13 +66,13 @@ MACRO BODIES
     guard failure.
 
 Usage:
-  guard check --rule syscall-capability              scan; exit 1 on a violation, 2 on a stale entry
-  guard check --rule syscall-capability --emit-keys  print a template entry for each unlisted site
+  guard check --rule syscall-capability              scan; exit 1 on a violation, 2 on a stale row
+  guard check --rule syscall-capability --emit-keys  print a template row for each unlisted site
   guard check --rule syscall-capability --self-test  plant each shape and prove the verdicts
 
 Exit 0 clean, 1 on a violation, a false prose or a parse failure, 2 on a
-stale entry, a dead marker, a usage error or a failed self-test, 3 when the
-kit is not installed.
+stale row, a dead marker, a malformed ledger, a usage error or a failed
+self-test, 3 when the kit is not installed.
 """
 
 from __future__ import annotations
@@ -84,9 +84,11 @@ import re
 import sys
 import tempfile
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.readers import tsast
 
 SYSCALLS = frozenset("""
@@ -128,7 +130,8 @@ EXCLUDED = frozenset({"test", "bench", "examples", "third_party", "external", "v
 # out of them.
 DOOR_ROOTS = ("bench", "test")
 DOOR_EXCLUDED = EXCLUDED - {"test", "bench"}
-ALLOWLIST = "utils/scripts/syscall-capability-allowlist.txt"
+RULE = "syscall-capability"
+LEDGER = rule_ledger.shown_path(RULE)
 MARKER_WORD = "SYSCALL-CAP-OK"
 MARKER = re.compile(rf"{MARKER_WORD}:\s*\S")
 # A bare kernel-only name after one of these tokens is part of a larger expression.
@@ -146,6 +149,10 @@ _PART = r"(?:operator\s*(?:\(\)|\[\]|[^\s\w(]+)|~?[A-Za-z_]\w*)(?:\s*<[^<>]*(?:<
 _NAME = rf"(?:::)?{_PART}(?:::{_PART})*"
 VIA = re.compile(rf"\bvia\s+({_NAME}(?:\s+and\s+{_NAME})*)")
 TEMPLATE_ARGUMENTS = re.compile(r"<[^<>]*>")
+
+
+class LedgerRefused(ValueError):
+    """The ledger does not obey the rows grammar or the row form of this rule."""
 
 
 @dataclass(frozen=True)
@@ -449,18 +456,44 @@ def scan(root: Path) -> Scan:
     return found
 
 
-def allowlist_entries(path: Path) -> list[tuple[str, str]]:
-    """Return (key, prose) for each allowlist entry: the text before the first em dash, trimmed, and the rest."""
-    if not path.is_file():
-        return []
+def ledger_entries(root: Path) -> list[tuple[str, str]]:
+    """Return (key, prose) for each row of the ledger under a scan root: `PATH:CALL TEXT` and the REASON.
+
+    A scan root with no ledger file has no row.
+
+    Raises:
+        LedgerRefused: If the ledger does not obey the rows grammar, or a row has a kind, no path or no call text
+    """
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), root=root)
+    except rows_grammar.RowsError as exc:
+        raise LedgerRefused(str(exc)) from None
     entries = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#"):
-            key, _, prose = stripped.partition("—")
-            if key.rstrip():
-                entries.append((key.rstrip(), prose.strip()))
+    for key, entry in sorted(ledger.base.items()):
+        if key.kind or not key.path or not key.entity:
+            raise LedgerRefused(f"{LEDGER}:{entry.line}: a row is `PATH | - | admit | CALL TEXT | REASON`")
+        entries.append((f"{key.path}:{key.entity}", entry.reason))
     return entries
+
+
+def plant_ledger(root: Path, rows: dict[str, str]) -> None:
+    """Write the ledger of a planted scan root: one row for each `PATH:CALL TEXT` key, with its prose.
+
+    An empty dict leaves no ledger file, as an empty ledger has none.
+    """
+    base: dict[rule_ledger.Key, rule_ledger.Entry] = {}
+    for text, prose in rows.items():
+        path, _, call = text.partition(":")
+        key = rule_ledger.Key(path, "", call)
+        base[key] = rule_ledger.Entry(key, rule_ledger.ADMIT_VALUE, prose)
+    rule_ledger.store(replace(rule_ledger.empty(rule_ledger.rule_of(RULE)), base=base), root=root)
+
+
+def template_row(key: str, called: set[str]) -> str:
+    """Return the template row of an unlisted site: its path, its call text and a claim to fill in."""
+    path, _, call = key.partition(":")
+    return rows_grammar.render([path], ["", rule_ledger.ADMIT_VALUE, call,
+                                        f"effects::? via ? ({' '.join(sorted(called))})"])
 
 
 def via_names(prose: str) -> list[tuple[str, ...]]:
@@ -486,7 +519,7 @@ def prose_findings(entries: list[tuple[str, str]], found: Scan) -> list[str]:
     Complexity: O(E * S) for E entries and S sites of one key, both small.
 
     Args:
-        entries: The (key, prose) pairs of the allowlist
+        entries: The (key, prose) pairs of the ledger rows
         found: The scan
 
     Returns:
@@ -526,7 +559,7 @@ def prose_findings(entries: list[tuple[str, str]], found: Scan) -> list[str]:
 
 
 def check(root: Path, emit: bool = False) -> int:
-    """Run the scan and report, or print a template entry for each unlisted site.
+    """Run the scan and report, or print a template row for each unlisted site.
 
     Args:
         root: The scan root
@@ -534,10 +567,14 @@ def check(root: Path, emit: bool = False) -> int:
 
     Returns:
         0 clean, 1 on a violation, a false prose or a parse failure, 2 on a
-        stale entry or a dead marker
+        stale row, a dead marker or a malformed ledger
     """
+    try:
+        entries = ledger_entries(root)
+    except LedgerRefused as exc:
+        print(f"SYSCALL-CAP ledger: {exc}", file=sys.stderr)
+        return 2
     found = scan(root)
-    entries = allowlist_entries(root / ALLOWLIST)
     keys = [key for key, _ in entries]
     admitted = set(keys)
     unlisted = [site for site in found.sites if site.key not in admitted]
@@ -546,14 +583,14 @@ def check(root: Path, emit: bool = False) -> int:
         for site in unlisted:
             names.setdefault(site.key, set()).update(site.names)
         for key, called in sorted(names.items()):
-            print(f"{key}  — effects::? via ? ({' '.join(sorted(called))})")
+            print(template_row(key, called))
         return 0
     for failure in found.failures:
         print(f"SYSCALL-CAP parse failure: {failure}", file=sys.stderr)
     for breach in found.breaches:
         door_path, door_function = DOOR_ONLY[breach.name]
         print(f"SYSCALL-CAP door: {breach.path}:{breach.line} — a call of {breach.name} outside its door "
-              f"{'::'.join(door_function)} in {door_path}.  No marker and no allowlist entry admits it.  Call the "
+              f"{'::'.join(door_function)} in {door_path}.  No marker and no ledger row admits it.  Call the "
               f"door, or a gated function that calls it, such as fixy::sched::apply_affinity_to_mask.",
               file=sys.stderr)
     if found.breaches:
@@ -561,28 +598,28 @@ def check(root: Path, emit: bool = False) -> int:
               file=sys.stderr)
     for site in unlisted:
         print(f"SYSCALL-CAP violation: {site.path}:{site.line} — bare Linux syscall site missing effects::* "
-              f"capability admission.  Allowlist key: {site.key}", file=sys.stderr)
+              f"capability admission.  Ledger key: {site.key}", file=sys.stderr)
     if found.breaches and not unlisted and not found.failures:
         return 1
     if unlisted or found.failures:
-        print(f"check-syscall-capability: {len(unlisted)} site(s) with no marker and no entry.  Route the call "
-              "through a §XXI mint, mark its statement with `// SYSCALL-CAP-OK: <reason>`, or add the printed key "
-              f"to {ALLOWLIST} followed by `  — <effects::* capability claim> via <function> (<note>)`.  "
-              "--emit-keys prints templates.", file=sys.stderr)
+        print(f"check-syscall-capability: {len(unlisted)} site(s) with no marker and no row.  Route the call "
+              "through a §XXI mint, mark its statement with `// SYSCALL-CAP-OK: <reason>`, or add the row "
+              f"`PATH | - | admit | CALL TEXT | <effects::* capability claim> via <function> (<note>)` to {LEDGER}.  "
+              "--emit-keys prints template rows.", file=sys.stderr)
         return 1
     findings = prose_findings(entries, found)
     for finding in findings:
         print(f"SYSCALL-CAP prose: {finding}", file=sys.stderr)
     if findings:
-        print(f"check-syscall-capability: {len(findings)} false statement(s) in {ALLOWLIST}.  Make the prose "
+        print(f"check-syscall-capability: {len(findings)} false statement(s) in {LEDGER}.  Make the prose "
               "name the syscall that the line calls, only constants that the file spells in code, and the "
               "function that holds each call.", file=sys.stderr)
         return 1
     live = {site.key for site in found.sites}
     stale = [key for key in keys if key not in live]
     for key in stale:
-        print(f"SYSCALL-CAP stale: {key} — no live syscall call with this text in the file; remove the entry.",
-              file=sys.stderr)
+        print(f"SYSCALL-CAP stale: {key} — no live syscall call has this text in the file.  Remove the row from "
+              f"{LEDGER}.", file=sys.stderr)
     for marker in found.dead:
         print(f"SYSCALL-CAP dead marker: {marker.path}:{marker.line} — the {MARKER_WORD} comment sits on no "
               f"syscall site, so it exempts nothing.  Delete it.", file=sys.stderr)
@@ -659,14 +696,12 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
         (root / "src/planted").mkdir(parents=True)
-        (root / "utils" / "scripts").mkdir(parents=True)
         source = root / "src/planted/Sys.cpp"
         source.write_text(planted, encoding="utf-8")
         (root / "src/test").mkdir()
         (root / "src/test/Out.cpp").write_text("int f() { return ::socket(11, 0, 0); }\n", encoding="utf-8")
-        allow = root / ALLOWLIST
-        allow.write_text("# fixture\nsrc/planted/Sys.cpp:inline int admitted() { return ::socket(2, 0, 0); }  "
-                         "— effects::Init via admitted (socket, fixture)\n", encoding="utf-8")
+        admitted_key = "src/planted/Sys.cpp:inline int admitted() { return ::socket(2, 0, 0); }"
+        plant_ledger(root, {admitted_key: "effects::Init via admitted (socket, fixture)"})
         found = scan(root)
         sites, broken, dead = found.sites, found.failures, found.dead
         lines = {site.line for site in sites if site.path == "src/planted/Sys.cpp"}
@@ -705,15 +740,15 @@ def self_test() -> int:
         with contextlib.redirect_stderr(io.StringIO()) as report:
             code = check(root)
         expect("the check fails on the unlisted sites", code == 1)
-        expect("an allowlisted site is admitted", "socket(2, 0, 0)" not in report.getvalue(), True)
+        expect("a site that a ledger row admits is admitted", "socket(2, 0, 0)" not in report.getvalue(), True)
         expect("the violation prints its content key",
-               "Allowlist key: src/planted/Sys.cpp:inline int drift() { return ::socket(1, 0, 0); }"
+               "Ledger key: src/planted/Sys.cpp:inline int drift() { return ::socket(1, 0, 0); }"
                in report.getvalue())
         with contextlib.redirect_stdout(io.StringIO()) as emitted:
             check(root, emit=True)
-        expect("--emit-keys names the syscall of each unlisted site",
-               "src/planted/Sys.cpp:inline long raw() { return ::syscall(SYS_gettid); }  — effects::? via ? (gettid)"
-               in emitted.getvalue())
+        expect("--emit-keys prints a row that names the syscall of each unlisted site",
+               "src/planted/Sys.cpp | - | admit | inline long raw() { return ::syscall(SYS_gettid); } | "
+               "effects::? via ? (gettid)" in emitted.getvalue())
         expect("--emit-keys skips an admitted site", "socket(2, 0, 0)" not in emitted.getvalue(), True)
 
         def captured(cwd: Path) -> tuple[int, str]:
@@ -730,14 +765,26 @@ def self_test() -> int:
 
         expect("the report from / equals the report from the scan root", captured(Path("/")) == captured(root))
         source.write_text("\n\ninline int drift() { return ::socket(1, 0, 0); }\n", encoding="utf-8")
-        allow.write_text("# fixture\nsrc/planted/Sys.cpp:inline int drift() { return ::socket(1, 0, 0); }  "
-                         "— effects::Init via drift (socket, fixture)\n", encoding="utf-8")
+        drift_rows = {"src/planted/Sys.cpp:inline int drift() { return ::socket(1, 0, 0); }":
+                      "effects::Init via drift (socket, fixture)"}
+        plant_ledger(root, drift_rows)
         with contextlib.redirect_stderr(io.StringIO()):
             expect("a content key survives a line shift", check(root) == 0)
-        allow.write_text(allow.read_text() + "src/planted/Sys.cpp:return ::socket(99, 0, 0);  — stale\n",
-                         encoding="utf-8")
+        plant_ledger(root, {**drift_rows, "src/planted/Sys.cpp:return ::socket(99, 0, 0);": "stale"})
         with contextlib.redirect_stderr(io.StringIO()):
-            expect("a stale entry exits 2", check(root) == 2, True)
+            expect("a stale row exits 2", check(root) == 2, True)
+        ledger_file = rule_ledger.ledger_path(RULE, root)
+        ledger_file.write_text(f"format 1\nrule {RULE}\nsrc/planted/Sys.cpp | - | admit | drift\n", encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()) as report:
+            code = check(root)
+        expect("a malformed ledger exits 2 and names its line",
+               code == 2 and f"{LEDGER}:3:" in report.getvalue(), True)
+        ledger_file.write_text(f"format 1\nrule {RULE}\nsrc/planted/Sys.cpp | socket | admit | drift | fixture\n",
+                               encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()) as report:
+            code = check(root)
+        expect("a row with a kind exits 2", code == 2 and "PATH | - | admit | CALL TEXT" in report.getvalue(), True)
+        plant_ledger(root, drift_rows)
         (root / "src/planted/Broken.cpp").write_text("void f() { g(1) { } }\n", encoding="utf-8")
         with contextlib.redirect_stderr(io.StringIO()):
             expect("a file the parser cannot read fails the check", check(root) == 1, True)
@@ -817,12 +864,9 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
         (root / "src/planted").mkdir(parents=True)
-        (root / "utils" / "scripts").mkdir(parents=True)
         (root / prose_file).write_text(prose_fixture, encoding="utf-8")
         for label, changes, want, needle in rotten:
-            rows = {**honest, **changes}
-            (root / ALLOWLIST).write_text("# fixture\n" + "".join(f"{key}  — {text}\n" for key, text in rows.items()),
-                                          encoding="utf-8")
+            plant_ledger(root, {**honest, **changes})
             with contextlib.redirect_stderr(io.StringIO()) as report:
                 code = check(root)
             expect(f"prose: {label}", code == want and needle in report.getvalue(), want != 0)
@@ -832,7 +876,6 @@ def self_test() -> int:
         root = Path(work)
         (root / door_file).parent.mkdir(parents=True)
         (root / door_copy).parent.mkdir(parents=True)
-        (root / "utils" / "scripts").mkdir(parents=True)
         (root / door_file).write_text(
             "namespace fixy::detail {\n"                                                              # 1
             "inline int set_calling_thread_affinity(int n) noexcept {\n"                              # 2
@@ -853,9 +896,8 @@ def self_test() -> int:
             "#define PIN_IN_MACRO(n) ::sched_setaffinity(0, n, nullptr)  // SYSCALL-CAP-OK: fixture\n"  # 8
             "inline int listed(int n) noexcept { return ::sched_setaffinity(0, n, nullptr); }\n",     # 9
             encoding="utf-8")
-        (root / ALLOWLIST).write_text(
-            f"# fixture\n{door_copy}:inline int listed(int n) noexcept {{ return ::sched_setaffinity(0, n, nullptr); }}"
-            "  — effects::Init via listed (sched_setaffinity, fixture)\n", encoding="utf-8")
+        listed_key = f"{door_copy}:inline int listed(int n) noexcept {{ return ::sched_setaffinity(0, n, nullptr); }}"
+        plant_ledger(root, {listed_key: "effects::Init via listed (sched_setaffinity, fixture)"})
         breaches = {(breach.path, breach.line, breach.name) for breach in scan(root).breaches}
         expect("door: the door calls its syscall", (door_file, 3, "sched_setaffinity") not in breaches, True)
         for where, line, name, label in (
@@ -864,7 +906,7 @@ def self_test() -> int:
                 (door_copy, 6, "sched_setaffinity", "a raw syscall number"),
                 (door_copy, 7, "pthread_setaffinity_np", "the pthread call, which the door does not make"),
                 (door_copy, 8, "sched_setaffinity", "a marked call in a macro body"),
-                (door_copy, 9, "sched_setaffinity", "an allowlisted call")):
+                (door_copy, 9, "sched_setaffinity", "a call that a ledger row names")):
             expect(f"door: caught: {label}", (where, line, name) in breaches)
         with contextlib.redirect_stderr(io.StringIO()) as report:
             code = check(root)
@@ -877,8 +919,6 @@ def self_test() -> int:
         root = Path(work)
         for rel in (door_file, bench_pin, test_pin, nested_pin):
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
-        (root / "utils" / "scripts").mkdir(parents=True)
-        (root / ALLOWLIST).write_text("# fixture\n", encoding="utf-8")
         (root / door_file).write_text(
             "namespace fixy::detail {\n"
             "inline int set_calling_thread_affinity(int n) noexcept {\n"

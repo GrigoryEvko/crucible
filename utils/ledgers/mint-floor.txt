@@ -1,0 +1,36 @@
+# The ledger of the rule mint-floor: the mints of the past under the floor of
+# HS14.  `python3 utils/bin/guard explain mint-floor` tells the rule, and
+# `python3 utils/bin/guard check --rule mint-floor` runs it.
+#
+# One row is `PATH | - | admit | MINT | REASON`.  PATH is relative to the
+# source root, and MINT is `Class::mint_name` for a member mint.  The key has
+# no line number: a mint moves down its header each time an edit lands above
+# it, so a line key becomes stale at once.  The name and the path survive a
+# change of line, and they still pin the row to one declaration site.
+#
+# HS14 (CLAUDE.md section XVIII) asks for two negative-compile fixtures for
+# each mint, because a `requires` clause with no witness that it fires is a
+# comment.  Each time the rule read more of the tree, it found mints with no
+# fixtures.  These rows record those deficits.  A new mint with no fixtures
+# fails the rule at once.
+#
+# Each row is a task: write the fixtures, and remove the row.  A stale row
+# names a mint that meets the floor at this time, or that has a new name or a
+# new file.  A stale row fails the rule with exit 2, so the file drains with
+# the debt.  A reviewer writes each row by hand.
+format 1
+rule mint-floor
+include/crucible/cntp/Backpressure.h | - | admit | mint_admission_decision | A deficit of the past: the mint has fewer than two negative-compile fixtures in the fixture directories of its layer.  Write the fixtures, and remove the row
+include/crucible/cntp/Backpressure.h | - | admit | mint_resource_limit | A deficit of the past: the mint has fewer than two negative-compile fixtures in the fixture directories of its layer.  Write the fixtures, and remove the row
+include/crucible/cntp/Backpressure.h | - | admit | mint_resource_pressure | A deficit of the past: the mint has fewer than two negative-compile fixtures in the fixture directories of its layer.  Write the fixtures, and remove the row
+include/crucible/cntp/IncastControl.h | - | admit | mint_dctcp_incast_config | A deficit of the past: the mint has fewer than two negative-compile fixtures in the fixture directories of its layer.  Write the fixtures, and remove the row
+include/crucible/cntp/IncastControl.h | - | admit | mint_incast_config | A deficit of the past: the mint has fewer than two negative-compile fixtures in the fixture directories of its layer.  Write the fixtures, and remove the row
+include/crucible/cntp/Pacing.h | - | admit | mint_bbr_qdisc_config | A deficit of the past: the mint has fewer than two negative-compile fixtures in the fixture directories of its layer.  Write the fixtures, and remove the row
+include/crucible/observe/Metrics.h | - | admit | mint_canopy_metrics_reader | A deficit of the past: the mint has fewer than two negative-compile fixtures in the fixture directories of its layer.  Write the fixtures, and remove the row
+include/crucible/observe/Metrics.h | - | admit | mint_keeper_metrics_reader | A deficit of the past: the mint has fewer than two negative-compile fixtures in the fixture directories of its layer.  Write the fixtures, and remove the row
+include/crucible/observe/Metrics.h | - | admit | mint_metrics_writer | A deficit of the past: the mint has fewer than two negative-compile fixtures in the fixture directories of its layer.  Write the fixtures, and remove the row
+include/crucible/observe/SyntheticProbe.h | - | admit | mint_synthetic_probes | A deficit of the past: the mint has fewer than two negative-compile fixtures in the fixture directories of its layer.  Write the fixtures, and remove the row
+include/fixy/Fn.h | - | admit | mint_fn_for | The rule counts only the fixtures of the layer of the mint, and the mint has fewer than two in test/fixy/ and test/foundation/.  Write the fixtures, and remove the row
+include/fixy/Machine.h | - | admit | mint_machine | The rule counts only the fixtures of the layer of the mint, and the mint has fewer than two in test/fixy/ and test/foundation/.  Write the fixtures, and remove the row
+include/fixy/Qtt.h | - | admit | mint_affine | The rule counts only the fixtures of the layer of the mint, and the mint has fewer than two in test/fixy/ and test/foundation/.  Write the fixtures, and remove the row
+include/fixy/Refined.h | - | admit | mint_sealed_refined_trusted | The rule counts only the fixtures of the layer of the mint, and the mint has fewer than two in test/fixy/ and test/foundation/.  Write the fixtures, and remove the row

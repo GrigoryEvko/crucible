@@ -1,0 +1,65 @@
+# The ledger of the rule heavy-include: the includes of heavy standard headers in the headers
+# under include/.  `python3 utils/bin/guard explain heavy-include` tells the rule.
+#
+# A header that each translation unit compiles must not include a heavy header for one function.
+# utils/scripts/header-costs.txt gives the cost of each header.  A header is heavy when it costs
+# more than <meta> times the factor of the measured rule heavy-include of utils/registry.txt.
+#
+# A count row:  PATH | - | 1 | <header> | -
+#   An include that the tree holds today.  Each run gives a warning for it.  When you remove the
+#   include, run python3 utils/bin/guard check --rule heavy-include --write in the same commit.
+#
+# A keep row:   PATH | - | 1 | <header> | REASON
+#   A header that owns a heavy header on purpose, for example the one door of a system facility.
+#   The reason makes the row a keep row, and the row gives no warning.
+format 1
+rule heavy-include
+include/crucible/BackgroundThread.h | - | 1 | <memory> | -
+include/crucible/CKernel.h | - | 1 | <memory> | -
+include/crucible/Cipher.h | - | 1 | <filesystem> | -
+include/crucible/SchemaTable.h | - | 1 | <memory> | -
+include/crucible/Serialize.h | - | 1 | <memory> | -
+include/crucible/SwissTable.h | - | 1 | <arm_neon.h> | -
+include/crucible/TraceLoader.h | - | 1 | <memory> | -
+include/crucible/Vigil.h | - | 1 | <memory> | -
+include/crucible/canopy/bpf/common.h | - | 1 | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
+include/crucible/cntp/CongestionControl.h | - | 1 | <filesystem> | -
+include/crucible/cntp/Fec.h | - | 1 | <arm_neon.h> | -
+include/crucible/cntp/RoceConfig.h | - | 1 | <filesystem> | -
+include/crucible/cntp/bpf/common.h | - | 1 | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
+include/crucible/cntp/dataplane/bpf/common.h | - | 1 | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
+include/crucible/cog/bpf/common.h | - | 1 | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
+include/crucible/ledger/HostFingerprint.h | - | 1 | <filesystem> | -
+include/crucible/ledger/LedgerStore.h | - | 1 | <chrono> | -
+include/crucible/ledger/LedgerStore.h | - | 1 | <filesystem> | -
+include/crucible/ledger/ProbeSupport.h | - | 1 | <chrono> | -
+include/crucible/ledger/RefreshDaemon.h | - | 1 | <chrono> | -
+include/crucible/ledger/RefreshDaemon.h | - | 1 | <memory> | -
+include/crucible/ledger/RefreshDaemon.h | - | 1 | <thread> | -
+include/crucible/ledger/probes/CacheTier.h | - | 1 | <thread> | -
+include/crucible/observe/SdcDetect.h | - | 1 | <memory> | -
+include/crucible/observe/bpf/common.h | - | 1 | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
+include/crucible/perf/LockContention.h | - | 1 | <memory> | -
+include/crucible/perf/PmuSample.h | - | 1 | <memory> | -
+include/crucible/perf/ProcGauges.h | - | 1 | <memory> | -
+include/crucible/perf/SchedSwitch.h | - | 1 | <memory> | -
+include/crucible/perf/SchedTpBtf.h | - | 1 | <memory> | -
+include/crucible/perf/SenseHub.h | - | 1 | <memory> | -
+include/crucible/perf/SenseHubV2.h | - | 1 | <memory> | -
+include/crucible/perf/SyscallLatency.h | - | 1 | <memory> | -
+include/crucible/perf/SyscallTpBtf.h | - | 1 | <memory> | -
+include/crucible/perf/bpf/common.h | - | 1 | <bpf/bpf_core_read.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
+include/crucible/perf/bpf/common.h | - | 1 | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
+include/crucible/perf/bpf/common.h | - | 1 | <bpf/bpf_tracing.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
+include/crucible/perf/detail/BpfHub.h | - | 1 | <memory> | -
+include/crucible/topology/AsymmetricFailure.h | - | 1 | <memory> | -
+include/crucible/topology/CongestionTelemetryWorker.h | - | 1 | <memory> | -
+include/crucible/topology/Health.h | - | 1 | <memory> | -
+include/crucible/topology/Pingmesh.h | - | 1 | <chrono> | -
+include/crucible/topology/bpf/common.h | - | 1 | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
+include/crucible/warden/bpf/common.h | - | 1 | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
+include/fixy/Borrowed.h | - | 1 | <ranges> | -
+include/fixy/Budgeted.h | - | 1 | <memory> | -
+include/fixy/EpochVersioned.h | - | 1 | <memory> | -
+include/fixy/Path.h | - | 1 | <filesystem> | the path type is a Tagged over std::filesystem::path, so this header is the one owner of <filesystem> in fixy
+include/fixy/SelfContained.h | - | 1 | <ranges> | -

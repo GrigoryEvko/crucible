@@ -1,4 +1,4 @@
-"""check-quarantine-ratchet — the count of quarantine findings in each file, kind and entity can only fall.
+"""quarantine — the count of quarantine findings in each file, kind and entity can only fall.
 
 THE FINDINGS
     The quarantine plugin of utils/tools/quarantine/ writes the findings of
@@ -42,28 +42,29 @@ THE ENTITY
     it raises the count of std::map, and the check refuses that change.
 
 THE LEDGER
-    utils/scripts/quarantine-ledger.txt holds the count of each file, kind
-    and entity with a finding.  --write generates each row.  The rows are
-    sorted and each row holds one fact, so the resolution of a merge conflict
-    is a new --write.  The rows after the head comment:
+    utils/ledgers/quarantine.txt holds the count of each file, kind and
+    entity with a finding, in the rows of assay.core.ledger (the policy
+    count).  --write generates each row through assay.core.ledger.  The rows
+    are sorted and each row holds one fact, so the resolution of a merge
+    conflict is a new --write.  The rows after the head comment:
 
-        format 4
-        configuration NAME KEY VALUE   One row for each key of the
-                                       configuration NAME
-        FILE KIND COUNT ENTITY         The count of the base configuration.
-                                       ENTITY is the rest of the line, and
-                                       a kind with no entity has none
-        NAME FILE KIND DELTA ENTITY    The count of the configuration NAME,
-                                       as a difference from the base count:
-                                       +N or -N
+        format 1
+        rule quarantine
+        configuration NAME KEY VALUE           One row for each key of the
+                                               configuration NAME
+        FILE | KIND | COUNT | ENTITY | -       The count of the base
+                                               configuration.  A kind with
+                                               no entity has the cell "-"
+        @NAME | FILE | KIND | DELTA | ENTITY | -
+                                               The count of the configuration
+                                               NAME, as a difference from the
+                                               base count: +N or -N
 
     The first configuration of the ledger is the base.  The count of another
     configuration is the base count plus its difference, so a change that
-    lowers a count in each configuration writes only the base rows.
-    parse_ledger also reads the rows of format 1 (a directory and a kind),
-    of format 2 (a file and a kind, with no entity) and of format 3 (no row
-    of opted_out), for the history that the rule history
-    (`guard check --rule history`) reads.
+    lowers a count in each configuration writes only the base rows.  The rule
+    history (`guard check --rule history`) reads the versions of the ledger in
+    the git history, also the versions of its earlier formats.
 
 THE CONFIGURATION
     A configuration is the build kind and the target tier of
@@ -136,14 +137,16 @@ WRITE THE LEDGER
 A CONFIGURATION THAT ONLY CI BUILDS
     No aarch64 compiler is on the build host, so only a CI leg can count an
     aarch64 configuration.  For a configuration other than the base, the check
-    prints each row of the build with the prefix "quarantine-row: " after a
-    failure and when the ledger does not hold the configuration.  --import
-    LOG puts those rows into the ledger in place of the old rows of the
-    configuration.  Import the log of the commit that you merge, because a
-    difference row is relative to the base rows of that commit.  Import only
-    a configuration that no build of the host counts.  The name of a
-    configuration does not hold its tier, so the rows of an x86_64 CI runner
-    of another tier replace the rows that the local build counts.
+    prints each row of the build with the prefix "ledger-row: "
+    (assay.core.ledger.rows_of_counts) after a failure and when the ledger
+    does not hold the configuration.  --import LOG puts those rows into the
+    ledger in place of the old rows of the configuration
+    (assay.core.ledger.import_rows).  Import the log of the commit that you
+    merge, because a difference row is relative to the base rows of that
+    commit.  Import only a configuration that no build of the host counts.
+    The name of a configuration does not hold its tier, so the rows of an
+    x86_64 CI runner of another tier replace the rows that the local build
+    counts.
 
 NOT APPLICABLE
     The check exits 3, with the reason, when the build has no build kind,
@@ -154,11 +157,11 @@ NOT APPLICABLE
     (build_target.not_held), and then the rows of the build.
 
 Usage
-    guard check --rule quarantine-ratchet --build-dir DIR [--warnings-dir DIR]
-    guard check --rule quarantine-ratchet --build-dir DIR --write [--raise | --admit] [--add-configuration]
-    guard check --rule quarantine-ratchet --build-dir DIR --list [FILE|DIRECTORY [KIND]]
-    guard check --rule quarantine-ratchet --import LOG
-    guard check --rule quarantine-ratchet --self-test
+    guard check --rule quarantine --build-dir DIR [--warnings-dir DIR]
+    guard check --rule quarantine --build-dir DIR --write [--raise | --admit] [--add-configuration]
+    guard check --rule quarantine --build-dir DIR --list [FILE|DIRECTORY [KIND]]
+    guard check --rule quarantine --import LOG
+    guard check --rule quarantine --self-test
 
 Exit 0 with no finding or with warnings only, 1 with an error, 2 on a usage error
 or a failed self-test, 3 when the check does not apply to the build.
@@ -169,6 +172,7 @@ from __future__ import annotations
 import argparse
 import bisect
 import contextlib
+import dataclasses
 import io
 import json
 import os
@@ -177,28 +181,25 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from assay.core import git as throwaway_repo
+from assay.core import ledger as rule_ledger
 from assay.core import report as check_report
+from assay.core import rows as rows_grammar
 from assay.core import ruletable as layer_rules
 from assay.core import target as build_target
 from assay.core.paths import REPO_ROOT
 from assay.readers import census as build_census
 from assay.readers import sections as quarantine_sections
 
-CHECK = "quarantine-ratchet"
-LEDGER = "utils/scripts/quarantine-ledger.txt"
+CHECK = "quarantine"
+LEDGER = rule_ledger.shown_path(CHECK)
 RULES = "utils/scripts/layer-rules.txt"
 NOT_APPLICABLE = build_target.NOT_APPLICABLE
-FORMAT = 4
-# The formats that parse_ledger reads.  The check and --write use only FORMAT.
-READ_FORMATS = (2, 3, FORMAT)
-FORMAT_ROW = "format"
-CONFIGURATION_ROW = "configuration"
 KIND_KEY = "kind"
 TIER_KEY = "tier"
 # The cache variables that change the objects of all or their preprocessor arms.
@@ -209,9 +210,6 @@ CONFIGURATION = ("CMAKE_BUILD_TYPE", "CMAKE_CXX_FLAGS", "CRUCIBLE_SANITIZE", "CR
 PLUGIN_ARGUMENT = "-fplugin-arg-crucible_quarantine-"
 STAMP = re.compile(re.escape(PLUGIN_ARGUMENT) + r"stamp=(\S*)")
 CMAKE_FALSE = {"", "0", "OFF", "NO", "FALSE", "N", "IGNORE", "NOTFOUND"}
-NAME_PATTERN = re.compile(r"[a-z][a-z0-9_.-]*")
-ROW_MARK = "quarantine-row: "
-DELTA_PATTERN = re.compile(r"[+-][1-9][0-9]*")
 READERS = 16
 # The kinds whose entity is "NAME (TYPE)": the entity of a row is the library name (THE ENTITY).
 NAME_KINDS = frozenset(("std_object", "c_library_object"))
@@ -223,57 +221,8 @@ REASON_SEPARATOR = " | "
 # The operators of a new-expression, the longest first.  The type after the operator is not part of the entity.
 NEW_OPERATORS = ("placement new", "new")
 
-# The file, the kind and the entity of one count.
-Key = tuple[str, str, str]
-
-
-class LedgerError(ValueError):
-    """A row of the ledger does not have the format."""
-
-
-@dataclass(slots=True)
-class Ledger:
-    """The rows of the ledger: the configurations, the base counts, the differences and the line of each row.
-
-    `configurations` keeps the order of the ledger, and its first name is the
-    base.  A format 1 ledger counts directories, and its one configuration has
-    the name "default".  A count of format 1 or 2 has an empty entity.
-    """
-
-    head: list[str] = field(default_factory=list)
-    format: int = FORMAT
-    configurations: dict[str, dict[str, str]] = field(default_factory=dict)
-    counts: dict[Key, int] = field(default_factory=dict)
-    deltas: dict[str, dict[Key, int]] = field(default_factory=dict)
-    lines: dict[tuple[str, str, str], int] = field(default_factory=dict)
-
-    @property
-    def base(self) -> str | None:
-        """The name of the base configuration, or None for a ledger with no configuration."""
-        return next(iter(self.configurations), None)
-
-    def expected(self, name: str) -> dict[Key, int]:
-        """Return the count of each file, kind and entity of one configuration, with no zero count.
-
-        Complexity: linear in the rows of the base and of the configuration.
-        """
-        if name == self.base:
-            return dict(self.counts)
-        delta = self.deltas.get(name, {})
-        counts = {key: self.counts.get(key, 0) + delta.get(key, 0) for key in set(self.counts) | set(delta)}
-        return {key: count for key, count in counts.items() if count != 0}
-
-    def line_of(self, name: str, key: Key) -> int:
-        """Return the line of the row of one count: the difference row, else the base row, else 0.
-
-        A count with no row gives the first row of its file, so a new entity of a file points at the file.
-        Complexity: O(1) for a count with a row, else linear in the rows.
-        """
-        exact = self.lines.get((name, *key)) or self.lines.get((self.base or "", *key), 0)
-        if exact:
-            return exact
-        return min((line for (row_name, file, _kind, _entity), line in self.lines.items()
-                    if file == key[0] and row_name in (name, self.base)), default=0)
+# The file, the kind and the entity of one count: the key of a row of the ledger.
+Key = rule_ledger.Key
 
 
 @dataclass(slots=True)
@@ -294,128 +243,26 @@ class Census:
 # ── The ledger ─────────────────────────────────────────────────────
 
 
-def parse_ledger(text: str, where: str) -> Ledger:
-    """Read the text of a ledger of format 1, 2 or 3.  The leading comment lines are its head.
+def read_ledger(path: Path) -> rule_ledger.Ledger:
+    """Read the ledger file through assay.core.ledger.
 
     Raises:
-        LedgerError: If a row does not have the format, a row has a second copy, or a count of a configuration is
-        below 0
-    """
-    ledger = Ledger()
-    is_head = True
-    rows: list[tuple[int, str]] = []
-    for number, raw in enumerate(text.splitlines(), start=1):
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("#"):
-            if is_head:
-                ledger.head.append(raw)
-            continue
-        is_head = False
-        rows.append((number, stripped))
-    # A ledger with rows and no format row has format 1.  An empty ledger has the format of --write.
-    ledger.format = 1 if rows else FORMAT
-    if rows and rows[0][1].split()[0] == FORMAT_ROW:
-        number, row = rows.pop(0)
-        words = row.split()
-        if len(words) != 2 or words[1] not in {str(item) for item in READ_FORMATS}:
-            raise LedgerError(f"{where}:{number}: the format row is 'format {FORMAT}'")
-        ledger.format = int(words[1])
-    for number, row in rows:
-        if ledger.format == 1:
-            parse_row_format_1(ledger, number, row.split(), where)
-        else:
-            parse_row(ledger, number, row, where)
-    for name in ledger.configurations:
-        if any(count < 0 for count in ledger.expected(name).values()):
-            raise LedgerError(f"{where}: a difference of the configuration {name} makes a count below 0")
-    return ledger
-
-
-def parse_row_format_1(ledger: Ledger, number: int, words: list[str], where: str) -> None:
-    """Read one row of a format 1 ledger: a configuration row or a count of a directory and kind."""
-    if words[0] == CONFIGURATION_ROW and len(words) == 3:
-        ledger.configurations.setdefault("default", {})[words[1]] = words[2]
-        return
-    if len(words) != 3 or not words[2].isdigit():
-        raise LedgerError(f"{where}:{number}: a format 1 row is 'DIRECTORY KIND COUNT'")
-    ledger.configurations.setdefault("default", {})
-    ledger.counts[(words[0], words[1], "")] = int(words[2])
-    ledger.lines[("default", words[0], words[1], "")] = number
-
-
-def parse_row(ledger: Ledger, number: int, row: str, where: str) -> None:
-    """Read one row of a format 2 or format 3 ledger.  The entity of a format 3 row is the rest of the line.
-
-    Raises:
-        LedgerError: If the row does not have the format, or it has a second copy
-    """
-    words = row.split()
-    if words[0] == CONFIGURATION_ROW:
-        if len(words) != 4 or not NAME_PATTERN.fullmatch(words[1]):
-            raise LedgerError(f"{where}:{number}: a configuration row is 'configuration NAME KEY VALUE', with a "
-                              f"lowercase NAME")
-        keys = ledger.configurations.setdefault(words[1], {})
-        if words[2] in keys:
-            raise LedgerError(f"{where}:{number}: the configuration {words[1]} has a second row for {words[2]}")
-        keys[words[2]] = words[3]
-        return
-    base = ledger.base
-    is_delta = words[0] in ledger.configurations
-    if ledger.format == 2:
-        fields = words if len(words) == (4 if is_delta else 3) else []
-    else:
-        # The entity of a format 3 row is the rest of the line, with its spaces.  An empty field is no field.
-        fields = row.split(" ", 4 if is_delta else 3)
-    if is_delta:
-        if words[0] == base or len(fields) < 4 or "" in fields or not DELTA_PATTERN.fullmatch(fields[3]):
-            raise LedgerError(f"{where}:{number}: a difference row is 'NAME FILE KIND +N|-N ENTITY', for a "
-                              f"configuration other than the base {base}")
-        name, key, value = fields[0], (fields[1], fields[2], fields[4] if len(fields) == 5 else ""), int(fields[3])
-        table = ledger.deltas.setdefault(name, {})
-    else:
-        if base is None or len(fields) < 3 or "" in fields or not fields[2].isdigit() or int(fields[2]) == 0:
-            raise LedgerError(f"{where}:{number}: a count row is 'FILE KIND COUNT ENTITY', with a COUNT above 0, "
-                              f"after the configuration rows")
-        name, key, value = base, (fields[0], fields[1], fields[3] if len(fields) == 4 else ""), int(fields[2])
-        table = ledger.counts
-    if key[2] != " ".join(key[2].split()):
-        raise LedgerError(f"{where}:{number}: the entity {key[2]!r} has more than one space between two words")
-    if key in table:
-        raise LedgerError(f"{where}:{number}: the file {key[0]}, the kind {key[1]} and the entity {key[2]!r} have a "
-                          f"second row in the configuration {name}")
-    table[key] = value
-    ledger.lines[(name, *key)] = number
-
-
-def read_ledger(path: Path) -> Ledger:
-    """Read the ledger file.
-
-    Raises:
-        LedgerError: If a row does not have the format
+        rows_grammar.RowsError: If the file does not obey the ledger schema of the policy count
+        rule_ledger.LedgerError: If the registry has no rule quarantine
         OSError: If the file cannot be read
     """
-    return parse_ledger(path.read_text(encoding="utf-8"), str(path))
+    return rule_ledger.read(rule_ledger.rule_of(CHECK), file=path)
 
 
-def row_text(*fields: str) -> str:
-    """Return one row: its fields with one space between them.  An empty entity at the end gives no field."""
+def facts_of(ledger: rule_ledger.Ledger, name: str) -> dict[str, str] | None:
+    """Return the keys and the values of a configuration of the ledger, or None when the ledger does not hold it."""
+    item = ledger.configuration(name)
+    return dict(item.facts) if item is not None else None
+
+
+def joined(*fields: str) -> str:
+    """Return the fields with one space between them.  An empty field at the end gives no space."""
     return " ".join(fields).rstrip(" ")
-
-
-def ledger_text(ledger: Ledger) -> str:
-    """Return the text of a format 3 ledger: the head, the configurations, the base rows, then the differences.
-
-    Complexity: O(r log r) for r rows.
-    """
-    lines = [*ledger.head, f"{FORMAT_ROW} {FORMAT}"]
-    lines += [f"{CONFIGURATION_ROW} {name} {key} {value}" for name, keys in ledger.configurations.items()
-              for key, value in keys.items()]
-    lines += [row_text(file, kind, str(count), entity) for (file, kind, entity), count in sorted(ledger.counts.items())
-              if count > 0]
-    lines += [row_text(name, file, kind, f"{delta:+d}", entity) for name in ledger.configurations
-              if name in ledger.deltas for (file, kind, entity), delta in sorted(ledger.deltas[name].items())
-              if delta != 0]
-    return "\n".join(lines) + "\n"
 
 
 # ── The configuration ──────────────────────────────────────────────
@@ -478,11 +325,12 @@ def configuration_difference(build: dict[str, str], ledger: dict[str, str]) -> l
             for name in sorted(set(build) | set(ledger)) if build.get(name) != ledger.get(name)]
 
 
-def held_line(ledger: Ledger, name: str, configuration: dict[str, str]) -> str:
+def held_line(ledger: rule_ledger.Ledger, name: str, configuration: dict[str, str]) -> str:
     """Return the one line of a build whose configuration the ledger does not hold (build_target.not_held)."""
-    held = [(held_name, keys.get(TIER_KEY, "?")) for held_name, keys in ledger.configurations.items()]
-    difference = configuration_difference(configuration, ledger.configurations.get(name, {}))
-    detail = (f"Its configuration {name} differs: {'; '.join(difference)}" if name in ledger.configurations else "")
+    held = [(item.name, dict(item.facts).get(TIER_KEY, "?")) for item in ledger.configurations]
+    facts = facts_of(ledger, name)
+    difference = configuration_difference(configuration, facts or {})
+    detail = f"Its configuration {name} differs: {'; '.join(difference)}" if facts is not None else ""
     return build_target.not_held(CHECK, name, configuration[TIER_KEY], held, detail)
 
 
@@ -608,7 +456,7 @@ def entity_key(kind: str, entity: str) -> str:
 def opted_out_key(reason: str, entity: str) -> str:
     """Return the entity of the row of an opted_out finding: the reason of its region, the inner kind and entity."""
     inner, _, rest = " ".join(entity.split()).partition(" ")
-    return row_text(f"{' '.join(reason.split())}{REASON_SEPARATOR}{inner}", entity_key(inner, rest))
+    return joined(f"{' '.join(reason.split())}{REASON_SEPARATOR}{inner}", entity_key(inner, rest))
 
 
 def count_findings(findings: Iterable[quarantine_sections.Finding],
@@ -621,9 +469,9 @@ def count_findings(findings: Iterable[quarantine_sections.Finding],
     counts: Counter[Key] = Counter()
     for item in findings:
         if item.kind != quarantine_sections.OPTED_OUT:
-            counts[(item.file, item.kind, entity_key(item.kind, item.entity))] += 1
+            counts[Key(item.file, item.kind, entity_key(item.kind, item.entity))] += 1
         elif item in reasons:
-            counts[(item.file, item.kind, opted_out_key(reasons[item], item.entity))] += 1
+            counts[Key(item.file, item.kind, opted_out_key(reasons[item], item.entity))] += 1
     return counts
 
 
@@ -632,36 +480,10 @@ def described(kind: str, entity: str) -> str:
     return f"the kind {kind} and the entity {entity}" if entity else f"the kind {kind}"
 
 
-def git_moves(root: Path) -> dict[str, str]:
-    """Return the old path of each file that git reports as moved between HEAD and the work tree.
-
-    A tree that is not a git work tree, or a failed git command, gives no move.
-    """
-    try:
-        proc = subprocess.run(["git", "-C", str(root), "diff", "--find-renames", "--name-status", "-z", "HEAD",
-                               "--"], capture_output=True, check=False)
-    except OSError:
-        return {}
-    if proc.returncode != 0:
-        return {}
-    moves: dict[str, str] = {}
-    words = proc.stdout.decode("utf-8", "surrogateescape").split("\0")
-    index = 0
-    while index < len(words):
-        status = words[index]
-        if status[:1] in ("R", "C") and index + 2 < len(words):
-            if status[0] == "R":
-                moves[words[index + 2]] = words[index + 1]
-            index += 3
-        else:
-            index += 2 if status else 1
-    return moves
-
-
 # ── The verdict ────────────────────────────────────────────────────
 
 
-def evaluate(counts: Counter[Key], ledger: Ledger, name: str, rows: list[str], ledger_shown: str,
+def evaluate(counts: Counter[Key], ledger: rule_ledger.Ledger, name: str, rows: list[str], ledger_shown: str,
              build_shown: str) -> list[check_report.Finding]:
     """Compare each count of the build with its ledger count, and give one warning for each directory that passes.
 
@@ -669,16 +491,16 @@ def evaluate(counts: Counter[Key], ledger: Ledger, name: str, rows: list[str], l
     """
     findings: list[check_report.Finding] = []
     expected = ledger.expected(name)
-    held = {file for file, _, _ in expected}
+    held = {key.path for key in expected}
     failed: set[str] = set()
-    script = f"python3 utils/bin/guard check --rule quarantine-ratchet --build-dir {build_shown}"
+    script = f"python3 utils/bin/guard check --rule {CHECK} --build-dir {build_shown}"
     for key in sorted(set(counts) | set(expected)):
-        file, kind, entity = key
+        file, kind, entity = key.path, key.kind, key.entity
         measured, admitted = counts.get(key, 0), expected.get(key, 0)
         if measured == admitted:
             continue
         failed.add(directory_of(file, rows))
-        line = ledger.line_of(name, key)
+        line = ledger.line_of(key, name)
         listing = f"`{script} --list {file} {kind}`"
         what = described(kind, entity)
         if measured > admitted and kind == quarantine_sections.OPTED_OUT:
@@ -709,11 +531,11 @@ def evaluate(counts: Counter[Key], ledger: Ledger, name: str, rows: list[str], l
     kept: dict[str, Counter[str]] = {}
     first_line: dict[str, int] = {}
     for key, admitted in sorted(expected.items()):
-        directory = directory_of(key[0], rows)
+        directory = directory_of(key.path, rows)
         if directory in failed:
             continue
-        kept.setdefault(directory, Counter())[key[1]] += admitted
-        first_line.setdefault(directory, ledger.line_of(name, key))
+        kept.setdefault(directory, Counter())[key.kind] += admitted
+        first_line.setdefault(directory, ledger.line_of(key, name))
     for directory, kinds in sorted(kept.items()):
         shown = ", ".join(f"{kind} {count}" for kind, count in sorted(kinds.items()))
         findings.append(check_report.Finding("warning", ledger_shown, first_line[directory], CHECK,
@@ -748,13 +570,9 @@ def run(build_dir: Path, root: Path, ledger_path: Path, rules_path: Path, warnin
     try:
         ledger = read_ledger(ledger_path)
         table = layer_rules.load(rules_path)
-    except (OSError, LedgerError, layer_rules.TableError) as problem:
-        return check_report.emit([check_report.Finding("error", ledger_shown, 0, CHECK, str(problem))], CHECK,
-                                 warnings_dir)
-    if ledger.format != FORMAT:
-        return check_report.emit([check_report.Finding(
-            "error", ledger_shown, 0, CHECK, f"the ledger has format {ledger.format}, and the check reads format "
-            f"{FORMAT}.  Generate it again with --write --add-configuration")], CHECK, warnings_dir)
+    except (OSError, rows_grammar.RowsError, rule_ledger.LedgerError, layer_rules.TableError) as problem:
+        return check_report.emit([check_report.Finding("error", ledger_shown, getattr(problem, "line", 0), CHECK,
+                                                       str(problem))], CHECK, warnings_dir)
     if build_target.kind_of(build_dir) is None:
         print(f"{CHECK}: {build_shown} has no build-kind.txt.  The check does not apply")
         return NOT_APPLICABLE
@@ -779,7 +597,7 @@ def run(build_dir: Path, root: Path, ledger_path: Path, rules_path: Path, warnin
     counts = count_findings(census.findings, census.reasons)
     if request.listed is not None:
         return list_findings(census, request.listed)
-    is_held = ledger.configurations.get(name) == configuration
+    is_held = facts_of(ledger, name) == configuration
     if request.write:
         return write_ledger(root, ledger_path, ledger, name if is_held else None, name, configuration, counts,
                             census, request, warnings_dir)
@@ -789,7 +607,7 @@ def run(build_dir: Path, root: Path, ledger_path: Path, rules_path: Path, warnin
         return NOT_APPLICABLE
     findings = census.problems + evaluate(counts, ledger, name, rows, ledger_shown, build_shown)
     status = check_report.emit(findings, CHECK, warnings_dir)
-    files = {file for file, _, _ in counts}
+    files = {key.path for key in counts}
     print(f"{CHECK}: {sum(counts.values())} findings in {len(counts)} rows of {len(files)} files, configuration "
           f"{name} on {configuration[TIER_KEY]}, from {census.objects} objects")
     if status != 0:
@@ -809,22 +627,20 @@ def list_findings(census: Census, listed: list[str]) -> int:
     return 0
 
 
-def print_rows(ledger: Ledger, name: str, configuration: dict[str, str], counts: Counter[Key],
+def print_rows(ledger: rule_ledger.Ledger, name: str, configuration: dict[str, str], counts: Counter[Key],
                census: Census) -> None:
     """Print the rows of the configuration of the build, as --import reads them from a log.
 
     The base has no such rows, because --write writes it, and a build with a
-    problem object has no rows to print.  Each row has the prefix ROW_MARK.
+    problem object has no rows to print.  Each row has the prefix
+    assay.core.ledger.ROW_MARK.
     """
-    if name == ledger.base or ledger.base is None or census.problems:
+    if name == ledger.base_name or ledger.base_name is None or census.problems:
         return
-    rows = [f"{CONFIGURATION_ROW} {name} {key} {value}" for key, value in configuration.items()]
-    rows += [row_text(name, file, kind, f"{counts.get(key, 0) - ledger.counts.get(key, 0):+d}", entity)
-             for key in sorted(set(counts) | set(ledger.counts)) for file, kind, entity in [key]
-             if counts.get(key, 0) != ledger.counts.get(key, 0)]
-    build_target.print_rows(ROW_MARK, rows)
+    for line in rule_ledger.rows_of_counts(ledger, name, list(configuration.items()), counts):
+        print(line)
     print(f"{CHECK}: the lines above give the rows of the configuration {name}.  Import them from the log with "
-          f"`python3 utils/bin/guard check --rule quarantine-ratchet --import LOG`")
+          f"`python3 utils/bin/guard check --rule {CHECK} --import LOG`")
 
 
 def import_rows(ledger_path: Path, source: Path) -> int:
@@ -834,64 +650,23 @@ def import_rows(ledger_path: Path, source: Path) -> int:
         0 when the ledger is written, 1 when the rows or the ledger do not have the format
     """
     try:
-        ledger = read_ledger(ledger_path)
-        rows = [row for row in build_target.rows_in_log(source.read_text(encoding="utf-8", errors="replace"),
-                                                        ROW_MARK) if row.split()]
-        names = {words[1] if words[0] == CONFIGURATION_ROW and len(words) > 1 else words[0]
-                 for words in (row.split() for row in rows)}
-        if len(names) != 1:
-            raise LedgerError(f"{source}: the rows name {len(names)} configurations, and an import takes one")
-        name = names.pop()
-        if name == ledger.base:
-            raise LedgerError(f"{source}: the rows are of the base configuration {name}.  Write it with --write")
-        keys: dict[str, str] = {}
-        deltas: dict[Key, int] = {}
-        for row in rows:
-            words = row.split()
-            # The entity of a difference row is the rest of the line, with its spaces.
-            fields = row.split(" ", 4)
-            if words[0] == CONFIGURATION_ROW and len(words) == 4:
-                if keys.setdefault(words[2], words[3]) != words[3]:
-                    raise LedgerError(f"{source}: the key {words[2]} has two values")
-            elif len(fields) >= 4 and "" not in fields and DELTA_PATTERN.fullmatch(fields[3]):
-                key = (fields[1], fields[2], fields[4] if len(fields) == 5 else "")
-                if deltas.setdefault(key, int(fields[3])) != int(fields[3]):
-                    raise LedgerError(f"{source}: the file {key[0]}, the kind {key[1]} and the entity {key[2]!r} have "
-                                      f"two values")
-            else:
-                raise LedgerError(f"{source}: the row {row!r} is not a row of a configuration")
-        ledger.configurations[name] = keys
-        ledger.deltas[name] = deltas
-        text = ledger_text(ledger)
-        parse_ledger(text, str(source))
-    except (OSError, LedgerError) as problem:
+        ledger = rule_ledger.import_rows(read_ledger(ledger_path), source.read_text(encoding="utf-8",
+                                                                                    errors="replace"))
+    except (OSError, rows_grammar.RowsError, rule_ledger.LedgerError) as problem:
         print(f"{CHECK}: the ledger is not written: {problem}", file=sys.stderr)
         return 1
-    ledger_path.write_text(text, encoding="utf-8")
-    print(f"{CHECK}: imported the configuration {name}: {len(keys)} keys and {len(deltas)} difference rows, to "
-          f"{ledger_path}")
+    rule_ledger.store(ledger, file=ledger_path)
+    name = ledger.configurations[-1].name
+    print(f"{CHECK}: imported the configuration {name}: {len(ledger.configurations[-1].facts)} keys and "
+          f"{len(ledger.deltas.get(name, {}))} difference rows, to {ledger_path}")
     return 0
 
 
-def moved_expectation(expected: dict[Key, int], moves: dict[str, str]) -> dict[Key, int]:
-    """Return the expected counts with the rows of each moved file under its new path.
-
-    A move counts only from a file that the ledger holds to a file that it does not hold.
-    """
-    held = {file for file, _, _ in expected}
-    renamed = {new: old for new, old in moves.items() if old in held and new not in held}
-    result = dict(expected)
-    for (file, kind, entity), count in expected.items():
-        for new, old in renamed.items():
-            if old == file:
-                result[(new, kind, entity)] = count
-    return result
-
-
-def write_ledger(root: Path, ledger_path: Path, ledger: Ledger, held: str | None, name: str,
+def write_ledger(root: Path, ledger_path: Path, ledger: rule_ledger.Ledger, held: str | None, name: str,
                  configuration: dict[str, str], counts: Counter[Key], census: Census, request: Request,
                  warnings_dir: Path | None) -> int:
-    """Write the rows of the configuration of the build, unless an object has a problem or a count rose.
+    """Write the rows of the configuration of the build through assay.core.ledger, unless an object has a problem or
+    a count rose.
 
     `held` is the name of the configuration when the ledger holds it, else None.  Complexity: O(k log k) for k
     rows of the ledger and counts of the build.
@@ -899,74 +674,67 @@ def write_ledger(root: Path, ledger_path: Path, ledger: Ledger, held: str | None
     if census.problems:
         print(f"{CHECK}: the ledger is not written, because an object has a problem", file=sys.stderr)
         return check_report.emit(census.problems, CHECK, warnings_dir)
+    rule = rule_ledger.rule_of(CHECK)
+    moves: dict[str, str] = {}
+    mode = rule_ledger.WriteMode.LOWER
     if request.add_configuration:
         refusal = add_refusal(ledger, held, name)
         if refusal:
             print(f"{CHECK}: the ledger is not written: {refusal}", file=sys.stderr)
             return 1
-        ledger.configurations[name] = dict(configuration)
+        added = rule_ledger.Configuration(name, tuple(configuration.items()))
+        others = tuple(item for item in ledger.configurations if item.name != name)
+        ledger = dataclasses.replace(ledger, configurations=(*others, added),
+                                     deltas={key: table for key, table in ledger.deltas.items() if key != name})
+        mode = rule_ledger.WriteMode.RAISE
     elif held is None:
         print(held_line(ledger, name, configuration))
         print(f"{CHECK}: the ledger is not written.  Give --add-configuration to write the configuration of the "
               f"build", file=sys.stderr)
         return NOT_APPLICABLE
     else:
-        moves = git_moves(root)
-        expected = moved_expectation(ledger.expected(name), moves)
-        held = {file for file, _, _ in expected}
+        moves = throwaway_repo.moves(root)
+        expected = rule_ledger.moved_counts(ledger.expected(name), moves)
+        held_files = {key.path for key in expected}
         rises = sorted((key, count, expected.get(key, 0)) for key, count in counts.items()
                        if count > expected.get(key, 0))
-        for (file, kind, entity), count, admitted in rises:
-            words = "a file that the ledger does not hold" if file not in held else f"rises from {admitted}"
-            print(f"{CHECK}: {file} has {count} findings of {described(kind, entity)}, {words}", file=sys.stderr)
+        for key, count, admitted in rises:
+            words = "a file that the ledger does not hold" if key.path not in held_files else f"rises from {admitted}"
+            print(f"{CHECK}: {key.path} has {count} findings of {described(key.kind, key.entity)}, {words}",
+                  file=sys.stderr)
         # --admit writes a region that covers more, and --raise writes each count.
         refused = [rise for rise in rises if not request.allow_raise
-                   and not (request.admit and rise[0][1] == quarantine_sections.OPTED_OUT)]
+                   and not (request.admit and rise[0].kind == quarantine_sections.OPTED_OUT)]
         if refused:
             print(f"{CHECK}: the ledger is not written: {len(refused)} counts rose.  Remove the new findings.  Give "
                   f"--admit only for a region that must cover more, and --raise only when the plugin or the rule "
                   f"table changed what it reports", file=sys.stderr)
             return 1
-        move_rows(ledger, moves)
-    base = ledger.base
-    if name == base:
-        ledger.counts = dict(counts)
-        drop_gone_files(ledger, root, counts)
-    else:
-        ledger.deltas[name] = {key: counts.get(key, 0) - ledger.counts.get(key, 0)
-                               for key in set(counts) | set(ledger.counts)
-                               if counts.get(key, 0) != ledger.counts.get(key, 0)}
-    ledger_path.write_text(ledger_text(ledger), encoding="utf-8")
-    files = {file for file, _, _ in counts}
+        mode = rule_ledger.WriteMode.RAISE if rises else rule_ledger.WriteMode.LOWER
+    written = rule_ledger.write_counts(rule, ledger, counts, name, mode, moved=moves)
+    if name == written.base_name:
+        written = drop_gone_files(written, root, counts)
+    rule_ledger.store(written, file=ledger_path)
+    files = {key.path for key in counts}
     print(f"{CHECK}: wrote the configuration {name}: {sum(counts.values())} findings in {len(counts)} rows of "
           f"{len(files)} files, to {ledger_path}")
     return 0
 
 
-def add_refusal(ledger: Ledger, held: str | None, name: str) -> str:
+def add_refusal(ledger: rule_ledger.Ledger, held: str | None, name: str) -> str:
     """Return the reason that --add-configuration cannot write the configuration of the build, or an empty text."""
-    if not NAME_PATTERN.fullmatch(name):
+    if not rule_ledger.rows_grammar_name(name):
         return f"the name {name!r} of the configuration is not a lowercase word"
     if held is not None:
         return f"the ledger holds the configuration {name} of the build.  Write its rows with --write"
-    if name == ledger.base:
+    if name == ledger.base_name:
         return (f"the build has other keys than the base configuration {name}.  A change of the base keys "
                 f"generates the ledger again: keep its head, remove its rows, then run --write "
                 f"--add-configuration in the build of each configuration, the base first")
     return ""
 
 
-def move_rows(ledger: Ledger, moves: dict[str, str]) -> None:
-    """Move the difference rows of each moved file to its new path, in each configuration."""
-    for table in ledger.deltas.values():
-        for (file, kind, entity), delta in list(table.items()):
-            new = next((new for new, old in moves.items() if old == file), None)
-            if new is not None and (new, kind, entity) not in table:
-                del table[(file, kind, entity)]
-                table[(new, kind, entity)] = delta
-
-
-def drop_gone_files(ledger: Ledger, root: Path, counts: Counter[Key]) -> None:
+def drop_gone_files(ledger: rule_ledger.Ledger, root: Path, counts: Mapping[Key, int]) -> rule_ledger.Ledger:
     """Remove the difference rows of each source file that the tree does not hold, and keep each count at 0 or above.
 
     A file of the build directory (layer_rules.BUILD_PREFIX) is in no source tree.  A write of the base cannot know
@@ -975,16 +743,21 @@ def drop_gone_files(ledger: Ledger, root: Path, counts: Counter[Key]) -> None:
     file, its check fails on the row until its own --write removes the row.  Complexity: linear in the difference
     rows.
     """
-    for table in ledger.deltas.values():
-        for key, delta in list(table.items()):
-            base = ledger.counts.get(key, 0)
-            is_source_gone = not key[0].startswith(layer_rules.BUILD_PREFIX) and not (root / key[0]).exists()
+    deltas: dict[str, dict[Key, rule_ledger.Entry]] = {}
+    for name, table in ledger.deltas.items():
+        kept: dict[Key, rule_ledger.Entry] = {}
+        for key, entry in table.items():
+            base = int(ledger.base[key].value) if key in ledger.base else 0
+            delta = int(entry.value)
+            is_source_gone = not key.path.startswith(layer_rules.BUILD_PREFIX) and not (root / key.path).exists()
             if key not in counts and is_source_gone:
-                del table[key]
-            elif base + delta < 0:
-                table[key] = -base
-                if table[key] == 0:
-                    del table[key]
+                continue
+            if base + delta < 0:
+                delta = -base
+            if delta != 0:
+                kept[key] = dataclasses.replace(entry, value=delta)
+        deltas[name] = kept
+    return dataclasses.replace(ledger, deltas=deltas)
 
 
 # ── The self-test ──────────────────────────────────────────────────
@@ -999,6 +772,7 @@ sys.stdout.write((build / "inputs.txt").read_text())
 RULES_TEXT = ("layer base 0 include/fixy/ include/fixy/session/\n"
               "quarantine include/crucible/\nquarantine src/\nquarantine test/\nquarantine @build/\n")
 HEAD = "# a planted ledger\n"
+EMPTY_LEDGER = f"{HEAD}format 1\nrule {CHECK}\n"
 STAMP_VALUE = "0123abcd"
 PROBE_REASON = "PROBE: a planted region"
 # A fake compiler: -Q --help=target prints the -march value of the file march.txt beside it, or of native.txt for
@@ -1040,8 +814,9 @@ class Scratch:
         (root / ".gitignore").write_text("build/\n", encoding="utf-8")
         self.git("add", "-A", "--", ".")
         self.git("commit", "-q", "-m", "Add the planted sources")
-        self.ledger = root / "quarantine-ledger.txt"
-        self.ledger.write_text(HEAD, encoding="utf-8")
+        self.ledger = root / LEDGER
+        self.ledger.parent.mkdir(parents=True)
+        self.ledger.write_text(EMPTY_LEDGER, encoding="utf-8")
         self.rules = root / "layer-rules.txt"
         self.rules.write_text(RULES_TEXT, encoding="utf-8")
         ninja = root / "ninja.py"
@@ -1112,13 +887,33 @@ class Scratch:
         _, findings, _ = self.run()
         return [item.message.split(".  ")[0] for item in findings if item.level == "error"]
 
-    def counts(self) -> Counter[Key]:
+    def counts(self) -> dict[tuple[str, str, str], int]:
         """Return the count of each file, kind and entity of the planted objects."""
         census = read_census(plugin_objects(self.build, self.root), self.build)
-        return count_findings(census.findings, census.reasons)
+        return as_tuples(count_findings(census.findings, census.reasons))
 
 
-def directory_totals(counts: dict[Key, int], rows: list[str]) -> Counter[tuple[str, str]]:
+def as_tuples(counts: Mapping[Key, int]) -> dict[tuple[str, str, str], int]:
+    """Return the counts with each key as the tuple (file, kind, entity)."""
+    return {(key.path, key.kind, key.entity): count for key, count in counts.items()}
+
+
+def base_counts(path: Path) -> dict[tuple[str, str, str], int]:
+    """Return the count of each base row of a planted ledger, each keyed by file, kind and entity."""
+    return as_tuples({key: int(entry.value) for key, entry in read_ledger(path).base.items()})
+
+
+def delta_counts(path: Path, name: str) -> dict[tuple[str, str, str], int]:
+    """Return the difference of each row of one configuration of a planted ledger, each keyed by file, kind and entity."""
+    return as_tuples({key: int(entry.value) for key, entry in read_ledger(path).deltas.get(name, {}).items()})
+
+
+def delta_row(name: str, path: str, kind: str, delta: str, entity: str) -> str:
+    """Return one difference row that the check prints for an import, with its mark."""
+    return rule_ledger.ROW_MARK + rows_grammar.render([f"{rule_ledger.DELTA_MARK}{name}"], [path, kind, delta, entity, ""])
+
+
+def directory_totals(counts: dict[tuple[str, str, str], int], rows: list[str]) -> Counter[tuple[str, str]]:
     """Return the count of each directory and kind: the rule of the ratchet before it counted files."""
     totals: Counter[tuple[str, str]] = Counter()
     for (file, kind, _entity), count in counts.items():
@@ -1126,7 +921,7 @@ def directory_totals(counts: dict[Key, int], rows: list[str]) -> Counter[tuple[s
     return totals
 
 
-def file_totals(counts: dict[Key, int]) -> Counter[tuple[str, str]]:
+def file_totals(counts: dict[tuple[str, str, str], int]) -> Counter[tuple[str, str]]:
     """Return the count of each file and kind: the rule of the ratchet before it counted entities."""
     totals: Counter[tuple[str, str]] = Counter()
     for (file, kind, _entity), count in counts.items():
@@ -1159,31 +954,18 @@ def self_test() -> int:
            (normalized("BOOL", "TRUE"), normalized("BOOL", "OFF"), normalized("PATH", "x-NOTFOUND"),
             normalized("FILEPATH", "/usr/bin/x"), normalized("STRING", ""), normalized("STRING", "Debug"))
            == ("on", "off", "unset", "set", "unset", "Debug"))
-    for text in ("format 3\nconfiguration b machine x\nx.cpp std_object -1 std::vector\n",
-                 "format 3\nconfiguration b machine x\nconfiguration r machine y\nb x.cpp std_object +1 std::vector\n",
-                 "format 3\nconfiguration b machine x\nconfiguration r machine y\nx.cpp k 1 e\nr x.cpp k -2 e\n",
-                 "format 3\nx.cpp std_object 1 std::vector\n", "format 5\n",
-                 "format 3\nconfiguration b machine x\nx.cpp std_object 1  std::vector\n",
-                 "format 3\nconfiguration b machine x\nx.cpp std_object 1 std::vector\n"
-                 "x.cpp std_object 2 std::vector\n",
-                 "format 2\nconfiguration b machine x\nx.cpp std_object 1 std::vector\n"):
-        try:
-            parse_ledger(text, "planted")
-            expect(f"a malformed ledger is refused: {text!r}", False)
-        except LedgerError:
-            expect(f"a malformed ledger is refused: {text.splitlines()[-1]!r}", True)
-    keyed = parse_ledger("format 3\nconfiguration b machine x\nconfiguration r machine y\n"
-                         "x.cpp raw_pointer_object 2\nx.cpp layer_header 1 <vector> in the layer X1\n"
-                         "r x.cpp layer_header +1 <vector> in the layer X1\n", "planted")
-    expect("a row keeps the spaces of its entity, and a kind with no entity has none",
-           keyed.counts == {("x.cpp", "raw_pointer_object", ""): 2,
-                            ("x.cpp", "layer_header", "<vector> in the layer X1"): 1}
-           and keyed.expected("r")[("x.cpp", "layer_header", "<vector> in the layer X1")] == 2
-           and ledger_text(keyed).endswith("x.cpp layer_header 1 <vector> in the layer X1\nx.cpp raw_pointer_object 2\n"
-                                           "r x.cpp layer_header +1 <vector> in the layer X1\n"), ledger_text(keyed))
-    old = parse_ledger("format 2\nconfiguration b machine x\nx.cpp std_object 3\n", "planted")
-    expect("a format 2 ledger reads with an empty entity, for the history",
-           old.format == 2 and old.counts == {("x.cpp", "std_object", ""): 3})
+    keyed = rule_ledger.parse(f"{EMPTY_LEDGER}configuration b machine x\nconfiguration r machine y\n"
+                              "x.cpp | raw_pointer_object | 2 | - | -\n"
+                              "x.cpp | layer_header | 1 | <vector> in the layer X1 | -\n"
+                              "x.cpp | opted_out | 1 | PROBE: a region \\| c_library_call memcpy | -\n"
+                              "@r | x.cpp | layer_header | +1 | <vector> in the layer X1 | -\n", "planted", CHECK,
+                              rule_ledger.rule_of(CHECK).policy)
+    expect("a row keeps the spaces and the bar of its entity, and a kind with no entity has the empty cell",
+           as_tuples({key: int(entry.value) for key, entry in keyed.base.items()})
+           == {("x.cpp", "raw_pointer_object", ""): 2, ("x.cpp", "layer_header", "<vector> in the layer X1"): 1,
+               ("x.cpp", "opted_out", "PROBE: a region | c_library_call memcpy"): 1}
+           and keyed.expected("r")[Key("x.cpp", "layer_header", "<vector> in the layer X1")] == 2,
+           rule_ledger.render(keyed))
     expect("the entity of a row names what the plugin refuses, with no type of the code",
            [entity_key(kind, entity) for kind, entity in (
                ("std_object", "std::span (std::span<const Row>)"), ("c_library_object", "_IO_FILE (FILE*)"),
@@ -1205,19 +987,18 @@ def self_test() -> int:
         status, _, _ = scratch.run(write=True, add_configuration=True)
         written = read_ledger(scratch.ledger)
         expect("--add-configuration writes one row for each file, kind and entity of the base",
-               status == 0 and written.counts == {("include/crucible/Vigil.h", "std_object", "std::vector"): 1,
-                                                  ("include/fixy/session/Handle.h", "upward_include",
-                                                   "include/crucible/X.h"): 1,
-                                                  ("src/canopy/Lifeguard.cpp", "raw_pointer_object", ""): 1,
-                                                  ("test/fixy/test_a.cpp", "c_library_call", "memcpy"): 1,
-                                                  ("test/fixy/test_a.cpp", "opted_out",
-                                                   f"{PROBE_REASON} | raw_pointer_object"): 1,
-                                                  ("test/fixy/test_b.cpp", "std_object", "std::span"): 1,
-                                                  ("test/test_arena.cpp", "std_entity", "std::swap"): 1},
-               written.counts)
-        base_keys = written.configurations.get(BASE_NAME, {})
-        expect("--write keeps the head and writes the format and the configuration under the name of the kind",
-               written.head == [HEAD.strip()] and written.format == FORMAT and written.base == BASE_NAME
+               status == 0 and base_counts(scratch.ledger) == {
+                   ("include/crucible/Vigil.h", "std_object", "std::vector"): 1,
+                   ("include/fixy/session/Handle.h", "upward_include", "include/crucible/X.h"): 1,
+                   ("src/canopy/Lifeguard.cpp", "raw_pointer_object", ""): 1,
+                   ("test/fixy/test_a.cpp", "c_library_call", "memcpy"): 1,
+                   ("test/fixy/test_a.cpp", "opted_out", f"{PROBE_REASON} | raw_pointer_object"): 1,
+                   ("test/fixy/test_b.cpp", "std_object", "std::span"): 1,
+                   ("test/test_arena.cpp", "std_entity", "std::swap"): 1},
+               base_counts(scratch.ledger))
+        base_keys = facts_of(written, BASE_NAME) or {}
+        expect("--write keeps the head and writes the configuration under the name of the kind",
+               written.comment == HEAD and written.base_name == BASE_NAME
                and base_keys.get("CMAKE_BUILD_TYPE") == "Debug" and base_keys.get(KIND_KEY) == BASE_NAME
                and base_keys.get(TIER_KEY, "").startswith("x86-64-"), written)
         status, findings, text = scratch.run()
@@ -1232,7 +1013,7 @@ def self_test() -> int:
 
         # The opt-out regions: a region that covers more fails until --write --admit writes it.
         lines_a = scratch.objects["a"][0]
-        region_rows = {key: count for key, count in read_ledger(scratch.ledger).counts.items() if key[1] == "opted_out"}
+        region_rows = {key: count for key, count in base_counts(scratch.ledger).items() if key[1] == "opted_out"}
         scratch.add("a", [*lines_a, "quarantine: opted_out test/fixy/test_a.cpp:10:1 c_library_call memset"])
         memset_row = ("test/fixy/test_a.cpp", "opted_out", f"{PROBE_REASON} | c_library_call memset")
         expect("a region that covers one more finding fails, with the reason of the region in the row",
@@ -1241,12 +1022,12 @@ def self_test() -> int:
         status, _, text = scratch.run(write=True)
         expect("--write refuses the growth of a region", status == 1 and "--admit" in text, text)
         status, _, text = scratch.run(write=True, admit=True)
-        grown = read_ledger(scratch.ledger).counts
+        grown = base_counts(scratch.ledger)
         expect("--write --admit writes the growth of a region, and the check passes",
                status == 0 and grown.get(memset_row) == 1 and scratch.errors() == [], text)
         scratch.add("a", [*lines_a, "quarantine: c_library_call test/fixy/test_a.cpp:4:9 memset"])
         status, _, text = scratch.run(write=True, admit=True)
-        expect("--admit writes no rise of another kind", status == 1 and read_ledger(scratch.ledger).counts == grown,
+        expect("--admit writes no rise of another kind", status == 1 and base_counts(scratch.ledger) == grown,
                text)
         scratch.add("a", lines_a)
         expect("a region that covers less fails until the ledger is written again",
@@ -1270,11 +1051,11 @@ def self_test() -> int:
                                    for item in findings) and scratch.run(write=True)[0] == 1, text)
         scratch.add("a", lines_a)
         expect("the ledger keeps the rows of the region", {key: count for key, count in
-                                                           read_ledger(scratch.ledger).counts.items()
+                                                           base_counts(scratch.ledger).items()
                                                            if key[1] == "opted_out"} == region_rows)
 
         # The hole of a count for each directory: one std object in, one std object out of the same directory.
-        before = read_ledger(scratch.ledger).counts
+        before = base_counts(scratch.ledger)
         lines_a = scratch.objects["a"][0]
         scratch.add("a", [line for line in lines_a if "test_b.cpp" not in line]
                     + ["quarantine: std_object test/fixy/test_a.cpp:12:5 std::array (std::array<int, 2>)"])
@@ -1287,7 +1068,7 @@ def self_test() -> int:
                                             "test/fixy/test_b.cpp has 0 findings of the kind std_object and the entity "
                                             "std::span, and the ledger holds 1"], scratch.errors())
         status, _, _ = scratch.run(write=True)
-        expect("--write refuses the rise", status == 1 and read_ledger(scratch.ledger).counts == before)
+        expect("--write refuses the rise", status == 1 and base_counts(scratch.ledger) == before)
         scratch.add("a", lines_a)
 
         # The hole of a count for each file: in one file, std::span goes and std::map comes.
@@ -1302,11 +1083,12 @@ def self_test() -> int:
                                             "std::span, and the ledger holds 1",
                                             "test/fixy/test_b.cpp has 1 findings of the kind std_object and the entity "
                                             "std::map, and the ledger admits 0"], scratch.errors())
-        first_row = read_ledger(scratch.ledger).line_of(BASE_NAME, ("test/fixy/test_b.cpp", "std_object", "std::span"))
+        first_row = read_ledger(scratch.ledger).line_of(Key("test/fixy/test_b.cpp", "std_object", "std::span"),
+                                                        BASE_NAME)
         expect("the error of a new entity points at the first row of its file",
                any(item.line == first_row and "std::map" in item.message for item in scratch.run()[1]), first_row)
         status, _, text = scratch.run(write=True)
-        expect("--write refuses the entity swap", status == 1 and read_ledger(scratch.ledger).counts == before
+        expect("--write refuses the entity swap", status == 1 and base_counts(scratch.ledger) == before
                and "std::map, rises from 0" in text, text)
         scratch.add("a", [line.replace("test_b.cpp:6:5 std::span (std::span<int>)",
                                        "test_b.cpp:40:9 std::span (std::span<const float>)")
@@ -1337,7 +1119,7 @@ def self_test() -> int:
         status, findings, text = scratch.run()
         expect("after --write the build passes again",
                status == 0
-               and ("test/test_arena.cpp", "std_entity", "std::swap") not in read_ledger(scratch.ledger).counts, text)
+               and ("test/test_arena.cpp", "std_entity", "std::swap") not in base_counts(scratch.ledger), text)
 
         status, _, text = scratch.run(listed=["test/fixy", "c_library_call"])
         expect("--list prints the findings of a directory and kind",
@@ -1354,7 +1136,7 @@ def self_test() -> int:
         expect("a moved file fails until the ledger is written again", len(scratch.errors()) == 2, scratch.errors())
         status, _, text = scratch.run(write=True)
         expect("--write moves the rows of a file that git reports as moved",
-               status == 0 and ("test/fixy/test_c.cpp", "std_object", "std::span") in read_ledger(scratch.ledger).counts
+               status == 0 and ("test/fixy/test_c.cpp", "std_object", "std::span") in base_counts(scratch.ledger)
                and scratch.run()[0] == 0, text)
 
         # A second configuration holds differences from the base.
@@ -1374,12 +1156,13 @@ def self_test() -> int:
                    f"quarantine: c_array_object {generated[0]}:3:1 int [4]"]
         scratch.add("e", [*lines_e, f"quarantine: std_entity {gone[0]}:2:1 std::swap"])
         status, _, _ = scratch.run(write=True, add_configuration=True)
-        release = read_ledger(scratch.ledger)
+        release = delta_counts(scratch.ledger, RELEASE_NAME)
+        release_tier = (facts_of(read_ledger(scratch.ledger), RELEASE_NAME) or {}).get(TIER_KEY, "")
         expect("--add-configuration writes the differences of a second configuration",
-               status == 0 and release.deltas.get(RELEASE_NAME)
+               status == 0 and release
                == {("include/crucible/Vigil.h", "compiler_builtin", "__builtin_ia32_pause"): 1,
                    ("include/fixy/session/Handle.h", "door_header", door): 1, generated: 1, gone: 1}
-               and release.configurations[RELEASE_NAME][TIER_KEY].startswith("znver5-"), release.deltas)
+               and release_tier.startswith("znver5-"), (release, release_tier))
         expect("the second configuration passes", scratch.run()[0] == 0)
         (scratch.compiler.parent / "native.txt").write_text("znver3\n", encoding="utf-8")
         status, _, text = scratch.run()
@@ -1392,10 +1175,10 @@ def self_test() -> int:
         lines_a = scratch.objects["a"][0]
         scratch.add("a", [line for line in lines_a if "memcpy" not in line])
         status, _, _ = scratch.run(write=True)
-        lowered = read_ledger(scratch.ledger).deltas.get(RELEASE_NAME, {})
+        lowered = delta_counts(scratch.ledger, RELEASE_NAME)
         expect("a change that lowers a count in each configuration writes only the base rows",
                status == 0 and {key: delta for key, delta in lowered.items() if key[0] in SOURCES}
-               == {key: delta for key, delta in release.deltas[RELEASE_NAME].items() if key[0] in SOURCES}, lowered)
+               == {key: delta for key, delta in release.items() if key[0] in SOURCES}, lowered)
         expect("a --write of the base removes the difference row of a source file that the tree does not hold",
                gone not in lowered, lowered)
         expect("a --write of the base keeps the difference row of a file that a build of the configuration writes",
@@ -1407,8 +1190,8 @@ def self_test() -> int:
         scratch.add("g", ["quarantine: std_entity include/crucible/Vigil.h:31:7 std::swap"])
         status, _, text = scratch.run()
         expect("a failure of a later configuration prints its rows for an import",
-               status == 1 and f"{ROW_MARK}{RELEASE_NAME} include/crucible/Vigil.h std_entity +1 std::swap" in text,
-               text)
+               status == 1 and delta_row(RELEASE_NAME, "include/crucible/Vigil.h", "std_entity", "+1", "std::swap")
+               in text, text)
         del scratch.objects["g"]
         lines_e = lines_e[:2]
         scratch.add("e", lines_e)
@@ -1417,16 +1200,18 @@ def self_test() -> int:
                                     f"1"], scratch.errors())
         status, _, text = scratch.run(write=True)
         expect("a --write of that configuration removes the row, and the build then passes",
-               status == 0 and generated not in read_ledger(scratch.ledger).deltas.get(RELEASE_NAME, {})
+               status == 0 and generated not in delta_counts(scratch.ledger, RELEASE_NAME)
                and scratch.errors() == [], text)
 
         # A configuration that only CI builds: the check prints its rows, and they go through a log.
         scratch.configure("aarch64-debug-asan", "Debug")
         status, _, text = scratch.run()
         expect("a build that the ledger does not hold prints its configuration and its differences",
-               status == NOT_APPLICABLE and f"{ROW_MARK}configuration aarch64-debug-asan kind aarch64-debug-asan" in text
-               and f"{ROW_MARK}aarch64-debug-asan include/crucible/Vigil.h compiler_builtin +1 __builtin_ia32_pause"
-               in text and f"{ROW_MARK}aarch64-debug-asan include/fixy/session/Handle.h door_header +1 {door}" in text,
+               status == NOT_APPLICABLE
+               and f"{rule_ledger.ROW_MARK}configuration aarch64-debug-asan kind aarch64-debug-asan" in text
+               and delta_row("aarch64-debug-asan", "include/crucible/Vigil.h", "compiler_builtin", "+1",
+                             "__builtin_ia32_pause") in text
+               and delta_row("aarch64-debug-asan", "include/fixy/session/Handle.h", "door_header", "+1", door) in text,
                text)
         log = scratch.root / "ci.log"
         log.write_text("".join(f"build+test aarch64\tQuarantine ratchet\t2026-10-02T21:00:00Z {line}\n"
@@ -1434,10 +1219,11 @@ def self_test() -> int:
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             status = import_rows(scratch.ledger, log)
         expect("--import puts the rows of a log into the ledger, and the build then passes",
-               status == 0 and "aarch64-debug-asan" in read_ledger(scratch.ledger).configurations
+               status == 0 and facts_of(read_ledger(scratch.ledger), "aarch64-debug-asan") is not None
                and scratch.run()[0] == 0, scratch.run()[2])
-        log.write_text(log.read_text() + f"x\t{ROW_MARK}aarch64-debug-asan include/crucible/Vigil.h compiler_builtin "
-                                         f"+3 __builtin_ia32_pause\n", encoding="utf-8")
+        third = delta_row("aarch64-debug-asan", "include/crucible/Vigil.h", "compiler_builtin", "+3",
+                          "__builtin_ia32_pause")
+        log.write_text(log.read_text() + f"x\t{third}\n", encoding="utf-8")
         before_import = scratch.ledger.read_text()
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             status = import_rows(scratch.ledger, log)
@@ -1447,7 +1233,7 @@ def self_test() -> int:
         scratch.add("g", ["quarantine: std_entity include/crucible/Vigil.h:31:7 std::swap"])
         status, _, text = scratch.run()
         expect("a failure of the base prints no rows, because --write writes the base", status == 1
-               and ROW_MARK not in text, text)
+               and rule_ledger.ROW_MARK not in text, text)
         del scratch.objects["g"]
         scratch.flush()
 
@@ -1457,7 +1243,7 @@ def self_test() -> int:
         scratch.flags["h"] = "-O3 -march=native"
         scratch.add("h", ["quarantine: compiler_builtin include/crucible/Vigil.h:40:7 __builtin_ia32_vpcmpb512"])
         status, _, _ = scratch.run(write=True, add_configuration=True)
-        bench_tier = read_ledger(scratch.ledger).configurations.get(bench_name, {}).get(TIER_KEY, "")
+        bench_tier = (facts_of(read_ledger(scratch.ledger), bench_name) or {}).get(TIER_KEY, "")
         expect("a compile with its own native flag adds the native tier of the host to the tier",
                status == 0 and bench_tier.startswith("x86-64-") and "+znver5-" in bench_tier, bench_tier)
         (scratch.compiler.parent / "native.txt").write_text("znver3\n", encoding="utf-8")
@@ -1498,33 +1284,33 @@ def self_test() -> int:
         scratch.flush()
 
         good = scratch.ledger.read_text()
-        scratch.ledger.write_text(good.replace("test/fixy/test_c.cpp std_object 1", "test/fixy/test_c.cpp std_object x"),
-                                  encoding="utf-8")
+        malformed = good.replace("test/fixy/test_c.cpp | std_object | 1 |", "test/fixy/test_c.cpp | std_object | x |")
+        scratch.ledger.write_text(malformed, encoding="utf-8")
         status, findings, _ = scratch.run()
-        expect("a malformed row is an error", status == 1 and any("COUNT" in item.message for item in findings))
-        scratch.ledger.write_text(HEAD + "configuration machine x86_64\ntest dir_kind 3\n", encoding="utf-8")
+        expect("a malformed row is an error", malformed != good and status == 1
+               and any("count 'x'" in item.message for item in findings), findings)
+        scratch.ledger.write_text(HEAD + f"format 4\nconfiguration {BASE_NAME} kind {BASE_NAME}\n"
+                                         f"test/fixy/test_c.cpp std_object 1 std::span\n", encoding="utf-8")
         status, findings, _ = scratch.run()
-        expect("a format 1 ledger is an error with the way to generate it again",
-               status == 1 and any("format 1" in item.message for item in findings))
-        scratch.ledger.write_text(HEAD + f"format 2\nconfiguration {BASE_NAME} kind {BASE_NAME}\n"
-                                         f"test/fixy/test_c.cpp std_object 1\n", encoding="utf-8")
-        status, findings, _ = scratch.run()
-        expect("a format 2 ledger with no entity is an error with the way to generate it again",
-               status == 1 and any("format 2" in item.message and "--add-configuration" in item.message
-                                   for item in findings))
+        expect("a ledger of the format of the old ratchet is an error that names the format of the rows",
+               status == 1 and any(f"'format {rule_ledger.FORMAT}' and 'rule {CHECK}'" in item.message
+                                   for item in findings), findings)
+        status, _, _ = scratch.run(write=True)
+        expect("--write refuses a ledger that it cannot read", status == 1
+               and "format 4" in scratch.ledger.read_text())
 
     if failures:
-        print(f"check-quarantine-ratchet --self-test: FAILED, {len(failures)} case(s) did not hold")
+        print(f"{CHECK} --self-test: FAILED, {len(failures)} case(s) did not hold")
         for failure in failures:
             print(f"  {failure}")
         return 2
-    print("check-quarantine-ratchet --self-test: every case holds.")
+    print(f"{CHECK} --self-test: every case holds.")
     return 0
 
 
 def main(argv: list[str]) -> int:
     """Parse the arguments and run the check, the writer, the list or the self-test."""
-    parser = argparse.ArgumentParser(prog="guard check --rule quarantine-ratchet",
+    parser = argparse.ArgumentParser(prog=f"guard check --rule {CHECK}",
                                      description=__doc__.split("\n", 1)[0])
     parser.add_argument("--build-dir", type=Path, help="the build directory whose objects the check reads")
     parser.add_argument("--root", type=Path, default=REPO_ROOT, help="the source root")

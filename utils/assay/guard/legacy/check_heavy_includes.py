@@ -50,17 +50,21 @@ WHAT THE CHECK READS
     preprocess.
 
 THE LEDGER
-    utils/scripts/heavy-includes-ledger.txt holds two kinds of row.
-      path | <header>
+    utils/ledgers/heavy-include.txt (assay.core.ledger) holds two kinds of
+    row.
+      path | - | 1 | <header> | -
           An include of a heavy header that the tree holds today.  Each run
           gives a warning for it, so the debt stays visible.  An include of
           a heavy header with no row is an error.  A row whose include is
           gone, or whose header is no longer heavy, is an error: run
           --write in the same commit.
-      keep | path | <header> | reason
-          A header that owns a heavy header on purpose, for example the one
-          door of a system facility.  It gives no finding.  A keep row whose
-          include is gone or is no longer heavy is an error.
+      path | - | 1 | <header> | reason
+          A keep row: a header that owns a heavy header on purpose, for
+          example the one door of a system facility.  It gives no finding.
+          A keep row whose include is gone or is no longer heavy is an
+          error.
+    A row that the rows grammar refuses, a row with a kind, a count other
+    than 1 or a path outside include/, and a configuration row are errors.
 
 Usage
     guard check --rule heavy-include [--warnings-dir DIR]   compare the tree with the ledger
@@ -86,18 +90,20 @@ import sys
 import tempfile
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
+from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
+from assay.core import rows as rows_grammar
 from assay.readers import tsast
 
 CHECK = "heavy-include"
 # The command of this rule, as the advice of a finding names it after `python3 `.
 SCRIPT = "utils/bin/guard check --rule heavy-include"
 TABLE = "utils/scripts/header-costs.txt"
-LEDGER = "utils/scripts/heavy-includes-ledger.txt"
+LEDGER = rule_ledger.shown_path(CHECK)
 INCLUDE = "include"
 HEADER_SUFFIXES = (".h", ".hpp")
 SEPARATOR = " | "
@@ -123,21 +129,23 @@ TABLE_HEADER = (
     "#\n"
     "# Measured {date} on {host}.  An empty translation unit costs {empty:.2f} s.\n"
 )
-LEDGER_HEADER = (
-    "# utils/scripts/heavy-includes-ledger.txt — the includes of heavy standard headers in the headers\n"
-    "# under include/.  The rule heavy-include (`guard check --rule heavy-include`) reads this ledger.\n"
+# The head comment of the ledger.  --write writes it into a new ledger, and keeps the comment of a ledger that
+# exists.
+COMMENT = (
+    "# The ledger of the rule heavy-include: the includes of heavy standard headers in the headers\n"
+    "# under include/.  `python3 utils/bin/guard explain heavy-include` tells the rule.\n"
     "#\n"
     "# A header that each translation unit compiles must not include a heavy header for one function.\n"
     "# utils/scripts/header-costs.txt gives the cost of each header.  A header is heavy when it costs\n"
     "# more than <meta> times the factor of the measured rule heavy-include of utils/registry.txt.\n"
     "#\n"
-    "# A count row:  path | <header>\n"
+    "# A count row:  PATH | - | 1 | <header> | -\n"
     "#   An include that the tree holds today.  Each run gives a warning for it.  When you remove the\n"
     "#   include, run python3 utils/bin/guard check --rule heavy-include --write in the same commit.\n"
     "#\n"
-    "# A keep row:   keep | path | <header> | reason\n"
+    "# A keep row:   PATH | - | 1 | <header> | REASON\n"
     "#   A header that owns a heavy header on purpose, for example the one door of a system facility.\n"
-    "#   The reason is mandatory.\n"
+    "#   The reason makes the row a keep row, and the row gives no warning.\n"
 )
 
 
@@ -177,11 +185,16 @@ class Keep:
 
 @dataclass
 class Ledger:
-    """The rows of the ledger, and one finding for each malformed row."""
+    """The rows of the ledger, and one finding for each malformed row.
+
+    file is the ledger as assay.core.ledger reads it, or None when it
+    cannot be read.
+    """
 
     rows: dict[tuple[str, str], int]
     keeps: list[Keep]
     malformed: list[check_report.Finding]
+    file: rule_ledger.Ledger | None = None
 
 
 def read_table(path: Path) -> dict[str, Cost]:
@@ -360,53 +373,53 @@ def scan(root: Path, costs: dict[str, Cost], limit: float) -> Scan:
     return result
 
 
-def read_ledger(path: Path) -> Ledger:
-    """Read the ledger.
+def read_ledger(root: Path) -> Ledger:
+    """Read the ledger of the tree at a root (THE LEDGER).
+
+    A missing ledger has no row.  A ledger that the rows grammar refuses
+    holds no row.
 
     Args:
-        path: The ledger file.  A missing ledger has no row
+        root: The repository root
 
     Returns:
         The count rows by (path, header) with their line, the keep rows, and the malformed rows
     """
     ledger = Ledger({}, [], [])
-    if not path.is_file():
+    try:
+        file = rule_ledger.read(rule_ledger.rule_of(CHECK), root)
+    except rows_grammar.RowsError as problem:
+        message = str(problem).removeprefix(f"{problem.path}:{problem.line}: ")
+        ledger.malformed.append(check_report.Finding("error", LEDGER, problem.line, CHECK, message))
         return ledger
-    seen: set[tuple[str, str]] = set()
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        entry = raw.strip()
-        if not entry or entry.startswith("#"):
+    except (rule_ledger.LedgerError, OSError) as problem:
+        ledger.malformed.append(check_report.Finding("error", LEDGER, 0, CHECK, str(problem)))
+        return ledger
+    ledger.file = file
+    ledger.malformed += [check_report.Finding("error", LEDGER, 0, CHECK, f"the ledger names the configuration "
+                                              f"{item.name}, and a ledger of {CHECK} has no configuration")
+                         for item in file.configurations]
+    for key, entry in sorted(file.base.items(), key=lambda item: item[1].line):
+        if key.kind or entry.value != 1 or not key.path.startswith(f"{INCLUDE}/") \
+                or not (key.entity.startswith("<") and key.entity.endswith(">")):
+            ledger.malformed.append(check_report.Finding(
+                "error", LEDGER, entry.line, CHECK,
+                f"the row of {key.path or 'no path'} is malformed.  A count row is `PATH | - | 1 | <header> | -`, "
+                f"and a keep row is `PATH | - | 1 | <header> | REASON`, with a path under {INCLUDE}/."))
             continue
-        cells = [cell.strip() for cell in (entry + " ").split(SEPARATOR)]
-        is_keep = cells[0] == "keep"
-        body = cells[1:] if is_keep else cells
-        problem = ""
-        if len(body) != (3 if is_keep else 2) or not body[0].startswith(f"{INCLUDE}/") \
-                or not (body[1].startswith("<") and body[1].endswith(">")):
-            problem = (f"the row is malformed: {entry}.  A count row is `path{SEPARATOR}<header>`, and a keep "
-                       f"row is `keep{SEPARATOR}path{SEPARATOR}<header>{SEPARATOR}reason`.")
-        elif is_keep and not body[2]:
-            problem = "the keep row gives no reason.  Say why the header owns this heavy header on purpose."
-        elif (body[0], body[1]) in seen:
-            problem = f"a row for {body[0]} and {body[1]} comes before this one.  Remove one of them."
-        if problem:
-            ledger.malformed.append(check_report.Finding("error", LEDGER, number, CHECK, problem))
-            continue
-        seen.add((body[0], body[1]))
-        if is_keep:
-            ledger.keeps.append(Keep(body[0], body[1], body[2], number))
+        if entry.reason:
+            ledger.keeps.append(Keep(key.path, key.entity, entry.reason, entry.line))
         else:
-            ledger.rows[(body[0], body[1])] = number
+            ledger.rows[(key.path, key.entity)] = entry.line
     return ledger
 
 
-def evaluate(root: Path, table: Path, ledger_path: Path, factor: float) -> list[check_report.Finding]:
+def evaluate(root: Path, table: Path, factor: float) -> list[check_report.Finding]:
     """Compare the tree with the ledger and return each finding.
 
     Args:
         root: The repository root
         table: The cost table
-        ledger_path: The ledger file
         factor: The factor of the cost of <meta> that gives the limit
 
     Returns:
@@ -419,7 +432,7 @@ def evaluate(root: Path, table: Path, ledger_path: Path, factor: float) -> list[
     except TableError as exc:
         return [check_report.Finding("error", TABLE, 0, CHECK, str(exc))]
     found = scan(root, costs, limit)
-    ledger = read_ledger(ledger_path)
+    ledger = read_ledger(root)
     findings = list(found.errors) + list(ledger.malformed)
     kept = {(keep.path, keep.target) for keep in ledger.keeps}
     for (path, target), include in sorted(found.findings.items()):
@@ -469,7 +482,7 @@ def factor_of(registry: Path) -> float:
     return rows[CHECK].error
 
 
-def check(root: Path, table: Path, ledger_path: Path, registry: Path, warnings_dir: Path | None) -> int:
+def check(root: Path, table: Path, registry: Path, warnings_dir: Path | None) -> int:
     """Run the check and print each finding.
 
     Returns:
@@ -480,7 +493,7 @@ def check(root: Path, table: Path, ledger_path: Path, registry: Path, warnings_d
     except ValueError as exc:
         findings = [check_report.Finding("error", rule_registry.REGISTRY_PATH, 0, CHECK, str(exc))]
     else:
-        findings = evaluate(root, table, ledger_path, factor)
+        findings = evaluate(root, table, factor)
     code = check_report.emit(findings, CHECK, warnings_dir)
     warnings = sum(found.level == "warning" for found in findings)
     print(f"check-heavy-includes: {warnings} include(s) of a heavy header in the ledger, "
@@ -488,8 +501,11 @@ def check(root: Path, table: Path, ledger_path: Path, registry: Path, warnings_d
     return code
 
 
-def write(root: Path, table: Path, ledger_path: Path, registry: Path) -> int:
+def write(root: Path, table: Path, registry: Path) -> int:
     """Write the count rows of the ledger again from the tree, and keep each keep row.
+
+    A new ledger gets the head comment COMMENT, and a ledger that exists
+    keeps its own.
 
     Returns:
         0 when the ledger is written, 1 when an error of the tree, the table or a row stops the write
@@ -501,20 +517,26 @@ def write(root: Path, table: Path, ledger_path: Path, registry: Path) -> int:
         print(f"check-heavy-includes: {exc}", file=sys.stderr)
         return 1
     found = scan(root, costs, limit)
-    ledger = read_ledger(ledger_path)
-    if found.errors or ledger.malformed:
+    ledger = read_ledger(root)
+    if found.errors or ledger.malformed or ledger.file is None:
         for item in found.errors + ledger.malformed:
             print(item.text(), file=sys.stderr)
         print("check-heavy-includes: --write does not write the ledger while the tree or the ledger has an "
               "error.", file=sys.stderr)
         return 1
     kept = {(keep.path, keep.target) for keep in ledger.keeps}
-    rows = [f"{path}{SEPARATOR}{target}\n" for path, target in sorted(found.findings) if (path, target) not in kept]
-    keeps = [f"keep{SEPARATOR}{keep.path}{SEPARATOR}{keep.target}{SEPARATOR}{keep.reason}\n"
-             for keep in sorted(ledger.keeps, key=lambda keep: (keep.path, keep.target))]
-    ledger_path.write_text(LEDGER_HEADER + "\n" + "".join(rows) + ("\n" + "".join(keeps) if keeps else ""),
-                           encoding="utf-8")
-    print(f"check-heavy-includes: ledger written with {len(rows)} count row(s) and {len(keeps)} keep row(s).",
+    base: dict[rule_ledger.Key, rule_ledger.Entry] = {}
+    for path, target in found.findings:
+        if (path, target) not in kept:
+            key = rule_ledger.Key(path, "", target)
+            base[key] = rule_ledger.Entry(key, 1, "")
+    rows = len(base)
+    for keep in ledger.keeps:
+        key = rule_ledger.Key(keep.path, "", keep.target)
+        base[key] = rule_ledger.Entry(key, 1, keep.reason)
+    comment = ledger.file.comment if rule_ledger.ledger_path(CHECK, root).is_file() else COMMENT
+    rule_ledger.store(replace(ledger.file, comment=comment, base=base), root)
+    print(f"check-heavy-includes: ledger written with {rows} count row(s) and {len(ledger.keeps)} keep row(s).",
           file=sys.stderr)
     return 0
 
@@ -637,13 +659,20 @@ def self_test() -> int:
         for rel, text in files.items():
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(text, encoding="utf-8")
-        matching = ("include/fixy/Debt.h | <chrono>\ninclude/fixy/Neon.h | <arm_neon.h>\n"
-                    "keep | include/fixy/os/Door.h | <thread> | the planted door\n")
-        ledger.write_text(matching, encoding="utf-8")
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        matching = ("include/fixy/Debt.h | - | 1 | <chrono> | -\ninclude/fixy/Neon.h | - | 1 | <arm_neon.h> | -\n"
+                    "include/fixy/os/Door.h | - | 1 | <thread> | the planted door\n")
+        plant_comment = "# The planted ledger.\n"
+
+        def plant(rows: str) -> None:
+            """Write a ledger of format 1 with the rows of the text."""
+            ledger.write_text(f"{plant_comment}format 1\nrule {CHECK}\n{rows}", encoding="utf-8")
+
+        plant(matching)
 
         def run() -> tuple[list[check_report.Finding], int]:
             """Evaluate the scratch tree, and give its findings and its exit status."""
-            found = evaluate(root, table, ledger, factor_of(registry))
+            found = evaluate(root, table, factor_of(registry))
             return found, 1 if any(item.level == "error" for item in found) else 0
 
         found, code = run()
@@ -683,18 +712,27 @@ def self_test() -> int:
                             encoding="utf-8")
         found, code = run()
         expect("a row whose header is no longer heavy is an error",
-               code == 1 and any("is no longer heavy" in item.message and item.line == 1 for item in found))
+               code == 1 and any("is no longer heavy" in item.message and item.line == 4 for item in found))
         expect("a keep row whose header is no longer heavy is an error",
                any("keep row" in item.message and "no longer heavy" in item.message for item in found))
         registry.write_text(files[rule_registry.REGISTRY_PATH], encoding="utf-8")
 
-        for body, label in ((matching + "include/fixy/Debt.h\n", "a row with no header"),
-                            (matching + "keep | include/fixy/Debt.h | <chrono> | \n", "a keep row with no reason"),
-                            (matching + "include/fixy/Debt.h | <chrono>\n", "a second row for one include")):
-            ledger.write_text(body, encoding="utf-8")
+        for body, label in ((matching + "include/fixy/Debt.h | - | 1 | - | -\n", "a row with no header"),
+                            (matching + "include/fixy/Debt.h | include | 1 | <thread> | -\n", "a row with a kind"),
+                            (matching + "include/fixy/Debt.h | - | 2 | <thread> | -\n", "a row with a count of 2"),
+                            (matching + "fixy/Debt.h | - | 1 | <thread> | -\n", "a row with a path outside include/"),
+                            (matching + "include/fixy/Debt.h | - | 1 | <chrono> | a reason\n",
+                             "a second row for one include"),
+                            ("configuration debug kind debug\n" + matching, "a configuration row")):
+            plant(body)
             found, code = run()
             expect(f"{label} is an error", code == 1 and any(item.path == LEDGER for item in found))
-        ledger.write_text(matching, encoding="utf-8")
+        plant(matching + "include/fixy/Debt.h | <chrono>\n")
+        with contextlib.redirect_stderr(io.StringIO()):
+            written = write(root, table, registry)
+        expect("--write refuses while the ledger does not obey the rows grammar",
+               written == 1 and ledger.read_text(encoding="utf-8").endswith("include/fixy/Debt.h | <chrono>\n"))
+        plant(matching)
 
         table.write_text(files[TABLE] + "<chrono> | 1.0 | 1\n", encoding="utf-8")
         found, code = run()
@@ -711,19 +749,34 @@ def self_test() -> int:
         expect("a missing table is an error", code == 1 and found[0].path == TABLE)
         table.write_text(files[TABLE], encoding="utf-8")
 
-        ledger.write_text("include/fixy/Debt.h | <chrono>\n", encoding="utf-8")
+        plant("include/fixy/Debt.h | - | 1 | <chrono> | -\n")
         with contextlib.redirect_stderr(io.StringIO()):
-            written = write(root, table, ledger, registry)
+            written = write(root, table, registry)
         text = ledger.read_text(encoding="utf-8")
         found, code = run()
-        expect("--write gives a ledger that passes, and it keeps no row of a keep",
-               written == 0 and code == 0 and "include/fixy/Neon.h | <arm_neon.h>" in text
-               and text.startswith(LEDGER_HEADER))
-        ledger.write_text(matching, encoding="utf-8")
+        expect("--write gives a ledger that passes, keeps its head comment, and writes a count row for an include "
+               "that no keep row admits",
+               written == 0 and code == 0 and "include/fixy/Neon.h | - | 1 | <arm_neon.h> | -\n" in text
+               and "include/fixy/os/Door.h | - | 1 | <thread> | -\n" in text and text.startswith(plant_comment))
+        ledger.unlink()
+        with contextlib.redirect_stderr(io.StringIO()):
+            written = write(root, table, registry)
+        text = ledger.read_text(encoding="utf-8")
+        found, code = run()
+        expect("--write of a missing ledger gives the head comment of a new ledger and a ledger that passes",
+               written == 0 and code == 0 and text.startswith(COMMENT + "format 1\n"))
+        plant(matching)
+        with contextlib.redirect_stderr(io.StringIO()):
+            written = write(root, table, registry)
+        found, code = run()
+        expect("--write keeps each keep row with its reason",
+               written == 0 and code == 0 and "include/fixy/os/Door.h | - | 1 | <thread> | the planted door\n"
+               in ledger.read_text(encoding="utf-8"))
+        plant(matching)
 
         warnings_dir = root / "warnings"
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            status = check(root, table, ledger, registry, warnings_dir)
+            status = check(root, table, registry, warnings_dir)
         lines = (warnings_dir / f"{CHECK}.txt").read_text(encoding="utf-8").splitlines()
         expect("the warnings file holds each warning", status == 0 and len(lines) == 2
                and all(check_report.parse_line(line) is not None for line in lines))
@@ -731,11 +784,11 @@ def self_test() -> int:
         previous = Path.cwd()
         os.chdir("/")
         try:
-            from_slash = [item.text() for item in evaluate(root, table, ledger, factor_of(registry))]
+            from_slash = [item.text() for item in evaluate(root, table, factor_of(registry))]
         finally:
             os.chdir(previous)
         expect("the findings from / equal the findings from the root",
-               from_slash == [item.text() for item in evaluate(root, table, ledger, factor_of(registry))])
+               from_slash == [item.text() for item in evaluate(root, table, factor_of(registry))])
         (root / "include/fixy/Broken.h").write_text("void f() { g(1) { } }\n", encoding="utf-8")
         found, code = run()
         expect("a header that the parser cannot read is an error",
@@ -767,15 +820,15 @@ def main(argv: list[str]) -> int:
     if arguments.headers and arguments.measure is None:
         parser.error("a header name goes only with --measure")
     root = tsast.REPO_ROOT
-    table, ledger, registry = root / TABLE, root / LEDGER, check_report.REGISTRY
+    table, registry = root / TABLE, check_report.REGISTRY
     try:
         if arguments.self_test:
             return self_test()
         if arguments.write:
-            return write(root, table, ledger, registry)
+            return write(root, table, registry)
         if arguments.measure is not None:
             return measure(root, arguments.measure.resolve(), arguments.headers, table)
-        return check(root, table, ledger, registry, arguments.warnings_dir)
+        return check(root, table, registry, arguments.warnings_dir)
     except tsast.KitMissing as exc:
         print(f"check-heavy-includes: {exc}", file=sys.stderr)
         return 3

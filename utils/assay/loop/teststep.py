@@ -49,11 +49,14 @@ THE MEASURED RULES
         DIR/RULE.NAME.txt, so the tests that run at the same time do not write
         one file.  Under the warning threshold, it removes that file.
       * Over the error threshold, it prints an error line, and a test that
-        passed fails with status 1, unless a row of
-        utils/scripts/RULE-ledger.txt admits the test for the kind of the
-        build (`kind | test | value | reason`).  An admitted test gives a
-        warning.  A row whose test stays at or below the error threshold is
-        an error too, so that the row goes.
+        passed fails with status 1, unless a row of the ledger
+        utils/ledgers/RULE.txt admits the test for the kind of the build:
+        '- | KIND | VALUE | TEST | REASON', with VALUE the measure when the
+        row was written, in the unit of the rule (meter.py, THE REGISTRY AND
+        THE LEDGERS).  An admitted test gives a warning.  A row whose test
+        stays at or below the error threshold is an error too, so that the
+        row goes.  A ledger that does not exist has no row, and the
+        subcommand then imports no ledger module.
     Memory is almost the same on each run, so its error threshold sits above
     the largest measure.  Wall time depends on the load of the host, so its
     error threshold sits above the noise that the commit of the threshold
@@ -70,7 +73,8 @@ THE MEASURED RULES
     has WILL_FAIL at this time.
 
 The variables CRUCIBLE_TEST_REGISTRY and CRUCIBLE_TEST_LEDGERS name another
-registry and another directory of ledgers, for the self-test.
+registry and another directory of ledgers, which holds RULE.txt for each
+planted ledger, for the self-test.
 CRUCIBLE_TEST_CORES is the variable of CORE DUMPS above.
 
     guard selftest loop.teststep
@@ -92,8 +96,6 @@ NO_CORE_LIMIT_BYTES = 1
 # The directory utils.  This module is utils/assay/loop/teststep.py.  It calculates the paths with os.path and not
 # with assay.core.paths, because each test imports it.
 UTILS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# The directory of the ledgers, utils/scripts.
-DATA = os.path.join(UTILS, "scripts")
 # The registry of the measured rules, utils/registry.txt.
 REGISTRY_FILE = os.path.join(UTILS, "registry.txt")
 RECORD_SUFFIX = ".test" + cost_meter.RECORD_SUFFIX
@@ -141,18 +143,16 @@ def ledger_row(row: str, name: str, kind: str | None) -> tuple[str, str] | None:
     Returns:
         The place of the row (path:line) and its reason, or None
     """
-    ledger = os.path.join(os.environ.get(LEDGERS_ENV) or DATA, f"{row}-ledger.txt")
     if kind is None:
         return None
     try:
-        rows, _, _ = cost_meter.read_ledger_rows(ledger)
+        rows, _, shown = cost_meter.read_kind_rows(row, cost_meter.ITEM_NAME,
+                                                   cost_meter.ledger_file(row, os.environ.get(LEDGERS_ENV)))
     except OSError:
         return None
     found = rows.get((kind, name))
     if found is None:
         return None
-    repository = os.path.dirname(os.path.dirname(DATA))
-    shown = os.path.relpath(ledger, repository) if ledger.startswith(repository + os.sep) else ledger
     return f"{shown}:{found[0]}", found[2]
 
 
@@ -193,7 +193,7 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float,
                                 f"budgets no wall time, so the timeout of the test preset is the hard stop")
         elif value > error:
             add("error", row, f"{said}, over the error threshold of {error:g} {unit}, and no row of "
-                              f"utils/scripts/{row}-ledger.txt admits it for the kind {kind}.  Make the test smaller, "
+                              f"utils/ledgers/{row}.txt admits it for the kind {kind}.  Make the test smaller, "
                               f"or split it into tests over disjoint cases")
         elif value > warn:
             add("warning", row, f"{said}, over the warning threshold of {warn:g} {unit}")
@@ -346,7 +346,12 @@ def self_test() -> int:
                 rule_registry.measured_rule("test-memory", *memory_rule, "GB", "the peak memory")]))
 
         def ledger(row: str, text: str) -> None:
-            (ledgers / f"{row}-ledger.txt").write_text("# kind | test | value | reason\n" + text)
+            # A ledger with no row has no file (assay.core.ledger).
+            path = Path(cost_meter.ledger_file(row, str(ledgers)))
+            if text:
+                path.write_text(f"# a planted ledger\nformat 1\nrule {row}\n{text}")
+            else:
+                path.unlink(missing_ok=True)
 
         def environment_of(extra: dict[str, str]) -> dict[str, str]:
             # A case that needs a CI runner or kept cores sets the variable
@@ -428,14 +433,17 @@ def self_test() -> int:
         budget((1000, 2000), (0, 0))
         status, said = launch(program)
         expect("a passed test over the memory error threshold fails", status == 1 and ": error: [test-memory] " in said)
-        ledger("test-memory", "x86_64-debug-asan | test_planted | 0.01 | a planted reason\n")
+        ledger("test-memory", "- | x86_64-debug-asan | 0.01 | test_planted | a planted reason\n")
         status, said = launch(program)
         expect("a ledger row of the kind admits the test, with a warning",
                status == 0 and ": warning: [test-memory] " in said and "a planted reason" in said)
-        ledger("test-memory", "x86_64-release | test_planted | 0.01 | a planted reason\n")
+        ledger("test-memory", "- | x86_64-release | 0.01 | test_planted | a planted reason\n")
         status, said = launch(program)
         expect("a ledger row of another kind admits nothing", status == 1)
-        ledger("test-memory", "x86_64-debug-asan | test_planted | 0.01 | a planted reason\n")
+        ledger("test-memory", "@build/test/test_planted | x86_64-debug-asan | 0.01 | - | a planted reason\n")
+        status, said = launch(program)
+        expect("a ledger row that names a file and not a test admits nothing", status == 1)
+        ledger("test-memory", "- | x86_64-debug-asan | 0.01 | test_planted | a planted reason\n")
         budget((1000, 2000), (1000, 2000))
         status, said = launch(program)
         expect("a ledger row whose test stays under the error threshold fails the test",

@@ -1,0 +1,4 @@
+# a planted ledger of a rule with the policy none
+format 1
+rule none-rule
+- | kind | 1 | entity | -

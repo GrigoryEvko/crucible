@@ -1,0 +1,3 @@
+# a planted registry: no rule ghost-rule, and utils/ledgers/ghost-rule.txt exists
+format 1
+rule admit-rule engine=meta scope=tracked ledger=admit doc=XV | a planted refusal | fix the planted file

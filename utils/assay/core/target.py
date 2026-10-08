@@ -1,6 +1,6 @@
 """target — the build kind and the target tier of a build, and the rows of a build that a ledger does not hold.
 
-The rules quarantine-ratchet and libstdcxx-symbols hold ledgers whose rows
+The rules quarantine and libstdcxx-symbols hold ledgers whose rows
 depend on the build.  This module gives the two checks the same facts, and the
 same behavior for a build that the ledger does not hold.
 

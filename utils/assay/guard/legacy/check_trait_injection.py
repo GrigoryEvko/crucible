@@ -96,13 +96,18 @@ FAMILY E: A GATE READS NO OPEN TEMPLATE
     a class template each accept an explicit member specialization.  An
     explicit specialization also skips access checks, so a private key
     type does not close a template.
-    The ledger utils/scripts/open-gate-reads.txt counts the open reads of
-    each template, and each count only shrinks.  A template that the ledger
-    does not name, or a count above its row, fails.  A count below its row,
-    or a row that no gate reads, is stale and fails until --refresh writes
-    the new count.  A row whose second field is `open` stays open on purpose,
-    and its third field gives the reason.  A count row can also give a
-    reason in a third field.
+    The ledger utils/ledgers/trait-guard.txt (assay.core.ledger) counts the
+    open reads of each template, and each count only shrinks.  A template is
+    no file, so the path of each row is "-", and the template is its entity.
+    A row `- | count | N | TEMPLATE | REASON` admits N reads, and its reason
+    is optional.  A template that the ledger does not name, or a count above
+    its row, fails.  A count below its row, or a row that no gate reads, is
+    stale and fails until --refresh writes the new count.  A row
+    `- | open | N | TEMPLATE | REASON` stays open on purpose: its reason is
+    necessary, N is the number of reads that --refresh wrote, and the guard
+    gives the row no bound.  A template with a count row and an open row, a
+    row with a path or of another kind, and a ledger that the rows grammar
+    refuses fail.
     The row of a template that a gate of include/crucible reads must give a
     reason, and a row without one fails.  Each such read that a count row
     admits gives a warning in the format of utils/assay/core/report.py,
@@ -184,11 +189,13 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from assay.core import git as throwaway_repo
+from assay.core import ledger as rule_ledger
 from assay.core import report as check_report
+from assay.core import rows as rows_grammar
 from assay.readers import tsast
 
 LAYER_ROOTS = ("include/foundation/", "include/fixy/")
@@ -274,27 +281,31 @@ EXTENSION_POINTS: dict[QualifiedName, tuple[tuple[str, ...], str]] = {
 
 # Family E.  The ledger of open reads, the gate nodes, and the name nodes that
 # a gate can read a template through.
-GATE_LEDGER = "utils/scripts/open-gate-reads.txt"
+GATE_LEDGER = rule_ledger.shown_path(CHECK)
 GATE_NODES = ("concept_definition", "requires_clause")
 GATE_NAMES = ("template_function", "template_type", "qualified_identifier", "identifier")
+# The kinds of a row of the gate ledger.
+COUNT_MARK = "count"
 OPEN_MARK = "open"
-LEDGER_HEADER = (
-    "# utils/scripts/open-gate-reads.txt — the open reads of each template that a gate of\n"
-    "# include/foundation, include/fixy or include/crucible reads, read by the rule\n"
-    "# trait-guard (`guard check --rule trait-guard`, Family E).  A gate is a concept definition or a\n"
-    "# requires clause, in a header or in the check file of a header (test/layer/checks/).  An\n"
-    "# open read names a variable template, a function template, or a class template for its\n"
-    "# value or its type: a translation unit can specialize each, and the specialization\n"
-    "# changes the answer of the gate.\n"
+# The head comment of the gate ledger.  --refresh keeps the comment of the ledger, and a new ledger gets this one.
+COMMENT = (
+    "# The ledger of the rule trait-guard: the open reads of each template that a gate of\n"
+    "# include/foundation, include/fixy or include/crucible reads (Family E).  A gate is a concept\n"
+    "# definition or a requires clause, in a header or in the check file of a header (test/layer/checks/).\n"
+    "# An open read names a variable template, a function template, or a class template for its value or\n"
+    "# its type: a translation unit can specialize each, and the specialization changes the answer of\n"
+    "# the gate.  A template is no file, so the PATH of each row is \"-\".\n"
     "#\n"
-    "#   <template> | <count>             reads that wait for a fix.  The count only shrinks.\n"
-    "#   <template> | <count> | <reason>  the same, with the reason that the reads stay.\n"
-    "#   <template> | open | <reason>     a template that stays open on purpose.\n"
+    "#   - | count | N | TEMPLATE | -       N reads that wait for a fix.  The count only shrinks.\n"
+    "#   - | count | N | TEMPLATE | REASON  the same, with the reason that the reads stay.\n"
+    "#   - | open | N | TEMPLATE | REASON   a template that stays open on purpose.  N is the number of\n"
+    "#                                      its reads, and the rule gives the row no bound.\n"
     "#\n"
-    "# The row of a template that a gate of include/crucible reads gives a reason.  Each such\n"
-    "# read that a count row admits gives a warning.\n"
+    "# The row of a template that a gate of include/crucible reads gives a reason.  Each such read that\n"
+    "# a count row admits gives a warning.\n"
     "#\n"
-    "# Run `guard check --rule trait-guard --refresh` in the commit that removes a read.\n")
+    "# Run `python3 utils/bin/guard check --rule trait-guard --refresh` in the commit that removes a read.\n"
+    "# `python3 utils/bin/guard explain trait-guard` tells the rule.\n")
 
 
 @dataclass(frozen=True)
@@ -777,35 +788,31 @@ class LedgerRow:
     reason: str
 
 
-def read_ledger(path: Path) -> tuple[dict[str, LedgerRow], list[str]]:
-    """Return the rows of the gate ledger by template, and each malformed row.
+def read_ledger(root: Path) -> tuple[dict[str, LedgerRow], list[str], rule_ledger.Ledger | None]:
+    """Return the rows of the gate ledger by template, each malformed row, and the ledger that assay.core.ledger reads.
 
-    A missing ledger has no rows.
+    A missing ledger has no rows.  A ledger that the rows grammar refuses
+    holds no row, and the third item is then None.
     """
     rows: dict[str, LedgerRow] = {}
-    errors: list[str] = []
-    if not path.is_file():
-        return rows, errors
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        if not raw.strip() or raw.startswith("#"):
+    try:
+        file = rule_ledger.read(rule_ledger.rule_of(CHECK), root)
+    except (rule_ledger.LedgerError, rows_grammar.RowsError, OSError) as problem:
+        return rows, [f"trait_guard[gate ledger]: {problem}"], None
+    errors = [f"trait_guard[gate ledger]: {GATE_LEDGER} names the configuration {item.name}, and the gate ledger "
+              f"has no configuration" for item in file.configurations]
+    for key, entry in sorted(file.base.items(), key=lambda item: item[1].line):
+        if key.path or key.kind not in (COUNT_MARK, OPEN_MARK) or not key.entity \
+                or (key.kind == OPEN_MARK and not entry.reason):
+            errors.append(f"trait_guard[gate ledger]: {GATE_LEDGER}:{entry.line} is not `- | {COUNT_MARK} | N | "
+                          f"TEMPLATE | REASON or -` or `- | {OPEN_MARK} | N | TEMPLATE | REASON`")
             continue
-        fields = [part.strip() for part in raw.split("|", 2)]
-        is_count = len(fields) >= 2 and fields[1].isdigit() and int(fields[1]) > 0
-        if len(fields) == 2 and is_count:
-            row = LedgerRow(fields[0], int(fields[1]), "")
-        elif len(fields) == 3 and is_count and fields[2]:
-            row = LedgerRow(fields[0], int(fields[1]), fields[2])
-        elif len(fields) == 3 and fields[1] == OPEN_MARK and fields[2]:
-            row = LedgerRow(fields[0], None, fields[2])
-        else:
-            errors.append(f"trait_guard[gate ledger]: {path.name}:{number} is not `<template> | <count>`, "
-                          f"`<template> | <count> | <reason>` or `<template> | open | <reason>`")
+        if key.entity in rows:
+            errors.append(f"trait_guard[gate ledger]: {GATE_LEDGER}:{entry.line} names {key.entity} a second time")
             continue
-        if row.template in rows:
-            errors.append(f"trait_guard[gate ledger]: {path.name}:{number} names {row.template} a second time")
-            continue
-        rows[row.template] = row
-    return rows, errors
+        count = int(entry.value) if key.kind == COUNT_MARK else None
+        rows[key.entity] = LedgerRow(key.entity, count, entry.reason)
+    return rows, errors, file
 
 
 def check_ledger(reads: list[GateRead], rows: dict[str, LedgerRow]
@@ -838,7 +845,7 @@ def check_ledger(reads: list[GateRead], rows: dict[str, LedgerRow]
             continue
         if crucible_reads and not row.reason:
             above.append(f"trait_guard[gate ledger]: a gate of {CRUCIBLE_ROOT} reads the open template {template}, "
-                         f"and its row gives no reason: {sites}.  Give the reason in a third field")
+                         f"and its row gives no reason: {sites}.  Give the reason in the REASON cell of its row")
             continue
         if row.count is not None:
             warnings += [check_report.Finding(
@@ -856,28 +863,27 @@ def check_ledger(reads: list[GateRead], rows: dict[str, LedgerRow]
     return above, stale, warnings
 
 
-def refreshed_ledger(reads: list[GateRead], rows: dict[str, LedgerRow]) -> str:
-    """Return the ledger text with the count of each row lowered to the current reads.
+def refreshed_rows(reads: list[GateRead], rows: dict[str, LedgerRow]) -> dict[rule_ledger.Key, rule_ledger.Entry]:
+    """Return the rows of the ledger with the count of each row lowered to the current reads.
 
-    A row that no gate reads goes.  An open row and a count row keep their
-    reasons.  A template with no row, or a count above its row, is not
-    written: a refresh only shrinks the ledger.
+    A row that no gate reads goes.  An open row gets the number of its reads
+    as its count.  An open row and a count row keep their reasons.  A
+    template with no row, or a count above its row, is not written: a
+    refresh only shrinks the ledger.
     """
     counts: dict[str, int] = {}
     for read in reads:
         counts[read.template] = counts.get(read.template, 0) + 1
-    lines = [LEDGER_HEADER]
+    base: dict[rule_ledger.Key, rule_ledger.Entry] = {}
     for template in sorted(counts):
         row = rows.get(template)
         if row is None:
             continue
-        if row.count is None:
-            lines.append(f"{template} | {OPEN_MARK} | {row.reason}\n")
-        elif row.reason:
-            lines.append(f"{template} | {min(row.count, counts[template])} | {row.reason}\n")
-        else:
-            lines.append(f"{template} | {min(row.count, counts[template])}\n")
-    return "".join(lines)
+        kind = OPEN_MARK if row.count is None else COUNT_MARK
+        count = counts[template] if row.count is None else min(row.count, counts[template])
+        key = rule_ledger.Key("", kind, template)
+        base[key] = rule_ledger.Entry(key, count, row.reason)
+    return base
 
 
 def scan(root: Path, extension_points: dict[QualifiedName, tuple[tuple[str, ...], str]] | None = None,
@@ -945,7 +951,7 @@ def run(root: Path, extension_points: dict[QualifiedName, tuple[tuple[str, ...],
     """
     gates: list[GateRead] = []
     forged, unread, stale = scan(root, extension_points, gates)
-    rows, ledger_errors = read_ledger(root / GATE_LEDGER)
+    rows, ledger_errors, _file = read_ledger(root)
     above, stale_rows, warnings = check_ledger(gates, rows)
     check_report.emit(warnings, CHECK, warnings_dir)
     for site in forged:
@@ -989,21 +995,20 @@ def refresh(root: Path) -> int:
     """Lower the count of each gate ledger row to the reads of the tree, and drop each row that no gate reads.
 
     A refresh only shrinks the ledger.  A read that is above the ledger is
-    printed, and the ledger is not written.
+    printed, and the ledger is not written.  The ledger keeps its head
+    comment, and a new ledger gets COMMENT.
     """
     gates: list[GateRead] = []
     scan(root, None, gates)
-    path = root / GATE_LEDGER
-    rows, errors = read_ledger(path)
+    rows, errors, file = read_ledger(root)
     above, _stale, _warnings = check_ledger(gates, rows)
     for line in errors + above:
         print(line, file=sys.stderr)
-    if errors or above:
+    if errors or above or file is None:
         print("check-trait-injection --refresh: the ledger only shrinks, so it is not written", file=sys.stderr)
         return 1
-    text = refreshed_ledger(gates, rows)
-    if not path.is_file() or path.read_text(encoding="utf-8") != text:
-        path.write_text(text, encoding="utf-8")
+    comment = file.comment if rule_ledger.ledger_path(CHECK, root).is_file() else COMMENT
+    if rule_ledger.store(replace(file, comment=comment, base=refreshed_rows(gates, rows)), root):
         print(f"check-trait-injection --refresh: wrote {GATE_LEDGER}", file=sys.stderr)
     return 0
 
@@ -1306,6 +1311,18 @@ def self_test() -> int:
     return 0
 
 
+def gate_row(kind: str, count: int, template: str, reason: str = "") -> str:
+    """Return one row of a planted gate ledger, with its line break."""
+    return rows_grammar.render(["-"], [kind, str(count), template, reason]) + "\n"
+
+
+def plant_gate_ledger(root: Path, rows: str) -> None:
+    """Write a gate ledger of format 1 with the rows of the text into a planted tree."""
+    path = rule_ledger.ledger_path(CHECK, root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"# The planted ledger.\nformat 1\nrule {CHECK}\n{rows}", encoding="utf-8")
+
+
 def self_test_gates(expect: Callable[..., None], captured: Callable[[Callable[[], int]], tuple[int, str]]) -> None:
     """Plant gates over each kind of open template and over closed ones, and examine the verdicts of Family E."""
     header = (
@@ -1324,16 +1341,14 @@ def self_test_gates(expect: Callable[..., None], captured: Callable[[Callable[[]
         "template <class T> struct Holder { static consteval bool answer() { return false; } };\n"
         "template <class T> concept ReadsMember = Holder<T>::answer();\n"
         "}\n")
-    exact = ("foundation::gates::Holder | 1\n"
-             "foundation::gates::open_f | 1\n"
-             "foundation::gates::open_trait | 1\n"
-             "foundation::gates::open_v | 2\n")
+    open_v, open_f = "foundation::gates::open_v", "foundation::gates::open_f"
+    exact = (gate_row(COUNT_MARK, 1, "foundation::gates::Holder") + gate_row(COUNT_MARK, 1, open_f)
+             + gate_row(COUNT_MARK, 1, "foundation::gates::open_trait") + gate_row(COUNT_MARK, 2, open_v))
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
         (root / "include" / "foundation").mkdir(parents=True)
         (root / "include" / "foundation" / "gates.h").write_text(header, encoding="utf-8")
         ledger = root / GATE_LEDGER
-        ledger.parent.mkdir(parents=True)
 
         gates: list[GateRead] = []
         scan(root, {}, gates)
@@ -1352,29 +1367,53 @@ def self_test_gates(expect: Callable[..., None], captured: Callable[[Callable[[]
         expect("a function-template read with no ledger row fails",
                "read the open template foundation::gates::open_f" in report, True)
 
-        ledger.write_text(exact, encoding="utf-8")
+        plant_gate_ledger(root, exact)
         expect("a ledger that holds each count exits 0", captured(lambda: run(root, {}))[0] == 0)
 
-        ledger.write_text(exact.replace("open_v | 2", "open_v | 1"), encoding="utf-8")
+        plant_gate_ledger(root, exact.replace(gate_row(COUNT_MARK, 2, open_v), gate_row(COUNT_MARK, 1, open_v)))
         expect("a count above its row fails", captured(lambda: run(root, {}))[0] == 1, True)
 
-        ledger.write_text(exact.replace("open_v | 2", "open_v | 3"), encoding="utf-8")
+        plant_gate_ledger(root, exact.replace(gate_row(COUNT_MARK, 2, open_v), gate_row(COUNT_MARK, 3, open_v)))
         code, report = captured(lambda: run(root, {}))
         expect("a count below its row is stale", code == 2 and "Run --refresh" in report, True)
-        expect("a refresh lowers the row",
-               captured(lambda: refresh(root))[0] == 0 and "open_v | 2\n" in ledger.read_text(encoding="utf-8"))
+        expect("a refresh lowers the row and keeps the head comment",
+               captured(lambda: refresh(root))[0] == 0 and gate_row(COUNT_MARK, 2, open_v)
+               in ledger.read_text(encoding="utf-8")
+               and ledger.read_text(encoding="utf-8").startswith("# The planted ledger.\n"))
 
-        ledger.write_text(exact + "foundation::gates::gone_v | 4\n", encoding="utf-8")
+        plant_gate_ledger(root, exact + gate_row(COUNT_MARK, 4, "foundation::gates::gone_v"))
         code, report = captured(lambda: run(root, {}))
         expect("a row that no gate reads is stale", code == 2 and "no gate reads foundation::gates::gone_v" in report,
                True)
 
-        ledger.write_text(exact.replace("open_f | 1", "open_f | open | a planted extension point"), encoding="utf-8")
-        expect("an open row admits its template with its reason", captured(lambda: run(root, {}))[0] == 0)
-        ledger.write_text(exact.replace("open_f | 1", "open_f | open | "), encoding="utf-8")
-        expect("an open row with no reason is malformed", captured(lambda: run(root, {}))[0] == 1, True)
+        opened = exact.replace(gate_row(COUNT_MARK, 1, open_f), gate_row(OPEN_MARK, 5, open_f,
+                                                                         "a planted extension point"))
+        plant_gate_ledger(root, opened)
+        expect("an open row admits its template with its reason, with no bound from its count",
+               captured(lambda: run(root, {}))[0] == 0)
+        expect("a refresh writes the count of an open row again from the reads",
+               captured(lambda: refresh(root))[0] == 0 and gate_row(OPEN_MARK, 1, open_f, "a planted extension point")
+               in ledger.read_text(encoding="utf-8"))
+        for rows, label in ((exact.replace(gate_row(COUNT_MARK, 1, open_f), gate_row(OPEN_MARK, 1, open_f)),
+                             "an open row with no reason"),
+                            (exact + gate_row(OPEN_MARK, 1, open_f, "a reason"),
+                             "a template with a count row and an open row"),
+                            (exact + rows_grammar.render(["include/foundation/gates.h"],
+                                                         [COUNT_MARK, "1", "foundation::gates::extra", ""]) + "\n",
+                             "a row with a path"),
+                            (exact + gate_row("closed", 1, "foundation::gates::extra"), "a row of another kind"),
+                            (exact + "- | count | many | foundation::gates::extra | -\n",
+                             "a row that the rows grammar refuses"),
+                            ("configuration debug kind debug\n" + exact, "a configuration row")):
+            plant_gate_ledger(root, rows)
+            code, report = captured(lambda: run(root, {}))
+            expect(f"{label} is malformed", code == 1 and "trait_guard[gate ledger]" in report, True)
+        plant_gate_ledger(root, exact + "- | count | many | foundation::gates::extra | -\n")
+        before = ledger.read_text(encoding="utf-8")
+        expect("a refresh does not write a ledger that the rows grammar refuses",
+               captured(lambda: refresh(root))[0] == 1 and ledger.read_text(encoding="utf-8") == before, True)
 
-        ledger.write_text(exact.replace("foundation::gates::open_trait | 1\n", ""), encoding="utf-8")
+        plant_gate_ledger(root, exact.replace(gate_row(COUNT_MARK, 1, "foundation::gates::open_trait"), ""))
         before = ledger.read_text(encoding="utf-8")
         code, _report = captured(lambda: refresh(root))
         expect("a refresh does not write a template with no row", code == 1 and
@@ -1390,7 +1429,7 @@ def self_test_gates(expect: Callable[..., None], captured: Callable[[Callable[[]
         expect("a gate in the check file of a layer header is an open read",
                [(read.path, read.line, read.is_crucible) for read in gates if read.path.startswith("test/")]
                == [("test/layer/checks/foundation/gates.cpp", 3, False)])
-        ledger.write_text(exact, encoding="utf-8")
+        plant_gate_ledger(root, exact)
         code, report = captured(lambda: run(root, {}))
         expect("an open read in a check file above its ledger row fails",
                code == 1 and "3 gate(s) read the open template foundation::gates::open_v" in report, True)
@@ -1437,19 +1476,22 @@ def self_test_crucible_gates(expect: Callable[..., None], captured: Callable[[Ca
            not any(read.is_crucible for read in gates if read.path.startswith(LAYER_ROOTS)))
 
     ledger = root / GATE_LEDGER
+    open_v, runtime_open_v = "foundation::gates::open_v", "crucible::gates::runtime_open_v"
     code, report = captured(lambda: run(root, {}))
     expect("a crucible read with no ledger row fails",
            code == 1 and "read the open template crucible::gates::runtime_open_v" in report, True)
-    ledger.write_text(exact.replace("open_v | 2", "open_v | 3") + "crucible::gates::runtime_open_v | 2\n",
-                      encoding="utf-8")
+    plant_gate_ledger(root, exact.replace(gate_row(COUNT_MARK, 2, open_v), gate_row(COUNT_MARK, 3, open_v))
+                      + gate_row(COUNT_MARK, 2, runtime_open_v))
     code, report = captured(lambda: run(root, {}))
     expect("a crucible read whose row gives no reason fails",
            code == 1 and "reads the open template crucible::gates::runtime_open_v, and its row gives no reason" in report
            and "reads the open template foundation::gates::open_v, and its row gives no reason" in report, True)
 
-    with_reasons = (exact.replace("open_v | 2", "open_v | 3 | a planted layer read")
-                    + "crucible::gates::runtime_open_v | 2 | a planted runtime read\n")
-    ledger.write_text(with_reasons, encoding="utf-8")
+    runtime_row = gate_row(COUNT_MARK, 2, runtime_open_v, "a planted runtime read")
+    with_reasons = (exact.replace(gate_row(COUNT_MARK, 2, open_v), gate_row(COUNT_MARK, 3, open_v,
+                                                                            "a planted layer read"))
+                    + runtime_row)
+    plant_gate_ledger(root, with_reasons)
     warnings_dir = root / "build" / check_report.WARNINGS_SUBDIR
     with check_report.github_actions(False), contextlib.redirect_stdout(io.StringIO()) as printed:
         code, _report = captured(lambda: run(root, {}, warnings_dir))
@@ -1462,20 +1504,20 @@ def self_test_crucible_gates(expect: Callable[..., None], captured: Callable[[Ca
            any(line.startswith("include/crucible/gates.h:3: warning: [trait-guard] ") and "runtime_open_v" in line
                and line.endswith("a planted runtime read") for line in lines))
 
-    ledger.write_text(with_reasons.replace("runtime_open_v | 2 | a planted runtime read",
-                                           "runtime_open_v | open | a planted extension point"), encoding="utf-8")
+    plant_gate_ledger(root, with_reasons.replace(runtime_row, gate_row(OPEN_MARK, 2, runtime_open_v,
+                                                                       "a planted extension point")))
     with check_report.github_actions(False), contextlib.redirect_stdout(io.StringIO()) as printed:
         code, _report = captured(lambda: run(root, {}, warnings_dir))
     expect("a crucible read that an open row admits gives no warning",
            code == 0 and "runtime_open_v" not in printed.getvalue() and len(printed.getvalue().splitlines()) == 1)
 
-    ledger.write_text(with_reasons.replace("runtime_open_v | 2 |", "runtime_open_v | 3 |"), encoding="utf-8")
+    plant_gate_ledger(root, with_reasons.replace(runtime_row, gate_row(COUNT_MARK, 3, runtime_open_v,
+                                                                       "a planted runtime read")))
     with check_report.github_actions(False), contextlib.redirect_stdout(io.StringIO()):
         code, _report = captured(lambda: run(root, {}))
     expect("a crucible count below its row is stale", code == 2, True)
     expect("a refresh lowers the row and keeps its reason",
-           captured(lambda: refresh(root))[0] == 0
-           and "crucible::gates::runtime_open_v | 2 | a planted runtime read\n" in ledger.read_text(encoding="utf-8"))
+           captured(lambda: refresh(root))[0] == 0 and runtime_row in ledger.read_text(encoding="utf-8"))
     header.unlink()
     check_file.unlink()
 

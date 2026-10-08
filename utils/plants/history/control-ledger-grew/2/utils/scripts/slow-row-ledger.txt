@@ -1,3 +1,0 @@
-# kind | item | value | reason
-k | a | 21 | r
-k | b | 22 | r

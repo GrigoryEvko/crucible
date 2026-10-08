@@ -1,0 +1,4 @@
+# a planted ledger of a rule that the registry does not hold
+format 1
+rule ghost-rule
+- | kind | admit | entity | a planted reason

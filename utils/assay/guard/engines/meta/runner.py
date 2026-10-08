@@ -44,6 +44,8 @@ PLANTS = "utils/plants"
 PLANT_PREFIX = "plant-"
 CONTROL_PREFIX = "control-"
 SKIPPED = 77
+# The guide of the tree.  Only the root of the repository holds a file with this name (the rule layout).
+GUIDE = "CLAUDE.md"
 
 
 class NotApplicable(Exception):
@@ -51,18 +53,20 @@ class NotApplicable(Exception):
 
 
 class MetaContext:
-    """The tree that a meta rule reads: its root, its build directory and its registry.
+    """The tree that a meta rule reads: its root, its build directory, its guide and its registry.
 
-    The context reads the registry and the tracked files one time, on the
-    first use.
+    The guide is the path of the guide of the tree relative to its root:
+    CLAUDE.md, or a planted guide of a plant.  The context reads the registry
+    and the tracked files one time, on the first use.
     """
 
-    __slots__ = ("root", "build_dir", "_registry", "_problems", "_tracked")
+    __slots__ = ("root", "build_dir", "guide", "_registry", "_problems", "_tracked")
 
-    def __init__(self, root: Path, build_dir: Path | None = None) -> None:
-        """Keep the root and the build directory."""
+    def __init__(self, root: Path, build_dir: Path | None = None, guide: str = GUIDE) -> None:
+        """Keep the root, the build directory and the path of the guide."""
         self.root = root
         self.build_dir = build_dir
+        self.guide = guide
         self._registry: rule_registry.Registry | None = None
         self._problems: list[rows_grammar.RowsError] = []
         self._tracked: tuple[str, ...] | None = None

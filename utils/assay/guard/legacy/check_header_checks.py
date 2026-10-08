@@ -117,32 +117,31 @@ THE SIX KINDS
     in a semicolon at its call site, and it does not count.
 
 THE LEDGER
-    utils/scripts/header-checks-ledger.txt holds three kinds of row.
-      path | self-test namespaces | namespace-scope static_asserts
-      function static_assert | path | count
-      eager evaluation | path | count
-          The work that the header still does in each includer.  Each item
-          of a row gives a warning on each run, so the debt stays visible.
-          A count above its row is an error: move the new check to the
-          check file, or make the new evaluation lazy.  A count below its
-          row is an error too: regenerate the ledger with --write in the
+    utils/ledgers/header-checks.txt (assay.core.ledger) holds two kinds of
+    row.  The kind of each row is one of the six kinds: namespace,
+    static_assert, function static_assert, eager evaluation, eager
+    instantiation and eager fold.
+      path | kind | count | - | -
+          The work of one kind that the header still does in each includer.
+          Each item of a row gives a warning on each run, so the debt stays
+          visible.  A count above its row is an error: move the new check
+          to the check file, or make the new evaluation lazy.  A count below
+          its row is an error too: regenerate the ledger with --write in the
           same commit.  A header with no item of a kind has no row of that
-          kind.
-      eager instantiation | path | count
-      eager fold | path | count
-          The same, for the two kinds of a call.
-      keep | path | kind | key | reason
-          One item that stays in its header, because its result depends on
-          the translation unit that includes the header, or because a
-          template in its place would let a translation unit specialize a
-          verdict.  The kind is one of the six kinds.  The key of a
-          namespace is its full name, the key of a static_assert is the
-          spelling of its condition, the key of an eager evaluation is the
-          qualified name of what it defines, and the key of a call is the
-          qualified name of its scope and the spelling of the call, all as
-          --list prints them.  A keep row that names no item is an error,
-          and a keep row with no reason is an error.  A reason does not
-          contain ` | `.
+          kind, and a count row gives no reason.
+      path | kind | 1 | key | reason
+          A keep row: one item that stays in its header, because its result
+          depends on the translation unit that includes the header, or
+          because a template in its place would let a translation unit
+          specialize a verdict.  The key of a namespace is its full name,
+          the key of a static_assert is the spelling of its condition, the
+          key of an eager evaluation is the qualified name of what it
+          defines, and the key of a call is the qualified name of its scope
+          and the spelling of the call, all as --list prints them.  A keep
+          row that names no item is an error, and a keep row with no reason
+          is an error.
+    A row that the rows grammar refuses, a row of another kind or of a path
+    outside include/, and a configuration row are errors.
 
 THE REPORT
     Each finding is one line in the format of utils/assay/core/report.py,
@@ -256,15 +255,17 @@ import sys
 import tempfile
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
 from assay.core import report as check_report
+from assay.core import rows as rows_grammar
 from assay.readers import tsast
 
 SCRIPT = "utils/bin/guard check --rule header-checks"
-LEDGER = "utils/scripts/header-checks-ledger.txt"
 CHECK = "header-checks"
+LEDGER = rule_ledger.shown_path(CHECK)
 INCLUDE = "include"
 CHECKS = "test/layer/checks"
 NOT_STANDALONE = "test/layer/crucible-not-standalone.txt"
@@ -277,8 +278,6 @@ EAGER = "eager evaluation"
 INSTANCE = "eager instantiation"
 FOLD = "eager fold"
 KINDS = (NAMESPACE, ASSERT, FUNCTION_ASSERT, EAGER, INSTANCE, FOLD)
-# The kinds that have a count row of their own, `kind | path | count`.
-ROW_KINDS = (FUNCTION_ASSERT, EAGER, INSTANCE, FOLD)
 # The two functions of std whose first instantiation in a unit is expensive.
 STATIC_DEFINERS = frozenset({"define_static_array", "define_static_string"})
 # The node types of the parameters of a template parameter list.  The first
@@ -324,10 +323,12 @@ REFLECTION_FUNCTIONS = frozenset({
 })
 LOOPS = frozenset({"for_statement", "for_range_loop", "while_statement", "do_statement"})
 CLASS_SPECIFIERS = ("class_specifier", "struct_specifier", "union_specifier")
-LEDGER_HEADER = (
-    "# utils/scripts/header-checks-ledger.txt — the compile-time work that each header under include/\n"
-    "# still does in each translation unit that includes it.  The rule header-checks\n"
-    "# (`guard check --rule header-checks`) reads this ledger.\n"
+# The head comment of the ledger.  --write writes it into a new ledger, and keeps the comment of a ledger that
+# exists.
+COMMENT = (
+    "# The ledger of the rule header-checks: the compile-time work that each header under include/\n"
+    "# still does in each translation unit that includes it.  `python3 utils/bin/guard explain header-checks`\n"
+    "# tells the rule.\n"
     "#\n"
     "# A header holds no self-test namespace, no static_assert at namespace scope and no static_assert\n"
     "# in the body of a function that is not a template.  Such a check belongs in the check file of the\n"
@@ -338,21 +339,19 @@ LEDGER_HEADER = (
     "# depends on a template parameter (foundation/reflect/Anchor.h).  A consteval function that is not a\n"
     "# template calls no reflection query with constant arguments.\n"
     "#\n"
-    "# A count row:  path | self-test namespaces | namespace-scope static_asserts\n"
-    "#               function static_assert | path | count\n"
-    "#               eager evaluation | path | count\n"
-    "#               eager instantiation | path | count\n"
-    "#               eager fold | path | count\n"
-    "#   Each item of a row gives a warning on each run.  The counts can only decrease.  A header with no\n"
-    "#   item of a kind has no row of that kind.  When you move a check or make an evaluation lazy, run\n"
-    "#   python3 utils/bin/guard check --rule header-checks --write in the same commit.\n"
+    "# The KIND of each row is namespace, static_assert, function static_assert, eager evaluation,\n"
+    "# eager instantiation or eager fold.\n"
     "#\n"
-    "# A keep row:   keep | path | kind | key | reason\n"
+    "# A count row:  PATH | KIND | COUNT | - | -\n"
+    "#   The items of one kind in a header.  Each item gives a warning on each run.  The counts can only\n"
+    "#   decrease.  A header with no item of a kind has no row of that kind.  When you move a check or\n"
+    "#   make an evaluation lazy, run python3 utils/bin/guard check --rule header-checks --write in the\n"
+    "#   same commit.\n"
+    "#\n"
+    "# A keep row:   PATH | KIND | 1 | KEY | REASON\n"
     "#   One item that stays in its header, because its result depends on the translation unit that\n"
     "#   includes the header, or because a template in its place would let a translation unit specialize\n"
-    "#   a verdict.  The kind is namespace, static_assert, function static_assert, eager evaluation,\n"
-    "#   eager instantiation or eager fold.  The key is the one that --list prints.  The reason is\n"
-    "#   mandatory.\n"
+    "#   a verdict.  The KEY is the one that --list prints.  The reason is mandatory.\n"
 )
 
 
@@ -392,6 +391,8 @@ class Ledger:
     and lines maps (header, kind) to the line of the row that permits it.
     bad_keeps holds the messages of the malformed keep rows only, because
     --write keeps each keep row and cannot keep one that it cannot read.
+    file is the ledger as assay.core.ledger reads it, or None when it cannot
+    be read.
     """
 
     counts: dict[str, dict[str, int]] = field(default_factory=dict)
@@ -399,6 +400,7 @@ class Ledger:
     keeps: list[Keep] = field(default_factory=list)
     malformed: list[tuple[int, str]] = field(default_factory=list)
     bad_keeps: list[tuple[int, str]] = field(default_factory=list)
+    file: rule_ledger.Ledger | None = None
 
 
 @dataclass(frozen=True)
@@ -1498,70 +1500,62 @@ def scan(root: Path) -> Scan:
                 base.is_dir())
 
 
-def read_ledger(path: Path) -> Ledger:
-    """Read the ledger.
+def read_ledger(root: Path) -> Ledger:
+    """Read the ledger of the tree at a root (THE LEDGER).
+
+    A missing ledger has no row.  A ledger that the rows grammar refuses
+    holds no row, and its error is a malformed keep row too, so that --write
+    does not drop the keep rows that it cannot read.
 
     Args:
-        path: The ledger file
+        root: The repository root
 
     Returns:
         The count rows, the keep rows and one (line, message) for each malformed row
     """
     ledger = Ledger()
-    if not path.is_file():
+    try:
+        file = rule_ledger.read(rule_ledger.rule_of(CHECK), root)
+    except rows_grammar.RowsError as problem:
+        message = str(problem).removeprefix(f"{problem.path}:{problem.line}: ")
+        ledger.malformed.append((problem.line, message))
+        ledger.bad_keeps.append((problem.line, message))
         return ledger
-    shape = (f"A count row is `path{SEPARATOR}self-test namespaces{SEPARATOR}static_asserts` or "
-             f"`{FUNCTION_ASSERT} or {EAGER}{SEPARATOR}path{SEPARATOR}count`, and a keep row is "
-             f"`keep{SEPARATOR}path{SEPARATOR}kind{SEPARATOR}key{SEPARATOR}reason`.")
-    keys: set[tuple[str, str, str]] = set()
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        entry = raw.strip()
-        if not entry or entry.startswith("#"):
+    except (rule_ledger.LedgerError, OSError) as problem:
+        ledger.malformed.append((0, str(problem)))
+        ledger.bad_keeps.append((0, str(problem)))
+        return ledger
+    ledger.file = file
+    ledger.malformed += [(0, (f"the ledger names the configuration {item.name}, and a ledger of {CHECK} has no "
+                              f"configuration")) for item in file.configurations]
+    shape = "A count row is `PATH | KIND | COUNT | - | -`, and a keep row is `PATH | KIND | 1 | KEY | REASON`."
+    for key, entry in sorted(file.base.items(), key=lambda item: item[1].line):
+        if key.kind not in KINDS or not key.path.startswith(f"{INCLUDE}/"):
+            problem = (f"the row of {key.path or 'no path'} has the kind {key.kind or 'none'}.  The kind is one of "
+                       f"{', '.join(KINDS)}, and the path is under {INCLUDE}/.  {shape}")
+            ledger.malformed.append((entry.line, problem))
+            if key.entity:
+                ledger.bad_keeps.append((entry.line, problem))
             continue
-        # The space after the entry keeps an empty last cell, so that a
-        # keep row that ends in its separator has an empty reason.
-        cells = [cell.strip() for cell in (entry + " ").split(SEPARATOR)]
-        if cells[0] == "keep":
+        if key.entity:
             problem = ""
-            if len(cells) < 5 or cells[2] not in KINDS or not cells[1].startswith(f"{INCLUDE}/"):
-                problem = f"the row is malformed: {entry}  {shape}"
-            elif not cells[-1]:
+            if entry.value != 1:
+                problem = f"a keep row holds one item, and this row holds {entry.value}.  {shape}"
+            elif not entry.reason:
                 problem = "the keep row gives no reason.  Say why the item depends on the translation unit that " \
                           "includes the header."
-            elif (cells[1], cells[2], SEPARATOR.join(cells[3:-1])) in keys:
-                problem = "a keep row for this item comes before this one.  Remove one of them."
             if problem:
-                ledger.malformed.append((number, problem))
-                ledger.bad_keeps.append((number, problem))
+                ledger.malformed.append((entry.line, problem))
+                ledger.bad_keeps.append((entry.line, problem))
                 continue
-            keep = Keep(cells[1], cells[2], SEPARATOR.join(cells[3:-1]), cells[-1], number)
-            keys.add((keep.path, keep.kind, keep.key))
-            ledger.keeps.append(keep)
+            ledger.keeps.append(Keep(key.path, key.kind, key.entity, entry.reason, entry.line))
             continue
-        if cells[0] in ROW_KINDS:
-            if len(cells) != 3 or not cells[1].startswith(f"{INCLUDE}/") or not cells[2].isdigit():
-                ledger.malformed.append((number, f"the row is malformed: {entry}  {shape}"))
-                continue
-            permitted = {cells[0]: int(cells[2])}
-            header = cells[1]
-        else:
-            if len(cells) != 3 or not cells[1].isdigit() or not cells[2].isdigit():
-                ledger.malformed.append((number, f"the row is malformed: {entry}  {shape}"))
-                continue
-            permitted = {NAMESPACE: int(cells[1]), ASSERT: int(cells[2])}
-            header = cells[0]
-        if not any(permitted.values()):
-            ledger.malformed.append((number, f"the row counts no item.  A header with no item of a kind has no row "
-                                             f"of that kind.  Run: python3 {SCRIPT} --write"))
+        if entry.reason:
+            ledger.malformed.append((entry.line, (f"a count row gives no reason.  Only a keep row, which names its "
+                                                  f"key, gives one.  {shape}")))
             continue
-        slot = ledger.counts.setdefault(header, {})
-        if any(kind in slot for kind in permitted):
-            ledger.malformed.append((number, f"{header} has a row of this kind before this one.  Remove one of "
-                                             f"them, or run: python3 {SCRIPT} --write"))
-            continue
-        slot.update(permitted)
-        for kind in permitted:
-            ledger.lines[(header, kind)] = number
+        ledger.counts.setdefault(key.path, {})[key.kind] = int(entry.value)
+        ledger.lines[(key.path, key.kind)] = entry.line
     return ledger
 
 
@@ -1631,19 +1625,18 @@ def describe(check: Check, count: int = 1) -> str:
             f"header.  Make it a variable template or a member of a template, or move it to {target}")
 
 
-def check(root: Path, ledger_path: Path, warnings_dir: Path | None = None) -> int:
+def check(root: Path, warnings_dir: Path | None = None) -> int:
     """Compare the tree with the ledger and print each finding.
 
     Args:
         root: The repository root
-        ledger_path: The ledger file
         warnings_dir: The warnings directory of check_report, or None
 
     Returns:
         0 with no error finding, 1 with one or more
     """
     found = scan(root)
-    ledger = read_ledger(ledger_path)
+    ledger = read_ledger(root)
     checks, stale_keeps = apply_keeps(found.checks, ledger.keeps)
     counts = per_header(checks)
     findings: list[check_report.Finding] = []
@@ -1700,19 +1693,21 @@ def check(root: Path, ledger_path: Path, warnings_dir: Path | None = None) -> in
     return check_report.emit(findings, CHECK, warnings_dir)
 
 
-def write(root: Path, ledger_path: Path) -> int:
+def write(root: Path) -> int:
     """Write the count rows of the ledger again from the tree, and keep each keep row.
+
+    A new ledger gets the head comment COMMENT, and a ledger that exists
+    keeps its own.
 
     Args:
         root: The repository root
-        ledger_path: The ledger file
 
     Returns:
         0 when the ledger is written, 1 when a parse failure or a malformed keep row stops the write
     """
     found = scan(root)
-    ledger = read_ledger(ledger_path)
-    if found.failures or ledger.bad_keeps:
+    ledger = read_ledger(root)
+    if found.failures or ledger.bad_keeps or ledger.file is None:
         for path, message in found.failures:
             print(f"{path}: {message}", file=sys.stderr)
         for line, message in ledger.bad_keeps:
@@ -1721,30 +1716,30 @@ def write(root: Path, ledger_path: Path) -> int:
               "is malformed.", file=sys.stderr)
         return 1
     checks, _stale_keeps = apply_keeps(found.checks, ledger.keeps)
-    counts = per_header(checks)
-    rows = [f"{path}{SEPARATOR}{slot.get(NAMESPACE, 0)}{SEPARATOR}{slot.get(ASSERT, 0)}\n"
-            for path, slot in sorted(counts.items()) if slot.get(NAMESPACE, 0) or slot.get(ASSERT, 0)]
-    for kind in ROW_KINDS:
-        rows.extend(f"{kind}{SEPARATOR}{path}{SEPARATOR}{slot[kind]}\n"
-                    for path, slot in sorted(counts.items()) if slot.get(kind, 0))
-    keeps = [f"keep{SEPARATOR}{keep.path}{SEPARATOR}{keep.kind}{SEPARATOR}{keep.key}{SEPARATOR}{keep.reason}\n"
-             for keep in sorted(ledger.keeps, key=lambda keep: (keep.path, keep.kind, keep.key))]
-    ledger_path.parent.mkdir(parents=True, exist_ok=True)
-    ledger_path.write_text(LEDGER_HEADER + "".join(rows) + ("\n" + "".join(keeps) if keeps else ""),
-                           encoding="utf-8")
-    print(f"check-header-checks: ledger written with {len(rows)} count row(s) and {len(keeps)} keep row(s).",
+    base: dict[rule_ledger.Key, rule_ledger.Entry] = {}
+    for path, slot in per_header(checks).items():
+        for kind, count in slot.items():
+            key = rule_ledger.Key(path, kind, "")
+            base[key] = rule_ledger.Entry(key, count, "")
+    rows = len(base)
+    for keep in ledger.keeps:
+        key = rule_ledger.Key(keep.path, keep.kind, keep.key)
+        base[key] = rule_ledger.Entry(key, 1, keep.reason)
+    comment = ledger.file.comment if rule_ledger.ledger_path(CHECK, root).is_file() else COMMENT
+    rule_ledger.store(replace(ledger.file, comment=comment, configurations=(), deltas={}, base=base), root)
+    print(f"check-header-checks: ledger written with {rows} count row(s) and {len(ledger.keeps)} keep row(s).",
           file=sys.stderr)
     return 0
 
 
-def list_checks(root: Path, ledger_path: Path) -> int:
+def list_checks(root: Path) -> int:
     """Print each item that a header holds, with the key that a keep row names.
 
     Returns:
         0, or 1 on a parse failure
     """
     found = scan(root)
-    kept = {(keep.path, keep.kind, keep.key) for keep in read_ledger(ledger_path).keeps}
+    kept = {(keep.path, keep.kind, keep.key) for keep in read_ledger(root).keeps}
     for item in found.checks:
         marker = "KEPT" if (item.path, item.kind, item.key) in kept else "HELD"
         print(f"{marker}  {item.path}:{item.row}  {item.kind}  {item.key}")
@@ -2492,12 +2487,11 @@ def place(root: Path, destination: str, header: str, placements: list[Placement]
     return data.decode("utf-8"), dropped
 
 
-def fix(root: Path, ledger_path: Path, headers: list[str], into: str | None, dry_run: bool) -> int:
+def fix(root: Path, headers: list[str], into: str | None, dry_run: bool) -> int:
     """Move the checks of each header to its check file, and make each count a literal.
 
     Args:
         root: The repository root
-        ledger_path: The ledger file
         headers: The headers, repo-relative or relative to include/
         into: The destination for one header that has no check file, or None
         dry_run: When true, print the changes and write nothing
@@ -2506,7 +2500,7 @@ def fix(root: Path, ledger_path: Path, headers: list[str], into: str | None, dry
         0 when each item is handled, 1 when the fix refuses an item, 2 on a usage error
     """
     found = scan(root)
-    keeps = read_ledger(ledger_path).keeps
+    keeps = read_ledger(root).keeps
     checks, _stale = apply_keeps(found.checks, keeps)
     listed = {row for row, _line in read_not_standalone(root)[0]}
     if into is not None and len(headers) != 1:
@@ -2989,8 +2983,6 @@ def fix_self_test(expect) -> None:
         for rel, text in files.items():
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(text, encoding="utf-8")
-        ledger = root / LEDGER
-        ledger.parent.mkdir(parents=True, exist_ok=True)
 
         def run(*arguments: str) -> tuple[int, str]:
             """Run --fix in the scratch tree and keep its report."""
@@ -2999,7 +2991,7 @@ def fix_self_test(expect) -> None:
             into = next((argument.removeprefix("--into=") for argument in arguments
                          if argument.startswith("--into=")), None)
             with contextlib.redirect_stderr(buffer), contextlib.redirect_stdout(buffer):
-                code = fix(root, ledger, headers, into, "--dry-run" in arguments)
+                code = fix(root, headers, into, "--dry-run" in arguments)
             return code, buffer.getvalue()
 
         def read(rel: str) -> str:
@@ -3083,7 +3075,7 @@ def fix_self_test(expect) -> None:
                code == 0 and "self_test" not in read("include/crucible/Probe.h")
                and 0 <= probe_test.find("namespace probe_detail::self_test {") < probe_test.find("int main()"))
         with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
-            agrees = write(root, ledger) == 0 and check(root, ledger) == 0
+            agrees = write(root) == 0 and check(root) == 0
         expect("--write and the check agree with the tree after the fix", agrees)
 
 
@@ -3107,14 +3099,23 @@ def self_test() -> int:
     kept_header = ("#pragma once\nnamespace crucible {\nstatic_assert(sizeof(long) == 8);\n"
                    "static_assert(sizeof(char) == 1);\ninline constexpr auto kept_value = "
                    "std::meta::members_of(^^crucible, ctx).size();\n}  // namespace crucible\n")
-    keep_row = "keep | include/crucible/Kept.h | static_assert | sizeof(long)==8 | the planted reason"
-    eager_keep_row = "keep | include/crucible/Kept.h | eager evaluation | crucible::kept_value | the planted reason"
-    planted_rows = ("include/foundation/Planted.h | 5 | 9\n"
-                    "function static_assert | include/foundation/Planted.h | 6\n"
-                    "eager evaluation | include/foundation/Planted.h | 13\n"
-                    "eager instantiation | include/foundation/Planted.h | 5\n"
-                    "eager fold | include/foundation/Planted.h | 3\n")
-    matching = "include/crucible/Kept.h | 0 | 1\n" + planted_rows + keep_row + "\n" + eager_keep_row + "\n"
+    planted_header = "include/foundation/Planted.h"
+    # The count of each kind of item in the planted header.
+    planted_counts = {NAMESPACE: 5, ASSERT: 9, FUNCTION_ASSERT: 6, EAGER: 13, INSTANCE: 5, FOLD: 3}
+
+    def entry(path: str, kind: str, value: str, key: str = "", reason: str = "") -> str:
+        """Return one ledger row, with its line break."""
+        return rows_grammar.render([path], [kind, value, key, reason]) + "\n"
+
+    def count_rows(counts: dict[str, int]) -> str:
+        """Return the count rows of the planted header."""
+        return "".join(entry(planted_header, kind, str(count)) for kind, count in counts.items())
+
+    keep_row = entry("include/crucible/Kept.h", ASSERT, "1", "sizeof(long)==8", "the planted reason")
+    eager_keep_row = entry("include/crucible/Kept.h", EAGER, "1", "crucible::kept_value", "the planted reason")
+    planted_rows = count_rows(planted_counts)
+    matching = entry("include/crucible/Kept.h", ASSERT, "1") + planted_rows + keep_row + eager_keep_row
+    plant_comment = "# The planted ledger.\n"
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
         files = {
@@ -3132,6 +3133,10 @@ def self_test() -> int:
         warnings_dir = root / "build" / check_report.WARNINGS_SUBDIR
         warnings_file = warnings_dir / f"{CHECK}.txt"
 
+        def plant(rows: str) -> None:
+            """Write a ledger of format 1 with the rows of the text."""
+            ledger.write_text(f"{plant_comment}format 1\nrule {CHECK}\n{rows}", encoding="utf-8")
+
         def captured(action) -> tuple[int, str]:
             """Run one action and keep its report and its findings."""
             buffer = io.StringIO()
@@ -3141,7 +3146,7 @@ def self_test() -> int:
 
         def verdict() -> tuple[int, str]:
             """Compare the scratch tree with its ledger."""
-            return captured(lambda: check(root, ledger, warnings_dir))
+            return captured(lambda: check(root, warnings_dir))
 
         found = scan(root)
         rows = {(item.row, item.kind) for item in found.checks if item.path == "include/foundation/Planted.h"}
@@ -3203,7 +3208,7 @@ def self_test() -> int:
         expect("the planted tree has no parse failure and no bad check file",
                not found.failures and not found.bad_check_files, True)
 
-        ledger.write_text(matching, encoding="utf-8")
+        plant(matching)
         code, report = verdict()
         expect("a ledger that agrees with the tree passes, with a warning for each held item",
                code == 0 and "error:" not in report
@@ -3288,79 +3293,75 @@ def self_test() -> int:
                code == 1 and "include/fixy/Clean.h:3: error: [header-checks] the invocation of the macro PLANTED_PAIR "
                              "makes 2 namespace-scope static_assert(s)" in report, True)
         (root / "include/fixy/Clean.h").write_text(clean_planted, encoding="utf-8")
-        for row, label in (("include/foundation/Planted.h | 5 | 8", "static_assert"),
-                           ("include/foundation/Planted.h | 4 | 9", "self-test namespace"),
-                           ("function static_assert | include/foundation/Planted.h | 5", "function static_assert"),
-                           ("eager evaluation | include/foundation/Planted.h | 12", "eager evaluation"),
-                           ("eager instantiation | include/foundation/Planted.h | 4", "eager instantiation"),
-                           ("eager fold | include/foundation/Planted.h | 2", "eager fold")):
-            first = row.split(SEPARATOR)[0]
-            original = next(text for text in planted_rows.splitlines() if text.split(SEPARATOR)[0] == first)
-            ledger.write_text(matching.replace(original, row), encoding="utf-8")
+        others = entry("include/crucible/Kept.h", ASSERT, "1") + keep_row + eager_keep_row
+        for kind in (ASSERT, NAMESPACE, FUNCTION_ASSERT, EAGER, INSTANCE, FOLD):
+            plant(others + count_rows({**planted_counts, kind: planted_counts[kind] - 1}))
             code, report = verdict()
-            expect(f"one more {label} than the row permits is an error",
+            expect(f"one more {'self-test namespace' if kind == NAMESPACE else kind} than the row permits is an error",
                    code == 1 and ": error: [header-checks]" in report and "include/foundation/Planted.h:" in report)
-        for row, label in (("include/foundation/Planted.h | 5 | 10", "static_assert"),
-                           ("function static_assert | include/foundation/Planted.h | 7", "function static_assert"),
-                           ("eager evaluation | include/foundation/Planted.h | 14", "eager evaluation"),
-                           ("eager instantiation | include/foundation/Planted.h | 6", "eager instantiation"),
-                           ("eager fold | include/foundation/Planted.h | 4", "eager fold")):
-            first = row.split(SEPARATOR)[0]
-            original = next(text for text in planted_rows.splitlines() if text.split(SEPARATOR)[0] == first)
-            ledger.write_text(matching.replace(original, row), encoding="utf-8")
+        for kind in (ASSERT, FUNCTION_ASSERT, EAGER, INSTANCE, FOLD):
+            plant(others + count_rows({**planted_counts, kind: planted_counts[kind] + 1}))
             code, report = verdict()
-            expect(f"a {label} row above the tree is an error that asks for a regenerate in the same commit",
+            expect(f"a {kind} row above the tree is an error that asks for a regenerate in the same commit",
                    code == 1 and f"{LEDGER}:" in report and "Regenerate the ledger in the same commit" in report,
                    True)
-        ledger.write_text(matching.replace(planted_rows, ""), encoding="utf-8")
+        plant(others)
         code, report = verdict()
         expect("a header with items and no row is an error", code == 1 and "error:" in report)
-        ledger.write_text(matching + "include/foundation/Gone.h | 1 | 1\n", encoding="utf-8")
+        plant(matching + entry("include/foundation/Gone.h", ASSERT, "1"))
         code, report = verdict()
         expect("a row that names no header is an error", code == 1 and "include/foundation/Gone.h" in report, True)
-        ledger.write_text(matching + "eager evaluation | include/foundation/Gone.h | 1\n", encoding="utf-8")
+        plant(matching + entry("include/foundation/Gone.h", EAGER, "1"))
         code, report = verdict()
         expect("an eager row that names no header is an error",
                code == 1 and "the row names include/foundation/Gone.h" in report, True)
-        for extra, label in (("include/fixy/Clean.h | 0 | 0", "a row that counts no item"),
-                             ("eager evaluation | include/fixy/Clean.h | 0", "an eager row that counts no item"),
-                             ("include/foundation/Planted.h | 9 | 9", "a second count row for one header"),
-                             ("eager evaluation | include/foundation/Planted.h | 13", "a second eager row"),
-                             ("include/fixy/Clean.h 1 1", "a row without its separators"),
-                             ("eager evaluation | include/fixy/Clean.h | many", "an eager row with no number"),
-                             ("function static_assert | fixy/Clean.h | 1", "a row with a path outside include/"),
-                             ("keep | include/fixy/Clean.h | constexpr | key | reason", "a keep row of no kind")):
-            ledger.write_text(matching + extra + "\n", encoding="utf-8")
+        for extra, label in ((entry("include/fixy/Clean.h", ASSERT, "0"), "a row that counts no item"),
+                             (entry(planted_header, EAGER, "13"), "a second count row of one kind for one header"),
+                             ("include/fixy/Clean.h 1 1\n", "a row without its separators"),
+                             (entry("include/fixy/Clean.h", EAGER, "many"), "a row with no number"),
+                             (entry("fixy/Clean.h", FUNCTION_ASSERT, "1"), "a row with a path outside include/"),
+                             (entry("include/fixy/Clean.h", "constexpr", "1"), "a count row of no kind"),
+                             (entry("include/fixy/Clean.h", "constexpr", "1", "key", "reason"),
+                              "a keep row of no kind"),
+                             (entry("include/fixy/Clean.h", ASSERT, "2", "key", "reason"),
+                              "a keep row that holds two items"),
+                             (entry("include/fixy/Clean.h", ASSERT, "1", "", "reason"), "a count row with a reason"),
+                             ("configuration debug kind debug\n", "a configuration row")):
+            plant(extra + matching if extra.startswith("configuration") else matching + extra)
             code, report = verdict()
             expect(f"{label} is an error", code == 1 and f"{LEDGER}:" in report and "error:" in report, True)
-        ledger.write_text(matching.replace(" | the planted reason", " | ", 1), encoding="utf-8")
+        plant(matching.replace(" | the planted reason", " | -", 1))
         code, report = verdict()
         expect("a keep row with no reason is an error", code == 1 and "gives no reason" in report, True)
-        ledger.write_text(matching.replace("sizeof(long)==8", "sizeof(long)==4"), encoding="utf-8")
+        expect("--write refuses while a keep row is malformed", captured(lambda: write(root))[0] == 1, True)
+        plant(matching + "include/fixy/Clean.h | static_assert | 1\n")
+        expect("--write refuses while the ledger does not obey the rows grammar",
+               captured(lambda: write(root))[0] == 1 and ledger.read_text(encoding="utf-8").endswith(
+                   "include/fixy/Clean.h | static_assert | 1\n"), True)
+        plant(matching.replace("sizeof(long)==8", "sizeof(long)==4"))
         code, report = verdict()
         expect("a keep row that names no item is an error", code == 1 and "the keep row names no static_assert" in report,
                True)
-        ledger.write_text(matching.replace(eager_keep_row + "\n", ""), encoding="utf-8")
+        plant(matching.replace(eager_keep_row, ""))
         code, report = verdict()
         expect("without its keep row, the kept evaluation counts",
                code == 1 and "include/crucible/Kept.h:5: error: [header-checks]" in report, True)
-        ledger.write_text("include/foundation/Planted.h | 1 | 1\n" + keep_row + "\n" + eager_keep_row + "\n",
-                          encoding="utf-8")
-        code, _ = captured(lambda: write(root, ledger))
+        plant(entry(planted_header, NAMESPACE, "1") + entry(planted_header, ASSERT, "1") + keep_row + eager_keep_row)
+        code, _ = captured(lambda: write(root))
         written = ledger.read_text(encoding="utf-8")
-        expect("--write gives a ledger that passes, with the header, each row kind and each keep row",
-               code == 0 and verdict()[0] == 0 and written.startswith(LEDGER_HEADER)
+        expect("--write gives a ledger that passes, with its head comment, each row kind and each keep row",
+               code == 0 and verdict()[0] == 0 and written.startswith(plant_comment + "format 1\n")
                and keep_row in written and eager_keep_row in written and all(text in written for text in
                                                                               planted_rows.splitlines()))
         for rel in ("include/foundation/Planted.h", "include/crucible/Kept.h"):
             (root / rel).unlink()
-        ledger.write_text("", encoding="utf-8")
+        plant("")
         code, report = verdict()
         expect("a run with no warning passes and removes the warnings file",
                code == 0 and "warning:" not in report and not warnings_file.exists(), True)
         for rel in ("include/foundation/Planted.h", "include/crucible/Kept.h"):
             (root / rel).write_text(files[rel], encoding="utf-8")
-        ledger.write_text(matching, encoding="utf-8")
+        plant(matching)
 
         clean_check = (root / f"{CHECKS}/fixy/Clean.cpp").read_text(encoding="utf-8")
         for text, label in ((clean_check.replace("<fixy/Clean.h>", "<foundation/Planted.h>"),
@@ -3388,7 +3389,7 @@ def self_test() -> int:
         code, report = verdict()
         expect("a header the parser cannot read is an error",
                code == 1 and "include/fixy/Broken.h:0: error: [header-checks] the parser cannot read" in report)
-        expect("--write refuses while a header does not parse", captured(lambda: write(root, ledger))[0] == 1, True)
+        expect("--write refuses while a header does not parse", captured(lambda: write(root))[0] == 1, True)
         (root / "include/fixy/Broken.h").unlink()
 
         previous = Path.cwd()
@@ -3401,15 +3402,19 @@ def self_test() -> int:
 
         empty = root / "empty"
         empty.mkdir()
-        code, report = captured(lambda: check(empty, empty / LEDGER, None))
+        code, report = captured(lambda: check(empty, None))
         expect("a tree with no include directory is an error", code == 1 and "include:0: error:" in report)
         ledger.unlink()
         code, report = verdict()
         expect("a missing ledger permits nothing, so each held item is an error",
                code == 1 and "include/foundation/Planted.h:3: error:" in report)
+        code, _ = captured(lambda: write(root))
+        expect("--write of a missing ledger gives the head comment of a new ledger and a ledger that passes",
+               code == 0 and ledger.read_text(encoding="utf-8").startswith(COMMENT + "format 1\n")
+               and verdict()[0] == 0)
         for rel in ("include/foundation/Planted.h", "include/crucible/Kept.h"):
             (root / rel).unlink()
-        ledger.write_text("", encoding="utf-8")
+        plant("")
         expect("a tree with no item in a header and an empty ledger passes", verdict()[0] == 0, True)
 
         # The list of the headers that cannot compile alone, against a
@@ -3490,19 +3495,18 @@ def main(argv: list[str]) -> int:
         print("check-header-checks: --into and --dry-run take --fix.", file=sys.stderr)
         return 2
     root = tsast.REPO_ROOT
-    ledger = root / LEDGER
     try:
         if options.self_test:
             return self_test()
         if options.fix:
-            return fix(root, ledger, options.fix, options.into, options.dry_run)
+            return fix(root, options.fix, options.into, options.dry_run)
         if options.write:
-            return write(root, ledger)
+            return write(root)
         if options.list:
-            return list_checks(root, ledger)
+            return list_checks(root)
         if options.standalone is not None:
             return standalone(root, options.standalone.resolve())
-        return check(root, ledger, options.warnings_dir)
+        return check(root, options.warnings_dir)
     except tsast.KitMissing as exc:
         print(f"check-header-checks: {exc}", file=sys.stderr)
         return 3

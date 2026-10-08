@@ -231,7 +231,7 @@ int main(int argc, char** argv) {
     // process start. Reading and writing the store blocks on a disk, and
     // an initialization context deliberately does not admit Effect::Block.
     // The tool runs no dispatch thread, so main is the one scope that takes
-    // the background door, and utils/scripts/ctx-bg-door-allowlist.txt lists it.
+    // the background door, and a background row of utils/ledgers/ctx-init-door.txt lists it.
     constexpr ledger::LedgerIoCtx ctx{::foundation::effects::host::BackgroundOwner::mint_background_context()};
 
     const ledger::HostFacts facts = ledger::probe_host_facts(ctx);

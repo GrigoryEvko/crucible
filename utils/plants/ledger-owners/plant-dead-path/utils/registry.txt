@@ -1,0 +1,3 @@
+# a planted registry: the row of count-rule names a file that moved to data/moved/gone.txt
+format 1
+rule count-rule engine=meta scope=tracked ledger=count doc=XV | a planted refusal | fix the planted file

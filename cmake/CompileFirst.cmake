@@ -8,8 +8,8 @@
 # A long compile that comes late in build.ninja then starts late, and with 192
 # jobs it makes the tail of an edit build.
 #
-# utils/scripts/compile-first.txt lists the targets with a long compile, one
-# name on each line.  This file gives each listed target one more edge: one
+# cmake/compile-first.txt lists the targets with a long compile, one name on
+# each line.  This file gives each listed target one more edge: one
 # stamp command with each listed target as an order-only input.  The objects
 # of a listed test or a listed static library then have a chain of three
 # edges, so Ninja starts them before the objects of the other tests and after
@@ -31,7 +31,7 @@
 # of `all` that compiles a source, one name on each line.  The test
 # compile_first judges only those targets.
 
-set(CRUCIBLE_COMPILE_FIRST_LIST "${CMAKE_SOURCE_DIR}/utils/scripts/compile-first.txt")
+set(CRUCIBLE_COMPILE_FIRST_LIST "${CMAKE_CURRENT_LIST_DIR}/compile-first.txt")
 set_property(DIRECTORY "${CMAKE_SOURCE_DIR}" APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CRUCIBLE_COMPILE_FIRST_LIST}")
 
 # Complexity: linear in the directories, the targets and the rows of the list.

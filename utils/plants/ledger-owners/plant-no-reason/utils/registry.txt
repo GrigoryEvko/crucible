@@ -1,0 +1,3 @@
+# a planted registry: the rule admit-rule has the policy admit, and its row gives no reason
+format 1
+rule admit-rule engine=meta scope=tracked ledger=admit doc=XV | a planted refusal | fix the planted file

@@ -4,8 +4,9 @@ utils/assay/loop/step.py (`loop step`) imports this module for each compile
 and each link of the build.  The launcher in front of a test, `loop
 test-step`, imports it in the same way.  The module imports only os, sys and
 time, so an import costs about one millisecond.  It imports signal and
-resource only to run a command, _ctypes only to count instructions, and
-utils/assay/core/report.py only to write a finding line.
+resource only to run a command, _ctypes only to count instructions,
+utils/assay/core/report.py only to write a finding line, and
+utils/assay/core/ledger.py only to read or write a ledger that exists.
 
 MEASURE
     measure(command, environment, cpu_limit_s) runs a command with the
@@ -116,10 +117,23 @@ THE REGISTRY AND THE LEDGERS
     utils/registry.txt, through the rows reader of assay.core.rows, which
     imports no module.  assay.core.registry is the full reader of the
     registry, and its import of dataclasses costs 13 ms, so a launcher does not
-    import it.  read_ledger_rows() reads the rows of a ledger of a measured rule,
-    for example utils/scripts/compile-memory-ledger.txt:
+    import it.
 
-        kind | item | value | reason
+    read_kind_rows() reads the ledger of a measured rule of the policy max,
+    utils/ledgers/RULE.txt, through assay.core.ledger.  A row admits one item
+    over the error threshold of the rule, for one build kind:
+
+        PATH | KIND | VALUE | ENTITY | REASON
+
+    KIND is the build kind.  The rule gives the form of its item: an output
+    of the build directory (PATH @build/OUTPUT, and no ENTITY), a file of the
+    source tree (PATH FILE, and no ENTITY), or a name, such as the name of a
+    test (PATH "-", and ENTITY NAME).  VALUE is the measure when the row was
+    written, in the unit of the rule.  A row that does not have the form of
+    its rule is a problem of the ledger.  A ledger that does not exist has no
+    row, and the call then imports no module, so a launcher pays the import
+    of assay.core.ledger only when a ledger exists.  write_kind_rows()
+    writes the rows of such a ledger again.
 
     The build kind of a build directory is the one line of
     BUILD_DIR/build-kind.txt, which cmake/BuildLauncher.cmake writes at each
@@ -167,9 +181,23 @@ COMPILER_COUNT_ENV = "CRUCIBLE_COMPILER_COUNT"
 COMPILER_COUNT_SUFFIX = ".compiler-count"
 INEXACT_COUNT = "-"
 CCACHE_PREFIX_ENV = "CCACHE_PREFIX"
-# The master loop, utils/bin/loop.  This module is utils/assay/core/meter.py.  It calculates the path with os.path
-# and not with assay.core.paths, because each compile and each link imports it, and pathlib costs an import.
-LOOP_MASTER = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "bin", "loop")
+# The directory utils.  This module is utils/assay/core/meter.py.  It calculates the paths with os.path and not with
+# assay.core.paths, because each compile and each link imports it, and pathlib costs an import.
+UTILS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# The master loop, utils/bin/loop.
+LOOP_MASTER = os.path.join(UTILS, "bin", "loop")
+# The directory of the ledgers of the rules, utils/ledgers (assay.core.ledger).
+LEDGER_DIRECTORY = os.path.join(UTILS, "ledgers")
+# The prefix of a PATH cell that names a file of the build directory (assay.core.ledger, THE FILE).
+BUILD_PATH_PREFIX = "@build/"
+# The forms of the item of a row of a ledger of a measured rule (THE REGISTRY AND THE LEDGERS), and the row of each.
+ITEM_OUTPUT = "output"
+ITEM_FILE = "file"
+ITEM_NAME = "name"
+ITEM_ROWS = {ITEM_OUTPUT: f"{BUILD_PATH_PREFIX}OUTPUT | KIND | VALUE | - | REASON",
+             ITEM_FILE: "FILE | KIND | VALUE | - | REASON", ITEM_NAME: "- | KIND | VALUE | NAME | REASON"}
+# The characters of a word of a build kind.
+KIND_CHARACTERS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789_")
 # The words of the prefix that ccache puts in front of the compiler run of a miss (A COMPILE THROUGH CCACHE).
 COMPILER_METER = (LOOP_MASTER, "meter-compiler")
 
@@ -610,60 +638,134 @@ def budget_rows(path: str, names: tuple[str, ...]) -> dict[str, tuple[float, flo
     return found
 
 
-def read_ledger_rows(path: str) -> tuple[dict[tuple[str, str], tuple[int, float, str]], list[tuple[int, str]],
-                                         list[str]]:
-    """Read the rows of one ledger: kind | item | value | reason.
-
-    A line that starts with '#' and an empty line are not rows.  The comment
-    lines before the first row are the header of the ledger.
+def ledger_file(rule_id: str, directory: str | None = None) -> str:
+    """Return the ledger of a measured rule: utils/ledgers/RULE.txt, or RULE.txt in a directory of planted ledgers.
 
     Args:
-        path: The ledger
+        rule_id: The ID of the rule
+        directory: The directory of planted ledgers of a test, or None for the ledgers of the tree
+    """
+    return os.path.join(directory or LEDGER_DIRECTORY, f"{rule_id}.txt")
+
+
+def shown_ledger(path: str) -> str:
+    """Return the path of a ledger as a finding names it: relative to the source root when it is in the tree."""
+    root = os.path.dirname(UTILS)
+    return os.path.relpath(path, root) if path.startswith(root + os.sep) else path
+
+
+def is_build_kind(text: str) -> bool:
+    """Tell whether a text is a build kind: words of a-z, 0-9 and '_', with one hyphen between two words."""
+    return all(word and set(word) <= KIND_CHARACTERS for word in text.split("-"))
+
+
+def item_of(path: str, entity: str, form: str) -> str | None:
+    """Return the item of a ledger row, or None when the PATH cell and the ENTITY cell do not have the form `form`.
+
+    Args:
+        path: The PATH of the row, "" for the cell "-"
+        entity: The ENTITY of the row, "" for the cell "-"
+        form: ITEM_OUTPUT, ITEM_FILE or ITEM_NAME
+    """
+    if form == ITEM_OUTPUT:
+        is_output = path.startswith(BUILD_PATH_PREFIX) and len(path) > len(BUILD_PATH_PREFIX) and not entity
+        return path[len(BUILD_PATH_PREFIX):] if is_output else None
+    if form == ITEM_FILE:
+        return path if path and not path.startswith(BUILD_PATH_PREFIX) and not entity else None
+    return entity if not path and entity else None
+
+
+def item_cells(item: str, form: str) -> tuple[str, str]:
+    """Return the PATH and the ENTITY of the ledger row of an item of the form `form`, each "" for the cell "-"."""
+    if form == ITEM_OUTPUT:
+        return BUILD_PATH_PREFIX + item, ""
+    if form == ITEM_FILE:
+        return item, ""
+    return "", item
+
+
+def read_kind_rows(rule_id: str, form: str, path: str) -> tuple[dict[tuple[str, str], tuple[int, float, str]],
+                                                                list[tuple[int, str]], str]:
+    """Read the ledger of a measured rule of the policy max: each row by its build kind and its item.
+
+    THE REGISTRY AND THE LEDGERS gives the rows.  A ledger that does not exist
+    has no row, and the call then imports no module.
+
+    Args:
+        rule_id: The ID of the measured rule
+        form: The form of the item of a row: ITEM_OUTPUT, ITEM_FILE or ITEM_NAME
+        path: The ledger, from ledger_file()
 
     Returns:
-        Each row by its kind and item, with its line, its value and its reason; each problem with its
-        line; and the header lines
+        Each row by its kind and its item, with its line, its value and its reason; each problem with its line, or
+        line 0 for a problem of the file as a whole; and the path of the ledger from shown_ledger()
 
     Raises:
-        OSError: If the ledger cannot be read
+        OSError: If the ledger exists and cannot be read, or the registry cannot be read
     """
-    import re
+    shown = shown_ledger(path)
+    if not os.path.isfile(path):
+        return {}, [], shown
+    from pathlib import Path
 
-    kind_pattern = re.compile(r"[a-z0-9_]+(?:-[a-z0-9_]+)*")
+    from assay.core import ledger as rule_ledger
+    from assay.core import rows as rows_grammar
+
+    try:
+        rule = rule_ledger.rule_of(rule_id)
+    except (rule_ledger.LedgerError, rows_grammar.RowsError) as problem:
+        return {}, [(0, f"the registry gives no measured rule {rule_id} for the ledger: {problem}")], shown
+    file = Path(path)
+    try:
+        ledger = rule_ledger.read(rule, file=file)
+    except rows_grammar.RowsError as problem:
+        return {}, [(problem.line, str(problem).removeprefix(f"{problem.path}:{problem.line}: "))], shown
     rows: dict[tuple[str, str], tuple[int, float, str]] = {}
     problems: list[tuple[int, str]] = []
-    header: list[str] = []
-    with open(path, encoding="utf-8") as handle:
-        lines = handle.read().splitlines()
-    for number, raw in enumerate(lines, start=1):
-        text = raw.strip()
-        if not text or text.startswith("#"):
-            if not rows and not problems:
-                header.append(raw)
-            continue
-        cells = [cell.strip() for cell in text.split(" | ")]
-        if len(cells) != 4:
-            problems.append((number, f"a row has four cells (kind | item | value | reason), and this row has "
-                                     f"{len(cells)}"))
-            continue
-        kind, item, value_text, reason = cells
-        problem = None
-        if not kind_pattern.fullmatch(kind):
-            problem = f"the kind {kind!r} is not lowercase words with hyphens"
-        elif not item:
-            problem = "the row names no item"
-        elif not reason:
-            problem = f"the row of {item} gives no reason"
-        elif (kind, item) in rows:
-            problem = f"the item {item} has a second row of kind {kind}"
+    for key, entry in sorted(ledger.base.items(), key=lambda pair: pair[1].line):
+        item = item_of(key.path, key.entity, form)
+        if not is_build_kind(key.kind):
+            problems.append((entry.line, f"the kind {key.kind!r} is not lowercase words with hyphens"))
+        elif item is None:
+            problems.append((entry.line, f"a row of the rule {rule_id} is '{ITEM_ROWS[form]}'"))
         else:
-            try:
-                rows[(kind, item)] = (number, float(value_text), reason)
-            except ValueError:
-                problem = f"the value {value_text!r} is not a number"
-        if problem is not None:
-            problems.append((number, problem))
-    return rows, problems, header
+            rows[(key.kind, item)] = (entry.line, float(entry.value), entry.reason)
+    return rows, problems, shown
+
+
+def write_kind_rows(rule_id: str, form: str, path: str, rows: dict[tuple[str, str], tuple[float, str]],
+                    comment: str) -> None:
+    """Write the ledger of a measured rule of the policy max with these rows, sorted by their keys.
+
+    The ledger keeps its head comment, and a new ledger takes `comment`.  A
+    ledger with no row has no file.
+
+    Args:
+        rule_id: The ID of the measured rule
+        form: The form of the item of a row: ITEM_OUTPUT, ITEM_FILE or ITEM_NAME
+        path: The ledger, from ledger_file()
+        rows: The value and the reason of each kind and item
+        comment: The head comment of a new ledger, with its line breaks
+
+    Raises:
+        OSError: If the ledger or the registry cannot be read, or the ledger cannot be written
+        ValueError: If the ledger or the registry does not obey its schema, or a cell cannot hold its text
+    """
+    from dataclasses import replace
+    from pathlib import Path
+
+    from assay.core import ledger as rule_ledger
+
+    file = Path(path)
+    ledger = rule_ledger.read(rule_ledger.rule_of(rule_id), file=file)
+    if not file.is_file():
+        ledger = replace(ledger, comment=comment)
+    base: dict[rule_ledger.Key, rule_ledger.Entry] = {}
+    for (kind, item), (value, reason) in rows.items():
+        item_path, entity = item_cells(item, form)
+        key = rule_ledger.Key(item_path, kind, entity)
+        base[key] = rule_ledger.Entry(key, value, reason)
+    rule_ledger.store(replace(ledger, base=base), file=file)
 
 
 def build_dir_of(path: str) -> str | None:

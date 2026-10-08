@@ -1,0 +1,23 @@
+# The ledger of the rule padded-list: the fixed lists whose element type has a padding bit.
+# `python3 utils/bin/guard explain padded-list` tells the rule.
+#
+# With -ftrivial-auto-var-init=zero, GCC writes one store for each padding hole of each element of
+# a fixed list in an automatic object, with no loop.  Make each padding byte a member.  The measured
+# rule padded-list of utils/registry.txt gives the element count above which a list counts.
+#
+# A count row:  PATH | ROLE | 1 | DECLARATION: ELEMENT TYPE | -
+#   A padded list that the tree holds today.  Each run gives a warning for it.  When you remove the
+#   padding, run python3 utils/bin/guard check --rule padded-list --build-dir BUILD_DIR --write in
+#   the same commit.
+#
+# A keep row:   PATH | ROLE | 1 | DECLARATION: ELEMENT TYPE | REASON
+#   An element type with padding on purpose.  The reason makes the row a keep row, and the row gives
+#   no warning.
+#
+# The role is alias, member, return or `parameter N`.  The declaration and the element type are the
+# spellings of the compiler, with `%`, `|` and control characters percent-encoded.  The first ": "
+# divides the declaration from the element type, and a ": " in the declaration is written "%3A ".
+format 1
+rule padded-list
+include/fixy/session/Watch.h | member | 1 | fixy::session::watch::detail::registry::endpoints: fixy::session::watch::detail::endpoint_record | each record is alignas(64) and fills one cache line, so two threads that write two records never share a line. The registry has static storage
+include/fixy/session/Watch.h | member | 1 | fixy::session::watch::detail::registry::threads: fixy::session::watch::detail::thread_record | each record is alignas(64) and fills one cache line, so two threads that write two records never share a line. The registry has static storage

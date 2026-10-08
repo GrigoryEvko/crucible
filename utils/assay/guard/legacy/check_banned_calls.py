@@ -95,16 +95,20 @@ EXEMPTIONS
     line.  The reason must not be empty.
     `NO-FILE-STREAM-OK: <reason>` and `SPAWN-PROCESS-OK: <reason>` exempt a
     line of their ban the same way.
-    An entry `path:text` in the ban's allowlist exempts the site whose line,
-    trimmed, equals `text`.  The key is the content of the line, not its
-    number, so an edit above the site does not move it.  An entry that
-    matches no live site is stale.
+    A row `PATH | KIND | admit | TEXT | REASON` of utils/ledgers/banned-calls.txt
+    (the ledger module assay.core.ledger, policy admit) exempts the site of
+    the ban KIND in the file PATH whose line, trimmed, equals TEXT.  The
+    kinds are reinterpret, reserve, file-stream and spawn.  The key is the
+    content of the line, not its number, so an edit above the site does
+    not move it.  A row that matches no live site is stale.  A file that
+    does not obey the schema, and a row of another kind or with no text,
+    fail the check, and such a file admits no site.
 
 USAGE
     guard check --rule banned-calls [--self-test]
 
-Exit 0 clean, 1 on a violation or a parse error, 2 on a stale entry or a
-usage error, 3 when the kit is not installed.
+Exit 0 clean, 1 on a violation or a parse error, 2 on a stale or malformed
+ledger row or a usage error, 3 when the kit is not installed.
 """
 
 from __future__ import annotations
@@ -122,8 +126,12 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.readers import tsast
 
+RULE = "banned-calls"
+LEDGER = rule_ledger.shown_path(RULE)
 EXCLUDED_COMPONENTS = frozenset({"test", "examples", "third_party", "external", "vendor"})
 FILE_STREAMS = frozenset({
     "ofstream", "ifstream", "fstream", "filebuf",
@@ -266,6 +274,7 @@ class Ban:
         token_hit: The rule over the preprocessing tokens of a macro body
             that does not parse: the token list and an index, true when the
             token at the index is a use
+        kind: The KIND cell of each ledger row of the ban
         token_detail: The reason why the ban rejects a use that the token rule finds
         excluded_prefixes: Repo-relative path prefixes that the ban skips
     """
@@ -274,7 +283,7 @@ class Ban:
     roots: Callable[[Path], tuple[str, ...]]
     extra_excluded: frozenset[str]
     marker: str
-    allowlist: str
+    kind: str
     rule: str
     node_hits: Callable[[tsast.Tree, Scope], Iterator[tuple[tsast.Node, str]]]
     token_hit: Callable[[list[tsast.Token], int, Scope], bool]
@@ -949,7 +958,7 @@ BANS = (
         roots=lambda root: ("include", "src", "vessel"),
         extra_excluded=frozenset({"bench"}),
         marker="NO-REINTERPRET-OK",
-        allowlist="utils/scripts/no-reinterpret-allowlist.txt",
+        kind="reinterpret",
         rule="reinterpret_cast is banned (CLAUDE.md §III). Use std::bit_cast or std::start_lifetime_as",
         node_hits=_reinterpret_nodes,
         token_hit=_reinterpret_token,
@@ -959,7 +968,7 @@ BANS = (
         roots=lambda root: ("include", "src", "bench"),
         extra_excluded=frozenset(),
         marker="NO-RESERVE-OK",
-        allowlist="utils/scripts/no-reserve-allowlist.txt",
+        kind="reserve",
         rule="a reserve call on a std container is banned (CLAUDE.md §IV). Use std::inplace_vector, "
              "a sized constructor, or arena storage",
         node_hits=_reserve_nodes,
@@ -971,7 +980,7 @@ BANS = (
         roots=_band3_roots,
         extra_excluded=frozenset(),
         marker="NO-FILE-STREAM-OK",
-        allowlist="utils/scripts/no-file-stream-allowlist.txt",
+        kind="file-stream",
         rule="a C++ file stream is banned in a fixy-only band-3 directory. Use fixy::fs::mint_file or "
              "fixy::mint_owned_file",
         node_hits=_file_stream_nodes,
@@ -982,7 +991,7 @@ BANS = (
         roots=lambda root: ("include", "src", "vessel"),
         extra_excluded=frozenset(),
         marker="SPAWN-PROCESS-OK",
-        allowlist="utils/scripts/no-spawn-process-allowlist.txt",
+        kind="spawn",
         rule="a raw process spawn is banned in production code (CLAUDE.md §IX). The child carries no "
              "Permission and no effect row. Use std::jthread with permission_fork",
         node_hits=_spawn_nodes,
@@ -1072,7 +1081,7 @@ def scan(root: Path, ban: Ban) -> tuple[list[Hit], list[str]]:
         ban: The ban
 
     Returns:
-        The unexempted hits before the allowlist, and the parse failures
+        The unexempted hits before the ledger, and the parse failures
 
     Raises:
         tsast.KitMissing: If the pinned kit is not installed
@@ -1113,23 +1122,36 @@ def scan(root: Path, ban: Ban) -> tuple[list[Hit], list[str]]:
     return hits, failures
 
 
-def load_allowlist(path: Path) -> list[str]:
-    """Return the entries of an allowlist, without comments or blank lines.
+def read_ledger(root: Path) -> tuple[dict[str, dict[tuple[str, str], int]], list[str]]:
+    """Read the content-keyed rows of the ledger of a tree.
 
     Args:
-        path: The allowlist file
+        root: The scan root
 
     Returns:
-        Each `path:text` entry, trimmed
+        For each kind of ban, the line of each row by its (path, text) key,
+        and each problem with the file or with a row.  A file that does not
+        obey the schema admits no site
     """
-    if not path.is_file():
-        return []
-    entries = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#"):
-            entries.append(stripped)
-    return entries
+    kinds = sorted(ban.kind for ban in BANS)
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), root)
+    except rows_grammar.RowsError as problem:
+        return {}, [f"{problem}.  The ledger admits no site"]
+    rows: dict[str, dict[tuple[str, str], int]] = {kind: {} for kind in kinds}
+    problems: list[str] = []
+    for key, entry in sorted(ledger.base.items(), key=lambda item: item[1].line):
+        if key.kind not in rows or not key.entity:
+            problems.append(f"{LEDGER}:{entry.line}: a row is `PATH | KIND | admit | TEXT | REASON`, with KIND one "
+                            f"of {', '.join(kinds)} and with the text of the line")
+        else:
+            rows[key.kind][(key.path, key.entity)] = entry.line
+    return rows, problems
+
+
+def ledger_row(ban: Ban, hit: Hit) -> str:
+    """Return the ledger row that admits a hit, with the placeholder REASON for its reason."""
+    return rows_grammar.render([hit.path], [ban.kind, rule_ledger.ADMIT_VALUE, hit.key, "REASON"])
 
 
 def check(root: Path) -> int:
@@ -1139,40 +1161,42 @@ def check(root: Path) -> int:
         root: The scan root
 
     Returns:
-        0 clean, 1 on a violation or a parse failure, 2 on a stale entry
+        0 clean, 1 on a violation or a parse failure, 2 on a stale or malformed ledger row
     """
     violations = stale = 0
+    rows, problems = read_ledger(root)
+    for problem in problems:
+        print(f"check-banned-calls: malformed ledger row: {problem}", file=sys.stderr)
+        stale += 1
     for ban in BANS:
         hits, failures = scan(root, ban)
-        entries = load_allowlist(root / ban.allowlist)
-        admitted = set(entries)
-        live = {f"{hit.path}:{hit.key}" for hit in hits}
+        admitted = rows.get(ban.kind, {})
+        live = {(hit.path, hit.key) for hit in hits}
         tag = ban.marker.removesuffix("-OK")
         for failure in failures:
             print(f"{tag} parse failure: {failure}", file=sys.stderr)
             violations += 1
         for hit in hits:
-            key = f"{hit.path}:{hit.key}"
-            if key in admitted:
+            if (hit.path, hit.key) in admitted:
                 continue
             reason = "".join(f"  The site: {detail}." for detail in hit.details)
-            print(f"{tag} violation: {hit.path}:{hit.row} — {ban.rule}.{reason}  Allowlist key: {key}",
+            print(f"{tag} violation: {hit.path}:{hit.row} — {ban.rule}.{reason}  Ledger row: {ledger_row(ban, hit)}",
                   file=sys.stderr)
             violations += 1
-        for entry in entries:
-            if entry not in live:
-                print(f"{tag} stale: {entry} — no {ban.name} site has this line text. "
-                      f"Remove the entry from {ban.allowlist}.", file=sys.stderr)
+        for (path, text), line in sorted(admitted.items(), key=lambda item: item[1]):
+            if (path, text) not in live:
+                print(f"{tag} stale: {LEDGER}:{line}: {path}:{text} — no {ban.name} site has this line text. "
+                      f"Remove the row.", file=sys.stderr)
                 stale += 1
     if violations:
         print(f"check-banned-calls: {violations} violation(s). Rewrite the site, mark the line with "
-              "`// <MARKER>: <reason>`, or add the printed allowlist key with the migration it waits for.",
-              file=sys.stderr)
+              f"`// <MARKER>: <reason>`, or add the printed ledger row to {LEDGER} with the migration that it waits "
+              f"for.", file=sys.stderr)
         return 1
     if stale:
-        print(f"check-banned-calls: {stale} stale allowlist entr(y/ies).", file=sys.stderr)
+        print(f"check-banned-calls: {stale} stale or malformed ledger row(s).", file=sys.stderr)
         return 2
-    print("check-banned-calls: clean — no new banned call, no stale allowlist entry.", file=sys.stderr)
+    print("check-banned-calls: clean — no new banned call, no stale ledger row.", file=sys.stderr)
     return 0
 
 
@@ -1197,6 +1221,12 @@ def self_test() -> int:
         """Return the content keys of the unexempted hits of one ban."""
         hits, _ = scan(root, ban)
         return {hit.key for hit in hits}
+
+    def planted_ledger(*rows: tuple[str, str, str]) -> str:
+        """Return the text of a planted ledger with one row for each (path, kind, text)."""
+        return f"# planted\nformat {rule_ledger.FORMAT}\nrule {RULE}\n" + "".join(
+            rows_grammar.render([path], [kind, rule_ledger.ADMIT_VALUE, text, "a planted site"]) + "\n"
+            for path, kind, text in rows)
 
     cast_fixture = (
         "#pragma once\n"
@@ -1362,17 +1392,15 @@ def self_test() -> int:
             ("bench/planted.cpp", "void g(V& v) { v.reserve(23); }\n"
                                   "int* f(void* p) { return reinterpret_cast<int*>(bench_cast); }\n"),
             ("include/crucible/test/planted.h", "int* f(void* p) { return reinterpret_cast<int*>(test_dir); }\n"),
-            ("utils/scripts/no-reinterpret-allowlist.txt",
-             "include/crucible/planted/Casts.h:inline float* admitted(void* p) "
-             "{ return reinterpret_cast<float*>(p); }\n"),
-            ("utils/scripts/no-reserve-allowlist.txt",
-             "include/crucible/planted/Reserve.h:inline void admitted(V& v) { v.reserve(11); }\n"),
+            (LEDGER, planted_ledger(
+                ("include/crucible/planted/Casts.h", "reinterpret",
+                 "inline float* admitted(void* p) { return reinterpret_cast<float*>(p); }"),
+                ("include/crucible/planted/Reserve.h", "reserve", "inline void admitted(V& v) { v.reserve(11); }"),
+                ("src/planted/Spawn.cpp", "spawn", "inline int admitted() { return daemon(0, 0); }"))),
             ("src/planted/Spawn.cpp", spawn_fixture),
             ("vessel/spawn.cpp", "int vessel_spawn() { return fork(); }\n"),
             ("include/crucible/perf/bpf/vmlinux.h", "int kernel_dump() { return fork(); }\n"),
             ("include/crucible/test/spawn.h", "int test_dir_spawn() { return fork(); }\n"),
-            ("utils/scripts/no-spawn-process-allowlist.txt",
-             "src/planted/Spawn.cpp:inline int admitted() { return daemon(0, 0); }\n"),
             ("include/crucible/planted/Pools.h", pools_header),
             ("bench/receivers.cpp", receiver_fixture),
             ("src/planted/Calls.cpp", "int* cast_in_src(void* p) { return reinterpret_cast<int*>(src_cast); }\n"
@@ -1491,9 +1519,10 @@ def self_test() -> int:
         with contextlib.redirect_stderr(report):
             check(root)
         expect("process spawn: the report names an unadmitted site by its content key",
-               "Allowlist key: src/planted/Spawn.cpp:inline int bare()" in report.getvalue())
-        expect("process spawn: an allowlist row keyed by content admits its site",
-               "Allowlist key: src/planted/Spawn.cpp:inline int admitted()" not in report.getvalue(), True)
+               "Ledger row: src/planted/Spawn.cpp | spawn | admit | inline int bare()" in report.getvalue())
+        expect("process spawn: a ledger row keyed by content admits its site",
+               "Ledger row: src/planted/Spawn.cpp | spawn | admit | inline int admitted()" not in report.getvalue(),
+               True)
         expect("reserve: the report names the std type behind an alias",
                "the receiver `v` has a std type: `std::vector<int>` is a type of namespace std, through the alias "
                "`Vec` at bench/receivers.cpp:2." in report.getvalue())
@@ -1525,9 +1554,9 @@ def self_test() -> int:
 
         expect("the report from / equals the report from the scan root", captured(Path("/")) == captured(root))
 
-        allow = root / "utils/scripts/no-reserve-allowlist.txt"
-        live_keys = sorted(f"{hit.path}:{hit.key}" for hit in scan(root, reserve_ban)[0]
-                           if hit.path == "include/crucible/planted/Reserve.h")
+        ledger = root / LEDGER
+        live_rows = sorted({(hit.path, reserve_ban.kind, hit.key) for hit in scan(root, reserve_ban)[0]
+                            if hit.path == "include/crucible/planted/Reserve.h"})
         (root / "bench/planted.cpp").unlink()
         (root / "bench/receivers.cpp").unlink()
         (root / "src/planted/Calls.cpp").unlink()
@@ -1537,19 +1566,29 @@ def self_test() -> int:
         (root / "src/cntp/streams.cpp").unlink()
         (root / "src/planted/Spawn.cpp").unlink()
         (root / "vessel/spawn.cpp").unlink()
-        (root / "utils/scripts/no-reinterpret-allowlist.txt").write_text("", encoding="utf-8")
-        (root / "utils/scripts/no-spawn-process-allowlist.txt").write_text("", encoding="utf-8")
-        allow.write_text("\n".join(live_keys) + "\n", encoding="utf-8")
+        ledger.write_text(planted_ledger(*live_rows), encoding="utf-8")
         shifted = root / "include/crucible/planted/Reserve.h"
         shifted.write_text("\n\n" + reserve_fixture, encoding="utf-8")
         expect("a content key survives a line shift", check(root) == 0)
-        allow.write_text("\n".join(live_keys) + "\ninclude/crucible/planted/Reserve.h:v.reserve(99);\n",
-                         encoding="utf-8")
-        expect("a stale entry exits 2", check(root) == 2, True)
+        ledger.write_text(planted_ledger(*live_rows, ("include/crucible/planted/Reserve.h", "reserve",
+                                                      "v.reserve(99);")), encoding="utf-8")
+        expect("a stale row exits 2", check(root) == 2, True)
+        ledger.write_text(planted_ledger(*live_rows, ("include/crucible/planted/Reserve.h", "other",
+                                                      "v.reserve(99);")), encoding="utf-8")
+        expect("a row of another kind exits 2", check(root) == 2, True)
+        path, kind, text = live_rows[0]
+        ledger.write_text(f"format {rule_ledger.FORMAT}\nrule {RULE}\n" + rows_grammar.render(
+            [path], [kind, rule_ledger.ADMIT_VALUE, text, ""]) + "\n", encoding="utf-8")
+        report = io.StringIO()
+        with contextlib.redirect_stderr(report):
+            code = check(root)
+        expect("a ledger that does not obey the schema admits no site",
+               code == 1 and "malformed ledger row" in report.getvalue()
+               and "Ledger row: include/crucible/planted/Reserve.h | reserve | admit |" in report.getvalue())
 
         broken = root / "include/crucible/planted/Broken.h"
         broken.write_text("void f() { g(1) { } }\n", encoding="utf-8")
-        allow.write_text("\n".join(live_keys) + "\n", encoding="utf-8")
+        ledger.write_text(planted_ledger(*live_rows), encoding="utf-8")
         expect("a file the parser cannot read fails the check", check(root) == 1, True)
 
     if failures:

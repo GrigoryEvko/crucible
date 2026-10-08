@@ -20,7 +20,7 @@
 // writes the same bytes, but GCC refuses it for a type that is not trivially
 // copyable, for example a type with an atomic or a refined member.  The walk
 // reads private members too, because a wrapper keeps its value in a private
-// member, so utils/scripts/unchecked-access-allowlist.txt names this file.
+// member, so a row of utils/ledgers/no-unchecked-access.txt names this file.
 // The walk gives no reflection of a member to its caller.
 
 #include "test_assert.h"

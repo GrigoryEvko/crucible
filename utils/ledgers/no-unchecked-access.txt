@@ -1,0 +1,61 @@
+# The ledger of the rule no-unchecked-access: the files that can call
+# std::meta::access_context::unchecked() or splice a member of an object
+# (.[: ->[: &[:).  `python3 utils/bin/guard explain no-unchecked-access`
+# tells the rule.
+#
+# A splice of a nonstatic data member has no access check, so a reflection of
+# a private member writes the private state of a proof.  One row is
+# `PATH | - | admit | - | REASON`: it names one file and the reason that the
+# file needs the unchecked context.  A file here does not give its caller a
+# reflection of a member that a walk found.  The rule refuses a function that
+# returns one, and the reviewer of each row examines the other ways to publish
+# one.  A row whose file no longer opens the door fails the rule, so the list
+# only shrinks.  A reviewer writes each row by hand.
+#
+# The rows have four classes:
+#   * A closed roster: a walk of the members of a namespace or of a registry
+#     class, which a verdict reads to prove that a set is closed.  No such
+#     walk reflects a data member of a proof type.
+#   * A structure walk: a verdict over each base and data member of a type,
+#     which must see the private ones to be sound.  Each gives a bool, a hash
+#     or a row, and never the reflection of a member.
+#   * A test: a roster or structure walk that a test compares with the walk of
+#     production, and the reproducer which proves that the splice still writes.
+#   * A negative fixture that reads the return type of a private member
+#     function, so that the fixture follows the production signature.  It
+#     keeps the reflection of that one function, and it splices nothing.
+format 1
+rule no-unchecked-access
+include/crucible/Reflect.h | - | admit | - | walks every member of a type for reflect_hash and reflect_print
+include/fixy/Atom.h | - | admit | - | walks the atom namespaces and an owner's members to derive the atom roster
+include/fixy/Bands.h | - | admit | - | walks the band namespace to derive the band roster
+include/fixy/Collision.h | - | admit | - | walks the members of rules_of<void> to derive the collision rule set
+include/fixy/Corpus.h | - | admit | - | walks the secret-policy namespace to derive the corpus of policies
+include/fixy/Refined.h | - | admit | - | reads the bases of a predicate and walks the admitted implications to seal the relation
+include/fixy/ScopedView.h | - | admit | - | finds a view stored in a private member, so a class cannot hide an escape
+include/fixy/SelfContained.h | - | admit | - | walks every base and member to prove that a type holds no pointer out of itself
+include/fixy/atoms/Os.h | - | admit | - | walks the OS atom namespaces to derive their rosters
+include/fixy/session/Payload.h | - | admit | - | walks every member of a session payload to find a delegated handle or a permission
+include/foundation/Lifetime.h | - | admit | - | walks every base and member to prove that a type is an implicit-lifetime type
+include/foundation/algebra/Transition.h | - | admit | - | walks a transition registry to derive its edges
+include/foundation/contracts/ArmedRoster.h | - | admit | - | walks a scope to derive the armed-predicate roster
+include/foundation/core/Scalar.h | - | admit | - | walks every base and member, a private one too, to prove that decode can make a type from bytes and to check each bool and enumeration of it
+include/foundation/diag/Catalog.h | - | admit | - | walks the diagnostic namespace to derive the catalog
+include/foundation/diag/FailClosed.h | - | admit | - | walks a fail-closed relation's namespace to count and seal its edges
+include/foundation/effects/Ctx.h | - | admit | - | reads the type and access of each member of an ExecCtx specialization to refuse a forged one
+include/foundation/reflect/Hash.h | - | admit | - | walks every member of a type to fold its stable hash
+include/foundation/reflect/RawEscape.h | - | admit | - | walks every base, a private one too, to find the members that a caller can name through a type
+include/foundation/reflect/TypeComponents.h | - | admit | - | walks every base and member to list the component types of a type
+test/cipher_neg/neg_cipher_obj_path_bare_string_assign.cpp | - | admit | - | reads the return type of the private Cipher::obj_path
+test/cipher_neg/neg_cipher_obj_path_cross_source.cpp | - | admit | - | reads the return type of the private Cipher::obj_path
+test/fixy/test_armed_roster.cpp | - | admit | - | compares the armed-predicate roster with its own namespace walk
+test/fixy/test_cheat_probe.cpp | - | admit | - | walks the algebra namespace to prove that no cheat is admitted
+test/fixy/test_forgeable_proofs.cpp | - | admit | - | walks proof types and namespaces to prove that no proof builds from bytes
+test/fixy/test_refined.cpp | - | admit | - | walks the admitted implications to check the sealed relation
+test/fixy/test_secret.cpp | - | admit | - | walks the secret-policy namespace to check the policy roster
+test/fixy/test_splice_access_attacks.cpp | - | admit | - | the ledger reproducer: a splice of a private member still writes it
+test/fixy/test_tagged.cpp | - | admit | - | walks the admitted retags to check the sealed relation
+test/layer/checks/fixy/Refined.cpp | - | admit | - | walks the admitted implications to count the narrowing edges of the relation
+test/layer/checks/fixy/Secret.cpp | - | admit | - | walks the admitted declassification policies to check that each edge is a policy exit
+test/layer/checks/foundation/permissions/Permission.cpp | - | admit | - | walks the permission tag namespace to check that each canonical tag is a sound token
+test/padding_bytes.h | - | admit | - | walks every base and member of a type, a private one too, to count the bits that hold a value, and gives a test the type of a private member

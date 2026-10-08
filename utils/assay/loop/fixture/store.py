@@ -51,13 +51,16 @@ when the regexes match its other errors.  An error with no regex can hide a
 change: a fixture can keep its own error and get a second error from a
 different cause.
 
-utils/scripts/fixture-own-reason-ledger.txt names the fixtures that had an
-error with no regex when the rule started, `fixture | note`.  A listed fixture
-gives a warning in the format of utils/assay/core/report.py, and the driver
-writes it to the warnings directory (`fixture-own-reason.NAME.txt`).  A listed
-fixture with no such error fails, so that its row goes.
-CRUCIBLE_NEG_REASON_LEDGER names a different ledger, for the tests of the
-driver.
+The ledger utils/ledgers/fixture-own-reason.txt names the fixtures that had
+an error with no regex when the rule started, `- | - | admit | FIXTURE |
+REASON`.  The registry has no rule fixture-own-reason, so the driver reads
+this ledger with the policy admit of assay.core.ledger.  A ledger that does
+not exist has no row, and the driver then imports no ledger module.  A listed
+fixture gives a warning in the format of utils/assay/core/report.py, and the
+driver writes it to the warnings directory (`fixture-own-reason.NAME.txt`).  A
+listed fixture with no such error fails, so that its row goes.
+CRUCIBLE_NEG_REASON_LEDGER names a different ledger in the same format, for
+the tests of the driver.
 
 The quarantine plugin
 ---------------------
@@ -296,22 +299,26 @@ host and the count does not.  A CPU time above its error threshold then gives a
 warning only.  With no count, the error level belongs to the CPU time.  A
 measure above the error threshold of the rule that holds the error level fails
 the test, and the driver does not store that result, so the next run measures
-again.  utils/scripts/fixture-cpu-ledger.txt and
-utils/scripts/fixture-instructions-ledger.txt name the fixtures above the error
-threshold of their rule at this time, `fixture | note`.  A listed fixture gives
-a warning, and a listed fixture at or below the error threshold fails, so that
-its row goes.  On a GitHub runner, each error of the CPU time is a warning that
-says that it was demoted (utils/assay/core/meter.py, A CI RUNNER), and an
-error of the instruction count stays an error.  A registry that cannot be read
-stays an error.  CRUCIBLE_NEG_REGISTRY, CRUCIBLE_NEG_CPU_LEDGER and
-CRUCIBLE_NEG_INSTRUCTIONS_LEDGER name a different registry and ledgers, for the
-tests of the driver.
+again.  The ledgers utils/ledgers/fixture-cpu.txt and
+utils/ledgers/fixture-instructions.txt name the fixtures above the error
+threshold of their rule at this time, `- | - | VALUE | FIXTURE | REASON`, with
+VALUE the measure of the compile when the row was added, in the unit of the
+rule.  A row applies to each build.  A listed fixture gives a warning, and a
+listed fixture at or below the error threshold fails, so that its row goes.  A
+ledger that does not exist has no row.  On a GitHub runner, each error of the
+CPU time is a warning that says that it was demoted (utils/assay/core/meter.py,
+A CI RUNNER), and an error of the instruction count stays an error.  A
+registry that cannot be read stays an error.  CRUCIBLE_NEG_REGISTRY,
+CRUCIBLE_NEG_CPU_LEDGER and CRUCIBLE_NEG_INSTRUCTIONS_LEDGER name a different
+registry and different ledgers in the same format, for the tests of the
+driver.
 
 A memo in the store keeps the two measured rules and the two ledgers while the
-registry and the two ledgers have the same stat fields.  The driver writes it
-only when the three files did not change in the settle period.  A run with no
-finding and no warnings file of its fixture then reads no registry and imports
-no report module.
+registry and the two ledgers have the same stat fields.  A ledger that does not
+exist has the stamp of an absent file, so a new ledger replaces the memo.  The
+driver writes the memo only when no file changed in the settle period.  A run
+with no finding and no warnings file of its fixture then reads no registry and
+imports no report module.
 
 The record of a run
 -------------------
@@ -342,7 +349,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
 
-from assay.core.paths import DATA, LOOP, REPO_ROOT
+from assay.core.paths import LOOP, REPO_ROOT
 
 # ── Diagnostic-text normalisation ──────────────────────────────────
 #
@@ -944,8 +951,9 @@ _ANSWERS_FORMAT = 1
 # The format of the record of the hashes of the dependencies of one fixture.
 _DIGESTS_FORMAT = 2
 _DIGESTS_SUFFIX = ".digests"
-# The format of the memo of the budget rows and the ledgers.
-_BUDGET_FORMAT = 1
+# The format of the memo of the budget rows and the ledgers.  Format 2 keeps the path of each ledger as a finding
+# names it, and the stamp of a ledger that does not exist.
+_BUDGET_FORMAT = 2
 
 _driver_digest_value: str | None = None
 
@@ -2394,8 +2402,9 @@ def _note(fixture_name: str, text: str) -> None:
 # ── The cost budget of a compile ───────────────────────────────────
 
 _REPO_ROOT = REPO_ROOT
-# The directory of the ledgers.
-_SCRIPTS = DATA
+# The directory of the ledgers of the rules, utils/ledgers.  It is the directory of assay.core.ledger, and the
+# test of the driver holds the two equal.  The driver does not import that module for each run.
+_LEDGER_DIRECTORY = _REPO_ROOT / "utils" / "ledgers"
 # The registry of the measured rules, utils/registry.txt.
 _REGISTRY = _REPO_ROOT / "utils" / "registry.txt"
 # The master that ctest starts for each fixture.  Its bytes are a part of the key (the module text, item 1).
@@ -2404,25 +2413,26 @@ _CPU_CHECK = "fixture-cpu"
 _INSTRUCTIONS_CHECK = "fixture-instructions"
 # The variable that names a different ledger for each check, and the ledger of the tree.
 _LEDGERS = {
-    _CPU_CHECK: ("CRUCIBLE_NEG_CPU_LEDGER", _SCRIPTS / "fixture-cpu-ledger.txt"),
-    _INSTRUCTIONS_CHECK: ("CRUCIBLE_NEG_INSTRUCTIONS_LEDGER", _SCRIPTS / "fixture-instructions-ledger.txt"),
+    _CPU_CHECK: ("CRUCIBLE_NEG_CPU_LEDGER", _LEDGER_DIRECTORY / f"{_CPU_CHECK}.txt"),
+    _INSTRUCTIONS_CHECK: ("CRUCIBLE_NEG_INSTRUCTIONS_LEDGER", _LEDGER_DIRECTORY / f"{_INSTRUCTIONS_CHECK}.txt"),
 }
 _GIGA = 1e9
 _ADVICE = "Include only the header that the fixture attacks, or make the tables that it does not read lazy."
 
 
 class BudgetRow:
-    """The thresholds of one measured rule of a fixture compile, and the rows of its ledger (`fixture | note`)."""
+    """The thresholds of one measured rule of a fixture compile, and the reason of each fixture of its ledger."""
 
-    __slots__ = ("check", "warn", "error", "ledger", "ledger_name")
+    __slots__ = ("check", "warn", "error", "ledger", "ledger_shown")
 
-    def __init__(self, check: str, warn: float, error: float, ledger: dict[str, str], ledger_name: str) -> None:
-        """Hold the check name, the two thresholds, the ledger rows and the file name of the ledger of one rule."""
+    def __init__(self, check: str, warn: float, error: float, ledger: dict[str, str], ledger_shown: str) -> None:
+        """Hold the check name, the two thresholds, the ledger rows and the path of the ledger of one rule, relative
+        to the root of the tree when the ledger is in the tree."""
         self.check = check
         self.warn = warn
         self.error = error
         self.ledger = ledger
-        self.ledger_name = ledger_name
+        self.ledger_shown = ledger_shown
 
 
 class CostBudget:
@@ -2473,19 +2483,51 @@ def _cost_meter_module() -> ModuleType:
     return cost_meter
 
 
-def _read_fixture_ledger(path: Path) -> tuple[dict[str, str], str]:
-    """Read one ledger of fixtures, `fixture | note`, and return its rows, or no rows and the reason."""
-    ledger: dict[str, str] = {}
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        text = raw.strip()
-        if not text or text.startswith("#"):
-            continue
-        cells = [cell.strip() for cell in text.split("|")]
-        if len(cells) != 2 or not all(cells) or cells[0] in ledger:
-            return {}, (f"{path}:{number}: a row is `fixture | note`, with two cells that are not empty, and one row "
-                        f"for each fixture")
-        ledger[cells[0]] = cells[1]
-    return ledger, ""
+def _shown(path: Path) -> str:
+    """Return a path relative to the root of the tree when it is in the tree, else the path itself."""
+    try:
+        return str(path.relative_to(_REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _read_fixture_ledger(path: Path, check: str, has_rule: bool) -> tuple[dict[str, str], str]:
+    """Read one ledger of fixtures, and return the reason of each fixture, or no rows and the problem.
+
+    A row is `- | - | VALUE | FIXTURE | REASON` (the module text, The reason of
+    the failure and The cost of a compile).  A ledger that does not exist has
+    no row, and the call then imports no module.  The ledger of a check with a
+    rule of the registry has the policy of that rule.  The check
+    fixture-own-reason has no rule, and its ledger has the policy admit.
+
+    Args:
+        path: The ledger
+        check: The check, which the row `rule CHECK` of the ledger names
+        has_rule: Whether the registry has a rule for the check
+
+    Raises:
+        OSError: If the ledger exists and cannot be read, or the registry cannot be read
+    """
+    if not path.is_file():
+        return {}, ""
+    from assay.core import ledger as rule_ledger
+    from assay.core.registry import Policy
+
+    try:
+        if has_rule:
+            ledger = rule_ledger.read(rule_ledger.rule_of(check), file=path)
+        else:
+            ledger = rule_ledger.parse(path.read_text(encoding="utf-8"), str(path), check, Policy.ADMIT)
+    except ValueError as problem:
+        return {}, str(problem)
+    value = "VALUE" if has_rule else rule_ledger.ADMIT_VALUE
+    rows: dict[str, str] = {}
+    for key, entry in sorted(ledger.base.items(), key=lambda pair: pair[1].line):
+        if key.path or key.kind or not key.entity:
+            return {}, (f"{path}:{entry.line}: a row is `- | - | {value} | FIXTURE | REASON`, with the name of the "
+                        f"fixture")
+        rows[key.entity] = entry.reason
+    return rows, ""
 
 
 def _parse_cost_budget(registry: Path, ledger_paths: Mapping[str, Path]) -> CostBudget:
@@ -2502,22 +2544,28 @@ def _parse_cost_budget(registry: Path, ledger_paths: Mapping[str, Path]) -> Cost
             problems[check] = f"the registry {registry} has no measured rule {check}"
             continue
         try:
-            ledger, problem = _read_fixture_ledger(path)
+            ledger, problem = _read_fixture_ledger(path, check, True)
         except OSError as error:
             ledger, problem = {}, f"the ledger of {check} cannot be read: {error}"
         if problem:
             problems[check] = problem
             continue
-        rows[check] = BudgetRow(check, row.warn, row.error, ledger, path.name)
+        rows[check] = BudgetRow(check, row.warn, row.error, ledger, _shown(path))
     return CostBudget(rows, problems)
 
 
 def _file_stamps(paths: list[Path]) -> list[list[int]] | None:
-    """Return the stat fields of each file of `paths`, or None when one cannot be read."""
-    try:
-        return [_stat_fields(os.stat(path)) for path in paths]
-    except OSError:
-        return None
+    """Return the stat fields of each file of `paths`, an empty list for a file that does not exist, or None when a
+    file cannot be read."""
+    stamps: list[list[int]] = []
+    for path in paths:
+        try:
+            stamps.append(_stat_fields(os.stat(path)))
+        except FileNotFoundError:
+            stamps.append([])
+        except OSError:
+            return None
+    return stamps
 
 
 def read_cost_budget(memo_dir: Path | None) -> CostBudget:
@@ -2526,9 +2574,9 @@ def read_cost_budget(memo_dir: Path | None) -> CostBudget:
     CRUCIBLE_NEG_REGISTRY, CRUCIBLE_NEG_CPU_LEDGER and
     CRUCIBLE_NEG_INSTRUCTIONS_LEDGER name a different registry and ledgers.
     A memo in `memo_dir` keeps a budget with no problem while the three files
-    have the same stat fields (the module text, The cost of a compile).  The
-    function writes the memo only when no file changed in the settle period
-    and during the read.
+    have the same stat fields, and a ledger that does not exist has the empty
+    stamp (the module text, The cost of a compile).  The function writes the
+    memo only when no file changed in the settle period and during the read.
     """
     registry = Path(os.environ.get("CRUCIBLE_NEG_REGISTRY") or _REGISTRY)
     ledger_paths = {check: Path(os.environ.get(variable) or default) for check, (variable, default) in _LEDGERS.items()}
@@ -2541,8 +2589,8 @@ def read_cost_budget(memo_dir: Path | None) -> CostBudget:
             recorded = json.loads(memo.read_text())
             if (recorded["format"] == _BUDGET_FORMAT and set(recorded["rows"]) == set(_LEDGERS)
                     and recorded["stamps"] == _file_stamps(files)):
-                return CostBudget({check: BudgetRow(check, float(warn), float(error), dict(ledger), str(name))
-                                   for check, (warn, error, ledger, name) in recorded["rows"].items()}, {})
+                return CostBudget({check: BudgetRow(check, float(warn), float(error), dict(ledger), str(shown))
+                                   for check, (warn, error, ledger, shown) in recorded["rows"].items()}, {})
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             pass
     started_ns = _now_ns()
@@ -2550,8 +2598,8 @@ def read_cost_budget(memo_dir: Path | None) -> CostBudget:
     budget = _parse_cost_budget(registry, ledger_paths)
     if memo is None or budget.problems or before is None or _file_stamps(files) != before:
         return budget
-    if all(stamp[4] < started_ns - _SETTLE_NS for stamp in before):
-        rows = {check: [row.warn, row.error, row.ledger, row.ledger_name] for check, row in budget.rows.items()}
+    if all(not stamp or stamp[4] < started_ns - _SETTLE_NS for stamp in before):
+        rows = {check: [row.warn, row.error, row.ledger, row.ledger_shown] for check, row in budget.rows.items()}
         try:
             _write_atomic(memo, json.dumps({"format": _BUDGET_FORMAT, "stamps": before, "rows": rows}).encode(
                 "utf-8", "surrogateescape"))
@@ -2581,7 +2629,7 @@ def _judge_row(report: ModuleType, row: BudgetRow, verdict: str, fixture_name: s
     if verdict == "listed-within":
         return [report.judged("error", place, 0, row.check,
                               f"{text}, no more than the error threshold {row.error:g} {unit}.  Remove its row from "
-                              f"utils/scripts/{row.ledger_name}.")]
+                              f"{row.ledger_shown}.")]
     if verdict == "listed":
         return [report.judged("warning", place, 0, row.check,
                               f"{text}, more than the error threshold {row.error:g} {unit}.  It has a row in the "
@@ -2769,7 +2817,7 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
 
 _REASON_CHECK = "fixture-own-reason"
 # The variable that names a different ledger, and the ledger of the tree.
-_REASON_LEDGER = ("CRUCIBLE_NEG_REASON_LEDGER", _SCRIPTS / "fixture-own-reason-ledger.txt")
+_REASON_LEDGER = ("CRUCIBLE_NEG_REASON_LEDGER", _LEDGER_DIRECTORY / f"{_REASON_CHECK}.txt")
 
 
 def _shown_line(line: str) -> str:
@@ -2786,12 +2834,12 @@ def report_own_reason(fixture_name: str, source: Path, unmatched: list[str], is_
     A listed fixture with no such error fails, so that its row goes (the
     module text, The reason of the failure).  A run with no finding, whose
     fixture has no row and no warnings file, reads no report module.  The
-    ledger is a small text file, and the driver reads it on each run.
+    driver reads the ledger on each run, when it exists.
     """
     variable, default = _REASON_LEDGER
     path = Path(os.environ.get(variable) or default)
     try:
-        ledger, problem = _read_fixture_ledger(path)
+        ledger, problem = _read_fixture_ledger(path, _REASON_CHECK, False)
     except OSError as error:
         ledger, problem = {}, f"the ledger {path} cannot be read: {error}"
     is_listed = fixture_name in ledger
@@ -2822,7 +2870,7 @@ def report_own_reason(fixture_name: str, source: Path, unmatched: list[str], is_
         findings.append(report.Finding(
             "error", place, 0, _REASON_CHECK,
             f"{measured} of the fixture {fixture_name} gave no error that no regex matches.  Remove its row from "
-            f"utils/scripts/{path.name}."))
+            f"{_shown(path)}."))
     return report.emit(findings, _REASON_CHECK, warnings_dir, fixture_name)
 
 

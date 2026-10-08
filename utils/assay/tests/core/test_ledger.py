@@ -6,7 +6,8 @@ line.  Exit 0 when each case holds, else 1.
 
 import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import replace
 from pathlib import Path
 
 from assay.core import git
@@ -74,6 +75,18 @@ def reader_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     expect("a row of the policy admit with no reason is refused",
            refuses(lambda: rule_ledger.parse(admit_text, "ledger.txt", "admit-rule", rule_registry.Policy.ADMIT),
                    rows_grammar.RowsError))
+    built = rule_ledger.parse(text + "@build/gen/table.c | kind | 1 | - | -\n", "ledger.txt", "count-rule",
+                              rule_registry.Policy.COUNT)
+    expect("a row of a file of the build directory is a base row, and @NAME with no slash is a difference row",
+           built.base.get(rule_ledger.Key("@build/gen/table.c", "kind", "")) is not None
+           and len(built.deltas["arm"]) == 1
+           and without_lines(rule_ledger.parse(rule_ledger.render(built), "again.txt", "count-rule",
+                                               rule_registry.Policy.COUNT)) == without_lines(built))
+    nameless = rule_ledger.parse(text + "- | kind | 1 | name | -\n@arm | - | kind | +1 | name | -\n", "ledger.txt",
+                                 "count-rule", rule_registry.Policy.COUNT)
+    expect("the PATH '-' is the empty path in a base row and in a difference row, and it renders as '-' again",
+           rule_ledger.Key("", "kind", "name") in nameless.base and rule_ledger.Key("", "kind", "name") in
+           nameless.deltas["arm"] and "\n- | kind | 1 | name | -\n" in rule_ledger.render(nameless))
     expect("count_rows() counts the entry rows of format 1 and each line of an earlier format",
            rule_ledger.count_rows(text) == 3 and rule_ledger.count_rows("# head\na | b\nc | d\n") == 2
            and rule_ledger.count_rows(None) is None)
@@ -87,6 +100,25 @@ def reader_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
         expect("store() writes a file, keeps the same bytes, and removes the file of a ledger with no row",
                changed and not again and read_back == ledger and removed
                and not rule_ledger.ledger_path("count-rule", root).exists())
+        planted = root / "planted" / "ledger.txt"
+        planted.parent.mkdir()
+        stored = rule_ledger.store(ledger, file=planted)
+        planted_back = rule_ledger.read(table["count-rule"], file=planted)
+        expect("read() and store() take the file of a planted ledger, and the reader names that file",
+               stored and planted_back.base == ledger.base and not rule_ledger.ledger_path("count-rule", root).exists()
+               and rule_ledger.read(table["count-rule"], file=root / "absent.txt").base == {})
+    expect("rule_of() gives a rule of the registry and refuses an unknown rule",
+           rule_ledger.rule_of("history").id == "history"
+           and refuses(lambda: rule_ledger.rule_of("no-such-rule"), rule_ledger.LedgerError))
+
+
+def without_lines(ledger: rule_ledger.Ledger) -> rule_ledger.Ledger:
+    """Return a ledger with the line of each row at 0, so that two texts with the same rows in another order compare equal."""
+    def table(entries: Mapping[rule_ledger.Key, rule_ledger.Entry]) -> dict[rule_ledger.Key, rule_ledger.Entry]:
+        return {key: replace(entry, line=0) for key, entry in entries.items()}
+
+    return replace(ledger, base=table(ledger.base),
+                   deltas={name: table(entries) for name, entries in ledger.deltas.items()})
 
 
 def policy_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
@@ -97,6 +129,8 @@ def policy_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     judged = rule_ledger.compare(count, ledger, [finding("a.py"), finding("a.py")])
     expect("findings at their count give one warning for each path, and no error",
            not errors(judged) and len(judged) == 1 and "keeps 2 findings" in judged[0].message)
+    expect("the warning of the policy count tells the reader to remove a finding and to lower its count",
+           "lower its count" in judged[0].message and "guard write --rule count-rule" in judged[0].message)
     judged = rule_ledger.compare(count, ledger, [finding("a.py")] * 3)
     expect("a count above its row is an error at each finding", len(errors(judged)) == 3)
     judged = rule_ledger.compare(count, ledger, [finding("a.py")])
@@ -112,6 +146,9 @@ def policy_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
                                mode=rule_ledger.WriteMode.ADMIT, reason="a planted reason")
     judged = rule_ledger.compare(admit, ledger, [finding("a.py", rule_id="admit-rule")])
     expect("an admitted finding gives a warning", not errors(judged) and len(judged) == 1)
+    expect("the warning of the policy admit tells that each row gives its reason, and asks for no removal",
+           "Each row gives its reason" in judged[0].message and "Remove" not in judged[0].message
+           and "lower" not in judged[0].message)
     judged = rule_ledger.compare(admit, ledger, [])
     expect("a row that admits no finding is an error", any("admits no finding" in item.message
                                                            for item in errors(judged)))
@@ -148,6 +185,11 @@ def write_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
                               mode=rule_ledger.WriteMode.RAISE)
     expect("a write of a configuration other than the base writes only its difference rows",
            armed.base == based.base and armed.expected("arm")[rule_ledger.Key("a.py", "kind", "")] == 3)
+    shifted = rule_ledger.write(count, based, [finding("new/a.py")] * 2, configuration="arm", moved={"new/a.py": "a.py"})
+    expect("a write of a later configuration after a move, before the write of the base, keeps the base rows and "
+           "gives its counts at the new path",
+           shifted.base == based.base and shifted.expected("arm") == {rule_ledger.Key("new/a.py", "kind", ""): 2}
+           and shifted.expected() == {rule_ledger.Key("a.py", "kind", ""): 2})
     lines = rule_ledger.rows_of_configuration(based, "arm", [("machine", "aarch64")], [finding("a.py")] * 4)
     imported = rule_ledger.import_rows(based, "".join(f"2026-10-08 log: {line}\n" for line in lines))
     expect("import_rows() puts the rows of a configuration from a log into the ledger",

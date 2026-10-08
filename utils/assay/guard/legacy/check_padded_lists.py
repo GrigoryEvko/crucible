@@ -48,18 +48,23 @@ WHAT THE CHECK CANNOT SEE
     through an alias is seen at the alias.
 
 THE LEDGER
-    utils/scripts/padded-lists-ledger.txt holds two kinds of row.
-      path | role | declaration | element type
+    utils/ledgers/padded-list.txt (assay.core.ledger) holds two kinds of
+    row.
+      path | role | 1 | declaration: element type | -
           A padded list that the tree holds today.  Each run gives a
           warning for it.  A padded list with no row is an error.  A row
           that names no padded list is an error: run --write in the same
           commit.
-      keep | path | role | declaration | element type | reason
-          An element type with padding on purpose, for example a slot that
-          fills a cache line.  It gives no finding.
+      path | role | 1 | declaration: element type | reason
+          A keep row: an element type with padding on purpose, for example
+          a slot that fills a cache line.  It gives no finding.
     The role is alias, member, return, or `parameter N`.  The declaration
     and the element type are the spellings of the compiler, with `%`, `|`
-    and control characters percent-encoded.
+    and control characters percent-encoded.  In the ledger, the first ": "
+    divides the declaration from the element type, and a ": " in the
+    declaration is written "%3A ".  A row that the rows grammar refuses, a
+    row with a count other than 1, a path outside include/ and src/ or an
+    empty part, and a configuration row are errors.
 
 Usage
     guard check --rule padded-list --build-dir BUILD_DIR [--warnings-dir DIR]
@@ -85,18 +90,24 @@ import sys
 import tempfile
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from urllib.parse import unquote
 
 from assay.core import cache as cache_dir
+from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
+from assay.core import rows as rows_grammar
 from assay.readers import tsast
 
 CHECK = "padded-list"
 SCRIPT = "utils/assay/guard/legacy/check_padded_lists.py"
-LEDGER = "utils/scripts/padded-lists-ledger.txt"
+LEDGER = rule_ledger.shown_path(CHECK)
+# The text between the declaration and the element type in the entity of a ledger row, and its form in a
+# declaration.  The probe writes `%` as %25, so %3A comes from no spelling of the compiler.
+ENTITY_SEPARATOR = ": "
+ESCAPED_SEPARATOR = "%3A "
 NOT_STANDALONE = "test/layer/crucible-not-standalone.txt"
 SENTINEL_TARGET = "layer_sentinel_crucible"
 PROBE_DIRECTORY = "padded-list-probes"
@@ -120,21 +131,28 @@ SCALAR_NAMES = frozenset({
 BODIES = ("compound_statement", "lambda_expression")
 DECLARATIONS = ("field_declaration", "declaration", "parameter_declaration", "type_definition",
                 "optional_parameter_declaration")
-LEDGER_HEADER = (
-    "# utils/scripts/padded-lists-ledger.txt — the fixed lists whose element type has a padding bit.\n"
-    "# The rule padded-list (`guard check --rule padded-list`) reads this ledger.\n"
+# The head comment of the ledger.  --write writes it into a new ledger, and keeps the comment of a ledger that
+# exists.
+COMMENT = (
+    "# The ledger of the rule padded-list: the fixed lists whose element type has a padding bit.\n"
+    "# `python3 utils/bin/guard explain padded-list` tells the rule.\n"
     "#\n"
     "# With -ftrivial-auto-var-init=zero, GCC writes one store for each padding hole of each element of\n"
     "# a fixed list in an automatic object, with no loop.  Make each padding byte a member.  The measured\n"
     "# rule padded-list of utils/registry.txt gives the element count above which a list counts.\n"
     "#\n"
-    "# A count row:  path | role | declaration | element type\n"
+    "# A count row:  PATH | ROLE | 1 | DECLARATION: ELEMENT TYPE | -\n"
     "#   A padded list that the tree holds today.  Each run gives a warning for it.  When you remove the\n"
     "#   padding, run python3 utils/bin/guard check --rule padded-list --build-dir BUILD_DIR --write in\n"
     "#   the same commit.\n"
     "#\n"
-    "# A keep row:   keep | path | role | declaration | element type | reason\n"
-    "#   An element type with padding on purpose.  The reason is mandatory.\n"
+    "# A keep row:   PATH | ROLE | 1 | DECLARATION: ELEMENT TYPE | REASON\n"
+    "#   An element type with padding on purpose.  The reason makes the row a keep row, and the row gives\n"
+    "#   no warning.\n"
+    "#\n"
+    "# The role is alias, member, return or `parameter N`.  The declaration and the element type are the\n"
+    "# spellings of the compiler, with `%`, `|` and control characters percent-encoded.  The first \": \"\n"
+    "# divides the declaration from the element type, and a \": \" in the declaration is written \"%3A \".\n"
 )
 
 # The walk that each probe runs.  The check writes it into the probe directory,
@@ -440,11 +458,16 @@ class Keep:
 
 @dataclass
 class Ledger:
-    """The rows of the ledger, and one finding for each malformed row."""
+    """The rows of the ledger, and one finding for each malformed row.
+
+    file is the ledger as assay.core.ledger reads it, or None when it
+    cannot be read.
+    """
 
     rows: dict[tuple[str, str, str, str], int] = field(default_factory=dict)
     keeps: list[Keep] = field(default_factory=list)
     malformed: list[check_report.Finding] = field(default_factory=list)
+    file: rule_ledger.Ledger | None = None
 
 
 @dataclass
@@ -934,38 +957,47 @@ def run_probes(root: Path, build_dir: Path, targets: list[Target], limit: int) -
 # ── The ledger and the report ────────────────────────────────────────────────
 
 
-def read_ledger(path: Path) -> Ledger:
-    """Read the ledger.  A missing ledger has no row."""
+def ledger_key(key: tuple[str, str, str, str]) -> rule_ledger.Key:
+    """Return the ledger key of a padded list: its path, its role, and its declaration and element type."""
+    path, role, declaration, element = key
+    escaped = declaration.replace(ENTITY_SEPARATOR, ESCAPED_SEPARATOR)
+    return rule_ledger.Key(path, role, f"{escaped}{ENTITY_SEPARATOR}{element}")
+
+
+def read_ledger(root: Path) -> Ledger:
+    """Read the ledger of the tree at a root (THE LEDGER).
+
+    A missing ledger has no row.  A ledger that the rows grammar refuses
+    holds no row.
+    """
     ledger = Ledger()
-    if not path.is_file():
+    try:
+        file = rule_ledger.read(rule_ledger.rule_of(CHECK), root)
+    except rows_grammar.RowsError as problem:
+        message = str(problem).removeprefix(f"{problem.path}:{problem.line}: ")
+        ledger.malformed.append(check_report.Finding("error", LEDGER, problem.line, CHECK, message))
         return ledger
-    seen: set[tuple[str, str, str, str]] = set()
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        entry = raw.strip()
-        if not entry or entry.startswith("#"):
+    except (rule_ledger.LedgerError, OSError) as problem:
+        ledger.malformed.append(check_report.Finding("error", LEDGER, 0, CHECK, str(problem)))
+        return ledger
+    ledger.file = file
+    ledger.malformed += [check_report.Finding("error", LEDGER, 0, CHECK, f"the ledger names the configuration "
+                                              f"{item.name}, and a ledger of {CHECK} has no configuration")
+                         for item in file.configurations]
+    for key, entry in sorted(file.base.items(), key=lambda item: item[1].line):
+        declaration, separator, element = key.entity.partition(ENTITY_SEPARATOR)
+        if entry.value != 1 or not key.path.startswith(("include/", "src/")) or not key.kind or not separator \
+                or not declaration or not element:
+            ledger.malformed.append(check_report.Finding(
+                "error", LEDGER, entry.line, CHECK,
+                f"the row of {key.path or 'no path'} is malformed.  A count row is `PATH | ROLE | 1 | DECLARATION: "
+                f"ELEMENT TYPE | -`, with a path under include/ or src/, and a keep row ends with its reason."))
             continue
-        cells = [cell.strip() for cell in (entry + " ").split(SEPARATOR)]
-        is_keep = cells[0] == "keep"
-        body = cells[1:] if is_keep else cells
-        problem = ""
-        if len(body) != (5 if is_keep else 4) or not body[0].startswith(("include/", "src/")) \
-                or not all(body[:4]):
-            problem = (f"the row is malformed: {entry}.  A count row is `path{SEPARATOR}role{SEPARATOR}declaration"
-                       f"{SEPARATOR}element type`, and a keep row starts with `keep{SEPARATOR}` and ends with "
-                       f"`{SEPARATOR}reason`.")
-        elif is_keep and not body[4]:
-            problem = "the keep row gives no reason.  Say why the element type has padding on purpose."
-        elif tuple(body[:4]) in seen:
-            problem = "a row for this list comes before this one.  Remove one of them."
-        if problem:
-            ledger.malformed.append(check_report.Finding("error", LEDGER, number, CHECK, problem))
-            continue
-        key = (body[0], body[1], body[2], body[3])
-        seen.add(key)
-        if is_keep:
-            ledger.keeps.append(Keep(key, body[4], number))
+        list_key = (key.path, key.kind, declaration.replace(ESCAPED_SEPARATOR, ENTITY_SEPARATOR), element)
+        if entry.reason:
+            ledger.keeps.append(Keep(list_key, entry.reason, entry.line))
         else:
-            ledger.rows[key] = number
+            ledger.rows[list_key] = entry.line
     return ledger
 
 
@@ -1024,8 +1056,7 @@ def compare(found: ProbeResult, ledger: Ledger) -> list[check_report.Finding]:
     return findings
 
 
-def evaluate(root: Path, build_dir: Path, ledger_path: Path, registry: Path) -> tuple[list[check_report.Finding],
-                                                                                     ProbeResult]:
+def evaluate(root: Path, build_dir: Path, registry: Path) -> tuple[list[check_report.Finding], ProbeResult]:
     """Select the files, run the probes and compare the result with the ledger.
 
     Returns:
@@ -1048,42 +1079,51 @@ def evaluate(root: Path, build_dir: Path, ledger_path: Path, registry: Path) -> 
     for rel in skipped:
         print(f"check-padded-lists: {rel} is not probed, because it does not compile alone ({NOT_STANDALONE}).",
               file=sys.stderr)
-    return compare(found, read_ledger(ledger_path)), found
+    return compare(found, read_ledger(root)), found
 
 
-def write(root: Path, build_dir: Path, ledger_path: Path, registry: Path) -> int:
+def write(root: Path, build_dir: Path, registry: Path) -> int:
     """Write the count rows of the ledger again from the probes, and keep each keep row.
+
+    A new ledger gets the head comment COMMENT, and a ledger that exists
+    keeps its own.
 
     Returns:
         0 when the ledger is written, 1 when an error of the probes or of a row stops the write
     """
-    _, found = evaluate(root, build_dir, ledger_path, registry)
-    ledger = read_ledger(ledger_path)
+    _, found = evaluate(root, build_dir, registry)
+    ledger = read_ledger(root)
     blocking = list(found.errors) + list(ledger.malformed)
-    if blocking:
+    if blocking or ledger.file is None:
         for item in blocking:
             print(item.text(), file=sys.stderr)
         print("check-padded-lists: --write does not write the ledger while a probe or a row has an error.",
               file=sys.stderr)
         return 1
     kept = {keep.key for keep in ledger.keeps}
-    rows = [SEPARATOR.join(key) + "\n" for key in sorted(found.sites) if key not in kept]
-    keeps = [SEPARATOR.join(("keep", *keep.key, keep.reason)) + "\n"
-             for keep in sorted(ledger.keeps, key=lambda keep: keep.key)]
-    ledger_path.write_text(LEDGER_HEADER + "\n" + "".join(rows) + ("\n" + "".join(keeps) if keeps else ""),
-                           encoding="utf-8")
-    print(f"check-padded-lists: ledger written with {len(rows)} count row(s) and {len(keeps)} keep row(s).",
+    base: dict[rule_ledger.Key, rule_ledger.Entry] = {}
+    for list_key in found.sites:
+        if list_key not in kept:
+            key = ledger_key(list_key)
+            base[key] = rule_ledger.Entry(key, 1, "")
+    rows = len(base)
+    for keep in ledger.keeps:
+        key = ledger_key(keep.key)
+        base[key] = rule_ledger.Entry(key, 1, keep.reason)
+    comment = ledger.file.comment if rule_ledger.ledger_path(CHECK, root).is_file() else COMMENT
+    rule_ledger.store(replace(ledger.file, comment=comment, base=base), root)
+    print(f"check-padded-lists: ledger written with {rows} count row(s) and {len(ledger.keeps)} keep row(s).",
           file=sys.stderr)
     return 0
 
 
-def check(root: Path, build_dir: Path, ledger_path: Path, registry: Path, warnings_dir: Path | None) -> int:
+def check(root: Path, build_dir: Path, registry: Path, warnings_dir: Path | None) -> int:
     """Run the check and print each finding.
 
     Returns:
         1 when one finding is an error, else 0
     """
-    findings, found = evaluate(root, build_dir, ledger_path, registry)
+    findings, found = evaluate(root, build_dir, registry)
     code = check_report.emit(findings, CHECK, warnings_dir)
     warnings = sum(item.level == "warning" for item in findings)
     print(f"check-padded-lists: {found.probed} file(s) probed, {warnings} padded list(s) in the ledger, "
@@ -1210,7 +1250,15 @@ def self_test(build_dir: Path) -> int:
 
         def run() -> tuple[list[check_report.Finding], ProbeResult]:
             with contextlib.redirect_stderr(io.StringIO()):
-                return evaluate(root, build, ledger, registry)
+                return evaluate(root, build, registry)
+
+        def plant(rows: str) -> None:
+            """Write a ledger of format 1 with the rows of the text."""
+            ledger.write_text(f"# The planted ledger.\nformat 1\nrule {CHECK}\n{rows}", encoding="utf-8")
+
+        def row(key: rule_ledger.Key, value: str = "1", reason: str = "") -> str:
+            """Return one ledger row, with its line break."""
+            return rows_grammar.render([key.path], [key.kind, value, key.entity, reason]) + "\n"
 
         findings, found = run()
         planted = {(site.role, unquote(site.entity)) for site in found.sites.values()
@@ -1234,27 +1282,53 @@ def self_test(build_dir: Path) -> int:
                findings and all(item.level == "error" for item in findings))
 
         with contextlib.redirect_stderr(io.StringIO()):
-            written = write(root, build, ledger, registry)
+            written = write(root, build, registry)
         findings, found = run()
-        expect("--write gives a ledger whose rows give warnings and no error",
-               written == 0 and findings and all(item.level == "warning" for item in findings))
         text = ledger.read_text(encoding="utf-8")
-        first_row = next(line for line in text.splitlines() if line.startswith("include/"))
-        ledger.write_text(text.replace(first_row + "\n", "") + "keep" + SEPARATOR + first_row + SEPARATOR
-                          + "the planted reason\n", encoding="utf-8")
+        expect("--write gives a ledger whose rows give warnings and no error, with the head comment of a new ledger",
+               written == 0 and findings and all(item.level == "warning" for item in findings)
+               and text.startswith(COMMENT + "format 1\n"))
+        entries = sorted(rule_ledger.read(rule_ledger.rule_of(CHECK), root).base)
+        counted = "".join(row(key) for key in entries)
+        first = entries[0]
+        plant(counted.replace(row(first), row(first, reason="the planted reason")))
         findings, _ = run()
         expect("a keep row gives no finding", len(findings) == len(found.sites) - 1)
-        ledger.write_text(text + "include/fixy/Planted.h | alias | fixy::Gone | fixy::Padded\n", encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()):
+            written = write(root, build, registry)
+        expect("--write keeps the head comment, each keep row and its reason",
+               written == 0 and ledger.read_text(encoding="utf-8").startswith("# The planted ledger.\n")
+               and row(first, reason="the planted reason") in ledger.read_text(encoding="utf-8"))
+        colon = rule_ledger.Key("include/fixy/Planted.h", "alias", "fixy::With%3A colon: fixy::Padded")
+        expect("the entity of a ledger row escapes a \": \" of the declaration",
+               ledger_key(("include/fixy/Planted.h", "alias", "fixy::With: colon", "fixy::Padded")) == colon)
+        plant(counted + row(colon))
+        findings, _ = run()
+        expect("a row reads back the \": \" of its declaration",
+               any(item.level == "error" and item.path == LEDGER and "fixy::With: colon" in item.message
+                   for item in findings))
+        plant(counted + row(rule_ledger.Key("include/fixy/Planted.h", "alias", "fixy::Gone: fixy::Padded")))
         findings, _ = run()
         expect("a row that names no padded list is an error",
                any(item.level == "error" and item.path == LEDGER for item in findings))
-        for body, label in ((text + "include/fixy/Planted.h | alias\n", "a short row"),
-                            (text + first_row + "\n", "a second row for one list"),
-                            (text + "keep" + SEPARATOR + first_row + SEPARATOR + "\n", "a keep row with no reason")):
-            ledger.write_text(body, encoding="utf-8")
+        for body, label in ((counted + "include/fixy/Planted.h | alias\n", "a short row"),
+                            (counted + row(first, reason="a reason"), "a second row for one list"),
+                            (counted + row(rule_ledger.Key(first.path, first.kind, "fixy::Padded")),
+                             "a row with no element type"),
+                            (counted + row(rule_ledger.Key(first.path, "", first.entity)), "a row with no role"),
+                            (counted + row(rule_ledger.Key("bench/Planted.h", first.kind, first.entity)),
+                             "a row with a path outside include/ and src/"),
+                            (counted.replace(row(first), row(first, value="2")), "a row with a count of 2"),
+                            ("configuration debug kind debug\n" + counted, "a configuration row")):
+            plant(body)
             findings, _ = run()
             expect(f"{label} is an error", any(item.level == "error" and item.path == LEDGER for item in findings))
-        ledger.write_text(text, encoding="utf-8")
+        plant(counted + "include/fixy/Planted.h | alias\n")
+        with contextlib.redirect_stderr(io.StringIO()):
+            written = write(root, build, registry)
+        expect("--write refuses while the ledger does not obey the rows grammar",
+               written == 1 and ledger.read_text(encoding="utf-8").endswith("include/fixy/Planted.h | alias\n"))
+        plant(counted)
 
         (root / "include/fixy/Clean.h").write_text("#pragma once\n#include <array>\nnamespace fixy {\n"
                                                    "struct Hole { long wide; char narrow; };\n"
@@ -1310,8 +1384,8 @@ def main(argv: list[str]) -> int:
         if arguments.self_test:
             return self_test(build_dir)
         if arguments.write:
-            return write(root, build_dir, root / LEDGER, check_report.REGISTRY)
-        return check(root, build_dir, root / LEDGER, check_report.REGISTRY, arguments.warnings_dir)
+            return write(root, build_dir, check_report.REGISTRY)
+        return check(root, build_dir, check_report.REGISTRY, arguments.warnings_dir)
     except tsast.KitMissing as exc:
         print(f"check-padded-lists: {exc}", file=sys.stderr)
         return 3

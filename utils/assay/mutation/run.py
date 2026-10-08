@@ -33,10 +33,17 @@ A mutant whose header does not compile on its own is recorded as invalid and
 never as killed, because every dependent test would then fail for a reason
 that says nothing about the gate.  An invalid mutant leaves its gate
 untested, so it stops the run after the header that holds it, with the gate
-named, unless utils/tools/mutation/invalid-exemptions.txt lists the gate with a
+named, unless a row of utils/ledgers/gate-mutants.txt admits the gate with a
 reason.  A header that does not compile on its own stops the run before its
 first mutant, because then no probe can tell a malformed mutant from a
 killed one.
+
+The ledger utils/ledgers/gate-mutants.txt has the policy admit, in format 1
+of assay.core.ledger.  A row admits the invalid mutant of one gate:
+    HEADER | GATE KIND | admit | NAME: TEXT | REASON
+NAME is the gated entity, TEXT is the gate text with its whitespace
+squeezed, and REASON says why no mutant of the gate can parse, or why other
+means witness the gate.
 
 Complexity: one baseline pass over the candidates of a header, then for each
 mutant up to one pass, in batches of --jobs compiles that stop at the first
@@ -60,12 +67,16 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.core.paths import LOOP, REPO_ROOT
 from assay.mutation import gates as gate_finder
 from assay.readers import tsast
 from assay.setup import pins as cmake_pin
 
-INVALID_EXEMPTIONS = REPO_ROOT / "utils" / "tools" / "mutation" / "invalid-exemptions.txt"
+RULE = "gate-mutants"
+# The text between the entity and the gate text in the entity cell of a ledger row.
+ENTITY_DIVIDER = ": "
 # A negative test runs `python3 -S SRC/utils/bin/loop fixture [--warnings-dir DIR] BUILD SOURCE NAME REGEX...`.
 # SRC is the source tree of the build, which can be an export of the tree.  The run finds the master by the end
 # of its path.
@@ -595,21 +606,34 @@ def gate_key(header: str, kind: str, entity: str, text: str) -> str:
     return " | ".join((header, kind, entity, " ".join(text.split())))
 
 
-def load_exemptions(path: Path) -> set[str]:
-    """The gate keys of a reviewed list whose rows are `header | kind | entity | text | reason`.
+def load_exemptions(file: Path | None = None) -> set[str]:
+    """The gate keys that the rows of the ledger of gate-mutants admit.
 
-    A row with no reason is refused, because an exemption that says nothing
-    cannot be reviewed.  Complexity: linear in the size of the file."""
+    A row is `HEADER | KIND | admit | NAME: TEXT | REASON`.  The policy
+    admit refuses a row with no reason, because a review cannot judge an
+    exemption that says nothing.  Complexity: linear in the size of the
+    file.
+
+    Args:
+        file: The file to read in place of utils/ledgers/gate-mutants.txt, for a planted ledger of a self-test
+    """
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), file=file)
+    except (OSError, rule_ledger.LedgerError, rows_grammar.RowsError) as problem:
+        raise SystemExit(f"mutation: {problem}") from None
     keys: set[str] = set()
-    for number, raw in enumerate(path.read_text().splitlines(), 1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        fields = [field.strip() for field in line.split(" | ")]
-        if len(fields) < 5 or not fields[-1]:
-            raise SystemExit(f"{path}:{number}: a row needs five fields separated by ' | ', the last a reason")
-        keys.add(gate_key(fields[0], fields[1], fields[2], " | ".join(fields[3:-1])))
+    for key, entry in ledger.base.items():
+        name, divider, text = key.entity.partition(ENTITY_DIVIDER)
+        if not divider or not key.path or not key.kind:
+            shown = rule_ledger.shown_path(RULE) if file is None else str(file)
+            raise SystemExit(f"{shown}:{entry.line}: a row is 'HEADER | GATE KIND | admit | NAME: TEXT | REASON'")
+        keys.add(gate_key(key.path, key.kind, name, text))
     return keys
+
+
+def exemption_row(header: str, kind: str, entity: str, text: str) -> rule_ledger.Key:
+    """Return the key of the ledger row that admits the invalid mutant of one gate."""
+    return rule_ledger.Key(header, kind, f"{entity}{ENTITY_DIVIDER}{' '.join(text.split())}")
 
 
 def unexempted_invalid(outcomes: list[Outcome], exempt: set[str]) -> list[Outcome]:
@@ -628,7 +652,7 @@ def cmd_mutate(args: argparse.Namespace) -> int:
     out = Path(args.out)
     deps = json.loads((out / "deps.json").read_text())
     candidates = load_candidates(build, deps)
-    exempt = load_exemptions(INVALID_EXEMPTIONS)
+    exempt = load_exemptions()
     only_lines = {int(line) for line in args.lines.split(",")} if args.lines else None
     with (out / args.results).open("a") as sink:
         for header in args.header:
@@ -641,7 +665,8 @@ def cmd_mutate(args: argparse.Namespace) -> int:
             for outcome in untested:
                 print(f"mutation: INVALID MUTANT {outcome.header}:{outcome.line} {outcome.kind} {outcome.entity}: "
                       f"{outcome.original!r} does not parse, so the gate went untested.  Fix the mutant in "
-                      f"utils/assay/mutation/gates.py, or list the gate in {INVALID_EXEMPTIONS.name} with a reason.",
+                      f"utils/assay/mutation/gates.py, or admit the gate with a row and a reason in "
+                      f"{rule_ledger.shown_path(RULE)}.",
                       file=sys.stderr)
             if untested:
                 return 1
@@ -854,10 +879,22 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         planted_invalid = Outcome("k", "include/planted.h", "requires", 1, "fused", "(x)", "invalid")
         if unexempted_invalid([planted_invalid], set()) != [planted_invalid]:
             failures.append("an invalid outcome with no exemption was not reported")
-        exemption = tmp / "exemptions.txt"
-        exemption.write_text("include/planted.h | requires | fused | (x) | a planted reason\n")
+        exemption = tmp / "gate-mutants.txt"
+        rule = rule_ledger.rule_of(RULE)
+        row = exemption_row("include/planted.h", "requires", "fused", " (x) ")
+        rule_ledger.store(dataclasses.replace(rule_ledger.empty(rule), base={
+            row: rule_ledger.Entry(row, rule_ledger.ADMIT_VALUE, "a planted reason")}), file=exemption)
         if unexempted_invalid([planted_invalid], load_exemptions(exemption)):
             failures.append("an invalid outcome that an exemption names was still reported")
+        for label, text in (("no reason", "include/planted.h | requires | admit | fused: (x) | -\n"),
+                            ("no divider in its entity", "include/planted.h | requires | admit | fused (x) | why\n")):
+            exemption.write_text(f"format {rule_ledger.FORMAT}\nrule {RULE}\n{text}")
+            try:
+                load_exemptions(exemption)
+                failures.append(f"a row with {label} was read")
+            except SystemExit as refusal:
+                if f"{exemption}:3:" not in str(refusal):
+                    failures.append(f"the refusal of a row with {label} names no place: {refusal}")
         # Only a refusal by a check of the header kills a mutant at the probe.
         probe_cases = {"planted.h:3:1: error: static assertion failed: small": "killed",
                        "planted.h:3:1: error: call of overloaded 'take(int)' is ambiguous": "killed",

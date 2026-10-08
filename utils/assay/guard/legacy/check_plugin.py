@@ -48,8 +48,8 @@ give the section of a real compile.  A changed rule table with a new stamp
 must miss and give the new findings.  The negative controls show that the
 stamp alone carries the table into the key of the cache, and that a key
 without the stamp gives a section whose stamp is not the stamp of the
-command, which the rule quarantine-ratchet (`guard check --rule
-quarantine-ratchet`) refuses.
+command, which the rule quarantine (`guard check --rule quarantine`)
+refuses.
 
 A generated file of the build directory has the name @build/ and its path in
 the build directory, and the row `quarantine @build/` quarantines it.  The

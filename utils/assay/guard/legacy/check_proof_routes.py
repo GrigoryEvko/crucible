@@ -14,7 +14,7 @@ guard refuses them in the source text instead:
                                  points at an object whose lifetime never
                                  started.  Each union definition in scope,
                                  a union template too, needs a reviewed
-                                 entry that says it holds no proof type.
+                                 row that says it holds no proof type.
   pointer-cast                   a static_cast, reinterpret_cast or
                                  bit_cast to a pointer or a reference whose
                                  target names a proof type.  A void
@@ -122,18 +122,20 @@ Out of scope, stated rather than implied
   pointer to a proof type.  The copy names no proof type at the call.  The
   same ledger pins it.
 
-The allowlist
--------------
-utils/scripts/proof-routes-allowlist.txt admits a reviewed site.  An entry is
-`path:rule:key`, or `path:rule:key xN` for N sites, and a comment above
-each paragraph gives the reason.  An entry above the count that the tree
-has, or an entry for a key that the tree does not have, is stale.
+The ledger
+----------
+utils/ledgers/proof-routes.txt admits a reviewed site, and the reader of
+assay.core.ledger reads it.  A row is `PATH | ROUTE | N | KEY | REASON` for
+N sites of the route ROUTE with the key KEY, and each row gives a reason.
+A report names a site as PATH:ROUTE:KEY.  A row above the count that the
+tree has, or a row for a key that the tree does not have, is stale.
 
 Exit codes
-  0  each site in scope has an entry, and each entry admits its sites
-  1  a site with no entry, or more sites than its entry admits
-  2  a stale entry, a preprocessor failure, a file or an expansion that the
-     parser cannot read, a bad invocation, or a failed self-test
+  0  each site in scope has a row, and each row admits its sites
+  1  a site with no row, or more sites than its row admits
+  2  a stale or malformed row, a preprocessor failure, a file or an
+     expansion that the parser cannot read, a bad invocation, or a failed
+     self-test
   3  the pinned tree-sitter kit is not installed, or the proof-name binary
      or the compile database that the arguments name is not built, which
      ctest reports as a skip
@@ -159,6 +161,8 @@ from pathlib import Path
 
 from assay.core import cache as cache_dir
 from assay.core import git as throwaway_repo
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.core.paths import GUARD, REPO_ROOT
 from assay.guard.preprocessed import Expansion, Store, chunk_text, text_results
 from assay.readers import tsast
@@ -173,7 +177,10 @@ NAMESPACE_SCOPE = frozenset({"translation_unit", "namespace_definition", "declar
                              "preproc_elifdef"})
 FIXTURE = re.compile(r"^test/(?:[^/]+/)*(?:neg|[^/]+_neg)/[^/]+$")
 BPF = re.compile(r"^include/crucible/[^/]+/bpf/|\.bpf\.c$")
-ENTRY = re.compile(r"^(?P<key>.*?)(?: x(?P<count>[1-9][0-9]*))?$")
+RULE = "proof-routes"
+LEDGER = rule_ledger.shown_path(RULE)
+# One site: the path of its file, its route and its key, as a row of the ledger holds them.
+Site = tuple[str, str, str]
 
 CASTS = frozenset({"static_cast", "reinterpret_cast", "bit_cast"})
 ALLOCATORS = frozenset({"allocator", "allocator_traits", "polymorphic_allocator"})
@@ -194,8 +201,8 @@ def is_word(character: str) -> bool:
 def canonical(text: str) -> str:
     """Reduce white space to the key form: one space between two word characters, none elsewhere.
 
-    The key is an identity for the allowlist, and this form keeps each key
-    of the allowlist stable.  Complexity: linear in the length of the text.
+    The key is an identity for the ledger, and this form keeps each key of
+    the ledger stable.  Complexity: linear in the length of the text.
     """
     out: list[str] = []
     pending_space = False
@@ -642,13 +649,13 @@ def expansion_records(batch: list[tuple[str, str, str, list[str]]]) -> list[list
             for tree in tsast.parse_texts(texts, strict=False)]
 
 
-def preprocessed_counts(expansions: list[tuple[str, list[list]]], proofs, friends, primaries) -> dict[str, int]:
-    """The count of each key over the preprocessed expansions, the largest over the entries of a file."""
-    merged: dict[str, int] = defaultdict(int)
+def preprocessed_counts(expansions: list[tuple[str, list[list]]], proofs, friends, primaries) -> dict[Site, int]:
+    """The count of each site over the preprocessed expansions, the largest over the entries of a file."""
+    merged: dict[Site, int] = defaultdict(int)
     for path, records in expansions:
-        counts: dict[str, int] = defaultdict(int)
+        counts: dict[Site, int] = defaultdict(int)
         for rule, key, _ in judge(records, proofs, friends, frozenset(primaries_for(path, primaries))):
-            counts[f"{path}:{rule}:{key}"] += 1
+            counts[(path, rule, key)] += 1
         for key, count in counts.items():
             merged[key] = max(merged[key], count)
     return merged
@@ -720,33 +727,36 @@ def primaries_for(path: str, primaries: dict[str, set[str]]) -> set[str]:
     return {name for name, files in primaries.items() if path in files}
 
 
-def read_allowlist(path: Path) -> tuple[dict[str, tuple[int, int]], list[str]]:
-    """Each entry key, the count it admits and its line, and each malformed entry."""
-    entries: dict[str, tuple[int, int]] = {}
+def site_text(site: Site) -> str:
+    """The name of a site in a report: PATH:ROUTE:KEY."""
+    return ":".join(site)
+
+
+def read_ledger(root: Path) -> tuple[dict[Site, tuple[int, int]], list[str]]:
+    """Each site of the ledger, the count it admits and its line, and each malformed row.
+
+    A row is PATH | ROUTE | N | KEY | REASON, and each row gives a reason.  A
+    file that does not obey the rows grammar, or a second row of one site,
+    gives one error at the place that the reader names, and no row.
+    """
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), root)
+    except rows_grammar.RowsError as problem:
+        return {}, [str(problem)]
+    entries: dict[Site, tuple[int, int]] = {}
     errors: list[str] = []
-    if not path.is_file():
-        return entries, errors
-    paragraph_has_comment = False
-    for number, raw in enumerate(path.read_text().splitlines(), 1):
-        line = raw.strip()
-        if not line:
-            paragraph_has_comment = False
-            continue
-        if line.startswith("#"):
-            paragraph_has_comment = True
-            continue
-        match = ENTRY.match(line)
-        key = match.group("key")
-        if key.count(":") < 2:
-            errors.append(f"{path.name}:{number}: `{line}` is not path:rule:key")
-        if not paragraph_has_comment:
-            errors.append(f"{path.name}:{number}: `{line}` has no comment above its paragraph")
-        entries[key] = (int(match.group("count") or 1), number)
+    for key, entry in ledger.base.items():
+        site = (key.path, key.kind, key.entity)
+        if not all(site):
+            errors.append(f"{LEDGER}:{entry.line}: the row is not PATH | ROUTE | N | KEY | REASON")
+        if not entry.reason:
+            errors.append(f"{LEDGER}:{entry.line}: the row of `{site_text(site)}` gives no reason")
+        entries[site] = (int(entry.value), entry.line)
     return entries, errors
 
 
-def scan(root: Path, compile_db: Path | None, binary: str | None, allowlist: Path, mode: str) -> int:
-    """Scan the tree under the root and compare each site with the allowlist."""
+def scan(root: Path, compile_db: Path | None, binary: str | None, mode: str) -> int:
+    """Scan the tree under the root and compare each site with the ledger under the root."""
     files = listed_files(root)
     qualified: dict[str, set[str]] = defaultdict(set)
     for source in (roster_names(root), reflected_names(binary)):
@@ -779,35 +789,37 @@ def scan(root: Path, compile_db: Path | None, binary: str | None, allowlist: Pat
     # namespace-scope alias of a header joins the proof names before any
     # file is judged.  An alias of a class body stays in its own file.
     proofs = alias_closure(frozenset(qualified), exported)
-    lexical: dict[str, list[int]] = defaultdict(list)
+    lexical: dict[Site, list[int]] = defaultdict(list)
     for path, records in records_of.items():
         admitted = frozenset(primaries_for(path, primaries))
         for rule, key, line in judge(records, proofs, friends, admitted):
-            lexical[f"{path}:{rule}:{key}"].append(line)
-    preprocessed: dict[str, int] = {}
+            lexical[(path, rule, key)].append(line)
+    preprocessed: dict[Site, int] = {}
     if compile_db is not None:
         preprocessed = preprocessed_counts(preprocessed_records(root, compile_db, failures, frozenset(files)),
                                            proofs, friends, primaries)
-    entries, errors = read_allowlist(allowlist)
+    entries, errors = read_ledger(root)
     unreviewed = 0
-    for key in sorted(set(lexical) | set(preprocessed)):
-        count = max(len(lexical.get(key, [])), preprocessed.get(key, 0))
-        admitted = entries.get(key, (0, 0))[0]
-        lines = ", ".join(map(str, lexical.get(key, []))) or "a macro expansion"
+    for site in sorted(set(lexical) | set(preprocessed), key=site_text):
+        count = max(len(lexical.get(site, [])), preprocessed.get(site, 0))
+        admitted = entries.get(site, (0, 0))[0]
+        lines = ", ".join(map(str, lexical.get(site, []))) or "a macro expansion"
         if count > admitted:
             unreviewed += 1
-            print(f"PROOF-ROUTE violation: {key} at line(s) {lines}: {count} site(s), {admitted} admitted.  "
-                  f"Remove the route, or add a reviewed entry `{key}{' x' + str(count) if count > 1 else ''}` "
-                  f"to {allowlist.name}.{qualified_names(key.split(':', 2)[-1], qualified)}", file=sys.stderr)
+            row = rows_grammar.SEPARATOR.join([site[0], rows_grammar.escape(site[1]), str(count),
+                                               rows_grammar.escape(site[2]), "REASON"])
+            print(f"PROOF-ROUTE violation: {site_text(site)} at line(s) {lines}: {count} site(s), {admitted} "
+                  f"admitted.  Remove the route, or add a reviewed row `{row}` to {LEDGER}."
+                  f"{qualified_names(site[2], qualified)}", file=sys.stderr)
         elif mode == "list":
-            print(f"REVIEWED  {key}  ({count} site(s), line(s) {lines})")
+            print(f"REVIEWED  {site_text(site)}  ({count} site(s), line(s) {lines})")
     stale = 0
-    for key, (admitted, number) in sorted(entries.items(), key=lambda item: item[1][1]):
-        found = max(len(lexical.get(key, [])), preprocessed.get(key, 0))
+    for site, (admitted, number) in sorted(entries.items(), key=lambda item: item[1][1]):
+        found = max(len(lexical.get(site, [])), preprocessed.get(site, 0))
         if found < admitted:
             stale += 1
-            print(f"PROOF-ROUTE stale: {allowlist.name}:{number} admits {admitted} site(s) of {key}, and the tree "
-                  f"has {found}.  The list only shrinks: lower the count or delete the entry.", file=sys.stderr)
+            print(f"PROOF-ROUTE stale: {LEDGER}:{number} admits {admitted} site(s) of {site_text(site)}, and the "
+                  f"tree has {found}.  The ledger only shrinks: lower the count or delete the row.", file=sys.stderr)
     for error in errors:
         print(f"PROOF-ROUTE malformed: {error}", file=sys.stderr)
     for failure in failures:
@@ -926,26 +938,36 @@ def planted_cases(caches: Path) -> int:
     if any(r == "friend-template-specialization" and "Opener" in k
            for r, k, _ in judge(records, proofs, friends, frozenset({"Opener"}))):
         failures.append("a specialization in the file that defines the primary template was refused")
-    # The allowlist admits a site, refuses a surplus and reports a stale entry.
+    # The ledger admits a site, refuses a surplus and reports a stale row.
     with tempfile.TemporaryDirectory() as scratch:
         root = Path(scratch)
         (root / "utils" / "scripts").mkdir(parents=True)
         (root / "utils" / "scripts" / "witness-roster.txt").write_text(
             "forge::Door | h | forge::Door{} | private | closed\n")
         (root / "a.cpp").write_text("union Plain { int a; };\nunion Other { int b; };\n")
-        allow = root / "utils" / "scripts" / "allow.txt"
-        allow.write_text("# plain scalars\na.cpp:union:Plain\n")
-        if scan(root, None, None, allow, "check") != 1:
-            failures.append("a union with no entry did not exit 1")
-        allow.write_text("# plain scalars\na.cpp:union:Plain\na.cpp:union:Other\na.cpp:union:Gone\n")
-        if scan(root, None, None, allow, "check") != 2:
-            failures.append("a stale entry did not exit 2")
-        allow.write_text("# plain scalars\na.cpp:union:Plain\na.cpp:union:Other\n")
-        if scan(root, None, None, allow, "check") != 0:
-            failures.append("a tree whose sites all have entries did not exit 0")
-        allow.write_text("a.cpp:union:Plain\na.cpp:union:Other\n")
-        if scan(root, None, None, allow, "check") != 2:
-            failures.append("an entry with no comment above it was accepted")
+        ledger = root / LEDGER
+        ledger.parent.mkdir(parents=True)
+        head = f"format 1\nrule {RULE}\n"
+        plain = "a.cpp | union | 1 | Plain | plain scalars\n"
+        both = head + "a.cpp | union | 1 | Other | plain scalars\n" + plain
+        ledger.write_text(head + plain)
+        if scan(root, None, None, "check") != 1:
+            failures.append("a union with no row did not exit 1")
+        ledger.write_text(both + "a.cpp | union | 1 | Gone | plain scalars\n")
+        if scan(root, None, None, "check") != 2:
+            failures.append("a stale row did not exit 2")
+        ledger.write_text(both)
+        if scan(root, None, None, "check") != 0:
+            failures.append("a tree whose sites all have rows did not exit 0")
+        ledger.write_text(head + "a.cpp | union | 1 | Other | -\na.cpp | union | 1 | Plain | -\n")
+        if scan(root, None, None, "check") != 2:
+            failures.append("a row with no reason was accepted")
+        ledger.write_text(head + "a.cpp:union:Plain\na.cpp:union:Other\n")
+        report = io.StringIO()
+        with contextlib.redirect_stderr(report):
+            verdict = scan(root, None, None, "check")
+        if verdict == 0 or f"PROOF-ROUTE malformed: {LEDGER}:3:" not in report.getvalue():
+            failures.append(f"a row that does not obey the rows grammar was accepted:\n{report.getvalue()}")
         # A report names the qualified class that the dump gives for a
         # spelled name, and the class that the roster writes.
         (root / "b.cpp").write_text("void f(void* raw) { auto* key = static_cast<Key*>(raw); (void)key; }\n"
@@ -953,10 +975,10 @@ def planted_cases(caches: Path) -> int:
         dump = root / "proof-names.sh"
         dump.write_text("#!/bin/sh\nprintf 'Key\\t::forge::detail::Key\\n'\n")
         dump.chmod(0o755)
-        allow.write_text("# plain scalars\na.cpp:union:Plain\na.cpp:union:Other\n")
+        ledger.write_text(both)
         report = io.StringIO()
         with contextlib.redirect_stderr(report):
-            verdict = scan(root, None, str(dump), allow, "check")
+            verdict = scan(root, None, str(dump), "check")
         for needle in ("b.cpp:pointer-cast:static_cast<Key*>", "The key names Key = ::forge::detail::Key.",
                        "b.cpp:pointer-cast:static_cast<Door*>", "The key names Door = forge::Door."):
             if verdict != 1 or needle not in report.getvalue():
@@ -970,7 +992,7 @@ def planted_cases(caches: Path) -> int:
                                     "void f(void* raw) { auto* d = static_cast<forge::DoorHandle*>(raw); (void)d; }\n")
         report = io.StringIO()
         with contextlib.redirect_stderr(report):
-            verdict = scan(root, None, None, allow, "check")
+            verdict = scan(root, None, None, "check")
         if verdict != 1 or "y.cpp:pointer-cast:static_cast<forge::DoorHandle*>" not in report.getvalue():
             failures.append(f"a cast through an alias that another file declares was not refused:\n{report.getvalue()}")
         (root / "y.cpp").unlink()
@@ -982,17 +1004,17 @@ def planted_cases(caches: Path) -> int:
                                               "template <class T> class Opener;\ntemplate <> class Opener<int> {};\n}\n")
         report = io.StringIO()
         with contextlib.redirect_stderr(report):
-            verdict = scan(root, None, None, allow, "check")
+            verdict = scan(root, None, None, "check")
         if verdict != 1 or "include/F.h:friend-template-specialization:class Opener<int>" not in report.getvalue():
             failures.append(f"a specialization beside a forward declaration of its primary was admitted:\n"
                             f"{report.getvalue()}")
         (root / "include" / "F.h").unlink()
         # A file that the parser cannot read can hold a route, so it refuses
-        # the run even when every site it can read has an entry.
+        # the run even when every site it can read has a row.
         (root / "bad.cpp").write_text("#define JOIN(a, b) a##b\nJOIN(uni, on) Hidden { int x; };\n")
         report = io.StringIO()
         with contextlib.redirect_stderr(report):
-            verdict = scan(root, None, None, allow, "check")
+            verdict = scan(root, None, None, "check")
         if verdict != 2 or "PROOF-ROUTE unread input: bad.cpp" not in report.getvalue():
             failures.append(f"a file that the parser cannot read did not refuse the run:\n{report.getvalue()}")
         (root / "bad.cpp").unlink()
@@ -1008,11 +1030,11 @@ def planted_cases(caches: Path) -> int:
             database = root / "compile_commands.json"
             database.write_text(json.dumps([{"directory": str(root), "file": "a.cpp",
                                              "command": f"{compiler} -std=c++20 -c a.cpp -o a.o"}]))
-            allow.write_text("# none\n")
+            # A ledger with no rows has no file.
+            ledger.unlink()
             for attempt in ("cold", "cached"):
                 report = subprocess.run([sys.executable, str(GUARD), "check", "--rule", "proof-routes", "--scan-root",
-                                         str(root), "--compile-db", str(database), "--allowlist", str(allow)],
-                                        capture_output=True, text=True)
+                                         str(root), "--compile-db", str(database)], capture_output=True, text=True)
                 if (report.returncode != 1 or "a.cpp:union:Hidden" not in report.stderr
                         or "PROOF-ROUTE unread input" in report.stderr):
                     failures.append(f"the {attempt} preprocessed pass missed a union formed by token pasting:\n"
@@ -1036,14 +1058,13 @@ def planted_cases(caches: Path) -> int:
                                              "command": f"{compiler} -std=c++20 -Ilayer-stage -c fixture.cpp "
                                                         f"-o fixture.o"}]))
             report = subprocess.run([sys.executable, str(GUARD), "check", "--rule", "proof-routes", "--scan-root",
-                                     str(root), "--compile-db", str(database), "--allowlist", str(allow)],
-                                    capture_output=True, text=True)
+                                     str(root), "--compile-db", str(database)], capture_output=True, text=True)
             if "fixture.cpp:union:Staged" not in report.stderr or "PROOF-ROUTE unread input" in report.stderr:
                 failures.append(f"a layer fixture under a staged root was not read with the include directory:\n"
                                 f"{report.stderr}")
         missing = subprocess.run([sys.executable, str(GUARD), "check", "--rule", "proof-routes", "--scan-root",
-                                  str(root), "--proof-names-binary", str(root / "not-built"), "--allowlist",
-                                  str(allow)], capture_output=True, text=True)
+                                  str(root), "--proof-names-binary", str(root / "not-built")],
+                                 capture_output=True, text=True)
         if missing.returncode != 3 or "is not built" not in missing.stderr:
             failures.append(f"a proof-name binary that is not built did not skip with exit 3:\n{missing.stderr}")
     # In a work tree, an untracked file is out of scope, because the export
@@ -1051,19 +1072,16 @@ def planted_cases(caches: Path) -> int:
     with tempfile.TemporaryDirectory() as scratch:
         root = Path(scratch)
         throwaway_repo.init(root)
-        (root / "utils" / "scripts").mkdir(parents=True)
-        allow = root / "utils" / "scripts" / "allow.txt"
-        allow.write_text("# none\n")
         (root / "clean.cpp").write_text("int clean = 0;\n")
         subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
         (root / "grun" / "change").mkdir(parents=True)
         (root / "grun" / "change" / "export.cpp").write_text("union Exported { int a; float b; };\n")
-        if scan(root, None, None, allow, "check") != 0:
+        if scan(root, None, None, "check") != 0:
             failures.append("an untracked file was read")
         subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
         report = io.StringIO()
         with contextlib.redirect_stderr(report):
-            verdict = scan(root, None, None, allow, "check")
+            verdict = scan(root, None, None, "check")
         if verdict != 1 or "grun/change/export.cpp:union:Exported" not in report.getvalue():
             failures.append(f"the same file was not refused once git tracks it:\n{report.getvalue()}")
     for failure in failures:
@@ -1090,7 +1108,6 @@ def run(argv: list[str]) -> int:
     root = REPO_ROOT
     compile_db: Path | None = None
     binary: str | None = None
-    allowlist: Path | None = None
     mode = "check"
     while argv:
         flag = argv.pop(0)
@@ -1100,11 +1117,9 @@ def run(argv: list[str]) -> int:
             binary = argv.pop(0)
         elif flag == "--list":
             mode = "list"
-        # The self-test scans a scratch tree with its own allowlist.
+        # The self-test scans a scratch tree, and the ledger under that root.
         elif flag == "--scan-root" and argv:
             root = Path(argv.pop(0)).resolve()
-        elif flag == "--allowlist" and argv:
-            allowlist = Path(argv.pop(0)).resolve()
         else:
             print(__doc__, file=sys.stderr)
             return 2
@@ -1113,5 +1128,4 @@ def run(argv: list[str]) -> int:
             print(f"check-proof-routes: {what} {named} is not built, so the guard cannot run.  Build the tree "
                   f"first.", file=sys.stderr)
             return 3
-    return scan(root, compile_db, binary, allowlist or root / "utils" / "scripts" / "proof-routes-allowlist.txt",
-                mode)
+    return scan(root, compile_db, binary, mode)

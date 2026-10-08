@@ -42,11 +42,14 @@ WHICH FILES HOLD THE SITES
 
 THE RULE
     A site is a spelling of a branded template whose argument list stops at
-    or before the brand, or names DefaultBrand.  utils/scripts/brand-drain.txt
-    holds one count per file.  A file with more sites than its entry fails:
-    write the brand or a generic parameter.  A file with fewer sites than
-    its entry fails as stale: run --refresh in the same commit.  An empty
-    ledger makes every site a hard error, and that is the end state.
+    or before the brand, or names DefaultBrand.  utils/ledgers/brand-drain.txt
+    (assay.core.ledger) holds one row for each file: `PATH | - | COUNT | - |
+    REASON`, with an optional reason.  A file with more sites than its row
+    fails: write the brand or a generic parameter.  A file with fewer sites
+    than its row fails as stale: run --refresh in the same commit.  A row
+    with a kind or an entity, and a ledger that does not obey its grammar,
+    are malformed.  An empty ledger makes every site a hard error, and that
+    is the end state.
 
 WHAT READS THE SITES
     The guard reads the parse tree of the pinned tree-sitter kit
@@ -68,8 +71,8 @@ Usage
     guard check --rule brand-drain --self-test  put sites in a temporary tree and examine each verdict
 
 Exit 0 clean, 1 on a new site, an unreadable list or a parse failure, 2 on
-a stale entry, a usage error or a failed self-test, 3 when the kit is not
-installed.
+a stale entry, a malformed ledger, a usage error or a failed self-test, 3
+when the kit is not installed.
 """
 
 from __future__ import annotations
@@ -79,23 +82,29 @@ import io
 import os
 import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.readers import tsast
 
 ROOTS = ("include/foundation", "include/fixy", "test/foundation", "test/fixy", "test/layer/checks/foundation",
          "test/layer/checks/fixy")
 TEMPLATE_ROOT = "include"
-LEDGER = "utils/scripts/brand-drain.txt"
+RULE = "brand-drain"
+LEDGER = rule_ledger.shown_path(RULE)
 SUFFIXES = (".h", ".cpp")
 BRAND_PARAMETER = "Brand"
 ERASED_BRAND = "DefaultBrand"
-LEDGER_HEADER = (
-    "# utils/scripts/brand-drain.txt — the sites on the erased brand, one count per\n"
-    "# file.  The rule brand-drain (`guard check --rule brand-drain`) reads this\n"
-    "# ledger.  A count can only decrease.  Where a new spelling is necessary,\n"
-    "# write the brand.  Run --refresh in the commit that removes a site.\n"
+# The head comment of the ledger.  --refresh writes it into a new ledger, and keeps the comment of a ledger that
+# exists.
+COMMENT = (
+    "# The ledger of the rule brand-drain: the sites on the erased brand, one row for each file.\n"
+    "# A row PATH | - | COUNT | - | REASON gives the count of the sites of the file, and the reason is\n"
+    "# optional.  A count can only decrease.  Where a new spelling is necessary, write the brand.  Run\n"
+    "# `python3 utils/bin/guard check --rule brand-drain --refresh` in the commit that removes a site.\n"
+    "# `python3 utils/bin/guard explain brand-drain` tells the rule.\n"
     "#\n"
     "# This ledger holds the counts of 2026-09-24, when the guard moved onto\n"
     "# the parse tree and into CI.  These counts replace the smaller counts of\n"
@@ -359,32 +368,37 @@ def per_file(sites: list[Site]) -> dict[str, int]:
     return counts
 
 
-def read_ledger(path: Path) -> tuple[dict[str, int], list[str]]:
-    """Return the count of each file the ledger lists, and one line for each malformed row."""
+def read_ledger(root: Path) -> tuple[dict[str, int], list[str], rule_ledger.Ledger | None]:
+    """Read the ledger of the tree at a root.
+
+    A missing ledger has no row.  A ledger that does not obey its grammar
+    holds no row, so each site of the tree is over it.
+
+    Returns:
+        The count of each file that a row names, one line for each malformed
+        row, and the ledger, or None when it cannot be read
+    """
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), root)
+    except (rule_ledger.LedgerError, rows_grammar.RowsError, OSError) as problem:
+        return {}, [f"MALFORMED {problem}"], None
+    rot = [f"MALFORMED {LEDGER}:0: the ledger names the configuration {item.name}, and a ledger of {RULE} has no "
+           f"configuration" for item in ledger.configurations]
     allowed: dict[str, int] = {}
-    rot = []
-    if not path.is_file():
-        return allowed, rot
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        entry = raw.strip()
-        if not entry or entry.startswith("#"):
+    for key, entry in sorted(ledger.base.items(), key=lambda item: item[1].line):
+        if not key.path or key.kind or key.entity:
+            rot.append(f"MALFORMED {LEDGER}:{entry.line}: a row is `PATH | - | COUNT | - | REASON`, and this row "
+                       f"names a kind or an entity, or no file")
             continue
-        shown, _, count = entry.rpartition("\t")
-        if not shown or not count.isdigit():
-            rot.append(f"MALFORMED line {number}: {entry} — a row is `path<TAB>count`")
-            continue
-        if shown in allowed:
-            rot.append(f"DUPLICATE line {number}: {shown} has a row before this one")
-            continue
-        allowed[shown] = int(count)
-    return allowed, rot
+        allowed[key.path] = int(entry.value)
+    return allowed, rot, ledger
 
 
-def check(root: Path, ledger: Path, roots: tuple[str, ...] = ROOTS) -> int:
+def check(root: Path, roots: tuple[str, ...] = ROOTS) -> int:
     """Compare the tree with the ledger, and print the report."""
     sites, unreadable, failures = scan(root, roots)
     counts = per_file(sites)
-    allowed, rot = read_ledger(ledger)
+    allowed, rot, _ledger = read_ledger(root)
     over = [(path, counts.get(path, 0), allowed.get(path, 0)) for path in sorted(set(counts) | set(allowed))
             if counts.get(path, 0) > allowed.get(path, 0)]
     stale = [(path, counts.get(path, 0), allowed[path]) for path in sorted(allowed)
@@ -407,16 +421,29 @@ def check(root: Path, ledger: Path, roots: tuple[str, ...] = ROOTS) -> int:
     return 2 if stale or rot else 0
 
 
-def refresh(root: Path, ledger: Path, roots: tuple[str, ...] = ROOTS) -> int:
-    """Write the ledger again from the tree.  An unreadable list or a parse failure stops the write."""
+def refresh(root: Path, roots: tuple[str, ...] = ROOTS) -> int:
+    """Write the ledger again from the tree, with the reason of each row that stays.
+
+    An unreadable list, a parse failure or a ledger that cannot be read
+    stops the write.  A malformed row goes.  A new ledger gets the head
+    comment COMMENT, and a ledger that exists keeps its own.
+    """
     sites, unreadable, failures = scan(root, roots)
-    if unreadable or failures:
-        print("check-brand-drain: --refresh does not write the ledger while a list is unreadable or a file "
-              "does not parse.", file=sys.stderr)
+    _allowed, rot, ledger = read_ledger(root)
+    if unreadable or failures or ledger is None:
+        for line in rot:
+            print(line, file=sys.stderr)
+        print("check-brand-drain: --refresh does not write the ledger while a list is unreadable, a file "
+              "does not parse or the ledger cannot be read.", file=sys.stderr)
         return 1
     counts = per_file(sites)
-    ledger.write_text(LEDGER_HEADER + "".join(f"{path}\t{counts[path]}\n" for path in sorted(counts)),
-                      encoding="utf-8")
+    base: dict[rule_ledger.Key, rule_ledger.Entry] = {}
+    for path in sorted(counts):
+        key = rule_ledger.Key(path, "", "")
+        kept = ledger.base.get(key)
+        base[key] = rule_ledger.Entry(key, counts[path], kept.reason if kept is not None else "")
+    comment = ledger.comment if rule_ledger.ledger_path(RULE, root).is_file() else COMMENT
+    rule_ledger.store(replace(ledger, comment=comment, configurations=(), deltas={}, base=base), root)
     print(f"check-brand-drain: ledger written with {len(counts)} file(s), {len(sites)} site(s).", file=sys.stderr)
     return 0
 
@@ -571,8 +598,12 @@ def self_test() -> int:
                 code = action()
             return code, buffer.getvalue()
 
-        ledger.write_text("include/fixy/Planted.h\t16\n", encoding="utf-8")
-        expect("a ledger that matches passes", captured(lambda: check(root, ledger))[0] == 0)
+        def plant(rows: str) -> None:
+            """Write a ledger of format 1 with the rows of the text."""
+            ledger.write_text(f"# The planted ledger.\nformat 1\nrule {RULE}\n{rows}", encoding="utf-8")
+
+        plant("include/fixy/Planted.h | - | 16 | - | -\n")
+        expect("a ledger that matches passes", captured(lambda: check(root))[0] == 0)
 
         # A check file of a layer header is part of that layer.  A check file
         # of include/crucible is outside the roots, as its header is.
@@ -587,61 +618,72 @@ def self_test() -> int:
         expect("counted: a site in the check file of a layer header", in_checks == [(moved.relative_to(root).as_posix(), 2)])
         expect("not counted: a site in the check file of a crucible header",
                not any(path.startswith("test/layer/checks/crucible/") for path, _row in in_checks), True)
-        code, report = captured(lambda: check(root, ledger))
+        code, report = captured(lambda: check(root))
         expect("a site that a check file adds and the ledger does not name fails",
                code == 1 and "NEW SITE  test/layer/checks/fixy/Planted.cpp: 1" in report, True)
         moved.unlink()
         outside_check.unlink()
 
-        ledger.write_text("include/fixy/Planted.h\t15\n", encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
+        plant("include/fixy/Planted.h | - | 15 | - | -\n")
+        code, report = captured(lambda: check(root))
         expect("one more site than the ledger permits fails", code == 1 and "NEW SITE  include/fixy/Planted.h: 16"
                in report, True)
         clash = root / "include/crucible/Clash.h"
         clash.write_text("template <class A, class B, class Brand = ::foundation::brand::DefaultBrand> class Novel;\n",
                          encoding="utf-8")
-        ledger.write_text("include/fixy/Planted.h\t16\n", encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
+        plant("include/fixy/Planted.h | - | 16 | - | -\n")
+        code, report = captured(lambda: check(root))
         expect("two templates of one name with the brand at two positions fail",
                code == 1 and "Novel: two primary declarations" in report, True)
         clash.unlink()
-        ledger.write_text("include/fixy/Planted.h\t18\n", encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
+        plant("include/fixy/Planted.h | - | 18 | - | -\n")
+        code, report = captured(lambda: check(root))
         expect("a ledger above the tree is stale", code == 2 and "STALE" in report, True)
-        ledger.write_text("", encoding="utf-8")
-        expect("an empty ledger refuses every site", captured(lambda: check(root, ledger))[0] == 1, True)
+        plant("")
+        expect("an empty ledger refuses every site", captured(lambda: check(root))[0] == 1, True)
         ledger.unlink()
-        expect("a missing ledger refuses every site", captured(lambda: check(root, ledger))[0] == 1, True)
-        ledger.write_text("include/fixy/Planted.h nine\n", encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
-        expect("a malformed row fails", code != 0 and "MALFORMED" in report, True)
-        ledger.write_text("include/fixy/Planted.h\t16\ninclude/fixy/Planted.h\t40\n", encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
-        expect("a second row for one file fails", code != 0 and "DUPLICATE line 2" in report, True)
+        expect("a missing ledger refuses every site", captured(lambda: check(root))[0] == 1, True)
+        plant("include/fixy/Planted.h | - | nine | - | -\n")
+        code, report = captured(lambda: check(root))
+        expect("a malformed row fails at its place", code != 0 and f"MALFORMED {LEDGER}:4:" in report, True)
+        plant("include/fixy/Planted.h | site | 16 | - | -\n")
+        code, report = captured(lambda: check(root))
+        expect("a row with a kind fails", code != 0 and f"MALFORMED {LEDGER}:4:" in report, True)
+        plant("include/fixy/Planted.h | - | 16 | - | -\ninclude/fixy/Planted.h | - | 40 | - | -\n")
+        code, report = captured(lambda: check(root))
+        expect("a second row for one file fails", code != 0 and f"MALFORMED {LEDGER}:5:" in report
+               and "has a second row" in report, True)
+        expect("--refresh refuses while the ledger cannot be read", captured(lambda: refresh(root))[0] == 1, True)
+        ledger.unlink()
         expect("--refresh writes a ledger that passes",
-               captured(lambda: refresh(root, ledger))[0] == 0 and captured(lambda: check(root, ledger))[0] == 0)
-        expect("the refreshed ledger carries the header", ledger.read_text().startswith(LEDGER_HEADER))
+               captured(lambda: refresh(root))[0] == 0 and captured(lambda: check(root))[0] == 0)
+        expect("a new ledger carries the head comment", ledger.read_text(encoding="utf-8").startswith(COMMENT))
+        plant("include/fixy/Planted.h | - | 18 | - | a planted reason\n")
+        expect("--refresh keeps the head comment and the reason of a row",
+               captured(lambda: refresh(root))[0] == 0 and ledger.read_text(encoding="utf-8").startswith(
+                   "# The planted ledger.\n")
+               and "include/fixy/Planted.h | - | 16 | - | a planted reason\n" in ledger.read_text(encoding="utf-8"))
 
         (root / "include/fixy/Open.h").write_text("#define OPEN(x) Permission<x\n", encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
+        code, report = captured(lambda: check(root))
         expect("a list in a macro body that does not close is unreadable and fails",
                code == 1 and "UNREADABLE include/fixy/Open.h:1" in report, True)
-        expect("--refresh refuses while a list is unreadable", captured(lambda: refresh(root, ledger))[0] == 1, True)
+        expect("--refresh refuses while a list is unreadable", captured(lambda: refresh(root))[0] == 1, True)
         (root / "include/fixy/Open.h").unlink()
 
         (root / "include/fixy/Broken.h").write_text("void f() { g(1) { } }\n", encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
+        code, report = captured(lambda: check(root))
         expect("a file the parser cannot read fails", code == 1 and "include/fixy/Broken.h" in report, True)
         (root / "include/fixy/Broken.h").unlink()
 
         previous = Path.cwd()
         os.chdir("/")
         try:
-            from_slash = captured(lambda: check(root, ledger))
+            from_slash = captured(lambda: check(root))
         finally:
             os.chdir(previous)
         expect("the report from / equals the report from the repository", from_slash == captured(
-            lambda: check(root, ledger)))
+            lambda: check(root)))
     if failures:
         print(f"check-brand-drain --self-test: FAILED — {len(failures)} case(s) did not hold")
         return 2
@@ -652,14 +694,13 @@ def self_test() -> int:
 def main(argv: list[str]) -> int:
     """Run one mode."""
     root = tsast.REPO_ROOT
-    ledger = root / LEDGER
     try:
         if argv == []:
-            return check(root, ledger)
+            return check(root)
         if argv == ["--self-test"]:
             return self_test()
         if argv == ["--refresh"]:
-            return refresh(root, ledger)
+            return refresh(root)
         if argv == ["--list"]:
             sites, unreadable, failures = scan(root)
             for site in sites:

@@ -7,8 +7,9 @@ usage: loop derive              write each generated file of REFRESH, then run e
 THE REFRESH
     A commit that moves, renames or deletes a path can leave a generated file
     that names it, and two kinds of drift need a check:
-      * A path goes dead.  A key of an allowlist or a sentence names a file
-        that is no longer there.  The check of the allowlist keys finds it.
+      * A path goes dead.  A sentence of the guide or the PATH cell of a
+        ledger row names a file that is no longer there.  The check of the
+        prose paths and the rule ledger-owners find it.
       * The content goes stale while each path still resolves.  The mint
         inventory can stop counting a mint, and only a new write shows it.
     `loop derive` writes each generated file of REFRESH, and then it runs
@@ -82,7 +83,8 @@ TARGETS = {
 REFRESH = ("mint-inventory", "witness-fixtures", "walk-units")
 # The checks of the refresh, in the order that a moved path breaks them: a label and a command.
 CHECKS = (
-    ("allowlist keys and prose", ("bash", str(REPO_ROOT / "utils" / "scripts" / "check-allowlist-keys.sh"))),
+    ("prose paths", ("bash", str(REPO_ROOT / "utils" / "scripts" / "check-allowlist-keys.sh"))),
+    ("ledger paths", (sys.executable, str(GUARD), "check", "--rule", "ledger-owners")),
     ("mint inventory", (sys.executable, str(LOOP), "derive", "mint-inventory", "--check")),
     ("witness roster", (sys.executable, str(GUARD), "check", "--rule", "witness-roster", "--check")),
     ("walk units", (sys.executable, str(GUARD), "check", "--rule", "walk-units")),

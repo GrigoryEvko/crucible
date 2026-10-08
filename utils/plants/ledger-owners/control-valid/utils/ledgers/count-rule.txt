@@ -1,0 +1,8 @@
+# a planted ledger of the policy count: two configurations, a row of a file of the build directory and a difference row
+format 1
+rule count-rule
+configuration base machine x86_64
+configuration arm machine aarch64
+@build/gen/table.c | kind | 1 | - | -
+data/live.txt | kind | 2 | - | -
+@arm | data/live.txt | kind | -1 | - | -

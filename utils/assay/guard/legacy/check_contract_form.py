@@ -41,19 +41,20 @@ WHAT THE CHECK READS
     after `CRUCIBLE_PRE(decide::positive(n))` is an error, and
     `[[assume(p->size > 0)]]` after `CRUCIBLE_PRE(p != nullptr)` is not.
 
-THE ALLOWLIST
-    utils/scripts/contract-form-allowlist.txt admits a file whose subject is
-    the specifier itself.  A row is `path | reason`.  A specifier in a listed
-    file is no finding.  A listed file that holds no specifier is an error,
-    so the list only shrinks.  A row with no reason, a row for a file that is
-    not a tracked C++ file and a second row for one file are errors.  The
-    allowlist does not apply to the assumption rule.
+THE LEDGER
+    utils/ledgers/contract-form.txt (the ledger module assay.core.ledger,
+    policy admit) admits a file whose subject is the specifier itself.  A row
+    is `PATH | - | admit | - | REASON`.  A specifier in an admitted file is
+    no finding.  An admitted file that holds no specifier is an error, so the
+    ledger only shrinks.  A file that does not obey the schema, a row with a
+    kind or an entity, and a row for a file that is not a tracked C++ file
+    are errors.  A missing file admits no file.  The ledger does not apply to
+    the assumption rule.
 
 LEVELS
-    Each finding is an error.  The tree has no specifier outside the
-    allowlist and no assumption about the values of a contract check of its
-    body, and the compiler rejects each specifier, so the check has no ledger
-    and no warning.
+    Each finding is an error.  The tree has no specifier outside the ledger
+    and no assumption about the values of a contract check of its body, and
+    the compiler rejects each specifier, so the check gives no warning.
 
 Usage
     guard check --rule contract-form [--warnings-dir DIR]
@@ -73,11 +74,13 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
 from assay.core import report as check_report
+from assay.core import rows as rows_grammar
 from assay.readers import tsast
 
 CHECK = "contract-form"
-ALLOWLIST = Path("utils/scripts/contract-form-allowlist.txt")
+LEDGER = Path(rule_ledger.shown_path(CHECK))
 SPECIFIER = "function_contract_specifier"
 REPLACEMENT = {
     "pre": "write CRUCIBLE_PRE(condition) of foundation/contracts/Pre.h as the first statement of the function body",
@@ -254,45 +257,40 @@ def assumption_findings(rel: str, tree: tsast.Tree) -> list[check_report.Finding
 
 @dataclass(frozen=True)
 class Admission:
-    """One row of the allowlist."""
+    """One row of the ledger."""
 
     path: str
     reason: str
     line: int
 
 
-def read_allowlist(root: Path) -> tuple[dict[str, Admission], list[check_report.Finding]]:
-    """Read the allowlist of one tree.
+def read_ledger(root: Path) -> tuple[dict[str, Admission], list[check_report.Finding]]:
+    """Read the ledger of one tree.
 
     Args:
         root: The root of the tree
 
     Returns:
-        The rows by path, and one error for each row that the check refuses or for a missing file
+        The rows by path, and one error for a file that the check cannot read or for each row that it refuses
     """
-    shown = ALLOWLIST.as_posix()
-    path = root / ALLOWLIST
+    shown = LEDGER.as_posix()
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(CHECK), root)
+    except rows_grammar.RowsError as problem:
+        return {}, [check_report.Finding("error", problem.path, problem.line, CHECK,
+                                         f"the ledger does not obey its schema, so the check cannot know which file "
+                                         f"it admits: {str(problem).removeprefix(f'{problem.path}:{problem.line}: ')}")]
+    except (OSError, UnicodeDecodeError) as exc:
+        return {}, [check_report.Finding("error", shown, 0, CHECK, f"the ledger cannot be read, so the check cannot "
+                                                                   f"know which file it admits: {exc}")]
     rows: dict[str, Admission] = {}
     errors: list[check_report.Finding] = []
-    try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
-        return rows, [check_report.Finding("error", shown, 0, CHECK, f"the allowlist cannot be read, so the check "
-                                                                     f"cannot know which file it admits: {exc}")]
-    for number, raw in enumerate(text.splitlines(), start=1):
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("#"):
+    for key, entry in sorted(ledger.base.items()):
+        if key.kind or key.entity:
+            errors.append(check_report.Finding("error", shown, entry.line, CHECK,
+                                               "a row is `PATH | - | admit | - | REASON`, with no kind and no entity"))
             continue
-        listed, _bar, reason = (cell.strip() for cell in stripped.partition("|"))
-        if not listed or not reason:
-            errors.append(check_report.Finding("error", shown, number, CHECK,
-                                               "a row is `path | reason`, and the reason is necessary"))
-            continue
-        if listed in rows:
-            errors.append(check_report.Finding("error", shown, number, CHECK,
-                                               f"{listed} has a second row.  Keep one row for each file."))
-            continue
-        rows[listed] = Admission(listed, reason, number)
+        rows[key.path] = Admission(key.path, entry.reason, entry.line)
     return rows, errors
 
 
@@ -307,7 +305,7 @@ def evaluate(root: Path) -> list[check_report.Finding]:
     Returns:
         The findings
     """
-    rows, findings = read_allowlist(root)
+    rows, findings = read_ledger(root)
     files = [rel for rel in tsast.tracked_files(root) if tsast.is_in_cpp_scope(rel) and (root / rel).is_file()]
     relative_of = {(root / rel).as_posix(): rel for rel in files}
     holders: set[str] = set()
@@ -332,12 +330,12 @@ def evaluate(root: Path) -> list[check_report.Finding]:
     for admission in rows.values():
         if admission.path not in tracked:
             findings.append(check_report.Finding(
-                "error", ALLOWLIST.as_posix(), admission.line, CHECK,
+                "error", LEDGER.as_posix(), admission.line, CHECK,
                 f"{admission.path} is not a C++ file that git tracks.  Delete the row."))
         elif admission.path not in holders:
             findings.append(check_report.Finding(
-                "error", ALLOWLIST.as_posix(), admission.line, CHECK,
-                f"{admission.path} holds no contract specifier.  The list only shrinks: delete the row."))
+                "error", LEDGER.as_posix(), admission.line, CHECK,
+                f"{admission.path} holds no contract specifier.  The ledger only shrinks: delete the row."))
     return findings
 
 
@@ -403,6 +401,12 @@ inline const char* text = "int in_a_text(int value) pre(value > 0);";
 """
 
 ADMITTED = "int admitted(int value) pre(value > 0);\n"
+ADMITTED_ROW = "test/neg/Admitted.cpp | - | admit | - | the subject of the fixture is the specifier"
+
+
+def planted_ledger(*rows: str) -> str:
+    """Return the text of a planted ledger of the rule with the rows."""
+    return f"# planted\nformat {rule_ledger.FORMAT}\nrule {CHECK}\n" + "".join(f"{row}\n" for row in rows)
 
 # Each shape of an assumption about the values of a contract of its body, one on
 # each line of RESTATED_LINES: after the check, the same values in another
@@ -514,13 +518,12 @@ def self_test() -> int:
         root = Path(work)
         (root / "include/planted").mkdir(parents=True)
         (root / "test/neg").mkdir(parents=True)
-        (root / ALLOWLIST).parent.mkdir(parents=True)
+        (root / LEDGER).parent.mkdir(parents=True)
         (root / "include/planted/Forms.h").write_text(FORMS, encoding="utf-8")
         (root / "include/planted/Clean.h").write_text(CLEAN, encoding="utf-8")
         (root / "test/neg/Admitted.cpp").write_text(ADMITTED, encoding="utf-8")
-        allowlist = root / ALLOWLIST
-        allowlist.write_text("# planted\ntest/neg/Admitted.cpp | the subject of the fixture is the specifier\n",
-                             encoding="utf-8")
+        ledger = root / LEDGER
+        ledger.write_text(planted_ledger(ADMITTED_ROW), encoding="utf-8")
 
         found = evaluate(root)
         forms = {(item.line, item.message.split("`")[1]) for item in found if item.path == "include/planted/Forms.h"}
@@ -530,13 +533,13 @@ def self_test() -> int:
                all(item.level == "error" and "CRUCIBLE_P" in item.message for item in found))
         expect("a name, an assertion, a macro call, a comment and a text are no specifier",
                not [item for item in found if item.path == "include/planted/Clean.h"])
-        expect("a specifier in a listed file is no finding",
+        expect("a specifier in an admitted file is no finding",
                not [item for item in found if item.path == "test/neg/Admitted.cpp"])
         expect("the planted tree has no other finding",
                all(item.path == "include/planted/Forms.h" for item in found), found)
 
         (root / "include/planted/Forms.h").write_text(CLEAN, encoding="utf-8")
-        expect("a tree with no specifier outside the allowlist gives no finding", evaluate(root) == [])
+        expect("a tree with no specifier outside the ledger gives no finding", evaluate(root) == [])
 
         (root / "include/planted/Restated.h").write_text(RESTATED, encoding="utf-8")
         (root / "include/planted/Independent.h").write_text(INDEPENDENT, encoding="utf-8")
@@ -554,29 +557,32 @@ def self_test() -> int:
         (root / "test/neg/Admitted.cpp").write_text(ADMITTED + "int f(int n) {\n    CRUCIBLE_PRE(n > 0);\n"
                                                     "    [[assume(n > 0)]];\n    return n;\n}\n", encoding="utf-8")
         found = evaluate(root)
-        expect("the allowlist does not admit an assumption about the values of a contract",
+        expect("the ledger does not admit an assumption about the values of a contract",
                any(item.path == "test/neg/Admitted.cpp" and item.line == 4 for item in found), found)
         (root / "test/neg/Admitted.cpp").write_text(ADMITTED, encoding="utf-8")
         (root / "include/planted/Restated.h").unlink()
         (root / "include/planted/Independent.h").unlink()
 
         for text, label, needle in (
-                ("test/neg/Admitted.cpp\n", "a row with no reason", "the reason is necessary"),
-                ("test/neg/Admitted.cpp | a reason\ntest/neg/Admitted.cpp | again\n", "a second row for one file",
-                 "has a second row"),
-                ("test/neg/Admitted.cpp | a reason\ntest/neg/Gone.cpp | a reason\n", "a row for a missing file",
-                 "is not a C++ file that git tracks"),
-                ("test/neg/Admitted.cpp | a reason\ninclude/planted/Clean.h | a reason\n",
-                 "a row for a file that holds no specifier", "holds no contract specifier")):
-            allowlist.write_text(text, encoding="utf-8")
+                (planted_ledger("test/neg/Admitted.cpp | - | admit | - | -"), "a row with no reason",
+                 "gives a reason"),
+                (planted_ledger(ADMITTED_ROW, "test/neg/Admitted.cpp | - | admit | - | again"),
+                 "a second row for one file", "has a second row"),
+                (planted_ledger(ADMITTED_ROW, "test/neg/Gone.cpp | - | admit | - | a reason"),
+                 "a row for a missing file", "is not a C++ file that git tracks"),
+                (planted_ledger(ADMITTED_ROW, "include/planted/Clean.h | - | admit | - | a reason"),
+                 "a row for a file that holds no specifier", "holds no contract specifier"),
+                (planted_ledger(ADMITTED_ROW, "include/planted/Clean.h | kind | admit | - | a reason"),
+                 "a row with a kind", "no kind and no entity")):
+            ledger.write_text(text, encoding="utf-8")
             found = evaluate(root)
-            expect(f"an error: {label}", any(item.level == "error" and item.path == ALLOWLIST.as_posix()
+            expect(f"an error: {label}", any(item.level == "error" and item.path == LEDGER.as_posix()
                                              and needle in item.message for item in found), found)
-        allowlist.unlink()
+        ledger.unlink()
         found = evaluate(root)
-        expect("an error: a missing allowlist", any("cannot be read" in item.message for item in found), found)
-        allowlist.write_text("test/neg/Admitted.cpp | the subject of the fixture is the specifier\n",
-                             encoding="utf-8")
+        expect("a missing ledger admits no file",
+               any(item.path == "test/neg/Admitted.cpp" and "specifier" in item.message for item in found), found)
+        ledger.write_text(planted_ledger(ADMITTED_ROW), encoding="utf-8")
 
         (root / "include/planted/Broken.h").write_text("void f() { g(1) { } }\n", encoding="utf-8")
         found = evaluate(root)

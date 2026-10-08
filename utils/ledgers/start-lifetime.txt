@@ -1,0 +1,30 @@
+# The ledger of the rule start-lifetime: the reviewed uses of std::start_lifetime_as and
+# std::start_lifetime_as_array.  A row PATH | - | admit | KEY | REASON admits one use in the file PATH
+# with the key KEY, and a row PATH | - | admit | KEY xN | REASON admits N uses.  The key is the name and
+# its template argument list, with the white space reduced, as the rule prints it.
+#
+# A row can name two places only: the checked start in include/foundation/Lifetime.h and a negative
+# fixture.  The rule refuses a row for each other path.  New code calls
+# foundation::lifetime::start_as_array, which refuses a proof subobject at compile time, and needs no
+# row.  The checked start does not call the library function, so it has no row.
+#
+# `python3 utils/bin/guard explain start-lifetime` tells the rule.  No command writes this file: write
+# each row by hand, with its reason.
+format 1
+rule start-lifetime
+test/fixy/neg/neg_sess_crash_reporter_by_start_lifetime_as.cpp | - | admit | start_lifetime_as<s::CrashReporter> | A negative fixture.  It applies std::start_lifetime_as to one proof type and must fail to compile.  That shows that the proof type is not an implicit-lifetime type
+test/fixy/neg/neg_sess_delegated_session_forged_by_start_lifetime_as.cpp | - | admit | start_lifetime_as<t::Carried> | A negative fixture.  It applies std::start_lifetime_as to one proof type and must fail to compile.  That shows that the proof type is not an implicit-lifetime type
+test/fixy/neg/neg_sess_event_forged_by_start_lifetime_as.cpp | - | admit | start_lifetime_as<s::SessionEvent> | A negative fixture.  It applies std::start_lifetime_as to one proof type and must fail to compile.  That shows that the proof type is not an implicit-lifetime type
+test/foundation/neg/neg_bg_context_forged_by_start_lifetime_as.cpp | - | admit | start_lifetime_as<fe::Bg> | A negative fixture.  It applies std::start_lifetime_as to one proof type and must fail to compile.  That shows that the proof type is not an implicit-lifetime type
+test/foundation/neg/neg_bg_exec_ctx_forged_by_start_lifetime_as.cpp | - | admit | start_lifetime_as<fe::ExecCtx<fe::Bg,fe::Row<fe::Effect::Bg,fe::Effect::Block>>> | A negative fixture.  It applies std::start_lifetime_as to one proof type and must fail to compile.  That shows that the proof type is not an implicit-lifetime type
+test/foundation/neg/neg_bg_key_forged_by_start_lifetime_as.cpp | - | admit | start_lifetime_as<fe::detail::ctx_mint::bg_key> | A negative fixture.  It applies std::start_lifetime_as to one proof type and must fail to compile.  That shows that the proof type is not an implicit-lifetime type
+test/foundation/neg/neg_cap_mint_key_forged_by_start_lifetime_as.cpp | - | admit | start_lifetime_as<fe::cap_mint_key> | A negative fixture.  It applies std::start_lifetime_as to one proof type and must fail to compile.  That shows that the proof type is not an implicit-lifetime type
+test/foundation/neg/neg_capability_forged_by_start_lifetime_as.cpp | - | admit | start_lifetime_as<fe::Capability<fe::Effect::Block,fe::Bg>> | A negative fixture.  It applies std::start_lifetime_as to one proof type and must fail to compile.  That shows that the proof type is not an implicit-lifetime type
+test/foundation/neg/neg_init_context_forged_by_start_lifetime_as.cpp | - | admit | start_lifetime_as<fe::Init> | A negative fixture.  It applies std::start_lifetime_as to one proof type and must fail to compile.  That shows that the proof type is not an implicit-lifetime type
+test/foundation/neg/neg_init_key_forged_by_start_lifetime_as.cpp | - | admit | start_lifetime_as<fe::detail::ctx_mint::init_key> | A negative fixture.  It applies std::start_lifetime_as to one proof type and must fail to compile.  That shows that the proof type is not an implicit-lifetime type
+test/foundation/neg/neg_lent_permission_forged_by_start_lifetime_as.cpp | - | admit | start_lifetime_as<fp::LentPermission<Region>> | A negative fixture.  It applies std::start_lifetime_as to one proof type and must fail to compile.  That shows that the proof type is not an implicit-lifetime type
+test/foundation/neg/neg_permission_forged_by_start_lifetime_as.cpp | - | admit | start_lifetime_as<fp::Permission<Region>> | A negative fixture.  It applies std::start_lifetime_as to one proof type and must fail to compile.  That shows that the proof type is not an implicit-lifetime type
+test/foundation/neg/neg_read_loan_forged_by_start_lifetime_as.cpp | - | admit | start_lifetime_as<fp::ReadLoan<Region>> | A negative fixture.  It applies std::start_lifetime_as to one proof type and must fail to compile.  That shows that the proof type is not an implicit-lifetime type
+test/foundation/neg/neg_read_view_forged_by_start_lifetime_as.cpp | - | admit | start_lifetime_as<fp::ReadView<Region>> | A negative fixture.  It applies std::start_lifetime_as to one proof type and must fail to compile.  That shows that the proof type is not an implicit-lifetime type
+test/foundation/neg/neg_test_context_forged_by_start_lifetime_as.cpp | - | admit | start_lifetime_as<fe::Test> | A negative fixture.  It applies std::start_lifetime_as to one proof type and must fail to compile.  That shows that the proof type is not an implicit-lifetime type
+test/foundation/neg/neg_test_key_forged_by_start_lifetime_as.cpp | - | admit | start_lifetime_as<fe::detail::ctx_mint::test_key> | A negative fixture.  It applies std::start_lifetime_as to one proof type and must fail to compile.  That shows that the proof type is not an implicit-lifetime type

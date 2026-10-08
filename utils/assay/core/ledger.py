@@ -15,6 +15,12 @@ THE FILE
     rule with the policy none has no ledger, and a ledger with no rows has no
     file.
 
+    PATH is a path relative to the source root, a path of the build directory
+    with the prefix @build/, or "-" for a row that names no file.  Key.path
+    is "" for such a row, in a base row and in a difference row.  A head
+    @NAME with no "/" starts a difference row, so the head of a base row of a
+    file of the build directory, @build/PATH, is never a difference row.
+
 THE POLICIES
     count     VALUE is a positive count.  A key with more findings than its
               row, or a file with a finding and no row, is an error.  A key
@@ -30,7 +36,14 @@ THE POLICIES
               against the row, so compare() does not read this policy.
     A row of the policy count or admit that admits a finding gives a warning
     on each run, one warning for each PATH, so each admitted item stays in
-    the output of the rule.
+    the output of the rule.  The text of the warning tells the action of the
+    policy: a count falls when its findings go, and an admit row goes with
+    the finding that it admits.
+
+A MODULE OUTSIDE THE ENGINES
+    A legacy module that reads its own ledger gets its rule with rule_of(),
+    reads the rows with read() and writes them with store().  A self-test
+    gives read() and store() the path of a planted ledger.
 
 THE CONFIGURATIONS
     A rule whose findings change with the build has configuration rows.  The
@@ -158,11 +171,17 @@ class Ledger:
         return {key: count for key, count in counts.items() if count != 0}
 
     def line_of(self, key: Key, name: str | None = None) -> int:
-        """Return the line of the row of a key: the difference row, else the base row, else the first row of its path."""
-        entry = (self.deltas.get(name, {}).get(key) if name is not None else None) or self.base.get(key)
+        """Return the line of the row of a key: the difference row, else the base row, else the first row of its path.
+
+        The first row of its path is a base row or a difference row of the configuration, so a new entity of a file
+        points at the file.  Complexity: O(1) for a key with a row, else linear in the rows.
+        """
+        delta_table = self.deltas.get(name, {}) if name is not None else {}
+        entry = delta_table.get(key) or self.base.get(key)
         if entry is not None:
             return entry.line
-        return min((item.line for item in self.base.values() if item.key.path == key.path), default=0)
+        return min((item.line for item in [*self.base.values(), *delta_table.values()] if item.key.path == key.path),
+                   default=0)
 
 
 def ledger_path(rule_id: str, root: Path = REPO_ROOT) -> Path:
@@ -256,7 +275,7 @@ def parse(text: str, shown: str, rule_id: str, policy: Policy) -> Ledger:
         is_header = False
         if len(row.words) != 1:
             raise row.error("an entry row is 'PATH | KIND | VALUE | ENTITY | REASON', and a path has no space")
-        if row.words[0].startswith(DELTA_MARK):
+        if is_delta_head(row.words[0]):
             name = row.words[0][1:]
             if policy != Policy.COUNT or name not in facts or name == configurations[0].name or len(row.cells) != 5:
                 raise row.error("a difference row is '@NAME | PATH | KIND | +N|-N | ENTITY | REASON', of the policy "
@@ -269,7 +288,7 @@ def parse(text: str, shown: str, rule_id: str, policy: Policy) -> Ledger:
             continue
         if len(row.cells) != 4:
             raise row.error("an entry row is 'PATH | KIND | VALUE | ENTITY | REASON'")
-        key = Key(row.words[0], row.cells[0], row.cells[2])
+        key = Key(path_of_head(row.words[0]), row.cells[0], row.cells[2])
         if key in base:
             raise row.error(f"the key {key} has a second row.  The first is at line {base[key].line}")
         reason = row.cells[3]
@@ -285,23 +304,62 @@ def parse(text: str, shown: str, rule_id: str, policy: Policy) -> Ledger:
     return ledger
 
 
+def is_delta_head(head: str) -> bool:
+    """Whether the head of an entry row starts a difference row: @NAME with no "/" (THE FILE)."""
+    return head.startswith(DELTA_MARK) and "/" not in head
+
+
+def path_of_head(head: str) -> str:
+    """Return the PATH of the head of a base row: "" for the word "-", as the cell "-" of a difference row is."""
+    return "" if head == rows_grammar.EMPTY_CELL else head
+
+
+def head_of_path(path: str) -> str:
+    """Return the head word of the PATH of a base row: "-" for a row that names no file."""
+    return path or rows_grammar.EMPTY_CELL
+
+
 def rows_grammar_name(text: str) -> bool:
     """Whether a text is the name of a configuration: lowercase letters, digits, '_', '.' and '-', from a letter."""
     return bool(text) and "a" <= text[0] <= "z" and all(
         "a" <= character <= "z" or "0" <= character <= "9" or character in "_.-" for character in text)
 
 
-def read(rule: Rule, root: Path = REPO_ROOT) -> Ledger:
+def rule_of(rule_id: str) -> Rule:
+    """Return the rule of the registry with an ID, for a legacy module that reads and writes its own ledger.
+
+    Raises:
+        LedgerError: If the registry has no such rule, or the rule has the policy none
+        rows_grammar.RowsError: If the registry does not obey its schema
+        OSError: If the registry cannot be read
+    """
+    from assay.core import registry as rule_registry
+
+    rule = rule_registry.load().rules.get(rule_id)
+    if rule is None:
+        raise LedgerError(f"the registry {rule_registry.REGISTRY_PATH} has no rule {rule_id}")
+    if rule.policy == Policy.NONE:
+        raise LedgerError(f"the rule {rule_id} has the policy none, and such a rule has no ledger")
+    return rule
+
+
+def read(rule: Rule, root: Path = REPO_ROOT, file: Path | None = None) -> Ledger:
     """Read the ledger of a rule, or give an empty ledger when the rule has no file.
+
+    Args:
+        rule: The rule
+        root: The source root of the file utils/ledgers/RULE.txt
+        file: The file to read in place of that file, for a planted ledger of a self-test
 
     Raises:
         rows_grammar.RowsError: If the file does not obey its schema
         OSError: If the file exists and cannot be read
     """
-    path = ledger_path(rule.id, root)
+    path = file if file is not None else ledger_path(rule.id, root)
     if not path.is_file():
         return empty(rule)
-    return parse(path.read_text(encoding="utf-8"), shown_path(rule.id), rule.id, rule.policy)
+    shown = shown_path(rule.id) if file is None else str(file)
+    return parse(path.read_text(encoding="utf-8"), shown, rule.id, rule.policy)
 
 
 def value_text(value: int | float | str) -> str:
@@ -321,7 +379,8 @@ def render(ledger: Ledger) -> str:
                for key, value in item.facts]
     # The first item of a key puts each base row before each difference row.
     entries = [(("0", key.path, key.kind, key.entity),
-                rows_grammar.render([key.path], [key.kind, value_text(entry.value), key.entity, entry.reason]))
+                rows_grammar.render([head_of_path(key.path)], [key.kind, value_text(entry.value), key.entity,
+                                                               entry.reason]))
                for key, entry in ledger.base.items()]
     entries += [(("1", name, key.path, key.kind, key.entity),
                  rows_grammar.render([f"{DELTA_MARK}{name}"], [key.path, key.kind, f"{int(entry.value):+d}",
@@ -330,13 +389,18 @@ def render(ledger: Ledger) -> str:
     return rows_grammar.compose(ledger.comment, header, entries)
 
 
-def store(ledger: Ledger, root: Path = REPO_ROOT) -> bool:
+def store(ledger: Ledger, root: Path = REPO_ROOT, file: Path | None = None) -> bool:
     """Write a ledger, or remove its file when it has no row.  Return True when the file changed.
+
+    Args:
+        ledger: The ledger
+        root: The source root of the file utils/ledgers/RULE.txt
+        file: The file to write in place of that file, for a planted ledger of a self-test
 
     Raises:
         OSError: If the file cannot be written or removed
     """
-    path = ledger_path(ledger.rule, root)
+    path = file if file is not None else ledger_path(ledger.rule, root)
     if not ledger.base and not any(ledger.deltas.values()) and not ledger.configurations:
         if path.exists():
             path.unlink()
@@ -365,6 +429,16 @@ def described(key: Key) -> str:
     return " ".join(parts) if parts else "the finding"
 
 
+def admitted_text(rule: Rule, path: str, total: int, shown: str) -> str:
+    """Return the message of the warning of one path with admitted findings, with the action of the policy."""
+    if rule.policy == Policy.COUNT:
+        return (f"{path} keeps {total} findings that the ledger counts: {shown}.  Remove a finding, and lower its "
+                f"count in the same change with `python3 utils/bin/guard write --rule {rule.id}`")
+    return (f"{path} has {total} findings that rows of the ledger admit: {shown}.  Each row gives its reason, and a "
+            f"row goes in the change that removes its finding.  `python3 utils/bin/guard explain {rule.id}` gives the "
+            f"rule")
+
+
 def admitted_warnings(rule: Rule, admitted: Mapping[str, Counter[str]], lines: Mapping[str, int]) -> list[check_report.Finding]:
     """Return one warning for each path with admitted findings: the number of findings of each kind."""
     findings: list[check_report.Finding] = []
@@ -372,8 +446,7 @@ def admitted_warnings(rule: Rule, admitted: Mapping[str, Counter[str]], lines: M
         shown = ", ".join(f"{kind or 'no kind'} {count}" for kind, count in sorted(kinds.items()))
         findings.append(check_report.Finding(
             "warning", shown_path(rule.id), lines.get(path, 0), rule.id,
-            f"{path} keeps {sum(kinds.values())} findings that the ledger admits: {shown}.  Remove them, and write "
-            f"the ledger again with `guard write --rule {rule.id}`", "admitted", path))
+            admitted_text(rule, path, sum(kinds.values()), shown), "admitted", path))
     return findings
 
 
@@ -482,12 +555,29 @@ def write(rule: Rule, ledger: Ledger, findings: Sequence[check_report.Finding], 
 
     Complexity: O(f log f + r) for f findings and r rows.
     """
+    counts = Counter(key_of(finding) for finding in findings if finding.level == "error")
+    return write_counts(rule, ledger, counts, configuration, mode, reason, moved)
+
+
+def write_counts(rule: Rule, ledger: Ledger, counts: Mapping[Key, int], configuration: str | None = None,
+                 mode: WriteMode = WriteMode.LOWER, reason: str | None = None,
+                 moved: Mapping[str, str] | None = None) -> Ledger:
+    """Return the ledger that admits the count of each key, as write() does for the error findings of a rule.
+
+    A legacy module that counts its findings itself, such as the ratchet of
+    the quarantine, writes its ledger with this function.
+
+    Raises:
+        LedgerError: If the mode refuses a count, the policy has no write here, or a necessary reason is missing
+
+    Complexity: O(k log k + r) for k counts and r rows.
+    """
     if rule.policy in (Policy.NONE, Policy.MAX, Policy.BASELINE):
         raise LedgerError(f"the rule {rule.id} has the policy {rule.policy}, and its own module writes such a ledger")
     if mode == WriteMode.ADMIT and not reason:
         raise LedgerError("a write in the mode admit gives a reason with --reason TEXT")
     moved = dict(moved or {})
-    counts = Counter(key_of(finding) for finding in findings if finding.level == "error")
+    counts = {key: count for key, count in counts.items() if count > 0}
     base = moved_entries(ledger.base, moved)
     deltas = {name: moved_entries(table, moved) for name, table in ledger.deltas.items()}
     if rule.policy == Policy.ADMIT:
@@ -510,7 +600,9 @@ def write(rule: Rule, ledger: Ledger, findings: Sequence[check_report.Finding], 
         new_base = {key: Entry(key, count, base[key].reason if key in base else (reason or "")) for key, count in
                     counts.items()}
         return replace(ledger, base=new_base, deltas=deltas)
-    base_counts = {key: int(entry.value) for key, entry in base.items()}
+    # The difference rows are relative to the stored base rows, which keep the old path of a moved file until a write
+    # of the base moves them.
+    base_counts = {key: int(entry.value) for key, entry in ledger.base.items()}
     table = {key: Entry(key, counts.get(key, 0) - base_counts.get(key, 0),
                         deltas.get(configuration, {}).get(key, Entry(key, 0, reason or "")).reason)
              for key in set(counts) | set(base_counts) if counts.get(key, 0) != base_counts.get(key, 0)}
@@ -526,9 +618,18 @@ def rows_of_configuration(ledger: Ledger, name: str, facts: Sequence[tuple[str, 
     Raises:
         LedgerError: If the configuration is the base, or the policy is not count
     """
+    return rows_of_counts(ledger, name, facts, Counter(key_of(finding) for finding in findings
+                                                       if finding.level == "error"))
+
+
+def rows_of_counts(ledger: Ledger, name: str, facts: Sequence[tuple[str, str]], counts: Mapping[Key, int]) -> list[str]:
+    """Return the rows of a configuration other than the base for the count of each key, as rows_of_configuration().
+
+    Raises:
+        LedgerError: If the configuration is the base, or the policy is not count
+    """
     if ledger.policy != Policy.COUNT or name == ledger.base_name:
         raise LedgerError("only a configuration other than the base of a count ledger has rows to import")
-    counts = Counter(key_of(finding) for finding in findings if finding.level == "error")
     base_counts = {key: int(entry.value) for key, entry in ledger.base.items()}
     lines = [rows_grammar.render(["configuration", name, key, value]) for key, value in facts]
     lines += [rows_grammar.render([f"{DELTA_MARK}{name}"], [key.path, key.kind, f"{counts.get(key, 0) - base_counts.get(key, 0):+d}",

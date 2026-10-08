@@ -1,0 +1,70 @@
+# The ledger of the rule mint-pattern: the reviewed exemptions from the five
+# axes of section XXI.  `python3 utils/bin/guard explain mint-pattern` tells
+# the rule.  A reviewer writes each row by hand.
+#
+# One row is `PATH | AXIS-ok | admit | MINT | REASON`.  The axis is one of
+# nodiscard, noexcept, constexpr, requires and ctxfit.  A row names the mint,
+# never a line, so an edit above the mint does not move it.  PATH is the file
+# of the mint.  One row covers each overload of that name in that file,
+# because an overload set is one factory with one reason.
+#
+# The rule refuses a row that exempts nothing, and a row that it cannot read:
+#   * A row whose mint meets the axis, or that names no live mint, is stale
+#   * A row whose sites each carry their own marker for the axis is
+#     redundant, because the marker exempts each site
+#   * A row with no axis, an unknown axis, a line in place of a name, or a
+#     name that is no mint is malformed.
+# So this file only shrinks while the tree stays the same.
+#
+# An in-source marker is the other way to exempt: a `§XXI carve-out:
+# cx=alloc` or `rq=pre` comment directly above the declaration, or a
+# `MINT-PATTERN-OK: <reason>` comment on the line that names the mint.  A
+# marker exempts constexpr (cx=alloc, MINT-PATTERN-OK) or requires (rq=pre),
+# and no other axis.  One exemption lives in one place.
+#
+# Each row is a structural exemption: a mint that allocates, calls the
+# kernel, makes a resource or reads runtime state.  Section XXI lets such a
+# mint drop constexpr.  When a mint gets the shape of section XXI, or the
+# rule learns a new shape, remove the row.  Before a new row, ask if the row
+# describes a limit of the rule.  Such a row is no exemption.  On 2026-09-21
+# the rule learned to read a template parameter that a concept constrains,
+# and 50 rows went in one change.
+#
+# The kinds:
+#   constexpr-ok  a mint that allocates, calls the kernel, makes a resource
+#                 or reads runtime state.  Some rows name a mint that builds
+#                 a fixed aggregate in place and allocates nothing.  The
+#                 reason of such a row does not apply to its mint, and a
+#                 reviewer examines each such row.
+#   requires-ok   a template mint with no type-level constraint.  The rule
+#                 reads a `requires` clause and a constrained template
+#                 parameter as one constraint.
+#   ctxfit-ok     a mint that takes a context that no constraint gates, so
+#                 the mint takes each context.  `IsExecCtx Ctx` does not gate
+#                 the context.  A token mint has no such row.  A new row of
+#                 this kind is a defect, not an exemption.
+#   noexcept-ok   section XXI admits no noexcept exemption.  A row of this
+#                 kind is a defect, not an exemption.
+#   nodiscard-ok  a mint whose return value a caller can discard.  A
+#                 constructor with a passkey is not such a mint: the rule
+#                 skips each `= default` declaration.
+format 1
+rule mint-pattern
+include/crucible/CKernel.h | constexpr-ok | admit | mint_mutable_view | The mutable view mint of the registration table reads the atomic seal word of the table.  No constant evaluation can read an atomic, and -Winvalid-constexpr refuses a constexpr function that always calls a function that is not constexpr
+include/crucible/SchemaTable.h | constexpr-ok | admit | mint_mutable_view | The mutable view mint of the registration table reads the atomic seal word of the table.  No constant evaluation can read an atomic, and -Winvalid-constexpr refuses a constexpr function that always calls a function that is not constexpr
+include/crucible/Vigil.h | constexpr-ok | admit | mint_producer_context | The producer-context mint reads the thread id and the atomic claim word.  The body reads runtime state, and -Winvalid-constexpr refuses constexpr
+include/crucible/cntp/AfXdp.h | constexpr-ok | admit | mint_af_xdp_socket | A transport mint of cntp.  The mint allocates, calls the kernel, makes a resource or reads runtime state at run time, so it cannot be constexpr (section XXI)
+include/crucible/cntp/OverlayMulticast.h | constexpr-ok | admit | mint_overlay_multicast | A defect and not an exemption, as the earlier allowlist marked it.  The mint has no constexpr and no reason for that.  Give the mint constexpr, or write its true reason here
+include/crucible/observe/Metrics.h | constexpr-ok | admit | mint_canopy_metrics_reader | An allocating mint of observe.  The mint allocates, calls the kernel, makes a resource or reads runtime state at run time, so it cannot be constexpr (section XXI)
+include/crucible/observe/Metrics.h | constexpr-ok | admit | mint_keeper_metrics_reader | An allocating mint of observe.  The mint allocates, calls the kernel, makes a resource or reads runtime state at run time, so it cannot be constexpr (section XXI)
+include/crucible/observe/SyntheticProbe.h | constexpr-ok | admit | mint_synthetic_probes | An allocating mint of observe.  The mint allocates, calls the kernel, makes a resource or reads runtime state at run time, so it cannot be constexpr (section XXI)
+include/crucible/topology/Pingmesh.h | constexpr-ok | admit | mint_pingmesh | An allocating mint of topology.  The mint allocates, calls the kernel, makes a resource or reads runtime state at run time, so it cannot be constexpr (section XXI)
+include/crucible/topology/Ptp.h | constexpr-ok | admit | mint_ptp_handle | An allocating mint of topology.  The mint allocates, calls the kernel, makes a resource or reads runtime state at run time, so it cannot be constexpr (section XXI)
+include/crucible/warden/Hardening.h | constexpr-ok | admit | mint_hardening | An allocating mint of warden.  The mint allocates, calls the kernel, makes a resource or reads runtime state at run time, so it cannot be constexpr (section XXI)
+include/fixy/concurrent/SwmrSession.h | constexpr-ok | admit | mint_swmr_reader | The reader mint takes a share from an atomic reference count, so it reads runtime state and cannot be constexpr
+include/fixy/os/Spawn.h | constexpr-ok | admit | mint_parallel_for | The mint starts one jthread for each shard but the single-shard case, so a constexpr would claim a compile-time cost for a call that schedules threads
+include/fixy/os/Spawn.h | constexpr-ok | admit | mint_spawn | The mint reads the probed cache sizes and starts one jthread for each child for a set past L2, so a constexpr would claim a compile-time cost for a call that schedules threads
+include/fixy/session/CrashTransport.h | constexpr-ok | admit | mint_crash_reporter | The reporter mint claims its cell with an atomic exchange, and a second mint for one cell ends the process.  It reads and writes runtime state, so it cannot be constexpr.  The class names the mint as the friend of its only constructor, so the rule sees the signature two times, and one row covers the two sites
+include/fixy/session/CrashTransport.h | constexpr-ok | admit | mint_crash_session | The mint reads at run time the writer that it takes, so it cannot be constexpr
+include/fixy/session/CrashTransport.h | constexpr-ok | admit | mint_crash_writer | The writer mint claims its cell with an atomic exchange, so it cannot be constexpr
+include/foundation/permissions/PermissionFork.h | constexpr-ok | admit | mint_permission_fork | The fork arm that spawns starts threads, so it is not constexpr.  The inline arm is constexpr

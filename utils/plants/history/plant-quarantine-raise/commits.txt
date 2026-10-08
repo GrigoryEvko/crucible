@@ -1,3 +1,5 @@
-# A commit raises a count of the quarantine ledger, and it changes neither the plugin nor the rule table.
+# A commit raises a count of the quarantine ledger after its move from the earlier file, and it changes neither the
+# plugin nor the rule table.
 commit 1 | Count each file | The first counts.
-commit 2 | Raise a count by hand | A finding comes back.
+commit 2 | Move the ledger to the rows | Each count stays.
+commit 3 | Raise a count by hand | A finding comes back.

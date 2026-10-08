@@ -48,10 +48,12 @@ WHAT THE CHECK READS
 
 EACH CANDIDATE IS ONE OF
     process-wide  it carries the marker, as THE PATTERN says
-    per library   a row of utils/scripts/process-wide-roster.txt names it, with the
-                  reason why one copy in each library is correct.
+    per library   a row `PATH | - | admit | NAME | REASON` of
+                  utils/ledgers/process-wide-state.txt (assay.core.ledger)
+                  names it, with the reason why one copy in each library is
+                  correct.
     A row that names no candidate, or names a marked candidate, fails the
-    check.
+    check.  A ledger with no file names no candidate.
 
 WHAT THE CHECK CANNOT SEE
     A const object whose address is its meaning, such as a sentinel.  Declare
@@ -74,10 +76,13 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import NamedTuple
 
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.readers import tsast
 
 SCOPE = ("include", "src", "vessel")
-ROSTER = Path("utils/scripts/process-wide-roster.txt")
+RULE = "process-wide-state"
+ROSTER = rule_ledger.shown_path(RULE)
 MARKER = "CRUCIBLE_PROCESS_WIDE"
 ANONYMOUS = "(anonymous namespace)"
 
@@ -267,7 +272,7 @@ def marker_faults(candidate: Candidate) -> list[str]:
 
 
 class RosterRow(NamedTuple):
-    """One row of the roster: a candidate that is correct with one copy in each library."""
+    """One row of the ledger: a candidate that is correct with one copy in each library."""
 
     line: int
     path: str
@@ -276,26 +281,33 @@ class RosterRow(NamedTuple):
 
 
 def read_roster(root: Path) -> tuple[list[RosterRow], list[str]]:
-    """Read the roster rows, and the errors of each row that cannot be read.
+    """Read the rows of the ledger under a root, and the errors of each row that cannot be read.
 
-    One row is `path | qualified name | reason`.  A `#` starts a comment line,
-    and a blank line is skipped.
+    One row is `PATH | - | admit | QUALIFIED NAME | REASON`.  A root with no
+    ledger file has no row.  A ledger that does not obey the rows grammar
+    gives one error with its place and no row.
     """
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), root=root)
+    except rows_grammar.RowsError as exc:
+        return [], [str(exc)]
     rows: list[RosterRow] = []
     errors: list[str] = []
-    listing = root / ROSTER
-    if not listing.is_file():
-        return rows, [f"{ROSTER}: the roster does not exist"]
-    for number, raw in enumerate(listing.read_text(encoding="utf-8").splitlines(), start=1):
-        text = raw.strip()
-        if not text or text.startswith("#"):
+    for key, entry in sorted(ledger.base.items(), key=lambda item: item[1].line):
+        if key.kind or not key.path or not key.entity:
+            errors.append(f"{ROSTER}:{entry.line}: a row is `PATH | - | admit | QUALIFIED NAME | REASON`")
             continue
-        cells = [cell.strip() for cell in text.split("|")]
-        if len(cells) != 3 or not all(cells):
-            errors.append(f"{ROSTER}:{number}: a row is `path | qualified name | reason`, with no empty cell")
-            continue
-        rows.append(RosterRow(number, cells[0], cells[1], cells[2]))
+        rows.append(RosterRow(entry.line, key.path, key.entity, entry.reason))
     return rows, errors
+
+
+def plant_roster(root: Path, rows: list[tuple[str, str, str]]) -> None:
+    """Write the ledger of a planted root: one row for each (path, qualified name, reason)."""
+    base = {rule_ledger.Key(path, "", name): rule_ledger.Entry(rule_ledger.Key(path, "", name),
+                                                               rule_ledger.ADMIT_VALUE, reason)
+            for path, name, reason in rows}
+    ledger = rule_ledger.Ledger(RULE, rule_ledger.rule_of(RULE).policy, "# planted\n", base=base)
+    rule_ledger.store(ledger, root=root)
 
 
 def scope_files(root: Path) -> list[Path]:
@@ -452,18 +464,16 @@ def self_test() -> int:
         ("}", None, ""),
     ]
     roster_rows = [
-        "# planted",
-        "include/crucible/Planted.h | crucible::planted::rostered_variable | a fixture",
-        "include/crucible/Planted.h | crucible::planted::gone_variable | a stale row",
-        "include/crucible/Planted.h | crucible::planted::marked_variable | a row for a marked object",
+        ("include/crucible/Planted.h", "crucible::planted::rostered_variable", "a fixture"),
+        ("include/crucible/Planted.h", "crucible::planted::gone_variable", "a stale row"),
+        ("include/crucible/Planted.h", "crucible::planted::marked_variable", "a row for a marked object"),
     ]
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
         header = root / "include/crucible/Planted.h"
         header.parent.mkdir(parents=True)
         header.write_text("\n".join(line for line, _, _ in planted) + "\n", encoding="utf-8")
-        (root / "utils" / "scripts").mkdir(parents=True)
-        (root / ROSTER).write_text("\n".join(roster_rows) + "\n", encoding="utf-8")
+        plant_roster(root, roster_rows)
         (root / "test").mkdir()
         (root / "test/Out.cpp").write_text("inline int out_of_scope = 0;\n", encoding="utf-8")
         violations = scan(root)
@@ -496,11 +506,16 @@ def self_test() -> int:
         expect("the planted tree fails the check", captured(root)[0] == 1)
         expect("the report from / equals the report from the scan root", captured(Path("/")) == captured(root))
         header.write_text("#pragma once\nCRUCIBLE_PROCESS_WIDE inline int shared = 0;\n", encoding="utf-8")
-        (root / ROSTER).write_text("# empty\n", encoding="utf-8")
-        expect("a clean tree passes", captured(root)[0] == 0, True)
-        (root / ROSTER).write_text("include/x.h | name\n", encoding="utf-8")
-        expect("a roster row with two cells fails the check", captured(root)[0] == 1)
-        (root / ROSTER).write_text("# empty\n", encoding="utf-8")
+        plant_roster(root, [])
+        expect("a clean tree with no ledger file passes", captured(root)[0] == 0, True)
+        ledger_file = rule_ledger.ledger_path(RULE, root)
+        ledger_file.write_text(f"format 1\nrule {RULE}\ninclude/x.h | name\n", encoding="utf-8")
+        code, report = captured(root)
+        expect("a ledger row with two cells fails the check", code == 1 and f"{ROSTER}:3:" in report)
+        ledger_file.write_text(f"format 1\nrule {RULE}\ninclude/x.h | kind | admit | name | reason\n", encoding="utf-8")
+        code, report = captured(root)
+        expect("a ledger row with a kind fails the check", code == 1 and "QUALIFIED NAME" in report)
+        plant_roster(root, [])
         (root / "src").mkdir()
         (root / "src/Broken.cpp").write_text("void f() { g(1) { } }\n", encoding="utf-8")
         expect("a file the parser cannot read fails the check", captured(root)[0] == 1)

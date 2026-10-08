@@ -1,0 +1,5 @@
+# a planted ledger of the policy admit: a row of a file of the tree, and a row that names no file
+format 1
+rule admit-rule
+- | kind | admit | a\|symbol | a planted reason
+data/live.txt | kind | admit | entity | a planted reason

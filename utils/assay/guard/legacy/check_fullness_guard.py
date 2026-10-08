@@ -53,11 +53,13 @@ EXEMPTIONS
     `// FULLNESS-OK: <reason>` on a line of the comparison, or on a line of
     the condition or statement that holds it, exempts the site.  The reason
     must not be empty.
-    A row `path:text — reason` in utils/scripts/fullness-guard-allowlist.txt
-    exempts each site in that file whose first line, trimmed, equals
-    `text`.  The key is the content of the line, not its number.  A row
-    with no reason, a duplicate row and a row that matches no live site
-    fail the check.
+    A row `PATH | - | admit | TEXT | REASON` of utils/ledgers/fullness-guard.txt
+    (the ledger module assay.core.ledger, policy admit) exempts each site
+    in the file PATH whose first line, trimmed, equals TEXT.  The key is the
+    content of the line, not its number.  A file that does not obey the
+    schema, a row with a kind or with no text, and a row that matches no
+    live site fail the check.  A ledger that does not obey the schema admits
+    no site.
 
 Exit 0 clean, 1 on a violation or a parse failure, 2 on a malformed or stale
 row, a usage error or a failed self-test, 3 when the kit is not installed.
@@ -75,16 +77,18 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.readers import tsast
 
+RULE = "fullness-guard"
 ROOTS = ("include", "src", "vessel")
 EXCLUDED_COMPONENTS = frozenset({"third_party", "external", "vendor"})
-ALLOWLIST = "utils/scripts/fullness-guard-allowlist.txt"
+LEDGER = rule_ledger.shown_path(RULE)
 BOUND_NAME = re.compile(r"(?:[Cc]apacity|max_\w+|MAX_\w+|Max[A-Z]\w*)")
 BOUND_CALLS = frozenset({"size", "capacity", "max_size"})
 MARKER = re.compile(r"FULLNESS-OK:\s*\S")
 MEMBER_ACCESS = (".", "->")
-SEPARATOR = " — "
 # The nodes whose last line still belongs to the comparison, for a marker.
 STATEMENTS = ("condition_clause", "expression_statement", "return_statement", "declaration",
               "field_declaration", "init_declarator", "static_assert_declaration")
@@ -355,29 +359,34 @@ def scan(root: Path) -> tuple[list[Site], list[str]]:
     return sites, failures
 
 
-def read_allowlist(path: Path) -> tuple[dict[str, str], list[str]]:
-    """Read the content-keyed rows of the allowlist.
+def read_ledger(root: Path) -> tuple[dict[tuple[str, str], int], list[str]]:
+    """Read the content-keyed rows of the ledger of a tree.
+
+    Args:
+        root: The scan root
 
     Returns:
-        Each `path:text` key with its reason, and each problem with a row
+        The line of each row by its (path, text) key, and each problem with the file or with a row.  A file that
+        does not obey the schema admits no site
     """
-    rows: dict[str, str] = {}
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), root)
+    except rows_grammar.RowsError as problem:
+        return {}, [f"{problem}.  The ledger admits no site"]
+    rows: dict[tuple[str, str], int] = {}
     problems: list[str] = []
-    if not path.is_file():
-        return rows, problems
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        key, found, reason = line.partition(SEPARATOR)
-        if not found or not reason.strip() or ":" not in key:
-            problems.append(f"{ALLOWLIST}:{number}: a row is `path:text — reason`, and the reason must not be "
-                            f"empty.")
-        elif key in rows:
-            problems.append(f"{ALLOWLIST}:{number}: the key {key} is on two rows.")
+    for key, entry in sorted(ledger.base.items()):
+        if key.kind or not key.entity:
+            problems.append(f"{LEDGER}:{entry.line}: a row is `PATH | - | admit | TEXT | REASON`, with no kind and "
+                            f"with the text of the line")
         else:
-            rows[key] = reason.strip()
+            rows[(key.path, key.entity)] = entry.line
     return rows, problems
+
+
+def ledger_row(site: Site) -> str:
+    """Return the ledger row that admits a site, with the placeholder REASON for its reason."""
+    return rows_grammar.render([site.path], ["", rule_ledger.ADMIT_VALUE, site.key, "REASON"])
 
 
 def check(root: Path) -> int:
@@ -387,24 +396,25 @@ def check(root: Path) -> int:
         0 clean, 1 on a violation or a parse failure, 2 on a malformed or stale row
     """
     sites, failures = scan(root)
-    rows, problems = read_allowlist(root / ALLOWLIST)
-    live = {f"{site.path}:{site.key}" for site in sites}
-    violations = [site for site in sites if f"{site.path}:{site.key}" not in rows]
+    rows, problems = read_ledger(root)
+    live = {(site.path, site.key) for site in sites}
+    violations = [site for site in sites if (site.path, site.key) not in rows]
     for site in violations:
         print(f"FULLNESS violation: {site.path}:{site.line} — an `==` fullness test against a capacity bound. "
-              f"Write `>=`, so that a count past the bound still reads as full.  Allowlist key: "
-              f"{site.path}:{site.key}", file=sys.stderr)
+              f"Write `>=`, so that a count past the bound still reads as full.  Ledger row: {ledger_row(site)}",
+              file=sys.stderr)
     for failure in failures:
         print(f"FULLNESS parse failure: {failure}", file=sys.stderr)
-    stale = [key for key in rows if key not in live]
-    for key in stale:
-        print(f"FULLNESS stale row: {key} — no `==` fullness test has this text. Remove the row.", file=sys.stderr)
+    stale = sorted((line, path, text) for (path, text), line in rows.items() if (path, text) not in live)
+    for line, path, text in stale:
+        print(f"FULLNESS stale row: {LEDGER}:{line}: {path}: {text} — no `==` fullness test has this text. "
+              f"Remove the row.", file=sys.stderr)
     for problem in problems:
         print(f"FULLNESS malformed row: {problem}", file=sys.stderr)
     if violations or failures:
         print("check-fullness-guard: make the counter private so that the guarded push is its only writer, "
               "or write `>=`. For a not-found sentinel, mark the line `// FULLNESS-OK: <reason>` or add the "
-              "printed key with a reason.", file=sys.stderr)
+              f"printed ledger row to {LEDGER} with its reason.", file=sys.stderr)
         return 1
     if stale or problems:
         return 2
@@ -464,7 +474,7 @@ def self_test() -> int:
         ("    static_assert(count == Capacity);", False, "a static_assert"),
         ("    consteval bool y() { return count == Capacity; }", False, "a consteval function"),
         ("    bool z() { return lhs == Capacity && rhs == Capacity; }", True, "two sites on one line"),
-        ("    bool v() { return allowed == Capacity; }", False, "an allowlisted site"),
+        ("    bool v() { return allowed == Capacity; }", False, "a site that the ledger admits"),
         ("    bool aa(T& s) { return s.count /* n */ == Capacity; }", True, "a comment before the operator"),
         ("};", None, ""),
         ("#define FULL_IN_MACRO(s) ((s).count == Capacity)", True, "a macro body"),
@@ -493,18 +503,25 @@ def self_test() -> int:
         header = root / "include/crucible/planted/Planted.h"
         header.parent.mkdir(parents=True)
         header.write_text("\n".join(line for line, _, _ in planted) + "\n", encoding="utf-8")
-        allow = root / ALLOWLIST
-        allow.parent.mkdir(parents=True)
-        allowed_key = "include/crucible/planted/Planted.h:bool v() { return allowed == Capacity; }"
-        allow.write_text(f"# planted\n{allowed_key} — a planted not-found sentinel\n", encoding="utf-8")
+        ledger = root / LEDGER
+        ledger.parent.mkdir(parents=True)
+        planted_path = "include/crucible/planted/Planted.h"
+        allowed_text = "bool v() { return allowed == Capacity; }"
+
+        def planted_ledger(*rows: tuple[str, str]) -> str:
+            """Return the text of a planted ledger with one row of the planted header for each (text, reason)."""
+            return f"# planted\nformat {rule_ledger.FORMAT}\nrule {RULE}\n" + "".join(
+                rows_grammar.render([planted_path], ["", rule_ledger.ADMIT_VALUE, text, reason]) + "\n"
+                for text, reason in rows)
+
+        ledger.write_text(planted_ledger((allowed_text, "a planted not-found sentinel")), encoding="utf-8")
         (root / "vessel").mkdir()
         (root / "vessel/Out.cpp").write_text("bool w(int count) { return count == Capacity; }\n", encoding="utf-8")
         (root / "include/vendor").mkdir(parents=True)
         (root / "include/vendor/Lib.h").write_text("bool x() { return count == Capacity; }\n", encoding="utf-8")
         sites, broken = scan(root)
-        rows, _ = read_allowlist(allow)
-        reported = {site.line for site in sites if site.path == "include/crucible/planted/Planted.h"
-                    and f"{site.path}:{site.key}" not in rows}
+        rows, _ = read_ledger(root)
+        reported = {site.line for site in sites if site.path == planted_path and (site.path, site.key) not in rows}
         for line, (_, caught, label) in enumerate(planted, start=1):
             if caught is True:
                 expect(f"caught: {label}", line in reported)
@@ -532,23 +549,29 @@ def self_test() -> int:
         expect("the planted tree fails the check", code == 1)
         expect("the report from / equals the report from the scan root", captured(Path("/")) == captured(root))
 
-        allowed_line = next(line for line, _, label in planted if label == "an allowlisted site")
+        allowed_line = next(line for line, _, label in planted if label == "a site that the ledger admits")
         header.write_text("#pragma once\n\n\n" + "\n".join(line for line, _, _ in planted[:2]) + "\n"
                           + allowed_line + "\n};\n", encoding="utf-8")
         (root / "vessel/Out.cpp").unlink()
         expect("a content key survives a line shift", captured(root)[0] == 0, True)
-        allow.write_text(f"{allowed_key} — a planted not-found sentinel\n"
-                         f"include/crucible/planted/Planted.h:gone == Capacity — a stale row\n", encoding="utf-8")
+        ledger.write_text(planted_ledger((allowed_text, "a planted not-found sentinel"),
+                                         ("gone == Capacity", "a stale row")), encoding="utf-8")
         code, report = captured(root)
         expect("a stale row exits 2", code == 2 and "stale row" in report)
-        allow.write_text(f"{allowed_key}\n", encoding="utf-8")
+        ledger.write_text(planted_ledger((allowed_text, "")), encoding="utf-8")
         code, report = captured(root)
+        allowed_row = rows_grammar.render([planted_path], ["", rule_ledger.ADMIT_VALUE, allowed_text, "REASON"])
         expect("a row with no reason admits nothing and is reported",
-               code == 1 and "malformed row" in report and "Allowlist key: " + allowed_key in report)
-        allow.write_text(f"{allowed_key} — one\n{allowed_key} — two\n", encoding="utf-8")
+               code == 1 and "malformed row" in report and "Ledger row: " + allowed_row in report)
+        ledger.write_text(planted_ledger((allowed_text, "one"), (allowed_text, "two")), encoding="utf-8")
         code, report = captured(root)
-        expect("a duplicate row exits 2", code == 2 and "on two rows" in report)
-        allow.write_text(f"{allowed_key} — a planted not-found sentinel\n", encoding="utf-8")
+        expect("a duplicate row admits nothing and is reported",
+               code == 1 and "malformed row" in report and "has a second row" in report)
+        ledger.write_text(f"format {rule_ledger.FORMAT}\nrule {RULE}\n" + rows_grammar.render(
+            [planted_path], ["kind", rule_ledger.ADMIT_VALUE, allowed_text, "a planted kind"]) + "\n", encoding="utf-8")
+        code, report = captured(root)
+        expect("a row with a kind admits nothing and is reported", code == 1 and "with no kind" in report)
+        ledger.write_text(planted_ledger((allowed_text, "a planted not-found sentinel")), encoding="utf-8")
         rostered = root / next(iter(tsast.UNPARSEABLE))
         rostered.parent.mkdir(parents=True, exist_ok=True)
         rostered.write_text("void f() { g(1) { } }\nbool s() { return count == Capacity; }\n", encoding="utf-8")

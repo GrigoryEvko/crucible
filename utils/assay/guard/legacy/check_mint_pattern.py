@@ -27,9 +27,10 @@ exception is stated, and the statement is the exemption.
 
 THREE EXEMPTION MECHANISMS, EACH FOR NAMED AXES:
 
-  * a row `path:mint_name:axis-ok` in `utils/scripts/mint-pattern-allowlist.txt`.
-    A row names the mint, never a line, and it exempts one axis for every
-    overload of that name in that file.  A row can exempt any axis.
+  * a row `PATH | AXIS-ok | admit | MINT | REASON` in
+    `utils/ledgers/mint-pattern.txt` (assay.core.ledger).  A row names the
+    mint, never a line, and it exempts one axis for every overload of that
+    name in that file.  A row can exempt any axis.
   * a `// §XXI carve-out: cx=alloc` or `rq=pre` comment in the comment run
     directly above the signature.  cx=alloc exempts constexpr, and rq=pre
     exempts requires.
@@ -46,8 +47,10 @@ later regression:
   * a marker on a mint that meets its axis is dead
   * a marker that sits on no mint signature is dangling, because the model
     never reads it
-  * a row that does not parse, names an unknown axis, names a line, or
-    repeats another row is malformed
+  * a row that names no axis or an unknown axis, names a line, or names no
+    mint is malformed
+  * a ledger that does not obey the rows grammar, such as a ledger with a
+    row that repeats another row or a row with no reason, is malformed
 
 A FILE THE PARSER CANNOT READ FAILS.  Its mints are unknown, so a clean verdict
 over it would be a guess.  The surface comes from `tsast.cpp_files`, which
@@ -56,8 +59,8 @@ leaves out the files that `tsast.UNPARSEABLE` names, because they are not C++.
 EXIT CODES
     0  every mint meets the five axes, or one stated mechanism exempts it
     1  a mint falls short with nothing exempting it, or a file does not parse
-    2  a row is stale, redundant or malformed, or a marker is dead, redundant
-       or dangling, or the self-test fails
+    2  a row is stale, redundant or malformed, the ledger is malformed, or a
+       marker is dead, redundant or dangling, or the self-test fails
     3  the pinned tree-sitter kit is not installed
 """
 
@@ -72,13 +75,17 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from assay.core.paths import DATA
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.loop.derive import mint_model as mintmodel
 from assay.readers import tsast
 
-ALLOWLIST = DATA / "mint-pattern-allowlist.txt"
+RULE = "mint-pattern"
+LEDGER = rule_ledger.shown_path(RULE)
+# The suffix of the kind of a ledger row: the kind `constexpr-ok` exempts the axis constexpr.
+AXIS_SUFFIX = "-ok"
 
-# The axes, each with the allowlist suffix that exempts it.  `requires` asks only
+# The axes, each with the kind of the ledger row that exempts it.  `requires` asks only
 # whether a constraint is PRESENT; `ctxfit` asks the separate question of whether
 # it gates the context, which is the one §XXI actually cares about for a ctx-bound
 # mint.  Folding the two reported a constrained mint as unconstrained, and read a
@@ -126,48 +133,52 @@ class Finding:
 FAILING_KINDS = frozenset({"violation", "parse"})
 
 
-def read_allowlist(path: Path = ALLOWLIST) -> tuple[set[Row], list[Finding]]:
-    """Return the rows of the allowlist and one finding for each malformed row.
+def row_text(path: str, axis_kind: str, name: str) -> str:
+    """Return the start of a ledger row, as the file holds it, with no reason: the text to search for."""
+    return rows_grammar.render([path or rows_grammar.EMPTY_CELL], [axis_kind, rule_ledger.ADMIT_VALUE, name])
 
-    A row is `path:mint_name:axis-ok`.  The key is content, never a line
-    number, so an edit above a site cannot drift it.
+
+def read_ledger(file: Path | None = None) -> tuple[set[Row], list[Finding]]:
+    """Return the rows of the ledger and one finding for each malformed row.
+
+    A row is `PATH | AXIS-ok | admit | MINT | REASON`.  The key is content,
+    never a line number, so an edit above a site cannot drift it.
 
     Complexity: linear in the length of the file.
 
     Args:
-        path: The allowlist file
+        file: A planted ledger file, or None for utils/ledgers/mint-pattern.txt
 
     Returns:
         The rows as (path, mint name, axis) triples, and the malformed rows
+
+    Raises:
+        rows_grammar.RowsError: If the ledger does not obey the rows grammar, for example a key with a second row
+            or a row with no reason
     """
+    ledger = rule_ledger.read(rule_ledger.rule_of(RULE), file=file)
+    shown = Path(LEDGER if file is None else str(file)).name
+    axes = ", ".join(axis + AXIS_SUFFIX for axis in AXES)
     rows: set[Row] = set()
     problems: list[Finding] = []
-    if not path.is_file():
-        return rows, problems
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        where = f"{path.name}:{number}"
-        parts = line.split(":")
+    for key, entry in sorted(ledger.base.items(), key=lambda item: item[1].line):
+        where = f"{shown}:{entry.line}"
+        text = row_text(key.path, key.kind, key.entity)
+        axis = key.kind.removesuffix(AXIS_SUFFIX)
         reason = ""
-        if len(parts) != 3 or not parts[0] or any(ch.isspace() for ch in line):
-            reason = "a row is `path:mint_name:axis-ok`, with no space"
-        elif parts[1].isdigit():
+        if not key.path:
+            reason = "a row names the file of the mint in its PATH"
+        elif key.entity.isdigit():
             reason = "a row names the mint, never a line"
-        elif MINT_NAME.fullmatch(parts[1]) is None:
-            reason = f"`{parts[1]}` is not the name of a mint"
-        elif not parts[2].endswith("-ok") or parts[2].removesuffix("-ok") not in AXES:
-            reason = f"`{parts[2]}` names no axis; the axes are {', '.join(a + '-ok' for a in AXES)}"
+        elif MINT_NAME.fullmatch(key.entity) is None:
+            reason = f"`{key.entity}` is not the name of a mint"
+        elif not key.kind.endswith(AXIS_SUFFIX) or axis not in AXES:
+            reason = f"`{key.kind or rows_grammar.EMPTY_CELL}` names no axis.  The kind of a row is one of {axes}"
         if reason:
-            problems.append(Finding("malformed", where, line, f"MINT-PATTERN malformed row {where}: {line} — {reason}."))
+            problems.append(Finding("malformed", where, text,
+                                    f"MINT-PATTERN malformed row {where}: {text} — {reason}."))
             continue
-        row = (parts[0], parts[1], parts[2].removesuffix("-ok"))
-        if row in rows:
-            problems.append(Finding("malformed", where, line,
-                                    f"MINT-PATTERN malformed row {where}: {line} — a row before this one says the same."))
-            continue
-        rows.add(row)
+        rows.add((key.path, key.entity, axis))
     return rows, problems
 
 
@@ -233,7 +244,7 @@ def exempted(mint: mintmodel.Mint, axis: str, rows: set[Row]) -> bool:
     Args:
         mint: The mint in question
         axis: One of the five axis names
-        rows: The allowlist rows
+        rows: The ledger rows
 
     Returns:
         True when a row or a marker for that axis covers it
@@ -290,7 +301,7 @@ def violation_text(mint: mintmodel.Mint, axis: str) -> str:
         )
     else:
         lack = f"is missing {axis}. Add it to the signature, or state the reason"
-    row = f"a row `{mint.path}:{mint.name}:{axis}-ok` in utils/scripts/mint-pattern-allowlist.txt"
+    row = f"a row `{row_text(mint.path, axis + AXIS_SUFFIX, mint.name)} | REASON` in {LEDGER}"
     ways = f"an inline `// MINT-PATTERN-OK: <reason>` on the signature line, or {row}" \
         if axis == "constexpr" else row
     return f"MINT-PATTERN violation: {mint.path}:{mint.line} — {mint.name} {lack}: {ways}."
@@ -303,7 +314,7 @@ def evaluate(mints: list[mintmodel.Mint], rows: set[Row], dangling: list[Marker]
 
     Args:
         mints: The merged mints of the surface
-        rows: The allowlist rows
+        rows: The ledger rows
         dangling: The markers that attach to no mint signature
 
     Returns:
@@ -337,7 +348,7 @@ def evaluate(mints: list[mintmodel.Mint], rows: set[Row], dangling: list[Marker]
     for row in sorted(rows):
         path, name, axis = row
         sites = covered.get(row, [])
-        text = f"{path}:{name}:{axis}-ok"
+        text = row_text(path, axis + AXIS_SUFFIX, name)
         if not sites:
             findings.append(Finding(
                 "stale-row", text, name,
@@ -365,19 +376,24 @@ def evaluate(mints: list[mintmodel.Mint], rows: set[Row], dangling: list[Marker]
     return findings
 
 
-def run(files: list[Path], allowlist: Path) -> int:
+def run(files: list[Path], ledger_file: Path | None = None) -> int:
     """Scan the files, print every finding, and return the exit code.
 
     Args:
         files: The surface to scan
-        allowlist: The allowlist file
+        ledger_file: A planted ledger file, or None for utils/ledgers/mint-pattern.txt
 
     Returns:
-        0 when clean, 1 on a violation or a parse failure, 2 on any other finding
+        0 when clean, 1 on a violation or a parse failure, 2 on a malformed ledger or on any other finding
 
     Raises:
         tsast.KitMissing: If the pinned kit is not installed
     """
+    try:
+        rows, malformed = read_ledger(ledger_file)
+    except rows_grammar.RowsError as exc:
+        print(f"MINT-PATTERN malformed ledger: {exc}.", file=sys.stderr)
+        return 2
     findings: list[Finding] = []
     dangling: list[Marker] = []
 
@@ -391,7 +407,6 @@ def run(files: list[Path], allowlist: Path) -> int:
         dangling.extend(find_markers(tree, sites))
 
     mints = mintmodel.collect(files, on_tree=on_tree)
-    rows, malformed = read_allowlist(allowlist)
     findings += malformed + evaluate(mints, rows, dangling)
     for finding in findings:
         print(finding.message, file=sys.stderr)
@@ -503,27 +518,42 @@ def self_test() -> int:
         root = Path(work)
         allow = root / "allow.txt"
 
+        def plant(rows: list[tuple[Path, str, str]]) -> None:
+            """Write the planted ledger: one row (file, kind, mint) for each item, each with a planted reason."""
+            keys = [rule_ledger.Key(str(path), kind, name) for path, kind, name in rows]
+            base = {key: rule_ledger.Entry(key, rule_ledger.ADMIT_VALUE, "planted") for key in keys}
+            rule_ledger.store(rule_ledger.Ledger(RULE, rule_ledger.rule_of(RULE).policy, "# planted\n", base=base),
+                              file=allow)
+
         # The grammar of a row.
+        header = f"# a comment\n\nformat 1\nrule {RULE}\n"
         allow.write_text(
-            "# a comment\n\n"
-            "a.h:mint_good:constexpr-ok\n"
-            "a.h:mint_bare\n"
-            "a.h:120:constexpr-ok\n"
-            "a.h:mint_typo:constexr-ok\n"
-            "a.h:mint_good:constexpr-ok\n"
-            "a.h:helper:constexpr-ok\n"
-            "a.h:mint_space:constexpr-ok  trailing\n",
+            header
+            + "a.h | constexpr-ok | admit | mint_good | a reason\n"
+            "a.h | - | admit | mint_bare | a reason\n"
+            "a.h | constexpr-ok | admit | 120 | a reason\n"
+            "a.h | constexr-ok | admit | mint_typo | a reason\n"
+            "a.h | constexpr-ok | admit | helper | a reason\n"
+            "a.h | constexpr-ok | admit | mint_space trailing | a reason\n",
             encoding="utf-8",
         )
-        rows, malformed = read_allowlist(allow)
+        rows, malformed = read_ledger(allow)
         texts = " ".join(finding.message for finding in malformed)
         check("a well-formed row is read", rows == {("a.h", "mint_good", "constexpr")})
-        check("a bare key with no axis is malformed", "a.h:mint_bare —" in texts, True)
+        check("a row with no axis is malformed", "a.h | - | admit | mint_bare — `-` names no axis" in texts, True)
         check("a row keyed by a line is malformed", "names the mint, never a line" in texts, True)
         check("a row with an unknown axis is malformed", "`constexr-ok` names no axis" in texts, True)
-        check("a second copy of a row is malformed", "a row before this one says the same" in texts, True)
         check("a row that names no mint is malformed", "`helper` is not the name of a mint" in texts, True)
-        check("a row with a space is malformed", "mint_space" in texts, True)
+        check("a row with a space in its mint is malformed", "`mint_space trailing` is not the name" in texts, True)
+        allow.write_text(header + "a.h | constexpr-ok | admit | mint_good | a reason\n"
+                         "a.h | constexpr-ok | admit | mint_good | the same key\n", encoding="utf-8")
+        try:
+            read_ledger(allow)
+            second = ""
+        except rows_grammar.RowsError as exc:
+            second = str(exc)
+        check("a second copy of a row is malformed", "allow.txt:6: the key" in second and "second row" in second,
+              True)
 
         # The whole scan, over a planted surface.
         live = root / "live.h"
@@ -558,16 +588,11 @@ def self_test() -> int:
             "}\n",
             encoding="utf-8",
         )
-        allow.write_text(
-            f"{live}:mint_runtime_read:constexpr-ok\n"
-            f"{live}:mint_marked_twice:constexpr-ok\n"
-            f"{live}:mint_overload:constexpr-ok\n"
-            f"{live}:mint_compliant:constexpr-ok\n",
-            encoding="utf-8",
-        )
+        plant([(live, "constexpr-ok", name)
+               for name in ("mint_runtime_read", "mint_marked_twice", "mint_overload", "mint_compliant")])
         dangling: list[Marker] = []
         mints = mintmodel.collect([live], on_tree=lambda tree, sites: dangling.extend(find_markers(tree, sites)))
-        rows, malformed = read_allowlist(allow)
+        rows, malformed = read_ledger(allow)
         found = evaluate(mints, rows, dangling)
 
         def has(kind: str, name: str) -> bool:
@@ -619,7 +644,8 @@ def self_test() -> int:
             "[[nodiscard]] constexpr int mint_compliant() noexcept { return 7; }\n}\n",
             encoding="utf-8",
         )
-        allow.write_text(f"{clean}:mint_runtime_read:constexpr-ok\n", encoding="utf-8")
+        runtime_row = (clean, "constexpr-ok", "mint_runtime_read")
+        plant([runtime_row])
         check("a clean surface exits 0", captured(lambda: run([clean], allow))[0] == 0)
         previous = Path.cwd()
         os.chdir("/")
@@ -629,16 +655,19 @@ def self_test() -> int:
             os.chdir(previous)
         check("the report from / equals the report from the repository", from_slash == captured(
             lambda: run([clean], allow)))
-        allow.write_text("", encoding="utf-8")
+        plant([])
         check("a runtime-only mint with no row exits 1", captured(lambda: run([clean], allow))[0] == 1, True)
-        allow.write_text(f"{clean}:mint_runtime_read:constexpr-ok\n{clean}:mint_compliant:constexpr-ok\n",
-                         encoding="utf-8")
+        plant([runtime_row, (clean, "constexpr-ok", "mint_compliant")])
         check("a stale row exits 2", captured(lambda: run([clean], allow))[0] == 2, True)
-        allow.write_text(f"{clean}:mint_runtime_read:constexpr-ok\n{clean}:mint_extra\n", encoding="utf-8")
+        plant([runtime_row, (clean, "", "mint_extra")])
         check("a malformed row exits 2", captured(lambda: run([clean], allow))[0] == 2, True)
+        allow.write_text(f"format 1\nrule {RULE}\n{clean} | constexpr-ok | admit | mint_runtime_read | -\n",
+                         encoding="utf-8")
+        code, report = captured(lambda: run([clean], allow))
+        check("a ledger with a row with no reason exits 2", code == 2 and "malformed ledger" in report, True)
         broken = root / "broken.h"
         broken.write_text("void f() { g(1) { } }\n", encoding="utf-8")
-        allow.write_text(f"{clean}:mint_runtime_read:constexpr-ok\n", encoding="utf-8")
+        plant([runtime_row])
         code, report = captured(lambda: run([clean, broken], allow))
         check("a file the parser cannot read exits 1", code == 1 and "parse failure" in report, True)
 
@@ -662,7 +691,7 @@ def main(argv: list[str]) -> int:
         if argv == ["--self-test"]:
             return self_test()
         if argv == []:
-            return run(mintmodel.surface_files(), ALLOWLIST)
+            return run(mintmodel.surface_files())
     except tsast.KitMissing as exc:
         print(f"check-mint-pattern: {exc}", file=sys.stderr)
         return 3

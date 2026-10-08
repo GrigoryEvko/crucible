@@ -41,10 +41,12 @@ THE MEASURED RULES
         limit would stop it.
       * The peak memory, which is almost the same on each run of one step.
         Over the error threshold, the subcommand removes the output, prints
-        an error line and exits with status 1, unless a row of
-        utils/scripts/<memory row>-ledger.txt admits the output for the kind
-        of the build, with a reason.  Over the warning threshold, it prints a
-        warning line.
+        an error line and exits with status 1, unless a row of the ledger
+        utils/ledgers/<memory rule>.txt admits the output for the kind of the
+        build, with a reason: '@build/OUTPUT | KIND | GB | - | REASON', with
+        OUTPUT relative to the build directory (meter.py, THE REGISTRY AND THE
+        LEDGERS).  The subcommand reads that ledger only for a step over the
+        error threshold.  Over the warning threshold, it prints a warning line.
     The subcommand prints at most one line, after the output of the command,
     in the format of utils/assay/core/report.py.  A GB is 2^30 bytes.
 
@@ -66,8 +68,8 @@ A COMPILE THROUGH CCACHE
     compiler run.
 
 The variables CRUCIBLE_BUILD_REGISTRY and CRUCIBLE_BUILD_LEDGERS name another
-registry and another directory of ledgers.  utils/assay/tests/loop/test_step.py
-uses them.
+registry and another directory of ledgers, which holds RULE.txt for each
+planted ledger.  utils/assay/tests/loop/test_step.py uses them.
 """
 
 import os
@@ -84,8 +86,6 @@ LEDGERS_ENV = "CRUCIBLE_BUILD_LEDGERS"
 # The directory utils.  This module is utils/assay/loop/step.py.  It calculates the paths with os.path and not with
 # assay.core.paths, because each compile and each link imports it.
 UTILS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# The directory of the ledgers, utils/scripts.
-DATA = os.path.join(UTILS, "scripts")
 # The registry of the measured rules, utils/registry.txt.
 REGISTRY_FILE = os.path.join(UTILS, "registry.txt")
 
@@ -127,11 +127,11 @@ def admission(memory_row: str, output: str) -> tuple[bool, str]:
         output: The absolute output path
 
     Returns:
-        Whether a row admits the output, and the words that tell which row or why none does
+        Whether a row admits the output, and the words that tell which row or why none does.  A problem of the
+        ledger admits nothing, and the words give its line
     """
-    ledger = os.path.join(os.environ.get(LEDGERS_ENV) or DATA, f"{memory_row}-ledger.txt")
-    repository = os.path.dirname(os.path.dirname(DATA))
-    shown = os.path.relpath(ledger, repository) if ledger.startswith(repository + os.sep) else ledger
+    ledger = cost_meter.ledger_file(memory_row, os.environ.get(LEDGERS_ENV))
+    shown = cost_meter.shown_ledger(ledger)
     build_dir = cost_meter.build_dir_of(output)
     kind = cost_meter.read_kind(build_dir) if build_dir else None
     if build_dir is None or kind is None:
@@ -139,12 +139,16 @@ def admission(memory_row: str, output: str) -> tuple[bool, str]:
                        f"{shown} can admit it")
     item = os.path.relpath(output, build_dir)
     try:
-        rows, _, _ = cost_meter.read_ledger_rows(ledger)
-    except OSError:
-        rows = {}
+        rows, problems, _ = cost_meter.read_kind_rows(memory_row, cost_meter.ITEM_OUTPUT, ledger)
+    except OSError as error:
+        rows, problems = {}, [(0, f"the ledger cannot be read ({error})")]
     row = rows.get((kind, item))
     if row is None:
-        return False, f"no row of {shown} admits {item} for the kind {kind}"
+        words = f"no row of {shown} admits {item} for the kind {kind}"
+        if problems:
+            line, text = problems[0]
+            words += f", and the ledger has a problem at {shown}:{line}: {text}"
+        return False, words
     return True, f"the row {shown}:{row[0]} admits it: {row[2]}"
 
 

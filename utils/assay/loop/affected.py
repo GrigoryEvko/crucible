@@ -28,10 +28,12 @@ THE EXECUTABLE TEST
       named file of the source tree with a C or C++ suffix is the text of a
       diagnostic, for example from __FILE__, and it is not an input.
     - For a test behind the test launcher: the bytes of the master loop, of
-      each .py file of utils/assay/core and utils/assay/loop, of each .txt
-      file of utils/scripts, of utils/registry.txt, and of build-kind.txt in
-      the build tree.  The launcher reads its modules, the registry and its
-      ledgers there, and the result of a test depends on them.
+      each .py file of utils/assay/core and utils/assay/loop, of
+      utils/registry.txt, of the ledger utils/ledgers/RULE.txt of each rule
+      of the launcher, and of build-kind.txt in the build tree.  The launcher
+      reads its modules, the registry and its ledgers there, and the result
+      of a test depends on them.  A ledger that does not exist is an input
+      too, so a new ledger makes the test run.
     The scan of an ELF file reads its section headers, so it finds a name in
     .rodata, .data or .dynstr, and it does not read the code or the debug
     information.
@@ -115,6 +117,7 @@ from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import LOOP
 from assay.loop import history as loop_history
+from assay.loop import teststep as test_launcher
 from assay.readers import elf as elf_file
 from assay.setup import pins as cmake_pin
 
@@ -129,9 +132,10 @@ FIXTURE_SUBCOMMAND = "fixture"
 LAUNCHER_SUBCOMMAND = "test-step"
 # The files that the test launcher reads: each directory relative to utils/
 # (the parent of the directory of the master), and the suffix of its files.
-LAUNCHER_INPUT_DIRECTORIES = (("assay/core", ".py"), ("assay/loop", ".py"), ("scripts", ".txt"))
-# The other files that the test launcher reads, relative to utils/: the registry of the measured rules.
-LAUNCHER_INPUT_FILES = ("registry.txt",)
+LAUNCHER_INPUT_DIRECTORIES = (("assay/core", ".py"), ("assay/loop", ".py"))
+# The other files that the test launcher reads, relative to utils/: the registry of the measured rules, and the
+# ledger of each rule of the launcher.
+LAUNCHER_INPUT_FILES = ("registry.txt", *(f"ledgers/{rule}.txt" for rule in test_launcher.ROWS))
 BUILD_KIND_FILE = "build-kind.txt"
 ALWAYS_RUN_PROPERTIES = ("FIXTURES_REQUIRED", "FIXTURES_SETUP", "FIXTURES_CLEANUP", "REQUIRED_FILES")
 ENVIRONMENT_PROPERTIES = ("ENVIRONMENT", "ENVIRONMENT_MODIFICATION")
@@ -522,8 +526,8 @@ class Planner:
     def launcher_inputs(self, launcher: str) -> list[str]:
         """Return the files that the test launcher reads: the master, its modules, its data files and build-kind.txt.
 
-        LAUNCHER_INPUT_DIRECTORIES gives the directories of the modules and of
-        the data files, and LAUNCHER_INPUT_FILES gives the registry.
+        LAUNCHER_INPUT_DIRECTORIES gives the directories of the modules, and
+        LAUNCHER_INPUT_FILES gives the registry and the ledgers.
         O(number of files in those directories), one time for each call of the
         script.
         """
@@ -800,7 +804,7 @@ class SelfTest:
         # drops its own arguments and runs the test.  The registry in utils/
         # is one of the files that the launched test depends on.
         (self.source_dir / "utils" / "bin").mkdir(parents=True)
-        (self.source_dir / "utils" / "scripts").mkdir()
+        (self.source_dir / "utils" / "ledgers").mkdir()
         self.launcher = self.source_dir / "utils" / "bin" / LOOP_MASTER
         self.launcher.write_text("import os, sys\narguments = sys.argv[2:]\n"
                                  "if arguments[:1] == ['--warnings-dir']:\n    arguments = arguments[2:]\n"
@@ -937,10 +941,16 @@ def self_test(ctest: str) -> int:
                fake.skipped() and "exe_ok" in fake.skipped(), output)
         status, output = fake.call()
         expect("the launched test is skipped again after its pass", "exe_launched" in fake.skipped(), output)
-        (fake.source_dir / "utils" / "scripts" / "test-time-ledger.txt").write_text("# a planted ledger\n")
+        (fake.source_dir / "utils" / "ledgers" / "test-time.txt").write_text(
+            "# a planted ledger\nformat 1\nrule test-time\n- | x86_64-debug-asan | 9 | exe_other | a planted reason\n")
         status, output = fake.call()
-        expect("a changed ledger of the test launcher makes a launched test run", "exe_launched" not in
+        expect("a new ledger of the test launcher makes a launched test run", "exe_launched" not in
                fake.skipped() and "exe_ok" in fake.skipped(), output)
+        status, output = fake.call()
+        (fake.source_dir / "utils" / "ledgers" / "history.txt").write_text("# a ledger of a different rule\n")
+        status, output = fake.call()
+        expect("a ledger of a rule that the test launcher does not read leaves a launched test skipped",
+               "exe_launched" in fake.skipped(), output)
 
         with open(fake.build_dir / "bin" / "ok", "ab") as handle:
             handle.write(b"\0")

@@ -30,9 +30,16 @@ THE FOUR SANCTIONED SHAPES
               explicit, discouraged doors of the C boundary and of the
               ownership hand-off.  Admitted, counted, and the count is pinned
               in the ledger, so a new hatch is a reviewed act.
-    LEDGERED  a bare door named in utils/scripts/escape-doors.txt with a reason.
-              The list only shrinks.
+    LEDGERED  a bare door that a row of the ledger names with a reason.  The
+              list only shrinks.
     Anything else, a conversion operator included, is a NEW BARE DOOR.
+
+THE LEDGER
+    utils/ledgers/escape-doors.txt (assay.core.ledger) holds two forms of row:
+        PATH | door | admit | NAME | REASON        one ledgered bare door
+        - | hatch-total | admit | N | REASON       the pin: the count of hatches
+    The ledger holds one pin.  A change of the count changes the key of the
+    pin row, and --refresh writes the pin again.
 
 WHAT READS THE DECLARATIONS
     The parse tree of the pinned tree-sitter kit (utils/assay/readers/tsast.py),
@@ -49,7 +56,7 @@ Usage
     guard check --rule escape-doors --refresh    write the hatch pin and keep each reason
     guard check --rule escape-doors --self-test  plant each shape and each evasion
 
-Exit 0 clean, 1 on a new bare door, a stale ledger line, a hatch-count drift
+Exit 0 clean, 1 on a new bare door, a stale ledger row, a hatch-count drift
 or a header the parser cannot read, 2 on a malformed ledger, a bad invocation
 or a failed self-test, 3 when the kit is not installed.
 """
@@ -64,11 +71,15 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.readers import tsast
 
 REPO = tsast.REPO_ROOT
 ROOTS = (REPO / "include" / "foundation", REPO / "include" / "fixy")
-LEDGER = REPO / "utils" / "scripts" / "escape-doors.txt"
+RULE = "escape-doors"
+DOOR_KIND = "door"
+PIN_KIND = "hatch-total"
 
 # The conventional getter names.  A member whose provenance is the object it
 # is called on carries one of these.  A new getter with a new name is added
@@ -84,21 +95,27 @@ HATCHES = frozenset({"from_raw", "from_raw_nonnull", "into_raw", "release", "dec
 FUNCTION_NODES = ("function_definition", "declaration", "field_declaration")
 CLASS_NODES = frozenset({"class_specifier", "struct_specifier", "union_specifier"})
 LEDGER_HEADER = (
-    "# utils/scripts/escape-doors.txt — the escape surface the guard locks.\n"
-    "# Read by the rule escape-doors (`guard check --rule escape-doors`).\n"
+    "# The ledger of the rule escape-doors: the escape surface that the rule locks.\n"
+    "# `python3 utils/bin/guard explain escape-doors` tells the rule.\n"
     "#\n"
-    "# hatch-total pins the count of discouraged, type-checked escape\n"
-    "# hatches (from_raw, from_raw_nonnull, into_raw, release,\n"
-    "# declassify).  A new hatch raises the count and fails CI until the\n"
-    "# pin is raised in the same commit, so a hatch is never added\n"
-    "# quietly.  Removing a hatch lowers it and is refreshed here too.\n"
+    "# The row `- | hatch-total | admit | N | REASON` pins the count N of the\n"
+    "# discouraged, type-checked escape hatches (from_raw, from_raw_nonnull,\n"
+    "# into_raw, release, declassify).  A new hatch raises the count, and the\n"
+    "# rule fails until the same commit raises the pin.  So no hatch comes in\n"
+    "# quietly.  The removal of a hatch lowers the count, and the pin falls in\n"
+    "# the same commit.\n"
     "#\n"
-    "# Each `path:name  reason` line admits one bare door: a raw escape\n"
-    "# that is neither an accessor nor a mint nor a hatch, but is safe\n"
-    "# for the stated reason.  The list only shrinks: a bare door is\n"
-    "# reclassified, never added.  --refresh rewrites the pin and keeps\n"
-    "# each reason.\n"
+    "# Each row `PATH | door | admit | NAME | REASON` admits one bare door: a\n"
+    "# raw escape that is not an accessor, a mint or a hatch, but is safe for\n"
+    "# the reason of the row.  The rows only become fewer: a bare door gets a\n"
+    "# new class, and no row is added.\n"
+    "#\n"
+    "# `python3 utils/bin/guard check --rule escape-doors --refresh` writes the\n"
+    "# pin again, keeps the reason of each live door, and writes this comment.\n"
 )
+# The reason of a new pin row.
+PIN_REASON = ("The count of the discouraged hatches.  A new hatch raises it, and --refresh writes the pin again in "
+              "the same commit")
 
 
 class LedgerError(ValueError):
@@ -248,52 +265,66 @@ def collect(roots: tuple[Path, ...] | list[Path]) -> tuple[list[Escape], list[st
     return escapes, unread
 
 
-def read_ledger(ledger: Path) -> tuple[int | None, dict[str, str]]:
-    """Return the hatch pin and each ledgered bare door with its reason.
+def shown_ledger(file: Path | None) -> str:
+    """Return the name of the ledger in a report: utils/ledgers/escape-doors.txt, or a planted file."""
+    return rule_ledger.shown_path(RULE) if file is None else str(file)
+
+
+def read_ledger(file: Path | None = None) -> tuple[int | None, dict[tuple[str, str], str], str]:
+    """Return the hatch pin, each ledgered bare door (path, name) with its reason, and the reason of the pin.
+
+    Args:
+        file: A planted ledger file, or None for utils/ledgers/escape-doors.txt
 
     Raises:
-        LedgerError: For a line with no reason, a second pin or a duplicate door
+        LedgerError: For a ledger that does not obey the rows grammar, a row with no reason, a second pin, a pin
+            that is not a count, or a row of another form
     """
+    shown = shown_ledger(file)
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), file=file)
+    except rows_grammar.RowsError as exc:
+        raise LedgerError(str(exc)) from None
     pin: int | None = None
-    doors: dict[str, str] = {}
-    if not ledger.is_file():
-        return pin, doors
-    for number, raw in enumerate(ledger.read_text(encoding="utf-8").splitlines(), 1):
-        entry = raw.strip()
-        if not entry or entry.startswith("#"):
+    pin_reason = PIN_REASON
+    doors: dict[tuple[str, str], str] = {}
+    for key, entry in sorted(ledger.base.items(), key=lambda item: item[1].line):
+        if key.kind == PIN_KIND:
+            is_count = bool(key.entity) and all("0" <= digit <= "9" for digit in key.entity)
+            if pin is not None or key.path or not is_count:
+                raise LedgerError(f"{shown}:{entry.line}: one `- | hatch-total | admit | N | REASON` row is allowed")
+            pin, pin_reason = int(key.entity), entry.reason
             continue
-        if entry.startswith("hatch-total"):
-            parts = entry.split()
-            if pin is not None or len(parts) != 2 or not parts[1].isdigit():
-                raise LedgerError(f"{ledger.name}:{number}: one `hatch-total <N>` line is allowed")
-            pin = int(parts[1])
-            continue
-        key, _, reason = entry.partition("  ")
-        if not reason.strip() or ":" not in key:
-            raise LedgerError(f"{ledger.name}:{number}: a door line is `path:name  reason`, with two spaces")
-        if key in doors:
-            raise LedgerError(f"{ledger.name}:{number}: {key} has a line before this one")
-        doors[key.strip()] = reason.strip()
-    return pin, doors
+        if key.kind != DOOR_KIND or not key.path or not key.entity:
+            raise LedgerError(f"{shown}:{entry.line}: a door row is `PATH | door | admit | NAME | REASON`")
+        doors[(key.path, key.entity)] = entry.reason
+    return pin, doors, pin_reason
 
 
-def check(roots: tuple[Path, ...] | list[Path], ledger: Path) -> int:
-    """Compare the escapes with the ledger, and print each failure."""
+def check(roots: tuple[Path, ...] | list[Path], file: Path | None = None) -> int:
+    """Compare the escapes with the ledger, and print each failure.
+
+    Args:
+        roots: The directories of the headers
+        file: A planted ledger file, or None for utils/ledgers/escape-doors.txt
+    """
     escapes, unread = collect(roots)
-    pin, doors = read_ledger(ledger)
+    pin, doors, _pin_reason = read_ledger(file)
+    shown = shown_ledger(file)
     failures = list(unread)
     hatches = [escape for escape in escapes if escape.klass == "hatch"]
     bare = [escape for escape in escapes if escape.klass == "bare"]
     for escape in bare:
-        if f"{escape.path}:{escape.name}" not in doors:
+        if (escape.path, escape.name) not in doors:
+            row = rows_grammar.render([escape.path], [DOOR_KIND, rule_ledger.ADMIT_VALUE, escape.name, "<reason>"])
             failures.append(f"NEW BARE DOOR  {escape.path}:{escape.line}  {escape.name} — returns a raw reference or "
                             f"pointer that is not an accessor, a mint or a marked hatch.  Make it one of those, or "
-                            f"add '{escape.path}:{escape.name}  <reason>' to {ledger.name} if it is a safe exception.")
-    live = {f"{escape.path}:{escape.name}" for escape in bare}
-    for key in sorted(set(doors) - live):
-        failures.append(f"STALE LEDGER   {key} — no longer a bare door.  Delete the line.")
+                            f"add the row '{row}' to {shown} if it is a safe exception.")
+    live = {(escape.path, escape.name) for escape in bare}
+    for path, name in sorted(set(doors) - live):
+        failures.append(f"STALE LEDGER   {path}:{name} — no longer a bare door.  Delete the row.")
     if pin is None:
-        failures.append(f"NO HATCH PIN   {ledger.name} has no `hatch-total` line.  Run --refresh.")
+        failures.append(f"NO HATCH PIN   {shown} has no `hatch-total` row.  Run --refresh.")
     elif pin != len(hatches):
         verb = "rose" if len(hatches) > pin else "fell"
         failures.append(f"HATCH DRIFT    the count of discouraged hatches {verb} from {pin} to {len(hatches)}.  "
@@ -307,22 +338,29 @@ def check(roots: tuple[Path, ...] | list[Path], ledger: Path) -> int:
     return 1 if failures else 0
 
 
-def refresh(roots: tuple[Path, ...] | list[Path], ledger: Path) -> int:
+def refresh(roots: tuple[Path, ...] | list[Path], file: Path | None = None) -> int:
     """Write the hatch pin again and keep the reason of each ledgered door that is still bare.
 
-    A new bare door gets no line: its author writes the reason by hand, so
-    the refresh never admits a door on its own.
+    A new bare door gets no row: its author writes the reason by hand, so
+    the refresh never admits a door on its own.  The pin keeps its reason.
+
+    Args:
+        roots: The directories of the headers
+        file: A planted ledger file, or None for utils/ledgers/escape-doors.txt
     """
     escapes, unread = collect(roots)
     if unread:
         print("\n".join(unread))
         return 1
-    _pin, doors = read_ledger(ledger)
-    live = {f"{escape.path}:{escape.name}" for escape in escapes if escape.klass == "bare"}
+    _pin, doors, pin_reason = read_ledger(file)
+    live = {(escape.path, escape.name) for escape in escapes if escape.klass == "bare"}
     hatches = sum(escape.klass == "hatch" for escape in escapes)
-    lines = [LEDGER_HEADER, f"hatch-total {hatches}\n"]
-    lines += [f"{key}  {doors[key]}\n" for key in sorted(doors) if key in live]
-    ledger.write_text("".join(lines), encoding="utf-8")
+    rows = {rule_ledger.Key("", PIN_KIND, str(hatches)): pin_reason}
+    rows.update({rule_ledger.Key(path, DOOR_KIND, name): reason for (path, name), reason in doors.items()
+                 if (path, name) in live})
+    base = {key: rule_ledger.Entry(key, rule_ledger.ADMIT_VALUE, reason) for key, reason in rows.items()}
+    rule_ledger.store(rule_ledger.Ledger(RULE, rule_ledger.rule_of(RULE).policy, LEDGER_HEADER, base=base),
+                      file=file)
     print(f"check-escape-doors: ledger written — hatch-total {hatches}, {sum(key in live for key in doors)} "
           f"ledgered door(s).", file=sys.stderr)
     return 0
@@ -404,30 +442,48 @@ def self_test() -> int:
 
         ledger = Path(work) / "ledger.txt"
         shown = (root / "planted" / "Leak.h").as_posix()
-        lines = "".join(f"{shown}:{name}  planted: safe for the self-test\n" for name in sorted(bare_expected))
-        ledger.write_text(f"hatch-total 1\n{lines}", encoding="utf-8")
+        safe = "planted: safe for the self-test"
+        doors = {name: safe for name in sorted(bare_expected)}
+
+        def plant(pin: int, planted_doors: dict[str, str]) -> None:
+            """Write the planted ledger: the pin and one door row for each name of the planted header."""
+            keys = {rule_ledger.Key("", PIN_KIND, str(pin)): "a planted pin"}
+            keys.update({rule_ledger.Key(shown, DOOR_KIND, name): reason for name, reason in planted_doors.items()})
+            base = {key: rule_ledger.Entry(key, rule_ledger.ADMIT_VALUE, reason) for key, reason in keys.items()}
+            rule_ledger.store(rule_ledger.Ledger(RULE, rule_ledger.rule_of(RULE).policy, "# planted\n", base=base),
+                              file=ledger)
+
+        def refused(text: str) -> bool:
+            """Write a planted ledger text, and report whether read_ledger refuses it."""
+            ledger.write_text(f"format 1\nrule {RULE}\n{text}", encoding="utf-8")
+            try:
+                read_ledger(ledger)
+            except LedgerError:
+                return True
+            return False
+
+        plant(1, doors)
         expect("a ledgered tree passes", captured(lambda: check([root], ledger))[0] == 0)
-        ledger.write_text(f"hatch-total 1\n{lines}{shown}:gone  a door that left\n", encoding="utf-8")
+        plant(1, {**doors, "gone": "a door that left"})
         code, report = captured(lambda: check([root], ledger))
-        expect("a stale ledger line fails", code == 1 and "STALE LEDGER" in report, True)
-        ledger.write_text("hatch-total 1\n" + "".join(line + "\n" for line in lines.splitlines()[1:]),
-                          encoding="utf-8")
+        expect("a stale ledger row fails", code == 1 and "STALE LEDGER" in report, True)
+        plant(1, {name: reason for name, reason in doors.items() if name != min(doors)})
         code, report = captured(lambda: check([root], ledger))
-        expect("a bare door with no line fails", code == 1 and "NEW BARE DOOR" in report, True)
-        ledger.write_text(f"hatch-total 0\n{lines}", encoding="utf-8")
+        expect("a bare door with no row fails", code == 1 and "NEW BARE DOOR" in report, True)
+        plant(0, doors)
         code, report = captured(lambda: check([root], ledger))
         expect("a hatch over the pin fails", code == 1 and "HATCH DRIFT" in report, True)
-        ledger.write_text(f"hatch-total 1\n{shown}:free_steal\n", encoding="utf-8")
-        try:
-            read_ledger(ledger)
-            refused = False
-        except LedgerError:
-            refused = True
-        expect("a door line with no reason is malformed", refused, True)
-        ledger.write_text(f"hatch-total 0\n{lines}", encoding="utf-8")
+        expect("a door row with no reason is malformed",
+               refused(f"- | {PIN_KIND} | admit | 1 | pin\n{shown} | {DOOR_KIND} | admit | free_steal | -\n"), True)
+        expect("a second pin is malformed",
+               refused(f"- | {PIN_KIND} | admit | 1 | pin\n- | {PIN_KIND} | admit | 2 | pin\n"), True)
+        expect("a pin that is not a count is malformed", refused(f"- | {PIN_KIND} | admit | one | pin\n"), True)
+        expect("a row of another kind is malformed",
+               refused(f"- | {PIN_KIND} | admit | 1 | pin\n{shown} | gate | admit | free_steal | a reason\n"), True)
+        plant(0, doors)
         captured(lambda: refresh([root], ledger))
         expect("--refresh fixes the pin and keeps every reason",
-               ledger.read_text().count("planted: safe") == len(bare_expected)
+               ledger.read_text().count(safe) == len(bare_expected) and "a planted pin" in ledger.read_text()
                and captured(lambda: check([root], ledger))[0] == 0)
         previous = Path.cwd()
         os.chdir("/")
@@ -452,9 +508,9 @@ def main(argv: list[str]) -> int:
     """Run one mode."""
     try:
         if argv == []:
-            return check(ROOTS, LEDGER)
+            return check(ROOTS)
         if argv == ["--refresh"]:
-            return refresh(ROOTS, LEDGER)
+            return refresh(ROOTS)
         if argv == ["--self-test"]:
             return self_test()
         if argv == ["--list"]:

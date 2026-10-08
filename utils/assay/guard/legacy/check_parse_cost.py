@@ -40,28 +40,32 @@ THE CHECKS
                     do not see.  The check exits 3 when one compile has no
                     count (the host gives no exact counter, or a ccache hit
                     keeps no count of a real compile in this build
-                    directory).  It compares the sum with the total row of
-                    utils/scripts/instruction-total-ledger.txt, at the levels
-                    of the measured rule instruction-total.  The count does
-                    not change
-                    with the load of the host: two clean builds of one tree
-                    differ by less than 0.01 % in the sum.
+                    directory).  It compares the sum with the two total rows
+                    of utils/ledgers/instruction-total.txt, at the levels of
+                    the measured rule instruction-total.  The count does not
+                    change with the load of the host: two clean builds of one
+                    tree differ by less than 0.01 % in the sum.
 
 THE BASELINE
-    utils/scripts/parse-total-ledger.txt holds the baseline of each build
-    kind, which --write regenerates:
+    utils/ledgers/parse-total.txt holds the baseline of each build kind, in
+    format 1 of assay.core.ledger.  --write writes the rows of one kind
+    again:
 
-        total | KIND | OBJECT BYTES | FIXTURE BYTES | reason
-        file | KIND | FILE | BYTES | READERS
+        - | KIND | BYTES | objects | REASON
+        - | KIND | BYTES | fixtures | REASON
+        PATH | KIND | BYTES/READERS | - | -
+        - | KIND | BYTES/READERS | NAME | -
 
-    A total row gives the two sums at the last --write.  A file row gives the
-    size of one file and the number of units that read it, for each file
-    whose product (size times readers) was at least 0.05 % of the total.  The
-    sum of the products of all files is the total, so the file rows tell
-    which files a change of the total comes from.  FILE is the path in the
-    tree, <build>/PATH for a file of the build directory, or <system>/PATH
-    after the first include/ component of the path of another file
-    (build_census.file_key).
+    The two total rows give the two sums at the last --write, with one
+    reason.  A file row gives the size of one file and the number of units
+    that read it, for each file whose product (size times readers) was at
+    least 0.05 % of the total.  The sum of the products of all files is the
+    total, so the file rows tell which files a change of the total comes
+    from.  PATH is the path of a file of the tree, or @build/PATH for a file
+    of the build directory.  NAME is <system>/PATH after the first include/
+    component of the path of another file (build_census.file_key).
+    utils/ledgers/instruction-total.txt holds only the two total rows of
+    each kind.
 
 THE LEVELS
     The measured rules parse-total and instruction-total of utils/registry.txt
@@ -79,10 +83,10 @@ THE LEVELS
     compiles.
 
 THE FAN-OUT BASELINE
-    utils/scripts/header-fanout-ledger.txt holds the 30 largest products of
-    each build kind at the last --write:
+    utils/ledgers/header-fanout.txt holds the 30 largest products of each
+    build kind at the last --write:
 
-        header | KIND | HEADER | ALONE BYTES | READERS
+        HEADER | KIND | ALONE BYTES/READERS | - | -
 
     A header in the ten largest products of the build that was not in the ten
     largest of the baseline gives a warning.  A header whose product
@@ -98,7 +102,7 @@ NOT APPLICABLE
     fixture ran), or when its ledger has no baseline of the kind of the
     build.  A kind with no baseline is a build that nobody measured, for
     example a build for another architecture.  Each other input that a check
-    cannot read is an error.
+    cannot read is an error, also a ledger file that does not exist.
 
 Usage
     guard check --rule RULE --build-dir DIR [--warnings-dir DIR]
@@ -124,20 +128,22 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
 from assay.core import meter as cost_meter
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
-from assay.core.paths import DATA, REPO_ROOT
+from assay.core import rows as rows_grammar
+from assay.core.paths import REPO_ROOT
 from assay.readers import census as build_census
 
-# The directory of the ledgers.
-SCRIPTS = DATA
-# The ledger of each check.
-LEDGERS = {"parse-total": "parse-total-ledger.txt", "header-fanout": "header-fanout-ledger.txt",
-           "instruction-total": "instruction-total-ledger.txt"}
 GIGA = 1e9
-CHECKS = tuple(LEDGERS)
+CHECKS = ("parse-total", "header-fanout", "instruction-total")
 NOT_APPLICABLE = 3
+# The entity of each of the two total rows of a kind.
+TOTAL_PARTS = ("objects", "fixtures")
+# The prefix of a file of the build directory in the names of build_census.file_key and in the PATH of a row.
+CENSUS_BUILD = "<build>/"
+LEDGER_BUILD = "@build/"
 # The part of the path of an object of a sentinel of test/layer, which compiles one header alone.
 SENTINEL_MARK = "/layer_sentinel_"
 # The headers that the fan-out lists, and the headers that its baseline keeps.
@@ -153,7 +159,16 @@ KB = 1024
 
 
 class LedgerError(ValueError):
-    """The ledger does not exist or holds a malformed row."""
+    """The ledger does not exist or holds a malformed row.
+
+    Attributes:
+        line: The line of the row, or 0 when no row applies
+    """
+
+    def __init__(self, message: str, line: int = 0) -> None:
+        """Keep the message and the line of the row."""
+        super().__init__(message)
+        self.line = line
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,9 +188,9 @@ class Total:
 
 @dataclass(slots=True)
 class Ledger:
-    """The rows of the ledger: the header lines, the total of each kind and the file rows of each kind."""
+    """The rows of the ledger: the head comment, the total of each kind and the file rows of each kind."""
 
-    header: list[str]
+    comment: str
     totals: dict[str, Total]
     files: dict[str, dict[str, tuple[int, int]]]
 
@@ -205,43 +220,121 @@ def size_text(count: int) -> str:
     return f"{count / KB:.1f} KB"
 
 
-def read_ledger(path: Path) -> Ledger:
-    """Read the ledger.
+def read_rows(rule: rule_registry.Rule, root: Path) -> rule_ledger.Ledger:
+    """Read the rows of the ledger of a rule, utils/ledgers/RULE.txt under the root.
 
     Raises:
-        LedgerError: If the file does not exist, or a row is malformed or repeated
+        LedgerError: If the file does not exist, or it does not obey the rows grammar or the schema of format 1
     """
-    if not path.is_file():
-        raise LedgerError(f"{path.name} does not exist.  It holds a comment block and the rows that --write writes")
-    ledger = Ledger([], {}, {})
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        text = raw.strip()
-        if not text or text.startswith("#"):
-            if not ledger.totals and not ledger.files:
-                ledger.header.append(raw)
+    shown = rule_ledger.shown_path(rule.id)
+    if not rule_ledger.ledger_path(rule.id, root).is_file():
+        raise LedgerError(f"{shown} does not exist.  It holds a comment block and the rows that --write writes")
+    try:
+        return rule_ledger.read(rule, root)
+    except rows_grammar.RowsError as problem:
+        raise LedgerError(str(problem), problem.line) from None
+
+
+def file_name(key: rule_ledger.Key) -> str:
+    """Return the name of the file of a file row, as build_census.file_key gives it."""
+    if key.path.startswith(LEDGER_BUILD):
+        return CENSUS_BUILD + key.path.removeprefix(LEDGER_BUILD)
+    return key.path or key.entity
+
+
+def file_key_of(name: str, kind: str) -> rule_ledger.Key:
+    """Return the key of the row of a file of build_census.file_key.
+
+    A file of the tree has its path in PATH, and a file of the build
+    directory has @build/PATH there.  Each other file has no PATH, and its
+    name is the entity.
+    """
+    if name.startswith(CENSUS_BUILD):
+        return rule_ledger.Key(LEDGER_BUILD + name.removeprefix(CENSUS_BUILD), kind, "")
+    if name.startswith("<") or Path(name).is_absolute():
+        return rule_ledger.Key("", kind, name)
+    return rule_ledger.Key(name, kind, "")
+
+
+def ordered_rows(rows: rule_ledger.Ledger) -> list[rule_ledger.Entry]:
+    """Return the rows of a ledger in the order of their lines, so that the first malformed row gives the error."""
+    return sorted(rows.base.values(), key=lambda entry: entry.line)
+
+
+def bytes_and_readers(entry: rule_ledger.Entry) -> tuple[int, int] | None:
+    """Return the two counts of a value BYTES/READERS, or None for a value of another form."""
+    if not isinstance(entry.value, str):
+        return None
+    size, _, readers = entry.value.partition("/")
+    return int(size), int(readers)
+
+
+def read_ledger(rule: rule_registry.Rule, root: Path) -> Ledger:
+    """Read the ledger of parse-total or instruction-total: the two total rows and the file rows of each kind.
+
+    Complexity: O(r log r) for r rows.
+
+    Raises:
+        LedgerError: If the file does not exist or a row is malformed: a kind that is not a build kind, a total row
+            with no whole number or no reason, a kind with one total row or two reasons, or a file row with no
+            BYTES/READERS or not in the form of its file
+    """
+    rows = read_rows(rule, root)
+    shown = rule_ledger.shown_path(rule.id)
+    parts: dict[str, dict[str, rule_ledger.Entry]] = {}
+    files: dict[str, dict[str, tuple[int, int]]] = {}
+    for entry in ordered_rows(rows):
+        key, place = entry.key, f"{shown}:{entry.line}"
+        if not is_kind(key.kind):
+            raise LedgerError(f"{place}: the kind {key.kind!r} is not lowercase words with hyphens", entry.line)
+        if not key.path and key.entity in TOTAL_PARTS:
+            if not isinstance(entry.value, float) or not entry.value.is_integer() or not entry.reason:
+                raise LedgerError(f"{place}: a total row is `- | KIND | BYTES | objects | REASON` or `- | KIND | "
+                                  f"BYTES | fixtures | REASON`, with a whole number and a reason", entry.line)
+            parts.setdefault(key.kind, {})[key.entity] = entry
             continue
-        cells = [cell.strip() for cell in text.split(" | ")]
-        kind = cells[1] if len(cells) > 1 else ""
-        try:
-            if cells[0] == "total" and len(cells) == 5 and cells[4]:
-                if kind in ledger.totals:
-                    raise LedgerError(f"{path.name}:{number}: the kind {kind} has a second total row")
-                ledger.totals[kind] = Total(number, int(cells[2]), int(cells[3]), cells[4])
-            elif cells[0] == "file" and len(cells) == 5:
-                rows = ledger.files.setdefault(kind, {})
-                if cells[2] in rows:
-                    raise LedgerError(f"{path.name}:{number}: the file {cells[2]} has a second row of the kind {kind}")
-                rows[cells[2]] = (int(cells[3]), int(cells[4]))
-            else:
-                raise LedgerError(f"{path.name}:{number}: a row is `total | KIND | OBJECT BYTES | FIXTURE BYTES | "
-                                  f"reason` or `file | KIND | FILE | BYTES | READERS`, and this row is: {text}")
-        except ValueError as problem:
-            if isinstance(problem, LedgerError):
-                raise
-            raise LedgerError(f"{path.name}:{number}: a count of this row is not a whole number: {text}") from None
-        if not is_kind(kind):
-            raise LedgerError(f"{path.name}:{number}: the kind {kind!r} is not lowercase words with hyphens")
-    return ledger
+        counts, name = bytes_and_readers(entry), file_name(key)
+        if counts is None or not name or entry.reason or file_key_of(name, key.kind) != key:
+            raise LedgerError(f"{place}: a file row is `PATH | KIND | BYTES/READERS | - | -` for a file of the tree or "
+                              f"@build/PATH of the build directory, and `- | KIND | BYTES/READERS | NAME | -` for "
+                              f"another file", entry.line)
+        files.setdefault(key.kind, {})[name] = counts
+    totals: dict[str, Total] = {}
+    for kind, found in parts.items():
+        first = min(found.values(), key=lambda entry: entry.line)
+        if len(found) != len(TOTAL_PARTS):
+            raise LedgerError(f"{shown}:{first.line}: the kind {kind} has a total row of {first.key.entity} and no "
+                              f"other.  A kind has a total row of objects and one of fixtures", first.line)
+        objects, fixtures = found["objects"], found["fixtures"]
+        if objects.reason != fixtures.reason:
+            raise LedgerError(f"{shown}:{first.line}: the two total rows of the kind {kind} give two reasons.  The two "
+                              f"rows of a kind give one reason", first.line)
+        totals[kind] = Total(first.line, int(objects.value), int(fixtures.value), objects.reason)
+    return Ledger(rows.comment, totals, files)
+
+
+def store_rows(rule: rule_registry.Rule, root: Path, comment: str, entries: list[rule_ledger.Entry]) -> str | None:
+    """Write the rows of a ledger in format 1, with its head comment.
+
+    Returns:
+        None when the file is written, else the reason that a cell cannot hold a value
+    """
+    ledger = rule_ledger.Ledger(rule.id, rule.policy, comment, (), {entry.key: entry for entry in entries})
+    try:
+        rule_ledger.store(ledger, root)
+    except ValueError as problem:
+        return f"the ledger is not written: {problem}"
+    return None
+
+
+def total_entries(totals: dict[str, Total]) -> list[rule_ledger.Entry]:
+    """Return the two total rows of each kind."""
+    entries: list[rule_ledger.Entry] = []
+    for kind, total in totals.items():
+        for part, count in zip(TOTAL_PARTS, (total.objects, total.fixtures)):
+            key = rule_ledger.Key("", kind, part)
+            entries.append(rule_ledger.Entry(key, count, total.reason))
+    return entries
 
 
 def is_kind(kind: str) -> bool:
@@ -322,8 +415,8 @@ def evaluate(measured: Measure, ledger: Ledger, ledger_shown: str, kind: str, bu
     return []
 
 
-def write_ledger(path: Path, ledger: Ledger, kind: str, measured: Measure, reason: str | None,
-                 budget: check_report.Budget) -> tuple[bool, str]:
+def write_ledger(rule: rule_registry.Rule, root: Path, ledger: Ledger, kind: str, measured: Measure,
+                 reason: str | None, budget: check_report.Budget) -> tuple[bool, str]:
     """Write the rows of one kind again from a measure, and keep the rows of the other kinds.
 
     Returns:
@@ -340,15 +433,15 @@ def write_ledger(path: Path, ledger: Ledger, kind: str, measured: Measure, reaso
     files = dict(ledger.files)
     floor = measured.bytes * FILE_FLOOR
     files[kind] = {key: value for key, value in measured.files.items() if value[0] * value[1] >= floor}
-    lines = list(ledger.header)
-    for each_kind in sorted(totals):
-        row = totals[each_kind]
-        lines.append(f"total | {each_kind} | {row.objects} | {row.fixtures} | {row.reason}")
-        ordered = sorted(files.get(each_kind, {}).items(), key=lambda item: (-item[1][0] * item[1][1], item[0]))
-        lines.extend(f"file | {each_kind} | {key} | {size} | {readers}" for key, (size, readers) in ordered)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return True, (f"parse-total: {path.name} holds the baseline {measured.bytes} bytes and {len(files[kind])} file "
-                  f"rows of the kind {kind}")
+    entries = total_entries(totals)
+    for each_kind in totals:
+        entries += [rule_ledger.Entry(file_key_of(name, each_kind), f"{size}/{readers}", "")
+                    for name, (size, readers) in files.get(each_kind, {}).items()]
+    refused = store_rows(rule, root, ledger.comment, entries)
+    if refused is not None:
+        return False, refused
+    return True, (f"parse-total: {rule_ledger.shown_path(rule.id)} holds the baseline {measured.bytes} bytes and "
+                  f"{len(files[kind])} file rows of the kind {kind}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -367,9 +460,9 @@ class Fan:
 
 @dataclass(slots=True)
 class FanLedger:
-    """The rows of the fan-out ledger: the header lines and, for each kind, the line, bytes and readers of a header."""
+    """The rows of the fan-out ledger: the head comment and, for each kind, the line, bytes and readers of a header."""
 
-    header: list[str]
+    comment: str
     rows: dict[str, dict[str, tuple[int, int, int]]]
 
 
@@ -395,34 +488,28 @@ def fanout(census: build_census.Census, root: Path) -> list[Fan]:
     return sorted(fans.values(), key=lambda fan: (-fan.product, fan.header))
 
 
-def read_fanout_ledger(path: Path) -> FanLedger:
+def read_fanout_ledger(rule: rule_registry.Rule, root: Path) -> FanLedger:
     """Read the fan-out ledger.
 
+    Complexity: O(r log r) for r rows.
+
     Raises:
-        LedgerError: If the file does not exist, or a row is malformed or repeated
+        LedgerError: If the file does not exist, or a row is malformed: a kind that is not a build kind, a value that
+            is not BYTES/READERS with two positive counts, or a row not in the form of its header
     """
-    if not path.is_file():
-        raise LedgerError(f"{path.name} does not exist.  It holds a comment block and the rows that --write writes")
-    ledger = FanLedger([], {})
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        text = raw.strip()
-        if not text or text.startswith("#"):
-            if not ledger.rows:
-                ledger.header.append(raw)
-            continue
-        cells = [cell.strip() for cell in text.split(" | ")]
-        if len(cells) != 5 or cells[0] != "header" or not is_kind(cells[1]) or not cells[2]:
-            raise LedgerError(f"{path.name}:{number}: a row is `header | KIND | HEADER | ALONE BYTES | READERS`, and "
-                              f"this row is: {text}")
-        try:
-            alone, readers = int(cells[3]), int(cells[4])
-        except ValueError:
-            raise LedgerError(f"{path.name}:{number}: a count of this row is not a whole number: {text}") from None
-        rows = ledger.rows.setdefault(cells[1], {})
-        if cells[2] in rows or alone <= 0 or readers <= 0:
-            raise LedgerError(f"{path.name}:{number}: the header {cells[2]} has a second row of the kind {cells[1]}, "
-                              f"or a count that is not positive")
-        rows[cells[2]] = (number, alone, readers)
+    rows = read_rows(rule, root)
+    shown = rule_ledger.shown_path(rule.id)
+    ledger = FanLedger(rows.comment, {})
+    for entry in ordered_rows(rows):
+        key, counts, header = entry.key, bytes_and_readers(entry), file_name(entry.key)
+        if (not is_kind(key.kind) or counts is None or not header or entry.reason
+                or file_key_of(header, key.kind) != key):
+            raise LedgerError(f"{shown}:{entry.line}: a row is `HEADER | KIND | ALONE BYTES/READERS | - | -`, with a "
+                              f"build kind in lowercase words with hyphens", entry.line)
+        alone, readers = counts
+        if alone <= 0 or readers <= 0:
+            raise LedgerError(f"{shown}:{entry.line}: the header {header} has a count that is not positive", entry.line)
+        ledger.rows.setdefault(key.kind, {})[header] = (entry.line, alone, readers)
     return ledger
 
 
@@ -471,21 +558,21 @@ def evaluate_fanout(fans: list[Fan], rows: dict[str, tuple[int, int, int]], ledg
     return findings
 
 
-def write_fanout_ledger(path: Path, ledger: FanLedger, kind: str, fans: list[Fan]) -> str:
+def write_fanout_ledger(rule: rule_registry.Rule, root: Path, ledger: FanLedger, kind: str,
+                        fans: list[Fan]) -> tuple[bool, str]:
     """Write the rows of one kind again from the largest products of a build, and keep the rows of the other kinds.
 
     Returns:
-        The summary
+        True and a summary, or False and the reason that the write refuses
     """
     rows = dict(ledger.rows)
     rows[kind] = {fan.header: (0, fan.alone, fan.readers) for fan in fans[:FANOUT_KEPT]}
-    lines = list(ledger.header)
-    for each_kind in sorted(rows):
-        ordered = sorted(rows[each_kind].items(), key=lambda item: (-item[1][1] * item[1][2], item[0]))
-        lines.extend(f"header | {each_kind} | {header} | {alone} | {readers}"
-                     for header, (_, alone, readers) in ordered)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return f"header-fanout: {path.name} holds {len(rows[kind])} rows of the kind {kind}"
+    entries = [rule_ledger.Entry(file_key_of(header, each_kind), f"{alone}/{readers}", "")
+               for each_kind, headers in rows.items() for header, (_, alone, readers) in headers.items()]
+    refused = store_rows(rule, root, ledger.comment, entries)
+    if refused is not None:
+        return False, refused
+    return True, f"header-fanout: {rule_ledger.shown_path(rule.id)} holds {len(rows[kind])} rows of the kind {kind}"
 
 
 def top_table(fans: list[Fan]) -> str:
@@ -552,9 +639,9 @@ def evaluate_instructions(census: build_census.Census, objects: int, fixtures: i
     return []
 
 
-def write_totals(path: Path, ledger: Ledger, kind: str, objects: int, fixtures: int, reason: str | None,
-                 budget: check_report.Budget) -> tuple[bool, str]:
-    """Write the total row of one kind again, and keep the total rows of the other kinds.
+def write_totals(rule: rule_registry.Rule, root: Path, ledger: Ledger, kind: str, objects: int, fixtures: int,
+                 reason: str | None, budget: check_report.Budget) -> tuple[bool, str]:
+    """Write the two total rows of one kind again, and keep the total rows of the other kinds.
 
     Returns:
         True and a summary, or False and the reason that the write refuses
@@ -566,22 +653,24 @@ def write_totals(path: Path, ledger: Ledger, kind: str, objects: int, fixtures: 
                        f"the warning threshold {budget.warn:g}%.  Give the reason of the growth with --reason")
     totals = dict(ledger.totals)
     totals[kind] = Total(0, objects, fixtures, reason or (old.reason if old is not None else DEFAULT_REASON))
-    lines = list(ledger.header)
-    lines.extend(f"total | {each_kind} | {row.objects} | {row.fixtures} | {row.reason}"
-                 for each_kind, row in sorted(totals.items()))
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return True, (f"instruction-total: {path.name} holds the baseline {objects + fixtures} instructions of the kind "
-                  f"{kind}")
+    refused = store_rows(rule, root, ledger.comment, total_entries(totals))
+    if refused is not None:
+        return False, refused
+    return True, (f"instruction-total: {rule_ledger.shown_path(rule.id)} holds the baseline {objects + fixtures} "
+                  f"instructions of the kind {kind}")
 
 
-def run(check: str, build_dir: Path, root: Path, kind: str, ledger_path: Path, registry_path: Path,
-        warnings_dir: Path | None, write: bool = False, reason: str | None = None) -> int:
+def run(check: str, build_dir: Path, root: Path, kind: str, registry_path: Path, warnings_dir: Path | None,
+        write: bool = False, reason: str | None = None) -> int:
     """Run one check, or its --write, over one build.
+
+    The ledger is utils/ledgers/CHECK.txt under the root, and the registry
+    at registry_path gives the levels.
 
     Returns:
         The exit status
     """
-    ledger_shown = build_census.shown(ledger_path, root)
+    ledger_shown = rule_ledger.shown_path(check)
     build_shown = build_census.shown(build_dir, root)
 
     def fail(path: str, message: str, line: int = 0) -> int:
@@ -597,14 +686,18 @@ def run(check: str, build_dir: Path, root: Path, kind: str, ledger_path: Path, r
     if budget is None:
         return fail(build_census.shown(registry_path, root), f"{registry_path.name} has no measured rule {check}")
     try:
+        rule = rule_ledger.rule_of(check)
+    except (OSError, rule_ledger.LedgerError, rows_grammar.RowsError) as problem:
+        return fail(rule_registry.REGISTRY_PATH, str(problem))
+    try:
         if check == "header-fanout":
-            ledger: Ledger | FanLedger = read_fanout_ledger(ledger_path)
+            ledger: Ledger | FanLedger = read_fanout_ledger(rule, root)
             has_baseline = kind in ledger.rows  # type: ignore[union-attr]
         else:
-            ledger = read_ledger(ledger_path)
+            ledger = read_ledger(rule, root)
             has_baseline = kind in ledger.totals  # type: ignore[union-attr]
     except LedgerError as problem:
-        return fail(ledger_shown, str(problem))
+        return fail(ledger_shown, str(problem), problem.line)
     if not write and not has_baseline:
         print(f"{check}: {ledger_shown} has no baseline of the kind {kind}, so no baseline applies to this build.  "
               f"The check does not apply")
@@ -620,7 +713,7 @@ def run(check: str, build_dir: Path, root: Path, kind: str, ledger_path: Path, r
         return fail(build_shown, str(problem))
     if check == "instruction-total" and isinstance(ledger, Ledger):
         if write:
-            is_written, summary = write_totals(ledger_path, ledger, kind, objects, fixtures, reason, budget)
+            is_written, summary = write_totals(rule, root, ledger, kind, objects, fixtures, reason, budget)
             print(summary, file=sys.stderr if not is_written else sys.stdout)
             return 0 if is_written else 1
         total = ledger.totals[kind]
@@ -634,15 +727,16 @@ def run(check: str, build_dir: Path, root: Path, kind: str, ledger_path: Path, r
     if isinstance(ledger, FanLedger):
         fans = fanout(census, root)
         if write:
-            print(write_fanout_ledger(ledger_path, ledger, kind, fans))
-            return 0
+            is_written, summary = write_fanout_ledger(rule, root, ledger, kind, fans)
+            print(summary, file=sys.stderr if not is_written else sys.stdout)
+            return 0 if is_written else 1
         status = check_report.emit(evaluate_fanout(fans, ledger.rows[kind], ledger_shown, budget), check,
                                    warnings_dir)
         print(top_table(fans))
         return status
     measured = measure(census, root)
     if write:
-        is_written, summary = write_ledger(ledger_path, ledger, kind, measured, reason, budget)
+        is_written, summary = write_ledger(rule, root, ledger, kind, measured, reason, budget)
         print(summary, file=sys.stderr if not is_written else sys.stdout)
         return 0 if is_written else 1
     findings = evaluate(measured, ledger, ledger_shown, kind, budget, build_shown)
@@ -670,6 +764,13 @@ from pathlib import Path
 build = Path(sys.argv[sys.argv.index("--test-dir") + 1])
 sys.stdout.write((build / "tests.json").read_text())
 """
+# The three lines before the first row of a planted ledger: the head comment, the format row and the rule row.
+PLANTED_HEAD_LINES = 3
+
+
+def planted_ledger(rule_id: str) -> str:
+    """Return the text of a planted ledger of a rule with a head comment and no row."""
+    return f"# a planted ledger of {rule_id}\nformat {rule_ledger.FORMAT}\nrule {rule_id}\n"
 
 
 class Scratch:
@@ -689,12 +790,13 @@ class Scratch:
         self.build = root / "build"
         self.build.mkdir(parents=True)
         (root / "include").mkdir()
-        self.ledger = root / "parse-total-ledger.txt"
-        self.ledger.write_text("# a planted ledger\n", encoding="utf-8")
-        self.fan_ledger = root / "header-fanout-ledger.txt"
-        self.fan_ledger.write_text("# a planted fan-out ledger\n", encoding="utf-8")
-        self.instruction_ledger = root / "instruction-total-ledger.txt"
-        self.instruction_ledger.write_text("# a planted instruction ledger\n", encoding="utf-8")
+        (root / rule_ledger.LEDGER_DIRECTORY).mkdir(parents=True)
+        self.ledger = rule_ledger.ledger_path("parse-total", root)
+        self.ledger.write_text(planted_ledger("parse-total"), encoding="utf-8")
+        self.fan_ledger = rule_ledger.ledger_path("header-fanout", root)
+        self.fan_ledger.write_text(planted_ledger("header-fanout"), encoding="utf-8")
+        self.instruction_ledger = rule_ledger.ledger_path("instruction-total", root)
+        self.instruction_ledger.write_text(planted_ledger("instruction-total"), encoding="utf-8")
         self.registry = root / "registry.txt"
         self.registry.write_text(self.REGISTRY, encoding="utf-8")
         for name, text in (("ninja.py", FAKE_NINJA), ("ctest.py", FAKE_CTEST)):
@@ -777,11 +879,9 @@ class Scratch:
             warnings_dir: Path | None = None, check: str = "parse-total") -> tuple[int, list[check_report.Finding], str]:
         """Run one check or its --write, and return its status, its findings and its output."""
         output = io.StringIO()
-        ledger = {"parse-total": self.ledger, "header-fanout": self.fan_ledger,
-                  "instruction-total": self.instruction_ledger}[check]
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
-            status = run(check, self.build.resolve(), self.root.resolve(), kind, ledger, self.registry, warnings_dir,
-                         write, reason)
+            status = run(check, self.build.resolve(), self.root.resolve(), kind, self.registry, warnings_dir, write,
+                         reason)
         found = [parsed for line in output.getvalue().splitlines()
                  if (parsed := check_report.parse_line(line)) is not None]
         return status, found, output.getvalue()
@@ -800,6 +900,9 @@ def self_test() -> int:
         if not holds:
             failures.append(name)
 
+    # The first row of a planted ledger, which is the first total row after a --write.
+    first_row = PLANTED_HEAD_LINES + 1
+    shown = rule_ledger.shown_path("parse-total")
     with tempfile.TemporaryDirectory(prefix="parse-cost-") as scratch_name:
         tree = Scratch(Path(scratch_name).resolve())
         status, found, output = tree.run()
@@ -807,18 +910,19 @@ def self_test() -> int:
                and "has no baseline of the kind" in output)
         status, _, output = tree.run(write=True)
         written = tree.ledger.read_text(encoding="utf-8")
-        expect("--write writes the total and the file rows, and keeps the header",
-               status == 0 and written.startswith("# a planted ledger\n")
-               and f"total | {Scratch.KIND} | 2200 | 2100 | {DEFAULT_REASON}" in written
-               and f"file | {Scratch.KIND} | include/Base.h | 1000 | 4" in written)
+        expect("--write writes the two total rows and the file rows, and keeps the head comment",
+               status == 0 and written.startswith(planted_ledger("parse-total"))
+               and f"- | {Scratch.KIND} | 2200 | objects | {DEFAULT_REASON}\n" in written
+               and f"- | {Scratch.KIND} | 2100 | fixtures | {DEFAULT_REASON}\n" in written
+               and f"include/Base.h | {Scratch.KIND} | 1000/4 | - | -\n" in written)
         status, found, output = tree.run()
         expect("an unchanged build passes with no finding", status == 0 and not found and "+0.00%" in output)
 
         tree.write("include/Base.h", 1030)
         status, found, _ = tree.run()
-        expect("a growth of 2.8% gives a warning at the total row that names the header and its change",
-               status == 0 and [f.level for f in found] == ["warning"] and found[0].path == "parse-total-ledger.txt"
-               and found[0].line == 2 and "2.79% more than the baseline" in found[0].message
+        expect("a growth of 2.8% gives a warning at the first total row that names the header and its change",
+               status == 0 and [f.level for f in found] == ["warning"] and found[0].path == shown
+               and found[0].line == first_row and "2.79% more than the baseline" in found[0].message
                and "include/Base.h 1.0 KB x 4 readers = 4.0 KB (+0.1 KB, was 1.0 KB x 4)" in found[0].message)
         tree.add_object("c", ["src/a.cpp", "include/Big.h"])
         status, found, _ = tree.run()
@@ -855,13 +959,27 @@ def self_test() -> int:
         status, found, output = tree.run(kind="aarch64-debug-asan")
         expect("a kind with no baseline exits 3", status == NOT_APPLICABLE and not found)
         good_ledger = tree.ledger.read_text(encoding="utf-8")
-        for label, text in (("a row of four cells", f"total | {Scratch.KIND} | 1 | 2\n"),
-                            ("a word count", f"file | {Scratch.KIND} | include/Base.h | many | 4\n"),
-                            ("a second total row", good_ledger.split("\n", 1)[1]),
-                            ("a total row with no reason", f"total | {Scratch.KIND} | 1 | 2 | \n")):
+        bad_line = good_ledger.count("\n") + 1
+        other = "x86_64-release"
+        for label, text in (("a total row of three cells", f"- | {Scratch.KIND} | 1 | objects\n"),
+                            ("a word count", f"include/Other.h | {Scratch.KIND} | many/4 | - | -\n"),
+                            ("a second total row", f"- | {Scratch.KIND} | 1 | objects | a reason\n"),
+                            ("a total row with no reason",
+                             f"- | {other} | 1 | objects | -\n- | {other} | 2 | fixtures | -\n"),
+                            ("a total row of BYTES/READERS",
+                             f"- | {other} | 1/2 | objects | r\n- | {other} | 2 | fixtures | r\n"),
+                            ("a kind with one total row", f"- | {other} | 1 | objects | a reason\n"),
+                            ("two reasons of one kind",
+                             f"- | {other} | 1 | objects | a\n- | {other} | 2 | fixtures | b\n"),
+                            ("a kind that is not a build kind",
+                             "- | X86 | 1 | objects | r\n- | X86 | 2 | fixtures | r\n"),
+                            ("a file row of one count", f"include/Other.h | {Scratch.KIND} | 12 | - | -\n"),
+                            ("a file of the tree as the entity", f"- | {Scratch.KIND} | 1/2 | include/Other.h | -\n"),
+                            ("a file row with a reason", f"include/Other.h | {Scratch.KIND} | 1/2 | - | a reason\n")):
             tree.ledger.write_text(good_ledger + text, encoding="utf-8")
             status, found, _ = tree.run()
-            expect(f"a ledger with {label} is an error", status == 1 and found[0].path == "parse-total-ledger.txt")
+            expect(f"a ledger with {label} is an error at the line of the row",
+                   status == 1 and found[0].path == shown and found[0].line == bad_line)
         tree.ledger.unlink()
         status, found, _ = tree.run()
         expect("a missing ledger is an error", status == 1 and "does not exist" in found[0].message)
@@ -915,10 +1033,13 @@ def self_test() -> int:
         expect("header-fanout: a ledger with no row of the kind exits 3", status == NOT_APPLICABLE and not found)
         status, _, output = fan_run(write=True)
         written = fan.fan_ledger.read_text(encoding="utf-8")
-        expect("header-fanout: --write writes a row for each header, the largest product first",
-               status == 0 and written.startswith("# a planted fan-out ledger\n")
-               and written.splitlines()[1] == f"header | {Scratch.KIND} | include/H11.h | 1200 | 2"
-               and written.count("\nheader |") == 12)
+        fan_shown = rule_ledger.shown_path("header-fanout")
+        expect("header-fanout: --write writes a row of the bytes alone and the readers of each header, in the order "
+               "of the paths",
+               status == 0 and written.startswith(planted_ledger("header-fanout"))
+               and written.splitlines()[first_row - 1] == f"include/H00.h | {Scratch.KIND} | 100/2 | - | -"
+               and f"\ninclude/H11.h | {Scratch.KIND} | 1200/2 | - | -\n" in written
+               and written.count(f" | {Scratch.KIND} | ") == 12)
         status, found, output = fan_run()
         expect("header-fanout: an unchanged build gives no warning and prints the top list",
                status == 0 and not found and "   1.    2.3 KB     1.2 KB alone x     2 readers  include/H11.h"
@@ -938,23 +1059,27 @@ def self_test() -> int:
         fell = [f for f in found if "fell by" in f.message]
         expect("header-fanout: a header whose product fell by more than 10% warns at its row, to write the baseline "
                "again, and the header that takes its place in the top 10 warns",
-               status == 0 and len(fell) == 1 and fell[0].path == "header-fanout-ledger.txt" and fell[0].line == 2
+               status == 0 and len(fell) == 1 and fell[0].path == fan_shown and fell[0].line == first_row + 11
                and "fell by 91.7%" in fell[0].message
                and [f.path for f in found if "enters the top 10" in f.message] == ["include/H01.h"])
         fan.write("include/H11.h", 1200)
         fan.remove_object("H05")
         status, found, _ = fan_run()
         expect("header-fanout: a header of the baseline with no sentinel warns at its row",
-               status == 0 and [f.line for f in found if "has no sentinel of include/H05.h" in f.message] == [8])
+               status == 0 and [f.line for f in found if "has no sentinel of include/H05.h" in f.message]
+               == [first_row + 5])
         good_fan = fan.fan_ledger.read_text(encoding="utf-8")
-        for label, text in (("a row of four cells", f"header | {Scratch.KIND} | include/H00.h | 1\n"),
-                            ("a word count", f"header | {Scratch.KIND} | include/H99.h | many | 2\n"),
-                            ("a second row of one header", f"header | {Scratch.KIND} | include/H00.h | 100 | 2\n"),
-                            ("a count of zero", f"header | {Scratch.KIND} | include/H99.h | 0 | 2\n")):
+        bad_line = good_fan.count("\n") + 1
+        for label, text in (("a row of three cells", f"include/H99.h | {Scratch.KIND} | 1/2 | -\n"),
+                            ("a word count", f"include/H99.h | {Scratch.KIND} | many/2 | - | -\n"),
+                            ("a second row of one header", f"include/H00.h | {Scratch.KIND} | 100/2 | - | -\n"),
+                            ("a count of zero", f"include/H99.h | {Scratch.KIND} | 0/2 | - | -\n"),
+                            ("a value of one count", f"include/H99.h | {Scratch.KIND} | 100 | - | -\n"),
+                            ("a kind that is not a build kind", "include/H99.h | X86 | 100/2 | - | -\n")):
             fan.fan_ledger.write_text(good_fan + text, encoding="utf-8")
             status, found, _ = fan_run()
-            expect(f"header-fanout: a ledger with {label} is an error",
-                   status == 1 and found[0].path == "header-fanout-ledger.txt")
+            expect(f"header-fanout: a ledger with {label} is an error at the line of the row",
+                   status == 1 and found[0].path == fan_shown and found[0].line == bad_line)
         fan.fan_ledger.write_text(good_fan, encoding="utf-8")
         (fan.build / "neg-compile" / "neg_one" / "neg_one.inputs").unlink()
         status, found, _ = fan_run()
@@ -969,16 +1094,18 @@ def self_test() -> int:
         status, found, _ = count_run()
         expect("instruction-total: a ledger with no row of the kind exits 3", status == NOT_APPLICABLE and not found)
         status, _, output = count_run(write=True)
-        expect("instruction-total: --write writes the total row",
-               status == 0 and f"total | {Scratch.KIND} | 4000000000 | 10000000000 | {DEFAULT_REASON}"
-               in counted.instruction_ledger.read_text(encoding="utf-8"))
+        written = counted.instruction_ledger.read_text(encoding="utf-8")
+        expect("instruction-total: --write writes the two total rows",
+               status == 0 and f"- | {Scratch.KIND} | 4000000000 | objects | {DEFAULT_REASON}\n" in written
+               and f"- | {Scratch.KIND} | 10000000000 | fixtures | {DEFAULT_REASON}\n" in written)
         status, found, output = count_run()
         expect("instruction-total: an unchanged build gives no finding", status == 0 and not found
                and "14.0 G user instructions" in output)
         counted.add_object("a", ["src/a.cpp", "include/Base.h"], instructions=2_420_000_000)
         status, found, _ = count_run()
-        expect("instruction-total: a growth of 3% gives a warning at the total row that names the largest compiles",
-               status == 0 and [f.level for f in found] == ["warning"] and found[0].line == 2
+        expect("instruction-total: a growth of 3% gives a warning at the first total row that names the largest "
+               "compiles",
+               status == 0 and [f.level for f in found] == ["warning"] and found[0].line == first_row
                and "3.00% more" in found[0].message and "src/a.cpp 2.4 G" in found[0].message)
         counted.add_object("a", ["src/a.cpp", "include/Base.h"], instructions=2_840_000_000)
         warnings_dir = counted.root / "warnings"
@@ -1043,5 +1170,5 @@ def main(argv: list[str]) -> int:
             "error", build_census.shown(build_dir / cost_meter.KIND_FILE, REPO_ROOT), 0, arguments.check,
             "the build has no build kind.  cmake/BuildLauncher.cmake writes it at each configure.  Configure the build "
             "again")], arguments.check, arguments.warnings_dir)
-    return run(arguments.check, build_dir, REPO_ROOT, kind, SCRIPTS / LEDGERS[arguments.check], check_report.REGISTRY,
-               arguments.warnings_dir, arguments.write, arguments.reason)
+    return run(arguments.check, build_dir, REPO_ROOT, kind, check_report.REGISTRY, arguments.warnings_dir,
+               arguments.write, arguments.reason)

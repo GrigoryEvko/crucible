@@ -53,10 +53,13 @@ SCOPE
     include/, src/, test/, bench/, utils/tools/ and vessel/, without the
     negative-compile fixtures of test/*_neg/.
 
-THE ALLOWLIST
-    utils/scripts/derived-pins-allowlist.txt admits a pin by `path:NAME — reason`.
-    The key names a constant, not a line.  A row with no reason, a duplicate
-    row and a row that matches no live pin fail the check.
+THE LEDGER
+    utils/ledgers/derived-pins.txt (the ledger module assay.core.ledger,
+    policy admit) admits a pin by a row `PATH | - | admit | NAME | REASON`.
+    The key names a constant, not a line.  A file that does not obey the
+    schema, a row with a kind or with no name, and a row that matches no
+    live pin fail the check.  A ledger that does not obey the schema admits
+    no pin, and a missing file admits no pin.
 
 USAGE
     guard check --rule derived-pins [--self-test]
@@ -79,13 +82,15 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.readers import tsast
 
+RULE = "derived-pins"
 ROOTS = ("include", "src", "test", "bench", "utils/tools", "vessel")
-ALLOWLIST = "utils/scripts/derived-pins-allowlist.txt"
+LEDGER = rule_ledger.shown_path(RULE)
 FIXTURE_DIR = re.compile(r"^test/[^/]+_neg/")
 COMPARISONS = frozenset({"=="})
-SEPARATOR = " — "
 # The directory of the check files, and the directory of their headers.
 CHECK_FILES = "test/layer/checks/"
 CHECKED_HEADERS = "include/"
@@ -462,23 +467,21 @@ def scan(root: Path) -> tuple[list[tuple[str, int, str, int, tuple[str, ...]]], 
     return sorted(found), failures
 
 
-def read_allowlist(path: Path) -> tuple[set[str], list[str]]:
-    """Return the keys of the allowlist, and each problem with a row."""
-    keys: set[str] = set()
+def read_ledger(root: Path) -> tuple[dict[tuple[str, str], int], list[str]]:
+    """Return the line of each row of the ledger of a tree by its (path, NAME) key, and each problem with the file
+    or with a row.  A file that does not obey the schema admits no pin."""
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), root)
+    except rows_grammar.RowsError as problem:
+        return {}, [f"{problem}.  The ledger admits no pin"]
+    keys: dict[tuple[str, str], int] = {}
     problems: list[str] = []
-    if not path.is_file():
-        return keys, problems
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        key, found, reason = line.partition(SEPARATOR)
-        if not found or not reason.strip() or ":" not in key:
-            problems.append(f"{ALLOWLIST}:{number}: a row is `path:NAME — reason`, and the reason must not be empty.")
-        elif key in keys:
-            problems.append(f"{ALLOWLIST}:{number}: the key {key} is on two rows.")
+    for key, entry in sorted(ledger.base.items()):
+        if key.kind or not key.entity:
+            problems.append(f"{LEDGER}:{entry.line}: a row is `PATH | - | admit | NAME | REASON`, with no kind and "
+                            f"with the name of the constant")
         else:
-            keys.add(key)
+            keys[(key.path, key.entity)] = entry.line
     return keys, problems
 
 
@@ -489,19 +492,20 @@ def check(root: Path) -> int:
         0 clean, 1 on a vacuous pin or a parse failure, 2 on a malformed or stale row
     """
     found, failures = scan(root)
-    keys, problems = read_allowlist(root / ALLOWLIST)
-    live = {f"{rel}:{name}" for rel, _, name, _, _ in found}
-    violations = [pin for pin in found if f"{pin[0]}:{pin[2]}" not in keys]
+    keys, problems = read_ledger(root)
+    live = {(rel, name) for rel, _, name, _, _ in found}
+    violations = [pin for pin in found if (pin[0], pin[2]) not in keys]
     for rel, line, name, value, origins in violations:
+        row = rows_grammar.render([rel], ["", rule_ledger.ADMIT_VALUE, name, "REASON"])
         print(f"DERIVED-PIN violation: {rel}:{line} — `{name}` is pinned against the literal {value} that "
               f"{' and '.join(origins)} assigns to it, so the assertion cannot fire.  Derive one side (reflection, "
-              f"tuple_size_v, .size()).  Allowlist key: {rel}:{name}", file=sys.stderr)
+              f"tuple_size_v, .size()).  Ledger row: {row}", file=sys.stderr)
     for failure in failures:
         print(f"DERIVED-PIN parse failure: {failure}", file=sys.stderr)
-    stale = sorted(keys - live)
-    for key in stale:
-        print(f"DERIVED-PIN stale: {key} — no vacuous pin with this name is left in the file.  Remove the row.",
-              file=sys.stderr)
+    stale = sorted((line, rel, name) for (rel, name), line in keys.items() if (rel, name) not in live)
+    for line, rel, name in stale:
+        print(f"DERIVED-PIN stale: {LEDGER}:{line}: {rel}: {name} — no vacuous pin with this name is left in the "
+              f"file.  Remove the row.", file=sys.stderr)
     for problem in problems:
         print(f"DERIVED-PIN malformed row: {problem}", file=sys.stderr)
     if violations or failures:
@@ -657,7 +661,7 @@ def self_test() -> int:
         ("inline constexpr int floor_value = 30;", None, ""),
         ("static_assert(floor_value >= 20);", False, "a floor against another literal"),
         ("inline constexpr int allowed = 5;", None, ""),
-        ("static_assert(allowed == 5);", False, "an allowlisted pin"),
+        ("static_assert(allowed == 5);", False, "a pin that the ledger admits"),
         ("inline int runtime = 9;", None, ""),
         ("static_assert(runtime == 9);", False, "a name that is not constexpr"),
         ("inline bool check() { return plain == 28; }", False, "a comparison outside a static_assert"),
@@ -687,17 +691,23 @@ def self_test() -> int:
         header = root / "include/foundation/Planted.h"
         header.parent.mkdir(parents=True)
         header.write_text("\n".join(line for line, _, _ in planted) + "\n", encoding="utf-8")
+        def planted_ledger(*rows: tuple[str, str]) -> str:
+            """Return the text of a planted ledger with one row of the planted header for each (NAME, reason)."""
+            return f"# planted\nformat {rule_ledger.FORMAT}\nrule {RULE}\n" + "".join(
+                rows_grammar.render(["include/foundation/Planted.h"], ["", rule_ledger.ADMIT_VALUE, name, reason])
+                + "\n" for name, reason in rows)
+
         for rel, text in (
             ("test/sample_neg/neg_pin.cpp", "inline constexpr int fixture = 2;\nstatic_assert(fixture == 2);\n"),
             ("src/planted.cpp", "constexpr int in_source = 3;\nstatic_assert(in_source == 3);\n"),
-            (ALLOWLIST, "# planted\ninclude/foundation/Planted.h:allowed — a planted pin\n"),
+            (LEDGER, planted_ledger(("allowed", "a planted pin"))),
         ):
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(text, encoding="utf-8")
         found, broken = scan(root)
-        keys, _ = read_allowlist(root / ALLOWLIST)
+        keys, _ = read_ledger(root)
         reported = {line for rel, line, name, _, _ in found
-                    if rel == "include/foundation/Planted.h" and f"{rel}:{name}" not in keys}
+                    if rel == "include/foundation/Planted.h" and (rel, name) not in keys}
         for line, (_, caught, label) in enumerate(planted, start=1):
             if caught is True:
                 expect(f"caught: {label}", line in reported)
@@ -726,14 +736,21 @@ def self_test() -> int:
         header.write_text("inline constexpr int allowed = 5;\nstatic_assert(allowed == 5);\n", encoding="utf-8")
         (root / "src/planted.cpp").unlink()
         expect("a tree whose pins all have rows passes", captured(root)[0] == 0, True)
-        (root / ALLOWLIST).write_text("include/foundation/Planted.h:allowed — a planted pin\n"
-                                      "include/foundation/Planted.h:gone — a stale row\n", encoding="utf-8")
+        (root / LEDGER).write_text(planted_ledger(("allowed", "a planted pin"), ("gone", "a stale row")),
+                                   encoding="utf-8")
         code, report = captured(root)
         expect("a stale row exits 2", code == 2 and "stale" in report)
-        (root / ALLOWLIST).write_text("include/foundation/Planted.h:allowed\n", encoding="utf-8")
+        (root / LEDGER).write_text(planted_ledger(("allowed", "")), encoding="utf-8")
         code, report = captured(root)
         expect("a row with no reason admits nothing and is reported", code == 1 and "malformed row" in report)
-        (root / ALLOWLIST).write_text("include/foundation/Planted.h:allowed — a planted pin\n", encoding="utf-8")
+        (root / LEDGER).write_text(planted_ledger(("allowed", "one"), ("allowed", "two")), encoding="utf-8")
+        code, report = captured(root)
+        expect("a duplicate row admits nothing and is reported",
+               code == 1 and "malformed row" in report and "has a second row" in report)
+        (root / LEDGER).unlink()
+        code, report = captured(root)
+        expect("a missing ledger admits no pin", code == 1 and "Ledger row: include/foundation/Planted.h" in report)
+        (root / LEDGER).write_text(planted_ledger(("allowed", "a planted pin")), encoding="utf-8")
         (root / "src/Broken.cpp").write_text("void f() { g(1) { } }\nstatic_assert(true);\n", encoding="utf-8")
         expect("a file the parser cannot read fails the check", captured(root)[0] == 1)
     with tempfile.TemporaryDirectory() as work:

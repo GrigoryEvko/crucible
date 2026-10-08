@@ -6,8 +6,8 @@
 // CRUCIBLE_END_I_KNOW_WHAT_IM_DOING closes it.  A finding of the quarantine
 // plugin inside a region is reported as opted_out and is not an error.  The
 // reason starts with its class: ABI:, C-HEADER:, PROBE:, ORACLE: or MEASURE:.
-// utils/scripts/quarantine-region-ledger.txt holds one row for each region of
-// the tree, and the number of rows can only decrease.
+// The rows of utils/ledgers/quarantine-regions.txt count the regions of each
+// file and reason, and the number of regions can only decrease.
 //
 // The build defines CRUCIBLE_QUARANTINE_ACTIVE when it loads the quarantine
 // plugin (utils/tools/quarantine/Quarantine.cmake), and the macros then

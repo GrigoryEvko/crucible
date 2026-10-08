@@ -1,0 +1,14 @@
+# The ledger of the rule gate-mutants: the gates whose mutant does not parse, and why each one can stay
+# untested.  `python3 utils/bin/guard explain gate-mutants` tells the rule.
+#
+# utils/assay/mutation/run.py records a mutant whose header no longer parses as invalid, and the gate of an
+# invalid mutant goes untested.  The run stops after the header that holds one, unless a row here admits
+# the gate.  The reason of a row must say why no mutant of the gate can parse, or why other means witness
+# the gate.
+#
+# A row:  HEADER | GATE KIND | admit | NAME: TEXT | REASON
+#   NAME is the gated entity, and TEXT is the gate text that the run reports, at most 200 characters,
+#   with its whitespace squeezed.
+format 1
+rule gate-mutants
+include/fixy/Qtt.h | requires | admit | Qtt: detail::IsConsumeBound<Grade> | the forward declaration and the definition of Qtt both carry the gate, so a mutant of one site is a redeclaration with different constraints. With both sites weakened together, neg_qtt_grade_that_only_compares_equal compiles and test_qtt.cpp fails its static assertions

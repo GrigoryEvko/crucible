@@ -24,16 +24,23 @@ MODES
     --write        regenerate misc/mint-inventory.md
     --stdout       print the inventory (read-only)
     --check        exit 1 when the committed copy differs from a fresh render
-    --check-floor  exit 1 when a row is under the HS14 floor and the floor
-                   allowlist does not list it, exit 2 on a stale allowlist entry
+    --check-floor  exit 1 when a row is under the HS14 floor and no row of
+                   utils/ledgers/mint-floor.txt names it, exit 2 on a stale
+                   ledger row.  `guard check --rule mint-floor` runs this mode
     --self-test    plant a tree of fixtures and check every rule, positive and
                    negative
+
+THE FLOOR LEDGER
+    utils/ledgers/mint-floor.txt (assay.core.ledger) holds one row
+    `PATH | - | admit | MINT | REASON` for each mint under the floor, where
+    MINT is `Class::mint_name` for a member mint.  The key is the path and
+    the name, with no line, so an edit above a mint does not move it.
 
 EXIT CODES
     0  success
     1  drift, or a live HS14 floor violation
-    2  a stale floor allowlist entry, a malformed entry, a self-test failure, or
-       a usage error
+    2  a stale floor ledger row, a malformed ledger, a self-test failure, or a
+       usage error
     3  the pinned tree-sitter kit is not installed
 """
 
@@ -42,15 +49,17 @@ from __future__ import annotations
 import difflib
 import sys
 import tempfile
+from collections.abc import Collection
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from assay.core.paths import DATA
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.loop.derive import mint_model as mintmodel
 from assay.readers import tsast
 
 INVENTORY = tsast.REPO_ROOT / "misc" / "mint-inventory.md"
-FLOOR_ALLOWLIST = DATA / "mint-hs14-floor-allowlist.txt"
+FLOOR_RULE = "mint-floor"
 
 # The HS14 floor (CLAUDE.md §XVIII): two negative-compile fixtures for each mint.
 HS14_FLOOR = 2
@@ -91,7 +100,7 @@ class Row:
 
     @property
     def floor_key(self) -> str:
-        """Return the floor allowlist key: the name and the path, no line."""
+        """Return the floor key: the name and the path, no line, as `name|path`."""
         return f"{self.name}|{self.path}"
 
 
@@ -222,10 +231,11 @@ python3 utils/bin/loop derive mint-inventory --check         # exit 1 on drift
 python3 utils/bin/loop derive mint-inventory --check-floor   # exit 1 on a row under the HS14 floor
 ```
 
-`--check-floor` reads `utils/scripts/mint-hs14-floor-allowlist.txt`, which lists the
-mints that are under the floor today.  A mint added without fixtures fails the
-gate.  A listed mint that reaches the floor leaves a stale entry, which fails
-the gate at exit 2, so the file only drains.
+`--check-floor`, which `guard check --rule mint-floor` runs, reads
+`utils/ledgers/mint-floor.txt`.  It lists the mints that are under the floor
+today.  A mint added without fixtures fails the gate.  A listed mint that
+reaches the floor leaves a stale row, which fails the gate at exit 2, so the
+file only drains.
 
 The scope is all of `include/`.  One row is one function: overloads are
 separate rows, and a forward declaration folds into its definition.  A section
@@ -297,45 +307,46 @@ def render(rows: list[Row]) -> str:
     return "".join(out)
 
 
-def read_floor_allowlist(path: Path) -> set[str]:
-    """Return the floor allowlist keys, `name|path` each.
+def read_floor_ledger(file: Path | None = None) -> dict[str, str]:
+    """Return the key of each row of the floor ledger, `name|path`, with the start of the row as the file holds it.
 
     Args:
-        path: The allowlist file
+        file: A planted ledger file, or None for utils/ledgers/mint-floor.txt
 
     Returns:
-        The keys
+        The start of each row, with no reason, by its key
 
     Raises:
-        ValueError: If a line is not of the form `name|path`
+        ValueError: If the ledger does not obey the rows grammar, or a row has a kind, no path or no mint
     """
-    keys: set[str] = set()
-    if not path.is_file():
-        return keys
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        entry = raw.split("#", 1)[0].strip()
-        if not entry:
-            continue
-        if entry.count("|") != 1:
-            raise ValueError(f"malformed floor allowlist entry (want `name|path`): {entry}")
-        keys.add(entry)
+    shown = rule_ledger.shown_path(FLOOR_RULE) if file is None else str(file)
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(FLOOR_RULE), file=file)
+    except rows_grammar.RowsError as exc:
+        raise ValueError(f"malformed floor ledger: {exc}") from None
+    keys: dict[str, str] = {}
+    for key, entry in ledger.base.items():
+        if key.kind or not key.path or not key.entity:
+            raise ValueError(f"malformed floor ledger row {shown}:{entry.line} (want `PATH | - | admit | MINT | "
+                             f"REASON`)")
+        keys[f"{key.entity}|{key.path}"] = rows_grammar.render([key.path], ["", rule_ledger.ADMIT_VALUE, key.entity])
     return keys
 
 
-def floor_verdict(rows: list[Row], allowed: set[str]) -> tuple[list[Row], list[str]]:
-    """Split the rows under the floor into live violations and find stale entries.
+def floor_verdict(rows: list[Row], allowed: Collection[str]) -> tuple[list[Row], list[str]]:
+    """Split the rows under the floor into live violations and find stale ledger rows.
 
     Args:
         rows: Every row
-        allowed: The floor allowlist keys
+        allowed: The keys of the floor ledger
 
     Returns:
-        The live violations, and the allowlist keys that no violating row uses
+        The live violations, and the ledger keys that no violating row uses
     """
     under = [r for r in rows if r.hs14 < HS14_FLOOR]
     live = [r for r in under if r.floor_key not in allowed]
     seen = {r.floor_key for r in under}
-    return live, sorted(allowed - seen)
+    return live, sorted(set(allowed) - seen)
 
 
 def real_rows() -> list[Row]:
@@ -347,18 +358,19 @@ def real_rows() -> list[Row]:
     return build_rows(tsast.REPO_ROOT, mintmodel.surface_files(), mintmodel.fixture_files())
 
 
-def check_floor(rows: list[Row], allowlist: Path) -> int:
+def check_floor(rows: list[Row], file: Path | None = None) -> int:
     """Apply the HS14 floor gate and print its findings.
 
     Args:
         rows: Every row
-        allowlist: The floor allowlist file
+        file: A planted floor ledger file, or None for utils/ledgers/mint-floor.txt
 
     Returns:
-        0 when clean, 1 on a live violation, 2 on a stale or malformed entry
+        0 when clean, 1 on a live violation, 2 on a stale ledger row or a malformed ledger
     """
+    shown = rule_ledger.shown_path(FLOOR_RULE) if file is None else str(file)
     try:
-        allowed = read_floor_allowlist(allowlist)
+        allowed = read_floor_ledger(file)
     except ValueError as exc:
         print(f"gen-mint-inventory: {exc}", file=sys.stderr)
         return 2
@@ -371,13 +383,13 @@ def check_floor(rows: list[Row], allowlist: Path) -> int:
         print("Write fixtures that name the mint in a fixture directory of its layer.", file=sys.stderr)
         return 1
     if stale:
-        print(f"gen-mint-inventory: STALE floor allowlist entries — these mints meet the "
-              f"floor now, or moved, or were renamed.  Delete them from {allowlist}:", file=sys.stderr)
+        print(f"gen-mint-inventory: STALE floor ledger rows — these mints meet the "
+              f"floor now, or moved, or were renamed.  Delete them from {shown}:", file=sys.stderr)
         for key in stale:
-            print(f"  {key}", file=sys.stderr)
+            print(f"  {allowed[key]}", file=sys.stderr)
         return 2
     print(f"gen-mint-inventory: every mint meets the HS14 floor of {HS14_FLOOR}, "
-          f"or {allowlist.name} lists it ({len(allowed)} entries).", file=sys.stderr)
+          f"or {Path(shown).name} lists it ({len(allowed)} entries).", file=sys.stderr)
     return 0
 
 
@@ -518,15 +530,26 @@ constexpr Thing mint_planted_source(C const&) noexcept { return {}; }
 
         # The floor gate, three arms.
         allow = root / "allow.txt"
-        allow.write_text("", encoding="utf-8")
+
+        def plant(sites: list[tuple[str, str]]) -> None:
+            """Write the planted floor ledger: one row (path, mint) for each site, each with a planted reason."""
+            keys = [rule_ledger.Key(path, "", name) for path, name in sites]
+            base = {key: rule_ledger.Entry(key, rule_ledger.ADMIT_VALUE, "planted") for key in keys}
+            rule_ledger.store(rule_ledger.Ledger(FLOOR_RULE, rule_ledger.rule_of(FLOOR_RULE).policy, "# planted\n",
+                                                 base=base), file=allow)
+
+        plant([])
         check("an unlisted row under the floor is a live violation", check_floor(rows, allow) == 1, True)
-        listed = "\n".join(r.floor_key for r in rows if r.hs14 < HS14_FLOOR) + "\n"
-        allow.write_text(listed, encoding="utf-8")
+        listed = [(r.path, r.name) for r in rows if r.hs14 < HS14_FLOOR]
+        plant(listed)
         check("listing every row under the floor passes", check_floor(rows, allow) == 0)
-        allow.write_text(listed + "mint_gone|include/crucible/sample/Gone.h\n", encoding="utf-8")
-        check("an entry that no row uses is stale", check_floor(rows, allow) == 2, True)
-        allow.write_text("mint_no_bar\n", encoding="utf-8")
-        check("a malformed entry fails", check_floor(rows, allow) == 2, True)
+        plant([*listed, ("include/crucible/sample/Gone.h", "mint_gone")])
+        check("a row that no mint uses is stale", check_floor(rows, allow) == 2, True)
+        allow.write_text(f"format 1\nrule {FLOOR_RULE}\nmint_no_bar\n", encoding="utf-8")
+        check("a malformed ledger fails", check_floor(rows, allow) == 2, True)
+        allow.write_text(f"format 1\nrule {FLOOR_RULE}\ninclude/crucible/sample/Mint.h | fixture | admit | "
+                         f"mint_planted_token | planted\n", encoding="utf-8")
+        check("a row with a kind fails", check_floor(rows, allow) == 2, True)
 
     if failures:
         print(f"gen-mint-inventory --self-test: FAILED — {len(failures)} case(s)")
@@ -559,7 +582,7 @@ def main(argv: list[str]) -> int:
         print(f"gen-mint-inventory: {exc}", file=sys.stderr)
         return 3
     if mode == "--check-floor":
-        return check_floor(rows, FLOOR_ALLOWLIST)
+        return check_floor(rows)
     text = render(rows)
     if mode == "--stdout":
         sys.stdout.write(text)

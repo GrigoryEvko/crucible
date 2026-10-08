@@ -78,7 +78,7 @@ namespace crucible::ledger {
 
 // The background load row: Bg, Alloc, IO and Block.  A tool builds one from
 // the background door, foundation::effects::host::BackgroundOwner, and the
-// door's call sites are listed in utils/scripts/ctx-bg-door-allowlist.txt.
+// background rows of utils/ledgers/ctx-init-door.txt list the call sites of the door.
 using LedgerIoCtx = ::fixy::BgLoadCtx;
 
 // Every store entry point takes a context admitting both IO and Block,

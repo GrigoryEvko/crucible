@@ -14,22 +14,21 @@ WHAT THE RULE READS
       threshold goes on across the move of the thresholds into the registry.
       A measured rule of the registry and a row of the old table with the same
       name are one history.
-    * The ledgers: utils/ledgers/*.txt, the ledgers of the legacy modules
-      utils/scripts/*-ledger.txt, and the earlier paths of EARLIER_PATHS.  A
-      ledger that moved to the format of assay.core.ledger counts the
-      versions of its earlier path, because git does not see a move to a new
-      format as a rename.
-    * Each path that a commit of the quarantine ledger changed, and each file
-      that git reports as moved in it.
+    * The ledgers utils/ledgers/*.txt, and the earlier files of EARLIER_FILES.
+      A ledger that moved to the rows of assay.core.ledger counts the
+      versions of its earlier files, because git does not see a move to a new
+      format as a rename.  A state before the move counts the rows of each
+      earlier file of the ledger, added.
+    * Each path that a commit of the quarantine ledger or of its earlier file
+      changed, and each file that git reports as moved in it.
     * The working-tree copy of each file, which can hold an edit that no
       commit holds yet.
     * The ledger of this rule, utils/ledgers/history.txt (policy admit): the
       rises of the past whose commit gives no measurement.  A row
       `utils/registry.txt | COLUMN | admit | COMMIT RULE | REASON` admits the
       rise of the warn or error threshold of RULE, and a row
-      `utils/scripts/quarantine-ledger.txt | raise | admit | COMMIT | REASON`
-      admits a raise of the quarantine ledger.  COMMIT is the hash in 9
-      characters.
+      `utils/ledgers/quarantine.txt | raise | admit | COMMIT | REASON` admits
+      a raise of the quarantine ledger.  COMMIT is the hash in 9 characters.
 
 THE FINDINGS
     * A threshold (the warn or the error field of a measured rule) above its
@@ -47,10 +46,13 @@ THE FINDINGS
       neither the plugin of utils/tools/quarantine/ nor the rule table
       utils/scripts/layer-rules.txt, gives an error, of the kind raise.  A
       raised count of the kind opted_out gives no error, because only
-      `--write --admit` of the ratchet writes it.  Each raised count that
-      stays above its count before the commit gives a warning on each run.
-      The legacy module of the ratchet reads each version of the ledger, so
-      the rules of its formats, its configurations and its moves stay.
+      `--write --admit` of the rule quarantine writes it.  Each raised count
+      that stays above its count before the commit gives a warning on each
+      run.  read_quarantine_version() reads each version: the rows of
+      assay.core.ledger, and the formats 1 to 4 of the earlier file
+      utils/scripts/quarantine-ledger.txt.  The rows hold the counts of format
+      4, so the commit of the move compares row by row, and the rules of the
+      formats, the configurations and the moves stay.
     * A commit that raised a threshold, and whose body holds no measurement of
       the rule, gives an error, of the kind of its field.
     A rise in the working tree gives a warning only, and the error comes when
@@ -87,8 +89,6 @@ import math
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
-
 from assay.core import git
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
@@ -102,13 +102,58 @@ REGISTRY = rule_registry.REGISTRY_PATH
 OLD_TABLE = "utils/scripts/budgets.txt"
 TABLES = (REGISTRY, OLD_TABLE)
 LEDGER_DIRECTORY = rule_ledger.LEDGER_DIRECTORY
-LEGACY_LEDGER_DIRECTORY = "utils/scripts"
-LEGACY_LEDGER_SUFFIX = "-ledger.txt"
-QUARANTINE_LEDGER = "utils/scripts/quarantine-ledger.txt"
+QUARANTINE_RULE = "quarantine"
+QUARANTINE_LEDGER = rule_ledger.shown_path(QUARANTINE_RULE)
+# The file of the quarantine ledger before it moved to the rows of assay.core.ledger.
+EARLIER_QUARANTINE_LEDGER = "utils/scripts/quarantine-ledger.txt"
+QUARANTINE_PATHS = (QUARANTINE_LEDGER, EARLIER_QUARANTINE_LEDGER)
 # A commit that changes one of these paths can change what the quarantine plugin reports.
 QUARANTINE_MACHINERY = ("utils/tools/quarantine/", "utils/scripts/layer-rules.txt")
-# The earlier paths of a ledger that moved to the format of assay.core.ledger.
-EARLIER_PATHS = {f"{LEDGER_DIRECTORY}/history.txt": ("utils/scripts/budget-history-ledger.txt",)}
+# The earlier files of each rule whose ledger moved to the rows of assay.core.ledger.  A state before the move holds
+# the earlier files, and its row count is the sum of their row counts.
+EARLIER_FILES = {
+    "banned-calls": ("utils/scripts/no-reinterpret-allowlist.txt", "utils/scripts/no-reserve-allowlist.txt",
+                     "utils/scripts/no-spawn-process-allowlist.txt"),
+    "brand-drain": ("utils/scripts/brand-drain.txt",),
+    "compile-cpu": ("utils/scripts/compile-cpu-ledger.txt",),
+    "compile-instructions": ("utils/scripts/compile-instructions-ledger.txt",),
+    "compile-memory": ("utils/scripts/compile-memory-ledger.txt",),
+    "contract-form": ("utils/scripts/contract-form-allowlist.txt",),
+    "ctx-init-door": ("utils/scripts/ctx-init-door-allowlist.txt", "utils/scripts/ctx-bg-door-allowlist.txt"),
+    "ctx-testing-boundary": ("utils/scripts/ctx-testing-boundary-allowlist.txt",),
+    "detail-namespace": ("utils/scripts/detail-namespace-allowlist.txt",),
+    "escape-doors": ("utils/scripts/escape-doors.txt",),
+    "fixture-cpu": ("utils/scripts/fixture-cpu-ledger.txt",),
+    "fixture-instructions": ("utils/scripts/fixture-instructions-ledger.txt",),
+    "fixture-own-reason": ("utils/scripts/fixture-own-reason-ledger.txt",),
+    "fullness-guard": ("utils/scripts/fullness-guard-allowlist.txt",),
+    "function-size": ("utils/scripts/function-size-ledger.txt",),
+    "gate-mutants": ("utils/tools/mutation/invalid-exemptions.txt",),
+    "header-alone": ("utils/scripts/header-alone-ledger.txt",),
+    "header-checks": ("utils/scripts/header-checks-ledger.txt",),
+    "heavy-include": ("utils/scripts/heavy-includes-ledger.txt",),
+    "history": ("utils/scripts/budget-history-ledger.txt",),
+    "libstdcxx-symbols": ("utils/scripts/libstdcxx-symbols-ledger.txt",),
+    "link-memory": ("utils/scripts/link-memory-ledger.txt",),
+    "link-time": ("utils/scripts/link-time-ledger.txt",),
+    "mint-floor": ("utils/scripts/mint-hs14-floor-allowlist.txt",),
+    "mint-pattern": ("utils/scripts/mint-pattern-allowlist.txt",),
+    "no-raw-array-member": ("utils/scripts/raw-array-member-allowlist.txt",),
+    "no-unchecked-access": ("utils/scripts/unchecked-access-allowlist.txt",),
+    "object-text": ("utils/scripts/object-text-ledger.txt",),
+    "padded-list": ("utils/scripts/padded-lists-ledger.txt",),
+    "process-wide-state": ("utils/scripts/process-wide-roster.txt",),
+    "proof-routes": ("utils/scripts/proof-routes-allowlist.txt",),
+    QUARANTINE_RULE: (EARLIER_QUARANTINE_LEDGER,),
+    "quarantine-regions": ("utils/scripts/quarantine-region-ledger.txt",),
+    "start-lifetime": ("utils/scripts/start-lifetime-allowlist.txt",),
+    "syscall-capability": ("utils/scripts/syscall-capability-allowlist.txt",),
+    "test-memory": ("utils/scripts/test-memory-ledger.txt",),
+    "test-time": ("utils/scripts/test-time-ledger.txt",),
+    "trait-guard": ("utils/scripts/open-gate-reads.txt",),
+    "use-after-move": ("utils/scripts/use-after-move-allowlist.txt",),
+}
+EARLIER_PATHS = {rule_ledger.shown_path(rule_id): paths for rule_id, paths in EARLIER_FILES.items()}
 RAISE_KIND = "raise"
 COLUMNS = ("warn", "error")
 WORKING_TREE = "the working tree"
@@ -335,13 +380,12 @@ def read_history(root: Path) -> History:
             raise NotApplicable(f"{root} is not the top of a git work tree")
         if git.is_shallow(root):
             raise NotApplicable("the history is shallow, and a shallow history does not hold the lowest values")
-        ledgers = sorted(path for path in git.tracked_files(root, (f"{LEDGER_DIRECTORY}/*.txt",
-                                                                   f"{LEGACY_LEDGER_DIRECTORY}/*{LEGACY_LEDGER_SUFFIX}"),
-                                                            with_new=True))
+        ledgers = sorted(git.tracked_files(root, (f"{LEDGER_DIRECTORY}/*.txt",), with_new=True))
         earlier = [path for ledger in ledgers for path in EARLIER_PATHS.get(ledger, ())]
         watched = list(dict.fromkeys([*TABLES, *ledgers, *earlier]))
-        states = git.path_history(root, watched)
-        changes = (git.changes(root, [QUARANTINE_LEDGER, *QUARANTINE_MACHINERY]) if QUARANTINE_LEDGER in ledgers
+        groups = [EARLIER_PATHS[ledger] for ledger in ledgers if len(EARLIER_PATHS.get(ledger, ())) > 1]
+        states = git.path_history(root, watched, groups)
+        changes = (git.changes(root, [*QUARANTINE_PATHS, *QUARANTINE_MACHINERY]) if QUARANTINE_LEDGER in ledgers
                    else {})
     except git.GitError as problem:
         raise NotApplicable(str(problem)) from None
@@ -428,10 +472,18 @@ def threshold_findings(history: History, registry: rule_registry.Registry) -> li
 
 
 def ledger_rule(path: str) -> str:
-    """Return the rule of a ledger file: utils/ledgers/ID.txt or utils/scripts/ID-ledger.txt."""
-    name = Path(path).name
-    return name.removesuffix(LEGACY_LEDGER_SUFFIX) if path.startswith(f"{LEGACY_LEDGER_DIRECTORY}/") \
-        else name.removesuffix(".txt")
+    """Return the rule of a ledger file utils/ledgers/ID.txt."""
+    return Path(path).name.removesuffix(".txt")
+
+
+def ledger_rows(history: History, place: str, sha: str, path: str) -> int | None:
+    """Return the row count of a ledger in one state: of its file, else the sum of its earlier files, else None."""
+    own = history.text(place, sha, (path,))
+    if own is not None:
+        return rule_ledger.count_rows(own)
+    counts = [rule_ledger.count_rows(history.text(place, sha, (item,))) for item in EARLIER_PATHS.get(path, ())]
+    held = [count for count in counts if count is not None]
+    return sum(held) if held else None
 
 
 def ledger_findings(history: History, registry: rule_registry.Registry) -> list[check_report.Finding]:
@@ -448,12 +500,12 @@ def ledger_findings(history: History, registry: rule_registry.Registry) -> list[
             if not any(item in commit.paths for item in paths):
                 states.append(None)
                 continue
-            new = rule_ledger.count_rows(history.text("at", commit.sha, paths))
-            old = rule_ledger.count_rows(history.text("before", commit.sha, paths))
+            new = ledger_rows(history, "at", commit.sha, path)
+            old = ledger_rows(history, "before", commit.sha, path)
             states.append(float(new) if new is not None else None)
             if new is not None and old is not None and new > old:
                 rises.append((index, Rise(commit.short, commit.subject, old, new, commit.sha)))
-        committed = rule_ledger.count_rows(history.text("head", "", paths))
+        committed = ledger_rows(history, "head", "", path)
         current = rule_ledger.count_rows(history.text("working", "", (path,)))
         working_rise = (Rise(WORKING_TREE, "not committed", committed, current)
                         if committed is not None and current is not None and current > committed else None)
@@ -472,10 +524,188 @@ def ledger_findings(history: History, registry: rule_registry.Registry) -> list[
 
 # The configuration, the file, the kind and the entity of one count of the quarantine ledger.
 CountKey = tuple[str, str, str, str]
+# The file, the kind and the entity of one count.
+RowKey = tuple[str, str, str]
+# The formats of the earlier file utils/scripts/quarantine-ledger.txt.  A format 1 version has no format row and
+# counts directories.  A format 2 version counts files, a format 3 version also keys each count by its entity, and a
+# format 4 version also counts the findings of the kind opted_out.  The rows of assay.core.ledger hold the counts of
+# format 4, so a version of utils/ledgers/quarantine.txt reads as format 4.
 FILE_FORMAT = 2
 ENTITY_FORMAT = 3
 OPTED_OUT_FORMAT = 4
+EARLIER_FORMATS = (FILE_FORMAT, ENTITY_FORMAT, OPTED_OUT_FORMAT)
+DIRECTORY_CONFIGURATION = "default"
 OPTED_OUT = "opted_out"
+
+
+class VersionError(ValueError):
+    """A version of the quarantine ledger does not have a format of the ledger."""
+
+
+@dataclass(slots=True)
+class QuarantineVersion:
+    """The counts of one version of the quarantine ledger, in each of its formats.
+
+    `configurations` keeps the order of the version, and its first name is the
+    base.  A format 1 version has one configuration with the name "default".
+    A count of format 1 or 2 has an empty entity.  `lines` gives the line of
+    the row of each configuration and count.
+    """
+
+    format: int = OPTED_OUT_FORMAT
+    configurations: dict[str, dict[str, str]] = field(default_factory=dict)
+    counts: dict[RowKey, int] = field(default_factory=dict)
+    deltas: dict[str, dict[RowKey, int]] = field(default_factory=dict)
+    lines: dict[CountKey, int] = field(default_factory=dict)
+
+    @property
+    def base(self) -> str | None:
+        """The name of the base configuration, or None for a version with no configuration."""
+        return next(iter(self.configurations), None)
+
+    def expected(self, name: str) -> dict[RowKey, int]:
+        """Return the count of each file, kind and entity of one configuration, with no zero count.
+
+        Complexity: linear in the rows of the base and of the configuration.
+        """
+        if name == self.base:
+            return dict(self.counts)
+        delta = self.deltas.get(name, {})
+        counts = {key: self.counts.get(key, 0) + delta.get(key, 0) for key in set(self.counts) | set(delta)}
+        return {key: count for key, count in counts.items() if count != 0}
+
+    def line_of(self, name: str, key: RowKey) -> int:
+        """Return the line of the row of one count: the difference row, else the base row, else the first row of its file.
+
+        Complexity: O(1) for a count with a row, else linear in the rows.
+        """
+        exact = self.lines.get((name, *key)) or self.lines.get((self.base or "", *key), 0)
+        if exact:
+            return exact
+        return min((line for (row_name, file, _kind, _entity), line in self.lines.items()
+                    if file == key[0] and row_name in (name, self.base)), default=0)
+
+
+def is_delta_word(text: str) -> bool:
+    """Whether a word is the difference of an earlier format: '+' or '-', and a number above 0 with no leading 0."""
+    return (len(text) >= 2 and text[0] in "+-" and "1" <= text[1] <= "9"
+            and all("0" <= character <= "9" for character in text[2:]))
+
+
+def read_rows_version(text: str, where: str) -> QuarantineVersion:
+    """Read a version of utils/ledgers/quarantine.txt through assay.core.ledger.
+
+    Raises:
+        VersionError: If the text does not obey the rows of the ledger
+    """
+    try:
+        ledger = rule_ledger.parse(text, where, QUARANTINE_RULE, rule_registry.Policy.COUNT)
+    except rows_grammar.RowsError as problem:
+        raise VersionError(str(problem)) from None
+    version = QuarantineVersion(OPTED_OUT_FORMAT)
+    for item in ledger.configurations:
+        version.configurations[item.name] = dict(item.facts)
+    base = ledger.base_name or ""
+    for key, entry in ledger.base.items():
+        version.counts[(key.path, key.kind, key.entity)] = int(entry.value)
+        version.lines[(base, key.path, key.kind, key.entity)] = entry.line
+    for name, table in ledger.deltas.items():
+        for key, entry in table.items():
+            version.deltas.setdefault(name, {})[(key.path, key.kind, key.entity)] = int(entry.value)
+            version.lines[(name, key.path, key.kind, key.entity)] = entry.line
+    return version
+
+
+def read_earlier_version(rows: list[tuple[int, str]], where: str) -> QuarantineVersion:
+    """Read the rows of a version of the earlier file utils/scripts/quarantine-ledger.txt, in the format 1 to 4.
+
+    Raises:
+        VersionError: If a row does not have its format, or a row has a second copy
+    """
+    version = QuarantineVersion(1 if rows else OPTED_OUT_FORMAT)
+    if rows and rows[0][1].split()[0] == "format":
+        number, row = rows.pop(0)
+        words = row.split()
+        if len(words) != 2 or words[1] not in {str(item) for item in EARLIER_FORMATS}:
+            raise VersionError(f"{where}:{number}: the format row of the earlier file is 'format {OPTED_OUT_FORMAT}'")
+        version.format = int(words[1])
+    for number, row in rows:
+        if version.format == 1:
+            read_directory_row(version, number, row.split(), where)
+        else:
+            read_file_row(version, number, row, where)
+    return version
+
+
+def read_directory_row(version: QuarantineVersion, number: int, words: list[str], where: str) -> None:
+    """Read one row of a format 1 version: a configuration row or a count of a directory and kind."""
+    if words[0] == "configuration" and len(words) == 3:
+        version.configurations.setdefault(DIRECTORY_CONFIGURATION, {})[words[1]] = words[2]
+        return
+    if len(words) != 3 or not words[2].isdigit():
+        raise VersionError(f"{where}:{number}: a format 1 row is 'DIRECTORY KIND COUNT'")
+    version.configurations.setdefault(DIRECTORY_CONFIGURATION, {})
+    version.counts[(words[0], words[1], "")] = int(words[2])
+    version.lines[(DIRECTORY_CONFIGURATION, words[0], words[1], "")] = number
+
+
+def read_file_row(version: QuarantineVersion, number: int, row: str, where: str) -> None:
+    """Read one row of a format 2, 3 or 4 version.  The entity of a format 3 or 4 row is the rest of the line.
+
+    Raises:
+        VersionError: If the row does not have its format, or it has a second copy
+    """
+    words = row.split()
+    if words[0] == "configuration":
+        if len(words) != 4 or not rule_ledger.rows_grammar_name(words[1]):
+            raise VersionError(f"{where}:{number}: a configuration row is 'configuration NAME KEY VALUE'")
+        keys = version.configurations.setdefault(words[1], {})
+        if words[2] in keys:
+            raise VersionError(f"{where}:{number}: the configuration {words[1]} has a second row for {words[2]}")
+        keys[words[2]] = words[3]
+        return
+    base = version.base
+    is_delta = words[0] in version.configurations
+    if version.format == FILE_FORMAT:
+        fields = words if len(words) == (4 if is_delta else 3) else []
+    else:
+        fields = row.split(" ", 4 if is_delta else 3)
+    if is_delta:
+        if words[0] == base or len(fields) < 4 or "" in fields or not is_delta_word(fields[3]):
+            raise VersionError(f"{where}:{number}: a difference row is 'NAME FILE KIND +N|-N ENTITY'")
+        name, key, value = fields[0], (fields[1], fields[2], fields[4] if len(fields) == 5 else ""), int(fields[3])
+        table = version.deltas.setdefault(name, {})
+    else:
+        if base is None or len(fields) < 3 or "" in fields or not fields[2].isdigit() or int(fields[2]) == 0:
+            raise VersionError(f"{where}:{number}: a count row is 'FILE KIND COUNT ENTITY', after the configurations")
+        name, key, value = base, (fields[0], fields[1], fields[3] if len(fields) == 4 else ""), int(fields[2])
+        table = version.counts
+    if key[2] != " ".join(key[2].split()):
+        raise VersionError(f"{where}:{number}: the entity {key[2]!r} has more than one space between two words")
+    if key in table:
+        raise VersionError(f"{where}:{number}: the count {key} has a second row in the configuration {name}")
+    table[key] = value
+    version.lines[(name, *key)] = number
+
+
+def read_quarantine_version(text: str, where: str) -> QuarantineVersion:
+    """Read one version of the quarantine ledger, in the rows of assay.core.ledger or in a format of the earlier file.
+
+    The rows of assay.core.ledger start with the row 'format 1' and the row of the rule.  The earlier file had no
+    format row in its format 1, and the rows 'format 2' to 'format 4' after it.
+
+    Raises:
+        VersionError: If the text does not have a format of the ledger, or a count of a configuration is below 0
+    """
+    rows = [(number, raw.strip()) for number, raw in enumerate(text.splitlines(), start=1)
+            if raw.strip() and not raw.strip().startswith("#")]
+    if rows and rows[0][1] == f"format {rule_ledger.FORMAT}":
+        return read_rows_version(text, where)
+    version = read_earlier_version(rows, where)
+    for name in version.configurations:
+        if any(count < 0 for count in version.expected(name).values()):
+            raise VersionError(f"{where}: a difference of the configuration {name} makes a count below 0")
+    return version
 
 
 @dataclass(frozen=True, slots=True)
@@ -500,18 +730,7 @@ class LedgerRise:
         return f"{self.file} {what} in {self.configuration} from {self.old} to {self.new}"
 
 
-def load_ratchet() -> Any:
-    """Return the legacy module of the rule quarantine-ratchet, for its reader of the formats of the quarantine ledger.
-
-    The import is in the function, so only a run that reads the quarantine
-    ledger pays for it.  Its Ledger objects have the type Any here.
-    """
-    from assay.guard.legacy import check_quarantine_ratchet
-
-    return check_quarantine_ratchet
-
-
-def absolute_counts(ledger: Any, has_entity: bool = True) -> dict[CountKey, int]:
+def absolute_counts(ledger: QuarantineVersion, has_entity: bool = True) -> dict[CountKey, int]:
     """Return the count of each configuration, file, kind and entity of a ledger: the base count plus the difference."""
     counts: dict[CountKey, int] = {}
     for name in ledger.configurations:
@@ -521,7 +740,7 @@ def absolute_counts(ledger: Any, has_entity: bool = True) -> dict[CountKey, int]
     return counts
 
 
-def difference_of(ledger: Any, name: str, row: tuple[str, str, str], has_entity: bool) -> int:
+def difference_of(ledger: QuarantineVersion, name: str, row: RowKey, has_entity: bool) -> int:
     """Return the difference of one row of a configuration from the base, or the sum for its file and kind."""
     deltas = ledger.deltas.get(name, {})
     if has_entity:
@@ -529,7 +748,7 @@ def difference_of(ledger: Any, name: str, row: tuple[str, str, str], has_entity:
     return sum(delta for (file, kind, _entity), delta in deltas.items() if (file, kind) == row[:2])
 
 
-def kind_totals(ledger: Any) -> dict[str, int]:
+def kind_totals(ledger: QuarantineVersion) -> dict[str, int]:
     """Return the sum of the base counts of each kind of a ledger."""
     totals: dict[str, int] = {}
     for (_file, kind, _entity), count in ledger.counts.items():
@@ -537,17 +756,18 @@ def kind_totals(ledger: Any) -> dict[str, int]:
     return totals
 
 
-def comparable(before: Any, after: Any) -> bool:
+def comparable(before: QuarantineVersion, after: QuarantineVersion) -> bool:
     """Whether two versions of the quarantine ledger compare row by row: both count files, or they have one format."""
     return before.format == after.format or min(before.format, after.format) >= FILE_FORMAT
 
 
-def has_entities(before: Any, after: Any) -> bool:
+def has_entities(before: QuarantineVersion, after: QuarantineVersion) -> bool:
     """Whether two comparable versions compare by entity."""
     return min(before.format, after.format) >= ENTITY_FORMAT
 
 
-def ledger_rises(before: Any, after: Any, moves: dict[str, str], peaks: dict[CountKey, int]) -> list[LedgerRise]:
+def ledger_rises(before: QuarantineVersion, after: QuarantineVersion, moves: dict[str, str],
+                 peaks: dict[CountKey, int]) -> list[LedgerRise]:
     """Return each count that rose from one version of the quarantine ledger to the next.
 
     * Two versions of different formats compare the total of each kind of the
@@ -593,7 +813,7 @@ def ledger_rises(before: Any, after: Any, moves: dict[str, str], peaks: dict[Cou
     return rises
 
 
-def rise_line(ledger: Any, rise: LedgerRise) -> int:
+def rise_line(ledger: QuarantineVersion, rise: LedgerRise) -> int:
     """Return the line of the row of a rise in a ledger.  A rise of a file and kind gives the first row of its file."""
     if rise.entity or ledger.format < ENTITY_FORMAT:
         return int(ledger.line_of(rise.configuration, rise.key))
@@ -624,28 +844,29 @@ def quarantine_findings(history: History) -> list[check_report.Finding]:
     """
     if QUARANTINE_LEDGER not in history.ledgers:
         return []
-    ratchet = load_ratchet()
-    parsed: dict[str, Any] = {}
+    parsed: dict[str, QuarantineVersion | None] = {}
 
-    def parse(text: str | None, where: str) -> Any:
+    def parse(text: str | None, where: str) -> QuarantineVersion | None:
         """Read one version of the ledger, one time for each text, or None for no text or a malformed text."""
         if text is None:
             return None
         if text not in parsed:
             try:
-                parsed[text] = ratchet.parse_ledger(text, where)
-            except ratchet.LedgerError:
+                parsed[text] = read_quarantine_version(text, where)
+            except VersionError:
                 parsed[text] = None
         return parsed[text]
 
-    path = (QUARANTINE_LEDGER,)
+    # A state holds the ledger or, before the move to the rows of assay.core.ledger, its earlier file.
+    path = QUARANTINE_PATHS
     findings: list[check_report.Finding] = []
     peaks: dict[CountKey, int] = {}
     standing: list[tuple[git.Commit, LedgerRise]] = []
     stale: set[str] = set()
     known: set[str] = set()
-    last: Any = None
-    by_sha = {commit.sha: commit for commit in history.states.commits if QUARANTINE_LEDGER in commit.paths}
+    last: QuarantineVersion | None = None
+    by_sha = {commit.sha: commit for commit in history.states.commits
+              if any(item in commit.paths for item in QUARANTINE_PATHS)}
     for sha, (paths, moves) in reversed(list(history.changes.items())):
         commit = by_sha.get(sha)
         if commit is None:

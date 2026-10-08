@@ -1,0 +1,22 @@
+# The ledger of the rule ctx-init-door: the scopes of production code that can name host::InitOwner,
+# the owner of the init door, or host::BackgroundOwner, the owner of the background door.
+# A row PATH | DOOR | N | SCOPE | REASON admits N uses of the owner of the door DOOR in the scope SCOPE
+# of the file PATH.  DOOR is init or background.  SCOPE is the enclosing function as the parse gives
+# it, or namespace-scope, or macro.  Each row gives a reason.
+# The init door gives an init context, which permits the effects of process startup, so only a process
+# entry point calls it.  The background door gives a background context, which permits the effects of
+# a background thread (Bg, Alloc, IO and Block), so only the entry function of a background thread
+# calls it, on that thread.  The definition site in include/foundation/effects/Effect.h names each
+# owner too, and it has its rows.
+# A new use in a scope is more than its count, and it fails.  A count above the uses of its scope is
+# stale, and it fails too.  The rule does not scan test/ and bench/, because the test door serves them.
+# A reviewer writes each row.  `python3 utils/bin/guard explain ctx-init-door` tells the rule.
+format 1
+rule ctx-init-door
+include/crucible/Vigil.h | init | 1 | Vigil::Vigil | the constructor loads the scheduler-switch program for the deadline watchdog, and that load waits in the kernel for the verifier.
+include/foundation/effects/Effect.h | background | 3 | namespace-scope | declares the owner, makes it a friend of the background key, and defines it with its door.  This is the definition site.
+include/foundation/effects/Effect.h | init | 3 | namespace-scope | declares the owner, makes it a friend of the init key, and defines it with its door.  This is the definition site.
+src/BackgroundThread.cpp | background | 1 | BackgroundThread::Pipeline::BuildTraceFn | the pipeline runs the build stage as the entry function of a stage thread, or inline on the pipeline thread, and both are background threads.  The stage takes the context once, before its loop, to allocate trace graphs and to wait on the arena gate.
+src/BackgroundThread.cpp | background | 1 | BackgroundThread::Pipeline::MakeRegionFn | the pipeline runs the publish stage as the entry function of a stage thread, or inline on the pipeline thread, and both are background threads.  The stage takes the context once, before its loop, to allocate regions, to wait on the arena gate and to hand to the region callback.
+src/BackgroundThread.cpp | background | 1 | BackgroundThread::start | the lambda that start() gives to the pipeline thread is the entry function of that thread.  It takes the context once, on that thread, and hands it to run_in_row.
+utils/tools/crucible_hwprobe.cpp | background | 1 | main | the one-shot hardware probe runs no dispatch thread, so its main thread is its only thread, and the ledger store it drives reads and writes a file and waits on the disk.

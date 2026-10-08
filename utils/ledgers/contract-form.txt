@@ -1,0 +1,13 @@
+# The ledger of the rule contract-form: the files whose subject is the P2900 contract specifier itself.
+# A row PATH | - | admit | - | REASON admits each specifier in the file PATH.  Each admitted file holds a
+# specifier, so a row for a file that holds no specifier is an error, and the ledger only shrinks.  The
+# rows do not admit an assumption about the values of a contract.  `python3 utils/bin/guard explain
+# contract-form` tells the rule.  No command writes this file: write each row by hand, with its reason.
+format 1
+rule contract-form
+cmake/probes/contract_cache.cpp | - | admit | - | a probe of a compiler fix to the pre specifier, and execute_process compiles it without the plugin
+test/foundation/neg/neg_contract_specifier_post.cpp | - | admit | - | a negative fixture of the contract rule of the plugin
+test/foundation/neg/neg_contract_specifier_pre.cpp | - | admit | - | a negative fixture of the contract rule of the plugin
+test/foundation/neg/neg_contract_specifier_template_member.cpp | - | admit | - | a negative fixture of the contract rule of the plugin
+utils/tools/quarantine/test/contracts.cpp | - | admit | - | the test of the plugin holds each form of the specifier
+utils/tools/quarantine/test/include/fixy/Contracted.h | - | admit | - | the test of the plugin holds a specifier in base code

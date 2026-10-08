@@ -6,7 +6,7 @@ procedure needs at least MIN_CITES production cites within GRACE_DAYS of the
 day its definition entered Decide.h.
 
 The catalog and the cite count of each procedure come from the sibling audit,
-the rule pre-callsite-count (`guard check --rule pre-callsite-count`), which
+the rule contract-cites (`guard check --rule contract-cites`), which
 reads both from the parse tree.  The day of each definition comes from the
 history of Decide.h, under each path the file has had.  The audit parses
 every committed version with the pinned tree-sitter kit and takes the first

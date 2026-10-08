@@ -1,0 +1,4 @@
+# a planted ledger whose row names a path that the tree does not hold
+format 1
+rule count-rule
+data/gone.txt | kind | 1 | - | -

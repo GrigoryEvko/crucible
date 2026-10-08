@@ -20,16 +20,19 @@ of the object layout, so an overflow of it reaches no neighbour member.  A
 declaration inside a namespace whose name ends in `_self_test` is a probe
 type that a header self-test uses to exercise the array case on purpose.
 
-The reviewed exceptions are in utils/scripts/raw-array-member-allowlist.txt, one
-line per member: `path name reason`.  An entry that no longer matches a
-member fails the gate, so the list only shrinks.
+The reviewed exceptions are the rows of utils/ledgers/no-raw-array-member.txt
+(the ledger module assay.core.ledger, policy admit), one row for each
+member: `PATH | - | admit | NAME | REASON`.  A row that no longer matches a
+member fails the gate, so the ledger only shrinks.  A file that does not
+obey the schema and a row with a kind or with no name fail the gate too.
 
 What the gate cannot see: an array type produced by a template (for example
 a member of type `T` instantiated with `int[4]`), and a C array reached
 through an alias declared outside the two roots.
 
-Exit codes: 0 clean, 1 findings, 2 a stale allowlist entry or a failed
-self-test, 3 the pinned tree-sitter kit is absent (ctest reports a skip).
+Exit codes: 0 clean, 1 findings, 2 a stale or malformed ledger row or a
+failed self-test, 3 the pinned tree-sitter kit is absent (ctest reports a
+skip).
 """
 
 from __future__ import annotations
@@ -38,10 +41,13 @@ import sys
 import tempfile
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.readers import tsast
 
+RULE = "no-raw-array-member"
 ROOTS = ("include/foundation", "include/fixy")
-ALLOWLIST = tsast.REPO_ROOT / "utils" / "scripts" / "raw-array-member-allowlist.txt"
+LEDGER = rule_ledger.shown_path(RULE)
 PROBE_SUFFIX = "_self_test"
 
 # The declarator kinds that sit between a name and the constructor that
@@ -185,31 +191,29 @@ def findings(tree: tsast.Tree) -> list[tuple[int, str, str]]:
     return found
 
 
-def load_allowlist(path: Path = ALLOWLIST) -> tuple[dict[tuple[str, str], str], list[str]]:
+def load_ledger(file: Path | None = None) -> tuple[dict[tuple[str, str], rule_ledger.Entry], list[str]]:
     """Read the reviewed exceptions, keyed by (path, member name).
 
     Args:
-        path: The allowlist file
+        file: A planted ledger to read in place of utils/ledgers/no-raw-array-member.txt
 
     Returns:
-        The reason for each admitted member, and one message for each row
-        that is not `path name reason`
+        The row of each admitted member, and one message for a file that does
+        not obey the schema or for each row with a kind or with no name.  A
+        file that does not obey the schema admits no member
     """
-    admitted: dict[tuple[str, str], str] = {}
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), tsast.REPO_ROOT, file)
+    except rows_grammar.RowsError as problem:
+        return {}, [f"{problem}.  The ledger admits no member."]
+    admitted: dict[tuple[str, str], rule_ledger.Entry] = {}
     malformed: list[str] = []
-    if not path.is_file():
-        return admitted, malformed
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
+    for key, entry in sorted(ledger.base.items()):
+        if key.kind or not key.entity:
+            malformed.append(f"{LEDGER if file is None else file}:{entry.line}: a row is "
+                             f"`PATH | - | admit | NAME | REASON`.  Give the path, the member name and the reason.")
             continue
-        fields = line.split(maxsplit=2)
-        if len(fields) != 3:
-            malformed.append(f"{path.name}:{number}: `{line}` is not `path name reason`. "
-                             "Give the path, the member name and the reason.")
-            continue
-        member_path, name, reason = fields
-        admitted[(member_path, name)] = reason
+        admitted[(key.path, key.entity)] = entry
     return admitted, malformed
 
 
@@ -240,10 +244,10 @@ def run() -> int:
 
     Returns:
         0 when clean, 1 on a finding or an unreadable file, 2 on a stale or
-        malformed allowlist entry
+        malformed ledger row
     """
     hits, unread = scan(tsast.cpp_files(*ROOTS))
-    admitted, malformed = load_allowlist()
+    admitted, malformed = load_ledger()
     refused = {key: lines for key, lines in hits.items() if key not in admitted}
     stale = sorted(key for key in admitted if key not in hits)
     for (path, name), lines in sorted(refused.items()):
@@ -253,8 +257,8 @@ def run() -> int:
     for message in unread:
         print(message)
     for path, name in stale:
-        print(f"{ALLOWLIST.relative_to(tsast.REPO_ROOT)}: stale entry `{path} {name}`: "
-              "no C array member has that name there now. Delete the entry.")
+        print(f"{LEDGER}:{admitted[(path, name)].line}: stale row `{path} | {name}`: "
+              "no C array member has that name there now. Delete the row.")
     for message in malformed:
         print(message)
     if stale or malformed:
@@ -322,11 +326,22 @@ struct CommentProbe { int cells[2]; };
         broken = root / "broken.h"
         broken.write_text("void f() { g(1) { } }\n", encoding="utf-8")
         expect("a file the parser cannot read is reported, not raised", bool(scan([broken])[1]))
-        allow = root / "allow.txt"
-        allow.write_text("# comment\na.h values the reason\na.h values\n", encoding="utf-8")
-        admitted, malformed = load_allowlist(allow)
-        expect("a row with its reason is read", admitted == {("a.h", "values"): "the reason"})
-        expect("a row with no reason is malformed", len(malformed) == 1 and "a.h values" in malformed[0])
+        head = f"# comment\nformat {rule_ledger.FORMAT}\nrule {RULE}\n"
+        planted = root / "ledger.txt"
+        planted.write_text(head + "a.h | - | admit | values | the reason\n", encoding="utf-8")
+        admitted, malformed = load_ledger(planted)
+        expect("a row with its reason is read",
+               {key: entry.reason for key, entry in admitted.items()} == {("a.h", "values"): "the reason"}
+               and not malformed)
+        planted.write_text(head + "a.h | - | admit | values | the reason\nb.h | - | admit | values | -\n",
+                           encoding="utf-8")
+        admitted, malformed = load_ledger(planted)
+        expect("a row with no reason is malformed, and the ledger admits no member",
+               not admitted and len(malformed) == 1 and "gives a reason" in malformed[0])
+        planted.write_text(head + "a.h | kind | admit | values | the reason\n", encoding="utf-8")
+        admitted, malformed = load_ledger(planted)
+        expect("a row with a kind is malformed",
+               not admitted and len(malformed) == 1 and "PATH | - | admit | NAME | REASON" in malformed[0])
     for name in sorted(must_refuse):
         expect(f"refuses `{name}`", name in refused)
     for name in sorted(must_admit):

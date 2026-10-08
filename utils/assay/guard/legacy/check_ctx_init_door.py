@@ -11,7 +11,7 @@ effects to the scope that makes the call.  Each call of the init door must be in
 a process entry point, and each call of the background door must be in the
 entry function of a background thread, that a reviewer admitted.
 
-THE RULE (each owner is checked alone, against its own allowlist)
+THE RULE (each owner is checked alone, against its own rows of the ledger)
     - A use is the identifier of the owner (InitOwner or BackgroundOwner) in
       the code of a C++ file under the trees of production code:
       include/foundation, include/fixy, include/crucible, src, vessel,
@@ -28,12 +28,12 @@ THE RULE (each owner is checked alone, against its own allowlist)
       the declarator name.  A use in no function has the scope
       namespace-scope.  A use in a macro body has the scope macro, because
       the parse cannot tell where the macro expands.
-    - Each scope with a use needs a row `PATH SCOPE [xN] — REASON` in the
-      allowlist of the owner: utils/scripts/ctx-init-door-allowlist.txt for the init
-      owner, utils/scripts/ctx-bg-door-allowlist.txt for the background owner.  N is
-      the number of uses that the row admits, and it is 1 when the row gives
-      no count.  A new use in a listed scope is more than the count, and it
-      fails.  A row in the allowlist of one owner admits no use of the other.
+    - Each scope with a use needs a row `PATH | DOOR | N | SCOPE | REASON` in
+      utils/ledgers/ctx-init-door.txt, which the reader of assay.core.ledger
+      reads.  DOOR is init for the init owner and background for the
+      background owner.  N is the number of uses that the row admits, and
+      each row gives a reason.  A new use in a listed scope is more than the
+      count, and it fails.  A row of one door admits no use of the other.
     - A row that admits more uses than its scope has is stale, and it fails.
       So the list becomes shorter when the code does.
     - A file that the parser cannot read fails when its tokens name the
@@ -58,13 +58,14 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import re
 import sys
 import tempfile
 from collections import defaultdict
 from pathlib import Path
 from typing import NamedTuple
 
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.readers import tsast
 
 SCAN_DIRS = ("include/foundation", "include/fixy", "include/crucible", "src", "vessel", "utils/tools", "examples")
@@ -72,54 +73,52 @@ NAMESPACE_SCOPE = "namespace-scope"
 MACRO_SCOPE = "macro"
 MACROS = ("preproc_def", "preproc_function_def")
 SPLICES = (b"\\\n", b"\\\r\n")
-ENTRY = re.compile(r"^(?P<path>\S+)\s+(?P<scope>\S+?)(?:\s+x(?P<count>[1-9][0-9]*))?\s+—\s+\S")
+RULE = "ctx-init-door"
+LEDGER = rule_ledger.shown_path(RULE)
 
 Key = tuple[str, str]
 
 
 class Door(NamedTuple):
-    """One door: the owner whose name marks a use, the allowlist of its scopes, and what it gives."""
+    """One door: the owner whose name marks a use, the kind of its rows in the ledger, and what it gives."""
 
     owner: str
-    allowlist: str
     context: str
     effects: str
     callers: str
 
 
 DOORS = (
-    Door("InitOwner", "utils/scripts/ctx-init-door-allowlist.txt", "init", "the effects of process startup",
-         "Call it only from a process entry point"),
-    Door("BackgroundOwner", "utils/scripts/ctx-bg-door-allowlist.txt", "background", "the effects of a background thread",
+    Door("InitOwner", "init", "the effects of process startup", "Call it only from a process entry point"),
+    Door("BackgroundOwner", "background", "the effects of a background thread",
          "Call it only from the entry function of a background thread"),
 )
-INIT_DOOR, BG_DOOR = DOORS
 
 
 class Refused(Exception):
-    """The allowlist has a malformed or a repeated row (exit 2)."""
+    """The ledger has a malformed or a repeated row (exit 2)."""
 
 
-def read_allowlist(root: Path, door: Door) -> dict[Key, tuple[int, int]]:
-    """Return the count and the line of each row of the allowlist of one door, by (path, scope).
+def read_ledger(root: Path) -> dict[str, dict[Key, tuple[int, int]]]:
+    """Return the count and the line of each row of the ledger, by the kind of its door and by (path, scope).
+
+    A row is PATH | DOOR | N | SCOPE | REASON, and DOOR is the context word
+    of a door: init or background.
 
     Raises:
-        Refused: If a row does not parse, or two rows have one path and one scope
+        Refused: If the file does not obey the rows grammar, two rows have one door, one path and one scope, or a
+            row has no path, no scope, no reason or a door that is not init or background
     """
-    allowlist = root / door.allowlist
-    entries: dict[Key, tuple[int, int]] = {}
-    for number, raw in enumerate(allowlist.read_text().splitlines() if allowlist.is_file() else [], 1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        match = ENTRY.match(line)
-        if match is None:
-            raise Refused(f"{door.allowlist}:{number} is not a row.  A row is PATH SCOPE [xN] — REASON.")
-        key = (match.group("path"), match.group("scope"))
-        if key in entries:
-            raise Refused(f"{door.allowlist}:{number} repeats the row at line {entries[key][1]}.  "
-                          f"Give one row a count.")
-        entries[key] = (int(match.group("count") or 1), number)
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), root)
+    except rows_grammar.RowsError as problem:
+        raise Refused(f"{problem}.") from None
+    entries: dict[str, dict[Key, tuple[int, int]]] = {door.context: {} for door in DOORS}
+    for key, entry in ledger.base.items():
+        if not key.path or key.kind not in entries or not key.entity or not entry.reason:
+            raise Refused(f"{LEDGER}:{entry.line} is not a row.  A row is PATH | DOOR | N | SCOPE | REASON, and "
+                          f"DOOR is {' or '.join(entries)}.")
+        entries[key.kind][(key.path, key.entity)] = (int(entry.value), entry.line)
     return entries
 
 
@@ -158,7 +157,7 @@ def scope_of(node: tsast.Node) -> str:
     """Return the scope of one use: the enclosing classes and function, or namespace-scope.
 
     A function whose name the guard cannot read gives the scope `?`, which
-    no allowlist row names, so the use fails.
+    no row of the ledger names, so the use fails.
     """
     if node.ancestor_of_type("function_definition") is None:
         return NAMESPACE_SCOPE
@@ -212,29 +211,24 @@ def scan(root: Path, door: Door) -> tuple[dict[Key, list[int]], list[str]]:
     return uses, problems
 
 
-def check_door(root: Path, door: Door) -> int:
-    """Compare the uses of one owner with its allowlist, and report to stderr.
+def check_door(root: Path, door: Door, entries: dict[Key, tuple[int, int]]) -> int:
+    """Compare the uses of one owner with the rows of its door, and report to stderr.
 
     Returns:
-        0 clean, 1 on a finding, 2 on a bad allowlist
+        0 clean, 1 on a finding
     """
-    try:
-        entries = read_allowlist(root, door)
-    except Refused as exc:
-        print(f"check-ctx-init-door: {exc}", file=sys.stderr)
-        return 2
     uses, problems = scan(root, door)
     for (rel, scope), lines in sorted(uses.items()):
         admitted = entries.get((rel, scope), (0, 0))[0]
         if len(lines) > admitted:
             problems.append(f"UNLISTED  {rel}:{', '.join(map(str, lines))} — the scope {scope} names the "
-                            f"{door.context} owner {len(lines)} time(s), and its row in {door.allowlist} admits "
-                            f"{admitted}.  The {door.context} door gives {door.effects} to its caller.  "
+                            f"{door.context} owner {len(lines)} time(s), and its {door.context} row in {LEDGER} "
+                            f"admits {admitted}.  The {door.context} door gives {door.effects} to its caller.  "
                             f"{door.callers}, and give that entry point a row with a sentence that says why.")
     for (rel, scope), (admitted, number) in sorted(entries.items(), key=lambda item: item[1][1]):
         held = len(uses.get((rel, scope), []))
         if held < admitted:
-            problems.append(f"STALE     {door.allowlist}:{number} admits {admitted} use(s) in the scope {scope} of "
+            problems.append(f"STALE     {LEDGER}:{number} admits {admitted} use(s) in the scope {scope} of "
                             f"{rel}, and the scope has {held}.  Lower or remove the row.")
     for line in problems:
         print(f"check-ctx-init-door: {line}", file=sys.stderr)
@@ -245,12 +239,17 @@ def check_door(root: Path, door: Door) -> int:
 
 
 def check(root: Path) -> int:
-    """Check each door against its own allowlist, and return the worst verdict.
+    """Check each door against its own rows of the ledger, and return the worst verdict.
 
     Returns:
-        0 clean, 1 on a finding, 2 on a bad allowlist
+        0 clean, 1 on a finding, 2 on a bad ledger
     """
-    return max(check_door(root, door) for door in DOORS)
+    try:
+        entries = read_ledger(root)
+    except Refused as exc:
+        print(f"check-ctx-init-door: {exc}", file=sys.stderr)
+        return 2
+    return max(check_door(root, door, entries[door.context]) for door in DOORS)
 
 
 def self_test() -> int:
@@ -263,13 +262,18 @@ def self_test() -> int:
     negatives = 0
     door = "foundation::effects::host::InitOwner::mint_init_context()"
     bg_door = "foundation::effects::host::BackgroundOwner::mint_background_context()"
-    ALLOWLIST = INIT_DOOR.allowlist  # noqa: N806
-    BG_ALLOWLIST = BG_DOOR.allowlist  # noqa: N806
+    definition = "include/foundation/effects/Effect.h | init | {count} | namespace-scope | the definition site"
+    entry_point = "vessel/torch/api.cpp | init | 1 | crucible_create | the entry point of the C interface"
+    worker = "src/thread.cpp | background | 1 | Worker::run | the entry function of the worker thread"
 
     def write(root: Path, rel: str, text: str) -> None:
         """Write one planted file."""
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text(text, encoding="utf-8")
+
+    def write_ledger(root: Path, *rows: str) -> None:
+        """Write a planted ledger of format 1 with the given rows, the first row at line 3."""
+        write(root, LEDGER, f"format 1\nrule {RULE}\n" + "".join(f"{row}\n" for row in rows))
 
     def captured(root: Path, cwd: Path | None = None) -> tuple[int, str]:
         """Run the check on the planted tree and keep its report."""
@@ -307,9 +311,7 @@ def self_test() -> int:
               f'const char* note = "{door}";\nint clean() {{ return 0; }}\n')
         write(root, "test/t.cpp", f"int t() {{ return {door}; }}\n")
         write(root, "bench/b.cpp", f"int b() {{ return {door}; }}\n")
-        write(root, ALLOWLIST, "# planted\n"
-              "include/foundation/effects/Effect.h namespace-scope x3 — the definition site\n"
-              "vessel/torch/api.cpp crucible_create — the entry point of the C interface\n")
+        write_ledger(root, definition.format(count=3), entry_point)
         expect(root, 0, ["4 use(s) of the init owner in 2 scope(s)"],
                "listed scopes pass, and a comment, a literal, a test and a bench are not uses")
 
@@ -351,23 +353,21 @@ def self_test() -> int:
         write(root, "vessel/torch/api.cpp",
               f'extern "C" {{\nint crucible_create(void) noexcept {{\n    return {door};\n}}\n}}\n')
 
-        write(root, ALLOWLIST, "# planted\n"
-              "include/foundation/effects/Effect.h namespace-scope x4 — the definition site\n"
-              "vessel/torch/api.cpp crucible_create — the entry point of the C interface\n"
-              "vessel/torch/api.cpp crucible_destroy — never called\n")
-        expect(root, 1, [f"STALE     {ALLOWLIST}:2 admits 4 use(s) in the scope namespace-scope",
-                         f"STALE     {ALLOWLIST}:4 admits 1 use(s) in the scope crucible_destroy"],
+        write_ledger(root, definition.format(count=4), entry_point,
+                     "vessel/torch/api.cpp | init | 1 | crucible_destroy | never called")
+        expect(root, 1, [f"STALE     {LEDGER}:3 admits 4 use(s) in the scope namespace-scope",
+                         f"STALE     {LEDGER}:5 admits 1 use(s) in the scope crucible_destroy"],
                "a count above the uses and a row with no use are stale", True)
-        write(root, ALLOWLIST, "vessel/torch/api.cpp crucible_create\n")
-        expect(root, 2, ["is not a row"], "a malformed row", True)
-        write(root, ALLOWLIST, "# planted\n"
-              "include/foundation/effects/Effect.h namespace-scope x3 — the definition site\n"
-              "vessel/torch/api.cpp crucible_create — the entry point of the C interface\n"
-              "vessel/torch/api.cpp crucible_create — the same row again\n")
-        expect(root, 2, ["repeats the row at line 3"], "a repeated row", True)
-        write(root, ALLOWLIST, "# planted\n"
-              "include/foundation/effects/Effect.h namespace-scope x3 — the definition site\n"
-              "vessel/torch/api.cpp crucible_create — the entry point of the C interface\n")
+        write_ledger(root, "vessel/torch/api.cpp crucible_create")
+        expect(root, 2, [f"{LEDGER}:3: an entry row is"], "a row that does not obey the rows grammar", True)
+        write_ledger(root, "vessel/torch/api.cpp | init | 1 | crucible_create | -")
+        expect(root, 2, [f"{LEDGER}:3 is not a row"], "a row with no reason", True)
+        write_ledger(root, "vessel/torch/api.cpp | startup | 1 | crucible_create | a door that does not exist")
+        expect(root, 2, [f"{LEDGER}:3 is not a row"], "a row of a door that does not exist", True)
+        write_ledger(root, definition.format(count=3), entry_point,
+                     "vessel/torch/api.cpp | init | 1 | crucible_create | the same row again")
+        expect(root, 2, ["has a second row.  The first is at line 4"], "a repeated row", True)
+        write_ledger(root, definition.format(count=3), entry_point)
 
         write(root, "src/broken.cpp", f"int broken( {{ return {door}; }}}}\n")
         expect(root, 1, ["PARSE     src/broken.cpp:1"], "a file that the parser cannot read fails", True)
@@ -380,28 +380,28 @@ def self_test() -> int:
         (root / "src/pragma.cpp").unlink()
         (root / "src/broken_elsewhere.cpp").unlink()
 
-        # The background door is checked against its own allowlist, so a
-        # row for the init door admits no call of the background door.
+        # The background door is checked against its own rows, so a row of
+        # the init door admits no call of the background door.
         write(root, "src/thread.cpp", f"struct Worker {{ int run() {{ return {bg_door}; }} }};\n")
         expect(root, 1, ["UNLISTED  src/thread.cpp:1 — the scope Worker::run names the background owner 1 time(s)",
                          "4 use(s) of the init owner in 2 scope(s), each one admitted"],
                "the background door called from an unlisted thread entry", True)
-        write(root, BG_ALLOWLIST, "# planted\nsrc/thread.cpp Worker::run — the entry function of the worker thread\n")
+        write_ledger(root, definition.format(count=3), entry_point, worker)
         expect(root, 0, ["1 use(s) of the background owner in 1 scope(s), each one admitted"],
                "a listed thread entry opens the background door")
         write(root, "vessel/torch/api.cpp",
               f'extern "C" {{\nint crucible_create(void) noexcept {{\n    return {bg_door};\n}}\n}}\n')
         expect(root, 1, ["UNLISTED  vessel/torch/api.cpp:3 — the scope crucible_create names the background owner",
-                         f"STALE     {ALLOWLIST}:3 admits 1 use(s) in the scope crucible_create"],
-               "a row of the init allowlist admits no call of the background door", True)
+                         f"STALE     {LEDGER}:4 admits 1 use(s) in the scope crucible_create"],
+               "a row of the init door admits no call of the background door", True)
         write(root, "vessel/torch/api.cpp",
               f'extern "C" {{\nint crucible_create(void) noexcept {{\n    return {door};\n}}\n}}\n')
-        write(root, BG_ALLOWLIST, "# planted\nsrc/thread.cpp Worker::run — the entry function of the worker thread\n"
-              "src/thread.cpp Worker::stop — never called\n")
-        expect(root, 1, [f"STALE     {BG_ALLOWLIST}:3 admits 1 use(s) in the scope Worker::stop"],
+        write_ledger(root, definition.format(count=3), entry_point, worker,
+                     "src/thread.cpp | background | 1 | Worker::stop | never called")
+        expect(root, 1, [f"STALE     {LEDGER}:6 admits 1 use(s) in the scope Worker::stop"],
                "a background row with no use is stale", True)
         (root / "src/thread.cpp").unlink()
-        (root / BG_ALLOWLIST).unlink()
+        write_ledger(root, definition.format(count=3), entry_point)
 
         same = captured(root, root) == captured(root, Path("/"))
         print(f"  {'ok  ' if same else 'FAIL'} the report from / equals the report from the tree")

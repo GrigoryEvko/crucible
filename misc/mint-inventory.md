@@ -12,10 +12,11 @@ python3 utils/bin/loop derive mint-inventory --check         # exit 1 on drift
 python3 utils/bin/loop derive mint-inventory --check-floor   # exit 1 on a row under the HS14 floor
 ```
 
-`--check-floor` reads `utils/scripts/mint-hs14-floor-allowlist.txt`, which lists the
-mints that are under the floor today.  A mint added without fixtures fails the
-gate.  A listed mint that reaches the floor leaves a stale entry, which fails
-the gate at exit 2, so the file only drains.
+`--check-floor`, which `guard check --rule mint-floor` runs, reads
+`utils/ledgers/mint-floor.txt`.  It lists the mints that are under the floor
+today.  A mint added without fixtures fails the gate.  A listed mint that
+reaches the floor leaves a stale row, which fails the gate at exit 2, so the
+file only drains.
 
 The scope is all of `include/`.  One row is one function: overloads are
 separate rows, and a forward declaration folds into its definition.  A section

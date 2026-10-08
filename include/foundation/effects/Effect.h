@@ -369,9 +369,9 @@ private:
 // friends are the owner of the context and the test scaffolding.  A
 // translation unit that holds neither cannot forge a context.  The init
 // owner and the background owner each have a door.  A new entry point
-// that calls the init door needs a row in utils/scripts/ctx-init-door-allowlist.txt,
-// and one that calls the background door needs a row in
-// utils/scripts/ctx-bg-door-allowlist.txt.
+// that calls a door must have a row of the kind init or background, for
+// the door that it calls, in utils/ledgers/ctx-init-door.txt.  The rule
+// ctx-init-door reads that file.
 //
 // The factory is constexpr so a friended caller can build a context
 // during constant evaluation.
@@ -423,7 +423,7 @@ namespace host {
 //
 // The door is a static member, so the name of the owner is in each call.
 // utils/assay/guard/legacy/check_ctx_init_door.py rejects a call of the door outside the
-// process entry points in utils/scripts/ctx-init-door-allowlist.txt.
+// process entry points that the init rows of utils/ledgers/ctx-init-door.txt admit.
 struct InitOwner final {
     [[nodiscard]] static constexpr Init mint_init_context() noexcept {
         return mint_context<Init>(detail::ctx_mint::init_key{});
@@ -441,7 +441,7 @@ struct InitOwner final {
 // hot path would then claim the right to block.  The door is a static
 // member, so the name of the owner is in each call, and
 // utils/assay/guard/legacy/check_ctx_init_door.py rejects a call outside the thread entry
-// points in utils/scripts/ctx-bg-door-allowlist.txt.
+// points that the background rows of utils/ledgers/ctx-init-door.txt admit.
 struct BackgroundOwner final {
     [[nodiscard]] static constexpr Bg mint_background_context() noexcept {
         return mint_context<Bg>(detail::ctx_mint::bg_key{});

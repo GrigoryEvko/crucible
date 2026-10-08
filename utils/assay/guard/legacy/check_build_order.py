@@ -31,8 +31,8 @@ THE CHECK build-order
     follow the inputs of a link or an archive.
 
 THE CHECK compile-first
-    The targets with a long compile are on utils/scripts/compile-first.txt,
-    and each object of a listed target has a chain of three edges or more.
+    The targets with a long compile are on cmake/compile-first.txt, and each
+    object of a listed target has a chain of three edges or more.
 
     The object of a test has a chain of two edges, the compile and the link,
     so Ninja starts the objects of the tests in the order of build.ninja, short
@@ -142,7 +142,7 @@ from pathlib import Path
 
 from assay.core import meter as cost_meter
 from assay.core import report as check_report
-from assay.core.paths import DATA, REPO_ROOT
+from assay.core.paths import REPO_ROOT
 from assay.readers import census as build_census
 from assay.readers.ninja import COMPILE_RULE, CUSTOM_RULE, LINK_RULE, Graph, read_graph
 
@@ -152,7 +152,8 @@ NOT_APPLICABLE = 3
 OBJECT_SUFFIX = ".o"
 # The value of the binding `deps` that makes Ninja move a depfile into its dependency log.
 GCC_DEPS = "gcc"
-LIST = DATA / "compile-first.txt"
+# The list sits beside cmake/CompileFirst.cmake, which reads it at configure time.
+LIST = REPO_ROOT / "cmake" / "compile-first.txt"
 CANDIDATES = "compile-first-targets.txt"
 KIND_PREFIX = "kind "
 GIGA = 1e9
@@ -177,7 +178,7 @@ class Compile:
 
 @dataclass(slots=True)
 class CompileList:
-    """utils/scripts/compile-first.txt: its header lines, its kind, and the line of each name."""
+    """cmake/compile-first.txt: its header lines, its kind, and the line of each name."""
 
     header: list[str]
     kind: str
@@ -403,7 +404,7 @@ def chain_lengths(graph: Graph) -> dict[int, int]:
 
 
 def read_list(path: Path) -> CompileList:
-    """Read utils/scripts/compile-first.txt.
+    """Read cmake/compile-first.txt.
 
     The comment lines before the first row are the header.  One row is
     `kind KIND`, and each other row is one target name.
@@ -1090,7 +1091,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--check", choices=CHECKS, help="the rule, which `guard check --rule RULE` gives")
     parser.add_argument("--build-dir", type=Path, help="the build directory")
     parser.add_argument("--write", action="store_true",
-                        help="with the rule compile-first, write utils/scripts/compile-first.txt again from the "
+                        help="with the rule compile-first, write cmake/compile-first.txt again from the "
                              "records")
     parser.add_argument("--self-test", action="store_true", help="plant each verdict of each check")
     arguments = parser.parse_args(argv)

@@ -5,9 +5,10 @@ reflection of a private member m, `obj.[:m:] = v` writes it.  The reflection
 of a private member comes only from a walk under
 std::meta::access_context::unchecked(), so that call is the one door to the
 private state of every proof type: a count, a stamp, a grade, a Refined value
-or a Secret payload.  utils/scripts/unchecked-access-allowlist.txt names each file
-that may open the door, with the reason, and the guard refuses the door
-anywhere else.
+or a Secret payload.  A row `PATH | - | admit | - | REASON` of
+utils/ledgers/no-unchecked-access.txt (assay.core.ledger) names each file that
+may open the door, with the reason, and the guard refuses the door anywhere
+else.
 
 HOW THE GUARD READS A FILE
     The guard reads each C++ file that git tracks under the scan roots.  An
@@ -65,7 +66,7 @@ WHAT COUNTS AS AN OPEN TARGET
          constexpr: a pointer to const is writable, a const pointer is not,
          and a reference is writable when its referent is.  The access of
          each #if arm is joined, so an access label inside one arm does not
-         open the members after the block.  No allowlist admits a member:
+         open the members after the block.  No ledger row admits a member:
          make it const or constexpr, or move it into the object.
 
 THE EXPANDED RUN
@@ -126,13 +127,13 @@ WHAT IT DOES NOT SEE, STATED RATHER THAN IMPLIED
     - A file that utils/assay/readers/tsast.py lists as not C++.
 
 A stale row, one whose file does not exist or does not open the door, fails
-the guard, so the allowlist only shrinks.
+the guard, so the ledger only shrinks.  A ledger with no file admits no file.
 
 USAGE
     guard check --rule no-unchecked-access [--compile-db DATABASE] [--self-test]
 
-Exit 0 clean, 1 on a door outside the allowlist, a stale row, an open target
-or an input the guard cannot read, 2 on a usage error, a bad allowlist or a
+Exit 0 clean, 1 on a door outside the ledger, a stale row, an open target or
+an input the guard cannot read, 2 on a usage error, a malformed ledger or a
 failed self-test, 3 when the parser kit is missing.
 """
 
@@ -154,11 +155,14 @@ from pathlib import Path
 
 from assay.core import cache as cache_dir
 from assay.core import git as throwaway_repo
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
 from assay.guard.preprocessed import Store, chunk_text, map_batches, text_results
 from assay.readers import tsast
 
-ALLOWLIST = "utils/scripts/unchecked-access-allowlist.txt"
+RULE = "no-unchecked-access"
+LEDGER = rule_ledger.shown_path(RULE)
 SCAN_ROOTS = ("include", "src", "test", "vessel", "utils/tools", "bench", "examples")
 MEMBER_ROOTS = ("include/foundation/", "include/fixy/", "include/crucible/")
 # The leaves that spell one part of a name.
@@ -204,27 +208,40 @@ Publisher = tuple[str, int, str]
 
 
 class Refused(Exception):
-    """The allowlist is missing or malformed (exit 2)."""
+    """The ledger is malformed (exit 2)."""
 
 
-def read_allowlist(root: Path) -> list[tuple[int, str]]:
-    """Return (line, path) for each row of the allowlist.
+def read_ledger(root: Path) -> list[tuple[int, str]]:
+    """Return (line, path) for each row of the ledger under a root, in the order of the lines.
+
+    A root with no ledger file has no row, so no file may open the door.
 
     Raises:
-        Refused: If the allowlist is missing or a row has no reason
+        Refused: If the ledger does not obey the rows grammar, a row has no reason, or a row has a kind or an entity
     """
-    listing = root / ALLOWLIST
-    if not listing.is_file():
-        raise Refused(f"{ALLOWLIST} is missing, so no file may open the door.")
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), root=root)
+    except rows_grammar.RowsError as exc:
+        raise Refused(str(exc)) from None
     rows = []
-    for number, line in enumerate(listing.read_text().splitlines(), 1):
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        path, separator, reason = line.partition(" — ")
-        if not separator or not path.strip() or not reason.strip():
-            raise Refused(f"{ALLOWLIST}:{number} is not PATH — REASON.")
-        rows.append((number, path.strip()))
+    for key, entry in sorted(ledger.base.items(), key=lambda item: item[1].line):
+        if key.kind or key.entity or not key.path:
+            raise Refused(f"{LEDGER}:{entry.line} is not `PATH | - | admit | - | REASON`.")
+        rows.append((entry.line, key.path))
     return rows
+
+
+def plant_ledger(root: Path, rows: dict[str, str]) -> None:
+    """Write the ledger of a planted repository: one row for each path, with its reason, under the comment "# planted".
+
+    The comment takes line 1, the header rows take lines 2 and 3, and the rows
+    follow from line 4 in the order of their paths.
+    """
+    base = {rule_ledger.Key(path, "", ""): rule_ledger.Entry(rule_ledger.Key(path, "", ""), rule_ledger.ADMIT_VALUE,
+                                                             reason)
+            for path, reason in rows.items()}
+    ledger = rule_ledger.Ledger(RULE, rule_ledger.rule_of(RULE).policy, "# planted\n", base=base)
+    rule_ledger.store(ledger, root=root)
 
 
 def scope_files(root: Path) -> list[str]:
@@ -956,19 +973,19 @@ def remedy(shape: str) -> str:
     if shape.startswith(SPLICE_DOOR):
         return (f"A splice of a member of an object has no access check, whatever walk gave its reflection, so it "
                 f"can write a proof's private state.  Read or write the member by its name or its accessor, or "
-                f"add a reviewed row to {ALLOWLIST}.")
+                f"add a reviewed row to {LEDGER}.")
     return (f"A reflection of a private member lets a splice write a proof's private state.  Walk with "
-            f"access_context::current(), or add a reviewed row to {ALLOWLIST}.")
+            f"access_context::current(), or add a reviewed row to {LEDGER}.")
 
 
 def check(root: Path, compile_db: Path | None = None) -> int:
-    """Compare the doors in the tree with the allowlist, and report to stderr.
+    """Compare the doors in the tree with the ledger, and report to stderr.
 
     Returns:
-        0 clean, 1 on a finding, 2 on a bad allowlist
+        0 clean, 1 on a finding, 2 on a malformed ledger
     """
     try:
-        rows = read_allowlist(root)
+        rows = read_ledger(root)
     except Refused as exc:
         print(f"check-no-unchecked-access: {exc}", file=sys.stderr)
         return 2
@@ -1000,7 +1017,7 @@ def check(root: Path, compile_db: Path | None = None) -> int:
             problems += [f"REFUSED   {rel}:{line} — {shape}.  {remedy(shape)}" for line, shape in sorted(set(found))]
     for number, path in rows:
         if path not in opened:
-            problems.append(f"STALE     {ALLOWLIST}:{number}: {path} — does not open the door.  Remove the row.")
+            problems.append(f"STALE     {LEDGER}:{number}: {path} — does not open the door.  Remove the row.")
     for line in problems:
         print(f"check-no-unchecked-access: {line}", file=sys.stderr)
     if not problems:
@@ -1071,7 +1088,8 @@ def planted_cases(caches: Path) -> int:
               "auto m = std::meta::members_of(^^T, std::meta::access_context::unchecked());\n"
               "#define WALK_DOOR std::meta::access_context::unchecked()\n"
               "#define WALK_OUTER WALK_DOOR\n")
-        write(root, ALLOWLIST, "# planted\ninclude/foundation/Walk.h — a reviewed walk\n")
+        walk_row = {"include/foundation/Walk.h": "a reviewed walk"}
+        plant_ledger(root, walk_row)
         write(root, "src/Clean.cpp",
               "// std::meta::access_context::unchecked() is refused outside the allowlist.\n"
               'const char* s = "access_context::unchecked()";\n'
@@ -1224,8 +1242,7 @@ def planted_cases(caches: Path) -> int:
             (root / rel).unlink()
         # The walk lives in a file with no macro, so only its function makes
         # the warm run parse it again.
-        write(root, ALLOWLIST, "# planted\ninclude/foundation/Walk.h — a reviewed walk\n"
-                               "include/foundation/Listing.h — a reviewed walk of a namespace\n")
+        plant_ledger(root, {**walk_row, "include/foundation/Listing.h": "a reviewed walk of a namespace"})
         write(root, "include/foundation/Listing.h", "consteval std::meta::info first_listed() {\n"
               f"    for (auto m : std::meta::members_of(^^listed, {unchecked})) return m;\n    return ^^void;\n}}\n")
         write(root, "src/Listed.cpp", "namespace listed { struct Entry {}; }\n")
@@ -1233,7 +1250,7 @@ def planted_cases(caches: Path) -> int:
         write(root, "src/Listed.cpp", "struct listed { int n_; };\n")
         expect(root, 1, "REFUSED   include/foundation/Listing.h:1 — first_listed uses unchecked and returns a member",
                "a function that did not change is refused when the namespace that it walks leaves another file", True)
-        write(root, ALLOWLIST, "# planted\ninclude/foundation/Walk.h — a reviewed walk\n")
+        plant_ledger(root, walk_row)
         (root / "include/foundation/Listing.h").unlink()
         (root / "src/Listed.cpp").unlink()
 
@@ -1313,21 +1330,22 @@ def planted_cases(caches: Path) -> int:
             (root / "include/foundation/Counter.h").unlink()
             shutil.rmtree(root / "build")
 
-        write(root, ALLOWLIST, "# planted\ninclude/foundation/Walk.h — a reviewed walk\n"
-                               "src/Clean.cpp — opens nothing\n")
-        expect(root, 1, "STALE     utils/scripts/unchecked-access-allowlist.txt:3: src/Clean.cpp", "a stale row", True)
-        write(root, ALLOWLIST, "# planted\ninclude/foundation/Walk.h — a reviewed walk\nsrc/Gone.cpp — gone\n")
-        expect(root, 1, "STALE     utils/scripts/unchecked-access-allowlist.txt:3: src/Gone.cpp", "a row for a missing file",
-               True)
-        write(root, ALLOWLIST, "include/foundation/Walk.h\n")
-        expect(root, 2, "is not PATH — REASON", "a row with no reason", True)
-        write(root, ALLOWLIST, "# planted\ninclude/foundation/Walk.h — a reviewed walk\n")
+        plant_ledger(root, {**walk_row, "src/Clean.cpp": "opens nothing"})
+        expect(root, 1, f"STALE     {LEDGER}:5: src/Clean.cpp", "a stale row", True)
+        plant_ledger(root, {**walk_row, "src/Gone.cpp": "gone"})
+        expect(root, 1, f"STALE     {LEDGER}:5: src/Gone.cpp", "a row for a missing file", True)
+        write(root, LEDGER, f"format 1\nrule {RULE}\ninclude/foundation/Walk.h | - | admit | - | -\n")
+        expect(root, 2, f"{LEDGER}:3: a row of the policy admit gives a reason", "a row with no reason", True)
+        write(root, LEDGER, f"format 1\nrule {RULE}\ninclude/foundation/Walk.h | walk | admit | - | a reviewed walk\n")
+        expect(root, 2, "is not `PATH | - | admit | - | REASON`", "a row with a kind", True)
+        plant_ledger(root, walk_row)
         same = captured(root, root) == captured(root, Path("/"))
         print(f"  {'ok  ' if same else 'FAIL'} the report from / equals the report from the repository")
         if not same:
             failures.append("the report depends on the working directory")
-        (root / ALLOWLIST).unlink()
-        expect(root, 2, "is missing", "a missing allowlist", True)
+        plant_ledger(root, {})
+        expect(root, 1, "REFUSED   include/foundation/Walk.h:1 — a use of unchecked",
+               "a ledger with no file admits no file", True)
     for failure in failures:
         print(f"check-no-unchecked-access --self-test: FAIL — {failure}", file=sys.stderr)
     if failures:

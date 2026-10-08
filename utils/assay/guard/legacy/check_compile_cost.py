@@ -84,14 +84,18 @@ THE BUILD KIND
     row applies only to the build of its kind.
 
 THE LEDGERS
-    utils/scripts/CHECK-ledger.txt lists the items that can exceed the error
-    threshold of the check, one row each, with the reason:
+    The ledger utils/ledgers/CHECK.txt lists the items that can exceed the
+    error threshold of the check, one row for each item and build kind, with
+    the reason (utils/assay/core/meter.py, THE REGISTRY AND THE LEDGERS):
 
-        kind | item | value | reason
+        @build/OUTPUT | KIND | VALUE | - | REASON     an output of a step
+        HEADER | KIND | VALUE | - | REASON            a header, for header-alone
 
-    The item is the output path relative to the build directory, or the path
-    of the header.  The value is the measure at the last --write, in the unit
-    of the measured rule.  In a build of the kind of a row:
+    OUTPUT is the output path relative to the build directory, and HEADER is
+    the path of the header relative to the source root.  KIND is the build
+    kind.  VALUE is the measure at the last --write, in the unit of the
+    measured rule.  A ledger that does not exist has no row.  In a build of
+    the kind of a row:
       * An item over the error threshold with a row gives a warning, so the
         debt stays visible.  With no row, it gives an error.
       * An item with a row that is at or under the error threshold is an
@@ -109,8 +113,10 @@ THE LEDGERS
     rows of compile-memory and link-memory to admit a step over the memory
     error threshold.
     --write writes the rows of the kind of the build again from this build,
-    and keeps the rows of the other kinds and the reason of each item that
-    keeps its row.  A new row takes the reason of --reason.
+    and keeps the rows of the other kinds, the reason of each item that
+    keeps its row, and the head comment.  A new row takes the reason of
+    --reason, a new ledger takes LEDGER_COMMENT, and a ledger with no row has
+    no file.
 
 THE SELF-TEST
     --self-test plants records, objects, linked outputs, a file API reply, a
@@ -152,13 +158,23 @@ from pathlib import Path
 from assay.core import meter as cost_meter
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
-from assay.core.paths import DATA, REPO_ROOT
+from assay.core.paths import REPO_ROOT
 from assay.readers import elf as elf_file
 
-# The directory of the ledgers.
-SCRIPTS = DATA
 CHECKS =("compile-cpu", "compile-instructions", "compile-memory", "link-time", "link-memory", "function-size",
           "object-text", "header-alone")
+# The form of the item of a ledger row of each check (THE LEDGERS): a header for header-alone, else an output.
+LEDGER_FORMS = {check: cost_meter.ITEM_FILE if check == "header-alone" else cost_meter.ITEM_OUTPUT
+                for check in CHECKS}
+# The head comment of a ledger that --write makes.  ROW is the row of the form of the check, and the build
+# options of the write follow DIR.
+LEDGER_COMMENT = (
+    "# The ledger of the rule {check} of utils/registry.txt: the items that can exceed the error threshold of\n"
+    "# the rule, one row for each item and build kind.  A row is '{row}'.\n"
+    "# KIND is the build kind of BUILD_DIR/build-kind.txt, and VALUE is the measure at the last --write, in {unit}.\n"
+    "# A row applies only to a build of its kind.  `python3 utils/bin/guard explain {check}` tells the rule, and\n"
+    "# `python3 utils/bin/guard check --rule {check} --build-dir DIR{options} --write [--reason TEXT]` writes\n"
+    "# this file.\n")
 # The step and the measure of each time, instruction or memory check.
 TIMED = {"compile-cpu": ("compile", "time"), "compile-instructions": ("compile", "instructions"),
          "compile-memory": ("compile", "memory"), "link-time": ("link", "time"), "link-memory": ("link", "memory")}
@@ -221,17 +237,16 @@ class ObjectCode:
 
 @dataclass(slots=True)
 class Ledger:
-    """The rows of one ledger file: the line, the value and the reason of each (kind, item)."""
+    """The rows of the ledger of one check: the line, the value and the reason of each (kind, item)."""
 
     path: Path
     shown: str
-    header: list[str]
     rows: dict[tuple[str, str], tuple[int, float, str]]
 
 
 @dataclass(slots=True)
 class Context:
-    """The inputs of one run of one check."""
+    """The inputs of one run of one check.  `ledger_dir` is utils/ledgers, or the directory of a planted ledger."""
 
     check: str
     build_dir: Path
@@ -650,27 +665,26 @@ def header_measures(context: Context, outputs: list[Output]) -> tuple[list[Measu
 
 def ledger_path(context: Context) -> Path:
     """Return the ledger file of the check of a run."""
-    return context.ledger_dir / f"{context.check}-ledger.txt"
+    return Path(cost_meter.ledger_file(context.check, str(context.ledger_dir)))
 
 
 def read_ledger(context: Context) -> tuple[Ledger, list[check_report.Finding]]:
-    """Read the ledger of one check.
+    """Read the ledger of one check.  A ledger that does not exist has no row.
 
     Args:
         context: The run
 
     Returns:
-        The ledger, and an error for each row that is not valid and for a missing file
+        The ledger, and an error for each row that is not valid, for a file that does not obey its schema, and for
+        a file that cannot be read
     """
     path = ledger_path(context)
     shown = shown_path(path, context.root)
     try:
-        rows, problems, header = cost_meter.read_ledger_rows(str(path))
+        rows, problems, _ = cost_meter.read_kind_rows(context.check, LEDGER_FORMS[context.check], str(path))
     except OSError as problem:
-        return Ledger(path, shown, [], {}), [
-            error_at(context.check, shown, f"the ledger cannot be read ({problem}).  It holds a comment block and "
-                                           f"no row when no item exceeds the error threshold")]
-    return Ledger(path, shown, header, rows), [error_at(context.check, shown, text, line) for line, text in problems]
+        return Ledger(path, shown, {}), [error_at(context.check, shown, f"the ledger cannot be read ({problem})")]
+    return Ledger(path, shown, rows), [error_at(context.check, shown, text, line) for line, text in problems]
 
 
 def judge(context: Context, budgets: dict[str, check_report.Budget], measures: list[Measure], unjudged: set[str],
@@ -817,7 +831,8 @@ def write_ledger(context: Context, reason: str | None) -> int:
         reason: The reason of each new row, or None
 
     Returns:
-        0 when the ledger was written, 1 when an input or the ledger cannot be read or a new row has no reason
+        0 when the ledger was written, 1 when an input or the ledger cannot be read, a new row has no reason, or the
+        ledger cannot be written
     """
     try:
         budgets = budget_of(context)
@@ -831,7 +846,8 @@ def write_ledger(context: Context, reason: str | None) -> int:
         for found in problems:
             print(found.text(), file=sys.stderr)
         return 1
-    kept = {key: entry for key, entry in ledger.rows.items() if key[0] != context.kind or key[1] in unjudged}
+    kept = {key: (value, why) for key, (_, value, why) in ledger.rows.items()
+            if key[0] != context.kind or key[1] in unjudged}
     unexplained: list[str] = []
     for measure in measures:
         if measure.value <= budgets[measure.row or context.check].error:
@@ -841,14 +857,21 @@ def write_ledger(context: Context, reason: str | None) -> int:
         if not old_reason:
             unexplained.append(measure.item)
             continue
-        kept[key] = (0, round(measure.value, 3), old_reason)
+        kept[key] = (round(measure.value, 3), old_reason)
     if unexplained:
         print(f"{context.check}: these items exceed the error threshold and have no row.  Give the reason of their "
               f"rows with --reason: {', '.join(unexplained)}", file=sys.stderr)
         return 1
-    lines = ledger.header + [f"{kind} | {item} | {value:g} | {why}"
-                             for (kind, item), (_, value, why) in sorted(kept.items())]
-    ledger.path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    form = LEDGER_FORMS[context.check]
+    units = {budget.unit for budget in budgets.values()}
+    comment = LEDGER_COMMENT.format(check=context.check, row=cost_meter.ITEM_ROWS[form],
+                                    unit=" or ".join(sorted(units)),
+                                    options=" --ninja NINJA" if context.check == "header-alone" else "")
+    try:
+        cost_meter.write_kind_rows(context.check, form, str(ledger.path), kept, comment)
+    except (OSError, ValueError) as problem:
+        print(f"{context.check}: {ledger.shown} cannot be written: {problem}", file=sys.stderr)
+        return 1
     count = sum(1 for kind, _ in kept if kind == context.kind)
     print(f"{context.check}: {ledger.shown} holds {count} rows of the kind {context.kind}")
     return 0
@@ -913,8 +936,6 @@ class Scratch:
                 ("object-text", 512, 768, "KB", "o"), ("header-alone-foundation", 2, 3, "MB", "h"),
                 ("header-alone-fixy", 8, 12, "MB", "h"), ("header-alone-crucible", 9, 14, "MB", "h"))),
             encoding="utf-8")
-        for check in CHECKS:
-            (self.ledgers / f"{check}-ledger.txt").write_text("# a planted ledger\n", encoding="utf-8")
         self.ninja.write_text(f"#!{sys.executable}\nimport sys\nsys.stdout.write(open({str(self.deps)!r}).read())\n",
                               encoding="utf-8")
         self.ninja.chmod(0o755)
@@ -999,9 +1020,16 @@ class Scratch:
                  if (parsed := check_report.parse_line(line)) is not None]
         return status, found, output.getvalue()
 
+    def ledger_file(self, check: str) -> Path:
+        """Return the planted ledger of one check."""
+        return Path(cost_meter.ledger_file(check, str(self.ledgers)))
+
     def ledger(self, check: str, rows: str) -> None:
-        """Write rows into the planted ledger of one check."""
-        (self.ledgers / f"{check}-ledger.txt").write_text(f"# a planted ledger\n{rows}", encoding="utf-8")
+        """Write rows into the planted ledger of one check, after its three head lines, or remove it for no rows."""
+        if rows:
+            self.ledger_file(check).write_text(f"# a planted ledger\nformat 1\nrule {check}\n{rows}", encoding="utf-8")
+        else:
+            self.ledger_file(check).unlink(missing_ok=True)
 
 
 def self_test() -> int:
@@ -1058,38 +1086,50 @@ def self_test_cases() -> int:
             status, found, _ = tree.run("compile-memory")
             expect("compile-memory: on a CI runner, a 5 GB job still gives an error",
                    status == 1 and levels(found) == ["error", "warning"])
-        tree.ledger("compile-cpu", f"{debug} | CMakeFiles/lib.dir/slower.cpp.o | 25 | a planted reason\n")
+        cpu_ledger = "ledgers/compile-cpu.txt"
+        tree.ledger("compile-cpu", f"@build/CMakeFiles/lib.dir/slower.cpp.o | {debug} | 25 | - | a planted reason\n")
         status, found, _ = tree.run("compile-cpu")
-        expect("compile-cpu: a row turns the error into a warning that gives the reason",
+        expect("compile-cpu: a row turns the error into a warning that gives the reason and the line of the row",
                status == 0 and levels(found) == ["warning"] * 2
-               and any("a planted reason" in f.message for f in found))
+               and any("a planted reason" in f.message and f"{cpu_ledger}:4 " in f.message for f in found))
         status, found, _ = tree.run("compile-cpu", "x86_64-release")
         expect("compile-cpu: a row of another kind does not apply", status == 1)
-        tree.ledger("compile-cpu", f"{debug} | CMakeFiles/lib.dir/slow.cpp.o | 21 | a planted reason\n")
+        tree.ledger("compile-cpu", f"@build/CMakeFiles/lib.dir/slow.cpp.o | {debug} | 21 | - | a planted reason\n")
         status, found, _ = tree.run("compile-cpu")
         expect("compile-cpu: a row of an item under the error threshold is an error",
-               status == 1 and any(f.path.endswith("compile-cpu-ledger.txt") and f.level == "error" for f in found))
+               status == 1 and any(f.path == cpu_ledger and f.line == 4 and f.level == "error" for f in found))
         with check_report.github_actions(True):
             status, found, _ = tree.run("compile-cpu")
             expect("compile-cpu: on a CI runner, a row of an item under the error threshold is a warning",
-                   status == 0 and any(f.path.endswith("compile-cpu-ledger.txt") and f.level == "warning"
+                   status == 0 and any(f.path == cpu_ledger and f.level == "warning"
                                        and "demoted" in f.message for f in found))
-        tree.ledger("compile-cpu", f"{debug} | CMakeFiles/lib.dir/gone.cpp.o | 21 | a planted reason\n"
-                                   f"{debug} | CMakeFiles/lib.dir/slower.cpp.o | 25 | a planted reason\n")
+        tree.ledger("compile-cpu", f"@build/CMakeFiles/lib.dir/gone.cpp.o | {debug} | 21 | - | a planted reason\n"
+                                   f"@build/CMakeFiles/lib.dir/slower.cpp.o | {debug} | 25 | - | a planted reason\n")
         status, found, _ = tree.run("compile-cpu")
         expect("compile-cpu: a row of an item that the build does not hold is a warning",
-               status == 0 and sum(f.path.endswith("ledger.txt") for f in found) == 1)
-        tree.ledger("compile-cpu", f"{debug} | CMakeFiles/lib.dir/slower.cpp.o | 25\n")
+               status == 0 and sum(f.path == cpu_ledger for f in found) == 1)
+        tree.ledger("compile-cpu", f"@build/CMakeFiles/lib.dir/slower.cpp.o | {debug} | 25\n")
         status, found, _ = tree.run("compile-cpu")
-        expect("compile-cpu: a row of three cells is an error",
-               status == 1 and any(f.line == 2 and f.path.endswith("ledger.txt") for f in found))
-        tree.ledger("compile-cpu", "Debug | CMakeFiles/lib.dir/slower.cpp.o | 25 | a planted reason\n")
+        expect("compile-cpu: a row of three cells is an error at its line",
+               status == 1 and any(f.line == 4 and f.path == cpu_ledger for f in found))
+        tree.ledger("compile-cpu", f"@build/CMakeFiles/lib.dir/slower.cpp.o | {debug} | 25 | - | -\n")
         status, found, _ = tree.run("compile-cpu")
-        expect("compile-cpu: a kind with an uppercase letter is an error", status == 1)
-        (tree.ledgers / "compile-cpu-ledger.txt").unlink()
+        expect("compile-cpu: a row with no reason is an error at its line",
+               status == 1 and any(f.line == 4 and f.path == cpu_ledger for f in found))
+        tree.ledger("compile-cpu", "@build/CMakeFiles/lib.dir/slower.cpp.o | Debug | 25 | - | a planted reason\n")
         status, found, _ = tree.run("compile-cpu")
-        expect("compile-cpu: a missing ledger is an error", status == 1)
+        expect("compile-cpu: a kind with an uppercase letter is an error at its line",
+               status == 1 and any(f.line == 4 and f.path == cpu_ledger and "Debug" in f.message for f in found))
+        tree.ledger("compile-cpu", f"CMakeFiles/lib.dir/slower.cpp.o | {debug} | 25 | - | a planted reason\n")
+        status, found, _ = tree.run("compile-cpu")
+        expect("compile-cpu: a row whose PATH does not name an output of the build directory is an error at its line",
+               status == 1 and any(f.line == 4 and f.path == cpu_ledger and "@build/OUTPUT" in f.message
+                                   for f in found))
         tree.ledger("compile-cpu", "")
+        status, found, _ = tree.run("compile-cpu")
+        expect("compile-cpu: a ledger that does not exist has no row, so the 25 s job gives an error",
+               status == 1 and not any(f.path == cpu_ledger for f in found)
+               and [f.level for f in found if f.path == "src/slower.cpp"] == ["error"])
 
         # compile-instructions, and the error level of compile-cpu when a record holds a count.
         giga = int(GIGA)
@@ -1123,14 +1163,16 @@ def self_test_cases() -> int:
         with check_report.github_actions(True):
             status, found, _ = counted.run("compile-instructions")
             expect("compile-instructions: on a CI runner, an instruction error stays an error", status == 1)
-        counted.ledger("compile-instructions", f"{debug} | CMakeFiles/lib.dir/heavy.cpp.o | 120 | a planted reason\n")
+        counted.ledger("compile-instructions",
+                       f"@build/CMakeFiles/lib.dir/heavy.cpp.o | {debug} | 120 | - | a planted reason\n")
         status, found, _ = counted.run("compile-instructions")
         expect("compile-instructions: a row turns the error into a warning", status == 0
                and any("a planted reason" in f.message for f in found))
-        counted.ledger("compile-instructions", f"{debug} | CMakeFiles/lib.dir/light.cpp.o | 120 | a planted reason\n")
+        counted.ledger("compile-instructions",
+                       f"@build/CMakeFiles/lib.dir/light.cpp.o | {debug} | 120 | - | a planted reason\n")
         status, found, _ = counted.run("compile-instructions")
         expect("compile-instructions: a row of an item under the error threshold is an error",
-               status == 1 and any(f.path.endswith("compile-instructions-ledger.txt") and f.level == "error"
+               status == 1 and any(f.path == "ledgers/compile-instructions.txt" and f.level == "error"
                                    for f in found))
         counted.ledger("compile-instructions", "")
 
@@ -1139,7 +1181,7 @@ def self_test_cases() -> int:
         status, found, output = hits.run("compile-cpu")
         expect("compile-cpu: a build of hits only passes, and the summary counts the hits",
                status == 0 and not found and "1 ccache hits" in output)
-        hits.ledger("compile-cpu", f"{debug} | CMakeFiles/lib.dir/cached.cpp.o | 25 | a planted reason\n")
+        hits.ledger("compile-cpu", f"@build/CMakeFiles/lib.dir/cached.cpp.o | {debug} | 25 | - | a planted reason\n")
         status, found, _ = hits.run("compile-cpu")
         expect("compile-cpu: a row of a hit gives no finding", status == 0 and not found)
 
@@ -1224,7 +1266,7 @@ def self_test_cases() -> int:
         status, found, _ = code.run("object-text")
         expect("object-text: a section with no symbol counts, 800 KB gives an error",
                status == 1 and levels(found) == ["error", "warning"])
-        code.ledger("object-text", f"{debug} | CMakeFiles/lib.dir/wider.cpp.o | 800 | a planted reason\n")
+        code.ledger("object-text", f"@build/CMakeFiles/lib.dir/wider.cpp.o | {debug} | 800 | - | a planted reason\n")
         status, found, _ = code.run("object-text")
         expect("object-text: a row turns the error into a warning", status == 0)
         broken = code.unit("broken")
@@ -1272,7 +1314,11 @@ def self_test_cases() -> int:
                status == 1 and levels(found) == ["error", "warning"]
                and any("of the measured rule header-alone-fixy 12 MB" in f.message
                        for f in found if f.level == "error"))
-        headers.ledger("header-alone", f"{debug} | include/fixy/Huge.h | 13 | a planted reason\n")
+        headers.ledger("header-alone", f"@build/include/fixy/Huge.h | {debug} | 13 | - | a planted reason\n")
+        status, found, _ = headers.run("header-alone")
+        expect("header-alone: a row whose PATH names a file of the build directory and not a header is an error",
+               status == 1 and any(f.path == "ledgers/header-alone.txt" and f.line == 4 for f in found))
+        headers.ledger("header-alone", f"include/fixy/Huge.h | {debug} | 13 | - | a planted reason\n")
         status, found, _ = headers.run("header-alone")
         expect("header-alone: a row turns the error into a warning", status == 0)
         sentinel("Base", "Base.h", layer="foundation")
@@ -1300,8 +1346,9 @@ def self_test_cases() -> int:
         expect("header-alone: a build with no compile database is an error", status == 1 and len(found) == 1)
 
         # --write keeps the rows of the other kinds, keeps each reason, and needs --reason for a new row.
-        code.ledger("function-size", f"x86_64-release | CMakeFiles/lib.dir/other.cpp.o | 300 | another kind\n"
-                                     f"{debug} | CMakeFiles/lib.dir/giant.cpp.o | 290 | the kept reason\n")
+        other_row = "@build/CMakeFiles/lib.dir/other.cpp.o | x86_64-release | 300 | - | another kind"
+        code.ledger("function-size", f"{other_row}\n"
+                                     f"@build/CMakeFiles/lib.dir/giant.cpp.o | {debug} | 290 | - | the kept reason\n")
         broken.unlink()
         code.rows = [row for row in code.rows if not row["output"].endswith("broken.cpp.o")]
         code.write_database()
@@ -1309,14 +1356,28 @@ def self_test_cases() -> int:
         expect("--write refuses a new row with no reason, and names its item",
                status == 1 and "wide.cpp.o" in output)
         status, _, _ = code.run("function-size", write=True, reason="a new reason")
-        written = (code.ledgers / "function-size-ledger.txt").read_text(encoding="utf-8")
-        expect("--write keeps the rows of another kind and each reason, and gives a new row the new reason",
-               status == 0 and "x86_64-release | CMakeFiles/lib.dir/other.cpp.o | 300 | another kind" in written
-               and f"{debug} | CMakeFiles/lib.dir/giant.cpp.o | 300 | the kept reason" in written
-               and f"{debug} | CMakeFiles/lib.dir/wide.cpp.o | 300 | a new reason" in written
+        written = code.ledger_file("function-size").read_text(encoding="utf-8")
+        expect("--write keeps the rows of another kind, each reason and the head comment, and gives a new row the new "
+               "reason",
+               status == 0 and other_row in written
+               and f"@build/CMakeFiles/lib.dir/giant.cpp.o | {debug} | 300 | - | the kept reason" in written
+               and f"@build/CMakeFiles/lib.dir/wide.cpp.o | {debug} | 300 | - | a new reason" in written
                and "big.cpp.o" not in written and written.startswith("# a planted ledger"))
         status, found, _ = code.run("function-size")
         expect("the written ledger passes", status == 0)
+
+        # --write of a ledger that does not exist gives it the head comment, and a write with no row removes it.
+        fresh = Scratch(root / "fresh")
+        fresh.program("heavy_test", cpu_s=6.0)
+        status, _, _ = fresh.run("link-time", write=True, reason="a new reason")
+        made = fresh.ledger_file("link-time")
+        written = made.read_text(encoding="utf-8") if made.is_file() else ""
+        expect("--write gives a new ledger its head comment and its row",
+               status == 0 and written.startswith("# The ledger of the rule link-time of utils/registry.txt")
+               and f"@build/test/heavy_test | {debug} | 6 | - | a new reason\n" in written)
+        fresh.program("heavy_test", cpu_s=1.0)
+        status, _, _ = fresh.run("link-time", write=True)
+        expect("--write removes a ledger that has no row", status == 0 and not made.exists())
 
     if failures:
         print(f"check-compile-cost --self-test: FAILED, {len(failures)} case(s) did not hold")
@@ -1350,7 +1411,8 @@ def main(argv: list[str]) -> int:
                                  arguments.check, arguments.warnings_dir)
     if not KIND.fullmatch(kind):
         parser.error(f"the kind {kind!r} is not lowercase words with hyphens")
-    context = Context(arguments.check, build_dir, kind, arguments.ninja, REPO_ROOT, check_report.REGISTRY, SCRIPTS)
+    context = Context(arguments.check, build_dir, kind, arguments.ninja, REPO_ROOT, check_report.REGISTRY,
+                      Path(cost_meter.LEDGER_DIRECTORY))
     if arguments.write:
         return write_ledger(context, arguments.reason)
     return run_check(context, arguments.warnings_dir)

@@ -11,10 +11,10 @@ admitted in two places only:
   a negative fixture   a file under a test directory named neg or *_neg,
                        which must fail to compile
 
-Each admitted use also needs an entry in
-utils/scripts/start-lifetime-allowlist.txt, and each entry states how many uses
-it admits.  A use anywhere else is refused, also when the allowlist names
-it, and an entry for such a path is refused too.  New code calls
+Each admitted use also needs a row of utils/ledgers/start-lifetime.txt (the
+ledger module assay.core.ledger, policy admit), and each row states how many
+uses it admits.  A use anywhere else is refused, also when the ledger names
+it, and a row for such a path is refused too.  New code calls
 foundation::lifetime::start_as_array.  A use is each name node with one of
 the two names: a call, a using-declaration, a macro body, or the address of
 the function.
@@ -43,19 +43,22 @@ test/fixy/test_forgeable_proofs.cpp states the routes that stay open.
 
 The key
 -------
-An allowlist entry is `path:key`, or `path:key xN` for N uses.  The key is
-the name and the template argument list of its node, spelled by
-tsast.spelled: one space between two word tokens and none elsewhere, with
-comments dropped.  For example
+A ledger row is `PATH | - | admit | KEY | REASON`, or
+`PATH | - | admit | KEY xN | REASON` for N uses.  The key is the name and
+the template argument list of its node, spelled by tsast.spelled: one space
+between two word tokens and none elsewhere, with comments dropped.  For
+example
 
-  test/foundation/neg/neg_bg_context_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::Bg>
+  test/foundation/neg/neg_bg_context_forged_by_start_lifetime_as.cpp | - | admit | start_lifetime_as<fe::Bg> | ...
 
-The key survives a line shift, a rename of the variable that holds the
-result, and a change of the qualification.  The parse tree bounds the
-argument list, so a `>` inside parentheses does not end it.  A use with no
-template argument list has the bare name as its key.  The count makes each
-new use a change to the allowlist.  Each entry needs a comment above it
-that gives the reason.
+The report names a use by `PATH:KEY`.  The key survives a line shift, a
+rename of the variable that holds the result, and a change of the
+qualification.  The parse tree bounds the argument list, so a `>` inside
+parentheses does not end it.  A use with no template argument list has the
+bare name as its key.  The count makes each new use a change to the ledger.
+The REASON cell of each row gives the reason.  A ledger that does not obey
+the schema, a row with a kind or with no key, and two rows of one key refuse
+the run.
 
 Two passes
 ----------
@@ -106,11 +109,12 @@ What this guard does not see, stated rather than implied
     pins them.
 
 Exit codes
-  0  each use is admitted, and each entry admits exactly its uses
-  1  a use outside the two places, a use with no entry, or a key with
-     more uses than its entry admits
-  2  an entry above its count or outside the two places, a preprocessor
-     failure, a bad invocation, or a failed self-test
+  0  each use is admitted, and each row admits exactly its uses
+  1  a use outside the two places, a use with no row, or a key with more
+     uses than its row admits
+  2  a row above its count or outside the two places, a ledger that the
+     run refuses, a preprocessor failure, a bad invocation, or a failed
+     self-test
   3  the pinned tree-sitter kit is not installed
 
 Usage
@@ -143,10 +147,16 @@ from pathlib import Path
 
 from assay.core import cache as cache_dir
 from assay.core import git as throwaway_repo
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
 from assay.guard.preprocessed import SETTLE_NS, Expansion, Store, chunk_text, map_batches, text_results
 from assay.readers import tsast
 
+RULE = "start-lifetime"
+LEDGER = rule_ledger.shown_path(RULE)
+# The mark before the count of a ledger key that admits more than one use: `KEY xN`.
+COUNT_MARK = " x"
 NAMES = frozenset({"start_lifetime_as", "start_lifetime_as_array"})
 SOURCE_SUFFIXES = frozenset({".c", ".C", ".h", ".H", ".cc", ".hh", ".cpp", ".hpp", ".cxx", ".hxx", ".c++", ".h++",
                              ".cp", ".CPP", ".ixx", ".cppm", ".mpp", ".inl", ".ipp", ".tpp", ".tcc", ".txx",
@@ -158,7 +168,6 @@ INCLUDE_ROOTS = ("include", "", "src", "test", "vessel", "bench", "utils/tools",
 CHECKED_START = "include/foundation/Lifetime.h"
 # A negative-compile fixture: a file under a test directory named neg or *_neg.
 FIXTURE = re.compile(r"^test/(?:[^/]+/)*(?:neg|[^/]+_neg)/[^/]+$")
-ENTRY = re.compile(r"^(?P<key>.*?)(?: x(?P<count>[1-9][0-9]*))?$")
 # The leaves that spell one part of a name.
 NAME_LEAVES = ("identifier", "field_identifier", "type_identifier", "namespace_identifier")
 # The nodes whose name field is a leaf and whose arguments field is its template argument list.
@@ -502,25 +511,50 @@ def preprocessed_scan(root: Path, compile_db: Path, failures: list[str]) -> tupl
     return uses, store.unit_count, store.cached_count, time.monotonic() - begin
 
 
-def read_allowlist(allowlist: Path) -> dict[str, tuple[int, int]]:
-    """Each entry key, the number of uses it admits, and its line in the allowlist."""
+def admitted_count(cell: str) -> tuple[str, int]:
+    """Return the key of the KEY cell of a ledger row and the number of uses that the row admits.
+
+    `KEY xN` admits N uses, with N a decimal number that starts with a digit
+    from 1 to 9.  Each other text is a key that admits one use.
+    """
+    key, mark, count = cell.rpartition(COUNT_MARK)
+    if mark and count and "1" <= count[0] <= "9" and all("0" <= digit <= "9" for digit in count):
+        return key, int(count)
+    return cell, 1
+
+
+def read_ledger(root: Path) -> tuple[dict[str, tuple[int, int]], list[str]]:
+    """Read the ledger of a tree.
+
+    Returns:
+        Each `PATH:KEY` with the number of uses that its row admits and the
+        line of the row, and each problem with the file or with a row.  A
+        file that does not obey the schema admits no use
+    """
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), root)
+    except rows_grammar.RowsError as problem:
+        return {}, [f"{problem}.  The ledger admits no use"]
     entries: dict[str, tuple[int, int]] = {}
-    if not allowlist.is_file():
-        return entries
-    for number, raw in enumerate(allowlist.read_text().splitlines(), 1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        match = ENTRY.match(line)
-        entries[match.group("key")] = (int(match.group("count") or 1), number)
-    return entries
+    problems: list[str] = []
+    for key, entry in sorted(ledger.base.items(), key=lambda item: item[1].line):
+        name, count = admitted_count(key.entity)
+        joined = f"{key.path}:{name}"
+        if key.kind or not key.entity:
+            problems.append(f"{LEDGER}:{entry.line}: a row is `PATH | - | admit | KEY | REASON` or "
+                            f"`PATH | - | admit | KEY xN | REASON`")
+        elif joined in entries:
+            problems.append(f"{LEDGER}:{entry.line}: a second row admits {joined}.  The first row is at line "
+                            f"{entries[joined][1]}")
+        else:
+            entries[joined] = (count, entry.line)
+    return entries, problems
 
 
 def check(root: Path, compile_db: Path | None, mode: str) -> int:
-    """Compare each use in the tree with the two places and the allowlist, and report to stderr."""
+    """Compare each use in the tree with the two places and the ledger, and report to stderr."""
     root = root.resolve()
-    allowlist = root / "utils" / "scripts" / "start-lifetime-allowlist.txt"
-    entries = read_allowlist(allowlist)
+    entries, problems = read_ledger(root)
     lexical = lexical_scan(root, compile_db)
     preprocessed: Expanded = defaultdict(set)
     failures: list[str] = []
@@ -545,12 +579,12 @@ def check(root: Path, compile_db: Path | None, mode: str) -> int:
         elif admitted == 0:
             for line in lines:
                 unreviewed += 1
-                print(f"START-LIFETIME violation: {path}:{line} has no reviewed entry.  Allowlist key: {key}",
+                print(f"START-LIFETIME violation: {path}:{line} has no reviewed entry.  Ledger key: {key}",
                       file=sys.stderr)
         elif count > admitted:
             unreviewed += 1
             print(f"START-LIFETIME violation: {path} has {count} uses of this key at lines "
-                  f"{', '.join(map(str, lines))}, and its entry admits {admitted}.  Allowlist key: "
+                  f"{', '.join(map(str, lines))}, and its entry admits {admitted}.  Ledger key: "
                   f"{key} x{count}", file=sys.stderr)
         elif mode == "list":
             print(f"REVIEWED  {key}  ({count} use(s), lines {', '.join(map(str, lines))})")
@@ -560,12 +594,15 @@ def check(root: Path, compile_db: Path | None, mode: str) -> int:
         found = max(len(lexical.get(key, [])), len(preprocessed.get(key, set())))
         if not is_admitted_path(path):
             stale += 1
-            print(f"START-LIFETIME refused entry: {allowlist.name}:{number} names {path}, which is not the "
+            print(f"START-LIFETIME refused entry: {LEDGER}:{number} names {path}, which is not the "
                   f"checked start or a negative fixture.  An entry cannot admit it.", file=sys.stderr)
         elif not unreviewed and found < admitted:
             stale += 1
-            print(f"START-LIFETIME stale: {allowlist.name}:{number} admits {admitted} use(s) of {key}, "
+            print(f"START-LIFETIME stale: {LEDGER}:{number} admits {admitted} use(s) of {key}, "
                   f"and the tree has {found}.", file=sys.stderr)
+    for problem in problems:
+        stale += 1
+        print(f"START-LIFETIME refused ledger: {problem}.", file=sys.stderr)
     for failure in failures:
         print(f"START-LIFETIME preprocessor failure: {failure}.  A translation unit the guard cannot read can "
               f"hold a use, so the run is refused.", file=sys.stderr)
@@ -579,8 +616,9 @@ def check(root: Path, compile_db: Path | None, mode: str) -> int:
               "  (2) Use foundation::lifetime::start_as_array from <foundation/Lifetime.h>.  It refuses at\n"
               "      compile time a type with a subobject that is not an implicit-lifetime type.  A single\n"
               "      object is a span of one.\n"
-              "  (3) A negative fixture adds the printed key to utils/scripts/start-lifetime-allowlist.txt, with a\n"
-              "      comment above it that names the element type.",
+              "  (3) A negative fixture adds a row `PATH | - | admit | KEY | REASON` to\n"
+              f"      {LEDGER}.  PATH and KEY are the two parts of the printed key, at its\n"
+              "      first colon, and REASON names the element type.",
               file=sys.stderr)
         return 1
     return 2 if stale or failures else 0
@@ -688,6 +726,12 @@ def planted_cases() -> int:
     failures: list[str] = []
     compiler = os.environ.get("START_LIFETIME_CXX") or shutil.which("c++") or shutil.which("g++") or "c++"
 
+    def planted_ledger(*rows: tuple[str, str, str]) -> str:
+        """Return the text of a planted ledger with one row for each (path, key, reason), in that order."""
+        return f"# The planted ledger.\nformat {rule_ledger.FORMAT}\nrule {RULE}\n" + "".join(
+            rows_grammar.render([path], ["", rule_ledger.ADMIT_VALUE, key, reason]) + "\n"
+            for path, key, reason in rows)
+
     def run(root: Path, compile_db: Path | None = None) -> tuple[int, str]:
         """Run the check on the planted root and keep its report."""
         buffer = io.StringIO()
@@ -709,9 +753,8 @@ def planted_cases() -> int:
         files = {
             # Each route of the ledger and each bypass the guard must see.
             # Each use has a distinct template argument, so each key names
-            # one planted line.  The <Listed> use has an allowlist entry,
-            # and the path is none of the two places, so the entry cannot
-            # admit it.
+            # one planted line.  The <Listed> use has a ledger row, and the
+            # path is none of the two places, so the row cannot admit it.
             "include/planted/Routes.h": ROUTES,
             # Two files that a header includes, each with a suffix that is
             # not a source suffix: one through the digraph of #, and one
@@ -749,15 +792,15 @@ def planted_cases() -> int:
             # suffix.  Only the compile database brings it into scope.
             "build-planted/generated.gen": "inline void* generated(unsigned char* buf) "
                                            "{ return std::start_lifetime_as<Proof[11]>(buf); }\n",
-            "utils/scripts/start-lifetime-allowlist.txt":
-                "# The planted reviewed site in the checked start.\n"
-                "include/foundation/Lifetime.h:start_lifetime_as_array<Event>\n"
-                "# The planted negative fixture.\ntest/neg/fixture.cpp:start_lifetime_as<Proof>\n"
-                "# The fixture macro header, each key reviewed for one use.\n"
-                "test/neg/Twice.h:start_lifetime_as<Proof[18]>\n"
-                "test/neg/Twice.h:start_lifetime_as<Proof[19]>\n"
-                "# An entry for a path that is none of the two places.  It cannot admit.\n"
-                "include/planted/Routes.h:start_lifetime_as_array<Listed>\n",
+            # The row of include/planted/Routes.h is at line 8.
+            LEDGER: planted_ledger(
+                ("include/foundation/Lifetime.h", "start_lifetime_as_array<Event>",
+                 "The planted reviewed site in the checked start"),
+                ("test/neg/fixture.cpp", "start_lifetime_as<Proof>", "The planted negative fixture"),
+                ("test/neg/Twice.h", "start_lifetime_as<Proof[18]>", "The fixture macro header, reviewed for one use"),
+                ("test/neg/Twice.h", "start_lifetime_as<Proof[19]>", "The fixture macro header, reviewed for one use"),
+                ("include/planted/Routes.h", "start_lifetime_as_array<Listed>",
+                 "A row for a path that is none of the two places.  It cannot admit")),
         }
         for rel, text in files.items():
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -768,7 +811,7 @@ def planted_cases() -> int:
             failures.append(f"the planted routes gave exit {code}, not 1:\n{report}")
         expect_reports("the lexical pass", report, r"Quiet\.h|Pasted\.h|<Event>|fixture\.cpp|generated\.gen",
                        LEXICAL_KEYS)
-        if "refused entry: start-lifetime-allowlist.txt:9 names include/planted/Routes.h" not in report:
+        if f"refused entry: {LEDGER}:8 names include/planted/Routes.h" not in report:
             failures.append(f"the entry for a path outside the two places was not refused:\n{report}")
 
         # The preprocessed pass.  A translation unit expands the pasted name,
@@ -822,9 +865,9 @@ def planted_cases() -> int:
         for rel in ("test/neg/Twice.h", "include/planted/Routes.h", "lib/Stray.h", "misc/Hidden.txt",
                     "misc/Other.txt", "include/planted/Unit.cppm", "src/planted.cpp"):
             (root / rel).unlink()
-        (root / "utils/scripts/start-lifetime-allowlist.txt").write_text(
-            "# The planted reviewed site.\ninclude/foundation/Lifetime.h:start_lifetime_as_array<Event>\n"
-            "# The planted fixture.\ntest/neg/fixture.cpp:start_lifetime_as<Proof>\n")
+        (root / LEDGER).write_text(planted_ledger(
+            ("include/foundation/Lifetime.h", "start_lifetime_as_array<Event>", "The planted reviewed site"),
+            ("test/neg/fixture.cpp", "start_lifetime_as<Proof>", "The planted fixture")))
         code, report = run(root, broken)
         if code != 2 or "preprocessor failure: src/broken.cpp" not in report:
             failures.append(f"a preprocessor failure gave exit {code} without its report:\n{report}")
@@ -843,17 +886,17 @@ def planted_cases() -> int:
             stream.write("inline Event* second(unsigned char* storage) "
                          "{ return std::start_lifetime_as_array<Event>(storage, 1); }\n")
         code, report = run(root)
-        if code != 1 or ("and its entry admits 1.  Allowlist key: "
+        if code != 1 or ("and its entry admits 1.  Ledger key: "
                          "include/foundation/Lifetime.h:start_lifetime_as_array<Event> x2") not in report:
             failures.append(f"a second use under a reviewed key gave exit {code} without its report:\n{report}")
 
         # An entry that admits more uses than the tree has is stale, and so
         # is an entry that names no use.
-        (root / "utils/scripts/start-lifetime-allowlist.txt").write_text(
-            "# The planted reviewed sites, one count too high.\n"
-            "include/foundation/Lifetime.h:start_lifetime_as_array<Event> x3\n"
-            "# The planted fixture.\ntest/neg/fixture.cpp:start_lifetime_as<Proof>\n"
-            "# A planted stale entry.\ninclude/foundation/Lifetime.h:start_lifetime_as<Gone>\n")
+        (root / LEDGER).write_text(planted_ledger(
+            ("include/foundation/Lifetime.h", "start_lifetime_as_array<Event> x3",
+             "The planted reviewed sites, one count too high"),
+            ("test/neg/fixture.cpp", "start_lifetime_as<Proof>", "The planted fixture"),
+            ("include/foundation/Lifetime.h", "start_lifetime_as<Gone>", "A planted stale entry")))
         code, report = run(root)
         if (code != 2
                 or "admits 3 use(s) of include/foundation/Lifetime.h:start_lifetime_as_array<Event>, and the "
@@ -861,6 +904,16 @@ def planted_cases() -> int:
                 or "admits 1 use(s) of include/foundation/Lifetime.h:start_lifetime_as<Gone>, and the tree "
                    "has 0." not in report):
             failures.append(f"stale entries gave exit {code} without their reports:\n{report}")
+
+        # A row with a kind refuses the ledger, and the row admits nothing.
+        (root / LEDGER).write_text(
+            f"format {rule_ledger.FORMAT}\nrule {RULE}\n"
+            "include/foundation/Lifetime.h | kind | admit | start_lifetime_as_array<Event> x2 | A planted kind\n"
+            "test/neg/fixture.cpp | - | admit | start_lifetime_as<Proof> | The planted fixture\n")
+        code, report = run(root)
+        if code != 1 or f"refused ledger: {LEDGER}:3: a row is" not in report \
+                or "Ledger key: include/foundation/Lifetime.h:start_lifetime_as_array<Event>" not in report:
+            failures.append(f"a row with a kind gave exit {code} without its report:\n{report}")
 
     # In a work tree, an untracked file is out of scope, because the export
     # of a guard run can appear under the tree while the guard reads it.  A

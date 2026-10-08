@@ -56,20 +56,26 @@ def main(argv: list[str]) -> int:
             except (rows_grammar.RowsError, OSError) as problem:
                 print(f"guard list: the ledger of {rule.id} cannot be read: {problem}", file=sys.stderr)
                 continue
-            for key, entry in sorted(ledger.base.items()):
+            rows = [("", entry) for entry in ledger.base.values()]
+            rows += [(f"@{name} ", entry) for name, table in ledger.deltas.items() for entry in table.values()]
+            for configuration, entry in sorted(rows, key=lambda item: item[1].line):
+                key = entry.key
                 if key.path == wanted:
                     shown += 1
-                    print(f"{rule_ledger.shown_path(rule.id)}:{entry.line}: {rule.id} {key.kind or '-'} "
+                    print(f"{rule_ledger.shown_path(rule.id)}:{entry.line}: {rule.id} {configuration}{key.kind or '-'} "
                           f"{rule_ledger.value_text(entry.value)} {key.entity or '-'}: {entry.reason or 'no reason'}")
-        print(f"guard list: {shown} ledger rows of utils/ledgers/ name {wanted}.  The legacy ledgers of "
-              f"utils/scripts/ are not in this list")
+        print(f"guard list: {shown} ledger rows of {rule_ledger.LEDGER_DIRECTORY}/ name {wanted}")
         return 0
+    listed = 0
     for rule in sorted(registry.rules.values(), key=lambda item: item.id):
         if options.engine is not None and rule.engine.value != options.engine:
             continue
+        listed += 1
         threshold = (f" warn {check_report.threshold_text(rule.threshold.warn)} error "
                      f"{check_report.threshold_text(rule.threshold.error)} {rule.threshold.unit}"
                      if rule.threshold is not None else "")
         print(f"{rule.id:28} {rule.engine.value:6} {rule.policy.value:8}{threshold}; {holder(rule)}")
-    print(f"guard list: {len(registry.rules)} rules in {REPO_ROOT / 'utils' / 'registry.txt'}")
+    selection = f" of the engine {options.engine}" if options.engine is not None else ""
+    print(f"guard list: {listed} rules{selection} of the {len(registry.rules)} rules in "
+          f"{REPO_ROOT / 'utils' / 'registry.txt'}")
     return 0

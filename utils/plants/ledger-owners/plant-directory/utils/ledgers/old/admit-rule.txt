@@ -1,0 +1,4 @@
+# a planted ledger in a directory of utils/ledgers/
+format 1
+rule admit-rule
+- | kind | admit | entity | a planted reason

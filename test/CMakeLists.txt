@@ -377,7 +377,7 @@ if(CRUCIBLE_UBSAN_STRICT)
 endif()
 # libstdcxx_symbols — utils/assay/guard/legacy/check_libstdcxx_symbols.py holds the
 # libstdc++ symbols of the libraries foundation, fixy and crucible against
-# utils/scripts/libstdcxx-symbols-ledger.txt, for each build kind that the
+# utils/ledgers/libstdcxx-symbols.txt, for each build kind that the
 # ledger holds (rule R5 of the quarantine plan).  A new symbol fails, and a
 # symbol that goes fails until --write.  The inputs file names the archives
 # and the compiler, so a --write by hand reads the inputs of the test.  The
@@ -492,14 +492,14 @@ set_tests_properties(escape_doors escape_doors_self_test PROPERTIES
 # --check compares the live counts with the committed baseline.  A counter
 # that rises passes, and a counter that falls fails the test.  After a
 # deliberate removal, write the baseline again with
-# `python3 utils/bin/guard check --rule pre-callsite-count --baseline
-# utils/scripts/contracts-baseline.json` and give the reason in the commit.
+# `python3 utils/bin/guard check --rule contract-cites --baseline` and give
+# the reason in the commit.  The baseline is utils/ledgers/contract-cites.txt.
 add_test(NAME contract_cite_regression_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule pre-callsite-count
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule contract-cites
           --self-test)
 add_test(NAME contract_cite_regression
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule pre-callsite-count
-          --check ${CMAKE_SOURCE_DIR}/utils/scripts/contracts-baseline.json)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule contract-cites
+          --check)
 set_tests_properties(contract_cite_regression contract_cite_regression_self_test PROPERTIES
   LABELS "ci_guard;ast"
   SKIP_RETURN_CODE 3)
@@ -533,8 +533,8 @@ set_tests_properties(refined_pre_subsumption refined_pre_subsumption_self_test P
 # The contract rule: no file has a P2900 pre or post specifier.  The
 # quarantine plugin rejects one in each compile.  This guard reads the parse
 # tree of each tracked C++ file, so it also reads each preprocessor arm and
-# each file that no build compiles.  utils/scripts/contract-form-allowlist.txt
-# admits the files whose subject is the specifier.
+# each file that no build compiles.  utils/ledgers/contract-form.txt admits
+# the files whose subject is the specifier.
 add_test(NAME contract_form_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule contract-form --self-test)
 add_test(NAME contract_form
@@ -601,7 +601,7 @@ set_tests_properties(permission_storage permission_storage_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
 # Each object with static storage duration is one per process, through
-# CRUCIBLE_PROCESS_WIDE, or utils/scripts/process-wide-roster.txt says why one copy
+# CRUCIBLE_PROCESS_WIDE, or a row of utils/ledgers/process-wide-state.txt says why one copy
 # in each shared library is correct.  The build hides symbols, so an inline
 # object that two shared libraries compile has two copies without the marker.
 # utils/assay/guard/legacy/check_process_wide_state.py reads each object from the parse tree.
@@ -616,10 +616,9 @@ set_tests_properties(process_wide_state process_wide_state_self_test PROPERTIES
 # The reinterpret_cast ban (CLAUDE.md §III), the std::vector::reserve ban
 # (CLAUDE.md §IV), the file-stream ban of the fixy-only band-3 directories
 # and the process-spawn ban of production code (CLAUDE.md §IX), read from
-# the parse tree of the pinned kit.  Each ban has a content-keyed allowlist:
-# utils/scripts/no-reinterpret-allowlist.txt, utils/scripts/no-reserve-allowlist.txt,
-# utils/scripts/no-file-stream-allowlist.txt and
-# utils/scripts/no-spawn-process-allowlist.txt.  The self-test plants each shape
+# the parse tree of the pinned kit.  The content-keyed rows of
+# utils/ledgers/banned-calls.txt admit the sites of each ban, with the kind of
+# the ban in each row.  The self-test plants each shape
 # that a line regex misses or misreads.  Exit 3 when the kit is absent
 # reports a skip.
 add_test(NAME banned_calls_self_test
@@ -659,7 +658,7 @@ set_tests_properties(syscall_grant_coverage syscall_grant_coverage_self_test PRO
     SKIP_RETURN_CODE 3)
 # A spelling of a branded type that names no brand is the erased
 # identity.  utils/assay/guard/legacy/check_brand_drain.py reads those spellings from the
-# parse tree, and utils/scripts/brand-drain.txt holds one count per file.  A
+# parse tree, and utils/ledgers/brand-drain.txt holds one count per file.  A
 # count can only decrease.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME brand_drain_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule brand-drain
@@ -738,7 +737,7 @@ set_tests_properties(cache_size cache_size_self_test PROPERTIES
 # utils/assay/guard/legacy/check_use_after_move.py walks each control-flow path of each
 # function body and refuses a read of a name after a move spends it, unless
 # an assignment or a reset builds the value again first.  The reviewed and
-# counted exceptions are in utils/scripts/use-after-move-allowlist.txt.  The
+# counted exceptions are in utils/ledgers/use-after-move.txt.  The
 # self-test plants the uses that the guard must catch and the correct code
 # that it must accept.
 add_test(NAME use_after_move_self_test
@@ -757,7 +756,7 @@ set_tests_properties(use_after_move_attacks PROPERTIES
 # A splice of a private data member has no access check, so
 # access_context::unchecked() is the one door to a proof's private state.
 # utils/assay/guard/legacy/check_no_unchecked_access.py admits it only in the files that
-# utils/scripts/unchecked-access-allowlist.txt names, each with its reason.  A
+# utils/ledgers/no-unchecked-access.txt names, each with its reason.  A
 # bare splice of a static data member has no door token, so the guard also
 # refuses a writable private or protected static data member.  It reads the
 # macro expansions of this build too, so a door that ## builds and a member
@@ -773,7 +772,7 @@ set_tests_properties(no_unchecked_access no_unchecked_access_self_test PROPERTIE
 # A function in a detail namespace does the work of a door with no gate of
 # its own.  utils/assay/guard/legacy/check_detail_namespace.py refuses a use of a detail
 # namespace of foundation or fixy outside the two layers.  The reviewed uses
-# in tests are in utils/scripts/detail-namespace-allowlist.txt, keyed by file and
+# in tests are in utils/ledgers/detail-namespace.txt, keyed by file and
 # namespace.  Exit 3 (the pinned tree-sitter kit is absent) is a skip.
 add_test(NAME detail_namespace_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule detail-namespace --self-test)
@@ -796,8 +795,8 @@ set_tests_properties(host_owners host_owners_self_test PROPERTIES
 # init context, and host::BackgroundOwner::mint_background_context() is the
 # one production door of the background context.  Each context permits
 # effects that the hot path must not have.  utils/assay/guard/legacy/check_ctx_init_door.py
-# rejects a use of either owner in production code outside the scopes of its
-# allowlist (utils/scripts/ctx-init-door-allowlist.txt, utils/scripts/ctx-bg-door-allowlist.txt),
+# rejects a use of either owner in production code outside the scopes that
+# the rows of its door in utils/ledgers/ctx-init-door.txt admit,
 # and a stale row.  Exit 3 (the pinned tree-sitter kit is absent) is a skip.
 add_test(NAME ctx_init_door_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ctx-init-door --self-test)
@@ -809,8 +808,8 @@ set_tests_properties(ctx_init_door ctx_init_door_self_test PROPERTIES
 # same object, where the address sanitizer sees valid memory, and no build
 # checks the subscript.  utils/assay/guard/legacy/check_no_raw_array_member.py refuses a C
 # array data member and an alias of a C array type in include/foundation and
-# include/fixy.  The reviewed exceptions are in
-# utils/scripts/raw-array-member-allowlist.txt, and a stale entry fails the gate.
+# include/fixy.  The reviewed exceptions are the rows of
+# utils/ledgers/no-raw-array-member.txt, and a stale row fails the gate.
 # Exit 3 (the pinned tree-sitter kit is absent) is a skip.
 add_test(NAME raw_array_member_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-raw-array-member --self-test)
@@ -847,8 +846,8 @@ set_tests_properties(fixy_dim_prose fixy_dim_prose_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 # Each direct Linux syscall call in include/, src/ and vessel/ carries a
-# `// SYSCALL-CAP-OK: <reason>` comment in its statement or an entry in
-# utils/scripts/syscall-capability-allowlist.txt with its effects::* capability
+# `// SYSCALL-CAP-OK: <reason>` comment in its statement or a row in
+# utils/ledgers/syscall-capability.txt with its effects::* capability
 # claim.  utils/assay/guard/legacy/check_syscall_capability.py reads the calls from the
 # parse tree, and an entry that matches no live call is stale.  The guard
 # also holds the prose of each entry to its sites: the syscall, the
@@ -868,7 +867,7 @@ set_tests_properties(syscall_capability syscall_capability_self_test PROPERTIES
 # utils/assay/guard/legacy/check_fullness_guard.py reads each `==` between a counter and a
 # capacity bound from the parse tree.  A counter whose name ends in `_` is
 # protected by a class invariant, by the house convention.  The content-keyed
-# rows of utils/scripts/fullness-guard-allowlist.txt are all not-found sentinels.
+# rows of utils/ledgers/fullness-guard.txt are all not-found sentinels.
 # Exit 3 when the kit is absent reports a skip.
 add_test(NAME fullness_guard_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule fullness-guard --self-test)
@@ -915,7 +914,7 @@ set_tests_properties(detsafe_ledger detsafe_ledger_self_test PROPERTIES
 # is what every ctx-bound mint checks for.  utils/assay/guard/legacy/check_ctx_testing_boundary.py
 # counts each use of the door in the code that ships, from the parse tree and
 # through the aliases of every file of the scan, and each file with a use needs
-# a counted entry in utils/scripts/ctx-testing-boundary-allowlist.txt.
+# a counted row in utils/ledgers/ctx-testing-boundary.txt.
 add_test(NAME ctx_testing_boundary_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ctx-testing-boundary --self-test)
 add_test(NAME ctx_testing_boundary
@@ -1023,9 +1022,11 @@ set_tests_properties(lock_free_asserts lock_free_asserts_self_test PROPERTIES
     SKIP_RETURN_CODE 3)
 # The mint inventory: its self-test, the drift gate that fails when
 # misc/mint-inventory.md was not regenerated after a mint changed, and the
-# HS14 floor gate.  utils/assay/loop/derive/mint_inventory.py holds the floor value.
-# The generator reads the parse tree, so it skips (exit 3) where the pinned
-# tree-sitter kit is absent.  CI installs the kit, so CI enforces.
+# HS14 floor gate, the rule mint-floor.  utils/assay/loop/derive/mint_inventory.py
+# holds the floor value, and the rows of utils/ledgers/mint-floor.txt admit the
+# mints under the floor.  The generator reads the parse tree, so it skips
+# (exit 3) where the pinned tree-sitter kit is absent.  CI installs the kit, so
+# CI enforces.
 add_test(NAME mint_inventory_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest
           loop.derive.mint_inventory
@@ -1035,8 +1036,7 @@ add_test(NAME mint_inventory_check
           --check
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME mint_inventory_check_floor
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/loop derive mint-inventory
-          --check-floor
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule mint-floor
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 set_tests_properties(mint_inventory_self_test
                      mint_inventory_check
@@ -5410,7 +5410,7 @@ endif()
 #                    walk outside a template.  Each check lives in the
 #                    check file of its header under test/layer/checks,
 #                    each such walk is lazy, and
-#                    utils/scripts/header-checks-ledger.txt holds the items
+#                    utils/ledgers/header-checks.txt holds the items
 #                    that remain.  Each item of the ledger gives a warning,
 #                    and the counts can only decrease.
 #   walk_units     — test/layer/walk-checks.txt lists each check file whose
@@ -5477,7 +5477,7 @@ set_tests_properties(check_report_self_test guard_warnings_self_test report_chec
 # <meta> alone times the factor of the rule heavy-include of
 # utils/registry.txt.  utils/scripts/header-costs.txt holds the
 # measured times.  Each include that the tree holds today is a row of
-# utils/scripts/heavy-includes-ledger.txt and gives a warning.  A new one is
+# utils/ledgers/heavy-include.txt and gives a warning.  A new one is
 # an error.
 add_test(NAME heavy_includes_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule heavy-include --self-test)
@@ -5517,7 +5517,7 @@ set_tests_properties(contract_semantic contract_semantic_self_test PROPERTIES LA
 # The check selects files from the parse tree, compiles one probe for each
 # through ccache, and reads the counts and the padding with reflection.  The
 # rule padded-list of utils/registry.txt gives the count.  Each padded
-# list that the tree holds today is a row of utils/scripts/padded-lists-ledger.txt
+# list that the tree holds today is a row of utils/ledgers/padded-list.txt
 # and gives a warning.  A new one is an error.
 add_test(NAME padded_lists_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule padded-list
@@ -5599,7 +5599,7 @@ add_test(NAME build_order
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule build-order
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 # compile_first — each target of all with a long compile is on
-# utils/scripts/compile-first.txt, and each object of a listed target has a
+# cmake/compile-first.txt, and each object of a listed target has a
 # chain of three edges in build.ninja, so Ninja starts it before the objects
 # of the other tests (cmake/CompileFirst.cmake).
 add_test(NAME compile_first
@@ -5625,7 +5625,7 @@ set_tests_properties(ninja_files_self_test PROPERTIES LABELS "ci_guard")
 
 # parse_total — the sum, over each object of the target all and each negative
 # fixture, of the bytes that its compile reads, against the baseline of the
-# build kind in utils/scripts/parse-total-ledger.txt (the rule parse-total of
+# build kind in utils/ledgers/parse-total.txt (the rule parse-total of
 # utils/registry.txt gives the levels).  utils/assay/readers/census.py
 # reads the files of an object from the ninja dependency log and the files of a
 # fixture from the record that its driver writes after each run.  The check
@@ -5641,7 +5641,7 @@ add_test(NAME parse_cost_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.legacy.check_parse_cost)
 # header_fanout — for each header of include/, the bytes that its sentinel
 # includes alone times the units that read it, against the 30 largest
-# products of utils/scripts/header-fanout-ledger.txt.  It prints the ten
+# products of utils/ledgers/header-fanout.txt.  It prints the ten
 # largest products, and it gives warnings only: for a header that enters the
 # ten largest, and for a product that changed by more than the rule
 # header-fanout of utils/registry.txt.
@@ -5650,7 +5650,7 @@ add_test(NAME header_fanout
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 # instruction_total — the user instructions of the last real compile of each
 # object of all and each negative fixture, against the baseline of
-# utils/scripts/instruction-total-ledger.txt, at the levels of the rule
+# utils/ledgers/instruction-total.txt, at the levels of the rule
 # instruction-total.  It exits 3 when one compile has no exact instruction count.
 add_test(NAME instruction_total
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule instruction-total
@@ -5665,7 +5665,7 @@ endfunction()
 cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_checks)
 
 # build_target_self_test — utils/assay/core/target.py gives the build kind
-# and the target tier to the quarantine ratchet and to the libstdc++ symbols
+# and the target tier to the rule quarantine and to the libstdc++ symbols
 # check.  The self-test reads planted target help of x86_64 and aarch64 GCC.
 add_test(NAME build_target_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest core.target)
@@ -5683,23 +5683,23 @@ add_test(NAME quarantine_sections_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest readers.sections)
 # quarantine_ratchet — utils/assay/guard/legacy/check_quarantine_ratchet.py counts the
 # distinct findings of the sections of the objects of all in each file, kind and
-# entity, against utils/scripts/quarantine-ledger.txt.  A count above or below its row
-# fails, and so does a finding in a file that the ledger does not hold.  A finding
-# inside an opt-out region counts with the reason of its region.  It exits
-# 3 for a build whose compiles do not load the quarantine plugin, for a build of
-# a configuration that the ledger does not have, and for a build that made only
-# some targets.
+# entity, against utils/ledgers/quarantine.txt (the rule quarantine).  A count above
+# or below its row fails, and so does a finding in a file that the ledger does not
+# hold.  A finding inside an opt-out region counts with the reason of its region.
+# It exits 3 for a build whose compiles do not load the quarantine plugin, for a
+# build of a configuration that the ledger does not have, and for a build that
+# made only some targets.
 add_test(NAME quarantine_ratchet
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule quarantine-ratchet --build-dir ${CMAKE_BINARY_DIR}
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule quarantine --build-dir ${CMAKE_BINARY_DIR}
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 add_test(NAME quarantine_ratchet_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule quarantine-ratchet --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule quarantine --self-test)
 set_tests_properties(quarantine_sections_self_test quarantine_ratchet quarantine_ratchet_self_test PROPERTIES
     LABELS "ci_guard" SKIP_RETURN_CODE 3)
 
 # quarantine_regions — utils/assay/guard/legacy/check_quarantine_regions.py reads each
 # opt-out region of the tracked C++ files through the parse tree, against
-# utils/scripts/quarantine-region-ledger.txt.  A region with no row and a row
+# utils/ledgers/quarantine-regions.txt.  A region with no row and a row
 # with no region fail.  It exits 3 when the kit of the parse tree is missing.
 add_test(NAME quarantine_regions
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule quarantine-regions
@@ -5799,11 +5799,11 @@ else()
   set_tests_properties(vessel_acceptance PROPERTIES LABELS "ci_guard;vessel" TIMEOUT 3600 RUN_SERIAL TRUE)
 endif()
 
-# allowlist_keys runs over every utils/scripts/*allowlist*.txt and holds the one
-# property none of the owning guards can hold once it breaks: the path half
-# of each key names a file that exists.  When a file moves, a key on the
-# missing path exempts nothing AND the owning guard can no longer locate
-# the site it was written for, so the guard goes quiet rather than loud.
+# allowlist_keys reads the guidance prose at the root of the tree: each path
+# that a sentence names is a file that exists.  When a file moves, the
+# sentence sends its reader to a file that is not there, and the message
+# names the place that the file most likely moved to.  The rule
+# ledger-owners holds the PATH cell of each ledger row.
 add_test(NAME allowlist_keys_self_test
   COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/check-allowlist-keys.sh --self-test)
 add_test(NAME allowlist_keys

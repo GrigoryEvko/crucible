@@ -55,16 +55,18 @@ WHAT IT DOES NOT SEE, STATED RATHER THAN IMPLIED
     - A negative-compile fixture, a file under a test directory named neg
       or *_neg.  It must fail to compile, so it builds nothing.
 
-THE ALLOWLIST
-    utils/scripts/detail-namespace-allowlist.txt admits the reviewed uses in test
-    files.  A row is `PATH NAMESPACE xN — REASON`, where NAMESPACE is the
-    detail namespace, for example ::foundation::effects::detail, and N is
-    the number of uses.  The key is the content, not a line.  Only a file
-    under test/ may take a row, and a file under test/fuzz/ may not: a fuzz
-    harness drives a production boundary, so it calls the public door as
-    production code does.  More uses than a row admits fail, and a row
-    that admits more uses than the file has is stale, so the list only
-    shrinks.
+THE LEDGER
+    utils/ledgers/detail-namespace.txt admits the reviewed uses in test
+    files, with the reader of assay.core.ledger.  A row is
+    `PATH | - | N | NAMESPACE | REASON`, where NAMESPACE is the detail
+    namespace, for example ::foundation::effects::detail, and N is the
+    number of uses.  Each row gives a reason.  The key is the content, not a
+    line.  Only a file under test/ may take a row, and a file under
+    test/fuzz/ may not: a fuzz harness drives a production boundary, so it
+    calls the public door as production code does.  More uses than a row
+    admits fail, and a row that admits more uses than the file has is
+    stale, so the ledger only shrinks.  A ledger with no rows has no file,
+    so with no file no test file may use a detail namespace.
 
 The guard reads every C++ file of the scan roots and of the layers,
 because an alias in any header of an include closure can open a detail
@@ -81,7 +83,7 @@ THE STORE
     not hold go to worker processes, at most 16.
 
 Exit 0 clean, 1 on an unlisted use, a surplus, a stale row or a parse
-failure, 2 on a usage error, a bad allowlist or a failed self-test, 3 when
+failure, 2 on a usage error, a bad ledger or a failed self-test, 3 when
 the parser kit is missing.
 """
 
@@ -101,10 +103,13 @@ from typing import NamedTuple
 
 from assay.core import cache as cache_dir
 from assay.core import git as throwaway_repo
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.guard.preprocessed import map_batches, text_results
 from assay.readers import tsast
 
-ALLOWLIST = "utils/scripts/detail-namespace-allowlist.txt"
+RULE = "detail-namespace"
+LEDGER = rule_ledger.shown_path(RULE)
 SCAN_ROOTS = ("include", "src", "test", "vessel", "utils/tools", "bench", "examples")
 # The directory under test/ whose files take no row: the fuzz harnesses.
 FUZZ_TREE = "test/fuzz/"
@@ -113,7 +118,6 @@ LAYER_ROOTS = ("include/foundation/", "include/fixy/", "src/foundation/", "src/f
 LAYERS = frozenset({"foundation", "fixy"})
 NEG_FIXTURE = re.compile(r"(?:^|/)(?:neg|[^/]+_neg)/")
 MACROS = ("preproc_def", "preproc_function_def")
-ROW = re.compile(r"^(?P<path>\S+)\s+(?P<namespace>::\S+)(?:\s+x(?P<count>[1-9][0-9]*))?$")
 
 # A namespace path, outermost name first.
 NsPath = tuple[str, ...]
@@ -121,7 +125,7 @@ Position = tuple[int, int]
 
 
 class Refused(Exception):
-    """The allowlist is missing or malformed (exit 2)."""
+    """The ledger is malformed (exit 2)."""
 
 
 class Name(NamedTuple):
@@ -590,39 +594,39 @@ def scan(root: Path) -> tuple[Counter, dict[tuple[str, str], list[int]], list[st
     return counts, lines, problems
 
 
-def read_allowlist(root: Path) -> dict[tuple[str, str], tuple[int, int]]:
-    """Return (admitted count, line) for each (path, namespace) row.
+def read_ledger(root: Path) -> dict[tuple[str, str], tuple[int, int]]:
+    """Return (admitted count, line) for each (path, namespace) row of the ledger.
+
+    A row is PATH | - | N | NAMESPACE | REASON.  A ledger with no file has no
+    row, so it admits no use.
 
     Raises:
-        Refused: If the allowlist is missing, a row is malformed, or a row names a file outside test/ or
-            under test/fuzz/
+        Refused: If the file does not obey the rows grammar, a key has a second row, a row is malformed, or a row
+            names a file outside test/ or under test/fuzz/
     """
-    listing = root / ALLOWLIST
-    if not listing.is_file():
-        raise Refused(f"{ALLOWLIST} is missing, so no test file may use a detail namespace.")
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), root)
+    except rows_grammar.RowsError as problem:
+        raise Refused(f"{problem}.") from None
     rows: dict[tuple[str, str], tuple[int, int]] = {}
-    for number, line in enumerate(listing.read_text().splitlines(), 1):
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        key, separator, reason = line.partition(" — ")
-        match = ROW.match(key.strip())
-        if not separator or not reason.strip() or match is None:
-            raise Refused(f"{ALLOWLIST}:{number} is not PATH NAMESPACE xN — REASON.")
-        if not match.group("path").startswith("test/") or match.group("path").startswith(FUZZ_TREE):
-            raise Refused(f"{ALLOWLIST}:{number} names {match.group('path')}, and only a test file outside "
+    for key, entry in ledger.base.items():
+        if key.kind or not key.entity.startswith("::") or not entry.reason:
+            raise Refused(f"{LEDGER}:{entry.line} is not PATH | - | N | NAMESPACE | REASON.")
+        if not key.path.startswith("test/") or key.path.startswith(FUZZ_TREE):
+            raise Refused(f"{LEDGER}:{entry.line} names {key.path or 'no file'}, and only a test file outside "
                           f"{FUZZ_TREE} may take a row.")
-        rows[(match.group("path"), match.group("namespace"))] = (int(match.group("count") or 1), number)
+        rows[(key.path, key.entity)] = (int(entry.value), entry.line)
     return rows
 
 
 def check(root: Path) -> int:
-    """Compare the uses in the tree with the allowlist, and report to stderr.
+    """Compare the uses in the tree with the ledger, and report to stderr.
 
     Returns:
-        0 clean, 1 on a finding, 2 on a bad allowlist
+        0 clean, 1 on a finding, 2 on a bad ledger
     """
     try:
-        rows = read_allowlist(root)
+        rows = read_ledger(root)
     except Refused as exc:
         print(f"check-detail-namespace: {exc}", file=sys.stderr)
         return 2
@@ -637,7 +641,7 @@ def check(root: Path) -> int:
                             f"door of the layer.")
     for key, (admitted, number) in sorted(rows.items(), key=lambda item: item[1][1]):
         if counts.get(key, 0) < admitted:
-            problems.append(f"STALE     {ALLOWLIST}:{number} admits {admitted} use(s) of {key[1]} in {key[0]}, and "
+            problems.append(f"STALE     {LEDGER}:{number} admits {admitted} use(s) of {key[1]} in {key[0]}, and "
                             f"the file has {counts.get(key, 0)}.  Lower the count or remove the row.")
     for line in problems:
         print(f"check-detail-namespace: {line}", file=sys.stderr)
@@ -660,6 +664,12 @@ def self_test() -> int:
         """Write one planted file."""
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text(text, encoding="utf-8")
+
+    def write_ledger(root: Path, *rows: str) -> None:
+        """Write a planted ledger of format 1 with the given rows, the first row at line 3."""
+        write(root, LEDGER, f"format 1\nrule {RULE}\n" + "".join(f"{row}\n" for row in rows))
+
+    probe = "test/fixy/test_probe.cpp | - | 2 | ::foundation::effects::detail | a probe"
 
     def captured(root: Path, cwd: Path | None = None) -> tuple[int, str]:
         """Run the check on the planted repository and keep its report."""
@@ -718,14 +728,14 @@ def self_test() -> int:
         write(root, "test/fixy/test_directive.cpp",
               "void probe() {\n    using namespace ::foundation::effects::detail;\n    std::size_t a = 0;\n"
               "    std::vector<int> b;\n    helper(Key{});\n}\n")
-        write(root, ALLOWLIST, "# planted\ntest/fixy/test_probe.cpp ::foundation::effects::detail x2 — a probe\n"
-                               "test/fixy/test_directive.cpp ::foundation::effects::detail x1 — one directive\n")
+        write_ledger(root, "test/fixy/test_directive.cpp | - | 1 | ::foundation::effects::detail | one directive",
+                     probe)
         expect(root, 0, "3 use(s) of a detail namespace", "a use inside the layers, the check file of a layer header, "
                                                             "reviewed tests, a fixture, a comment, a string, a fixy "
                                                             "namespace under crucible, a public door, a macro string "
                                                             "and a crucible detail after a layer directive pass", True)
         (root / "test/fixy/test_directive.cpp").unlink()
-        write(root, ALLOWLIST, "# planted\ntest/fixy/test_probe.cpp ::foundation::effects::detail x2 — a probe\n")
+        write_ledger(root, probe)
 
         forgeries = {
             "src/Qualified.cpp": "auto key = ::foundation::effects::detail::Key{};\n",
@@ -821,17 +831,22 @@ def self_test() -> int:
         expect(root, 1, "REFUSED   test/fixy/test_probe.cpp:1, 2, 3 — 3 use(s)", "a use above the reviewed count",
                True)
         write(root, "test/fixy/test_probe.cpp", "auto first = ::foundation::effects::detail::Key{};\n")
-        expect(root, 1, "STALE     utils/scripts/detail-namespace-allowlist.txt:2", "a row above the count", True)
+        expect(root, 1, f"STALE     {LEDGER}:3", "a row above the count", True)
         write(root, "test/fixy/test_probe.cpp",
               "auto first = ::foundation::effects::detail::Key{};\nauto second = foundation::effects::detail::Key{};\n")
-        write(root, ALLOWLIST, "# planted\nsrc/Clean.cpp ::foundation::effects::detail x1 — not a test\n")
+        write_ledger(root, "src/Clean.cpp | - | 1 | ::foundation::effects::detail | not a test")
         expect(root, 2, "only a test file outside test/fuzz/ may take a row", "a row outside test/", True)
-        write(root, ALLOWLIST, "# planted\ntest/fuzz/boundary/Reach.cpp ::foundation::effects::detail x1 — a fuzz "
-                               "harness\n")
+        write_ledger(root, "test/fuzz/boundary/Reach.cpp | - | 1 | ::foundation::effects::detail | a fuzz harness")
         expect(root, 2, "only a test file outside test/fuzz/ may take a row", "a row for a fuzz harness", True)
-        write(root, ALLOWLIST, "test/fixy/test_probe.cpp ::foundation::effects::detail x2\n")
-        expect(root, 2, "is not PATH NAMESPACE xN — REASON", "a row with no reason", True)
-        write(root, ALLOWLIST, "# planted\ntest/fixy/test_probe.cpp ::foundation::effects::detail x2 — a probe\n")
+        write_ledger(root, "test/fixy/test_probe.cpp | - | 2 | ::foundation::effects::detail | -")
+        expect(root, 2, "is not PATH | - | N | NAMESPACE | REASON", "a row with no reason", True)
+        write_ledger(root, "test/fixy/test_probe.cpp | - | 2 | foundation::effects::detail | a probe")
+        expect(root, 2, "is not PATH | - | N | NAMESPACE | REASON", "a namespace with no leading ::", True)
+        write_ledger(root, "test/fixy/test_probe.cpp ::foundation::effects::detail x2 — a probe")
+        expect(root, 2, f"{LEDGER}:3: an entry row is", "a row that does not obey the rows grammar", True)
+        write_ledger(root, probe, "test/fixy/test_probe.cpp | - | 1 | ::foundation::effects::detail | again")
+        expect(root, 2, "has a second row", "a second row of one key", True)
+        write_ledger(root, probe)
         write(root, "src/Broken.cpp", "namespace detail { struct X { int = ; }}}\n")
         expect(root, 1, "PARSE     src/Broken.cpp", "a file the parser cannot read fails", True)
         (root / "src/Broken.cpp").unlink()
@@ -839,8 +854,9 @@ def self_test() -> int:
         print(f"  {'ok  ' if same else 'FAIL'} the report from / equals the report from the repository")
         if not same:
             failures.append("the report depends on the working directory")
-        (root / ALLOWLIST).unlink()
-        expect(root, 2, "is missing", "a missing allowlist", True)
+        (root / LEDGER).unlink()
+        expect(root, 1, "REFUSED   test/fixy/test_probe.cpp:1, 2 — 2 use(s)", "a ledger with no file admits no use",
+               True)
     for failure in failures:
         print(f"check-detail-namespace --self-test: FAIL — {failure}", file=sys.stderr)
     if failures:

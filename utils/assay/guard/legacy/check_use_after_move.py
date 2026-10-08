@@ -91,7 +91,7 @@ guard learns one of them.
 - A move inside a function that takes T&.  The call does not say
   std::move, so the name stays live at the call site.  A call that passes
   std::move(x) to a T&& parameter spends x, although the callee can leave
-  x whole.  An allowlist entry says why when it does.
+  x whole.  A row of the ledger says why when it does.
 - A use through a pointer to a spent object, or through a reference that
   is not bound to a plain name, such as a reference that a call returns.
 - A lambda that captures a name by reference, runs after the name is
@@ -99,7 +99,7 @@ guard learns one of them.
   source, so the guard reads it with the name live.
 - The guard does not know types, so it also reports a use after move of
   a type whose moved-from state is specified, such as a std::vector.
-  Assign the name first.  The allowlist is only for a test that probes a
+  Assign the name first.  The ledger is only for a test that probes a
   moved-from object on purpose.
 - A try_ function that moves its argument when it fails, for example one
   that takes a parameter by value of a type that is not trivially
@@ -110,20 +110,21 @@ A file that tsast.UNPARSEABLE lists is out of scope, because it is not C++.
 Negative-compile fixtures (a test directory named neg or *_neg) are out of
 scope, because each one must fail to compile.
 
-The allowlist
--------------
-utils/scripts/use-after-move-allowlist.txt holds reviewed findings.  An entry
-is `path:function:key`, or `path:function:key xN` for N findings, with
-a comment above it that names the probe.  The key survives a line shift.
-Only a test that reads or uses a moved-from object on purpose belongs on
-the list.  A real use after move is fixed in the code, and a finding that
+The ledger
+----------
+utils/ledgers/use-after-move.txt holds reviewed findings, and the reader of
+assay.core.ledger reads it.  A row is `PATH | - | N | FUNCTION: KEY | REASON`
+for N findings of the key KEY in the function FUNCTION, and its reason
+names the probe.  Each row gives a reason.  The key survives a line shift.
+Only a test that reads or uses a moved-from object on purpose belongs in
+the ledger.  A real use after move is fixed in the code, and a finding that
 the guard reads wrongly is fixed in the guard, with a self-test line.
 
 Exit codes
-  0  every finding has an entry, and every entry has its findings
-  1  a finding with no entry
-  2  an entry with more findings admitted than found, a bad invocation,
-     or a failed self-test
+  0  every finding has a row, and every row has its findings
+  1  a finding with no row
+  2  a row with more findings admitted than found, a malformed row, a bad
+     invocation, or a failed self-test
   3  the pinned tree-sitter kit is not installed
 
 Usage
@@ -146,11 +147,16 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
+from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
 from assay.readers import tsast
 
 SCAN_ROOTS = ("include", "src", "test", "vessel", "utils/tools")
-ALLOWLIST = "utils/scripts/use-after-move-allowlist.txt"
+RULE = "use-after-move"
+LEDGER = rule_ledger.shown_path(RULE)
+# The key of a row of the ledger: the path and the entity FUNCTION: KEY.
+LedgerKey = tuple[str, str]
 # The files one worker parses in one kit run.  A run costs a fixed start-up,
 # so a chunk amortises it, and the chunks spread over the workers.
 CHUNK = 96
@@ -208,8 +214,9 @@ class Finding:
     what: str
     moved_at: int
 
-    def allow_key(self) -> str:
-        return f"{self.path}:{self.function}:{self.key}"
+    def ledger_key(self) -> LedgerKey:
+        """Return the key of the row of the ledger that admits this finding: the path and FUNCTION: KEY."""
+        return self.path, f"{self.function}: {self.key}"
 
 
 State = dict[str, int] | None  # spent key -> line of its move; None when no path reaches the point
@@ -1416,46 +1423,63 @@ def tracked_sources(root: Path) -> list[str] | None:
     return sorted(out)
 
 
-def read_allowlist(path: Path) -> tuple[Counter, list[str]]:
-    admitted: Counter = Counter()
+def read_ledger(root: Path = REPO_ROOT, file: Path | None = None) -> tuple[dict[LedgerKey, tuple[int, int]], list[str]]:
+    """Return the count and the line of each row of the ledger by its key, and each malformed row.
+
+    A row is PATH | - | N | FUNCTION: KEY | REASON, and each row gives the
+    reason of its probe.  A file that does not obey the rows grammar, or a
+    second row of one key, gives one error at the place that the reader
+    names, and no row.
+
+    Args:
+        root: The source root of the file utils/ledgers/use-after-move.txt
+        file: The file to read in place of that file, for a planted ledger of the self-test
+    """
+    shown = LEDGER if file is None else str(file)
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), root, file)
+    except rows_grammar.RowsError as problem:
+        return {}, [str(problem)]
+    admitted: dict[LedgerKey, tuple[int, int]] = {}
     errors: list[str] = []
-    if not path.exists():
-        return admitted, errors
-    lines = path.read_text().split("\n")
-    for number, raw in enumerate(lines, 1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
+    for key, entry in ledger.base.items():
+        if not key.path or key.kind or not key.entity:
+            errors.append(f"{shown}:{entry.line}: a row is PATH | - | N | FUNCTION: KEY | REASON")
             continue
-        entry, _, count = line.partition(" x")
-        if entry.count(":") < 2:
-            errors.append(f"{path.name}:{number}: an entry is path:function:key, got '{line}'")
-            continue
-        above = number - 2
-        while above >= 0 and lines[above].strip() and not lines[above].strip().startswith("#"):
-            above -= 1
-        if above < 0 or not lines[above].strip().startswith("#"):
-            errors.append(f"{path.name}:{number}: an entry needs a comment in its paragraph that gives the reason")
-        admitted[entry.strip()] += int(count) if count.strip().isdigit() else 1
+        if not entry.reason:
+            errors.append(f"{shown}:{entry.line}: a row gives the reason that names its probe, and this row gives "
+                          f"none")
+        admitted[(key.path, key.entity)] = (int(entry.value), entry.line)
     return admitted, errors
 
 
-def verdict(findings: list[Finding], admitted: Counter, errors: list[str], mode: str) -> int:
-    found = Counter(f.allow_key() for f in findings)
+def verdict(findings: list[Finding], admitted: dict[LedgerKey, tuple[int, int]], errors: list[str], mode: str,
+            shown: str = LEDGER) -> int:
+    """Print each finding that no row admits and each stale row, and return the exit status.
+
+    Args:
+        findings: The findings of the scan
+        admitted: The count and the line of each row of the ledger, by its key
+        errors: The malformed rows of the ledger
+        mode: check, or list to print each finding
+        shown: The name of the ledger in each message
+    """
+    found = Counter(f.ledger_key() for f in findings)
     status = 2 if errors else 0
     for error in errors:
         print(f"check-use-after-move: {error}", file=sys.stderr)
     for finding in sorted(findings, key=lambda f: (f.path, f.line)):
-        allowed = admitted[finding.allow_key()] >= found[finding.allow_key()]
+        allowed = admitted.get(finding.ledger_key(), (0, 0))[0] >= found[finding.ledger_key()]
         if mode == "list" or not allowed:
             where = f"{finding.path}:{finding.line}"
             print(f"{where}: {finding.what} of '{finding.key}' in {finding.function} "
                   f"(moved at line {finding.moved_at}){'' if not allowed else '  [allowlisted]'}")
         if not allowed:
             status = max(status, 1)
-    for key, count in admitted.items():
-        if found[key] < count:
-            print(f"check-use-after-move: STALE entry {key} admits {count} and {found[key]} found; lower it",
-                  file=sys.stderr)
+    for (path, entity), (count, line) in admitted.items():
+        if found[(path, entity)] < count:
+            print(f"check-use-after-move: STALE row {shown}:{line} ({path}, {entity}) admits {count} and "
+                  f"{found[(path, entity)]} found; lower it", file=sys.stderr)
             status = 2
     return status
 
@@ -1736,25 +1760,35 @@ def self_test() -> int:
                         f"{by_fixture['must_catch_repeated_reads']} findings, and one move is one finding")
     if len(caught) < 50 or len(accepted) < 50:
         failures.append(f"the fixture names were not read from the tree ({len(caught)} caught, {len(accepted)} accepted)")
-    # The allowlist admits a finding, and an entry above its count is stale.
+    # The ledger admits a finding, and a row above its count is stale.
     with tempfile.TemporaryDirectory() as tmp:
-        allow = Path(tmp) / "allow.txt"
-        allow.write_text("# a reason\nself_test.cpp:must_catch_use:t\n# a reason\nself_test.cpp:nowhere:x\n")
-        admitted, errors = read_allowlist(allow)
+        planted = Path(tmp) / "ledger.txt"
+        head = f"format 1\nrule {RULE}\n"
+        used = "self_test.cpp | - | 1 | must_catch_use: t | a reason\n"
+        planted.write_text(head + used + "self_test.cpp | - | 1 | nowhere: x | a reason\n", encoding="utf-8")
+        admitted, errors = read_ledger(file=planted)
         sub = [f for f in findings if f.function == "must_catch_use"]
         report = io.StringIO()
         with contextlib.redirect_stderr(report):
-            stale_status = verdict(sub, admitted, errors, "check")
-        if stale_status != 2 or "STALE entry self_test.cpp:nowhere:x" not in report.getvalue():
-            failures.append("a stale allowlist entry did not exit 2 with its name")
-        allow.write_text("# a reason\nself_test.cpp:must_catch_use:t\n")
-        admitted, errors = read_allowlist(allow)
+            stale_status = verdict(sub, admitted, errors, "check", str(planted))
+        if stale_status != 2 or f"STALE row {planted}:4 (self_test.cpp, nowhere: x)" not in report.getvalue():
+            failures.append("a stale row did not exit 2 with its key")
+        planted.write_text(head + used, encoding="utf-8")
+        admitted, errors = read_ledger(file=planted)
         if verdict(sub, admitted, errors, "check") != 0:
-            failures.append("an allowlisted finding did not pass")
-        allow.write_text("self_test.cpp:must_catch_use:t\n")
-        admitted, errors = read_allowlist(allow)
+            failures.append("an admitted finding did not pass")
+        planted.write_text(head + "self_test.cpp | - | 1 | must_catch_use: t | -\n", encoding="utf-8")
+        admitted, errors = read_ledger(file=planted)
         if not errors:
-            failures.append("an entry with no reason above it was accepted")
+            failures.append("a row with no reason was accepted")
+        planted.write_text(head + used + used, encoding="utf-8")
+        admitted, errors = read_ledger(file=planted)
+        if not any("has a second row" in error for error in errors):
+            failures.append("a second row of one key was accepted")
+        planted.write_text(head + "self_test.cpp:must_catch_use:t\n", encoding="utf-8")
+        admitted, errors = read_ledger(file=planted)
+        if not errors:
+            failures.append("a row that does not obey the rows grammar was accepted")
         # A file the kit cannot parse is a finding, not a silent pass.
         broken = Path(tmp) / "broken.cpp"
         broken.write_text("void f( { take(std::move(t)); read(t); \n", encoding="utf-8")
@@ -1786,9 +1820,9 @@ def main(argv: list[str]) -> int:
     except tsast.KitMissing as exc:
         print(f"check-use-after-move: {exc}", file=sys.stderr)
         return 3
-    admitted, errors = read_allowlist(root / ALLOWLIST)
+    admitted, errors = read_ledger(root)
     if rest:
-        admitted = Counter({k: v for k, v in admitted.items() if k.split(":", 1)[0] in set(rest)})
+        admitted = {key: value for key, value in admitted.items() if key[0] in set(rest)}
     status = verdict(findings, admitted, errors, mode)
     if status == 0:
         print(f"check-use-after-move: {len(files)} files, {len(findings)} findings, each one allowlisted")

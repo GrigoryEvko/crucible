@@ -16,6 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from assay.core import git
+from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.guard.engines.meta import history
@@ -162,7 +163,7 @@ def threshold_cases(expect: Expect, scratch: Path) -> Scratch:
     tree.commit("Admit the raise of the slow row", "The admission row gives the slow-row measurement of 26 s.")
     status, found = tree.run()
     expect("an admission row changes the error to a warning of the ledger",
-           status == 0 and any(item.path == ADMISSIONS and "admits" in item.message for item in found))
+           status == 0 and any(item.path == ADMISSIONS and "rows of the ledger admit" in item.message for item in found))
     tree.write(rule_registry.REGISTRY_PATH, registry_text(slow=(10, 30), size=(2, 6)))
     measured = tree.commit("Raise the size row", "The largest link of size-row took 5.2 GB of memory.")
     status, found = tree.run()
@@ -257,6 +258,25 @@ def move_cases(expect: Expect, scratch: Path) -> None:
            any(item.path == ADMISSIONS and "holds 1 rows, more than its lowest committed count 0" in item.message
                for item in found))
 
+    group = Scratch(scratch / "move-group")
+    doors = "utils/ledgers/ctx-init-door.txt"
+    first, second = history.EARLIER_PATHS[doors]
+    group.write(first, "# the init doors\na\nb\n")
+    group.write(second, "# the bg doors\nc\nd\ne\nf\ng\n")
+    group.commit("Admit seven doors", "Two files hold the doors.")
+    group.write(second, "# the bg doors\nc\nd\ne\nf\ng\nh\n")
+    added = group.commit("Admit one more bg door", "Only the second file changes.")
+    (group.root / first).unlink()
+    (group.root / second).unlink()
+    group.write(doors, LEDGER_HEAD.format(rule="ctx-init-door")
+                + "".join(f"src/{name}.cpp | init | 1 | {name} | -\n" for name in "abcdefgh"))
+    group.commit("Move the doors to one ledger", "The ledger holds each door.")
+    status, found = group.run()
+    grew = [item.message for item in found if item.path == doors]
+    expect("a ledger with two earlier files counts the rows of the two, also at a commit that changed one",
+           status == 0 and len(grew) == 1 and "holds 8 rows, more than its lowest committed count 7" in grew[0]
+           and f"{added[:9]} (Admit one more bg door) from 7 to 8" in grew[0])
+
 
 def quarantine_text(base: dict[str, int], deltas: dict[str, dict[str, int]] | None = None) -> str:
     """Return a quarantine ledger of format 2 with base counts of the kind std_object and the differences of more
@@ -280,6 +300,19 @@ def entity_text(base: dict[tuple[str, str], int], ledger_format: int = 3,
     rows = [(file, "std_object", entity, count) for (file, entity), count in base.items() if count]
     rows += [(file, history.OPTED_OUT, entity, count) for (file, entity), count in (regions or {}).items() if count]
     lines += [f"{file} {kind} {count} {entity}" for file, kind, entity, count in sorted(rows)]
+    return "\n".join(lines) + "\n"
+
+
+def rows_text(base: dict[tuple[str, str], int], deltas: dict[str, dict[tuple[str, str], int]] | None = None) -> str:
+    """Return a quarantine ledger in the rows of assay.core.ledger, with base counts of the kind std_object keyed by file
+    and entity, and the differences of more configurations."""
+    deltas = deltas or {}
+    lines = ["# a planted ledger", f"format {rule_ledger.FORMAT}", f"rule {history.QUARANTINE_RULE}",
+             "configuration default machine x86_64"]
+    lines += [f"configuration {name} machine aarch64" for name in deltas]
+    lines += [f"{file} | std_object | {count} | {entity} | -" for (file, entity), count in sorted(base.items()) if count]
+    lines += [f"@{name} | {file} | std_object | {delta:+d} | {entity} | -" for name, table in deltas.items()
+              for (file, entity), delta in sorted(table.items()) if delta]
     return "\n".join(lines) + "\n"
 
 
@@ -320,8 +353,8 @@ def quarantine_cases(expect: Expect, scratch: Path) -> None:
     tree.commit("Admit the raise", "The row admits it.")
     status, found = tree.run()
     expect("an admission row of a raise changes the error to a warning",
-           status == 0 and not errors_of(found) and any(item.path == ADMISSIONS and "admits" in item.message
-                                                        for item in found))
+           status == 0 and not errors_of(found) and any(item.path == ADMISSIONS and "rows of the ledger admit"
+                                                        in item.message for item in found))
     tree.write("utils/tools/quarantine/quarantine.cpp", "// a new rule\n")
     tree.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 4, "test/b.cpp": 3}))
     ruled = tree.commit("Report a new kind in the plugin", "The plugin finds more.")
@@ -432,6 +465,48 @@ def quarantine_cases(expect: Expect, scratch: Path) -> None:
     expect("a region that covers more is no error, and its row gives a warning that names the commit",
            status == 0 and not errors_of(found) and any(admitted[:9] in item.message and history.OPTED_OUT
                                                         in item.message for item in standing_of(found)))
+    move_quarantine_cases(expect, scratch)
+
+
+def move_quarantine_cases(expect: Expect, scratch: Path) -> None:
+    """Move the quarantine ledger from its earlier file to the rows of assay.core.ledger, and check each verdict."""
+    earlier = history.EARLIER_QUARANTINE_LEDGER
+    span, vector = ("test/a.cpp", "std::span"), ("test/a.cpp", "std::vector")
+    moved = Scratch(scratch / "quarantine-move")
+    moved.write(earlier, entity_text({span: 2}, 4))
+    moved.commit("Count each entity", "The first counts.")
+    moved.write(earlier, entity_text({span: 3}, 4))
+    raised = moved.commit("Raise a count by hand", "A finding comes back.")
+    (moved.root / earlier).unlink()
+    moved.write(QUARANTINE_LEDGER, rows_text({span: 3}))
+    status, found = moved.run()
+    expect("a working tree that moves the ledger with the same counts raises nothing more",
+           status == 1 and len(errors_of(found)) == 1 and raised[:9] in errors_of(found)[0].message
+           and not any(history.WORKING_TREE in item.message for item in found))
+    moved.commit("Move the ledger to the rows", "Each count stays.")
+    status, found = moved.run()
+    expect("a raise in the earlier file stays an error after the move, and its warning points at the new row",
+           status == 1 and len(errors_of(found)) == 1 and raised[:9] in errors_of(found)[0].message
+           and [item.line for item in standing_of(found)] == [5] and raised[:9] in standing_of(found)[0].message)
+    moved.write(QUARANTINE_LEDGER, rows_text({span: 3}, {"arm": {span: 1}}))
+    moved.commit("Add the configuration of a CI leg", "The leg counts one more finding.")
+    moved.write(QUARANTINE_LEDGER, rows_text({span: 3, vector: 1}, {"arm": {span: 1}}))
+    added = moved.commit("Add a finding by hand", "A new entity comes.")
+    status, found = moved.run()
+    expect("a raise in the rows is an error that names the new entity",
+           status == 1 and any(added[:9] in item.message and "std_object std::vector in default from 0 to 1"
+                               in item.message for item in errors_of(found)))
+
+    jump = Scratch(scratch / "quarantine-move-raise")
+    jump.write(earlier, entity_text({span: 2}, 4))
+    jump.commit("Count each entity", "The first counts.")
+    (jump.root / earlier).unlink()
+    jump.write(QUARANTINE_LEDGER, rows_text({span: 3}))
+    hidden = jump.commit("Move the ledger and raise a count", "A move must not hide the raise.")
+    status, found = jump.run()
+    expect("a move to the rows that raises a count is an error that names the commit",
+           status == 1 and any(hidden[:9] in item.message and "from 2 to 3" in item.message
+                               for item in errors_of(found)))
 
 
 def applicability_cases(expect: Expect, tree: Scratch, scratch: Path) -> None:

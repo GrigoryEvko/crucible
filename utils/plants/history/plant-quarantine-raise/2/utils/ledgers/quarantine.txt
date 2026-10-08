@@ -1,0 +1,6 @@
+# a planted ledger
+format 1
+rule quarantine
+configuration default machine x86_64
+test/a.cpp | std_object | 2 | - | -
+test/b.cpp | std_object | 2 | - | -
