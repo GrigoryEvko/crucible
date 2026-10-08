@@ -13,7 +13,7 @@
 # row and fails when an outcome differs.  The rows of the record families
 # (the runs, the subject-reduction safety, mpstk and the subtyping
 # certificates) have no assertion.
-# Rebuild the files with utils/scripts/session-oracle.sh --regenerate.  The
+# Rebuild the files with `loop derive session-oracle regenerate`.  The
 # guard session_oracle_check and the parts session_oracle_self_test_K of
 # the self-test are in test/CMakeLists.txt beside the other script guards.
 

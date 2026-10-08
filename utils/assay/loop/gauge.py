@@ -2,7 +2,9 @@
 
 Run `loop gauge` before each stage gate.  It takes minutes, so no test runs it.
 `loop gauge --sample` measures a sample of translation units instead
-(utils/assay/loop/gauge_sample.py).
+(utils/assay/loop/gauge_sample.py), and `loop gauge --cold` measures one
+clean build and one test run with no compiler cache
+(utils/assay/loop/gauge_cold.py).
 
 THE MEASUREMENT
     1. The gauge clones the source tree at its HEAD commit into
@@ -65,6 +67,7 @@ Usage
     loop gauge [--jobs N] [--runs K] [--preset NAME] [--work-dir DIR | --reuse DIR] [--keep] [--timeout S]
                [--min-free-gb G] [--warnings-dir DIR] [--record FILE]
     loop gauge --sample [ARG]...
+    loop gauge --cold [ARG]...
     guard selftest loop.gauge
 
 Exit 0 with no error, 1 with an error finding or a step that failed, 2 on a usage error, too little free memory or a
@@ -91,7 +94,7 @@ from assay.core import git as throwaway_repo
 from assay.core import meter as cost_meter
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
-from assay.loop import gauge_sample
+from assay.loop import gauge_cold, gauge_sample
 from assay.loop import history as loop_history
 from assay.readers import ninja as ninja_files
 from assay.readers import tsast
@@ -645,7 +648,7 @@ def self_test() -> int:
 
 
 def main(argv: list[str]) -> int:
-    """Parse the arguments and run the gauge or the self-test, or give the words after --sample to gauge_sample.
+    """Parse the arguments and run the gauge or the self-test, or give the words after --sample or --cold to its module.
 
     Args:
         argv: The words after `loop gauge`
@@ -655,6 +658,8 @@ def main(argv: list[str]) -> int:
     """
     if argv[:1] == ["--sample"]:
         return gauge_sample.main(argv[1:])
+    if argv[:1] == ["--cold"]:
+        return gauge_cold.main(argv[1:])
     if argv == ["--self-test"]:
         return self_test()
     parser = argparse.ArgumentParser(prog="loop gauge",

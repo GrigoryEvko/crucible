@@ -124,8 +124,6 @@ rule vessel-acceptance engine=build scope=vessel/ ledger=none legacy=guard.legac
 rule walk-units engine=tsast scope=test/layer/ ledger=none legacy=guard.legacy.check_walk_units doc=XV.1 | a check file that walks a namespace and that test/layer/walk-checks.txt does not list, and a listed file that walks none | write the list again with --write
 rule witness-roster engine=tsast scope=include/ ledger=admit legacy=guard.legacy.check_witness_roster doc=XXI | a door class with no roster row, and a fixture that its roster row does not produce | add the row, and write the fixtures again with --gen
 
-path bench/run-bench.sh | the bench driver.  The subcommand loop bench replaces it, and the change that makes the shell scripts modules deletes it
-path test/fuzz/run-afl.sh | the AFL++ driver.  The subcommand loop fuzz replaces it, and the change that makes the shell scripts modules deletes it
 path test/harness/check_output.py | a test of two C++ probes of the product, as a C++ test executable is.  It is outside the utils system
 path utils/assay/**/*.py | the modules of the package
 path utils/assay/oracle/coq/*.v | the Rocq source of the liveness certificate, data beside its reader

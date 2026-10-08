@@ -114,7 +114,7 @@ crucible_property_fuzzer(prop_ptp_degradation)
 #   fuzz_<name>              the fuzz binary.  Its smoke test replays the
 #                            seeds, then a fixed stream of mutated copies.
 #                            Built with afl-g++-fast, it runs under afl-fuzz
-#                            with no arguments: see test/fuzz/run-afl.sh.
+#                            with no arguments: see `loop fuzz`.
 #   prop_boundary_harnesses  the property test that runs every harness on
 #                            Philox-edited seeds.
 

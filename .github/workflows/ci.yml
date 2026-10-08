@@ -308,7 +308,7 @@ jobs:
           python3 utils/bin/guard check --rule no-coordination-refs
 
       - name: session oracle drift (check)
-        run: bash utils/scripts/session-oracle.sh --check
+        run: python3 utils/bin/guard check --rule session-oracle check
 
       - name: check report format and the measured rules (self-test)
         run: python3 utils/bin/guard selftest core.report

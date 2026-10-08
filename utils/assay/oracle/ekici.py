@@ -66,7 +66,7 @@ def coqc() -> list[str]:
     """Return the coqc command of the Coq 8.20 toolchain that the development builds with.
 
     SESSION_ORACLE_COQC20 names it.  The default runs coqc in the opam
-    switch sessoracle20 (utils/scripts/session-oracle.sh says how to make it).
+    switch sessoracle20 (THE TOOLCHAINS of utils/assay/oracle/runner.py says how to make it).
     """
     env = os.environ.get("SESSION_ORACLE_COQC20")
     if env:
@@ -74,8 +74,8 @@ def coqc() -> list[str]:
     opam = shutil.which("opam") or str(Path.home() / ".local" / "bin" / "opam")
     if not Path(opam).is_file() and shutil.which(opam) is None:
         raise OracleError("opam is not on PATH, and SESSION_ORACLE_COQC20 is not set.  The ITP 2025 development "
-                          "needs Coq 8.20 with mathcomp-ssreflect 2.3 and paco; utils/scripts/session-oracle.sh says "
-                          "how to install them.")
+                          "needs Coq 8.20 with mathcomp-ssreflect 2.3 and paco; THE TOOLCHAINS of "
+                          "utils/assay/oracle/runner.py says how to install them.")
     return [opam, "exec", "--switch=sessoracle20", "--", "coqc"]
 
 

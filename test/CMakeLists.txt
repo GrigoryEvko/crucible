@@ -962,7 +962,7 @@ set_tests_properties(no_coordination_refs no_coordination_refs_self_test
 # 6 s of wall time and not 12 s, and a cold run 9 s and not 24 s.  The store
 # self-test proves each rule of the store on scratch units.
 add_test(NAME session_oracle_check
-  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/session-oracle.sh --check)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule session-oracle check)
 set_tests_properties(session_oracle_check PROPERTIES LABELS "ci_guard;session_oracle")
 add_test(NAME session_oracle_store_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest oracle.unit_store --cxx ${CMAKE_CXX_COMPILER})
@@ -971,8 +971,8 @@ set(SESSION_ORACLE_SELF_TEST_PARTS 3)
 math(EXPR session_oracle_last_part "${SESSION_ORACLE_SELF_TEST_PARTS} - 1")
 foreach(part RANGE ${session_oracle_last_part})
   add_test(NAME session_oracle_self_test_${part}
-    COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/session-oracle.sh --self-test ${CMAKE_CXX_COMPILER}
-            --part ${part}/${SESSION_ORACLE_SELF_TEST_PARTS})
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule session-oracle self-test
+            --cxx ${CMAKE_CXX_COMPILER} --part ${part}/${SESSION_ORACLE_SELF_TEST_PARTS})
   set_tests_properties(session_oracle_self_test_${part} PROPERTIES
     LABELS "ci_guard;session_oracle"
     PROCESSORS 8)
@@ -5732,6 +5732,15 @@ set_tests_properties(affected_tests_self_test loop_history_self_test PROPERTIES 
 add_test(NAME edit_loop_gauge_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest loop.gauge)
 set_tests_properties(edit_loop_gauge_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
+# The self-tests of `loop gauge --cold`, `loop pgo`, `loop bench`, `loop fuzz`
+# and `loop derive`.  Each one plants its input in a scratch directory, and no
+# one of them builds the tree or runs a bench or a campaign.
+foreach(_loop_module loop.gauge_cold loop.pgo loop.bench loop.fuzz loop.derive)
+  string(REPLACE "." "_" _loop_self_test "${_loop_module}_self_test")
+  add_test(NAME ${_loop_self_test}
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest ${_loop_module})
+  set_tests_properties(${_loop_self_test} PROPERTIES LABELS "ci_guard")
+endforeach()
 
 # vessel_acceptance is the acceptance gate of the PyTorch vessel under
 # vessel/torch.  utils/assay/guard/legacy/check_vessel_acceptance.py builds the vessel targets
@@ -5918,7 +5927,7 @@ add_subdirectory(shape)
 #   ctest -L fuzz_property  the property tests on Philox-derived input
 #   ctest -L fuzz_boundary  the boundary harnesses, on their seeds and mutated copies
 # AFL++ with its GCC plugin drives the same boundary harnesses for a
-# coverage-guided campaign (test/fuzz/run-afl.sh).
+# coverage-guided campaign (`loop fuzz`, utils/assay/loop/fuzz.py).
 option(CRUCIBLE_FUZZ "Build property + boundary fuzz harnesses" OFF)
 if(CRUCIBLE_FUZZ AND CRUCIBLE_TSAN AND CMAKE_BUILD_TYPE STREQUAL "Debug")
   message(FATAL_ERROR "The fuzz harnesses build under ASan, and CRUCIBLE_TSAN puts ThreadSanitizer on every target.  Set CRUCIBLE_FUZZ to OFF in a ThreadSanitizer build.")

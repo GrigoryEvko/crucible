@@ -21,13 +21,30 @@ lets something go wrong.  The oracles:
              on a mailbox for each receiver and on a bag for each receiver,
              built natively with its solver MuVal
 
-Modes:
+Each oracle downloads a pinned commit as a tarball into
+~/.cache/crucible/session_oracle and builds it there.  SESSION_ORACLE_CACHE
+changes the directory.  No part of a repository goes into this tree.  Only
+our code and the verdicts go into it.  The verdicts are in
+test/session_oracle/golden.csv, with the commit of each oracle and the commit
+of the measured headers.  The C++ tests that assert them are emitted from
+that file.
+
+Modes (`guard check --rule session-oracle MODE`, and `loop derive
+session-oracle MODE` for the modes that write):
 
   regenerate  Generate the corpora, run the oracles, measure our
               relations, shrink every divergence to a minimal case, and
               write test/session_oracle/golden.csv and the emitted
-              tests.  Needs the toolchains that utils/scripts/session-oracle.sh
-              names and the project compiler.
+              tests.  Needs the toolchains of THE TOOLCHAINS and the
+              project compiler.  The mode puts the environment of the opam
+              switch sessoracle into the process when opam and that switch
+              exist.  The subtyping oracle runs its own switch.  A run takes
+              some minutes, because the shrinker makes every divergence as
+              small as possible.  Each oracle keeps its answers in a cache
+              whose file name carries its commit, so a second run asks only
+              the new queries.  Read the diff of golden.csv before you commit
+              it: a row that changes from divergence to agree is a repair,
+              and a row that changes the other way is a regression.
   derive      Compute the liveness and implementability rows again from
               the multiparty rows of the golden file, and write the golden
               file.  Needs the toolchains of keskin.py and sprout.py only.
@@ -42,6 +59,77 @@ Modes:
               the planted case.  Needs the project compiler.  With
               --part K/N, it does only part K of N disjoint parts.  The
               store of unit_store.py keeps the result of each unit.
+
+  regenerate and self-test take --at REV: the tool then measures the
+  include tree of that commit, which it takes with git archive into a
+  temporary directory, and golden.csv names the full commit.  Without it,
+  the tool measures the working tree and names HEAD and any edits in the
+  session headers.  Give a commit when the working tree holds edits that do
+  not compile.  The command refuses a compiler that is not an executable
+  and a REV that names no commit, with the exit status 2.
+
+  To regenerate after a relation changes:
+      python3 utils/bin/loop derive session-oracle regenerate --cxx "$HOME/.local/gcc16-patched/usr/bin/g++-16p" --at HEAD
+
+THE TOOLCHAINS
+  Install them one time, in your home directory.  Nothing goes into the
+  repository.
+
+  1. The projection and the subject-reduction oracles need Coq 8.15.
+     Install opam, then make a switch with OCaml 4.14, pin Coq before you
+     install a library, and install the libraries:
+       opam switch create sessoracle ocaml-base-compiler.4.14.2
+       opam pin add -n --switch=sessoracle coq 8.15.2
+       opam repo add --switch=sessoracle coq-released https://coq.inria.fr/opam/released
+       opam install --switch=sessoracle coq coq-mathcomp-ssreflect.1.17.0 \\
+           coq-equations coq-paco coq-deriving coq-mathcomp-zify
+     A subsequent Coq cannot build the two pinned commits, and coq-deriving
+     installs the newest Coq when Coq is not pinned.
+  2. The subtyping oracle needs Coq 8.20 with mathcomp-ssreflect 2 and paco.
+     Make a second switch:
+       opam switch create sessoracle20 ocaml-base-compiler.4.14.2
+       opam pin add -n --switch=sessoracle20 coq 8.20.1
+       opam repo add --switch=sessoracle20 coq-released https://coq.inria.fr/opam/released
+       opam install --switch=sessoracle20 coq coq-mathcomp-ssreflect.2.3.0 coq-paco
+     SESSION_ORACLE_COQC20 names a different coqc command.
+  3. The liveness oracle needs Coq 8.20.1 with mathcomp-ssreflect 2.5, paco,
+     mmaps and equations.  Make a third switch:
+       opam switch create sessoracle25 ocaml-base-compiler.4.14.2
+       opam pin add -n --switch=sessoracle25 coq 8.20.1
+       opam repo add --switch=sessoracle25 coq-released https://coq.inria.fr/opam/released
+       opam install --switch=sessoracle25 coq coq-mathcomp-ssreflect.2.5.0 coq-paco \\
+           coq-mmaps coq-equations
+     The first run builds the development, which takes about ten minutes.
+     SESSION_ORACLE_KESKIN_SWITCH names a different switch.
+  4. The implementability oracle builds Sprout(A) and its solver MuVal
+     natively, from the pinned sources that sprout.py names.  It needs a
+     switch with OCaml 5.2.1 and the package versions of the MuVal build of
+     the artifact, which the debug information of the MuVal binary of the
+     artifact names:
+       opam switch create sprout ocaml-base-compiler.5.2.1 --no-switch
+       opam pin add -n --switch=sprout libsvm.0.10.0~modified \\
+           git+https://github.com/hiroshi-unno/libsvm-ocaml.git#5d3b175220f865e1ce60909bef11b7e2773451d8
+       opam install --switch=sprout dune.3.18.2 menhir.20240715 \\
+           base.v0.17.1 core.v0.17.1 core_kernel.v0.17.0 core_unix.v0.17.0 \\
+           ppx_deriving.6.0.3 ppx_deriving_yojson.3.9.1 yojson.2.2.2 ppx_expect.v0.17.2 \\
+           ocaml-compiler-libs.v0.17.0 ocamlgraph.2.1.0 zarith.1.14 z3.4.14.1 \\
+           minisat.0.6 camlzip.1.13 lacaml.11.1.1 libsvm.0.10.0~modified \\
+           domainslib.0.5.0 num.1.5-1 logs.0.8.0 fmt.0.10.0 stdio.v0.17.0 \\
+           sexplib.v0.17.0 ppx_custom_printf.v0.17.0 ppx_compare.v0.17.0 \\
+           ppx_hash.v0.17.0 ppx_sexp_conv.v0.17.0
+     The system needs the development files of gmp, mpfr, BLAS, LAPACK and
+     zstd, and a static zlib.  On Fedora, install gmp-devel, mpfr-devel,
+     blas-devel, lapack-devel, libzstd-devel and zlib-ng-compat-static.  The
+     first run downloads and builds MuVal and the front end in the cache,
+     which takes less than one minute.  SESSION_ORACLE_SPROUT_SWITCH names a
+     different switch.
+  5. The crash-stop oracle needs a Java 17 runtime, sbt, and the mCRL2 tools
+     mcrl22lps, lps2pbes and pbes2bool.  Install nothing by hand:
+     `python3 utils/bin/setup install oracle` downloads the pinned release of
+     each one (the pins temurin-jdk, sbt and mcrl2 of utils/pins.txt) into
+     the cache, checks its SHA-256, and unpacks it there.  The build of the
+     pinned commit then asks sbt for sbt 1.6.1 and downloads it into the same
+     cache.  The host needs rpm2cpio and cpio, which unpack the mCRL2 package.
 
 The relations under test:
 
@@ -87,6 +175,7 @@ import dataclasses
 import io
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -97,6 +186,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from assay.core import git as tree_git
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
 from assay.oracle.emit import (SHARD_BUDGET, WIRE_FAMILIES, GoldenError, Row, emit_all, read_golden,
@@ -118,6 +208,9 @@ LOG = logging.getLogger("session_oracle")
 
 TEST_DIR = REPO_ROOT / "test" / "session_oracle"
 GOLDEN = TEST_DIR / "golden.csv"
+# The opam switch of the projection and the subject-reduction oracles, and the place of opam when PATH has none.
+OPAM_SWITCH = "sessoracle"
+OPAM_LOCAL = Path.home() / ".local" / "bin" / "opam"
 
 FIXY_SEED, FIXY_COUNT, FIXY_DEPTH = 20260923, 160, 6
 FIXY_ADV_SEED, FIXY_ADV_COUNT, FIXY_ADV_DEPTH = 20260925, 120, 8
@@ -2409,7 +2502,8 @@ def check() -> int:
     drift = drifted(emit_all(rows), TEST_DIR)
     if drift:
         print("session_oracle check: these files differ from what golden.csv emits, or golden.csv does not "
-              "emit them: " + ", ".join(drift) + ".  Run utils/scripts/session-oracle.sh --emit.", file=sys.stderr)
+              "emit them: " + ", ".join(drift) + ".  Run python3 utils/bin/loop derive session-oracle emit.",
+              file=sys.stderr)
         return 1
     from assay.oracle import semantics
     try:
@@ -2659,6 +2753,45 @@ def _self_test(cxx: str, include: Path, jobs: int, part: tuple[int, int]) -> int
     return 0
 
 
+def is_executable(program: str) -> bool:
+    """Whether a compiler is an executable file, or a name that PATH finds."""
+    return (Path(program).is_file() and os.access(program, os.X_OK)) or shutil.which(program) is not None
+
+
+def names_commit(revision: str) -> bool:
+    """Whether a revision names a commit of the repository of the tree."""
+    try:
+        tree_git.run(REPO_ROOT, "rev-parse", "--verify", "--quiet", f"{revision}^{{commit}}")
+    except tree_git.GitError:
+        return False
+    return True
+
+
+def activate_opam() -> None:
+    """Put the environment of the opam switch OPAM_SWITCH into this process, when opam and that switch exist.
+
+    The projection and the subject-reduction oracles run the coqc of that
+    switch from PATH.  opam is on PATH or in ~/.local/bin.  With no opam or
+    no such switch, the environment stays, and an oracle that needs the
+    switch says what is missing.
+    """
+    opam = shutil.which("opam") or (str(OPAM_LOCAL) if OPAM_LOCAL.is_file() else None)
+    if opam is None:
+        return
+    listed = subprocess.run([opam, "switch", "list", "--short"], capture_output=True, text=True, check=False)
+    if listed.returncode != 0 or OPAM_SWITCH not in listed.stdout.split():
+        return
+    shown = subprocess.run([opam, "exec", f"--switch={OPAM_SWITCH}", "--", "env", "-0"], capture_output=True,
+                           check=False)
+    if shown.returncode != 0:
+        return
+    for item in shown.stdout.split(b"\0"):
+        name, separator, value = item.partition(b"=")
+        if separator and name:
+            os.environ[name.decode("utf-8", "surrogateescape")] = value.decode("utf-8", "surrogateescape")
+    LOG.info("the environment of the opam switch %s is active", OPAM_SWITCH)
+
+
 def main(argv: list[str]) -> int:
     """Parse the command line and run one mode (`guard check --rule session-oracle MODE [ARG]...`).
 
@@ -2688,8 +2821,13 @@ def main(argv: list[str]) -> int:
         parser.error(f"{args.mode} needs --cxx")
     if args.mode != "self-test" and args.part != (0, 1):
         parser.error("--part applies to the self-test only")
+    if args.cxx and not is_executable(args.cxx):
+        parser.error(f"the compiler '{args.cxx}' is not an executable")
+    if args.at and not names_commit(args.at):
+        parser.error(f"'{args.at}' names no commit of this repository")
     probe_jobs = args.jobs or 32
     if args.mode == "regenerate":
+        activate_opam()
         regenerate(args.cxx, probe_jobs, do_shrink=not args.no_shrink, at=args.at)
         return check()
     if args.mode == "derive":

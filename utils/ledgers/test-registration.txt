@@ -3,6 +3,5 @@
 format 1
 rule test-registration
 utils/registry.txt | no-test | admit | reconfigure-noop | A step of the CI build job runs the rule, because a ctest test cannot configure the tree that runs it
-utils/registry.txt | no-test | admit | session-oracle | A step of the CI guards job runs the rule through utils/scripts/session-oracle.sh --check
 utils/registry.txt | no-test | admit | test-time | ctest runs the rule after the tests of each run, as the command of the CTestCustom.cmake that cmake/TestLauncher.cmake writes
 utils/registry.txt | no-test | admit | vessel-acceptance | Only a build with TORCH_DIR registers the test of the rule, and each other build registers a disabled test

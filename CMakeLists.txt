@@ -64,8 +64,8 @@ crucible_relocatable_objects()
 #
 # generate  Instruments every target that links crucible_dialect.  A
 #           bench writes its counters into the profile directory when
-#           it exits.  utils/scripts/pgo-bootstrap.sh drives this mode from
-#           configure to the COLLECTION record.
+#           it exits.  `loop pgo` (utils/assay/loop/pgo.py) drives this mode
+#           from configure to the COLLECTION record.
 #
 # use       Reads the counters.  The profile must exist for this tier,
 #           and its TARGET record must be equal to what this
@@ -206,21 +206,21 @@ if(NOT CRUCIBLE_PGO STREQUAL "off")
   else()
     if(NOT EXISTS "${CRUCIBLE_PGO_PROFILE_DIR}/TARGET")
       message(FATAL_ERROR "PGO: no profile for tier ${_crucible_pgo_tier} at ${CRUCIBLE_PGO_PROFILE_DIR}. "
-        "Run utils/scripts/pgo-bootstrap.sh on a host of this tier, or set CRUCIBLE_PGO=off.")
+        "Run python3 utils/bin/loop pgo on a host of this tier, or set CRUCIBLE_PGO=off.")
     endif()
     file(READ "${CRUCIBLE_PGO_PROFILE_DIR}/TARGET" _crucible_pgo_recorded_target)
     if(NOT _crucible_pgo_recorded_target STREQUAL _crucible_pgo_target_record)
       message(FATAL_ERROR "PGO: the profile at ${CRUCIBLE_PGO_PROFILE_DIR} was collected for a different "
         "target. Recorded:\n${_crucible_pgo_recorded_target}\nThis configuration:\n${_crucible_pgo_target_record}"
-        "Run utils/scripts/pgo-bootstrap.sh again with the flags you build with.")
+        "Run python3 utils/bin/loop pgo again with the flags you build with.")
     endif()
     file(GLOB _crucible_pgo_counter_files "${CRUCIBLE_PGO_PROFILE_DIR}/*.gcda")
     list(LENGTH _crucible_pgo_counter_files _crucible_pgo_counter_count)
     if(_crucible_pgo_counter_count EQUAL 0)
       message(FATAL_ERROR "PGO: ${CRUCIBLE_PGO_PROFILE_DIR} has a TARGET record and no counter files. "
-        "The instrumented benches were configured and not run. Run utils/scripts/pgo-bootstrap.sh.")
+        "The instrumented benches were configured and not run. Run python3 utils/bin/loop pgo.")
     endif()
-    # utils/scripts/pgo-bootstrap.sh rewrites COLLECTION on every run, so a
+    # `loop pgo` rewrites COLLECTION on every run, so a
     # build after a collection reconfigures and the stamp below changes.
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
       "${CRUCIBLE_PGO_PROFILE_DIR}/TARGET"
@@ -249,18 +249,18 @@ if(NOT CRUCIBLE_PGO STREQUAL "off")
       if(NOT _crucible_pgo_commit STREQUAL _crucible_pgo_head)
         message(FATAL_ERROR "PGO strict: the profile was collected at ${_crucible_pgo_commit} and HEAD "
           "is ${_crucible_pgo_head}. A release profile is collected at the commit it ships with. "
-          "Run utils/scripts/pgo-bootstrap.sh at HEAD, or configure without CRUCIBLE_PGO_STRICT.")
+          "Run python3 utils/bin/loop pgo at HEAD, or configure without CRUCIBLE_PGO_STRICT.")
       endif()
       if(NOT _crucible_pgo_tree STREQUAL "clean")
         message(FATAL_ERROR "PGO strict: the profile was collected from a tree recorded as "
           "'${_crucible_pgo_tree}'. A release profile is collected from a clean tree, so that the "
           "counters describe the commit and nothing else. Commit or discard the changes, then run "
-          "utils/scripts/pgo-bootstrap.sh again.")
+          "python3 utils/bin/loop pgo again.")
       endif()
     elseif(NOT _crucible_pgo_commit STREQUAL _crucible_pgo_head)
       message(WARNING "PGO: the profile was collected at ${_crucible_pgo_commit} and HEAD is "
         "${_crucible_pgo_head}. A function whose control flow changed between the two stops the "
-        "build with -Wcoverage-mismatch. Run utils/scripts/pgo-bootstrap.sh again to collect at HEAD.")
+        "build with -Wcoverage-mismatch. Run python3 utils/bin/loop pgo again to collect at HEAD.")
     endif()
     set(_CRUCIBLE_PGO_COMPILE_FLAGS
       -fprofile-use=${CRUCIBLE_PGO_PROFILE_DIR}

@@ -47,9 +47,13 @@ if sys.path[:1] != [_UTILS]:
 # text does not list it.
 SUBCOMMANDS = {
     "test": ("assay.loop.affected", "build, and then run each test with an input that changed: loop test BUILD_DIR"),
-    "gauge": ("assay.loop.gauge", "measure the edit loop in a clone, or a sample of units with --sample"),
+    "gauge": ("assay.loop.gauge", "measure the edit loop in a clone, a sample of units with --sample, or a clean "
+                                  "build with --cold"),
     "history": ("assay.loop.history", "print the loop history of a build directory: loop history BUILD_DIR"),
-    "derive": ("assay.loop.derive", "write or compare a generated file: loop derive TARGET [ARG]..."),
+    "derive": ("assay.loop.derive", "write each generated file and compare it, or one: loop derive [TARGET [ARG]...]"),
+    "pgo": ("assay.loop.pgo", "collect a profile for profile-guided optimization on this host: loop pgo"),
+    "bench": ("assay.loop.bench", "build and run benches on an isolated core: loop bench [TARGET]... [-- ARG...]"),
+    "fuzz": ("assay.loop.fuzz", "run an AFL++ campaign: loop fuzz BUILD_DIR OUT_DIR HARNESS CPU_LIST SECONDS"),
     "step": ("assay.loop.step", None),
     "meter-compiler": ("assay.loop.meter_compiler", None),
     "test-step": ("assay.loop.teststep", None),

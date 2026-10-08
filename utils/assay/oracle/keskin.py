@@ -82,13 +82,13 @@ def _switch() -> list[str]:
     """Return the prefix that runs a command in the opam switch of the development.
 
     SESSION_ORACLE_KESKIN_SWITCH names the switch.  The default is
-    sessoracle25 (utils/scripts/session-oracle.sh says how to make it).
+    sessoracle25 (THE TOOLCHAINS of utils/assay/oracle/runner.py says how to make it).
     """
     opam = shutil.which("opam") or str(Path.home() / ".local" / "bin" / "opam")
     if not Path(opam).is_file() and shutil.which(opam) is None:
         raise OracleError("opam is not on PATH.  The ITP 2026 development needs Coq 8.20.1 with "
                           "mathcomp-ssreflect 2.5, paco, mmaps and equations in an opam switch; "
-                          "utils/scripts/session-oracle.sh says how to install them.")
+                          "THE TOOLCHAINS of utils/assay/oracle/runner.py says how to install them.")
     return [opam, "exec", f"--switch={os.environ.get('SESSION_ORACLE_KESKIN_SWITCH', 'sessoracle25')}", "--"]
 
 

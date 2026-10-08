@@ -99,16 +99,16 @@ to an empty string or to zero, and with `AFL_PATH` set to
 directory, and link `afl-gcc-fast` and `afl-g++-fast` to `afl-cc`.  The
 cmplog pass gives the comparison feedback.
 
-Then `test/fuzz/run-afl.sh` builds the instrumented binaries in a directory you
-name, writes the seeds, and starts one `afl-fuzz` instance for each core
-that you give it, with a time limit:
+Then `loop fuzz` (`utils/assay/loop/fuzz.py`) builds the instrumented
+binaries in a directory you name, writes the seeds, and starts one
+`afl-fuzz` instance for each core that you give it, with a time limit:
 
 ```sh
-test/fuzz/run-afl.sh BUILD_DIR OUT_DIR HARNESS CORES SECONDS
-test/fuzz/run-afl.sh /tmp/afl-build /tmp/afl-out region 0-15 3600
+python3 utils/bin/loop fuzz BUILD_DIR OUT_DIR HARNESS CORES SECONDS
+python3 utils/bin/loop fuzz /tmp/afl-build /tmp/afl-out region 0-15 3600
 ```
 
-The script keeps the campaign off the cores that the host reserves.  After
+The command keeps the campaign off the cores that the host reserves.  After
 a campaign, minimize each file in `OUT_DIR/*/crashes` with `afl-tmin`, find
 the root cause, and fix it at the boundary.  Then add the input to the
 seeds of the harness, as a literal or as a patch to an image that a writer

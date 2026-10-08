@@ -14,8 +14,8 @@ MuVal.  Three of their networks match our substrates:
 The artifact (doi 10.5281/zenodo.19600644, CC BY 4.0) gives the front end of
 Sprout(A) as source.zip, and MuVal only as a build tree inside an arm64
 container image.  This module builds the two natively in the cache of
-rocq.py, with the opam switch SWITCH (utils/scripts/session-oracle.sh says how to
-make it):
+rocq.py, with the opam switch SWITCH (THE TOOLCHAINS of utils/assay/oracle/runner.py
+says how to make it):
 
   front end  source.zip of the artifact, checked against SOURCE_SHA256
   MuVal      CoAR (github.com/hiroshi-unno/coar, Apache 2.0) at COAR_COMMIT.
@@ -118,7 +118,7 @@ def _opam() -> str:
     tool = shutil.which("opam") or str(Path.home() / ".local" / "bin" / "opam")
     if not os.access(tool, os.X_OK):
         raise OracleError("opam is not on PATH.  Sprout(A) builds with the opam switch "
-                          f"'{SWITCH}'; utils/scripts/session-oracle.sh says how to make it.")
+                          f"'{SWITCH}'; THE TOOLCHAINS of utils/assay/oracle/runner.py says how to make it.")
     return tool
 
 
