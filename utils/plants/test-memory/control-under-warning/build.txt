@@ -1,0 +1,7 @@
+# The record of one test of the build gives a peak memory of 0.2 GB, under the warning threshold 0.5 GB of
+# test-memory.  A second test takes 40 s of wall time and 0.2 GB, and the rule test-time judges its wall time.
+# judge() of `loop test-step` gives no finding of test-memory.
+format 1
+kind x86_64-debug-asan
+test-record test_small wall=1 peak=0.2
+test-record test_slow wall=40 peak=0.2

@@ -164,22 +164,23 @@ def keeps_cores() -> bool:
     return False
 
 
-def ledger_row(row: str, name: str, kind: str | None) -> tuple[str, str] | None:
+def ledger_row(row: str, name: str, kind: str | None, ledgers: str | None = None) -> tuple[str, str] | None:
     """Return the place and the reason of the ledger row that names a test for the kind of the build.
 
     Args:
         row: test-time or test-memory
         name: The name of the test
         kind: The kind of the build, or None when it is not known
+        ledgers: The directory of the ledgers, or None for the directory of CRUCIBLE_TEST_LEDGERS, else of the tree
 
     Returns:
         The place of the row (path:line) and its reason, or None
     """
     if kind is None:
         return None
+    directory = ledgers if ledgers is not None else os.environ.get(LEDGERS_ENV)
     try:
-        rows, _, shown = cost_meter.read_kind_rows(row, cost_meter.ITEM_NAME,
-                                                   cost_meter.ledger_file(row, os.environ.get(LEDGERS_ENV)))
+        rows, _, shown = cost_meter.read_kind_rows(row, cost_meter.ITEM_NAME, cost_meter.ledger_file(row, directory))
     except OSError:
         return None
     found = rows.get((kind, name))
@@ -189,14 +190,19 @@ def ledger_row(row: str, name: str, kind: str | None) -> tuple[str, str] | None:
 
 
 def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float, float]],
-          kind: str | None) -> list[tuple[str, str, str]]:
+          kind: str | None, ledgers: str | None = None) -> list[tuple[str, str, str]]:
     """Compare the measures of one test with its measured rules.
+
+    The witness of test-memory judges the planted record of a test with this
+    function, and with the ledgers of the copy of a plant
+    (assay.guard.engines.buildsys.held).
 
     Args:
         name: The name of the test
         run: The measurement of the command
         budget: The thresholds of the measured rules that the registry gives
         kind: The kind of the build, or None
+        ledgers: The directory of the ledgers (ledger_row()), or None
 
     Returns:
         One (level, rule, message) for each rule with a finding.  On a GitHub runner, a time error is a warning
@@ -212,7 +218,7 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float,
         if row not in budget:
             continue
         warn, error = budget[row]
-        admitted = ledger_row(row, name, kind)
+        admitted = ledger_row(row, name, kind, ledgers)
         said = f"the test {name} took {text}"
         if admitted is not None and value <= error:
             add("error", row, f"{said}, no more than the error threshold of {error:g} {unit}.  Remove its row "

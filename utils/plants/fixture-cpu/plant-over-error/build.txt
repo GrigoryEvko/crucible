@@ -1,0 +1,5 @@
+# The last cold compile of one negative fixture took 16 s of user time and no exact instruction count, so the CPU
+# time holds the error level, over the error threshold 15 s of fixture-cpu.  The fixture driver gives one error.
+format 1
+kind x86_64-debug-asan
+fixture neg_slow test/neg/slow.cpp user=16 system=0

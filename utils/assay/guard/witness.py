@@ -19,7 +19,10 @@ its rules itself.  It selects each rule of the engine plugin that the call
 names.  With --engine plugin, it also selects each rule of the engine with a
 module or with plants.  The witness of the engine elf builds each plant with
 the patched compiler that ASSAY_TEST_CXX names
-(assay.guard.engines.elf.runner, THE PLANTS).
+(assay.guard.engines.elf.runner, THE PLANTS).  A measured rule with a holder
+has no run of its own.  The command selects it when the call names it, or
+when the call names its engine and the rule has plants.  Its witness runs the
+judge of its holder on each plant (assay.guard.engines.buildsys.held).
 
 The status is 1 when a witness fails, 2 on a usage error, 77 when each witness
 cannot run, and else 0.
@@ -59,6 +62,29 @@ def plugin_rules(registry: rule_registry.Registry, ids: list[str], engines: list
             and rule not in chosen
             and (rule.has_module or runner.plants_of(rule.id, REPO_ROOT))
         ]
+    return chosen
+
+
+def held_rules(registry: rule_registry.Registry, ids: list[str], engines: list[str]) -> list[rule_registry.Rule]:
+    """Return each rule with a holder that the call names, and each such rule with plants of an engine of --engine.
+
+    The witness of these rules is in assay.guard.engines.buildsys.held.
+    """
+    from assay.guard.engines.meta import runner
+
+    chosen = [
+        registry.rules[rule_id]
+        for rule_id in ids
+        if rule_id in registry.rules and registry.rules[rule_id].held_by is not None
+    ]
+    chosen += [
+        rule
+        for rule in registry.rules.values()
+        if rule.held_by is not None
+        and rule.engine.value in engines
+        and rule not in chosen
+        and runner.plants_of(rule.id, REPO_ROOT)
+    ]
     return chosen
 
 
@@ -105,11 +131,16 @@ def main(argv: list[str]) -> int:
     if registry is None:
         return ExitCode.USAGE
     compiled = plugin_rules(registry, options.rules, options.engines)
-    other_ids = [rule_id for rule_id in options.rules if rule_id not in {rule.id for rule in compiled}]
+    held = held_rules(registry, options.rules, options.engines)
+    taken = {rule.id for rule in (*compiled, *held)}
+    other_ids = [rule_id for rule_id in options.rules if rule_id not in taken]
     other_engines = [engine for engine in options.engines if engine != PLUGIN_ENGINE.value]
     chosen: list[rule_registry.Rule] | str = []
-    if other_ids or other_engines or not compiled:
+    if other_ids or other_engines or not (compiled or held):
         chosen = check.selected(registry, other_ids, other_engines)
+    strangers = [rule.id for rule in held if rule.engine != rule_registry.Engine.BUILD]
+    if strangers:
+        chosen = f"the rule {', '.join(strangers)} has a holder and no engine build, and its witness has no judge"
     if isinstance(chosen, str):
         print(f"guard witness: {chosen}", file=sys.stderr)
         return ExitCode.USAGE
@@ -129,6 +160,10 @@ def main(argv: list[str]) -> int:
         from assay.guard.engines.buildsys import runner as build_runner
 
         statuses += [build_runner.witness(rule, REPO_ROOT) for rule in build_rules]
+    if held:
+        from assay.guard.engines.buildsys import held as held_witness
+
+        statuses += [held_witness.witness(rule, REPO_ROOT) for rule in held]
     if compiled:
         from assay.guard.engines.plugin import witness as plugin_witness
 

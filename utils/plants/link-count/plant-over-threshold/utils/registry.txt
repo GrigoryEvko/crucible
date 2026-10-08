@@ -1,0 +1,4 @@
+# A planted registry: the threshold of the rule link-count is 2 links, so that the plant needs three link rows and
+# not 401.
+format 1
+rule link-count engine=build scope=builddir ledger=none warn=2 error=2 unit=links held-by=guard-warnings doc=XV | the planted threshold | link fewer executables

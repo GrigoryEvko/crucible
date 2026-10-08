@@ -1,0 +1,5 @@
+# The loop history of the build directory holds a build that ran no edge and took 0.2 s, under the threshold 0.5 s
+# of noop-build-time, and a build of 12 edges that took 9 s, which the rule does not judge.  judge_line() of `loop
+# history` gives no warning.
+format 1
+kind x86_64-debug-asan

@@ -52,7 +52,9 @@ THE PROGRAMS
 
 THE IMPORT CLOSURE
     The closure holds the module of the subcommand, the runner of the engine
-    of the rule and the module of the rule.  It follows each import of a
+    of the rule and the module of the rule.  A measured rule with a holder
+    has no module of its own, and the closure holds the module of the judges
+    of the holders (HELD_WITNESS).  It follows each import of a
     module of the package, also an import in a function.  It also holds the
     file __init__.py of each package of a module.  assay.readers.python reads
     the imports of each module one time.  The modules of DISPATCH import the
@@ -103,6 +105,8 @@ DISPATCH = frozenset({CHECK, WITNESS})
 ENGINES = "assay.guard.engines."
 META_RUNNER = "assay.guard.engines.meta.runner"
 PLUGIN_WITNESS = "assay.guard.engines.plugin.witness"
+# The module of the judge of the holder of a measured rule with a holder, which its witness runs.
+HELD_WITNESS = "assay.guard.engines.buildsys.held"
 PREPROCESSED = "assay.guard.preprocessed"
 REGISTRY_MODULE = "assay.core.registry"
 # The files of the tree that a module reads, and that no scope of a rule names.
@@ -373,7 +377,12 @@ class Deriver:
         roots.append(f"{ENGINES}{rule.engine.directory}.runner")
         if rule.engine == rule_registry.Engine.PLUGIN and subcommand == "witness":
             roots.append(PLUGIN_WITNESS)
-        roots.append(rule.legacy.qualified if rule.legacy is not None else meta_runner.module_name_of(rule, self._root))
+        if rule.legacy is not None:
+            roots.append(rule.legacy.qualified)
+        elif rule.held_by is not None:
+            roots.append(HELD_WITNESS)
+        else:
+            roots.append(meta_runner.module_name_of(rule, self._root))
         return roots
 
     def rule_inputs(self, rule_id: str, subcommand: str) -> Inputs:

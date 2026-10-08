@@ -2513,6 +2513,15 @@ def _parse_cost_budget(registry: Path, ledger_paths: Mapping[str, Path], test_re
     return CostBudget(rows, problems, test_rows)
 
 
+def cost_budget_at(registry: Path, ledgers: Path) -> CostBudget:
+    """Read the measured rules of a fixture compile from a registry and from the ledgers of one directory, with no memo.
+
+    The witness of each rule of the driver reads the registry and the
+    ledgers of the copy of a plant with it (assay.guard.engines.buildsys.held).
+    """
+    return _parse_cost_budget(registry, {check: ledgers / f"{check}.txt" for check in _LEDGERS}, registry)
+
+
 def _file_stamps(paths: list[Path]) -> list[list[int]] | None:
     """Return the stat fields of each file of `paths`, an empty list for a file that does not exist, or None when a
     file cannot be read."""
@@ -2630,6 +2639,28 @@ def report_cost(fixture_name: str, source: Path, result: CompileResult, is_store
     write one file.  A run with no finding, whose fixture has no warnings file,
     has nothing to write, and it does not import the report module.
     """
+    findings = cost_findings(fixture_name, source, result, is_stored, budget)
+    has_file = warnings_dir is not None and any(_warnings_file(warnings_dir, check, fixture_name).exists()
+                                                for check in _LEDGERS)
+    if not any(findings.values()) and not has_file:
+        return 0
+    report = _report_module()
+    status = 0
+    for check, found in findings.items():
+        status |= report.emit(found, check, warnings_dir, fixture_name)
+    return status
+
+
+def cost_findings(fixture_name: str, source: Path, result: CompileResult, is_stored: bool,
+                  budget: CostBudget) -> dict[str, list[object]]:
+    """Return the findings of the CPU time and of the instruction count of the compile against the budget, by check.
+
+    A compile with no finding, with a budget with no problem, gives two
+    empty lists, and the call does not import the report module.
+    report_cost() reports the findings.  The witness of each rule of the
+    driver judges a planted record of a fixture with this function
+    (assay.guard.engines.buildsys.held).
+    """
     has_count = result.instructions is not None
     verdicts: dict[str, str] = {}
     if _CPU_CHECK in budget.rows:
@@ -2637,17 +2668,15 @@ def report_cost(fixture_name: str, source: Path, result: CompileResult, is_store
     if _INSTRUCTIONS_CHECK in budget.rows and result.instructions is not None:
         verdicts[_INSTRUCTIONS_CHECK] = _row_verdict(budget.rows[_INSTRUCTIONS_CHECK], fixture_name,
                                                      result.instructions / _GIGA, True)
-    has_file = warnings_dir is not None and any(_warnings_file(warnings_dir, check, fixture_name).exists()
-                                                for check in _LEDGERS)
-    if not budget.problems and not any(verdicts.values()) and not has_file:
-        return 0
+    findings: dict[str, list[object]] = {_CPU_CHECK: [], _INSTRUCTIONS_CHECK: []}
+    if not budget.problems and not any(verdicts.values()):
+        return findings
     report = _report_module()
     try:
         place = str(source.relative_to(_REPO_ROOT))
     except ValueError:
         place = str(source)
     measured = "the stored compile" if is_stored else "the compile"
-    findings: dict[str, list[object]] = {_CPU_CHECK: [], _INSTRUCTIONS_CHECK: []}
     for check, problem in budget.problems.items():
         findings[check].append(report.Finding("error", place, 0, check, f"{problem}."))
     if _CPU_CHECK in verdicts:
@@ -2659,10 +2688,7 @@ def report_cost(fixture_name: str, source: Path, result: CompileResult, is_store
         text = f"{measured} of the fixture {fixture_name} ran {result.instructions / _GIGA:.2f} G user instructions"
         findings[_INSTRUCTIONS_CHECK] += _judge_row(report, budget.rows[_INSTRUCTIONS_CHECK],
                                                     verdicts[_INSTRUCTIONS_CHECK], fixture_name, place, text, "G")
-    status = 0
-    for check, found in findings.items():
-        status |= report.emit(found, check, warnings_dir, fixture_name)
-    return status
+    return findings
 
 
 def _record_compile(store: ResultStore, key: str, result: CompileResult, missing: list[str], argv: list[str],
@@ -2826,14 +2852,30 @@ def report_own_reason(fixture_name: str, source: Path, unmatched: list[str], is_
     """
     variable, default = _REASON_LEDGER
     path = Path(os.environ.get(variable) or default)
+    findings = own_reason_findings(fixture_name, source, unmatched, is_stored, path)
+    has_file = warnings_dir is not None and _warnings_file(warnings_dir, _REASON_CHECK, fixture_name).exists()
+    if not findings and not has_file:
+        return 0
+    return _report_module().emit(findings, _REASON_CHECK, warnings_dir, fixture_name)
+
+
+def own_reason_findings(fixture_name: str, source: Path, unmatched: list[str], is_stored: bool,
+                        path: Path) -> list[object]:
+    """Return the findings of each error of the compile that no regex matches, against the ledger at `path`.
+
+    A run with no such error gives no finding when the ledger has no row of
+    the fixture.  Then the call does not import the report module.
+    report_own_reason() reports the findings.  The witness of the rule judges
+    the planted log of a fixture with this function
+    (assay.guard.engines.buildsys.held).
+    """
     try:
         ledger, problem = _read_fixture_ledger(path, _REASON_CHECK)
     except OSError as error:
         ledger, problem = {}, f"the ledger {path} cannot be read: {error}"
     is_listed = fixture_name in ledger
-    has_file = warnings_dir is not None and _warnings_file(warnings_dir, _REASON_CHECK, fixture_name).exists()
-    if not problem and not unmatched and not is_listed and not has_file:
-        return 0
+    if not problem and not unmatched and not is_listed:
+        return []
     report = _report_module()
     try:
         place = str(source.relative_to(_REPO_ROOT))
@@ -2859,7 +2901,7 @@ def report_own_reason(fixture_name: str, source: Path, unmatched: list[str], is_
             "error", place, 0, _REASON_CHECK,
             f"{measured} of the fixture {fixture_name} gave no error that no regex matches.  Remove its row from "
             f"{_shown(path)}."))
-    return report.emit(findings, _REASON_CHECK, warnings_dir, fixture_name)
+    return findings
 
 
 # ── The test result ────────────────────────────────────────────────
@@ -2972,18 +3014,15 @@ def main(argv: list[str]) -> int:
     # floor above `crucible_neg_compile_test` in test/CMakeLists.txt.
     # `--warnings-dir DIR` before the other arguments names the warnings
     # directory of utils/assay/core/report.py.
-    arguments = argv
-    warnings_dir: Path | None = None
-    if len(arguments) >= 2 and arguments[0] == "--warnings-dir":
-        warnings_dir = Path(arguments[1])
-        arguments = arguments[2:]
-    if len(arguments) < 4:
+    parsed = fixture_arguments(argv)
+    if parsed is None:
         print(
             "usage: loop fixture [--warnings-dir DIR] <build-dir> <source> "
             "<fixture-name> <expected-regex> [<expected-regex> ...]",
             file=sys.stderr,
         )
         return 2
+    warnings_dir, arguments = parsed
 
     start = _cost_meter_module().start_self()
     build_dir = Path(arguments[0]).resolve()
@@ -2995,6 +3034,22 @@ def main(argv: list[str]) -> int:
         return 2
     status, budget = run_fixture(build_dir, source, fixture_name, expected_regexes, warnings_dir)
     return judge_test(fixture_name, build_dir, source, status, start, budget, warnings_dir)
+
+
+def fixture_arguments(argv: list[str]) -> tuple[Path | None, list[str]] | None:
+    """Return the warnings directory and the other words of the command line of the driver, or None on a usage error.
+
+    The command line is `[--warnings-dir DIR] BUILD_DIR SOURCE FIXTURE_NAME
+    EXPECTED_REGEX...`, with one regex or more.  The other words start with
+    BUILD_DIR.  The witness of the rule fixture-own-reason reads the regexes
+    of a planted fixture with this function (assay.guard.engines.buildsys.held).
+    """
+    arguments = argv
+    warnings_dir: Path | None = None
+    if len(arguments) >= 2 and arguments[0] == "--warnings-dir":
+        warnings_dir = Path(arguments[1])
+        arguments = arguments[2:]
+    return (warnings_dir, arguments) if len(arguments) >= 4 else None
 
 
 def run_fixture(build_dir: Path, source: Path, fixture_name: str, expected_regexes: list[str],

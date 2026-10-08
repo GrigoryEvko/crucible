@@ -1,0 +1,7 @@
+# Two compiles of 70 GB of peak memory each end at the same time, so their wall times overlap and their peak memory
+# is 140 GB together, over the threshold 128 GB of build-peak-memory.  The build totals of `guard warnings` give one
+# warning.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/first.cpp.o src/first.cpp cpu=10 peak=70
+compile CMakeFiles/lib.dir/second.cpp.o src/second.cpp cpu=10 peak=70

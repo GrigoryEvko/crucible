@@ -5150,7 +5150,8 @@ foreach(_assay_test guard.engines.elf.test_runner guard.engines.elf.test_artifac
 endforeach()
 foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test_proc core.test_git
         core.test_paths core.test_testing core.test_record core.test_budget guard.engines.buildsys.test_runner
-        guard.engines.buildsys.test_planted readers.test_compdb readers.test_python readers.test_tool_reports
+        guard.engines.buildsys.test_planted guard.engines.buildsys.test_held readers.test_compdb readers.test_python
+        readers.test_tool_reports
         readers.test_sections readers.test_prose guard.test_history guard.test_import_closure
         guard.engines.meta.test_package guard.engines.meta.test_ste_dictionary
         guard.engines.meta.test_decide_cite_ratio guard.engines.meta.test_clang_format

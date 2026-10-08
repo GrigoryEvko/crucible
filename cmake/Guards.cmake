@@ -156,24 +156,25 @@ endfunction()
 
 # crucible_build_rule_tests(<warnings-dir> [NO_CHECK <rule>...])
 #
-# Register the tests of each rule of the engine build with a module: a row with no field legacy and no field
-# held-by.  guard_ID runs the rule on this build directory, and guard_ID_witness runs it on each plant and control
-# of utils/plants/ID/.  A rule of NO_CHECK gets only its witness, because a ctest test cannot run that rule on the
-# tree that runs the test.  The witness gets the patched compiler, the cmake and the ninja of the build
-# (ASSAY_TEST_CXX, ASSAY_TEST_CMAKE and ASSAY_TEST_NINJA), because some plants compile a planted unit or configure a
-# planted project.  No build rule reads the parse trees, so the tests do not require the fixture
-# tsast_trees.  Exit 77 is a skip: the rule does not apply to the build.
+# Register the tests of each rule of the engine build with no field legacy.  guard_ID runs the rule on this build
+# directory, and guard_ID_witness runs it on each plant and control of utils/plants/ID/.  A rule of NO_CHECK gets
+# only its witness, because a ctest test cannot run that rule on the tree that runs the test.  A measured rule with
+# the field held-by gets only its witness too, because its holder judges it and it has no run of its own.  Its
+# witness runs the judge of the holder on each plant.  The witness gets the patched compiler, the cmake and the
+# ninja of the build (ASSAY_TEST_CXX, ASSAY_TEST_CMAKE and ASSAY_TEST_NINJA), because some plants compile a planted
+# unit or configure a planted project.  No build rule reads the parse trees, so the tests do not require the
+# fixture tsast_trees.  Exit 77 is a skip: the rule does not apply to the build.
 function(crucible_build_rule_tests warnings_dir)
   cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "NO_CHECK")
   crucible_rule_rows("^rule[ \t]+[a-z0-9-]+[ \t]+(.*[ \t])?engine=build[ \t]" rows)
   foreach(row IN LISTS rows)
-    if(row MATCHES "[ \t](legacy|held-by)=")
+    if(row MATCHES "[ \t]legacy=")
       continue()
     endif()
     string(REGEX MATCH "^rule[ \t]+([a-z0-9-]+)" match "${row}")
     set(rule "${CMAKE_MATCH_1}")
     string(REPLACE "-" "_" test_name "guard_${rule}")
-    if(NOT rule IN_LIST arg_NO_CHECK)
+    if(NOT rule IN_LIST arg_NO_CHECK AND NOT row MATCHES "[ \t]held-by=")
       crucible_script_test(NAME ${test_name}
         COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ${rule} --build-dir ${CMAKE_BINARY_DIR}
                 --warnings-dir ${warnings_dir})

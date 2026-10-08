@@ -1,0 +1,7 @@
+# The build directory holds three link records, over the planted threshold of two links of link-count.  The build
+# totals of `guard warnings` give one warning.
+format 1
+kind x86_64-debug-asan
+link bin/first
+link bin/second
+link bin/third

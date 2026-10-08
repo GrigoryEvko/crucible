@@ -52,7 +52,10 @@ THE WITNESS
     runs a tool of the host gives applies(), which raises NotApplicable when
     the host has no such tool.  The witness then exits with SKIPPED and runs
     no plant.  An engine gives the copy of its own context to witness(), and
-    the judge of a rule that it judges in its own way.
+    the judge of a rule that it judges in its own way.  A measured rule with a
+    holder has no module of its own.  Its witness gets the module and the
+    judge of its holder (assay.guard.engines.buildsys.held), and it counts
+    each finding of a plant, also a warning.
 
 THE STATUS
     A run exits 0 with no error, 1 with an error, and 77 (SKIPPED, the
@@ -501,6 +504,9 @@ def witness(
     root: Path = REPO_ROOT,
     copy: Callable[[Path, Path], RuleContext] = copy_tree,
     judge: Callable[[rule_registry.Rule, RuleContext], list[check_report.Finding]] | None = None,
+    *,
+    module: ModuleType | FamilyRule | None = None,
+    counts_warnings: bool = False,
 ) -> int:
     """Run a rule on each of its plants and controls (THE WITNESS), and print each verdict.
 
@@ -511,12 +517,16 @@ def witness(
             plant_context
         judge: The judged findings of the rule on the context of a plant, when the engine judges a rule in its own
             way.  None judges the findings of the rule against the ledger of the copy (judged())
+        module: The module that gives plant_context and applies(), or None for the module of the rule
+            (rule_module()).  A rule with a holder has no module of its own
+        counts_warnings: True when a warning counts as a finding of a plant too.  A measured rule with two equal
+            thresholds gives a warning only
 
     Returns:
         0 when each plant is refused and each control is accepted, 1 otherwise, 2 when the rule has no plant.
         SKIPPED when the function applies() of the module raises NotApplicable
     """
-    module = rule_module(rule)
+    module = rule_module(rule) if module is None else module
     prepare: Callable[[Path, Path], RuleContext] = getattr(module, "plant_context", copy)
     plants = plants_of(rule.id, root)
     if not plants:
@@ -529,6 +539,7 @@ def witness(
         except NotApplicable as reason:
             check_report.write_line(f"{rule.id}: {reason}.  The witness does not apply on this host")
             return SKIPPED
+    noun = "finding" if counts_warnings else "error"
     failures: list[str] = []
     for plant in plants:
         with tempfile.TemporaryDirectory(prefix=f"witness-{rule.id}-") as scratch:
@@ -537,16 +548,16 @@ def witness(
                 found = (
                     judge(rule, context) if judge is not None else judged(rule, context.root, context.findings_of(rule))
                 )
-                errors = [item for item in found if item.level == "error"]
+                counted = [item for item in found if counts_warnings or item.level == "error"]
             except NotApplicable as reason:
                 failures.append(f"{plant.name}: the rule does not apply to it: {reason}")
                 continue
         is_plant = plant.name.startswith(PLANT_PREFIX)
-        holds = bool(errors) if is_plant else not errors
-        shown = errors[0].text() if errors else "no error"
-        print(f"  {'ok  ' if holds else 'FAIL'} {plant.name}: {len(errors)} error(s); {shown}")
+        holds = bool(counted) if is_plant else not counted
+        shown = counted[0].text() if counted else f"no {noun}"
+        print(f"  {'ok  ' if holds else 'FAIL'} {plant.name}: {len(counted)} {noun}(s); {shown}")
         if not holds:
-            failures.append(f"{plant.name}: {'no error' if is_plant else f'{len(errors)} error(s)'}")
+            failures.append(f"{plant.name}: {f'no {noun}' if is_plant else f'{len(counted)} {noun}(s)'}")
     if failures:
         print(f"{rule.id}: the witness fails: {'; '.join(failures)}", file=sys.stderr)
         return 1

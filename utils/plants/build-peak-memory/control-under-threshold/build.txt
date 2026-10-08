@@ -1,0 +1,6 @@
+# Two compiles of 1 GB of peak memory each end at the same time, so their peak memory is 2 GB together, under the
+# threshold 128 GB of build-peak-memory.  The build totals of `guard warnings` give no warning.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/first.cpp.o src/first.cpp cpu=10 peak=1
+compile CMakeFiles/lib.dir/second.cpp.o src/second.cpp cpu=10 peak=1

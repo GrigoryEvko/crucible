@@ -65,7 +65,11 @@ THE REPORT
     The report prints each finding in the format of utils/assay/core/report.py,
     at the path of the edited header.  With --warnings-dir, each rule writes
     its warnings to DIR/RULE.txt.  With --record FILE, the gauge appends the
-    result as one JSON line to FILE.
+    result as one JSON line to FILE.  The gauge judges that record with
+    judged_record().  A record of a different run then gives the same
+    findings.  read_records() reads the lines of such a file, and the witness
+    of each measured rule of the gauge judges planted records with the two
+    functions (assay.guard.engines.buildsys.held).
 
 Usage
     loop gauge [--jobs N] [--runs K] [--preset NAME] [--work-dir DIR | --reuse DIR] [--keep] [--timeout S]
@@ -90,7 +94,7 @@ import statistics
 import sys
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -154,6 +158,15 @@ class Median:
     cpu_s: float
     instructions_g: float | None
     worst_others_pct: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class GaugeRecord:
+    """The part of a record of --record that the gauge judges: the job count, each step, and the median of each run."""
+
+    jobs: int
+    steps: tuple[StepResult, ...]
+    medians: Mapping[str, Median]
 
 
 # ── The edit ───────────────────────────────────────────────────────────────
@@ -388,6 +401,117 @@ def judge_others(results: list[StepResult], budgets: dict[str, check_report.Budg
     return findings
 
 
+# ── The record ─────────────────────────────────────────────────────────────
+
+
+def read_records(path: Path) -> list[GaugeRecord]:
+    """Return each record of a file that --record writes, one JSON object on each line (THE REPORT).
+
+    Complexity: linear in the bytes of the file.
+
+    Raises:
+        GaugeError: If the file cannot be read, or a line that is not empty is not a record
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as problem:
+        raise GaugeError(f"the records {path} cannot be read: {problem}") from None
+    records: list[GaugeRecord] = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except ValueError as problem:
+            raise GaugeError(f"{path}:{number}: the line is not JSON: {problem}") from None
+        records.append(parsed_record(value, f"{path}:{number}"))
+    return records
+
+
+def record_number(block: Mapping[str, object], key: str, where: str) -> float:
+    """Return a number of a part of a record.
+
+    Raises:
+        GaugeError: If the part has no number of that key
+    """
+    value = loop_history.number(block, key)
+    if value is None:
+        raise GaugeError(f"{where} has no number {key}")
+    return value
+
+
+def record_step(item: object, where: str) -> StepResult:
+    """Return the measures of one step of a record, as measure() writes them with asdict().
+
+    Raises:
+        GaugeError: If the step does not have that shape
+    """
+    if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+        raise GaugeError(f"{where} is not a step with a name")
+    status = item.get("status")
+    path = item.get("critical_path", [])
+    if not isinstance(status, int) or isinstance(status, bool) or not isinstance(path, (list, tuple)):
+        raise GaugeError(f"{where} has no whole status or no list critical_path")
+    return StepResult(str(item["name"]), status, record_number(item, "wall_s", where),
+                      record_number(item, "cpu_s", where), record_number(item, "system_s", where),
+                      loop_history.number(item, "others_pct"), loop_history.number(item, "instructions_g"),
+                      loop_history.number(item, "peak_memory_gb"), loop_history.number(item, "critical_path_s"),
+                      tuple(str(part) for part in path))
+
+
+def record_median(item: object, where: str) -> Median:
+    """Return the median of one step of a record, as measure() writes it with asdict().
+
+    Raises:
+        GaugeError: If the median does not have that shape
+    """
+    if not isinstance(item, dict):
+        raise GaugeError(f"{where} is not a median")
+    return Median(record_number(item, "wall_s", where), record_number(item, "cpu_s", where),
+                  loop_history.number(item, "instructions_g"), loop_history.number(item, "worst_others_pct"))
+
+
+def parsed_record(value: object, where: str) -> GaugeRecord:
+    """Return the part of a JSON record that the gauge judges, from a record that measure() writes.
+
+    Raises:
+        GaugeError: If the value does not have the shape that measure() writes
+    """
+    if not isinstance(value, dict):
+        raise GaugeError(f"{where} is not a JSON object")
+    jobs, steps, medians = value.get("jobs"), value.get("steps"), value.get("medians")
+    if not isinstance(jobs, int) or isinstance(jobs, bool) or not isinstance(steps, list) \
+            or not isinstance(medians, dict):
+        raise GaugeError(f"{where} has no whole jobs, no list steps or no object medians")
+    missing = sorted(set(STEP_ROWS) - set(medians))
+    if missing:
+        raise GaugeError(f"{where} has no median of the step {', '.join(missing)}")
+    return GaugeRecord(
+        jobs,
+        tuple(record_step(item, f"the step {index} of {where}") for index, item in enumerate(steps)),
+        {name: record_median(medians[name], f"the median {name} of {where}") for name in STEP_ROWS},
+    )
+
+
+def judged_record(record: GaugeRecord, budgets: dict[str, check_report.Budget],
+                  position: str) -> tuple[list[check_report.Finding], list[str]]:
+    """Judge one record of the gauge: the medians of the edit runs (judge()) and the other steps (judge_others()).
+
+    measure() judges its own record with this function, and the witness of each measured rule of the gauge
+    judges a planted record with it (assay.guard.engines.buildsys.held).
+
+    Args:
+        record: The record
+        budgets: The measured rules of the registry
+        position: The path that a finding names
+
+    Returns:
+        The findings, and one note for each value that the gauge did not judge
+    """
+    findings, notes = judge(dict(record.medians), budgets, position, record.jobs)
+    return findings + judge_others(list(record.steps), budgets, position), notes
+
+
 def available_gb() -> float | None:
     """Return the available memory of the host in GB, from /proc/meminfo, or None when it cannot be read."""
     try:
@@ -534,9 +658,12 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
         return 1, True
     medians = {step_name: median_of(step_results) for step_name, step_results in runs.items()}
     print(table(results, medians))
+    record = {"time": started, "commit": commit, "changed_files": state.get("changed_files"),
+              "host": socket.gethostname(), "jobs": options.jobs, "runs": options.runs, "preset": options.preset,
+              "steps": [asdict(result) for result in results],
+              "medians": {name: asdict(median) for name, median in medians.items()}}
     budgets = check_report.read_budgets()
-    findings, notes = judge(medians, budgets, str(EDIT_HEADER), options.jobs)
-    findings += judge_others(results, budgets, str(EDIT_HEADER))
+    findings, notes = judged_record(GaugeRecord(options.jobs, tuple(results), medians), budgets, str(EDIT_HEADER))
     for note in notes:
         print(f"edit-loop-gauge: {note}")
     status = 0
@@ -544,10 +671,6 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
         status |= check_report.emit([finding for finding in findings if finding.check == row], row,
                                     options.warnings_dir)
     if options.record is not None:
-        record = {"time": started, "commit": commit, "changed_files": state.get("changed_files"),
-                  "host": socket.gethostname(), "jobs": options.jobs, "runs": options.runs, "preset": options.preset,
-                  "steps": [asdict(result) for result in results],
-                  "medians": {name: asdict(median) for name, median in medians.items()}}
         with options.record.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, separators=(",", ":")) + "\n")
     if failed:
@@ -682,6 +805,38 @@ def self_test() -> int:
                "fast build with nothing to do",
                sorted(f.check for f in found) == ["build-peak-memory", "configure-time"]
                and all(f.level == "warning" for f in found) and any("120 GB" in f.message for f in found))
+        record = {"jobs": WALL_JOBS, "steps": [asdict(step) for step in steps],
+                  "medians": {name: asdict(median) for name, median in quiet.items()}}
+        parsed = parsed_record(json.loads(json.dumps(record)), "the record")
+        found, notes = judged_record(parsed, {**rows(10, 100), **other_rows}, "h")
+        expect("judged_record judges the medians and the other steps of a record that went through JSON",
+               sorted(f.check for f in found) == sorted(["build-peak-memory", "configure-time",
+                                                         *(name for triple in STEP_ROWS.values() for name in triple)])
+               and not notes)
+        direct, _ = judged_record(GaugeRecord(WALL_JOBS, tuple(steps), quiet), {**rows(10, 100), **other_rows}, "h")
+        expect("a record that went through JSON gives the findings of the record of the run",
+               [item.text() for item in found] == [item.text() for item in direct])
+        for name, broken in (("no median of the tests", {**record, "medians": {"build": asdict(quiet["build"])}}),
+                             ("a step with no wall time", {**record, "steps": [{"name": "configure", "status": 0}]}),
+                             ("a jobs that is no whole number", {**record, "jobs": "many"})):
+            try:
+                parsed_record(broken, "the record")
+                expect(f"parsed_record refuses a record with {name}", False)
+            except GaugeError:
+                expect(f"parsed_record refuses a record with {name}", True)
+    with tempfile.TemporaryDirectory(prefix="edit-loop-gauge-") as work:
+        records = Path(work) / "records.jsonl"
+        line = json.dumps(record)
+        records.write_text(f"{line}\n\n{line}\n", encoding="utf-8")
+        expect("read_records gives each record of the file and skips an empty line",
+               [item.jobs for item in read_records(records)] == [WALL_JOBS, WALL_JOBS])
+        for name, text in (("a line that is not JSON", "{\n"), ("a line that is not an object", "[1]\n")):
+            records.write_text(text, encoding="utf-8")
+            try:
+                read_records(records)
+                expect(f"read_records refuses {name}", False)
+            except GaugeError:
+                expect(f"read_records refuses {name}", True)
 
     if failures:
         print(f"edit-loop-gauge --self-test: FAILED, {len(failures)} case(s) did not hold")

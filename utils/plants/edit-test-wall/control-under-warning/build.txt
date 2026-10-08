@@ -1,0 +1,5 @@
+# The planted record of the gauge gives the test run after the edit build a median of 10 s of wall time at 192 jobs
+# on a quiet host, under the warning threshold 15 s of edit-test-wall.  A second record at 24 jobs gives a median
+# of 40 s, and the gauge does not judge it.  judged_record() of `loop gauge` gives no finding of the rule.
+format 1
+kind x86_64-debug-asan

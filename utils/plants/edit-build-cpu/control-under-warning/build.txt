@@ -1,0 +1,5 @@
+# The planted record of the gauge gives the edit build a median of 1000 s of CPU time and no exact instruction
+# count, under the warning threshold 2500 s of edit-build-cpu.  judged_record() of `loop gauge` gives no finding of
+# the rule.
+format 1
+kind x86_64-debug-asan

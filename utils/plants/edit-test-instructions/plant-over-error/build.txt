@@ -1,0 +1,5 @@
+# The planted record of the gauge, planted-build/gauge-records.jsonl, gives the test run after the edit build a
+# median of 19000 G instructions, over the error threshold 18500 G of edit-test-instructions.  judged_record() of
+# `loop gauge` gives one error.
+format 1
+kind x86_64-debug-asan

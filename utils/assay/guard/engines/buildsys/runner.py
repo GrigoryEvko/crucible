@@ -33,7 +33,9 @@ THE PLANTS
     A plant of a build rule holds the file build.txt, which tells what its
     planted build directory holds (assay.guard.engines.buildsys.planted).  The
     witness copies the plant to a throwaway repository and makes the planted
-    build there (planted.plant_context()).
+    build there (planted.plant_context()).  The witness of a measured rule
+    with a holder runs the judge of the holder on that build
+    (assay.guard.engines.buildsys.held).
 
 Complexity: one read of each input that a rule of the call reads.
 """
@@ -151,6 +153,15 @@ class BuildContext:
             check_report.unit_text(rule.threshold.unit),
             rule.refuses,
         )
+
+    def budgets(self) -> dict[str, check_report.Budget]:
+        """Return the thresholds of each measured rule of the registry of the context, by the ID of the rule.
+
+        Complexity: linear in the rules of the registry.
+        """
+        registry = self.registry if self.registry is not None else rule_registry.load()
+        self.registry = registry
+        return {rule.id: self.budget(rule.id) for rule in registry.rules.values() if rule.threshold is not None}
 
     def kind(self) -> str:
         """Return the build kind of the build directory (THE KIND).

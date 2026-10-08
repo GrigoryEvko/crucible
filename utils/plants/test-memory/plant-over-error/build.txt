@@ -1,0 +1,5 @@
+# The record of one test of the build gives a peak memory of 2 GB, over the error threshold 1.5 GB of test-memory.
+# judge() of `loop test-step` gives one error.
+format 1
+kind x86_64-debug-asan
+test-record test_large wall=1 peak=2

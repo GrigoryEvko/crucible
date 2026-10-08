@@ -1,0 +1,1 @@
+{"jobs": 192, "steps": [], "medians": {"build": {"wall_s": 10.0, "cpu_s": 1000.0, "instructions_g": null, "worst_others_pct": 2.0}, "tests": {"wall_s": 10.0, "cpu_s": 1000.0, "instructions_g": 10000.0, "worst_others_pct": 2.0}}}

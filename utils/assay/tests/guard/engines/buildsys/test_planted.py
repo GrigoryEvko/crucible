@@ -121,6 +121,21 @@ def build_cases(expect: testing.Expect) -> None:
         )
 
 
+def configure_cases(expect: testing.Expect) -> None:
+    """A configure row gives a configure of its seconds to the reader of the configure time."""
+    from assay.loop import history as loop_history
+
+    with tempfile.TemporaryDirectory(prefix="test-planted-") as scratch:
+        context = context_of(Path(scratch), "format 1\nkind x86_64-debug-asan\nconfigure seconds=12.5\n")
+        times = loop_history.configure_time(context.require_build())
+        expect(
+            "a configure row gives a configure of its seconds, with no generate step and no reply after it",
+            times is not None and times["total_s"] == 12.5 and times["configure_s"] == 12.5,
+        )
+    expect("a configure row with no seconds is refused", is_refused("format 1\nconfigure\n"))
+    expect("a configure row with a word that is no number is refused", is_refused("format 1\nconfigure seconds=x\n"))
+
+
 def refused_cases(expect: testing.Expect) -> None:
     """Refuse a build.txt with no format row, an unknown row kind and a field that its kind does not take."""
     expect("a build.txt with no format row is refused", is_refused("kind k\n"))
@@ -150,4 +165,6 @@ def registry_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (build_cases, refused_cases, registry_cases))
+    return testing.run(
+        __name__.removeprefix("assay."), argv, (build_cases, configure_cases, refused_cases, registry_cases)
+    )

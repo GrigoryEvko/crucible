@@ -1,0 +1,6 @@
+# Two links of 25 s of CPU time each take 50 s together, over the threshold 40 s of total-link-cpu.  The totals of
+# `guard warnings` give one warning.
+format 1
+kind x86_64-debug-asan
+link bin/first cpu=25
+link bin/second cpu=25

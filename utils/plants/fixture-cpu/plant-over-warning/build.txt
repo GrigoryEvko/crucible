@@ -1,0 +1,5 @@
+# The last cold compile of one negative fixture took 7 s of user time and no exact instruction count, over the
+# warning threshold 5 s of fixture-cpu.  The fixture driver gives one warning.
+format 1
+kind x86_64-debug-asan
+fixture neg_slow test/neg/slow.cpp user=7 system=0

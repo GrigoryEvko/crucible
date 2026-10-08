@@ -1,0 +1,8 @@
+# A header of include/fixy includes 5.0 MB alone, under the warning threshold 6 MB of header-alone-fixy.  The size
+# is over the error threshold 3.5 MB of foundation.  The rule header-alone gives no finding of the held rule.
+format 1
+kind x86_64-debug-asan
+file system.h size=1000
+file include/fixy/Base.h size=5241880
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Base.cpp.o test/layer/checks/fixy/Base.cpp cpu=3
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Base.cpp.o | test/layer/checks/fixy/Base.cpp system.h include/fixy/Base.h

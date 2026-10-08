@@ -1,0 +1,5 @@
+# The last configure of the build directory took 3 s, under the threshold 10 s of configure-time.  The build totals
+# of `guard warnings` give no warning.
+format 1
+kind x86_64-debug-asan
+configure seconds=3

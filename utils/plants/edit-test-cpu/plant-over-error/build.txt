@@ -1,0 +1,5 @@
+# The planted record of the gauge gives the test run after the edit build a median of 5100 s of CPU time and no
+# exact instruction count, so the CPU time holds the error level, over the error threshold 5000 s of edit-test-cpu.
+# judged_record() of `loop gauge` gives one error.
+format 1
+kind x86_64-debug-asan

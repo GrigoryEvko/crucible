@@ -28,6 +28,7 @@ THE FILE
         file PATH size=BYTES              a file of the tree with that number of bytes
         cache-file PATH size=BYTES        a file in the root of the caches
         limit NAME BYTES                  the limit of one cache, as an alternative to LIMITS
+        configure seconds=SECONDS         a last configure that ends SECONDS after its start
 
     The fields of a compile:
       * result: `built`, `hit` or `failed`
@@ -48,6 +49,11 @@ THE FILE
     the files of the compile.  The fields of a test: line (of its
     registration in test/CMakeLists.txt) and labels.  The fields of a record
     of a test: result, cpu, wall, peak and program.
+
+    A configure row writes build.ninja after each other file of the build.
+    It also writes the file configure-time.txt of a configure of SECONDS
+    (assay.loop.history, THE CONFIGURE TIME).  The times of a configure come
+    from the clock.  A file of a plant cannot hold them.
 
     A word or a cell can hold {root}, {build}, {cxx} (the patched compiler
     of assay.core.testing) and {python}.  A FILE of a list is a path of the
@@ -118,6 +124,7 @@ TEST_FIELDS = frozenset({"line", "labels"})
 RECORD_FIELDS = frozenset({"result", "cpu", "wall", "peak", "program"})
 SIZE_FIELDS = frozenset({"size"})
 CACHE_FIELDS = frozenset({"type"})
+CONFIGURE_FIELDS = frozenset({"seconds"})
 # The planted ninja: it prints the inputs of the target all and the lists of the dependency log from ninja.json.
 NINJA_TOOL = """\
 import json
@@ -168,11 +175,17 @@ class Planted:
     cache: MutableMapping[str, str | tuple[str, str]] = field(default_factory=dict)
     limits: MutableMapping[str, int] = field(default_factory=dict)
     kinds: list[str] = field(default_factory=list)
+    configures: list[float] = field(default_factory=list)
 
     @property
     def kind(self) -> str | None:
         """The build kind of the last kind row, or None when build.txt has no kind row."""
         return self.kinds[-1] if self.kinds else None
+
+    @property
+    def configure_s(self) -> float | None:
+        """The seconds of the configure of the last configure row, or None when build.txt has no configure row."""
+        return self.configures[-1] if self.configures else None
 
 
 def expanded(text: str, root: Path, build: Path) -> str:
@@ -575,6 +588,11 @@ def read_rows(plant_file_path: Path, root: Path, build: Path) -> Planted:
                 plant_file(row, root / CACHES)
             elif kind == "limit" and len(row.words) == 3:
                 planted.limits[row.words[1]] = rows_grammar.number(row.words[2], 1 << 50, row, "limit")
+            elif kind == "configure" and len(row.words) == 2:
+                fields = rows_grammar.fields(row, CONFIGURE_FIELDS, start=1)
+                if "seconds" not in fields:
+                    raise row.error("a configure row is 'configure seconds=SECONDS'")
+                planted.configures.append(rows_grammar.decimal(fields["seconds"], row, "seconds"))
             else:
                 raise row.error(f"the row kind {kind!r} or its words do not have a shape of {BUILD_FILE}")
     except rows_grammar.RowsError as problem:
@@ -607,6 +625,24 @@ def write_build(planted: Planted, root: Path, build: Path) -> None:
     }
     cache.update(planted.cache)
     cmake_reader.plant(build, cache=cache, targets=planted.targets, source=str(root), build=str(build))
+    if planted.configure_s is not None:
+        write_configure(build, planted.configure_s)
+
+
+def write_configure(build: Path, seconds: float) -> None:
+    """Write build.ninja again, and configure-time.txt of a configure that ends at that write (THE FILE).
+
+    build.ninja keeps its bytes.  Its write comes after each other file of
+    the build.  The reply of the file API is then not newer than it.  The
+    configure takes SECONDS from its start to its end
+    (assay.loop.history.configure_time()).
+    """
+    from assay.loop import history as loop_history
+
+    graph = ninja_reader.graph_file(build)
+    graph.write_bytes(graph.read_bytes() if graph.is_file() else b"")
+    written = graph.stat().st_mtime
+    (build / loop_history.CONFIGURE_TIME_FILE).write_text(f"{written - seconds!r} {written!r}\n", encoding="ascii")
 
 
 def plant_context(plant: Path, scratch: Path) -> BuildContext:

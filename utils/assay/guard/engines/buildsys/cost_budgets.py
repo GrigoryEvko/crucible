@@ -111,20 +111,23 @@ THE RULE compile-first
 
 THE TOTALS
     `guard warnings` (assay.guard.warnings) prints the totals of a build after
-    the warnings.  total_report_totals() gives the time totals
-    total-compile-cpu, total-fixture-cpu and total-test-cpu, from the census
-    of assay.readers.census and the test records.  total_report_build() gives
+    the warnings.  time_totals() gives the time totals total-compile-cpu,
+    total-fixture-cpu and total-test-cpu, from the census of
+    assay.readers.census and the test records.  build_totals() gives
     link-count, total-link-cpu, build-peak-memory and configure-time, from the
-    records of the build launcher.  A total gives a warning only, because the
-    CPU time increases with the load of the shared host.  These rules are held
-    by guard warnings, and this module gives no member for them.
+    records of the build launcher.  total_report_totals() and
+    total_report_build() print the lines of the two with the thresholds of the
+    registry.  A total gives a warning only, because the CPU time increases
+    with the load of the shared host.  These rules are held by guard warnings,
+    and this module gives no member for them.  The witness of each such rule
+    runs the two functions on its plants (assay.guard.engines.buildsys.held).
 
 Complexity: one read of the compile database, the code model and the records of the outputs that a rule reads.
 """
 
 import enum
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from functools import partial
 from pathlib import Path
@@ -1240,32 +1243,35 @@ def total_build_totals(
     return findings, lines
 
 
-def total_report_build(build_dir: Path, root: Path = REPO_ROOT) -> list[check_report.Finding]:
-    """Write the summary lines of the build totals of a build directory, and return their warnings."""
+def build_totals(
+    build_dir: Path, root: Path, budgets: Mapping[str, check_report.Budget]
+) -> tuple[list[check_report.Finding], list[str]]:
+    """Return the warnings and the summary lines of the build totals of a build directory (THE TOTALS).
+
+    Complexity: linear in the files of the build directory.
+    """
     from assay.loop import history as loop_history
 
-    try:
-        budgets = check_report.read_budgets()
-    except (OSError, ValueError) as reason:
-        check_report.write_line(f"{TOTAL_PREFIX} no build totals: {reason}")
-        return []
-    findings, lines = total_build_totals(
+    return total_build_totals(
         total_build_records(build_dir),
         loop_history.configure_time(build_dir),
         budgets,
         build_census.shown(build_dir, root),
     )
-    for line in lines:
-        check_report.write_line(line)
-    return findings
 
 
-def total_report_totals(build_dir: Path, root: Path = REPO_ROOT) -> list[check_report.Finding]:
-    """Write the summary lines of the time totals of a build directory, and return their warnings."""
+def time_totals(
+    build_dir: Path, root: Path, budgets: Mapping[str, check_report.Budget]
+) -> tuple[list[check_report.Finding], list[str]]:
+    """Return the warnings and the summary lines of the time totals of a build directory (THE TOTALS).
+
+    When the census or the test records of the build cannot be read, the function gives no warning, and one line
+    that tells why.
+    Complexity: one read of the census and of the test records of the build directory.
+    """
     from assay.readers import ctest as ctest_reader
 
     try:
-        budgets = check_report.read_budgets()
         census = build_census.read_census(build_dir, root, read_files=False)
         test_times = total_test_times(build_dir)
     except (
@@ -1275,12 +1281,37 @@ def total_report_totals(build_dir: Path, root: Path = REPO_ROOT) -> list[check_r
         OSError,
         ValueError,
     ) as reason:
-        check_report.write_line(f"{TOTAL_PREFIX} no time totals: {reason}")
+        return [], [f"{TOTAL_PREFIX} no time totals: {reason}"]
+    return total_time_totals(census, test_times, budgets, build_census.shown(build_dir, root))
+
+
+type Totals = Callable[[Path, Path, Mapping[str, check_report.Budget]], tuple[list[check_report.Finding], list[str]]]
+
+
+def written_totals(name: str, totals: Totals, build_dir: Path, root: Path) -> list[check_report.Finding]:
+    """Write the summary lines of one group of totals of a build directory, and return their warnings.
+
+    `name` names the group in the line of a registry that does not read.
+    """
+    try:
+        budgets = check_report.read_budgets()
+    except (OSError, ValueError) as reason:
+        check_report.write_line(f"{TOTAL_PREFIX} no {name}: {reason}")
         return []
-    findings, lines = total_time_totals(census, test_times, budgets, build_census.shown(build_dir, root))
+    findings, lines = totals(build_dir, root, budgets)
     for line in lines:
         check_report.write_line(line)
     return findings
+
+
+def total_report_build(build_dir: Path, root: Path = REPO_ROOT) -> list[check_report.Finding]:
+    """Write the summary lines of the build totals of a build directory, and return their warnings."""
+    return written_totals("build totals", build_totals, build_dir, root)
+
+
+def total_report_totals(build_dir: Path, root: Path = REPO_ROOT) -> list[check_report.Finding]:
+    """Write the summary lines of the time totals of a build directory, and return their warnings."""
+    return written_totals("time totals", time_totals, build_dir, root)
 
 
 def budget_member(rule_id: str) -> meta_runner.Member:

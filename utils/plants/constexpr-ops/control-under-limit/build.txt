@@ -1,0 +1,5 @@
+# A unit of the compile database has a constant evaluation of 10 loop rounds, under the planted threshold of 1000
+# operations of constexpr-ops.  The compile at that limit succeeds, and the witness gives no finding.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/src/unit.cpp.o src/unit.cpp record=no | {cxx} -std=c++26 -o {build}/unit.o -c {root}/src/unit.cpp

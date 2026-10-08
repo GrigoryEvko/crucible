@@ -1,0 +1,4 @@
+# The loop history of the build directory, planted-build/loop-history/history.jsonl, holds a build that ran no edge
+# and took 0.9 s, over the threshold 0.5 s of noop-build-time.  judge_line() of `loop history` gives one warning.
+format 1
+kind x86_64-debug-asan

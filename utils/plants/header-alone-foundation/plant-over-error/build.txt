@@ -1,0 +1,8 @@
+# A header of include/foundation includes 3.6 MB alone, more than the error threshold 3.5 MB of
+# header-alone-foundation.  The rule header-alone gives one error of the held rule of the layer.
+format 1
+kind x86_64-debug-asan
+file system.h size=1000
+file include/foundation/Base.h size=3774874
+compile test/layer/CMakeFiles/layer_sentinel_foundation.dir/checks/foundation/Base.cpp.o test/layer/checks/foundation/Base.cpp cpu=3
+deps test/layer/CMakeFiles/layer_sentinel_foundation.dir/checks/foundation/Base.cpp.o | test/layer/checks/foundation/Base.cpp system.h include/foundation/Base.h

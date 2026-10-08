@@ -1,0 +1,5 @@
+# The planted record of the gauge gives the test run after the edit build a median of 10000 G instructions, under
+# the warning threshold 17000 G of edit-test-instructions.  judged_record() of `loop gauge` gives no finding of the
+# rule.
+format 1
+kind x86_64-debug-asan

@@ -1,0 +1,6 @@
+# The last compile of one negative fixture gave two errors, and the regex of the fixture matches only the first.
+# The SARIF log of the compile is planted-build/neg-compile/neg_two/neg_two.sarif.  No row of the ledger names the
+# fixture, so the fixture driver gives one error for the second error.
+format 1
+kind x86_64-debug-asan
+test neg_two | {python} -S {root}/utils/bin/loop fixture --warnings-dir {build}/check-warnings {build} {root}/test/neg_two.cpp neg_two undeclared_first
