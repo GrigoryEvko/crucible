@@ -1,0 +1,9 @@
+// A quarantined unit of production code.  This comment names InitOwner and
+// BackgroundOwner, and a literal names them too, so the unit uses no door.
+#include <foundation/effects/Effect.h>
+
+namespace planted {
+
+constexpr char note[] = "InitOwner::mint_init_context()";
+
+}  // namespace planted

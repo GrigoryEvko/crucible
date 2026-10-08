@@ -422,8 +422,8 @@ namespace host {
 // door.
 //
 // The door is a static member, so the name of the owner is in each call.
-// utils/assay/guard/legacy/check_ctx_init_door.py rejects a call of the door outside the
-// process entry points that the init rows of utils/ledgers/ctx-init-door.txt admit.
+// The rule ctx-init-door of the quarantine plugin rejects a call of the door
+// outside the process entry points that utils/ledgers/ctx-init-door.txt admits.
 struct InitOwner final {
     [[nodiscard]] static constexpr Init mint_init_context() noexcept {
         return mint_context<Init>(detail::ctx_mint::init_key{});
@@ -439,9 +439,9 @@ struct InitOwner final {
 // thread, before the thread enters its loop.  A background context permits
 // Bg, Alloc, IO and Block, so the foreground thread must never hold one: its
 // hot path would then claim the right to block.  The door is a static
-// member, so the name of the owner is in each call, and
-// utils/assay/guard/legacy/check_ctx_init_door.py rejects a call outside the thread entry
-// points that the background rows of utils/ledgers/ctx-init-door.txt admit.
+// member, so the name of the owner is in each call, and the rule
+// ctx-init-door of the quarantine plugin rejects a call outside the thread
+// entry points that utils/ledgers/ctx-init-door.txt admits.
 struct BackgroundOwner final {
     [[nodiscard]] static constexpr Bg mint_background_context() noexcept {
         return mint_context<Bg>(detail::ctx_mint::bg_key{});

@@ -1,0 +1,2 @@
+// A quarantined unit that includes the header of the self-test.
+#include <crucible/SelfTest.h>

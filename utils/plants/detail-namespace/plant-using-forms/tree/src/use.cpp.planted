@@ -1,0 +1,20 @@
+// A quarantined unit with the using forms of a detail namespace at namespace
+// scope: a using-declaration, a using-directive and a namespace alias, and a
+// call through the alias.
+#include <foundation/effects/Detail.h>
+
+namespace planted {
+
+using ::foundation::effects::detail::Key;
+
+namespace hidden = ::foundation::effects::detail;
+
+int skip_gate() { return hidden::helper(Key{}); }
+
+}  // namespace planted
+
+namespace opened {
+
+using namespace ::foundation::effects::detail;
+
+}  // namespace opened

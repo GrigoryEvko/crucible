@@ -1,0 +1,9 @@
+# A test holds two uses of a detail namespace in one function, and its row
+# admits one.  The count of the file and the entity is more than its row, so
+# each use is an error.
+
+compile probe test/probe.cpp stage=c
+exit probe pass
+judge probe
+finding probe detail-namespace detail-use test/probe.cpp:7:40 | planted::probe(): foundation::effects::detail
+finding probe detail-namespace detail-use test/probe.cpp:8:43 | planted::probe(): foundation::effects::detail

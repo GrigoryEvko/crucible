@@ -1,0 +1,7 @@
+# A function outside the layer calls a detail function by its qualified name.
+# The name of the detail namespace is a use, with the function as its holder.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use detail-namespace detail-use src/use.cpp:7:49 | planted::skip_gate(): foundation::effects::detail

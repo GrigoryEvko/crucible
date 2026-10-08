@@ -1,0 +1,15 @@
+# The layer names its own detail namespace, and the sentinel unit of the door
+# gives no use.  A quarantined unit calls the public door, and a detail
+# function that argument-dependent lookup finds through a public alias.  No
+# name of the unit names the detail namespace, so the unit gives no use.  A
+# comment and a literal are no use.
+
+compile sentinel src/use.cpp sentinel=include/foundation/effects/Door.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel quarantine c-array-object src/use.cpp:9:16 | const char [36]
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use quarantine c-array-object src/use.cpp:9:16 | const char [36]

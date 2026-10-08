@@ -1,13 +1,19 @@
-# The ledger of the rule ctx-testing-boundary: the files that ship and can use the testing door,
+# The ledger of the rule ctx-testing-boundary: the uses in code that ships of the testing door,
 # foundation::effects::testing.
-# A row PATH | - | N | - | REASON admits N uses of the door in the file PATH, and gives the reason.
+# A row PATH | testing-use | N | HOLDER: foundation::effects::testing | REASON admits N uses of the door
+# in the file PATH, and gives the reason.  HOLDER is the function that holds the use, with the types of
+# its parameters, "macro NAME" for a use that a macro body spells, or namespace-scope.
 # The door mints a context with no key, and each ctx-bound mint checks for a context.  So a use in code
 # that ships gives authority that no mint gave.  A header can use the door in its own self-test.
-# A new use in a listed file is more than its count, and it fails.  A count above the uses of its file
-# is stale, and it fails too, so the ledger becomes shorter when the self-tests leave the headers.
-# The rule does not scan test/ and bench/, because they use the test path on purpose.
-# A reviewer writes each row.  `python3 utils/bin/guard explain ctx-testing-boundary` tells the rule.
+# A new use is more than its count, and it fails.  A count above the uses of its row is stale, and it
+# fails too, so the ledger becomes shorter when the self-tests leave the headers.
+# The rule does not read test/ and bench/, because they use the test path on purpose.
+# A reviewer writes each reason.  `python3 utils/bin/guard explain ctx-testing-boundary` tells the rule.
 format 1
 rule ctx-testing-boundary
-include/foundation/effects/Ctx.h | - | 6 | - | declares the foreground door and ForegroundWitness, friends the witness from the key of the foreground context and from the branded source, and gives the branded door.  This is the definition site.
-include/foundation/effects/Effect.h | - | 8 | - | declares the door, its three factories and TestWitness.  This is the definition site.
+include/foundation/effects/Ctx.h | testing-use | 2 | foundation::effects::testing::foreground(): foundation::effects::testing | gives the branded door of the foreground context through ForegroundWitness.  This is the definition site.
+include/foundation/effects/Ctx.h | testing-use | 4 | namespace-scope: foundation::effects::testing | declares ForegroundWitness, and friends the witness from the key of the foreground context and from the branded source.  This is the definition site.
+include/foundation/effects/Effect.h | testing-use | 1 | foundation::effects::testing::bg(): foundation::effects::testing | the factory bg() of the door mints its context through TestWitness.  This is the definition site.
+include/foundation/effects/Effect.h | testing-use | 1 | foundation::effects::testing::init(): foundation::effects::testing | the factory init() of the door mints its context through TestWitness.  This is the definition site.
+include/foundation/effects/Effect.h | testing-use | 1 | foundation::effects::testing::test(): foundation::effects::testing | the factory test() of the door mints its context through TestWitness.  This is the definition site.
+include/foundation/effects/Effect.h | testing-use | 5 | namespace-scope: foundation::effects::testing | declares TestWitness, friends it from the three keys, and defines it.  This is the definition site.

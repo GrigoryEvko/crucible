@@ -1,0 +1,10 @@
+# A header defines an alias of the init owner, and a unit calls the door
+# through the alias.  The alias declaration names the owner, and the name of
+# the alias resolves to it, so each one is a use.
+
+compile entry src/entry.cpp stage=c
+exit entry pass
+judge entry
+finding entry ctx-init-door door-use include/crucible/Door.h:8:43 | namespace-scope: foundation::effects::host::InitOwner
+finding entry mint-pattern mint-alias include/crucible/Door.h:8:7 | planted::Door \| alias=Door owner=foundation::effects::host::InitOwner
+finding entry ctx-init-door door-use src/entry.cpp:7:22 | planted::start(): foundation::effects::host::InitOwner

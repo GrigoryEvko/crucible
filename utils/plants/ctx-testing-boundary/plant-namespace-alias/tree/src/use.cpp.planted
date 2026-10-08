@@ -1,0 +1,9 @@
+// A quarantined unit of production code that mints a context through an alias
+// of the testing door that a different file defines.
+#include <crucible/Door.h>
+
+namespace planted {
+
+int forged() { return door::bg(); }
+
+}  // namespace planted

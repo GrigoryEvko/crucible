@@ -14,9 +14,6 @@ utils/assay/core/cache.py | wall-clock | 1 | victims | A finding of today.  The 
 utils/assay/core/report.py | listing | 1 | self_test | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/engines/meta/history.py | listing | 1 | replace_tree | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/engines/meta/rule_witness.py | listing | 1 | findings | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/guard/legacy/check_ctx_testing_boundary.py | listing | 1 | scope_files | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/guard/legacy/check_detail_namespace.py | listing | 1 | listed_files | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/guard/legacy/check_no_unchecked_access.py | listing | 1 | planted_cases | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/preprocessed.py | listing | 2 | _chunk_names | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/preprocessed.py | listing | 1 | _finalize_retired | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/preprocessed.py | listing | 3 | _remove_garbage | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count

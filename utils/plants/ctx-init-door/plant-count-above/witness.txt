@@ -1,0 +1,9 @@
+# One entry point holds two uses of the init owner, and its row admits one.
+# The count of the file and the entity is more than its row, so each use is
+# an error.
+
+compile entry src/entry.cpp stage=c
+exit entry pass
+judge entry
+finding entry ctx-init-door door-use src/entry.cpp:7:46 | planted::main_entry(): foundation::effects::host::InitOwner
+finding entry ctx-init-door door-use src/entry.cpp:8:49 | planted::main_entry(): foundation::effects::host::InitOwner

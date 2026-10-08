@@ -1,0 +1,6 @@
+// A quarantined header with an alias of the testing door.
+#pragma once
+
+#include <foundation/effects/Effect.h>
+
+namespace door = ::foundation::effects::testing;

@@ -1,0 +1,9 @@
+// A quarantined unit that names a detail type in a constant initializer,
+// inside an unevaluated operand.  The front end folds the initializer.
+#include <foundation/effects/Detail.h>
+
+namespace planted {
+
+constexpr bool is_small = sizeof(::foundation::effects::detail::Key) == 1;
+
+}  // namespace planted

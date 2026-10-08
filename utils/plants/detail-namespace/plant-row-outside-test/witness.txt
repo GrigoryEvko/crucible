@@ -1,0 +1,8 @@
+# A row of the ledger admits a use in a file of production code.  The count
+# of the use agrees with its row, and the row is an error, because only a
+# file under test/ outside test/fuzz/ can take a row.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use detail-namespace detail-use src/use.cpp:8:49 | planted::skip_gate(): foundation::effects::detail

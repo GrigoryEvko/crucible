@@ -1,0 +1,10 @@
+# A using-directive at namespace scope nominates the testing door, and a
+# function calls a factory with no qualifier.  The directive names the door,
+# and the call names a member of the door with no qualifier, so each one is a
+# use.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use ctx-testing-boundary testing-use src/use.cpp:7:40 | namespace-scope: foundation::effects::testing
+finding use ctx-testing-boundary testing-use src/use.cpp:9:23 | planted::forged(): foundation::effects::testing

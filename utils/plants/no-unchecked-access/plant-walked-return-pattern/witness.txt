@@ -1,0 +1,10 @@
+# A pattern names unchecked as a member of an object of a dependent type,
+# which no event of the parser gives.  The walk of the pattern reads the
+# member, and the end of the unit reads the walked return of the pattern.
+
+compile walk src/walk.cpp stage=c
+flag walk -freflection
+exit walk pass
+judge walk
+finding walk no-unchecked-access unchecked-use src/walk.cpp:14:74 | planted::private_member(Context): std::meta::access_context::unchecked
+finding walk no-unchecked-access walked-return src/walk.cpp:13:27 | planted::private_member(Context): walked return

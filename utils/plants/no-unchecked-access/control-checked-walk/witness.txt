@@ -1,0 +1,18 @@
+# A walk under the checked access context, a local variable named unchecked,
+# a comment and a literal are no use.  A reviewed walk under the unchecked
+# access context is a finding line that its ledger row admits, so the module
+# gives no error.
+
+compile walk src/walk.cpp stage=c
+flag walk -freflection
+exit walk pass
+judge walk
+finding walk quarantine c-array-object src/walk.cpp:12:16 | const char [39]
+finding walk quarantine std-entity src/walk.cpp:15:97 | std::vector::operator[]
+
+compile admitted src/admitted.cpp stage=c
+flag admitted -freflection
+exit admitted pass
+judge admitted
+finding admitted no-unchecked-access unchecked-use src/admitted.cpp:12:85 | planted::private_count(): std::meta::access_context::unchecked
+finding admitted quarantine std-entity src/admitted.cpp:12:102 | std::vector::size

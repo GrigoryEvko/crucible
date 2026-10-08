@@ -1,0 +1,15 @@
+// A quarantined unit that befriends the init owner by its own name, and the
+// background owner by its qualified name.
+#include <foundation/effects/Effect.h>
+
+namespace foundation::effects::host {
+
+class Key {
+    friend struct InitOwner;
+};
+
+class OtherKey {
+    friend struct ::foundation::effects::host::BackgroundOwner;
+};
+
+}  // namespace foundation::effects::host

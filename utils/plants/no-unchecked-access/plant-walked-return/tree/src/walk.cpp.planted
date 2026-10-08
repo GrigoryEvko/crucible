@@ -1,0 +1,21 @@
+// A quarantined unit with a function that walks the private members of a
+// class under the unchecked access context and gives its caller one of them,
+// directly and through a local variable.
+#include <meta>
+
+namespace planted {
+
+class Proof {
+    int count = 0;
+};
+
+consteval std::meta::info private_member() {
+    return std::meta::nonstatic_data_members_of(^^Proof, std::meta::access_context::unchecked())[0];
+}
+
+consteval std::meta::info private_member_through_local() {
+    auto members = std::meta::nonstatic_data_members_of(^^Proof, std::meta::access_context::unchecked());
+    return members.front();
+}
+
+}  // namespace planted

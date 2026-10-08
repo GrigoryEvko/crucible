@@ -1,0 +1,7 @@
+# A function of production code calls a factory of the testing door.  The
+# name of the namespace of the door is a use, with the function as its holder.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use ctx-testing-boundary testing-use src/use.cpp:7:46 | planted::forged(): foundation::effects::testing

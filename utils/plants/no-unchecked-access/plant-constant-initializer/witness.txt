@@ -1,0 +1,9 @@
+# A constant initializer at namespace scope keeps the unchecked access
+# context.  The parser resolves the name before the front end folds the
+# initializer.
+
+compile walk src/walk.cpp stage=c
+flag walk -freflection
+exit walk pass
+judge walk
+finding walk no-unchecked-access unchecked-use src/walk.cpp:7:73 | namespace-scope: std::meta::access_context::unchecked

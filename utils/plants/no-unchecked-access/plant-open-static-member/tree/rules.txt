@@ -1,0 +1,13 @@
+# The rule table of this plant.  The headers of include/foundation/ are base
+# files, and each other file is quarantined.  The owner row names the
+# unchecked access context, and the plant admits the header <meta>.
+
+layer floor 0 include/foundation/
+
+quarantine include/crucible/
+quarantine src/
+quarantine test/
+
+admit <meta> | the reflection of the plant
+
+owner no-unchecked-access unchecked-use std::meta::access_context::unchecked | the door of the plant

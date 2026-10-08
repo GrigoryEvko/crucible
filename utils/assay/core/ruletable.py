@@ -21,7 +21,8 @@ cite rows give the rule refined-pre-subsumption, and the grant rows give the
 rule syscall-grant-coverage.  The witness rows give the rule witness-roster and
 the negative fixtures that `loop derive witness-fixtures` writes
 (assay.loop.derive.witness_fixtures).  The owner rows give the rules
-start-lifetime and syscall-capability, and the syscall rows give the system
+start-lifetime, syscall-capability, ctx-init-door, ctx-testing-boundary,
+detail-namespace and no-unchecked-access, and the syscall rows give the system
 calls of the rule syscall-capability.
 """
 
@@ -85,7 +86,14 @@ CELLS_MESSAGE = (
 )
 # The rules of the family owner of the plugin (utils/tools/quarantine/owner.cpp) that the owner rows name.  Each rule
 # gives one kind to a use that is not at a site of its owner row.
-OWNER_KINDS = {"start-lifetime": "lifetime-start", "syscall-capability": "outside-door"}
+OWNER_KINDS = {
+    "start-lifetime": "lifetime-start",
+    "syscall-capability": "outside-door",
+    "ctx-init-door": "door-use",
+    "ctx-testing-boundary": "testing-use",
+    "detail-namespace": "detail-use",
+    "no-unchecked-access": "unchecked-use",
+}
 # The errors of an owner row and of a syscall row that do not obey the format of their words.  rule_table.cpp gives
 # the same texts.
 OWNER_FORMAT = (
@@ -360,8 +368,9 @@ def parse_owner(args: list[str], reason: str, number: int, where: str) -> Owner:
         raise TableError(f"{where}: {OWNER_FORMAT}")
     rule, kind, entity = args[0], args[1], args[2]
     if rule not in OWNER_KINDS:
-        raise TableError(f"{where}: the rule {rule} is no rule of the family owner; the rules are start-lifetime and "
-                         f"syscall-capability")
+        raise TableError(f"{where}: the rule {rule} is no rule of the family owner; the rules are start-lifetime, "
+                         f"syscall-capability, ctx-init-door, ctx-testing-boundary, detail-namespace and "
+                         f"no-unchecked-access")
     if kind != OWNER_KINDS[rule]:
         raise TableError(f"{where}: the kind {kind} is no kind of a use outside the sites of an owner row of the rule "
                          f"{rule}")

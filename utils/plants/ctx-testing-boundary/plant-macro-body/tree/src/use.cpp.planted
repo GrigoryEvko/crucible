@@ -1,0 +1,9 @@
+// A quarantined unit of production code that expands the macro of
+// crucible/Take.h.
+#include <crucible/Take.h>
+
+namespace planted {
+
+int forged() { return CRUCIBLE_PLANT_TAKE(); }
+
+}  // namespace planted

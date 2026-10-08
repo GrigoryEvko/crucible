@@ -1,0 +1,9 @@
+# A reflection of the class of the access context, and a reflection of the
+# namespace std::meta, are each a finding.
+
+compile reflect src/reflect.cpp stage=c
+flag reflect -freflection
+exit reflect pass
+judge reflect
+finding reflect no-unchecked-access access-reflection src/reflect.cpp:8:45 | namespace-scope: std::meta::access_context
+finding reflect no-unchecked-access access-reflection src/reflect.cpp:9:42 | namespace-scope: std::meta

@@ -1,0 +1,11 @@
+// A quarantined test that probes a detail function two times in one function.
+#include <foundation/effects/Detail.h>
+
+namespace planted {
+
+int probe() {
+    int first = ::foundation::effects::detail::helper({});
+    return first + ::foundation::effects::detail::helper({});
+}
+
+}  // namespace planted

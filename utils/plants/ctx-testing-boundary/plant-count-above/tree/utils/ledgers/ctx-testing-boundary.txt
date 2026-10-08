@@ -1,0 +1,5 @@
+# The ledger of the plant.  The row admits one use of the testing door, and
+# the self-test holds two.
+format 1
+rule ctx-testing-boundary
+include/crucible/SelfTest.h | testing-use | 1 | planted::self_test(): foundation::effects::testing | the self-test of the plant

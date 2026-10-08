@@ -1,0 +1,7 @@
+# A macro body names a detail namespace, and a unit expands the macro.  The
+# use stands in the macro body, with the holder "macro NAME".
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use detail-namespace detail-use include/crucible/Skip.h:6:54 | macro CRUCIBLE_PLANT_SKIP: foundation::effects::detail

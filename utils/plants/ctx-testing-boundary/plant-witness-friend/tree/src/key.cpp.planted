@@ -1,0 +1,20 @@
+// A quarantined unit of production code that befriends the witness of the
+// testing door by its qualified name, and by its own name in a namespace of
+// the door.
+#include <foundation/effects/Effect.h>
+
+namespace planted {
+
+class Key {
+    friend struct ::foundation::effects::testing::TestWitness;
+};
+
+}  // namespace planted
+
+namespace foundation::effects::testing {
+
+class OtherKey {
+    friend struct TestWitness;
+};
+
+}  // namespace foundation::effects::testing

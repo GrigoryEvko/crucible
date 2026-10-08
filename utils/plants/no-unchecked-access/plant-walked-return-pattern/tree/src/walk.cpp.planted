@@ -1,0 +1,18 @@
+// A quarantined unit with a pattern that uses unchecked through an object of
+// a dependent type, walks the private members of a class, and gives its caller
+// one of them through a local variable.  No unit instantiates the pattern.
+#include <meta>
+
+namespace planted {
+
+class Proof {
+    int count = 0;
+};
+
+template <typename Context>
+consteval std::meta::info private_member(Context context) {
+    auto members = std::meta::nonstatic_data_members_of(^^Proof, context.unchecked());
+    return members[0];
+}
+
+}  // namespace planted

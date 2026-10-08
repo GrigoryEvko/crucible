@@ -1,0 +1,11 @@
+// A quarantined unit of production code with a using-directive of the testing
+// door at namespace scope, and a call of a factory with no qualifier.
+#include <foundation/effects/Effect.h>
+
+namespace planted {
+
+using namespace ::foundation::effects::testing;
+
+int forged() { return bg(); }
+
+}  // namespace planted

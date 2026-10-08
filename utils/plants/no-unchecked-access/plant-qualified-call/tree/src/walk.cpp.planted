@@ -1,0 +1,15 @@
+// A quarantined unit that walks the private members of a class under the
+// unchecked access context, and gives the caller only their number.
+#include <meta>
+
+namespace planted {
+
+class Proof {
+    int count = 0;
+};
+
+consteval unsigned long private_members() {
+    return std::meta::nonstatic_data_members_of(^^Proof, std::meta::access_context::unchecked()).size();
+}
+
+}  // namespace planted

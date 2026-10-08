@@ -1,0 +1,8 @@
+// A quarantined unit that expands the macro of crucible/Open.h.
+#include <crucible/Open.h>
+
+namespace planted {
+
+int start() { return CRUCIBLE_PLANT_OPEN(); }
+
+}  // namespace planted

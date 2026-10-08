@@ -1,0 +1,4 @@
+# The ledger of the plant.  The row admits the reviewed walk.
+format 1
+rule no-unchecked-access
+src/walk.cpp | unchecked-use | admit | planted::first_member(): std::meta::access_context::unchecked | the reviewed walk of the plant

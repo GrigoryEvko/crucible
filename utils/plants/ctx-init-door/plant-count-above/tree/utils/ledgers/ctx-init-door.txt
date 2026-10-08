@@ -1,0 +1,5 @@
+# The ledger of the plant.  The row admits one use of the init owner, and the
+# entry point holds two.
+format 1
+rule ctx-init-door
+src/entry.cpp | door-use | 1 | planted::main_entry(): foundation::effects::host::InitOwner | the entry point of the plant

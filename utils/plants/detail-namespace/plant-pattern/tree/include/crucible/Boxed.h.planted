@@ -1,0 +1,18 @@
+// A quarantined header with a pattern that names a detail template with a
+// dependent argument, and a base class that names a detail type.  No unit
+// instantiates the pattern.
+#pragma once
+
+#include <foundation/effects/Detail.h>
+
+namespace planted {
+
+template <typename Value>
+Value unbox(Value value) {
+    ::foundation::effects::detail::Box<Value> box{value};
+    return box.value;
+}
+
+struct Derived : ::foundation::effects::detail::Key {};
+
+}  // namespace planted

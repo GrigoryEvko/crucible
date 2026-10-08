@@ -1,0 +1,16 @@
+# Two functions walk the private members of a class under the unchecked
+# access context and give the caller a member that the walk found: one by a
+# subscript of the walk, one through a local variable.  Each function is a
+# walked return, which no ledger row admits.
+
+compile walk src/walk.cpp stage=c
+flag walk -freflection
+exit walk pass
+judge walk
+finding walk no-unchecked-access unchecked-use src/walk.cpp:13:85 | planted::private_member(): std::meta::access_context::unchecked
+finding walk no-unchecked-access unchecked-use src/walk.cpp:17:93 | planted::private_member_through_local(): std::meta::access_context::unchecked
+finding walk no-unchecked-access walked-return src/walk.cpp:12:27 | planted::private_member(): walked return
+finding walk no-unchecked-access walked-return src/walk.cpp:16:27 | planted::private_member_through_local(): walked return
+finding walk quarantine std-entity src/walk.cpp:13:99 | std::vector::operator[]
+finding walk quarantine std-object src/walk.cpp:17:10 | std::vector (std::vector<std::meta::info>)
+finding walk quarantine std-entity src/walk.cpp:18:25 | std::vector::front

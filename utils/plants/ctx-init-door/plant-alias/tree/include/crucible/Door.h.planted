@@ -1,0 +1,10 @@
+// A quarantined header with an alias of the init owner.
+#pragma once
+
+#include <foundation/effects/Effect.h>
+
+namespace planted {
+
+using Door = ::foundation::effects::host::InitOwner;
+
+}  // namespace planted

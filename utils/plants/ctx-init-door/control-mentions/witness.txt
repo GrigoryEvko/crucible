@@ -1,0 +1,13 @@
+# A comment and a literal that name the owners are no use.  A use in test/ is
+# a finding line of the plugin, and the rule does not read test/, so the
+# module gives no error.
+
+compile note src/note.cpp stage=c
+exit note pass
+judge note
+finding note quarantine c-array-object src/note.cpp:7:16 | const char [31]
+
+compile door test/door.cpp stage=c
+exit door pass
+judge door
+finding door ctx-init-door door-use test/door.cpp:7:51 | planted::start(): foundation::effects::host::InitOwner

@@ -1,0 +1,5 @@
+# The ledger of the plant.  The row admits one use of the detail namespace,
+# and the test holds two.
+format 1
+rule detail-namespace
+test/probe.cpp | detail-use | 1 | planted::probe(): foundation::effects::detail | the probe of the plant

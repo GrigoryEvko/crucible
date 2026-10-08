@@ -1,0 +1,9 @@
+// A quarantined test unit that opens the init door.  The rule does not read
+// test/, because the test door serves it.
+#include <foundation/effects/Effect.h>
+
+namespace planted {
+
+int start() { return ::foundation::effects::host::InitOwner::mint_init_context(); }
+
+}  // namespace planted

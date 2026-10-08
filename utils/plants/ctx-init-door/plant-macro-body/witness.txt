@@ -1,0 +1,7 @@
+# A macro body names the init owner, and a unit expands the macro.  The use
+# stands in the macro body, with the holder "macro NAME".
+
+compile entry src/entry.cpp stage=c
+exit entry pass
+judge entry
+finding entry ctx-init-door door-use include/crucible/Open.h:6:60 | macro CRUCIBLE_PLANT_OPEN: foundation::effects::host::InitOwner

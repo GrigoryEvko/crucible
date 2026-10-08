@@ -1,0 +1,12 @@
+# The rule table of this plant.  The headers of include/foundation/ are base
+# files, and each other file is quarantined.  The owner rows name the owners
+# of the two production doors.
+
+layer floor 0 include/foundation/
+
+quarantine include/crucible/
+quarantine src/
+quarantine test/
+
+owner ctx-init-door door-use foundation::effects::host::InitOwner | the init door of the plant
+owner ctx-init-door door-use foundation::effects::host::BackgroundOwner | the background door of the plant

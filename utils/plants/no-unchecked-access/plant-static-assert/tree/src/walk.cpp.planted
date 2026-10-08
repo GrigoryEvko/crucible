@@ -1,0 +1,13 @@
+// A quarantined unit that walks the private members of a class under the
+// unchecked access context in a static_assert outside a template.
+#include <meta>
+
+namespace planted {
+
+class Proof {
+    int count = 0;
+};
+
+static_assert(std::meta::nonstatic_data_members_of(^^Proof, std::meta::access_context::unchecked()).size() == 1);
+
+}  // namespace planted

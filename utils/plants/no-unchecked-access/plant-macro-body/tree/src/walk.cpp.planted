@@ -1,0 +1,15 @@
+// A quarantined unit that expands the macro of crucible/Open.h in a walk of
+// the private members of a class.
+#include <crucible/Open.h>
+
+namespace planted {
+
+class Proof {
+    int count = 0;
+};
+
+consteval unsigned long private_members() {
+    return std::meta::nonstatic_data_members_of(^^Proof, CRUCIBLE_PLANT_OPEN()).size();
+}
+
+}  // namespace planted

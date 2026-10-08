@@ -1,0 +1,19 @@
+// A quarantined unit that reads a member of an object through a splice, and
+// takes the address of a member through a splice.
+#include <meta>
+
+namespace planted {
+
+struct Point {
+    int x = 0;
+};
+
+consteval std::meta::info first_member() {
+    return std::meta::nonstatic_data_members_of(^^Point, std::meta::access_context::current())[0];
+}
+
+int read_member(Point const& point) { return point.[:first_member():]; }
+
+constexpr auto member_pointer = &[:first_member():];
+
+}  // namespace planted

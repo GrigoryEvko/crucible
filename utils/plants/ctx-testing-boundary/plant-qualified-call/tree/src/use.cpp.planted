@@ -1,0 +1,9 @@
+// A quarantined unit of production code that mints a context from the
+// testing door in the body of a function.
+#include <foundation/effects/Effect.h>
+
+namespace planted {
+
+int forged() { return ::foundation::effects::testing::bg(); }
+
+}  // namespace planted

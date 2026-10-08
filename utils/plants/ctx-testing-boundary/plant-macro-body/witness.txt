@@ -1,0 +1,7 @@
+# A macro body names the testing door, and a unit expands the macro.  The use
+# stands in the macro body, with the holder "macro NAME".
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use ctx-testing-boundary testing-use include/crucible/Take.h:7:54 | macro CRUCIBLE_PLANT_TAKE: foundation::effects::testing

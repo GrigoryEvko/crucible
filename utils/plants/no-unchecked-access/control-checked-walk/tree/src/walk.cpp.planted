@@ -1,0 +1,23 @@
+// A quarantined unit with a walk under the checked access context, which
+// gives its caller a public member, and a local variable named unchecked.
+// This comment names access_context::unchecked(), and a literal names it too.
+#include <meta>
+
+namespace planted {
+
+struct Point {
+    int x = 0;
+};
+
+constexpr char note[] = "std::meta::access_context::unchecked()";
+
+consteval std::meta::info public_member() {
+    return std::meta::nonstatic_data_members_of(^^Point, std::meta::access_context::current())[0];
+}
+
+consteval int count_unchecked() {
+    int unchecked = 3;
+    return unchecked;
+}
+
+}  // namespace planted

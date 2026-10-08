@@ -1,0 +1,10 @@
+# A function walks the private members of a class under the unchecked access
+# context.  The name of the function unchecked is a use, and the tree holds no
+# row that admits it.
+
+compile walk src/walk.cpp stage=c
+flag walk -freflection
+exit walk pass
+judge walk
+finding walk no-unchecked-access unchecked-use src/walk.cpp:12:85 | planted::private_members(): std::meta::access_context::unchecked
+finding walk quarantine std-entity src/walk.cpp:12:102 | std::vector::size

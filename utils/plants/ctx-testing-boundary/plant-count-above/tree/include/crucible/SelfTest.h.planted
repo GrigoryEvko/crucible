@@ -1,0 +1,10 @@
+// A quarantined header with a self-test that uses the testing door two times.
+#pragma once
+
+#include <foundation/effects/Effect.h>
+
+namespace planted {
+
+inline int self_test() { return ::foundation::effects::testing::bg() + ::foundation::effects::testing::test(); }
+
+}  // namespace planted

@@ -183,26 +183,6 @@ jobs:
           done
           python3 utils/bin/guard check --engine meta
 
-      - name: erased brand spellings only decrease (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule brand-drain --self-test
-          python3 utils/bin/guard check --rule brand-drain
-
-      - name: unchecked access context only in reviewed walks (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule no-unchecked-access --self-test
-          python3 utils/bin/guard check --rule no-unchecked-access
-
-      - name: detail namespaces of foundation and fixy only inside the layers (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule detail-namespace --self-test
-          python3 utils/bin/guard check --rule detail-namespace
-
-      - name: init and background doors opened only from reviewed entry points (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule ctx-init-door --self-test
-          python3 utils/bin/guard check --rule ctx-init-door
-
       - name: session oracle drift (check)
         run: python3 utils/bin/guard check --rule session-oracle
 

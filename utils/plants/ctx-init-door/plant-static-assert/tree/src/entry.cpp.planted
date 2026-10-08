@@ -1,0 +1,9 @@
+// A quarantined unit that opens the background door in a static_assert
+// outside a template.  The front end folds the condition while it parses.
+#include <foundation/effects/Effect.h>
+
+namespace planted {
+
+static_assert(::foundation::effects::host::BackgroundOwner::mint_background_context() == 2);
+
+}  // namespace planted

@@ -1,0 +1,9 @@
+// A quarantined test unit that mints a context from the testing door.  The
+// rule does not read test/, because a test takes the test path.
+#include <foundation/effects/Effect.h>
+
+namespace planted {
+
+int forged() { return ::foundation::effects::testing::bg(); }
+
+}  // namespace planted

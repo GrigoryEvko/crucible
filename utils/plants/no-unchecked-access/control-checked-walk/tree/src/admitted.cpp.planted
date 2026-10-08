@@ -1,0 +1,15 @@
+// A quarantined unit with a reviewed walk under the unchecked access context,
+// which a ledger row admits.  The walk gives its caller only a count.
+#include <meta>
+
+namespace planted {
+
+class Proof {
+    int count = 0;
+};
+
+consteval unsigned long private_count() {
+    return std::meta::nonstatic_data_members_of(^^Proof, std::meta::access_context::unchecked()).size();
+}
+
+}  // namespace planted

@@ -1,0 +1,5 @@
+# The ledger of the plant.  The row admits a use in a file of production
+# code, which no row can admit.
+format 1
+rule detail-namespace
+src/use.cpp | detail-use | 1 | planted::skip_gate(): foundation::effects::detail | the use of the plant

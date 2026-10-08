@@ -1,0 +1,9 @@
+# A self-test holds two uses of the testing door, and its row admits one.
+# The count of the file and the entity is more than its row, so each use is
+# an error.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use ctx-testing-boundary testing-use include/crucible/SelfTest.h:8:56 | planted::self_test(): foundation::effects::testing
+finding use ctx-testing-boundary testing-use include/crucible/SelfTest.h:8:95 | planted::self_test(): foundation::effects::testing

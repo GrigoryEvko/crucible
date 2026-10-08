@@ -1,0 +1,11 @@
+# A file outside the layer opens a detail namespace again.  The parser gives
+# no event for the definition of a namespace, so the walk of the
+# declarations reads the function that it adds, and each name that the code
+# uses inside the namespace is a use too.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use detail-namespace detail-use src/use.cpp:7:12 | namespace-scope: foundation::effects::detail
+finding use detail-namespace detail-use src/use.cpp:7:30 | foundation::effects::detail::forged(): foundation::effects::detail
+finding use detail-namespace detail-use src/use.cpp:7:37 | foundation::effects::detail::forged(): foundation::effects::detail

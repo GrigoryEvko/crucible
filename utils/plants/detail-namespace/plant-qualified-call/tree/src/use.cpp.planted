@@ -1,0 +1,9 @@
+// A quarantined unit that calls a detail function of the layer by its
+// qualified name.
+#include <foundation/effects/Detail.h>
+
+namespace planted {
+
+int skip_gate() { return ::foundation::effects::detail::helper({}); }
+
+}  // namespace planted

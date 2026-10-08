@@ -1,0 +1,18 @@
+// A quarantined unit of production code.  This comment names
+// effects::testing::bg() and TestWitness, and a literal names them too.  A
+// different namespace named testing holds no door.
+#include <foundation/effects/Effect.h>
+
+namespace other::testing {
+
+inline int bg_like() { return 5; }
+
+}  // namespace other::testing
+
+namespace planted {
+
+constexpr char note[] = "testing::bg() and TestWitness";
+
+inline int fine() { return other::testing::bg_like(); }
+
+}  // namespace planted

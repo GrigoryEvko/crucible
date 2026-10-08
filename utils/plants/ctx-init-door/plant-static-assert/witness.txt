@@ -1,0 +1,8 @@
+# The condition of a static_assert outside a template calls the background
+# door.  The parser resolves the name of the owner before the front end folds
+# the condition, so the use counts.
+
+compile entry src/entry.cpp stage=c
+exit entry pass
+judge entry
+finding entry ctx-init-door door-use src/entry.cpp:7:44 | namespace-scope: foundation::effects::host::BackgroundOwner

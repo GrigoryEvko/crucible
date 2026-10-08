@@ -50,8 +50,8 @@ static_assert(contexts_that_are_not_final() == 0, "a context is not final, or th
 
 // The owners are defined in the header of their keys, so they are
 // complete in every TU that can name a key, and no TU can define one
-// again.  Each owner has one member, the door to its context, and
-// utils/assay/guard/legacy/check_ctx_init_door.py limits the calls of each door.
+// again.  Each owner has one member, the door to its context, and the rule
+// ctx-init-door of the quarantine plugin limits the calls of each door.
 template <class T>
 concept Complete = requires { sizeof(T); };
 static_assert(Complete<fe::host::BackgroundOwner> && Complete<fe::host::InitOwner>);

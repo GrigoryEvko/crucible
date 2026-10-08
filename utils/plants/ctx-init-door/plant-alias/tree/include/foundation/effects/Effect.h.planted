@@ -1,0 +1,14 @@
+// A base header with the owners of the two production doors.
+#pragma once
+
+namespace foundation::effects::host {
+
+struct InitOwner final {
+    static constexpr int mint_init_context() noexcept { return 1; }
+};
+
+struct BackgroundOwner final {
+    static constexpr int mint_background_context() noexcept { return 2; }
+};
+
+}  // namespace foundation::effects::host

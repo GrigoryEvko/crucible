@@ -1,0 +1,9 @@
+# A class of include/crucible holds a writable private static data member.
+# The member is a finding that no ledger row admits.  The constexpr member and
+# the const member cannot change, so they are no finding.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use no-unchecked-access open-static-member include/crucible/Holder.h:13:23 | planted::Holder::count
+finding use process-wide-state unmarked-static include/crucible/Holder.h:13:23 | planted::Holder::count

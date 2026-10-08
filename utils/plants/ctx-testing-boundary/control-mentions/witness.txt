@@ -1,0 +1,13 @@
+# A comment and a literal that name the door are no use, and a different
+# namespace named testing holds no door.  A use in test/ is a finding line of
+# the plugin, and the rule does not read test/, so the module gives no error.
+
+compile note src/note.cpp stage=c
+exit note pass
+judge note
+finding note quarantine c-array-object src/note.cpp:14:16 | const char [30]
+
+compile door test/door.cpp stage=c
+exit door pass
+judge door
+finding door ctx-testing-boundary testing-use test/door.cpp:7:46 | planted::forged(): foundation::effects::testing

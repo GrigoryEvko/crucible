@@ -1,0 +1,23 @@
+// A base header with a function and a pattern that walk the private members
+// of a class under the unchecked access context.  No unit instantiates the
+// pattern.
+#pragma once
+
+#include <meta>
+
+namespace foundation::planted {
+
+class Proof {
+    int count = 0;
+};
+
+consteval unsigned long private_members() {
+    return std::meta::nonstatic_data_members_of(^^Proof, std::meta::access_context::unchecked()).size();
+}
+
+template <typename Value>
+consteval unsigned long private_members_of() {
+    return std::meta::nonstatic_data_members_of(^^Value, std::meta::access_context::unchecked()).size();
+}
+
+}  // namespace foundation::planted

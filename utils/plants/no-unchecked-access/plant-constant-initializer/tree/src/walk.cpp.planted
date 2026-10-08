@@ -1,0 +1,9 @@
+// A quarantined unit that keeps the unchecked access context in a constant at
+// namespace scope.  The front end folds the initializer.
+#include <meta>
+
+namespace planted {
+
+constexpr std::meta::access_context opened = std::meta::access_context::unchecked();
+
+}  // namespace planted

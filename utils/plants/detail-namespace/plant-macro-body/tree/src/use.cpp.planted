@@ -1,0 +1,8 @@
+// A quarantined unit that expands the macro of crucible/Skip.h.
+#include <crucible/Skip.h>
+
+namespace planted {
+
+int skip_gate() { return CRUCIBLE_PLANT_SKIP(); }
+
+}  // namespace planted

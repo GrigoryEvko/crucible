@@ -1,0 +1,16 @@
+// A base header that opens the background door in a function and in a
+// pattern that no unit instantiates.
+#pragma once
+
+#include <foundation/effects/Effect.h>
+
+namespace foundation::planted {
+
+inline int start() { return ::foundation::effects::host::BackgroundOwner::mint_background_context(); }
+
+template <typename Value>
+int start_with(Value value) {
+    return value + ::foundation::effects::host::BackgroundOwner::mint_background_context();
+}
+
+}  // namespace foundation::planted

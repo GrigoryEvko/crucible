@@ -1,0 +1,24 @@
+// A quarantined unit with a reviewed walk under the unchecked access context,
+// which a ledger row admits.  The walk gives its caller an aggregate that
+// holds a member that it found.  The rule reads no aggregate that the code
+// builds, so this return is a known miss.
+#include <meta>
+
+namespace planted {
+
+class Proof {
+    int count = 0;
+};
+
+struct Found {
+    std::meta::info member{};
+};
+
+consteval Found first_member() {
+    for (std::meta::info member : std::meta::nonstatic_data_members_of(^^Proof, std::meta::access_context::unchecked())) {
+        return Found{member};
+    }
+    return Found{};
+}
+
+}  // namespace planted

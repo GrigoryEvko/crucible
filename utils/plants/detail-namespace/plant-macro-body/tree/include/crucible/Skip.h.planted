@@ -1,0 +1,6 @@
+// A quarantined header with a macro body that calls a detail function.
+#pragma once
+
+#include <foundation/effects/Detail.h>
+
+#define CRUCIBLE_PLANT_SKIP() ::foundation::effects::detail::helper({})

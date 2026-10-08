@@ -1,0 +1,11 @@
+// A quarantined unit with two calls of the init door in one entry point.
+#include <foundation/effects/Effect.h>
+
+namespace planted {
+
+int main_entry() {
+    int first = ::foundation::effects::host::InitOwner::mint_init_context();
+    return first + ::foundation::effects::host::InitOwner::mint_init_context();
+}
+
+}  // namespace planted

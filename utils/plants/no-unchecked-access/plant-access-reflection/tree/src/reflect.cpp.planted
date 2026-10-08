@@ -1,0 +1,11 @@
+// A quarantined unit that reflects the class of the access context and the
+// namespace that holds it.  A walk of their members reaches unchecked with no
+// name.
+#include <meta>
+
+namespace planted {
+
+constexpr std::meta::info context_class = ^^std::meta::access_context;
+constexpr std::meta::info meta_space = ^^std::meta;
+
+}  // namespace planted

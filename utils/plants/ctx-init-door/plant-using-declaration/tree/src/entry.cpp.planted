@@ -1,0 +1,11 @@
+// A quarantined unit with a using-declaration of the background owner at
+// namespace scope, and a call of the door through the name that it declares.
+#include <foundation/effects/Effect.h>
+
+namespace planted {
+
+using ::foundation::effects::host::BackgroundOwner;
+
+int start() { return BackgroundOwner::mint_background_context(); }
+
+}  // namespace planted

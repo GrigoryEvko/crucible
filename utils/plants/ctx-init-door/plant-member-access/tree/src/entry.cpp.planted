@@ -1,0 +1,10 @@
+// A quarantined unit that calls the init door through an object of the
+// owner.  The type of the parameter names the owner, and the member access
+// names its door.
+#include <foundation/effects/Effect.h>
+
+namespace planted {
+
+int start(::foundation::effects::host::InitOwner const& owner) { return owner.mint_init_context(); }
+
+}  // namespace planted

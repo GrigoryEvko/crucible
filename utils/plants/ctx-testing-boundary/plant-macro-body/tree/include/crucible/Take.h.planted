@@ -1,0 +1,7 @@
+// A quarantined header with a macro body that mints a context from the
+// testing door.
+#pragma once
+
+#include <foundation/effects/Effect.h>
+
+#define CRUCIBLE_PLANT_TAKE() ::foundation::effects::testing::bg()

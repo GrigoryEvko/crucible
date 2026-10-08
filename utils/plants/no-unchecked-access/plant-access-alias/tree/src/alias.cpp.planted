@@ -1,0 +1,16 @@
+// A quarantined unit that gives the class of the access context a second
+// name: an alias declaration, a typedef, and a using-declaration in a body.
+#include <meta>
+
+namespace planted {
+
+using Context = std::meta::access_context;
+
+typedef std::meta::access_context ContextTypedef;
+
+consteval int count_aliases() {
+    using std::meta::access_context;
+    return 0;
+}
+
+}  // namespace planted

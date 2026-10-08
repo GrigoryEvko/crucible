@@ -1,0 +1,2 @@
+// A quarantined unit that includes the header of the pattern.
+#include <crucible/Boxed.h>

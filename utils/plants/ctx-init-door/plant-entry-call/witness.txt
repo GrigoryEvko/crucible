@@ -1,0 +1,7 @@
+# A function of production code calls the init door.  The name of the owner
+# is a use, with the function as its holder, and the tree holds no ledger row.
+
+compile entry src/entry.cpp stage=c
+exit entry pass
+judge entry
+finding entry ctx-init-door door-use src/entry.cpp:6:51 | planted::start(): foundation::effects::host::InitOwner

@@ -353,6 +353,10 @@ bool owner_kind_of(Rule rule, const std::string& text, Kind& kind) {
     constexpr OwnerKind kOwnerKinds[] = {
         {Rule::start_lifetime, Kind::lifetime_start},
         {Rule::syscall_capability, Kind::outside_door},
+        {Rule::ctx_init_door, Kind::door_use},
+        {Rule::ctx_testing_boundary, Kind::testing_use},
+        {Rule::detail_namespace, Kind::detail_use},
+        {Rule::no_unchecked_access, Kind::unchecked_use},
     };
     for (const OwnerKind& known : kOwnerKinds) {
         if (known.rule == rule && text == kind_name(known.kind)) {
@@ -378,8 +382,8 @@ std::string parse_owner(const std::vector<std::string>& args, OwnerRow& row) {
         }
     }
     if (!is_rule) {
-        return "the rule " + args[0] + " is no rule of the family owner; the rules are start-lifetime and "
-               "syscall-capability";
+        return "the rule " + args[0] + " is no rule of the family owner; the rules are start-lifetime, "
+               "syscall-capability, ctx-init-door, ctx-testing-boundary, detail-namespace and no-unchecked-access";
     }
     if (!owner_kind_of(row.rule, args[1], row.kind)) {
         return "the kind " + args[1] + " is no kind of a use outside the sites of an owner row of the rule " + args[0];

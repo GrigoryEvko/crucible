@@ -1,0 +1,9 @@
+# A header defines a namespace alias of the testing door, and a unit calls a
+# factory through the alias.  The alias names the door, and the name of the
+# alias resolves to it, so each one is a use.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use ctx-testing-boundary testing-use include/crucible/Door.h:6:41 | namespace-scope: foundation::effects::testing
+finding use ctx-testing-boundary testing-use src/use.cpp:7:23 | planted::forged(): foundation::effects::testing

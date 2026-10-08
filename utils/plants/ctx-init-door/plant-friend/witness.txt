@@ -1,0 +1,10 @@
+# Two classes befriend the owners.  The parser gives no event for a friend by
+# its own name, so the walk of the classes reads each friend, and its
+# finding stands at the class.  A qualified friend is a name that the parser
+# resolves, so its use stands at the name, and the walk gives no second use.
+
+compile key src/key.cpp stage=c
+exit key pass
+judge key
+finding key ctx-init-door door-use src/key.cpp:7:7 | namespace-scope: friend foundation::effects::host::InitOwner
+finding key ctx-init-door door-use src/key.cpp:12:48 | namespace-scope: foundation::effects::host::BackgroundOwner

@@ -422,59 +422,6 @@ crucible_script_test(NAME cache_dir_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest core.cache)
 set_tests_properties(cache_dir_self_test PROPERTIES
     LABELS "ci_guard")
-# A splice of a private data member has no access check, so
-# access_context::unchecked() is the one door to a proof's private state.
-# utils/assay/guard/legacy/check_no_unchecked_access.py admits it only in the files that
-# utils/ledgers/no-unchecked-access.txt names, each with its reason.  A
-# bare splice of a static data member has no door token, so the guard also
-# refuses a writable private or protected static data member.  It reads the
-# macro expansions of this build too, so a door that ## builds and a member
-# that a macro declares are seen.  Exit 3 (the pinned tree-sitter kit is
-# absent) is a skip.
-crucible_script_test(NAME no_unchecked_access_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-unchecked-access --self-test)
-crucible_script_test(NAME no_unchecked_access
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-unchecked-access
-          --build-dir ${CMAKE_BINARY_DIR})
-set_tests_properties(no_unchecked_access no_unchecked_access_self_test PROPERTIES
-    LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
-# A function in a detail namespace does the work of a door with no gate of
-# its own.  utils/assay/guard/legacy/check_detail_namespace.py refuses a use of a detail
-# namespace of foundation or fixy outside the two layers.  The reviewed uses
-# in tests are in utils/ledgers/detail-namespace.txt, keyed by file and
-# namespace.  Exit 3 (the pinned tree-sitter kit is absent) is a skip.
-crucible_script_test(NAME detail_namespace_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule detail-namespace --self-test)
-crucible_script_test(NAME detail_namespace
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule detail-namespace)
-set_tests_properties(detail_namespace detail_namespace_self_test PROPERTIES
-    LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
-# host::InitOwner::mint_init_context() is the one production door of the
-# init context, and host::BackgroundOwner::mint_background_context() is the
-# one production door of the background context.  Each context permits
-# effects that the hot path must not have.  utils/assay/guard/legacy/check_ctx_init_door.py
-# rejects a use of either owner in production code outside the scopes that
-# the rows of its door in utils/ledgers/ctx-init-door.txt admit,
-# and a stale row.  Exit 3 (the pinned tree-sitter kit is absent) is a skip.
-crucible_script_test(NAME ctx_init_door_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ctx-init-door --self-test)
-crucible_script_test(NAME ctx_init_door
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ctx-init-door)
-set_tests_properties(ctx_init_door ctx_init_door_self_test PROPERTIES
-    LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
-
-# The testing door of either tree mints a context with no key, and a context
-# is what every ctx-bound mint checks for.  utils/assay/guard/legacy/check_ctx_testing_boundary.py
-# counts each use of the door in the code that ships, from the parse tree and
-# through the aliases of every file of the scan, and each file with a use needs
-# a counted row in utils/ledgers/ctx-testing-boundary.txt.
-crucible_script_test(NAME ctx_testing_boundary_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ctx-testing-boundary --self-test)
-crucible_script_test(NAME ctx_testing_boundary
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ctx-testing-boundary)
-set_tests_properties(ctx_testing_boundary ctx_testing_boundary_self_test
-    PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
-
 # Differential tests of the session relations against the projection
 # oracle of Tirore, Bengtson and Carbone (ITP 2023).  The rule session-oracle
 # (its test guard_session_oracle, from the block of the engine build below)
@@ -623,8 +570,6 @@ foreach(crucible_store_shard RANGE ${crucible_last_store_shard})
       LABELS "ci_guard"
       FIXTURES_SETUP preprocessed_store)
 endforeach()
-set_tests_properties(no_unchecked_access PROPERTIES
-    FIXTURES_REQUIRED preprocessed_store)
 
 crucible_test(test_vessel_api_typed)
 crucible_test(test_storage_nbytes_simd)
@@ -4943,8 +4888,14 @@ crucible_script_test(NAME plugin_declarations_self_test
 # ledger of the rule trait-guard.
 crucible_script_test(NAME plugin_home_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.plugin.test_home)
+# plugin_names_self_test — the rules that read the names of the source
+# (utils/assay/guard/engines/plugin/names.py): the scope of a rule, and the
+# rows of its ledger with no reason.
+crucible_script_test(NAME plugin_names_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.plugin.test_names)
 set_tests_properties(guard_plugin plugin_runner_self_test plugin_witness_self_test
-    plugin_declarations_self_test plugin_home_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 77)
+    plugin_declarations_self_test plugin_home_self_test plugin_names_self_test
+    PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 77)
 
 # affected_tests_self_test — `loop test` (utils/assay/loop/affected.py) builds a tree
 # and runs only the tests whose inputs changed since their last pass.  It is

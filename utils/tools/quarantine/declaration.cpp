@@ -2769,6 +2769,7 @@ struct PropertyWalk {
         if (is_pattern) {
             walk_family_pattern(function);
         }
+        check_named_function(function);
         bool is_mint_name = is_mint(function);
         bool is_door = returns_raw(function);
         bool is_stub = has_stub_deprecation(function);
@@ -2805,6 +2806,7 @@ struct PropertyWalk {
     // A variable at namespace scope or a static data member.  IS_TEMPLATED
     // is true for a variable of a template.
     void variable(tree decl, bool is_templated) {
+        check_named_variable(decl);
         if (DECL_CLASS_SCOPE_P(decl)) {
             check_permission_member(decl);
         }
@@ -2821,6 +2823,7 @@ struct PropertyWalk {
     // true for an alias template and for an alias of a class template.
     void alias(tree decl, bool is_pattern) {
         if (!DECL_ARTIFICIAL(decl) && !DECL_IMPLICIT_TYPEDEF_P(decl)) {
+            check_named_alias(decl);
             check_array_declaration(decl, Kind::array_alias);
             check_mint_alias(decl, mint_classes);
             if (!is_pattern) {
@@ -2880,6 +2883,7 @@ struct PropertyWalk {
             return;
         }
         check_witness(main_type);
+        check_named_class(main_type);
         for (tree member = TYPE_FIELDS(main_type); member != NULL_TREE; member = DECL_CHAIN(member)) {
             switch (TREE_CODE(member)) {
                 case FIELD_DECL:

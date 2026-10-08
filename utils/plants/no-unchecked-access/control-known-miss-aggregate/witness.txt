@@ -1,0 +1,19 @@
+# A function that uses unchecked returns an aggregate that holds a member
+# that its walk found.  The rule reads a return of the walk, of an element of
+# it, of a variable that holds one, and of a constant that the front end
+# folded, and not an aggregate that the code builds.  The return is a known
+# miss, and the ledger row admits the use of unchecked, so the module gives no
+# error.
+
+compile walk src/walk.cpp stage=c
+flag walk -freflection
+exit walk pass
+judge walk
+finding walk no-unchecked-access unchecked-use src/walk.cpp:18:108 | planted::first_member(): std::meta::access_context::unchecked
+finding walk quarantine std-entity src/walk.cpp:18:119 | std::vector
+finding walk quarantine std-entity src/walk.cpp:18:119 | __gnu_cxx::__normal_iterator
+finding walk quarantine std-entity src/walk.cpp:18:119 | std::vector::begin
+finding walk quarantine std-entity src/walk.cpp:18:119 | std::vector::end
+finding walk quarantine std-entity src/walk.cpp:18:119 | __gnu_cxx::operator==
+finding walk quarantine std-entity src/walk.cpp:18:119 | __gnu_cxx::__normal_iterator::operator++
+finding walk quarantine std-entity src/walk.cpp:18:119 | __gnu_cxx::__normal_iterator::operator*

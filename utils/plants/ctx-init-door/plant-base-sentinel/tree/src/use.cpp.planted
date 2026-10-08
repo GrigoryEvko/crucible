@@ -1,0 +1,2 @@
+// A quarantined unit that includes the base header and names no owner.
+#include <foundation/Start.h>

@@ -1,0 +1,10 @@
+// A base header of the layer with the public door of the detail function.
+#pragma once
+
+#include <foundation/effects/Detail.h>
+
+namespace foundation::effects {
+
+inline int door() noexcept { return detail::helper(detail::Key{}); }
+
+}  // namespace foundation::effects

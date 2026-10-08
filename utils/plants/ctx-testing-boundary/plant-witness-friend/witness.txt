@@ -1,0 +1,10 @@
+# Two classes befriend the witness of the testing door.  The qualified friend
+# names the door at its name.  The parser gives no event for the friend by its
+# own name, so the walk of the classes reads it, and its finding stands at the
+# class.
+
+compile key src/key.cpp stage=c
+exit key pass
+judge key
+finding key ctx-testing-boundary testing-use src/key.cpp:9:42 | namespace-scope: foundation::effects::testing
+finding key ctx-testing-boundary testing-use src/key.cpp:16:7 | namespace-scope: friend foundation::effects::testing

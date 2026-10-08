@@ -1,0 +1,18 @@
+// A quarantined unit that calls the public door of the layer, and a detail
+// function that argument-dependent lookup finds through the public alias of
+// its argument type.  This comment names foundation::effects::detail, and a
+// literal names it too.
+#include <foundation/effects/Door.h>
+
+namespace planted {
+
+constexpr char note[] = "foundation::effects::detail::helper";
+
+int through_door() { return ::foundation::effects::door(); }
+
+int through_lookup() {
+    ::foundation::effects::PublicKey key{};
+    return helper(key);
+}
+
+}  // namespace planted

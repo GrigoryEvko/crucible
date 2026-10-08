@@ -1,0 +1,11 @@
+# An alias declaration, a typedef and a using-declaration each give the class
+# of the access context a second name, which hides a use of unchecked behind
+# it.  Each one is a finding.
+
+compile alias src/alias.cpp stage=c
+flag alias -freflection
+exit alias pass
+judge alias
+finding alias no-unchecked-access access-alias src/alias.cpp:7:7 | namespace-scope: std::meta::access_context
+finding alias no-unchecked-access access-alias src/alias.cpp:9:35 | namespace-scope: std::meta::access_context
+finding alias no-unchecked-access access-alias src/alias.cpp:12:22 | planted::count_aliases(): std::meta::access_context

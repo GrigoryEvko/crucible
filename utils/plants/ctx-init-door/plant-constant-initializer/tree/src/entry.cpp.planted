@@ -1,0 +1,9 @@
+// A quarantined unit that opens the init door in a constant initializer.  The
+// front end folds the initializer while it parses.
+#include <foundation/effects/Effect.h>
+
+namespace planted {
+
+constexpr int start_value = ::foundation::effects::host::InitOwner::mint_init_context();
+
+}  // namespace planted

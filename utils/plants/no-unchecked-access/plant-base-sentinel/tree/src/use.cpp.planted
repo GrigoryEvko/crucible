@@ -1,0 +1,2 @@
+// A quarantined unit that includes the base header and opens no door.
+#include <foundation/Walk.h>

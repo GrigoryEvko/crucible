@@ -1,0 +1,8 @@
+# A constant initializer at namespace scope calls the init door.  The parser
+# resolves the name of the owner before the front end folds the initializer,
+# so the use has the holder namespace-scope.
+
+compile entry src/entry.cpp stage=c
+exit entry pass
+judge entry
+finding entry ctx-init-door door-use src/entry.cpp:7:58 | namespace-scope: foundation::effects::host::InitOwner

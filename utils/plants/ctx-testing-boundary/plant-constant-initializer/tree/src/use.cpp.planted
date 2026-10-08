@@ -1,0 +1,9 @@
+// A quarantined unit of production code that mints a context from the
+// testing door in a constant initializer, which the front end folds.
+#include <foundation/effects/Effect.h>
+
+namespace planted {
+
+constexpr int forged = ::foundation::effects::testing::test();
+
+}  // namespace planted

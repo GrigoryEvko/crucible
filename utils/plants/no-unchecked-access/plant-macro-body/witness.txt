@@ -1,0 +1,11 @@
+# A macro body opens the unchecked access context, and a unit expands the
+# macro in a walk.  The use counts in the macro body, with the holder "macro
+# NAME", and at the expansion point, with the function as its holder.
+
+compile walk src/walk.cpp stage=c
+flag walk -freflection
+exit walk pass
+judge walk
+finding walk no-unchecked-access unchecked-use include/crucible/Open.h:7:58 | macro CRUCIBLE_PLANT_OPEN: std::meta::access_context::unchecked
+finding walk no-unchecked-access unchecked-use src/walk.cpp:12:58 | planted::private_members(): std::meta::access_context::unchecked
+finding walk quarantine std-entity src/walk.cpp:12:85 | std::vector::size

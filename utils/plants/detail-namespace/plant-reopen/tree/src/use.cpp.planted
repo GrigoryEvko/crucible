@@ -1,0 +1,9 @@
+// A quarantined unit that opens a detail namespace of the layer again, and
+// adds a function that calls a detail function with no qualifier.
+#include <foundation/effects/Detail.h>
+
+namespace foundation::effects::detail {
+
+inline int forged() { return helper(Key{}); }
+
+}  // namespace foundation::effects::detail

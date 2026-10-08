@@ -1,0 +1,8 @@
+# A constant initializer at namespace scope names a detail type in the operand
+# of a sizeof.  The parser resolves the name before the front end folds the
+# initializer.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use detail-namespace detail-use src/use.cpp:7:57 | namespace-scope: foundation::effects::detail

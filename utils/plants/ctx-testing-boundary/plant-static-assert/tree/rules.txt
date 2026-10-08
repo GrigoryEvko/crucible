@@ -1,0 +1,11 @@
+# The rule table of this plant.  The headers of include/foundation/ are base
+# files, and each other file is quarantined.  The owner row names the
+# namespace of the testing door.
+
+layer floor 0 include/foundation/
+
+quarantine include/crucible/
+quarantine src/
+quarantine test/
+
+owner ctx-testing-boundary testing-use foundation::effects::testing | the testing door of the plant

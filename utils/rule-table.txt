@@ -166,7 +166,15 @@
 #       call of syscall() with the number of the macro SYS_ENTITY.  ENTITY and
 #       FUNCTION are qualified names, and a function of the C library has its
 #       own name.  An ENTITY has one owner row of a rule at most, and the
-#       reason is necessary.  A ledger row admits no finding of KIND
+#       reason is necessary.  A ledger row admits no finding of KIND.
+#       The rules ctx-init-door, ctx-testing-boundary, detail-namespace and
+#       no-unchecked-access read the names that the source spells, from the
+#       events of the parser (THE NAMES OF THE SOURCE of owner.cpp).  For
+#       these rules, a use is a name, a using form, a member access or a
+#       reflection that names ENTITY or an alias of it.  The ENTITY of a row of
+#       the rule detail-namespace is a top namespace, and each namespace named
+#       detail inside it is the entity of the row.  The ledger of such a rule
+#       admits its findings
 #   syscall NAME... | REASON
 #       Each NAME is a function of the C library that issues one system call.
 #       A call of NAME, and a call of syscall(), is a finding of the kind
@@ -355,6 +363,15 @@ owner start-lifetime lifetime-start std::start_lifetime_as include/foundation/Li
 owner start-lifetime lifetime-start std::start_lifetime_as_array include/foundation/Lifetime.h | the library puts no mandate on the element type, so a start of an array of proofs gives a pointer to a proof whose lifetime never started, and only the checked start of foundation/Lifetime.h refuses it at compile time
 owner syscall-capability outside-door sched_setaffinity include/fixy/os/CpuPinned.h by=fixy::detail::set_calling_thread_affinity | the door records a pin event, and a pin proof stays in force across a pin that goes around the door
 owner syscall-capability outside-door pthread_setaffinity_np include/fixy/os/CpuPinned.h by=fixy::detail::set_calling_thread_affinity | the call changes the same mask as sched_setaffinity, and its door is the same function, which does not call it
+
+# The owner rows of the rules that read the names of the source.  The ledger
+# of each rule admits the reviewed uses with their reasons.
+owner ctx-init-door door-use foundation::effects::host::InitOwner | the init door gives the effects of process startup, so only a reviewed process entry point names its owner
+owner ctx-init-door door-use foundation::effects::host::BackgroundOwner | the background door gives the effects of a background thread, so only the reviewed entry function of a background thread names its owner
+owner ctx-testing-boundary testing-use foundation::effects::testing | the testing door mints a context with no key, so code that ships names it only in a reviewed self-test
+owner detail-namespace detail-use foundation include/foundation/ include/fixy/ src/foundation/ src/fixy/ test/layer/checks/foundation/ test/layer/checks/fixy/ | a detail function does the work of a door with no gate of its own, so only the base and the check files of its headers name it
+owner detail-namespace detail-use fixy include/foundation/ include/fixy/ src/foundation/ src/fixy/ test/layer/checks/foundation/ test/layer/checks/fixy/ | a detail function does the work of a door with no gate of its own, so only the base and the check files of its headers name it
+owner no-unchecked-access unchecked-use std::meta::access_context::unchecked | a splice of a private member has no access check, and a walk under unchecked gives the reflection of each private member of a proof type
 
 # The system calls of the rule syscall-capability, and the call syscall()
 # with the number of a system call.

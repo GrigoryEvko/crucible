@@ -1,0 +1,9 @@
+# A using-declaration at namespace scope names the background owner, and a
+# function calls the door through the name.  The using form and the call are
+# two uses.
+
+compile entry src/entry.cpp stage=c
+exit entry pass
+judge entry
+finding entry ctx-init-door door-use src/entry.cpp:7:36 | namespace-scope: foundation::effects::host::BackgroundOwner
+finding entry ctx-init-door door-use src/entry.cpp:9:22 | planted::start(): foundation::effects::host::BackgroundOwner

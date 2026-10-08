@@ -1,0 +1,9 @@
+// A quarantined unit of production code that calls a factory of the testing
+// door in a static_assert outside a template.
+#include <foundation/effects/Effect.h>
+
+namespace planted {
+
+static_assert(::foundation::effects::testing::bg() == 3);
+
+}  // namespace planted

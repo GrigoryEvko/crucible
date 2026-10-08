@@ -1,0 +1,9 @@
+// A quarantined unit that names a detail template in the condition of a
+// static_assert outside a template.
+#include <foundation/effects/Detail.h>
+
+namespace planted {
+
+static_assert(sizeof(::foundation::effects::detail::Box<int>) == sizeof(int));
+
+}  // namespace planted

@@ -1,0 +1,9 @@
+# A function takes an object of the init owner and calls its door.  The type
+# of the parameter is a use at namespace scope, because the parser reads it
+# before the body.  The member access of the door is a use in the function.
+
+compile entry src/entry.cpp stage=c
+exit entry pass
+judge entry
+finding entry ctx-init-door door-use src/entry.cpp:8:40 | namespace-scope: foundation::effects::host::InitOwner
+finding entry ctx-init-door door-use src/entry.cpp:8:79 | planted::start(const foundation::effects::host::InitOwner&): foundation::effects::host::InitOwner

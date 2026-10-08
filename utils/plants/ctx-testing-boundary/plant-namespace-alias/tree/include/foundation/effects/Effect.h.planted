@@ -1,0 +1,13 @@
+// A base header with the testing door.
+#pragma once
+
+namespace foundation::effects::testing {
+
+struct TestWitness {
+    static constexpr int key() noexcept { return 3; }
+};
+
+inline constexpr int bg() noexcept { return TestWitness::key(); }
+inline constexpr int test() noexcept { return 4; }
+
+}  // namespace foundation::effects::testing

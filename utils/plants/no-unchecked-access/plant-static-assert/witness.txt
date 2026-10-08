@@ -1,0 +1,9 @@
+# The condition of a static_assert outside a template walks the private
+# members of a class under the unchecked access context.  The parser resolves
+# the name before the front end folds the condition.
+
+compile walk src/walk.cpp stage=c
+flag walk -freflection
+exit walk pass
+judge walk
+finding walk no-unchecked-access unchecked-use src/walk.cpp:11:88 | namespace-scope: std::meta::access_context::unchecked

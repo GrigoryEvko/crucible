@@ -1,0 +1,10 @@
+// A quarantined unit of production code that calls a detail function by its
+// qualified name.  A ledger row admits the use, and only a test file can
+// take a row.
+#include <foundation/effects/Detail.h>
+
+namespace planted {
+
+int skip_gate() { return ::foundation::effects::detail::helper({}); }
+
+}  // namespace planted

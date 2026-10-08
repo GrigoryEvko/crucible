@@ -1,0 +1,7 @@
+// A quarantined header with a macro body that opens the unchecked access
+// context.
+#pragma once
+
+#include <meta>
+
+#define CRUCIBLE_PLANT_OPEN() std::meta::access_context::unchecked()

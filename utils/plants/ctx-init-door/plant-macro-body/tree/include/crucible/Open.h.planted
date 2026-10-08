@@ -1,0 +1,6 @@
+// A quarantined header with a macro body that opens the init door.
+#pragma once
+
+#include <foundation/effects/Effect.h>
+
+#define CRUCIBLE_PLANT_OPEN() ::foundation::effects::host::InitOwner::mint_init_context()

@@ -1,0 +1,18 @@
+// A quarantined header with a class of include/crucible that holds a writable
+// private static data member.  A splice of the member writes it with no
+// object and no door.
+#pragma once
+
+namespace planted {
+
+class Holder {
+public:
+    static int read() noexcept { return count; }
+
+private:
+    static inline int count = 0;
+    static constexpr int limit = 4;
+    static inline int const fixed = 2;
+};
+
+}  // namespace planted

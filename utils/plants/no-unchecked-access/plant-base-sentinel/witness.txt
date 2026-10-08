@@ -1,0 +1,15 @@
+# A base header opens the unchecked access context in a function and in a
+# pattern.  The sentinel unit of the header gives each use.  A unit with no
+# sentinel argument reads the header and gives no use.
+
+compile sentinel src/use.cpp sentinel=include/foundation/Walk.h stage=c
+flag sentinel -freflection
+exit sentinel pass
+judge sentinel
+finding sentinel no-unchecked-access unchecked-use include/foundation/Walk.h:15:85 | foundation::planted::private_members(): std::meta::access_context::unchecked
+finding sentinel no-unchecked-access unchecked-use include/foundation/Walk.h:20:85 | foundation::planted::private_members_of(): std::meta::access_context::unchecked
+
+compile plain src/use.cpp stage=c
+flag plain -freflection
+exit plain pass
+judge plain

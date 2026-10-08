@@ -1,0 +1,9 @@
+# A pattern that no unit instantiates names a detail template with a dependent
+# argument, and a class names a detail type as its base.  The parser resolves
+# each name when it reads the pattern and the class.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use detail-namespace detail-use include/crucible/Boxed.h:12:28 | planted::unbox(Value): foundation::effects::detail
+finding use detail-namespace detail-use include/crucible/Boxed.h:16:41 | namespace-scope: foundation::effects::detail

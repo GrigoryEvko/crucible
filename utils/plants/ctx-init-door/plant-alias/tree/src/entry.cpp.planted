@@ -1,0 +1,9 @@
+// A quarantined unit that calls the init door through an alias of a
+// different file.
+#include <crucible/Door.h>
+
+namespace planted {
+
+int start() { return Door::mint_init_context(); }
+
+}  // namespace planted

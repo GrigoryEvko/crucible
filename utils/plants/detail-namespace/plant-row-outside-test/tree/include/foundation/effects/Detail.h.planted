@@ -1,0 +1,22 @@
+// A base header with a detail namespace of the layer, and a public alias of
+// a detail type.
+#pragma once
+
+namespace foundation::effects::detail {
+
+struct Key {};
+
+inline int helper(Key) noexcept { return 1; }
+
+template <typename Value>
+struct Box {
+    Value value;
+};
+
+}  // namespace foundation::effects::detail
+
+namespace foundation::effects {
+
+using PublicKey = detail::Key;
+
+}  // namespace foundation::effects

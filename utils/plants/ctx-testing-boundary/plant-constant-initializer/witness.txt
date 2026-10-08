@@ -1,0 +1,8 @@
+# A constant initializer at namespace scope calls a factory of the testing
+# door.  The parser resolves the name before the front end folds the
+# initializer.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use ctx-testing-boundary testing-use src/use.cpp:7:47 | namespace-scope: foundation::effects::testing

@@ -1,0 +1,13 @@
+# A member access through a splice and the address of a member through a
+# splice each read or write a member with no access check, so each one is a
+# finding, whichever walk gave the reflection.  The front end resolves each
+# splice at the end of its splice-specifier.
+
+compile splice src/splice.cpp stage=c
+flag splice -freflection
+exit splice pass
+judge splice
+finding splice no-unchecked-access member-splice src/splice.cpp:15:68 | planted::read_member(const planted::Point&): member splice
+finding splice no-unchecked-access member-splice src/splice.cpp:17:50 | namespace-scope: member splice
+finding splice quarantine std-entity src/splice.cpp:12:97 | std::vector::operator[]
+finding splice quarantine raw-function-pointer src/splice.cpp:17:16 | int planted::Point::* const

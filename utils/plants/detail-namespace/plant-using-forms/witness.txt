@@ -1,0 +1,12 @@
+# A using-declaration, a namespace alias and a using-directive each name a
+# detail namespace, and a call through the alias names it too.  The name Key
+# that the using-declaration brings into scope resolves to a declaration of
+# the detail namespace through no qualifier, and it is no second use.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use detail-namespace detail-use src/use.cpp:8:30 | namespace-scope: foundation::effects::detail
+finding use detail-namespace detail-use src/use.cpp:10:43 | namespace-scope: foundation::effects::detail
+finding use detail-namespace detail-use src/use.cpp:12:26 | planted::skip_gate(): foundation::effects::detail
+finding use detail-namespace detail-use src/use.cpp:18:40 | namespace-scope: foundation::effects::detail

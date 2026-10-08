@@ -1,0 +1,8 @@
+# The condition of a static_assert outside a template calls a factory of the
+# testing door.  The parser resolves the name before the front end folds the
+# condition.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use ctx-testing-boundary testing-use src/use.cpp:7:38 | namespace-scope: foundation::effects::testing
