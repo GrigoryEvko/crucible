@@ -344,8 +344,7 @@ def plugin_objects(build_dir: Path, root: Path) -> list[tuple[Path, str, str]]:
         build_census.NotApplicable: If the build made only some targets, or its generator is not Ninja
         build_census.CensusError: If the compile database or the inputs of all cannot be read
     """
-    ninja, _ = build_census.tools_of(build_dir)
-    objects = {str(path) for path, _ in build_census.objects_of_all(build_dir, ninja, root)}
+    objects = {str(path) for path, _ in build_census.objects_of_all(build_dir, root)}
     try:
         rows = compdb.entries(build_dir)
     except compdb.CompdbError as problem:

@@ -89,18 +89,14 @@ THE CHECK custom-deps
     a build with CRUCIBLE_HAVE_BPF off.
 
 WHAT THE CHECKS READ
-    * build.ninja of the build directory, through utils/assay/readers/ninja.py.
-      A line that ends with an unescaped '$' continues on the next line.  An indented line after a build
-      statement is a binding of that statement, `name = value`, until a line
-      that is empty or not indented.  The checks do not read an included
-      file, because CMake writes only rules there.  A compile edge has a rule
-      whose name starts with CXX_COMPILER__ or C_COMPILER__.  A link or an
-      archive has a rule whose name has the form <LANG>_<KIND>_LINKER__, for
-      an executable, a static library, a shared library or a module.  The
-      target of an object is the directory CMakeFiles/<target>.dir of its path.
-    * For custom-deps: the dependency log (`ninja -t deps`), through the
-      ninja of the value CMAKE_MAKE_PROGRAM of the CMake cache of the
-      build (utils/assay/readers/census.py reads the output).
+    * build.ninja of the build directory, through assay.readers.ninja (THE
+      BUILD GRAPH): the edges, the variables of each edge, and the kind of
+      each edge.  A link or an archive has an edge of the kind "link" or
+      "archive", for an executable, a static library, a shared library or a
+      module.  The target of an object is the directory
+      CMakeFiles/<target>.dir of its path.
+    * For custom-deps: the dependency log, through assay.readers.ninja (THE
+      DEPENDENCY LOG), which runs the ninja of the CMake cache of the build.
     * For compile-first: BUILD_DIR/compile-first-targets.txt, each target of
       `all` that compiles a source, which cmake/CompileFirst.cmake writes at
       each configure.  The compile database, and the record OBJECT.cost of
@@ -137,15 +133,16 @@ import os
 import sys
 import tempfile
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import meter as cost_meter
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
-from assay.readers import census as build_census
-from assay.readers import cmake, compdb
-from assay.readers.ninja import COMPILE_RULE, CUSTOM_RULE, LINK_RULE, Graph, read_graph
+from assay.readers import compdb
+from assay.readers import ninja as ninja_reader
+from assay.readers.ninja import CUSTOM_RULE, Graph
 
 CHECKS = ("build-order", "compile-first", "custom-deps")
 NOT_APPLICABLE = 3
@@ -163,10 +160,22 @@ GIGA = 1e9
 LISTED_CHAIN = 3
 # The results of a record whose count belongs to the object that exists.
 COUNTED_RESULTS = frozenset({"built", "hit"})
+# The edge kinds of assay.readers.ninja that a link or an archive has.
+LINKED_KINDS = frozenset({"link", "archive"})
 
 
 class NotApplicable(Exception):
     """The check does not apply to the build."""
+
+
+def is_linked(rule: str) -> bool:
+    """Tell if an edge of a rule is a link or an archive."""
+    return ninja_reader.edge_kind(rule) in LINKED_KINDS
+
+
+def is_compile(rule: str) -> bool:
+    """Tell if an edge of a rule is a compile of CMake."""
+    return ninja_reader.edge_kind(rule) == "compile"
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,7 +253,7 @@ def order_only_waits(graph: Graph) -> dict[tuple[int, int], int]:
                 stack.append((current, child + 1))
                 producer = graph.producer.get(inputs[child])
                 if (producer is not None and producer not in memo
-                        and not LINK_RULE.match(graph.edges[producer].rule)):
+                        and not is_linked(graph.edges[producer].rule)):
                     memo.setdefault(current, frozenset())
                     stack.append((producer, 0))
                 continue
@@ -253,7 +262,7 @@ def order_only_waits(graph: Graph) -> dict[tuple[int, int], int]:
                 producer = graph.producer.get(name)
                 if producer is None:
                     continue
-                if LINK_RULE.match(graph.edges[producer].rule):
+                if is_linked(graph.edges[producer].rule):
                     if index >= len(edge.inputs):
                         found.add((current, producer))
                 else:
@@ -263,7 +272,7 @@ def order_only_waits(graph: Graph) -> dict[tuple[int, int], int]:
 
     counts: Counter[tuple[int, int]] = Counter()
     for edge_id, edge in enumerate(graph.edges):
-        if COMPILE_RULE.match(edge.rule):
+        if is_compile(edge.rule):
             for pair in waits_of(edge_id):
                 counts[pair] += 1
     return dict(counts)
@@ -306,11 +315,11 @@ def custom_objects(graph: Graph) -> list[int]:
             if edge.rule == CUSTOM_RULE and edge.outputs and edge.outputs[0].endswith(OBJECT_SUFFIX)]
 
 
-def evaluate_custom_deps(graph: Graph, build: Path, built: set[str], lists: dict[str, list[str]],
-                         states: dict[str, str], ninja_shown: str) -> list[check_report.Finding]:
+def evaluate_custom_deps(graph: Graph, build: Path, built: set[str], lists: Mapping[str, ninja_reader.Deps],
+                         ninja_shown: str) -> list[check_report.Finding]:
     """Make one error for each object of a custom command whose headers Ninja does not record.
 
-    An edge with no `depfile` binding or no `deps = gcc` binding gives one
+    An edge with no `depfile` variable or no `deps = gcc` variable gives one
     error, and the check then does not read the log of its object.
 
     Complexity: linear in the edges, their inputs and the files of the log.
@@ -319,8 +328,7 @@ def evaluate_custom_deps(graph: Graph, build: Path, built: set[str], lists: dict
         graph: The graph
         build: The build directory, against which a relative path of build.ninja resolves
         built: The first output of each such edge that exists
-        lists: The files of each object in the dependency log, from build_census.parse_dependencies
-        states: The state of the list of each object in the dependency log
+        lists: The list of each built object in the dependency log (assay.readers.ninja)
         ninja_shown: The path of build.ninja, for the findings
 
     Returns:
@@ -344,15 +352,16 @@ def evaluate_custom_deps(graph: Graph, build: Path, built: set[str], lists: dict
             continue
         if output not in built:
             continue
-        state = states.get(output, "MISSING")
+        listed = lists.get(output, ninja_reader.Deps(ninja_reader.DepsState.MISSING, ()))
         inputs = {resolved(name) for name in edge.inputs}
-        has_header = any(resolved(name) not in inputs for name in lists.get(output, []))
-        if state != "VALID" or not has_header:
+        has_header = any(resolved(name) not in inputs for name in listed.files)
+        if listed.state != ninja_reader.DepsState.VALID or not has_header:
+            why = f" ({listed.why})" if listed.why else ""
             findings.append(check_report.Finding(
                 "error", ninja_shown, edge.line, "custom-deps",
-                f"the dependency log of Ninja holds no header of {output}, and the state of its list is {state}, "
-                f"although build.ninja gives the command a depfile.  Make sure that the depfile names each header "
-                f"that the compile reads, and build {output} again"))
+                f"the dependency log of Ninja holds no header of {output}, and the state of its list is "
+                f"{listed.state}{why}, although build.ninja gives the command a depfile.  Make sure that the depfile "
+                f"names each header that the compile reads, and build {output} again"))
     return findings
 
 
@@ -484,7 +493,7 @@ def evaluate_chains(graph: Graph, candidates: set[str], compile_list: CompileLis
     chain = chain_lengths(graph)
     shortest: dict[str, tuple[int, str]] = {}
     for edge_id, edge in enumerate(graph.edges):
-        if not COMPILE_RULE.match(edge.rule):
+        if not is_compile(edge.rule):
             continue
         target = target_of(Path(edge.outputs[0]))
         if target is None or target not in compile_list.names or target not in candidates:
@@ -748,21 +757,15 @@ CUSTOM_GRAPH = (
     "build lib.o: CXX_COMPILER__lib_unscanned_Debug lib.cpp\n"
     "  DEP_FILE = lib.o.d\n")
 
-# The output of `ninja -t deps` for the built objects of CUSTOM_GRAPH.  The
+# The lists of the dependency log for the built objects of CUSTOM_GRAPH.  The
 # log holds no list of missing.bpf.o.
-CUSTOM_DEPS_OUTPUT = (
-    "kept.bpf.o: #deps 2, deps mtime 1 (VALID)\n"
-    "    /src/kept.bpf.c\n"
-    "    /src/common.h\n"
-    "\n"
-    "empty.bpf.o: #deps 1, deps mtime 1 (VALID)\n"
-    "    /src/empty.bpf.c\n"
-    "\n"
-    "stale.bpf.o: #deps 2, deps mtime 1 (STALE)\n"
-    "    /src/stale.bpf.c\n"
-    "    /src/common.h\n"
-    "\n"
-    "missing.bpf.o: deps not found\n")
+CUSTOM_DEPS = {
+    "kept.bpf.o": ninja_reader.Deps(ninja_reader.DepsState.VALID, ("/src/kept.bpf.c", "/src/common.h")),
+    "empty.bpf.o": ninja_reader.Deps(ninja_reader.DepsState.VALID, ("/src/empty.bpf.c",)),
+    "stale.bpf.o": ninja_reader.Deps(ninja_reader.DepsState.STALE, ("/src/stale.bpf.c", "/src/common.h"),
+                                     "the output is newer than its list"),
+    "missing.bpf.o": ninja_reader.Deps(ninja_reader.DepsState.MISSING, (), "the build log holds no record"),
+}
 
 
 def self_test_cases() -> int:
@@ -789,14 +792,14 @@ def self_test_cases() -> int:
 
     with tempfile.TemporaryDirectory(prefix="check-build-order-") as work:
         root = Path(work)
-        ninja = root / "build.ninja"
-        ninja.write_text(ORDER_GRAPH, encoding="utf-8")
-        graph = read_graph(ninja)
-        expect("read_graph reads each build statement, a continued line and the default targets",
-               len(graph.edges) == 13 and graph.defaults == ["all"]
+        shown = ninja_reader.GRAPH_NAME
+        ninja_reader.plant_graph(root, ORDER_GRAPH)
+        graph = ninja_reader.graph(root)
+        expect("the graph holds each build statement, a continued line and the default targets",
+               len(graph.edges) == 13 and graph.defaults == ("all",)
                and graph.edges[graph.producer["b2.o"]].inputs == ("b2.cpp",)
                and graph.edges[graph.producer["b2.o"]].line == 10)
-        findings = evaluate_order(graph, "build.ninja")
+        findings = evaluate_order(graph, shown)
         expect("build-order, an error: a custom command with an order-only input that an archive writes, at its "
                "line, with the count of the compiles behind it",
                len(findings) == 1 and findings[0].level == "error" and findings[0].line == 7
@@ -804,12 +807,12 @@ def self_test_cases() -> int:
                and "2 compile(s)" in findings[0].message)
         expect("build-order, no finding: a command that runs a tool of the build as an explicit input",
                not any("hdr.h" in found.message for found in findings))
-        ninja.write_text(ORDER_GRAPH.replace(" || liba.a\n", "\n"), encoding="utf-8")
+        ninja_reader.plant_graph(root, ORDER_GRAPH.replace(" || liba.a\n", "\n"))
         expect("build-order, no finding: the same graph with no order-only input on the archive",
-               evaluate_order(read_graph(ninja), "build.ninja") == [])
+               evaluate_order(ninja_reader.graph(root), shown) == [])
 
-        ninja.write_text(CHAIN_GRAPH, encoding="utf-8")
-        chain_graph = read_graph(ninja)
+        ninja_reader.plant_graph(root, CHAIN_GRAPH)
+        chain_graph = ninja_reader.graph(root)
         chain = chain_lengths(chain_graph)
         expect("chain_lengths: three edges for the object of a listed test, two for another test, two for the "
                "object of a listed object library, and one for a link with no consumer",
@@ -821,48 +824,44 @@ def self_test_cases() -> int:
         found = evaluate_chains(chain_graph, {"listed", "other", "unit"}, chain_list, "compile-first.txt")
         expect("compile-first, an error at the row: a listed object library whose object has two edges",
                len(found) == 1 and found[0].line == 5 and "unit" in found[0].message)
-        ninja.write_text(CHAIN_GRAPH.replace("build compile-first.stamp: CUSTOM_COMMAND || t/listed unit\n", ""),
-                         encoding="utf-8")
-        found = evaluate_chains(read_graph(ninja), {"listed", "other", "unit"}, chain_list, "compile-first.txt")
+        ninja_reader.plant_graph(root, CHAIN_GRAPH.replace(
+            "build compile-first.stamp: CUSTOM_COMMAND || t/listed unit\n", ""))
+        found = evaluate_chains(ninja_reader.graph(root), {"listed", "other", "unit"}, chain_list, "compile-first.txt")
         expect("compile-first, an error for each listed target when the graph has no stamp",
                [item.line for item in found] == [4, 5])
 
-        ninja.write_text(CUSTOM_GRAPH, encoding="utf-8")
-        custom_graph = read_graph(ninja)
+        ninja_reader.plant_graph(root, CUSTOM_GRAPH)
+        custom_graph = ninja_reader.graph(root)
         kept_bindings = custom_graph.variables.get(custom_graph.producer["kept.bpf.o"], {})
         plain_bindings = custom_graph.variables.get(custom_graph.producer["plain.bpf.o"], {})
-        expect("read_graph reads the bindings of a build statement, also a continued one, and no binding of a rule",
+        expect("the graph holds the variables of a build statement, also a continued one, and no variable of a rule",
                kept_bindings.get("depfile") == "CMakeFiles/d/kept.d" and kept_bindings.get("deps") == "gcc"
                and "-o kept.bpf.o" in kept_bindings.get("COMMAND", "")
                and not any("command" in bindings for bindings in custom_graph.variables.values()))
-        expect("read_graph ends the bindings of a build statement at an empty line",
+        expect("the variables of a build statement end at an empty line",
                set(plain_bindings) == {"COMMAND", "restat"})
         expect("custom_objects takes each custom command whose first output is an object, and no other edge",
                [custom_graph.edges[edge_id].outputs[0] for edge_id in custom_objects(custom_graph)]
                == ["plain.bpf.o", "halfway.bpf.o", "kept.bpf.o", "empty.bpf.o", "stale.bpf.o", "missing.bpf.o",
                    "unbuilt.bpf.o"])
-        lists, states = build_census.parse_dependencies(CUSTOM_DEPS_OUTPUT)
-        expect("parse_dependencies reads the files and the state of each list of the log",
-               lists["kept.bpf.o"] == ["/src/kept.bpf.c", "/src/common.h"] and states["kept.bpf.o"] == "VALID"
-               and states["stale.bpf.o"] == "STALE" and states["missing.bpf.o"] == "MISSING"
-               and lists["missing.bpf.o"] == [])
         built_objects = {"halfway.bpf.o", "kept.bpf.o", "empty.bpf.o", "stale.bpf.o", "missing.bpf.o"}
-        found = evaluate_custom_deps(custom_graph, root, built_objects, lists, states, "build.ninja")
+        found = evaluate_custom_deps(custom_graph, root, built_objects, CUSTOM_DEPS, shown)
         expect("custom-deps, an error at the line of each edge with no depfile or no `deps = gcc`, also for an "
-               "object that is not built, and of each built object whose list is empty of headers, stale or missing",
+               "object that is not built, and of each built object with no header in its list, a stale list or no list",
                [(item.line, item.level) for item in found]
                == [(3, "error"), (8, "error"), (15, "error"), (18, "error"), (21, "error")]
                and "plain.bpf.o" in found[0].message and "DEPFILE" in found[0].message
-               and "MISSING" in found[4].message)
+               and "MISSING (the build log holds no record)" in found[4].message
+               and "STALE (the output is newer than its list)" in found[3].message)
         expect("custom-deps, no finding: a built object whose list holds a header, an object that is not built, a "
                "custom command that writes a source, and a compile of CMake",
                not any(name in item.message for item in found
                        for name in ("kept.bpf.o", "unbuilt.bpf.o", "gen.c", "lib.o ")))
         custom_build = root / "custom"
         custom_build.mkdir()
-        (custom_build / "build.ninja").write_text(ORDER_GRAPH, encoding="utf-8")
+        ninja_reader.plant_graph(custom_build, ORDER_GRAPH)
         with contextlib.redirect_stderr(io.StringIO()):
-            status = run_custom_deps(custom_build, read_graph(custom_build / "build.ninja"), "build.ninja", None)
+            status = run_custom_deps(custom_build, ninja_reader.graph(custom_build), shown, None)
         expect("custom-deps does not apply to a build in which no custom command writes an object",
                status == NOT_APPLICABLE)
 
@@ -1060,21 +1059,15 @@ def run_custom_deps(build: Path, graph: Graph, ninja_shown: str, warnings_dir: P
         return NOT_APPLICABLE
     built = sorted({graph.edges[edge_id].outputs[0] for edge_id in objects
                     if (build / graph.edges[edge_id].outputs[0]).is_file()})
-    lists: dict[str, list[str]] = {}
-    states: dict[str, str] = {}
+    lists: dict[str, ninja_reader.Deps] = {}
     if built:
         try:
-            ninja = cmake.cache_value(build, "CMAKE_MAKE_PROGRAM") or "ninja"
-        except cmake.CmakeError:
-            ninja = "ninja"
-        try:
-            lists, states = build_census.parse_dependencies(
-                build_census.run_tool([ninja, "-C", str(build), "-t", "deps", *built]))
-        except build_census.CensusError as exc:
+            lists = ninja_reader.deps(build, built)
+        except ninja_reader.NinjaError as exc:
             return check_report.emit([check_report.Finding("error", ninja_shown, 0, "custom-deps",
                                                            f"the check cannot read the dependency log: {exc}")],
                                      "custom-deps", warnings_dir)
-    findings = evaluate_custom_deps(graph, build, set(built), lists, states, ninja_shown)
+    findings = evaluate_custom_deps(graph, build, set(built), lists, ninja_shown)
     print(f"check-build-order: {len(objects)} object(s) of custom commands, {len(built)} of them built, "
           f"{len(findings)} finding(s).", file=sys.stderr)
     return check_report.emit(findings, "custom-deps", warnings_dir)
@@ -1106,15 +1099,13 @@ def main(argv: list[str]) -> int:
     if arguments.write and arguments.check != "compile-first":
         parser.error("--write applies only to the rule compile-first")
     build = arguments.build_dir.resolve()
-    ninja = build / "build.ninja"
+    ninja = ninja_reader.graph_file(build)
     try:
-        if not ninja.is_file():
-            raise NotApplicable(f"{ninja} does not exist, so a generator other than Ninja made the build")
-        graph = read_graph(ninja)
-    except NotApplicable as exc:
-        print(f"check-build-order: the check does not apply: {exc}.", file=sys.stderr)
+        graph = ninja_reader.graph(build)
+    except ninja_reader.NotNinja as exc:
+        print(f"check-build-order: the check does not apply: {exc}", file=sys.stderr)
         return NOT_APPLICABLE
-    except (ValueError, OSError) as exc:
+    except ninja_reader.NinjaError as exc:
         return check_report.emit([check_report.Finding("error", display(ninja), 0, arguments.check,
                                                        f"the check cannot read its input: {exc}")],
                                  arguments.check, arguments.warnings_dir)

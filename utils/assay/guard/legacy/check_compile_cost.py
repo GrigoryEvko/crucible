@@ -67,8 +67,8 @@ THE INSTRUCTION COUNT HOLDS THE ERROR LEVEL OF A COMPILE
 
     header-alone reads the sentinels of test/layer/CMakeLists.txt, which
     compile each header of include/ alone.  For each sentinel, it reads the
-    dependency list from the ninja log (ninja -t deps) and adds the sizes of
-    the files after the source.  The header is the first file of the list
+    list of the dependency log of Ninja (assay.readers.ninja) and adds the
+    sizes of the files after the source.  The header is the first file of the list
     under include/, after symbolic links resolve.  A check file of
     test/layer/checks can include more than its header, and the measure then
     holds those files too.  The finding also gives the CPU time of the
@@ -126,8 +126,8 @@ THE SELF-TEST
     tests the launcher itself.
 
 Usage
-    guard check --rule RULE --build-dir DIR [--ninja NINJA] [--warnings-dir DIR]
-    guard check --rule RULE --build-dir DIR [--ninja NINJA] --write [--reason TEXT]
+    guard check --rule RULE --build-dir DIR [--warnings-dir DIR]
+    guard check --rule RULE --build-dir DIR --write [--reason TEXT]
     guard selftest guard.legacy.check_compile_cost
 
     RULE is one of the checks above.  The registry gives each rule its words
@@ -151,7 +151,7 @@ import re
 import shutil
 import sys
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -162,20 +162,20 @@ from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
 from assay.readers import cmake, compdb
 from assay.readers import elf as elf_file
+from assay.readers import ninja as ninja_reader
 
 CHECKS =("compile-cpu", "compile-instructions", "compile-memory", "link-time", "link-memory", "function-size",
           "object-text", "header-alone")
 # The form of the item of a ledger row of each check (THE LEDGERS): a header for header-alone, else an output.
 LEDGER_FORMS = {check: cost_meter.ITEM_FILE if check == "header-alone" else cost_meter.ITEM_OUTPUT
                 for check in CHECKS}
-# The head comment of a ledger that --write makes.  ROW is the row of the form of the check, and the build
-# options of the write follow DIR.
+# The head comment of a ledger that --write makes.  ROW is the row of the form of the check.
 LEDGER_COMMENT = (
     "# The ledger of the rule {check} of utils/registry.txt: the items that can exceed the error threshold of\n"
     "# the rule, one row for each item and build kind.  A row is '{row}'.\n"
     "# KIND is the build kind of BUILD_DIR/build-kind.txt, and VALUE is the measure at the last --write, in {unit}.\n"
     "# A row applies only to a build of its kind.  `python3 utils/bin/guard explain {check}` tells the rule, and\n"
-    "# `python3 utils/bin/guard check --rule {check} --build-dir DIR{options} --write [--reason TEXT]` writes\n"
+    "# `python3 utils/bin/guard check --rule {check} --build-dir DIR --write [--reason TEXT]` writes\n"
     "# this file.\n")
 # The step and the measure of each time, instruction or memory check.
 TIMED = {"compile-cpu": ("compile", "time"), "compile-instructions": ("compile", "instructions"),
@@ -192,8 +192,6 @@ LINKED_TYPES = frozenset({"EXECUTABLE", "SHARED_LIBRARY", "MODULE_LIBRARY"})
 SENTINEL_MARK = "/layer_sentinel_"
 CHECK_FILES = Path("test/layer/checks")
 KIND = re.compile(r"[a-z0-9_]+(?:-[a-z0-9_]+)*")
-# The first line of one entry of `ninja -t deps`; the files follow, indented.
-DEPS_HEADER = re.compile(r"(?P<target>.+?): (?:#deps \d+, deps mtime \d+ \((?P<state>[A-Z]+)\)|deps not found)")
 KB = 1024
 MB = 1024 * 1024
 NOT_APPLICABLE = 3
@@ -253,7 +251,6 @@ class Context:
     check: str
     build_dir: Path
     kind: str
-    ninja: str
     root: Path
     registry_path: Path
     ledger_dir: Path
@@ -524,46 +521,6 @@ def code_measures(context: Context, outputs: list[Output]) -> tuple[list[Measure
     return measures, findings, f"{context.check}: {len(outputs)} objects, {len(codes)} read"
 
 
-def read_dependencies(ninja: str, build_dir: Path, keys: list[str]) -> dict[str, tuple[str, list[str]]]:
-    """Read the dependency lists of some outputs from the ninja log.
-
-    Args:
-        ninja: The ninja program
-        build_dir: The build directory
-        keys: The outputs, relative to the build directory
-
-    Returns:
-        For each output in the log: its state (VALID, STALE or MISSING) and its files
-
-    Raises:
-        OSError: If ninja cannot start, runs past its limit, or fails
-    """
-    try:
-        result = proc.run(proc.Command([ninja, "-C", str(build_dir), "-t", "deps", *keys], timeout_s=proc.QUICK_S))
-    except proc.CannotStart as problem:
-        raise problem.error from None
-    except proc.TimedOut:
-        raise OSError(f"{ninja} -t deps ran past its limit of {proc.QUICK_S:g} s") from None
-    if result.exit != 0:
-        raise OSError(f"{ninja} -t deps exited {result.exit}: {result.err.strip()[:300]}")
-    lists: dict[str, tuple[str, list[str]]] = {}
-    current: list[str] | None = None
-    for line in result.out.splitlines():
-        if not line.strip():
-            continue
-        if line.startswith((" ", "\t")):
-            if current is not None:
-                current.append(line.strip())
-            continue
-        match = DEPS_HEADER.fullmatch(line)
-        if match is None:
-            current = None
-            continue
-        current = []
-        lists[match["target"]] = (match["state"] or "MISSING", current)
-    return lists
-
-
 def sentinel_outputs(outputs: list[Output]) -> list[Output]:
     """Return the objects of the sentinels of test/layer."""
     return [output for output in outputs if SENTINEL_MARK in output.path.as_posix()]
@@ -607,13 +564,18 @@ def header_measures(context: Context, outputs: list[Output]) -> tuple[list[Measu
 
     Returns:
         The measures, the errors for the sentinels that cannot be measured, and the summary line
+
+    Raises:
+        NotApplicable: If the generator of the build is not Ninja, and the build has no dependency log
     """
     sentinels = sentinel_outputs(outputs)
     findings: list[check_report.Finding] = []
     keys = [shown_path(output.path, context.build_dir) for output in sentinels]
     try:
-        lists = read_dependencies(context.ninja, context.build_dir, keys)
-    except OSError as problem:
+        lists = ninja_reader.deps(context.build_dir, keys)
+    except ninja_reader.NotNinja as problem:
+        raise NotApplicable(f"the build has no dependency log of Ninja: {problem}") from None
+    except ninja_reader.NinjaError as problem:
         return [], [error_at(context.check, shown_path(context.build_dir, context.root), str(problem))], \
             f"{context.check}: no dependency log"
     include_root = context.root / "include"
@@ -628,14 +590,15 @@ def header_measures(context: Context, outputs: list[Output]) -> tuple[list[Measu
     measures: list[Measure] = []
     for output, key in zip(sentinels, keys, strict=True):
         source_shown = shown_path(output.source or output.path, context.root)
-        state, files = lists.get(key, ("MISSING", []))
-        if state != "VALID" or not files:
+        listed = lists[key]
+        if listed.state != ninja_reader.DepsState.VALID or not listed.files:
+            why = f": {listed.why}" if listed.why else ""
             findings.append(error_at(context.check, source_shown,
-                                     f"the ninja log holds no valid dependency list of {key} (state {state}).  Build "
-                                     f"the object again"))
+                                     f"the dependency log of Ninja holds no VALID list of {key} (state {listed.state}"
+                                     f"{why}).  Build the object again"))
             continue
         try:
-            entries = [resolved(name) for name in files[1:]]
+            entries = [resolved(name) for name in listed.files[1:]]
         except OSError as problem:
             findings.append(error_at(context.check, source_shown, f"a dependency of {key} cannot be read: {problem}"))
             continue
@@ -755,8 +718,6 @@ def measure_all(context: Context) -> tuple[list[Measure], set[str], list[check_r
     Raises:
         NotApplicable: If the check does not apply to the build
     """
-    if context.check == "header-alone" and not context.ninja:
-        raise NotApplicable("the build has no ninja dependency log, because the ninja generator did not make it")
     if context.check in TIMED and TIMED[context.check][0] == "link":
         outputs, findings = read_links(context)
     else:
@@ -860,8 +821,7 @@ def write_ledger(context: Context, reason: str | None) -> int:
     form = LEDGER_FORMS[context.check]
     units = {budget.unit for budget in budgets.values()}
     comment = LEDGER_COMMENT.format(check=context.check, row=cost_meter.ITEM_ROWS[form],
-                                    unit=" or ".join(sorted(units)),
-                                    options=" --ninja NINJA" if context.check == "header-alone" else "")
+                                    unit=" or ".join(sorted(units)))
     try:
         cost_meter.write_kind_rows(context.check, form, str(ledger.path), kept, comment)
     except (OSError, ValueError) as problem:
@@ -904,6 +864,17 @@ def plant_object(path: Path, functions: list[tuple[str, int]], loose_text: int =
     path.write_bytes(elf_file.make_file(sections))
 
 
+# The planted ninja of the self-test: for `-t deps OUTPUT...`, it writes the planted list of each output, or the
+# line of an output with no list.  DEPS names the JSON file of the lists.
+FAKE_NINJA = """\
+import json
+import sys
+blocks = json.loads(open({deps!r}, encoding="utf-8").read())
+words = sys.argv[sys.argv.index("deps") + 1:] if "deps" in sys.argv else []
+sys.stdout.write("".join(blocks.get(word, word + ": deps not found\\n") + "\\n" for word in words))
+"""
+
+
 class Scratch:
     """A scratch repository root and build directory for the self-test of the checks."""
 
@@ -916,7 +887,8 @@ class Scratch:
         self.ledgers = root / "ledgers"
         self.registry = root / "registry.txt"
         self.ninja = root / "fake-ninja.py"
-        self.deps = root / "deps.txt"
+        self.deps = root / "deps.json"
+        self.generator = "Ninja"
         self.rows: list[dict[str, str]] = []
         self.targets: list[dict[str, object]] = []
         self.build.mkdir(parents=True)
@@ -931,10 +903,9 @@ class Scratch:
                 ("object-text", 512, 768, "KB", "o"), ("header-alone-foundation", 2, 3, "MB", "h"),
                 ("header-alone-fixy", 8, 12, "MB", "h"), ("header-alone-crucible", 9, 14, "MB", "h"))),
             encoding="utf-8")
-        self.ninja.write_text(f"#!{sys.executable}\nimport sys\nsys.stdout.write(open({str(self.deps)!r}).read())\n",
-                              encoding="utf-8")
+        self.ninja.write_text(f"#!{sys.executable}\n{FAKE_NINJA.format(deps=str(self.deps))}", encoding="utf-8")
         self.ninja.chmod(0o755)
-        self.deps.write_text("", encoding="utf-8")
+        self.deps.write_text("{}", encoding="utf-8")
         self.write_database()
         self.write_reply()
         self.launcher = load_launcher()
@@ -982,20 +953,24 @@ class Scratch:
         compdb.plant(self.build, self.rows)
 
     def write_reply(self) -> None:
-        """Write a codemodel reply of the CMake file API with the planted targets."""
+        """Write a reply of the CMake file API: the planted targets, the generator, and the planted ninja."""
         library = {"name": "library", "type": "STATIC_LIBRARY", "artifacts": [{"path": "liblibrary.a"}]}
-        cmake.plant(self.build, targets=[*self.targets, library], source=str(self.root))
+        cache: dict[str, str | tuple[str, str]] = {"CMAKE_GENERATOR": self.generator,
+                                                   "CMAKE_MAKE_PROGRAM": ("FILEPATH", str(self.ninja))}
+        cmake.plant(self.build, cache=cache, targets=[*self.targets, library], source=str(self.root))
+
+    def plant_lists(self, blocks: Mapping[str, str]) -> None:
+        """Give the planted ninja the text of the list of each output in its dependency log."""
+        self.deps.write_text(json.dumps(blocks), encoding="utf-8")
 
     def context(self, check: str, kind: str = KIND) -> Context:
-        """Return a run over the scratch build, with the planted ninja that prints the planted dependency log."""
-        return Context(check, self.build, kind, str(self.ninja), self.root, self.registry, self.ledgers)
+        """Return a run over the scratch build.  The cache of the build names the planted ninja."""
+        return Context(check, self.build, kind, self.root, self.registry, self.ledgers)
 
-    def run(self, check: str, kind: str = KIND, ninja: str | None = None, write: bool = False,
+    def run(self, check: str, kind: str = KIND, write: bool = False,
             reason: str | None = None) -> tuple[int, list[check_report.Finding], str]:
         """Run one check, or its --write, and return its status, its findings and its output."""
         context = self.context(check, kind)
-        if ninja is not None:
-            context.ninja = ninja
         output = io.StringIO()
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
             status = write_ledger(context, reason) if write else run_check(context, None)
@@ -1270,15 +1245,15 @@ def self_test_cases() -> int:
         (headers.root / "include" / "other" / "Stray.h").write_bytes(b"x" * MB)
         system = headers.root / "system.h"
         system.write_bytes(b"y" * 1000)
-        deps: list[str] = []
+        blocks: dict[str, str] = {}
 
         def sentinel(name: str, header: str, state: str = "VALID", layer: str = "fixy") -> None:
             obj = headers.unit(name, sentinel=True, cpu_s=3.0)
             key = obj.relative_to(headers.build).as_posix()
             files = [str(headers.root / "test/layer/checks" / f"{name}.cpp"), str(system),
                      str(headers.build / "layer-roots" / layer / layer / header)]
-            deps.append(f"{key}: #deps {len(files)}, deps mtime 1 ({state})\n" + "".join(f"    {f}\n" for f in files))
-            headers.deps.write_text("\n".join(deps), encoding="utf-8")
+            blocks[key] = f"{key}: #deps {len(files)}, deps mtime 1 ({state})\n" + "".join(f"    {f}\n" for f in files)
+            headers.plant_lists(blocks)
 
         sentinel("Small", "Small.h")
         status, found, _ = headers.run("header-alone")
@@ -1316,10 +1291,20 @@ def self_test_cases() -> int:
         headers.write_database()
         sentinel("Stale", "Small.h", state="STALE")
         status, found, _ = headers.run("header-alone")
-        expect("header-alone: a stale dependency list is an error",
-               status == 1 and any("STALE" in f.message for f in found))
-        status, found, _ = headers.run("header-alone", ninja="")
-        expect("header-alone: a build with no ninja log exits 3", status == NOT_APPLICABLE and not found)
+        expect("header-alone: a stale dependency list is an error, with the reason of the reader",
+               status == 1 and any("STALE: the output is newer than its list" in f.message for f in found))
+        headers.unit("Unlisted", sentinel=True, cpu_s=3.0)
+        status, found, _ = headers.run("header-alone")
+        expect("header-alone: a sentinel with no list is an error, and the reason names the build log",
+               status == 1 and any("MISSING: .ninja_log holds no record" in f.message for f in found))
+        headers.rows = [row for row in headers.rows if not row["output"].endswith("Unlisted.cpp.o")]
+        headers.write_database()
+        headers.generator = "Unix Makefiles"
+        headers.write_reply()
+        status, found, _ = headers.run("header-alone")
+        expect("header-alone: a build of a generator other than Ninja exits 3", status == NOT_APPLICABLE and not found)
+        headers.generator = "Ninja"
+        headers.write_reply()
         status, found, _ = code.run("header-alone")
         expect("header-alone: a build with no sentinel exits 3", status == NOT_APPLICABLE and not found)
         status, found, _ = empty.run("header-alone")
@@ -1372,7 +1357,6 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--check", choices=CHECKS, help="the rule, which `guard check --rule RULE` gives")
     parser.add_argument("--build-dir", type=Path)
     parser.add_argument("--kind", help="the kind of the build, in place of the line of BUILD_DIR/build-kind.txt")
-    parser.add_argument("--ninja", default="", help="the ninja program of the build, for header-alone")
     parser.add_argument("--write", action="store_true", help="write the ledger rows of the kind again")
     parser.add_argument("--reason", help="the reason of each new ledger row that --write adds")
     parser.add_argument("--self-test", action="store_true", help="plant each verdict of each check")
@@ -1391,7 +1375,7 @@ def main(argv: list[str]) -> int:
                                  arguments.check, arguments.warnings_dir)
     if not KIND.fullmatch(kind):
         parser.error(f"the kind {kind!r} is not lowercase words with hyphens")
-    context = Context(arguments.check, build_dir, kind, arguments.ninja, REPO_ROOT, check_report.REGISTRY,
+    context = Context(arguments.check, build_dir, kind, REPO_ROOT, check_report.REGISTRY,
                       Path(cost_meter.LEDGER_DIRECTORY))
     if arguments.write:
         return write_ledger(context, arguments.reason)

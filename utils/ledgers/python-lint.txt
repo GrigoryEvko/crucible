@@ -128,7 +128,6 @@ utils/assay/guard/legacy/check_quarantine_ratchet.py | B008 | 1 | run | An issue
 utils/assay/guard/legacy/check_quarantine_ratchet.py | ISC004 | 9 | self_test | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_quarantine_ratchet.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_quarantine_regions.py | format | 1 | regions_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | I001 | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_reconfigure_noop.py | format | 1 | evaluate | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_refined_pre_subsumption.py | format | 1 | preconditions | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_splits_orphan.py | ISC004 | 3 | self_test | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
@@ -264,7 +263,6 @@ utils/assay/oracle/unit_store.py | format | 1 | UnitStore.__init__ | An issue of
 utils/assay/readers/compdb.py | format | 1 | CompileEntry.__init__ | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/readers/ctest.py | format | 1 | place_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/readers/elf.py | format | 1 | name_at | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/readers/ninja.py | format | 1 | parse_build_line | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/readers/sections.py | format | 1 | parse_line | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/readers/shell.py | format | 1 | read | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/readers/tsast.py | FURB166 | 2 | number_value | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count

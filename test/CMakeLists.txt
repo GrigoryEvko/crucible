@@ -5468,17 +5468,12 @@ set_tests_properties(build_launcher_test PROPERTIES LABELS "ci_guard")
 #                                from the ninja dependency log of its sentinel
 # A ledger row applies only to the build of its kind, and each rule reads
 # the kind from build-kind.txt of this build.
-set(_compile_cost_ninja "")
-if(CMAKE_GENERATOR MATCHES "Ninja")
-  set(_compile_cost_ninja ${CMAKE_MAKE_PROGRAM})
-endif()
 foreach(_compile_cost_rule compile-cpu compile-instructions compile-memory link-time link-memory function-size
         object-text header-alone)
   string(REPLACE "-" "_" _compile_cost_test "${_compile_cost_rule}")
   add_test(NAME ${_compile_cost_test}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ${_compile_cost_rule}
-            --build-dir ${CMAKE_BINARY_DIR} --ninja "${_compile_cost_ninja}"
-            --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+            --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
   set_tests_properties(${_compile_cost_test} PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
 endforeach()
 add_test(NAME compile_cost_self_test
@@ -5509,13 +5504,6 @@ add_test(NAME build_order_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.legacy.check_build_order)
 set_tests_properties(build_order compile_first custom_deps build_order_self_test PROPERTIES LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# ninja_files_self_test — utils/assay/readers/ninja.py reads build.ninja and the
-# ninja log for the rules build-order and reconfigure-noop and for the loop
-# history of utils/assay/loop/history.py.
-add_test(NAME ninja_files_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest readers.ninja)
-set_tests_properties(ninja_files_self_test PROPERTIES LABELS "ci_guard")
-
 # parse_total — the sum, over each object of the target all and each negative
 # fixture, of the bytes that its compile reads, against the baseline of the
 # build kind in utils/ledgers/parse-total.txt (the rule parse-total of
@@ -5784,6 +5772,11 @@ add_test(NAME assay_readers_test_cmake
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.readers.test_cmake)
 set_tests_properties(assay_readers_test_cmake PROPERTIES LABELS "ci_guard;meta"
   ENVIRONMENT "ASSAY_TEST_CMAKE=${CMAKE_COMMAND};ASSAY_TEST_CXX=${CMAKE_CXX_COMPILER};ASSAY_TEST_NINJA=${CMAKE_MAKE_PROGRAM}")
+# The test of the Ninja reader builds a scratch graph, so it gets the ninja of this build.
+add_test(NAME assay_readers_test_ninja
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.readers.test_ninja)
+set_tests_properties(assay_readers_test_ninja PROPERTIES LABELS "ci_guard;meta"
+  ENVIRONMENT "ASSAY_TEST_NINJA=${CMAKE_MAKE_PROGRAM}")
 
 add_subdirectory(foundation)
 add_subdirectory(fixy)

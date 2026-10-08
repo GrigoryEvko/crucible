@@ -12,11 +12,11 @@ A UNIT
         (utils/assay/loop/fixture/store.py, The record of a run).
 
 THE FILES OF A UNIT
-    The files of an object come from the ninja dependency log (`ninja -t
-    deps`): the source and each header that its compile read.  A ccache hit
-    records its dependencies too.  The files of a fixture come from its
-    record.  Each name resolves to its real path, and a unit counts one real
-    path one time.
+    The files of an object come from the dependency log of Ninja
+    (assay.readers.ninja): the source and each header that its compile read.
+    A ccache hit records its dependencies too.  The files of a fixture come
+    from its record.  Each name resolves to its real path, and a unit counts
+    one real path one time.
 
 THE COST OF A UNIT
     The cost of an object comes from the record OUTPUT.cost of `loop step`:
@@ -29,8 +29,9 @@ THE COST OF A UNIT
     driver runs the compiler directly.
 
 THE TOOLS
-    The ninja and ctest of a build are the values CMAKE_MAKE_PROGRAM and
-    CMAKE_CTEST_COMMAND of its CMake cache (assay.readers.cmake).
+    assay.readers.ninja runs the ninja of the CMake cache of the build.  The
+    ctest of a build is the value CMAKE_CTEST_COMMAND of its CMake cache
+    (assay.readers.cmake).
 
 FAILURES
     read_census() raises NotApplicable when an input does not exist by the
@@ -45,13 +46,13 @@ from __future__ import annotations
 import json
 import os
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from assay.core import meter as cost_meter
 from assay.core import proc
-from assay.readers import cmake, compdb
+from assay.readers import cmake, compdb, ninja
 
 # The command of a negative fixture runs the master loop with the subcommand fixture.
 FIXTURE_MASTER = "utils/bin/loop"
@@ -134,28 +135,19 @@ def names_text(names: Iterable[str]) -> str:
     return head + (f" and {rest} more" if rest > 0 else "")
 
 
-def tools_of(build_dir: Path) -> tuple[str, str | None]:
-    """Return the ninja and the ctest of a build.  The ctest is None when the cache names none.
+def ctest_of(build_dir: Path) -> str | None:
+    """Return the ctest of a build, or None when the cache names none.
 
-    The census runs no ctest of PATH, because PATH can hold a ctest of another
-    version (utils/assay/setup/pins.py).
+    The census runs no ctest of PATH, because PATH can hold a ctest of a
+    different version (utils/assay/setup/pins.py).
 
     Raises:
-        NotApplicable: If the generator of the build is not ninja
-        CensusError: If the cache of the build cannot be read, or it names no generator
+        CensusError: If the cache of the build cannot be read
     """
     try:
-        entries = cmake.cache(build_dir)
+        return cmake.cache_value(build_dir, "CMAKE_CTEST_COMMAND")
     except cmake.CmakeError as problem:
         raise CensusError(f"the CMake cache of the build cannot be read: {problem}") from None
-    generator = entries.get("CMAKE_GENERATOR")
-    if generator is None:
-        raise CensusError(f"the CMake cache of {build_dir} has no entry CMAKE_GENERATOR.  {cmake.AGAIN}")
-    if "Ninja" not in generator.value:
-        raise NotApplicable(f"the generator of the build is {generator.value}, and only ninja writes a dependency log")
-    ninja = entries.get("CMAKE_MAKE_PROGRAM")
-    ctest = entries.get("CMAKE_CTEST_COMMAND")
-    return (ninja.value if ninja is not None and ninja.value else "ninja"), (None if ctest is None else ctest.value)
 
 
 def run_tool(command: list[str]) -> str:
@@ -178,24 +170,27 @@ def run_tool(command: list[str]) -> str:
     return proc.decoded(result.stdout, "surrogateescape")
 
 
-def objects_of_all(build_dir: Path, ninja: str, root: Path) -> list[tuple[Path, str]]:
+def objects_of_all(build_dir: Path, root: Path) -> list[tuple[Path, str]]:
     """Return each object of the target all, with its source as a message shows it.
 
     Complexity: linear in the rows of the compile database and the inputs of all.
 
     Raises:
-        NotApplicable: If an object of all does not exist, because the build made only some targets
+        NotApplicable: If the generator of the build is not Ninja, or an object of all is missing, because the build
+            made only some targets
         CensusError: If the compile database or the inputs of all cannot be read
     """
+    try:
+        inputs = {os.path.normpath(os.path.join(build_dir, name)) for name in ninja.inputs(build_dir, "all")}
+    except ninja.NotNinja as problem:
+        raise NotApplicable(str(problem)) from None
+    except ninja.NinjaError as problem:
+        raise CensusError(f"the inputs of the target all cannot be read: {problem}") from None
     database = compdb.database_file(build_dir)
     try:
         compiles = compdb.entries(build_dir)
     except compdb.CompdbError as problem:
         raise CensusError(f"the compile database cannot be read: {problem}") from None
-    inputs = {
-        os.path.normpath(os.path.join(build_dir, name))
-        for name in run_tool([ninja, "-C", str(build_dir), "-t", "inputs", "all"]).split()
-    }
     objects: dict[str, str] = {}
     for compile_entry in compiles:
         if compile_entry.output is None:
@@ -217,52 +212,29 @@ def objects_of_all(build_dir: Path, ninja: str, root: Path) -> list[tuple[Path, 
     return [(Path(path), source) for path, source in sorted(objects.items())]
 
 
-def parse_dependencies(output: str) -> tuple[dict[str, list[str]], dict[str, str]]:
-    """Read the output of `ninja -t deps`: the files of each target and the state of its list.
+def read_dependencies(build_dir: Path, keys: list[str]) -> dict[str, tuple[str, ...]]:
+    """Read the files of the list of each object from the dependency log of Ninja.
 
-    The state is VALID, MISSING (the log holds no list of the target) or
-    STALE (the list is older than the output).
-
-    Complexity: linear in the length of the output.
-
-    Args:
-        output: The standard output of `ninja -t deps`
-
-    Returns:
-        The files of each target, and the state of each target
-    """
-    lists: dict[str, list[str]] = {}
-    states: dict[str, str] = {}
-    current: list[str] | None = None
-    for line in output.splitlines():
-        if not line:
-            continue
-        if line[0] in " \t":
-            if current is not None:
-                current.append(line.strip())
-            continue
-        target, _, rest = line.partition(": ")
-        current = []
-        lists[target] = current
-        states[target] = "VALID" if rest.endswith("(VALID)") else "MISSING" if "deps not found" in rest else "STALE"
-    return lists, states
-
-
-def read_dependencies(build_dir: Path, ninja: str, keys: list[str]) -> dict[str, list[str]]:
-    """Read the dependency list of each object from the ninja log.
-
-    Complexity: linear in the length of the log output.
+    Complexity: linear in the length of the output of the log.
 
     Raises:
-        CensusError: If ninja fails, or the log holds no valid list for an object
+        NotApplicable: If the generator of the build is not Ninja
+        CensusError: If ninja fails, or the log holds no VALID list with a file for an object
     """
-    lists, states = parse_dependencies(run_tool([ninja, "-C", str(build_dir), "-t", "deps", *keys]))
-    bad = [key for key in keys if states.get(key) != "VALID" or not lists.get(key)]
+    try:
+        lists = ninja.deps(build_dir, keys)
+    except ninja.NotNinja as problem:
+        raise NotApplicable(str(problem)) from None
+    except ninja.NinjaError as problem:
+        raise CensusError(f"the dependency log of Ninja cannot be read: {problem}") from None
+    bad = [key for key in keys if lists[key].state != ninja.DepsState.VALID or not lists[key].files]
     if bad:
+        first = lists[min(bad)]
         raise CensusError(
-            f"the ninja log holds no valid dependency list of {len(bad)} objects: {names_text(bad)}.  Build them again"
+            f"the dependency log of Ninja holds no VALID list of {len(bad)} objects: {names_text(bad)}.  The list of "
+            f"the first one is {first.state}{f' ({first.why})' if first.why else ''}.  Build them again"
         )
-    return lists
+    return {key: lists[key].files for key in keys}
 
 
 def object_cost(path: Path) -> Cost:
@@ -378,12 +350,12 @@ def read_census(build_dir: Path, root: Path, read_files: bool = True) -> Census:
         NotApplicable: If an input does not exist by the design of the build
         CensusError: If an input exists and cannot be read, or only some fixtures have a record
     """
-    ninja, ctest = tools_of(build_dir)
-    objects = objects_of_all(build_dir, ninja, root)
+    objects = objects_of_all(build_dir, root)
+    ctest = ctest_of(build_dir)
     units: list[Unit] = [Unit("object", shown(path, build_dir), source, object_cost(path)) for path, source in objects]
-    names_of: list[list[str]] = []
+    names_of: list[Sequence[str]] = []
     if read_files:
-        lists = read_dependencies(build_dir, ninja, [unit.item for unit in units])
+        lists = read_dependencies(build_dir, [unit.item for unit in units])
         names_of = [lists[unit.item] for unit in units]
     fixtures = fixtures_of(build_dir, ctest)
     missing: list[str] = []
@@ -412,9 +384,9 @@ def read_census(build_dir: Path, root: Path, read_files: bool = True) -> Census:
     sizes: dict[str, int] = {}
     if read_files:
         resolved: dict[str, str] = {}
-        for unit, names in zip(units, names_of, strict=True):
+        for unit, unit_names in zip(units, names_of, strict=True):
             files: dict[str, None] = {}
-            for name in names:
+            for name in unit_names:
                 real = resolved.get(name)
                 if real is None:
                     real = os.path.realpath(name if os.path.isabs(name) else os.path.join(build_dir, name))

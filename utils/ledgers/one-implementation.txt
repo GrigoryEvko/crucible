@@ -171,8 +171,6 @@ utils/assay/oracle/runner.py | near-copy | 1 | evaluate_subtype | A copy of toda
 utils/assay/oracle/unit_store.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/readers/elf.py | copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/readers/elf.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/readers/ninja.py | copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/readers/ninja.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/readers/sections.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/tests/core/test_git.py | copy | 1 | main.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/tests/core/test_ledger.py | copy | 1 | main.expect | A copy of today.  The change that keeps one body and calls it lowers the count

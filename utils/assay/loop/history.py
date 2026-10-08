@@ -107,6 +107,7 @@ import resource
 import sys
 import tempfile
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -135,8 +136,8 @@ RECORD_SLACK_S = 1.0
 # The edge kinds whose time the critical path counts.  The glob check and the
 # CMake run are of the kind "cmake", and a phony edge does no work.
 WORK_KINDS = frozenset({"compile", "link", "archive", "custom", "other"})
-# The word that read_graph() leaves of the variable ${cmake_ninja_workdir}, which
-# CMake puts before the absolute name of an implicit output.
+# The word that the graph of assay.readers.ninja gives for the variable
+# ${cmake_ninja_workdir}, which CMake puts before the absolute name of an implicit output.
 WORKDIR_PREFIX = "{cmake_ninja_workdir}"
 # The fields of the line "cpu" of /proc/stat that count busy time: user, nice,
 # system, irq, softirq and steal.  The time of a guest is part of user.
@@ -254,7 +255,7 @@ def absolute_output(build: Path, name: str) -> str:
 
     Args:
         build: The build directory
-        name: The path as read_graph() gives it
+        name: The path as the graph of assay.readers.ninja gives it
 
     Returns:
         The absolute path
@@ -270,7 +271,7 @@ def compact(graph: ninja_files.Graph, build: Path) -> CompactGraph:
     Complexity: linear in the edges and their inputs.
 
     Args:
-        graph: The graph of read_graph()
+        graph: The graph of assay.readers.ninja
         build: The build directory
 
     Returns:
@@ -295,7 +296,7 @@ def compact(graph: ninja_files.Graph, build: Path) -> CompactGraph:
 def manifest_key(build: Path) -> list[int] | None:
     """Return the inode, the size and the time of build.ninja, or None when it does not exist."""
     try:
-        status = (build / "build.ninja").stat()
+        status = ninja_files.graph_file(build).stat()
     except OSError:
         return None
     return [status.st_ino, status.st_size, status.st_mtime_ns]
@@ -325,7 +326,7 @@ def load_graph(build: Path) -> CompactGraph | None:
             return graph
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         pass
-    graph = compact(ninja_files.read_graph(build / "build.ninja"), build)
+    graph = compact(ninja_files.graph(build), build)
     cache.parent.mkdir(parents=True, exist_ok=True)
     staging = cache.with_name(f".{cache.name}.{os.getpid()}")
     staging.write_text(json.dumps({"format": GRAPH_FORMAT, "key": key, "build": str(build), "kinds": graph.kinds,
@@ -338,7 +339,7 @@ def load_graph(build: Path) -> CompactGraph | None:
 
 
 def edge_spans(graph: CompactGraph, records: dict[str, ninja_files.LogRecord],
-               outputs: list[str]) -> tuple[dict[int, tuple[int, int]], int]:
+               outputs: Sequence[str]) -> tuple[dict[int, tuple[int, int]], int]:
     """Return the start and the end of each edge that ran, from the records of its outputs.
 
     Args:
@@ -495,7 +496,7 @@ def summarize_build(build: Path, graph: CompactGraph | None, before: dict[str, n
                                 "kinds": dict(sorted(kinds.items()))}
     if unknown:
         facts["unknown_outputs"] = unknown
-    manifest = graph.edge_of.get(os.path.normpath(build / "build.ninja"))
+    manifest = graph.edge_of.get(os.path.normpath(ninja_files.graph_file(build)))
     if manifest is not None and manifest in spans:
         start, end = spans[manifest]
         facts["reconfigure_s"] = round((end - start) / 1000, 2)
@@ -558,7 +559,7 @@ def configure_time(build: Path) -> dict[str, object] | None:
     try:
         start_text, end_text = (build / CONFIGURE_TIME_FILE).read_text(encoding="ascii").split()
         start, end = float(start_text), float(end_text)
-        written = (build / "build.ninja").stat().st_mtime
+        written = ninja_files.graph_file(build).stat().st_mtime
     except (OSError, ValueError):
         return None
     if not start <= end <= written + CONFIGURE_SLACK_S:
@@ -691,7 +692,7 @@ class Recorder:
     def start_build(self) -> StepTimer:
         """Read the ninja log before the build, and return the timer of the build step."""
         try:
-            self._log_before = ninja_files.read_log(self.build)
+            self._log_before = ninja_files.log(self.build)
         except Exception as problem:  # noqa: BLE001
             self.problems.append(f"the ninja log before the build: {problem}")
         return self._build_timer
@@ -704,7 +705,7 @@ class Recorder:
         """
         facts: dict[str, object] = {"status": status, **self._build_timer.result}
         try:
-            after = ninja_files.read_log(self.build)
+            after = ninja_files.log(self.build)
             facts.update(summarize_build(self.build, load_graph(self.build), self._log_before, after,
                                          self._build_timer.started_epoch))
         except Exception as problem:  # noqa: BLE001
@@ -915,7 +916,7 @@ def self_test() -> int:
 
     with tempfile.TemporaryDirectory(prefix="loop-history-") as work:
         build = Path(work)
-        (build / "build.ninja").write_text(PLANTED_NINJA, encoding="utf-8")
+        manifest = ninja_files.plant_graph(build, PLANTED_NINJA)
         graph = load_graph(build)
         assert graph is not None
         expect("load_graph writes the cache", (build / HISTORY_DIR / GRAPH_NAME).is_file())
@@ -966,17 +967,17 @@ def self_test() -> int:
         expect("summarize_build gives the critical path, the longest edge and the peak memory",
                facts["critical_path_s"] == 9.5 and facts["critical_path"] == ["gen.h", "a.o", "liba.a", "tool"]
                and facts["longest_edge"] == "a.o" and facts["longest_edge_s"] == 5.0 and facts["peak_memory_gb"] == 1.0)
-        log_after[str(build / "build.ninja")] = ninja_files.LogRecord(0, 6300, 3, "h")
+        log_after[str(manifest)] = ninja_files.LogRecord(0, 6300, 3, "h")
         expect("summarize_build gives the time of a CMake run inside the build",
                summarize_build(build, graph, log_before, log_after, time.time() - 10)["reconfigure_s"] == 6.3)
-        (build / "build.ninja").write_text(PLANTED_NINJA + "build extra: phony all\n", encoding="utf-8")
+        ninja_files.plant_graph(build, PLANTED_NINJA + "build extra: phony all\n")
         changed = load_graph(build)
         expect("load_graph reads build.ninja again after it changes",
                changed is not None and str(build / "extra") in changed.edge_of)
 
         expect("configure_time gives nothing for a build directory with no configure-time.txt",
                configure_time(build) is None)
-        written = (build / "build.ninja").stat().st_mtime
+        written = manifest.stat().st_mtime
         (build / CONFIGURE_TIME_FILE).write_text(f"{written - 6.5} {written - 2.0}\n", encoding="ascii")
         times = configure_time(build)
         expect("configure_time gives the configure, the generate step and their sum",

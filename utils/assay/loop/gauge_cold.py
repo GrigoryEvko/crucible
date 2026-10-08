@@ -170,7 +170,7 @@ def compile_lines(build_dir: Path) -> list[str]:
     Returns:
         The lines, or one line that says that the build wrote no ninja log
     """
-    records = ninja_files.read_log(build_dir)
+    records = ninja_files.log(build_dir)
     if not records:
         return ["loop gauge --cold: the build wrote no ninja log."]
     steps = {os.path.relpath(output, build_dir): (record.end_ms - record.start_ms) / 1000.0

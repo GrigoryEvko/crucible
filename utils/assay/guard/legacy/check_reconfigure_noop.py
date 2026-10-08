@@ -23,7 +23,7 @@ WHAT THE CHECK DOES
        record of build.ninja tells that CMake configured again during the
        build, so a glob with CONFIGURE_DEPENDS or a configure dependency
        changed with no source change.
-    6. It reads the dependency log of Ninja (`ninja -t deps`).  Each
+    6. It reads the dependency log of Ninja through assay.readers.ninja.  Each
        recorded dependency must exist.  A dependency that does not exist
        makes its object dirty on each build.  A compiler launcher that gives
        the dependency file of another build directory, such as ccache with a
@@ -63,24 +63,22 @@ from assay.core import proc
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
 from assay.readers import cmake as cmake_reader
-from assay.readers.ninja import LOG_NAME, read_log, ran_outputs
+from assay.readers import ninja as ninja_reader
 from assay.setup import pins as cmake_pin
 
 CHECK = "reconfigure-noop"
 GLOB_CHECK = Path("CMakeFiles") / "cmake.verify_globs"
-MANIFEST = "build.ninja"
 # The lines of build output that a finding prints, at most.
 OUTPUT_LINES = 60
 
 
 @dataclass(frozen=True, slots=True)
 class BuildDir:
-    """A configured Ninja build directory and the tools that it names."""
+    """A configured Ninja build directory, its source tree and its cmake."""
 
     path: Path
     source: Path
     cmake: str
-    ninja: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,7 +143,7 @@ def open_build(build: Path) -> tuple[BuildDir | None, str]:
     for name, value in (("CMAKE_HOME_DIRECTORY", source), ("CMAKE_COMMAND", cmake), ("CMAKE_MAKE_PROGRAM", ninja)):
         if not value or not Path(value).exists():
             return None, f"the cache entry {name} of {build} names no existing path ('{value}')"
-    return BuildDir(build, Path(source), cmake, ninja), ""
+    return BuildDir(build, Path(source), cmake), ""
 
 
 def run(argv: list[str], timeout_s: float, cwd: Path | None = None) -> tuple[int, str]:
@@ -217,9 +215,9 @@ def tail(text: str) -> str:
 
 
 def missing_dependencies(tree: BuildDir) -> tuple[dict[str, list[str]], str]:
-    """Read the dependency log of Ninja and return each recorded dependency that does not exist.
+    """Read the dependency log of Ninja (assay.readers.ninja) and return each recorded dependency that is missing.
 
-    Complexity: O(n) in the lines of `ninja -t deps`.
+    Complexity: O(n) in the files of the lists of the log, with one stat for each file.
 
     Args:
         tree: The build directory
@@ -227,23 +225,19 @@ def missing_dependencies(tree: BuildDir) -> tuple[dict[str, list[str]], str]:
     Returns:
         The missing dependencies of each output, and an error text when the log cannot be read
     """
-    code, output = run([tree.ninja, "-C", str(tree.path), "-t", "deps"], proc.QUICK_S)
-    if code != 0:
-        return {}, f"`ninja -t deps` failed: {tail(output)}"
+    try:
+        lists = ninja_reader.deps(tree.path)
+    except ninja_reader.NinjaError as problem:
+        return {}, f"the dependency log of Ninja cannot be read: {problem}"
     # Ninja can list one output two times, under a relative and an absolute
-    # name, so the outputs are normalized and each dependency counts once.
+    # name.  The outputs are normalized, and each dependency counts one time.
     missing: dict[str, list[str]] = {}
-    target = ""
-    for raw in output.splitlines():
-        if not raw.strip():
-            continue
-        if not raw[0].isspace():
-            target = os.path.normpath(os.path.join(tree.path, raw.split(": #deps", 1)[0]))
-            continue
-        dependency = raw.strip()
-        known = missing.get(target, [])
-        if dependency not in known and not os.path.exists(os.path.join(tree.path, dependency)):
-            missing[target] = [*known, dependency]
+    for output, listed in sorted(lists.items()):
+        target = os.path.normpath(os.path.join(tree.path, output))
+        for dependency in listed.files:
+            known = missing.get(target, [])
+            if dependency not in known and not os.path.exists(os.path.join(tree.path, dependency)):
+                missing[target] = [*known, dependency]
     return missing, ""
 
 
@@ -266,13 +260,17 @@ def evaluate(build: Path, jobs: int, root: Path) -> tuple[list[check_report.Find
     if code != 0:
         return [finding(place, "the build fails, so the check cannot measure a second configure.  Make the build "
                                "pass first.")], tail(output)
-    if not (build / LOG_NAME).is_file():
-        return [finding(place, f"the build wrote no {LOG_NAME}, so the check cannot see which edges ran.")], ""
+    log_path = ninja_reader.log_file(build)
+    if not log_path.is_file():
+        return [finding(place, f"the build wrote no {log_path.name}, so the check cannot see which edges ran.")], ""
     links_before = read_links(build)
     code, output = run([tree.cmake, "-S", str(tree.source), "-B", str(build)], proc.BUILD_S)
     if code != 0:
         return [finding(place, "the second configure fails.")], tail(output)
-    log = read_log(build)
+    try:
+        log = ninja_reader.log(build)
+    except ninja_reader.NinjaError as unread:
+        return [finding(place, f"the build log of Ninja cannot be read: {unread}")], ""
     findings: list[check_report.Finding] = []
     for path, state in sorted(read_links(build).items()):
         old = links_before.get(path)
@@ -283,15 +281,20 @@ def evaluate(build: Path, jobs: int, root: Path) -> tuple[list[check_report.Find
                                     f"{state.target}.  Make the link only when its target changes."))
     explained = ""
     allowed = os.path.normpath(build / GLOB_CHECK)
-    manifest = os.path.normpath(build / MANIFEST)
+    manifest = os.path.normpath(ninja_reader.graph_file(build))
     for attempt in ("first", "second"):
         code, output = build_once(tree, jobs)
         if code != 0:
             findings.append(finding(place, f"the {attempt} build after the second configure fails."))
             explained += tail(output) + "\n"
             break
-        after = read_log(build)
-        edges = [edge for edge in ran_outputs(log, after) if edge != allowed]
+        try:
+            after = ninja_reader.log(build)
+        except ninja_reader.NinjaError as unread:
+            findings.append(finding(place, f"the build log of Ninja cannot be read after the {attempt} build: "
+                                           f"{unread}"))
+            break
+        edges = [edge for edge in ninja_reader.ran_outputs(log, after) if edge != allowed]
         log = after
         for edge in edges:
             if edge == manifest:

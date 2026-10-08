@@ -262,7 +262,7 @@ def run_step(name: str, command: list[str], cwd: Path, environment: dict[str, st
     Raises:
         proc.CannotStart: If the program of the step cannot start
     """
-    before = ninja_files.read_log(build) if build is not None else {}
+    before = ninja_files.log(build) if build is not None else {}
     counter = cost_meter.open_instruction_counter()
     step_command = proc.Command(command, timeout_s=proc.BUILD_S, cwd=cwd, env=environment,
                                 stdout=logs / f"{name}.log", stderr=proc.Output.MERGE)
@@ -277,7 +277,7 @@ def run_step(name: str, command: list[str], cwd: Path, environment: dict[str, st
                       None if result["others_pct"] is None else float(result["others_pct"]),
                       None if instructions is None else round(instructions / GIGA, 1))
     if build is not None:
-        facts = loop_history.summarize_build(build, loop_history.load_graph(build), before, ninja_files.read_log(build),
+        facts = loop_history.summarize_build(build, loop_history.load_graph(build), before, ninja_files.log(build),
                                              timer.started_epoch)
         step.peak_memory_gb = loop_history.number(facts, "peak_memory_gb")
         step.critical_path_s = loop_history.number(facts, "critical_path_s")

@@ -111,7 +111,6 @@ utils/assay/oracle/unit_store.py | no-test | 1 | assay.oracle.unit_store | A mod
 utils/assay/readers/census.py | no-test | 1 | assay.readers.census | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/readers/ctest.py | no-test | 1 | assay.readers.ctest | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/readers/elf.py | no-test | 1 | assay.readers.elf | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/readers/ninja.py | no-test | 1 | assay.readers.ninja | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/readers/sections.py | no-test | 1 | assay.readers.sections | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/readers/shell.py | no-test | 1 | assay.readers.shell | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/readers/tsast.py | no-test | 1 | assay.readers.tsast | A module of today with no test module.  The change that writes the test module removes the row

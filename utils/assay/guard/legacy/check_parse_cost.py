@@ -1027,7 +1027,8 @@ def self_test() -> int:
                and "only some targets" in output)
         tree.add_object("b", ["src/b.cpp", "include/Base.h"], state="STALE")
         status, found, _ = tree.run()
-        expect("a stale dependency list is an error", status == 1 and "no valid dependency list" in found[0].message)
+        expect("a stale dependency list is an error, with the reason of the reader",
+               status == 1 and "no VALID list" in found[0].message and "newer than its list" in found[0].message)
         tree.add_object("b", ["src/b.cpp", "include/Base.h"])
         (tree.build / "neg-compile" / "neg_two" / "neg_two.inputs").unlink()
         status, found, _ = tree.run()
@@ -1045,7 +1046,7 @@ def self_test() -> int:
         expect("a file of a record that is gone is an error", status == 1 and "Gone.h" in found[0].message)
         cmake.plant(tree.build, cache={"CMAKE_GENERATOR": "Unix Makefiles"})
         status, found, output = tree.run()
-        expect("a build of another generator exits 3", status == NOT_APPLICABLE and "only ninja" in output)
+        expect("a build of another generator exits 3", status == NOT_APPLICABLE and "only Ninja" in output)
 
         # header-fanout: twelve headers, each with a sentinel, and one object that reads each header.
         fan = Scratch(Path(scratch_name).resolve() / "fan")

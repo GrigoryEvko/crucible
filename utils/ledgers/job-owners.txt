@@ -398,9 +398,6 @@ utils/assay/readers/census.py | cost-record | 1 | <module> | A use of today.  Th
 utils/assay/readers/elf.py | print | 1 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/readers/elf.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/readers/elf.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/readers/ninja.py | print | 1 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/readers/ninja.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/readers/ninja.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/readers/sections.py | print | 1 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/readers/sections.py | print | 3 | print_objects | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/readers/sections.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count

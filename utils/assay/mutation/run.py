@@ -69,7 +69,7 @@ from assay.core import proc
 from assay.core import rows as rows_grammar
 from assay.core.paths import LOOP, REPO_ROOT
 from assay.mutation import gates as gate_finder
-from assay.readers import cmake, compdb, tsast
+from assay.readers import cmake, compdb, ninja, tsast
 from assay.setup import pins as cmake_pin
 
 RULE = "gate-mutants"
@@ -817,7 +817,7 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         (tmp / "wide_user.cpp").write_text(WIDE_USER)
         (tmp / "run_half.cpp").write_text(RUNNER)
         (tmp / "run_third.cpp").write_text(THIRD_RUNNER)
-        (tmp / "build.ninja").write_text(NINJA_FILE.format(compiler=args.compiler))
+        ninja.plant_graph(tmp, NINJA_FILE.format(compiler=args.compiler))
         base = [args.compiler, "-std=c++26", "-fcontracts", f"-I{tmp / 'include'}"]
         rows = [{"directory": str(tmp), "file": str(tmp / name), "arguments": base + ["-c", str(tmp / name),
                  "-o", str(tmp / (name + ".o"))]}
