@@ -8,7 +8,7 @@
 # The seconds are the median of three runs of the user plus system CPU time of a translation
 # unit that includes only the header, with -fsyntax-only and the flags of test/foundation/test_row_hash.cpp.
 # The lines are the non-empty lines of the -E -P output of the same unit.  A header is heavy when
-# it costs more than <meta> times the factor of the row heavy-include of utils/scripts/budgets.txt.
+# it costs more than <meta> times the factor of the measured rule heavy-include of utils/registry.txt.
 #
 # Measured 2026-10-01 on AMD EPYC 9655 96-Core Processor, 376 threads, load average 789.  An empty translation unit costs 0.01 s.
 

@@ -72,12 +72,12 @@ THE HOST LOAD
     is small for the two.
 
 THE WARNINGS OF A LINE
-    judge_line() compares one line with three rows of utils/scripts/budgets.txt,
-    and each finding is a warning: noop-build-time for the wall time of a
-    build that ran no edge but the glob check, build-peak-memory for the peak
-    concurrent memory of the build, and configure-time for a CMake run inside
-    the build.  `loop test` prints the warnings of its line, and the table
-    prints the warnings of each line that it shows.
+    judge_line() compares one line with three measured rules of
+    utils/registry.txt, and each finding is a warning: noop-build-time for the
+    wall time of a build that ran no edge but the glob check, build-peak-memory
+    for the peak concurrent memory of the build, and configure-time for a
+    CMake run inside the build.  `loop test` prints the warnings of its line,
+    and the table prints the warnings of each line that it shows.
 
 THE CONFIGURE TIME
     The root CMakeLists.txt writes the start and the end of each configure to
@@ -575,11 +575,11 @@ def configure_time(build: Path) -> dict[str, object] | None:
 
 def warning_over(budgets: dict[str, check_report.Budget], row: str, value: float | None, unit: str, what: str,
                  place: str) -> list[check_report.Finding]:
-    """Return a warning when a value is over the warning threshold of its row, else no finding.
+    """Return a warning when a value is over the warning threshold of its measured rule, else no finding.
 
     Args:
-        budgets: The budget table
-        row: The row
+        budgets: The measured rules of the registry
+        row: The ID of the measured rule
         value: The value, or None for no value
         unit: The unit of the value
         what: The words that name the value
@@ -592,7 +592,7 @@ def warning_over(budgets: dict[str, check_report.Budget], row: str, value: float
     if budget is None or value is None or value <= budget.warn:
         return []
     return [check_report.Finding("warning", place, 0, row, f"{what} took {value:g} {unit}, over the warning threshold "
-                                                           f"of {budget.warn:g} {unit} of the row {row}")]
+                                                           f"of {budget.warn:g} {unit} of the rule {row}")]
 
 
 def judge_line(line: dict[str, object], budgets: dict[str, check_report.Budget],
@@ -601,7 +601,7 @@ def judge_line(line: dict[str, object], budgets: dict[str, check_report.Budget],
 
     Args:
         line: The line
-        budgets: The budget table
+        budgets: The measured rules of the registry
         place: The path that a finding names
 
     Returns:

@@ -1304,9 +1304,9 @@ def _runtime_flags(cxx: str) -> list[str]:
 def _cxx_flags(include: Path) -> list[str]:
     """Return the flags of each compile of an emitted test or a measured program, with ``include`` as the include tree.
 
-    The operation limit is the limit of the build, the row constexpr-ops of
-    utils/scripts/budgets.txt, so an emitted test compiles where the build
-    compiles it.
+    The operation limit is the limit of the build, the measured rule
+    constexpr-ops of utils/registry.txt, so an emitted test compiles where the
+    build compiles it.
     """
     ops_limit = check_report.threshold_text(check_report.read_budgets()["constexpr-ops"].error)
     return ["-std=c++26", "-freflection", "-fcontracts", f"-fconstexpr-ops-limit={ops_limit}",

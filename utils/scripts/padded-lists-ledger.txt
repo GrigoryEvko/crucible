@@ -2,8 +2,8 @@
 # The rule padded-list (`guard check --rule padded-list`) reads this ledger.
 #
 # With -ftrivial-auto-var-init=zero, GCC writes one store for each padding hole of each element of
-# a fixed list in an automatic object, with no loop.  Make each padding byte a member.  The row
-# padded-list of utils/scripts/budgets.txt gives the element count above which a list counts.
+# a fixed list in an automatic object, with no loop.  Make each padding byte a member.  The measured
+# rule padded-list of utils/registry.txt gives the element count above which a list counts.
 #
 # A count row:  path | role | declaration | element type
 #   A padded list that the tree holds today.  Each run gives a warning for it.  When you remove the

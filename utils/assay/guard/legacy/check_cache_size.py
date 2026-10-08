@@ -5,8 +5,8 @@ THE CHECK
     and LIMITS of that module gives the limit of each one.  The check takes the
     size of each cache from a sample of its files (cache.py, THE SAMPLE),
     so a run does not stat each file of a large cache.  It divides the size by
-    the limit, and it compares the quotient with the row cache-size of
-    utils/scripts/budgets.txt.  A cache over the warning threshold gives a
+    the limit, and it compares the quotient with the measured rule cache-size
+    of utils/registry.txt.  A cache over the warning threshold gives a
     warning, and a cache over the error threshold gives an error.  The
     eviction of each cache holds it under its limit.  So a cache over its
     limit shows an eviction that does not run, or a limit that is too small.
@@ -53,7 +53,7 @@ def findings(root: Path | None, limits: dict[str, int], budget: check_report.Bud
     Args:
         root: The root of the caches, or None when the caches are off
         limits: The limit of each cache, in allocated bytes
-        budget: The row cache-size of the budget table
+        budget: The measured rule cache-size of the registry
         rng: The random generator of the samples, or None for a new one
 
     Returns:
@@ -78,9 +78,9 @@ def findings(root: Path | None, limits: dict[str, int], budget: check_report.Bud
         found.append(check_report.Finding(
             level, str(directory), 0, CHECK,
             f"the cache {directory.name} holds {size / GIB:.2f} GiB, {size / limit:.2f} times its limit of "
-            f"{limit / GIB:.2f} GiB in LIMITS of utils/assay/core/cache.py.  The {level} threshold of the row "
-            f"{CHECK} is {threshold} times the limit.  The eviction of the cache holds it under its limit, so the "
-            f"eviction does not run, or the limit is too small."))
+            f"{limit / GIB:.2f} GiB in LIMITS of utils/assay/core/cache.py.  The {level} threshold of the "
+            f"measured rule {CHECK} is {threshold} times the limit.  The eviction of the cache holds it under its "
+            f"limit, so the eviction does not run, or the limit is too small."))
     return found
 
 
@@ -101,7 +101,7 @@ def self_test() -> int:
             failures.append(name)
 
     budget = check_report.read_budgets()[CHECK]
-    expect("the row cache-size warns over the limit and fails over twice the limit",
+    expect("the measured rule cache-size warns over the limit and fails over twice the limit",
            budget.warn == 1 and budget.error == 2)
     with tempfile.TemporaryDirectory(prefix="cache-size-") as scratch:
         root = Path(scratch)

@@ -1,5 +1,5 @@
 # utils/scripts/link-memory-ledger.txt — the links that can take more peak memory than the error
-# threshold of link-memory (utils/scripts/budgets.txt).  utils/assay/loop/step.py fails a link
+# threshold of the measured rule link-memory (utils/registry.txt).  utils/assay/loop/step.py fails a link
 # over that threshold unless a row of this ledger admits its output for the kind of the build.
 # utils/assay/guard/legacy/check_compile_cost.py reads the ledger too.
 #
@@ -11,6 +11,5 @@
 #
 # A link over the error threshold that a row admits gives a warning, and the link does not fail.  In a
 # build of its kind, the check gives a warning for a row while its output stays over the error
-# threshold, and an error when the output is at or under it.  python3 utils/bin/guard check --rule compile-cost
-# --check link-memory --build-dir DIR --write [--reason TEXT] writes the rows of the kind of a build
-# again from that build.
+# threshold, and an error when the output is at or under it.  python3 utils/bin/guard check --rule link-memory
+# --build-dir DIR --write [--reason TEXT] writes the rows of the kind of a build again from that build.

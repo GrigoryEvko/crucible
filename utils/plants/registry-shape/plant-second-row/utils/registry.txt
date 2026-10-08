@@ -1,0 +1,6 @@
+# a planted registry: the rule has two rows
+format 1
+rule slow-row engine=build scope=builddir ledger=max warn=10 error=20 unit=s held-by=cmake doc=XV | a planted time | lower the value
+rule stray-rule engine=meta scope=tracked ledger=none doc=XV | a planted refusal | fix the planted file
+rule stray-rule engine=meta scope=tracked ledger=none doc=XV | a second planted refusal | fix the planted file
+path utils/registry.txt | the planted registry

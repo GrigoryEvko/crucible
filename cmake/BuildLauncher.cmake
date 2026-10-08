@@ -8,7 +8,8 @@
 # and holds no time.  The launcher also holds the budget of the step: a step
 # over the memory error threshold fails, and RLIMIT_CPU stops a step that
 # runs away (the docstring of the launcher gives the rules).
-# The rule compile-cost (`guard check --rule compile-cost`) reads the records and the outputs.
+# The rules compile-cpu, compile-instructions, compile-memory, link-time and link-memory
+# (`guard check --rule ID`) read the records and the outputs.
 #
 # This file comes after each block that sets or clears the compiler
 # launcher: the ccache block, the PGO block and the quarantine plugin.  It
@@ -24,8 +25,7 @@
 #
 # python3 -S skips the site module, which saves about 5 ms of each step.  A
 # host with no python3 builds with no launcher, because a measurement never
-# stops a build.  The checks of the rule compile-cost then find no record, and
-# they fail.
+# stops a build.  Those rules then find no record, and they fail.
 #
 # The build kind names the preset of the build for the ledger rows, because
 # the sizes and the times depend on it.  The launcher and the checks read it

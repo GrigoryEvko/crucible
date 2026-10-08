@@ -1,4 +1,4 @@
-"""check-test-time — no test that runs without the test launcher takes more than the budget of the row test-time.
+"""check-test-time — no test that runs without the test launcher takes more than the measured rule test-time permits.
 
 The test launcher `loop test-step` judges each executable test while it runs.
 CMake gives that launcher only to a test whose command is an executable
@@ -22,8 +22,8 @@ WHAT THE CHECK READS
       Without --from-ctest, the check reads --log, by default
       BUILD_DIR/Testing/Temporary/LastTest.log of the last ctest command.
       `ctest --show-only` writes that file too, with no test in it.
-    * The row test-time of utils/scripts/budgets.txt: the warning threshold
-      and the error threshold, in seconds.
+    * The measured rule test-time of utils/registry.txt: the warning
+      threshold and the error threshold, in seconds.
     * The kind of the build (BUILD_DIR/build-kind.txt).
     * utils/scripts/test-time-ledger.txt, `kind | test | value | reason`: the
       tests that take more than the error threshold at this time.
@@ -31,9 +31,9 @@ WHAT THE CHECK READS
       test has a finding or the ledger has a row of the kind: the CMake file
       and the line that register each test, for the place of a finding, and
       the tests that the build registers.
-    The variables CRUCIBLE_TEST_BUDGETS and CRUCIBLE_TEST_LEDGERS name another
-    budget table and another directory of ledgers, as for the test launcher.
-    Only a self-test sets them.
+    The variables CRUCIBLE_TEST_REGISTRY and CRUCIBLE_TEST_LEDGERS name
+    another registry and another directory of ledgers, as for the test
+    launcher.  Only a self-test sets them.
 
 THE LOG
     ctest writes one block for each test when the test ends:
@@ -78,8 +78,8 @@ LEVELS
     a test that the build does not register and an input that the check
     cannot read stay errors.
 
-    The log gives no memory of a test.  The row test-memory holds only the
-    tests of the launcher.
+    The log gives no memory of a test.  The measured rule test-memory holds
+    only the tests of the launcher.
 
 Usage
     guard check --rule test-time --build-dir BUILD_DIR [--from-ctest | --log FILE] [--ctest CTEST]
@@ -111,6 +111,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import meter as cost_meter
+from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import DATA, REPO_ROOT
 from assay.setup import pins as cmake_pin
@@ -118,7 +119,7 @@ from assay.setup import pins as cmake_pin
 CHECK = "test-time"
 ROOT = REPO_ROOT
 LEDGER_NAME = "test-time-ledger.txt"
-BUDGETS_ENV = "CRUCIBLE_TEST_BUDGETS"
+REGISTRY_ENV = "CRUCIBLE_TEST_REGISTRY"
 LEDGERS_ENV = "CRUCIBLE_TEST_LEDGERS"
 TEMPORARY = Path("Testing") / "Temporary"
 DEFAULT_LOG = TEMPORARY / "LastTest.log"
@@ -338,7 +339,7 @@ def evaluate(times: list[TestTime], places: dict[str, Place], launched: set[str]
             no row of the kind
         launched: The tests that the launcher runs and judges
         ledger: The ledger rows of the kind of the build
-        budget: The row test-time
+        budget: The measured rule test-time
         kind: The kind of the build
         ledger_name: The path of the ledger, for its findings
 
@@ -394,7 +395,7 @@ def write_ledger(path: Path, times: list[TestTime], launched: set[str], kind: st
         times: The tests of the log
         launched: The tests that the launcher runs
         kind: The kind of the build
-        budget: The row test-time
+        budget: The measured rule test-time
     """
     rows, _, header = cost_meter.read_ledger_rows(str(path))
     kept = {key: value for key, value in rows.items() if key[0] != kind or key[1] in launched}
@@ -420,11 +421,11 @@ def run(build: Path, log: Path | None, ctest: str, warnings_dir: Path | None, sh
     Returns:
         The exit code
     """
-    budgets = Path(os.environ.get(BUDGETS_ENV) or check_report.BUDGETS)
+    registry = Path(os.environ.get(REGISTRY_ENV) or check_report.REGISTRY)
     ledger_path = Path(os.environ.get(LEDGERS_ENV) or DATA) / LEDGER_NAME
     shown_log = display(log) if log is not None else display(build / TEMPORARY)
     try:
-        budget = check_report.read_budgets(budgets)[CHECK]
+        budget = check_report.read_budgets(registry)[CHECK]
         kind = cost_meter.read_kind(str(build))
         if kind is None:
             raise ValueError(f"{build}/{cost_meter.KIND_FILE} does not exist, so the kind of the build is not known")
@@ -436,7 +437,7 @@ def run(build: Path, log: Path | None, ctest: str, warnings_dir: Path | None, sh
         needs_places = bool(ledger) or has_finding(run_log.times, run_log.launched, budget)
         places = read_places(build, ctest) if needs_places and not should_write else {}
     except (ValueError, KeyError, OSError) as exc:
-        problem = f"the row {CHECK} is missing from the budget table" if isinstance(exc, KeyError) else str(exc)
+        problem = f"the measured rule {CHECK} is missing from the registry" if isinstance(exc, KeyError) else str(exc)
         return check_report.emit([check_report.Finding("error", shown_log, 0, CHECK,
                                                        f"the check cannot read its input: {problem}")],
                                  CHECK, warnings_dir)
@@ -621,7 +622,7 @@ def self_test_cases(cmake: str, ctest: str) -> int:
         expect("--write keeps a reason, adds a row above the error threshold, and keeps a row of a launched test",
                set(rows) == {"b", "c", "launched"} and rows["c"].reason == "kept")
         expect("--write keeps a row of another kind", set(read_ledger(ledger, "other-kind")) == {"b"})
-        expect("the repository budget table has the row test-time", CHECK in check_report.read_budgets())
+        expect("the repository registry has the measured rule test-time", CHECK in check_report.read_budgets())
         warnings_dir = root / "warnings"
         with contextlib.redirect_stdout(io.StringIO()) as printed:
             status = check_report.emit(judge({"slow": 7.0}, {}), CHECK, warnings_dir)
@@ -644,7 +645,7 @@ def self_test_cases(cmake: str, ctest: str) -> int:
 def through_ctest(work: Path, cmake: str, ctest: str, expect: Callable[[str, bool], None]) -> None:
     """Run real ctest runs of a scratch project that includes cmake/TestLauncher.cmake, and check each verdict.
 
-    The planted budget tables make each verdict independent of the speed of the host: a table of 0 and 0 makes
+    The planted registries make each verdict independent of the speed of the host: the thresholds 0 and 0 make
     each test an error, 0 and 1000 a warning, and 1000 and 1000 no finding.
     """
     source, build, ledgers = work / "source", work / "build", work / "ledgers"
@@ -669,12 +670,14 @@ def through_ctest(work: Path, cmake: str, ctest: str, expect: Callable[[str, boo
         print(configured.stdout + configured.stderr)
         return
     (build / cost_meter.KIND_FILE).write_text("x86_64-debug-asan\n", encoding="utf-8")
-    table = work / "budgets.txt"
+    registry = work / "registry.txt"
     warnings_file = build / "check-warnings" / f"{CHECK}.txt"
 
-    def ctest_run(thresholds: str, *arguments: str, **extra: str) -> tuple[int, str]:
-        table.write_text(f"test-time | {thresholds} | s | the wall time\n", encoding="utf-8")
-        environment = dict(os.environ, **{BUDGETS_ENV: str(table), LEDGERS_ENV: str(ledgers)})
+    def ctest_run(warn: float, error: float, *arguments: str, **extra: str) -> tuple[int, str]:
+        registry.write_text(rule_registry.planted([rule_registry.measured_rule(CHECK, warn, error, "s",
+                                                                               "the wall time")]),
+                            encoding="utf-8")
+        environment = dict(os.environ, **{REGISTRY_ENV: str(registry), LEDGERS_ENV: str(ledgers)})
         environment.pop(cost_meter.GITHUB_ACTIONS_ENV, None)
         environment.update(extra)
         proc = subprocess.run([ctest, "--test-dir", str(build), "-j3", *arguments], capture_output=True, text=True,
@@ -682,17 +685,17 @@ def through_ctest(work: Path, cmake: str, ctest: str, expect: Callable[[str, boo
         return proc.returncode, proc.stdout + proc.stderr
 
     (ledgers / LEDGER_NAME).write_text("# kind | test | value | reason\n", encoding="utf-8")
-    status, said = ctest_run("0 | 0")
+    status, said = ctest_run(0, 0)
     expect("ctest fails after its tests when a script test is over the error threshold, and names the test and "
            "its place", status != 0 and "error: [test-time] the test planted_script took" in said
            and "error: [test-time] the test planted_wrapped took" in said and "CMakeLists.txt:" in said)
     expect("the check skips a test whose command names the test launcher",
            "planted_launched took" not in said and "2 tests without the launcher" in said)
-    status, said = ctest_run("0 | 1000")
+    status, said = ctest_run(0, 1000)
     expect("ctest passes with a warning for a script test over the warning threshold, and writes the warnings "
            "file", status == 0 and "warning: [test-time] the test planted_script took" in said
            and "planted_script" in (warnings_file.read_text(encoding="utf-8") if warnings_file.is_file() else ""))
-    status, said = ctest_run("1000 | 1000", "-R", "planted_script")
+    status, said = ctest_run(1000, 1000, "-R", "planted_script")
     expect("a run of a part of the suite under the thresholds gives no finding and removes the warnings file",
            status == 0 and "[test-time]" not in said and "1 tests without the launcher" in said
            and not warnings_file.exists())
@@ -700,14 +703,14 @@ def through_ctest(work: Path, cmake: str, ctest: str, expect: Callable[[str, boo
                                        "x86_64-debug-asan | planted_script | 1.0 | a planted reason\n"
                                        "x86_64-debug-asan | planted_wrapped | 1.0 | a planted reason\n",
                                        encoding="utf-8")
-    status, said = ctest_run("0 | 0")
+    status, said = ctest_run(0, 0)
     expect("a ledger row of the kind admits a script test over the error threshold, with a warning",
            status == 0 and said.count("a planted reason") == 2 and "error:" not in said)
     (ledgers / LEDGER_NAME).write_text("# kind | test | value | reason\n", encoding="utf-8")
-    status, said = ctest_run("0 | 0", GITHUB_ACTIONS="true")
+    status, said = ctest_run(0, 0, GITHUB_ACTIONS="true")
     expect("on a CI runner, ctest passes with a demoted warning for a script test over the error threshold",
            status == 0 and "warning: [test-time] the test planted_script took" in said and "demoted" in said)
-    status, said = ctest_run("0 | 0", "--show-only")
+    status, said = ctest_run(0, 0, "--show-only")
     expect("ctest --show-only runs no check", status == 0 and "[test-time]" not in said)
 
 

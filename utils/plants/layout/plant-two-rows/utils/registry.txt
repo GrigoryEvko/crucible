@@ -1,0 +1,7 @@
+# a planted registry: two path rows hold utils/assay/good_module.py
+format 1
+path utils/assay/*.py | a second row of the planted modules
+path utils/assay/**/*.py | the planted modules
+path utils/bin/* | the planted master
+path utils/registry.txt | the planted registry
+path utils/scripts/*.txt | the planted data

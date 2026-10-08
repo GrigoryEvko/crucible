@@ -4,8 +4,8 @@
 #   <layer>/<path>.h | limit | reason
 #
 # test/layer/CMakeLists.txt compiles each header alone with
-# -fconstexpr-ops-limit at the error threshold of the row
-# header-constexpr-ops in utils/scripts/budgets.txt.  An evaluation of more
+# -fconstexpr-ops-limit at the error threshold of the rule
+# header-constexpr-ops in utils/registry.txt.  An evaluation of more
 # operations runs where the header stands, in each translation unit that
 # includes the header, so it stops the build.  A row gives its header the
 # limit of the row in place of that threshold.  The limit of a row is more

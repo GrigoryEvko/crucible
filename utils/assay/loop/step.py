@@ -16,13 +16,13 @@ WHAT THE SUBCOMMAND DOES
     an exact count (meter.py, THE INSTRUCTION COUNT), which costs
     approximately 1 ms.  When the command ends on a signal, the subcommand
     ends on the same signal.  A failure to measure or to write the record
-    never changes the status and prints nothing.  The rule compile-cost
-    finds a missing record, and it fails.  A command with no -o, or a compile
+    never changes the status and prints nothing.  The rules that read the
+    record, such as compile-cpu, find a missing record, and they fail.  A command with no -o, or a compile
     with no -c, runs in its own place, and the subcommand records nothing.
 
-THE BUDGET ROWS
-    A compile reads the rows compile-cpu and compile-memory of
-    utils/scripts/budgets.txt, and a link reads the rows link-time and
+THE MEASURED RULES
+    A compile reads the measured rules compile-cpu and compile-memory of
+    utils/registry.txt, and a link reads the measured rules link-time and
     link-memory.
       * The CPU time.  Each process of the step gets RLIMIT_CPU at three
         times the error threshold of the time row.  A step that reaches the
@@ -65,8 +65,8 @@ A COMPILE THROUGH CCACHE
     For a compile with no ccache, the count of the step is the count of the
     compiler run.
 
-The variables CRUCIBLE_BUILD_BUDGETS and CRUCIBLE_BUILD_LEDGERS name another
-budget table and another directory of ledgers.  utils/assay/tests/loop/test_step.py
+The variables CRUCIBLE_BUILD_REGISTRY and CRUCIBLE_BUILD_LEDGERS name another
+registry and another directory of ledgers.  utils/assay/tests/loop/test_step.py
 uses them.
 """
 
@@ -79,11 +79,15 @@ STEP_ROWS = {"compile": ("compile-cpu", "compile-memory"), "link": ("link-time",
 CPU_LIMIT_FACTOR = 3
 # The name of the program of a compile command that runs ccache (cmake/Ccache.cmake uses the same rule).
 CCACHE_NAME = "ccache"
-BUDGETS_ENV = "CRUCIBLE_BUILD_BUDGETS"
+REGISTRY_ENV = "CRUCIBLE_BUILD_REGISTRY"
 LEDGERS_ENV = "CRUCIBLE_BUILD_LEDGERS"
-# The directory of the budget table and the ledgers, utils/scripts.  This module is utils/assay/loop/step.py.  It
-# calculates the path with os.path and not with assay.core.paths, because each compile and each link imports it.
-DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "scripts")
+# The directory utils.  This module is utils/assay/loop/step.py.  It calculates the paths with os.path and not with
+# assay.core.paths, because each compile and each link imports it.
+UTILS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# The directory of the ledgers, utils/scripts.
+DATA = os.path.join(UTILS, "scripts")
+# The registry of the measured rules, utils/registry.txt.
+REGISTRY_FILE = os.path.join(UTILS, "registry.txt")
 
 
 def step_paths(step: str, command: list[str]) -> tuple[str, str | None] | None:
@@ -152,7 +156,7 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
         step: "compile" or "link"
         output: The absolute output path
         run: The measurement of the command
-        budget: The thresholds of the rows of the step that the budget table gives
+        budget: The thresholds of the measured rules of the step that the registry gives
         hit: Whether ccache gave the output
 
     Returns:
@@ -281,8 +285,7 @@ def main(argv: list[str]) -> int:
     output, source = paths
     time_row, memory_row = STEP_ROWS[step]
     try:
-        budget = cost_meter.budget_rows(os.environ.get(BUDGETS_ENV) or os.path.join(DATA, "budgets.txt"),
-                                        (time_row, memory_row))
+        budget = cost_meter.budget_rows(os.environ.get(REGISTRY_ENV) or REGISTRY_FILE, (time_row, memory_row))
     except (OSError, ValueError):
         budget = {}
     cpu_limit = CPU_LIMIT_FACTOR * budget[time_row][1] if time_row in budget else None

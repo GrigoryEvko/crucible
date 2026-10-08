@@ -3,7 +3,7 @@
 #
 # A header that each translation unit compiles must not include a heavy header for one function.
 # utils/scripts/header-costs.txt gives the cost of each header.  A header is heavy when it costs
-# more than <meta> times the factor of the row heavy-include of utils/scripts/budgets.txt.
+# more than <meta> times the factor of the measured rule heavy-include of utils/registry.txt.
 #
 # A count row:  path | <header>
 #   An include that the tree holds today.  Each run gives a warning for it.  When you remove the

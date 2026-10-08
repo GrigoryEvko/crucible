@@ -1,0 +1,4 @@
+# The commit that moves the thresholds from the old table into the registry also raises the error threshold of
+# slow-row from 20 s to 30 s, and its body gives no measurement.
+commit 1 | Add the planted table | The first thresholds.
+commit 2 | Move the thresholds into the registry | The tests are slower.

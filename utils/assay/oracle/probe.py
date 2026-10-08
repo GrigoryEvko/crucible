@@ -62,9 +62,9 @@ HEADS = {
     "semantics": "#include <fixy/session/CrashAssociation.h>\n#include <fixy/session/Semantics.h>\n"
                  "#include <type_traits>\n",
 }
-# The constexpr budget is the one that the project build passes, the row
-# constexpr-ops of utils/scripts/budgets.txt, so a probe answers where the
-# build answers.
+# The constexpr budget is the one that the project build passes, the measured
+# rule constexpr-ops of utils/registry.txt, so a probe answers where the build
+# answers.
 _FLAGS = ("-std=c++26", "-freflection", "-fcontracts", "-fdiagnostics-color=never",
           f"-fconstexpr-ops-limit={check_report.threshold_text(check_report.read_budgets()['constexpr-ops'].error)}")
 

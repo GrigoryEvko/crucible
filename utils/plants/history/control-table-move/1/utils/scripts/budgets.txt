@@ -1,0 +1,3 @@
+# a planted table
+slow-row | 10 | 20 | s | a planted time
+count-row | 55 | 110 | G instructions | a planted count

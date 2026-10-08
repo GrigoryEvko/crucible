@@ -1,0 +1,3 @@
+# A commit raises the error threshold of slow-row from 20 s to 30 s, and its body gives the measurement 26 s.
+commit 1 | Add the planted registry | The first thresholds.
+commit 2 | Raise the slow row | The slowest job of slow-row took 26 s.

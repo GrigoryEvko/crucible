@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+"""A planted master, which the rule reads as a Python file."""
+
+import json
+
+print(json.dumps(1))

@@ -1,0 +1,6 @@
+# a planted registry: the data file utils/scripts/Bad_Data.txt has a name that is not lowercase words with hyphens
+format 1
+path utils/assay/**/*.py | the planted modules
+path utils/bin/* | the planted master
+path utils/registry.txt | the planted registry
+path utils/scripts/*.txt | the planted data

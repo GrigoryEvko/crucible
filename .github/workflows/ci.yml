@@ -130,8 +130,8 @@ jobs:
           bash utils/scripts/install-ast-grep.sh --self-test
           bash utils/scripts/install-ast-grep.sh
 
-      # The self-tests of the rules no-ffast-math and ci-guard-labels
-      # configure a scratch project.
+      # The self-test of the rule no-ffast-math and the plants of the rule
+      # test-registration configure a scratch project.
       - name: Install the pinned CMake and ctest
         uses: ./.github/actions/pinned-cmake
 
@@ -210,18 +210,19 @@ jobs:
           python3 utils/bin/guard check --rule syscall-grant-coverage --self-test
           python3 utils/bin/guard check --rule syscall-grant-coverage
 
-      - name: git writes only to a named, isolated repository (self-test + scan)
+      # The rules of the engine meta read the registry, the ledgers, the plants,
+      # the modules of the package and the git history.  The witness runs each
+      # rule on its plants of utils/plants/.  The rule structured-reads reads
+      # shell with the pinned ast-grep that a step above installs.  The rule
+      # test-registration reads the tests of a configured build, so its scan
+      # runs in the build legs through ctest, and here it does not apply.
+      - name: the rules of the engine meta (witness + scan)
         run: |
-          python3 utils/bin/guard check --rule git-isolation --self-test
-          python3 utils/bin/guard check --rule git-isolation
-
-      # utils/scripts/guard-engines.txt gives the engine of each script, and the
-      # guard holds each row to the code, so no script reads C++ as text.
-      # It reads shell with the pinned ast-grep that a step above installs.
-      - name: every script names its engine and reads no C++ as text (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule guard-engines --self-test
-          python3 utils/bin/guard check --rule guard-engines
+          for rule in history layout registry-shape rule-implementations rule-witness structured-reads \
+                      test-registration; do
+            python3 utils/bin/guard witness --rule "$rule"
+          done
+          python3 utils/bin/guard check --engine meta
 
       - name: erased brand spellings only decrease (self-test + scan)
         run: |
@@ -310,12 +311,7 @@ jobs:
       - name: session oracle drift (check)
         run: bash utils/scripts/session-oracle.sh --check
 
-      # The scan reads the tests of a configured build, so it runs in the
-      # build legs through ctest. Only its self-test runs here.
-      - name: ci_guard label coverage (self-test)
-        run: python3 utils/bin/guard check --rule ci-guard-labels --self-test
-
-      - name: check report format and budget table (self-test)
+      - name: check report format and the measured rules (self-test)
         run: python3 utils/bin/guard selftest core.report
 
   # ---------------------------------------------------------------------------
@@ -498,8 +494,7 @@ jobs:
       - name: Install the pinned tree-sitter C++ kit
         run: bash utils/scripts/install-tree-sitter.sh
 
-      # The git isolation guard and the guard-engines guard read shell scripts
-      # with the pinned ast-grep.
+      # The rule structured-reads reads shell scripts with the pinned ast-grep.
       - name: Install the pinned ast-grep
         run: bash utils/scripts/install-ast-grep.sh
 

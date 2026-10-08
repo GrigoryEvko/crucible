@@ -1,0 +1,6 @@
+# a planted registry: the module utils/assay/BadModule.py has a name that is not lowercase words
+format 1
+path utils/assay/**/*.py | the planted modules
+path utils/bin/* | the planted master
+path utils/registry.txt | the planted registry
+path utils/scripts/*.txt | the planted data

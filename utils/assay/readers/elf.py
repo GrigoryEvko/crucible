@@ -3,8 +3,8 @@
 THE READERS
     This module is the one reader of ELF headers in the package:
     * utils/assay/loop/affected.py reads the data sections of a test program
-    * the rule compile-cost reads the code sections and the largest function
-      of an object
+    * the rules function-size and object-text read the code sections and the
+      largest function of an object
     * utils/assay/readers/sections.py reads the section .crucible.quarantine
       of an object.
 

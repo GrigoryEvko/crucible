@@ -39,7 +39,11 @@ if sys.path[:1] != [_UTILS]:
 # Each subcommand: its module, and the line of the help text.  A subcommand
 # with no line is for a tool, and the help text does not list it.
 SUBCOMMANDS = {
-    "check": ("assay.guard.check", "run the module of one rule: guard check --rule ID [ARG]..."),
+    "check": ("assay.guard.check", "give the findings of rules and judge them: guard check --rule ID [ARG]..."),
+    "witness": ("assay.guard.witness", "run rules on their plants and controls: guard witness --rule ID..."),
+    "write": ("assay.guard.write", "write the ledger of one rule: guard write --rule ID [--raise | --admit]"),
+    "list": ("assay.guard.listing", "print the rules, or the ledger rows of one file: guard list [--path FILE]"),
+    "explain": ("assay.guard.explain", "print one rule and its section of CLAUDE.md: guard explain RULE"),
     "warnings": ("assay.guard.warnings", "print the warnings directory of a build: guard warnings BUILD_DIR"),
     "selftest": ("assay.guard.selftest", "run the self-test of one module: guard selftest MODULE [ARG]..."),
     "sections": ("assay.readers.sections", "print the plugin findings of objects: guard sections OBJECT..."),

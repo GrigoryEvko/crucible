@@ -43,8 +43,8 @@ THE CHECK compile-first
       than three edges is an error at the row of the target.
     * The records: the largest compile of a target is the compile of its
       object with the most user instructions.  A target of `all` whose largest
-      compile exceeds the error threshold of the row compile-first of
-      utils/scripts/budgets.txt is an error when the list does not name it.  A
+      compile exceeds the error threshold of the measured rule compile-first
+      of utils/registry.txt is an error when the list does not name it.  A
       listed target whose largest compile does not exceed the warning
       threshold gives a warning.  A listed target between the two thresholds
       gives no finding, so a small change of a compile does not move a target
@@ -111,11 +111,14 @@ WHAT THE CHECKS READ
       The kind of the build (BUILD_DIR/build-kind.txt).
 
 Usage
-    guard check --rule build-order --check build-order --build-dir BUILD_DIR [--warnings-dir DIR]
-    guard check --rule build-order --check compile-first --build-dir BUILD_DIR [--warnings-dir DIR]
-    guard check --rule build-order --check compile-first --build-dir BUILD_DIR --write
-    guard check --rule build-order --check custom-deps --build-dir BUILD_DIR [--warnings-dir DIR]
-    guard check --rule build-order --self-test
+    guard check --rule build-order --build-dir BUILD_DIR [--warnings-dir DIR]
+    guard check --rule compile-first --build-dir BUILD_DIR [--warnings-dir DIR]
+    guard check --rule compile-first --build-dir BUILD_DIR --write
+    guard check --rule custom-deps --build-dir BUILD_DIR [--warnings-dir DIR]
+    guard selftest guard.legacy.check_build_order
+
+    The registry gives each rule its words `--check RULE` before the words
+    of the call.
 
 Exit 0 with no finding or with warnings only, 1 with an error or an input that
 the check cannot read, 2 on a usage error or a failed self-test, 3 when the
@@ -571,14 +574,14 @@ def evaluate_records(largest: dict[str, Compile], candidates: set[str], compile_
         largest: The largest compile of each target with a count
         candidates: The targets of `all` that compile a source
         compile_list: The list
-        budget: The row compile-first
+        budget: The measured rule compile-first
         list_shown: The path of the list, for the findings
 
     Returns:
         The findings
     """
     findings: list[check_report.Finding] = []
-    command = "python3 utils/bin/guard check --rule build-order --check compile-first --build-dir BUILD_DIR --write"
+    command = "python3 utils/bin/guard check --rule compile-first --build-dir BUILD_DIR --write"
     on_runner = cost_meter.is_github_actions()
     for target in sorted(candidates & largest.keys()):
         compile_ = largest[target]
@@ -611,7 +614,7 @@ def write_list(path: Path, compile_list: CompileList, largest: dict[str, Compile
         compile_list: The list as it is
         largest: The largest compile of each target with a count
         candidates: The targets of `all` that compile a source
-        budget: The row compile-first
+        budget: The measured rule compile-first
     """
     judged = candidates & largest.keys()
     kept = {name for name in compile_list.names
@@ -975,7 +978,8 @@ def self_test_cases() -> int:
                                        warnings_dir)
         expect("an error gives exit status 1 and removes the warnings file",
                status == 1 and not (warnings_dir / "compile-first.txt").exists())
-    expect("the repository budget table has the row compile-first", "compile-first" in check_report.read_budgets())
+    expect("the repository registry has the measured rule compile-first",
+           "compile-first" in check_report.read_budgets())
     expect("the repository list reads, and it names the walk units of test/layer",
            any(name.startswith("layer_walks_across_headers_") for name in read_list(LIST).names))
     if failures:
@@ -1005,7 +1009,8 @@ def run_compile_first(build: Path, graph: Graph, ninja_shown: str, is_write: boo
         compile_list = read_list(LIST)
         candidates = read_candidates(build)
     except (ValueError, KeyError, OSError) as exc:
-        problem = "the row compile-first is missing from the budget table" if isinstance(exc, KeyError) else str(exc)
+        problem = ("the measured rule compile-first is missing from the registry" if isinstance(exc, KeyError)
+                   else str(exc))
         return check_report.emit([check_report.Finding("error", list_shown, 0, "compile-first",
                                                        f"the check cannot read its input: {problem}")],
                                  "compile-first", warnings_dir)
@@ -1080,20 +1085,22 @@ def main(argv: list[str]) -> int:
     Returns:
         The exit code
     """
-    parser = argparse.ArgumentParser(prog="guard check --rule build-order", description=__doc__.split("\n", 1)[0])
+    parser = argparse.ArgumentParser(prog="guard check --rule RULE", description=__doc__.split("\n", 1)[0])
     check_report.add_arguments(parser)
-    parser.add_argument("--check", choices=CHECKS)
+    parser.add_argument("--check", choices=CHECKS, help="the rule, which `guard check --rule RULE` gives")
     parser.add_argument("--build-dir", type=Path, help="the build directory")
     parser.add_argument("--write", action="store_true",
-                        help="with --check compile-first, write utils/scripts/compile-first.txt again from the records")
+                        help="with the rule compile-first, write utils/scripts/compile-first.txt again from the "
+                             "records")
     parser.add_argument("--self-test", action="store_true", help="plant each verdict of each check")
     arguments = parser.parse_args(argv)
     if arguments.self_test:
         return self_test()
     if arguments.check is None or arguments.build_dir is None:
-        parser.error("give --check CHECK --build-dir BUILD_DIR, or --self-test")
+        parser.error("give --build-dir BUILD_DIR to `guard check --rule RULE`, which gives --check RULE, or use "
+                     "--self-test")
     if arguments.write and arguments.check != "compile-first":
-        parser.error("--write applies only to --check compile-first")
+        parser.error("--write applies only to the rule compile-first")
     build = arguments.build_dir.resolve()
     ninja = build / "build.ninja"
     try:

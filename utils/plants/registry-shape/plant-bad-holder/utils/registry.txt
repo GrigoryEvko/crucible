@@ -1,0 +1,5 @@
+# a planted registry: the measured rule names a holder that is not a rule of the registry
+format 1
+rule slow-row engine=build scope=builddir ledger=max warn=10 error=20 unit=s held-by=ghost-rule doc=XV | a planted time | lower the value
+rule stray-rule engine=meta scope=tracked ledger=none doc=XV | a planted refusal | fix the planted file
+path utils/registry.txt | the planted registry

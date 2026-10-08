@@ -1,0 +1,4 @@
+# The commit that moves the thresholds from the old table into the registry keeps each value.  The unit
+# "G instructions" of the old table and the unit G of the registry are one unit.
+commit 1 | Add the planted table | The first thresholds.
+commit 2 | Move the thresholds into the registry | Each threshold keeps its value.

@@ -1,0 +1,4 @@
+# a planted registry
+format 1
+rule count-row engine=build scope=builddir ledger=max warn=55 error=110 unit=G held-by=cmake doc=XV | a planted count | lower the value
+rule slow-row engine=build scope=builddir ledger=max warn=10 error=20 unit=s held-by=cmake doc=XV | a planted time | lower the value

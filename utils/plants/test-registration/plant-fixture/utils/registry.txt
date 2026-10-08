@@ -1,0 +1,5 @@
+# a planted registry: a labelled test runs each rule, and the test of a rule that reads the trees requires them
+format 1
+rule slow-row engine=build scope=builddir ledger=max warn=10 error=20 unit=s held-by=cmake doc=XV | a planted time | lower the value
+rule stray-rule engine=meta scope=tracked ledger=none doc=XV | a planted refusal | fix the planted file
+rule tree-rule engine=tsast scope=base ledger=none doc=XV | a planted refusal that reads the trees | fix the planted file

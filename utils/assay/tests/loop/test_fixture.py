@@ -45,6 +45,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from assay.core import registry as rule_registry
 from assay.core.paths import LOOP
 from assay.loop.fixture import store
 
@@ -143,6 +144,11 @@ PLANTED_RULES = ("# The rule table of a planted tree of the fixture driver test.
                  "layer planted 0 planted_pragma/ planted_empty/\n"
                  "quarantine neg/\n"
                  "enforce neg/ error\n")
+
+
+def planted_registry(*rules: tuple[str, float, float, str]) -> str:
+    """Return the text of a planted registry with one measured rule for each (rule, warning, error, unit)."""
+    return rule_registry.planted(rule_registry.measured_rule(*rule) for rule in rules)
 
 
 class StoreTest:
@@ -554,24 +560,23 @@ class StoreTest:
                     f"a stored exit code 0 fails the fixture: {compiled[0]}")
 
     def check_cpu_budget(self) -> None:
-        """With no instruction count, the driver judges the CPU time of a compile with the row fixture-cpu.
+        """With no instruction count, the driver judges the CPU time of a compile with the rule fixture-cpu.
 
         CRUCIBLE_COUNT_INSTRUCTIONS=0 gives each compile no count, as a host
         with no counter does.  The entry keeps the CPU time.
         """
-        table = self.root / "budgets.txt"
+        table = self.root / "registry.txt"
         ledger = self.root / "fixture-cpu-ledger.txt"
         count_ledger = self.root / "fixture-instructions-ledger.txt"
         warnings = self.root / "warnings"
         ledger.write_text("# no row\n")
         count_ledger.write_text("# no row\n")
-        env = {"CRUCIBLE_NEG_BUDGETS": str(table), "CRUCIBLE_NEG_CPU_LEDGER": str(ledger),
+        env = {"CRUCIBLE_NEG_REGISTRY": str(table), "CRUCIBLE_NEG_CPU_LEDGER": str(ledger),
                "CRUCIBLE_NEG_INSTRUCTIONS_LEDGER": str(count_ledger), "CRUCIBLE_COUNT_INSTRUCTIONS": "0"}
 
         def budget(warn: float, error: float) -> None:
-            """Write a budget table with the row fixture-cpu and a quiet row fixture-instructions."""
-            table.write_text(f"fixture-cpu | {warn} | {error} | s | the CPU time of one fixture compile\n"
-                             f"fixture-instructions | 0 | 0 | G | a row that a compile with no count does not read\n")
+            """Write a registry with the rule fixture-cpu and a rule fixture-instructions that no compile reads."""
+            table.write_text(planted_registry(("fixture-cpu", warn, error, "s"), ("fixture-instructions", 0, 0, "G")))
 
         def finding(text: str, level: str) -> str | None:
             """Return the first finding line of the level in a standard output, or None."""
@@ -630,34 +635,33 @@ class StoreTest:
         self.expect(malformed[0] == 1 and line is not None and "a row is `fixture | note`" in line,
                     f"a malformed ledger row fails: {malformed[0]} {line}")
         ledger.write_text("# no row\n")
-        table.write_text("other-check | 1 | 2 | s | another row\n")
+        table.write_text(planted_registry(("other-check", 1, 2, "s")))
         missing = self.run("neg_convert", *CONVERT, **env)
         line = finding(missing[1], "error")
-        self.expect(missing[0] == 1 and line is not None and "has no row fixture-cpu" in line,
-                    f"a budget table with no row fixture-cpu fails: {missing[0]} {line}")
+        self.expect(missing[0] == 1 and line is not None and "has no measured rule fixture-cpu" in line,
+                    f"a registry with no rule fixture-cpu fails: {missing[0]} {line}")
         missing = self.run("neg_convert", *CONVERT, GITHUB_ACTIONS="true", **env)
         line = finding(missing[1], "error")
-        self.expect(missing[0] == 1 and line is not None and "has no row fixture-cpu" in line,
+        self.expect(missing[0] == 1 and line is not None and "has no measured rule fixture-cpu" in line,
                     f"on a CI runner, a budget that cannot be read still fails: {missing[0]} {line}")
 
     def check_instruction_budget(self) -> None:
-        """With an instruction count, the row fixture-instructions holds the error level, and the CPU time warns only."""
+        """With a count, the rule fixture-instructions holds the error level, and the CPU time warns only."""
         if store._cost_meter_module().open_instruction_counter() is None:
             self.skip("the host gives no exact instruction counter (utils/assay/core/meter.py)")
             return
-        table = self.root / "budgets.txt"
+        table = self.root / "registry.txt"
         cpu_ledger = self.root / "fixture-cpu-ledger.txt"
         ledger = self.root / "fixture-instructions-ledger.txt"
         warnings = self.root / "warnings"
         cpu_ledger.write_text("# no row\n")
         ledger.write_text("# no row\n")
-        env = {"CRUCIBLE_NEG_BUDGETS": str(table), "CRUCIBLE_NEG_CPU_LEDGER": str(cpu_ledger),
+        env = {"CRUCIBLE_NEG_REGISTRY": str(table), "CRUCIBLE_NEG_CPU_LEDGER": str(cpu_ledger),
                "CRUCIBLE_NEG_INSTRUCTIONS_LEDGER": str(ledger)}
 
         def budget(cpu: tuple[float, float], count: tuple[float, float]) -> None:
-            """Write a budget table with the rows fixture-cpu and fixture-instructions."""
-            table.write_text(f"fixture-cpu | {cpu[0]} | {cpu[1]} | s | the CPU time of one fixture compile\n"
-                             f"fixture-instructions | {count[0]} | {count[1]} | G | the instructions of one compile\n")
+            """Write a registry with the rules fixture-cpu and fixture-instructions."""
+            table.write_text(planted_registry(("fixture-cpu", *cpu, "s"), ("fixture-instructions", *count, "G")))
 
         def finding(text: str, level: str, check: str) -> str | None:
             """Return the first finding line of the level and the check in a standard output, or None."""
@@ -703,11 +707,11 @@ class StoreTest:
         self.expect(stale[0] == 1 and line is not None and "Remove its row from utils/scripts/fixture-instructions"
                     in line, f"a ledger row of a fixture at or below the error threshold fails: {stale[0]} {line}")
         ledger.write_text("# no row\n")
-        table.write_text("fixture-cpu | 1000 | 2000 | s | the CPU time of one fixture compile\n")
+        table.write_text(planted_registry(("fixture-cpu", 1000, 2000, "s")))
         missing = self.run("neg_convert", *CONVERT, **env)
         line = finding(missing[1], "error", "fixture-instructions")
-        self.expect(missing[0] == 1 and line is not None and "has no row fixture-instructions" in line,
-                    f"a budget table with no row fixture-instructions fails: {missing[0]} {line}")
+        self.expect(missing[0] == 1 and line is not None and "has no measured rule fixture-instructions" in line,
+                    f"a registry with no rule fixture-instructions fails: {missing[0]} {line}")
 
     def check_inputs_record(self) -> None:
         """Each run writes NAME.inputs: its result, its cost and each file that its compile read."""
@@ -855,19 +859,19 @@ class StoreTest:
                     f"an edit of a header that keeps its size compiles the fixture again: {edited[0]} {edited[3]}")
 
     def check_budget_memo(self) -> None:
-        """The budget memo gives the rows only while the table and the two ledgers have the same stat fields."""
-        table = self.root / "budgets.txt"
+        """The budget memo gives the rules only while the registry and the two ledgers have the same stat fields."""
+        table = self.root / "registry.txt"
         cpu_ledger = self.root / "fixture-cpu-ledger.txt"
         count_ledger = self.root / "fixture-instructions-ledger.txt"
         cpu_ledger.write_text("# no row\n")
         count_ledger.write_text("# no row\n")
-        env = {"CRUCIBLE_NEG_BUDGETS": str(table), "CRUCIBLE_NEG_CPU_LEDGER": str(cpu_ledger),
+        env = {"CRUCIBLE_NEG_REGISTRY": str(table), "CRUCIBLE_NEG_CPU_LEDGER": str(cpu_ledger),
                "CRUCIBLE_NEG_INSTRUCTIONS_LEDGER": str(count_ledger)}
 
         def budget(warn: float) -> None:
-            """Write a budget table whose two rows have the warning threshold `warn` and a high error threshold."""
-            table.write_text(f"fixture-cpu | {warn} | 2000 | s | the CPU time of one fixture compile\n"
-                             f"fixture-instructions | {warn} | 2000 | G | the instructions of one compile\n")
+            """Write a registry whose two rules have the warning threshold `warn` and a high error threshold."""
+            table.write_text(planted_registry(("fixture-cpu", warn, 2000, "s"),
+                                              ("fixture-instructions", warn, 2000, "G")))
 
         def warning(text: str) -> str | None:
             """Return the first warning line of a fixture budget in a standard output, or None."""
@@ -882,7 +886,7 @@ class StoreTest:
         budget(0)
         warned = self.run("neg_convert", *CONVERT, **env)
         self.expect(warned[0] == 0 and warning(warned[1]) is not None,
-                    f"a new budget table replaces the kept budget: {warned[0]} {warned[3]}")
+                    f"a new registry replaces the kept budget: {warned[0]} {warned[3]}")
 
     def check_cross_root_hit(self) -> None:
         """A second work tree of the same files uses the result of the first, and its output names its own paths."""
@@ -1458,7 +1462,7 @@ def check_kernel_time(failures: list[str]) -> None:
     threshold of 0 s, so such a compile failed them under load.
     """
     def budget(warn: float, error: float) -> store.CostBudget:
-        """Return a budget whose row fixture-cpu has the two thresholds, and whose count row is quiet."""
+        """Return a budget whose rule fixture-cpu has the two thresholds, and whose count rule is quiet."""
         return store.CostBudget({
             "fixture-cpu": store.BudgetRow("fixture-cpu", warn, error, {}, "fixture-cpu-ledger.txt"),
             "fixture-instructions": store.BudgetRow("fixture-instructions", 1000.0, 2000.0, {},

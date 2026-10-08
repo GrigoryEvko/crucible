@@ -26,8 +26,8 @@ THE THRESHOLD
     Each layer may include <meta>, because reflection needs it.  <meta> and
     the containers share one core of libstdc++, and <meta> costs the most of
     that core.  A header is heavy when its cost alone is more than the cost
-    alone of <meta>, times the factor of the row heavy-include of
-    utils/scripts/budgets.txt.  The two costs come from one measurement, so
+    alone of <meta>, times the factor of the measured rule heavy-include of
+    utils/registry.txt.  The two costs come from one measurement, so
     a change of the host load moves the two costs together.  An unmeasured
     header is heavy too, because the check cannot show that it is light.
 
@@ -89,6 +89,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.readers import tsast
 
@@ -118,7 +119,7 @@ TABLE_HEADER = (
     "# The seconds are the median of three runs of the user plus system CPU time of a translation\n"
     "# unit that includes only the header, with -fsyntax-only and the flags of {reference}.\n"
     "# The lines are the non-empty lines of the -E -P output of the same unit.  A header is heavy when\n"
-    "# it costs more than <meta> times the factor of the row heavy-include of utils/scripts/budgets.txt.\n"
+    "# it costs more than <meta> times the factor of the measured rule heavy-include of utils/registry.txt.\n"
     "#\n"
     "# Measured {date} on {host}.  An empty translation unit costs {empty:.2f} s.\n"
 )
@@ -128,7 +129,7 @@ LEDGER_HEADER = (
     "#\n"
     "# A header that each translation unit compiles must not include a heavy header for one function.\n"
     "# utils/scripts/header-costs.txt gives the cost of each header.  A header is heavy when it costs\n"
-    "# more than <meta> times the factor of the row heavy-include of utils/scripts/budgets.txt.\n"
+    "# more than <meta> times the factor of the measured rule heavy-include of utils/registry.txt.\n"
     "#\n"
     "# A count row:  path | <header>\n"
     "#   An include that the tree holds today.  Each run gives a warning for it.  When you remove the\n"
@@ -455,28 +456,29 @@ def evaluate(root: Path, table: Path, ledger_path: Path, factor: float) -> list[
     return findings
 
 
-def factor_of(budgets: Path) -> float:
-    """Return the factor of the cost of <meta> that gives the limit, from the budget table.
+def factor_of(registry: Path) -> float:
+    """Return the factor of the cost of <meta> that gives the limit, from the registry.
 
     Raises:
-        ValueError: If the table is malformed or has no row for this check
+        ValueError: If the registry is malformed or has no measured rule for this check
     """
-    rows = check_report.read_budgets(budgets)
+    rows = check_report.read_budgets(registry)
     if CHECK not in rows:
-        raise ValueError(f"{budgets} has no row {CHECK}.  Add `{CHECK} | factor | factor | unit | meaning`.")
+        raise ValueError(f"{registry} has no measured rule {CHECK}.  Add the rule {CHECK} with warn=FACTOR, "
+                         f"error=FACTOR and unit=x.")
     return rows[CHECK].error
 
 
-def check(root: Path, table: Path, ledger_path: Path, budgets: Path, warnings_dir: Path | None) -> int:
+def check(root: Path, table: Path, ledger_path: Path, registry: Path, warnings_dir: Path | None) -> int:
     """Run the check and print each finding.
 
     Returns:
         1 when one finding is an error, else 0
     """
     try:
-        factor = factor_of(budgets)
+        factor = factor_of(registry)
     except ValueError as exc:
-        findings = [check_report.Finding("error", "utils/scripts/budgets.txt", 0, CHECK, str(exc))]
+        findings = [check_report.Finding("error", rule_registry.REGISTRY_PATH, 0, CHECK, str(exc))]
     else:
         findings = evaluate(root, table, ledger_path, factor)
     code = check_report.emit(findings, CHECK, warnings_dir)
@@ -486,7 +488,7 @@ def check(root: Path, table: Path, ledger_path: Path, budgets: Path, warnings_di
     return code
 
 
-def write(root: Path, table: Path, ledger_path: Path, budgets: Path) -> int:
+def write(root: Path, table: Path, ledger_path: Path, registry: Path) -> int:
     """Write the count rows of the ledger again from the tree, and keep each keep row.
 
     Returns:
@@ -494,7 +496,7 @@ def write(root: Path, table: Path, ledger_path: Path, budgets: Path) -> int:
     """
     try:
         costs = read_table(table)
-        limit = heavy_limit(costs, factor_of(budgets))
+        limit = heavy_limit(costs, factor_of(registry))
     except ValueError as exc:
         print(f"check-heavy-includes: {exc}", file=sys.stderr)
         return 1
@@ -618,11 +620,12 @@ def self_test() -> int:
         root = Path(work)
         table = root / TABLE
         ledger = root / LEDGER
-        budgets = root / "utils/scripts/budgets.txt"
+        registry = root / rule_registry.REGISTRY_PATH
         files = {
             TABLE: "# planted\n<chrono> | 0.97 | 30000\n<cstdint> | 0.01 | 40\n<arm_neon.h> | unmeasured | "
                    "it does not compile on this architecture\n<thread> | 0.85 | 28000\n<meta> | 0.36 | 34799\n",
-            "utils/scripts/budgets.txt": f"{CHECK} | 1.0 | 1.0 | x <meta> | the planted factor\n",
+            rule_registry.REGISTRY_PATH: rule_registry.planted([rule_registry.measured_rule(
+                CHECK, 1.0, 1.0, "x", "the planted factor")]),
             "include/fixy/Light.h": "#pragma once\n#include <cstdint>\n#include <fixy/Other.h>\n"
                                     '#include "Other.h"\n#include <bench_harness.h>\n#include <meta>\n',
             "include/fixy/Other.h": "#pragma once\n",
@@ -640,7 +643,7 @@ def self_test() -> int:
 
         def run() -> tuple[list[check_report.Finding], int]:
             """Evaluate the scratch tree, and give its findings and its exit status."""
-            found = evaluate(root, table, ledger, factor_of(budgets))
+            found = evaluate(root, table, ledger, factor_of(registry))
             return found, 1 if any(item.level == "error" for item in found) else 0
 
         found, code = run()
@@ -675,13 +678,15 @@ def self_test() -> int:
         expect("a row whose include is gone is an error that asks for --write",
                code == 1 and any(item.path == LEDGER and "--write" in item.message for item in found))
         (root / "include/fixy/Debt.h").write_text(files["include/fixy/Debt.h"], encoding="utf-8")
-        budgets.write_text(f"{CHECK} | 3.0 | 3.0 | x <meta> | a high factor\n", encoding="utf-8")
+        registry.write_text(rule_registry.planted([rule_registry.measured_rule(CHECK, 3.0, 3.0, "x",
+                                                                               "a high factor")]),
+                            encoding="utf-8")
         found, code = run()
         expect("a row whose header is no longer heavy is an error",
                code == 1 and any("is no longer heavy" in item.message and item.line == 1 for item in found))
         expect("a keep row whose header is no longer heavy is an error",
                any("keep row" in item.message and "no longer heavy" in item.message for item in found))
-        budgets.write_text(files["utils/scripts/budgets.txt"], encoding="utf-8")
+        registry.write_text(files[rule_registry.REGISTRY_PATH], encoding="utf-8")
 
         for body, label in ((matching + "include/fixy/Debt.h\n", "a row with no header"),
                             (matching + "keep | include/fixy/Debt.h | <chrono> | \n", "a keep row with no reason"),
@@ -708,7 +713,7 @@ def self_test() -> int:
 
         ledger.write_text("include/fixy/Debt.h | <chrono>\n", encoding="utf-8")
         with contextlib.redirect_stderr(io.StringIO()):
-            written = write(root, table, ledger, budgets)
+            written = write(root, table, ledger, registry)
         text = ledger.read_text(encoding="utf-8")
         found, code = run()
         expect("--write gives a ledger that passes, and it keeps no row of a keep",
@@ -718,7 +723,7 @@ def self_test() -> int:
 
         warnings_dir = root / "warnings"
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            status = check(root, table, ledger, budgets, warnings_dir)
+            status = check(root, table, ledger, registry, warnings_dir)
         lines = (warnings_dir / f"{CHECK}.txt").read_text(encoding="utf-8").splitlines()
         expect("the warnings file holds each warning", status == 0 and len(lines) == 2
                and all(check_report.parse_line(line) is not None for line in lines))
@@ -726,11 +731,11 @@ def self_test() -> int:
         previous = Path.cwd()
         os.chdir("/")
         try:
-            from_slash = [item.text() for item in evaluate(root, table, ledger, factor_of(budgets))]
+            from_slash = [item.text() for item in evaluate(root, table, ledger, factor_of(registry))]
         finally:
             os.chdir(previous)
         expect("the findings from / equal the findings from the root",
-               from_slash == [item.text() for item in evaluate(root, table, ledger, factor_of(budgets))])
+               from_slash == [item.text() for item in evaluate(root, table, ledger, factor_of(registry))])
         (root / "include/fixy/Broken.h").write_text("void f() { g(1) { } }\n", encoding="utf-8")
         found, code = run()
         expect("a header that the parser cannot read is an error",
@@ -762,15 +767,15 @@ def main(argv: list[str]) -> int:
     if arguments.headers and arguments.measure is None:
         parser.error("a header name goes only with --measure")
     root = tsast.REPO_ROOT
-    table, ledger, budgets = root / TABLE, root / LEDGER, check_report.BUDGETS
+    table, ledger, registry = root / TABLE, root / LEDGER, check_report.REGISTRY
     try:
         if arguments.self_test:
             return self_test()
         if arguments.write:
-            return write(root, table, ledger, budgets)
+            return write(root, table, ledger, registry)
         if arguments.measure is not None:
             return measure(root, arguments.measure.resolve(), arguments.headers, table)
-        return check(root, table, ledger, budgets, arguments.warnings_dir)
+        return check(root, table, ledger, registry, arguments.warnings_dir)
     except tsast.KitMissing as exc:
         print(f"check-heavy-includes: {exc}", file=sys.stderr)
         return 3

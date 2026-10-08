@@ -1,0 +1,7 @@
+# a planted registry: the path row utils/scripts/gone.py holds no file
+format 1
+path utils/assay/**/*.py | the planted modules
+path utils/bin/* | the planted master
+path utils/registry.txt | the planted registry
+path utils/scripts/*.txt | the planted data
+path utils/scripts/gone.py | a planted file that does not exist

@@ -23,7 +23,7 @@ THE CHECKS
                     most, and the check prints the ten largest products, the
                     list that a developer reads first.  The bytes alone are
                     the files of the sentinel after its source, as for
-                    header-alone of the rule compile-cost, so a check file
+                    the rule header-alone, so a check file
                     that includes more than its header counts those files
                     too.  This check gives warnings only.
 
@@ -42,7 +42,8 @@ THE CHECKS
                     keeps no count of a real compile in this build
                     directory).  It compares the sum with the total row of
                     utils/scripts/instruction-total-ledger.txt, at the levels
-                    of the row instruction-total.  The count does not change
+                    of the measured rule instruction-total.  The count does
+                    not change
                     with the load of the host: two clean builds of one tree
                     differ by less than 0.01 % in the sum.
 
@@ -63,7 +64,7 @@ THE BASELINE
     (build_census.file_key).
 
 THE LEVELS
-    The rows parse-total and instruction-total of utils/scripts/budgets.txt
+    The measured rules parse-total and instruction-total of utils/registry.txt
     give two thresholds in percent of the baseline.  A total that increased
     by more than the warning threshold gives a warning, and by more than the
     error threshold an error.  A total that fell by more than the warning
@@ -85,8 +86,8 @@ THE FAN-OUT BASELINE
 
     A header in the ten largest products of the build that was not in the ten
     largest of the baseline gives a warning.  A header whose product
-    increased by more than the threshold of the row header-fanout of
-    utils/scripts/budgets.txt gives a warning.  A header whose product fell
+    increased by more than the threshold of the measured rule header-fanout
+    of utils/registry.txt gives a warning.  A header whose product fell
     by more than that threshold, and a header of the baseline that has no
     sentinel in the build, give a warning to write the baseline again, so
     that it does not stay above the product.
@@ -100,9 +101,12 @@ NOT APPLICABLE
     cannot read is an error.
 
 Usage
-    guard check --rule parse-cost --check CHECK --build-dir DIR [--warnings-dir DIR]
-    guard check --rule parse-cost --check CHECK --build-dir DIR --write [--reason TEXT]
-    guard check --rule parse-cost --self-test
+    guard check --rule RULE --build-dir DIR [--warnings-dir DIR]
+    guard check --rule RULE --build-dir DIR --write [--reason TEXT]
+    guard selftest guard.legacy.check_parse_cost
+
+    RULE is parse-total, header-fanout or instruction-total.  The registry
+    gives each rule its words `--check RULE` before the words of the call.
 
 Exit 0 with no finding or with warnings only, 1 with an error, 2 on a usage
 error or a failed self-test, 3 when the check does not apply to the build.
@@ -121,6 +125,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import meter as cost_meter
+from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import DATA, REPO_ROOT
 from assay.readers import census as build_census
@@ -297,7 +302,7 @@ def evaluate(measured: Measure, ledger: Ledger, ledger_shown: str, kind: str, bu
              f"{size_text(measured.objects)} in {measured.object_units} units, fixtures {size_text(measured.fixtures)} "
              f"in {measured.fixture_units} units)")
     floor = int(baseline * FILE_FLOOR)
-    write = (f"python3 utils/bin/guard check --rule parse-cost --check parse-total --build-dir {build_shown} --write")
+    write = f"python3 utils/bin/guard check --rule parse-total --build-dir {build_shown} --write"
     level = check_report.classify(growth, budget)
     if level is not None:
         limit = budget.error if level == "error" else budget.warn
@@ -372,7 +377,7 @@ def fanout(census: build_census.Census, root: Path) -> list[Fan]:
     """Find the bytes alone and the readers of each header that a sentinel compiles, largest product first.
 
     The header of a sentinel is the first file of its list under include/
-    after the source, as for header-alone of the rule compile-cost, and the
+    after the source, as for the rule header-alone, and the
     bytes alone are the sum of the files after the source.  Complexity: linear
     in the total length of the file lists, and O(n log n) for the sort.
     """
@@ -527,8 +532,7 @@ def evaluate_instructions(census: build_census.Census, objects: int, fixtures: i
     change = (count - total.bytes) / total.bytes * 100.0
     words = (f"the compiles of the build ran {count_text(count)} user instructions (objects {count_text(objects)}, "
              f"fixtures {count_text(fixtures)})")
-    write = (f"python3 utils/bin/guard check --rule parse-cost --check instruction-total --build-dir {build_shown} "
-             f"--write")
+    write = f"python3 utils/bin/guard check --rule instruction-total --build-dir {build_shown} --write"
     level = check_report.classify(change, budget)
     if level is not None:
         limit = budget.error if level == "error" else budget.warn
@@ -570,7 +574,7 @@ def write_totals(path: Path, ledger: Ledger, kind: str, objects: int, fixtures: 
                   f"{kind}")
 
 
-def run(check: str, build_dir: Path, root: Path, kind: str, ledger_path: Path, budgets_path: Path,
+def run(check: str, build_dir: Path, root: Path, kind: str, ledger_path: Path, registry_path: Path,
         warnings_dir: Path | None, write: bool = False, reason: str | None = None) -> int:
     """Run one check, or its --write, over one build.
 
@@ -587,11 +591,11 @@ def run(check: str, build_dir: Path, root: Path, kind: str, ledger_path: Path, b
         return check_report.emit([check_report.Finding("error", path, line, check, message)], check, warnings_dir)
 
     try:
-        budget = check_report.read_budgets(budgets_path).get(check)
+        budget = check_report.read_budgets(registry_path).get(check)
     except (OSError, ValueError) as problem:
-        return fail(build_census.shown(budgets_path, root), str(problem))
+        return fail(build_census.shown(registry_path, root), str(problem))
     if budget is None:
-        return fail(build_census.shown(budgets_path, root), f"{budgets_path.name} has no row {check}")
+        return fail(build_census.shown(registry_path, root), f"{registry_path.name} has no measured rule {check}")
     try:
         if check == "header-fanout":
             ledger: Ledger | FanLedger = read_fanout_ledger(ledger_path)
@@ -669,12 +673,14 @@ sys.stdout.write((build / "tests.json").read_text())
 
 
 class Scratch:
-    """A scratch tree, build directory, ninja, ctest, budget table and ledger for the self-test."""
+    """A scratch tree, build directory, ninja, ctest, registry and ledger for the self-test."""
 
     KIND = "x86_64-debug-asan"
-    BUDGETS = ("parse-total | 2 | 5 | % | the growth of the total\n"
-               "header-fanout | 10 | 10 | % | the change of the product of a header\n"
-               "instruction-total | 2 | 5 | % | the growth of the instruction total\n")
+    REGISTRY = rule_registry.planted([
+        rule_registry.measured_rule("parse-total", 2, 5, "%", "the growth of the total"),
+        rule_registry.measured_rule("header-fanout", 10, 10, "%", "the change of the product of a header"),
+        rule_registry.measured_rule("instruction-total", 2, 5, "%", "the growth of the instruction total"),
+    ])
     SENTINELS = "test/layer/CMakeFiles/layer_sentinel_fixy.dir"
 
     def __init__(self, root: Path) -> None:
@@ -689,8 +695,8 @@ class Scratch:
         self.fan_ledger.write_text("# a planted fan-out ledger\n", encoding="utf-8")
         self.instruction_ledger = root / "instruction-total-ledger.txt"
         self.instruction_ledger.write_text("# a planted instruction ledger\n", encoding="utf-8")
-        self.budgets = root / "budgets.txt"
-        self.budgets.write_text(self.BUDGETS, encoding="utf-8")
+        self.registry = root / "registry.txt"
+        self.registry.write_text(self.REGISTRY, encoding="utf-8")
         for name, text in (("ninja.py", FAKE_NINJA), ("ctest.py", FAKE_CTEST)):
             tool = root / name
             tool.write_text(f"#!{sys.executable}\n{text}", encoding="utf-8")
@@ -774,7 +780,7 @@ class Scratch:
         ledger = {"parse-total": self.ledger, "header-fanout": self.fan_ledger,
                   "instruction-total": self.instruction_ledger}[check]
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
-            status = run(check, self.build.resolve(), self.root.resolve(), kind, ledger, self.budgets, warnings_dir,
+            status = run(check, self.build.resolve(), self.root.resolve(), kind, ledger, self.registry, warnings_dir,
                          write, reason)
         found = [parsed for line in output.getvalue().splitlines()
                  if (parsed := check_report.parse_line(line)) is not None]
@@ -860,11 +866,12 @@ def self_test() -> int:
         status, found, _ = tree.run()
         expect("a missing ledger is an error", status == 1 and "does not exist" in found[0].message)
         tree.ledger.write_text(good_ledger, encoding="utf-8")
-        tree.budgets.write_text("other | 1 | 2 | % | m\n", encoding="utf-8")
+        tree.registry.write_text(rule_registry.planted([rule_registry.measured_rule("other", 1, 2, "%", "m")]),
+                                 encoding="utf-8")
         status, found, _ = tree.run()
-        expect("a budget table with no row parse-total is an error", status == 1 and "no row parse-total"
-               in found[0].message)
-        tree.budgets.write_text(Scratch.BUDGETS, encoding="utf-8")
+        expect("a registry with no measured rule parse-total is an error",
+               status == 1 and "no measured rule parse-total" in found[0].message)
+        tree.registry.write_text(Scratch.REGISTRY, encoding="utf-8")
 
         (tree.build / "CMakeFiles" / "b.o").unlink()
         status, found, output = tree.run()
@@ -1016,8 +1023,8 @@ def self_test() -> int:
 
 def main(argv: list[str]) -> int:
     """Parse the command line and run the check, the write or the self-test."""
-    parser = argparse.ArgumentParser(prog="guard check --rule parse-cost", description=__doc__.split("\n")[0])
-    parser.add_argument("--check", choices=CHECKS)
+    parser = argparse.ArgumentParser(prog="guard check --rule RULE", description=__doc__.split("\n")[0])
+    parser.add_argument("--check", choices=CHECKS, help="the rule, which `guard check --rule RULE` gives")
     parser.add_argument("--build-dir", type=Path)
     parser.add_argument("--kind", help="the kind of the build, in place of the line of BUILD_DIR/build-kind.txt")
     parser.add_argument("--write", action="store_true", help="write the baseline of the kind again")
@@ -1028,7 +1035,7 @@ def main(argv: list[str]) -> int:
     if arguments.self_test:
         return self_test()
     if arguments.check is None or arguments.build_dir is None:
-        parser.error("--check and --build-dir are necessary")
+        parser.error("give --build-dir DIR to `guard check --rule RULE`, which gives --check RULE, or use --self-test")
     build_dir = arguments.build_dir.resolve()
     kind = arguments.kind or cost_meter.read_kind(str(build_dir))
     if kind is None:
@@ -1036,5 +1043,5 @@ def main(argv: list[str]) -> int:
             "error", build_census.shown(build_dir / cost_meter.KIND_FILE, REPO_ROOT), 0, arguments.check,
             "the build has no build kind.  cmake/BuildLauncher.cmake writes it at each configure.  Configure the build "
             "again")], arguments.check, arguments.warnings_dir)
-    return run(arguments.check, build_dir, REPO_ROOT, kind, SCRIPTS / LEDGERS[arguments.check], check_report.BUDGETS,
+    return run(arguments.check, build_dir, REPO_ROOT, kind, SCRIPTS / LEDGERS[arguments.check], check_report.REGISTRY,
                arguments.warnings_dir, arguments.write, arguments.reason)

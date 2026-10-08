@@ -772,8 +772,8 @@ using ::foundation::algebra::transition::stack;
 // can change an answer.
 //
 // The amount keeps the search inside the constexpr operation limit of
-// the build (-fconstexpr-ops-limit, the row constexpr-ops of
-// utils/scripts/budgets.txt, 33,554,432 operations).  A hard pair is
+// the build (-fconstexpr-ops-limit, the rule constexpr-ops of
+// utils/registry.txt, 33,554,432 operations).  A hard pair is
 // refused with an answer and never stops the build.  The evaluation of
 // the differential corpus that uses the most operations is a search that
 // spends all its fuel, in test/session_oracle/generated_fixy_subtype_00.cpp.

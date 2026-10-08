@@ -62,8 +62,8 @@ THE LEDGER
     lowers a count in each configuration writes only the base rows.
     parse_ledger also reads the rows of format 1 (a directory and a kind),
     of format 2 (a file and a kind, with no entity) and of format 3 (no row
-    of opted_out), for the history that the rule budget-history
-    (`guard check --rule budget-history`) reads.
+    of opted_out), for the history that the rule history
+    (`guard check --rule history`) reads.
 
 THE CONFIGURATION
     A configuration is the build kind and the target tier of
@@ -116,8 +116,8 @@ WRITE THE LEDGER
     reason in the commit.  --admit writes a count of opted_out above its row,
     and no other count.  Use it only for a region of a reason class of
     CLAUDE.md section XXII that must cover more, and give the reason in the
-    commit.  The rule budget-history (`guard check --rule budget-history`)
-    gives a warning for each such count on each run.
+    commit.  The rule history (`guard check --rule history`) gives a warning
+    for each such count on each run.
     * A file that git reports as moved (`git diff --find-renames HEAD`, after
       `git mv` or `git add`) takes the rows of its old path in each
       configuration.

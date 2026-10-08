@@ -653,32 +653,6 @@ add_test(NAME syscall_grant_coverage
 set_tests_properties(syscall_grant_coverage syscall_grant_coverage_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# A script that writes to a git repository names it and clears the
-# caller's repository variables.  utils/assay/guard/legacy/check_git_isolation.py refuses a
-# script under utils/ that runs git init, commit, update-ref, reset, checkout,
-# fetch or apply without
-# utils/assay/core/git.py, or, in shell, without the unset and the
-# --absolute-git-dir check.  It reads shell with the pinned ast-grep, and
-# exit 3 when that binary is absent reports a skip.
-add_test(NAME git_isolation_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule git-isolation --self-test)
-add_test(NAME git_isolation
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule git-isolation)
-set_tests_properties(git_isolation git_isolation_self_test PROPERTIES
-    LABELS "ci_guard" SKIP_RETURN_CODE 3)
-# No script reads C++ source as text.  utils/scripts/guard-engines.txt gives the
-# engine of each script under utils/scripts/, test/, utils/tools/mutation/ and the
-# session oracle emitter, and utils/assay/guard/legacy/check_guard_engines.py holds each row
-# to the code: no regex or string method on the text of a tsast node, no
-# grep, rg, awk or sed over C++ in a shell script, and no cxx_lex.  It reads
-# shell with the pinned ast-grep, and exit 3 when that binary is absent
-# reports a skip.
-add_test(NAME guard_engines_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule guard-engines --self-test)
-add_test(NAME guard_engines
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule guard-engines)
-set_tests_properties(guard_engines guard_engines_self_test PROPERTIES
-    LABELS "ci_guard" SKIP_RETURN_CODE 3)
 # A spelling of a branded type that names no brand is the erased
 # identity.  utils/assay/guard/legacy/check_brand_drain.py reads those spellings from the
 # parse tree, and utils/scripts/brand-drain.txt holds one count per file.  A
@@ -745,8 +719,8 @@ set_tests_properties(cache_dir_self_test PROPERTIES
 # utils/assay/guard/legacy/check_cache_size.py takes the size of each cache under the root
 # of the caches from a sample of its files, and compares it with the row of
 # the cache in LIMITS of utils/assay/core/cache.py.  A cache over its limit gives a warning, and
-# a cache over twice its limit gives an error (the row cache-size of
-# utils/scripts/budgets.txt).
+# a cache over twice its limit gives an error (the rule cache-size of
+# utils/registry.txt).
 add_test(NAME cache_size
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule cache-size
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
@@ -1077,19 +1051,6 @@ set_tests_properties(no_combine_ids_duplicate
                      no_combine_ids_duplicate_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# ci_guard label coverage.  `ctest -L ci_guard` is the local pre-merge
-# check, and it skips a guard that has no label, so it reports a pass for
-# a guard that never ran.  This test fails on each test that runs a script
-# and has no ci_guard label.  It reads the tests that ctest lists for this
-# build directory, so it sees every subdirectory and every label change.
-add_test(NAME ci_guard_labels_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ci-guard-labels
-          --self-test --cmake ${CMAKE_COMMAND} --ctest ${CMAKE_CTEST_COMMAND})
-add_test(NAME ci_guard_labels
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ci-guard-labels
-          --build-dir ${CMAKE_BINARY_DIR} --ctest ${CMAKE_CTEST_COMMAND})
-set_tests_properties(ci_guard_labels ci_guard_labels_self_test PROPERTIES
-    LABELS "ci_guard")
 # The cross-build row_hash determinism witness.  The test runs
 # dump_row_hashes and diffs its output against the committed golden.  A
 # mismatch says either that the fold changed on purpose, and the golden
@@ -5491,22 +5452,26 @@ set_tests_properties(walk_units walk_units_self_test PROPERTIES
 # warning does not.  ctest shows no output of a test that passes, so a check
 # that gets --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR} also writes its
 # warnings there, and `guard warnings` (utils/assay/guard/warnings.py) prints them.
-# utils/scripts/budgets.txt gives the thresholds of the checks that measure a
-# quantity.  The top of this file sets CRUCIBLE_CHECK_WARNINGS_DIR.
+# The measured rules of utils/registry.txt give the thresholds of the checks
+# that measure a quantity.  The top of this file sets CRUCIBLE_CHECK_WARNINGS_DIR.
 add_test(NAME check_report_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest core.report)
-# `guard warnings` also adds the time totals of the build: the CPU time
+# `guard warnings` also prints the time totals of the build: the CPU time
 # of the objects of all, of the fixtures and of the executable tests, against
-# the rows total-compile-cpu, total-fixture-cpu and total-test-cpu.  A total
-# gives a warning only.  The CI step "Check warnings" runs it after the tests.
-add_test(NAME report_check_warnings_self_test
+# the rules total-compile-cpu, total-fixture-cpu and total-test-cpu
+# (utils/assay/guard/legacy/report_check_warnings.py).  A total gives a
+# warning only.  The CI step "Check warnings" runs it after the tests.
+add_test(NAME guard_warnings_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.warnings)
-set_tests_properties(check_report_self_test report_check_warnings_self_test PROPERTIES LABELS "ci_guard")
+add_test(NAME report_check_warnings_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.legacy.report_check_warnings)
+set_tests_properties(check_report_self_test guard_warnings_self_test report_check_warnings_self_test PROPERTIES
+    LABELS "ci_guard")
 
 # heavy_includes — a header under include/ includes no heavy standard header.
 # A header is heavy when its compile time alone is more than the time of
-# <meta> alone times the factor of the row heavy-include of
-# utils/scripts/budgets.txt.  utils/scripts/header-costs.txt holds the
+# <meta> alone times the factor of the rule heavy-include of
+# utils/registry.txt.  utils/scripts/header-costs.txt holds the
 # measured times.  Each include that the tree holds today is a row of
 # utils/scripts/heavy-includes-ledger.txt and gives a warning.  A new one is
 # an error.
@@ -5547,7 +5512,7 @@ set_tests_properties(contract_semantic contract_semantic_self_test PROPERTIES LA
 # hole of each element of a fixed list in an automatic object, with no loop.
 # The check selects files from the parse tree, compiles one probe for each
 # through ccache, and reads the counts and the padding with reflection.  The
-# row padded-list of utils/scripts/budgets.txt gives the count.  Each padded
+# rule padded-list of utils/registry.txt gives the count.  Each padded
 # list that the tree holds today is a row of utils/scripts/padded-lists-ledger.txt
 # and gives a warning.  A new one is an error.
 add_test(NAME padded_lists_self_test
@@ -5571,8 +5536,8 @@ add_test(NAME reconfigure_noop_self_test
 set_tests_properties(reconfigure_noop_self_test PROPERTIES LABELS "ci_guard")
 
 # The test launcher (cmake/TestLauncher.cmake) runs in front of each test whose
-# command is an executable target, and it holds the rows test-time and
-# test-memory of utils/scripts/budgets.txt while the test runs.  CMake gives
+# command is an executable target, and it holds the rules test-time and
+# test-memory of utils/registry.txt while the test runs.  CMake gives
 # no launcher to a script test.  A test cannot measure the run that it is part
 # of.  ctest runs the rule test-time after the tests of each run, as the
 # command of the CTestCustom.cmake that cmake/TestLauncher.cmake writes.  Only
@@ -5594,7 +5559,7 @@ add_test(NAME build_launcher_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.loop.test_step --cxx ${CRUCIBLE_REAL_CXX})
 set_tests_properties(build_launcher_test PROPERTIES LABELS "ci_guard")
 
-# The cost checks of utils/assay/guard/legacy/check_compile_cost.py read the records of
+# The rules of utils/assay/guard/legacy/check_compile_cost.py read the records of
 # the launcher and the outputs of this build:
 #   compile_cpu, compile_memory  the CPU time and the peak memory of each compile job
 #   compile_instructions         the user instructions of each compile job, which hold the
@@ -5604,47 +5569,47 @@ set_tests_properties(build_launcher_test PROPERTIES LABELS "ci_guard")
 #   object_text                  the machine code of each object
 #   header_alone                 the bytes that each header of include/ includes alone,
 #                                from the ninja dependency log of its sentinel
-# A ledger row applies only to the build of its kind, and each check reads
+# A ledger row applies only to the build of its kind, and each rule reads
 # the kind from build-kind.txt of this build.
 set(_compile_cost_ninja "")
 if(CMAKE_GENERATOR MATCHES "Ninja")
   set(_compile_cost_ninja ${CMAKE_MAKE_PROGRAM})
 endif()
-foreach(_compile_cost_check compile-cpu compile-instructions compile-memory link-time link-memory function-size
+foreach(_compile_cost_rule compile-cpu compile-instructions compile-memory link-time link-memory function-size
         object-text header-alone)
-  string(REPLACE "-" "_" _compile_cost_test "${_compile_cost_check}")
+  string(REPLACE "-" "_" _compile_cost_test "${_compile_cost_rule}")
   add_test(NAME ${_compile_cost_test}
-    COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule compile-cost --check ${_compile_cost_check}
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ${_compile_cost_rule}
             --build-dir ${CMAKE_BINARY_DIR} --ninja "${_compile_cost_ninja}"
             --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
   set_tests_properties(${_compile_cost_test} PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
 endforeach()
 add_test(NAME compile_cost_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule compile-cost --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.legacy.check_compile_cost)
 set_tests_properties(compile_cost_self_test PROPERTIES LABELS "ci_guard")
 
 # build_order — no compile of this build waits for a link or an archive
 # through an order-only input (utils/assay/guard/legacy/check_build_order.py).  Each
 # compile behind such an input starts only after the link or the archive.
 add_test(NAME build_order
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule build-order --check build-order
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule build-order
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 # compile_first — each target of all with a long compile is on
 # utils/scripts/compile-first.txt, and each object of a listed target has a
 # chain of three edges in build.ninja, so Ninja starts it before the objects
 # of the other tests (cmake/CompileFirst.cmake).
 add_test(NAME compile_first
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule build-order --check compile-first
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule compile-first
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 # custom_deps — each object that a custom command compiles, as each BPF object
 # of cmake/CrucibleBpf.cmake, has a depfile in build.ninja, and the ninja
 # dependency log holds a header of each built one.  Without the depfile, an
 # edit of a header does not compile the object again.
 add_test(NAME custom_deps
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule build-order --check custom-deps
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule custom-deps
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 add_test(NAME build_order_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule build-order --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.legacy.check_build_order)
 set_tests_properties(build_order compile_first custom_deps build_order_self_test PROPERTIES LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 # ninja_files_self_test — utils/assay/readers/ninja.py reads build.ninja and the
@@ -5656,8 +5621,8 @@ set_tests_properties(ninja_files_self_test PROPERTIES LABELS "ci_guard")
 
 # parse_total — the sum, over each object of the target all and each negative
 # fixture, of the bytes that its compile reads, against the baseline of the
-# build kind in utils/scripts/parse-total-ledger.txt (the row parse-total of
-# utils/scripts/budgets.txt gives the levels).  utils/assay/readers/census.py
+# build kind in utils/scripts/parse-total-ledger.txt (the rule parse-total of
+# utils/registry.txt gives the levels).  utils/assay/readers/census.py
 # reads the files of an object from the ninja dependency log and the files of a
 # fixture from the record that its driver writes after each run.  The check
 # exits 3 for a build that made only some targets and for a build whose
@@ -5666,25 +5631,25 @@ set_tests_properties(ninja_files_self_test PROPERTIES LABELS "ci_guard")
 # directory makes the check DEPEND on each of them, so that ctest runs the
 # check after the last fixture of the run.
 add_test(NAME parse_total
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule parse-cost --check parse-total
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule parse-total
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 add_test(NAME parse_cost_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule parse-cost --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.legacy.check_parse_cost)
 # header_fanout — for each header of include/, the bytes that its sentinel
 # includes alone times the units that read it, against the 30 largest
 # products of utils/scripts/header-fanout-ledger.txt.  It prints the ten
 # largest products, and it gives warnings only: for a header that enters the
-# ten largest, and for a product that changed by more than the row
-# header-fanout of utils/scripts/budgets.txt.
+# ten largest, and for a product that changed by more than the rule
+# header-fanout of utils/registry.txt.
 add_test(NAME header_fanout
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule parse-cost --check header-fanout
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-fanout
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 # instruction_total — the user instructions of the last real compile of each
 # object of all and each negative fixture, against the baseline of
-# utils/scripts/instruction-total-ledger.txt, at the levels of the row
+# utils/scripts/instruction-total-ledger.txt, at the levels of the rule
 # instruction-total.  It exits 3 when one compile has no exact instruction count.
 add_test(NAME instruction_total
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule parse-cost --check instruction-total
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule instruction-total
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 set_tests_properties(parse_total parse_cost_self_test header_fanout instruction_total PROPERTIES
     LABELS "ci_guard" SKIP_RETURN_CODE 3)
@@ -5694,22 +5659,6 @@ function(crucible_order_census_checks)
       DEPENDS "${_fixtures}")
 endfunction()
 cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_checks)
-
-# budget_history — utils/assay/guard/legacy/check_budget_history.py reads the git history
-# of utils/scripts/budgets.txt and of each ledger.  A threshold above its
-# lowest committed value and a ledger above its lowest committed row count
-# give a warning that names the commits.  A rise of a threshold whose commits
-# give no measurement of the row is an error.  A raise of a count of the
-# quarantine ledger gives a warning, and it is an error when its commit changes
-# neither the quarantine plugin nor the rule table.  It exits 3 for a tree with
-# no whole history.
-add_test(NAME budget_history
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule budget-history --root ${CMAKE_SOURCE_DIR}
-          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-add_test(NAME budget_history_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule budget-history --self-test)
-set_tests_properties(budget_history budget_history_self_test PROPERTIES LABELS "ci_guard")
-set_tests_properties(budget_history PROPERTIES SKIP_RETURN_CODE 3)
 
 # build_target_self_test — utils/assay/core/target.py gives the build kind
 # and the target tier to the quarantine ratchet and to the libstdc++ symbols
@@ -5773,8 +5722,8 @@ add_test(NAME loop_history_self_test
 set_tests_properties(affected_tests_self_test loop_history_self_test PROPERTIES LABELS "ci_guard")
 # edit_loop_gauge_self_test — `loop gauge` (utils/assay/loop/gauge.py) measures the
 # build and the full test run after one code edit of a base header, in a
-# clone of the tree, against the rows edit-build-* and edit-test-* of
-# utils/scripts/budgets.txt.  The measurement takes minutes, so the owner runs
+# clone of the tree, against the rules edit-build-* and edit-test-* of
+# utils/registry.txt.  The measurement takes minutes, so the owner runs
 # it before each stage gate, and only its self-test is a test.
 add_test(NAME edit_loop_gauge_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest loop.gauge)
@@ -5936,6 +5885,22 @@ foreach(crucible_guard_test IN LISTS crucible_directory_tests)
   if("ci_guard" IN_LIST crucible_guard_labels AND NOT crucible_guard_setup)
     set_property(TEST ${crucible_guard_test} APPEND PROPERTY FIXTURES_REQUIRED tsast_trees)
   endif()
+endforeach()
+
+# The rules of the engine meta read the registry, the ledgers, the plants, the
+# modules of the package and the git history, and no parse tree, so their
+# tests come after the block above (cmake/Guards.cmake).  guard_history reads
+# the git history of utils/registry.txt and of each ledger: a threshold that
+# rose with no measurement in its commit is an error, and a threshold or a
+# ledger above its lowest committed value gives a warning.  The test modules
+# of the rows grammar, the registry, the ledgers and the rule history plant
+# their input in throwaway trees.
+crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR})
+foreach(_assay_test core.test_rows core.test_registry core.test_ledger guard.test_history)
+  string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
+  add_test(NAME ${_assay_test_name}
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})
+  set_tests_properties(${_assay_test_name} PROPERTIES LABELS "ci_guard;meta")
 endforeach()
 
 add_subdirectory(foundation)

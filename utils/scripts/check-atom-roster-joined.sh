@@ -112,8 +112,8 @@ find_cxx() {
 # No -Werror and no -W: this guard's finding is a static_assert, and the
 # tree's warning policy is other guards' business.  Colour is off because
 # escape sequences land inside identifiers and defeat matching on the
-# message.  The operation limit is the limit of the build, the row
-# constexpr-ops of utils/scripts/budgets.txt.
+# message.  The operation limit is the limit of the build, the measured
+# rule constexpr-ops of utils/registry.txt.
 ops_limit="$(python3 "$REPO_ROOT/utils/bin/loop" budget --error-threshold constexpr-ops)"
 sentinel_flags=(-std=c++26 -freflection -fcontracts -fsyntax-only -w
                 -fdiagnostics-color=never "-fconstexpr-ops-limit=$ops_limit"

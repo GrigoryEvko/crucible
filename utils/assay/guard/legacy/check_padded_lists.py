@@ -9,9 +9,9 @@ variable tracking in each file that included it.  Make each padding byte a
 member, as include/crucible/ledger/Verdict.h does with `pad`.
 
 WHAT THE CHECK FINDS
-    A declaration whose type is a fixed list of more elements than the row
-    padded-list of utils/scripts/budgets.txt permits, and whose element type
-    has a padding bit.  A fixed list is an array, or an array that a class
+    A declaration whose type is a fixed list of more elements than the
+    measured rule padded-list of utils/registry.txt permits, and whose element
+    type has a padding bit.  A fixed list is an array, or an array that a class
     template specialization or an unnamed class holds at any depth: a C
     array, std::array, std::inplace_vector, and each fixed container of the
     tree that stores an array.  The count of a list of lists is the product
@@ -90,6 +90,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from assay.core import cache as cache_dir
+from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.readers import tsast
 
@@ -124,8 +125,8 @@ LEDGER_HEADER = (
     "# The rule padded-list (`guard check --rule padded-list`) reads this ledger.\n"
     "#\n"
     "# With -ftrivial-auto-var-init=zero, GCC writes one store for each padding hole of each element of\n"
-    "# a fixed list in an automatic object, with no loop.  Make each padding byte a member.  The row\n"
-    "# padded-list of utils/scripts/budgets.txt gives the element count above which a list counts.\n"
+    "# a fixed list in an automatic object, with no loop.  Make each padding byte a member.  The measured\n"
+    "# rule padded-list of utils/registry.txt gives the element count above which a list counts.\n"
     "#\n"
     "# A count row:  path | role | declaration | element type\n"
     "#   A padded list that the tree holds today.  Each run gives a warning for it.  When you remove the\n"
@@ -968,15 +969,16 @@ def read_ledger(path: Path) -> Ledger:
     return ledger
 
 
-def limit_of(budgets: Path) -> int:
-    """Return the element count from which a list counts: one more than the error threshold of the budget row.
+def limit_of(registry: Path) -> int:
+    """Return the element count from which a list counts: one more than the error threshold of the measured rule.
 
     Raises:
-        ValueError: If the budget table is malformed or has no row for this check
+        ValueError: If the registry is malformed or has no measured rule for this check
     """
-    rows = check_report.read_budgets(budgets)
+    rows = check_report.read_budgets(registry)
     if CHECK not in rows:
-        raise ValueError(f"{budgets} has no row {CHECK}.  Add `{CHECK} | count | count | elements | meaning`.")
+        raise ValueError(f"{registry} has no measured rule {CHECK}.  Add the rule {CHECK} with warn=COUNT, "
+                         f"error=COUNT and unit=elements.")
     return int(rows[CHECK].error) + 1
 
 
@@ -1022,17 +1024,17 @@ def compare(found: ProbeResult, ledger: Ledger) -> list[check_report.Finding]:
     return findings
 
 
-def evaluate(root: Path, build_dir: Path, ledger_path: Path, budgets: Path) -> tuple[list[check_report.Finding],
-                                                                                    ProbeResult]:
+def evaluate(root: Path, build_dir: Path, ledger_path: Path, registry: Path) -> tuple[list[check_report.Finding],
+                                                                                     ProbeResult]:
     """Select the files, run the probes and compare the result with the ledger.
 
     Returns:
         The findings, and the result of the probes
     """
     try:
-        limit = limit_of(budgets)
+        limit = limit_of(registry)
     except ValueError as exc:
-        failed = ProbeResult(errors=[check_report.Finding("error", "utils/scripts/budgets.txt", 0, CHECK, str(exc))])
+        failed = ProbeResult(errors=[check_report.Finding("error", rule_registry.REGISTRY_PATH, 0, CHECK, str(exc))])
         return list(failed.errors), failed
     if not (build_dir / "compile_commands.json").is_file():
         failed = ProbeResult(errors=[check_report.Finding(
@@ -1049,13 +1051,13 @@ def evaluate(root: Path, build_dir: Path, ledger_path: Path, budgets: Path) -> t
     return compare(found, read_ledger(ledger_path)), found
 
 
-def write(root: Path, build_dir: Path, ledger_path: Path, budgets: Path) -> int:
+def write(root: Path, build_dir: Path, ledger_path: Path, registry: Path) -> int:
     """Write the count rows of the ledger again from the probes, and keep each keep row.
 
     Returns:
         0 when the ledger is written, 1 when an error of the probes or of a row stops the write
     """
-    _, found = evaluate(root, build_dir, ledger_path, budgets)
+    _, found = evaluate(root, build_dir, ledger_path, registry)
     ledger = read_ledger(ledger_path)
     blocking = list(found.errors) + list(ledger.malformed)
     if blocking:
@@ -1075,13 +1077,13 @@ def write(root: Path, build_dir: Path, ledger_path: Path, budgets: Path) -> int:
     return 0
 
 
-def check(root: Path, build_dir: Path, ledger_path: Path, budgets: Path, warnings_dir: Path | None) -> int:
+def check(root: Path, build_dir: Path, ledger_path: Path, registry: Path, warnings_dir: Path | None) -> int:
     """Run the check and print each finding.
 
     Returns:
         1 when one finding is an error, else 0
     """
-    findings, found = evaluate(root, build_dir, ledger_path, budgets)
+    findings, found = evaluate(root, build_dir, ledger_path, registry)
     code = check_report.emit(findings, CHECK, warnings_dir)
     warnings = sum(item.level == "warning" for item in findings)
     print(f"check-padded-lists: {found.probed} file(s) probed, {warnings} padded list(s) in the ledger, "
@@ -1183,8 +1185,10 @@ def self_test(build_dir: Path) -> int:
         (root / "include/fixy").mkdir(parents=True)
         (root / "src").mkdir()
         build.mkdir()
-        budgets = root / "budgets.txt"
-        budgets.write_text(f"{CHECK} | 63 | 63 | elements | the planted limit\n", encoding="utf-8")
+        registry = root / "registry.txt"
+        registry.write_text(rule_registry.planted([rule_registry.measured_rule(CHECK, 63, 63, "elements",
+                                                                               "the planted limit")]),
+                            encoding="utf-8")
         ledger = root / LEDGER
         ledger.parent.mkdir(parents=True)
         (root / "include/fixy/Planted.h").write_text(SELF_TEST_HEADER, encoding="utf-8")
@@ -1206,7 +1210,7 @@ def self_test(build_dir: Path) -> int:
 
         def run() -> tuple[list[check_report.Finding], ProbeResult]:
             with contextlib.redirect_stderr(io.StringIO()):
-                return evaluate(root, build, ledger, budgets)
+                return evaluate(root, build, ledger, registry)
 
         findings, found = run()
         planted = {(site.role, unquote(site.entity)) for site in found.sites.values()
@@ -1230,7 +1234,7 @@ def self_test(build_dir: Path) -> int:
                findings and all(item.level == "error" for item in findings))
 
         with contextlib.redirect_stderr(io.StringIO()):
-            written = write(root, build, ledger, budgets)
+            written = write(root, build, ledger, registry)
         findings, found = run()
         expect("--write gives a ledger whose rows give warnings and no error",
                written == 0 and findings and all(item.level == "warning" for item in findings))
@@ -1306,8 +1310,8 @@ def main(argv: list[str]) -> int:
         if arguments.self_test:
             return self_test(build_dir)
         if arguments.write:
-            return write(root, build_dir, root / LEDGER, check_report.BUDGETS)
-        return check(root, build_dir, root / LEDGER, check_report.BUDGETS, arguments.warnings_dir)
+            return write(root, build_dir, root / LEDGER, check_report.REGISTRY)
+        return check(root, build_dir, root / LEDGER, check_report.REGISTRY, arguments.warnings_dir)
     except tsast.KitMissing as exc:
         print(f"check-padded-lists: {exc}", file=sys.stderr)
         return 3

@@ -1,0 +1,2 @@
+# A row of the ledger of the rule names a commit of 4 characters, which is not the form of an admission.
+commit 1 | Add the planted registry and a malformed admission | The first thresholds.

@@ -29,9 +29,9 @@ THE EXECUTABLE TEST
       diagnostic, for example from __FILE__, and it is not an input.
     - For a test behind the test launcher: the bytes of the master loop, of
       each .py file of utils/assay/core and utils/assay/loop, of each .txt
-      file of utils/scripts, and of build-kind.txt in the build tree.  The
-      launcher reads its modules, its budget table and its ledgers there, and
-      the result of a test depends on them.
+      file of utils/scripts, of utils/registry.txt, and of build-kind.txt in
+      the build tree.  The launcher reads its modules, the registry and its
+      ledgers there, and the result of a test depends on them.
     The scan of an ELF file reads its section headers, so it finds a name in
     .rodata, .data or .dynstr, and it does not read the code or the debug
     information.
@@ -111,6 +111,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import LOOP
 from assay.loop import history as loop_history
@@ -129,6 +130,8 @@ LAUNCHER_SUBCOMMAND = "test-step"
 # The files that the test launcher reads: each directory relative to utils/
 # (the parent of the directory of the master), and the suffix of its files.
 LAUNCHER_INPUT_DIRECTORIES = (("assay/core", ".py"), ("assay/loop", ".py"), ("scripts", ".txt"))
+# The other files that the test launcher reads, relative to utils/: the registry of the measured rules.
+LAUNCHER_INPUT_FILES = ("registry.txt",)
 BUILD_KIND_FILE = "build-kind.txt"
 ALWAYS_RUN_PROPERTIES = ("FIXTURES_REQUIRED", "FIXTURES_SETUP", "FIXTURES_CLEANUP", "REQUIRED_FILES")
 ENVIRONMENT_PROPERTIES = ("ENVIRONMENT", "ENVIRONMENT_MODIFICATION")
@@ -520,8 +523,9 @@ class Planner:
         """Return the files that the test launcher reads: the master, its modules, its data files and build-kind.txt.
 
         LAUNCHER_INPUT_DIRECTORIES gives the directories of the modules and of
-        the data files.  O(number of files in those directories), one time for
-        each call of the script.
+        the data files, and LAUNCHER_INPUT_FILES gives the registry.
+        O(number of files in those directories), one time for each call of the
+        script.
         """
         if launcher not in self.launcher_files:
             utils = os.path.dirname(os.path.dirname(real(launcher)))
@@ -533,6 +537,7 @@ class Planner:
                 except OSError:
                     names = []
                 files.extend(os.path.join(directory, name) for name in names if name.endswith(suffix))
+            files.extend(os.path.join(utils, name) for name in LAUNCHER_INPUT_FILES)
             self.launcher_files[launcher] = [real(launcher), *files,
                                              os.path.join(self.trees.build_root, BUILD_KIND_FILE)]
         return self.launcher_files[launcher]
@@ -687,7 +692,7 @@ def save_history(recorder: loop_history.Recorder, build_dir: Path) -> None:
         for finding in loop_history.judge_line(recorder.line, budgets, str(loop_history.history_path(build_dir))):
             print(finding.text())
     except (OSError, ValueError) as problem:
-        print(f"loop test: the budget table cannot be read, so the line of the loop history has no "
+        print(f"loop test: the registry cannot be read, so the line of the loop history has no "
               f"warnings: {problem}")
 
 
@@ -792,16 +797,16 @@ class SelfTest:
             shutil.copyfile(true_program, self.build_dir / "bin" / name)
             (self.build_dir / "bin" / name).chmod(0o755)
         # A stand-in for the master loop of the tree: its subcommand test-step
-        # drops its own arguments and runs the test.  The budget table in the
-        # data directory is one of the files that the launched test depends on.
+        # drops its own arguments and runs the test.  The registry in utils/
+        # is one of the files that the launched test depends on.
         (self.source_dir / "utils" / "bin").mkdir(parents=True)
         (self.source_dir / "utils" / "scripts").mkdir()
         self.launcher = self.source_dir / "utils" / "bin" / LOOP_MASTER
         self.launcher.write_text("import os, sys\narguments = sys.argv[2:]\n"
                                  "if arguments[:1] == ['--warnings-dir']:\n    arguments = arguments[2:]\n"
                                  "os.execv(arguments[0], arguments)\n")
-        self.budgets = self.source_dir / "utils" / "scripts" / "budgets.txt"
-        self.budgets.write_text("test-time | warning 5 | error 10\n")
+        self.registry = self.source_dir / "utils" / "registry.txt"
+        self.plant_registry(5, 10)
         shutil.copyfile(false_program, self.build_dir / "bin" / "bad")
         (self.build_dir / "bin" / "bad").chmod(0o755)
         build_text, source_text = str(self.build_dir).encode(), str(self.source_dir).encode()
@@ -815,6 +820,10 @@ class SelfTest:
             allocated=b"\0" + source_text + b"/test/test_example.cpp\0"))
         self.extra_argument = ""
         self.write_tests()
+
+    def plant_registry(self, warn: float, error: float) -> None:
+        """Write the registry of the fake source tree, with the measured rule test-time."""
+        self.registry.write_text(rule_registry.planted([rule_registry.measured_rule("test-time", warn, error, "s")]))
 
     def write_tests(self) -> None:
         """Write the CTestTestfile.cmake of the fake build tree."""
@@ -922,12 +931,16 @@ def self_test(ctest: str) -> int:
         expect("the summary gives the count of skipped tests and the reason",
                "4 tests skipped, because each input is the same as at the last pass" in output, output)
 
-        fake.budgets.write_text("test-time | warning 5 | error 20\n")
+        fake.plant_registry(5, 20)
         status, output = fake.call()
-        expect("a changed data file of the test launcher makes a launched test run", "exe_launched" not in
+        expect("a changed registry of the test launcher makes a launched test run", "exe_launched" not in
                fake.skipped() and "exe_ok" in fake.skipped(), output)
         status, output = fake.call()
         expect("the launched test is skipped again after its pass", "exe_launched" in fake.skipped(), output)
+        (fake.source_dir / "utils" / "scripts" / "test-time-ledger.txt").write_text("# a planted ledger\n")
+        status, output = fake.call()
+        expect("a changed ledger of the test launcher makes a launched test run", "exe_launched" not in
+               fake.skipped() and "exe_ok" in fake.skipped(), output)
 
         with open(fake.build_dir / "bin" / "ok", "ab") as handle:
             handle.write(b"\0")

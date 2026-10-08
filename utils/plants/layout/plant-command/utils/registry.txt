@@ -1,0 +1,7 @@
+# a planted registry: utils/scripts/run.sh has a shebang and mode 755, and it is not a master
+format 1
+path utils/assay/**/*.py | the planted modules
+path utils/bin/* | the planted master
+path utils/registry.txt | the planted registry
+path utils/scripts/*.sh | the planted scripts
+path utils/scripts/*.txt | the planted data

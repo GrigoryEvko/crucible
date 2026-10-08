@@ -31,8 +31,8 @@
 # a check file that has no header.
 #
 # Each header also compiles alone in a one-line unit, with
-# -fconstexpr-ops-limit at the error threshold of the row
-# header-constexpr-ops in utils/scripts/budgets.txt.  A constant evaluation
+# -fconstexpr-ops-limit at the error threshold of the rule
+# header-constexpr-ops in utils/registry.txt.  A constant evaluation
 # that runs where the header stands runs again in each translation unit that
 # includes the header, so an evaluation of more operations stops the build.
 # A variable template or a template that no code instantiates costs nothing
@@ -94,9 +94,9 @@ foreach(_row IN LISTS _not_standalone_rows)
   list(APPEND _not_standalone "${_header}")
 endforeach()
 
-# The operation limit of a header alone: the error threshold of the row
-# header-constexpr-ops in utils/scripts/budgets.txt (cmake/Budgets.cmake).
-crucible_budget_limit(header-constexpr-ops _ops_limit)
+# The operation limit of a header alone: the error threshold of the rule
+# header-constexpr-ops in utils/registry.txt (cmake/Guards.cmake).
+crucible_rule_limit(header-constexpr-ops _ops_limit)
 
 # The headers that need a higher limit, relative to include/, with the limit
 # of each one.
@@ -131,7 +131,7 @@ foreach(_row IN LISTS _ops_rows)
   endif()
   if(_limit LESS_EQUAL _ops_limit)
     message(FATAL_ERROR "test/layer/header-constexpr-ops.txt: the limit ${_limit} of ${_header} is not more than "
-                        "the threshold ${_ops_limit} of utils/scripts/budgets.txt.  Remove the row.")
+                        "the threshold ${_ops_limit} of utils/registry.txt.  Remove the row.")
   endif()
   if(_header IN_LIST _ops_headers)
     message(FATAL_ERROR "test/layer/header-constexpr-ops.txt: ${_header} has two rows.  Remove one.")
@@ -521,6 +521,9 @@ add_test(NAME admitted_audit
 set_tests_properties(admitted_audit admitted_audit_self_test PROPERTIES
     LABELS "ci_guard;substrate"
     SKIP_RETURN_CODE 3)
+# The rule admitted-audit reads the parse trees, so its test starts after the
+# tests that fill the tree cache (the end of test/CMakeLists.txt).
+set_tests_properties(admitted_audit PROPERTIES FIXTURES_REQUIRED tsast_trees)
 
 # Each header of crucible-not-standalone.txt still fails to compile alone.
 # The test compiles it with the command of the crucible sentinels.  The
@@ -530,6 +533,9 @@ add_test(NAME layer_not_standalone
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-checks
           --standalone ${CMAKE_BINARY_DIR})
 set_tests_properties(layer_not_standalone PROPERTIES LABELS "ci_guard;substrate" SKIP_RETURN_CODE 3)
+# The rule header-checks reads the parse trees, so this test also requires the
+# tests that fill the tree cache.
+set_tests_properties(layer_not_standalone PROPERTIES FIXTURES_REQUIRED tsast_trees)
 
 # Each one-line unit has its operation limit, and each row of
 # header-constexpr-ops.txt is still necessary: its header compiles alone at

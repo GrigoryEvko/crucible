@@ -1,5 +1,5 @@
 # utils/scripts/compile-instructions-ledger.txt — the compile jobs that can run more user instructions
-# than the error threshold of compile-instructions (utils/scripts/budgets.txt).
+# than the error threshold of the measured rule compile-instructions (utils/registry.txt).
 # utils/assay/guard/legacy/check_compile_cost.py reads it.
 #
 # A row:  kind | object | G instructions | reason
@@ -10,6 +10,6 @@
 #
 # In a build of its kind, a row gives a warning while its object stays over the error threshold, and
 # an error when the object is at or under it.  A record of a ccache hit and a record with no count
-# hold no instructions, and the check does not judge them.  python3 utils/bin/guard check --rule compile-cost
-# --check compile-instructions --build-dir DIR --write [--reason TEXT] writes the rows of the kind of a
-# build again from that build.
+# hold no instructions, and the check does not judge them.  python3 utils/bin/guard check --rule
+# compile-instructions --build-dir DIR --write [--reason TEXT] writes the rows of the kind of a build
+# again from that build.

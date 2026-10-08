@@ -1,5 +1,5 @@
 # utils/scripts/test-memory-ledger.txt — the executable tests whose largest process takes more peak
-# memory than the error threshold of the row test-memory of utils/scripts/budgets.txt, for one kind
+# memory than the error threshold of the measured rule test-memory of utils/registry.txt, for one kind
 # of build.  utils/assay/loop/teststep.py reads it after each test.
 #
 # A row:  kind | test | value | reason

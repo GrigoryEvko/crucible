@@ -1,0 +1,6 @@
+# a planted registry: no path row holds utils/scripts/stray.py
+format 1
+path utils/assay/**/*.py | the planted modules
+path utils/bin/* | the planted master
+path utils/registry.txt | the planted registry
+path utils/scripts/*.txt | the planted data

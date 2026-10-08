@@ -1,0 +1,3 @@
+# A commit adds two rows to a ledger.  The ledger above its lowest count gives a warning, and no error.
+commit 1 | Add the planted ledger | The ledger admits nothing.
+commit 2 | Admit two slow tests | The two tests take 21 s and 22 s.

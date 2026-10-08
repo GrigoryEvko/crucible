@@ -35,6 +35,7 @@ if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   add_test(NAME core_shapes COMMAND python3 ${_core_shapes_command})
   add_test(NAME core_shapes_self_test COMMAND python3 ${_core_shapes_command} --self-test)
   set_tests_properties(core_shapes core_shapes_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
+  set_tests_properties(core_shapes PROPERTIES FIXTURES_REQUIRED tsast_trees)
   return()
 endif()
 
@@ -87,3 +88,6 @@ add_test(NAME core_shapes_self_test
   COMMAND_EXPAND_LISTS)
 
 set_tests_properties(core_shapes core_shapes_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
+# The rule core-shapes reads the parse trees, so its test starts after the
+# tests that fill the tree cache (the end of test/CMakeLists.txt).
+set_tests_properties(core_shapes PROPERTIES FIXTURES_REQUIRED tsast_trees)

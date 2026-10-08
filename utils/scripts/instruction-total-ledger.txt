@@ -7,10 +7,10 @@
 #   instructions of the compiler run of its last real compile, at the last --write.  A direct compile
 #   and a ccache miss give the same count (utils/assay/core/meter.py, A COMPILE THROUGH CCACHE).
 #
-# A growth over the warning threshold of the row instruction-total of utils/scripts/budgets.txt gives a
-# warning, and over its error threshold an error.  A fall of more than the warning threshold is an error
+# A growth over the warning threshold of the measured rule instruction-total of utils/registry.txt gives
+# a warning, and over its error threshold an error.  A fall of more than the warning threshold is an error
 # too.  The count covers the template instantiation and the constant evaluation that the bytes of
 # utils/scripts/parse-total-ledger.txt do not see.  To accept a growth, raise the baseline in the same
 # commit with a reason:
-#   python3 utils/bin/guard check --rule parse-cost --check instruction-total --build-dir build --write --reason TEXT
+#   python3 utils/bin/guard check --rule instruction-total --build-dir build --write --reason TEXT
 total | x86_64-debug-asan | 9841082170241 | 8727423836718 | the measure of the Debug build of all and of each negative fixture at be4dcbd05 on 2026-10-08. The growth of 2.14 % over 751d38a23 is the new tests of the core families, the NUMA doors, the iteration detector, the flag matrix and the SenseHub v2 sources, the new fixtures, and the include of fixy/Core.h in the test harness

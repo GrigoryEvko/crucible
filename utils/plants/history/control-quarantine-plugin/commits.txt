@@ -1,0 +1,3 @@
+# A commit raises a count of the quarantine ledger, and it changes the plugin, which finds more.
+commit 1 | Count each file | The first counts.
+commit 2 | Report a new kind in the plugin | The plugin finds more.

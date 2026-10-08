@@ -34,10 +34,10 @@ THE MEASUREMENT
     the host CPU time that other processes used (utils/assay/loop/history.py,
     THE HOST LOAD), and the user instructions of each process of the step,
     from one counter that each process inherits (utils/assay/core/meter.py,
-    THE INSTRUCTION COUNT).  The judged value of each row is the median over
-    the runs.
+    THE INSTRUCTION COUNT).  The judged value of each measured rule is the
+    median over the runs.
 
-THE BUDGET ROWS
+THE MEASURED RULES
     edit-build-instructions and edit-test-instructions hold the error level.
     The instruction count of the build does not change with the load of the
     host.  A test that spins runs more instructions on a busy host, so the
@@ -49,7 +49,7 @@ THE BUDGET ROWS
     was quiet, too: other processes used at most QUIET_OTHERS_PCT percent of
     the host CPU time in the step, in each run.  Else the report gives the
     wall time and the reason, and no finding.
-    Three rows give warnings only: configure-time for the first and the
+    Three rules give warnings only: configure-time for the first and the
     second configure, noop-build-time for the build with nothing to do, and
     build-peak-memory for the median of the peak concurrent memory of the
     edit builds.  For each build step, the report also gives the critical
@@ -57,8 +57,8 @@ THE BUDGET ROWS
 
 THE REPORT
     The report prints each finding in the format of utils/assay/core/report.py,
-    at the path of the edited header.  With --warnings-dir, each row writes
-    its warnings to DIR/ROW.txt.  With --record FILE, the gauge appends the
+    at the path of the edited header.  With --warnings-dir, each rule writes
+    its warnings to DIR/RULE.txt.  With --record FILE, the gauge appends the
     result as one JSON line to FILE.
 
 Usage
@@ -101,14 +101,14 @@ EDIT_HEADER = Path("include/foundation/Platform.h")
 EDIT_NAMESPACE = ("foundation", "detail")
 EDIT_FUNCTION = "breakpoint"
 QUIET_OTHERS_PCT = 10.0
-# The job count of the gate.  The wall rows hold the wall times of a measurement at this job count.
+# The job count of the gate.  The wall rules hold the wall times of a measurement at this job count.
 WALL_JOBS = 192
 DEFAULT_JOBS = WALL_JOBS
 DEFAULT_RUNS = 3
 DEFAULT_TIMEOUT_S = 600
 DEFAULT_MIN_FREE_GB = 64.0
 GIGA = 1e9
-# For each judged step: the row of its instructions, of its CPU time and of its wall time.
+# For each judged step: the measured rule of its instructions, of its CPU time and of its wall time.
 STEP_ROWS = {"build": ("edit-build-instructions", "edit-build-cpu", "edit-build-wall"),
              "tests": ("edit-test-instructions", "edit-test-cpu", "edit-test-wall")}
 NOT_RUNNABLE = 3
@@ -297,11 +297,11 @@ def median_of(results: list[StepResult]) -> Median:
 
 def judge(medians: dict[str, Median], budgets: dict[str, check_report.Budget], place: str, jobs: int) -> tuple[
         list[check_report.Finding], list[str]]:
-    """Compare the medians of the build and the tests with their rows.
+    """Compare the medians of the build and the tests with their measured rules.
 
     Args:
         medians: The median of the build and of the tests
-        budgets: The budget table
+        budgets: The measured rules of the registry
         place: The path that a finding names
         jobs: The job count of the measurement
 
@@ -326,8 +326,8 @@ def judge(medians: dict[str, Median], budgets: dict[str, check_report.Budget], p
         median = medians[step]
         if median.instructions_g is not None:
             compare(instruction_row, median.instructions_g, "G instructions")
-            compare(cpu_row, median.cpu_s, "s", f"The row {instruction_row} holds the error level, because the step has "
-                                                f"an exact instruction count")
+            compare(cpu_row, median.cpu_s, "s", f"The rule {instruction_row} holds the error level, because the step "
+                                                f"has an exact instruction count")
         else:
             notes.append(f"the {step} step has no exact instruction count, so {cpu_row} holds the error level")
             compare(cpu_row, median.cpu_s, "s")
@@ -350,7 +350,7 @@ def judge_others(results: list[StepResult], budgets: dict[str, check_report.Budg
 
     Args:
         results: The measures of each step
-        budgets: The budget table
+        budgets: The measured rules of the registry
         place: The path that a finding names
 
     Returns:

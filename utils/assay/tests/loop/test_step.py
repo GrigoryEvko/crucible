@@ -5,8 +5,8 @@ case runs the launcher as CMake runs it, in a temporary directory that
 holds a CMakeCache.txt and a build-kind.txt, as a build directory does.  The
 command is a planted compiler (a Python script that writes an object), a
 planted ccache (a Python script that writes a stats log as ccache 4 does) or
-a planted linker.  A budget table and a directory of ledgers of the test set
-the thresholds and the admitted outputs.  A case examines the status, the
+a planted linker.  A planted registry and a directory of ledgers of the test
+set the thresholds and the admitted outputs.  A case examines the status, the
 output and the record of the launcher.  Each case runs with no
 GITHUB_ACTIONS, except two cases that set it to "true": on a CI runner, a
 compile past the CPU limit runs to its end with a warning, and a compile over
@@ -51,6 +51,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from assay.core import meter as cost_meter
+from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import LOOP
 
@@ -128,12 +129,18 @@ int main() {
 # Two compiles of one source differ by less than this part of their count, also when one runs through ccache.
 COUNT_TOLERANCE = 0.005
 
-QUIET = ("compile-cpu | 1000 | 2000 | s | t\ncompile-memory | 1000 | 2000 | GB | m\n"
-         "link-time | 1000 | 2000 | s | t\nlink-memory | 1000 | 2000 | GB | m\n")
+
+def planted_registry(*rules: tuple[str, float, float, str]) -> str:
+    """Return the text of a planted registry with one measured rule for each (rule, warning, error, unit)."""
+    return rule_registry.planted(rule_registry.measured_rule(*rule) for rule in rules)
+
+
+QUIET = planted_registry(("compile-cpu", 1000, 2000, "s"), ("compile-memory", 1000, 2000, "GB"),
+                         ("link-time", 1000, 2000, "s"), ("link-memory", 1000, 2000, "GB"))
 
 
 class Bench:
-    """A temporary build directory with a source, an object path, the planted tools and a quiet budget table."""
+    """A temporary build directory with a source, an object path, the planted tools and a quiet registry."""
 
     def __init__(self, root: Path) -> None:
         """Make the tree."""
@@ -157,9 +164,10 @@ class Bench:
         self.ledgers.mkdir()
         for row in ("compile-memory", "link-memory"):
             (self.ledgers / f"{row}-ledger.txt").write_text("# a planted ledger\n", encoding="utf-8")
-        self.budgets = root / "budgets.txt"
-        self.budgets.write_text(QUIET, encoding="utf-8")
-        self.env = dict(os.environ, CRUCIBLE_BUILD_BUDGETS=str(self.budgets), CRUCIBLE_BUILD_LEDGERS=str(self.ledgers))
+        self.registry = root / "registry.txt"
+        self.registry.write_text(QUIET, encoding="utf-8")
+        self.env = dict(os.environ, CRUCIBLE_BUILD_REGISTRY=str(self.registry),
+                        CRUCIBLE_BUILD_LEDGERS=str(self.ledgers))
         # A case that needs a CI runner sets GITHUB_ACTIONS itself, so each
         # verdict is the same on a CI runner and on the build host.
         for name in ("CCACHE_STATSLOG", "CCACHE_DISABLE", "CCACHE_RECACHE", "CCACHE_READONLY", "GITHUB_ACTIONS",
@@ -187,8 +195,8 @@ class Bench:
             return {}
 
     def table(self, text: str) -> None:
-        """Write the budget table of the test."""
-        self.budgets.write_text(text, encoding="utf-8")
+        """Write the registry of the test."""
+        self.registry.write_text(text, encoding="utf-8")
 
 
 class Verdicts:
@@ -293,7 +301,7 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
            result.returncode == 1 and bench.record().get("result") == "failed" and result.stdout == b"tool stdout\n"
            and result.stderr == b"tool stderr\n" and not count_file.exists())
 
-    bench.table("compile-cpu | 0 | 1000 | s | t\ncompile-memory | 0 | 1000 | GB | m\n")
+    bench.table(planted_registry(("compile-cpu", 0, 1000, "s"), ("compile-memory", 0, 1000, "GB")))
     result = bench.launch(bench.tool)
     lines = result.stderr.decode().splitlines()
     found = [check_report.parse_line(line) for line in lines[1:]]
@@ -301,16 +309,16 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
            result.returncode == 0 and lines[0] == "tool stderr" and len(found) == 1 and found[0] is not None
            and found[0].level == "warning" and found[0].check == "compile-cpu"
            and "peak memory" in found[0].message)
-    bench.table("compile-cpu | zero | 1 | s | t\n")
+    bench.table(planted_registry(("compile-cpu", 0, 1, "s")).replace(" warn=0 ", " warn=zero "))
     result = bench.launch(bench.tool)
-    expect("a broken budget table changes neither the status nor the output",
+    expect("a broken registry changes neither the status nor the output",
            result.returncode == 0 and result.stderr == b"tool stderr\n")
 
 
 def run_memory_ledger(bench: Bench, verdicts: Verdicts) -> None:
     """A compile over the memory error threshold, and the rows of the ledger that admit it or do not."""
     expect = verdicts.expect
-    bench.table("compile-cpu | 1000 | 2000 | s | t\ncompile-memory | 0.0001 | 0.0002 | GB | m\n")
+    bench.table(planted_registry(("compile-cpu", 1000, 2000, "s"), ("compile-memory", 0.0001, 0.0002, "GB")))
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
     expect("a compile over the memory error threshold fails, removes the object and gives a rejected record",
@@ -343,7 +351,7 @@ def run_memory_ledger(bench: Bench, verdicts: Verdicts) -> None:
 def run_cpu_limit(bench: Bench, verdicts: Verdicts) -> None:
     """A planted compile that runs away ends at the CPU limit, and on a CI runner it runs to its end."""
     expect = verdicts.expect
-    bench.table("compile-cpu | 0.1 | 0.3 | s | t\ncompile-memory | 1000 | 2000 | GB | m\n")
+    bench.table(planted_registry(("compile-cpu", 0.1, 0.3, "s"), ("compile-memory", 1000, 2000, "GB")))
     started = time.monotonic()
     result = bench.launch(bench.tool, PLANTED_MODE="spin")
     found_line = last_finding(result.stderr)
@@ -361,7 +369,7 @@ def run_cpu_limit(bench: Bench, verdicts: Verdicts) -> None:
 
 def run_ci_memory(bench: Bench, verdicts: Verdicts) -> None:
     """On a CI runner, a compile over the memory error threshold still fails."""
-    bench.table("compile-cpu | 1000 | 2000 | s | t\ncompile-memory | 0.0001 | 0.0002 | GB | m\n")
+    bench.table(planted_registry(("compile-cpu", 1000, 2000, "s"), ("compile-memory", 0.0001, 0.0002, "GB")))
     result = bench.launch(bench.tool, GITHUB_ACTIONS="true")
     found_line = last_finding(result.stderr)
     verdicts.expect("on a CI runner, a compile over the memory error threshold still fails and removes the object",
@@ -381,7 +389,7 @@ def run_link(bench: Bench, verdicts: Verdicts) -> None:
            result.returncode == 0 and link_record.get("step") == "link" and link_record.get("result") == "built"
            and "source" not in link_record and link_record.get("output") == str(linked)
            and not any(key.endswith("instructions") for key in link_record["cost"]))
-    bench.table("link-time | 1000 | 2000 | s | t\nlink-memory | 0.0001 | 0.0002 | GB | m\n")
+    bench.table(planted_registry(("link-time", 1000, 2000, "s"), ("link-memory", 0.0001, 0.0002, "GB")))
     result = bench.launch(bench.tool, link=True, output=linked)
     found_line = last_finding(result.stderr)
     expect("a link over the memory error threshold fails with a link-memory error",
@@ -418,7 +426,7 @@ def run_real_tools(bench: Bench, verdicts: Verdicts, cxx: str | None) -> None:
                and subprocess.run([str(program)], timeout=30).returncode == 0)
 
         bench.source.write_text(SPIN_SOURCE, encoding="utf-8")
-        bench.table("compile-cpu | 0.1 | 0.3 | s | t\ncompile-memory | 1000 | 2000 | GB | m\n")
+        bench.table(planted_registry(("compile-cpu", 0.1, 0.3, "s"), ("compile-memory", 1000, 2000, "GB")))
         started = time.monotonic()
         stopped_run = bench.launch([cxx, *SPIN_FLAGS])
         found_line = last_finding(stopped_run.stderr)

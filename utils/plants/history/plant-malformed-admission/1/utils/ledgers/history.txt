@@ -1,0 +1,4 @@
+# a planted ledger
+format 1
+rule history
+utils/registry.txt | error | admit | 0123 slow-row | a short hash

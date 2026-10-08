@@ -32,7 +32,7 @@
 #   hold what each region covers.  A region that covers more fails the test until
 #       python3 utils/bin/guard check --rule quarantine-ratchet --build-dir build --write --admit
 #   writes the new count.  Use --admit only for a region of a reason class of CLAUDE.md section
-#   XXII, and give the reason in the commit.  The test budget_history gives a warning for each such
+#   XXII, and give the reason in the commit.  The test guard_history gives a warning for each such
 #   count on each run.  utils/scripts/quarantine-region-ledger.txt holds the regions themselves.
 #
 # THE TIER

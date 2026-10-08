@@ -1,4 +1,4 @@
-"""One format for the warnings and errors of the compile-time checks, and the budget table they read.
+"""One format for the warnings and errors of the compile-time checks, and the measured rules they read.
 
 THE FORMAT
     A check reports each finding on one line of its standard output:
@@ -36,16 +36,23 @@ A CI RUNNER
     slower (utils/assay/core/meter.py, A CI RUNNER).  A check makes the
     finding of a judgment of a measured value with judged().  When
     GITHUB_ACTIONS is "true", judged() gives a warning for an error of a time
-    row, and the message tells so.  An error of a memory row, of a size row
+    rule, and the message tells so.  An error of a memory rule, of a size rule
     or of an input stays an error.  github_actions() sets or removes the
     variable for the cases of a self-test.
 
-THE BUDGET TABLE
-    utils/scripts/budgets.txt gives the warning threshold and the error
-    threshold of each check that measures a quantity.  read_budgets() reads
-    the table, and classify() compares one value with one row.  A value that
-    is equal to a threshold does not exceed it.  A shell script gets the
-    error threshold of one row with `loop budget --error-threshold CHECK`.
+THE KIND AND THE ENTITY
+    A finding of a rule with a ledger also has a kind and an entity, and
+    assay.core.ledger keys its row by the path, the kind and the entity.  The
+    entity holds no line, so a change that only moves code keeps each row.
+    The text of the finding does not show the two fields.
+
+THE MEASURED RULES
+    A measured rule of utils/registry.txt gives the warning threshold, the
+    error threshold and the unit of a quantity (assay.core.registry).
+    read_budgets() reads the measured rules, and classify() compares one value
+    with one rule.  A value that is equal to a threshold does not exceed it.
+    A shell script gets the error threshold of one rule with `loop budget
+    --error-threshold RULE`.
 
 `guard selftest core.report` does a test of the module.
 """
@@ -55,7 +62,6 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
-import math
 import os
 import re
 import sys
@@ -66,11 +72,12 @@ from pathlib import Path
 from typing import Literal
 
 from assay.core import meter as cost_meter
-from assay.core.paths import DATA
+from assay.core import registry as rule_registry
+from assay.core import rows as rows_grammar
 
 Level = Literal["warning", "error"]
 
-BUDGETS = DATA / "budgets.txt"
+REGISTRY = rule_registry.REGISTRY
 # The name of the warnings directory inside a build directory.
 WARNINGS_SUBDIR = "check-warnings"
 LEVELS: tuple[Level, ...] = ("warning", "error")
@@ -86,19 +93,21 @@ FINDING_LINE = re.compile(
 
 @dataclass(frozen=True, slots=True)
 class Finding:
-    """One warning or one error of a check, at one place."""
+    """One warning or one error of a check, at one place, with the kind and the entity of its ledger key."""
 
     level: Level
     path: str
     line: int
     check: str
     message: str
+    kind: str = ""
+    entity: str = ""
 
     def __post_init__(self) -> None:
-        """Refuse a finding that the line format cannot hold.
+        """Refuse a finding that the line format or a ledger row cannot hold.
 
         Raises:
-            ValueError: If the level, the check name, the line or the message is not valid
+            ValueError: If the level, the check name, the line, the message, the kind or the entity is not valid
         """
         if self.level not in LEVELS:
             raise ValueError(f"the level {self.level!r} is not one of {LEVELS}")
@@ -108,6 +117,9 @@ class Finding:
             raise ValueError(f"the line {self.line} of {self.path} is negative")
         if not self.path or "\n" in self.path or "\n" in self.message:
             raise ValueError(f"a finding of {self.check} has an empty path or a line break")
+        if any(character in self.kind for character in " \t|\n") or "\n" in self.entity:
+            raise ValueError(f"the kind {self.kind!r} or the entity of a finding of {self.check} holds a space, a "
+                             f"bar or a line break")
 
     def text(self) -> str:
         """Return the finding as one line of the format.
@@ -131,7 +143,7 @@ class Finding:
 
 @dataclass(frozen=True, slots=True)
 class Budget:
-    """One row of the budget table: the two thresholds of one check."""
+    """The thresholds of one measured rule.  The unit is its display text, such as "G instructions"."""
 
     check: str
     warn: float
@@ -180,54 +192,39 @@ def parse_line(text: str) -> Finding | None:
     return Finding(level, match["path"], int(match["line"]), match["check"], match["message"])
 
 
-def read_budgets(path: Path = BUDGETS) -> dict[str, Budget]:
-    """Read the budget table.
+def unit_text(unit: str) -> str:
+    """Return the display text of the unit of a measured rule: G is 10^9 instructions, and each other unit is itself."""
+    return "G instructions" if unit == "G" else unit
 
-    A row is: check | warn | error | unit | meaning.  A line that starts with
-    '#' and an empty line are not rows.
+
+def read_budgets(path: Path = REGISTRY) -> dict[str, Budget]:
+    """Read the measured rules of the registry.
 
     Args:
-        path: The table
+        path: The registry
 
     Returns:
-        Each row, by its check name
+        The thresholds of each measured rule, by its ID
 
     Raises:
-        ValueError: If a row does not have five cells, a threshold is not a finite number,
-            the warning threshold is more than the error threshold, or a check has two rows
+        ValueError: If a row of the registry does not obey its schema (the error names the line)
+        OSError: If the registry cannot be read
     """
-    budgets: dict[str, Budget] = {}
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        cells = [cell.strip() for cell in stripped.split("|")]
-        if len(cells) != 5:
-            raise ValueError(f"{path}:{number}: a row has five cells (check | warn | error | unit | meaning), "
-                             f"and this row has {len(cells)}")
-        check, warn_text, error_text, unit, meaning = cells
-        if not CHECK_NAME.fullmatch(check):
-            raise ValueError(f"{path}:{number}: the check name {check!r} is not lowercase words with hyphens")
-        try:
-            warn, error = float(warn_text), float(error_text)
-        except ValueError:
-            raise ValueError(f"{path}:{number}: the thresholds {warn_text!r} and {error_text!r} of {check} "
-                             f"must be numbers") from None
-        if not (math.isfinite(warn) and math.isfinite(error)) or warn > error:
-            raise ValueError(f"{path}:{number}: the warning threshold {warn_text} of {check} must be finite and "
-                             f"at most its error threshold {error_text}")
-        if check in budgets:
-            raise ValueError(f"{path}:{number}: the check {check} has a second row")
-        budgets[check] = Budget(check, warn, error, unit, meaning)
-    return budgets
+    try:
+        registry = rule_registry.load(path, str(path))
+    except rows_grammar.RowsError as problem:
+        raise ValueError(str(problem)) from None
+    return {rule.id: Budget(rule.id, rule.threshold.warn, rule.threshold.error, unit_text(rule.threshold.unit),
+                            rule.refuses)
+            for rule in registry.rules.values() if rule.threshold is not None}
 
 
 def classify(value: float, budget: Budget) -> Level | None:
     """Compare one measured value with the thresholds of its check.
 
     Args:
-        value: The value, in the unit of the row
-        budget: The row
+        value: The value, in the unit of the measured rule
+        budget: The measured rule
 
     Returns:
         "error" when the value exceeds the error threshold, "warning" when it exceeds only the
@@ -253,7 +250,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 def judged(level: Level, path: str, line: int, check: str, message: str) -> Finding:
     """Return the finding of one judgment of a measured value against a threshold or a ledger row.
 
-    On a GitHub runner, an error of a time row becomes a warning that gives
+    On a GitHub runner, an error of a time rule becomes a warning that gives
     the reason (utils/assay/core/meter.py, ci_verdict).  A finding that
     reports an input that the check cannot read is not a judgment, and a
     check makes it with Finding.
@@ -262,7 +259,7 @@ def judged(level: Level, path: str, line: int, check: str, message: str) -> Find
         level: The level of the judgment on the build host
         path: The place of the finding
         line: The line of the finding, or 0
-        check: The name of the check, which is the row of the budget table
+        check: The name of the check, which is the ID of its measured rule
         message: The message
 
     Returns:
@@ -417,23 +414,27 @@ def self_test() -> int:
     refuses("Finding refuses a line break", lambda: Finding("error", "p", 1, "compile-cpu", "a\nb"))
 
     budgets = read_budgets()
-    expect("the repository table reads", bool(budgets))
+    expect("the measured rules of the repository registry read", bool(budgets))
     with tempfile.TemporaryDirectory(prefix="check-report-") as scratch:
         root = Path(scratch)
-        table = root / "budgets.txt"
-        table.write_text("# comment\n\nalpha | 1 | 2 | s | a value\n", encoding="utf-8")
+        table = root / "registry.txt"
+        table.write_text(rule_registry.planted([rule_registry.measured_rule("alpha", 1, 2, "s", "a value"),
+                                                rule_registry.measured_rule("beta", 1, 2, "G", "a count")]),
+                         encoding="utf-8")
         row = read_budgets(table)["alpha"]
-        expect("a row reads", row == Budget("alpha", 1.0, 2.0, "s", "a value"))
+        expect("a measured rule reads", row == Budget("alpha", 1.0, 2.0, "s", "a value"))
+        expect("the unit G reads as G instructions", read_budgets(table)["beta"].unit == "G instructions")
         expect("at the warning threshold: none", classify(1.0, row) is None)
         expect("over the warning threshold: warning", classify(1.5, row) == "warning")
         expect("at the error threshold: warning", classify(2.0, row) == "warning")
         expect("over the error threshold: error", classify(2.1, row) == "error")
-        for name, body in (("four cells", "alpha | 1 | 2 | s\n"),
-                           ("a word threshold", "alpha | one | 2 | s | m\n"),
-                           ("warn over error", "alpha | 3 | 2 | s | m\n"),
-                           ("an infinite threshold", "alpha | 1 | inf | s | m\n"),
-                           ("a second row", "alpha | 1 | 2 | s | m\nalpha | 1 | 2 | s | m\n")):
-            table.write_text(body, encoding="utf-8")
+        alpha = rule_registry.measured_rule("alpha", 1, 2, "s")
+        for name, row_text in (("a word threshold", alpha.replace("warn=1", "warn=one")),
+                               ("warn over error", alpha.replace("warn=1", "warn=3")),
+                               ("an unknown unit", alpha.replace("unit=s", "unit=hours")),
+                               ("a missing unit", alpha.replace(" unit=s", "")),
+                               ("a second row", f"{alpha}\n{alpha}")):
+            table.write_text(rule_registry.planted([row_text]), encoding="utf-8")
             refuses(f"read_budgets refuses {name}", lambda: read_budgets(table))
 
         warnings_dir = root / WARNINGS_SUBDIR
@@ -479,13 +480,16 @@ def self_test() -> int:
     expect("threshold_text keeps a fraction", threshold_text(1.25) == "1.25")
     with contextlib.redirect_stdout(io.StringIO()) as printed:
         found_row = print_error_threshold("constexpr-ops")
-    expect("--error-threshold prints the row constexpr-ops of the repository table",
+    expect("--error-threshold prints the rule constexpr-ops of the repository registry",
            found_row == 0 and printed.getvalue().strip().isdigit())
     with contextlib.redirect_stderr(io.StringIO()):
-        expect("--error-threshold fails for a missing row", print_error_threshold("no-such-check") == 1)
+        expect("--error-threshold fails for a missing rule", print_error_threshold("no-such-check") == 1)
 
-    expect("the time rows of cost_meter are the rows of unit s of the repository table",
+    expect("the time rows of cost_meter are the measured rules of unit s of the repository registry",
            cost_meter.TIME_ROWS == {row.check for row in budgets.values() if row.unit == "s"})
+    expect("a finding keeps its kind and its entity, and its text does not show them",
+           Finding("error", "a.py", 3, "alpha", "m", "regex-call", "f()").text() == "a.py:3: error: [alpha] m")
+    refuses("Finding refuses a kind with a space", lambda: Finding("error", "p", 1, "alpha", "m", "a b"))
     earlier = os.environ.get(cost_meter.GITHUB_ACTIONS_ENV)
     with github_actions(False):
         expect("off a CI runner, a time error stays an error",
@@ -528,31 +532,31 @@ def threshold_text(value: float) -> str:
 
 
 def print_error_threshold(check: str) -> int:
-    """Print the error threshold of one row of the budget table, for a shell script.
+    """Print the error threshold of one measured rule of the registry, for a shell script.
 
     Args:
-        check: The check name of the row
+        check: The ID of the rule
 
     Returns:
-        0 when the table has the row, else 1
+        0 when the registry has the measured rule, else 1
     """
     try:
         budget = read_budgets().get(check)
     except (OSError, ValueError) as exc:
-        print(f"loop budget: the budget table cannot be read: {exc}", file=sys.stderr)
+        print(f"loop budget: the registry cannot be read: {exc}", file=sys.stderr)
         return 1
     if budget is None:
-        print(f"loop budget: the budget table {BUDGETS} has no row {check}", file=sys.stderr)
+        print(f"loop budget: the registry {REGISTRY} has no measured rule {check}", file=sys.stderr)
         return 1
     print(threshold_text(budget.error))
     return 0
 
 
 def main(argv: list[str]) -> int:
-    """Run the self-test, or print one error threshold (`loop budget --error-threshold CHECK`).
+    """Run the self-test, or print one error threshold (`loop budget --error-threshold RULE`).
 
     Args:
-        argv: --self-test, or --error-threshold CHECK
+        argv: --self-test, or --error-threshold RULE
 
     Returns:
         The exit status of the mode, or 2 on a usage error
@@ -561,5 +565,5 @@ def main(argv: list[str]) -> int:
         return self_test()
     if len(argv) == 2 and argv[0] == "--error-threshold":
         return print_error_threshold(argv[1])
-    print("usage: loop budget --error-threshold CHECK | guard selftest core.report", file=sys.stderr)
+    print("usage: loop budget --error-threshold RULE | guard selftest core.report", file=sys.stderr)
     return 2

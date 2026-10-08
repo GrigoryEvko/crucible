@@ -1,5 +1,5 @@
 # utils/scripts/fixture-cpu-ledger.txt — the negative fixtures whose cold compile takes more CPU time
-# than the error threshold of the row fixture-cpu of utils/scripts/budgets.txt.
+# than the error threshold of the measured rule fixture-cpu of utils/registry.txt.
 # utils/assay/loop/fixture/store.py reads it after each compile and each result from its store.
 #
 # A row:  fixture | note

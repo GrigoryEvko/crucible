@@ -5,7 +5,7 @@ THE LIMIT
     translation unit that includes the header.  test/layer/CMakeLists.txt
     compiles each header of include/ alone, in a one-line unit
     `#include <header>`, with -fconstexpr-ops-limit at the error threshold
-    of the row header-constexpr-ops in utils/scripts/budgets.txt.  GCC
+    of the measured rule header-constexpr-ops in utils/registry.txt.  GCC
     stops the compile at an evaluation of more operations, and it names the
     location.  A variable template and a template that no code
     instantiates cost nothing there.  The one-line unit of a header with no
@@ -24,8 +24,7 @@ THE LIST
     mandatory.
 
 WHAT THE GUARD CHECKS
-    It reads the budget table, the list and the compile database of
-    BUILD_DIR.
+    It reads the registry, the list and the compile database of BUILD_DIR.
       * The database holds one one-line unit for each header that has a
         sentinel, and the last -fconstexpr-ops-limit of each unit is the
         threshold, or the limit of the row of its header.
@@ -72,12 +71,13 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
 
 CHECK = "header-constexpr-ops"
 COMMAND = "guard check --rule header-constexpr-ops"
-BUDGETS = "utils/scripts/budgets.txt"
+REGISTRY = rule_registry.REGISTRY_PATH
 LIST = "test/layer/header-constexpr-ops.txt"
 NOT_STANDALONE = "test/layer/crucible-not-standalone.txt"
 INCLUDE = "include"
@@ -125,7 +125,7 @@ class Paths:
     """The inputs of one run, so that the self-test can point them at a scratch tree."""
 
     root: Path
-    budgets: Path
+    registry: Path
     listing: Path
     build: Path
 
@@ -157,18 +157,19 @@ def unit_path(build: Path, header: str) -> Path:
     return build / "test" / "layer" / "sentinels" / header.split("/")[0] / f"{c_identifier(header)}.cpp"
 
 
-def threshold_of(budgets: Path) -> int:
-    """Return the error threshold of the row header-constexpr-ops.
+def threshold_of(registry: Path) -> int:
+    """Return the error threshold of the measured rule header-constexpr-ops.
 
     Raises:
-        ValueError: If the table is missing or malformed, has no such row, or the threshold is not a whole number
-        OSError: If the table cannot be read
+        ValueError: If the registry is missing or malformed, has no such rule, or the threshold is not a whole number
+        OSError: If the registry cannot be read
     """
-    row = check_report.read_budgets(budgets).get(CHECK)
+    row = check_report.read_budgets(registry).get(CHECK)
     if row is None:
-        raise ValueError(f"{budgets} has no row {CHECK}.  Add `{CHECK} | limit | limit | operations | meaning`.")
+        raise ValueError(f"{registry} has no measured rule {CHECK}.  Add the rule {CHECK} with warn=LIMIT, "
+                         f"error=LIMIT and unit=operations.")
     if row.error != int(row.error) or row.error < 1:
-        raise ValueError(f"the error threshold {row.error} of {CHECK} in {budgets} is not a whole number of "
+        raise ValueError(f"the error threshold {row.error} of {CHECK} in {registry} is not a whole number of "
                          f"operations")
     return int(row.error)
 
@@ -203,7 +204,7 @@ def read_rows(paths: Paths, threshold: int) -> tuple[list[Row], list[tuple[int, 
                                      f"limit."))
         elif limit <= threshold:
             problems.append((number, f"the limit {limit} of {header} is not more than the threshold {threshold} of "
-                                     f"{BUDGETS}.  Remove the row."))
+                                     f"{REGISTRY}.  Remove the row."))
         elif header in seen:
             problems.append((number, f"{header} has a row before this one.  Remove one of them."))
         else:
@@ -349,9 +350,9 @@ def run(paths: Paths, warnings_dir: Path | None) -> int:
         findings.append(check_report.Finding(level, path, line, CHECK, message))
 
     try:
-        threshold = threshold_of(paths.budgets)
+        threshold = threshold_of(paths.registry)
     except (OSError, ValueError) as problem:
-        report("error", BUDGETS, 0, f"the guard cannot read the threshold: {problem}")
+        report("error", REGISTRY, 0, f"the guard cannot read the threshold: {problem}")
         return check_report.emit(findings, CHECK, warnings_dir)
     if not paths.listing.is_file():
         report("error", LIST, 0, f"the list does not exist.  test/layer/CMakeLists.txt reads it, so the build "
@@ -453,14 +454,15 @@ def self_test() -> int:
         (root / NOT_STANDALONE).parent.mkdir(parents=True, exist_ok=True)
         (root / NOT_STANDALONE).write_text("crucible/Away.h | it includes a header that is not on the path\n",
                                            encoding="utf-8")
-        budgets = root / BUDGETS
-        budgets.parent.mkdir(parents=True, exist_ok=True)
-        budget_row = f"{CHECK} | 1000 | 1000 | operations | the planted threshold\n"
-        budgets.write_text(budget_row, encoding="utf-8")
+        registry = root / REGISTRY
+        registry.parent.mkdir(parents=True, exist_ok=True)
+        planted_threshold = rule_registry.planted([rule_registry.measured_rule(CHECK, 1000, 1000, "operations",
+                                                                               "the planted threshold")])
+        registry.write_text(planted_threshold, encoding="utf-8")
         listing = root / LIST
         heavy_row = "crucible/Heavy.h | 100000 | spin(2000) at namespace scope\n"
         build = root / "build"
-        paths = Paths(root, budgets, listing, build)
+        paths = Paths(root, registry, listing, build)
         limits = {"crucible/Heavy.h": 100000}
 
         def write_database(overrides: dict[str, int | None] | None = None, drop: str = "") -> None:
@@ -580,14 +582,18 @@ def self_test() -> int:
         code, report = verdict()
         expect("a missing list is an error", code == 1 and "the list does not exist" in report)
         listing.write_text(heavy_row, encoding="utf-8")
-        budgets.write_text("other-check | 1 | 2 | s | another row\n", encoding="utf-8")
+        registry.write_text(rule_registry.planted([rule_registry.measured_rule("other-check", 1, 2, "s",
+                                                                               "another rule")]),
+                            encoding="utf-8")
         code, report = verdict()
-        expect("a budget table with no row of the check is an error",
-               code == 1 and f"{BUDGETS}:0: error:" in report and f"has no row {CHECK}" in report)
-        budgets.write_text(budget_row.replace("1000 | 1000", "1000 | 1000.5"), encoding="utf-8")
+        expect("a registry with no measured rule of the check is an error",
+               code == 1 and f"{REGISTRY}:0: error:" in report and f"has no measured rule {CHECK}" in report)
+        registry.write_text(rule_registry.planted([rule_registry.measured_rule(CHECK, 1000, 1000.5, "operations",
+                                                                               "the planted threshold")]),
+                            encoding="utf-8")
         code, report = verdict()
         expect("a threshold that is not a whole number is an error", code == 1 and "not a whole number" in report)
-        budgets.write_text(budget_row, encoding="utf-8")
+        registry.write_text(planted_threshold, encoding="utf-8")
         expect("the identifier of a path agrees with CMake", c_identifier("crucible/cntp/Fec.h") == "crucible_cntp_Fec_h"
                and c_identifier("9lives/x.h") == "_9lives_x_h")
     if failures:
@@ -619,5 +625,5 @@ def main(argv: list[str]) -> int:
     if options.build_dir is None:
         print(f"usage: {COMMAND} BUILD_DIR [--warnings-dir DIR] | --self-test", file=sys.stderr)
         return 2
-    paths = Paths(REPO_ROOT, REPO_ROOT / BUDGETS, REPO_ROOT / LIST, options.build_dir.resolve())
+    paths = Paths(REPO_ROOT, REPO_ROOT / REGISTRY, REPO_ROOT / LIST, options.build_dir.resolve())
     return run(paths, options.warnings_dir)

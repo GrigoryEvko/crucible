@@ -1,0 +1,3 @@
+# a planted registry: the legacy module of the rule does not exist
+format 1
+rule stray-rule engine=tsast scope=tracked ledger=none legacy=guard.legacy.gone_check doc=XV | a planted refusal | fix the planted file

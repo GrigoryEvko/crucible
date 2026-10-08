@@ -17,7 +17,7 @@ WHAT THE SUBCOMMAND DOES
     standard streams.  It writes the record EXECUTABLE.test.cost (the format
     is in meter.py, with the step "test"), and it ends as the command ended:
     with its status, or on its signal.  A failure to measure, to read the
-    budget or to write the record never changes the status.
+    registry or to write the record never changes the status.
 
 CORE DUMPS
     A death test forks a child that aborts, and the parent waits for the
@@ -40,23 +40,24 @@ CORE DUMPS
         byte also when the test keeps its cores.  The core of the launcher
         itself has no use.
 
-THE BUDGET ROWS
+THE MEASURED RULES
     test-time is the wall time of the test, and test-memory is the peak
-    resident memory of its largest process (utils/scripts/budgets.txt).
-      * Over the warning threshold of a row, the subcommand prints a warning
+    resident memory of its largest process (the measured rules of
+    utils/registry.txt).
+      * Over the warning threshold of a rule, the subcommand prints a warning
         line in the format of utils/assay/core/report.py and writes it to
-        DIR/ROW.NAME.txt, so the tests that run at the same time do not write
+        DIR/RULE.NAME.txt, so the tests that run at the same time do not write
         one file.  Under the warning threshold, it removes that file.
       * Over the error threshold, it prints an error line, and a test that
         passed fails with status 1, unless a row of
-        utils/scripts/ROW-ledger.txt admits the test for the kind of the
+        utils/scripts/RULE-ledger.txt admits the test for the kind of the
         build (`kind | test | value | reason`).  An admitted test gives a
         warning.  A row whose test stays at or below the error threshold is
         an error too, so that the row goes.
     Memory is almost the same on each run, so its error threshold sits above
     the largest measure.  Wall time depends on the load of the host, so its
-    error threshold sits above the noise that the commit of the row states,
-    and the timeout of the test preset is the hard stop.  In a build of a
+    error threshold sits above the noise that the commit of the threshold
+    states, and the timeout of the test preset is the hard stop.  In a build of a
     kind with tsan, a wall time over the error threshold gives a warning
     only: ThreadSanitizer serializes the threads of a test, and one test took
     15 s in one run and 91 s in the next on the shared host.  On a GitHub
@@ -68,8 +69,8 @@ THE BUDGET ROWS
     over its budget therefore does not fail.  No executable test of the tree
     has WILL_FAIL at this time.
 
-The variables CRUCIBLE_TEST_BUDGETS and CRUCIBLE_TEST_LEDGERS name another
-budget table and another directory of ledgers, for the self-test.
+The variables CRUCIBLE_TEST_REGISTRY and CRUCIBLE_TEST_LEDGERS name another
+registry and another directory of ledgers, for the self-test.
 CRUCIBLE_TEST_CORES is the variable of CORE DUMPS above.
 
     guard selftest loop.teststep
@@ -81,16 +82,20 @@ import sys
 from assay.core import meter as cost_meter
 
 ROWS = ("test-time", "test-memory")
-BUDGETS_ENV = "CRUCIBLE_TEST_BUDGETS"
+REGISTRY_ENV = "CRUCIBLE_TEST_REGISTRY"
 LEDGERS_ENV = "CRUCIBLE_TEST_LEDGERS"
 CORES_ENV = "CRUCIBLE_TEST_CORES"
 CORES_KEEP = "keep"
 # The kernel writes no core dump at this soft limit, also when
 # kernel.core_pattern names a handler (fs/coredump.c).
 NO_CORE_LIMIT_BYTES = 1
-# The directory of the budget table and the ledgers, utils/scripts.  This module is utils/assay/loop/teststep.py.  It
-# calculates the path with os.path and not with assay.core.paths, because each test imports it.
-DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "scripts")
+# The directory utils.  This module is utils/assay/loop/teststep.py.  It calculates the paths with os.path and not
+# with assay.core.paths, because each test imports it.
+UTILS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# The directory of the ledgers, utils/scripts.
+DATA = os.path.join(UTILS, "scripts")
+# The registry of the measured rules, utils/registry.txt.
+REGISTRY_FILE = os.path.join(UTILS, "registry.txt")
 RECORD_SUFFIX = ".test" + cost_meter.RECORD_SUFFIX
 
 
@@ -153,16 +158,16 @@ def ledger_row(row: str, name: str, kind: str | None) -> tuple[str, str] | None:
 
 def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float, float]],
           kind: str | None) -> list[tuple[str, str, str]]:
-    """Compare the measures of one test with its budget rows.
+    """Compare the measures of one test with its measured rules.
 
     Args:
         name: The name of the test
         run: The measurement of the command
-        budget: The thresholds of the rows that the budget table gives
+        budget: The thresholds of the measured rules that the registry gives
         kind: The kind of the build, or None
 
     Returns:
-        One (level, row, message) for each row with a finding.  On a GitHub runner, a time error is a warning
+        One (level, rule, message) for each rule with a finding.  On a GitHub runner, a time error is a warning
     """
     findings = []
 
@@ -263,7 +268,7 @@ def main(argv: list[str]) -> int:
     command = os.path.abspath(arguments[0])
     name = os.path.basename(command)
     try:
-        budget = cost_meter.budget_rows(os.environ.get(BUDGETS_ENV) or os.path.join(DATA, "budgets.txt"), ROWS)
+        budget = cost_meter.budget_rows(os.environ.get(REGISTRY_ENV) or REGISTRY_FILE, ROWS)
     except (OSError, ValueError):
         budget = {}
     if not keeps_cores():
@@ -309,6 +314,8 @@ def self_test() -> int:
     import tempfile
     from pathlib import Path
 
+    from assay.core import registry as rule_registry
+
     failures: list[str] = []
 
     def expect(label: str, holds: bool) -> None:
@@ -324,7 +331,7 @@ def self_test() -> int:
         (build / cost_meter.KIND_FILE).write_text("x86_64-debug-asan\n")
         ledgers = root / "ledgers"
         ledgers.mkdir()
-        table = root / "budgets.txt"
+        table = root / "registry.txt"
         warnings = build / "check-warnings"
         program = build / "test" / "test_planted"
         program.write_text("#!/bin/sh\nexit \"${1:-0}\"\n")
@@ -333,9 +340,10 @@ def self_test() -> int:
         killer.write_text("#!/bin/sh\nkill -TERM $$\n")
         killer.chmod(0o755)
 
-        def budget(time_rows: str, memory_rows: str) -> None:
-            table.write_text(f"test-time | {time_rows} | s | the wall time\ntest-memory | {memory_rows} | GB | the "
-                             f"peak memory\n")
+        def budget(time_rule: tuple[float, float], memory_rule: tuple[float, float]) -> None:
+            table.write_text(rule_registry.planted([
+                rule_registry.measured_rule("test-time", *time_rule, "s", "the wall time"),
+                rule_registry.measured_rule("test-memory", *memory_rule, "GB", "the peak memory")]))
 
         def ledger(row: str, text: str) -> None:
             (ledgers / f"{row}-ledger.txt").write_text("# kind | test | value | reason\n" + text)
@@ -343,7 +351,7 @@ def self_test() -> int:
         def environment_of(extra: dict[str, str]) -> dict[str, str]:
             # A case that needs a CI runner or kept cores sets the variable
             # itself, so each verdict is the same in each environment.
-            environment = dict(os.environ, **{BUDGETS_ENV: str(table), LEDGERS_ENV: str(ledgers)})
+            environment = dict(os.environ, **{REGISTRY_ENV: str(table), LEDGERS_ENV: str(ledgers)})
             environment.pop(cost_meter.GITHUB_ACTIONS_ENV, None)
             environment.pop(CORES_ENV, None)
             environment.update(extra)
@@ -370,7 +378,7 @@ def self_test() -> int:
 
         ledger("test-time", "")
         ledger("test-memory", "")
-        budget("1000 | 2000", "1000 | 2000")
+        budget((1000, 2000), (1000, 2000))
         for code in ("0", "1", "3"):
             status, said = launch(program, code)
             expect(f"the status {code} of the test goes through, with no finding", status == int(code)
@@ -382,18 +390,18 @@ def self_test() -> int:
         status, _ = launch(killer)
         expect("a test that a signal stops ends on the same signal", status == -15)
 
-        budget("0 | 2000", "0 | 2000")
+        budget((0, 2000), (0, 2000))
         status, said = launch(program)
         own = warnings / "test-time.test_planted.txt"
         expect("a test over the warning thresholds passes, with a warning for each row",
                status == 0 and said.count(": warning: [test-") == 2 and own.is_file()
                and (warnings / "test-memory.test_planted.txt").is_file())
-        budget("1000 | 2000", "1000 | 2000")
+        budget((1000, 2000), (1000, 2000))
         status, said = launch(program)
         expect("a test under the thresholds removes its warnings files", status == 0 and not own.exists()
                and not (warnings / "test-memory.test_planted.txt").exists())
 
-        budget("0 | 0", "1000 | 2000")
+        budget((0, 0), (1000, 2000))
         status, said = launch(program)
         expect("a passed test over the time error threshold fails, with an error line",
                status == 1 and ": error: [test-time] " in said and "no row of" in said)
@@ -407,17 +415,17 @@ def self_test() -> int:
         expect("on a CI runner, a passed test over the time error threshold passes, with a warning that says that "
                "the error was demoted", status == 0 and ": warning: [test-time] " in said and "demoted" in said
                and ": error: " not in said and record["result"] == "passed")
-        budget("1000 | 2000", "0 | 0")
+        budget((1000, 2000), (0, 0))
         status, said = launch(program, GITHUB_ACTIONS="true")
         expect("on a CI runner, a passed test over the memory error threshold still fails",
                status == 1 and ": error: [test-memory] " in said)
-        budget("0 | 0", "1000 | 2000")
+        budget((0, 0), (1000, 2000))
         (build / cost_meter.KIND_FILE).write_text("x86_64-debug-tsan\n")
         status, said = launch(program)
         expect("a build of a tsan kind warns on a time over the error threshold, and the test passes",
                status == 0 and ": warning: [test-time] " in said and "budgets no wall time" in said)
         (build / cost_meter.KIND_FILE).write_text("x86_64-debug-asan\n")
-        budget("1000 | 2000", "0 | 0")
+        budget((1000, 2000), (0, 0))
         status, said = launch(program)
         expect("a passed test over the memory error threshold fails", status == 1 and ": error: [test-memory] " in said)
         ledger("test-memory", "x86_64-debug-asan | test_planted | 0.01 | a planted reason\n")
@@ -428,7 +436,7 @@ def self_test() -> int:
         status, said = launch(program)
         expect("a ledger row of another kind admits nothing", status == 1)
         ledger("test-memory", "x86_64-debug-asan | test_planted | 0.01 | a planted reason\n")
-        budget("1000 | 2000", "1000 | 2000")
+        budget((1000, 2000), (1000, 2000))
         status, said = launch(program)
         expect("a ledger row whose test stays under the error threshold fails the test",
                status == 1 and "Remove its row" in said)

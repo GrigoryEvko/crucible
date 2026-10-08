@@ -74,15 +74,15 @@ A COMPILE THROUGH CCACHE
     counts of the compiler run too.
 
 A CI RUNNER
-    The thresholds of the time rows (TIME_ROWS: compile-cpu, link-time,
+    The thresholds of the time rules (TIME_ROWS: compile-cpu, link-time,
     test-time and fixture-cpu) apply to the build host of the tree, which has
     384 hardware threads.  A GitHub runner has 4 slower vCPUs and 16 GB, and
     it runs two or three jobs at a time.  A time there can exceed an error
     threshold with no defect in the tree.  When the environment sets
-    GITHUB_ACTIONS to "true", ci_verdict() changes an error of a time row to
+    GITHUB_ACTIONS to "true", ci_verdict() changes an error of a time rule to
     a warning, and the message tells so.  limit_cpu() then sets no CPU limit,
     because a step that the limit stops cannot become a warning.  An error of
-    a memory row, of a size row or of an input stays an error.  Each launcher
+    a memory rule, of a size rule or of an input stays an error.  Each launcher
     and each check that judges a time calls ci_verdict().
 
 THE RECORD
@@ -111,11 +111,12 @@ THE RECORD
     text, with no JSON parser.  A cost block of an earlier format holds the
     key instructions, the count of the full step, and no reader takes it.
 
-THE BUDGET TABLE AND THE LEDGERS
-    budget_rows() reads the two thresholds of some rows of
-    utils/scripts/budgets.txt.  read_budgets() of utils/assay/core/report.py
-    is the full parser of the table, and a launcher calls it only when it
-    writes a finding.  read_ledger_rows() reads the rows of a ledger of a budget row,
+THE REGISTRY AND THE LEDGERS
+    budget_rows() reads the two thresholds of some measured rules of
+    utils/registry.txt, through the rows reader of assay.core.rows, which
+    imports no module.  assay.core.registry is the full reader of the
+    registry, and its import of dataclasses costs 13 ms, so a launcher does not
+    import it.  read_ledger_rows() reads the rows of a ledger of a measured rule,
     for example utils/scripts/compile-memory-ledger.txt:
 
         kind | item | value | reason
@@ -134,8 +135,8 @@ RECORD_SUFFIX = ".cost"
 KIND_FILE = "build-kind.txt"
 CARRIED_KEYS = ('"cost": ', '"last_cost": ')
 KB_PER_GB = 1024 * 1024
-# The rows of utils/scripts/budgets.txt whose value is a time.  The self-test
-# of utils/assay/core/report.py holds this set equal to the rows of unit s.
+# The measured rules of utils/registry.txt whose value is a time.  The self-test
+# of utils/assay/core/report.py holds this set equal to the rules of unit s.
 TIME_ROWS = frozenset({"compile-cpu", "link-time", "test-time", "fixture-cpu", "total-compile-cpu", "total-fixture-cpu",
                        "total-test-cpu", "edit-build-cpu", "edit-test-cpu", "edit-build-wall", "edit-test-wall",
                        "configure-time", "noop-build-time", "total-link-cpu"})
@@ -223,11 +224,11 @@ def ci_verdict(level: str, check: str, message: str) -> tuple[str, str]:
 
     Args:
         level: "warning" or "error"
-        check: The row of the budget table that the judgment reads
+        check: The ID of the measured rule that the judgment reads
         message: The message of the judgment
 
     Returns:
-        A warning whose message gives the reason, for an error of a row in TIME_ROWS on a GitHub runner.
+        A warning whose message gives the reason, for an error of a rule in TIME_ROWS on a GitHub runner.
         Else the level and the message, unchanged
     """
     if level != "error" or check not in TIME_ROWS or not is_github_actions():
@@ -572,26 +573,41 @@ def ccache_hit(stats_path: str, outer_log: str | None) -> bool:
 
 
 def budget_rows(path: str, names: tuple[str, ...]) -> dict[str, tuple[float, float]]:
-    """Read the warning threshold and the error threshold of some rows of the budget table.
+    """Read the warning threshold and the error threshold of some measured rules of the registry.
+
+    The rule registry-shape holds the schema of each row, so this reader
+    reads only the fields warn and error of the named rules.
 
     Args:
-        path: The budget table
-        names: The check names of the rows
+        path: The registry
+        names: The IDs of the rules
 
     Returns:
-        The thresholds of each row that the table gives
+        The thresholds of each named rule that the registry gives with both fields
 
     Raises:
-        OSError: If the table cannot be read
-        ValueError: If a threshold of one of the rows is not a number
+        OSError: If the registry cannot be read
+        ValueError: If the registry does not obey the rows grammar, or a threshold of a named rule is not a number
+
+    Complexity: linear in the length of the registry.
     """
-    rows: dict[str, tuple[float, float]] = {}
+    from assay.core import rows as rows_grammar
+
     with open(path, encoding="utf-8") as handle:
-        for line in handle:
-            cells = line.split("|")
-            if len(cells) == 5 and cells[0].strip() in names:
-                rows[cells[0].strip()] = (float(cells[1]), float(cells[2]))
-    return rows
+        text = handle.read()
+    try:
+        parsed = rows_grammar.parse(text, path)
+    except rows_grammar.RowsError as problem:
+        raise ValueError(str(problem)) from None
+    found: dict[str, tuple[float, float]] = {}
+    for row in parsed:
+        if row.words[0] != "rule" or len(row.words) < 2 or row.words[1] not in names:
+            continue
+        values = dict(word.partition("=")[::2] for word in row.words[2:])
+        if "warn" in values and "error" in values:
+            found[row.words[1]] = (rows_grammar.decimal(values["warn"], row, "warning threshold"),
+                                   rows_grammar.decimal(values["error"], row, "error threshold"))
+    return found
 
 
 def read_ledger_rows(path: str) -> tuple[dict[tuple[str, str], tuple[int, float, str]], list[tuple[int, str]],

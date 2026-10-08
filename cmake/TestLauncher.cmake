@@ -2,8 +2,8 @@
 #
 # `loop test-step` (utils/assay/loop/teststep.py) runs in front of each test
 # whose command is an executable target.  It runs the test, writes its wall
-# time, CPU time and peak memory to EXECUTABLE.test.cost, holds the budget
-# rows test-time and test-memory of utils/scripts/budgets.txt, and exits with
+# time, CPU time and peak memory to EXECUTABLE.test.cost, holds the measured
+# rules test-time and test-memory of utils/registry.txt, and exits with
 # the status of the test (the docstring of the launcher gives the rules).  It
 # gives each test a soft core limit of 1 byte, so a child that aborts writes
 # no core dump, unless CRUCIBLE_TEST_CORES=keep keeps the cores (CORE DUMPS in
@@ -16,7 +16,7 @@
 # each run, and it runs the command CTEST_CUSTOM_POST_TEST after the tests.
 # This file writes that command: the rule test-time (`guard check --rule
 # test-time`) reads the wall time of each test without the launcher from the
-# log of the run, and it holds the row test-time.  An error of the check
+# log of the run, and it holds the rule test-time.  An error of the check
 # makes ctest exit with a failure status.  ctest --show-only runs no such
 # command.
 #

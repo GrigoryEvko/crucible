@@ -9,10 +9,10 @@
 #   The size of one file and the number of compiles that read it, for each file whose product was at
 #   least 0.05 % of the total.  The rows tell which files a change of the total comes from.
 #
-# A growth over the baseline gives a warning, and over the error threshold of the row parse-total of
-# utils/scripts/budgets.txt an error.  A fall of more than the warning threshold is an error too.  To
-# accept a growth, raise the baseline in the same commit with a reason:
-#   python3 utils/bin/guard check --rule parse-cost --check parse-total --build-dir build --write --reason TEXT
+# A growth over the baseline gives a warning, and over the error threshold of the measured rule
+# parse-total of utils/registry.txt an error.  A fall of more than the warning threshold is an error
+# too.  To accept a growth, raise the baseline in the same commit with a reason:
+#   python3 utils/bin/guard check --rule parse-total --build-dir build --write --reason TEXT
 total | x86_64-debug-asan | 4532739123 | 9335389182 | the measure of the Debug build of all and of each negative fixture on 2026-10-03.  The families Choice, Report and Scalar, the walk tables of FailClosed.h, and 129 more units of new tests and fixtures add 3.4 %.  The include of diag/Catalog.h in AlignedBuffer.h gives Catalog.h 316 more readers, 42 MB
 file | x86_64-debug-asan | <system>/c++/16.2.1/bits/basic_string.h | 177023 | 2998
 file | x86_64-debug-asan | <system>/c++/16.2.1/type_traits | 133451 | 3096

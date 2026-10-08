@@ -17,6 +17,6 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 GUARD = REPO_ROOT / "utils" / "bin" / "guard"
 LOOP = REPO_ROOT / "utils" / "bin" / "loop"
 SETUP = REPO_ROOT / "utils" / "bin" / "setup"
-# The directory of the data files of the package: the budget table, the rule
-# table, the ledgers, the allowlists and the rosters.
+# The directory of the data files of the package: the rule table, the ledgers,
+# the allowlists and the rosters.
 DATA = REPO_ROOT / "utils" / "scripts"
