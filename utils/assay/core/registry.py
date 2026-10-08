@@ -237,7 +237,7 @@ def is_rule_id(text: str) -> bool:
 
 
 def is_module_name(text: str) -> bool:
-    """Whether a text is a dotted module name under assay, such as guard.legacy.check_padded_lists."""
+    """Whether a text is a dotted module name under assay, such as guard.engines.meta.runner."""
     return bool(text) and all(part.isidentifier() and part.islower() or part == "__init__" for part in text.split("."))
 
 
