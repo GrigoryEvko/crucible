@@ -1,0 +1,32 @@
+#pragma once
+
+namespace control {
+
+struct Value {
+    int raw = 0;
+};
+
+struct Holder {
+    int raw = 0;
+    // A getter of the accessor names and an operator are accessors.
+    int& data() { return raw; }
+    int const* begin() const { return &raw; }
+    int& operator*() { return raw; }
+    // A value return hands out no reference.
+    int copy() const { return raw; }
+    // A name with a trailing underscore is an internal helper.
+    int& internal_() { return raw; }
+    // A deleted function is no door.
+    int& removed() = delete;
+    // A friend declaration with no body names a function of a different place.
+    friend int& elsewhere(Holder& holder);
+
+private:
+    // A private member is no door.
+    int& hidden() { return raw; }
+};
+
+// A mint is a door of its own rule.
+[[nodiscard]] constexpr Value& mint_value(Value& value) noexcept { return value; }
+
+}  // namespace control

@@ -1,0 +1,25 @@
+# Each data member of a C array type and each alias or typedef of a C array
+# type in a base header is a finding of the rule no-raw-array-member: in a
+# class, at namespace scope, in an alias template and in a class template.  A
+# pointer to an array, a static member and a probe type of a self-test
+# namespace are none.  In the mode error each finding is an error.
+compile report arrays.cpp
+flag report -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Arrays.h
+exit report pass
+finding report no-raw-array-member array-member include/fixy/Arrays.h:27:7 | plant::Table::cells
+finding report no-raw-array-member array-alias include/fixy/Arrays.h:22:7 | plant::Pair
+finding report no-raw-array-member array-alias include/fixy/Arrays.h:18:7 | plant::Line
+finding report no-raw-array-member array-alias include/fixy/Arrays.h:17:14 | plant::Buffer
+finding report no-raw-array-member array-member include/fixy/Arrays.h:7:9 | plant::Holder::values
+finding report no-raw-array-member array-member include/fixy/Arrays.h:8:10 | plant::Holder::pointers
+finding report no-raw-array-member array-alias include/fixy/Arrays.h:13:11 | plant::Holder::Row
+compile error arrays.cpp mode=error findings=report
+flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Arrays.h
+exit error fail
+error error include/fixy/Arrays.h:27 | quarantine: array-member plant::Table::cells;
+error error include/fixy/Arrays.h:22 | quarantine: array-alias plant::Pair;
+error error include/fixy/Arrays.h:18 | quarantine: array-alias plant::Line;
+error error include/fixy/Arrays.h:17 | quarantine: array-alias plant::Buffer;
+error error include/fixy/Arrays.h:7 | quarantine: array-member plant::Holder::values;
+error error include/fixy/Arrays.h:8 | quarantine: array-member plant::Holder::pointers;
+error error include/fixy/Arrays.h:13 | quarantine: array-alias plant::Holder::Row;

@@ -476,20 +476,6 @@ crucible_script_test(NAME trait_guard
 set_tests_properties(trait_guard trait_guard_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
-
-# The coarse, tree-wide net for the escape surface: every public
-# function that hands out a raw reference or pointer is a sanctioned
-# accessor, mint, discouraged hatch, or a ledgered exception.  The
-# unbreakable member-function half is the compiled reflection probe
-# test_escape_reflection; this script covers the free-function residue
-# reflection cannot walk.
-crucible_script_test(NAME escape_doors_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule escape-doors --self-test)
-crucible_script_test(NAME escape_doors
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule escape-doors)
-set_tests_properties(escape_doors escape_doors_self_test PROPERTIES
-  LABELS "ci_guard"
-  SKIP_RETURN_CODE 3)
 # The cite-ratio policy of the decide:: catalog.  Each procedure needs at
 # least 2 production cites within 180 days of the day its definition
 # entered Decide.h.  The day comes from the parse of every committed
@@ -546,21 +532,6 @@ crucible_script_test(NAME witness_roster_self_test
 crucible_script_test(NAME witness_roster
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule witness-roster --check)
 set_tests_properties(witness_roster witness_roster_self_test PROPERTIES
-  LABELS "ci_guard"
-  SKIP_RETURN_CODE 3)
-# A Permission held as a class member is the [[no_unique_address]]
-# member of a handle (CLAUDE.md §IX).  Without the mark, the holder can
-# be aliased across threads and the type system does not see it.
-# utils/assay/guard/legacy/check_permission_storage.py reads each member from the parse
-# tree, so an initializer, two declarators, a member over two lines, an
-# array and an alias do not hide one.  Exit 3 when the kit is absent
-# reports a skip.
-crucible_script_test(NAME permission_storage_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule permission-storage
-          --self-test)
-crucible_script_test(NAME permission_storage
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule permission-storage)
-set_tests_properties(permission_storage permission_storage_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
 # Each object with static storage duration is one per process, through
@@ -714,19 +685,6 @@ crucible_script_test(NAME ctx_init_door
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ctx-init-door)
 set_tests_properties(ctx_init_door ctx_init_door_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
-# A write past the end of a C array member lands in the next member of the
-# same object, where the address sanitizer sees valid memory, and no build
-# checks the subscript.  utils/assay/guard/legacy/check_no_raw_array_member.py refuses a C
-# array data member and an alias of a C array type in include/foundation and
-# include/fixy.  The reviewed exceptions are the rows of
-# utils/ledgers/no-raw-array-member.txt, and a stale row fails the gate.
-# Exit 3 (the pinned tree-sitter kit is absent) is a skip.
-crucible_script_test(NAME raw_array_member_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-raw-array-member --self-test)
-crucible_script_test(NAME raw_array_member
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-raw-array-member)
-set_tests_properties(raw_array_member raw_array_member_self_test PROPERTIES
-    LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # The fast-math family is banned (CLAUDE.md §V, cmake/FpStrict.cmake is
 # the floor).  utils/assay/guard/legacy/check_no_ffast_math.py reads the compile flags of
 # this build from its compile database, the link line of each target from
@@ -872,23 +830,6 @@ foreach(part RANGE ${session_oracle_last_part})
     PROCESSORS 8)
 endforeach()
 
-# The stub discipline.  utils/assay/guard/legacy/check_stub_discipline.py reads the parse tree
-# of every header under include/ and pairs each honesty marker (a constexpr
-# bool *_implemented, *_attached or *_ready that is false, at namespace scope
-# or as a static member) with a `[[deprecated("CRUCIBLE_STUB:")]]` attribute
-# in the same header, in the two directions.  Without the pair, a stub surface
-# looks live and fails only at runtime, or code has no constant to test the
-# stub by.  With the pair, each call site gets a -Wdeprecated-declarations
-# warning at compile time.  A comment or a string that holds the same text is
-# neither a marker nor a deprecation.  Exit 3 when the kit is absent reports a
-# skip.
-crucible_script_test(NAME stub_discipline_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule stub-discipline --self-test)
-crucible_script_test(NAME stub_discipline
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule stub-discipline)
-set_tests_properties(stub_discipline stub_discipline_self_test PROPERTIES
-    LABELS "ci_guard"
-    SKIP_RETURN_CODE 3)
 # The mint inventory: its self-test, the drift gate that fails when
 # misc/mint-inventory.md was not regenerated after a mint changed, and the
 # HS14 floor gate, the rule mint-floor.  utils/assay/loop/derive/mint_inventory.py

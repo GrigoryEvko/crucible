@@ -1,0 +1,8 @@
+# An accessor, an operator, a value return, a name with a trailing underscore,
+# a deleted function, a friend declaration with no body, a private member and
+# a mint give no finding of the rule escape-doors, and the unit compiles in the
+# mode error.  The mint has its record of the rule mint-pattern.
+compile error doors.cpp mode=error
+flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Doors.h
+exit error pass
+finding error mint-pattern mint include/fixy/Doors.h:30:32 | control::mint_value(control::Value&) \| name=mint_value static=0 shape=token template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 owner=-

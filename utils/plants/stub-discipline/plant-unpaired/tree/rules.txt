@@ -1,0 +1,4 @@
+# The rule table of the plant of the rule stub-discipline: the headers of
+# include/crucible/ and stubs.cpp are quarantined.
+quarantine include/crucible/
+quarantine stubs.cpp

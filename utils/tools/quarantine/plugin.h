@@ -132,6 +132,22 @@
 //     mint-unconstrained    a mint template with no constraint
 //     mint-unfit-context    a mint that takes a context first, and no constraint
 //                           of which names that context
+//     The rule no-raw-array-member:
+//     array-member          a data member of a C array type
+//     array-alias           an alias or a typedef of a C array type
+//     The rule permission-storage:
+//     permission-member     a data member whose type names a Permission, with no
+//                           [[no_unique_address]]
+//     static-permission     a static data member whose type names a Permission
+//     The rule escape-doors:
+//     bare-door             a public function that returns a reference or a raw
+//                           pointer, and is no accessor, no mint and no hatch
+//     hatch                 such a function that is a hatch, such as into_raw
+//     The rule stub-discipline:
+//     marker-without-stub   a file with an honesty marker and no deprecation
+//                           CRUCIBLE_STUB, at its first marker
+//     stub-without-marker   a file with a deprecation CRUCIBLE_STUB and no
+//                           honesty marker, at its first deprecation
 //
 // THE SECTION
 //     A unit that writes an object puts its report into the section
@@ -299,6 +315,10 @@ enum class Rule : std::uint8_t {
     quarantine,
     contract_specifier,
     mint_pattern,
+    no_raw_array_member,
+    permission_storage,
+    escape_doors,
+    stub_discipline,
 };
 
 // The kinds of a finding (THE RULES AND THE KINDS above).  opted-out and
@@ -327,6 +347,14 @@ enum class Kind : std::uint8_t {
     mint_not_noexcept,
     mint_unconstrained,
     mint_unfit_context,
+    array_member,
+    array_alias,
+    permission_member,
+    static_permission,
+    bare_door,
+    hatch,
+    marker_without_stub,
+    stub_without_marker,
 };
 
 inline const char* rule_name(Rule rule) {
@@ -337,6 +365,14 @@ inline const char* rule_name(Rule rule) {
             return "contract-specifier";
         case Rule::mint_pattern:
             return "mint-pattern";
+        case Rule::no_raw_array_member:
+            return "no-raw-array-member";
+        case Rule::permission_storage:
+            return "permission-storage";
+        case Rule::escape_doors:
+            return "escape-doors";
+        case Rule::stub_discipline:
+            return "stub-discipline";
     }
     return "unknown";
 }
@@ -389,6 +425,22 @@ inline const char* kind_name(Kind kind) {
             return "mint-unconstrained";
         case Kind::mint_unfit_context:
             return "mint-unfit-context";
+        case Kind::array_member:
+            return "array-member";
+        case Kind::array_alias:
+            return "array-alias";
+        case Kind::permission_member:
+            return "permission-member";
+        case Kind::static_permission:
+            return "static-permission";
+        case Kind::bare_door:
+            return "bare-door";
+        case Kind::hatch:
+            return "hatch";
+        case Kind::marker_without_stub:
+            return "marker-without-stub";
+        case Kind::stub_without_marker:
+            return "stub-without-marker";
     }
     return "unknown";
 }
@@ -405,6 +457,18 @@ inline Rule rule_of(Kind kind) {
         case Kind::mint_unconstrained:
         case Kind::mint_unfit_context:
             return Rule::mint_pattern;
+        case Kind::array_member:
+        case Kind::array_alias:
+            return Rule::no_raw_array_member;
+        case Kind::permission_member:
+        case Kind::static_permission:
+            return Rule::permission_storage;
+        case Kind::bare_door:
+        case Kind::hatch:
+            return Rule::escape_doors;
+        case Kind::marker_without_stub:
+        case Kind::stub_without_marker:
+            return Rule::stub_discipline;
         default:
             return Rule::quarantine;
     }
@@ -413,7 +477,14 @@ inline Rule rule_of(Kind kind) {
 // True when a rule of the family declaration property gives the kind.  Such
 // a finding is an error only in the mode error, no opt-out region covers it,
 // and no enforce mode changes it.
-inline bool is_property_kind(Kind kind) { return rule_of(kind) == Rule::mint_pattern; }
+inline bool is_property_kind(Kind kind) {
+    Rule rule = rule_of(kind);
+    return rule != Rule::quarantine && rule != Rule::contract_specifier;
+}
+
+// True when a line of the kind is a record: a fact for a reader of the
+// records, and no finding of its rule.
+inline bool is_record_kind(Kind kind) { return kind == Kind::mint_record; }
 
 // The two kinds of a line of the report that the rule quarantine gives for
 // each rule: a finding inside an opt-out region, and the region itself.
@@ -455,6 +526,14 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"mint-pattern", "mint-not-noexcept"},
     {"mint-pattern", "mint-unconstrained"},
     {"mint-pattern", "mint-unfit-context"},
+    {"no-raw-array-member", "array-member"},
+    {"no-raw-array-member", "array-alias"},
+    {"permission-storage", "permission-member"},
+    {"permission-storage", "static-permission"},
+    {"escape-doors", "bare-door"},
+    {"escape-doors", "hatch"},
+    {"stub-discipline", "marker-without-stub"},
+    {"stub-discipline", "stub-without-marker"},
 };
 
 // True when the entity is part of the key of a finding: two findings of such

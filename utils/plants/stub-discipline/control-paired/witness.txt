@@ -1,0 +1,5 @@
+# A header with a marker and a stub deprecation, a true value, a name with no
+# marker suffix and a deprecation of a different reason give no finding, and
+# the unit compiles in the mode error.
+compile error stubs.cpp mode=error
+exit error pass

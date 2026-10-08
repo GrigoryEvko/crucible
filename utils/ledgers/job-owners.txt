@@ -87,11 +87,6 @@ utils/assay/guard/legacy/check_detsafe_ledger.py | print | 4 | check | A use of 
 utils/assay/guard/legacy/check_detsafe_ledger.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_detsafe_ledger.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_detsafe_ledger.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_escape_doors.py | print | 2 | check | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_escape_doors.py | print | 5 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_escape_doors.py | print | 2 | refresh | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_escape_doors.py | print | 3 | self_test | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_escape_doors.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_federation_admission.py | print | 3 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_federation_admission.py | print | 3 | planted_cases | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_federation_admission.py | print | 1 | planted_cases.expect | A use of today.  The change that calls the owner of the job lowers the count
@@ -147,10 +142,6 @@ utils/assay/guard/legacy/check_no_ffast_math.py | print | 5 | check | A use of t
 utils/assay/guard/legacy/check_no_ffast_math.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_no_ffast_math.py | print | 4 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_no_ffast_math.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_no_raw_array_member.py | print | 1 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_no_raw_array_member.py | print | 5 | run | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_no_raw_array_member.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_no_raw_array_member.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_no_throw_no_rtti.py | print | 8 | check | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_no_throw_no_rtti.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_no_throw_no_rtti.py | print | 4 | self_test | A use of today.  The change that calls the owner of the job lowers the count
@@ -178,10 +169,6 @@ utils/assay/guard/legacy/check_parse_cost.py | print | 8 | run | A use of today.
 utils/assay/guard/legacy/check_parse_cost.py | print | 1 | run.fail | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_parse_cost.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_parse_cost.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_permission_storage.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_permission_storage.py | print | 3 | run | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_permission_storage.py | print | 3 | self_test | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_permission_storage.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_process_wide_state.py | print | 3 | check | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_process_wide_state.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_process_wide_state.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
@@ -209,9 +196,6 @@ utils/assay/guard/legacy/check_start_lifetime.py | argparse | 1 | <module> | A u
 utils/assay/guard/legacy/check_start_lifetime.py | print | 11 | check | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | print | 2 | planted_cases | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_stub_discipline.py | print | 4 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_stub_discipline.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_stub_discipline.py | print | 2 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | print | 12 | check | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count

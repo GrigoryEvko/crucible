@@ -1,0 +1,10 @@
+#pragma once
+
+namespace control {
+
+// The marker and the deprecation are in one header.
+inline constexpr bool backend_implemented = false;
+
+[[nodiscard, deprecated("CRUCIBLE_STUB: no backend applies the plan")]] inline int apply() { return -1; }
+
+}  // namespace control

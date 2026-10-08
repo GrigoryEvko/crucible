@@ -1,22 +1,20 @@
-# The ledger of the rule escape-doors: the escape surface that the rule locks.
-# `python3 utils/bin/guard explain escape-doors` tells the rule.
+# The ledger of the rule escape-doors: the doors of the base headers that hand
+# out a raw reference or pointer, with the reason of each.  `python3
+# utils/bin/guard explain escape-doors` tells the rule.
 #
-# The row `- | hatch-total | admit | N | REASON` pins the count N of the
-# discouraged, type-checked escape hatches (from_raw, from_raw_nonnull,
-# into_raw, release, declassify).  A new hatch raises the count, and the
-# rule fails until the same commit raises the pin.  So no hatch comes in
-# quietly.  The removal of a hatch lowers the count, and the pin falls in
-# the same commit.
-#
-# Each row `PATH | door | admit | NAME | REASON` admits one bare door: a
-# raw escape that is not an accessor, a mint or a hatch, but is safe for
-# the reason of the row.  The rows only become fewer: a bare door gets a
-# new class, and no row is added.
-#
-# `python3 utils/bin/guard check --rule escape-doors --refresh` writes the
-# pin again, keeps the reason of each live door, and writes this comment.
+# One row is `PATH | KIND | admit | ENTITY | REASON`.  The kind is bare-door
+# or hatch, and the entity is the full name of the function with the types of
+# its parameters and its qualifiers.  Each hatch has its own row, and a new
+# hatch is then a reviewed act.  A row that admits no finding fails the rule.
 format 1
 rule escape-doors
-- | hatch-total | admit | 1 | The count of the discouraged hatches.  A new hatch raises it, and --refresh writes the pin again in the same commit
-include/fixy/concurrent/Topology.h | door | admit | instance | singleton accessor: returns a reference to a function-static const Topology; static lifetime, cannot dangle
-include/foundation/effects/Computation.h | door | admit | extract | within-object accessor: returns a reference to the carried value; provenance is the Computation itself, so the reference lives as long as it does
+include/fixy/CyclicBuffer.h | bare-door | admit | fixy::CyclicBuffer::claim() | A reference to a slot of the storage of the ring: its provenance is the buffer, and it stays valid until N more claims wrap back onto the slot
+include/fixy/CyclicBuffer.h | bare-door | admit | fixy::CyclicBuffer::push(T&&) | A reference to a slot of the storage of the ring: its provenance is the buffer, and it stays valid until N more claims wrap back onto the slot
+include/fixy/CyclicBuffer.h | bare-door | admit | fixy::CyclicBuffer::push(const T&) | A reference to a slot of the storage of the ring: its provenance is the buffer, and it stays valid until N more claims wrap back onto the slot
+include/fixy/CyclicBuffer.h | bare-door | admit | fixy::CyclicBuffer::recent(fixy::CyclicBuffer<T, N>::size_type) | A reference to a slot of the storage of the ring: its provenance is the buffer, and it stays valid until N more claims wrap back onto the slot
+include/fixy/CyclicBuffer.h | bare-door | admit | fixy::CyclicBuffer::recent(fixy::CyclicBuffer<T, N>::size_type) const | A reference to a slot of the storage of the ring: its provenance is the buffer, and it stays valid until N more claims wrap back onto the slot
+include/fixy/OwnedFile.h | hatch | admit | fixy::OwnedFile::release(LeakAtom) && | The inverse door of the handle: the stream leaves with its ownership, and the caller closes it.  A leak atom names why, and the method binds only to an rvalue
+include/fixy/concurrent/Topology.h | bare-door | admit | fixy::concurrent::Topology::instance() | A singleton accessor: it returns a reference to a function-static const Topology, which has static lifetime and cannot dangle
+include/foundation/diag/Runtime.h | bare-door | admit | foundation::diag::current_violation_sink() | The sink is a pointer to a function, which has static storage and cannot dangle
+include/foundation/diag/Runtime.h | bare-door | admit | foundation::diag::set_violation_sink(foundation::diag::violation_sink_t) | The sink is a pointer to a function, which has static storage and cannot dangle.  The setter gives back the sink that it replaces
+include/foundation/effects/Computation.h | bare-door | admit | foundation::effects::Computation::extract() const & | An accessor within the object: it returns a reference to the carried value, and the reference lives as long as the Computation

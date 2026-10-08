@@ -1,0 +1,10 @@
+#include <fixy/Held.h>
+
+namespace quarantined {
+
+// A token as a plain member of a class of a quarantined file.
+struct Holder {
+    plant::Permission<plant::Tag> perm;
+};
+
+}  // namespace quarantined

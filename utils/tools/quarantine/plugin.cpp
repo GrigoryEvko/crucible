@@ -239,7 +239,7 @@ void report_property(const Finding& finding, std::vector<std::string>& lines, bo
     std::string kind = kind_text(finding);
     const char* rule = rule_name(rule_of(finding.kind));
     lines.push_back(report_line(rule, kind, *finding.file, finding.line, finding.column, finding.entity));
-    if (finding.kind == Kind::mint_record) {
+    if (is_record_kind(finding.kind)) {
         return;
     }
     if (state.is_error_mode) {

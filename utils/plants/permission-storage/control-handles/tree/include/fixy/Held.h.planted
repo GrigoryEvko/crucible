@@ -1,0 +1,32 @@
+#pragma once
+
+namespace foundation::permissions {
+template <class Tag, class Brand = void>
+class Permission {};
+}  // namespace foundation::permissions
+
+namespace control {
+
+using foundation::permissions::Permission;
+struct Tag {};
+
+// The handle shape: the token folds to no byte.
+struct Handle {
+    int* state;
+    [[no_unique_address]] Permission<Tag> perm;
+};
+
+// A pointer or a reference member holds no token of its own.
+struct Borrower {
+    Permission<Tag>* pointer;
+    Permission<Tag> const& reference;
+};
+
+// A class whose name only looks like the token.
+template <class T>
+struct PermissionLike {};
+struct Other {
+    PermissionLike<Tag> value;
+};
+
+}  // namespace control

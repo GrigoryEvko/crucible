@@ -1,0 +1,30 @@
+#pragma once
+
+namespace plant {
+
+struct Value {
+    int raw = 0;
+};
+
+// A free function that returns a reference or a raw pointer.
+int& bare_reference(Value& value);
+inline int* bare_pointer(Value& value) { return &value.raw; }
+
+// A function template, and a decltype(auto) return.
+template <class T>
+T* template_door(T& item) {
+    return &item;
+}
+inline decltype(auto) deduced_door(Value& value) { return (value.raw); }
+
+struct Holder {
+    int raw = 0;
+    // A hatch, a getter with no accessor name and a conversion.
+    int* release() { return &raw; }
+    int& peek_raw() { return raw; }
+    operator int*() { return &raw; }
+    // A hidden friend with a body is a function that lookup finds.
+    friend int& befriended(Holder& holder) { return holder.raw; }
+};
+
+}  // namespace plant

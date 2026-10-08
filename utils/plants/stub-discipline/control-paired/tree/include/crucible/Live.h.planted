@@ -1,0 +1,12 @@
+#pragma once
+
+namespace control {
+
+// A true value, a name with no marker suffix and a deprecation of a different
+// reason make no stub.
+inline constexpr bool backend_ready = true;
+inline constexpr bool backend_shared = false;
+
+[[deprecated("use apply_plan")]] inline int apply_old() { return 0; }
+
+}  // namespace control

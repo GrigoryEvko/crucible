@@ -1,0 +1,41 @@
+#pragma once
+
+namespace foundation::permissions {
+template <class Tag, class Brand = void>
+class Permission {};
+}  // namespace foundation::permissions
+
+namespace plant {
+
+using foundation::permissions::Permission;
+struct Tag {};
+
+template <class T>
+struct Box {
+    T value;
+};
+
+// A token as a plain member, and inside a template argument.
+struct Bare {
+    Permission<Tag> perm;
+};
+struct Nested {
+    Box<Permission<Tag>> boxed;
+};
+
+// A static member never has the handle shape.
+struct Shared {
+    static Permission<Tag> perm;
+};
+
+// An alias of the token, and the member of a class template pattern.
+using Token = Permission<Tag>;
+struct ViaAlias {
+    Token perm;
+};
+template <class T>
+struct Pattern {
+    Permission<T> perm;
+};
+
+}  // namespace plant

@@ -1,0 +1,23 @@
+# A member whose type names a Permission with no [[no_unique_address]] is a
+# finding of the rule permission-storage: as a plain member, in a template
+# argument, through an alias, in a class template pattern and in a quarantined
+# unit.  A static member is a finding in each form.  In the mode error each
+# finding is an error.
+compile report held.cpp
+flag report -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Held.h
+exit report pass
+finding report permission-storage permission-member held.cpp:7:35 | quarantined::Holder::perm
+finding report permission-storage permission-member include/fixy/Held.h:38:19 | plant::Pattern::perm
+finding report permission-storage permission-member include/fixy/Held.h:34:11 | plant::ViaAlias::perm
+finding report permission-storage static-permission include/fixy/Held.h:28:28 | plant::Shared::perm
+finding report permission-storage permission-member include/fixy/Held.h:23:26 | plant::Nested::boxed
+finding report permission-storage permission-member include/fixy/Held.h:20:21 | plant::Bare::perm
+compile error held.cpp mode=error findings=report
+flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Held.h
+exit error fail
+error error held.cpp:7 | quarantine: permission-member quarantined::Holder::perm;
+error error include/fixy/Held.h:38 | quarantine: permission-member plant::Pattern::perm;
+error error include/fixy/Held.h:34 | quarantine: permission-member plant::ViaAlias::perm;
+error error include/fixy/Held.h:28 | quarantine: static-permission plant::Shared::perm;
+error error include/fixy/Held.h:23 | quarantine: permission-member plant::Nested::boxed;
+error error include/fixy/Held.h:20 | quarantine: permission-member plant::Bare::perm;

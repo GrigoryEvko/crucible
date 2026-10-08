@@ -1,0 +1,4 @@
+# The rule table of the control of the rule permission-storage: include/fixy/
+# is base code, and held.cpp is quarantined.
+layer low 0 include/fixy/
+quarantine held.cpp

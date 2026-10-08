@@ -32,10 +32,11 @@ THE MINTS
 `guard selftest tests.guard.engines.plugin.test_declarations` does a test of the module.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from assay.core import registry as rule_registry
+from assay.core import report as check_report
 from assay.core import ruletable
 from assay.core.paths import REPO_ROOT
 from assay.guard.engines.plugin import runner
@@ -156,6 +157,35 @@ def first_places(lines: Iterable[plugin_sections.Finding]) -> dict[tuple[str, st
         if key not in placed or item < placed[key]:
             placed[key] = item
     return placed
+
+
+def rule_findings(
+    context: runner.PluginContext,
+    rule_id: str,
+    actions: Mapping[str, str],
+    excluded: frozenset[str] = frozenset(),
+) -> list[check_report.Finding]:
+    """Return one error for each kind and entity of a rule of the family at its first position, and each problem.
+
+    The message is the entity and the action of its kind.  A file of `excluded` gives no finding.
+
+    Complexity: linear in the lines of the rule, times the items of its scope.
+
+    Raises:
+        NotApplicable: If the rule does not apply to the build
+        BuildError: If the build cannot be read
+    """
+    census = context.census()
+    lines = [item for item in lines_of(rule_of(context, rule_id), context) if item.file not in excluded]
+    found = census.errors(rule_id)
+    for item in sorted(first_places(lines).values()):
+        action = actions.get(item.kind, "is a finding of the rule")
+        found.append(
+            check_report.Finding(
+                "error", item.file, item.line, rule_id, f"{item.entity} {action}", item.kind, item.entity
+            )
+        )
+    return found
 
 
 def parse_mint(item: plugin_sections.Finding) -> Mint:

@@ -1,0 +1,37 @@
+#pragma once
+
+namespace plant {
+
+struct Holder {
+    // A C array member, and an array of pointers.
+    int values[4];
+    int* pointers[2];
+    // A pointer to an array is no array, and a static member is no part of the object.
+    int (*to_array)[4];
+    static int shared[3];
+    // An alias of an array type, in a class.
+    using Row = int[8];
+};
+
+// An alias and a typedef of an array type, at namespace scope.
+typedef char Buffer[16];
+using Line = unsigned char[32];
+
+// An alias template of an array type.
+template <class T>
+using Pair = T[2];
+
+// The member of a class template pattern.
+template <class T, int Count>
+struct Table {
+    T cells[Count];
+};
+
+// A probe type of a header self-test uses an array on purpose.
+namespace probe_self_test {
+struct Probe {
+    int cells[2];
+};
+}  // namespace probe_self_test
+
+}  // namespace plant

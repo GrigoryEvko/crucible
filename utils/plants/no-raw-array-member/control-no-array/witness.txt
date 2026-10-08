@@ -1,0 +1,6 @@
+# A fixed array of a class, a pointer to an array, a static member and the
+# probe types of a self-test namespace give no finding, and the unit compiles
+# in the mode error.
+compile error arrays.cpp mode=error
+flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Arrays.h
+exit error pass

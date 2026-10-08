@@ -1,0 +1,26 @@
+#pragma once
+
+namespace control {
+
+template <class T, int Count>
+struct Fixed {
+    T first;
+};
+
+struct Holder {
+    // A fixed array of a class is no C array, and neither is a pointer to an array.
+    Fixed<int, 4> values;
+    int (*to_array)[4];
+    // A static member is no part of the layout of the object.
+    static int shared[3];
+};
+
+// A probe type of a header self-test uses an array on purpose.
+namespace header_self_test {
+struct Probe {
+    int cells[2];
+};
+using Probe_row = int[2];
+}  // namespace header_self_test
+
+}  // namespace control

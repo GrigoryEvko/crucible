@@ -3,10 +3,9 @@
 // not sanction, and the compiler reads the return type, so no spelling
 // evades it.
 //
-// utils/assay/guard/legacy/check_escape_doors.py reads the parse tree and is the tree-wide
-// net.  It is coarse: a return type that a macro hides slips through,
-// which is the dangerous direction.  This TU closes that gap for the
-// wrappers where a raw escape is dangerous.  It reads the public surface
+// The rule escape-doors of the quarantine plugin is the tree-wide net over
+// the functions that the base headers declare.  This TU reads the wrappers
+// where a raw escape is dangerous.  It reads the public surface
 // of each one through std::meta: its own members, the members of each
 // public base, and each member of a base that a using-declaration makes
 // public.  Every member there that returns a reference or a pointer must

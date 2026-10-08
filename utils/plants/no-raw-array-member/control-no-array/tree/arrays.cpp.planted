@@ -1,0 +1,3 @@
+#include <fixy/Arrays.h>
+
+int control::Holder::shared[3] = {};

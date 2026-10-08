@@ -1,0 +1,6 @@
+# The [[no_unique_address]] member of a handle, a pointer or a reference to a
+# token and a class with a similar name give no finding, and the unit compiles
+# in the mode error.
+compile error held.cpp mode=error
+flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Held.h
+exit error pass

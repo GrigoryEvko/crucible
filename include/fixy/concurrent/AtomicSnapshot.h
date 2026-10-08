@@ -43,8 +43,8 @@
 //
 // SnapshotValue also requires ImplicitLifetimeThroughout, because the
 // checked lifetime start refuses any other T.  The payload bytes and the
-// read buffers are std::array, because
-// utils/assay/guard/legacy/check_no_raw_array_member.py refuses a C array data member.
+// read buffers are std::array, because the rule no-raw-array-member of the
+// quarantine plugin refuses a C array data member.
 
 #include <fixy/Mutation.h>
 

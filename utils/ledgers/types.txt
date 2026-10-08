@@ -55,9 +55,6 @@ utils/assay/guard/legacy/check_detail_namespace.py | type-arg | 1 | tree_facts |
 utils/assay/guard/legacy/check_detsafe_ledger.py | arg-type | 1 | Closure.chain | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_detsafe_ledger.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_detsafe_ledger.py | index | 1 | ledger_names | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_escape_doors.py | assignment | 1 | classify | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_escape_doors.py | attr-defined | 1 | <module> | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_escape_doors.py | no-untyped-def | 1 | self_test.captured | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_federation_admission.py | arg-type | 2 | expansion_sites | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_federation_admission.py | assignment | 1 | expansion_sites | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_federation_admission.py | assignment | 1 | name_leaf | An error of mypy of today.  The change that gives the code its types lowers the count
@@ -86,7 +83,6 @@ utils/assay/guard/legacy/check_no_coordination_refs.py | attr-defined | 1 | main
 utils/assay/guard/legacy/check_no_coordination_refs.py | type-arg | 2 | file_references | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_no_coordination_refs.py | type-arg | 1 | references | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_no_ffast_math.py | attr-defined | 1 | <module> | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_no_raw_array_member.py | attr-defined | 1 | load_ledger | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | assignment | 1 | check | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | assignment | 1 | is_checked_context | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | index | 1 | is_checked_context | An error of mypy of today.  The change that gives the code its types lowers the count
@@ -102,8 +98,6 @@ utils/assay/guard/legacy/check_padded_lists.py | attr-defined | 1 | main | An er
 utils/assay/guard/legacy/check_padded_lists.py | attr-defined | 1 | self_test | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_parse_cost.py | assignment | 1 | evaluate_fanout | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_parse_cost.py | unused-ignore | 1 | run | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_permission_storage.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_permission_storage.py | no-untyped-def | 1 | self_test.captured | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_process_wide_state.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | assignment | 2 | extract | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | assignment | 2 | planted_cases | An error of mypy of today.  The change that gives the code its types lowers the count
@@ -132,7 +126,6 @@ utils/assay/guard/legacy/check_start_lifetime.py | type-arg | 2 | expansion_uses
 utils/assay/guard/legacy/check_start_lifetime.py | type-arg | 2 | file_facts | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | type-arg | 1 | lexical_scan | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | type-arg | 1 | preprocessed_scan | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_stub_discipline.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | arg-type | 1 | scan | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | union-attr | 1 | scan | An error of mypy of today.  The change that gives the code its types lowers the count

@@ -1,0 +1,12 @@
+#pragma once
+
+namespace plant {
+
+// A stub deprecation with no marker: code has no constant to test the stub by.
+[[nodiscard, deprecated("CRUCIBLE_STUB: no backend applies the plan")]] inline int apply() { return -1; }
+
+struct Session {
+    [[deprecated("CRUCIBLE_STUB: no peer answers")]] int open() { return -1; }
+};
+
+}  // namespace plant

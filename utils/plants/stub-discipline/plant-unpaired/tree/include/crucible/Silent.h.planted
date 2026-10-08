@@ -1,0 +1,14 @@
+#pragma once
+
+namespace plant {
+
+// A marker with no stub deprecation: the stub looks live.
+inline constexpr bool backend_implemented = false;
+
+struct Engine {
+    static constexpr bool driver_attached = false;
+};
+
+inline int run() { return -1; }
+
+}  // namespace plant

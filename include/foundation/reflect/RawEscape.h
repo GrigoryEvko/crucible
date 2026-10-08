@@ -4,14 +4,12 @@
 // reference or pointer through a member the guard did not sanction, and
 // the compiler is what reads the return type, so no spelling evades it.
 //
-// utils/assay/guard/legacy/check_escape_doors.py reads the parse tree of the source.  It
-// is a coarse net: a return type that a macro hides is a raw escape it
-// never sees, and a missed escape is the dangerous direction.  This
-// header closes that gap for member functions.  It reads the public
-// surface of a type through std::meta, and it reads the return type of
-// each member function as the compiler resolved it.  So a later member
-// added to a checked wrapper, however it is spelled, is seen exactly as
-// the first was.
+// The rule escape-doors of the quarantine plugin reads each public function
+// that a base header declares.  This header reads the public surface of a
+// type through std::meta: also the members that a public base gives the
+// type.  It reads the return type of each member function as the compiler
+// resolved it.  So a later member added to a checked wrapper, however it is
+// spelled, is seen exactly as the first was.
 //
 // The surface
 // -----------

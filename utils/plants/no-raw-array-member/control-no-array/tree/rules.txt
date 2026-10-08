@@ -1,0 +1,4 @@
+# The rule table of the control of the rule no-raw-array-member: include/fixy/
+# is base code, and arrays.cpp is quarantined.
+layer low 0 include/fixy/
+quarantine arrays.cpp

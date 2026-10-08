@@ -19,8 +19,10 @@
 //     such unit, so each base header costs one walk in each build.  The place
 //     of a finding is the expansion point of the declaration
 //     (property_place), so a declaration that a macro writes counts in the
-//     file that expands the macro.  The module of a rule keeps the findings in
-//     the scope of its row of utils/registry.txt.
+//     file that expands the macro.  The rules no-raw-array-member and
+//     escape-doors hold the base, and they read only a declaration of a base
+//     file (base_place).  The module of a rule keeps the findings in the scope
+//     of its row of utils/registry.txt.
 //
 // THE WALK
 //     PropertyWalk reads each namespace that no library file opens, at
@@ -59,6 +61,39 @@
 //     named Ctx, or a template parameter that IsExecCtx constrains), and token
 //     otherwise.  The entity of each line is the qualified name of the mint
 //     with the types of its parameters (function_signature).
+//
+// THE RULE no-raw-array-member (CLAUDE.md section II)
+//     A data member of a C array type, and an alias or a typedef of a C array
+//     type, in a base file.  A namespace whose name ends with _self_test holds
+//     a probe type, and its declarations are none.  A static data member is
+//     no part of the layout of the object, and it is none.  The entity is the
+//     qualified name of the member or of the alias.
+//
+// THE RULE permission-storage (CLAUDE.md section IX)
+//     A data member whose type names the class template Permission, also
+//     through a template argument, with no [[no_unique_address]], and each
+//     static data member whose type names it.  A pointer or a reference member
+//     holds no token, and it is none.  The entity is the qualified name of
+//     the member.
+//
+// THE RULE escape-doors (CLAUDE.md section XVI)
+//     A public function of a base file that returns a reference or a raw
+//     pointer, or can through decltype(auto), is a door.  An operator other
+//     than a conversion and a getter of kAccessors are accessors, and a mint
+//     is a door of its own rule.  A hatch of kHatches is the kind hatch, and
+//     each other door is the kind bare-door.  A deleted function, a friend
+//     with no body, a private or protected member and a name that ends with an
+//     underscore are no door.  The entity is the function_signature of the
+//     door.
+//
+// THE RULE stub-discipline (CLAUDE.md section XVIII)
+//     An honesty marker is a constexpr bool with the value false whose name
+//     ends with _implemented, _attached or _ready.  A stub deprecation is the
+//     attribute deprecated with a reason that starts with CRUCIBLE_STUB:.  A
+//     file with a marker and no deprecation gets one finding at its first
+//     marker, and a file with a deprecation and no marker gets one finding at
+//     its first deprecation.  The walk reads each declaration of a file, so
+//     the pair holds in the file.
 
 #include "plugin.h"
 
@@ -743,6 +778,13 @@ void record_property(Kind kind, const Place& place, const std::string& entity) {
     }
 }
 
+// The place of a declaration of a base file at LOCATION, or an empty place
+// (THE SCOPE): the rules no-raw-array-member and escape-doors hold the base.
+Place base_place(location_t location) {
+    Place place = property_place(location);
+    return place.file_class == FileClass::base ? place : Place{};
+}
+
 // ── The facts of a body ─────────────────────────────────────────────────
 
 // The name of the function that the callee of a call names, in GENERIC or in
@@ -1086,22 +1128,341 @@ void check_mint(tree function, bool is_pattern) {
     }
 }
 
+// ── The rule no-raw-array-member ────────────────────────────────────────
+
+// True when a namespace that holds DECL has a name that ends with _self_test:
+// the probe types of a header self-test use a C array on purpose.
+bool is_in_probe_namespace(tree decl) {
+    constexpr const char kProbeSuffix[] = "_self_test";
+    constexpr std::size_t kProbeLength = sizeof(kProbeSuffix) - 1;
+    tree current = CP_DECL_CONTEXT(decl);
+    for (int depth = 0; current != NULL_TREE && current != global_namespace && depth < kTypeDepth; ++depth) {
+        if (TREE_CODE(current) == NAMESPACE_DECL) {
+            tree name = DECL_NAME(current);
+            if (name != NULL_TREE && IDENTIFIER_LENGTH(name) >= kProbeLength
+                && std::memcmp(IDENTIFIER_POINTER(name) + IDENTIFIER_LENGTH(name) - kProbeLength, kProbeSuffix,
+                               kProbeLength)
+                       == 0) {
+                return true;
+            }
+            current = CP_DECL_CONTEXT(current);
+        } else if (TYPE_P(current)) {
+            current = CP_TYPE_CONTEXT(TYPE_MAIN_VARIANT(current));
+        } else if (DECL_P(current)) {
+            current = CP_DECL_CONTEXT(current);
+        } else {
+            break;
+        }
+    }
+    return false;
+}
+
+// A data member or an alias of a C array type (THE RULE no-raw-array-member).
+void check_array_declaration(tree decl, Kind kind) {
+    tree type = TREE_TYPE(decl);
+    if (type == NULL_TREE || TREE_CODE(type) != ARRAY_TYPE) {
+        return;
+    }
+    Place place = base_place(DECL_SOURCE_LOCATION(decl));
+    if (place.file != nullptr && !is_in_probe_namespace(decl)) {
+        record_property(kind, place, qualified_name(decl));
+    }
+}
+
+// ── The rule permission-storage ─────────────────────────────────────────
+
+// True when TYPE names a class template named Permission, also through a
+// template argument, a pointer, a reference or an array in an argument.
+bool names_permission(tree type, int depth) {
+    if (type == NULL_TREE || depth > kTypeDepth) {
+        return false;
+    }
+    switch (TREE_CODE(type)) {
+        case POINTER_TYPE:
+        case REFERENCE_TYPE:
+        case ARRAY_TYPE:
+            return names_permission(TREE_TYPE(type), depth + 1);
+        case RECORD_TYPE:
+        case UNION_TYPE:
+            break;
+        default:
+            return false;
+    }
+    tree main_type = TYPE_MAIN_VARIANT(type);
+    tree info = CLASS_TYPE_P(main_type) ? CLASSTYPE_TEMPLATE_INFO(main_type) : NULL_TREE;
+    if (info == NULL_TREE || TI_TEMPLATE(info) == NULL_TREE || !DECL_P(TI_TEMPLATE(info))) {
+        return false;
+    }
+    if (identifier_text(DECL_NAME(TI_TEMPLATE(info))) == "Permission") {
+        return true;
+    }
+    tree arguments = INNERMOST_TEMPLATE_ARGS(TI_ARGS(info));
+    for (int index = 0; arguments != NULL_TREE && index < TREE_VEC_LENGTH(arguments); ++index) {
+        tree argument = TREE_VEC_ELT(arguments, index);
+        if (argument != NULL_TREE && TYPE_P(argument) && names_permission(argument, depth + 1)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// A member whose type names a Permission (THE RULE permission-storage).  A
+// pointer or a reference member holds no token of its own.  A data member
+// with [[no_unique_address]] is the handle shape, and a static member never
+// is.
+void check_permission_member(tree decl) {
+    tree type = TREE_TYPE(decl);
+    if (type == NULL_TREE || TREE_CODE(type) == POINTER_TYPE || TREE_CODE(type) == REFERENCE_TYPE
+        || !names_permission(type, 0)) {
+        return;
+    }
+    bool is_static = VAR_P(decl);
+    if (!is_static && lookup_attribute("no_unique_address", DECL_ATTRIBUTES(decl)) != NULL_TREE) {
+        return;
+    }
+    record_property(is_static ? Kind::static_permission : Kind::permission_member,
+                    property_place(DECL_SOURCE_LOCATION(decl)), qualified_name(decl));
+}
+
+// ── The rule escape-doors ───────────────────────────────────────────────
+
+// The names of a getter whose provenance is the object that it reads.
+constexpr const char* kAccessors[] = {
+    "data",   "data_mut",  "begin",  "end",     "cbegin",           "cend",    "front", "back",  "at",
+    "get",    "get_or_init", "get_assuming_set", "peek", "peek_mut", "value", "resource", "ctx", "in",
+    "out",    "input",     "output", "stage",   "machine",          "state",   "state_mut", "current",
+    "carrier", "handle",   "pin",    "c_str",   "sq_ring",          "cq_ring", "sqes",  "observe", "consume",
+    "try_get", "raw_ptr",  "graded", "cap",     "span",             "cspan",
+};
+
+// The explicit doors of the C boundary and of the hand-off of ownership.
+constexpr const char* kHatches[] = {"from_raw", "from_raw_nonnull", "into_raw", "release", "declassify"};
+
+bool is_one_of(const std::string& name, const char* const* names, std::size_t count) {
+    for (std::size_t index = 0; index < count; ++index) {
+        if (name == names[index]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True when FUNCTION returns a reference or a raw pointer, or can through
+// decltype(auto).
+bool returns_raw(tree function) {
+    tree type = TREE_TYPE(TREE_TYPE(function));
+    if (type == NULL_TREE) {
+        return false;
+    }
+    if (TREE_CODE(type) == REFERENCE_TYPE || TREE_CODE(type) == POINTER_TYPE) {
+        return true;
+    }
+    if (is_auto(type) && AUTO_IS_DECLTYPE(type)) {
+        return true;
+    }
+    tree saved = DECL_LANG_SPECIFIC(function) != nullptr && FNDECL_USED_AUTO(function)
+                   ? DECL_SAVED_AUTO_RETURN_TYPE(function)
+                   : NULL_TREE;
+    return saved != NULL_TREE && is_auto(saved) && AUTO_IS_DECLTYPE(saved);
+}
+
+// A public function that hands out a raw reference or pointer (THE RULE
+// escape-doors).  A private or protected member, a deleted function, a
+// friend with no body and a name that ends with an underscore are no door.
+// An operator other than a conversion is an accessor, and so is a getter
+// whose name kAccessors holds.  A mint is a door of its own rule.
+void check_escape(tree function, bool is_defined) {
+    if (DECL_ARTIFICIAL(function) || DECL_CONSTRUCTOR_P(function) || DECL_DESTRUCTOR_P(function)
+        || !returns_raw(function) || TREE_PRIVATE(function) || TREE_PROTECTED(function)) {
+        return;
+    }
+    if (DECL_LANG_SPECIFIC(function) != nullptr
+        && (DECL_DELETED_FN(function) || (DECL_UNIQUE_FRIEND_P(function) && !is_defined))) {
+        return;
+    }
+    Place place = base_place(DECL_SOURCE_LOCATION(function));
+    if (place.file == nullptr) {
+        return;
+    }
+    Kind kind = Kind::bare_door;
+    std::string entity;
+    if (DECL_CONV_FN_P(function)) {
+        tree owner = DECL_CONTEXT(function);
+        entity = (owner != NULL_TREE ? qualified_name(owner) + "::" : std::string{}) + "operator "
+               + type_text(TREE_TYPE(TREE_TYPE(function))) + "()";
+    } else {
+        if (DECL_OVERLOADED_OPERATOR_P(function) || is_mint(function)) {
+            return;
+        }
+        std::string name = identifier_text(DECL_NAME(function));
+        if (name.empty() || name.back() == '_'
+            || is_one_of(name, kAccessors, sizeof(kAccessors) / sizeof(kAccessors[0]))) {
+            return;
+        }
+        if (is_one_of(name, kHatches, sizeof(kHatches) / sizeof(kHatches[0]))) {
+            kind = Kind::hatch;
+        }
+        entity = function_signature(function);
+    }
+    record_property(kind, place, entity);
+}
+
+// ── The rule stub-discipline ────────────────────────────────────────────
+
+constexpr const char kStubPrefix[] = "CRUCIBLE_STUB:";
+
+// True when DECL is an honesty marker: a constexpr bool whose name ends with
+// _implemented, _attached or _ready, with the value false.
+bool is_honesty_marker(tree decl) {
+    if (!VAR_P(decl) || !DECL_DECLARED_CONSTEXPR_P(decl) || DECL_NAME(decl) == NULL_TREE
+        || TYPE_MAIN_VARIANT(TREE_TYPE(decl)) != boolean_type_node) {
+        return false;
+    }
+    tree initial = DECL_INITIAL(decl);
+    if (initial == NULL_TREE || TREE_CODE(initial) != INTEGER_CST || !integer_zerop(initial)) {
+        return false;
+    }
+    std::string name = identifier_text(DECL_NAME(decl));
+    for (const char* suffix : {"_implemented", "_attached", "_ready"}) {
+        std::size_t length = std::strlen(suffix);
+        if (name.size() > length && name.compare(name.size() - length, length, suffix) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True when DECL has the attribute deprecated with a reason that starts with
+// CRUCIBLE_STUB:.
+bool has_stub_deprecation(tree decl) {
+    tree attribute = lookup_attribute("deprecated", DECL_ATTRIBUTES(decl));
+    tree arguments = attribute != NULL_TREE ? TREE_VALUE(attribute) : NULL_TREE;
+    tree reason = arguments != NULL_TREE ? TREE_VALUE(arguments) : NULL_TREE;
+    return reason != NULL_TREE && TREE_CODE(reason) == STRING_CST
+        && static_cast<std::size_t>(TREE_STRING_LENGTH(reason)) > sizeof(kStubPrefix) - 1
+        && std::memcmp(TREE_STRING_POINTER(reason), kStubPrefix, sizeof(kStubPrefix) - 1) == 0;
+}
+
+// The first honesty marker and the first stub deprecation of one file.
+struct StubFile {
+    Place marker;
+    std::string marker_entity;
+    Place deprecation;
+    std::string deprecation_entity;
+};
+
+bool is_before(const Place& place, const Place& than) {
+    return than.file == nullptr || place.line < than.line || (place.line == than.line && place.column < than.column);
+}
+
+// Keeps PLACE with ENTITY as the first marker or the first deprecation of its
+// file.
+using StubFiles = std::unordered_map<const FileEntry*, StubFile>;
+
+void note_stub(StubFiles& stubs, const Place& place, const std::string& entity,
+               bool is_marker) {
+    if (place.file == nullptr) {
+        return;
+    }
+    StubFile& file = stubs[place.file];
+    Place& held = is_marker ? file.marker : file.deprecation;
+    if (is_before(place, held)) {
+        held = place;
+        (is_marker ? file.marker_entity : file.deprecation_entity) = entity;
+    }
+}
+
+// The stub deprecations of the unit, by file, and each declaration that
+// PLUGIN_FINISH_DECL noted.  A definition of a function in a different file,
+// such as a source file that defines a function of a header, moves the
+// location of the function there.  The deprecation then counts at the place
+// of the declaration that PLUGIN_FINISH_DECL saw, and the walk does not note
+// the function again.
+StubFiles stub_files;
+std::unordered_set<unsigned> noted_stubs;
+
+void on_finish_stub_declaration(void* gcc_data, void*) {
+    tree decl = static_cast<tree>(gcc_data);
+    if (decl == NULL_TREE || (TREE_CODE(decl) != FUNCTION_DECL && !VAR_P(decl)) || !has_stub_deprecation(decl)) {
+        return;
+    }
+    Place place = property_place(DECL_SOURCE_LOCATION(decl));
+    if (place.file != nullptr && noted_stubs.insert(DECL_UID(decl)).second) {
+        note_stub(stub_files, place, TREE_CODE(decl) == FUNCTION_DECL ? function_signature(decl) : qualified_name(decl),
+                  false);
+    }
+}
+
+// The finding of each file with a marker and no deprecation, and of each file
+// with a deprecation and no marker (THE RULE stub-discipline), in the
+// sequence of the paths.
+void report_stubs(const StubFiles& stubs) {
+    std::vector<const StubFile*> files;
+    for (const auto& entry : stubs) {
+        files.push_back(&entry.second);
+    }
+    std::sort(files.begin(), files.end(), [](const StubFile* left, const StubFile* right) {
+        const Place& left_place = left->marker.file != nullptr ? left->marker : left->deprecation;
+        const Place& right_place = right->marker.file != nullptr ? right->marker : right->deprecation;
+        return left_place.file->relative < right_place.file->relative;
+    });
+    for (const StubFile* stub : files) {
+        if (stub->marker.file != nullptr && stub->deprecation.file == nullptr) {
+            record_property(Kind::marker_without_stub, stub->marker, stub->marker_entity);
+        }
+        if (stub->deprecation.file != nullptr && stub->marker.file == nullptr) {
+            record_property(Kind::stub_without_marker, stub->deprecation, stub->deprecation_entity);
+        }
+    }
+}
+
 // ── The walk of the family ──────────────────────────────────────────────
 
 struct PropertyWalk {
     std::unordered_set<tree> visited;
+    StubFiles& stubs = stub_files;
 
-    // A pattern has template information, so the test of an instantiation
-    // reads the scope of a pattern and not the pattern itself.
+    // Each rule of a function first asks a test that reads no place: its name,
+    // its return type or its attributes.  A pattern has template information,
+    // so the test of an instantiation reads the scope of a pattern and not the
+    // pattern itself.
     void function(tree function, bool is_pattern) {
-        if (!is_mint(function)) {
+        bool is_mint_name = is_mint(function);
+        bool is_door = returns_raw(function);
+        bool is_stub = has_stub_deprecation(function);
+        if (!is_mint_name && !is_door && !is_stub) {
             return;
         }
         tree tested = is_pattern ? CP_DECL_CONTEXT(function) : function;
         if (!visited.insert(function).second || is_in_instantiation(tested)) {
             return;
         }
-        check_mint(function, is_pattern);
+        if (is_mint_name) {
+            check_mint(function, is_pattern);
+        }
+        if (is_door) {
+            check_escape(function, DECL_INITIAL(function) != NULL_TREE || DECL_SAVED_TREE(function) != NULL_TREE);
+        }
+        if (is_stub && noted_stubs.insert(DECL_UID(function)).second) {
+            note_stub(stubs, property_place(DECL_SOURCE_LOCATION(function)), function_signature(function), false);
+        }
+    }
+
+    // A variable at namespace scope or a static data member.
+    void variable(tree decl) {
+        if (DECL_CLASS_SCOPE_P(decl)) {
+            check_permission_member(decl);
+        }
+        if (is_honesty_marker(decl)) {
+            note_stub(stubs, property_place(DECL_SOURCE_LOCATION(decl)), qualified_name(decl), true);
+        }
+    }
+
+    // An alias or a typedef, which is no class that it names.
+    void alias(tree decl) {
+        if (!DECL_ARTIFICIAL(decl) && !DECL_IMPLICIT_TYPEDEF_P(decl)) {
+            check_array_declaration(decl, Kind::array_alias);
+        }
     }
 
     void template_decl(tree template_decl) {
@@ -1116,7 +1477,11 @@ struct PropertyWalk {
             function(result, true);
             return;
         }
-        if (TREE_CODE(result) != TYPE_DECL || !DECL_IMPLICIT_TYPEDEF_P(result) || !CLASS_TYPE_P(TREE_TYPE(result))) {
+        if (TREE_CODE(result) == TYPE_DECL && !DECL_IMPLICIT_TYPEDEF_P(result)) {
+            alias(result);
+            return;
+        }
+        if (TREE_CODE(result) != TYPE_DECL || !CLASS_TYPE_P(TREE_TYPE(result))) {
             return;
         }
         class_type(TREE_TYPE(result), true);
@@ -1151,15 +1516,25 @@ struct PropertyWalk {
                 case FIELD_DECL:
                     if (DECL_NAME(member) == NULL_TREE && ANON_AGGR_TYPE_P(TREE_TYPE(member))) {
                         class_type(TREE_TYPE(member), is_pattern);
+                    } else if (!DECL_ARTIFICIAL(member)) {
+                        check_array_declaration(member, Kind::array_member);
+                        check_permission_member(member);
                     }
+                    break;
+                case VAR_DECL:
+                    variable(member);
                     break;
                 case FUNCTION_DECL:
                     function(member, is_pattern);
                     break;
                 case TYPE_DECL:
-                    if (!DECL_SELF_REFERENCE_P(member) && DECL_IMPLICIT_TYPEDEF_P(member)
-                        && CLASS_TYPE_P(TREE_TYPE(member))) {
+                    if (DECL_SELF_REFERENCE_P(member)) {
+                        break;
+                    }
+                    if (DECL_IMPLICIT_TYPEDEF_P(member) && CLASS_TYPE_P(TREE_TYPE(member))) {
                         class_type(TREE_TYPE(member), is_pattern);
+                    } else {
+                        alias(member);
                     }
                     break;
                 case TEMPLATE_DECL:
@@ -1205,9 +1580,9 @@ struct PropertyWalk {
                 break;
         }
         // A class asks for the place of its file one time (class_type), and a
-        // function asks only when its name is the name of a mint (check_mint).
-        // The walk then reads no place for each declaration of a file that the
-        // family does not read.
+        // function, a variable or an alias asks only when a test that reads no
+        // place admits it.  The walk then reads no place for each declaration
+        // of a file that the family does not read.
         if (!DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl)) {
             return;
         }
@@ -1218,10 +1593,17 @@ struct PropertyWalk {
             case TYPE_DECL:
                 if (DECL_IMPLICIT_TYPEDEF_P(decl) && CLASS_TYPE_P(TREE_TYPE(decl))) {
                     class_type(TREE_TYPE(decl), false);
+                } else {
+                    alias(decl);
+                }
+                break;
+            case VAR_DECL:
+                if (!has_lang_template_info(decl)) {
+                    variable(decl);
                 }
                 break;
             case FUNCTION_DECL:
-                if (is_mint(decl) && (!has_lang_template_info(decl) || DECL_TEMPLATE_SPECIALIZATION(decl))) {
+                if (!has_lang_template_info(decl) || DECL_TEMPLATE_SPECIALIZATION(decl)) {
                     function(decl, false);
                 }
                 break;
@@ -1267,6 +1649,7 @@ void walk_declarations() {
     walk_namespace(global_namespace);
     PropertyWalk properties;
     properties.namespace_decl(global_namespace);
+    report_stubs(properties.stubs);
 }
 
 // Registers the hooks of the foreign symbols and of the facts of a body.
@@ -1274,6 +1657,7 @@ void register_declarations(const char* plugin_name) {
     register_callback(plugin_name, PLUGIN_FINISH_DECL, on_finish_variable, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_PARSE_FUNCTION, on_finish_function, nullptr);
     register_callback(plugin_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize_property, nullptr);
+    register_callback(plugin_name, PLUGIN_FINISH_DECL, on_finish_stub_declaration, nullptr);
 }
 
 }  // namespace crucible_plugin

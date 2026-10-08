@@ -1,0 +1,3 @@
+#include <fixy/Arrays.h>
+
+int plant::Holder::shared[3] = {};

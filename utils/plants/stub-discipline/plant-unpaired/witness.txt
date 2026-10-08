@@ -1,0 +1,13 @@
+# A header with an honesty marker and no stub deprecation gets one finding at
+# its first marker, and a header with a stub deprecation and no marker gets
+# one finding at its first deprecation.  A marker can be a static member, and
+# a deprecation can be on a member.  In the mode error each finding is an
+# error.
+compile report stubs.cpp
+exit report pass
+finding report stub-discipline marker-without-stub include/crucible/Silent.h:6:23 | plant::backend_implemented
+finding report stub-discipline stub-without-marker include/crucible/Unmarked.h:6:84 | plant::apply()
+compile error stubs.cpp mode=error findings=report
+exit error fail
+error error include/crucible/Silent.h:6 | quarantine: marker-without-stub plant::backend_implemented;
+error error include/crucible/Unmarked.h:6 | quarantine: stub-without-marker plant::apply();
