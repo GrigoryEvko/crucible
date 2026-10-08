@@ -12,16 +12,16 @@
 #   The weight is the share of the check file in a walk unit, in units of 10^9 instructions.
 #   test/layer/CMakeLists.txt divides the check files into units by weight.  --write keeps
 #   each weight, and --measure BUILD_DIR measures each weight again.
-crucible/CKernel.cpp | 0.4 | ::fixy::tags::admitted_retags
+crucible/CKernel.cpp | 0.5 | ::fixy::tags::admitted_retags
 crucible/DimHash.cpp | 0.0 | ::fixy::tags::admitted_retags
 crucible/Expr.cpp | 0.0 | ::fixy::tags::admitted_retags
 crucible/MetaLogSession.cpp | 0.2 | ::fixy::session::combinators
-crucible/Serialize.cpp | 2.4 | ::fixy::tags::admitted_retags
+crucible/Serialize.cpp | 1.6 | ::fixy::tags::admitted_retags
 crucible/SingletonInitGraph.cpp | 0.1 | unknown
 crucible/SwissTable.cpp | 0.1 | unknown
 crucible/SymbolTable.cpp | 0.1 | ::fixy::tags::admitted_retags
 crucible/TensorMeta.cpp | 0.0 | ::fixy::tags::admitted_retags
-crucible/TraceRing.cpp | 0.2 | unknown
+crucible/TraceRing.cpp | 0.1 | unknown
 crucible/Types.cpp | 0.2 | ::crucible
 crucible/canopy/Crdt.cpp | 0.2 | ::fixy::tags::admitted_retags
 crucible/canopy/Hlc.cpp | 0.0 | ::fixy::tags::admitted_retags
@@ -32,21 +32,21 @@ crucible/cipher/ComputationCacheFederation.cpp | 0.8 | ::fixy::session::combinat
 crucible/cipher/FederationProtocol.cpp | 0.5 | ::fixy::session::combinators
 crucible/cntp/AfXdp.cpp | 0.4 | ::fixy::tags::admitted_retags
 crucible/cntp/Backpressure.cpp | 0.3 | ::fixy::tags::admitted_retags
-crucible/cntp/ConnectionPool.cpp | 0.6 | ::fixy::tags::admitted_retags
-crucible/cntp/GossipMulticast.cpp | 0.9 | ::fixy::tags::admitted_retags
+crucible/cntp/ConnectionPool.cpp | 0.5 | ::fixy::tags::admitted_retags
+crucible/cntp/GossipMulticast.cpp | 0.8 | ::fixy::tags::admitted_retags
 crucible/cntp/IncastControl.cpp | 0.3 | ::fixy::tags::admitted_retags, unknown
 crucible/cntp/IncastControlRuntime.cpp | 0.3 | unknown
-crucible/cntp/MtlsTransport.cpp | 0.3 | ::fixy::tags::admitted_retags
-crucible/cntp/OverlayMulticast.cpp | 0.4 | ::fixy::tags::admitted_retags
+crucible/cntp/MtlsTransport.cpp | 0.4 | ::fixy::tags::admitted_retags
+crucible/cntp/OverlayMulticast.cpp | 0.3 | ::fixy::tags::admitted_retags
 crucible/cntp/PathSwap.cpp | 0.2 | ::fixy::tags::admitted_retags
 crucible/cntp/RoceConfig.cpp | 0.5 | ::fixy::tags::admitted_retags, unknown
-crucible/cntp/Tcam.cpp | 0.7 | ::fixy::tags::admitted_retags
+crucible/cntp/Tcam.cpp | 0.6 | ::fixy::tags::admitted_retags
 crucible/cntp/_wip/GpuDirect.cpp | 0.4 | ::fixy::tags::admitted_retags
 crucible/cntp/_wip/Sharp.cpp | 0.5 | ::fixy::tags::admitted_retags
-crucible/cntp/dataplane/TcEbpf.cpp | 0.9 | ::fixy::tags::admitted_retags
-crucible/cntp/dataplane/Xdp.cpp | 0.8 | ::fixy::tags::admitted_retags
+crucible/cntp/dataplane/TcEbpf.cpp | 0.8 | ::fixy::tags::admitted_retags
+crucible/cntp/dataplane/Xdp.cpp | 0.6 | ::fixy::tags::admitted_retags
 crucible/cog/CogIdentity.cpp | 0.3 | ::fixy::tags::admitted_retags
-crucible/cog/FitsCog.cpp | 1.2 | ::foundation::effects::resource
+crucible/cog/FitsCog.cpp | 1.4 | ::foundation::effects::resource
 crucible/cog/NicConfig.cpp | 0.8 | ::fixy::tags::admitted_retags
 crucible/cog/OpcodeLatencyTable.cpp | 0.7 | ::fixy::tags::admitted_retags
 crucible/cog/SrIov.cpp | 0.8 | ::fixy::tags::admitted_retags
@@ -57,40 +57,40 @@ crucible/ledger/HostFingerprint.cpp | 0.4 | unknown
 crucible/ledger/Verdict.cpp | 0.7 | ::fixy::tags::admitted_retags
 crucible/mimic/CogMimic.cpp | 0.8 | ::fixy::tags::admitted_retags
 crucible/mimic/_wip/network/Backend.cpp | 1.6 | ::fixy::tags::admitted_retags
-crucible/perf/detail/BpfLoader.cpp | 0.2 | ::fixy::tags::admitted_retags
+crucible/perf/detail/BpfLoader.cpp | 0.1 | ::fixy::tags::admitted_retags
 crucible/topology/CongestionTelemetry.cpp | 0.4 | ::fixy::tags::admitted_retags
-crucible/topology/Discovery.cpp | 0.6 | ::fixy::tags::admitted_retags
+crucible/topology/Discovery.cpp | 0.5 | ::fixy::tags::admitted_retags
 crucible/topology/Ptp.cpp | 0.5 | ::fixy::tags::admitted_retags
 crucible/topology/Telemetry.cpp | 0.6 | ::fixy::tags::admitted_retags
-crucible/warden/Quarantine.cpp | 0.6 | ::foundation::permissions::permission_rows
-fixy/Atom.cpp | 2.1 | unknown
+crucible/warden/Quarantine.cpp | 0.5 | ::foundation::permissions::permission_rows
+fixy/Atom.cpp | 2.2 | unknown
 fixy/Bands.cpp | 1.6 | ::fixy::alloc_class, ::fixy::cipher_tier, ::fixy::det_safe, ::fixy::hot_path, ::fixy::numerical_tier, ::fixy::opaque_lifetime, ::fixy::residency_heat, ::fixy::scoped_fence, ::fixy::vendor, ::fixy::wait
 fixy/CanonicalOrder.cpp | 0.2 | ::fixy::tags::admitted_retags
 fixy/Collision.cpp | 13.1 | ::fixy::atom::detail, unknown
 fixy/Corpus.cpp | 1.8 | ::fixy::corpus, ::fixy::tags::secret_policy, unknown
-fixy/Fn.cpp | 6.8 | ::foundation::effects::resource, ::foundation::permissions::permission_rows, unknown
+fixy/Fn.cpp | 7.2 | ::foundation::effects::resource, ::foundation::permissions::permission_rows, unknown
 fixy/Machine.cpp | 0.0 | ::fixy::machine::admitted_transitions, unknown
 fixy/OwnedRegion.cpp | 0.5 | ::foundation::permissions::permission_rows
 fixy/Path.cpp | 0.0 | ::fixy::tags::admitted_retags
-fixy/Refined.cpp | 1.9 | ::fixy::refined::admitted_implications
-fixy/Reject.cpp | 5.8 | unknown
+fixy/Refined.cpp | 2.0 | ::fixy::refined::admitted_implications
+fixy/Reject.cpp | 5.9 | unknown
 fixy/Role.cpp | 5.0 | ::fixy::role, ::foundation::effects::resource, ::foundation::permissions::permission_rows, unknown
 fixy/ScopedView.cpp | 0.0 | ::fixy::session::combinators
 fixy/Secret.cpp | 0.1 | ::fixy::tags::secret_policy, ::fixy::tags::secret_policy::admitted_policies
 fixy/SharedRegion.cpp | 0.1 | ::foundation::permissions::permission_rows
-fixy/Tagged.cpp | 0.4 | ::fixy::tags::admitted_retags
-fixy/Witnessed.cpp | 0.2 | ::foundation::permissions::permission_rows
+fixy/Tagged.cpp | 0.3 | ::fixy::tags::admitted_retags
+fixy/Witnessed.cpp | 0.1 | ::foundation::permissions::permission_rows
 fixy/atoms/Barrier.cpp | 0.3 | ::fixy::atom::barrier, unknown
 fixy/atoms/Ctrl.cpp | 0.5 | ::fixy::atom::ctrl, unknown
 fixy/atoms/Dispatch.cpp | 0.1 | ::fixy::atom::dispatch, unknown
-fixy/atoms/Fp.cpp | 0.3 | unknown
+fixy/atoms/Fp.cpp | 0.2 | unknown
 fixy/atoms/Global.cpp | 0.1 | ::fixy::atom::global, unknown
 fixy/atoms/Hw.cpp | 0.2 | ::fixy::atom::hw, unknown
 fixy/atoms/Observe.cpp | 0.1 | unknown
-fixy/atoms/Os.cpp | 1.1 | ::fixy::fs::atomicity, ::fixy::fs::flag, ::fixy::fs::open_mode, ::fixy::fs::sync_op, ::fixy::io::engine, ::fixy::io::ring_flag, ::fixy::io::zerocopy, ::fixy::mmap::advice, ::fixy::mmap::prot, ::fixy::mmap::share, unknown
+fixy/atoms/Os.cpp | 1.2 | ::fixy::fs::atomicity, ::fixy::fs::flag, ::fixy::fs::open_mode, ::fixy::fs::sync_op, ::fixy::io::engine, ::fixy::io::ring_flag, ::fixy::io::zerocopy, ::fixy::mmap::advice, ::fixy::mmap::prot, ::fixy::mmap::share, unknown
 fixy/atoms/Regime.cpp | 0.1 | ::fixy::atom::regime, unknown
 fixy/atoms/Scope.cpp | 0.4 | ::fixy::atom::scope, unknown
-fixy/atoms/Session.cpp | 0.0 | ::fixy::atom::session, unknown
+fixy/atoms/Session.cpp | 0.1 | ::fixy::atom::session, unknown
 fixy/atoms/Simd.cpp | 0.7 | ::fixy::atom::simd, unknown
 fixy/atoms/Stack.cpp | 0.1 | ::fixy::atom::stack, unknown
 fixy/atoms/Stdio.cpp | 0.1 | ::fixy::atom::stdio, unknown
@@ -107,13 +107,13 @@ fixy/os/Spawn.cpp | 0.4 | unknown
 fixy/session/Checkpoint.cpp | 0.1 | ::fixy::session::combinators, unknown
 fixy/session/Crash.cpp | 0.7 | ::fixy::session::combinators
 fixy/session/Delegate.cpp | 0.2 | ::fixy::session::combinators
-fixy/session/Network.cpp | 0.1 | ::fixy::session::combinators
+fixy/session/Network.cpp | 0.0 | ::fixy::session::combinators
 fixy/session/Protocol.cpp | 0.4 | ::fixy::session::combinators
 fixy/session/VigilMode.cpp | 0.4 | ::fixy::session::combinators
-foundation/diag/Catalog.cpp | 3.9 | ::foundation::diag
+foundation/diag/Catalog.cpp | 3.2 | ::foundation::diag
 foundation/diag/Insights.cpp | 0.6 | ::foundation::diag
 foundation/effects/Capability.cpp | 0.2 | ::foundation::effects::cap
-foundation/effects/Concurrent.cpp | 1.7 | ::foundation::effects::resource, ::foundation::permissions::permission_rows
+foundation/effects/Concurrent.cpp | 2.3 | ::foundation::effects::resource, ::foundation::permissions::permission_rows
 foundation/effects/Resources.cpp | 2.5 | ::foundation::effects, ::foundation::effects::resource, ::foundation::permissions::permission_rows
 foundation/permissions/Permission.cpp | 1.0 | ::foundation::permissions::permission_rows, ::foundation::permissions::tag
 foundation/permissions/ReadView.cpp | 0.2 | ::foundation::permissions::permission_rows
