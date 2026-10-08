@@ -72,6 +72,7 @@ utils/registry.txt | legacy | admit | no-combine-ids-duplicate | The rule has no
 utils/registry.txt | legacy | admit | no-coordination-refs | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | no-ffast-math | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | no-raw-array-member | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
+utils/registry.txt | legacy | admit | no-throw-no-rtti | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | no-unchecked-access | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | no-unity-pch | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | object-text | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
@@ -82,6 +83,7 @@ utils/registry.txt | legacy | admit | permission-storage | The rule has no modul
 utils/registry.txt | legacy | admit | preprocessed-fill | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | process-wide-state | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | proof-routes | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
+utils/registry.txt | legacy | admit | prose-paths | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | quarantine | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | quarantine-plugin | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | quarantine-regions | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row

@@ -48,8 +48,8 @@ struct co_await_only final {};
 struct generator final {};
 struct async_task final {};
 
-// Nothing in this tree throws, and utils/scripts/check-no-throw-no-rtti.sh
-// fails the build when __cxa_throw reaches an artifact, so no binding
+// Nothing in this tree throws, and the rule no-throw-no-rtti fails the
+// build when __cxa_throw reaches an artifact, so no binding
 // here holds this atom. It exists so a binding outside the tree can name
 // the family it throws.
 template <class ExceptionFamily = any_exception>

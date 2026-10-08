@@ -85,6 +85,7 @@ rule no-combine-ids-duplicate engine=tsast scope=include/ ledger=none legacy=gua
 rule no-coordination-refs engine=tsast scope=tracked ledger=none legacy=guard.legacy.check_no_coordination_refs doc=XVIII | a task, stage or tracker reference in the prose of the tree | tell what the code does, with no reference to the work that made it
 rule no-ffast-math engine=build scope=builddir ledger=admit legacy=guard.legacy.check_no_ffast_math doc=V | a flag, a preset, an attribute or a pragma that turns on a fast-math option | keep the FP floor of cmake/FpStrict.cmake
 rule no-raw-array-member engine=tsast scope=include/foundation/,include/fixy/ ledger=admit legacy=guard.legacy.check_no_raw_array_member doc=II | a C array data member in a base header | use a fixed array of the base
+rule no-throw-no-rtti engine=elf scope=builddir ledger=admit legacy=guard.legacy.check_no_throw_no_rtti doc=XII | a throw, a downcast or a polymorphic type in a static library of the tree that the ledger does not admit, and a row that admits nothing | return the error with std::expected or abort, or add a row with a reason when a library header makes the throw
 rule no-unchecked-access engine=tsast scope=tracked ledger=admit legacy=guard.legacy.check_no_unchecked_access doc=XVI | access_context::unchecked() outside a reviewed reflection walk, an open static data member, or a walked return of a private member | use the reviewed walk, or add a row with a reason
 rule no-unity-pch engine=build scope=builddir ledger=none legacy=guard.legacy.check_no_unity_pch doc=XV.6 | a unity build or a precompiled header | compile each unit alone
 rule noop-build-time engine=build scope=builddir ledger=none warn=0.5 error=0.5 unit=s held-by=loop-history doc=XV | the wall time of cmake --build when no edge but the glob check of CMake runs, from the loop history and loop gauge.  It took 0.2 s on 2026-10-02.  A warning only | make the check of the build graph shorter
@@ -96,6 +97,7 @@ rule permission-storage engine=tsast scope=tracked ledger=none legacy=guard.lega
 rule preprocessed-fill engine=build scope=builddir ledger=none legacy=guard.preprocessed legacy-args=--fill doc=XV | a unit of the compile database that the preprocessed store cannot hold | make the unit preprocess
 rule process-wide-state engine=tsast scope=tracked ledger=admit legacy=guard.legacy.check_process_wide_state doc=XV | a mutable object with static storage duration with no CRUCIBLE_PROCESS_WIDE marker and no roster row | mark the object, or give the roster a row with a reason
 rule proof-routes engine=tsast scope=tracked ledger=count legacy=guard.legacy.check_proof_routes doc=XXI | a union, a cast of a void pointer, an allocator, an explicit instantiation or a specialization that builds a proof type with no call to its door | build the proof only through its door
+rule prose-paths engine=tsast scope=tracked ledger=none legacy=guard.legacy.check_prose_paths doc=XIX | a path in the guidance prose at the root of the tree that names no file | name the path of the file, or write a placeholder that does not read as a path
 rule quarantine engine=plugin scope=quarantined ledger=count legacy=guard.legacy.check_quarantine_ratchet doc=XXII.R11 | a count of quarantine findings of a file, a kind and an entity above its row, a file with a finding and no row, and a count below its row | use a type of the base, or write the ledger again when a count falls
 rule quarantine-plugin engine=plugin scope=quarantined ledger=none legacy=guard.legacy.check_plugin doc=XXII | a fixture of the plugin test whose findings are not the expected findings | make the plugin give each expected finding, and only there
 rule quarantine-regions engine=tsast scope=tracked ledger=count legacy=guard.legacy.check_quarantine_regions doc=XXII.R7 | an opt-out region with no row of its ledger | remove the region, or add its row with --admit and the reason in the commit
@@ -135,8 +137,7 @@ path utils/ledgers/*.txt | the ledgers of the rules, one file for each rule with
 path utils/pins.txt | the pin table: the version and the SHA256 of each tool that the tree downloads, and the base commit of the patched GCC
 path utils/plants/** | the plants and the controls of each rule, one directory for each rule
 path utils/registry.txt | the registry of the rules, the jobs and the permitted paths
-path utils/scripts/*.sh | the shell scripts of the tree.  The change that makes the shell scripts modules of the package deletes them
-path utils/scripts/*.txt | the rosters and the tables of the legacy modules, and the allowlist of check-no-throw-no-rtti.sh.  The changes that move the rule table to utils/ and make the shell scripts modules of the package delete them
+path utils/scripts/*.txt | the rosters and the tables of the legacy modules.  Subsequent changes move each one to its place
 path utils/toolchain/gcc/patches/*.patch | the GCC patches
 path utils/tools/*.cpp | the hardware probe and dump_row_hashes, which are C++ tools
 path utils/tools/*.h | the probe list of the hardware probe

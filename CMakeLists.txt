@@ -774,10 +774,10 @@ endif()
 # them.  The pipeline starts its threads through std::jthread, and the
 # constructor opens the store through std::string and std::filesystem.
 # Those instantiations define the virtual table of std::thread::_State_impl.
-# The check of utils/scripts/check-no-throw-no-rtti.sh reads this library
-# too.  It admits the throw of a failed allocation, and
-# utils/scripts/no-throw-no-rtti-allowlist.txt admits the virtual table with
-# its reason.
+# The rule no-throw-no-rtti (`guard check --rule no-throw-no-rtti`) reads
+# this library too.  It admits the throw of a failed allocation, and
+# utils/ledgers/no-throw-no-rtti.txt admits the virtual table with its
+# reason.
 #
 # The bodies compile with the definitions that crucible gives its
 # consumers, so each header reads the same macros in both places.  The
@@ -804,8 +804,8 @@ target_link_libraries(crucible PUBLIC crucible_vigil)
 #
 # The store is a library of its own, as the Vigil runtime above is.  Its
 # streams, std::filesystem and its resident cache hold the throws of a failed
-# allocation, which utils/scripts/check-no-throw-no-rtti.sh reads in each
-# static library and admits.  The Vigil runtime opens the store, so it links
+# allocation, which the rule no-throw-no-rtti reads in each static library
+# and admits.  The Vigil runtime opens the store, so it links
 # this library.
 add_library(crucible_cipher STATIC src/Cipher.cpp)
 target_include_directories(crucible_cipher PUBLIC include/)
@@ -821,7 +821,7 @@ target_link_libraries(crucible PUBLIC crucible_cipher)
 # include/crucible/vis/.  A translation unit that includes a vis header then
 # compiles no layout and no renderer.  The bodies build std::string,
 # std::vector and std::unordered_map values, so they hold the throws of a
-# failed allocation, which utils/scripts/check-no-throw-no-rtti.sh admits.
+# failed allocation, which the rule no-throw-no-rtti admits.
 add_library(crucible_vis STATIC
   src/vis/BlockDetector.cpp
   src/vis/NetworkSimplex.cpp

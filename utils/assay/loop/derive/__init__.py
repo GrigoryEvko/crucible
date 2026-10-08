@@ -83,7 +83,7 @@ TARGETS = {
 REFRESH = ("mint-inventory", "witness-fixtures", "walk-units")
 # The checks of the refresh, in the order that a moved path breaks them: a label and a command.
 CHECKS = (
-    ("prose paths", ("bash", str(REPO_ROOT / "utils" / "scripts" / "check-allowlist-keys.sh"))),
+    ("prose paths", (sys.executable, str(GUARD), "check", "--rule", "prose-paths")),
     ("ledger paths", (sys.executable, str(GUARD), "check", "--rule", "ledger-owners")),
     ("mint inventory", (sys.executable, str(LOOP), "derive", "mint-inventory", "--check")),
     ("witness roster", (sys.executable, str(GUARD), "check", "--rule", "witness-roster", "--check")),

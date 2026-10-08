@@ -331,11 +331,11 @@ crucible_test(test_chase_lev_deque)
 # directory and of each directory that the root adds before this one, other
 # than test/.  A new library joins the gate with no edit here.  A directory
 # that the root adds after this one (bench/, examples/) holds no library of
-# the tree.  utils/scripts/no-throw-no-rtti-allowlist.txt admits the throws
-# and the classes that a library header makes.  The self-test needs the
-# project compiler, because the system g++ may be too old for the fixtures.
+# the tree.  utils/ledgers/no-throw-no-rtti.txt admits the throws and the
+# classes that a library header makes.  The self-test needs the project
+# compiler, because the system g++ may be too old for the fixtures.
 add_test(NAME no_throw_no_rtti_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-throw-no-rtti.sh --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-throw-no-rtti --self-test)
 set_tests_properties(no_throw_no_rtti_self_test PROPERTIES
   ENVIRONMENT "CRUCIBLE_CXX=${CMAKE_CXX_COMPILER}"
   LABELS "ci_guard"
@@ -364,7 +364,7 @@ if(NOT "$<TARGET_FILE:crucible>" IN_LIST _no_throw_artifacts
                       "the tree in the root CMakeLists.txt, before add_subdirectory(test).")
 endif()
 add_test(NAME no_throw_no_rtti
-  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-throw-no-rtti.sh ${_no_throw_artifacts})
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-throw-no-rtti ${_no_throw_artifacts})
 set_tests_properties(no_throw_no_rtti PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
@@ -5799,17 +5799,16 @@ else()
   set_tests_properties(vessel_acceptance PROPERTIES LABELS "ci_guard;vessel" TIMEOUT 3600 RUN_SERIAL TRUE)
 endif()
 
-# allowlist_keys reads the guidance prose at the root of the tree: each path
+# prose_paths reads the guidance prose at the root of the tree: each path
 # that a sentence names is a file that exists.  When a file moves, the
 # sentence sends its reader to a file that is not there, and the message
 # names the place that the file most likely moved to.  The rule
 # ledger-owners holds the PATH cell of each ledger row.
-add_test(NAME allowlist_keys_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/check-allowlist-keys.sh --self-test)
-add_test(NAME allowlist_keys
-  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/check-allowlist-keys.sh)
-set_tests_properties(allowlist_keys allowlist_keys_self_test PROPERTIES
-    LABELS "ci_guard;allowlist")
+add_test(NAME prose_paths_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule prose-paths --self-test)
+add_test(NAME prose_paths
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule prose-paths)
+set_tests_properties(prose_paths prose_paths_self_test PROPERTIES LABELS "ci_guard")
 
 # parse_clean owns the one question every AST gate depends on: does the file
 # parse at all.  The AST gates read a tree-sitter parse from the pinned kit

@@ -492,8 +492,8 @@ struct CrashClassMismatch : tag_base {
                                                     "fixy/atoms/Ctrl.h record each other exit: throws, abort, "
                                                     "longjmp_unsafe and exit.  A binding with no ctrl atom leaves "
                                                     "only by a return, and that is the strict default.  Nothing in "
-                                                    "this tree throws, and utils/scripts/check-no-throw-no-rtti.sh "
-                                                    "fails the build when __cxa_throw reaches an artifact.";
+                                                    "this tree throws, and the rule no-throw-no-rtti fails the "
+                                                    "build when __cxa_throw reaches an artifact.";
     static constexpr tag_text_literal remediation = "Two routes.  (a) If the callee can fail, return "
                                                     "std::expected<T, E> from it.  The caller then handles the "
                                                     "failure explicitly.  (b) If the failure cannot occur at this "

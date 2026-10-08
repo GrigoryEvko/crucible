@@ -683,7 +683,7 @@ struct TensorSlot {
 
 **Cost of violation:** silent parameter swap, implicit conversion bug, type confusion.
 
-**Compiler enforcement:** `-Werror=conversion -Werror=sign-conversion -Werror=arith-conversion -Werror=enum-conversion -Werror=old-style-cast`, plus `utils/scripts/check-no-throw-no-rtti.sh`, which holds the no-RTTI property on the artifact.
+**Compiler enforcement:** `-Werror=conversion -Werror=sign-conversion -Werror=arith-conversion -Werror=enum-conversion -Werror=old-style-cast`, plus the rule `no-throw-no-rtti` (`utils/assay/guard/legacy/check_no_throw_no_rtti.py`), which holds the no-RTTI property on the artifact.
 
 **Discipline:**
 - Every semantic value is a strong type. No raw `uint32_t` for anything with meaning.
@@ -732,7 +732,7 @@ void process(const TraceEntry* entry) {
 
 **Cost of violation:** use-after-free, double-free, memory corruption, RCE.
 
-**Compiler enforcement:** `-fsanitize=address` in debug, `-Werror=use-after-free=3 -Werror=free-nonheap-object -Werror=dangling-pointer=2 -Werror=mismatched-new-delete -Wanalyzer-use-after-free -Wanalyzer-double-free`. Nothing in the tree throws, so there is no "destructor during stack unwind" class to eliminate — `utils/scripts/check-no-throw-no-rtti.sh` holds that on the artifact rather than a flag holding it on our TUs.
+**Compiler enforcement:** `-fsanitize=address` in debug, `-Werror=use-after-free=3 -Werror=free-nonheap-object -Werror=dangling-pointer=2 -Werror=mismatched-new-delete -Wanalyzer-use-after-free -Wanalyzer-double-free`. Nothing in the tree throws, so there is no "destructor during stack unwind" class to eliminate — the rule `no-throw-no-rtti` holds that on the artifact rather than a flag holding it on our TUs.
 
 **Discipline:**
 - All graph/DAG memory lives in an Arena (bump pointer, ~2 ns alloc, no fragmentation, no UAF). Arena bulk-frees at epoch boundary.
@@ -879,8 +879,8 @@ At the end of the migration, the families of §XXII replace each row of these ta
 
 | Feature | Ban via | Reason |
 |---|---|---|
-| Exceptions | **not a flag** — `utils/scripts/check-no-throw-no-rtti.sh` | `-fno-exceptions` is NOT in this build and never was. It would not compile `src/fixy/concurrent/Topology.cpp`, whose eight catch sites turn a failed sysfs read into a conservative topology rather than a crash. Nothing in the tree throws: error paths are `std::expected` or a cold `[[noreturn]]` helper that calls `std::abort()` (§XII). The guard reads each static library of the tree, and it refuses a reference to `__cxa_throw` or `__cxa_rethrow`, also one that a library header makes. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, and `utils/scripts/no-throw-no-rtti-allowlist.txt` admits the function of each other such throw, with its reason |
-| RTTI | **not a flag** — `utils/scripts/check-no-throw-no-rtti.sh` | `-fno-rtti` is NOT in this build either, and on this tree it is a no-op: zero `dynamic_cast`, zero `typeid`, zero `std::type_info`, and every `virtual` lives in a planning document. Dispatch is a `kind` enum plus `static_cast`. The guard checks that the artifact references no `__dynamic_cast` and defines no typeinfo or vtable, other than those of a class that `utils/scripts/no-throw-no-rtti-allowlist.txt` admits: the `std::thread::_State_impl` classes that `std::jthread` uses |
+| Exceptions | **not a flag** — the rule `no-throw-no-rtti` | `-fno-exceptions` is NOT in this build and never was. It would not compile `src/fixy/concurrent/Topology.cpp`, whose eight catch sites turn a failed sysfs read into a conservative topology rather than a crash. Nothing in the tree throws: error paths are `std::expected` or a cold `[[noreturn]]` helper that calls `std::abort()` (§XII). The guard reads each static library of the tree, and it refuses a reference to `__cxa_throw` or `__cxa_rethrow`, also one that a library header makes. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, and `utils/ledgers/no-throw-no-rtti.txt` admits the function of each other such throw, with its reason |
+| RTTI | **not a flag** — the rule `no-throw-no-rtti` | `-fno-rtti` is NOT in this build either, and on this tree it is a no-op: zero `dynamic_cast`, zero `typeid`, zero `std::type_info`, and every `virtual` lives in a planning document. Dispatch is a `kind` enum plus `static_cast`. The guard checks that the artifact references no `__dynamic_cast` and defines no typeinfo or vtable, other than those of a class that `utils/ledgers/no-throw-no-rtti.txt` admits: the `std::thread::_State_impl` classes that `std::jthread` uses |
 | Coroutines on hot path | discipline | Heap allocation, unpredictable latency |
 | `volatile` for concurrency | P1152R4 deprecated | `volatile` does not order; use `std::atomic` |
 | `[=]` capturing `this` | P0806R2 deprecated; `-Werror=deprecated-this-capture` | Lifetime footgun |
@@ -988,7 +988,7 @@ These C++26 library features are spec'd and the project will adopt them, but lib
 here as common flags and neither has ever been on a compile line. The properties
 they stood for do hold — measured 2026-09-20: zero `__cxa_throw` references and
 zero typeinfo or vtable definitions in `libcrucible.a` in every preset — and
-`utils/scripts/check-no-throw-no-rtti.sh` is what holds them, on the artifact, where a
+the rule `no-throw-no-rtti` is what holds them, on the artifact, where a
 throw arriving through an instantiated library header is also visible. Adding the
 flags is the wrong repair; the opt-out table in §III says why for each.
 
@@ -1974,7 +1974,7 @@ CRUCIBLE_HOT void scan(
 
 ## XII. Error Handling and Debug Assertions
 
-Nothing throws. Not because a flag forbids it — `-fno-exceptions` is not in this build — but because every error path is one of the three tiers below. The ci_guard test `no_throw_no_rtti` (`utils/scripts/check-no-throw-no-rtti.sh`) reads each static library that the root `CMakeLists.txt` defines (`test/CMakeLists.txt` finds them in the build system, so a new library joins with no edit). It fails when a library references `__cxa_throw` or `__cxa_rethrow` in a function that a link can keep. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, the failure of an allocation inside libstdc++, which ends the process as an exhausted memory does. `utils/scripts/no-throw-no-rtti-allowlist.txt` admits each other throw that a library header makes, with its reason. The test reads no shared library, no test executable and not the vessel. Three tiers of error response:
+Nothing throws. Not because a flag forbids it — `-fno-exceptions` is not in this build — but because every error path is one of the three tiers below. The ci_guard test `no_throw_no_rtti` (`guard check --rule no-throw-no-rtti`, `utils/assay/guard/legacy/check_no_throw_no_rtti.py`) reads each static library that the root `CMakeLists.txt` defines (`test/CMakeLists.txt` finds them in the build system, so a new library joins with no edit). It fails when a library references `__cxa_throw` or `__cxa_rethrow` in a function that a link can keep. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, the failure of an allocation inside libstdc++, which ends the process as an exhausted memory does. `utils/ledgers/no-throw-no-rtti.txt` admits each other throw that a library header makes, with its reason. The test reads no shared library, no test executable and not the vessel. Three tiers of error response:
 
 | Class | Mechanism | Runtime cost | Example |
 |---|---|---|---|
