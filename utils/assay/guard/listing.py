@@ -33,7 +33,7 @@ def holder(rule: Rule) -> str:
     if rule.legacy is not None:
         return f"legacy assay.{rule.legacy.module}" + (f" {' '.join(rule.legacy.words)}" if rule.legacy.words else "")
     if rule.held_by is not None:
-        return f"held by {rule.held_by}"
+        return f"held by {rule.held_by}" + (f", function {rule.holder.text}" if rule.holder is not None else "")
     from assay.guard.engines.meta import runner
 
     return f"module {runner.module_name_of(rule)}"

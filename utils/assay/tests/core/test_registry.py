@@ -11,6 +11,9 @@ from assay.core import registry as rule_registry
 from assay.core import rows as rows_grammar
 
 GOOD_RULE = "rule alpha-rule engine=meta scope=tracked ledger=admit doc=XV | a planted refusal | fix it"
+# A measured rule with a holder, and the text of a field holder.
+SLOW_RULE = rule_registry.measured_rule("slow-row", 10, 20, "s")
+HOLDER_TEXT = "assay.loop.gauge:judged_record"
 GUIDE = (
     "# A planted guide\n\n## XV. Headers\n\n1. **A rule.** Text.\n2. **Another.** Text.\n\n### The ratchet (R11)\n\n"
     "The text of R11.\n\n## L0 — Safety\n\nThe layer.\n"
@@ -59,6 +62,18 @@ def rule_cases(expect: Callable[[str, bool], None]) -> None:
         and judged.rules["alpha-rule"].held_by == "loop-fixture"
         and not judged.rules["alpha-rule"].has_module,
     )
+    expect(
+        "a rule with held-by and no field holder reads, with no holder function",
+        slow.holder is None,
+    )
+    named, problems = examined(SLOW_RULE.replace("doc=XV", f"holder={HOLDER_TEXT} doc=XV"))
+    holder = named.rules["slow-row"].holder if "slow-row" in named.rules else None
+    expect(
+        "the field holder gives the module and the function of the holder, and its text again",
+        not problems
+        and holder == rule_registry.Holder("assay.loop.gauge", "judged_record")
+        and holder.text == HOLDER_TEXT,
+    )
     refused = {
         "an unknown engine": GOOD_RULE.replace("engine=meta", "engine=regex"),
         "an unknown policy": GOOD_RULE.replace("ledger=admit", "ledger=many"),
@@ -78,6 +93,20 @@ def rule_cases(expect: Callable[[str, bool], None]) -> None:
         ),
         "legacy-args with no legacy module": GOOD_RULE.replace("doc=XV", "legacy-args=--check,x doc=XV"),
         "a legacy module that is not a dotted name": GOOD_RULE.replace("doc=XV", "legacy=guard/legacy doc=XV"),
+        "a field holder and no held-by": GOOD_RULE.replace("doc=XV", f"holder={HOLDER_TEXT} doc=XV"),
+        "a field holder with no function": SLOW_RULE.replace("doc=XV", "holder=assay.loop.gauge doc=XV"),
+        "a field holder with an empty function": SLOW_RULE.replace("doc=XV", "holder=assay.loop.gauge: doc=XV"),
+        "a field holder outside the package": SLOW_RULE.replace("doc=XV", "holder=os.path:join doc=XV"),
+        "a field holder with a module that is not a dotted name": SLOW_RULE.replace(
+            "doc=XV", "holder=assay.loop/gauge:judged_record doc=XV"
+        ),
+        "a field holder with a keyword as the function": SLOW_RULE.replace(
+            "doc=XV", "holder=assay.loop.gauge:return doc=XV"
+        ),
+        "a field holder with two separators": SLOW_RULE.replace(
+            "doc=XV", "holder=assay.loop.gauge:judged:record doc=XV"
+        ),
+        "a second field holder": SLOW_RULE.replace("doc=XV", f"holder={HOLDER_TEXT} holder={HOLDER_TEXT} doc=XV"),
     }
     for name, row in refused.items():
         expect(f"a rule row with {name} is refused", bool(problem_of(row)))

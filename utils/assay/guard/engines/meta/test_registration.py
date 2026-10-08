@@ -41,7 +41,7 @@ from pathlib import Path
 from assay.core import proc
 from assay.core import report as check_report
 from assay.core import registry as rule_registry
-from assay.guard.engines.meta.runner import MetaContext, NotApplicable, copy_tree, module_name_of
+from assay.guard.engines.meta.runner import MetaContext, NotApplicable, copy_tree, module_file, module_name_of
 from assay.readers import ctest as ctest_reader
 
 RULE = "test-registration"
@@ -98,15 +98,6 @@ def engine_rules(words: Sequence[str], registry: rule_registry.Registry) -> list
     """Return each rule that `guard check --engine E` runs for each engine E of the words: a rule with a module."""
     engines = {words[index + 1] for index, word in enumerate(words[:-1]) if word == "--engine"}
     return [rule for rule in registry.rules.values() if rule.engine.value in engines and rule.has_module]
-
-
-def module_file(root: Path, module: str) -> Path | None:
-    """Return the file of a module of the package assay under the root, or None."""
-    base = root / "utils" / Path(*module.split("."))
-    for candidate in (base.with_suffix(".py"), base / "__init__.py"):
-        if candidate.is_file():
-            return candidate
-    return None
 
 
 def imports_of(path: Path) -> set[str]:

@@ -1,0 +1,3 @@
+# a planted registry: the judge of the holder in held.py does not call the function that the field holder names
+format 1
+rule slow-row engine=build scope=builddir ledger=max warn=10 error=20 unit=s held-by=loop-gauge holder=assay.loop.gauge:judged_record doc=XV | a planted time | lower the value

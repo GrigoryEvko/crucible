@@ -209,6 +209,18 @@ def module_name(rule_id: str, engine: str = "meta") -> str:
     return f"assay.guard.engines.{engine}.{rule_id.replace('-', '_')}"
 
 
+def module_file(root: Path, module: str) -> Path | None:
+    """Return the file of a dotted module of the package in a tree, such as assay.core.rows, or None.
+
+    The file is utils/MODULE.py, or utils/MODULE/__init__.py for a package, where a slash replaces each point.
+    """
+    base = root / "utils" / Path(*module.split("."))
+    for candidate in (base.with_suffix(".py"), base / "__init__.py"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def declared_rules(path: Path) -> tuple[bool, list[str]]:
     """Return True when a module holds the function findings, and the string keys of its table RULES (THE FAMILIES).
 

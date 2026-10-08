@@ -2,28 +2,6 @@
 # and `python3 utils/bin/guard write --rule rule-implementations` writes this file.
 format 1
 rule rule-implementations
-utils/registry.txt | held | admit | build-peak-memory | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | configure-time | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | constexpr-ops | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | edit-build-cpu | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | edit-build-instructions | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | edit-build-wall | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | edit-test-cpu | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | edit-test-instructions | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | edit-test-wall | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | fixture-cpu | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | fixture-instructions | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | fixture-own-reason | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | header-alone-crucible | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | header-alone-fixy | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | header-alone-foundation | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | link-count | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | noop-build-time | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | test-memory | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | total-compile-cpu | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | total-fixture-cpu | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | total-link-cpu | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | held | admit | total-test-cpu | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | ctx-init-door | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | ctx-testing-boundary | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | detail-namespace | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row

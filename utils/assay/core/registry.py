@@ -36,12 +36,19 @@ THE ROWS
                    loop-test-step, loop-fixture or cmake.  A step meter
                    (loop-step, loop-test-step or loop-fixture) can also hold
                    a rule with no thresholds, which it judges for each step
+      holder       the function of the holder that judges a rule with
+                   held-by, as MODULE:FUNCTION, such as
+                   assay.loop.gauge:judged_record.  MODULE is a module of the
+                   package.  The witness of the rule runs the function
+                   (assay.guard.engines.buildsys.held)
     The first cell tells what the rule refuses, or what a measured rule
     measures.  The second cell is the default action, in the imperative.
 
     A rule has at most one of legacy and held-by.  A rule with neither has a
     module of its own in assay/guard/engines/ENGINE/, which the rule
-    rule-implementations holds.
+    rule-implementations holds.  A rule with held-by has the field holder
+    too, and the rule rule-implementations holds that field.  Only a rule
+    with held-by has the field holder.
 
     A job row names a Python entity and the modules that can use it.  An
     owner is a dotted name from utils/: a module of the package, such as
@@ -65,6 +72,7 @@ LOAD AND EXAMINE
 """
 
 import enum
+import keyword
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -77,7 +85,21 @@ REGISTRY = REPO_ROOT / "utils" / "registry.txt"
 REGISTRY_PATH = "utils/registry.txt"
 FORMAT = "1"
 RULE_FIELDS = frozenset(
-    {"engine", "scope", "ledger", "kinds", "warn", "error", "unit", "inputs", "doc", "legacy", "legacy-args", "held-by"}
+    {
+        "engine",
+        "scope",
+        "ledger",
+        "kinds",
+        "warn",
+        "error",
+        "unit",
+        "inputs",
+        "doc",
+        "legacy",
+        "legacy-args",
+        "held-by",
+        "holder",
+    }
 )
 REQUIRED_FIELDS = ("engine", "scope", "ledger", "doc")
 THRESHOLD_FIELDS = ("warn", "error", "unit")
@@ -107,6 +129,8 @@ HOLDING_COMMANDS = frozenset(
 )
 # The step meters, which judge each step that they run.  Such a meter can also hold a rule with no thresholds.
 STEP_METERS = frozenset({"loop-step", "loop-test-step", "loop-fixture"})
+# The character between the module and the function in the field holder.
+HOLDER_SEPARATOR = ":"
 
 
 class Engine(enum.StrEnum):
@@ -162,6 +186,19 @@ class Legacy:
 
 
 @dataclass(frozen=True, slots=True)
+class Holder:
+    """The function of the holder that judges a rule with held-by: a module of the package and a function of it."""
+
+    module: str
+    function: str
+
+    @property
+    def text(self) -> str:
+        """The field holder of the row: MODULE:FUNCTION."""
+        return f"{self.module}{HOLDER_SEPARATOR}{self.function}"
+
+
+@dataclass(frozen=True, slots=True)
 class Rule:
     """One rule row."""
 
@@ -177,6 +214,7 @@ class Rule:
     action: str
     legacy: Legacy | None
     held_by: str | None
+    holder: Holder | None
     line: int
 
     @property
@@ -330,6 +368,16 @@ def parse_rule(row: rows_grammar.Row) -> Rule:
         raise row.error(
             f"the holder {held_by!r} of {rule_id} is not a rule ID or one of {', '.join(sorted(HOLDING_COMMANDS))}"
         )
+    holder = None
+    if "holder" in values:
+        if held_by is None:
+            raise row.error(f"the rule {rule_id} has the field holder and no field held-by.  Only a held rule has it")
+        holder = parse_holder(values["holder"])
+        if holder is None:
+            raise row.error(
+                f"the field holder {values['holder']!r} of {rule_id} is not MODULE{HOLDER_SEPARATOR}FUNCTION, with "
+                f"a module of the package, such as assay.loop.gauge{HOLDER_SEPARATOR}judged_record"
+            )
     kinds = tuple(values["kinds"].split(",")) if "kinds" in values else ()
     inputs = tuple(values["inputs"].split(",")) if "inputs" in values else ()
     return Rule(
@@ -345,8 +393,22 @@ def parse_rule(row: rows_grammar.Row) -> Rule:
         row.cells[1],
         legacy,
         held_by,
+        holder,
         row.line,
     )
+
+
+def parse_holder(text: str) -> Holder | None:
+    """Read the field holder: a module of the package, the separator and a function name.
+
+    Returns:
+        The module and the function, or None when the text has a different shape
+    """
+    module, separator, function = text.partition(HOLDER_SEPARATOR)
+    is_module = module.startswith(PACKAGE_OWNER) and is_module_name(module.removeprefix(PACKAGE_OWNER))
+    if not separator or not is_module or not function.isidentifier() or keyword.iskeyword(function):
+        return None
+    return Holder(module, function)
 
 
 def parse_job(row: rows_grammar.Row) -> Job:

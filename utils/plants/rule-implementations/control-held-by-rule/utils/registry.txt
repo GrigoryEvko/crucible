@@ -1,0 +1,4 @@
+# a planted registry: a rule holds the measured rule, and the field holder names a function of the module of that rule
+format 1
+rule alpha-rule engine=build scope=builddir ledger=none doc=XV | a planted refusal | fix the planted file
+rule alpha-size engine=build scope=builddir ledger=none warn=1 error=2 unit=MB held-by=alpha-rule holder=assay.guard.engines.buildsys.planted_family:alpha_values doc=XV | a planted size | lower the value

@@ -363,12 +363,6 @@ utils/assay/guard/engines/meta/ledger_owners.py | refused-word | 2 | <module>: w
 utils/assay/guard/engines/meta/ledger_owners.py | refused-word | 1 | <module>: wrong | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/ledger_owners.py | refused-word | 1 | moved_to: track | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/ledger_owners.py | refused-word | 1 | path_finding: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/engines/meta/rule_implementations.py | long-sentence | 1 | <module> | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/engines/meta/rule_implementations.py | refused-word | 2 | <module>: define | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/engines/meta/rule_implementations.py | refused-word | 1 | <module>: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/engines/meta/rule_implementations.py | refused-word | 1 | <module>: place | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/engines/meta/rule_implementations.py | refused-word | 1 | <module>: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/engines/meta/rule_implementations.py | refused-word | 1 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/rule_witness.py | long-sentence | 1 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/rule_witness.py | refused-word | 1 | <module>: bring | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/rule_witness.py | refused-word | 1 | <module>: neither | A text of today.  The change that writes the text again in STE lowers the count
@@ -445,7 +439,6 @@ utils/assay/guard/engines/meta/test_registration.py | refused-word | 2 | <module
 utils/assay/guard/engines/meta/test_registration.py | refused-word | 2 | <module>: under | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/test_registration.py | refused-word | 1 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/test_registration.py | refused-word | 1 | imports_of: inside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/engines/meta/test_registration.py | refused-word | 1 | module_file: under | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/test_registration.py | refused-word | 1 | plant_context: absent | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/test_registration.py | refused-word | 1 | reads_trees: size | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/test_registration.py | refused-word | 1 | reads_trees: whether | A text of today.  The change that writes the text again in STE lowers the count

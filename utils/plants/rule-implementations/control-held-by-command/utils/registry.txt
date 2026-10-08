@@ -1,0 +1,5 @@
+# a planted registry: the judge of each command in held.py calls the function that the field holder names, through
+# an import of its module in the judge, and through an import of the function at the top of held.py
+format 1
+rule noop-row engine=build scope=builddir ledger=none warn=1 error=1 unit=s held-by=loop-history holder=assay.loop.history:judge_line doc=XV | a planted time | lower the value
+rule slow-row engine=build scope=builddir ledger=max warn=10 error=20 unit=s held-by=loop-gauge holder=assay.loop.gauge:judged_record doc=XV | a planted time | lower the value

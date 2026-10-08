@@ -1,0 +1,3 @@
+# a planted registry: the field holder of the held rule names a function that its module does not have
+format 1
+rule slow-row engine=build scope=builddir ledger=max warn=10 error=20 unit=s held-by=loop-gauge holder=assay.loop.gauge:judged_record doc=XV | a planted time | lower the value

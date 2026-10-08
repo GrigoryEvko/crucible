@@ -26,6 +26,11 @@ THE HOLDERS
                       gives each compile of the tree that threshold as its
                       -fconstexpr-ops-limit
       a rule ID       the findings of that rule on the plant
+    The field holder of a held rule names the function of its holder that
+    judges it.  The rule rule-implementations makes sure that the judge of the
+    holder in HOLDERS calls that function.  For a holder that is a rule ID,
+    the function must be in the module of that rule.
+
     The witness keeps each finding of the held rule.  When the holder is a
     rule, the witness keeps each finding of the holder.  The plants of the
     held rule then hold only the items that the thresholds of the held rule
