@@ -13,4 +13,4 @@
 # utils/scripts/parse-total-ledger.txt do not see.  To accept a growth, raise the baseline in the same
 # commit with a reason:
 #   python3 utils/bin/guard check --rule parse-cost --check instruction-total --build-dir build --write --reason TEXT
-total | x86_64-debug-asan | 9553998204930 | 8625579563039 | the measure of the Debug build of all and of each negative fixture at 751d38a23 on 2026-10-02.  The total fell 15.9 % from the first baseline, with the compile-time work of the same day
+total | x86_64-debug-asan | 9841082170241 | 8727423836718 | the measure of the Debug build of all and of each negative fixture at be4dcbd05 on 2026-10-08. The growth of 2.14 % over 751d38a23 is the new tests of the core families, the NUMA doors, the iteration detector, the flag matrix and the SenseHub v2 sources, the new fixtures, and the include of fixy/Core.h in the test harness
