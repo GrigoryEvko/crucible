@@ -26,7 +26,7 @@ THE TARGETS
     and --check the words of its check, and each other ARG goes unchanged.
 
     mint-inventory    misc/mint-inventory.md and the HS14 floor (--write, --check, --check-floor)
-    witness-fixtures  the negative fixtures of the witness roster (--write, --check)
+    witness-fixtures  the negative fixtures of the witness rows of utils/rule-table.txt (--write, --check)
     walk-units        test/layer/walk-checks.txt (--write, --check, --measure BUILD_DIR, --explain CHECK_FILE)
     header-costs      the heavy and light rows of utils/rule-table.txt (--write, --check, --measure BUILD_DIR
                       [HEADER...])
@@ -74,7 +74,7 @@ class Target:
 
 TARGETS = {
     "mint-inventory": Target("assay.loop.derive.mint_inventory", (), ("--write",), ("--check",)),
-    "witness-fixtures": Target("assay.guard.check", ("--rule", "witness-roster"), ("--gen",), ("--check",)),
+    "witness-fixtures": Target("assay.loop.derive.witness_fixtures", (), ("--write",), ("--check",)),
     "walk-units": Target("assay.loop.derive.walk_units", (), ("--write",), ("--check",)),
     "header-costs": Target("assay.loop.derive.header_costs", (), ("--write",), ("--check",)),
     "mint-model": Target("assay.loop.derive.mint_model"),
@@ -88,7 +88,7 @@ CHECKS = (
     ("prose paths", (sys.executable, str(GUARD), "check", "--rule", "prose-paths")),
     ("ledger paths", (sys.executable, str(GUARD), "check", "--rule", "ledger-owners")),
     ("mint inventory", (sys.executable, str(LOOP), "derive", "mint-inventory", "--check")),
-    ("witness roster", (sys.executable, str(GUARD), "check", "--rule", "witness-roster", "--check")),
+    ("witness fixtures", (sys.executable, str(LOOP), "derive", "witness-fixtures", "--check")),
     ("walk units", (sys.executable, str(GUARD), "check", "--rule", "walk-units")),
     ("header costs", (sys.executable, str(LOOP), "derive", "header-costs", "--check")),
 )
@@ -204,7 +204,7 @@ def self_test() -> int:
             failures.append(name)
 
     expect("--write and --check give the words of the target, and each other word stays",
-           TARGETS["witness-fixtures"].translate(["--write"]) == ["--rule", "witness-roster", "--gen"]
+           TARGETS["witness-fixtures"].translate(["--write"]) == ["--write"]
            and TARGETS["walk-units"].translate(["--check"]) == ["--check"]
            and TARGETS["mint-inventory"].translate(["--check-floor"]) == ["--check-floor"]
            and TARGETS["session-oracle"].translate(["emit"]) == ["emit"])

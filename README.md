@@ -92,7 +92,8 @@ test/                            Tests of include/crucible and src, the constant
 test/fixy/ test/foundation/      Tests of layers 1 and 2, with negative-compile fixtures in neg/
 test/*_neg/                      Negative-compile fixtures of layer 3, one directory per subject
 test/fuzz/                       Property tests and boundary fuzz harnesses (test/fuzz/README.md)
-utils/scripts/                   CI guards, their allowlists and rosters, and the generators
+utils/                           The package assay of the guards and the generators, its three
+                                 commands in bin/, the ledgers, the plants and the rule table
 utils/tools/                     Hardware probe, row-hash witness, mutation runner, session oracle
 utils/toolchain/                 Build script and patches of the patched GCC
 vessel/torch/                    The PyTorch Vessel: the dispatch fallback and recording kernels,

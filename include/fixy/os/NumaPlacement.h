@@ -361,7 +361,7 @@ template <typename T, std::size_t Extent, ::foundation::effects::IsExecCtx Ctx>
 }  // namespace numa
 
 // A region tag that only checks name.  The witness roster
-// (utils/scripts/witness-roster.txt) and the check file of this header
+// (the witness rows of utils/rule-table.txt) and the check file of this header
 // spell a placement over it, and no code builds a region of it.
 namespace detail::numa_placement_witness {
 struct ProbeRegion final {};

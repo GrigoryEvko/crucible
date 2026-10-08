@@ -7,9 +7,10 @@
 //
 // THE SCHEMA
 //     The first word of a row is its kind, and the head comment of the table
-//     gives the words of each kind.  A row has at most one cell: the reason of
-//     an admit row or of a home row.  The rows grammar divides the words only
-//     at a space and a tab, and a word or a cell that holds a different
+//     gives the words of each kind.  A row has at most one cell, such as the
+//     reason of an admit row or of a home row.  Only a witness row has two
+//     cells: its type and its expression.  The rows grammar divides the words
+//     only at a space and a tab, and a word or a cell that holds a different
 //     white-space character is an error, because a reader that divides at each
 //     white-space character would read different words.
 
@@ -250,14 +251,40 @@ bool is_file_path(const std::string& text) {
     return is_plain_path(text) && text.back() != '/' && !has_prefix(text, kBuildPrefix);
 }
 
-// The error of a cite row and of a grant row that do not obey the format of
-// their words.  ruletable.py gives the same texts.
+// The full name of the class TYPE: the text with each template argument list
+// removed.  Returns an empty text when the angle brackets of TYPE do not pair,
+// or when the remaining text is not identifiers with "::" between them.
+// ruletable.witness_name() gives the same answer.  Complexity: linear in the
+// length of TYPE.
+std::string witness_name(const std::string& type) {
+    std::string kept;
+    int depth = 0;
+    for (char character : type) {
+        if (character == '<') {
+            ++depth;
+        } else if (character == '>') {
+            if (--depth < 0) {
+                return {};
+            }
+        } else if (depth == 0) {
+            kept.push_back(character);
+        }
+    }
+    return depth == 0 && is_qualified_name(kept) ? kept : std::string{};
+}
+
+// The error of a cite row, a grant row and a witness row that do not obey the
+// format of their words.  ruletable.py gives the same texts.
 constexpr const char* kCiteFormat =
     "a cite row is 'cite PREDICATE PROCEDURE...', with the qualified name of a predicate class and the name of each "
     "decide procedure that tests it";
 constexpr const char* kGrantFormat =
     "a grant row is 'grant FILE ALIAS ENUMERATION [DOOR...]', with the grant file, the qualified names of its alias "
     "and of the enumeration of the system calls, and each door file";
+constexpr const char* kWitnessFormat =
+    "a witness row is 'witness HEADER REFUSAL | TYPE | EXPRESSION', with the HEADER of the type in angle brackets, a "
+    "REFUSAL of private, deleted or no-match, the class TYPE with its template arguments, and the expression of a "
+    "forger";
 
 // The error of a home row that does not obey the format of its words.
 // ruletable.HOME_FORMAT gives the same text.
@@ -382,6 +409,7 @@ bool load_rule_table(const std::string& path) {
     crucible_rows::KeyLines grant_lines;
     // The entity of each home row and home-args row, and its line.
     crucible_rows::KeyLines home_lines;
+    crucible_rows::KeyLines witness_lines;  // the class name of each witness row, and its line
     bool is_valid = true;
     int line_number = 0;
     auto refuse = [&](const std::string& message) {
@@ -406,9 +434,9 @@ bool load_rule_table(const std::string& path) {
             refuse(white_space_message(white_space));
             continue;
         }
-        if (row.cells.size() > 1) {
+        if (row.cells.size() > 1 && row.words[0] != "witness") {
             refuse("a row has at most one cell: the reason of an admit row or of a home row, or the measure of a heavy "
-                   "or a light row");
+                   "or a light row.  Only a witness row has two cells");
             continue;
         }
         const std::string& kind = row.words[0];
@@ -593,6 +621,23 @@ bool load_rule_table(const std::string& path) {
             }
             table.grants.push_back(
                 GrantRow{args[0], args[1], args[2], std::vector<std::string>(args.begin() + 3, args.end())});
+        } else if (kind == "witness") {
+            std::string name = row.cells.size() == 2 ? witness_name(row.cells[0]) : std::string{};
+            bool is_valid_row = args.size() == 2 && is_header(args[0])
+                             && is_file_path(args[0].substr(1, args[0].size() - 2))
+                             && (args[1] == "private" || args[1] == "deleted" || args[1] == "no-match") && !name.empty()
+                             && !row.cells[1].empty();
+            if (!is_valid_row) {
+                refuse(kWitnessFormat);
+                continue;
+            }
+            if (int first_line = witness_lines.add(name, line_number); first_line > 0) {
+                refuse("the class " + name + " has a second witness row, and its first witness row is on line "
+                       + std::to_string(first_line));
+                continue;
+            }
+            table.witnesses.push_back(
+                WitnessRow{args[0].substr(1, args[0].size() - 2), args[1], row.cells[0], std::move(name)});
         } else if (kind == "home" || kind == "home-args") {
             HomeRow home;
             std::string problem = reason.empty() ? std::string(kHomeFormat) : parse_home(args, kind == "home-args", home);
@@ -611,7 +656,7 @@ bool load_rule_table(const std::string& path) {
             table.homes.push_back(std::move(home));
         } else {
             refuse("the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce, language, "
-                   "seal, heavy, light, cite, grant, home and home-args");
+                   "seal, heavy, light, cite, grant, home, home-args and witness");
         }
     }
     for (std::size_t index = 0; index < allow_layers.size(); ++index) {

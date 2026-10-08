@@ -426,7 +426,7 @@ mint_stage(Ctx const& ctx, std::remove_reference_t<::foundation::reflect::param_
 
 // The fake handles and the stage bodies that only checks name.  MpmcStage
 // and SwmrStage have a private door, so the witness roster
-// (utils/scripts/witness-roster.txt) forges each stage through these
+// (the witness rows of utils/rule-table.txt) forges each stage through these
 // names.  The check files of this header and of
 // fixy/concurrent/Pipeline.h, test/fixy/test_armed_roster.cpp and
 // test/fixy/row_hash_census.h name them too.  No code runs them.

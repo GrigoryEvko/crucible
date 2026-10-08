@@ -95,9 +95,7 @@ utils/assay/guard/legacy/check_syscall_capability.py | arg-type | 1 | scan | An 
 utils/assay/guard/legacy/check_syscall_capability.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | union-attr | 1 | scan | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | var-annotated | 1 | self_test | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_witness_roster.py | assignment | 2 | self_test | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_witness_roster.py | attr-defined | 1 | <module> | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_witness_roster.py | attr-defined | 5 | self_test | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_witness_roster.py | no-untyped-def | 1 | self_test.captured | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/report_check_warnings.py | arg-type | 1 | self_test | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/report_check_warnings.py | misc | 1 | build_totals | An error of mypy of today.  The change that gives the code its types lowers the count

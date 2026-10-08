@@ -297,7 +297,7 @@ inline constexpr auto publish_value = [](auto& writer, auto& value) noexcept -> 
 inline constexpr auto load_value = [](auto& reader) noexcept { return reader.try_load(); };
 
 // The tags and the brands that only checks name.  The witness roster
-// (utils/scripts/witness-roster.txt), the permission-row roster of
+// (the witness rows of utils/rule-table.txt), the permission-row roster of
 // test/test_permission_row_roster.cpp and the check file of this header
 // spell a session over them, and no code builds one.
 namespace detail::swmr_session_witness {

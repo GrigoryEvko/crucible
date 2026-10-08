@@ -433,6 +433,17 @@ struct GrantRow {
     std::vector<std::string> doors;
 };
 
+// One witness row: a class that attests to a fact that it cannot see.  The
+// row also gives the expression of a forger.  Only the writer of the negative
+// fixtures reads it (utils/assay/loop/derive/witness_fixtures.py), and the
+// plugin keeps no copy of it.
+struct WitnessRow {
+    std::string header;  // the name inside the angle brackets
+    std::string refusal;  // private, deleted or no-match
+    std::string type;  // the class as a caller spells it, with its template arguments
+    std::string name;  // the full name of the class, with no template arguments
+};
+
 // ── The rules and the kinds ─────────────────────────────────────────────
 
 enum class Rule : std::uint8_t {
@@ -485,6 +496,7 @@ struct RuleTable {
     std::vector<CiteRow> cites;
     std::vector<GrantRow> grants;
     std::vector<HomeRow> homes;
+    std::vector<WitnessRow> witnesses;
 };
 
 // The kinds of a finding (THE RULES AND THE KINDS above).  opted-out and

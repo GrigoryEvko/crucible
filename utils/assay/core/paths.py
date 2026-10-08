@@ -1,4 +1,4 @@
-"""The root of the repository, the masters and the directory of the data files, found from the location of this file.
+"""The root of the repository and the masters, found from the location of this file.
 
 This file is utils/assay/core/paths.py, and the root is three directories
 above it.  Each module of the package gets the root from REPO_ROOT here.  The
@@ -22,9 +22,6 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 GUARD = REPO_ROOT / "utils" / "bin" / "guard"
 LOOP = REPO_ROOT / "utils" / "bin" / "loop"
 SETUP = REPO_ROOT / "utils" / "bin" / "setup"
-# The directory of the data files of the package: the rule table, the ledgers,
-# the allowlists and the rosters.
-DATA = REPO_ROOT / "utils" / "scripts"
 
 
 def listing(directory: Path, pattern: str = "*") -> tuple[Path, ...]:

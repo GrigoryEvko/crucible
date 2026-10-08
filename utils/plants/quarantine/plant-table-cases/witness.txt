@@ -6,7 +6,7 @@
 
 table-unit plant_std.cpp
 
-table tables/an-unknown-row-kind.txt refused 1 | the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce, language, seal, heavy, light, cite, grant, home and home-args
+table tables/an-unknown-row-kind.txt refused 1 | the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce, language, seal, heavy, light, cite, grant, home, home-args and witness
 table tables/a-rank-that-is-not-digits.txt refused 1 | a layer row is 'layer NAME RANK PATH...', with a RANK of digits
 table tables/a-rank-of-two-layers.txt refused 2 | the rank belongs to a second layer
 table tables/a-layer-with-two-rows.txt refused 2 | the layer has a second row
@@ -60,7 +60,14 @@ table tables/a-seal-root-with-two-rows.txt refused 2 | the root include/crucible
 table tables/a-heavy-row-with-no-angle-brackets.txt refused 1 | a heavy row is 'heavy HEADER [\| MEASURE]', with a HEADER in angle brackets
 table tables/a-heavy-row-with-two-headers.txt refused 1 | a heavy row is 'heavy HEADER [\| MEASURE]', with a HEADER in angle brackets
 table tables/a-header-with-a-heavy-and-a-light-row.txt refused 2 | the header <chrono> has a second heavy or light row, and its first row is on line 1
-table tables/a-light-row-with-two-cells.txt refused 1 | a row has at most one cell: the reason of an admit row or of a home row, or the measure of a heavy or a light row
+table tables/a-light-row-with-two-cells.txt refused 1 | a row has at most one cell: the reason of an admit row or of a home row, or the measure of a heavy or a light row.  Only a witness row has two cells
+table tables/a-witness-row-with-one-cell.txt refused 1 | a witness row is 'witness HEADER REFUSAL \| TYPE \| EXPRESSION', with the HEADER of the type in angle brackets, a REFUSAL of private, deleted or no-match, the class TYPE with its template arguments, and the expression of a forger
+table tables/a-witness-row-with-an-unknown-refusal.txt refused 1 | a witness row is 'witness HEADER REFUSAL \| TYPE \| EXPRESSION', with the HEADER of the type in angle brackets, a REFUSAL of private, deleted or no-match, the class TYPE with its template arguments, and the expression of a forger
+table tables/a-witness-type-with-unpaired-angle-brackets.txt refused 1 | a witness row is 'witness HEADER REFUSAL \| TYPE \| EXPRESSION', with the HEADER of the type in angle brackets, a REFUSAL of private, deleted or no-match, the class TYPE with its template arguments, and the expression of a forger
+table tables/a-witness-header-with-no-angle-brackets.txt refused 1 | a witness row is 'witness HEADER REFUSAL \| TYPE \| EXPRESSION', with the HEADER of the type in angle brackets, a REFUSAL of private, deleted or no-match, the class TYPE with its template arguments, and the expression of a forger
+table tables/a-witness-row-with-an-empty-expression.txt refused 1 | a witness row is 'witness HEADER REFUSAL \| TYPE \| EXPRESSION', with the HEADER of the type in angle brackets, a REFUSAL of private, deleted or no-match, the class TYPE with its template arguments, and the expression of a forger
+table tables/a-class-with-two-witness-rows.txt refused 2 | the class fixy::Door has a second witness row, and its first witness row is on line 1
+table tables/witness-rows-accepted.txt accepted
 table tables/a-home-row-with-no-reason.txt refused 1 | a home row is 'home RULE ENTITY [PATH...] \| REASON', and a home-args row is 'home-args RULE ENTITY [PATH...] \| REASON'.  RULE is a rule of the family home, ENTITY is a qualified name or one name, and the reason is necessary
 table tables/a-home-row-with-no-entity.txt refused 1 | a home row is 'home RULE ENTITY [PATH...] \| REASON', and a home-args row is 'home-args RULE ENTITY [PATH...] \| REASON'.  RULE is a rule of the family home, ENTITY is a qualified name or one name, and the reason is necessary
 table tables/a-home-row-of-no-rule-of-the-family.txt refused 1 | the rule quarantine is no rule of the family home; the rules are federation-admission, host-owners, no-combine-ids-duplicate, splits-orphan and trait-guard

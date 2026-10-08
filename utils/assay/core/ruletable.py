@@ -18,7 +18,9 @@ The seal rows give the rule detsafe-ledger of the plugin, and the heavy and
 light rows give the rule heavy-include.  `loop derive header-costs` writes the
 heavy and light rows from a measure (assay.loop.derive.header_costs).  The
 cite rows give the rule refined-pre-subsumption, and the grant rows give the
-rule syscall-grant-coverage.
+rule syscall-grant-coverage.  The witness rows give the rule witness-roster and
+the negative fixtures that `loop derive witness-fixtures` writes
+(assay.loop.derive.witness_fixtures).
 """
 
 from __future__ import annotations
@@ -46,9 +48,12 @@ ROW_KINDS = (
     "grant",
     "home",
     "home-args",
+    "witness",
 )
-# The errors of a cite row and of a grant row that do not obey the format of their words.  rule_table.cpp gives
-# the same texts.
+# The refusal that the negative fixture of a witness row must see, as the row names it.
+REFUSALS = ("private", "deleted", "no-match")
+# The errors of a cite row, a grant row and a witness row that do not obey the format of their words.
+# rule_table.cpp gives the same texts.
 CITE_FORMAT = (
     "a cite row is 'cite PREDICATE PROCEDURE...', with the qualified name of a predicate class and the "
     "name of each decide procedure that tests it"
@@ -57,6 +62,11 @@ GRANT_FORMAT = (
     "a grant row is 'grant FILE ALIAS ENUMERATION [DOOR...]', with the grant file, the qualified names "
     "of its alias and of the enumeration of the system calls, and each door file"
 )
+WITNESS_FORMAT = (
+    "a witness row is 'witness HEADER REFUSAL | TYPE | EXPRESSION', with the HEADER of the type in angle "
+    "brackets, a REFUSAL of private, deleted or no-match, the class TYPE with its template arguments, and the "
+    "expression of a forger"
+)
 # The directory of the headers of the project roots.  A sealed PREFIX is a directory in it.
 INCLUDE_PREFIX = "include/"
 # The error of a seal row that does not obey the format of its words.  rule_table.cpp gives the same text.
@@ -64,9 +74,10 @@ SEAL_FORMAT = (
     "a seal row is 'seal ROOT PREFIX...', with one ROOT file of the source root and each PREFIX a "
     "directory under include/ whose parts are identifiers"
 )
-# The error of a row with two cells.  rule_table.cpp gives the same text.
+# The error of a row other than a witness row with two cells.  rule_table.cpp gives the same text.
 CELLS_MESSAGE = (
-    "a row has at most one cell: the reason of an admit row or of a home row, or the measure of a heavy or a light row"
+    "a row has at most one cell: the reason of an admit row or of a home row, or the measure of a heavy or a light "
+    "row.  Only a witness row has two cells"
 )
 # The rules of the family home of the plugin (utils/tools/quarantine/home.cpp),
 # which the home rows and the home-args rows name.
@@ -166,6 +177,23 @@ class Grant:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class Witness:
+    """One witness row: a class that attests to a fact that it cannot see, and the door that it keeps.
+
+    `header` is the header of the class with its angle brackets.  `refusal` is one of REFUSALS.  `type_` is the class
+    as a caller spells it, with its template arguments, and `name` is its full name with no template arguments
+    (witness_name).  `expression` is a construction that a forger can write.
+    """
+
+    header: str
+    refusal: str
+    type_: str
+    name: str
+    expression: str
+    line: int
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class Home:
     """One home row or home-args row of the family home: the rule, the entity, the paths, the reason and the line.
 
@@ -203,6 +231,7 @@ class RuleTable:
     cites: tuple[Cite, ...] = ()
     grants: tuple[Grant, ...] = ()
     homes: tuple[Home, ...] = ()
+    witnesses: tuple[Witness, ...] = ()
 
     def homes_of(self, rule: str) -> tuple[Home, ...]:
         """Return the home rows of one rule, in the sequence of the file."""
@@ -312,6 +341,29 @@ def is_identifier(text: str) -> bool:
 def is_qualified_name(text: str) -> bool:
     """Return True when TEXT is one or more identifiers with "::" between two of them, and no "::" at its start."""
     return all(is_identifier(part) for part in text.split("::"))
+
+
+def witness_name(type_: str) -> str:
+    """Return the full name of the class TYPE_: the text with each template argument list removed.
+
+    fixy::concurrent::PermissionedSpscChannel<int, 8, Tag, Brand>::ProducerHandle gives
+    fixy::concurrent::PermissionedSpscChannel::ProducerHandle.  The answer is empty when the angle brackets of TYPE_
+    do not pair, or when the remaining text is not identifiers with "::" between them.  rule_table.cpp gives the
+    same answer.  Complexity: linear in the length of TYPE_.
+    """
+    kept: list[str] = []
+    depth = 0
+    for character in type_:
+        if character == "<":
+            depth += 1
+        elif character == ">":
+            depth -= 1
+            if depth < 0:
+                return ""
+        elif depth == 0:
+            kept.append(character)
+    name = "".join(kept)
+    return name if depth == 0 and is_qualified_name(name) else ""
 
 
 def is_file_path(text: str) -> bool:
@@ -471,6 +523,8 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
     cite_lines: dict[str, int] = {}  # the predicate of each cite row, and its line
     grants: list[Grant] = []
     grant_lines: dict[str, int] = {}  # the grant file of each grant row, and its line
+    witnesses: list[Witness] = []
+    witness_lines: dict[str, int] = {}  # the class name of each witness row, and its line
     admit_lines: dict[str, int] = {}  # the entry of each admit row, and its line
     seals: list[Seal] = []
     seal_lines: dict[str, int] = {}  # the root of each seal row, and its line
@@ -485,7 +539,7 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
                             if character.isspace() and character not in WORD_DIVIDERS), None)
         if white_space is not None:
             raise TableError(f"{where}: {white_space_message(white_space)}")
-        if len(row.cells) > 1:
+        if len(row.cells) > 1 and row.words[0] != "witness":
             raise TableError(f"{where}: {CELLS_MESSAGE}")
         kind, args = row.words[0], list(row.words[1:])
         reason = row.cells[0] if row.cells else ""
@@ -612,6 +666,26 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
                                  f"is on line {home_lines[home.entity]}")
             home_lines[home.entity] = number
             homes.append(home)
+        elif kind == "witness":
+            class_name = witness_name(row.cells[0]) if len(row.cells) == 2 else ""
+            if (
+                len(args) != 2
+                or len(args[0]) < 3
+                or not args[0].startswith("<")
+                or not args[0].endswith(">")
+                or not is_file_path(args[0][1:-1])
+                or args[1] not in REFUSALS
+                or not class_name
+                or not row.cells[1]
+            ):
+                raise TableError(f"{where}: {WITNESS_FORMAT}")
+            if class_name in witness_lines:
+                raise TableError(
+                    f"{where}: the class {class_name} has a second witness row, and its first witness row is on "
+                    f"line {witness_lines[class_name]}"
+                )
+            witness_lines[class_name] = number
+            witnesses.append(Witness(args[0], args[1], row.cells[0], class_name, row.cells[1], number))
         else:
             if len(args) != 2 or args[1] not in MODES:
                 raise TableError(f"{where}: an enforce row is 'enforce PATH MODE', and MODE is report or error")
@@ -636,7 +710,7 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
                              f"language must be a path of the base")
     return RuleTable(tuple(layers), tuple(allows), tuple(doors), tuple(admits), tuple(quarantines),
                      tuple(enforces), tuple(languages), tuple(seals), tuple(header_costs), tuple(cites),
-                     tuple(grants), tuple(homes))
+                     tuple(grants), tuple(homes), tuple(witnesses))
 
 
 def load(path: Path = TABLE) -> RuleTable:

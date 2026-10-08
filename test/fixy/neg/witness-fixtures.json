@@ -1,5 +1,5 @@
 {
-  "generator": "guard check --rule witness-roster --gen",
+  "writer": "loop derive witness-fixtures --write",
   "fixtures": [
     {
       "name": "neg_witness_algebra_grade_key_direct_construction",
@@ -600,6 +600,488 @@
       "name": "neg_witness_writeoncenonnull_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bWriteOnceNonNull\\("
+    }
+  ],
+  "roster": [
+    {
+      "type": "foundation::effects::Bg",
+      "header": "foundation/effects/Effect.h"
+    },
+    {
+      "type": "foundation::effects::Init",
+      "header": "foundation/effects/Effect.h"
+    },
+    {
+      "type": "foundation::effects::Test",
+      "header": "foundation/effects/Effect.h"
+    },
+    {
+      "type": "foundation::effects::detail::ctx_mint::bg_key",
+      "header": "foundation/effects/Effect.h"
+    },
+    {
+      "type": "foundation::effects::detail::ctx_mint::init_key",
+      "header": "foundation/effects/Effect.h"
+    },
+    {
+      "type": "foundation::effects::detail::ctx_mint::test_key",
+      "header": "foundation/effects/Effect.h"
+    },
+    {
+      "type": "foundation::effects::detail::ctx_mint::fg_key",
+      "header": "foundation/effects/Ctx.h"
+    },
+    {
+      "type": "foundation::effects::ctx_cap::Fg",
+      "header": "foundation/effects/Ctx.h"
+    },
+    {
+      "type": "foundation::effects::ctx_cap::BrandedFg<int>",
+      "header": "foundation/effects/Ctx.h"
+    },
+    {
+      "type": "foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg>>",
+      "header": "foundation/effects/Ctx.h"
+    },
+    {
+      "type": "foundation::effects::cap_mint_key",
+      "header": "foundation/effects/Capability.h"
+    },
+    {
+      "type": "foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Bg>",
+      "header": "foundation/effects/Capability.h"
+    },
+    {
+      "type": "foundation::effects::detail::ContextBase<forge::brand, foundation::effects::detail::ctx_mint::bg_key, foundation::effects::Effect::Bg>",
+      "header": "foundation/effects/Effect.h"
+    },
+    {
+      "type": "foundation::effects::host::ProducerClaim<forge::brand>",
+      "header": "foundation/effects/Ctx.h"
+    },
+    {
+      "type": "foundation::permissions::perm_mint_key",
+      "header": "foundation/permissions/Permission.h"
+    },
+    {
+      "type": "foundation::permissions::erase_brand_key",
+      "header": "foundation/permissions/Permission.h"
+    },
+    {
+      "type": "foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>",
+      "header": "foundation/permissions/Permission.h"
+    },
+    {
+      "type": "foundation::permissions::WriteView<foundation::permissions::tag::HugePageTag, foundation::permissions::tag::MmapRegionTag>",
+      "header": "foundation/permissions/PermissionFork.h"
+    },
+    {
+      "type": "foundation::permissions::federation_admission_key",
+      "header": "foundation/permissions/Permission.h"
+    },
+    {
+      "type": "foundation::permissions::PermissionForkRunner",
+      "header": "foundation/permissions/PermissionFork.h"
+    },
+    {
+      "type": "fixy::spawn::ParallelForRunner",
+      "header": "fixy/os/Spawn.h"
+    },
+    {
+      "type": "foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag>",
+      "header": "foundation/permissions/Permission.h"
+    },
+    {
+      "type": "foundation::permissions::SharedPermissionGuard<foundation::permissions::tag::HugePageTag>",
+      "header": "foundation/permissions/Permission.h"
+    },
+    {
+      "type": "foundation::permissions::ReadView<foundation::permissions::tag::HugePageTag>",
+      "header": "foundation/permissions/ReadView.h"
+    },
+    {
+      "type": "foundation::permissions::ReadLoan<foundation::permissions::tag::HugePageTag>",
+      "header": "foundation/permissions/ReadView.h"
+    },
+    {
+      "type": "foundation::permissions::LentPermission<foundation::permissions::tag::HugePageTag>",
+      "header": "foundation/permissions/ReadView.h"
+    },
+    {
+      "type": "foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag>",
+      "header": "foundation/permissions/Permission.h"
+    },
+    {
+      "type": "foundation::permissions::detail::row_cell",
+      "header": "foundation/permissions/Permission.h"
+    },
+    {
+      "type": "foundation::fail_closed::detail::relation_cells<1>",
+      "header": "foundation/diag/FailClosed.h"
+    },
+    {
+      "type": "fixy::session::SessionHandle<fixy::session::End, int*>",
+      "header": "fixy/session/Handle.h"
+    },
+    {
+      "type": "fixy::session::CrashWatched<fixy::session::SessionHandle<fixy::session::End, int*>, int, long, fixy::session::ReliableSet<>, int>",
+      "header": "fixy/session/CrashTransport.h"
+    },
+    {
+      "type": "fixy::session::CheckpointHandle<fixy::session::SessionHandle<fixy::session::End, int*>, fixy::session::End, void, fixy::session::CheckpointFrame<fixy::session::End, fixy::session::End, void>>",
+      "header": "fixy/session/Checkpoint.h"
+    },
+    {
+      "type": "fixy::session::Recorded<fixy::session::SessionHandle<fixy::session::End, int*>>",
+      "header": "fixy/session/Recording.h"
+    },
+    {
+      "type": "fixy::session::SessionEvent",
+      "header": "fixy/session/EventLog.h"
+    },
+    {
+      "type": "fixy::session::PermHold<foundation::permissions::PermSet<foundation::permissions::tag::HugePageTag>>",
+      "header": "fixy/session/Payload.h"
+    },
+    {
+      "type": "fixy::session::HoldFactory",
+      "header": "fixy/session/Payload.h"
+    },
+    {
+      "type": "fixy::concurrent::PermissionedSpscChannel<int, 8, fixy::concurrent::detail::spsc_channel_witness::WitnessTag, fixy::concurrent::detail::spsc_channel_witness::WitnessBrand>::ProducerHandle",
+      "header": "fixy/concurrent/PermissionedSpscChannel.h"
+    },
+    {
+      "type": "fixy::concurrent::PermissionedSpscChannel<int, 8, fixy::concurrent::detail::spsc_channel_witness::WitnessTag, fixy::concurrent::detail::spsc_channel_witness::WitnessBrand>::ConsumerHandle",
+      "header": "fixy/concurrent/PermissionedSpscChannel.h"
+    },
+    {
+      "type": "fixy::concurrent::PermissionedMpscChannel<int, 8, fixy::concurrent::detail::mpsc_channel_witness::WitnessTag, fixy::concurrent::detail::mpsc_channel_witness::WitnessBrand>::ProducerHandle",
+      "header": "fixy/concurrent/PermissionedMpscChannel.h"
+    },
+    {
+      "type": "fixy::concurrent::PermissionedMpscChannel<int, 8, fixy::concurrent::detail::mpsc_channel_witness::WitnessTag, fixy::concurrent::detail::mpsc_channel_witness::WitnessBrand>::ConsumerHandle",
+      "header": "fixy/concurrent/PermissionedMpscChannel.h"
+    },
+    {
+      "type": "fixy::concurrent::swmr_session::SwmrSession<int, fixy::concurrent::swmr_session::detail::swmr_session_witness::WriterTag, fixy::concurrent::swmr_session::detail::swmr_session_witness::ReaderTag, fixy::concurrent::swmr_session::detail::swmr_session_witness::ReaderBrand, fixy::concurrent::swmr_session::detail::swmr_session_witness::WriterBrand>::WriterHandle",
+      "header": "fixy/concurrent/SwmrSession.h"
+    },
+    {
+      "type": "fixy::concurrent::swmr_session::SwmrSession<int, fixy::concurrent::swmr_session::detail::swmr_session_witness::WriterTag, fixy::concurrent::swmr_session::detail::swmr_session_witness::ReaderTag, fixy::concurrent::swmr_session::detail::swmr_session_witness::ReaderBrand, fixy::concurrent::swmr_session::detail::swmr_session_witness::WriterBrand>::ReaderHandle",
+      "header": "fixy/concurrent/SwmrSession.h"
+    },
+    {
+      "type": "fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int>",
+      "header": "fixy/Qtt.h"
+    },
+    {
+      "type": "fixy::Refinement<fixy::positive, int, false>",
+      "header": "fixy/Refined.h"
+    },
+    {
+      "type": "fixy::Secret<int>",
+      "header": "fixy/Secret.h"
+    },
+    {
+      "type": "fixy::Tagged<int, fixy::tags::source::External>",
+      "header": "fixy/Tagged.h"
+    },
+    {
+      "type": "fixy::fn<int>",
+      "header": "fixy/Fn.h"
+    },
+    {
+      "type": "fixy::Machine<int>",
+      "header": "fixy/Machine.h"
+    },
+    {
+      "type": "fixy::ScopedView<int, int>",
+      "header": "fixy/ScopedView.h"
+    },
+    {
+      "type": "fixy::AppendOnly<int>",
+      "header": "fixy/Mutation.h"
+    },
+    {
+      "type": "fixy::OrderedAppendOnly<int>",
+      "header": "fixy/Mutation.h"
+    },
+    {
+      "type": "fixy::Monotonic<int>",
+      "header": "fixy/Mutation.h"
+    },
+    {
+      "type": "fixy::BoundedMonotonic<int, 10>",
+      "header": "fixy/Mutation.h"
+    },
+    {
+      "type": "fixy::AtomicMonotonic<int>",
+      "header": "fixy/Mutation.h"
+    },
+    {
+      "type": "fixy::WriteOnce<int>",
+      "header": "fixy/Mutation.h"
+    },
+    {
+      "type": "fixy::WriteOnceNonNull<int*>",
+      "header": "fixy/Mutation.h"
+    },
+    {
+      "type": "fixy::session::SessionFromMachine<int, fixy::session::End>",
+      "header": "fixy/session/MachineBridge.h"
+    },
+    {
+      "type": "foundation::core::OptionCursor<int>",
+      "header": "foundation/core/Choice.h"
+    },
+    {
+      "type": "foundation::core::Box<int>",
+      "header": "foundation/core/Ref.h"
+    },
+    {
+      "type": "foundation::core::View<int>",
+      "header": "foundation/core/Region.h"
+    },
+    {
+      "type": "foundation::core::ViewCursor<int>",
+      "header": "foundation/core/Region.h"
+    },
+    {
+      "type": "foundation::core::TextView",
+      "header": "foundation/core/Text.h"
+    },
+    {
+      "type": "foundation::algebra::grade_key<forge::brand>",
+      "header": "foundation/algebra/Graded.h"
+    },
+    {
+      "type": "foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::detail::TrivialBoolLattice, int>",
+      "header": "foundation/algebra/Graded.h"
+    },
+    {
+      "type": "foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::element_type",
+      "header": "foundation/algebra/lattices/StrongCounterLattice.h"
+    },
+    {
+      "type": "foundation::algebra::lattices::HappensBeforeLattice<2>::element_type",
+      "header": "foundation/algebra/lattices/HappensBefore.h"
+    },
+    {
+      "type": "fixy::VersionSource",
+      "header": "fixy/EpochVersioned.h"
+    },
+    {
+      "type": "fixy::VersionStamp",
+      "header": "fixy/EpochVersioned.h"
+    },
+    {
+      "type": "fixy::BudgetAuthority",
+      "header": "fixy/Budgeted.h"
+    },
+    {
+      "type": "fixy::BudgetStamp",
+      "header": "fixy/Budgeted.h"
+    },
+    {
+      "type": "fixy::BorrowedRef<int>",
+      "header": "fixy/Borrowed.h"
+    },
+    {
+      "type": "fixy::Borrowed<int, int>",
+      "header": "fixy/Borrowed.h"
+    },
+    {
+      "type": "fixy::OwnedRegion<int, foundation::permissions::tag::HugePageTag>",
+      "header": "fixy/OwnedRegion.h"
+    },
+    {
+      "type": "fixy::SharedRegion<int, foundation::permissions::tag::HugePageTag>",
+      "header": "fixy/SharedRegion.h"
+    },
+    {
+      "type": "fixy::SharedRead<int, foundation::permissions::tag::HugePageTag>",
+      "header": "fixy/SharedRegion.h"
+    },
+    {
+      "type": "fixy::Witnessed<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>, fixy::witness::UnderRow<foundation::permissions::tag::HugePageTag>>",
+      "header": "fixy/Witnessed.h"
+    },
+    {
+      "type": "fixy::Disjoint<int, foundation::brand::DefaultBrand, fixy::Unsplit, 2>",
+      "header": "fixy/OwnedRegion.h"
+    },
+    {
+      "type": "fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>",
+      "header": "fixy/os/CpuPinned.h"
+    },
+    {
+      "type": "fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, int>",
+      "header": "fixy/os/ClockSource.h"
+    },
+    {
+      "type": "fixy::ThreadNamed<\"forged\">",
+      "header": "fixy/os/ThreadName.h"
+    },
+    {
+      "type": "fixy::NumaPlacement<fixy::detail::numa_placement_witness::ProbeRegion, fixy::mmap::prot::WriteCopy>",
+      "header": "fixy/os/NumaPlacement.h"
+    },
+    {
+      "type": "fixy::time::ClockReader<foundation::algebra::lattices::ClockSource::Monotonic>",
+      "header": "fixy/os/Time.h"
+    },
+    {
+      "type": "fixy::time::PtpClockReader",
+      "header": "fixy/os/Time.h"
+    },
+    {
+      "type": "fixy::time::TscReader<fixy::time::TscMode::Raw, fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>>",
+      "header": "fixy/os/Time.h"
+    },
+    {
+      "type": "fixy::time::BoundedSleeper<1000>",
+      "header": "fixy/os/Time.h"
+    },
+    {
+      "type": "fixy::SchedClass<foundation::algebra::lattices::SchedulerPolicy::Fifo, int>",
+      "header": "fixy/os/SchedClass.h"
+    },
+    {
+      "type": "fixy::sched::SchedPriority<5>",
+      "header": "fixy/os/Sched.h"
+    },
+    {
+      "type": "fixy::sched::SchedProofDoor",
+      "header": "fixy/os/Sched.h"
+    },
+    {
+      "type": "fixy::sched::PriorAffinity",
+      "header": "fixy/os/Sched.h"
+    },
+    {
+      "type": "fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private>",
+      "header": "fixy/OwnedMmap.h"
+    },
+    {
+      "type": "fixy::OwnedFile",
+      "header": "fixy/OwnedFile.h"
+    },
+    {
+      "type": "fixy::OwnedFileDoor",
+      "header": "fixy/OwnedFile.h"
+    },
+    {
+      "type": "fixy::io::IoUringRing",
+      "header": "fixy/os/Io.h"
+    },
+    {
+      "type": "fixy::fs::OwnedFd",
+      "header": "fixy/os/Fd.h"
+    },
+    {
+      "type": "fixy::fs::FileDoor",
+      "header": "fixy/os/Fs.h"
+    },
+    {
+      "type": "fixy::net::SocketDoor",
+      "header": "fixy/os/Socket.h"
+    },
+    {
+      "type": "fixy::time::PtpDeviceDoor",
+      "header": "fixy/os/Time.h"
+    },
+    {
+      "type": "fixy::fs::Dirfd",
+      "header": "fixy/os/Fs.h"
+    },
+    {
+      "type": "fixy::cipher::durable::CipherDurableHandle<fixy::cipher::durable::warm_writer_stance>",
+      "header": "fixy/os/CipherDurable.h"
+    },
+    {
+      "type": "fixy::concurrent::Stage<&fixy::concurrent::detail::stage_witness::stage_pass_through, fixy::HotFgCtx>",
+      "header": "fixy/concurrent/Stage.h"
+    },
+    {
+      "type": "fixy::concurrent::MpmcStage<&fixy::concurrent::detail::stage_witness::stage_fan_in_two, fixy::HotFgCtx, std::tuple<fixy::concurrent::detail::stage_witness::FakeConsumer<int>, fixy::concurrent::detail::stage_witness::FakeConsumer<int>>, std::tuple<fixy::concurrent::detail::stage_witness::FakeProducer<int>>>",
+      "header": "fixy/concurrent/Stage.h"
+    },
+    {
+      "type": "fixy::concurrent::SwmrStage<&fixy::concurrent::detail::stage_witness::stage_swmr_publish, fixy::HotFgCtx>",
+      "header": "fixy/concurrent/Stage.h"
+    },
+    {
+      "type": "fixy::concurrent::Endpoint<fixy::concurrent::PermissionedSpscChannel<int, 64, fixy::concurrent::detail::endpoint_witness::UserTag, fixy::concurrent::detail::endpoint_witness::UserBrand>, fixy::concurrent::Direction::Producer, fixy::concurrent::detail::endpoint_witness::FgCtx>",
+      "header": "fixy/concurrent/Endpoint.h"
+    },
+    {
+      "type": "fixy::concurrent::Pipeline<fixy::concurrent::Stage<&fixy::concurrent::detail::stage_witness::stage_pass_through, fixy::HotFgCtx>>",
+      "header": "fixy/concurrent/Pipeline.h"
+    },
+    {
+      "type": "fixy::concurrent::PipelineDag<fixy::concurrent::StageGraph<fixy::concurrent::StagePack<fixy::concurrent::Stage<&fixy::concurrent::detail::stage_witness::stage_pass_through, fixy::HotFgCtx>, fixy::concurrent::Stage<&fixy::concurrent::detail::stage_witness::stage_pass_through, fixy::HotFgCtx>>, fixy::concurrent::EdgePack<fixy::concurrent::StageEdge<0, 1>>>>",
+      "header": "fixy/concurrent/Pipeline.h"
+    },
+    {
+      "type": "fixy::session::detail::handle_core<fixy::session::End, int, void, fixy::session::check::Enforced, foundation::permissions::EmptyPermSet>",
+      "header": "fixy/session/Handle.h"
+    },
+    {
+      "type": "fixy::session::DelegatedSession<fixy::session::End, int, fixy::session::check::Enforced, foundation::permissions::EmptyPermSet>",
+      "header": "fixy/session/Delegate.h"
+    },
+    {
+      "type": "fixy::session::CrashReporter",
+      "header": "fixy/session/CrashTransport.h"
+    },
+    {
+      "type": "fixy::session::CrashWriter",
+      "header": "fixy/session/CrashTransport.h"
+    },
+    {
+      "type": "fixy::session::HandleKey",
+      "header": "fixy/session/Handle.h"
+    },
+    {
+      "type": "fixy::session::SessionOpenKey",
+      "header": "fixy/session/Handle.h"
+    },
+    {
+      "type": "fixy::session::DelegationKey",
+      "header": "fixy/session/Delegate.h"
+    },
+    {
+      "type": "fixy::session::HandleFactory",
+      "header": "fixy/session/Handle.h"
+    },
+    {
+      "type": "fixy::session::SessionMintDoor",
+      "header": "fixy/session/Handle.h"
+    },
+    {
+      "type": "fixy::session::DelegationDoor",
+      "header": "fixy/session/Delegate.h"
+    },
+    {
+      "type": "fixy::session::CheckpointDoor",
+      "header": "fixy/session/Checkpoint.h"
+    },
+    {
+      "type": "fixy::session::CrashSessionDoor",
+      "header": "fixy/session/CrashTransport.h"
+    },
+    {
+      "type": "fixy::session::RecordingDoor",
+      "header": "fixy/session/Recording.h"
+    },
+    {
+      "type": "fixy::concurrent::EndpointDoor",
+      "header": "fixy/concurrent/Endpoint.h"
+    },
+    {
+      "type": "fixy::concurrent::StageEndpointDoor",
+      "header": "fixy/concurrent/StageEndpointBridge.h"
     }
   ]
 }

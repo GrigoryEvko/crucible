@@ -9,7 +9,8 @@ files under the directory OUT:
                   the restrictions of each admit row and with no reason, no
                   measure, no comment and no `until` family.  A new measure of
                   the header costs that moves no header between heavy and
-                  light then compiles nothing.
+                  light then compiles nothing.  A witness row gives only the
+                  name of its class.  A new expression then compiles nothing.
                   The lines are sorted.  The stamp of each compile command
                   holds the hash of this file, so a change of a fact compiles
                   each unit again, and a change of a reason compiles nothing.
@@ -97,6 +98,7 @@ def facts_text(table: layer_rules.RuleTable) -> str:
         f"{'home-args' if home.is_args else 'home'} {home.rule} {home.entity} {' '.join(sorted(home.paths))}".rstrip()
         for home in table.homes
     ]
+    lines += [f"witness {witness.name}" for witness in table.witnesses]
     return "".join(f"{line}\n" for line in sorted(lines))
 
 

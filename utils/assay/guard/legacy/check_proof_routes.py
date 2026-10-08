@@ -53,9 +53,9 @@ The proof names
 ---------------
 The pointer-cast, allocator and raw-allocation rules need the names of
 the proof types.  They come from two sources, and the guard uses their
-union.  utils/scripts/witness-roster.txt names each type that attests to a fact
-it cannot see, and the rule witness-roster (`guard check --rule
-witness-roster`) refuses a door that the roster does not name.
+union.  The witness rows of utils/rule-table.txt name each type that attests
+to a fact that it cannot see.  The rule witness-roster refuses a door that no
+witness row names.
 test_forgeable_proofs --proof-names prints each class that the reflection
 walk of that test finds to have the shape of a proof, and each template in
 its witness list: one line each, the name that a source
@@ -162,6 +162,7 @@ from assay.core import git
 from assay.core import ledger as rule_ledger
 from assay.core import proc
 from assay.core import rows as rows_grammar
+from assay.core import ruletable
 from assay.core.paths import GUARD, REPO_ROOT
 from assay.guard.preprocessed import Expansion, Store, chunk_text, text_results
 from assay.readers import compdb, tsast
@@ -472,15 +473,12 @@ def listed_files(root: Path) -> list[str]:
 
 
 def roster_names(root: Path) -> dict[str, set[str]]:
-    """The class name of each line of the witness roster, closed or open, with the name the roster writes."""
+    """The class name of each witness row of the rule table, with the type that the row writes."""
     names: dict[str, set[str]] = defaultdict(set)
-    roster = root / "utils" / "scripts" / "witness-roster.txt"
-    if roster.is_file():
-        for raw in roster.read_text().splitlines():
-            line = raw.strip()
-            if line and not line.startswith("#") and "|" in line:
-                written = line.split("|", 1)[0].strip()
-                names[written.split("<", 1)[0].rsplit("::", 1)[-1]].add(written)
+    table = root / ruletable.TABLE.relative_to(REPO_ROOT)
+    if table.is_file():
+        for witness in ruletable.load(table).witnesses:
+            names[witness.name.rsplit("::", 1)[-1]].add(witness.type_)
     return names
 
 
@@ -940,9 +938,8 @@ def planted_cases(caches: Path) -> int:
     # The ledger admits a site, refuses a surplus and reports a stale row.
     with tempfile.TemporaryDirectory() as scratch:
         root = Path(scratch)
-        (root / "utils" / "scripts").mkdir(parents=True)
-        (root / "utils" / "scripts" / "witness-roster.txt").write_text(
-            "forge::Door | h | forge::Door{} | private | closed\n")
+        (root / "utils").mkdir(parents=True)
+        (root / "utils" / "rule-table.txt").write_text("witness <h> private | forge::Door | forge::Door{}\n")
         (root / "a.cpp").write_text("union Plain { int a; };\nunion Other { int b; };\n")
         ledger = root / LEDGER
         ledger.parent.mkdir(parents=True)

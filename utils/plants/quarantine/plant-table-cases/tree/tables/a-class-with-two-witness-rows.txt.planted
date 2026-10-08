@@ -1,0 +1,2 @@
+witness <fixy/Door.h> private | fixy::Door<int> | fixy::Door<int>{}
+witness <fixy/Door.h> deleted | fixy::Door<long> | fixy::Door<long>{}

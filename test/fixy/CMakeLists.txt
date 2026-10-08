@@ -3388,22 +3388,27 @@ target_include_directories(test_armed_roster PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
 fixy_test(test_forgeable_proofs)
 target_include_directories(test_forgeable_proofs PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/armed_roster)
 
-# The witness roster, for the byte-route walk of test_forgeable_proofs.
+# The witness rows of utils/rule-table.txt, for the byte-route walk of
+# test_forgeable_proofs and for the negative fixtures of the rows below.
 # Reflection cannot list the specializations of a template, so the build
-# writes each type of utils/scripts/witness-roster.txt into
-# witness_roster.h, with the header of each type.  A change of the roster
-# runs the configure step again.
-set(_witness_roster_file ${CMAKE_SOURCE_DIR}/utils/scripts/witness-roster.txt)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_witness_roster_file})
-file(STRINGS ${_witness_roster_file} _witness_roster_lines REGEX "^[^#].*[|]")
+# writes the type of each row into witness_roster.h, with the header of each
+# type.  `loop derive witness-fixtures --write` writes the manifest
+# neg/witness-fixtures.json from the rows, and a change of the manifest runs
+# the configure step again.
+set(_witness_manifest ${CMAKE_CURRENT_SOURCE_DIR}/neg/witness-fixtures.json)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_witness_manifest})
+file(READ ${_witness_manifest} _witness_json)
+string(JSON _witness_roster_count ERROR_VARIABLE _witness_error LENGTH "${_witness_json}" roster)
+if(_witness_error OR _witness_roster_count EQUAL 0)
+  message(FATAL_ERROR "${_witness_manifest}: the manifest gives no roster (${_witness_error}).  "
+    "Run python3 utils/bin/loop derive witness-fixtures --write.")
+endif()
 set(_witness_roster_types "")
 set(_witness_roster_headers "")
-foreach(_witness_roster_line IN LISTS _witness_roster_lines)
-  string(REPLACE "|" ";" _witness_roster_fields "${_witness_roster_line}")
-  list(GET _witness_roster_fields 0 _witness_roster_type)
-  list(GET _witness_roster_fields 1 _witness_roster_header)
-  string(STRIP "${_witness_roster_type}" _witness_roster_type)
-  string(STRIP "${_witness_roster_header}" _witness_roster_header)
+math(EXPR _witness_roster_last "${_witness_roster_count} - 1")
+foreach(_witness_roster_index RANGE ${_witness_roster_last})
+  string(JSON _witness_roster_type GET "${_witness_json}" roster ${_witness_roster_index} type)
+  string(JSON _witness_roster_header GET "${_witness_json}" roster ${_witness_roster_index} header)
   string(APPEND _witness_roster_types "    ^^${_witness_roster_type},\n")
   list(APPEND _witness_roster_headers "${_witness_roster_header}")
 endforeach()
@@ -3414,7 +3419,7 @@ foreach(_witness_roster_header IN LISTS _witness_roster_headers)
   string(APPEND _witness_roster_include_lines "#include <${_witness_roster_header}>\n")
 endforeach()
 file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/armed_roster/witness_roster.h
-  CONTENT "#pragma once\n${_witness_roster_include_lines}\n#include <meta>\n\n// The brand that a roster line spells.\nnamespace forge {\nstruct brand {};\n}  // namespace forge\n\nnamespace witness_roster {\ninline constexpr std::meta::info types[] = {\n${_witness_roster_types}};\n}  // namespace witness_roster\n")
+  CONTENT "#pragma once\n${_witness_roster_include_lines}\n#include <meta>\n\n// The brand that a witness row spells.\nnamespace forge {\nstruct brand {};\n}  // namespace forge\n\nnamespace witness_roster {\ninline constexpr std::meta::info types[] = {\n${_witness_roster_types}};\n}  // namespace witness_roster\n")
 
 # Attacks on ownership transfer that use the discipline correctly.  The
 # threaded half runs under a watchdog, and it is the half that means
@@ -4716,26 +4721,24 @@ fixy_neg_compile_test(neg_os_cipher_durable_head_advancer_extras_engage_atomic_w
   "no matching function for call"
   "mint_head_advancer<fixy::atom::fs::atomic_write<fixy::fs::atomicity::Rename> >\\(\\{anonymous\\}::IoBlockCtx&")
 
-# ── The witness roster: one fixture per closed line ──────────────────
+# ── The witness rows: one fixture for each row ─────────────────────────
 #
-# utils/scripts/witness-roster.txt names every type that attests to a fact it
-# cannot see.  `guard check --rule witness-roster --gen` writes
-# neg/neg_witness_<slug>_direct_construction.cpp for each closed line,
-# and it writes neg/witness-fixtures.json with one record per fixture:
-# the test name, the refusal reason, and the refused constructor as the
-# compiler prints it, with parentheses, which a brace-spelled fixture
-# never contains, so the source cannot satisfy its own gate.  This loop
-# reads that manifest, so the slug and the regexes have one
-# implementation, in the generator.  --check refuses a manifest that the
-# roster does not produce, and the guard's self-test checks that ctest
-# registers precisely the fixtures on disk.
-set(_witness_manifest ${CMAKE_CURRENT_SOURCE_DIR}/neg/witness-fixtures.json)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_witness_manifest})
-file(READ ${_witness_manifest} _witness_json)
+# The witness rows of utils/rule-table.txt name each class of the base that
+# attests to a fact that it cannot see.  `loop derive witness-fixtures
+# --write` writes neg/neg_witness_<slug>_direct_construction.cpp for each
+# row, and the manifest neg/witness-fixtures.json, which the block of
+# witness_roster.h above reads.  The manifest holds one record for each
+# fixture: the name of the test, the text of the refusal, and the refused
+# constructor as the compiler writes it, with parentheses.  A fixture spells
+# its construction with braces, so its source cannot match that pattern.
+# This loop reads the manifest, so the slug and the patterns have one
+# implementation, in the writer.  The test witness_fixtures_check refuses a
+# manifest that the rows do not give, and the test of the writer makes sure
+# that ctest registers each fixture on disk and no other one.
 string(JSON _witness_count ERROR_VARIABLE _witness_error LENGTH "${_witness_json}" fixtures)
 if(_witness_error)
   message(FATAL_ERROR "${_witness_manifest}: ${_witness_error}.  "
-    "Run python3 utils/bin/guard check --rule witness-roster --gen.")
+    "Run python3 utils/bin/loop derive witness-fixtures --write.")
 endif()
 if(_witness_count GREATER 0)
   math(EXPR _witness_last "${_witness_count} - 1")

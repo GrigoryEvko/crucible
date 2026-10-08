@@ -158,7 +158,7 @@ class EndpointDoor final : ::foundation::NoObject<EndpointDoor> {
 };
 
 // The tags and the context that only checks name.  The witness roster
-// (utils/scripts/witness-roster.txt) and the check file of this header
+// (the witness rows of utils/rule-table.txt) and the check file of this header
 // spell an endpoint over them, and no code builds a channel of them.
 namespace detail::endpoint_witness {
 struct UserTag {};

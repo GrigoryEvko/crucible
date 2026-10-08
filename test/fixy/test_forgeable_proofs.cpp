@@ -22,7 +22,7 @@
 // gated types, foundation::effects and foundation::permissions, every
 // class template must have a witness or a place on the open list, so a
 // new template there fails the build until someone classifies it.  Each
-// type of utils/scripts/witness-roster.txt gets the same test, and a byte
+// type of the witness rows of utils/rule-table.txt gets the same test, and a byte
 // ledger names each roster type that stays trivially copyable by design.
 //
 // The route ledger at the foot names the routes that still forge a proof
@@ -324,7 +324,7 @@ static_assert(verdict.unclassified_templates == 0,
 
 // ── the witness roster ──────────────────────────────────────────────
 //
-// Each type of utils/scripts/witness-roster.txt attests to a fact that it
+// Each type of the witness rows of utils/rule-table.txt attests to a fact that it
 // cannot see, and a caller cannot reach its constructor.  Reflection
 // cannot list the specializations of a template, so the build lists the
 // roster types in witness_roster.h.  The walk applies the test of the walk

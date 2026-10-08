@@ -406,27 +406,33 @@ crucible_script_test(NAME contract_header_unit
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule contract-header-unit
           --cxx ${CRUCIBLE_REAL_CXX} --include ${CMAKE_SOURCE_DIR}/include)
 set_tests_properties(contract_header_unit PROPERTIES LABELS "foundation;ci_guard")
-# The witness roster.  Every type that attests to a fact it cannot see
-# — a pin, a mapping, a descriptor, a permission, a context — is named
-# in utils/scripts/witness-roster.txt with the expression a forger would
-# write, and test/fixy/CMakeLists.txt stands one generated fixture on
-# each closed line.  --check walks include/fixy and include/foundation
-# and fails when a class showing a door shape — a mint_ friend, a
-# passkey, a static factory, a named friend or a friend type beside a
-# closed constructor — is absent from the roster, and fails when a
-# fixture on disk is not what its roster line produces.  The walk reads
-# the parse tree.  The self-test compiles a planted public-constructor
-# witness with this build's flags and must see it COMPILE, which is the
-# red the guard exists to raise.  Exit 3 when the kit is absent reports a
-# skip.
+# The witness rows.  Each type that attests to a fact that it cannot see,
+# such as a pin, a mapping, a descriptor, a permission or a context, has a
+# witness row in utils/rule-table.txt with the expression of a forger, and
+# test/fixy/CMakeLists.txt registers one written fixture for each row.
+# --check walks include/fixy and include/foundation, and it fails for a class
+# with a door shape and no row: a mint_ friend, a passkey, a static factory,
+# or a named friend or a friend type beside a closed constructor.  The walk
+# reads the parse tree.  Exit 3 when the kit is absent reports a skip.
 crucible_script_test(NAME witness_roster_self_test
-  COMMAND ${CMAKE_COMMAND} -E env WITNESS_BUILD_DIR=${CMAKE_BINARY_DIR}
-          python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule witness-roster --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule witness-roster --self-test)
 crucible_script_test(NAME witness_roster
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule witness-roster --check)
 set_tests_properties(witness_roster witness_roster_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
+# The fixtures of the witness rows.  witness_fixtures_check fails when a
+# fixture or the manifest is not what `loop derive witness-fixtures --write`
+# writes from the rows.  The test of the writer compiles a planted fixture
+# over a public constructor and over a private one with the compiler of this
+# build, and it makes sure that ctest registers each fixture on disk.
+crucible_script_test(NAME witness_fixtures_check
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/loop derive witness-fixtures --check)
+crucible_script_test(NAME assay_loop_derive_test_witness_fixtures
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.loop.derive.test_witness_fixtures)
+set_tests_properties(witness_fixtures_check assay_loop_derive_test_witness_fixtures PROPERTIES
+  LABELS "ci_guard"
+  ENVIRONMENT "ASSAY_TEST_CXX=${CRUCIBLE_REAL_CXX};ASSAY_TEST_BUILD_DIR=${CMAKE_BINARY_DIR}")
 # A spelling of a branded type that names no brand is the erased
 # identity.  utils/assay/guard/legacy/check_brand_drain.py reads those spellings from the
 # parse tree, and utils/ledgers/brand-drain.txt holds one count per file.  A
