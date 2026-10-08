@@ -135,6 +135,17 @@ jobs:
       - name: Install the pinned mypy and ruff
         run: python3 utils/bin/setup install mypy ruff
 
+      # The rule clang-format runs only the pinned clang-format, the binary of
+      # the wheel of clang-format on PyPI.  The clang-format of this runner is
+      # older, and it refuses the .clang-format of the tree.  The install
+      # verifies the wheel against the SHA-256 of its pin, unpacks the binary
+      # into the tools directory of the shared cache root, and checks its
+      # version.  The test of the rule runs after the install.
+      - name: Install the pinned clang-format (install + self-test)
+        run: |
+          python3 utils/bin/setup install clang-format
+          python3 utils/bin/guard selftest tests.guard.engines.meta.test_clang_format
+
       # The plants of the rule test-registration configure a scratch project.
       - name: Install the pinned CMake and ctest
         uses: ./.github/actions/pinned-cmake
@@ -156,18 +167,18 @@ jobs:
       # python-lint run the pinned mypy and ruff, that the steps above install.
       # The rule test-registration reads the tests of a configured build, so its
       # scan runs in the build legs through ctest, and here it does not apply.
-      # The rule clang-format needs clang-format 22 or 23, which this runner does
-      # not install, so it runs in the build legs through ctest.  The rule
-      # derived-files compares the mint inventory only with the mint records of
-      # a build, so here it gives a warning for the inventory, and the build
-      # legs compare it through ctest.  The rule mint-floor reads the same
-      # records, and the test guard_plugin of the build legs runs it.
+      # The rule clang-format runs the pinned clang-format that the step above
+      # installs.  The rule derived-files compares the mint inventory only with
+      # the mint records of a build, so here it gives a warning for the
+      # inventory, and the build legs compare it through ctest.  The rule
+      # mint-floor reads the same records, and the test guard_plugin of the
+      # build legs runs it.
       - name: the rules of the engine meta (witness + scan)
         run: |
           for rule in history layout registry-shape rule-implementations rule-witness structured-reads \
                       test-registration determinism exit-codes import-closure job-owners module-tests no-shell \
                       one-implementation python-lint ste-prose typed-data types prose-bans admitted-audit \
-                      decide-cite-ratio derived-files; do
+                      decide-cite-ratio derived-files clang-format; do
             python3 utils/bin/guard witness --rule "$rule"
           done
           python3 utils/bin/guard check --engine meta
@@ -349,9 +360,10 @@ jobs:
 
       # The rule types runs the pinned mypy, and the rule python-lint runs the
       # pinned ruff.  pip of the package python3-pip installs each wheel with
-      # the SHA-256 of its pin.
-      - name: Install the pinned mypy and ruff
-        run: python3 utils/bin/setup install mypy ruff
+      # the SHA-256 of its pin.  The rule clang-format and its test run only
+      # the pinned clang-format, which the install unpacks from its wheel.
+      - name: Install the pinned mypy, ruff and clang-format
+        run: python3 utils/bin/setup install mypy ruff clang-format
 
       - name: Install the pinned CMake and ctest
         uses: ./.github/actions/pinned-cmake

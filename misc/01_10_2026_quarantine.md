@@ -1429,6 +1429,7 @@ It holds a row for each pinned download:
 - ast-grep
 - cmake and ctest
 - mypy and ruff (decision 16)
+- clang-format: the binary of the wheel of clang-format on PyPI, for each platform of the table, with `via=archive`. The rule `clang-format` runs only this binary, and with no install of the pin the rule does not apply
 - The base commit of GCC (today `utils/toolchain/gcc/BASE`)
 - The toolchain of the session oracle: Java, sbt, mCRL2, the sources of Sprout and the Rocq developments
 - The version of Python (decision 17).

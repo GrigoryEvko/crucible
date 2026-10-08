@@ -30,6 +30,10 @@ THE TOOLS
                  first in sys.path.
     ruff         The linter and the formatter of the rule python-lint (the pin
                  ruff).  --print-bin prints the binary.
+    clang-format The formatter of the rule clang-format (the pin
+                 clang-format): the binary of the wheel of clang-format on
+                 PyPI.  The install unpacks the zip file of the wheel with no
+                 pip.  --print-bin prints the binary.
     No tool comes from PATH, because a program of PATH is an input that no pin
     holds.
 
@@ -51,8 +55,8 @@ FAIL-CLOSED PINNING
     and parse a fixture that only the fork parses, ast-grep must give its
     pinned version and read a fixture as the guards need, and cmake and
     ctest must give their pinned version.  mypy must give its pinned version
-    and the word that its compiled wheel gives, and ruff must give its pinned
-    version.  A failure at each step installs nothing.
+    and the word that its compiled wheel gives, and ruff and clang-format must
+    give their pinned version.  A failure at each step installs nothing.
 
 THE DIRECTORIES
     Each tool lives in the tools directory of assay.core.cache (tools_root()),
@@ -596,12 +600,12 @@ def unpack_zip(download_path: Path, staging: Path, pin: pin_table.Pin) -> Path:
 
 
 def version_stamp(pin: pin_table.Pin, slug: str, table: Pins) -> str:
-    """Return the stamp of ast-grep or cmake: the version and the SHA-256."""
+    """Return the stamp of ast-grep, cmake or clang-format: the version and the SHA-256."""
     return f"{pin.version} {pin.digest}\n"
 
 
 def version_stamp_matches(directory: Path, pin: pin_table.Pin, slug: str, table: Pins) -> str | None:
-    """Return why the stamp of ast-grep or cmake does not name the pin, or None."""
+    """Return why the stamp of ast-grep, cmake or clang-format does not name the pin, or None."""
     try:
         found = (directory / STAMP).read_text(encoding="utf-8").strip()
     except OSError:
@@ -611,27 +615,27 @@ def version_stamp_matches(directory: Path, pin: pin_table.Pin, slug: str, table:
     return None
 
 
-# cmake.
+# The wheels of PyPI with a program: cmake and clang-format.
 
 
-def check_cmake_version(name: str, line: str, version: str) -> None:
-    """Make sure that the first line of `PROGRAM --version` gives the pinned version.
+def check_version_line(name: str, line: str, version: str) -> None:
+    """Make sure that the first line of `NAME --version` is `NAME version VERSION`, with the pinned version.
 
     Raises:
-        InstallError: If it gives another version or another program
+        InstallError: If the line names a different version or a different program
     """
     if line != f"{name} version {version}":
         raise InstallError(f"{name} gives {line!r}, the pin says {name} version {version}.", NOT_PINNED)
 
 
-def verify_cmake(directory: Path, pin: pin_table.Pin, table: Pins) -> None:
-    """Make sure that the cmake and the ctest of a directory give the pinned version.
+def verify_programs(directory: Path, names: tuple[str, ...], version: str) -> None:
+    """Make sure that each named program of the bin directory of a directory gives the pinned version line.
 
     Raises:
-        InstallError: If a program is missing or gives another version
+        InstallError: If a program is missing, or its version line names a different version
     """
     bin_dir = directory / "bin"
-    for name in ("cmake", "ctest"):
+    for name in names:
         program = bin_dir / name
         if not is_executable(program):
             raise InstallError(f"{program} is missing or not executable.", NOT_PINNED)
@@ -639,21 +643,48 @@ def verify_cmake(directory: Path, pin: pin_table.Pin, table: Pins) -> None:
         if status != 0:
             raise InstallError(f"{program} --version fails.", NOT_PINNED)
         lines = output.splitlines()
-        check_cmake_version(name, lines[0].strip() if lines else "", pin.version)
+        check_version_line(name, lines[0].strip() if lines else "", version)
 
 
-def unpack_wheel(download_path: Path, staging: Path, pin: pin_table.Pin) -> Path:
-    """Unpack the CMake prefix of the wheel (cmake/data) into staging/out, and return staging/out.
+def verify_cmake(directory: Path, pin: pin_table.Pin, table: Pins) -> None:
+    """Make sure that the cmake and the ctest of a directory give the pinned version.
 
-    A zip file keeps no mode bits that the unpack restores, so each program of bin gets its mode bit here.
+    Raises:
+        InstallError: If a program is missing, or its version line names a different version
+    """
+    verify_programs(directory, ("cmake", "ctest"), pin.version)
+
+
+def verify_clang_format(directory: Path, pin: pin_table.Pin, table: Pins) -> None:
+    """Make sure that the clang-format of a directory gives the pinned version.
+
+    Raises:
+        InstallError: If the program is missing, or its version line names a different version
+    """
+    verify_programs(directory, ("clang-format",), pin.version)
+
+
+def unpack_wheel(package: str, download_path: Path, staging: Path, pin: pin_table.Pin) -> Path:
+    """Unpack the directory PACKAGE/data of a wheel into staging/out, and return staging/out.
+
+    The wheel of CMake holds the CMake prefix in cmake/data, and the wheel of
+    clang-format holds its program in clang_format/data/bin.  The unpack of a
+    zip file does not give a program its mode bits.  This function gives each
+    program of bin its mode bit.
+
+    Raises:
+        InstallError: If the wheel holds no directory PACKAGE/data/bin
     """
     import zipfile
 
     unpacked = staging / "unpacked"
     with zipfile.ZipFile(download_path) as archive:
         archive.extractall(unpacked)
+    data = unpacked / package / "data"
+    if not (data / "bin").is_dir():
+        raise InstallError(f"the wheel {download_path.name} holds no directory {package}/data/bin.", NOT_PINNED)
     out = staging / "out"
-    (unpacked / "cmake" / "data").rename(out)
+    data.rename(out)
     for program in (out / "bin").iterdir():
         program.chmod(program.stat().st_mode | 0o111)
     return out
@@ -781,7 +812,8 @@ TOOLS: dict[str, Tool] = {
         False),
     "cmake": Tool(
         "cmake", "cmake", "cmake-", {"linux-x86_64": "x86_64", "linux-aarch64": "aarch64"},
-        verify_cmake, unpack_wheel, version_stamp, version_stamp_matches, lambda directory: directory / "bin", True),
+        verify_cmake, functools.partial(unpack_wheel, "cmake"), version_stamp, version_stamp_matches,
+        lambda directory: directory / "bin", True),
     "mypy": Tool(
         "mypy", "mypy", "mypy-", {"linux-x86_64": "x86_64", "linux-aarch64": "aarch64"},
         verify_mypy, pip_unpack, functools.partial(pip_stamp, MYPY_REQUIRES),
@@ -790,6 +822,11 @@ TOOLS: dict[str, Tool] = {
         "ruff", "ruff", "ruff-", {"linux-x86_64": "x86_64", "linux-aarch64": "aarch64"},
         verify_ruff, pip_unpack, functools.partial(pip_stamp, ()), functools.partial(pip_stamp_matches, ()),
         lambda directory: directory / SITE / "bin" / "ruff", False),
+    "clang-format": Tool(
+        "clang-format", "clang-format", "clang-format-",
+        {"linux-x86_64": "x86_64", "linux-aarch64": "aarch64", "darwin-aarch64": "macos-arm64"},
+        verify_clang_format, functools.partial(unpack_wheel, "clang_format"), version_stamp, version_stamp_matches,
+        lambda directory: directory / "bin" / "clang-format", False),
 }
 
 

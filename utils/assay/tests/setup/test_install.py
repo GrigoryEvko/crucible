@@ -209,24 +209,33 @@ def check_cases(expect: Expect, work: Path) -> None:
     cmake_pin = install.pin_of(cmake, table, "linux-x86_64")
     version = cmake_pin.version
     expect("the version check of cmake accepts the pinned version",
-           not refused(lambda: install.check_cmake_version("cmake", f"cmake version {version}", version)))
-    expect("the version check of cmake rejects another version",
-           refused(lambda: install.check_cmake_version("ctest", "ctest version 4.3.0", version), 2))
+           not refused(lambda: install.check_version_line("cmake", f"cmake version {version}", version)))
+    expect("the version check of cmake rejects a different version",
+           refused(lambda: install.check_version_line("ctest", "ctest version 4.3.0", version), 2))
     expect("the version check of cmake rejects a version with a suffix",
-           refused(lambda: install.check_cmake_version("cmake", f"cmake version {version}-rc1", version), 2))
+           refused(lambda: install.check_version_line("cmake", f"cmake version {version}-rc1", version), 2))
     expect("the version check of cmake rejects the line of the other program",
-           refused(lambda: install.check_cmake_version("ctest", f"cmake version {version}", version), 2))
-    expect("each tool resolves linux-x86_64, and ast-grep and the kit resolve darwin-aarch64",
+           refused(lambda: install.check_version_line("ctest", f"cmake version {version}", version), 2))
+    formatter_pin = install.pin_of(install.TOOLS["clang-format"], table, "linux-x86_64")
+    expect("the version check of clang-format accepts the line of the wheel, and rejects the line of a host build",
+           not refused(lambda: install.check_version_line("clang-format", f"clang-format version "
+                                                          f"{formatter_pin.version}", formatter_pin.version))
+           and refused(lambda: install.check_version_line("clang-format", f"clang-format version "
+                                                          f"{formatter_pin.version} (Fedora 22.1.8-4.fc44)",
+                                                          formatter_pin.version), 2))
+    expect("each tool resolves linux-x86_64, and ast-grep, the kit and clang-format resolve darwin-aarch64",
            all(install.pin_of(install.TOOLS[name], table, "linux-x86_64").platform == "linux-x86_64"
                for name in install.TOOLS)
-           and install.pin_of(install.TOOLS["tree-sitter"], table, "darwin-aarch64").platform == "darwin-aarch64")
+           and all(install.pin_of(install.TOOLS[name], table, "darwin-aarch64").platform == "darwin-aarch64"
+                   for name in ("tree-sitter", "ast-grep", "clang-format")))
     expect("a platform with no pin is rejected with the status 4",
            refused(lambda: install.pin_of(install.TOOLS["tree-sitter"], table, "windows-i686"), 4)
            and refused(lambda: install.pin_of(cmake, table, "darwin-aarch64"), 4))
     expect("the wheel of x86_64 is the manylinux2014 wheel", PurePosixPath(cmake_pin.source).name
            == f"cmake-{version}-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl")
     root = work / "tools"
-    for name, slug in (("tree-sitter", "linux-x64"), ("ast-grep", "x86_64-unknown-linux-gnu"), ("cmake", "x86_64")):
+    for name, slug in (("tree-sitter", "linux-x64"), ("ast-grep", "x86_64-unknown-linux-gnu"), ("cmake", "x86_64"),
+                       ("clang-format", "x86_64")):
         tool = install.TOOLS[name]
         pin = install.pin_of(tool, table, "linux-x86_64")
         directory = install.directory_of(tool, pin, root, table)
@@ -265,9 +274,10 @@ def planted_zip(path: Path, version: str, lines: str) -> Path:
     return path
 
 
-def planted_table(source: Path, digest: str) -> install.Pins:
-    """Return a pin table with one ast-grep of this host, with the source and the digest."""
-    return pin_table.parse(f"# a planted pin table\nformat 1\npin ast-grep via=archive version=9.9.9 "
+def planted_table(source: Path, digest: str, name: str = "ast-grep", via: str = "archive",
+                  version: str = "9.9.9") -> install.Pins:
+    """Return a pin table with one pin of this host, with the source and the digest, by default an ast-grep."""
+    return pin_table.parse(f"# a planted pin table\nformat 1\npin {name} via={via} version={version} "
                            f"platform={pin_table.host_platform()} source=file://{source} sha256={digest} | a stand-in\n",
                            "planted")
 
@@ -313,6 +323,60 @@ def install_cases(expect: Expect, work: Path) -> None:
            refused(lambda: install.installed("ast-grep", work / "nothing", table), 3))
 
 
+# ── A program of a wheel with no network ───────────────────────────
+
+
+def planted_formatter_wheel(path: Path, version: str, package: str = "clang_format") -> Path:
+    """Write the wheel of a stand-in clang-format, and return its path.
+
+    The program is in the directory PACKAGE/data/bin, and it gives VERSION.
+    The zip keeps no mode bits, as the wheel of PyPI.
+    """
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(f"{package}/data/bin/clang-format", f'#!/bin/sh\necho "clang-format version {version}"\n')
+    return path
+
+
+def planted_formatter_table(source: Path) -> install.Pins:
+    """Return a pin table with one clang-format of this host, with the source and its SHA-256."""
+    return planted_table(source, install.sha256_of(source), "clang-format")
+
+
+def wheel_cases(expect: Expect, work: Path) -> None:
+    """Install a planted wheel of clang-format, and refuse a program of a different version and a wheel with none."""
+    if pin_table.host_platform() not in install.TOOLS["clang-format"].slugs:
+        expect("the install cases of a wheel need a host platform of clang-format", True)
+        return
+    good = planted_formatter_wheel(work / "good.whl", "9.9.9")
+    table = planted_formatter_table(good)
+    root = work / "install"
+    directory = install.install("clang-format", root, copy_fetch, table)
+    expect(
+        "an install of a planted wheel gives its program the mode bit, checks it and stamps it",
+        install.is_executable(directory / "bin" / "clang-format")
+        and (directory / install.STAMP).read_text() == f"9.9.9 {install.sha256_of(good)}\n"
+        and leftovers(root) == [],
+    )
+    expect(
+        "--print-bin prints the installed program",
+        install.program("clang-format", root, table) == directory / "bin" / "clang-format",
+    )
+    other = planted_formatter_wheel(work / "other.whl", "9.9.8")
+    other_root = work / "other-version"
+    expect(
+        "an install refuses a program that gives a different version, with the status 2, and adds nothing",
+        refused(lambda: install.install("clang-format", other_root, copy_fetch, planted_formatter_table(other)), 2)
+        and sorted(child.name for child in other_root.iterdir()) == [],
+    )
+    empty = planted_formatter_wheel(work / "empty.whl", "9.9.9", "other_package")
+    empty_root = work / "no-program"
+    expect(
+        "an install refuses a wheel with no directory clang_format/data/bin, with the status 2, and adds nothing",
+        refused(lambda: install.install("clang-format", empty_root, copy_fetch, planted_formatter_table(empty)), 2)
+        and sorted(child.name for child in empty_root.iterdir()) == [],
+    )
+
+
 # ── A tool of via=pip with no network ──────────────────────────────
 
 
@@ -340,9 +404,7 @@ def planted_wheel(directory: Path, version: str) -> Path:
 
 def planted_pip_table(source: Path, digest: str, version: str = "9.9.9") -> install.Pins:
     """Return a pin table with one ruff of via=pip for this host, with the source and the digest."""
-    return pin_table.parse(f"# a planted pin table\nformat 1\npin ruff via=pip version={version} "
-                           f"platform={pin_table.host_platform()} source=file://{source} sha256={digest} "
-                           f"| a stand-in\n", "planted")
+    return planted_table(source, digest, "ruff", "pip", version)
 
 
 def pip_cases(expect: Expect, work: Path) -> None:
@@ -404,7 +466,7 @@ def main(argv: list[str]) -> int:
     with tempfile.TemporaryDirectory(prefix="test-install-") as scratch:
         work = Path(scratch)
         for group, cases in (("directories", directory_cases), ("checks", check_cases), ("installs", install_cases),
-                             ("pip", pip_cases)):
+                             ("wheels", wheel_cases), ("pip", pip_cases)):
             (work / group).mkdir()
             cases(expect, work / group)
     if failures:

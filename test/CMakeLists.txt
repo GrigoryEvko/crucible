@@ -5129,10 +5129,9 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # mypy and ruff, the package scope, the STE table, the counted rules of the
 # engine plugin, the writer of the walk list and the writer of the header
 # costs plant their input in throwaway trees.  The tests of the reader of
-# prose and of the rule decide-cite-ratio parse small planted files, and the
-# test of the rule clang-format runs the clang-format of the host on planted
-# files.  The test of the import closure imports the module of each hidden
-# subcommand of the masters in a new interpreter.
+# prose and of the rule decide-cite-ratio parse small planted files.  The test
+# of the import closure imports the module of each hidden subcommand of the
+# masters in a new interpreter.
 crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} TREES admitted-audit decide-cite-ratio derived-files prose-bans)
 # The rules of the engine elf read the objects, the static libraries and the
 # compile database of this build (cmake/Guards.cmake).  The test modules of
@@ -5154,7 +5153,7 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         readers.test_tool_reports
         readers.test_sections readers.test_prose guard.test_history guard.test_import_closure
         guard.engines.meta.test_package guard.engines.meta.test_ste_dictionary
-        guard.engines.meta.test_decide_cite_ratio guard.engines.meta.test_clang_format
+        guard.engines.meta.test_decide_cite_ratio
         guard.engines.plugin.test_counted loop.derive.test_walk_units loop.derive.test_header_costs
         loop.derive.test_mint_inventory loop.test_inputs)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
@@ -5162,6 +5161,14 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})
   set_tests_properties(${_assay_test_name} PROPERTIES LABELS "ci_guard;meta")
 endforeach()
+# The test of the rule clang-format runs the pinned clang-format on planted
+# files.  `python3 utils/bin/setup install clang-format` installs it.  With no
+# install of the pin, the test runs only its cases with no formatter, and it
+# exits with 77.
+crucible_script_test(NAME assay_guard_engines_meta_test_clang_format
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.meta.test_clang_format)
+set_tests_properties(assay_guard_engines_meta_test_clang_format PROPERTIES LABELS "ci_guard;meta"
+  SKIP_RETURN_CODE 77)
 # The test of the CMake reader configures a scratch project, so it gets the programs of this build.
 crucible_script_test(NAME assay_readers_test_cmake
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.readers.test_cmake)

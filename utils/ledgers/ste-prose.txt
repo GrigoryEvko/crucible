@@ -2909,7 +2909,6 @@ utils/assay/setup/install.py | refused-word | 9 | <module>: so | A text of today
 utils/assay/setup/install.py | refused-word | 1 | <module>: under | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/setup/install.py | refused-word | 2 | <module>: verify | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/setup/install.py | refused-word | 1 | InstallError: absent | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/setup/install.py | refused-word | 2 | check_cmake_version: another | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/setup/install.py | refused-word | 1 | check_fixture_lines: differ | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/setup/install.py | refused-word | 1 | check_fixture_lines: exactly | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/setup/install.py | refused-word | 1 | check_fork_parse: inside | A text of today.  The change that writes the text again in STE lowers the count
@@ -2936,10 +2935,7 @@ utils/assay/setup/install.py | refused-word | 1 | retire: verify | A text of tod
 utils/assay/setup/install.py | refused-word | 1 | run_program: past | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/setup/install.py | refused-word | 1 | sha256_of: size | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/setup/install.py | refused-word | 1 | stamp_fields: rest | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/setup/install.py | refused-word | 1 | unpack_wheel: restore | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/setup/install.py | refused-word | 1 | unpack_wheel: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/setup/install.py | refused-word | 1 | verify_ast_grep: need | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/setup/install.py | refused-word | 1 | verify_cmake: another | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/setup/install.py | refused-word | 1 | verify_installed: absent | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/setup/install.py | refused-word | 1 | verify_kit: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/setup/install.py | refused-word | 1 | verify_lineage: absent | A text of today.  The change that writes the text again in STE lowers the count
