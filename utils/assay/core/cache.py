@@ -35,6 +35,17 @@ THE COMPILED MODULES
     the eviction turn of THE TURN.  A removed file costs one compile of its
     module on the next import, so the eviction is safe at each time.
 
+A TREE OF FILES
+    The compiled modules and the cache "mypy" of the rule types keep each
+    entry as a file at a depth of their tool.  files_below() gives each such
+    file.  hold_tree_bound() keeps such a cache in its limits at its turn.  It
+    also removes at its turn each file of a kind that no run of the tree
+    reads.  An example is a database that mypy wrote before the rule stopped
+    the SQLite cache of mypy.  A tool that reads a set of entries during one
+    long run holds the lock in the shared mode for the run (shared_use()).
+    mypy is such a tool.  An eviction does not take its turn
+    while a reader holds that lock.
+
 THE ENTRIES
     An entry is a file whose name is the SHA-256 of each input that its
     contents depend on.  A changed input gives a different name, so an entry
@@ -130,6 +141,10 @@ LIMITS: dict[str, int] = {
 }
 # The cache of the compiled modules of the package, which each master names in sys.pycache_prefix.
 COMPILED_CACHE = "pycache"
+# The suffix of a compiled module of the package.
+COMPILED_SUFFIXES = (".pyc",)
+# The lock of the eviction of a cache.  An eviction holds it alone, and a reader of a long run shares it (THE TURN).
+EVICT_LOCK = "evict.lock"
 
 
 class Entry:
@@ -487,7 +502,7 @@ def eviction_turn(
     if not is_due:
         yield False
         return
-    with open(directory / "evict.lock", "a") as lock:
+    with open(directory / EVICT_LOCK, "a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             has_turn = True
@@ -496,6 +511,19 @@ def eviction_turn(
         if has_turn:
             stamp.touch()
         yield has_turn
+
+
+@contextlib.contextmanager
+def shared_use(directory: Path) -> Iterator[None]:
+    """Hold the lock of the eviction of a cache in the shared mode for the block (A TREE OF FILES).
+
+    No eviction of the cache takes its turn in the block.  A tool that reads a
+    set of entries during one long run then keeps each entry of the set.  The
+    block waits while an eviction holds the lock.
+    """
+    with open(directory / EVICT_LOCK, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_SH)
+        yield
 
 
 def hold_bound(directory: Path, max_bytes: int, max_age: float = MAX_AGE) -> bool:
@@ -518,21 +546,16 @@ def hold_bound(directory: Path, max_bytes: int, max_age: float = MAX_AGE) -> boo
         return has_turn
 
 
-def compiled_modules(directory: Path) -> list[Entry]:
-    """Return each compiled module file under the cache of the compiled modules, at each depth.
+def files_below(directory: Path, suffixes: tuple[str, ...]) -> list[Entry]:
+    """Return each file at each depth below a cache, when its name ends with one of the suffixes (A TREE OF FILES).
 
-    Complexity: one stat of each file under the directory, O(n) for n files.
-
-    Args:
-        directory: The directory of the cache
-
-    Returns:
-        The entries, in no particular order.  The time of last use of an entry is the time of its write
+    The time of the last use of a file is the time of its last write.  Complexity: one stat of each file below the
+    directory, O(n log n) for n files and directories because of the sort of the walk.
     """
     found: list[Entry] = []
-    for folder, _directories, names in os.walk(directory):
-        for name in names:
-            if not name.endswith(".pyc"):
+    for folder, _directories, names in sorted(os.walk(directory)):
+        for name in sorted(names):
+            if not name.endswith(suffixes):
                 continue
             path = os.path.join(folder, name)
             with contextlib.suppress(FileNotFoundError):
@@ -541,27 +564,46 @@ def compiled_modules(directory: Path) -> list[Entry]:
     return found
 
 
-def hold_compiled_bound(max_age: float = MAX_AGE) -> bool:
-    """Hold the cache of the compiled modules under its row of LIMITS, when its turn is due (THE COMPILED MODULES).
+def hold_tree_bound(
+    directory: Path, max_bytes: int, suffixes: tuple[str, ...], unread: tuple[str, ...] = (), max_age: float = MAX_AGE
+) -> bool:
+    """Keep a cache of files at each depth in its limits at its turn, and remove each unread file (A TREE OF FILES).
 
-    Python writes a compiled module again only when its source changes, so the
-    time of the write is the time of last use, and a module in use can go.  It
-    then costs one compile on its next import.
+    A tool writes such a file again only when its input changes.  The time of
+    the write is then the time of the last use, and a file in use can go.  It
+    costs one more run of the tool on its input.
+
+    Args:
+        directory: The directory of the cache
+        max_bytes: The limit of the cache, in bytes
+        suffixes: The suffixes of the entries
+        unread: The suffixes of the files that no run of the tree reads
+        max_age: The age limit of an entry with no write
+
+    Returns:
+        True when this process took the turn
+    """
+    with eviction_turn(directory, max_bytes=max_bytes) as has_turn:
+        if has_turn:
+            if unread:
+                remove(files_below(directory, unread))
+            remove(victims(files_below(directory, suffixes), max_bytes, max_age))
+        return has_turn
+
+
+def hold_compiled_bound(max_age: float = MAX_AGE) -> bool:
+    """Keep the cache of the compiled modules in the limit of its row of LIMITS, at its turn (THE COMPILED MODULES).
 
     Args:
         max_age: The age limit of a compiled module
 
     Returns:
-        Whether this process took the turn.  With the caches off, or with no cache yet, False
+        True when this process took the turn.  With the caches off, or with no cache, False
     """
     base = base_root()
     if base is None or not (base / COMPILED_CACHE).is_dir():
         return False
-    directory = base / COMPILED_CACHE
-    with eviction_turn(directory, max_bytes=LIMITS[COMPILED_CACHE]) as has_turn:
-        if has_turn:
-            remove(victims(compiled_modules(directory), LIMITS[COMPILED_CACHE], max_age))
-        return has_turn
+    return hold_tree_bound(base / COMPILED_CACHE, LIMITS[COMPILED_CACHE], COMPILED_SUFFIXES, max_age=max_age)
 
 
 def evict_main(name: str) -> int:
@@ -698,14 +740,36 @@ def self_test() -> int:
         # The masters of the --evict runs above also wrote their compiled modules to this cache.
         expect(
             "the compiled modules are each .pyc file at each depth",
-            {stale_module, fresh_module} <= {entry.path for entry in compiled_modules(compiled)}
-            and all(entry.path.suffix == ".pyc" for entry in compiled_modules(compiled)),
+            {stale_module, fresh_module} <= {entry.path for entry in files_below(compiled, COMPILED_SUFFIXES)}
+            and all(entry.path.suffix == ".pyc" for entry in files_below(compiled, COMPILED_SUFFIXES)),
         )
         expect(
             "hold_compiled_bound takes a due turn, removes a compiled module past the age limit, and keeps a new one",
             hold_compiled_bound() and not stale_module.exists() and fresh_module.exists(),
         )
         expect("hold_compiled_bound takes no second turn within the interval", not hold_compiled_bound())
+
+        tool = root / "mypy"
+        aged = tool / "3.14" / "assay" / "core" / "cache.data.ff"
+        used = tool / "3.14" / "assay" / "core" / "paths.data.ff"
+        database = tool / "3.14" / "cache.0.db"
+        for item in (aged, used, database, tool / "CACHEDIR.TAG"):
+            item.parent.mkdir(parents=True, exist_ok=True)
+            item.write_bytes(bytes(4096))
+        os.utime(aged, (old - 2 * MAX_AGE, old - 2 * MAX_AGE))
+        with shared_use(tool):
+            expect(
+                "an eviction does not take its turn while a reader holds the lock in the shared mode",
+                not hold_tree_bound(tool, 1 << 20, (".ff",), (".db",)) and aged.exists() and database.exists(),
+            )
+        expect(
+            "hold_tree_bound removes an entry past the age limit and each unread file, and keeps the others",
+            hold_tree_bound(tool, 1 << 20, (".ff",), (".db",))
+            and not aged.exists()
+            and not database.exists()
+            and used.exists()
+            and (tool / "CACHEDIR.TAG").exists(),
+        )
     expect("each row of LIMITS is a positive size", all(limit > 0 for limit in LIMITS.values()))
     saved = os.environ.get(ROOT_VARIABLE)
     os.environ[ROOT_VARIABLE] = "off"

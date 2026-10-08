@@ -3,7 +3,6 @@
 format 1
 rule determinism
 utils/assay/core/cache.py | listing | 1 | _walk | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/core/cache.py | listing | 1 | compiled_modules | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/core/cache.py | listing | 2 | entries | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/core/cache.py | listing | 2 | remove_stale | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/core/cache.py | listing | 1 | self_test.exact | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count

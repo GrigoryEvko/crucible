@@ -13,6 +13,16 @@ THE RUN
     time increased these log files to 1 GiB in all, and the files of the
     cache took 9 MB.
 
+THE BOUND
+    Before its run, the rule keeps the cache in its row of LIMITS at its turn
+    (assay.core.cache, A TREE OF FILES).  An entry is a file with a suffix of
+    ENTRY_SUFFIXES.  The turn also removes each file with a suffix of
+    UNREAD_SUFFIXES.  These files are the databases of the SQLite cache, and
+    no run with --no-sqlite-cache reads them.  mypy reads the data file of a
+    module after its meta file.  A data file that goes between the two reads
+    stops the run.  The rule holds the lock of the cache in the shared mode
+    for the run, and no eviction takes its turn during the run.
+
 THE RULE
     Each error of mypy is a finding.  The kind is the error code of mypy,
     such as type-arg, and the entity is the function or the class that holds
@@ -49,6 +59,10 @@ OPTIONS = (
     "--no-sqlite-cache",
 )
 CACHE_NAME = "mypy"
+# The suffixes of the files of the cache of mypy: the format ff of mypy, and the format JSON (THE BOUND).
+ENTRY_SUFFIXES = (".ff", ".json")
+# The suffixes of the files of the SQLite cache of mypy, which no run with --no-sqlite-cache reads (THE BOUND).
+UNREAD_SUFFIXES = (".db", ".db-wal", ".db-shm", ".db-journal")
 # The cache of mypy when the caches are off: mypy writes no cache to /dev/null.
 NO_CACHE = "/dev/null"
 # The exit statuses of mypy: no error, and errors in the report.
@@ -68,9 +82,13 @@ def run_mypy(context: MetaContext, files: list[str]) -> str:
     site = pinned_program("mypy")
     directory = cache.cache_root(CACHE_NAME)
     arguments = [*OPTIONS, "--cache-dir", NO_CACHE if directory is None else str(directory), *files]
-    completed = proc.run(
-        proc.Command(install.mypy_command(site, arguments), timeout_s=proc.TOOL_S, cwd=context.root / UTILS)
-    )
+    command = proc.Command(install.mypy_command(site, arguments), timeout_s=proc.TOOL_S, cwd=context.root / UTILS)
+    if directory is None:
+        completed = proc.run(command)
+    else:
+        cache.hold_tree_bound(directory, cache.LIMITS[CACHE_NAME], ENTRY_SUFFIXES, UNREAD_SUFFIXES)
+        with cache.shared_use(directory):
+            completed = proc.run(command)
     if completed.exit not in (CLEAN, ERRORS):
         proc.require(completed)
     return completed.out

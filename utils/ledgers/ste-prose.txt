@@ -4,7 +4,6 @@ format 1
 rule ste-prose
 utils/assay/core/cache.py | long-sentence | 4 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/cache.py | long-sentence | 1 | eviction_turn | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/cache.py | long-sentence | 1 | hold_compiled_bound | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/cache.py | long-sentence | 1 | victims | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/cache.py | refused-word | 1 | <module>: another | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/cache.py | refused-word | 1 | <module>: depend | A text of today.  The change that writes the text again in STE lowers the count
@@ -29,9 +28,6 @@ utils/assay/core/cache.py | refused-word | 1 | Entry: size | A text of today.  T
 utils/assay/core/cache.py | refused-word | 1 | _is_fan: whether | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/cache.py | refused-word | 1 | _walk: choose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/cache.py | refused-word | 1 | _walk: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/cache.py | refused-word | 1 | compiled_modules: order | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/cache.py | refused-word | 1 | compiled_modules: particular | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/cache.py | refused-word | 2 | compiled_modules: under | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/cache.py | refused-word | 1 | entries: order | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/cache.py | refused-word | 1 | entries: particular | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/cache.py | refused-word | 3 | estimated_bytes: under | A text of today.  The change that writes the text again in STE lowers the count
@@ -45,10 +41,6 @@ utils/assay/core/cache.py | refused-word | 1 | hold_bound: under | A text of tod
 utils/assay/core/cache.py | refused-word | 1 | hold_bound: whether | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/cache.py | refused-word | 1 | hold_bound: whole | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/cache.py | refused-word | 1 | hold_bound: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/cache.py | refused-word | 1 | hold_compiled_bound: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/cache.py | refused-word | 1 | hold_compiled_bound: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/cache.py | refused-word | 1 | hold_compiled_bound: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/cache.py | refused-word | 1 | hold_compiled_bound: yet | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/cache.py | refused-word | 1 | main: under | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/cache.py | refused-word | 1 | mark_used: now | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/cache.py | refused-word | 1 | mark_used: whether | A text of today.  The change that writes the text again in STE lowers the count
