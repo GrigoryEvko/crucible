@@ -4,11 +4,14 @@ THE RUN
     The rule starts the pinned mypy (`setup install mypy`, assay.setup.install)
     through assay.core.proc, in the directory utils/ of the tree, on each file
     of the scope (assay.guard.engines.meta.package).  The options are
-    --strict, --output json, --scripts-are-modules and --python-version 3.14.
-    The cache of mypy is the cache "mypy" of the cache root (assay.core.cache).
-    mypy checks the hash of each file against its cache, and each run writes
-    a cache file with one rename.  The runs of the tree and of the plants can
-    then share the cache.
+    --strict, --output json, --scripts-are-modules, --python-version 3.14 and
+    --no-sqlite-cache.  The cache of mypy is the cache "mypy" of the cache
+    root (assay.core.cache).  mypy checks the hash of each file against its
+    cache, and each run writes a cache file with one rename.  The runs of the
+    tree and of the plants can then share the cache.  The SQLite cache of
+    mypy has a log file for each database.  On 2026-10-08, runs at the same
+    time increased these log files to 1 GiB in all, and the files of the
+    cache took 9 MB.
 
 THE RULE
     Each error of mypy is a finding.  The kind is the error code of mypy,
@@ -43,6 +46,7 @@ OPTIONS = (
     "3.14",
     "--no-color-output",
     "--no-error-summary",
+    "--no-sqlite-cache",
 )
 CACHE_NAME = "mypy"
 # The cache of mypy when the caches are off: mypy writes no cache to /dev/null.

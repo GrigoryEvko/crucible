@@ -1,0 +1,1 @@
+{"version": 6, "configurePresets": [{"name": "strict", "cacheVariables": {"CMAKE_CXX_FLAGS": "-O2 -fno-fast-math"}, "environment": {"FLAGS": null}}]}

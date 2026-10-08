@@ -1,0 +1,7 @@
+# A clean build and tree.  A plain target, and a cache entry whose name holds a unity name and does not start with
+# CMAKE_UNITY_BUILD.  The compile database of the overlay gives a forced include that is no precompiled header, as a
+# list of words and as a command string, and a command string that holds the marker cmake_pch only in an include
+# directory.  The presets file sets no unity build.  The rule gives no error.
+format 1
+cache CMAKE_SKIP_UNITY_BUILD_INCLUSION_X type=BOOL | ON
+target plain | src/a.cpp

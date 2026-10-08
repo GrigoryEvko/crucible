@@ -49,7 +49,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from assay.core import meter as cost_meter
+from assay.core import record as cost_record
 from assay.readers import compdb, ctest, ninja
 
 # The command of a negative fixture runs the master loop with the subcommand fixture.
@@ -58,7 +58,6 @@ FIXTURE_SUBCOMMAND = "fixture"
 FIXTURE_DIR = "neg-compile"
 INPUTS_SUFFIX = ".inputs"
 INPUTS_FORMAT = 1
-RECORD_SUFFIX = ".cost"
 # The number of names that a message lists before it gives only the count.
 SHOWN_NAMES = 5
 
@@ -201,22 +200,16 @@ def read_dependencies(build_dir: Path, keys: list[str]) -> dict[str, tuple[str, 
 
 
 def object_cost(path: Path) -> Cost:
-    """Return the cost of the last real compile of one object, from its record."""
+    """Return the cost of the last real compile of one object, from its record (assay.core.record).
+
+    An object with no record, or with a record that cannot be read, has an unknown cost.
+    """
     try:
-        record = json.loads(Path(str(path) + RECORD_SUFFIX).read_text(encoding="utf-8"))
-    except OSError, ValueError:
+        record = cost_record.read_of(path)
+    except cost_record.RecordError:
         return Cost()
-    block = record.get("cost") if isinstance(record, dict) else None
-    if not isinstance(block, dict):
-        block = record.get("last_cost") if isinstance(record, dict) else None
-    if not isinstance(block, dict):
-        return Cost()
-    cpu = block.get("cpu_s")
-    count = block.get(cost_meter.COMPILER_COUNT_KEY)
-    return Cost(
-        float(cpu) if isinstance(cpu, (int, float)) and not isinstance(cpu, bool) else None,
-        count if isinstance(count, int) and not isinstance(count, bool) else None,
-    )
+    block = record.cost or record.last_cost
+    return Cost() if block is None else Cost(block.cpu_s, block.compiler_instructions)
 
 
 def fixtures_of(build_dir: Path) -> list[tuple[str, str]]:

@@ -1,0 +1,13 @@
+# Each test runs behind a judge: a script test behind the test launcher, an executable behind the launcher, a test
+# behind the launcher with `cmake -E env` after it, and a negative fixture behind the fixture driver.  A ledger row of
+# the kind of the build names a registered test.  A row of another kind and a record of a test that the build does
+# not register give no finding.
+format 1
+kind x86_64-debug-asan
+test launched line=8 | {python} -S {root}/utils/bin/loop test-step --warnings-dir {build}/check-warnings --build-dir {build} --name launched {python} {root}/check.py
+test test_arena line=9 | {python} -S {root}/utils/bin/loop test-step --warnings-dir {build}/check-warnings --build-dir {build} {build}/test/test_arena
+test planted_wrapped line=10 | {python} -S {root}/utils/bin/loop test-step --name planted_wrapped cmake -E env A=1 {python} {root}/check.py
+test neg_fixture line=11 | {python} -S {root}/utils/bin/loop fixture --warnings-dir {build}/check-warnings {build} {root}/test/neg.cpp neg_fixture regex
+test-record launched wall=40 program={python}
+test-record test_arena wall=1.5 peak=2
+test-record gone_test wall=2

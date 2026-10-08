@@ -1,0 +1,6 @@
+# The record of one object gives a different number of bytes than the object has.  The object did not come through
+# the build launcher, so the rule gives one error of the kind no-record.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/third.cpp.o src/third.cpp cpu=1
+compile CMakeFiles/lib.dir/stale.cpp.o src/stale.cpp cpu=1 record=stale

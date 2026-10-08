@@ -1,0 +1,2 @@
+# The planted build directory holds a build kind and no reply of the CMake file API, because the plant has no
+# build.txt.  The rule cannot read the code model, and it gives one error of the kind input.

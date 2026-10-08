@@ -1,0 +1,4 @@
+# The overlay removes the index of the replies of the CMake file API, and the rule reads no link flag.  The rule gives
+# one error for its input.
+format 1
+compile a.o src/a.cpp | g++ -c src/a.cpp

@@ -1,0 +1,5 @@
+# A compile ran 120 G user instructions, more than the error threshold 110 G.  No ledger row admits it, so the rule
+# gives one error of the kind over-threshold.  A count is not a time, so a GitHub runner keeps the error.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/heavy.cpp.o src/heavy.cpp cpu=5 instructions=120

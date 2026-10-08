@@ -1,0 +1,3 @@
+# The planted list of the headers with a higher limit.
+crucible/Heavy.h | 100000 | spin(2000) at namespace scope
+crucible/Heavy.h | 200000 | a second row

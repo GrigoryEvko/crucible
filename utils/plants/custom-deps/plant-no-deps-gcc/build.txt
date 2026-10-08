@@ -1,0 +1,3 @@
+# A custom command compiles halfway.bpf.o with a depfile binding and no binding deps = gcc, so Ninja does not move the
+# depfile into its dependency log.  The rule gives one error at the line of the edge.
+format 1

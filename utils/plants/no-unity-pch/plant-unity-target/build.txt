@@ -1,0 +1,4 @@
+# The target unity compiles the unity source unity_0_cxx.cxx of a Unity directory of CMakeFiles, which holds its two
+# sources.  The rule gives one error at the command that makes the target.
+format 1
+target unity | {build}/CMakeFiles/unity.dir/Unity/unity_0_cxx.cxx src/a.cpp src/b.cpp

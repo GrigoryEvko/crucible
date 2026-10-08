@@ -1,0 +1,5 @@
+# A compile of 12 s of CPU time is more than the warning threshold 10 s and less than the error threshold 20 s.
+# The rule gives one warning of the kind over-threshold, and no error.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/slow.cpp.o src/slow.cpp cpu=12

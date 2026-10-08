@@ -1,0 +1,4 @@
+# A planted ledger of the rule link-memory.
+format 1
+rule link-memory
+@build/test/slow_test | x86_64-debug-asan | 1.5 | - | a planted reason

@@ -1,0 +1,5 @@
+# No linked output of the build has a record, so the build launcher is not wired for the links.  The rule gives one
+# error of the kind not-wired.
+format 1
+kind x86_64-debug-asan
+link test/first_test record=no

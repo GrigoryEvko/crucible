@@ -1,0 +1,15 @@
+# The object a.o ran 2.42 G instructions, and the total is 3 % more than its baseline: a warning that names the largest
+# compiles, and no error.
+format 1
+kind x86_64-debug-asan
+file include/Base.h size=1000
+file src/a.cpp size=100
+file src/b.cpp size=100
+file neg/neg_one.cpp size=50
+file neg/neg_two.cpp size=50
+compile CMakeFiles/a.o src/a.cpp instructions=2.42
+compile CMakeFiles/b.o src/b.cpp instructions=2
+deps CMakeFiles/a.o | src/a.cpp include/Base.h
+deps CMakeFiles/b.o | src/b.cpp include/Base.h
+fixture neg_one neg/neg_one.cpp instructions=5 | neg/neg_one.cpp include/Base.h
+fixture neg_two neg/neg_two.cpp instructions=5 | neg/neg_two.cpp include/Base.h

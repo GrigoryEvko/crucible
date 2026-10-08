@@ -1,0 +1,6 @@
+# A compile of 25 s of CPU time has a record with no instruction count, so compile-cpu keeps the error level of
+# that compile.  The rule gives one error, also when a different record holds a count.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/light.cpp.o src/light.cpp cpu=2 instructions=10
+compile CMakeFiles/lib.dir/uncounted.cpp.o src/uncounted.cpp cpu=25

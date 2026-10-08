@@ -1,0 +1,4 @@
+# A compile ran 10 G user instructions, which is less than the warning threshold 55 G.  The rule gives no finding.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/light.cpp.o src/light.cpp cpu=2 instructions=10

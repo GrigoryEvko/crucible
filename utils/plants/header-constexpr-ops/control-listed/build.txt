@@ -1,0 +1,10 @@
+# Two listed headers that compile alone at the limits of their rows and not at the threshold 1000: a warning for
+# each.  The evaluation of crucible/Heavy.h is an inline constant at namespace scope, and the evaluation of
+# foundation/Body.h is a constant local of a function that is not a template.  The header crucible/Away.h of the
+# not-standalone list has no unit.  The variable template of fixy/Lazy.h has no instance, so it costs nothing.
+format 1
+kind x86_64-debug-asan
+compile test/layer/CMakeFiles/layer_sentinel_crucible.dir/sentinels/crucible/crucible_Heavy_h.cpp.o build/test/layer/sentinels/crucible/crucible_Heavy_h.cpp record=no | {cxx} -std=c++26 -I {root}/include -fconstexpr-ops-limit=33554432 -fconstexpr-ops-limit=100000 -MD -MF {build}/heavy.d -o {build}/heavy.o -c {build}/test/layer/sentinels/crucible/crucible_Heavy_h.cpp
+compile test/layer/CMakeFiles/layer_sentinel_crucible.dir/sentinels/crucible/crucible_Light_h.cpp.o build/test/layer/sentinels/crucible/crucible_Light_h.cpp record=no | {cxx} -std=c++26 -I {root}/include -fconstexpr-ops-limit=33554432 -fconstexpr-ops-limit=1000 -o {build}/light.o -c {build}/test/layer/sentinels/crucible/crucible_Light_h.cpp
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/sentinels/fixy/fixy_Lazy_h.cpp.o build/test/layer/sentinels/fixy/fixy_Lazy_h.cpp record=no | {cxx} -std=c++26 -I {root}/include -fconstexpr-ops-limit=1000 -o {build}/lazy.o -c {build}/test/layer/sentinels/fixy/fixy_Lazy_h.cpp
+compile test/layer/CMakeFiles/layer_sentinel_foundation.dir/sentinels/foundation/foundation_Body_h.cpp.o build/test/layer/sentinels/foundation/foundation_Body_h.cpp record=no | {cxx} -std=c++26 -I {root}/include -fconstexpr-ops-limit=100000 -o {build}/body.o -c {build}/test/layer/sentinels/foundation/foundation_Body_h.cpp

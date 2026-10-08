@@ -1,0 +1,4 @@
+# CMakePresets.json of the tree is not JSON, and the rule cannot read its presets.  The rule gives one error at that
+# file.
+format 1
+compile a.o src/a.cpp | g++ -c src/a.cpp

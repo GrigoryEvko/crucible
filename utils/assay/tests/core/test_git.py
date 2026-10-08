@@ -29,8 +29,10 @@ def command_cases(expect: Callable[[str, bool], None]) -> None:
         expect("tracked_files takes a pathspec", git.tracked_files(root, ("sub",)) == ("sub/b.txt",))
         expect("run gives the standard output as bytes", git.run(root, "ls-files", "a.txt") == b"a.txt\n")
         problem = refuses(lambda: git.run(root, "no-such-command-of-git"), git.GitError)
-        expect("run raises GitError with the error text of git on a failure",
-               problem is not None and "no-such-command-of-git" in str(problem))
+        expect(
+            "run raises GitError with the error text of git on a failure",
+            problem is not None and "no-such-command-of-git" in str(problem),
+        )
         problem = refuses(lambda: git.run(root, "status", extra={"PATH": "/no/such/directory"}), git.GitError)
         expect("run raises GitError when git cannot start", problem is not None and "cannot run" in str(problem))
         completed = git.run_any_exit(root, "diff", "--quiet", "--no-index", "a.txt", "sub/b.txt")
@@ -69,11 +71,15 @@ def isolation_cases(expect: Callable[[str, bool], None]) -> None:
                     os.environ.pop(name, None)
                 else:
                     os.environ[name] = value
-        expect("a git command resolves the repository of its root, also with GIT_DIR exported",
-               Path(resolved) == (own / ".git").resolve())
+        expect(
+            "a git command resolves the repository of its root, also with GIT_DIR exported",
+            Path(resolved) == (own / ".git").resolve(),
+        )
         expect("tracked_files lists the root, also with GIT_INDEX_FILE exported", listed == ("own.txt",))
-        expect("a commit lands in the root and not in the repository of GIT_DIR",
-               git.head(own) == commit and other_head is None)
+        expect(
+            "a commit lands in the root and not in the repository of GIT_DIR",
+            git.head(own) == commit and other_head is None,
+        )
 
 
 def main(argv: list[str]) -> int:

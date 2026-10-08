@@ -1,0 +1,3 @@
+# A planted list with two kind rows.
+kind x86_64-debug-asan
+kind x86_64-release

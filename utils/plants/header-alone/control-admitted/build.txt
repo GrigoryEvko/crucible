@@ -1,0 +1,8 @@
+# A header of 7 MB alone has a ledger row of the kind of the build, with the path of the header.  The rule gives one
+# warning of the kind admitted.
+format 1
+kind x86_64-debug-asan
+file system.h size=1000
+file include/fixy/Huge.h size=7340032
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Huge.cpp.o test/layer/checks/fixy/Huge.cpp cpu=3
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Huge.cpp.o | test/layer/checks/fixy/Huge.cpp system.h include/fixy/Huge.h

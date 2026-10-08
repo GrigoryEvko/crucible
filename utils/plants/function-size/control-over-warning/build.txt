@@ -1,0 +1,5 @@
+# The largest function of the object, big(), has 100 KB of machine code, more than the warning threshold 64 KB.  The
+# rule gives one warning of the kind over-threshold, which names the function.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/big.cpp.o src/big.cpp functions=_Z3bigv:102400,_Z4tinyv:1024

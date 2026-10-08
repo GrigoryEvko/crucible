@@ -1,0 +1,3 @@
+# A custom command that writes gen.h has the order-only input bin/tool, which the link of an executable writes.  The
+# compile user.o waits for it through the phony edge of its target.  The rule gives one error.
+format 1

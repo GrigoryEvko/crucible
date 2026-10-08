@@ -1,0 +1,3 @@
+build kept.bpf.o: CUSTOM_COMMAND ../src/kept.bpf.c
+  depfile = CMakeFiles/d/kept.d
+  deps = gcc

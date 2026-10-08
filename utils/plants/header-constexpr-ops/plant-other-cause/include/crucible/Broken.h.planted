@@ -1,0 +1,3 @@
+#pragma once
+#include <constexpr_ops_absent.h>
+inline constexpr unsigned broken = spin(5u);

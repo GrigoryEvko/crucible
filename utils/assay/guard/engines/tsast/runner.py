@@ -38,7 +38,10 @@ THE PARTS
     a rule that calls part_of() reads a part.  part_of() orders the files by
     their size, the largest first, and the part holds each N-th file from
     the position K.  The run judges only the ledger rows of the files of the
-    part.
+    part.  The parts of one rule run at the same time.  Each part writes
+    its warnings to the file RULE.partK.txt of the warnings directory
+    (assay.core.report, THE WARNINGS DIRECTORY).  A part then does not
+    replace or remove the warnings of a different part.
 
 THE PLANTS
     plant_context() copies a plant to a throwaway repository
@@ -267,7 +270,8 @@ def run(rules: Sequence[rule_registry.Rule], root: Path, build_dir: Path | None,
     """
     context = TsastContext(root, build_dir, part, keep=len(rules) > 1)
     kept = context.is_covered if part is not None else None
-    return [meta_runner.run(rule, context, warnings_dir, kept) for rule in rules]
+    key = f"part{part[0]}" if part is not None else None
+    return [meta_runner.run(rule, context, warnings_dir, kept, key) for rule in rules]
 
 
 def witness(rule: rule_registry.Rule, root: Path = REPO_ROOT) -> int:

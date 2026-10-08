@@ -1,0 +1,4 @@
+# The build has no build-kind.txt, so the rule cannot compare the kind of the build with the kind of the list.  The
+# rule gives one error of the kind input.
+format 1
+compile test/CMakeFiles/long_unlisted.dir/long_unlisted.cpp.o test/long_unlisted.cpp cpu=1 instructions=5

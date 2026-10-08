@@ -1,0 +1,5 @@
+# The object of a target of all is a ccache hit, and its record keeps the count of the last compile: 40 G
+# instructions.  The list does not name the target, so the rule gives one error of the kind unlisted-long.
+format 1
+kind x86_64-debug-asan
+compile test/CMakeFiles/hit_long.dir/hit_long.cpp.o test/hit_long.cpp result=hit last-instructions=40

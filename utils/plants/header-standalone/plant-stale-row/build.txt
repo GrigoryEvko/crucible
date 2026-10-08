@@ -1,0 +1,4 @@
+# A row of the list that names a header that is not there.
+format 1
+kind x86_64-debug-asan
+compile test/layer/CMakeFiles/layer_sentinel_crucible.dir/sentinels/crucible/crucible_Arena_h.cpp.o build/test/layer/sentinels/crucible/crucible_Arena_h.cpp record=no | {cxx} -std=c++26 -I {root}/include -o {build}/sentinel.o -c {build}/test/layer/sentinels/crucible/crucible_Arena_h.cpp

@@ -1,0 +1,4 @@
+# The list names the object library unit, and its object has a chain of two edges in the graph: the compile and the
+# stamp.  The rule gives one error of the kind short-chain at the row of unit.
+format 1
+kind x86_64-debug-asan

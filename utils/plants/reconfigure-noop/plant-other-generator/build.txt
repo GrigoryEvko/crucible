@@ -1,0 +1,4 @@
+# The CMake cache of the configured build directory names the generator Unix Makefiles, which writes no log of Ninja.
+# The rule cannot measure it, and it gives one error for its input.
+format 1
+cache CMAKE_GENERATOR | Unix Makefiles

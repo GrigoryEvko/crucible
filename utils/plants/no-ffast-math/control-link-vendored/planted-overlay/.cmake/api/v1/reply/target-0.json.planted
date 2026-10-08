@@ -1,0 +1,1 @@
+{"name": "vendor_app", "type": "EXECUTABLE", "paths": {"source": "third_party", "build": "third_party"}, "sources": [{"path": "third_party/main.cpp"}], "link": {"commandFragments": [{"fragment": "-fno-signed-zeros", "role": "flags"}]}}

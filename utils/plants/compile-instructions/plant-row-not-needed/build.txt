@@ -1,0 +1,5 @@
+# A ledger row admits a compile of 10 G user instructions, which is not more than the error threshold.  The rule
+# gives one error of the kind row-not-needed at the row.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/light.cpp.o src/light.cpp cpu=2 instructions=10

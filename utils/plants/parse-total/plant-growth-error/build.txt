@@ -1,0 +1,18 @@
+# One more object reads include/Big.h of 5000 bytes, a file with no row.  The total is more than its baseline by more
+# than the error threshold: an error that names include/Big.h.
+format 1
+kind x86_64-debug-asan
+file include/Base.h size=1000
+file include/Big.h size=5000
+file src/a.cpp size=100
+file src/b.cpp size=100
+file neg/neg_one.cpp size=50
+file neg/neg_two.cpp size=50
+compile CMakeFiles/a.o src/a.cpp instructions=2
+compile CMakeFiles/b.o src/b.cpp instructions=2
+compile CMakeFiles/c.o src/a.cpp instructions=2
+deps CMakeFiles/a.o | src/a.cpp include/Base.h
+deps CMakeFiles/b.o | src/b.cpp include/Base.h
+deps CMakeFiles/c.o | src/a.cpp include/Big.h
+fixture neg_one neg/neg_one.cpp instructions=5 | neg/neg_one.cpp include/Base.h
+fixture neg_two neg/neg_two.cpp instructions=5 | neg/neg_two.cpp include/Base.h

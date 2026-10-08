@@ -2,10 +2,8 @@
 # and `python3 utils/bin/guard write --rule python-lint` writes this file.
 format 1
 rule python-lint
-utils/assay/core/cache.py | format | 1 | victims | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/core/git.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/core/ledger.py | PYI041 | 1 | value_text | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/core/ledger.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/core/meter.py | RUF023 | 1 | Measurement | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/core/meter.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/core/pins.py | format | 1 | parse_pin | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
@@ -17,7 +15,6 @@ utils/assay/core/proc.py | UP037 | 1 | Running.__init__ | An issue of ruff of to
 utils/assay/core/proc.py | UP037 | 1 | Running.__iter__ | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/core/proc.py | UP037 | 1 | start | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/core/proc.py | format | 1 | Command.__init__ | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/core/registry.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/core/report.py | format | 1 | Finding.__post_init__ | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/core/rows.py | RUF007 | 1 | compose | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/core/rows.py | RUF023 | 1 | Row | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
@@ -34,11 +31,9 @@ utils/assay/guard/engines/meta/layout.py | F541 | 2 | findings | An issue of ruf
 utils/assay/guard/engines/meta/layout.py | format | 1 | naming | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/meta/ledger_owners.py | format | 1 | path_finding | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/meta/registry_shape.py | format | 1 | doc_findings | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/engines/meta/rule_implementations.py | format | 1 | declared_rules | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/meta/rule_witness.py | F541 | 2 | findings | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/meta/rule_witness.py | format | 1 | findings | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/meta/runner.py | RUF023 | 1 | MetaContext | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/engines/meta/runner.py | format | 1 | judged | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/meta/structured_reads.py | SIM102 | 1 | reads_cpp_source | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/meta/structured_reads.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/meta/test_registration.py | I001 | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
@@ -60,41 +55,27 @@ utils/assay/guard/legacy/audit_decide_cite_ratio.py | format | 1 | definition_da
 utils/assay/guard/legacy/check_admitted_audit.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_brand_drain.py | RUF007 | 1 | unreadable_body | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_brand_drain.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_build_order.py | FLY002 | 1 | self_test_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_build_order.py | format | 1 | order_only_waits.waits_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_cache_size.py | format | 1 | findings | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_clang_format.py | ISC004 | 1 | check_tree | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_clang_format.py | format | 1 | settings_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_ctx_init_door.py | ISC004 | 2 | self_test | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_ctx_init_door.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_ctx_testing_boundary.py | format | 1 | scope_files | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_detail_namespace.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_fixy_dim_prose.py | format | 1 | scan | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | F541 | 2 | run | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | ISC004 | 3 | read_rows | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | format | 1 | threshold_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_coordination_refs.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | ISC004 | 1 | build_violations | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | ISC004 | 1 | link_violations | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | B023 | 3 | expanded.line_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | SIM114 | 1 | node_doors | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_no_unity_pch.py | SIM114 | 1 | pch_words | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_no_unity_pch.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_padded_lists.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | format | 1 | read_ledger | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | I001 | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_prose_paths.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | format | 1 | evaluate | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | B023 | 1 | file_facts | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | SIM905 | 2 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_vessel_acceptance.py | format | 1 | check_torch | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/contract_header_unit_test.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/report_check_warnings.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/listing.py | format | 1 | main | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/preprocessed.py | FURB167 | 1 | _self_test_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/preprocessed.py | FURB188 | 1 | _Files.name_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
@@ -102,7 +83,6 @@ utils/assay/guard/preprocessed.py | RUF015 | 2 | _self_test_cases | An issue of 
 utils/assay/guard/preprocessed.py | SIM115 | 1 | Store._hold_generation | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/preprocessed.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/selftest.py | format | 1 | main | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/warnings.py | format | 1 | main | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/write.py | I001 | 1 | main | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/write.py | format | 1 | main | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/affected.py | F541 | 3 | SelfTest.write_tests | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
@@ -211,13 +191,7 @@ utils/assay/setup/install.py | format | 1 | <module> | An issue of ruff of today
 utils/assay/setup/listing.py | format | 1 | main | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/setup/oracle.py | format | 1 | _unpack | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/setup/pins.py | format | 1 | read_pin | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/tests/core/test_git.py | format | 1 | command_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/tests/core/test_ledger.py | format | 1 | finding | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/tests/core/test_pins.py | F541 | 1 | row_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/tests/core/test_pins.py | format | 1 | row_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/tests/core/test_proc.py | format | 1 | is_gone | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/tests/core/test_registry.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/tests/core/test_rows.py | format | 1 | reader_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/tests/guard/test_history.py | ISC004 | 1 | move_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/tests/guard/test_history.py | ISC004 | 1 | quarantine_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/tests/guard/test_history.py | ISC004 | 2 | threshold_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count

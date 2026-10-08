@@ -1,0 +1,7 @@
+# The overlay gives the target vendor_app a CMake file in third_party/, and its link line has -fno-signed-zeros.  The
+# compile of its source has the same flag.  A vendored tree is out of the scope of the rule.  The compile of src/a.cpp
+# is clean, and the rule gives no error.
+format 1
+compile a.o src/a.cpp | g++ -c src/a.cpp
+compile v.o third_party/main.cpp | g++ -fno-signed-zeros -c third_party/main.cpp
+target vendor_app type=EXECUTABLE | third_party/main.cpp

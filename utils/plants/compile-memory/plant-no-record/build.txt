@@ -1,0 +1,6 @@
+# One object of the build has no record, so it did not come through the build launcher.  The rule gives one error
+# of the kind no-record at its source.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/third.cpp.o src/third.cpp cpu=1
+compile CMakeFiles/lib.dir/plain.cpp.o src/plain.cpp record=no

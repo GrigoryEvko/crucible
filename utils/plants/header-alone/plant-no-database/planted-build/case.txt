@@ -1,0 +1,2 @@
+# The planted build directory holds a build kind and no compile database, because the plant has no build.txt.  The
+# rule cannot read the compile database, and it gives one error of the kind input.

@@ -1,0 +1,5 @@
+# A listed header that still fails alone: it includes a header that is not on the include path.  The compile of the
+# rule writes no object and no dependency file, although the command of the sentinel names both.
+format 1
+kind x86_64-debug-asan
+compile test/layer/CMakeFiles/layer_sentinel_crucible.dir/sentinels/crucible/crucible_Arena_h.cpp.o build/test/layer/sentinels/crucible/crucible_Arena_h.cpp record=no | {cxx} -std=c++26 -I {root}/include -MD -MF {build}/sentinel.d -o {build}/sentinel.o -c {build}/test/layer/sentinels/crucible/crucible_Arena_h.cpp

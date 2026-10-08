@@ -1,0 +1,5 @@
+# A row of the compile database compiles a unity source in a Unity directory of CMakeFiles.  The rule gives one error at
+# the source.
+format 1
+target plain | src/a.cpp
+compile unity.o build/CMakeFiles/t.dir/Unity/unity_0_cxx.cxx | g++ -c unity_0_cxx.cxx

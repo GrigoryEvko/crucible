@@ -1,0 +1,5 @@
+# A row of the ledger admits -ffp-contract=on on the compile of src/admitted.cpp only.  The compile of src/floor.cpp
+# has the same flag, and no row admits it there.  The rule gives one error at src/floor.cpp.
+format 1
+compile admitted.o src/admitted.cpp | g++ -ffp-contract=on -c src/admitted.cpp
+compile floor.o src/floor.cpp | g++ -ffp-contract=on -c src/floor.cpp

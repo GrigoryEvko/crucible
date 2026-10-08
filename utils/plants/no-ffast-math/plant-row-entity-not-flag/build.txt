@@ -1,0 +1,4 @@
+# The entity of a row of the ledger is an attribute and not a banned flag.  The rule gives an error for the shape of
+# the row.
+format 1
+compile a.o src/a.cpp | g++ -c src/a.cpp

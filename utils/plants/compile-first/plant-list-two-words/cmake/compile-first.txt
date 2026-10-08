@@ -1,0 +1,3 @@
+# A planted list with a row of two words.
+kind x86_64-debug-asan
+two words

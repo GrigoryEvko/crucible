@@ -1,0 +1,1 @@
+{"kind": "codemodel", "version": {"major": 2, "minor": 0}, "paths": {"source": "{root}/src", "build": "{build}"}, "configurations": [{"targets": []}]}

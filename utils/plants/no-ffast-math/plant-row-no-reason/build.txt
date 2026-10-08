@@ -1,0 +1,4 @@
+# A row of the ledger has no reason, and a row of the policy admit must have one.  The ledger does not read, and the
+# rule gives one error at the ledger.
+format 1
+compile admitted.o src/admitted.cpp | g++ -ffp-contract=on -c src/admitted.cpp

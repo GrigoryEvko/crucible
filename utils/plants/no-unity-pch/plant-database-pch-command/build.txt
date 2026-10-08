@@ -1,0 +1,4 @@
+# The compile database of the overlay gives the command string of CMake, with -Winvalid-pch and -include of its file
+# cmake_pch.hxx.  The rule splits the string because it holds a marker, and it gives an error for each of the two.
+format 1
+target plain | src/a.cpp

@@ -1,0 +1,3 @@
+# The list has two rows `kind KIND`.  The rule gives one error of the kind input at the second row.
+format 1
+kind x86_64-debug-asan

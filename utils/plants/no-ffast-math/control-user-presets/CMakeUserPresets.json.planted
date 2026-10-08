@@ -1,0 +1,1 @@
+{"version": 6, "configurePresets": [{"name": "mine", "cacheVariables": {"CMAKE_CXX_FLAGS": "-Ofast"}}]}

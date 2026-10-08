@@ -1,0 +1,5 @@
+# A ledger row admits an object that is a ccache hit in this build.  The build holds the object, and the rule does
+# not judge a hit, so the row gives no finding.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/cached.cpp.o src/cached.cpp result=hit

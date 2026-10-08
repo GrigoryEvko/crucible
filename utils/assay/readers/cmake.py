@@ -643,7 +643,12 @@ def _preset_values(value: object) -> dict[str, str | None]:
 
 
 def _preset_file(path: Path) -> PresetFile:
-    """Return the configure presets of one presets file.  A missing file has no preset and no problem."""
+    """Return the configure presets of one presets file.  A missing file has no preset and no problem.
+
+    CMake refuses a configure preset with no name.  A preset with a name that
+    is not a text, or that is empty, is a problem of the file.  The problem
+    names the position of the preset, and the file then gives no preset.
+    """
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -659,15 +664,13 @@ def _preset_file(path: Path) -> PresetFile:
     configure = document.get("configurePresets", [])
     if not isinstance(configure, list) or not all(isinstance(item, dict) for item in configure):
         return PresetFile(path, (), "configurePresets is not a list of objects")
-    found = tuple(
-        Preset(
-            str(item.get("name", "?")),
-            _preset_values(item.get("cacheVariables")),
-            _preset_values(item.get("environment")),
-        )
-        for item in configure
-    )
-    return PresetFile(path, found, None)
+    found: list[Preset] = []
+    for position, item in enumerate(configure, start=1):
+        name = item.get("name")
+        if not isinstance(name, str) or not name:
+            return PresetFile(path, (), f"the item {position} of configurePresets has no name, and CMake refuses it")
+        found.append(Preset(name, _preset_values(item.get("cacheVariables")), _preset_values(item.get("environment"))))
+    return PresetFile(path, tuple(found), None)
 
 
 def presets(root: Path) -> tuple[PresetFile, ...]:

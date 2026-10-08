@@ -280,8 +280,7 @@ def entries(directory: Path, suffix: str = "") -> list[Entry]:
     return found
 
 
-def victims(candidates: list[Entry], max_bytes: int, max_age: float = MAX_AGE,
-            now: float | None = None) -> list[Entry]:
+def victims(candidates: list[Entry], max_bytes: int, max_age: float = MAX_AGE, now: float | None = None) -> list[Entry]:
     """Return the entries that an eviction removes: each one past the age limit, then the oldest past the size limit.
 
     Over the size limit, the oldest entries go until the rest is under
@@ -301,7 +300,7 @@ def victims(candidates: list[Entry], max_bytes: int, max_age: float = MAX_AGE,
     moment = time.time() if now is None else now
     ordered = sorted(candidates, key=lambda entry: entry.used)
     chosen = [entry for entry in ordered if moment - entry.used > max_age]
-    kept = ordered[len(chosen):]
+    kept = ordered[len(chosen) :]
     total = sum(entry.size for entry in kept)
     if total <= max_bytes:
         return chosen
@@ -434,9 +433,26 @@ def estimated_bytes(directory: Path, rng=None, full_walk: int = FULL_WALK) -> in
     return int(size)
 
 
+def sizes(root: Path) -> dict[str, int]:
+    """Return the estimated allocated bytes of each cache in a root, by its name (THE SAMPLE).
+
+    A cache is each subdirectory of the root that is not a symbolic link.
+    The rule cache-size compares the bytes of each cache with the row of
+    LIMITS of its name.  A missing root has no cache.
+
+    Complexity: one sample of each cache (estimated_bytes()).
+    """
+    if not root.is_dir():
+        return {}
+    return {
+        path.name: estimated_bytes(path) for path in sorted(root.iterdir()) if path.is_dir() and not path.is_symlink()
+    }
+
+
 @contextlib.contextmanager
-def eviction_turn(directory: Path, interval: float = EVICT_INTERVAL, max_bytes: int | None = None,
-                  stamp_name: str = "evicted") -> Iterator[bool]:
+def eviction_turn(
+    directory: Path, interval: float = EVICT_INTERVAL, max_bytes: int | None = None, stamp_name: str = "evicted"
+) -> Iterator[bool]:
     """Yield True when this process holds the eviction turn of a cache, else False (THE TURN).
 
     The turn is due when the stamp is older than the interval, or when
@@ -554,8 +570,10 @@ def evict_main(name: str) -> int:
         0, or 2 when LIMITS has no row for the name
     """
     if name not in LIMITS:
-        print(f"loop cache --evict: the cache {name!r} has no row in LIMITS.  Add one to utils/assay/core/cache.py.",
-              file=sys.stderr)
+        print(
+            f"loop cache --evict: the cache {name!r} has no row in LIMITS.  Add one to utils/assay/core/cache.py.",
+            file=sys.stderr,
+        )
         return 2
     directory = cache_root(name)
     if directory is not None:
@@ -595,8 +613,10 @@ def self_test() -> int:
                 path.write_bytes(bytes(4096 * (1 + rng.randrange(4))))
         total = exact(fanned)
         sampled = estimated_bytes(fanned, random.Random(7), full_walk=0)
-        expect("a sample of 16 of 256 fan-out directories gives the size within 25 percent",
-               abs(sampled - total) <= total // 4 and sampled != total)
+        expect(
+            "a sample of 16 of 256 fan-out directories gives the size within 25 percent",
+            abs(sampled - total) <= total // 4 and sampled != total,
+        )
         expect("a sample that shows few files gives way to a walk of each file", estimated_bytes(fanned) == total)
         expect("a missing directory has no size", estimated_bytes(root / "missing") == 0)
 
@@ -613,8 +633,10 @@ def self_test() -> int:
         expect("a sample touches its stamp", time.time() - probed.stat().st_mtime < 60)
         os.utime(probed, (stale, stale))
         with eviction_turn(fanned, max_bytes=total // 2) as has_turn:
-            expect("a due sample over the limit gives the turn, and the turn touches the stamp",
-                   has_turn and time.time() - stamp.stat().st_mtime < 60)
+            expect(
+                "a due sample over the limit gives the turn, and the turn touches the stamp",
+                has_turn and time.time() - stamp.stat().st_mtime < 60,
+            )
 
         everything = entries(fanned)
         old = time.time() - 86400
@@ -632,12 +654,18 @@ def self_test() -> int:
         os.utime(stamp, (old, old))
         expect("hold_bound takes a due turn", hold_bound(fanned, total // 2))
         kept = sum(entry.size for entry in entries(fanned))
-        expect("hold_bound leaves the entries under EVICT_TO of the limit, and keeps the entry of the newest use",
-               kept <= EVICT_TO * (total // 2) and newest.exists())
-        expect("hold_bound removes an old temporary file and an old empty directory, and keeps a new temporary file",
-               not dead.exists() and not empty.exists() and live.exists())
-        expect("write_atomic makes the directory of an entry", write_atomic(fanned / "new" / "entry", b"y") is None
-               and (fanned / "new" / "entry").read_bytes() == b"y")
+        expect(
+            "hold_bound leaves the entries under EVICT_TO of the limit, and keeps the entry of the newest use",
+            kept <= EVICT_TO * (total // 2) and newest.exists(),
+        )
+        expect(
+            "hold_bound removes an old temporary file and an old empty directory, and keeps a new temporary file",
+            not dead.exists() and not empty.exists() and live.exists(),
+        )
+        expect(
+            "write_atomic makes the directory of an entry",
+            write_atomic(fanned / "new" / "entry", b"y") is None and (fanned / "new" / "entry").read_bytes() == b"y",
+        )
 
         from assay.core.paths import LOOP
 
@@ -648,10 +676,16 @@ def self_test() -> int:
         roster.mkdir(parents=True)
         (roster / "variant.log").write_bytes(bytes(8192))
         os.utime(roster / "variant.log", (time.time() - 2 * MAX_AGE, time.time() - 2 * MAX_AGE))
-        done = proc.run(proc.Command([*command, "--evict", "atom-roster"], timeout_s=proc.TOOL_S,
-                                     env=proc.environment({ROOT_VARIABLE: str(root)})))
-        expect("--evict holds a cache of LIMITS under its limits", done.exit == 0
-               and not (roster / "variant.log").exists())
+        done = proc.run(
+            proc.Command(
+                [*command, "--evict", "atom-roster"],
+                timeout_s=proc.TOOL_S,
+                env=proc.environment({ROOT_VARIABLE: str(root)}),
+            )
+        )
+        expect(
+            "--evict holds a cache of LIMITS under its limits", done.exit == 0 and not (roster / "variant.log").exists()
+        )
 
         compiled = root / COMPILED_CACHE
         stale_module = compiled / "home" / "tree" / "utils" / "assay" / "core" / "cache.cpython-314.pyc"
@@ -661,11 +695,15 @@ def self_test() -> int:
             module.write_bytes(bytes(4096))
         os.utime(stale_module, (time.time() - 2 * MAX_AGE, time.time() - 2 * MAX_AGE))
         # The masters of the --evict runs above also wrote their compiled modules to this cache.
-        expect("the compiled modules are each .pyc file at each depth",
-               {stale_module, fresh_module} <= {entry.path for entry in compiled_modules(compiled)}
-               and all(entry.path.suffix == ".pyc" for entry in compiled_modules(compiled)))
-        expect("hold_compiled_bound takes a due turn, removes a compiled module past the age limit, and keeps a new one",
-               hold_compiled_bound() and not stale_module.exists() and fresh_module.exists())
+        expect(
+            "the compiled modules are each .pyc file at each depth",
+            {stale_module, fresh_module} <= {entry.path for entry in compiled_modules(compiled)}
+            and all(entry.path.suffix == ".pyc" for entry in compiled_modules(compiled)),
+        )
+        expect(
+            "hold_compiled_bound takes a due turn, removes a compiled module past the age limit, and keeps a new one",
+            hold_compiled_bound() and not stale_module.exists() and fresh_module.exists(),
+        )
         expect("hold_compiled_bound takes no second turn within the interval", not hold_compiled_bound())
     expect("each row of LIMITS is a positive size", all(limit > 0 for limit in LIMITS.values()))
     saved = os.environ.get(ROOT_VARIABLE)

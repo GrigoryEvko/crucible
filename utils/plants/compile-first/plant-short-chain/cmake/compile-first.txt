@@ -1,0 +1,5 @@
+# A planted list of the targets with a long compile.
+kind x86_64-debug-asan
+listed
+unit
+outside

@@ -1,0 +1,4 @@
+# The target reuse has no precompiled header of its own, and it compiles the source cmake_pch.hxx of the target header:
+# it uses the precompiled header of a different target.  The rule gives one error at the command that makes it.
+format 1
+target reuse line=4 | src/d.cpp {build}/CMakeFiles/header.dir/cmake_pch.hxx

@@ -1,13 +1,13 @@
 # The ledger of the rule instruction-total: the baseline of the user instructions of the compiles of one
-# build.  `python3 utils/bin/guard explain instruction-total` tells the rule.
-# utils/assay/guard/legacy/check_parse_cost.py reads this file, and its --write writes the rows of one
-# build kind again.
+# build.  `python3 utils/bin/guard explain instruction-total` tells the rule, and
+# `python3 utils/bin/guard write --rule instruction-total --build-dir BUILD` writes the rows of one build
+# kind again.
 #
 # The two rows of a kind:
 #   - | KIND | INSTRUCTIONS | objects | REASON
 #   - | KIND | INSTRUCTIONS | fixtures | REASON
 #   The sum, over each object of the target all and over each negative fixture, of the user instructions
-#   of the compiler run of its last real compile, at the last --write.  A direct compile and a ccache miss
+#   of the compiler run of its last real compile, at the last write.  A direct compile and a ccache miss
 #   give the same count (utils/assay/core/meter.py, A COMPILE THROUGH CCACHE).
 #
 # A growth over the warning threshold of the measured rule instruction-total of utils/registry.txt gives
@@ -15,7 +15,7 @@
 # too.  The count covers the template instantiation and the constant evaluation that the bytes of
 # utils/ledgers/parse-total.txt do not see.  To accept a growth, raise the baseline in the same commit
 # with a reason:
-#   python3 utils/bin/guard check --rule instruction-total --build-dir build --write --reason TEXT
+#   python3 utils/bin/guard write --rule instruction-total --build-dir build --reason TEXT
 format 1
 rule instruction-total
 - | x86_64-debug-asan | 8727423836718 | fixtures | the measure of the Debug build of all and of each negative fixture at be4dcbd05 on 2026-10-08. The growth of 2.14 % over 751d38a23 is the new tests of the core families, the NUMA doors, the iteration detector, the flag matrix and the SenseHub v2 sources, the new fixtures, and the include of fixy/Core.h in the test harness

@@ -1,7 +1,7 @@
 # The ledger of the rule header-fanout: the headers of include/ whose bytes alone times readers were the
-# largest at the last --write.  `python3 utils/bin/guard explain header-fanout` tells the rule.
-# utils/assay/guard/legacy/check_parse_cost.py reads this file, and its --write writes the rows of one
-# build kind again.
+# largest at the last write.  `python3 utils/bin/guard explain header-fanout` tells the rule, and
+# `python3 utils/bin/guard write --rule header-fanout --build-dir BUILD` writes the rows of one build kind
+# again.
 #
 # A row:  HEADER | KIND | ALONE BYTES/READERS | - | -
 #   ALONE BYTES  the bytes that the sentinel of the header in test/layer includes after its source
@@ -10,7 +10,7 @@
 # A header that enters the ten largest products, and a header whose product changes by more than the
 # threshold of the measured rule header-fanout of utils/registry.txt, give a warning.  To accept the cost,
 # write the rows again:
-#   python3 utils/bin/guard check --rule header-fanout --build-dir build --write
+#   python3 utils/bin/guard write --rule header-fanout --build-dir build
 format 1
 rule header-fanout
 include/fixy/GradedFacade.h | x86_64-debug-asan | 2919043/2114 | - | -

@@ -1,0 +1,5 @@
+# A listed header with a constant only: it compiles alone at the threshold 1000, so the higher limit of its row is
+# not necessary.
+format 1
+kind x86_64-debug-asan
+compile test/layer/CMakeFiles/layer_sentinel_crucible.dir/sentinels/crucible/crucible_Light_h.cpp.o build/test/layer/sentinels/crucible/crucible_Light_h.cpp record=no | {cxx} -std=c++26 -I {root}/include -fconstexpr-ops-limit=5000 -o {build}/light.o -c {build}/test/layer/sentinels/crucible/crucible_Light_h.cpp

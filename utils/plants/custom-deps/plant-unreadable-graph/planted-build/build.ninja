@@ -1,0 +1,1 @@
+build kept.bpf.o CUSTOM_COMMAND ../src/kept.bpf.c

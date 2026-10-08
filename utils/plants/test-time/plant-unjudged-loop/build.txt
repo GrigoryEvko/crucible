@@ -1,0 +1,4 @@
+# A test that starts the master loop with a subcommand that is not a judge, so its time and its memory have no judge.
+format 1
+kind x86_64-debug-asan
+test named_loop line=8 | {python} {root}/utils/bin/loop derive --check

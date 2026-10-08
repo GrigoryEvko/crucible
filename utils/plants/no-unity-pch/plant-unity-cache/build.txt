@@ -1,0 +1,4 @@
+# The CMake cache of the build sets CMAKE_UNITY_BUILD to ON, which turns a unity build on.  The rule gives one error.
+format 1
+cache CMAKE_UNITY_BUILD type=BOOL | ON
+target plain | src/a.cpp

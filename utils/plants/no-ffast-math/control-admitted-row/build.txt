@@ -1,0 +1,4 @@
+# A row of the ledger admits -ffp-contract=on on the compile of src/admitted.cpp, and that compile has the flag.  The
+# rule gives the finding, the ledger admits it with a warning, and the rule gives no error.
+format 1
+compile admitted.o src/admitted.cpp | g++ -ffp-contract=on -c src/admitted.cpp

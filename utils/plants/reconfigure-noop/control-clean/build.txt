@@ -1,0 +1,4 @@
+# A configure that writes only what it changes: a glob with CONFIGURE_DEPENDS, a file of file(CONFIGURE) and a link
+# that the configure makes only when it is not there.  Ninja ran CMake before the rule.  The rule gives no error.  The
+# project is CMakeLists.txt.planted, and the rule reads no row of this file.
+format 1

@@ -1,0 +1,5 @@
+# The build holds only a ccache hit, and its record holds no time.  The rule counts the hit, does not judge it, and
+# gives no finding.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/cached.cpp.o src/cached.cpp result=hit

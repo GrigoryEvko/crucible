@@ -1,0 +1,5 @@
+# A planted ledger of the measured rule test-time.
+format 1
+rule test-time
+- | x86_64-debug-asan | 40 | launched | a planted reason
+- | x86_64-release | 40 | gone_test | a row of a different kind

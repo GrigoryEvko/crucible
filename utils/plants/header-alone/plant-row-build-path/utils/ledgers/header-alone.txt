@@ -1,0 +1,4 @@
+# A planted ledger of the rule header-alone.
+format 1
+rule header-alone
+@build/include/fixy/Small.h | x86_64-debug-asan | 7 | - | a planted reason

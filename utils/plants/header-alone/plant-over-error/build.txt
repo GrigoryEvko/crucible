@@ -1,0 +1,8 @@
+# A header of include/fixy includes 7 MB alone, more than the error threshold 6.5 MB of header-alone-fixy.  The rule
+# gives one error of the kind over-threshold, which names the held rule of the layer.
+format 1
+kind x86_64-debug-asan
+file system.h size=1000
+file include/fixy/Huge.h size=7340032
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Huge.cpp.o test/layer/checks/fixy/Huge.cpp cpu=3
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Huge.cpp.o | test/layer/checks/fixy/Huge.cpp system.h include/fixy/Huge.h

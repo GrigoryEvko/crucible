@@ -1,0 +1,4 @@
+# A planted ledger of the rule no-ffast-math.
+format 1
+rule no-ffast-math
+src/admitted.cpp | link-flag | admit | -ffp-contract=on | a planted row with a kind

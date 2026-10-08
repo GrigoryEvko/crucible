@@ -1,0 +1,6 @@
+# The record of one object has the format 2, which `loop step` does not write.  The rule gives one error of the kind
+# no-record at its source.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/third.cpp.o src/third.cpp cpu=1
+compile CMakeFiles/lib.dir/stale.cpp.o src/stale.cpp cpu=1 record=format

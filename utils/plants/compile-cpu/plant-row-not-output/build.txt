@@ -1,0 +1,5 @@
+# A ledger row has a path with no @build/ prefix, and the item of compile-cpu is an output of the build directory.
+# The rule gives one error at the line of the row.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/quick.cpp.o src/quick.cpp cpu=1

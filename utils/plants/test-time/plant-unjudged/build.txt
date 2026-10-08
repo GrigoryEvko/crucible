@@ -1,0 +1,6 @@
+# A script test that runs with no test launcher, so its time and its memory have no judge.  The finding names the
+# line of its registration.
+format 1
+kind x86_64-debug-asan
+test launched line=7 | {python} -S {root}/utils/bin/loop test-step --name launched {python} {root}/check.py
+test planted_bare line=8 | {python} {root}/check.py 0

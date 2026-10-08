@@ -1,0 +1,4 @@
+# The reply of the CMake file API names no linked output, so the build holds no link to judge.  The rule gives one
+# error of the kind input, which tells to build the tree first.
+format 1
+kind x86_64-debug-asan

@@ -1,0 +1,5 @@
+# A ledger row admits a function of 100 KB, which is not more than the error threshold 256 KB.  The rule gives one
+# error of the kind row-not-needed at the row.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/big.cpp.o src/big.cpp functions=_Z3bigv:102400

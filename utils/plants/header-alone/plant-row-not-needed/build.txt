@@ -1,0 +1,8 @@
+# A ledger row admits a header of 1 MB alone, which is not more than the error threshold 6.5 MB.  The rule gives one
+# error of the kind row-not-needed at the row.
+format 1
+kind x86_64-debug-asan
+file system.h size=1000
+file include/fixy/Small.h size=1048576
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Small.cpp.o test/layer/checks/fixy/Small.cpp cpu=3
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Small.cpp.o | test/layer/checks/fixy/Small.cpp system.h include/fixy/Small.h

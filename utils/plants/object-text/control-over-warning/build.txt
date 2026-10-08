@@ -1,0 +1,5 @@
+# The object has two functions of 300 KB, 600 KB of machine code in all.  That is more than the warning threshold
+# 512 KB and less than the error threshold 768 KB, so the rule gives one warning of the kind over-threshold.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/wide.cpp.o src/wide.cpp functions=_Z1av:307200,_Z1bv:307200

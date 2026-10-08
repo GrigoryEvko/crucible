@@ -1,0 +1,5 @@
+# A compile of 25 s of CPU time has a ledger row of a different build kind.  The row does not apply, so the rule
+# gives one error of the kind over-threshold.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/slower.cpp.o src/slower.cpp cpu=25

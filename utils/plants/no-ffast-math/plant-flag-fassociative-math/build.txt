@@ -1,0 +1,4 @@
+# The compile of src/x.cpp has -fassociative-math, which changes the sequence of floating-point additions.  The rule
+# gives one error.
+format 1
+compile x.o src/x.cpp | g++ -fassociative-math -c src/x.cpp

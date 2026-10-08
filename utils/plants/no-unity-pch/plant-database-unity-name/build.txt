@@ -1,0 +1,5 @@
+# A row of the compile database compiles a file with the name unity_3_c.c of a unity source of CMake, outside a Unity
+# directory.  The name alone makes it a unity source, and the rule gives one error at the source.
+format 1
+target plain | src/a.cpp
+compile u.o src/unity_3_c.c | gcc -c src/unity_3_c.c

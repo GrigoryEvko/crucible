@@ -1,0 +1,5 @@
+# A ledger row has the kind Debug, and a build kind is lowercase words with hyphens.  The rule gives one error at
+# the line of the row.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/quick.cpp.o src/quick.cpp cpu=1

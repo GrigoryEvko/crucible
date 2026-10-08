@@ -1,0 +1,8 @@
+# A header of include/fixy includes 1 MB alone, which is less than the warning threshold 6 MB of the held rule
+# header-alone-fixy.  The rule gives no finding.
+format 1
+kind x86_64-debug-asan
+file system.h size=1000
+file include/fixy/Small.h size=1048576
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Small.cpp.o test/layer/checks/fixy/Small.cpp cpu=3
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Small.cpp.o | test/layer/checks/fixy/Small.cpp system.h include/fixy/Small.h

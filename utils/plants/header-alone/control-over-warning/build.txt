@@ -1,0 +1,8 @@
+# A header of include/fixy includes 6.2 MB alone, more than the warning threshold 6 MB of header-alone-fixy.  The
+# rule gives one warning of the kind over-threshold at the header, with the CPU time of its sentinel.
+format 1
+kind x86_64-debug-asan
+file system.h size=1000
+file include/fixy/Big.h size=6501171
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Big.cpp.o test/layer/checks/fixy/Big.cpp cpu=3
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Big.cpp.o | test/layer/checks/fixy/Big.cpp system.h include/fixy/Big.h

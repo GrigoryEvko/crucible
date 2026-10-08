@@ -1,0 +1,3 @@
+[{"directory": "/planted/build", "file": "/planted/src/a.cpp", "output": "a.o", "arguments": ["g++", "-include", "config.h", "-c", "/planted/src/a.cpp"]},
+ {"directory": "/planted/build", "file": "/planted/src/b.cpp", "output": "b.o", "command": "g++ -include config.h -o b.o -c /planted/src/b.cpp"},
+ {"directory": "/planted/build", "file": "/planted/src/c.cpp", "output": "c.o", "command": "g++ -I/planted/cmake_pch_headers -include config.h -o c.o -c /planted/src/c.cpp"}]

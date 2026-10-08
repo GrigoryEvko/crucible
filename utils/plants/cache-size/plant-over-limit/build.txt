@@ -1,0 +1,14 @@
+# A cache of ten files of 64 KiB, with a limit of 256 KiB: the cache holds 2.5 times its limit, over the error
+# threshold 2 of the rule cache-size.
+format 1
+limit far 262144
+cache-file far/00/0000 size=65536
+cache-file far/00/0001 size=65536
+cache-file far/01/0002 size=65536
+cache-file far/01/0003 size=65536
+cache-file far/02/0004 size=65536
+cache-file far/02/0005 size=65536
+cache-file far/03/0006 size=65536
+cache-file far/03/0007 size=65536
+cache-file far/04/0008 size=65536
+cache-file far/04/0009 size=65536

@@ -1,0 +1,5 @@
+# The largest function of the object has 10 KB of machine code, which is less than the warning threshold 64 KB.  The
+# rule gives no finding.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/small.cpp.o src/small.cpp functions=_Z5smallv:10240

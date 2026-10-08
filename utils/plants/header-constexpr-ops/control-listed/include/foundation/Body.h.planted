@@ -1,0 +1,7 @@
+#pragma once
+constexpr unsigned spin(unsigned rounds) {
+    unsigned total = 0;
+    for (unsigned index = 0; index < rounds; ++index) total += index;
+    return total;
+}
+inline unsigned body() { constexpr unsigned local = spin(2000u); return local; }

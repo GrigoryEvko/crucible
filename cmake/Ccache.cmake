@@ -105,7 +105,7 @@ macro(crucible_ccache_after_project)
     # a home directory, also makes the headers of the compiler relative.  A
     # hit in a build directory at a different depth then records headers that
     # do not exist, and Ninja compiles the object again on each build.
-    # The rule reconfigure-noop (utils/assay/guard/legacy/check_reconfigure_noop.py) finds such a dependency.
+    # The rule reconfigure-noop (utils/assay/guard/engines/buildsys/reconfigure_noop.py) finds such a dependency.
     # ccache does not hash base_dir, so an entry that a launcher with another
     # base_dir stored can still give such a dependency file.  The namespace
     # keeps the entries of this launcher apart from those entries.

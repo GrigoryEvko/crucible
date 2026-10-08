@@ -1,0 +1,4 @@
+# The graph has no stamp, so the object of each listed target has a chain of two edges.  The rule gives one error of
+# the kind short-chain at the row of each listed target of all.
+format 1
+kind x86_64-debug-asan

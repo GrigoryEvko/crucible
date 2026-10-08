@@ -1,0 +1,1 @@
+[{"directory": "/planted/build", "file": "/planted/src/c.cpp", "output": "c.o", "command": "g++ -Winvalid-pch -include /planted/build/CMakeFiles/t.dir/cmake_pch.hxx -o c.o -c /planted/src/c.cpp"}]

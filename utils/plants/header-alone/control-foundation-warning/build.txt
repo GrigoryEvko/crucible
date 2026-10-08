@@ -1,0 +1,8 @@
+# A header of include/foundation includes 3.3 MB alone, more than the warning threshold 3.25 MB of the tighter rule
+# header-alone-foundation.  The rule gives one warning.  Its sentinel is a ccache hit that keeps the last time.
+format 1
+kind x86_64-debug-asan
+file system.h size=1000
+file include/foundation/Base.h size=3460301
+compile test/layer/CMakeFiles/layer_sentinel_foundation.dir/checks/foundation/Base.cpp.o test/layer/checks/foundation/Base.cpp result=hit last-cpu=4
+deps test/layer/CMakeFiles/layer_sentinel_foundation.dir/checks/foundation/Base.cpp.o | test/layer/checks/foundation/Base.cpp system.h include/foundation/Base.h

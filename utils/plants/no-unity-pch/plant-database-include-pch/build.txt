@@ -1,0 +1,5 @@
+# A row of the compile database gives the option -include-pch with a file x.pch.  The rule gives an error for each of
+# the two words.
+format 1
+target plain | src/a.cpp
+compile d.o src/d.cpp | g++ -include-pch x.pch -c src/d.cpp

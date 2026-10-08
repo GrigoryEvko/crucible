@@ -1,0 +1,3 @@
+build halfway.bpf.o: CUSTOM_COMMAND ../src/halfway.bpf.c
+  COMMAND = clang -MD -MF CMakeFiles/d/halfway.d -c ../src/halfway.bpf.c -o halfway.bpf.o
+  depfile = CMakeFiles/d/halfway.d

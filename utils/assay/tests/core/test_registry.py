@@ -11,8 +11,10 @@ from assay.core import registry as rule_registry
 from assay.core import rows as rows_grammar
 
 GOOD_RULE = "rule alpha-rule engine=meta scope=tracked ledger=admit doc=XV | a planted refusal | fix it"
-GUIDE = ("# A planted guide\n\n## XV. Headers\n\n1. **A rule.** Text.\n2. **Another.** Text.\n\n### The ratchet (R11)\n\n"
-         "The text of R11.\n\n## L0 — Safety\n\nThe layer.\n")
+GUIDE = (
+    "# A planted guide\n\n## XV. Headers\n\n1. **A rule.** Text.\n2. **Another.** Text.\n\n### The ratchet (R11)\n\n"
+    "The text of R11.\n\n## L0 — Safety\n\nThe layer.\n"
+)
 
 
 def examined(*rows: str) -> tuple[rule_registry.Registry, list[rows_grammar.RowsError]]:
@@ -30,14 +32,33 @@ def rule_cases(expect: Callable[[str, bool], None]) -> None:
     """Check the rule rows: the fields, the engine, the policy, the thresholds and the holder."""
     registry, problems = examined(GOOD_RULE, rule_registry.measured_rule("slow-row", 10, 20, "s"))
     rule = registry.rules.get("alpha-rule")
-    expect("a good registry has no problem, and a rule row gives its fields",
-           not problems and rule is not None and rule.engine == rule_registry.Engine.META
-           and rule.policy == rule_registry.Policy.ADMIT and rule.scope == ("tracked",) and rule.line == 3
-           and rule.refuses == "a planted refusal" and rule.action == "fix it" and rule.has_module)
+    expect(
+        "a good registry has no problem, and a rule row gives its fields",
+        not problems
+        and rule is not None
+        and rule.engine == rule_registry.Engine.META
+        and rule.policy == rule_registry.Policy.ADMIT
+        and rule.scope == ("tracked",)
+        and rule.line == 3
+        and rule.refuses == "a planted refusal"
+        and rule.action == "fix it"
+        and rule.has_module,
+    )
     slow = registry.rules["slow-row"]
-    expect("a measured rule gives its thresholds and its holder, and has no module",
-           slow.threshold == rule_registry.Threshold(10.0, 20.0, "s") and slow.held_by == "cmake"
-           and not slow.has_module and set(registry.measured()) == {"slow-row"})
+    expect(
+        "a measured rule gives its thresholds and its holder, and has no module",
+        slow.threshold == rule_registry.Threshold(10.0, 20.0, "s")
+        and slow.held_by == "cmake"
+        and not slow.has_module
+        and set(registry.measured()) == {"slow-row"},
+    )
+    judged, problems = examined(GOOD_RULE.replace("doc=XV", "held-by=loop-fixture doc=XV"))
+    expect(
+        "a step meter holds a rule with no thresholds",
+        not problems
+        and judged.rules["alpha-rule"].held_by == "loop-fixture"
+        and not judged.rules["alpha-rule"].has_module,
+    )
     refused = {
         "an unknown engine": GOOD_RULE.replace("engine=meta", "engine=regex"),
         "an unknown policy": GOOD_RULE.replace("ledger=admit", "ledger=many"),
@@ -53,19 +74,24 @@ def rule_cases(expect: Callable[[str, bool], None]) -> None:
         "an unknown unit": rule_registry.measured_rule("slow-row", 1, 2, "s").replace("unit=s", "unit=hours"),
         "a holder with no thresholds": GOOD_RULE.replace("doc=XV", "held-by=cmake doc=XV"),
         "a legacy module and a holder": rule_registry.measured_rule("slow-row", 1, 2, "s").replace(
-            "held-by=cmake", "held-by=cmake legacy=guard.legacy.x"),
+            "held-by=cmake", "held-by=cmake legacy=guard.legacy.x"
+        ),
         "legacy-args with no legacy module": GOOD_RULE.replace("doc=XV", "legacy-args=--check,x doc=XV"),
         "a legacy module that is not a dotted name": GOOD_RULE.replace("doc=XV", "legacy=guard/legacy doc=XV"),
     }
     for name, row in refused.items():
         expect(f"a rule row with {name} is refused", bool(problem_of(row)))
     _, problems = examined(GOOD_RULE, GOOD_RULE.replace("a planted refusal", "a second refusal"))
-    expect("a second rule row with the same ID is refused, with the line of the first",
-           len(problems) == 1 and "line 3" in str(problems[0]))
+    expect(
+        "a second rule row with the same ID is refused, with the line of the first",
+        len(problems) == 1 and "line 3" in str(problems[0]),
+    )
     _, problems = rule_registry.examine("rule alpha-rule engine=meta\n", "planted.txt")
     expect("a registry with no format row is refused", any("format 1" in str(problem) for problem in problems))
-    expect("planted_rules() gives each rule of the planted rows by its identifier",
-           list(rule_registry.planted_rules([GOOD_RULE])) == ["alpha-rule"])
+    expect(
+        "planted_rules() gives each rule of the planted rows by its identifier",
+        list(rule_registry.planted_rules([GOOD_RULE])) == ["alpha-rule"],
+    )
     try:
         rule_registry.planted_rules([GOOD_RULE.replace("engine=meta", "engine=regex")])
         is_refused = False
@@ -76,39 +102,65 @@ def rule_cases(expect: Callable[[str, bool], None]) -> None:
 
 def other_row_cases(expect: Callable[[str, bool], None]) -> None:
     """Check the job rows, the path rows, an unknown row kind and load()."""
-    registry, problems = examined("job subprocess module=assay.core.git | the one module that runs git",
-                                  "path utils/registry.txt | the registry")
-    expect("a job row and a path row read",
-           not problems and registry.jobs[0].modules == ("assay.core.git",) and registry.paths[0].glob
-           == "utils/registry.txt")
-    expect("a job row with a module outside the package is refused",
-           bool(problem_of("job subprocess module=os.path | a reason")))
+    registry, problems = examined(
+        "job subprocess module=assay.core.git | the one module that runs git", "path utils/registry.txt | the registry"
+    )
+    expect(
+        "a job row and a path row read",
+        not problems
+        and registry.jobs[0].modules == ("assay.core.git",)
+        and registry.paths[0].glob == "utils/registry.txt",
+    )
+    expect(
+        "a job row with a module outside the package is refused",
+        bool(problem_of("job subprocess module=os.path | a reason")),
+    )
     registry, problems = examined("job sys.path module=bin.guard,assay.core.paths | a reason")
-    expect("a job row can name a master as an owner",
-           not problems and registry.jobs[0].modules == ("bin.guard", "assay.core.paths"))
-    expect("an owner bin.NAME with a capital letter, an underscore or a point is refused",
-           all(problem_of(f"job sys.path module={owner} | a reason") for owner in ("bin.Guard", "bin.g_x", "bin.a.b",
-                                                                                 "bin.")))
+    expect(
+        "a job row can name a master as an owner",
+        not problems and registry.jobs[0].modules == ("bin.guard", "assay.core.paths"),
+    )
+    expect(
+        "an owner bin.NAME with a capital letter, an underscore or a point is refused",
+        all(
+            problem_of(f"job sys.path module={owner} | a reason")
+            for owner in ("bin.Guard", "bin.g_x", "bin.a.b", "bin.")
+        ),
+    )
     expect("a path row that goes up is refused", bool(problem_of("path ../x | a reason")))
     _, problems = examined("path a/b | one", "path a/b | two")
     expect("a second path row with the same glob is refused", len(problems) == 1)
     expect("an unknown row kind is refused", bool(problem_of("script utils/x.py | text")))
     registry = rule_registry.load()
-    expect("the registry of the tree loads with no problem, and each measured rule has a unit of the schema",
-           bool(registry.rules) and all(rule.threshold.unit in rule_registry.UNITS
-                                        for rule in registry.measured().values() if rule.threshold is not None))
+    expect(
+        "the registry of the tree loads with no problem, and each measured rule has a unit of the schema",
+        bool(registry.rules)
+        and all(
+            rule.threshold.unit in rule_registry.UNITS
+            for rule in registry.measured().values()
+            if rule.threshold is not None
+        ),
+    )
 
 
 def term_cases(expect: Callable[[str, bool], None]) -> None:
     """Check the term rows: the word, the category, the meaning and a second row of one word."""
-    registry, problems = examined("term finding category=noun-19 | one record of a rule",
-                                  "term evaluate category=verb-3a | to calculate a value")
-    expect("a term row gives its word, its category, its meaning and its line",
-           not problems and [(term.word, term.category, term.meaning, term.line) for term in registry.terms]
-           == [("finding", "noun-19", "one record of a rule", 3), ("evaluate", "verb-3a", "to calculate a value", 4)])
-    expect("each category of rule 1.5 and of rule 1.12 reads",
-           not any(problem_of(f"term finding category={category} | a meaning")
-                   for category in ("noun-1", "noun-22", "verb-1a", "verb-1f", "verb-2c", "verb-3f", "verb-4")))
+    registry, problems = examined(
+        "term finding category=noun-19 | one record of a rule", "term evaluate category=verb-3a | to calculate a value"
+    )
+    expect(
+        "a term row gives its word, its category, its meaning and its line",
+        not problems
+        and [(term.word, term.category, term.meaning, term.line) for term in registry.terms]
+        == [("finding", "noun-19", "one record of a rule", 3), ("evaluate", "verb-3a", "to calculate a value", 4)],
+    )
+    expect(
+        "each category of rule 1.5 and of rule 1.12 reads",
+        not any(
+            problem_of(f"term finding category={category} | a meaning")
+            for category in ("noun-1", "noun-22", "verb-1a", "verb-1f", "verb-2c", "verb-3f", "verb-4")
+        ),
+    )
     refused = {
         "a category that is not a category of the rules": "term finding category=noun-23 | a meaning",
         "the category verb-2d": "term finding category=verb-2d | a meaning",
@@ -121,24 +173,36 @@ def term_cases(expect: Callable[[str, bool], None]) -> None:
     for name, row in refused.items():
         expect(f"a term row with {name} is refused", bool(problem_of(row)))
     _, problems = examined("term finding category=noun-19 | one", "term finding category=noun-7 | two")
-    expect("a second term row with the same word is refused, with the line of the first",
-           len(problems) == 1 and "line 3" in str(problems[0]))
-    expect("a hyphenated word is a word of the glossary", rule_registry.is_term_word("drag-and-drop")
-           and not rule_registry.is_term_word("-drag") and not rule_registry.is_term_word(""))
+    expect(
+        "a second term row with the same word is refused, with the line of the first",
+        len(problems) == 1 and "line 3" in str(problems[0]),
+    )
+    expect(
+        "a hyphenated word is a word of the glossary",
+        rule_registry.is_term_word("drag-and-drop")
+        and not rule_registry.is_term_word("-drag")
+        and not rule_registry.is_term_word(""),
+    )
 
 
 def doc_cases(expect: Callable[[str, bool], None]) -> None:
     """Check the reference forms of the doc field and the sections that they name."""
-    expect("the forms of a doc field", all(rule_registry.is_doc_reference(text)
-                                           for text in ("XV", "XV.4", "XXII.R11", "L0", "L15")))
-    expect("a doc field of another form is refused", not any(rule_registry.is_doc_reference(text)
-                                                             for text in ("XCV", "XV.", "XV.x", "Lx", "15", "")))
+    expect(
+        "the forms of a doc field",
+        all(rule_registry.is_doc_reference(text) for text in ("XV", "XV.4", "XXII.R11", "L0", "L15")),
+    )
+    expect(
+        "a doc field of another form is refused",
+        not any(rule_registry.is_doc_reference(text) for text in ("XCV", "XV.", "XV.x", "Lx", "15", "")),
+    )
     expect("a section gives its text", "1. **A rule.**" in (rule_registry.doc_section(GUIDE, "XV") or ""))
     expect("an item gives its line", (rule_registry.doc_section(GUIDE, "XV.2") or "").startswith("2. **Another"))
     expect("a rule gives its subsection", "The text of R11" in (rule_registry.doc_section(GUIDE, "XV.R11") or ""))
     expect("a layer gives its section", "The layer" in (rule_registry.doc_section(GUIDE, "L0") or ""))
-    expect("a section, an item or a rule that the guide does not have gives None",
-           all(rule_registry.doc_section(GUIDE, text) is None for text in ("XX", "XV.9", "XV.R12", "L1")))
+    expect(
+        "a section, an item or a rule that the guide does not have gives None",
+        all(rule_registry.doc_section(GUIDE, text) is None for text in ("XX", "XV.9", "XV.R12", "L1")),
+    )
 
 
 def main(argv: list[str]) -> int:

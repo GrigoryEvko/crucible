@@ -1,0 +1,5 @@
+# The build has the release kind, and the list holds the counts of the Debug kind.  The rule judges only the graph,
+# so a target of 60 G that the list does not name gives no finding.
+format 1
+kind x86_64-release
+compile test/CMakeFiles/long_unlisted.dir/long_unlisted.cpp.o test/long_unlisted.cpp cpu=1 instructions=60

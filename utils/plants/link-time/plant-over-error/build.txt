@@ -1,0 +1,5 @@
+# A link of a shared library took 6 s of CPU time, more than the error threshold 5 s.  The rule gives one error of
+# the kind over-threshold, which a GitHub runner changes to a warning.
+format 1
+kind x86_64-debug-asan
+link test/library.so type=SHARED_LIBRARY cpu=6

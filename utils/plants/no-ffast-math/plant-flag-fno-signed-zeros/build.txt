@@ -1,0 +1,3 @@
+# The compile of src/x.cpp has -fno-signed-zeros, which loses the sign of zero.  The rule gives one error.
+format 1
+compile x.o src/x.cpp | g++ -fno-signed-zeros -c src/x.cpp

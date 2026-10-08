@@ -1,0 +1,4 @@
+# A ledger row of test-time that names a file and not a test, which is not the shape of a row of the rule.
+format 1
+kind x86_64-debug-asan
+test launched line=7 | {python} -S {root}/utils/bin/loop test-step --name launched {python} {root}/check.py

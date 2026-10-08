@@ -1,0 +1,4 @@
+# A row of the ledger has the kind link-flag, and a link flag has no row.  The compile of src/admitted.cpp has the
+# flag of the row.  The rule gives an error for the shape of the row, and for the flag that no row admits.
+format 1
+compile admitted.o src/admitted.cpp | g++ -ffp-contract=on -c src/admitted.cpp

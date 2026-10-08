@@ -1,0 +1,4 @@
+# The compile of src/x.cpp has -ffast-math, the umbrella of the fast-math family.  CMake gives a flag of a generator
+# expression to the compile as the driver receives it, and the database holds that flag.  The rule gives one error.
+format 1
+compile x.o src/x.cpp | g++ -ffast-math -c src/x.cpp

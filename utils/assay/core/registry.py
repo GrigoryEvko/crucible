@@ -33,7 +33,9 @@ THE ROWS
       held-by      the rule or the command that reads the thresholds of a
                    measured rule that has no module of its own: a rule ID,
                    or guard-warnings, loop-gauge, loop-history, loop-step,
-                   loop-test-step, loop-fixture or cmake
+                   loop-test-step, loop-fixture or cmake.  A step meter
+                   (loop-step, loop-test-step or loop-fixture) can also hold
+                   a rule with no thresholds, which it judges for each step
     The first cell tells what the rule refuses, or what a measured rule
     measures.  The second cell is the default action, in the imperative.
 
@@ -74,26 +76,37 @@ REGISTRY = REPO_ROOT / "utils" / "registry.txt"
 # The path of the registry in each copy of the tree, from its root.
 REGISTRY_PATH = "utils/registry.txt"
 FORMAT = "1"
-RULE_FIELDS = frozenset({"engine", "scope", "ledger", "kinds", "warn", "error", "unit", "inputs", "doc", "legacy",
-                         "legacy-args", "held-by"})
+RULE_FIELDS = frozenset(
+    {"engine", "scope", "ledger", "kinds", "warn", "error", "unit", "inputs", "doc", "legacy", "legacy-args", "held-by"}
+)
 REQUIRED_FIELDS = ("engine", "scope", "ledger", "doc")
 THRESHOLD_FIELDS = ("warn", "error", "unit")
 JOB_FIELDS = frozenset({"module"})
 TERM_FIELDS = frozenset({"category"})
 # The categories of a term row: the technical-noun categories of rule 1.5, and the technical-verb categories of
 # rule 1.12.
-TERM_CATEGORIES = frozenset({*(f"noun-{number}" for number in range(1, 23)),
-                             *(f"verb-{group}{letter}" for group, letters in (("1", "abcdef"), ("2", "abc"),
-                                                                             ("3", "abcdef")) for letter in letters),
-                             "verb-4"})
+TERM_CATEGORIES = frozenset(
+    {
+        *(f"noun-{number}" for number in range(1, 23)),
+        *(
+            f"verb-{group}{letter}"
+            for group, letters in (("1", "abcdef"), ("2", "abc"), ("3", "abcdef"))
+            for letter in letters
+        ),
+        "verb-4",
+    }
+)
 # The two prefixes of the name of an owner of a job: a module of the package, and a master of utils/bin/.
 PACKAGE_OWNER = "assay."
 MASTER_OWNER = "bin."
 SCOPE_WORDS = frozenset({"base", "quarantined", "tracked", "builddir", "package"})
 UNITS = frozenset({"s", "G", "GB", "MB", "KB", "%", "operations", "elements", "x", "links"})
 # The commands that read the thresholds of a measured rule with no module of its own.
-HOLDING_COMMANDS = frozenset({"guard-warnings", "loop-gauge", "loop-history", "loop-step", "loop-test-step",
-                              "loop-fixture", "cmake"})
+HOLDING_COMMANDS = frozenset(
+    {"guard-warnings", "loop-gauge", "loop-history", "loop-step", "loop-test-step", "loop-fixture", "cmake"}
+)
+# The step meters, which judge each step that they run.  Such a meter can also hold a rule with no thresholds.
+STEP_METERS = frozenset({"loop-step", "loop-test-step", "loop-fixture"})
 
 
 class Engine(enum.StrEnum):
@@ -104,6 +117,16 @@ class Engine(enum.StrEnum):
     ELF = "elf"
     BUILD = "build"
     META = "meta"
+
+    @property
+    def directory(self) -> str:
+        """The directory of the modules of the engine in utils/assay/guard/engines/.
+
+        It is the name of the engine.  The engine build has the directory
+        buildsys, because the pattern build/ of .gitignore matches a
+        directory with that name at each depth.
+        """
+        return "buildsys" if self is Engine.BUILD else self.value
 
 
 class Policy(enum.StrEnum):
@@ -214,9 +237,8 @@ def is_rule_id(text: str) -> bool:
 
 
 def is_module_name(text: str) -> bool:
-    """Whether a text is a dotted module name under assay, such as guard.legacy.check_cache_size."""
-    return bool(text) and all(part.isidentifier() and part.islower() or part == "__init__"
-                              for part in text.split("."))
+    """Whether a text is a dotted module name under assay, such as guard.legacy.check_padded_lists."""
+    return bool(text) and all(part.isidentifier() and part.islower() or part == "__init__" for part in text.split("."))
 
 
 def is_doc_reference(text: str) -> bool:
@@ -245,23 +267,30 @@ def parse_rule(row: rows_grammar.Row) -> Rule:
     if missing:
         raise row.error(f"the rule {rule_id} has no field {', '.join(missing)}")
     if len(row.cells) != 2 or not all(row.cells):
-        raise row.error(f"the rule {rule_id} has {len(row.cells)} cells.  A rule row has two: what the rule "
-                        f"refuses, and the default action")
+        raise row.error(
+            f"the rule {rule_id} has {len(row.cells)} cells.  A rule row has two: what the rule "
+            f"refuses, and the default action"
+        )
     try:
         engine = Engine(values["engine"])
     except ValueError:
-        raise row.error(f"the engine {values['engine']!r} of {rule_id} is not one of "
-                        f"{', '.join(item.value for item in Engine)}") from None
+        raise row.error(
+            f"the engine {values['engine']!r} of {rule_id} is not one of {', '.join(item.value for item in Engine)}"
+        ) from None
     try:
         policy = Policy(values["ledger"])
     except ValueError:
-        raise row.error(f"the ledger policy {values['ledger']!r} of {rule_id} is not one of "
-                        f"{', '.join(item.value for item in Policy)}") from None
+        raise row.error(
+            f"the ledger policy {values['ledger']!r} of {rule_id} is not one of "
+            f"{', '.join(item.value for item in Policy)}"
+        ) from None
     scope = tuple(values["scope"].split(","))
     for item in scope:
         if not item or (item not in SCOPE_WORDS and (item.startswith("/") or ".." in item.split("/"))):
-            raise row.error(f"the scope {item!r} of {rule_id} is not a path relative to the source root or one of "
-                            f"{', '.join(sorted(SCOPE_WORDS))}")
+            raise row.error(
+                f"the scope {item!r} of {rule_id} is not a path relative to the source root or one of "
+                f"{', '.join(sorted(SCOPE_WORDS))}"
+            )
     given = [name for name in THRESHOLD_FIELDS if name in values]
     threshold = None
     if given and len(given) != len(THRESHOLD_FIELDS):
@@ -270,34 +299,54 @@ def parse_rule(row: rows_grammar.Row) -> Rule:
         warn = rows_grammar.decimal(values["warn"], row, "warning threshold")
         error = rows_grammar.decimal(values["error"], row, "error threshold")
         if warn > error:
-            raise row.error(f"the warning threshold {values['warn']} of {rule_id} is above its error threshold "
-                            f"{values['error']}")
+            raise row.error(
+                f"the warning threshold {values['warn']} of {rule_id} is above its error threshold {values['error']}"
+            )
         if values["unit"] not in UNITS:
             raise row.error(f"the unit {values['unit']!r} of {rule_id} is not one of {', '.join(sorted(UNITS))}")
         threshold = Threshold(warn, error, values["unit"])
     if not is_doc_reference(values["doc"]):
-        raise row.error(f"the doc {values['doc']!r} of {rule_id} is not a section of CLAUDE.md, such as XV, XV.4, "
-                        f"XXII.R11 or L0")
+        raise row.error(
+            f"the doc {values['doc']!r} of {rule_id} is not a section of CLAUDE.md, such as XV, XV.4, XXII.R11 or L0"
+        )
     legacy = None
     if "legacy" in values:
         if not is_module_name(values["legacy"]):
-            raise row.error(f"the legacy module {values['legacy']!r} of {rule_id} is not a dotted module name under "
-                            f"assay")
+            raise row.error(
+                f"the legacy module {values['legacy']!r} of {rule_id} is not a dotted module name under assay"
+            )
         legacy = Legacy(values["legacy"], tuple(values["legacy-args"].split(",")) if "legacy-args" in values else ())
     elif "legacy-args" in values:
         raise row.error(f"the rule {rule_id} has legacy-args and no legacy module")
     held_by = values.get("held-by")
     if held_by is not None and legacy is not None:
         raise row.error(f"the rule {rule_id} has a legacy module and a holder.  A rule has at most one of the two")
-    if held_by is not None and threshold is None:
-        raise row.error(f"the rule {rule_id} has a holder and no thresholds.  Only a measured rule has a holder")
+    if held_by is not None and threshold is None and held_by not in STEP_METERS:
+        raise row.error(
+            f"the rule {rule_id} has the holder {held_by} and no thresholds.  Only a measured rule, or a "
+            f"rule that a step meter judges ({', '.join(sorted(STEP_METERS))}), has a holder"
+        )
     if held_by is not None and held_by not in HOLDING_COMMANDS and not is_rule_id(held_by):
-        raise row.error(f"the holder {held_by!r} of {rule_id} is not a rule ID or one of "
-                        f"{', '.join(sorted(HOLDING_COMMANDS))}")
+        raise row.error(
+            f"the holder {held_by!r} of {rule_id} is not a rule ID or one of {', '.join(sorted(HOLDING_COMMANDS))}"
+        )
     kinds = tuple(values["kinds"].split(",")) if "kinds" in values else ()
     inputs = tuple(values["inputs"].split(",")) if "inputs" in values else ()
-    return Rule(rule_id, engine, scope, policy, kinds, threshold, inputs, values["doc"], row.cells[0], row.cells[1],
-                legacy, held_by, row.line)
+    return Rule(
+        rule_id,
+        engine,
+        scope,
+        policy,
+        kinds,
+        threshold,
+        inputs,
+        values["doc"],
+        row.cells[0],
+        row.cells[1],
+        legacy,
+        held_by,
+        row.line,
+    )
 
 
 def parse_job(row: rows_grammar.Row) -> Job:
@@ -313,15 +362,17 @@ def parse_job(row: rows_grammar.Row) -> Job:
         raise row.error(f"the job {row.words[1]} has no field module")
     modules = tuple(values["module"].split(","))
     if not all(is_owner_name(module) for module in modules):
-        raise row.error(f"an owner of the job {row.words[1]} is not a module of the package, such as assay.core.proc, "
-                        f"or a master, such as bin.guard")
+        raise row.error(
+            f"an owner of the job {row.words[1]} is not a module of the package, such as assay.core.proc, "
+            f"or a master, such as bin.guard"
+        )
     return Job(row.words[1], modules, row.cells[0], row.line)
 
 
 def is_owner_name(text: str) -> bool:
     """Return True when a text names an owner of a job: assay.MODULE for a module of the package, or bin.NAME."""
     if text.startswith(PACKAGE_OWNER):
-        return is_module_name(text[len(PACKAGE_OWNER):])
+        return is_module_name(text[len(PACKAGE_OWNER) :])
     name = text.removeprefix(MASTER_OWNER)
     return text.startswith(MASTER_OWNER) and name.isidentifier() and name.islower() and "_" not in name
 
@@ -339,13 +390,16 @@ def parse_term(row: rows_grammar.Row) -> Term:
             or rule 1.12
     """
     if len(row.words) != 3 or len(row.cells) != 1 or not row.cells[0] or not is_term_word(row.words[1]):
-        raise row.error("a term row is 'term WORD category=CATEGORY | ITS MEANING IN THIS PROJECT', with a lowercase "
-                        "WORD")
+        raise row.error(
+            "a term row is 'term WORD category=CATEGORY | ITS MEANING IN THIS PROJECT', with a lowercase WORD"
+        )
     values = rows_grammar.fields(row, TERM_FIELDS)
     category = values.get("category", "")
     if category not in TERM_CATEGORIES:
-        raise row.error(f"the category {category!r} of the term {row.words[1]} is not noun-N of rule 1.5 (1 to 22) or "
-                        f"verb-N of rule 1.12 (1a to 1f, 2a to 2c, 3a to 3f, or 4)")
+        raise row.error(
+            f"the category {category!r} of the term {row.words[1]} is not noun-N of rule 1.5 (1 to 22) or "
+            f"verb-N of rule 1.12 (1a to 1f, 2a to 2c, 3a to 3f, or 4)"
+        )
     return Term(row.words[1], category, row.cells[0], row.line)
 
 
@@ -383,8 +437,11 @@ def examine(text: str, shown: str = REGISTRY_PATH) -> tuple[Registry, list[rows_
     seen_jobs: dict[str, int] = {}
     seen_terms: dict[str, int] = {}
     if not all_rows or all_rows[0].words != ("format", FORMAT) or all_rows[0].cells:
-        problems.append(rows_grammar.RowsError(shown, all_rows[0].line if all_rows else 0,
-                                               f"the first row of the registry is 'format {FORMAT}'"))
+        problems.append(
+            rows_grammar.RowsError(
+                shown, all_rows[0].line if all_rows else 0, f"the first row of the registry is 'format {FORMAT}'"
+            )
+        )
     for row in all_rows[1:] if all_rows and all_rows[0].words[0] == "format" else all_rows:
         kind = row.words[0]
         try:
@@ -396,22 +453,25 @@ def examine(text: str, shown: str = REGISTRY_PATH) -> tuple[Registry, list[rows_
             elif kind == "job":
                 job = parse_job(row)
                 if job.entity in seen_jobs:
-                    raise row.error(f"the job {job.entity} has a second row.  The first is at line "
-                                    f"{seen_jobs[job.entity]}")
+                    raise row.error(
+                        f"the job {job.entity} has a second row.  The first is at line {seen_jobs[job.entity]}"
+                    )
                 seen_jobs[job.entity] = row.line
                 jobs.append(job)
             elif kind == "path":
                 path_row = parse_path(row)
                 if path_row.glob in seen_globs:
-                    raise row.error(f"the glob {path_row.glob} has a second row.  The first is at line "
-                                    f"{seen_globs[path_row.glob]}")
+                    raise row.error(
+                        f"the glob {path_row.glob} has a second row.  The first is at line {seen_globs[path_row.glob]}"
+                    )
                 seen_globs[path_row.glob] = row.line
                 paths.append(path_row)
             elif kind == "term":
                 term = parse_term(row)
                 if term.word in seen_terms:
-                    raise row.error(f"the term {term.word} has a second row.  The first is at line "
-                                    f"{seen_terms[term.word]}")
+                    raise row.error(
+                        f"the term {term.word} has a second row.  The first is at line {seen_terms[term.word]}"
+                    )
                 seen_terms[term.word] = row.line
                 terms.append(term)
             else:
@@ -447,8 +507,14 @@ def doc_section(guide: str, reference: str) -> str | None:
     """
     section, point, item = reference.partition(".")
     lines = guide.splitlines()
-    start = next((index for index, line in enumerate(lines) if line.startswith("## ")
-                  and line[3:].split(" ", 1)[0].rstrip(".") == section), None)
+    start = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if line.startswith("## ") and line[3:].split(" ", 1)[0].rstrip(".") == section
+        ),
+        None,
+    )
     if start is None:
         return None
     end = next((index for index in range(start + 1, len(lines)) if lines[index].startswith("## ")), len(lines))
@@ -471,12 +537,25 @@ def measured_rule(rule_id: str, warn: float, error: float, unit: str, measures: 
     Raises:
         ValueError: If the row cannot be written
     """
+
     def number_text(value: float) -> str:
         return str(int(value)) if float(value).is_integer() else repr(float(value))
 
-    return rows_grammar.render(["rule", rule_id, "engine=build", "scope=builddir", "ledger=max",
-                                f"warn={number_text(warn)}", f"error={number_text(error)}", f"unit={unit}",
-                                "held-by=cmake", "doc=XV"], [measures, "lower the value"])
+    return rows_grammar.render(
+        [
+            "rule",
+            rule_id,
+            "engine=build",
+            "scope=builddir",
+            "ledger=max",
+            f"warn={number_text(warn)}",
+            f"error={number_text(error)}",
+            f"unit={unit}",
+            "held-by=cmake",
+            "doc=XV",
+        ],
+        [measures, "lower the value"],
+    )
 
 
 def planted(rows: Iterable[str], comment: str = "# a planted registry\n") -> str:

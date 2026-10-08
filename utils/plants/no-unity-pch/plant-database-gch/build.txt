@@ -1,0 +1,5 @@
+# A row of the compile database names a file pre.h.gch, the precompiled header of GCC.  The rule gives one error for
+# the word.
+format 1
+target plain | src/a.cpp
+compile f.o src/f.cpp | g++ -c src/f.cpp src/pre.h.gch

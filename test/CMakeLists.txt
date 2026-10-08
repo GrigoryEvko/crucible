@@ -489,18 +489,6 @@ crucible_script_test(NAME cache_dir_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest core.cache)
 set_tests_properties(cache_dir_self_test PROPERTIES
     LABELS "ci_guard")
-# utils/assay/guard/legacy/check_cache_size.py takes the size of each cache under the root
-# of the caches from a sample of its files, and compares it with the row of
-# the cache in LIMITS of utils/assay/core/cache.py.  A cache over its limit gives a warning, and
-# a cache over twice its limit gives an error (the rule cache-size of
-# utils/registry.txt).
-crucible_script_test(NAME cache_size
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule cache-size
-          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-crucible_script_test(NAME cache_size_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule cache-size --self-test)
-set_tests_properties(cache_size cache_size_self_test PROPERTIES
-    LABELS "ci_guard")
 # A splice of a private data member has no access check, so
 # access_context::unchecked() is the one door to a proof's private state.
 # utils/assay/guard/legacy/check_no_unchecked_access.py admits it only in the files that
@@ -541,22 +529,6 @@ crucible_script_test(NAME ctx_init_door
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ctx-init-door)
 set_tests_properties(ctx_init_door ctx_init_door_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
-# The fast-math family is banned (CLAUDE.md §V, cmake/FpStrict.cmake is
-# the floor).  utils/assay/guard/legacy/check_no_ffast_math.py reads the compile flags of
-# this build from its compile database, the link line of each target from
-# the CMake file API, and the flag variables of every configure preset.  The
-# rule fast-math-override of the quarantine plugin reads each optimize
-# attribute and GCC optimize pragma that a unit compiles (test guard_plugin).
-# The self-test configures a planted project, so a flag inside a generator
-# expression is judged as the compiler receives it.
-crucible_script_test(NAME no_ffast_math_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-ffast-math
-          --self-test --cmake ${CMAKE_COMMAND} --cxx ${CMAKE_CXX_COMPILER})
-crucible_script_test(NAME no_ffast_math
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-ffast-math
-          --build-dir ${CMAKE_BINARY_DIR})
-set_tests_properties(no_ffast_math no_ffast_math_self_test PROPERTIES
-    LABELS "ci_guard")
 # The fixy doc-blocks name an axis by the enum spelling
 # "DimensionAxis::<Name> = <ordinal>", because the retired FX numbering no
 # longer matches the enum ordinals.  utils/assay/guard/legacy/check_fixy_dim_prose.py reads the
@@ -5056,25 +5028,12 @@ crucible_script_test(NAME check_report_self_test
 # `guard warnings` also prints the time totals of the build: the CPU time
 # of the objects of all, of the fixtures and of the executable tests, against
 # the rules total-compile-cpu, total-fixture-cpu and total-test-cpu
-# (utils/assay/guard/legacy/report_check_warnings.py).  A total gives a
+# (utils/assay/guard/engines/buildsys/cost_budgets.py).  A total gives a
 # warning only.  The CI step "Check warnings" runs it after the tests.
 crucible_script_test(NAME guard_warnings_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.warnings)
-crucible_script_test(NAME report_check_warnings_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.legacy.report_check_warnings)
-set_tests_properties(check_report_self_test guard_warnings_self_test report_check_warnings_self_test PROPERTIES
+set_tests_properties(check_report_self_test guard_warnings_self_test PROPERTIES
     LABELS "ci_guard")
-
-# no_unity_pch — no target compiles as a unity build or with a precompiled
-# header, because the reflection walks of this tree see each header that a
-# translation unit includes.  The check reads the compile database of this
-# build and the CMake files of the tree.
-crucible_script_test(NAME no_unity_pch_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-unity-pch --self-test)
-crucible_script_test(NAME no_unity_pch
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-unity-pch
-          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-set_tests_properties(no_unity_pch no_unity_pch_self_test PROPERTIES LABELS "ci_guard")
 
 # padded_lists — the element type of a large fixed list has no padding bit.
 # With -ftrivial-auto-var-init=zero, GCC writes one store for each padding
@@ -5094,30 +5053,15 @@ set_tests_properties(padded_lists padded_lists_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 
-# reconfigure_noop — a second configure and the two builds after it compile
-# nothing.  A ctest test cannot configure and build the tree that runs it, so
-# the check itself is a step of the CI build job, after the build:
-#     python3 utils/bin/guard check --rule reconfigure-noop BUILD_DIR
-# Only the self-test is a test.  It plants each defect in a scratch project.
-crucible_script_test(NAME reconfigure_noop_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule reconfigure-noop --self-test
-          --cmake ${CMAKE_COMMAND} --ninja ${CMAKE_MAKE_PROGRAM})
-set_tests_properties(reconfigure_noop_self_test PROPERTIES LABELS "ci_guard")
-
 # The test launcher (cmake/TestLauncher.cmake) runs in front of each test
 # except a negative fixture, and it holds the rules test-time and test-memory
 # of utils/registry.txt while the test runs.  The fixture driver holds them for
-# a fixture.  test_time refuses a test that the two do not run, and a ledger
-# row of the two rules that names a test that this build does not register.
-crucible_script_test(NAME test_time
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule test-time --build-dir ${CMAKE_BINARY_DIR}
-          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+# a fixture.  The rule test-time (test guard_test_time) refuses a test that the
+# two do not run, and a ledger row of the two rules that names a test that
+# this build does not register.
 crucible_script_test(NAME test_launcher_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 -S ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.loop.test_teststep)
-crucible_script_test(NAME test_time_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule test-time --self-test
-          --cmake ${CMAKE_COMMAND} --ctest ${CMAKE_CTEST_COMMAND})
-set_tests_properties(test_time test_launcher_self_test test_time_self_test PROPERTIES LABELS "ci_guard")
+set_tests_properties(test_launcher_self_test PROPERTIES LABELS "ci_guard")
 
 # cmake/BuildLauncher.cmake puts `loop step` (utils/assay/loop/step.py) in front of
 # each compile and each link.  The launcher writes the cost of the step beside
@@ -5129,94 +5073,6 @@ crucible_script_test(NAME build_launcher_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.loop.test_step --cxx ${CRUCIBLE_REAL_CXX})
 set_tests_properties(build_launcher_test PROPERTIES LABELS "ci_guard")
 
-# The rules of utils/assay/guard/legacy/check_compile_cost.py read the records of
-# the launcher and the outputs of this build:
-#   compile_cpu, compile_memory  the CPU time and the peak memory of each compile job
-#   compile_instructions         the user instructions of each compile job, which hold the
-#                                error level of a compile when its record has a count
-#   link_time, link_memory       the CPU time and the peak memory of each link
-#   function_size                the largest function of each object
-#   object_text                  the machine code of each object
-#   header_alone                 the bytes that each header of include/ includes alone,
-#                                from the ninja dependency log of its sentinel
-# A ledger row applies only to the build of its kind, and each rule reads
-# the kind from build-kind.txt of this build.
-foreach(_compile_cost_rule compile-cpu compile-instructions compile-memory link-time link-memory function-size
-        object-text header-alone)
-  string(REPLACE "-" "_" _compile_cost_test "${_compile_cost_rule}")
-  crucible_script_test(NAME ${_compile_cost_test}
-    COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ${_compile_cost_rule}
-            --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-  set_tests_properties(${_compile_cost_test} PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
-endforeach()
-crucible_script_test(NAME compile_cost_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.legacy.check_compile_cost)
-set_tests_properties(compile_cost_self_test PROPERTIES LABELS "ci_guard")
-
-# build_order — no compile of this build waits for a link or an archive
-# through an order-only input (utils/assay/guard/legacy/check_build_order.py).  Each
-# compile behind such an input starts only after the link or the archive.
-crucible_script_test(NAME build_order
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule build-order
-          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-# compile_first — each target of all with a long compile is on
-# cmake/compile-first.txt, and each object of a listed target has a
-# chain of three edges in build.ninja, so Ninja starts it before the objects
-# of the other tests (cmake/CompileFirst.cmake).
-crucible_script_test(NAME compile_first
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule compile-first
-          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-# custom_deps — each object that a custom command compiles, as each BPF object
-# of cmake/CrucibleBpf.cmake, has a depfile in build.ninja, and the ninja
-# dependency log holds a header of each built one.  Without the depfile, an
-# edit of a header does not compile the object again.
-crucible_script_test(NAME custom_deps
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule custom-deps
-          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-crucible_script_test(NAME build_order_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.legacy.check_build_order)
-set_tests_properties(build_order compile_first custom_deps build_order_self_test PROPERTIES LABELS "ci_guard"
-    SKIP_RETURN_CODE 3)
-# parse_total — the sum, over each object of the target all and each negative
-# fixture, of the bytes that its compile reads, against the baseline of the
-# build kind in utils/ledgers/parse-total.txt (the rule parse-total of
-# utils/registry.txt gives the levels).  utils/assay/readers/census.py
-# reads the files of an object from the ninja dependency log and the files of a
-# fixture from the record that its driver writes after each run.  The check
-# exits 3 for a build that made only some targets and for a build whose
-# fixtures did not run.  Each fixture registration appends its name to the
-# global property CRUCIBLE_NEG_FIXTURE_TESTS, and a call at the end of the top
-# directory makes the check DEPEND on each of them, so that ctest runs the
-# check after the last fixture of the run.
-crucible_script_test(NAME parse_total
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule parse-total
-          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-crucible_script_test(NAME parse_cost_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.legacy.check_parse_cost)
-# header_fanout — for each header of include/, the bytes that its sentinel
-# includes alone times the units that read it, against the 30 largest
-# products of utils/ledgers/header-fanout.txt.  It prints the ten
-# largest products, and it gives warnings only: for a header that enters the
-# ten largest, and for a product that changed by more than the rule
-# header-fanout of utils/registry.txt.
-crucible_script_test(NAME header_fanout
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-fanout
-          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-# instruction_total — the user instructions of the last real compile of each
-# object of all and each negative fixture, against the baseline of
-# utils/ledgers/instruction-total.txt, at the levels of the rule
-# instruction-total.  It exits 3 when one compile has no exact instruction count.
-crucible_script_test(NAME instruction_total
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule instruction-total
-          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-set_tests_properties(parse_total parse_cost_self_test header_fanout instruction_total PROPERTIES
-    LABELS "ci_guard" SKIP_RETURN_CODE 3)
-function(crucible_order_census_checks)
-  get_property(_fixtures GLOBAL PROPERTY CRUCIBLE_NEG_FIXTURE_TESTS)
-  set_tests_properties(parse_total header_fanout instruction_total DIRECTORY ${CMAKE_SOURCE_DIR}/test PROPERTIES
-      DEPENDS "${_fixtures}")
-endfunction()
-cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_checks)
 
 # build_target_self_test — utils/assay/core/target.py gives the build kind
 # and the target tier to the rules quarantine and artifact-symbols.  The
@@ -5395,24 +5251,50 @@ crucible_script_test(NAME mutation_self_test
           --compiler ${CMAKE_CXX_COMPILER} --cmake ${CMAKE_COMMAND} ${_mutation_ninja})
 set_tests_properties(mutation_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 
-# Each guard test of this directory starts on a full tree cache.  The rule
-# parse-clean runs in eight parts, and each part parses the C++ files of the
-# part with their macro bodies (THE PARTS OF THE FILL in
-# utils/assay/readers/tsast.py).  These parts are the setup tests of the
-# fixture tsast_trees, and each test of a tsast rule requires the fixture
-# (cmake/Guards.cmake).  Without them, each guard that starts cold parses each
-# file again.  ctest adds the setup tests to a run that selects one guard
-# test.  This block reads the tests of the directory, so it stays after the
-# last guard test.
+# Each guard test of this directory that reads the parse trees starts on a
+# full tree cache.  The rule parse-clean runs in eight parts, and each part
+# parses the C++ files of the part with their macro bodies (THE PARTS OF THE
+# FILL in utils/assay/readers/tsast.py).  These parts are the setup tests of
+# the fixture tsast_trees.  Each test of a tsast rule requires the fixture
+# (cmake/Guards.cmake), and each other test with the label ast gets it here.
+# Without the fixture, a guard that starts cold parses each file again.  ctest
+# adds the setup tests to a run that selects one such test.  A guard test with
+# no label ast reads no parse tree, and it does not wait for the fill.  This
+# block reads the tests of the directory, so it stays after the last guard
+# test that reads the trees.  The rule test-registration refuses a test that
+# runs a rule whose module reads the parse trees, when the test does not
+# require the fixture.  These tests read the trees and their registrations
+# give no label ast, so they get the label here.
+set_property(TEST brand_drain start_lifetime proof_routes fixy_dim_prose syscall_capability no_coordination_refs
+    mint_inventory_check_floor padded_lists guard_plugin APPEND PROPERTY LABELS ast)
 crucible_tsast_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} 8)
 get_property(crucible_directory_tests DIRECTORY PROPERTY TESTS)
 foreach(crucible_guard_test IN LISTS crucible_directory_tests)
   get_test_property(${crucible_guard_test} LABELS crucible_guard_labels)
   get_test_property(${crucible_guard_test} FIXTURES_SETUP crucible_guard_setup)
-  if("ci_guard" IN_LIST crucible_guard_labels AND NOT crucible_guard_setup)
+  if("ast" IN_LIST crucible_guard_labels AND NOT crucible_guard_setup)
     set_property(TEST ${crucible_guard_test} APPEND PROPERTY FIXTURES_REQUIRED tsast_trees)
   endif()
 endforeach()
+
+# The rules of the engine build read this build directory: the compile
+# database, the replies of the CMake file API, build.ninja and the logs of
+# Ninja, the records of the build launcher and of the tests, and the census
+# (cmake/Guards.cmake).  No build rule reads the parse trees.  The rule
+# reconfigure-noop configures a build again and builds it, and a ctest test
+# cannot do that to the build that runs it.  So it gets only its witness, and
+# a step of the CI build job runs the check.  The census rules
+# parse-total, header-fanout and instruction-total read the record of each
+# negative fixture.  Each fixture registration appends its name to the global
+# property CRUCIBLE_NEG_FIXTURE_TESTS, and a call at the end of the top
+# directory makes the three tests DEPEND on each fixture.
+crucible_build_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} NO_CHECK reconfigure-noop)
+function(crucible_order_census_checks)
+  get_property(_fixtures GLOBAL PROPERTY CRUCIBLE_NEG_FIXTURE_TESTS)
+  set_tests_properties(guard_parse_total guard_header_fanout guard_instruction_total
+      DIRECTORY ${CMAKE_SOURCE_DIR}/test PROPERTIES DEPENDS "${_fixtures}")
+endfunction()
+cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_checks)
 
 # The rules of the engine meta read the registry, the ledgers, the plants, the
 # modules of the package and the git history, and no parse tree, so their
@@ -5422,6 +5304,8 @@ endforeach()
 # ledger above its lowest committed value gives a warning.  The test modules
 # of the rows grammar, the registry, the ledgers, the rule history, the
 # process module, the git module, the paths, the run of the cases, the reader
+# of the cost records, the judge of the max rules, the runner and the planted
+# build of the engine build, the reader
 # of the compile database, the Python reader, the reader of the reports of
 # mypy and ruff, the package scope, the STE table, the counted rules of the
 # engine plugin, the writer of the walk list and the writer of the header
@@ -5444,7 +5328,8 @@ foreach(_assay_test guard.engines.elf.test_runner guard.engines.elf.test_artifac
     ENVIRONMENT "ASSAY_TEST_CXX=${CRUCIBLE_REAL_CXX};ASSAY_TEST_BUILD_DIR=${CMAKE_BINARY_DIR}")
 endforeach()
 foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test_proc core.test_git
-        core.test_paths core.test_testing readers.test_compdb readers.test_python readers.test_tool_reports
+        core.test_paths core.test_testing core.test_record core.test_budget guard.engines.buildsys.test_runner
+        guard.engines.buildsys.test_planted readers.test_compdb readers.test_python readers.test_tool_reports
         readers.test_sections guard.test_history guard.test_import_closure guard.engines.meta.test_package
         guard.engines.meta.test_ste_dictionary guard.engines.plugin.test_counted loop.derive.test_walk_units
         loop.derive.test_header_costs)

@@ -1,0 +1,7 @@
+# The object of a compile holds 13 bytes that are not an ELF file.  The ELF reader refuses it, so the rule gives one
+# error of the kind input at its source.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/giant.cpp.o src/giant.cpp functions=_Z5giantv:307200
+compile CMakeFiles/lib.dir/broken.cpp.o src/broken.cpp
+file build/CMakeFiles/lib.dir/broken.cpp.o size=13

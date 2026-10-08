@@ -1,0 +1,7 @@
+# The list of a sentinel holds its source and a system header, and no header of include/.  The rule gives one error
+# of the kind input.
+format 1
+kind x86_64-debug-asan
+file system.h size=1000
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Empty.cpp.o test/layer/checks/fixy/Empty.cpp cpu=3
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Empty.cpp.o | test/layer/checks/fixy/Empty.cpp system.h

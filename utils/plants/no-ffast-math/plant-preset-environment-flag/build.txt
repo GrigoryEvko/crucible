@@ -1,0 +1,4 @@
+# The environment variable CXXFLAGS of the preset strict holds -ffp-contract=fast.  Its cache variable, an object with
+# a type and the value -fno-fast-math, holds no banned flag.  The rule gives one error at the presets file.
+format 1
+compile a.o src/a.cpp | g++ -c src/a.cpp

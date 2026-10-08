@@ -1,0 +1,6 @@
+# One linked output has no record, so it did not come through the build launcher.  The rule gives one error of the
+# kind no-record.
+format 1
+kind x86_64-debug-asan
+link test/quick_test cpu=0.5
+link test/unrecorded_test record=no

@@ -1,0 +1,5 @@
+# The CMake cache names a ninja that is not on the disk, so the rule cannot read the dependency log of the object
+# kept.bpf.o.  The rule gives one error for its input.
+format 1
+cache CMAKE_MAKE_PROGRAM type=FILEPATH | /nonexistent/planted/ninja
+deps kept.bpf.o | src/kept.bpf.c src/common.h

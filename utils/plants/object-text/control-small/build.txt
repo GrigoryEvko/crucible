@@ -1,0 +1,4 @@
+# The object has 300 KB of machine code, which is less than the warning threshold 512 KB.  The rule gives no finding.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/giant.cpp.o src/giant.cpp functions=_Z5giantv:307200

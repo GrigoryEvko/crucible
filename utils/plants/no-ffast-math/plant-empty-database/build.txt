@@ -1,0 +1,2 @@
+# The compile database holds no entry, and the rule read no flag.  The rule gives one error for its input.
+format 1

@@ -1,0 +1,3 @@
+# A custom command that writes gen.c has the order-only input liba.a, which an archive writes.  The two compiles b.o
+# and b2.o wait for it through the phony edge of their target.  The rule gives one error at the line of the command.
+format 1

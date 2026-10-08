@@ -1,0 +1,4 @@
+# The depfile of the edge gone.out names a header that is not on the disk.  Each build runs the edge, and the
+# dependency log names the header.  The rule gives an error for each.  The project is CMakeLists.txt.planted, and the
+# rule reads no row of this file.
+format 1

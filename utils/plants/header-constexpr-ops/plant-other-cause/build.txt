@@ -1,0 +1,5 @@
+# A listed header that fails alone for a cause other than the limit: it includes a header that is not on the include
+# path.  The finding names that header.
+format 1
+kind x86_64-debug-asan
+compile test/layer/CMakeFiles/layer_sentinel_crucible.dir/sentinels/crucible/crucible_Broken_h.cpp.o build/test/layer/sentinels/crucible/crucible_Broken_h.cpp record=no | {cxx} -std=c++26 -I {root}/include -fconstexpr-ops-limit=5000 -o {build}/broken.o -c {build}/test/layer/sentinels/crucible/crucible_Broken_h.cpp

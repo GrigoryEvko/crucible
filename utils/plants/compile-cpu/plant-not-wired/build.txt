@@ -1,0 +1,6 @@
+# No object of the build has a record, so the build launcher is not wired.  The rule gives one error of the kind
+# not-wired at the build directory.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/plain.cpp.o src/plain.cpp record=no
+compile CMakeFiles/lib.dir/second.cpp.o src/second.cpp record=no

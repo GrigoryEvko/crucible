@@ -1,0 +1,16 @@
+# The fixture neg_one has no record and the fixture neg_two has one, so the census is not whole: an error that names
+# neg_one.
+format 1
+kind x86_64-debug-asan
+file include/H00.h size=100
+file include/Base.h size=1000
+file test/layer/checks/H00.cpp size=10
+file src/a.cpp size=100
+file neg/neg_one.cpp size=50
+file neg/neg_two.cpp size=50
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/H00.o test/layer/checks/H00.cpp
+compile CMakeFiles/user.o src/a.cpp
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/H00.o | test/layer/checks/H00.cpp include/H00.h
+deps CMakeFiles/user.o | src/a.cpp include/H00.h
+fixture neg_one neg/neg_one.cpp record=no
+fixture neg_two neg/neg_two.cpp | neg/neg_two.cpp include/Base.h

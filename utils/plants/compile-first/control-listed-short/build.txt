@@ -1,0 +1,5 @@
+# The list names a target with a largest compile of 15 G instructions, not more than the warning threshold 15 G.  The
+# rule gives one warning of the kind listed-short at its row, and no error.
+format 1
+kind x86_64-debug-asan
+compile test/CMakeFiles/short_listed.dir/short_listed.cpp.o test/short_listed.cpp cpu=1 instructions=15

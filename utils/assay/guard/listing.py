@@ -34,7 +34,9 @@ def holder(rule: Rule) -> str:
         return f"legacy assay.{rule.legacy.module}" + (f" {' '.join(rule.legacy.words)}" if rule.legacy.words else "")
     if rule.held_by is not None:
         return f"held by {rule.held_by}"
-    return f"module assay.guard.engines.{rule.engine.value}.{rule.id.replace('-', '_')}"
+    from assay.guard.engines.meta import runner
+
+    return f"module {runner.module_name_of(rule)}"
 
 
 def main(argv: list[str]) -> int:

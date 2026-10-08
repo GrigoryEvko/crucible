@@ -1,0 +1,3 @@
+# The compile database of the overlay gives the command string of CMake, with -Ofast after -O1.  The rule divides the
+# string by the rules of a shell, and it gives one error at the source.
+format 1

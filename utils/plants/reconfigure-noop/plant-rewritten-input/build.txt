@@ -1,0 +1,4 @@
+# Each configure writes build/written.txt again with the same content, and an edge reads it.  The first build after
+# the second configure runs the edge, and the rule gives an error for it.  The project is CMakeLists.txt.planted, and
+# the rule reads no row of this file.
+format 1

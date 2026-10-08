@@ -1,0 +1,4 @@
+# The compile of src/x.cpp has -fno-trapping-math after -ftrapping-math of the floor, so the flag cancels the floor.
+# The rule gives one error.
+format 1
+compile x.o src/x.cpp | g++ -ftrapping-math -fno-trapping-math -c src/x.cpp

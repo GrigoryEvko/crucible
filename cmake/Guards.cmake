@@ -1,5 +1,5 @@
-# cmake/Guards.cmake — read a limit of the build from the registry, and register the tests of the meta rules and of
-# the tsast rules.
+# cmake/Guards.cmake — read a limit of the build from the registry, and register the tests of the meta rules, of
+# the tsast rules and of the build rules.
 #
 # utils/registry.txt is the registry of the rules of the utils system.  A measured rule row is
 #
@@ -134,5 +134,38 @@ function(crucible_tsast_rule_tests warnings_dir parts)
       COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard witness --rule ${rule})
     set_tests_properties(${test_name}_witness PROPERTIES
       LABELS "ci_guard;tsast" FIXTURES_REQUIRED tsast_trees SKIP_RETURN_CODE 77)
+  endforeach()
+endfunction()
+
+# crucible_build_rule_tests(<warnings-dir> [NO_CHECK <rule>...])
+#
+# Register the tests of each rule of the engine build with a module: a row with no field legacy and no field
+# held-by.  guard_ID runs the rule on this build directory, and guard_ID_witness runs it on each plant and control
+# of utils/plants/ID/.  A rule of NO_CHECK gets only its witness, because a ctest test cannot run that rule on the
+# tree that runs the test.  The witness gets the patched compiler, the cmake and the ninja of the build
+# (ASSAY_TEST_CXX, ASSAY_TEST_CMAKE and ASSAY_TEST_NINJA), because some plants compile a planted unit or configure a
+# planted project.  No build rule reads the parse trees, so the tests do not require the fixture
+# tsast_trees.  Exit 77 is a skip: the rule does not apply to the build.
+function(crucible_build_rule_tests warnings_dir)
+  cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "NO_CHECK")
+  crucible_rule_rows("^rule[ \t]+[a-z0-9-]+[ \t]+(.*[ \t])?engine=build[ \t]" rows)
+  foreach(row IN LISTS rows)
+    if(row MATCHES "[ \t](legacy|held-by)=")
+      continue()
+    endif()
+    string(REGEX MATCH "^rule[ \t]+([a-z0-9-]+)" match "${row}")
+    set(rule "${CMAKE_MATCH_1}")
+    string(REPLACE "-" "_" test_name "guard_${rule}")
+    if(NOT rule IN_LIST arg_NO_CHECK)
+      crucible_script_test(NAME ${test_name}
+        COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ${rule} --build-dir ${CMAKE_BINARY_DIR}
+                --warnings-dir ${warnings_dir})
+      set_tests_properties(${test_name} PROPERTIES LABELS "ci_guard;build" SKIP_RETURN_CODE 77)
+    endif()
+    crucible_script_test(NAME ${test_name}_witness
+      COMMAND ${CMAKE_COMMAND} -E env ASSAY_TEST_CXX=${CRUCIBLE_REAL_CXX} ASSAY_TEST_CMAKE=${CMAKE_COMMAND}
+              ASSAY_TEST_NINJA=${CMAKE_MAKE_PROGRAM}
+              python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard witness --rule ${rule})
+    set_tests_properties(${test_name}_witness PROPERTIES LABELS "ci_guard;build" SKIP_RETURN_CODE 77)
   endforeach()
 endfunction()

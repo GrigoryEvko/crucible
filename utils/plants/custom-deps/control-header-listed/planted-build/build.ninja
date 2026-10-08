@@ -1,0 +1,14 @@
+rule CUSTOM_COMMAND
+  command = $COMMAND
+build kept.bpf.o: CUSTOM_COMMAND ../src/kept.bpf.c
+  COMMAND = clang -MD -MF kept.bpf.d -c ../src/kept.bpf.c $
+      -o kept.bpf.o
+  depfile = CMakeFiles/d/kept.d
+  deps = gcc
+build unbuilt.bpf.o: CUSTOM_COMMAND ../src/unbuilt.bpf.c
+  depfile = CMakeFiles/d/unbuilt.d
+  deps = gcc
+build gen.c: CUSTOM_COMMAND kept.bpf.o
+  COMMAND = xxd -i kept.bpf.o > gen.c
+build lib.o: CXX_COMPILER__lib_unscanned_Debug lib.cpp
+  DEP_FILE = lib.o.d

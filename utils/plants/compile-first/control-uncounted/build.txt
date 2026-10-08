@@ -1,0 +1,7 @@
+# No count: a ccache hit with no cost of a last compile, a failed compile, and an object with no record.  The rule
+# judges no largest compile, and it gives no finding.
+format 1
+kind x86_64-debug-asan
+compile test/CMakeFiles/hit_no_count.dir/hit_no_count.cpp.o test/hit_no_count.cpp result=hit
+compile test/CMakeFiles/failed_long.dir/failed_long.cpp.o test/failed_long.cpp result=failed cpu=1 instructions=50
+compile test/CMakeFiles/no_record.dir/no_record.cpp.o test/no_record.cpp record=no

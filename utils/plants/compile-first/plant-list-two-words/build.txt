@@ -1,0 +1,4 @@
+# A row of the list holds two words, and a row holds one target name.  The rule gives one error of the kind input at
+# that row.
+format 1
+kind x86_64-debug-asan

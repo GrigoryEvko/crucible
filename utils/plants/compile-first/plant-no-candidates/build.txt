@@ -1,0 +1,4 @@
+# The build directory has no compile-first-targets.txt, which cmake/CompileFirst.cmake writes at each configure.  The
+# rule gives one error of the kind input, which tells to configure the build again.
+format 1
+kind x86_64-debug-asan

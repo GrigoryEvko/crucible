@@ -431,7 +431,13 @@ def measure_self(exit_code: int, start: tuple[float, float]) -> Measurement:
     """Return the measurement of this process from `start` on, as measure() gives it for a command.
 
     The CPU time holds this process and each process that it waited for, and
-    the peak memory is that of the largest of them.
+    the peak memory is that of the largest of them.  The CPU time and the
+    peak memory start with the process.  The wall time starts at
+    start_self(), after the start of the interpreter and the imports of the
+    caller.  The wall time of a fixture run is then approximately 10 ms less
+    than the wall time of the same run in `loop test-step`, which measures the
+    process from its start.  This difference changes a verdict of the rule
+    test-time only for a run that is 10 ms or less from one of its thresholds.
 
     Args:
         exit_code: The status that the process ends with

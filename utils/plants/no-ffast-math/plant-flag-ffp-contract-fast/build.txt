@@ -1,0 +1,4 @@
+# The compile of src/x.cpp has -ffp-contract=fast, which contracts a multiply and an add across statements.  The rule
+# gives one error.
+format 1
+compile x.o src/x.cpp | g++ -ffp-contract=fast -c src/x.cpp

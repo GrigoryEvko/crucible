@@ -377,8 +377,6 @@ utils/assay/guard/engines/meta/rule_implementations.py | refused-word | 1 | <mod
 utils/assay/guard/engines/meta/rule_implementations.py | refused-word | 1 | <module>: place | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/rule_implementations.py | refused-word | 1 | <module>: size | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/rule_implementations.py | refused-word | 1 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/engines/meta/rule_implementations.py | refused-word | 1 | declared_rules: define | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/engines/meta/rule_implementations.py | refused-word | 1 | declared_rules: whether | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/rule_witness.py | long-sentence | 1 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/rule_witness.py | refused-word | 1 | <module>: bring | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/rule_witness.py | refused-word | 1 | <module>: neither | A text of today.  The change that writes the text again in STE lowers the count
@@ -666,52 +664,6 @@ utils/assay/guard/legacy/check_brand_drain.py | refused-word | 1 | tree_site_nod
 utils/assay/guard/legacy/check_brand_drain.py | refused-word | 1 | unreadable_body: comparison | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_brand_drain.py | refused-word | 1 | unreadable_body: every | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_brand_drain.py | refused-word | 2 | unreadable_body: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | long-sentence | 13 | <module> | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | long-sentence | 1 | chain_lengths | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | long-sentence | 1 | record_count | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 2 | <module>: another | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | <module>: beside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 3 | <module>: bind | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | <module>: direct | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 2 | <module>: exceed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 3 | <module>: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | <module>: failed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | <module>: lead | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | <module>: leave | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | <module>: old | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 9 | <module>: order | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 3 | <module>: ready | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | <module>: serve | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 5 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | <module>: tie | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 4 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | chain_lengths: later | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 2 | chain_lengths: reach | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | chain_lengths: ready | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | custom_objects: order | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | custom_objects: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | display: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | evaluate_chains: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | evaluate_custom_deps: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | evaluate_custom_deps: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | evaluate_order: order | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 2 | order_only_waits: order | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | read_candidates: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | record_count: exact | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | records_of: another | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | self_test: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | self_test: except | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | self_test: otherwise | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | self_test_cases: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_build_order.py | refused-word | 1 | self_test_cases: otherwise | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_cache_size.py | long-sentence | 1 | <module> | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_cache_size.py | refused-word | 1 | <module>: failed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_cache_size.py | refused-word | 2 | <module>: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_cache_size.py | refused-word | 2 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_cache_size.py | refused-word | 2 | <module>: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_cache_size.py | refused-word | 1 | findings: order | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_cache_size.py | refused-word | 1 | findings: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_cache_size.py | refused-word | 1 | self_test: every | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_clang_format.py | long-sentence | 2 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_clang_format.py | long-sentence | 1 | cache_identity | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_clang_format.py | refused-word | 2 | <module>: another | A text of today.  The change that writes the text again in STE lowers the count
@@ -752,49 +704,6 @@ utils/assay/guard/legacy/check_clang_format.py | refused-word | 1 | settings_of:
 utils/assay/guard/legacy/check_clang_format.py | refused-word | 1 | violation_path: should | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_clang_format.py | refused-word | 1 | write_cache: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_clang_format.py | semicolon | 1 | run_batch | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | long-sentence | 10 | <module> | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | long-sentence | 1 | read_ledger | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | long-sentence | 1 | write_ledger | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 2 | <module>: another | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | <module>: beside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | <module>: depend | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 2 | <module>: exact | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | <module>: exceed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 2 | <module>: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | <module>: failed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 2 | <module>: form | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | <module>: little | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | <module>: past | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | <module>: reach | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | <module>: rise | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 7 | <module>: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 9 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 2 | <module>: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | <module>: visible | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 4 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | Measure: exact | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | Measure: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | Output: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | header_measures: distinct | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | instruction_count: exact | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | load_launcher: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 2 | plant_object: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | read_ledger: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | read_links: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | read_links: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 2 | read_object_code: little | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | read_object_code: outside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | read_object_code: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | read_objects: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | read_objects: order | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | read_objects: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | self_test: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | self_test: except | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | self_test_cases: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | self_test_cases: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | self_test_cases: need | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | sentinel_timing: real | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_compile_cost.py | refused-word | 1 | shown_path: inside | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_ctx_init_door.py | long-sentence | 5 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_ctx_init_door.py | long-sentence | 1 | read_ledger | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_ctx_init_door.py | refused-word | 1 | <module>: any | A text of today.  The change that writes the text again in STE lowers the count
@@ -978,40 +887,6 @@ utils/assay/guard/legacy/check_fixy_dim_prose.py | refused-word | 1 | self_test:
 utils/assay/guard/legacy/check_fixy_dim_prose.py | refused-word | 1 | self_test: old | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_fixy_dim_prose.py | refused-word | 1 | self_test: otherwise | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_fixy_dim_prose.py | refused-word | 1 | self_test: wrong | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_checks.py | long-sentence | 2 | <module> | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_checks.py | refused-word | 1 | <module>: failed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_checks.py | refused-word | 1 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_checks.py | refused-word | 1 | <module>: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_checks.py | refused-word | 1 | self_test: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_checks.py | refused-word | 1 | self_test: otherwise | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_checks.py | refused-word | 1 | standalone.compiles: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_checks.py | refused-word | 1 | standalone: still | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_checks.py | refused-word | 1 | syntax_argv: another | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_checks.py | refused-word | 1 | syntax_argv: place | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_checks.py | refused-word | 1 | syntax_argv: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | long-sentence | 2 | <module> | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | <module>: another | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | <module>: failed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | <module>: few | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | <module>: form | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 2 | <module>: need | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | <module>: pass | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 3 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | <module>: still | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | <module>: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | <module>: visible | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | <module>: wrong | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | Outcome: exceed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | Paths: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | compile_alone: exceed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | compile_alone: pass | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | compile_alone: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | headers_with_units: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | read_units: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | run: pass | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | self_test: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | self_test: otherwise | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | refused-word | 1 | threshold_of: whole | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_no_coordination_refs.py | long-sentence | 4 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_no_coordination_refs.py | long-sentence | 2 | scan | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_no_coordination_refs.py | long-sentence | 1 | self_test | A text of today.  The change that writes the text again in STE lowers the count
@@ -1062,32 +937,6 @@ utils/assay/guard/legacy/check_no_coordination_refs.py | refused-word | 1 | self
 utils/assay/guard/legacy/check_no_coordination_refs.py | refused-word | 1 | self_test: wrong | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_no_coordination_refs.py | refused-word | 1 | text_lines: every | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_no_coordination_refs.py | semicolon | 1 | <module> | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | long-sentence | 2 | <module> | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | <module>: addition | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | <module>: ask | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | <module>: depend | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | <module>: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | <module>: failed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | <module>: false | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | <module>: inside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | <module>: lose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 3 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | <module>: still | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | <module>: unsafe | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | <module>: well | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | build_violations: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | check: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | is_exempt: lie | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | is_exempt: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | is_under: both | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | is_under: inside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | is_under: lie | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | is_under: once | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | link_violations: exempt | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | link_violations: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | link_violations: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | self_test: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | refused-word | 1 | self_test: otherwise | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | long-sentence | 11 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | long-sentence | 1 | expanded | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | long-sentence | 1 | file_facts | A text of today.  The change that writes the text again in STE lowers the count
@@ -1198,17 +1047,6 @@ utils/assay/guard/legacy/check_no_unchecked_access.py | refused-word | 1 | walk_
 utils/assay/guard/legacy/check_no_unchecked_access.py | refused-word | 1 | walk_members: order | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | refused-word | 1 | walk_members: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | refused-word | 1 | with_defines: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_unity_pch.py | long-sentence | 1 | <module> | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_unity_pch.py | refused-word | 1 | <module>: failed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_unity_pch.py | refused-word | 1 | command_words: quote | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_unity_pch.py | refused-word | 1 | command_words: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_unity_pch.py | refused-word | 2 | command_words: split | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_unity_pch.py | refused-word | 1 | database_findings: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_unity_pch.py | refused-word | 1 | database_findings: inside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_unity_pch.py | refused-word | 1 | database_findings: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_unity_pch.py | refused-word | 1 | is_unity_source: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_unity_pch.py | refused-word | 1 | self_test: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_no_unity_pch.py | refused-word | 1 | self_test: otherwise | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_padded_lists.py | long-sentence | 11 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_padded_lists.py | long-sentence | 1 | compiler_identity | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_padded_lists.py | long-sentence | 1 | list_names | A text of today.  The change that writes the text again in STE lowers the count
@@ -1267,50 +1105,6 @@ utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | template_par
 utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | write: exist | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | write_if_changed: another | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | write_if_changed: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | long-sentence | 11 | <module> | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | long-sentence | 1 | evaluate_fanout | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | long-sentence | 1 | fanout | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | long-sentence | 1 | read_fanout_ledger | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | long-sentence | 1 | read_ledger | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 2 | <module>: another | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 2 | <module>: depend | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | <module>: differ | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | <module>: direct | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | <module>: exact | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | <module>: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | <module>: failed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 3 | <module>: least | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | <module>: little | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | <module>: now | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | <module>: pass | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | <module>: per | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 2 | <module>: real | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 2 | <module>: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 6 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | <module>: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 3 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | LedgerError: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | Measure: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | Scratch.write: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | bytes_and_readers: another | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | bytes_and_readers: form | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | changes_text: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | evaluate_fanout: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | fanout: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | instruction_total: real | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | is_kind: form | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | measure: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | ordered_rows: order | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | ordered_rows: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | read_fanout_ledger: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | read_fanout_ledger: form | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | read_ledger: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | read_ledger: form | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | read_ledger: whole | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | read_rows: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | read_rows: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | run: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_parse_cost.py | refused-word | 1 | self_test: every | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | long-sentence | 15 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | long-sentence | 1 | file_facts | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | long-sentence | 2 | planted_cases | A text of today.  The change that writes the text again in STE lowers the count
@@ -1445,31 +1239,6 @@ utils/assay/guard/legacy/check_prose_paths.py | refused-word | 1 | scan: exist |
 utils/assay/guard/legacy/check_prose_paths.py | refused-word | 1 | scan: under | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_prose_paths.py | refused-word | 1 | self_test: every | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_prose_paths.py | refused-word | 1 | self_test: otherwise | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | long-sentence | 6 | <module> | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | <module>: another | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | <module>: any | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | <module>: both | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | <module>: depend | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | <module>: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 3 | <module>: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | <module>: failed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | <module>: few | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | <module>: may | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | <module>: once | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | <module>: real | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 7 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 3 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | <module>: would | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | display: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | finding: place | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | missing_dependencies: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | plant_project: failed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | read_links: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | run: combine | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | run: past | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | self_test.case: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | self_test: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_reconfigure_noop.py | refused-word | 1 | self_test: otherwise | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | long-sentence | 8 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | long-sentence | 2 | lexical_scan | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | long-sentence | 4 | planted_cases | A text of today.  The change that writes the text again in STE lowers the count
@@ -1623,14 +1392,6 @@ utils/assay/guard/legacy/check_syscall_capability.py | refused-word | 1 | statem
 utils/assay/guard/legacy/check_syscall_capability.py | refused-word | 1 | syscall_numbers: among | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | refused-word | 1 | token_calls: among | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | semicolon | 1 | <module> | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_test_time.py | long-sentence | 3 | <module> | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_test_time.py | long-sentence | 1 | through_ctest | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_test_time.py | refused-word | 1 | <module>: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_test_time.py | refused-word | 1 | <module>: failed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_test_time.py | refused-word | 2 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_test_time.py | refused-word | 1 | display: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_test_time.py | refused-word | 2 | read_ledger: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_test_time.py | refused-word | 1 | through_ctest: independent | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_vessel_acceptance.py | long-sentence | 2 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_vessel_acceptance.py | refused-word | 1 | <module>: carry | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_vessel_acceptance.py | refused-word | 1 | <module>: failed | A text of today.  The change that writes the text again in STE lowers the count
@@ -1657,17 +1418,6 @@ utils/assay/guard/legacy/contract_header_unit_test.py | refused-word | 1 | Runne
 utils/assay/guard/legacy/contract_header_unit_test.py | refused-word | 1 | run_form: beside | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/contract_header_unit_test.py | refused-word | 1 | run_form: form | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/contract_header_unit_test.py | refused-word | 1 | run_form: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/report_check_warnings.py | long-sentence | 3 | <module> | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/report_check_warnings.py | refused-word | 1 | <module>: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/report_check_warnings.py | refused-word | 1 | <module>: least | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/report_check_warnings.py | refused-word | 1 | <module>: never | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/report_check_warnings.py | refused-word | 1 | <module>: pass | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/report_check_warnings.py | refused-word | 1 | <module>: per | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/report_check_warnings.py | refused-word | 2 | <module>: real | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/report_check_warnings.py | refused-word | 1 | <module>: rise | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/report_check_warnings.py | refused-word | 1 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/report_check_warnings.py | refused-word | 1 | build_totals: place | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/report_check_warnings.py | refused-word | 1 | self_test: every | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/listing.py | long-sentence | 2 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/listing.py | refused-word | 2 | <module>: form | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/listing.py | refused-word | 1 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
@@ -1895,12 +1645,6 @@ utils/assay/guard/preprocessed.py | refused-word | 1 | without_root: inside | A 
 utils/assay/guard/preprocessed.py | refused-word | 1 | without_root: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/preprocessed.py | refused-word | 1 | without_root: whole | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/selftest.py | refused-word | 2 | <module>: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/warnings.py | refused-word | 1 | <module>: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/warnings.py | refused-word | 1 | <module>: failed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/warnings.py | refused-word | 1 | <module>: pass | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/warnings.py | refused-word | 1 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/warnings.py | refused-word | 1 | main: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/warnings.py | refused-word | 1 | self_test: every | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/write.py | long-sentence | 2 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/write.py | refused-word | 1 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | long-sentence | 11 | <module> | A text of today.  The change that writes the text again in STE lowers the count
@@ -2406,7 +2150,6 @@ utils/assay/loop/fixture/store.py | refused-word | 1 | _links_agree: real | A te
 utils/assay/loop/fixture/store.py | refused-word | 1 | _model_answers: now | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | _now_ns: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 2 | _read_fixture_ledger: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/fixture/store.py | refused-word | 1 | _read_fixture_ledger: whether | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | _record_compile: fatal | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 2 | _record_compile: pass | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 2 | _removable: old | A text of today.  The change that writes the text again in STE lowers the count

@@ -1,0 +1,10 @@
+cmake_minimum_required(VERSION 3.27)
+project(reconfigure_noop_plant NONE)
+file(GLOB inputs CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/*.txt")
+file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/kept.txt" CONTENT "kept\n")
+if(NOT IS_SYMLINK "${CMAKE_BINARY_DIR}/link")
+  file(CREATE_LINK "${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/link" SYMBOLIC)
+endif()
+add_custom_command(OUTPUT copy.txt COMMAND cp "${CMAKE_SOURCE_DIR}/src/input.txt" copy.txt
+                   DEPENDS ${inputs} "${CMAKE_BINARY_DIR}/kept.txt")
+add_custom_target(copy ALL DEPENDS copy.txt)

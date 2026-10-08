@@ -1,0 +1,4 @@
+# A planted ledger of the rule no-ffast-math.
+format 1
+rule no-ffast-math
+src/none.cpp | - | admit | -fno-rounding-math | a planted row that admits no compile

@@ -1,0 +1,11 @@
+# The ledger of a plant of the rule parse-total.
+format 1
+rule parse-total
+- | x86_64-debug-asan | 2100 | fixtures | the measure of a planted build with three objects
+- | x86_64-debug-asan | 7300 | objects | the measure of a planted build with three objects
+include/Base.h | x86_64-debug-asan | 1000/4 | - | -
+include/Big.h | x86_64-debug-asan | 5000/1 | - | -
+neg/neg_one.cpp | x86_64-debug-asan | 50/1 | - | -
+neg/neg_two.cpp | x86_64-debug-asan | 50/1 | - | -
+src/a.cpp | x86_64-debug-asan | 100/2 | - | -
+src/b.cpp | x86_64-debug-asan | 100/1 | - | -

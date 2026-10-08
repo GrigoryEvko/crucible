@@ -1,0 +1,4 @@
+# The compile of test/t.cpp has -freciprocal-math, which writes x/y as x*(1/y).  A file in test/ is in the scope of
+# the rule.  The rule gives one error.
+format 1
+compile t.o test/t.cpp | g++ -freciprocal-math -c test/t.cpp

@@ -14,7 +14,7 @@
 # of a listed test or a listed static library then have a chain of three
 # edges, so Ninja starts them before the objects of the other tests and after
 # the objects of the libraries that a test links, which have longer chains.
-# The test compile_first (utils/assay/guard/legacy/check_build_order.py) holds the list
+# The rule compile-first (utils/assay/guard/engines/buildsys/cost_budgets.py) holds the list
 # equal to the records of the build launcher, and holds each object of a
 # listed target to a chain of three edges or more.
 #

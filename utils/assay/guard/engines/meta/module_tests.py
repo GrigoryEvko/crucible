@@ -23,8 +23,7 @@ from pathlib import PurePosixPath
 
 from assay.core import report as check_report
 from assay.guard.engines.meta import package as package_scope
-from assay.guard.engines.meta import rule_implementations
-from assay.guard.engines.meta.runner import MetaContext
+from assay.guard.engines.meta.runner import MetaContext, declared_rules
 
 RULE = "module-tests"
 TESTS = "utils/assay/tests/"
@@ -40,7 +39,7 @@ def is_rule_module(context: MetaContext, item: package_scope.PythonFile) -> bool
     """Return True when a file is the module of a rule: in a directory of an engine, with findings or RULES."""
     if not item.path.startswith(ENGINES):
         return False
-    has_function, family = rule_implementations.declared_rules(context.root / item.path)
+    has_function, family = declared_rules(context.root / item.path)
     return has_function or bool(family)
 
 

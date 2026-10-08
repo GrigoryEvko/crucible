@@ -1,0 +1,10 @@
+build t/CMakeFiles/listed.dir/listed.cpp.o: CXX_COMPILER__listed_unscanned_Debug listed.cpp
+build t/listed: CXX_EXECUTABLE_LINKER__listed_Debug t/CMakeFiles/listed.dir/listed.cpp.o
+build t/CMakeFiles/other.dir/other.cpp.o: CXX_COMPILER__other_unscanned_Debug other.cpp
+build t/other: CXX_EXECUTABLE_LINKER__other_Debug t/CMakeFiles/other.dir/other.cpp.o
+build t/CMakeFiles/unit.dir/unit.cpp.o: CXX_COMPILER__unit_unscanned_Debug unit.cpp
+build unit: phony t/CMakeFiles/unit.dir/unit.cpp.o
+build compile-first.stamp: CUSTOM_COMMAND || t/listed unit
+build compile_first: phony compile-first.stamp
+build all: phony t/listed t/other unit compile_first
+default all

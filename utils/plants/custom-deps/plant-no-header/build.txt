@@ -1,0 +1,4 @@
+# The object empty.bpf.o is on the disk, and its VALID list in the dependency log holds only its source, which is an
+# input of the edge.  The list holds no header, so the rule gives one error.
+format 1
+deps empty.bpf.o | src/empty.bpf.c

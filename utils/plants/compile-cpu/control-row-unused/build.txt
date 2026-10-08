@@ -1,0 +1,5 @@
+# A ledger row names an object that the build does not hold.  An optional target is not in each build of a kind,
+# so the rule gives one warning of the kind row-unused, and no error.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/quick.cpp.o src/quick.cpp cpu=1

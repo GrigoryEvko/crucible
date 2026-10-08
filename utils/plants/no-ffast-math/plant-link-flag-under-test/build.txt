@@ -1,0 +1,5 @@
+# The overlay gives the target test_app a CMake file in test/, and its link line has -fassociative-math.  A target of
+# test/ is in the scope of the rule, so the rule gives one error.
+format 1
+compile main.o test/main.cpp | g++ -c test/main.cpp
+target test_app type=EXECUTABLE | test/main.cpp

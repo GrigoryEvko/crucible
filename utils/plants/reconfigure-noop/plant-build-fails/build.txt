@@ -1,0 +1,3 @@
+# The build of the project fails, and the rule cannot measure a second configure.  The rule gives one error for the
+# build.  The project is CMakeLists.txt.planted, and the rule reads no row of this file.
+format 1

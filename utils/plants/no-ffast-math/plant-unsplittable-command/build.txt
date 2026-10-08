@@ -1,0 +1,3 @@
+# The command string of a compile of the overlay has a quote with no end, and the rule cannot divide it.  The rule gives
+# one error for its input.
+format 1

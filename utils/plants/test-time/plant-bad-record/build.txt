@@ -1,0 +1,4 @@
+# A record of a test that is not JSON, in the directory of the records of the build.
+format 1
+kind x86_64-debug-asan
+test launched line=7 | {python} -S {root}/utils/bin/loop test-step --name launched {python} {root}/check.py

@@ -1,0 +1,3 @@
+# Each configure removes the link build/again and makes it again with the same target.  The rule gives an error for
+# the link.  The project is CMakeLists.txt.planted, and the rule reads no row of this file.
+format 1

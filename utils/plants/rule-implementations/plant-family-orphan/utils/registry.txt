@@ -1,0 +1,3 @@
+# a planted registry: the table of a family module names a rule that the registry does not have
+format 1
+rule alpha-rule engine=build scope=builddir ledger=none doc=XV | a planted refusal | fix the planted file

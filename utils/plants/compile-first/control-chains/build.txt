@@ -1,0 +1,4 @@
+# The list names the test listed, and the stamp gives its object a chain of three edges: the compile, the link and
+# the stamp.  A test that the list does not name has two edges.  The rule gives no finding.
+format 1
+kind x86_64-debug-asan

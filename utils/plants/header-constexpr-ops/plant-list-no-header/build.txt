@@ -1,0 +1,4 @@
+# A row of the list that names a header that is not under include/.
+format 1
+kind x86_64-debug-asan
+compile test/layer/CMakeFiles/layer_sentinel_crucible.dir/sentinels/crucible/crucible_Light_h.cpp.o build/test/layer/sentinels/crucible/crucible_Light_h.cpp record=no | {cxx} -std=c++26 -I {root}/include -fconstexpr-ops-limit=1000 -o {build}/light.o -c {build}/test/layer/sentinels/crucible/crucible_Light_h.cpp

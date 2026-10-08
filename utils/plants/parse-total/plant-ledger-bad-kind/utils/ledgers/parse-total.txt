@@ -1,0 +1,7 @@
+# The ledger of a plant of the rule parse-total.
+format 1
+rule parse-total
+- | x86_64-debug-asan | 2100 | fixtures | the measure of the planted build
+- | x86_64-debug-asan | 2200 | objects | the measure of the planted build
+- | X86 | 1 | objects | a reason
+- | X86 | 2 | fixtures | a reason

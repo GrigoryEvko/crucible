@@ -1,0 +1,4 @@
+# A planted ledger of the rule function-size.
+format 1
+rule function-size
+@build/CMakeFiles/lib.dir/giant.cpp.o | x86_64-debug-asan | 300 | - | a planted reason

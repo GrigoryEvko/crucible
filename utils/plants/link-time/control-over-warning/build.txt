@@ -1,0 +1,5 @@
+# A link of 3 s of CPU time is more than the warning threshold 2 s and less than the error threshold 5 s.  The rule
+# gives one warning of the kind over-threshold.
+format 1
+kind x86_64-debug-asan
+link test/slow_test cpu=3

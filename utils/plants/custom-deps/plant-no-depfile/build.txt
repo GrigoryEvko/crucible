@@ -1,0 +1,4 @@
+# A custom command compiles plain.bpf.o with no depfile binding.  An empty line ends the bindings of a build
+# statement, so the depfile line after it binds nothing.  The object is not on the disk, and the rule still gives one
+# error at the line of the edge.
+format 1

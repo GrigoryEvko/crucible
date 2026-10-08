@@ -1,0 +1,4 @@
+# A planted ledger of the rule compile-cpu.
+format 1
+rule compile-cpu
+@build/CMakeFiles/lib.dir/quick.cpp.o | Debug | 25 | - | a planted reason

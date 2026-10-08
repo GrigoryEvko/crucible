@@ -1,0 +1,3 @@
+# A custom command has the order-only input liba.a, which an archive writes, and no compile waits for the command.
+# Only a compile that waits counts, so the rule gives no error.
+format 1

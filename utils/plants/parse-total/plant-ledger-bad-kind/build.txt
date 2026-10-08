@@ -1,0 +1,3 @@
+# The kind X86 of two total rows is not a build kind of lowercase words: an error at the line of the first row.
+format 1
+kind x86_64-debug-asan

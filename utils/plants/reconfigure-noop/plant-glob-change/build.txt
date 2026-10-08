@@ -1,0 +1,4 @@
+# Each build adds an input of the glob with CONFIGURE_DEPENDS, so the build after the second configure runs CMake
+# again.  The rule gives an error for it.  The project is CMakeLists.txt.planted, and the rule reads no row of this
+# file.
+format 1

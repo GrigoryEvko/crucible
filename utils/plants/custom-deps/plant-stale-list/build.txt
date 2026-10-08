@@ -1,0 +1,4 @@
+# The object stale.bpf.o is on the disk, and its list in the dependency log holds a header in the state STALE: the
+# object is newer than its list.  The rule gives one error that tells the state and the reason.
+format 1
+deps stale.bpf.o state=STALE | src/stale.bpf.c src/common.h

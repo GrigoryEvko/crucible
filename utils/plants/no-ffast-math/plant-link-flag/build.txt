@@ -1,0 +1,5 @@
+# The link line of the executable app has -ffast-math, which links crtfastmath.o and sets the flush-to-zero bits of
+# the process.  The compile of its source is clean.  The rule gives one error at the command that makes the target.
+format 1
+compile main.o src/main.cpp | g++ -c src/main.cpp
+target app type=EXECUTABLE line=12 | src/main.cpp | -ffast-math

@@ -18,7 +18,7 @@
 # The crucible layer can name each layer, so its sentinels compile against
 # the full include root.  A crucible header that cannot compile alone has a
 # row in crucible-not-standalone.txt, `header | reason`, and no sentinel.
-# The test layer_not_standalone compiles each listed header alone and fails
+# The rule header-standalone compiles each listed header alone and fails
 # when one compiles, so the list can only become shorter.  A reason has no
 # semicolon, because CMake reads a semicolon as a list separator.
 #
@@ -45,7 +45,7 @@
 # builds them, `all` does not, and the default leg of CI builds the target.
 # A row of header-constexpr-ops.txt,
 # `<layer>/<path>.h | limit | reason`, gives one header a higher limit, and
-# the test header_constexpr_ops refuses a row that its header no longer
+# the rule header-constexpr-ops refuses a row that its header no longer
 # needs.  GCC gives no warning form of the limit, so the limit is an error
 # only.  The rule header-checks gives the warnings: it finds each eager
 # evaluation in the parse tree.
@@ -539,28 +539,13 @@ set_tests_properties(admitted_audit admitted_audit_self_test PROPERTIES
 # tests that fill the tree cache (the end of test/CMakeLists.txt).
 set_tests_properties(admitted_audit PROPERTIES FIXTURES_REQUIRED tsast_trees)
 
-# Each header of crucible-not-standalone.txt still fails to compile alone.
-# The test compiles it with the command of the crucible sentinels.  The
-# command comes from the compile database, so the test needs no target of
-# its own, and no unit that fails to preprocess enters the database.
-crucible_script_test(NAME layer_not_standalone
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-standalone
-          --standalone ${CMAKE_BINARY_DIR})
-crucible_script_test(NAME layer_not_standalone_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-standalone
-          --self-test)
-set_tests_properties(layer_not_standalone layer_not_standalone_self_test PROPERTIES LABELS "ci_guard;substrate")
-
-# Each one-line unit has its operation limit, and each row of
-# header-constexpr-ops.txt is still necessary: its header compiles alone at
-# the limit of the row and not at the threshold.  Each row gives a warning.
-crucible_script_test(NAME header_constexpr_ops_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-constexpr-ops --self-test
-          --cxx ${CRUCIBLE_REAL_CXX})
-crucible_script_test(NAME header_constexpr_ops
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-constexpr-ops ${CMAKE_BINARY_DIR}
-          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-set_tests_properties(header_constexpr_ops header_constexpr_ops_self_test PROPERTIES LABELS "ci_guard;substrate")
+# The rule header-standalone (test guard_header_standalone) compiles each
+# header of crucible-not-standalone.txt with the command of the crucible
+# sentinels from the compile database, and it fails when one compiles alone.
+# The rule header-constexpr-ops (test guard_header_constexpr_ops) holds the
+# operation limit of each one-line unit, and it refuses a row of
+# header-constexpr-ops.txt that its header no longer needs.  Each row gives a
+# warning.  test/CMakeLists.txt registers the tests of the two build rules.
 
 # A fixture compiles against the root of the foundation layer, as a
 # foundation header would, and the test passes when the compiler refuses it

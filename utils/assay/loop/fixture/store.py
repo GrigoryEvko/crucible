@@ -51,9 +51,9 @@ its own error and get a second error from a different cause.
 
 The ledger utils/ledgers/fixture-own-reason.txt names the fixtures that had
 an error with no regex when the rule started, `- | - | admit | FIXTURE |
-REASON`.  The registry has no rule fixture-own-reason, so the driver reads
-this ledger with the policy admit of assay.core.ledger.  A ledger that does
-not exist has no row, and the driver then imports no ledger module.  A listed
+REASON`.  The rule fixture-own-reason of the registry has the policy admit,
+and the driver holds it (held-by=loop-fixture).  A ledger that does not
+exist has no row, and the driver then imports no ledger module.  A listed
 fixture gives a warning in the format of utils/assay/core/report.py, and the
 driver writes it to the warnings directory (`fixture-own-reason.NAME.txt`).  A
 listed fixture with no such error fails, so that its row goes.
@@ -2447,19 +2447,17 @@ def _shown(path: Path) -> str:
         return str(path)
 
 
-def _read_fixture_ledger(path: Path, check: str, has_rule: bool) -> tuple[dict[str, str], str]:
+def _read_fixture_ledger(path: Path, check: str) -> tuple[dict[str, str], str]:
     """Read one ledger of fixtures, and return the reason of each fixture, or no rows and the problem.
 
     A row is `- | - | VALUE | FIXTURE | REASON` (the module text, The reason of
     the failure and The cost of a compile).  A ledger that does not exist has
-    no row, and the call then imports no module.  The ledger of a check with a
-    rule of the registry has the policy of that rule.  The check
-    fixture-own-reason has no rule, and its ledger has the policy admit.
+    no row, and the call then imports no module.  The ledger has the policy of
+    the rule of the check in the registry.
 
     Args:
         path: The ledger
         check: The check, which the row `rule CHECK` of the ledger names
-        has_rule: Whether the registry has a rule for the check
 
     Raises:
         OSError: If the ledger exists and cannot be read, or the registry cannot be read
@@ -2470,13 +2468,10 @@ def _read_fixture_ledger(path: Path, check: str, has_rule: bool) -> tuple[dict[s
     from assay.core.registry import Policy
 
     try:
-        if has_rule:
-            ledger = rule_ledger.read(rule_ledger.rule_of(check), file=path)
-        else:
-            ledger = rule_ledger.parse(path.read_text(encoding="utf-8"), str(path), check, Policy.ADMIT)
+        ledger = rule_ledger.read(rule_ledger.rule_of(check), file=path)
     except ValueError as problem:
         return {}, str(problem)
-    value = "VALUE" if has_rule else rule_ledger.ADMIT_VALUE
+    value = rule_ledger.ADMIT_VALUE if ledger.policy == Policy.ADMIT else "VALUE"
     rows: dict[str, str] = {}
     for key, entry in sorted(ledger.base.items(), key=lambda pair: pair[1].line):
         if key.path or key.kind or not key.entity:
@@ -2508,7 +2503,7 @@ def _parse_cost_budget(registry: Path, ledger_paths: Mapping[str, Path], test_re
             problems[check] = f"the registry {registry} has no measured rule {check}"
             continue
         try:
-            ledger, problem = _read_fixture_ledger(path, check, True)
+            ledger, problem = _read_fixture_ledger(path, check)
         except OSError as error:
             ledger, problem = {}, f"the ledger of {check} cannot be read: {error}"
         if problem:
@@ -2832,7 +2827,7 @@ def report_own_reason(fixture_name: str, source: Path, unmatched: list[str], is_
     variable, default = _REASON_LEDGER
     path = Path(os.environ.get(variable) or default)
     try:
-        ledger, problem = _read_fixture_ledger(path, _REASON_CHECK, False)
+        ledger, problem = _read_fixture_ledger(path, _REASON_CHECK)
     except OSError as error:
         ledger, problem = {}, f"the ledger {path} cannot be read: {error}"
     is_listed = fixture_name in ledger

@@ -1,0 +1,8 @@
+# The flags of the floor and -fno-fast-math are no banned flags.  A compile of a vendored tree and a compile of a
+# build tree are out of the scope of the rule.  A flag of a CMake bracket comment or of a variable that no target
+# reads is not in the database.  The link line of the target is clean, and the rule gives no error.
+format 1
+compile kept.o src/kept.cpp | g++ -fno-fast-math -ffp-contract=off -ftrapping-math -fsignaling-nans -frounding-math -c src/kept.cpp
+compile v.o third_party/v.cpp | g++ -fno-signed-zeros -c third_party/v.cpp
+compile g.o build-gen/g.cpp | g++ -Ofast -c build-gen/g.cpp
+target kept type=EXECUTABLE | src/kept.cpp | -O1 | -Wl,--as-needed

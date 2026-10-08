@@ -1,0 +1,4 @@
+# A planted list that names a target two times.
+kind x86_64-debug-asan
+a_target
+a_target

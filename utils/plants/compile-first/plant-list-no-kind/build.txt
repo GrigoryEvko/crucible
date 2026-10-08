@@ -1,0 +1,4 @@
+# The list has no row `kind KIND`, so the rule does not know the kind of its counts.  The rule gives one error of the
+# kind input at the list.
+format 1
+kind x86_64-debug-asan

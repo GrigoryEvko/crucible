@@ -1,0 +1,4 @@
+# The build has no build-kind.txt, so no ledger row can apply.  The rule gives one error of the kind input, which
+# tells to configure the build again.
+format 1
+compile CMakeFiles/lib.dir/quick.cpp.o src/quick.cpp cpu=1

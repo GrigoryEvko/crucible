@@ -1,0 +1,4 @@
+# A ledger row of test-time for the kind of the build that names a test that the build does not register.
+format 1
+kind x86_64-debug-asan
+test launched line=7 | {python} -S {root}/utils/bin/loop test-step --name launched {python} {root}/check.py

@@ -1,0 +1,8 @@
+# The list of a sentinel in the dependency log of Ninja has the state STALE: the object is newer than its list.  The
+# rule gives one error of the kind input, with the reason of the reader.
+format 1
+kind x86_64-debug-asan
+file system.h size=1000
+file include/fixy/Small.h size=1048576
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Small.cpp.o test/layer/checks/fixy/Small.cpp cpu=3
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Small.cpp.o state=STALE | test/layer/checks/fixy/Small.cpp system.h include/fixy/Small.h

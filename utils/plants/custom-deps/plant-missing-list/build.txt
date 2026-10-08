@@ -1,0 +1,4 @@
+# The object missing.bpf.o is on the disk, and the dependency log holds no list of it.  The build log holds no record
+# of the object either.  The rule gives one error that tells the state MISSING and the reason.
+format 1
+deps missing.bpf.o state=MISSING

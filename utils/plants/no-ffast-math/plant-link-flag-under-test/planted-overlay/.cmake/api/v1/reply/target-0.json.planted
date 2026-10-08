@@ -1,0 +1,1 @@
+{"name": "test_app", "type": "EXECUTABLE", "paths": {"source": "test", "build": "test"}, "sources": [{"path": "test/main.cpp"}], "link": {"commandFragments": [{"fragment": "-fassociative-math", "role": "flags"}]}}

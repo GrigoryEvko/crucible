@@ -1,0 +1,5 @@
+# A ledger row has three cells, and a row of the policy max has four after its path.  The rule gives one error at
+# the line of the row, for an input that it cannot read.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/quick.cpp.o src/quick.cpp cpu=1

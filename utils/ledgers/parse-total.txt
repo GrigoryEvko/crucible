@@ -1,12 +1,12 @@
 # The ledger of the rule parse-total: the baseline of the bytes that the compiles of one build read.
-# `python3 utils/bin/guard explain parse-total` tells the rule.  utils/assay/guard/legacy/check_parse_cost.py
-# reads this file, and its --write writes the rows of one build kind again.
+# `python3 utils/bin/guard explain parse-total` tells the rule, and
+# `python3 utils/bin/guard write --rule parse-total --build-dir BUILD` writes the rows of one build kind again.
 #
 # The two total rows of a kind:
 #   - | KIND | BYTES | objects | REASON
 #   - | KIND | BYTES | fixtures | REASON
 #   The sum, over each object of the target all and over each negative fixture, of the bytes of each file
-#   that its compile reads, at the last --write.  The reason tells why the baseline has its value.
+#   that its compile reads, at the last write.  The reason tells why the baseline has its value.
 #
 # A file row:
 #   PATH | KIND | BYTES/READERS | - | -       for a file of the tree, or @build/PATH of the build directory
@@ -17,7 +17,7 @@
 # A growth over the baseline gives a warning, and over the error threshold of the measured rule
 # parse-total of utils/registry.txt an error.  A fall of more than the warning threshold is an error
 # too.  To accept a growth, raise the baseline in the same commit with a reason:
-#   python3 utils/bin/guard check --rule parse-total --build-dir build --write --reason TEXT
+#   python3 utils/bin/guard write --rule parse-total --build-dir build --reason TEXT
 format 1
 rule parse-total
 - | x86_64-debug-asan | 5826/2998 | <system>/asm-generic/errno.h | -

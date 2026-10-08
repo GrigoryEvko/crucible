@@ -15,6 +15,21 @@ THE CONTEXT
     the policy max or baseline judges its ledger itself.  The run then gives
     its findings unchanged.
 
+THE FAMILIES
+    A family module holds more than one rule.  Its table RULES maps the ID of
+    each of its rules to a Member.  A Member gives the function of the
+    findings of the rule.  For a rule of the policy max or baseline, it also
+    gives the function that writes the ledger.  For a rule of the policy none,
+    it can give the function that writes the data file of the rule.
+
+    A rule with a module of its own is in the file ID.py of its engine
+    directory.  module_name_of() gives that file when the file is there.  Else
+    it gives the module that names the rule in its table.  rule_module() gives
+    a FamilyRule for a rule of a family.  The runners call the functions
+    findings, written and refresh of a FamilyRule, as they call the functions
+    of a module.  Each other attribute, such as plant_context, comes from the
+    family module.
+
 THE WITNESS
     The plants of a rule are in utils/plants/RULE/.  Each directory whose name
     starts with "plant-" is a tree that the rule must refuse: the rule gives a
@@ -40,10 +55,10 @@ import shutil
 import sys
 import tempfile
 from collections.abc import Callable, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import ModuleType
-from typing import Protocol
+from typing import Any, Protocol
 
 from assay.core import git
 from assay.core import ledger as rule_ledger
@@ -60,6 +75,9 @@ PLANTED_SUFFIX = ".planted"
 SKIPPED = 77
 # The guide of the tree.  Only the root of the repository holds a file with this name (the rule layout).
 GUIDE = "CLAUDE.md"
+# The directory of the modules of the engines, relative to the root, and the table of a family module (THE FAMILIES).
+ENGINES = "utils/assay/guard/engines"
+FAMILY_TABLE = "RULES"
 
 
 class NotApplicable(Exception):
@@ -164,21 +182,149 @@ def pinned_program(tool: str) -> Path:
 
 
 def module_name(rule_id: str, engine: str = "meta") -> str:
-    """Return the dotted name of the module of a rule."""
+    """Return the dotted name of the module of a rule with a module of its own.
+
+    Args:
+        rule_id: The ID of the rule
+        engine: The directory of the engine (assay.core.registry.Engine.directory)
+    """
     return f"assay.guard.engines.{engine}.{rule_id.replace('-', '_')}"
 
 
-def rule_module(rule: rule_registry.Rule) -> ModuleType:
-    """Import the module of a rule.
+def declared_rules(path: Path) -> tuple[bool, list[str]]:
+    """Return True when a module holds the function findings, and the string keys of its table RULES (THE FAMILIES).
+
+    The function reads the module with the Python ast module, and it imports none.
+    """
+    import ast
+
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
+    except SyntaxError:
+        return False, []
+    has_function = any(isinstance(node, ast.FunctionDef) and node.name == "findings" for node in tree.body)
+    keys: list[str] = []
+    for node in tree.body:
+        targets = (
+            node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
+        )
+        value = node.value if isinstance(node, (ast.Assign, ast.AnnAssign)) else None
+        if any(isinstance(target, ast.Name) and target.id == FAMILY_TABLE for target in targets) and isinstance(
+            value, ast.Dict
+        ):
+            keys += [key.value for key in value.keys if isinstance(key, ast.Constant) and isinstance(key.value, str)]
+    return has_function, keys
+
+
+def module_name_of(rule: rule_registry.Rule, root: Path = REPO_ROOT) -> str:
+    """Return the dotted name of the module of a rule: its own module, else the family module that names it.
+
+    When the engine directory holds no such module, the function gives the
+    name of the own module of the rule.  Then the import fails with the name
+    of the missing file.
+    Complexity: one parse of each module of the engine directory, for a rule of a family.
+    """
+    own = module_name(rule.id, rule.engine.directory)
+    directory = root / ENGINES / rule.engine.directory
+    if (directory / f"{rule.id.replace('-', '_')}.py").is_file():
+        return own
+    for path in sorted(directory.glob("*.py")):
+        if rule.id in declared_rules(path)[1]:
+            return f"assay.guard.engines.{rule.engine.directory}.{path.stem}"
+    return own
+
+
+@dataclass(frozen=True, slots=True)
+class Member:
+    """One rule of a family module (THE FAMILIES).
+
+    `findings` gives the findings of the rule on the context of its engine.
+    `written` gives the new ledger of a rule of the policy max or baseline,
+    from the context, the ledger and the reason of the call, and it is None
+    for each other rule.  `refresh` writes the data file of a rule of the
+    policy none again from the context, and it returns the line that tells
+    the result.  The list cmake/compile-first.txt of the rule compile-first is
+    such a file.  `refresh` is None for each other rule.
+    """
+
+    findings: Callable[[Any], list[check_report.Finding]]
+    written: Callable[[Any, rule_ledger.Ledger, str | None], rule_ledger.Ledger] | None = None
+    refresh: Callable[[Any], str] | None = None
+
+
+class FamilyRule:
+    """One rule of a family module, with the functions that the runners call on the module of a rule."""
+
+    __slots__ = ("member", "module")
+
+    def __init__(self, module: ModuleType, member: Member) -> None:
+        """Keep the family module and the member of the rule."""
+        self.module = module
+        self.member = member
+
+    def findings(self, context: Any) -> list[check_report.Finding]:
+        """Return the findings of the rule on the context of its engine."""
+        return self.member.findings(context)
+
+    def written(self, context: Any, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
+        """Return the new ledger of the rule.
+
+        Raises:
+            rule_ledger.LedgerError: If the member of the rule has no function that writes its ledger
+        """
+        if self.member.written is None:
+            raise rule_ledger.LedgerError(
+                f"the family module {self.module.__name__} gives no write of the ledger of this rule"
+            )
+        return self.member.written(context, ledger, reason)
+
+    @property
+    def refresh(self) -> Callable[[Any], str]:
+        """The write of the data file of the rule (Member).
+
+        Raises:
+            AttributeError: If the member of the rule writes no data file.  getattr() then takes its default
+        """
+        if self.member.refresh is None:
+            raise AttributeError(f"the family module {self.module.__name__} writes no data file of this rule")
+        return self.member.refresh
+
+    def __getattr__(self, name: str) -> Any:
+        """Give each other attribute of the family module, such as plant_context or judge, as a module gives it.
+
+        Raises:
+            AttributeError: If the family module has no such attribute, or the class gives the name itself.
+                getattr() then takes its default
+        """
+        if name in FamilyRule.__slots__ or hasattr(FamilyRule, name):
+            raise AttributeError(name)
+        return getattr(self.module, name)
+
+
+def rule_module(rule: rule_registry.Rule) -> ModuleType | FamilyRule:
+    """Import the module of a rule, and give a FamilyRule for a rule of a family module (THE FAMILIES).
 
     Raises:
         ModuleNotFoundError: If the rule has no module
     """
-    return importlib.import_module(module_name(rule.id, rule.engine.value))
+    name = module_name_of(rule)
+    module = importlib.import_module(name)
+    table = getattr(module, FAMILY_TABLE, None)
+    if (
+        name != module_name(rule.id, rule.engine.directory)
+        and isinstance(table, dict)
+        and isinstance(table.get(rule.id), Member)
+    ):
+        return FamilyRule(module, table[rule.id])
+    return module
 
 
-def judged(rule: rule_registry.Rule, root: Path, raw: Sequence[check_report.Finding],
-           kept: Callable[[rule_ledger.Key], bool] | None = None) -> list[check_report.Finding]:
+def judged(
+    rule: rule_registry.Rule,
+    root: Path,
+    raw: Sequence[check_report.Finding],
+    kept: Callable[[rule_ledger.Key], bool] | None = None,
+) -> list[check_report.Finding]:
     """Judge the findings of a rule against its ledger in a tree.
 
     A ledger that does not obey its schema gives one error, and the findings
@@ -197,12 +343,24 @@ def judged(rule: rule_registry.Rule, root: Path, raw: Sequence[check_report.Find
     try:
         ledger = rule_ledger.read(rule, root)
     except (rows_grammar.RowsError, OSError) as problem:
-        return [*raw, check_report.Finding("error", rule_ledger.shown_path(rule.id), getattr(problem, "line", 0),
-                                           rule.id, f"the ledger cannot be read: {problem}")]
+        return [
+            *raw,
+            check_report.Finding(
+                "error",
+                rule_ledger.shown_path(rule.id),
+                getattr(problem, "line", 0),
+                rule.id,
+                f"the ledger cannot be read: {problem}",
+            ),
+        ]
     if kept is not None:
-        ledger = replace(ledger, base={key: entry for key, entry in ledger.base.items() if kept(key)},
-                         deltas={name: {key: entry for key, entry in table.items() if kept(key)}
-                                 for name, table in ledger.deltas.items()})
+        ledger = replace(
+            ledger,
+            base={key: entry for key, entry in ledger.base.items() if kept(key)},
+            deltas={
+                name: {key: entry for key, entry in table.items() if kept(key)} for name, table in ledger.deltas.items()
+            },
+        )
     return rule_ledger.compare(rule, ledger, raw)
 
 
@@ -218,8 +376,13 @@ def module_judged(rule: rule_registry.Rule, context: RuleContext) -> list[check_
     return judged(rule, context.root, context.findings_of(rule))
 
 
-def run(rule: rule_registry.Rule, context: RuleContext, warnings_dir: Path | None,
-        kept: Callable[[rule_ledger.Key], bool] | None = None) -> int:
+def run(
+    rule: rule_registry.Rule,
+    context: RuleContext,
+    warnings_dir: Path | None,
+    kept: Callable[[rule_ledger.Key], bool] | None = None,
+    key: str | None = None,
+) -> int:
     """Run one rule on the tree of the context, judge its findings against its ledger and print them.
 
     Args:
@@ -227,6 +390,8 @@ def run(rule: rule_registry.Rule, context: RuleContext, warnings_dir: Path | Non
         context: The context of the engine of the rule
         warnings_dir: The directory of the warnings of a build, or None
         kept: The rows of the ledger that the run judges (judged()), or None for each row
+        key: The writer key of the warnings file (assay.core.report, THE WARNINGS DIRECTORY), when the parts of
+            one rule run at the same time, or None
 
     Returns:
         0 with no error, 1 with an error, SKIPPED when the rule does not apply
@@ -237,7 +402,7 @@ def run(rule: rule_registry.Rule, context: RuleContext, warnings_dir: Path | Non
         print(f"{rule.id}: {reason}.  The rule does not apply")
         return SKIPPED
     findings = judged(rule, context.root, raw, kept)
-    status = check_report.emit(findings, rule.id, warnings_dir)
+    status = check_report.emit(findings, rule.id, warnings_dir, key)
     errors = sum(item.level == "error" for item in findings)
     print(f"{rule.id}: {errors} error(s), {len(findings) - errors} warning(s)")
     return status
@@ -268,13 +433,17 @@ def plants_of(rule_id: str, root: Path = REPO_ROOT) -> list[Path]:
     directory = root / PLANTS / rule_id
     if not directory.is_dir():
         return []
-    return sorted(path for path in directory.iterdir() if path.is_dir()
-                  and path.name.startswith((PLANT_PREFIX, CONTROL_PREFIX)))
+    return sorted(
+        path for path in directory.iterdir() if path.is_dir() and path.name.startswith((PLANT_PREFIX, CONTROL_PREFIX))
+    )
 
 
-def witness(rule: rule_registry.Rule, root: Path = REPO_ROOT,
-            copy: Callable[[Path, Path], RuleContext] = copy_tree,
-            judge: Callable[[rule_registry.Rule, RuleContext], list[check_report.Finding]] | None = None) -> int:
+def witness(
+    rule: rule_registry.Rule,
+    root: Path = REPO_ROOT,
+    copy: Callable[[Path, Path], RuleContext] = copy_tree,
+    judge: Callable[[rule_registry.Rule, RuleContext], list[check_report.Finding]] | None = None,
+) -> int:
     """Run a rule on each of its plants and controls (THE WITNESS), and print each verdict.
 
     Args:
@@ -299,8 +468,9 @@ def witness(rule: rule_registry.Rule, root: Path = REPO_ROOT,
         with tempfile.TemporaryDirectory(prefix=f"witness-{rule.id}-") as scratch:
             try:
                 context = prepare(plant, Path(scratch) / "tree")
-                found = judge(rule, context) if judge is not None else judged(rule, context.root,
-                                                                              context.findings_of(rule))
+                found = (
+                    judge(rule, context) if judge is not None else judged(rule, context.root, context.findings_of(rule))
+                )
                 errors = [item for item in found if item.level == "error"]
             except NotApplicable as reason:
                 failures.append(f"{plant.name}: the rule does not apply to it: {reason}")

@@ -1,0 +1,5 @@
+# A link took 0.7 GB of peak memory, more than the warning threshold 0.5 GB and less than the error threshold 1 GB.
+# The rule gives one warning of the kind over-threshold.
+format 1
+kind x86_64-debug-asan
+link test/slow_test cpu=3 peak=0.7

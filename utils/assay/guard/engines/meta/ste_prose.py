@@ -48,9 +48,9 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 from assay.core import report as check_report
-from assay.guard.engines.meta import determinism, rule_implementations, ste_dictionary
+from assay.guard.engines.meta import determinism, ste_dictionary
 from assay.guard.engines.meta import package as package_scope
-from assay.guard.engines.meta.runner import MetaContext
+from assay.guard.engines.meta.runner import MetaContext, declared_rules
 from assay.readers import python as python_reader
 
 RULE = "ste-prose"
@@ -302,7 +302,7 @@ def lists_files(node: ast.FunctionDef | ast.AsyncFunctionDef, table: python_read
 def complexity_findings(context: MetaContext, item: package_scope.PythonFile) -> Iterator[check_report.Finding]:
     """Give the module of a rule and each reader function that lists files, with no Complexity: in its docstring."""
     if item.path.startswith(ENGINES):
-        has_function, family = rule_implementations.declared_rules(context.root / item.path)
+        has_function, family = declared_rules(context.root / item.path)
         module_doc = ast.get_docstring(item.parsed.tree) or ""
         if (has_function or family) and COMPLEXITY not in module_doc:
             yield check_report.Finding(

@@ -1,0 +1,4 @@
+# a planted registry: a family module of the engine build holds the two rules, in the directory buildsys
+format 1
+rule alpha-rule engine=build scope=builddir ledger=none doc=XV | a planted refusal | fix the planted file
+rule beta-rule engine=build scope=builddir ledger=none doc=XV | a planted refusal | fix the planted file

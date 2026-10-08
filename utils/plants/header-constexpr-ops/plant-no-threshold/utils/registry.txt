@@ -1,0 +1,3 @@
+# A planted registry with one measured rule that is not header-constexpr-ops.
+format 1
+rule other-check engine=build scope=builddir ledger=max warn=1 error=2 unit=s held-by=cmake doc=XV | another rule | lower the value

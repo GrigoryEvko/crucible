@@ -1,0 +1,7 @@
+rule CUSTOM_COMMAND
+  command = $COMMAND
+build plain.bpf.o | ${cmake_ninja_workdir}plain.bpf.o: CUSTOM_COMMAND ../src/plain.bpf.c ../src/plain.bpf.c
+  COMMAND = clang -c ../src/plain.bpf.c -o plain.bpf.o
+  restat = 1
+
+  depfile = CMakeFiles/d/after_blank.d

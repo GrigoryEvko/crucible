@@ -1,0 +1,5 @@
+# A compile ran 60 G user instructions, more than the warning threshold 55 G and less than the error threshold 110 G.
+# The rule gives one warning of the kind over-threshold at the source.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/loaded.cpp.o src/loaded.cpp cpu=25 instructions=60

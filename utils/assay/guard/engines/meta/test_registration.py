@@ -41,7 +41,7 @@ from pathlib import Path
 from assay.core import proc
 from assay.core import report as check_report
 from assay.core import registry as rule_registry
-from assay.guard.engines.meta.runner import MetaContext, NotApplicable, copy_tree
+from assay.guard.engines.meta.runner import MetaContext, NotApplicable, copy_tree, module_name_of
 from assay.readers import ctest as ctest_reader
 
 RULE = "test-registration"
@@ -150,13 +150,14 @@ def reads_trees(root: Path, module: str, cache: dict[str, bool]) -> bool:
     return False
 
 
-def implementing_module(rule: rule_registry.Rule) -> str | None:
-    """Return the module that runs a rule: its legacy module or its own module, or None for a measured rule with a holder."""
+def implementing_module(rule: rule_registry.Rule, root: Path) -> str | None:
+    """Return the module that runs a rule: its legacy module, its own module or its family module, or None for a rule
+    with a holder."""
     if rule.legacy is not None:
         return rule.legacy.qualified
     if rule.held_by is not None:
         return None
-    return f"assay.guard.engines.{rule.engine.value}.{rule.id.replace('-', '_')}"
+    return module_name_of(rule, root)
 
 
 def findings(context: MetaContext) -> list[check_report.Finding]:
@@ -205,7 +206,7 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
             rule_id = rule.id
             if LABEL in labels:
                 covered.add(rule_id)
-            module = implementing_module(rule)
+            module = implementing_module(rule, root)
             if (module is not None and reads_trees(root, module, tree_cache)
                     and TREE_FIXTURE not in test.words_of("FIXTURES_REQUIRED")
                     and TREE_FIXTURE not in test.words_of("FIXTURES_SETUP")):

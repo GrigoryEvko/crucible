@@ -1,0 +1,2 @@
+# No root of the caches: the rule reads no cache, and it gives no finding.
+format 1

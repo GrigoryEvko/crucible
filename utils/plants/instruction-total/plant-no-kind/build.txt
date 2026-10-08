@@ -1,0 +1,2 @@
+# The build has no build-kind.txt, so no row of the ledger applies to it: an error that asks to configure again.
+format 1

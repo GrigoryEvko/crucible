@@ -1,0 +1,4 @@
+# CMakeUserPresets.json of one host holds -Ofast in a preset, and CMakePresets.json holds -fno-fast-math.  The rule
+# reads only the presets file of the tree, and -fno-fast-math is no banned flag.  The rule gives no error.
+format 1
+compile a.o src/a.cpp | g++ -c src/a.cpp

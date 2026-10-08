@@ -124,6 +124,11 @@ def main(argv: list[str]) -> int:
         from assay.guard.engines.elf import runner as elf_runner
 
         statuses += [elf_runner.witness(rule, REPO_ROOT) for rule in elf_rules]
+    build_rules = [rule for rule in chosen if rule.engine == rule_registry.Engine.BUILD]
+    if build_rules:
+        from assay.guard.engines.buildsys import runner as build_runner
+
+        statuses += [build_runner.witness(rule, REPO_ROOT) for rule in build_rules]
     if compiled:
         from assay.guard.engines.plugin import witness as plugin_witness
 

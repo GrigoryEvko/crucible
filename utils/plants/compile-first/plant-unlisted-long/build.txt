@@ -1,0 +1,5 @@
+# A target of all compiles its source in 25 G instructions, more than the error threshold 20 G, and the list does not
+# name it.  The rule gives one error of the kind unlisted-long, which names the source.
+format 1
+kind x86_64-debug-asan
+compile test/CMakeFiles/long_unlisted.dir/long_unlisted.cpp.o test/long_unlisted.cpp cpu=1 instructions=25

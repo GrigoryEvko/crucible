@@ -1,0 +1,2 @@
+# The planted list of the crucible headers that cannot compile alone.
+crucible/Needs.h

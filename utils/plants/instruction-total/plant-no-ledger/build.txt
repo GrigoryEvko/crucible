@@ -1,0 +1,3 @@
+# The tree has no ledger of the rule.  The rule reads the ledger before the census: an error that names the ledger.
+format 1
+kind x86_64-debug-asan

@@ -1,0 +1,5 @@
+# The compile database holds a unit of the fixy sentinels and no unit of layer_sentinel_crucible, so the rule has no
+# command for a crucible header alone.
+format 1
+kind x86_64-debug-asan
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/sentinels/fixy/fixy_Thing_h.cpp.o build/test/layer/sentinels/fixy/fixy_Thing_h.cpp record=no | {cxx} -std=c++26 -I {root}/include -o {build}/sentinel.o -c {build}/test/layer/sentinels/fixy/fixy_Thing_h.cpp

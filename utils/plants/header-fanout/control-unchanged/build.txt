@@ -1,0 +1,60 @@
+# Twelve headers of include/, each with a sentinel, and one object that reads each header.  Each header has the cost of
+# its row in the baseline: the rule gives no finding, and it prints the ten largest costs.
+format 1
+kind x86_64-debug-asan
+file include/H00.h size=100
+file include/H01.h size=200
+file include/H02.h size=300
+file include/H03.h size=400
+file include/H04.h size=500
+file include/H05.h size=600
+file include/H06.h size=700
+file include/H07.h size=800
+file include/H08.h size=900
+file include/H09.h size=1000
+file include/H10.h size=1100
+file include/H11.h size=1200
+file include/Base.h size=1000
+file test/layer/checks/H00.cpp size=10
+file test/layer/checks/H01.cpp size=10
+file test/layer/checks/H02.cpp size=10
+file test/layer/checks/H03.cpp size=10
+file test/layer/checks/H04.cpp size=10
+file test/layer/checks/H05.cpp size=10
+file test/layer/checks/H06.cpp size=10
+file test/layer/checks/H07.cpp size=10
+file test/layer/checks/H08.cpp size=10
+file test/layer/checks/H09.cpp size=10
+file test/layer/checks/H10.cpp size=10
+file test/layer/checks/H11.cpp size=10
+file src/a.cpp size=100
+file neg/neg_one.cpp size=50
+file neg/neg_two.cpp size=50
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/H00.o test/layer/checks/H00.cpp
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/H01.o test/layer/checks/H01.cpp
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/H02.o test/layer/checks/H02.cpp
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/H03.o test/layer/checks/H03.cpp
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/H04.o test/layer/checks/H04.cpp
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/H05.o test/layer/checks/H05.cpp
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/H06.o test/layer/checks/H06.cpp
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/H07.o test/layer/checks/H07.cpp
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/H08.o test/layer/checks/H08.cpp
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/H09.o test/layer/checks/H09.cpp
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/H10.o test/layer/checks/H10.cpp
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/H11.o test/layer/checks/H11.cpp
+compile CMakeFiles/user.o src/a.cpp
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/H00.o | test/layer/checks/H00.cpp include/H00.h
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/H01.o | test/layer/checks/H01.cpp include/H01.h
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/H02.o | test/layer/checks/H02.cpp include/H02.h
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/H03.o | test/layer/checks/H03.cpp include/H03.h
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/H04.o | test/layer/checks/H04.cpp include/H04.h
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/H05.o | test/layer/checks/H05.cpp include/H05.h
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/H06.o | test/layer/checks/H06.cpp include/H06.h
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/H07.o | test/layer/checks/H07.cpp include/H07.h
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/H08.o | test/layer/checks/H08.cpp include/H08.h
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/H09.o | test/layer/checks/H09.cpp include/H09.h
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/H10.o | test/layer/checks/H10.cpp include/H10.h
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/H11.o | test/layer/checks/H11.cpp include/H11.h
+deps CMakeFiles/user.o | src/a.cpp include/H00.h include/H01.h include/H02.h include/H03.h include/H04.h include/H05.h include/H06.h include/H07.h include/H08.h include/H09.h include/H10.h include/H11.h
+fixture neg_one neg/neg_one.cpp | neg/neg_one.cpp include/Base.h
+fixture neg_two neg/neg_two.cpp | neg/neg_two.cpp include/Base.h

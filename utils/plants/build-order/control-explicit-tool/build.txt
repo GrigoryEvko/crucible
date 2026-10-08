@@ -1,0 +1,4 @@
+# The graph of the plant archive-order-only with no order-only input on the archive.  A custom command that runs the
+# linked tool as an explicit input writes hdr.h, and the compile c.o waits for it.  An explicit input that a link
+# writes is permitted, so the rule gives no error.
+format 1

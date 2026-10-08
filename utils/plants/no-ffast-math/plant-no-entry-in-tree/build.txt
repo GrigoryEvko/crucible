@@ -1,0 +1,4 @@
+# The one compile of the database compiles a file outside the tree.  The database is of a different source tree, and
+# the rule read no flag of this tree.  The rule gives one error for its input.
+format 1
+compile x.o /nonexistent/planted/src/x.cpp | g++ -c /nonexistent/planted/src/x.cpp

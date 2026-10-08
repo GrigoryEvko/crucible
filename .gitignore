@@ -1,5 +1,7 @@
 build/
 build-*/
+# The plants of a rule whose ID starts with build- are sources, such as the plants of the rule build-order.
+!utils/plants/build-*/
 pgo/
 CMakeUserPresets.json
 Testing/

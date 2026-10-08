@@ -1,0 +1,5 @@
+# The object kept.bpf.o is on the disk, and its VALID list holds the header common.h.  The object unbuilt.bpf.o has a
+# depfile and is not on the disk, so the rule does not read its list.  A custom command that writes the source gen.c
+# and a compile of CMake are not objects of a custom command.  The rule gives no error.
+format 1
+deps kept.bpf.o | src/kept.bpf.c src/common.h

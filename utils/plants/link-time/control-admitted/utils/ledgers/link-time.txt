@@ -1,0 +1,4 @@
+# A planted ledger of the rule link-time.
+format 1
+rule link-time
+@build/test/heavy_test | x86_64-debug-asan | 6 | - | a planted reason

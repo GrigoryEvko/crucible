@@ -1,0 +1,6 @@
+# One record holds no instruction count, because the host gave no exact counter.  The rule does not judge that
+# compile, and the counted compile of 10 G gives no finding.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/light.cpp.o src/light.cpp cpu=2 instructions=10
+compile CMakeFiles/lib.dir/uncounted.cpp.o src/uncounted.cpp cpu=25

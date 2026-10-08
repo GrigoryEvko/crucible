@@ -1,0 +1,5 @@
+# A row of the compile database gives the precompiled header of CMake in the joined shape -includeFILE, with no space
+# after the option.  The rule gives one error for the word.
+format 1
+target plain | src/a.cpp
+compile e.o src/e.cpp | g++ -include/b/CMakeFiles/t.dir/cmake_pch.hxx -c src/e.cpp

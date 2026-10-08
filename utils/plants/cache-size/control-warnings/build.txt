@@ -1,0 +1,14 @@
+# Three caches that give no error.  The cache under holds two files of 64 KiB under its limit of 256 KiB.  The cache
+# over holds six such files, 1.5 times its limit: a warning.  The directory undeclared has no limit: a warning.
+format 1
+limit under 262144
+limit over 262144
+cache-file under/00/0000 size=65536
+cache-file under/01/0001 size=65536
+cache-file over/00/0000 size=65536
+cache-file over/01/0001 size=65536
+cache-file over/02/0002 size=65536
+cache-file over/03/0003 size=65536
+cache-file over/04/0004 size=65536
+cache-file over/05/0005 size=65536
+cache-file undeclared/00/0000 size=65536

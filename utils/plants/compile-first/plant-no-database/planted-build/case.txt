@@ -1,0 +1,2 @@
+# The planted build directory holds a graph, the targets of all and a build kind of the list, and no compile
+# database, because the plant has no build.txt.  The rule cannot read the records, and it gives one error.

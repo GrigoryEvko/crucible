@@ -1,0 +1,4 @@
+# The compile of src/x.cpp has -ffp-contract=on after -ffp-contract=off of the floor.  GCC uses the last of two
+# contrary flags, so the flag cancels the floor.  No row of the ledger admits it, and the rule gives one error.
+format 1
+compile x.o src/x.cpp | g++ -ffp-contract=off -ffp-contract=on -c src/x.cpp

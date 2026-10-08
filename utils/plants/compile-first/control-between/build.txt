@@ -1,0 +1,9 @@
+# No finding: a listed target with a largest compile of 30 G, a listed target and an unlisted target of 18 G and 20 G,
+# a long target outside all, and a listed name with no compile.
+format 1
+kind x86_64-debug-asan
+compile test/CMakeFiles/long_listed.dir/long_listed_a.cpp.o test/long_listed_a.cpp cpu=1 instructions=3
+compile test/CMakeFiles/long_listed.dir/long_listed_b.cpp.o test/long_listed_b.cpp cpu=1 instructions=30
+compile test/CMakeFiles/middle_listed.dir/middle_listed.cpp.o test/middle_listed.cpp cpu=1 instructions=18
+compile test/CMakeFiles/middle_unlisted.dir/middle_unlisted.cpp.o test/middle_unlisted.cpp cpu=1 instructions=20
+compile test/CMakeFiles/outside_all.dir/outside_all.cpp.o test/outside_all.cpp cpu=1 instructions=60

@@ -1,0 +1,3 @@
+# The compile database of the overlay is not JSON.  The rule gives one error for its input.
+format 1
+target plain | src/a.cpp

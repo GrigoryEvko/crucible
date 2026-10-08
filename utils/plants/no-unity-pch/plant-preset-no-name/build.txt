@@ -1,0 +1,4 @@
+# The second configure preset of CMakePresets.json has no name, and CMake refuses the file.  The reader gives the
+# problem with the position of the preset, and the rule gives one error at the presets file.
+format 1
+target plain | src/a.cpp

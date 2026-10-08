@@ -1,0 +1,4 @@
+# The overlay removes the index of the replies of the CMake file API, and the rule cannot read what CMake decided.  The
+# rule gives one error for its input.
+format 1
+target plain | src/a.cpp

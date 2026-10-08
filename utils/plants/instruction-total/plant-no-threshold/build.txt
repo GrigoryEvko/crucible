@@ -1,0 +1,3 @@
+# The planted registry has no measured rule instruction-total, so the rule has no thresholds: an error at the registry.
+format 1
+kind x86_64-debug-asan

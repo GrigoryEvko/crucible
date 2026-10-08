@@ -16,6 +16,11 @@ A rule of the policy max or baseline judges its ledger itself, so its module
 writes the ledger: the function written(context, ledger, reason) of the module
 gives the new ledger, and --reason gives the reason of a changed row.
 
+A rule of the policy none has no ledger.  Its module can write a data file
+from a build.  Then the function refresh(context) of the module writes the
+file again, and the command prints the line that the function returns.  The
+list cmake/compile-first.txt of the rule compile-first is such a file.
+
 A rule of the engine plugin writes through assay.guard.engines.plugin.runner,
 which reads the build of --build-dir.  A module that writes its ledger itself
 gives the function write(rule, request), and its head comment tells its modes.
@@ -113,7 +118,21 @@ def main(argv: list[str]) -> int:
         tree_context = tree_runner.TsastContext(root, build_dir)
         tree_context.rule = rule
         context = tree_context
+    elif rule.engine == rule_registry.Engine.BUILD:
+        from assay.guard.engines.buildsys import runner as build_runner
+
+        build_context = build_runner.BuildContext(root, build_dir)
+        build_context.rule = rule
+        context = build_context
     try:
+        if rule.policy == rule_registry.Policy.NONE:
+            refresh = getattr(runner.rule_module(rule), "refresh", None)
+            if refresh is None:
+                check_report.write_line(f"guard write: the rule {rule.id} has no ledger, and its module writes no "
+                                        f"data file", is_error=True)
+                return 2
+            check_report.write_line(f"guard write: {refresh(context)}")
+            return 0
         ledger = rule_ledger.read(rule, root)
         if rule.policy in (rule_registry.Policy.MAX, rule_registry.Policy.BASELINE):
             written = runner.rule_module(rule).written(context, ledger, options.reason)

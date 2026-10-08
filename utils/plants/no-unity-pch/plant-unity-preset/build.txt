@@ -1,0 +1,4 @@
+# A configure preset of CMakePresets.json sets CMAKE_UNITY_BUILD, which turns a unity build on.  The build itself is
+# clean.  The rule gives one error at the presets file.
+format 1
+target plain | src/a.cpp

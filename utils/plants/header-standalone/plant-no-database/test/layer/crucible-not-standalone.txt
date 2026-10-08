@@ -1,0 +1,3 @@
+# The planted list of the crucible headers that cannot compile alone.  The planted build has no compile database,
+# because the plant has no build.txt and only the directory planted-build.
+crucible/Needs.h | it includes a header that is not on the include path

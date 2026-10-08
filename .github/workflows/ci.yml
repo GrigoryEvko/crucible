@@ -135,8 +135,7 @@ jobs:
       - name: Install the pinned mypy and ruff
         run: python3 utils/bin/setup install mypy ruff
 
-      # The self-test of the rule no-ffast-math and the plants of the rule
-      # test-registration configure a scratch project.
+      # The plants of the rule test-registration configure a scratch project.
       - name: Install the pinned CMake and ctest
         uses: ./.github/actions/pinned-cmake
 
@@ -196,14 +195,6 @@ jobs:
         run: |
           python3 utils/bin/guard check --rule brand-drain --self-test
           python3 utils/bin/guard check --rule brand-drain
-
-      # The compile-database half of the scan runs in the build legs through
-      # ctest. Here the self-test runs, and the scan reads the presets and
-      # the sources.
-      - name: no -ffast-math (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule no-ffast-math --self-test
-          python3 utils/bin/guard check --rule no-ffast-math
 
       - name: fixy dimension prose (self-test + scan)
         run: |
@@ -459,10 +450,11 @@ jobs:
       # leg builds only the crucible library, so it skips the check.
       - name: Re-configure compiles nothing
         if: ${{ matrix.preset != 'analyzer' }}
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: ${{ matrix.jobs }}
         run: >
           python3 utils/bin/guard check --rule reconfigure-noop
-          ${{ matrix.preset == 'default' && 'build' || format('build-{0}', matrix.preset) }}
-          --jobs ${{ matrix.jobs }}
+          --build-dir ${{ matrix.preset == 'default' && 'build' || format('build-{0}', matrix.preset) }}
 
       # Skipped for the analyzer preset (build-time -fanalyzer findings are its coverage).
       # The test launcher holds the rules test-time and test-memory for each test

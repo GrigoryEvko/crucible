@@ -1,0 +1,4 @@
+# A compile of 2 s of CPU time is less than the warning threshold 10 s of compile-cpu.  The rule gives no finding.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/quick.cpp.o src/quick.cpp cpu=2

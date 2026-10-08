@@ -1,0 +1,6 @@
+# One fragment of the link line of the shared library lib holds two words, and the second is
+# -funsafe-math-optimizations, as a flag of a generator expression or of target_link_libraries can give it.  The rule
+# divides the fragment by the rules of a shell, and it gives one error.
+format 1
+compile lib.o src/lib.cpp | g++ -c src/lib.cpp
+target lib type=SHARED_LIBRARY | src/lib.cpp | -Wl,-O1 -funsafe-math-optimizations

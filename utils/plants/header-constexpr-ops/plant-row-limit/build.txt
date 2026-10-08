@@ -1,0 +1,4 @@
+# A listed header that needs more operations than the limit 1500 of its row: it does not compile alone at that limit.
+format 1
+kind x86_64-debug-asan
+compile test/layer/CMakeFiles/layer_sentinel_crucible.dir/sentinels/crucible/crucible_Heavy_h.cpp.o build/test/layer/sentinels/crucible/crucible_Heavy_h.cpp record=no | {cxx} -std=c++26 -I {root}/include -fconstexpr-ops-limit=1500 -o {build}/heavy.o -c {build}/test/layer/sentinels/crucible/crucible_Heavy_h.cpp

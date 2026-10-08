@@ -1,0 +1,5 @@
+# A listed header whose evaluation is in a variable template with no instance: it compiles alone at the threshold
+# 1000, so the higher limit of its row is not necessary.
+format 1
+kind x86_64-debug-asan
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/sentinels/fixy/fixy_Lazy_h.cpp.o build/test/layer/sentinels/fixy/fixy_Lazy_h.cpp record=no | {cxx} -std=c++26 -I {root}/include -fconstexpr-ops-limit=5000 -o {build}/lazy.o -c {build}/test/layer/sentinels/fixy/fixy_Lazy_h.cpp

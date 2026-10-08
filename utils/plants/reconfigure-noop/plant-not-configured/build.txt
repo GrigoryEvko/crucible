@@ -1,0 +1,3 @@
+# The planted build directory holds no CMakeCache.txt: no configure made it.  The rule cannot measure it, and it gives
+# one error for its input.
+format 1

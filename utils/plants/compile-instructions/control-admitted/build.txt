@@ -1,0 +1,5 @@
+# A compile of 120 G user instructions has a ledger row of the kind of the build.  The rule gives one warning of the
+# kind admitted.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/heavy.cpp.o src/heavy.cpp cpu=5 instructions=120

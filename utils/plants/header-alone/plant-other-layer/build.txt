@@ -1,0 +1,8 @@
+# A sentinel includes a header of include/other, a layer with no held rule.  The rule gives one error of the kind
+# input at the header.
+format 1
+kind x86_64-debug-asan
+file system.h size=1000
+file include/other/Stray.h size=1048576
+compile test/layer/CMakeFiles/layer_sentinel_other.dir/checks/other/Stray.cpp.o test/layer/checks/other/Stray.cpp cpu=3
+deps test/layer/CMakeFiles/layer_sentinel_other.dir/checks/other/Stray.cpp.o | test/layer/checks/other/Stray.cpp system.h include/other/Stray.h

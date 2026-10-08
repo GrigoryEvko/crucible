@@ -1,0 +1,5 @@
+# The target header gets the precompiled header <vector> through a call at line 9 of CMakeLists.txt, and it compiles
+# the generated source cmake_pch.hxx of its own header.  The rule gives one error at the line of the call, and no
+# error for a borrowed header.
+format 1
+target header pch=<vector> pch-line=9 | src/c.cpp {build}/CMakeFiles/header.dir/cmake_pch.hxx

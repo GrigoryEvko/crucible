@@ -1,0 +1,6 @@
+# A link of 0.5 s of CPU time gives no finding.  A second target is not built, and the rule does not read an output
+# that is not there.
+format 1
+kind x86_64-debug-asan
+link test/quick_test cpu=0.5
+link test/unbuilt_test exists=no

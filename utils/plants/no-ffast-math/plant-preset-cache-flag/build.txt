@@ -1,0 +1,4 @@
+# The cache variable CMAKE_CXX_FLAGS of the preset fast of CMakePresets.json holds -Ofast.  The build is clean, and the
+# rule gives one error at the presets file.
+format 1
+compile a.o src/a.cpp | g++ -c src/a.cpp

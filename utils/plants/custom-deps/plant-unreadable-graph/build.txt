@@ -1,0 +1,3 @@
+# The build statement of build.ninja has no colon, so the reader refuses the file.  The rule gives one error for its
+# input.
+format 1

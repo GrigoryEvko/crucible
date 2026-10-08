@@ -210,6 +210,19 @@ def preset_cases(expect: testing.Expect) -> None:
             "configurePresets that is not a list gives a problem",
             cmake.presets(root)[1].problem == "configurePresets is not a list of objects",
         )
+        for label, document in (
+            ("no name", '{"configurePresets": [{"name": "first"}, {"cacheVariables": {"A": "1"}}]}'),
+            ("a name that is not a text", '{"configurePresets": [{"name": 3}]}'),
+            ("an empty name", '{"configurePresets": [{"name": ""}]}'),
+        ):
+            (root / "CMakeUserPresets.json").write_text(document, encoding="utf-8")
+            unnamed = cmake.presets(root)[1]
+            position = "2" if label == "no name" else "1"
+            expect(
+                f"a preset with {label} gives a problem that names its position, and the file gives no preset",
+                unnamed.configure == ()
+                and unnamed.problem == f"the item {position} of configurePresets has no name, and CMake refuses it",
+            )
 
 
 def programs() -> tuple[str, str, str]:

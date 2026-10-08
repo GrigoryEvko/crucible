@@ -1,0 +1,5 @@
+# The largest function of the object has 300 KB of machine code, more than the error threshold 256 KB.  The rule
+# gives one error of the kind over-threshold.  A ccache hit gives the same machine code, so the rule reads each object.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/giant.cpp.o src/giant.cpp functions=_Z5giantv:307200 result=hit
