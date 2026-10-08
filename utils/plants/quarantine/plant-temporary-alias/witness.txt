@@ -1,0 +1,12 @@
+# An explicit temporary names its class also through an alias of the class in
+# a namespace that holds it, and through an alias template of the class.
+
+compile report temporary_alias.cpp
+exit report pass
+finding report quarantine std-entity temporary_alias.cpp:15:33 | std::chrono::duration
+finding report quarantine std-entity temporary_alias.cpp:16:33 | std::chrono::duration
+finding report quarantine std-entity temporary_alias.cpp:17:33 | std::chrono::time_point
+finding report quarantine std-entity temporary_alias.cpp:17:77 | std::chrono::duration
+
+compile error temporary_alias.cpp mode=error out=no errors=report
+exit error fail

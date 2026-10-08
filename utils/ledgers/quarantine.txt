@@ -1196,6 +1196,7 @@ include/crucible/ledger/RefreshDaemon.h | std-entity | 2 | std::__atomic_base::s
 include/crucible/ledger/RefreshDaemon.h | std-entity | 1 | std::atomic::exchange | -
 include/crucible/ledger/RefreshDaemon.h | std-entity | 2 | std::atomic::load | -
 include/crucible/ledger/RefreshDaemon.h | std-entity | 3 | std::atomic::store | -
+include/crucible/ledger/RefreshDaemon.h | std-entity | 1 | std::chrono::duration | -
 include/crucible/ledger/RefreshDaemon.h | std-entity | 1 | std::counting_semaphore::release | -
 include/crucible/ledger/RefreshDaemon.h | std-entity | 1 | std::counting_semaphore::try_acquire | -
 include/crucible/ledger/RefreshDaemon.h | std-entity | 1 | std::counting_semaphore::try_acquire_for | -
@@ -3282,6 +3283,7 @@ test/fixy/test_concurrent_snapshot.cpp | std-entity | 7 | std::__atomic_base::lo
 test/fixy/test_concurrent_snapshot.cpp | std-entity | 6 | std::atomic | -
 test/fixy/test_concurrent_snapshot.cpp | std-entity | 4 | std::atomic::load | -
 test/fixy/test_concurrent_snapshot.cpp | std-entity | 2 | std::atomic::store | -
+test/fixy/test_concurrent_snapshot.cpp | std-entity | 2 | std::chrono::duration | -
 test/fixy/test_concurrent_snapshot.cpp | std-entity | 2 | std::chrono::operator+ | -
 test/fixy/test_concurrent_snapshot.cpp | std-entity | 2 | std::chrono::operator<=> | -
 test/fixy/test_concurrent_snapshot.cpp | std-entity | 4 | std::chrono::steady_clock::now | -
@@ -4395,6 +4397,7 @@ test/fixy/test_session_ownership_attacks.cpp | std-entity | 4 | std::atomic | -
 test/fixy/test_session_ownership_attacks.cpp | std-entity | 4 | std::atomic::load | -
 test/fixy/test_session_ownership_attacks.cpp | std-entity | 6 | std::atomic::store | -
 test/fixy/test_session_ownership_attacks.cpp | std-entity | 1 | std::bit_cast | -
+test/fixy/test_session_ownership_attacks.cpp | std-entity | 4 | std::chrono::duration | -
 test/fixy/test_session_ownership_attacks.cpp | std-entity | 1 | std::chrono::duration::count | -
 test/fixy/test_session_ownership_attacks.cpp | std-entity | 1 | std::chrono::operator+ | -
 test/fixy/test_session_ownership_attacks.cpp | std-entity | 1 | std::chrono::operator<=> | -
@@ -4529,6 +4532,7 @@ test/fixy/test_session_subtype_attack.cpp | std-entity | 3 | std::atomic::load |
 test/fixy/test_session_subtype_attack.cpp | std-entity | 2 | std::atomic::store | -
 test/fixy/test_session_subtype_attack.cpp | std-entity | 2 | std::basic_string_view::data | -
 test/fixy/test_session_subtype_attack.cpp | std-entity | 2 | std::basic_string_view::size | -
+test/fixy/test_session_subtype_attack.cpp | std-entity | 1 | std::chrono::duration | -
 test/fixy/test_session_subtype_attack.cpp | std-entity | 2 | std::get | -
 test/fixy/test_session_subtype_attack.cpp | std-entity | 1 | std::pair | -
 test/fixy/test_session_subtype_attack.cpp | std-entity | 3 | std::span | -
@@ -5661,6 +5665,7 @@ test/session_oracle/wire_driver.h | std-entity | 1 | __gnu_cxx::operator== | -
 test/session_oracle/wire_driver.h | std-entity | 1 | std::basic_string_view | -
 test/session_oracle/wire_driver.h | std-entity | 2 | std::basic_string_view::data | -
 test/session_oracle/wire_driver.h | std-entity | 2 | std::basic_string_view::size | -
+test/session_oracle/wire_driver.h | std-entity | 1 | std::chrono::duration | -
 test/session_oracle/wire_driver.h | std-entity | 2 | std::condition_variable::notify_all | -
 test/session_oracle/wire_driver.h | std-entity | 1 | std::condition_variable::wait_for | -
 test/session_oracle/wire_driver.h | std-entity | 2 | std::deque::empty | -
@@ -5730,6 +5735,7 @@ test/test_asymmetric_failure.cpp | std-entity | 1 | std::span::operator[] | -
 test/test_asymmetric_failure.cpp | std-object | 1 | std::span | -
 test/test_background_thread_run_in_row.cpp | raw-pointer-object | 1 | - | -
 test/test_background_thread_run_in_row.cpp | replace-pending:std::bit_cast | 1 | std::bit_cast | -
+test/test_background_thread_run_in_row_drain.cpp | std-entity | 3 | std::chrono::duration | -
 test/test_background_thread_run_in_row_drain.cpp | std-entity | 3 | std::chrono::operator+ | -
 test/test_background_thread_run_in_row_drain.cpp | std-entity | 3 | std::chrono::operator<=> | -
 test/test_background_thread_run_in_row_drain.cpp | std-entity | 6 | std::chrono::steady_clock::now | -
@@ -5745,6 +5751,7 @@ test/test_background_thread_run_in_row_meta.cpp | c-array-object | 4 | - | -
 test/test_background_thread_run_in_row_meta.cpp | raw-pointer-object | 5 | - | -
 test/test_background_thread_run_in_row_meta.cpp | replace-pending:std::bit_cast | 1 | std::bit_cast | -
 test/test_background_thread_run_in_row_meta.cpp | std-entity | 1 | std::atomic::load | -
+test/test_background_thread_run_in_row_meta.cpp | std-entity | 1 | std::chrono::duration | -
 test/test_background_thread_run_in_row_meta.cpp | std-entity | 1 | std::chrono::operator+ | -
 test/test_background_thread_run_in_row_meta.cpp | std-entity | 1 | std::chrono::operator<=> | -
 test/test_background_thread_run_in_row_meta.cpp | std-entity | 2 | std::chrono::steady_clock::now | -
@@ -5771,6 +5778,7 @@ test/test_background_thread_run_in_row_publish.cpp | std-entity | 8 | std::__ato
 test/test_background_thread_run_in_row_publish.cpp | std-entity | 1 | std::atomic::exchange | -
 test/test_background_thread_run_in_row_publish.cpp | std-entity | 7 | std::atomic::load | -
 test/test_background_thread_run_in_row_publish.cpp | std-entity | 6 | std::atomic::store | -
+test/test_background_thread_run_in_row_publish.cpp | std-entity | 5 | std::chrono::duration | -
 test/test_background_thread_run_in_row_publish.cpp | std-entity | 5 | std::chrono::operator+ | -
 test/test_background_thread_run_in_row_publish.cpp | std-entity | 5 | std::chrono::operator<=> | -
 test/test_background_thread_run_in_row_publish.cpp | std-entity | 10 | std::chrono::steady_clock::now | -
@@ -7494,6 +7502,7 @@ test/test_transaction_owner.cpp | c-library-call | 1 | waitpid | -
 test/test_transaction_owner.cpp | raw-function-pointer | 1 | - | -
 test/test_transaction_owner.cpp | raw-pointer-object | 2 | - | -
 test/test_transaction_owner.cpp | replace-pending:std::bit_cast | 1 | std::bit_cast | -
+test/test_transaction_owner.cpp | std-entity | 1 | std::chrono::duration | -
 test/test_transaction_owner.cpp | std-entity | 1 | std::chrono::operator+ | -
 test/test_transaction_owner.cpp | std-entity | 1 | std::chrono::operator<=> | -
 test/test_transaction_owner.cpp | std-entity | 2 | std::chrono::steady_clock::now | -
@@ -8143,6 +8152,7 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_perf_loader.cpp | std-entity | +1 | std::atomic_flag::clear | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_perf_loader.cpp | std-entity | +1 | std::atomic_flag::test | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_perf_loader.cpp | std-entity | +1 | std::atomic_flag::test_and_set | -
+@x86_64-debug-asan-bench-fuzz | bench/bench_perf_loader.cpp | std-entity | +2 | std::chrono::duration | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_perf_loader.cpp | std-entity | +1 | std::chrono::duration::count | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_perf_loader.cpp | std-entity | +1 | std::chrono::duration_cast | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_perf_loader.cpp | std-entity | +2 | std::chrono::operator+ | -
@@ -8863,7 +8873,7 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_crdt_counter.cpp | std-entity | +2 | std::operator< | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_crdt_counter.cpp | std-entity | +3 | std::operator<=> | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_crdt_counter.cpp | std-entity | +1 | std::operator> | -
-@x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_crdt_counter.cpp | std-entity | +1 | std::tuple | -
+@x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_crdt_counter.cpp | std-entity | +3 | std::tuple | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_crdt_counter.cpp | std-object | +1 | std::array | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_crdt_counter.cpp | std-object | +2 | std::pair | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_crdt_counter.cpp | std-object | +4 | std::tuple | -

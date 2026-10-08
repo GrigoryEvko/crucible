@@ -300,11 +300,16 @@ std::string member_name_text(tree name) {
 
 std::string identifier_spelled_at(location_t location) { return spelled_name_at(location).identifier; }
 
-// True when the source spells the class CLASS_TYPE, or an alias of it in its
-// namespace, at the start of the range of LOCATION, and a '(', a '{' or a '<'
-// follows the name.  An explicit temporary, such as std::vector<int>{1, 2} or
-// std::string("abc"), starts at the name of its type.  An implicit conversion
-// starts at the expression that it converts.
+// True when the source spells the class CLASS_TYPE at the start of the range
+// of LOCATION, and a '(', a '{' or a '<' follows the name.  An explicit
+// temporary, such as std::vector<int>{1, 2} or std::string("abc"), starts at
+// the name of its type.  An implicit conversion starts at the expression that
+// it converts.  The source can spell the class by its own name, or by the
+// name of the type as the code writes it: an alias such as
+// std::chrono::seconds, or an alias template such as std::chrono::sys_time.
+// The front end keeps that name in TYPE_NAME of the type of the temporary.  An
+// alias of the class in its top namespace also counts, when the type of the
+// temporary holds no alias name.
 bool spells_class_at(location_t location, tree class_type) {
     SpelledName spelled = spelled_name_at(location);
     if (spelled.identifier.empty() || (spelled.next != '(' && spelled.next != '{' && spelled.next != '<')) {
@@ -313,6 +318,10 @@ bool spells_class_at(location_t location, tree class_type) {
     tree decl = TYPE_MAIN_DECL(TYPE_MAIN_VARIANT(class_type));
     if (decl == NULL_TREE || spelled.identifier == simple_name(decl)) {
         return decl != NULL_TREE;
+    }
+    tree written = TYPE_NAME(class_type);
+    if (written != NULL_TREE && TREE_CODE(written) == TYPE_DECL && spelled.identifier == simple_name(written)) {
+        return true;
     }
     tree found =
         lookup_qualified_name(top_namespace(decl), get_identifier(spelled.identifier.c_str()), LOOK_want::TYPE, false);

@@ -1,0 +1,18 @@
+// An explicit temporary can name its class through an alias that a library
+// declares in a namespace that holds the class, such as std::chrono::seconds
+// for std::chrono::duration, or through an alias template of the class, such
+// as std::chrono::sys_time for std::chrono::time_point.  The plant expects a
+// finding at the name of each explicit temporary below.
+
+#include <chrono>
+
+template <class T>
+void temporary_sink(T&& value) {
+    static_cast<void>(value);
+}
+
+void temporary_alias_use(long count) {
+    temporary_sink(std::chrono::seconds{count});
+    temporary_sink(std::chrono::milliseconds(count));
+    temporary_sink(std::chrono::sys_time<std::chrono::seconds>(std::chrono::seconds(count)));
+}
