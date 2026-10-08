@@ -132,8 +132,7 @@ THE OTHER FINDINGS
     The rule also refuses these, and no row of the ledger admits them:
       check-file  a check file that is not a .cpp file, that has no
                   header, or that does not include its header first
-      unread      a tree with no directory include/, and a namespace with a
-                  name that the parse tree does not give
+      unread      a tree with no directory include/
       ledger      a row of the ledger that the rule refuses (THE LEDGER)
     A file that does not parse gives the kind parse (the engine runner).
 
@@ -1298,48 +1297,31 @@ def is_in_self_test(node: tsast.Node) -> bool:
     return any(is_self_test_segment(segment) for segment in tsast.namespace_path(node))
 
 
-def namespace_items(tree: tsast.Tree, path: str) -> tuple[list[Item], list[check_report.Finding]]:
-    """Return each self-test namespace of a header, and an error for each namespace with a name that the tree hides."""
+def namespace_items(tree: tsast.Tree, path: str) -> list[Item]:
+    """Return each self-test namespace of a header.
+
+    The grammar gives the name of a namespace as a namespace_identifier or a
+    nested_namespace_specifier, also with `inline`, and qualified_parts()
+    reads each of them.  An anonymous namespace has no name and no item.
+    """
     items: list[Item] = []
-    unread: list[check_report.Finding] = []
     for node in tree.find("namespace_definition"):
         name = node.child_by_field("name")
-        if name is None:
-            continue
-        parts = tsast.qualified_parts(name)
-        if parts is None:
-            unread.append(
-                check_report.Finding(
-                    "error",
-                    path,
-                    node.line,
-                    RULE,
-                    f"the rule cannot read the name {tsast.spelled(name)} of the namespace, and it cannot tell if it "
-                    f"is a self-test namespace.  Write the name as identifiers and `::`",
-                    UNREAD,
-                    tsast.spelled(name),
-                )
-            )
-            continue
-        if is_in_self_test(node):
+        parts = tsast.qualified_parts(name) if name is not None else None
+        if parts is None or is_in_self_test(node):
             continue
         if any(is_self_test_segment(segment) for segment in parts[1]):
             items.append(Item(path, node.line, NAMESPACE, "::".join((*tsast.namespace_path(node), *parts[1]))))
-    return items, unread
+    return items
 
 
-def header_items(
-    tree: tsast.Tree, macros: dict[str, MacroChecks], exits: frozenset[str]
-) -> tuple[list[Item], list[check_report.Finding]]:
+def header_items(tree: tsast.Tree, macros: dict[str, MacroChecks], exits: frozenset[str]) -> list[Item]:
     """Return each item of compile-time work that one header does in each includer (THE SIX KINDS).
-
-    The second list holds an error for each namespace with a name that the
-    rule cannot read.
 
     Complexity: linear in the number of nodes of the file, times the depth of each candidate.
     """
     path = tree.path.as_posix()
-    items, unread = namespace_items(tree, path)
+    items = namespace_items(tree, path)
     for node in tree.find("static_assert_declaration"):
         condition = node.child_by_field("condition")
         key = tsast.spelled(condition if condition is not None else node)
@@ -1361,7 +1343,7 @@ def header_items(
         items += [
             Item(path, site.line, kind, key, detail=detail) for site, key, detail in found if not is_in_self_test(site)
         ]
-    return items, unread
+    return items
 
 
 def check_file_of(header: str) -> str:
@@ -1578,9 +1560,7 @@ def findings(context: TsastContext) -> list[check_report.Finding]:
     macros = macro_table(trees, context.macro_bodies(trees))
     exits = report_exits(next((tree for tree in trees if tree.path.as_posix() == REPORT_HEADER), None))
     for tree in trees:
-        items, unread = header_items(tree, macros, exits)
-        found += unread
-        found += [item_finding(item) for item in items]
+        found += [item_finding(item) for item in header_items(tree, macros, exits)]
     found += check_file_findings(context)
     found += ledger_findings(context)
     return sorted(found, key=lambda finding: (finding.path, finding.line, finding.kind, finding.entity))
