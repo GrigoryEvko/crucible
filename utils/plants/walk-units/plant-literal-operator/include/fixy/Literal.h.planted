@@ -1,0 +1,6 @@
+#pragma once
+#include <foundation/Walk.h>
+namespace fixy {
+// A literal operator walks a namespace, and a use such as 2_members calls it with no name.
+consteval std::size_t operator""_members(unsigned long long scale) { return scale * ::foundation::count_in(^^::foundation::tags); }
+}  // namespace fixy

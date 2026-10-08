@@ -1,0 +1,6 @@
+#pragma once
+#include <foundation/Walk.h>
+namespace fixy {
+// The name starts with the word operator, but it is one identifier: a use calls the function by that name.
+consteval std::size_t operator_count() { return ::foundation::count_in(^^::foundation::tags); }
+}  // namespace fixy

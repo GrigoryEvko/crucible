@@ -1,0 +1,3 @@
+# A planted list that agrees with the tree: the check file calls operator_count by its name, so it joins with the
+# namespace that the function walks, and no free operator makes each check file join.
+fixy/Count.cpp | 0.1 | ::foundation::tags

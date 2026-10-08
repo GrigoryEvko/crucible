@@ -106,8 +106,9 @@ THE CLASSES
     a friend runs nothing until a use calls the function.
     The constructors, the destructor, the operators and the conversion
     functions of a class run with no name at the use.  The kit gives each of
-    these names, other than a constructor, a node of its own kind.  A name
-    of one token that starts with "operator" counts as an operator too.
+    these names, other than a constructor, a node of its own kind, and the
+    analysis reads the kind.  A name of one token, such as operator_count,
+    is an identifier, and a use calls it by that name.
     These functions give a second summary of the class, the construction
     summary.  An alias of a class gives the construction summary of the
     class.  A use that makes an object gets the construction summary:
@@ -281,8 +282,6 @@ CONTAINERS = frozenset(
 TEMPLATE_NAMES = frozenset({"template_function", "template_type", "template_method"})
 # The names that a use calls with no name: an operator, a destructor and a conversion function.
 UNNAMED_CALLS = frozenset({"operator_name", "destructor_name", "operator_cast"})
-# The start of the name of an operator function.  A name of one token that starts with it is an unnamed call too.
-OPERATOR_PREFIX = "operator"
 # The name nodes of one token, as tsast.leaf_name() reads them.
 ONE_TOKEN_NAMES = frozenset(
     {
@@ -684,31 +683,6 @@ def is_param_key(key: NsTag | ParamKey) -> TypeIs[ParamKey]:
 # ── Collection ───────────────────────────────────────────────────────────────
 
 
-def function_declarator(node: tsast.Node) -> tsast.Node | None:
-    """Return the function_declarator of a function definition or a declarator, or None."""
-    current: tsast.Node | None = node
-    if node.type in ("function_definition", "declaration", "field_declaration"):
-        current = node.child_by_field("declarator")
-    while current is not None and current.type != "function_declarator":
-        if current.type not in DECLARATORS:
-            return None
-        inner = current.child_by_field("declarator")
-        if inner is None and current.type == "parenthesized_declarator":
-            named = tsast.non_comment_children(current)
-            inner = named[0] if named else None
-        current = inner
-    return current
-
-
-def template_item(template: tsast.Node) -> tsast.Node | None:
-    """Return the declaration that a template_declaration introduces."""
-    for child in tsast.non_comment_children(template):
-        if child.field == "parameters" or child.type == "requires_clause":
-            continue
-        return child
-    return None
-
-
 def template_params(template: tsast.Node) -> list[Param]:
     """Return the template parameters of a template_declaration, in their sequence."""
     found: list[Param] = []
@@ -787,15 +761,11 @@ def is_predicate_call(function: tsast.Node | None) -> bool:
 def is_unnamed_call(declarator: tsast.Node | None) -> bool:
     """Say if a declared name is an operator, a destructor or a conversion function, through its qualifier.
 
-    A name of one token that starts with "operator", such as operator_helper, counts too.  The analysis then fails
-    closed on such a name.
+    The kit gives each of these names a node of its own kind (UNNAMED_CALLS), also `operator new` and a literal
+    operator.  A name of one token, such as operator_count, is an identifier, and a use calls it by that name.
     """
     leaf = name_leaf(declarator)
-    if leaf is None:
-        return False
-    return leaf.type in UNNAMED_CALLS or (
-        leaf.type in ONE_TOKEN_NAMES and tsast.lexeme(leaf).startswith(OPERATOR_PREFIX)
-    )
+    return leaf is not None and leaf.type in UNNAMED_CALLS
 
 
 def is_declaration_only(member: tsast.Node) -> bool:
@@ -807,10 +777,10 @@ def is_declaration_only(member: tsast.Node) -> bool:
     """
     item = member
     if item.type == "template_declaration":
-        item = template_item(item) or item
+        item = tsast.template_item(item) or item
     if item.type == "friend_declaration":
         return True
-    return item.type in ("field_declaration", "declaration") and function_declarator(item) is not None
+    return item.type in ("field_declaration", "declaration") and tsast.function_declarator(item) is not None
 
 
 class Collector:
@@ -866,7 +836,7 @@ class Collector:
             elif body is not None:
                 self.item(body, body, [], -1, owner, in_template)
         elif kind == "template_declaration":
-            inner = template_item(item)
+            inner = tsast.template_item(item)
             if inner is not None:
                 self.item(inner, outer, template_params(item), item.index, owner, True)
         elif kind in CLASS_SPECIFIERS:
@@ -985,7 +955,7 @@ class Collector:
         self, item: tsast.Node, outer: tsast.Node, params: list[Param], own_template: int, owner: Entity | None
     ) -> None:
         """Collect a function definition."""
-        declarator = function_declarator(item)
+        declarator = tsast.function_declarator(item)
         name_node = None if declarator is None else declarator.child_by_field("declarator")
         name, scope = declared_name(name_node)
         if not name:
@@ -1024,7 +994,7 @@ class Collector:
         ):
             self.item(type_node, type_node, params, own_template, owner, in_template)
         for declarator in item.children:
-            if declarator.field != "declarator" or function_declarator(declarator) is not None:
+            if declarator.field != "declarator" or tsast.function_declarator(declarator) is not None:
                 continue
             if declarator.type != "init_declarator" and item.child_by_field("default_value") is None:
                 continue
@@ -1634,7 +1604,7 @@ def initializer(variable: Entity) -> tsast.Node | None:
         return None
     holder = variable.body
     if holder.type == "template_declaration":
-        holder = template_item(holder) or holder
+        holder = tsast.template_item(holder) or holder
     for declarator in holder.children:
         if declarator.field != "declarator" or declarator.type != "init_declarator":
             continue

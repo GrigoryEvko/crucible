@@ -2220,8 +2220,19 @@ def calls(tree: Tree, names: Iterable[str] | None = None) -> Iterator[tuple[tupl
         yield (parts[1], node)
 
 
-def _function_declarator(node: Node) -> Node | None:
-    """Return the function_declarator of a function, a declaration or a declarator."""
+def function_declarator(node: Node) -> Node | None:
+    """Return the function_declarator of a function, a declaration or a declarator.
+
+    The walk goes down through the declarators of the return type, such as a
+    pointer, a reference or a parenthesized declarator.  It stops at a node
+    that is not a declarator.
+
+    Args:
+        node: A function_definition, a declaration, a field_declaration or a declarator
+
+    Returns:
+        The function_declarator, or None when the node declares no function
+    """
     current: Node | None = node
     if current is not None and current.type in ("function_definition", "declaration", "field_declaration"):
         current = current.child_by_field("declarator")
@@ -2251,7 +2262,7 @@ def parameters(function: Node) -> list[tuple[str, Node]]:
         (name, parameter node) for each parameter in order.  An unnamed
         parameter has the name "".
     """
-    declarator = _function_declarator(function)
+    declarator = function_declarator(function)
     if declarator is None:
         return []
     parameter_list = declarator.child_by_field("parameters")
@@ -2285,7 +2296,7 @@ def enclosing_function(node: Node) -> tuple[str, ...] | None:
     owner = node.ancestor_of_type("function_definition")
     if owner is None:
         return None
-    declarator = _function_declarator(owner)
+    declarator = function_declarator(owner)
     name = None if declarator is None else declarator.child_by_field("declarator")
     parts = None if name is None else qualified_parts(name)
     if parts is None:
@@ -2411,7 +2422,7 @@ def _declarations_of(item: Node, ns: tuple[str, ...]) -> Iterator[Declaration]:
                           item, scope)
         return
     if kind == "function_definition":
-        declarator = _function_declarator(item)
+        declarator = function_declarator(item)
         name_node = None if declarator is None else declarator.child_by_field("declarator")
         name, scope = _name_and_scope(name_node)
         yield Declaration(ns, name, "function", False, item, scope)
@@ -2427,7 +2438,7 @@ def _declarations_of(item: Node, ns: tuple[str, ...]) -> Iterator[Declaration]:
         for declarator in item.children:
             if declarator.field != "declarator":
                 continue
-            function = _function_declarator(declarator)
+            function = function_declarator(declarator)
             if function is not None:
                 name, scope = _name_and_scope(function.child_by_field("declarator"))
                 yield Declaration(ns, name, "function", True, item, scope)
@@ -2514,8 +2525,19 @@ class TemplateDecl(NamedTuple):
     scope_parts: tuple[str, ...] = ()
 
 
-def _template_item(template: Node) -> Node | None:
-    """Return the declaration that a template_declaration introduces."""
+def template_item(template: Node) -> Node | None:
+    """Return the declaration that a template_declaration introduces.
+
+    The result is the first named child that is not the parameter list, a
+    `requires` clause or a comment.  It can be a template_declaration
+    again: the out-of-line member template of a class template.
+
+    Args:
+        template: A template_declaration
+
+    Returns:
+        The declaration, or None when the template holds no declaration
+    """
     for child in non_comment_children(template):
         if child.field == "parameters" or child.type == "requires_clause":
             continue
@@ -2543,7 +2565,7 @@ def specializations(tree: Tree) -> Iterator[TemplateDecl]:
         One TemplateDecl for each template declaration, in source order
     """
     for template in tree.find("template_declaration"):
-        item = _template_item(template)
+        item = template_item(template)
         if item is None or item.type == "template_declaration":
             continue
         params = template.child_by_field("parameters")
@@ -2553,7 +2575,7 @@ def specializations(tree: Tree) -> Iterator[TemplateDecl]:
             kind = "class"
             name_node = item.child_by_field("name")
         elif item.type in ("declaration", "function_definition", "field_declaration"):
-            function = _function_declarator(item)
+            function = function_declarator(item)
             if function is not None:
                 kind = "function"
                 name_node = function.child_by_field("declarator")
@@ -2624,7 +2646,7 @@ def _declared_name(item: Node) -> tuple[str, Node | None]:
     if item.type in (*_CLASS_SPECIFIERS, "enum_specifier"):
         return "class", item.child_by_field("name")
     if item.type in ("declaration", "function_definition", "field_declaration"):
-        function = _function_declarator(item)
+        function = function_declarator(item)
         if function is not None:
             return "function", function.child_by_field("declarator")
         name = item.child_by_field("declarator")
@@ -2651,7 +2673,7 @@ def specialized_names(root: Node) -> Iterator[SpecializedName]:
         One SpecializedName for each specialization, in source order
     """
     for template in root.descendants("template_declaration"):
-        item = _template_item(template)
+        item = template_item(template)
         if item is None or item.type == "template_declaration":
             continue
         params = template.child_by_field("parameters")
@@ -2700,7 +2722,7 @@ def template_primaries(root: Node) -> Iterator[TemplatePrimary]:
     """
     for template in root.descendants("template_declaration"):
         params = template.child_by_field("parameters")
-        item = _template_item(template)
+        item = template_item(template)
         if params is None or not non_comment_children(params) or item is None:
             continue
         kind, name = _declared_name(item)
@@ -2731,10 +2753,10 @@ def template_functions(root: Node) -> Iterator[tuple[tuple[str, ...], Node]]:
     """
     for template in root.descendants("template_declaration"):
         params = template.child_by_field("parameters")
-        item = _template_item(template)
+        item = template_item(template)
         if params is None or not non_comment_children(params) or item is None:
             continue
-        declarator = _function_declarator(item)
+        declarator = function_declarator(item)
         named = None if declarator is None else declarator.child_by_field("declarator")
         if named is None or _is_template_id(named):
             continue
@@ -2985,8 +3007,8 @@ class NameIndex:
                 if declarator.field == "declarator" and declarator.type == "type_identifier":
                     self.names.add(scope_levels(node)[0] + (_leaf_text(declarator),))
         for template in tree.find("template_declaration"):
-            item = _template_item(template)
-            if item is None or item.type != "declaration" or _is_local(template) or _function_declarator(item):
+            item = template_item(template)
+            if item is None or item.type != "declaration" or _is_local(template) or function_declarator(item):
                 continue
             declarator = item.child_by_field("declarator")
             if declarator is not None and declarator.type == "init_declarator":
@@ -4019,6 +4041,32 @@ def _self_test_helpers(
     check(
         "parameters reads a function with a pack and an unnamed parameter",
         [name for name, _node in parameters(last)] == ["n", "", "rest"],
+    )
+    declarator_tree = parse_text(
+        "declarators.cpp",
+        "int& ref_of(int& value) { return value; }\n"
+        "const char* name_of();\n"
+        "int plain = 1;\n"
+        "template <class T> requires (sizeof(T) > 1) T& first(T* items);\n",
+    )
+    declared: list[str | None] = []
+    for node in declarator_tree.root.children:
+        if node.type not in ("function_definition", "declaration"):
+            continue
+        found_declarator = function_declarator(node)
+        name_node = None if found_declarator is None else found_declarator.child_by_field("declarator")
+        declared.append(None if name_node is None else leaf_name(name_node))
+    check(
+        "function_declarator reads below a reference or a pointer of the return type, and gives None for a variable",
+        declared == ["ref_of", "name_of", None],
+    )
+    introduced = template_item(next(declarator_tree.find("template_declaration")))
+    introduced_function = None if introduced is None else function_declarator(introduced)
+    introduced_name = None if introduced_function is None else introduced_function.child_by_field("declarator")
+    check(
+        "template_item skips the template parameters and the requires clause",
+        introduced is not None and introduced.type == "declaration" and introduced_name is not None
+        and leaf_name(introduced_name) == "first",
     )
 
     # Declarations and templates.

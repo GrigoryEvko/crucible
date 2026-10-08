@@ -1,0 +1,4 @@
+// The checks of fixy/Literal.h.
+#include <fixy/Literal.h>
+
+static_assert(sizeof(char) == 1);

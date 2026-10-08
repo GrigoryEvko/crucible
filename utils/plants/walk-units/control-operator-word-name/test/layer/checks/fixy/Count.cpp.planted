@@ -1,0 +1,4 @@
+// The checks of fixy/Count.h.
+#include <fixy/Count.h>
+
+static_assert(::fixy::operator_count() >= 1);
