@@ -2,9 +2,10 @@
 
 `guard selftest tests.loop.derive.test_header_costs` runs the test.  Each
 case plants its input in a throwaway directory, and writes one line.  A
-compiler of the test is a Python script that burns CPU time for one header.
-The measure then gives one heavy header, and the other headers are light.
-Exit 0 when each case holds, else 1.
+compiler of the test is a Python script that runs many more instructions for
+one header.  The measure then gives one heavy header, and the other headers
+are light.  On a host with no accurate instruction count, the measure must
+refuse to run.  Exit 0 when each case holds, else 1.
 """
 
 import functools
@@ -19,18 +20,19 @@ from assay.loop import gauge_sample
 from assay.loop.derive import header_costs as writer
 from assay.readers import compdb
 
-# The threshold of the planted registry.  A light header of the fake compiler costs approximately the time of
-# <meta>, and the heavy header costs more than ten times that time.
+# The threshold of the planted registry.  A light header of the fake compiler costs approximately the instructions
+# of <meta>, and the heavy header costs more than ten times that count.
 THRESHOLD = 5.0
 TABLE_HEAD = "# A planted rule table.\n\nquarantine src/\n\n" + writer.MARKER + "\n"
 GOOD_ROWS = (
     "# Measured on a planted host.\n"
     "heavy <arm_neon.h> | unmeasured: it does not compile alone\n"
-    "heavy <chrono> | 1.12 s, 70628 lines\n"
-    "light <cstdint> | 0.02 s, 178 lines\n"
-    "light <meta> | 0.37 s, 34799 lines\n"
+    "heavy <chrono> | 1.120 G, 70628 lines\n"
+    "light <cstdint> | 0.020 G, 178 lines\n"
+    "light <meta> | 0.370 G, 34799 lines\n"
 )
-# The fake compiler: -fsyntax-only burns CPU for <heavy.h> and fails for <broken.h>, and -E prints three lines.
+# The fake compiler: -fsyntax-only runs a long loop for <heavy.h> and fails for <broken.h>, and -E prints three
+# lines.
 FAKE_COMPILER = """#!{python}
 import sys
 source = open(sys.argv[-1], encoding="utf-8").read()
@@ -62,21 +64,22 @@ def plant(root: Path, rows: str = GOOD_ROWS, threshold: float = THRESHOLD) -> No
 
 def read_cases(expect: testing.Expect) -> None:
     """Check the reader of the cells and of the rows: each measure, each problem and the limit."""
-    measured = writer.parse_cell("<chrono>", "1.12 s, 70628 lines")
-    expect("a measure gives its seconds and its lines", measured.seconds == 1.12 and measured.lines == 70628)
+    measured = writer.parse_cell("<chrono>", "1.12 G, 70628 lines")
+    expect("a measure gives its instructions and its lines", measured.instructions == 1.12 and measured.lines == 70628)
     unmeasured = writer.parse_cell("<x.h>", "unmeasured: it does not compile")
     expect(
         "an unmeasured cell gives its reason and no number",
-        unmeasured.seconds is None and unmeasured.reason == "it does not compile",
+        unmeasured.instructions is None and unmeasured.reason == "it does not compile",
     )
     expect("an unmeasured header is heavy", writer.is_heavy(unmeasured, 10.0))
     expect("the cell of a measure reads back", writer.parse_cell("<chrono>", measured.cell()) == measured)
     for cell, label in (
-        ("1.12 s", "a measure with no lines"),
-        ("fast s, 3 lines", "seconds that are no number"),
-        ("-1 s, 3 lines", "negative seconds"),
+        ("1.12 G", "a measure with no lines"),
+        ("fast G, 3 lines", "instructions that are no number"),
+        ("-1 G, 3 lines", "negative instructions"),
         ("unmeasured:", "an unmeasured cell with no reason"),
-        ("1.0 s, 3 apples", "a measure with a different unit"),
+        ("1.0 G, 3 apples", "a measure with a different unit of lines"),
+        ("1.12 s, 3 lines", "a measure in seconds"),
     ):
         try:
             writer.parse_cell("<x.h>", cell)
@@ -85,7 +88,9 @@ def read_cases(expect: testing.Expect) -> None:
             refused = True
         expect(f"the reader refuses {label}", refused)
     costs = {"<meta>": writer.Cost("<meta>", 0.4, 10, "")}
-    expect("the limit is the seconds of <meta> times the threshold", abs(writer.limit_of(costs, 1.25) - 0.5) < 1e-9)
+    expect(
+        "the limit is the instructions of <meta> times the threshold", abs(writer.limit_of(costs, 1.25) - 0.5) < 1e-9
+    )
     try:
         writer.limit_of({"<meta>": writer.Cost("<meta>", None, None, "no")}, 1.25)
         refused = False
@@ -108,7 +113,7 @@ def read_cases(expect: testing.Expect) -> None:
                 "quarantine row is after the marker" in problem.message for problem in writer.read_costs(root).problems
             ),
         )
-        (root / writer.TABLE).write_text("light <x.h> | 0.01 s, 1 lines\n" + TABLE_HEAD + GOOD_ROWS, encoding="utf-8")
+        (root / writer.TABLE).write_text("light <x.h> | 0.010 G, 1 lines\n" + TABLE_HEAD + GOOD_ROWS, encoding="utf-8")
         expect(
             "a light row before the marker is a problem",
             any("before the marker line" in problem.message for problem in writer.read_costs(root).problems),
@@ -168,6 +173,7 @@ def measure_cases(expect: testing.Expect) -> None:
     with tempfile.TemporaryDirectory(prefix="header-costs-") as work:
         root = Path(work) / "root"
         root.mkdir()
+        # A row with a cell that the reader refuses.  A measure writes each cell again, and it reads only the header.
         plant(root, "light <meta> | 0.37 s, 34799 lines\n")
         (root / "include" / "crucible").mkdir(parents=True)
         (root / "include" / "crucible" / "Uses.h").write_text(
@@ -189,8 +195,16 @@ def measure_cases(expect: testing.Expect) -> None:
                 }
             ],
         )
+        status, _text = testing.captured(lambda: writer.measured(root, Path(work) / "missing", [], 4))
+        expect("--measure without a compile database is a missing input", status == ExitCode.MISSING_INPUT)
         status, text = testing.captured(lambda: writer.measured(root, build, ["broken.h"], 4))
         written = (root / writer.TABLE).read_text(encoding="utf-8")
+        if not writer.has_accurate_count():
+            expect(
+                "--measure on a host with no accurate instruction count is a missing input and writes no row",
+                status == ExitCode.MISSING_INPUT and "no accurate count" in text and "<heavy.h>" not in written,
+            )
+            return
         expect(
             "--measure writes a row for each header of the rows, of include/ and of the command line",
             status == ExitCode.OK and all(header in written for header in ("<meta>", "<heavy.h>", "<broken.h>")),
@@ -209,11 +223,10 @@ def measure_cases(expect: testing.Expect) -> None:
             written.startswith(TABLE_HEAD + "# Measured "),
         )
         expect("--measure names no project header", "<crucible/Other.h>" not in written)
+        expect("--measure writes again a row with a cell that the reader refuses", "0.37 s" not in written)
         expect("--measure writes a summary line", "wrote 3 rows" in text)
         status, _text = testing.captured(lambda: writer.checked(root))
         expect("the rows that --measure writes agree with --check", status == ExitCode.OK)
-        status, _text = testing.captured(lambda: writer.measured(root, Path(work) / "missing", [], 4))
-        expect("--measure without a compile database is a missing input", status == ExitCode.MISSING_INPUT)
 
 
 # The command lines that main refuses, each with the words of its case.

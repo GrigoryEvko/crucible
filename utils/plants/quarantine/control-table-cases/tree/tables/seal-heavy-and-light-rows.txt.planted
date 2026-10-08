@@ -2,7 +2,7 @@ layer low 0 include/fixy/
 quarantine plant_std.cpp
 seal include/crucible/Root.h include/crucible/ledger/ include/fixy/ledger/
 seal include/crucible/Other.h include/crucible/ledger/
-heavy <chrono> | 1.12 s, 70628 lines
+heavy <chrono> | 1.120 G, 70628 lines
 heavy <arm_neon.h> | unmeasured: it does not compile alone
 light <cstdint>
-light <cstddef> | 0.02 s, 155 lines
+light <cstddef> | 0.020 G, 155 lines

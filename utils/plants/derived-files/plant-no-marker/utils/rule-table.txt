@@ -3,6 +3,6 @@
 
 witness <planted/Open.h> private | planted::Open | planted::Open{42}
 
-heavy <chrono> | 1.12 s, 70628 lines
-light <cstdint> | 0.02 s, 178 lines
-light <meta> | 0.37 s, 34799 lines
+heavy <chrono> | 1.120 G, 70628 lines
+light <cstdint> | 0.020 G, 178 lines
+light <meta> | 0.370 G, 34799 lines

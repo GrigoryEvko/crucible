@@ -9,6 +9,6 @@ allow low <cstddef>
 quarantine include/crucible/
 quarantine unit.cpp
 
-heavy <chrono> | 1.12 s, 70628 lines
-light <cstddef> | 0.02 s, 155 lines
-light <cstdint> | 0.02 s, 178 lines
+heavy <chrono> | 1.120 G, 70628 lines
+light <cstddef> | 0.020 G, 155 lines
+light <cstdint> | 0.020 G, 178 lines

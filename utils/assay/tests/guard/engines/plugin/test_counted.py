@@ -30,9 +30,9 @@ LEDGER_HEAD = (
 )
 COST_ROWS = (
     "\n" + header_costs.MARKER + "\n"
-    "heavy <chrono> | 1.12 s, 70628 lines\n"
-    "light <cstdint> | 0.02 s, 178 lines\n"
-    "light <meta> | 0.37 s, 34799 lines\n"
+    "heavy <chrono> | 1.120 G, 70628 lines\n"
+    "light <cstdint> | 0.020 G, 178 lines\n"
+    "light <meta> | 0.370 G, 34799 lines\n"
 )
 
 
