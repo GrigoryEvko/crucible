@@ -364,6 +364,8 @@ This is the single largest Forge win over ptxas's `OriPropagateVarying` (phases 
 
 Uniformity drives: UR (uniform register) promotion in Phase H, address-space decisions in Phase E (constant-bank loads must be uniform), vectorization (uniform loads can coalesce into wider transactions), and scheduler decisions (uniform predicates don't cause warp divergence).
 
+Notice (2026-10-08): §18.9 makes this grade the kind of each value, `uniform` or `lane`. B.8 is then a type check.
+
 ---
 
 ## 8. Phase C — REWRITE
@@ -613,6 +615,8 @@ Decision is by dataflow over the KernelGraph:
 - Meet conflicts: insert explicit `transpose` or `layout_cast` IR002 nodes with nonzero cost
 
 IR001-level `CKernelId::VIEW/RESHAPE/PERMUTE/TRANSPOSE` operations that are pure metadata survive through Phase E as layout-change KernelNodes with `kind = POINTWISE` and zero computational cost but nonzero scheduling effect.
+
+Notice (2026-10-08): §18.9 replaces the six semantic layouts with a map from the bits of (register, lane, vector, CTA) to the bits of the tensor index.
 
 ### E.3 RecipeSelect
 
@@ -1873,6 +1877,29 @@ Mimic backends MUST declare each mutable value in kernel metadata. Missing a Pat
 | BranchNode | 1 CONDITIONAL |
 
 A full training step plan carries 50-100 PatchPoints; all are byte-addressable writes at ~10 ns each.
+
+### 18.9 Notice (2026-10-08): the programming model is SIMD, from the silicon
+
+Crucible defines its own programming model for each accelerator, directly on the silicon. It takes no model from a vendor stack. This notice gives the model and the sections that it changes. Where a section of this document does not agree with this notice, this notice applies. MIMIC.md §2.5 gives the IR003\* side.
+
+**The silicon facts that the model uses.**
+- Each instruction operates on all lanes of a vector, under a mask. The vector has 32 lanes on NVIDIA and 32 or 64 lanes on AMD. A CPU has AVX-512 or SVE registers with mask or predicate registers.
+- A scalar unit holds a value that has one copy for each vector. NVIDIA has the uniform registers `UR` (Turing and later), and AMD has `SGPR`.
+- Some units operate on a group of vectors: the tensor cores (`mma` on one vector, `wgmma` on four), the TMA engine, the shuffles and the votes.
+- Asynchronous engines (TMA, `wgmma`, `tcgen05`) operate beside the instruction stream. The stream continues, and it waits later on a barrier.
+
+**The model.**
+1. **Value kinds.** Each value in a kernel has one of two kinds: `uniform`, with one copy for each vector in a scalar register, or `lane`, with one copy for each lane in a vector register. This applies to the extension-point bodies of §18.7 and to the kernel templates of Mimic. The `warp_shape` grade of §B.8 becomes this kind, and B.8 becomes a type check.
+2. **Layouts.** The layout of a tile is a map from the bits of (register, lane, vector, CTA) to the bits of the tensor index. For power-of-two shapes, the map is a binary matrix over GF(2), and a swizzle is an XOR, which is also linear. The matrix gives three results by calculation, not by search:
+   - Shared-memory bank conflicts: a rank condition on the rows of the lanes of one access.
+   - The vector width of a load: the identity block on the low register bits.
+   - The conversion between a producer layout and a consumer layout, with its cost.
+
+   This map replaces the six semantic layouts of §E.2. A shape that is not a power of two gets padding or a mixed form.
+3. **Collective instructions.** An operation of a whole vector, a group of vectors, a CTA or a cluster is one collective instruction in the IR. Examples are MMA, TMA, a shuffle, a vote and a reduction across lanes. The IR does not split such an operation into per-lane operations.
+4. **Divergence is explicit.** A branch on a `lane` value becomes a predicate on each instruction of the branch, or a loop that continues while a vote shows an active lane. The backend builds this control flow from masks. Forge kernels are affine and tiled, so such branches are rare.
+5. **No wait between lanes.** No lane of a vector waits for another lane of the same vector, through a lock or a spin. The IR002 verifier refuses such a body.
+6. **Registers.** A register is one vector register, and a scalar register is one uniform register. The register budget of a kernel counts the two kinds separately.
 
 ---
 

@@ -213,6 +213,34 @@ Part II (§3-§35) documents the NVIDIA backend in detail as the reference-compl
 
 Part III (§36-§42) covers the multi-vendor additions explicitly — runtime library replacement, collective library replacement, NetworkOffload plane, Genesis Kernel Pack, recipe realization per backend, cross-vendor CI, and per-vendor backend notes.
 
+### 2.5 Notice (2026-10-08): IR003\* is SIMD, from the silicon
+
+Crucible defines its own programming model on the silicon of each vendor. Each IR003\* uses one vector model, and the shared core of `mimic/core/` holds it. FORGE.md §18.9 gives the IR002 side. Where a section of this document does not agree with this notice, this notice applies.
+
+**The model of the shared core.**
+- A program operates on vectors of `L` lanes. Each instruction has a mask. The backend gives `L`.
+- Each value has one of two kinds: `uniform`, with one copy for each vector in a scalar register, or `lane`, with one copy for each lane in a vector register.
+- A collective instruction operates on a group of vectors: a warpgroup, a CTA or a cluster. MMA, TMA, a shuffle, a vote and a reduction across lanes are collective instructions.
+- Control flow on a `lane` value is explicit: a predicate on each instruction, or a loop on a vote. The IR has no implicit reconvergence. On NVIDIA, the encoder writes `BSSY` and `BSYNC` from this explicit form.
+- No lane waits for another lane of the same vector. The verifier of each IR003\* refuses a lock or a spin between such lanes.
+- The layout of a register tile is the GF(2) map of FORGE.md §18.9, item 2.
+
+| Backend | Vector | Lanes | Mask | Scalar registers |
+|---|---|---|---|---|
+| `nv` | Warp | 32 | Predicate registers and the active mask | `UR` (Turing and later) |
+| `am` | Wavefront | 32 or 64 | `EXEC` | `SGPR` |
+| `cpu` x86_64 | AVX-512 register | 16 FP32 | `k0`-`k7` | General-purpose registers |
+| `cpu` aarch64 | SVE register | From the vector length | Predicate registers | General-purpose registers |
+| `tpu` | Vector register | 8 × 128 (sublanes × lanes) | Vector masks | The scalar unit |
+
+The per-vendor notes of §42 give the vector of `trn` and `cer`.
+
+**What changes in Mimic.**
+1. **The simulator** models one instruction stream for each vector, with a mask. It keeps no state for each thread. The warp scheduler of §12 picks a vector, not a thread.
+2. **Registers.** The register budget of a candidate counts vector registers and scalar registers separately. `regs_per_thread` of `DecodedProgram` (§6) is the count of vector registers.
+3. **Insights.** `UNUSED_UR_FILE` and the uniformity hints become checks of value kinds, and the lowering puts each `uniform` value in a scalar register.
+4. **The shared core** holds the vector model, the value kinds, the mask control flow and the layout map. Each backend gives `L`, its register files and its collective instructions. The CPU reference backend runs the same core on AVX-512 or SVE.
+
 ---
 
 ## 3. What Mimic predicts; what it does not
