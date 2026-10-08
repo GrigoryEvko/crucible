@@ -38,11 +38,11 @@ static_assert(sizeof(v2::sense_meta) == 64);
 // Each word here is the value that the BPF program calculates for its
 // build.  A change of one constant of SenseHubV2.h fails this check.
 #ifdef CRUCIBLE_SENSE_HUB_EXTENDED
-static_assert(v2::SENSE_HUB_LAYOUT_HASH == 0x0100'0040'0002'DEB6ULL,
+static_assert(v2::SENSE_HUB_LAYOUT_HASH == 0x010000400002DEB6ULL,
               "The extended build has 256 counters, 64 gauges, version 2 and the build tag 0xDEB6.");
 static_assert(static_cast<std::uint32_t>(v2::Idx::SKB_DROP_NEIGH_FAILED) == 128);
 #else
-static_assert(v2::SENSE_HUB_LAYOUT_HASH == 0x0080'0020'0002'BA51ULL,
+static_assert(v2::SENSE_HUB_LAYOUT_HASH == 0x008000200002BA51ULL,
               "The basic build has 128 counters, 32 gauges, version 2 and the build tag 0xBA51.");
 #endif
 
