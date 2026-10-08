@@ -49,6 +49,7 @@ from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core.paths import LOOP
 from assay.loop.fixture import store
+from assay.readers import compdb
 
 # The driver of a fixture as CTest starts it: the master loop with the subcommand fixture.
 DRIVER = (str(LOOP), "fixture")
@@ -201,7 +202,12 @@ class StoreTest:
                     str(self.build / f"{Path(name).stem}.o"),
                 ],
             })
-        (self.build / "compile_commands.json").write_text(json.dumps(rows))
+        compdb.plant(self.build, rows)
+
+    def database_rows(self) -> list[dict[str, list[str] | str]]:
+        """Return the rows of the planted compile database as compdb reads them, for a check that changes them."""
+        return [{"directory": entry.directory, "file": entry.file, "arguments": list(entry.argv())}
+                for entry in compdb.entries(self.build)]
 
     def run(self, fixture: str, *regexes: str, warnings_dir: Path | None = None,
             **environment: str) -> tuple[int, str, str, list[str]]:
@@ -499,10 +505,10 @@ class StoreTest:
         wrapper.write_text(f'#!/bin/sh\ncase " $* " in *" -c "*) echo "# a change" >> "$0";; esac\n'
                            f'exec "{self.cxx}" "$@"\n')
         wrapper.chmod(0o755)
-        rows = json.loads((self.build / "compile_commands.json").read_text())
+        rows = self.database_rows()
         for row in rows:
             row["arguments"] = [str(wrapper), *row["arguments"][1:]]
-        (self.build / "compile_commands.json").write_text(json.dumps(rows))
+        compdb.plant(self.build, rows)
         self.settle()
         changed = self.run("neg_convert", *CONVERT)
         self.expect(changed[0] == 0 and self.has(changed[3], "not stored (the compiler identity changed during the "
@@ -790,7 +796,7 @@ class StoreTest:
     def check_command_memo(self) -> None:
         """The driver keeps the command of a fixture, and uses it only while the compile database is the same."""
         memo = self.build / "neg-compile" / "neg_size" / f"neg_size{store._COMMAND_SUFFIX}"
-        database = self.build / "compile_commands.json"
+        database = compdb.database_file(self.build)
         fresh = self.run("neg_size", *SIZE, **self.started_at(database))
         self.expect(fresh[0] == 0 and not memo.exists(),
                     f"the driver keeps no command while the compile database is new: {fresh[0]} {fresh[3]}")
@@ -1121,9 +1127,9 @@ class StoreTest:
 
     def tree_command(self) -> list[str]:
         """Return the first C++ compile command of the compile database of the build of the source tree."""
-        rows = json.loads((self.tree_build / "compile_commands.json").read_text())
-        row = next((row for row in rows if str(row.get("file", "")).endswith((".cpp", ".cc", ".cxx"))), {})
-        return list(row["arguments"]) if row.get("arguments") else shlex.split(row.get("command", ""))
+        entry = next((entry for entry in compdb.entries(self.tree_build)
+                      if entry.file.endswith((".cpp", ".cc", ".cxx"))), None)
+        return list(entry.argv()) if entry is not None else []
 
     def cc1plus_view(self, command: list[str]) -> tuple[list[str], bool] | None:
         """Return the plugin options that GCC gives cc1plus for `command`, and True when it defines the macro.
@@ -1210,12 +1216,11 @@ class StoreTest:
         self.expect(abbreviated_view is not None and abbreviated_view[1] and definition in refused,
                     f"GCC takes the abbreviation --def {definition}, and the driver refuses it: {abbreviated_view} "
                     f"{refused}")
-        database = self.build / "compile_commands.json"
-        rows = json.loads(database.read_text())
+        rows = self.database_rows()
         for row in rows:
-            if row["file"].endswith("neg_size.cpp"):
+            if str(row["file"]).endswith("neg_size.cpp"):
                 row["arguments"] = [*row["arguments"], "--def", definition]
-        database.write_text(json.dumps(rows))
+        compdb.plant(self.build, rows)
         stopped = self.run("neg_size", *SIZE)
         self.expect(stopped[0] == 2 and not self.has(stopped[3], "compiled") and "does not remove" in stopped[2],
                     f"a spelling that the driver does not remove stops the driver before a compile: {stopped[0]} "
@@ -1262,8 +1267,7 @@ class StoreTest:
         for name, text in {**PLUGIN_FIXTURES, **PLANTED_HEADERS}.items():
             (self.root / name).parent.mkdir(parents=True, exist_ok=True)
             (self.root / name).write_text(text)
-        database = self.build / "compile_commands.json"
-        rows = json.loads(database.read_text())
+        rows = self.database_rows()
         include = str(store._REPO_ROOT / "include")
         for name in PLUGIN_FIXTURES:
             planted = ["-I", str(self.root / PLANTED_SEARCH[name])] if name in PLANTED_SEARCH else []
@@ -1274,7 +1278,7 @@ class StoreTest:
                               "-fdiagnostics-color=never", "-c", str(self.root / name), "-o",
                               str(self.build / f"{Path(name).stem}.o")],
             })
-        database.write_text(json.dumps(rows))
+        compdb.plant(self.build, rows)
         return True
 
     def check_plugin_extra_error(self) -> None:
@@ -1612,7 +1616,7 @@ def main(argv: list[str]) -> int:
                   f"Set FIXTURE_STORE_SELF_TEST_PARTS in test/CMakeLists.txt to {len(CHECKS)}, so that each part "
                   f"runs one check.", file=sys.stderr)
             return 2
-    if not (tree_build / "compile_commands.json").is_file() or not (tree_build / "CMakeCache.txt").is_file():
+    if not compdb.database_file(tree_build).is_file() or not (tree_build / "CMakeCache.txt").is_file():
         print(f"tests.loop.test_fixture --build-dir {tree_build}: the directory holds no compile_commands.json "
               f"and CMakeCache.txt of a build of the tree", file=sys.stderr)
         return 2

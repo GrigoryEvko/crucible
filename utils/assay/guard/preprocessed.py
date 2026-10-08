@@ -221,6 +221,7 @@ from pathlib import Path
 from assay.core import cache as cache_dir
 from assay.core import proc
 from assay.core.paths import REPO_ROOT
+from assay.readers import compdb
 
 # Bumped when the store reads or writes the output or a manifest differently,
 # so an older manifest is not reused.
@@ -575,23 +576,6 @@ def dependency_names(text: str, directory: str, real: dict[str, str] | None = No
         if name:
             found[_resolved(os.path.join(directory, name.replace("\\ ", " ")), real)] = None
     return list(found)
-
-
-def split_command(command: str) -> list[str]:
-    """Split a compile command as a POSIX shell does.
-
-    A command with no quote and no backslash splits at white space, which is
-    what shlex.split gives for it, at a small part of the cost.
-
-    Args:
-        command: The command of one database entry
-
-    Returns:
-        The arguments
-    """
-    if "'" in command or '"' in command or "\\" in command:
-        return shlex.split(command)
-    return command.split()
 
 
 class _Files:
@@ -1142,11 +1126,11 @@ def code_identity(*parts: object) -> str:
 class Store:
     """The shared preprocessed pass over one compile database."""
 
-    def __init__(self, compile_db: Path, root: Path, jobs: int = 0, latest_start_ns: int | None = None) -> None:
-        """Open the store for a compile database.
+    def __init__(self, build_dir: Path, root: Path, jobs: int = 0, latest_start_ns: int | None = None) -> None:
+        """Open the store for the compile database of a build directory.
 
         Args:
-            compile_db: The compile_commands.json file
+            build_dir: The build directory, whose compile database assay.readers.compdb reads
             root: The repository root, whose files the store keeps
             jobs: The number of parallel preprocessor runs, or 0 for the
                 number of processors, at most 16
@@ -1154,7 +1138,7 @@ class Store:
                 nanoseconds since the epoch, or None for the clock (THE
                 SETTLE PERIOD)
         """
-        self.compile_db = compile_db
+        self.build_dir = build_dir
         self.latest_start_ns = latest_start_ns
         self.root = root.resolve()
         self.prefix = str(self.root) + os.sep
@@ -1253,15 +1237,15 @@ class Store:
         """
         return map_batches(function, items, self.jobs, batch)
 
-    def _plan(self, entry: dict) -> Plan:
+    def _plan(self, entry: compdb.CompileEntry) -> Plan:
         """Return the plan of one database entry: its preprocessor command and its two manifest names.
 
         The name hashes one JSON text of the key items.  The rooted name
         hashes that text, a NUL and the root.  JSON has no raw NUL and a path
         has none, so the two names never meet.
         """
-        argv = entry["arguments"] if "arguments" in entry else split_command(entry["command"])
-        directory = entry["directory"]
+        argv = list(entry.argv())
+        directory = entry.directory
         root = str(self.root)
         run_argv = preprocess_argv(widen_staged_roots(argv, directory, self.root, self._staged))
         run_argv[-1:-1] = [f"-fmacro-prefix-map={root}/="]
@@ -1274,7 +1258,7 @@ class Store:
             arguments.append(found)
         identity = json.dumps([STORE_VERSION, arguments, without_root(directory, root),
                                compiler_identity(argv, directory), self._environment]).encode()
-        return Plan(entry["file"], tuple(run_argv), directory, hashlib.sha256(identity).hexdigest(),
+        return Plan(entry.file, tuple(run_argv), directory, hashlib.sha256(identity).hexdigest(),
                     hashlib.sha256(identity + b"\0" + root.encode()).hexdigest(), str(self.directory), root,
                     self.latest_start_ns)
 
@@ -1296,7 +1280,7 @@ class Store:
         Yields:
             One Unit for each entry
         """
-        units = self._resolve(json.loads(self.compile_db.read_text()))
+        units = self._resolve(list(compdb.entries(self.build_dir)))
         self._evict()
         yield from units
 
@@ -1314,10 +1298,10 @@ class Store:
         Returns:
             The units of the shard, in database order
         """
-        entries = json.loads(self.compile_db.read_text())
-        return self._resolve(entries[shard::count])
+        entries = compdb.entries(self.build_dir)
+        return self._resolve(list(entries[shard::count]))
 
-    def _resolve(self, entries: list[dict]) -> list[Unit]:
+    def _resolve(self, entries: list[compdb.CompileEntry]) -> list[Unit]:
         """Return the unit of each entry, from a valid variant or from the preprocessor, and record the counts."""
         plans = [self._plan(entry) for entry in entries]
         found: list[Unit | None] = [self._lookup(plan) for plan in plans]
@@ -1706,8 +1690,8 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     for stage, names in sets.items():
         for index, name in enumerate(names):
             (root / name).write_text(f'#include "shared.h"\nint {stage}_{index};\n')
-    database = root / "build" / "compile_commands.json"
-    database.parent.mkdir()
+    database = root / "build"
+    database.mkdir()
     # A second checkout of the same tree, made with the first.
     second = scratch / "second"
     shutil.copytree(root, second, ignore=shutil.ignore_patterns("build"))
@@ -1717,21 +1701,17 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     time.sleep(SETTLE_NS / 1e9 + 0.1)
 
     def write_db(base: Path, files: list[str], flags: str = "") -> Path:
-        """Write a compile database for the named sources of one tree, and return its path."""
-        target = base / "build" / "compile_commands.json"
-        target.write_text(json.dumps([{"directory": str(base), "file": name,
-                                       "command": f"{compiler} -std=c++20 {flags} -c {base / name} -o {name}.o"}
-                                      for name in files]))
+        """Write a compile database for the named sources of one tree, and return its build directory."""
+        target = base / "build"
+        compdb.plant(target, [{"directory": str(base), "file": name,
+                               "command": f"{compiler} -std=c++20 {flags} -c {base / name} -o {name}.o"}
+                              for name in files])
         return target
 
     def chunk_files() -> list[Path]:
         """Return each chunk file of the scratch store."""
         return [path for path in (store_dir / "chunks").rglob("*") if path.is_file() and not path.name.startswith(".")]
 
-    samples = ["g++ -I/a  -DX=1\t-c a.cpp -o a.o", 'g++ -DP=\\"/x y\\" -c a.cpp', "g++ '-Dq=a b' -c a.cpp",
-               "g++ -DE=a\\ b -c a.cpp"]
-    expect("split_command splits each command as shlex.split does",
-           all(split_command(sample) == shlex.split(sample) for sample in samples))
     sample_output = (b'# 0 "x.cpp"\nint text_zero;\n# 1 "x.h" 1 3\n# 3 "x.h"\n#notmarker\n# not a marker\n'
                      b'# 9 "x.h"\nint nine; # 5 "inside.h"\n# 2 "x.cpp" 2\n# 4 "x.cpp"')
     scanned = _markers(sample_output)
@@ -1750,7 +1730,7 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     expect("a cold run preprocesses each unit", [u.from_cache for u in cold] == [False, False])
     expect("a cold run has no failure", all(u.failure is None for u in cold))
     expect("the store is under the cache root and not beside the compile database",
-           (store_dir / "units").is_dir() and not (database.parent / "preprocessed-cache").exists())
+           (store_dir / "units").is_dir() and not (database / "preprocessed-cache").exists())
     shared = {c.digest for u in cold for c in u.chunks if c.path == "shared.h"}
     expect("a header included the same way is stored one time", len(shared) == 1)
     blobs = {variant[2] for manifest in (store_dir / "units").rglob(f"*{MANIFEST_SUFFIX}")
@@ -1774,8 +1754,8 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
            {"shared.h", "quiet.h"} <= cold[0].dependencies and "quiet.h" not in cold[1].dependencies)
     link = scratch / "first-link"
     link.symlink_to(root, target_is_directory=True)
-    database.write_text(json.dumps([{"directory": str(link), "file": "a.cpp",
-                                     "command": f"{compiler} -std=c++20 -c a.cpp -o a.o"}]))
+    compdb.plant(database, [{"directory": str(link), "file": "a.cpp",
+                             "command": f"{compiler} -std=c++20 -c a.cpp -o a.o"}])
     linked = list(Store(database, root).units())
     expect("an entry whose directory is a symbolic link still lists its dependencies and chunks",
            linked[0].failure is None and {"shared.h", "quiet.h"} <= linked[0].dependencies
@@ -1828,7 +1808,7 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
            not plugged_changed[0].from_cache
            and "plugged_new" in joined(plugged_store, files_of(plugged_changed[0]).get("plugged.h", ("", []))[1]))
     write_db(root, ["rooted.cpp"], f'-DHOME_PATH=\\"{root}/home\\"')
-    rooted_plan = Store(database, root)._plan(json.loads(database.read_text())[0])
+    rooted_plan = Store(database, root)._plan(compdb.entries(database)[0])
     rooted_first = list(Store(database, root).units())
     expect("a variant whose text holds the root goes under the name that hashes the root",
            _manifest_path(store_dir, rooted_plan.rooted_key).is_file()
@@ -1872,7 +1852,8 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
         else:
             os.environ["CPATH"] = saved_cpath
     expect("an include path from the environment is part of the name", [u.from_cache for u in moved] == [False, False])
-    plain, empty = (Store(database, root)._plan({"directory": str(root), "file": "a.cpp", "arguments": arguments})
+    plain, empty = (Store(database, root)._plan(compdb.CompileEntry(str(root / "a.cpp"), str(root), None,
+                                                                    shlex.join(arguments), tuple(arguments)))
                     for arguments in ([compiler, "-DX", "-c", "a.cpp"], [compiler, "-DX", "", "-c", "a.cpp"]))
     expect("an empty argument is part of the name", plain.shared_key != empty.shared_key)
 
@@ -1881,7 +1862,7 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     write_db(root, ["c.cpp", "d.cpp"], f"-isystem {outside}")
     system_units = list(Store(database, root).units())
     system_blobs = [{variant[2] for variant in _read_variants(_manifest_path(store_dir, plan.shared_key))}
-                    for plan in (Store(database, root)._plan(entry) for entry in json.loads(database.read_text()))]
+                    for plan in (Store(database, root)._plan(entry) for entry in compdb.entries(database))]
     expect("units that read the same files outside the root name one stored list of them",
            all(u.failure is None for u in system_units) and len(system_blobs[0] | system_blobs[1]) == 1)
     (outside / "system.h").write_text("#pragma once\n#define SYSTEM_VALUE 2\n")
@@ -1900,8 +1881,8 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
                        f'{{ printf "int seen_new;\\n" > "{root}/saved.h"; : > "{root}/saved"; }} ;; esac\n'
                        f'exit $status\n')
     wrapper.chmod(0o755)
-    database.write_text(json.dumps([{"directory": str(root), "file": "saving.cpp",
-                                     "command": f"{wrapper} -c saving.cpp -o saving.o"}]))
+    compdb.plant(database, [{"directory": str(root), "file": "saving.cpp",
+                             "command": f"{wrapper} -c saving.cpp -o saving.o"}])
     list(Store(database, root).units())
     saving_store = Store(database, root)
     saving = list(saving_store.units())
@@ -1945,7 +1926,7 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     after = Store(database, root)
     reread = list(after.units())
     expect("the shards of a database are disjoint, hold each entry, and fill the store for a guard after them",
-           sorted(unit.file for part in shards for unit in part) == sorted(sets["sharded"])
+           sorted(unit.file for part in shards for unit in part) == sorted(str(root / name) for name in sets["sharded"])
            and sum(filler.runs for filler in fillers) == len(sets["sharded"]) and after.runs == 0
            and all(unit.from_cache for unit in reread))
     squares = Store(database, root, jobs=4)
@@ -1970,7 +1951,7 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
 
     write_db(root, ["a.cpp"])
     store = Store(database, root)
-    plan = store._plan(json.loads(database.read_text())[0])
+    plan = store._plan(compdb.entries(database)[0])
     for manifest in (store.directory / "units").rglob(f"*{MANIFEST_SUFFIX}"):
         manifest.write_bytes(b"{not marshal")
     damaged = list(Store(database, root).units())
@@ -2065,11 +2046,11 @@ def _self_test_cases(expect, compiler: str, store_dir: Path, scratch: Path) -> N
     (real / "lower").mkdir(parents=True)
     (real / "lower" / "lower.h").write_text("#pragma once\nint lower_copy;\n")
     (root / "fixture.cpp").write_text("#include <lower/lower.h>\n#include <upper/upper.h>\n")
-    database.write_text(json.dumps([
+    compdb.plant(database, [
         {"directory": str(root), "file": "fixture.cpp",
          "command": f"{compiler} -std=c++20 -Ibuild/stage -c fixture.cpp -o fixture.o"},
         {"directory": str(root), "file": "fixture.cpp",
-         "command": f"{compiler} -std=c++20 -I build/real -c fixture.cpp -o fixture.o"}]))
+         "command": f"{compiler} -std=c++20 -I build/real -c fixture.cpp -o fixture.o"}])
     staged, plain_unit = list(Store(database, root).units())
     expect("a staged layer root reads with the include directory, so a layer fixture is read",
            staged.failure is None and any(c.path == "include/upper/upper.h" for c in staged.chunks))
@@ -2084,9 +2065,9 @@ def _self_test_turns(expect, store_dir: Path, root: Path, write_db) -> None:
         expect: The recorder of the self-test
         store_dir: The directory of the store, under a scratch root of the caches
         root: The scratch tree of the sources
-        write_db: Writes the compile database of the named sources of a tree, and returns its path
+        write_db: Writes the compile database of the named sources of a tree, and returns its build directory
     """
-    database = root / "build" / "compile_commands.json"
+    database = root / "build"
 
     def files_under(part: str) -> list[Path]:
         """Return each file under one directory of the store whose name does not start with a dot."""
@@ -2196,8 +2177,8 @@ def _self_test_turns(expect, store_dir: Path, root: Path, write_db) -> None:
            time.time() - (store_dir / SHARED_STAMP).stat().st_mtime < cache_dir.EVICT_INTERVAL)
 
 
-def fill_main(compile_db: Path, shard: int, count: int) -> int:
-    """Fill one shard of the store for a compile database, and print one line about it.
+def fill_main(build_dir: Path, shard: int, count: int) -> int:
+    """Fill one shard of the store for the compile database of a build directory, and print one line about it.
 
     A unit that the preprocessor rejects gets no variant, so each guard that
     reads it tries it again and reports it.  The fill itself does not fail.
@@ -2205,12 +2186,12 @@ def fill_main(compile_db: Path, shard: int, count: int) -> int:
     Returns:
         0, or 2 when the arguments or the database are wrong
     """
-    if not compile_db.is_file() or not 0 <= shard < count:
-        print(f"preprocessed --fill: {compile_db} does not exist, or shard {shard} is not in 0 to {count - 1}",
-              file=sys.stderr)
+    if not compdb.database_file(build_dir).is_file() or not 0 <= shard < count:
+        print(f"preprocessed --fill: {build_dir} holds no compile database, or shard {shard} is not in 0 to "
+              f"{count - 1}", file=sys.stderr)
         return 2
     begin = time.monotonic()
-    store = Store(compile_db, REPO_ROOT)
+    store = Store(build_dir, REPO_ROOT)
     units = store.fill_shard(shard, count)
     print(f"preprocessed --fill: shard {shard} of {count}: {len(units)} unit(s), {store.cached_count} from the "
           f"store, {store.runs} preprocessed, {len(store.failures)} rejected, in {time.monotonic() - begin:.1f} s")
@@ -2221,7 +2202,7 @@ def main(argv: list[str]) -> int:
     """Fill one shard of the store (`guard check --rule preprocessed-fill`), or run the self-test.
 
     Args:
-        argv: --self-test, or --fill COMPILE_DB --shard K --of N.  The row of the rule gives the word --fill
+        argv: --self-test, or --fill BUILD_DIR --shard K --of N.  The row of the rule gives the word --fill
 
     Returns:
         The exit status of the mode, or 2 on a usage error
@@ -2231,6 +2212,6 @@ def main(argv: list[str]) -> int:
     if len(argv) == 6 and argv[0] == "--fill" and argv[2] == "--shard" and argv[4] == "--of" \
             and argv[3].isdigit() and argv[5].isdigit():
         return fill_main(Path(argv[1]).resolve(), int(argv[3]), int(argv[5]))
-    print("usage: guard check --rule preprocessed-fill COMPILE_DB --shard K --of N | guard selftest guard.preprocessed",
+    print("usage: guard check --rule preprocessed-fill BUILD_DIR --shard K --of N | guard selftest guard.preprocessed",
           file=sys.stderr)
     return 2

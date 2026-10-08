@@ -48,7 +48,6 @@ import argparse
 import contextlib
 import io
 import json
-import shlex
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -56,10 +55,9 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from assay.core import report as check_report
-from assay.readers import tsast
+from assay.readers import compdb, tsast
 
 CHECK = "no-unity-pch"
-DATABASE = "compile_commands.json"
 PRESETS = ("CMakePresets.json", "CMakeUserPresets.json")
 PCH_COMMAND = "target_precompile_headers"
 # The names that turn a unity build or a precompiled header on.  A name that
@@ -251,7 +249,7 @@ def pch_words(argv: list[str]) -> list[str]:
     return found
 
 
-def command_words(row: dict[str, object]) -> list[str]:
+def command_words(row: compdb.CompileEntry) -> list[str]:
     """Return the words of the compile command of one row of the compile database.
 
     A command string that holds no marker of a precompiled header gives no
@@ -259,13 +257,11 @@ def command_words(row: dict[str, object]) -> list[str]:
     the time of the check on a database of thousands of rows.
 
     Raises:
-        KeyError: If the row has neither arguments nor a command
         ValueError: If the command string is not valid shell quoting
     """
-    if "arguments" in row:
-        return [str(word) for word in row["arguments"]]  # type: ignore[union-attr]
-    command = str(row["command"])
-    return shlex.split(command) if any(marker in command for marker in PCH_MARKERS) else []
+    if row.arguments is not None:
+        return list(row.arguments)
+    return list(row.argv()) if any(marker in row.command for marker in PCH_MARKERS) else []
 
 
 def database_findings(build_dir: Path, root: Path) -> list[check_report.Finding]:
@@ -280,18 +276,14 @@ def database_findings(build_dir: Path, root: Path) -> list[check_report.Finding]
     Returns:
         The findings, or one error when the database does not exist or cannot be read
     """
-    database = build_dir / DATABASE
-    shown = str(database)
-    if not database.is_file():
+    shown = str(compdb.database_file(build_dir))
+    try:
+        commands = [(row.file, command_words(row)) for row in compdb.entries(build_dir)]
+    except compdb.MissingDatabase:
         return [check_report.Finding("error", shown, 0, CHECK, "the compile database does not exist, so the check "
                                                                "cannot see the compile commands.  Configure the "
                                                                "build first.")]
-    try:
-        rows = json.loads(database.read_text(encoding="utf-8"))
-        if not isinstance(rows, list):
-            raise ValueError("the top level is not a list of rows")
-        commands = [(str(row["file"]), command_words(row)) for row in rows]
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (compdb.CompdbError, ValueError) as exc:
         return [check_report.Finding("error", shown, 0, CHECK, f"the compile database cannot be read: {exc}")]
     findings: list[check_report.Finding] = []
     for source, argv in commands:
@@ -371,8 +363,7 @@ def self_test() -> int:
         (root / "CMakeLists.txt").write_text(clean_cmake, encoding="utf-8")
         (root / "cmake/Extra.cmake").write_text("set(SOMETHING ON)\n", encoding="utf-8")
         (root / "CMakePresets.json").write_text(json.dumps(clean_presets), encoding="utf-8")
-        database = build / DATABASE
-        database.write_text(json.dumps(clean_rows), encoding="utf-8")
+        database = compdb.plant(build, clean_rows)
 
         def run() -> list[check_report.Finding]:
             """Evaluate the scratch tree."""
@@ -414,17 +405,17 @@ def self_test() -> int:
                  "the precompiled header of CMake in a command"),
                 ({"directory": "/b", "file": "/r/src/d.cpp", "arguments": ["g++", "-include-pch", "x.pch", "-c", "d"]},
                  "an -include-pch option")):
-            database.write_text(json.dumps(clean_rows + [row]), encoding="utf-8")
+            compdb.plant(build, clean_rows + [row])
             found = run()
             expect(f"an error: {label}", bool(found) and all(item.level == "error" for item in found))
-        database.write_text("[{]", encoding="utf-8")
+        compdb.plant(build, "[{]")
         found = run()
         expect("an error: a compile database that cannot be read",
                len(found) == 1 and "cannot be read" in found[0].message)
         database.unlink()
         found = run()
         expect("an error: a missing compile database", len(found) == 1 and "does not exist" in found[0].message)
-        database.write_text(json.dumps(clean_rows), encoding="utf-8")
+        compdb.plant(build, clean_rows)
 
         (root / "cmake/Extra.cmake").write_text("set(CMAKE_UNITY_BUILD ON)\n", encoding="utf-8")
         warnings_dir = Path(work) / "warnings"

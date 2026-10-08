@@ -681,7 +681,7 @@ add_test(NAME start_lifetime_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule start-lifetime --self-test)
 add_test(NAME start_lifetime
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule start-lifetime
-          --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json)
+          --build-dir ${CMAKE_BINARY_DIR})
 set_tests_properties(start_lifetime start_lifetime_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
@@ -696,7 +696,7 @@ add_test(NAME proof_routes_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule proof-routes --self-test)
 add_test(NAME proof_routes
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule proof-routes
-          --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json
+          --build-dir ${CMAKE_BINARY_DIR}
           --proof-names-binary $<TARGET_FILE:test_forgeable_proofs>)
 set_tests_properties(proof_routes proof_routes_self_test PROPERTIES
     LABELS "ci_guard"
@@ -766,7 +766,7 @@ add_test(NAME no_unchecked_access_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-unchecked-access --self-test)
 add_test(NAME no_unchecked_access
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-unchecked-access
-          --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json)
+          --build-dir ${CMAKE_BINARY_DIR})
 set_tests_properties(no_unchecked_access no_unchecked_access_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # A function in a detail namespace does the work of a door with no gate of
@@ -1172,7 +1172,7 @@ add_test(NAME federation_admission_self_test
          COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule federation-admission --self-test)
 add_test(NAME federation_admission
          COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule federation-admission
-                 --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json)
+                 --build-dir ${CMAKE_BINARY_DIR})
 set_tests_properties(federation_admission federation_admission_self_test PROPERTIES
     LABELS "forgery;ci_guard;ast"
     SKIP_RETURN_CODE 3)
@@ -1186,7 +1186,7 @@ math(EXPR crucible_last_store_shard "${CRUCIBLE_STORE_SHARDS} - 1")
 foreach(crucible_store_shard RANGE ${crucible_last_store_shard})
   add_test(NAME preprocessed_store_fill_${crucible_store_shard}
            COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule preprocessed-fill
-                   ${CMAKE_BINARY_DIR}/compile_commands.json
+                   ${CMAKE_BINARY_DIR}
                    --shard ${crucible_store_shard} --of ${CRUCIBLE_STORE_SHARDS})
   set_tests_properties(preprocessed_store_fill_${crucible_store_shard} PROPERTIES
       LABELS "ci_guard"
@@ -5892,7 +5892,7 @@ endforeach()
 # process module and the git module plant their input in throwaway trees.
 crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR})
 foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test_proc core.test_git
-        guard.test_history)
+        guard.test_history readers.test_compdb)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   add_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})

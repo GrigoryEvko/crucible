@@ -159,6 +159,7 @@ from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
+from assay.readers import compdb
 from assay.readers import elf as elf_file
 
 CHECKS =("compile-cpu", "compile-instructions", "compile-memory", "link-time", "link-memory", "function-size",
@@ -278,27 +279,26 @@ def read_objects(context: Context) -> tuple[list[Output], list[check_report.Find
     Returns:
         The objects in database order, and an error for each input that cannot be read
     """
-    database = context.build_dir / "compile_commands.json"
+    database = compdb.database_file(context.build_dir)
     shown = shown_path(database, context.root)
     try:
-        rows = json.loads(database.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as problem:
+        compiles = compdb.entries(context.build_dir)
+    except compdb.CompdbError as problem:
         return [], [error_at(context.check, shown, f"the compile database cannot be read ({problem}).  Configure "
                                                    f"the build directory with a preset first")]
     outputs: list[Output] = []
     findings: list[check_report.Finding] = []
     seen: set[Path] = set()
-    for row in rows:
-        output = row.get("output")
-        if output is None:
-            findings.append(error_at(context.check, shown, f"the row of {row.get('file')} has no output field.  "
+    for compile_entry in compiles:
+        if compile_entry.output is None:
+            findings.append(error_at(context.check, shown, f"the row of {compile_entry.file} has no output field.  "
                                                            f"CMake 3.20 or a subsequent version writes it"))
             continue
-        object_path = Path(os.path.normpath(os.path.join(row["directory"], output)))
+        object_path = Path(compile_entry.output)
         if object_path in seen or not object_path.is_file():
             continue
         seen.add(object_path)
-        outputs.append(Output(object_path, Path(os.path.normpath(os.path.join(row["directory"], row["file"])))))
+        outputs.append(Output(object_path, Path(os.path.normpath(compile_entry.file))))
     if not outputs and not findings:
         findings.append(error_at(context.check, shown, "no object of the compile database exists.  Build the "
                                                        "tree before the check"))
@@ -989,7 +989,7 @@ class Scratch:
 
     def write_database(self) -> None:
         """Write the compile database of the planted jobs."""
-        (self.build / "compile_commands.json").write_text(json.dumps(self.rows), encoding="utf-8")
+        compdb.plant(self.build, self.rows)
 
     def write_reply(self) -> None:
         """Write a codemodel reply of the CMake file API with the planted targets."""
@@ -1213,7 +1213,7 @@ def self_test_cases() -> int:
         status, found, _ = empty.run("compile-cpu")
         expect("compile-cpu: a build with no object is an error",
                status == 1 and len(found) == 1 and "no object" in found[0].message)
-        (empty.build / "compile_commands.json").unlink()
+        compdb.database_file(empty.build).unlink()
         status, found, _ = empty.run("function-size")
         expect("function-size: a build with no compile database is an error", status == 1)
 

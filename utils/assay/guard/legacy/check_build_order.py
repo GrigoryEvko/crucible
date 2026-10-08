@@ -144,6 +144,7 @@ from assay.core import meter as cost_meter
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
 from assay.readers import census as build_census
+from assay.readers import compdb
 from assay.readers.ninja import COMPILE_RULE, CUSTOM_RULE, LINK_RULE, Graph, read_graph
 
 CHECKS = ("build-order", "compile-first", "custom-deps")
@@ -543,24 +544,22 @@ def read_largest(build: Path, root: Path = REPO_ROOT) -> dict[str, Compile]:
     Raises:
         ValueError: If the compile database cannot be read
     """
-    database = build / "compile_commands.json"
     try:
-        rows = json.loads(database.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as problem:
-        raise ValueError(f"the compile database {database} cannot be read ({problem}).  Configure the build "
-                         f"directory with a preset first") from None
+        compiles = compdb.entries(build)
+    except compdb.CompdbError as problem:
+        raise ValueError(f"the compile database cannot be read ({problem}).  Configure the build directory with a "
+                         f"preset first") from None
     largest: dict[str, Compile] = {}
-    for row in rows:
-        output = row.get("output") if isinstance(row, dict) else None
-        if not output:
+    for compile_entry in compiles:
+        if not compile_entry.output:
             continue
-        object_path = Path(os.path.normpath(os.path.join(row["directory"], output)))
+        object_path = Path(compile_entry.output)
         target = target_of(object_path)
         count = record_count(object_path) if target is not None else None
         if target is None or count is None:
             continue
         if target not in largest or count > largest[target].instructions:
-            source = Path(os.path.normpath(os.path.join(row["directory"], row["file"])))
+            source = Path(os.path.normpath(compile_entry.file))
             largest[target] = Compile(display(source, root), count)
     return largest
 
@@ -681,7 +680,8 @@ def plant_object(build: Path, root: Path, target: str, source: str, record: dict
     object_path.write_bytes(b"object")
     if record is not None:
         Path(str(object_path) + cost_meter.RECORD_SUFFIX).write_text(json.dumps(record), encoding="utf-8")
-    return {"directory": str(build), "file": str(root / source), "output": output}
+    return {"directory": str(build), "file": str(root / source), "output": output,
+            "command": f"c++ -o {output} -c {root / source}"}
 
 
 ORDER_GRAPH = (
@@ -887,7 +887,7 @@ def self_test_cases() -> int:
             plant_object(build, root, "no_record", "test/no_record.cpp", None),
             plant_object(build, root, "outside_all", "test/outside_all.cpp", built(60.0)),
         ]
-        (build / "compile_commands.json").write_text(json.dumps(rows), encoding="utf-8")
+        compdb.plant(build, rows)
         candidates_text = "\n".join(("long_unlisted", "long_listed", "short_listed", "middle_listed",
                                      "middle_unlisted", "hit_long", "hit_no_count", "failed_long", "no_record",
                                      "step_count"))

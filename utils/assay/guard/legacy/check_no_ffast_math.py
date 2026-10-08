@@ -17,7 +17,7 @@ This guard catches what could punch through it.
 
 THE ENGINES
     Build flags   The compile database of a configured build
-                  (compile_commands.json) holds each flag as the compiler
+                  (assay.readers.compdb) holds each flag as the compiler
                   receives it, after CMake has expanded every generator
                   expression, variable and preset.  The guard reads it with
                   json, so a flag inside `$<$<CONFIG:Release>:...>` and a flag
@@ -78,8 +78,7 @@ from pathlib import Path
 from assay.core import ledger as rule_ledger
 from assay.core import proc
 from assay.core import rows as rows_grammar
-from assay.guard.preprocessed import split_command
-from assay.readers import tsast
+from assay.readers import compdb, tsast
 from assay.setup import pins as cmake_pin
 
 REPO_ROOT = tsast.REPO_ROOT
@@ -126,13 +125,6 @@ def is_exempt(path: Path, root: Path) -> bool:
     return any(part in EXEMPT_COMPONENTS or part.startswith("build") for part in rel.parts[:-1])
 
 
-def compile_flags(entry: dict) -> list[str]:
-    """Return the argument vector of one compile-database entry."""
-    if "arguments" in entry:
-        return list(entry["arguments"])
-    return split_command(entry.get("command", ""))
-
-
 def build_violations(build_dir: Path, root: Path) -> tuple[list[Violation], list[str]]:
     """Read the compile database of BUILD_DIR and return each banned flag, grouped by flag.
 
@@ -141,23 +133,23 @@ def build_violations(build_dir: Path, root: Path) -> tuple[list[Violation], list
     Returns:
         The violations, and one line for each error that stops the read
     """
-    database = build_dir / "compile_commands.json"
+    database = compdb.database_file(build_dir)
     try:
-        entries = json.loads(database.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        entries = compdb.entries(build_dir)
+    except compdb.CompdbError as error:
         return [], [f"{database}: cannot read the compile database: {error}"]
-    if not isinstance(entries, list) or not entries:
+    if not entries:
         return [], [f"{database}: the compile database holds no entry, so no flag was read"]
     by_flag: dict[str, list[str]] = {}
     under_root = 0
     for entry in entries:
-        source = Path(entry.get("directory", "."), entry.get("file", ""))
+        source = Path(entry.file)
         if not is_under(source, root):
             continue
         under_root += 1
         if is_exempt(source, root):
             continue
-        for flag in compile_flags(entry):
+        for flag in entry.argv():
             if flag in BANNED_FLAGS:
                 by_flag.setdefault(flag, []).append(str(source.resolve().relative_to(root.resolve())))
     if under_root == 0:

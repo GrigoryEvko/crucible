@@ -35,10 +35,11 @@ WHAT THE SCRIPT MEASURES
     --save writes the results as JSON.  --compare reads such a file and adds
     the change of each median to the table.
 
-    --db can name the compile database of another copy of the tree, such as
-    the main checkout.  The script finds each row by the end of its source
-    path, so two copies can run side by side, under the same load, for a
-    before and after table.
+    --build-dir can name the build directory of another copy of the tree,
+    such as the main checkout.  The script reads the compile database of that
+    directory (assay.readers.compdb), and it finds each row by the end of its
+    source path.  So two copies can run side by side, under the same load,
+    for a before and after table.
 
 EXIT CODES
     0  Each row has its numbers, and each command gave the expected result
@@ -53,7 +54,6 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
-import shlex
 import statistics
 import sys
 import tempfile
@@ -62,6 +62,7 @@ from pathlib import Path
 
 from assay.core import proc
 from assay.core.paths import REPO_ROOT
+from assay.readers import compdb
 
 # The fixed sample: the path of each source, and whether it is a negative
 # fixture.  The order is the order of the table.
@@ -84,7 +85,7 @@ SAMPLE: tuple[tuple[str, bool], ...] = (
     ("test/vigil_neg/neg_vigil_ring_other_brand.cpp", True),
 )
 HEADER_REFERENCE = "test/foundation/test_row_hash.cpp"
-DEFAULT_DATABASE = REPO_ROOT / "build" / "compile_commands.json"
+DEFAULT_BUILD_DIR = REPO_ROOT / "build"
 
 # The options that write a file beside the object: the object itself and the
 # dependency file that the build tool reads.  The script removes each one, so
@@ -130,30 +131,28 @@ class Row:
     problem: str
 
 
-def load_database(path: Path) -> list[tuple[Path, dict[str, object]]]:
-    """Read a compile database and pair each row with the resolved path of its source.
+def load_database(build_dir: Path) -> list[tuple[Path, compdb.CompileEntry]]:
+    """Read the compile database of a build directory and pair each compile with the resolved path of its source.
 
     Complexity: linear in the number of rows.
 
     Args:
-        path: The compile_commands.json file
+        build_dir: The build directory
 
     Returns:
-        (resolved source path, row) for each row
+        (resolved source path, compile) for each row
 
     Raises:
-        SampleError: If the file does not exist or holds no list of rows
+        SampleError: If the database does not exist or cannot be read
     """
-    if not path.is_file():
-        raise SampleError(f"the compile database {path} does not exist. Configure a build first, for example "
-                          f"`cmake --preset default`, or give --db.")
-    rows = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(rows, list):
-        raise SampleError(f"the compile database {path} does not hold a list of rows.")
-    return [((Path(str(row["directory"])) / str(row["file"])).resolve(), row) for row in rows]
+    try:
+        compiles = compdb.entries(build_dir)
+    except compdb.CompdbError as problem:
+        raise SampleError(f"{problem}.  Or give --build-dir.") from None
+    return [(Path(entry.file).resolve(), entry) for entry in compiles]
 
 
-def find_row(database: list[tuple[Path, dict[str, object]]], path: str) -> dict[str, object] | None:
+def find_row(database: list[tuple[Path, compdb.CompileEntry]], path: str) -> compdb.CompileEntry | None:
     """Return the one row whose source ends with the repository-relative path.
 
     The match is on the end of the path, so a database of a different copy of
@@ -173,18 +172,18 @@ def find_row(database: list[tuple[Path, dict[str, object]]], path: str) -> dict[
     return hits[0] if len(hits) == 1 else None
 
 
-def command_of(row: dict[str, object]) -> Command:
+def command_of(row: compdb.CompileEntry) -> Command:
     """Return the compile command of one row, without its output, dependency and source words.
 
     Args:
-        row: One row of the compile database
+        row: One compile of the compile database
 
     Returns:
         The command, with the source path kept apart from the flags
     """
-    directory = Path(str(row["directory"]))
-    words = list(row["arguments"]) if "arguments" in row else shlex.split(str(row["command"]))
-    source = (directory / str(row["file"])).resolve()
+    directory = Path(row.directory)
+    words = list(row.argv())
+    source = Path(row.file).resolve()
     flags: list[str] = []
     skip_next = False
     for word in words[1:]:
@@ -369,8 +368,9 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
         description="Measure the compile CPU time of a fixed sample of translation units, with -fsyntax-only "
                     "and in full, as the median of several runs.",
     )
-    parser.add_argument("--db", type=Path, default=DEFAULT_DATABASE,
-                        help="the compile database (default: build/compile_commands.json of this tree)")
+    parser.add_argument("--build-dir", type=Path, default=DEFAULT_BUILD_DIR,
+                        help="the build directory whose compile database the script reads (default: build of this "
+                             "tree)")
     parser.add_argument("--runs", type=int, default=3, help="the runs of each command (default: 3)")
     parser.add_argument("--jobs", type=int, default=8,
                         help="the compiler runs at the same time (default: 8)")
@@ -422,7 +422,7 @@ def main(argv: list[str]) -> int:
                   file=sys.stderr)
             return 1
     try:
-        database = load_database(arguments.db)
+        database = load_database(arguments.build_dir)
         jobs: list[tuple[str, str, Command, tuple[str, ...]]] = []
         missing: list[str] = []
         for path, is_fixture in selected:
@@ -436,13 +436,13 @@ def main(argv: list[str]) -> int:
             if arguments.headers:
                 reference_row = find_row(database, arguments.reference)
                 if reference_row is None:
-                    raise SampleError(f"no row of {arguments.db} names the reference unit {arguments.reference}, "
-                                      f"or more than one row names it.")
+                    raise SampleError(f"no row of the compile database of {arguments.build_dir} names the reference "
+                                      f"unit {arguments.reference}, or more than one row names it.")
                 reference = command_of(reference_row)
                 for header in arguments.headers:
                     jobs.append((header, "header", header_command(reference, header, scratch), ("syntax",)))
             print(f"tu-sample: {arguments.runs} runs of each command, {arguments.jobs} at the same time, "
-                  f"compile database {arguments.db}", flush=True)
+                  f"build directory {arguments.build_dir}", flush=True)
             rows = measure_all(jobs, arguments.runs, arguments.jobs, scratch)
     except SampleError as exc:
         print(f"tu-sample: {exc}", file=sys.stderr)
@@ -451,13 +451,14 @@ def main(argv: list[str]) -> int:
     if arguments.save is not None:
         arguments.save.write_text(json.dumps({
             "runs": arguments.runs,
-            "database": str(arguments.db),
+            "build_dir": str(arguments.build_dir),
             "rows": [{"name": row.name, "kind": row.kind, "syntax_seconds": row.syntax_seconds,
                       "full_seconds": row.full_seconds, "peak_mb": row.peak_mb} for row in rows],
         }, indent=2) + "\n", encoding="utf-8")
     problems = [(row.name, row.problem) for row in rows if row.problem]
     for path in missing:
-        problems.append((path, f"no row of {arguments.db} names the source, or more than one row names it"))
+        problems.append((path, f"no row of the compile database of {arguments.build_dir} names the source, or "
+                               f"more than one row names it"))
     for name, problem in problems:
         print(f"tu-sample: {name}: {problem}", file=sys.stderr)
     return 1 if problems else 0

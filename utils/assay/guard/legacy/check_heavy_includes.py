@@ -548,7 +548,7 @@ def measure(root: Path, build_dir: Path, extra: list[str], table: Path) -> int:
 
     Args:
         root: The repository root
-        build_dir: A configured build directory with compile_commands.json
+        build_dir: A configured build directory with a compile database
         extra: More headers to measure, as an include directive names them, without brackets
         table: The table file to write
 
@@ -558,10 +558,10 @@ def measure(root: Path, build_dir: Path, extra: list[str], table: Path) -> int:
     # Only --measure reads the compile helpers of utils/assay/loop/gauge_sample.py, so only this mode imports them.
     from assay.loop import gauge_sample as sample
 
-    database = sample.load_database(build_dir / "compile_commands.json")  # type: ignore[attr-defined]
+    database = sample.load_database(build_dir)  # type: ignore[attr-defined]
     reference_row = sample.find_row(database, sample.HEADER_REFERENCE)  # type: ignore[attr-defined]
     if reference_row is None:
-        print(f"check-heavy-includes: {build_dir}/compile_commands.json has no row of "
+        print(f"check-heavy-includes: the compile database of {build_dir} has no row of "
               f"{sample.HEADER_REFERENCE}.", file=sys.stderr)  # type: ignore[attr-defined]
         return 1
     reference = sample.command_of(reference_row)  # type: ignore[attr-defined]

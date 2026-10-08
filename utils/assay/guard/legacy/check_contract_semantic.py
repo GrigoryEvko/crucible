@@ -17,7 +17,7 @@ usage requirement.  This check reads the final compile lines.
 
 WHAT THE CHECK READS
     Each row of the compile database of a configured build
-    (BUILD_DIR/compile_commands.json) whose command names the semantic flag or
+    (assay.readers.compdb) whose command names the semantic flag or
     the define.  The words of the command, in order:
       * `-DCRUCIBLE_CONTRACT_SEMANTIC_IGNORE`, with or without a value, or
         `-D` and then that name as the next word, defines it.
@@ -41,17 +41,16 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
-import json
-import shlex
+import os
 import sys
 import tempfile
 from pathlib import Path
 
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
+from assay.readers import compdb
 
 CHECK = "contract-semantic"
-DATABASE = "compile_commands.json"
 DEFINE = "CRUCIBLE_CONTRACT_SEMANTIC_IGNORE"
 SEMANTIC_FLAG = "-fcontract-evaluation-semantic="
 IGNORE = "ignore"
@@ -94,20 +93,18 @@ def semantic_of(argv: list[str]) -> tuple[bool, str | None]:
     return is_defined, semantic
 
 
-def command_words(row: dict[str, object]) -> list[str]:
+def command_words(row: compdb.CompileEntry) -> list[str]:
     """Return the words of the compile command of one row, or no word when the row names neither item.
 
     The split of a command string costs most of the time of the check, so a
     command that names neither the flag nor the define is not split.
 
     Raises:
-        KeyError: If the row has neither arguments nor a command
         ValueError: If the command string is not valid shell quoting
     """
-    if "arguments" in row:
-        return [str(word) for word in row["arguments"]]  # type: ignore[union-attr]
-    command = str(row["command"])
-    return shlex.split(command) if (DEFINE in command or SEMANTIC_FLAG in command) else []
+    if row.arguments is not None:
+        return list(row.arguments)
+    return list(row.argv()) if (DEFINE in row.command or SEMANTIC_FLAG in row.command) else []
 
 
 def evaluate(build_dir: Path, root: Path) -> list[check_report.Finding]:
@@ -122,18 +119,16 @@ def evaluate(build_dir: Path, root: Path) -> list[check_report.Finding]:
     Returns:
         The findings, or one error when the database does not exist or cannot be read
     """
-    database = build_dir / DATABASE
-    shown = str(database)
-    if not database.is_file():
+    shown = str(compdb.database_file(build_dir))
+    try:
+        rows = compdb.entries(build_dir)
+        commands = [(row.file, "" if row.output is None else os.path.relpath(row.output, row.directory),
+                     command_words(row)) for row in rows]
+    except compdb.MissingDatabase:
         return [check_report.Finding("error", shown, 0, CHECK, "the compile database does not exist, so the check "
                                                                "cannot see the compile commands.  Configure the "
                                                                "build first.")]
-    try:
-        rows = json.loads(database.read_text(encoding="utf-8"))
-        if not isinstance(rows, list):
-            raise ValueError("the top level is not a list of rows")
-        commands = [(str(row["file"]), str(row.get("output", "")), command_words(row)) for row in rows]
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (compdb.CompdbError, ValueError) as exc:
         return [check_report.Finding("error", shown, 0, CHECK, f"the compile database cannot be read: {exc}")]
     findings: list[check_report.Finding] = []
     for source, output, argv in commands:
@@ -187,12 +182,11 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory(prefix="contract-semantic-") as work:
         build = Path(work) / "build"
         build.mkdir()
-        database = build / DATABASE
         root = Path("/r")
 
         def run(rows: list[dict[str, object]]) -> list[check_report.Finding]:
             """Write the rows as the compile database and evaluate it."""
-            database.write_text(json.dumps(rows), encoding="utf-8")
+            compdb.plant(build, rows)
             return evaluate(build, root)
 
         found = run(clean_rows)
@@ -218,11 +212,11 @@ def self_test() -> int:
             expect(f"an error: {label}", len(found) == 1 and found[0].level == "error"
                    and found[0].path == str(row["file"]).removeprefix("/r/") and needle in found[0].message, found)
 
-        database.write_text("[{]", encoding="utf-8")
+        compdb.plant(build, "[{]")
         found = evaluate(build, root)
         expect("an error: a compile database that cannot be read",
                len(found) == 1 and "cannot be read" in found[0].message, found)
-        database.unlink()
+        compdb.database_file(build).unlink()
         found = evaluate(build, root)
         expect("an error: a missing compile database", len(found) == 1 and "does not exist" in found[0].message, found)
 

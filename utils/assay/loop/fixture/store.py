@@ -350,6 +350,7 @@ from pathlib import Path
 from types import ModuleType
 
 from assay.core.paths import LOOP, REPO_ROOT
+from assay.readers import compdb
 
 # ── Diagnostic-text normalisation ──────────────────────────────────
 #
@@ -804,7 +805,7 @@ def find_compile_command(build_dir: Path, source: Path, memo: Path) -> tuple[lis
     only when no name is equal.  The cost is O(n) in the rows of the database,
     and O(1) with a correct memo.
     """
-    database = build_dir / "compile_commands.json"
+    database = compdb.database_file(build_dir)
     fields = _stat_fields(os.stat(database))
     text = str(source)
     try:
@@ -814,19 +815,14 @@ def find_compile_command(build_dir: Path, source: Path, memo: Path) -> tuple[lis
             return list(recorded["command"]), Path(recorded["directory"])
     except (OSError, ValueError, KeyError, TypeError):
         pass
-    rows = json.loads(database.read_text())
-    match = next((row for row in rows if row["file"] == text), None)
+    compiles = compdb.entries(build_dir)
+    match = next((entry for entry in compiles if entry.file == text), None)
     if match is None:
-        match = next((row for row in rows if Path(row["file"]).resolve() == source), None)
+        match = next((entry for entry in compiles if Path(entry.file).resolve() == source), None)
     if match is None:
         return None
-    if match.get("arguments"):
-        command = list(match["arguments"])
-    else:
-        import shlex
-
-        command = shlex.split(match["command"])
-    directory = Path(match.get("directory", build_dir))
+    command = list(match.argv())
+    directory = Path(match.directory)
     after = os.stat(database)
     if _stat_fields(after) == fields and after.st_ctime_ns < _now_ns() - _SETTLE_NS:
         try:

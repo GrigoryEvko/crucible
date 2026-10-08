@@ -83,7 +83,6 @@ import hashlib
 import io
 import json
 import os
-import shlex
 import shutil
 import sys
 import tempfile
@@ -99,7 +98,7 @@ from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
-from assay.readers import tsast
+from assay.readers import compdb, tsast
 
 CHECK = "padded-list"
 SCRIPT = "utils/assay/guard/legacy/check_padded_lists.py"
@@ -733,11 +732,15 @@ class Command:
     flags: tuple[str, ...]
 
 
-def command_of(row: dict[str, object]) -> Command:
-    """Return the compile command of one row, without the words that name its source, output or dependency file."""
-    directory = str(row["directory"])
-    words = [str(word) for word in row["arguments"]] if "arguments" in row else shlex.split(str(row["command"]))  # type: ignore[union-attr]
-    source = os.path.realpath(os.path.join(directory, str(row["file"])))
+def command_of(row: compdb.CompileEntry) -> Command:
+    """Return the compile command of one entry, without the words that name its source, output or dependency file.
+
+    Raises:
+        ValueError: If the command line does not obey the shell quoting rules
+    """
+    directory = row.directory
+    words = row.argv()
+    source = os.path.realpath(row.file)
     flags: list[str] = []
     skip = False
     for word in words[1:]:
@@ -759,18 +762,16 @@ def load_commands(build_dir: Path, root: Path) -> tuple[Command | None, dict[str
     """Return the command of one crucible sentinel, and the command of each source of src/.
 
     Raises:
-        OSError, ValueError, KeyError, TypeError: If the compile database cannot be read
+        compdb.CompdbError: If the compile database cannot be read
+        ValueError: If a command line does not obey the shell quoting rules
     """
-    rows = json.loads((build_dir / "compile_commands.json").read_text(encoding="utf-8"))
-    if not isinstance(rows, list):
-        raise ValueError("the compile database does not hold a list of rows")
     sentinel: Command | None = None
     sources: dict[str, Command] = {}
     resolved_root = root.resolve()
-    for row in rows:
-        if sentinel is None and f"/CMakeFiles/{SENTINEL_TARGET}.dir/" in str(row.get("output", "")):
+    for row in compdb.entries(build_dir):
+        if sentinel is None and f"/CMakeFiles/{SENTINEL_TARGET}.dir/" in (row.output or ""):
             sentinel = command_of(row)
-        named = os.path.join(str(row["directory"]), str(row["file"]))
+        named = row.file
         # A source of src/ has a directory named src in its path, so the
         # check resolves no other path.  The resolve costs most of the read.
         if f"{os.sep}src{os.sep}" not in named:
@@ -897,8 +898,8 @@ def run_probes(root: Path, build_dir: Path, targets: list[Target], limit: int) -
     result = ProbeResult()
     try:
         sentinel, sources = load_commands(build_dir, root)
-    except (OSError, ValueError, KeyError, TypeError) as exc:
-        result.errors.append(check_report.Finding("error", str(build_dir / "compile_commands.json"), 0, CHECK,
+    except (compdb.CompdbError, ValueError) as exc:
+        result.errors.append(check_report.Finding("error", str(compdb.database_file(build_dir)), 0, CHECK,
                                                   f"the compile database cannot be read: {exc}"))
         return result
     directory = build_dir / PROBE_DIRECTORY
@@ -1067,9 +1068,10 @@ def evaluate(root: Path, build_dir: Path, registry: Path) -> tuple[list[check_re
     except ValueError as exc:
         failed = ProbeResult(errors=[check_report.Finding("error", rule_registry.REGISTRY_PATH, 0, CHECK, str(exc))])
         return list(failed.errors), failed
-    if not (build_dir / "compile_commands.json").is_file():
+    database = compdb.database_file(build_dir)
+    if not database.is_file():
         failed = ProbeResult(errors=[check_report.Finding(
-            "error", str(build_dir / "compile_commands.json"), 0, CHECK,
+            "error", str(database), 0, CHECK,
             "the compile database does not exist, so the check cannot compile its probes.  Configure the build "
             "first.")])
         return list(failed.errors), failed
@@ -1213,7 +1215,7 @@ def self_test(build_dir: Path) -> int:
 
     try:
         sentinel, _ = load_commands(build_dir, tsast.REPO_ROOT)
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (compdb.CompdbError, ValueError) as exc:
         print(f"check-padded-lists --self-test: the compile database of {build_dir} cannot be read: {exc}")
         return 2
     if sentinel is None:
@@ -1246,7 +1248,7 @@ def self_test(build_dir: Path) -> int:
                  "-c", str(build / "s.cpp")], "output": f"{build}/CMakeFiles/{SENTINEL_TARGET}.dir/s.cpp.o"},
                 {"directory": str(build), "file": str(root / "src/Planted.cpp"),
                  "arguments": [sentinel.compiler, *flags, "-c", str(root / "src/Planted.cpp")]}]
-        (build / "compile_commands.json").write_text(json.dumps(rows), encoding="utf-8")
+        database = compdb.plant(build, rows)
 
         def run() -> tuple[list[check_report.Finding], ProbeResult]:
             with contextlib.redirect_stderr(io.StringIO()):
@@ -1350,7 +1352,7 @@ def self_test(build_dir: Path) -> int:
         expect("a polymorphic element type is an error", any("polymorphic" in item.message for item in findings))
         (root / "include/fixy/Clean.h").unlink()
 
-        (build / "compile_commands.json").unlink()
+        database.unlink()
         findings, _ = run()
         expect("a missing compile database is an error",
                len(findings) == 1 and "does not exist" in findings[0].message)

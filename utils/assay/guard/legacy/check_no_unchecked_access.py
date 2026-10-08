@@ -70,7 +70,7 @@ WHAT COUNTS AS AN OPEN TARGET
          make it const or constexpr, or move it into the object.
 
 THE EXPANDED RUN
-    With --compile-db the guard also reads the macro-expanded text of each
+    With --build-dir the guard also reads the macro-expanded text of each
     file from the preprocessor store of utils/assay/guard/preprocessed.py, one parse
     for each distinct expansion.  That run sees a door that ## builds from
     pieces, and a static data member that a macro declares, with the access
@@ -117,7 +117,7 @@ WHAT IT DOES NOT SEE, STATED RATHER THAN IMPLIED
       object that a const pointer member points to.
     - A door that ## builds, and a static data member that a macro
       declares, in a file that no unit of the compile database reads.
-      Without --compile-db, the guard sees neither in any file.
+      Without --build-dir, the guard sees neither in any file.
     - A member that rule 7 cannot trace: one that a function gives through
       a call to another function, an output parameter, a member, or a local
       variable that it sets after the declaration, and a function that a
@@ -130,7 +130,7 @@ A stale row, one whose file does not exist or does not open the door, fails
 the guard, so the ledger only shrinks.  A ledger with no file admits no file.
 
 USAGE
-    guard check --rule no-unchecked-access [--compile-db DATABASE] [--self-test]
+    guard check --rule no-unchecked-access [--build-dir BUILD_DIR] [--self-test]
 
 Exit 0 clean, 1 on a door outside the ledger, a stale row, an open target or
 an input the guard cannot read, 2 on a usage error, a malformed ledger or a
@@ -144,7 +144,6 @@ import bisect
 import contextlib
 import hashlib
 import io
-import json
 import os
 import shutil
 import sys
@@ -158,7 +157,7 @@ from assay.core import ledger as rule_ledger
 from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
 from assay.guard.preprocessed import Store, chunk_text, map_batches, text_results
-from assay.readers import tsast
+from assay.readers import compdb, tsast
 
 RULE = "no-unchecked-access"
 LEDGER = rule_ledger.shown_path(RULE)
@@ -902,7 +901,7 @@ def expansion_results(batch: list[tuple[str, str, str, list[str]]]) -> list[dict
     return found
 
 
-def expanded(root: Path, compile_db: Path, scope: frozenset[str],
+def expanded(root: Path, build_dir: Path, scope: frozenset[str],
              problems: list[str]) -> tuple[dict[str, list[Door]], list[Target]]:
     """Read the doors and the open targets of each distinct expansion of each file in scope.
 
@@ -915,7 +914,7 @@ def expanded(root: Path, compile_db: Path, scope: frozenset[str],
     Complexity: linear in the preprocessed output of the units, plus one
     parse for each expansion text that the store does not hold.
     """
-    store = Store(compile_db, root)
+    store = Store(build_dir, root)
     stored = store.results("no-unchecked-access", Path(__file__), tsast.parser_identity())
     results: dict[str, dict] = {}
     pending: dict[str, tuple[str, list[str]]] = {}
@@ -977,7 +976,7 @@ def remedy(shape: str) -> str:
             f"access_context::current(), or add a reviewed row to {LEDGER}.")
 
 
-def check(root: Path, compile_db: Path | None = None) -> int:
+def check(root: Path, build_dir: Path | None = None) -> int:
     """Compare the doors in the tree with the ledger, and report to stderr.
 
     Returns:
@@ -996,8 +995,8 @@ def check(root: Path, compile_db: Path | None = None) -> int:
                         f"walk found.  The caller can splice that member, or extract a pointer to it, with no door "
                         f"of its own.  Keep the reflection inside the function, and return the value that the "
                         f"caller needs: a count, a hash or a bool.")
-    if compile_db is not None:
-        more_doors, more_targets = expanded(root, compile_db, frozenset(files), problems)
+    if build_dir is not None:
+        more_doors, more_targets = expanded(root, build_dir, frozenset(files), problems)
         for rel, found in more_doors.items():
             known = {shape for _, shape in doors.get(rel, [])}
             doors.setdefault(rel, []).extend(
@@ -1020,7 +1019,7 @@ def check(root: Path, compile_db: Path | None = None) -> int:
     for line in problems:
         print(f"check-no-unchecked-access: {line}", file=sys.stderr)
     if not problems:
-        read = "the parse and the macro expansions" if compile_db is not None else "the parse"
+        read = "the parse and the macro expansions" if build_dir is not None else "the parse"
         print(f"check-no-unchecked-access: {len(opened)} file(s) open the unchecked access context, "
               f"each on its reviewed row, no function that uses unchecked returns a member that a walk found, and in "
               f"{read} {parsed} file(s) of the member roots hold no writable private or protected static data "
@@ -1055,7 +1054,7 @@ def planted_cases(caches: Path) -> int:
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text(text, encoding="utf-8")
 
-    def captured(root: Path, cwd: Path | None = None, compile_db: Path | None = None) -> tuple[int, str]:
+    def captured(root: Path, cwd: Path | None = None, build_dir: Path | None = None) -> tuple[int, str]:
         """Track each planted file, run the check on the planted repository and keep its report."""
         git.run(root, "add", "-A")
         buffer = io.StringIO()
@@ -1064,17 +1063,17 @@ def planted_cases(caches: Path) -> int:
             os.chdir(cwd)
         try:
             with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
-                code = check(root, compile_db)
+                code = check(root, build_dir)
         finally:
             os.chdir(previous)
         return code, buffer.getvalue()
 
     def expect(root: Path, code: int, needle: str, name: str, negative: bool = False,
-               compile_db: Path | None = None, absent: str | None = None) -> None:
+               build_dir: Path | None = None, absent: str | None = None) -> None:
         """Record one case."""
         nonlocal negatives
         negatives += negative
-        got, report = captured(root, compile_db=compile_db)
+        got, report = captured(root, build_dir=build_dir)
         ok = got == code and needle in report and (absent is None or absent not in report)
         print(f"  {'ok  ' if ok else 'FAIL'} {name}")
         if not ok:
@@ -1304,15 +1303,16 @@ def planted_cases(caches: Path) -> int:
         if compiler is None:
             failures.append("no C++ compiler to run the expanded pass")
         else:
-            database = root / "build" / "compile_commands.json"
+            database = root / "build"
             write(root, "include/foundation/Counter.h",
                   "#define COUNTER static int counter_;\nstruct Open { COUNTER };\nclass Shut { COUNTER };\n")
             write(root, "src/Glue.cpp",
                   '#include "include/foundation/Counter.h"\n#define GLUE(a, b) a##b\n'
                   "auto c = std::meta::access_context::GLUE(unch, ecked)();\n")
-            write(root, "build/compile_commands.json", json.dumps([{
+            database.mkdir(parents=True, exist_ok=True)
+            compdb.plant(database, [{
                 "directory": str(root), "file": "src/Glue.cpp",
-                "command": f"{compiler} -std=c++20 -I. -c src/Glue.cpp -o Glue.o"}]))
+                "command": f"{compiler} -std=c++20 -I. -c src/Glue.cpp -o Glue.o"}])
             expect(root, 0, "1 file(s) open", "the run without the database cannot see a pasted door or a macro "
                                               "member")
             for attempt in ("cold", "cached"):
@@ -1358,7 +1358,8 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="guard check --rule no-unchecked-access",
                                      description="Refuse access_context::unchecked() outside the reviewed walks.")
     parser.add_argument("--self-test", action="store_true", help="run the planted cases")
-    parser.add_argument("--compile-db", type=Path, help="also read the macro expansions of this compile database")
+    parser.add_argument("--build-dir", type=Path,
+                        help="also read the macro expansions of the compile database of this build directory")
     try:
         args = parser.parse_args(argv)
     except SystemExit:
@@ -1366,11 +1367,11 @@ def main(argv: list[str]) -> int:
     try:
         if args.self_test:
             return self_test()
-        if args.compile_db is not None and not args.compile_db.is_file():
-            print(f"check-no-unchecked-access: {args.compile_db} does not exist.  Configure the build first.",
-                  file=sys.stderr)
+        if args.build_dir is not None and not compdb.database_file(args.build_dir).is_file():
+            print(f"check-no-unchecked-access: {args.build_dir} holds no compile database.  Configure the build "
+                  f"first.", file=sys.stderr)
             return 2
-        return check(REPO_ROOT, args.compile_db)
+        return check(REPO_ROOT, args.build_dir)
     except tsast.KitMissing as exc:
         print(f"check-no-unchecked-access: {exc}", file=sys.stderr)
         return 3

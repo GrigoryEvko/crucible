@@ -174,8 +174,6 @@ import bisect
 import contextlib
 import dataclasses
 import io
-import json
-import os
 import re
 import sys
 import tempfile
@@ -193,6 +191,7 @@ from assay.core import ruletable as layer_rules
 from assay.core import target as build_target
 from assay.core.paths import REPO_ROOT
 from assay.readers import census as build_census
+from assay.readers import compdb
 from assay.readers import sections as quarantine_sections
 
 CHECK = "quarantine"
@@ -345,11 +344,14 @@ def plugin_objects(build_dir: Path, root: Path) -> list[tuple[Path, str, str]]:
     """
     ninja, _ = build_census.tools_of(build_dir)
     objects = {str(path) for path, _ in build_census.objects_of_all(build_dir, ninja, root)}
-    rows = json.loads((build_dir / "compile_commands.json").read_text(encoding="utf-8"))
+    try:
+        rows = compdb.entries(build_dir)
+    except compdb.CompdbError as problem:
+        raise build_census.CensusError(f"the compile database cannot be read: {problem}") from None
     found: list[tuple[Path, str, str]] = []
     for row in rows:
-        output = os.path.normpath(os.path.join(row["directory"], row.get("output", "")))
-        command = row.get("command") or " ".join(row.get("arguments", []))
+        output = row.output or row.directory
+        command = row.command
         stamp = STAMP.search(command)
         if output in objects and stamp is not None:
             found.append((Path(output), stamp[1], command))
@@ -866,7 +868,7 @@ class Scratch:
             rows.append({"directory": str(self.build), "file": str(self.root / f"{name}.cpp"), "output": f"{name}.o",
                          "command": f"g++ {self.flags.get(name, '')} -fplugin=q.so {PLUGIN_ARGUMENT}stamp="
                                     f"{STAMP_VALUE} -c {name}.cpp"})
-        (self.build / "compile_commands.json").write_text(json.dumps(rows), encoding="utf-8")
+        compdb.plant(self.build, rows)
         (self.build / "inputs.txt").write_text("".join(f"{name}.o\n" for name in self.objects), encoding="utf-8")
 
     def run(self, write: bool = False, allow_raise: bool = False, add_configuration: bool = False,
@@ -1265,10 +1267,10 @@ def self_test() -> int:
         del scratch.objects["f"]
         scratch.flush()
 
-        rows_json = json.loads((scratch.build / "compile_commands.json").read_text())
-        for row in rows_json:
-            row["command"] = row["command"].replace(PLUGIN_ARGUMENT, "-fplugin-arg-crucible_contract-")
-        (scratch.build / "compile_commands.json").write_text(json.dumps(rows_json), encoding="utf-8")
+        compdb.plant(scratch.build, [{"directory": entry.directory, "file": entry.file, "output": entry.output,
+                                      "command": entry.command.replace(PLUGIN_ARGUMENT,
+                                                                       "-fplugin-arg-crucible_contract-")}
+                                     for entry in compdb.entries(scratch.build)])
         status, _, text = scratch.run()
         expect("a build whose compiles do not load the quarantine plugin does not apply",
                status == NOT_APPLICABLE and "no compile" in text, text)

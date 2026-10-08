@@ -51,6 +51,7 @@ from pathlib import Path
 
 from assay.core import meter as cost_meter
 from assay.core import proc
+from assay.readers import compdb
 
 # The command of a negative fixture runs the master loop with the subcommand fixture.
 FIXTURE_MASTER = "utils/bin/loop"
@@ -194,22 +195,21 @@ def objects_of_all(build_dir: Path, ninja: str, root: Path) -> list[tuple[Path, 
         NotApplicable: If an object of all does not exist, because the build made only some targets
         CensusError: If the compile database or the inputs of all cannot be read
     """
-    database = build_dir / "compile_commands.json"
+    database = compdb.database_file(build_dir)
     try:
-        rows = json.loads(database.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as problem:
-        raise CensusError(f"the compile database {database} cannot be read ({problem}).  Configure the build "
-                          f"directory with a preset") from None
+        compiles = compdb.entries(build_dir)
+    except compdb.CompdbError as problem:
+        raise CensusError(f"the compile database cannot be read: {problem}") from None
     inputs = {os.path.normpath(os.path.join(build_dir, name))
               for name in run_tool([ninja, "-C", str(build_dir), "-t", "inputs", "all"]).split()}
     objects: dict[str, str] = {}
-    for row in rows:
-        if "output" not in row:
-            raise CensusError(f"the row of {row.get('file')} in {database} has no output field.  CMake 3.20 or a "
-                              f"subsequent version writes it")
-        output = os.path.normpath(os.path.join(row["directory"], row["output"]))
+    for compile_entry in compiles:
+        if compile_entry.output is None:
+            raise CensusError(f"the row of {compile_entry.file} in {database} has no output field.  CMake 3.20 or "
+                              f"a subsequent version writes it")
+        output = str(compile_entry.output)
         if output in inputs:
-            objects[output] = shown(os.path.normpath(os.path.join(row["directory"], row["file"])), root)
+            objects[output] = shown(os.path.normpath(compile_entry.file), root)
     if not objects:
         raise CensusError(f"no row of {database} is an input of the target all")
     missing = [path for path in objects if not os.path.isfile(path)]

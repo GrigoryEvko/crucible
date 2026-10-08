@@ -245,10 +245,8 @@ import argparse
 import contextlib
 import difflib
 import io
-import json
 import os
 import re
-import shlex
 import shutil
 import sys
 import tempfile
@@ -261,7 +259,7 @@ from assay.core import ledger as rule_ledger
 from assay.core import proc
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
-from assay.readers import tsast
+from assay.readers import compdb, tsast
 
 SCRIPT = "utils/bin/guard check --rule header-checks"
 CHECK = "header-checks"
@@ -2608,13 +2606,13 @@ def sentinel_command(build_dir: Path) -> tuple[list[str], str, str] | None:
         (argv, source, directory), or None when the database holds no unit
         of the crucible sentinels
     """
-    database = build_dir / "compile_commands.json"
-    if not database.is_file():
+    try:
+        compiles = compdb.entries(build_dir)
+    except compdb.MissingDatabase:
         return None
-    for row in json.loads(database.read_text(encoding="utf-8")):
-        if f"/CMakeFiles/{SENTINEL_TARGET}.dir/" in row.get("output", ""):
-            argv = row.get("arguments") or shlex.split(row["command"])
-            return argv, row["file"], row["directory"]
+    for row in compiles:
+        if f"/CMakeFiles/{SENTINEL_TARGET}.dir/" in (row.output or ""):
+            return list(row.argv()), row.file, row.directory
     return None
 
 
@@ -2664,7 +2662,7 @@ def standalone(root: Path, build_dir: Path) -> int:
         print(line, file=sys.stderr)
     found = sentinel_command(build_dir)
     if found is None:
-        print(f"check-header-checks: {build_dir}/compile_commands.json holds no unit of {SENTINEL_TARGET}.  "
+        print(f"check-header-checks: the compile database of {build_dir} holds no unit of {SENTINEL_TARGET}.  "
               f"Configure the build first.", file=sys.stderr)
         return 2
     argv, source, directory = found
@@ -3427,12 +3425,12 @@ def self_test() -> int:
             build.mkdir(exist_ok=True)
             sentinel = build / "sentinel.cpp"
             sentinel.write_text("#include <crucible/Alone.h>\n", encoding="utf-8")
-            (build / "compile_commands.json").write_text(json.dumps([{
+            compdb.plant(build, [{
                 "directory": str(build), "file": str(sentinel),
                 "output": f"{build}/test/layer/CMakeFiles/{SENTINEL_TARGET}.dir/sentinel.cpp.o",
                 "arguments": [compiler, "-I", str(root / INCLUDE), "-MD", "-MF", "sentinel.d", "-o", "sentinel.o",
                               "-c", str(sentinel)],
-            }]), encoding="utf-8")
+            }])
             (root / "include/crucible/Alone.h").write_text("#pragma once\ninline int alone = 1;\n", encoding="utf-8")
             (root / "include/crucible/Needs.h").write_text("#pragma once\n#include <header_checks_absent.h>\n",
                                                            encoding="utf-8")
@@ -3454,7 +3452,7 @@ def self_test() -> int:
             code, report = captured(lambda: standalone(root, build))
             expect("a row that names no header is stale", code == 2 and "crucible/Gone.h" in report, True)
             listing.write_text(needs_row, encoding="utf-8")
-            (build / "compile_commands.json").write_text("[]", encoding="utf-8")
+            compdb.plant(build, [])
             expect("a compile database with no crucible sentinel fails",
                    captured(lambda: standalone(root, build))[0] == 2, True)
     fix_self_test(expect)

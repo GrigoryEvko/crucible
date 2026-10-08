@@ -173,11 +173,9 @@ import bisect
 import concurrent.futures
 import contextlib
 import io
-import json
 import multiprocessing
 import os
 import re
-import shlex
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -186,7 +184,7 @@ from pathlib import Path
 
 from assay.core import meter as cost_meter
 from assay.core import report as check_report
-from assay.readers import tsast
+from assay.readers import compdb, tsast
 
 # The command that the messages tell the reader to run.
 COMMAND = "utils/bin/guard check --rule walk-units"
@@ -1755,18 +1753,19 @@ def walk_unit_command(build_dir: Path) -> tuple[list[str], str, str]:
     Raises:
         MeasureError: If the build has no compile database, or the database holds no walk unit
     """
-    database = build_dir / "compile_commands.json"
-    if not database.is_file():
-        raise MeasureError(f"{database} does not exist.  Configure the build first, for example: cmake --preset "
-                           f"default")
-    for row in json.loads(database.read_text(encoding="utf-8")):
-        argv = row["arguments"] if "arguments" in row else shlex.split(row["command"])
-        if UNIT_OUTPUT not in row.get("output", "") and not any(UNIT_OUTPUT in arg for arg in argv):
+    database = compdb.database_file(build_dir)
+    try:
+        compiles = compdb.entries(build_dir)
+    except compdb.CompdbError as problem:
+        raise MeasureError(str(problem)) from None
+    for row in compiles:
+        argv = list(row.argv())
+        if UNIT_OUTPUT not in (row.output or "") and not any(UNIT_OUTPUT in arg for arg in argv):
             continue
         for arg in argv:
             found = UNIT_INCLUDE.fullmatch(arg)
             if found is not None:
-                return argv, row["directory"], found.group(1)
+                return argv, row.directory, found.group(1)
         raise MeasureError(f"the walk unit command of {database} has no -I of a walk_units directory, so the measure "
                            f"cannot give it another walk_checks.h.  Read test/layer/CMakeLists.txt.")
     raise MeasureError(f"{database} holds no walk unit of test/layer/walks_across_headers.cpp.  Configure the build "
@@ -2091,7 +2090,7 @@ def self_test() -> int:
         list_path.write_text(written, encoding="utf-8")
         code, report = captured(lambda: measure(root / "no-build", list_path, 1))
         expect("--measure refuses a build with no compile database",
-               code == 1 and "compile_commands.json does not exist" in report
+               code == 1 and f"{compdb.database_file(root / 'no-build')} does not exist" in report
                and list_path.read_text(encoding="utf-8") == written, True)
         (root / f"{INCLUDE}/fixy/Planted.h").write_text(
             "#pragma once\nnamespace foundation::tags { struct Planted {}; }\n", encoding="utf-8")

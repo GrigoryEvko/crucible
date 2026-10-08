@@ -87,7 +87,7 @@ tool, can appear under the tree and vanish while this guard reads it.  The
 facts of each file text stay in the results of the store of
 utils/assay/guard/preprocessed.py, so a warm run parses no file.  The
 preprocessed pass runs with
---compile-db: it runs each entry of the compile database through the
+--build-dir: it runs each entry of the compile database of that build through the
 preprocessor with the flags of the build, and it parses each distinct
 expansion of each file, so a shape that a macro or token pasting forms is
 seen too.  The output comes from the shared store of
@@ -141,7 +141,7 @@ Exit codes
      ctest reports as a skip
 
 Usage
-  guard check --rule proof-routes [--compile-db PATH] [--proof-names-binary PATH]
+  guard check --rule proof-routes [--build-dir DIR] [--proof-names-binary PATH]
   guard check --rule proof-routes ... --list    print each admitted site
   guard check --rule proof-routes --self-test   plant each route and prove the verdicts
 """
@@ -149,7 +149,6 @@ Usage
 import contextlib
 import hashlib
 import io
-import json
 import os
 import re
 import shutil
@@ -165,7 +164,7 @@ from assay.core import proc
 from assay.core import rows as rows_grammar
 from assay.core.paths import GUARD, REPO_ROOT
 from assay.guard.preprocessed import Expansion, Store, chunk_text, text_results
-from assay.readers import tsast
+from assay.readers import compdb, tsast
 
 SOURCE_SUFFIXES = frozenset({".c", ".h", ".cc", ".hh", ".cpp", ".hpp", ".cxx", ".hxx", ".inl", ".ipp", ".tpp",
                              ".tcc", ".inc", ".ixx", ".cppm"})
@@ -592,7 +591,7 @@ def file_facts(root: Path, scope: list[str]) -> list[tuple[str, dict | None]]:
     return [(rel, found[rel]) for rel in scope]
 
 
-def preprocessed_records(root: Path, compile_db: Path, failures: list[str],
+def preprocessed_records(root: Path, build_dir: Path, failures: list[str],
                          tracked: frozenset[str]) -> list[tuple[str, list[list]]]:
     """The records of each file in the preprocessed output of each database entry, as (path, records).
 
@@ -605,7 +604,7 @@ def preprocessed_records(root: Path, compile_db: Path, failures: list[str],
 
     Complexity: linear in the number of units times the files each reads,
     plus one parse for each new distinct expansion text."""
-    store = Store(compile_db, root, int(os.environ.get("PROOF_ROUTES_JOBS", "0") or 0))
+    store = Store(build_dir, root, int(os.environ.get("PROOF_ROUTES_JOBS", "0") or 0))
     results = store.results("proof-routes", Path(__file__), tsast.parser_identity())
     records_of: dict[str, list[list]] = {}
     pending: dict[str, Expansion] = {}
@@ -755,7 +754,7 @@ def read_ledger(root: Path) -> tuple[dict[Site, tuple[int, int]], list[str]]:
     return entries, errors
 
 
-def scan(root: Path, compile_db: Path | None, binary: str | None, mode: str) -> int:
+def scan(root: Path, build_dir: Path | None, binary: str | None, mode: str) -> int:
     """Scan the tree under the root and compare each site with the ledger under the root."""
     files = listed_files(root)
     qualified: dict[str, set[str]] = defaultdict(set)
@@ -795,8 +794,8 @@ def scan(root: Path, compile_db: Path | None, binary: str | None, mode: str) -> 
         for rule, key, line in judge(records, proofs, friends, admitted):
             lexical[(path, rule, key)].append(line)
     preprocessed: dict[Site, int] = {}
-    if compile_db is not None:
-        preprocessed = preprocessed_counts(preprocessed_records(root, compile_db, failures, frozenset(files)),
+    if build_dir is not None:
+        preprocessed = preprocessed_counts(preprocessed_records(root, build_dir, failures, frozenset(files)),
                                            proofs, friends, primaries)
     entries, errors = read_ledger(root)
     unreviewed = 0
@@ -1027,14 +1026,13 @@ def planted_cases(caches: Path) -> int:
         else:
             (root / "a.cpp").write_text("#define JOIN(a, b) a##b\n#define HIDE(n) JOIN(uni, on) n { int x; }\n"
                                         "HIDE(Hidden);\n")
-            database = root / "compile_commands.json"
-            database.write_text(json.dumps([{"directory": str(root), "file": "a.cpp",
-                                             "command": f"{compiler} -std=c++20 -c a.cpp -o a.o"}]))
+            compdb.plant(root, [{"directory": str(root), "file": "a.cpp",
+                                 "command": f"{compiler} -std=c++20 -c a.cpp -o a.o"}])
             # A ledger with no rows has no file.
             ledger.unlink()
             for attempt in ("cold", "cached"):
                 report = proc.run(proc.Command([sys.executable, str(GUARD), "check", "--rule", "proof-routes",
-                                                "--scan-root", str(root), "--compile-db", str(database)],
+                                                "--scan-root", str(root), "--build-dir", str(root)],
                                                timeout_s=proc.TOOL_S))
                 if (report.exit != 1 or "a.cpp:union:Hidden" not in report.err
                         or "PROOF-ROUTE unread input" in report.err):
@@ -1055,11 +1053,10 @@ def planted_cases(caches: Path) -> int:
             (root / "layer-stage").mkdir()
             (root / "layer-stage" / "lower").symlink_to(root / "include" / "lower")
             (root / "fixture.cpp").write_text("#include <upper/Up.h>\nSTAGE(Staged);\n")
-            database.write_text(json.dumps([{"directory": str(root), "file": "fixture.cpp",
-                                             "command": f"{compiler} -std=c++20 -Ilayer-stage -c fixture.cpp "
-                                                        f"-o fixture.o"}]))
+            compdb.plant(root, [{"directory": str(root), "file": "fixture.cpp",
+                                 "command": f"{compiler} -std=c++20 -Ilayer-stage -c fixture.cpp -o fixture.o"}])
             report = proc.run(proc.Command([sys.executable, str(GUARD), "check", "--rule", "proof-routes",
-                                            "--scan-root", str(root), "--compile-db", str(database)],
+                                            "--scan-root", str(root), "--build-dir", str(root)],
                                            timeout_s=proc.TOOL_S))
             if "fixture.cpp:union:Staged" not in report.err or "PROOF-ROUTE unread input" in report.err:
                 failures.append(f"a layer fixture under a staged root was not read with the include directory:\n"
@@ -1108,13 +1105,13 @@ def run(argv: list[str]) -> int:
     if argv == ["--self-test"]:
         return self_test()
     root = REPO_ROOT
-    compile_db: Path | None = None
+    build_dir: Path | None = None
     binary: str | None = None
     mode = "check"
     while argv:
         flag = argv.pop(0)
-        if flag == "--compile-db" and argv:
-            compile_db = Path(argv.pop(0)).resolve()
+        if flag == "--build-dir" and argv:
+            build_dir = Path(argv.pop(0)).resolve()
         elif flag == "--proof-names-binary" and argv:
             binary = argv.pop(0)
         elif flag == "--list":
@@ -1125,9 +1122,10 @@ def run(argv: list[str]) -> int:
         else:
             print(__doc__, file=sys.stderr)
             return 2
-    for named, what in ((binary, "the proof-name binary"), (compile_db, "the compile database")):
+    database = None if build_dir is None else compdb.database_file(build_dir)
+    for named, what in ((binary, "the proof-name binary"), (database, "the compile database")):
         if named is not None and not Path(named).is_file():
             print(f"check-proof-routes: {what} {named} is not built, so the guard cannot run.  Build the tree "
                   f"first.", file=sys.stderr)
             return 3
-    return scan(root, compile_db, binary, mode)
+    return scan(root, build_dir, binary, mode)

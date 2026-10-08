@@ -63,8 +63,8 @@ WHAT READS THE SITES
     `template <...>` that a qualified member name follows before `;`, `{`
     or `}`.
 
-    With --compile-db, the guard also reads the macro-expanded text of each
-    file of the compile database, from the store of
+    With --build-dir, the guard also reads the macro-expanded text of each
+    file of the compile database of that build, from the store of
     utils/assay/guard/preprocessed.py.  The expanded text shows a definition
     that a macro of another file spells, and a name that a macro forms by
     token pasting.  The guard parses each expanded text that names the class
@@ -73,14 +73,14 @@ WHAT READS THE SITES
     cannot read, fail, because the guard cannot prove them clean.
 
 WHAT IT CANNOT SEE
-    Without --compile-db, a name that a macro forms by token pasting, and a
+    Without --build-dir, a name that a macro forms by token pasting, and a
     macro of another file that spells a qualified definition.  With it, a
     header that no unit of the compile database includes, which the tree
     pass still reads.
 
 Usage
-    guard check --rule federation-admission [--compile-db PATH]  scan the tree
-    guard check --rule federation-admission --self-test           plant each forgery and each legal use
+    guard check --rule federation-admission [--build-dir BUILD_DIR]  scan the tree
+    guard check --rule federation-admission --self-test               plant each forgery and each legal use
 
 Exit 0 clean, 1 on a forged definition, a class the guard cannot read, a
 file the parser cannot read or a unit the preprocessor rejects, 2 on a bad
@@ -101,7 +101,7 @@ from pathlib import Path
 from assay.core import cache as cache_dir
 from assay.core import git
 from assay.guard import preprocessed
-from assay.readers import tsast
+from assay.readers import compdb, tsast
 
 CLASS = "FederationAdmission"
 AUTHORED = "include/fixy/Federation.h"
@@ -389,7 +389,7 @@ def expansion_sites(batch: list[tuple[str, str, str, list[str], list[str]]]) -> 
     return found
 
 
-def expanded_sites(root: Path, compile_db: Path, members: set[str], problems: list[str]) -> list[Site]:
+def expanded_sites(root: Path, build_dir: Path, members: set[str], problems: list[str]) -> list[Site]:
     """Return the sites of the macro-expanded text of each file of a compile database.
 
     Each distinct expansion of a file is read one time.  A site is reported
@@ -402,7 +402,7 @@ def expanded_sites(root: Path, compile_db: Path, members: set[str], problems: li
     shares with the other guards, plus one parse of each new expanded text
     that names the class or a member name.
     """
-    store = preprocessed.Store(compile_db, root)
+    store = preprocessed.Store(build_dir, root)
     results = store.results("federation-admission", Path(__file__), tsast.parser_identity(),
                             json.dumps(sorted(members)))
     order: list[preprocessed.Expansion] = []
@@ -459,7 +459,7 @@ def listed_files(root: Path, needles: tuple[bytes, ...]) -> list[str]:
     return found
 
 
-def scan(root: Path, compile_db: Path | None = None) -> tuple[list[Site], list[str]]:
+def scan(root: Path, build_dir: Path | None = None) -> tuple[list[Site], list[str]]:
     """Return each forged site, and each problem that stops the scan.
 
     Complexity: linear in the size of the files that name the class or a
@@ -499,16 +499,16 @@ def scan(root: Path, compile_db: Path | None = None) -> tuple[list[Site], list[s
             sites += macro_sites(root, chunk, members)
             chunk = []
     sites += macro_sites(root, chunk, members)
-    if compile_db is not None:
-        sites += expanded_sites(root, compile_db, members, problems)
+    if build_dir is not None:
+        sites += expanded_sites(root, build_dir, members, problems)
     unique = sorted({(site.path, site.line, site.reason): site for site in sites}.values(),
                     key=lambda site: (site.path, site.line, site.reason))
     return unique, problems
 
 
-def run(root: Path, compile_db: Path | None = None) -> int:
+def run(root: Path, build_dir: Path | None = None) -> int:
     """Scan, print each finding, and return the exit code."""
-    forged, problems = scan(root, compile_db)
+    forged, problems = scan(root, build_dir)
     for site in forged:
         print(f"federation_admission: {site.reason} at {site.path}:{site.line}", file=sys.stderr)
         print(f"federation_admission: {site.text}", file=sys.stderr)
@@ -677,11 +677,11 @@ def planted_cases() -> int:
                 '#include "forge.h"\nstruct Evil;\nFORGE_FROM(FederationAdmission);\n', encoding="utf-8")
             (root / "src" / "expand" / "quiet.cpp").write_text('#include "forge.h"\nint quiet;\n',
                                                                encoding="utf-8")
-            database = root / "build" / "compile_commands.json"
-            database.parent.mkdir()
-            database.write_text(json.dumps([{"directory": str(root), "file": name,
-                                             "command": f"{compiler} -std=c++20 -c {name} -o {name}.o"}
-                                            for name in ("src/expand/use.cpp", "src/expand/quiet.cpp")]))
+            database = root / "build"
+            database.mkdir()
+            compdb.plant(database, [{"directory": str(root), "file": name,
+                                     "command": f"{compiler} -std=c++20 -c {name} -o {name}.o"}
+                                    for name in ("src/expand/use.cpp", "src/expand/quiet.cpp")])
             without = {(site.path, site.line) for site in scan(root)[0]}
             expect("the tree pass cannot see a pasted name from another file's macro",
                    ("src/expand/use.cpp", 3) not in without)
@@ -691,8 +691,8 @@ def planted_cases() -> int:
                    ("src/expand/use.cpp", 3) in found and not problems, True)
             expect("a unit that expands no forgery adds nothing", not any(site.path == "src/expand/quiet.cpp"
                                                                           for site in forged))
-            database.write_text(json.dumps([{"directory": str(root), "file": "src/expand/broken.cpp",
-                                             "command": f"{compiler} -std=c++20 -c src/expand/broken.cpp -o b.o"}]))
+            compdb.plant(database, [{"directory": str(root), "file": "src/expand/broken.cpp",
+                                     "command": f"{compiler} -std=c++20 -c src/expand/broken.cpp -o b.o"}])
             (root / "src" / "expand" / "broken.cpp").write_text('#include "missing.h"\n', encoding="utf-8")
             code, report = captured(lambda: run(root, database))
             expect("a unit the preprocessor rejects fails", code == 1 and "does not preprocess" in report, True)
@@ -749,14 +749,15 @@ def main(argv: list[str]) -> int:
             return self_test()
         if argv == []:
             return run(tsast.REPO_ROOT)
-        if len(argv) == 2 and argv[0] == "--compile-db":
-            database = Path(argv[1]).resolve()
-            if not database.is_file():
-                print(f"check-federation-admission: the compile database {database} does not exist", file=sys.stderr)
+        if len(argv) == 2 and argv[0] == "--build-dir":
+            build_dir = Path(argv[1]).resolve()
+            if not compdb.database_file(build_dir).is_file():
+                print(f"check-federation-admission: the build directory {build_dir} holds no compile database",
+                      file=sys.stderr)
                 return 2
-            return run(tsast.REPO_ROOT, database)
+            return run(tsast.REPO_ROOT, build_dir)
     except tsast.KitMissing as exc:
         print(f"check-federation-admission: {exc}", file=sys.stderr)
         return 3
-    print("usage: guard check --rule federation-admission [--compile-db PATH | --self-test]", file=sys.stderr)
+    print("usage: guard check --rule federation-admission [--build-dir BUILD_DIR | --self-test]", file=sys.stderr)
     return 2

@@ -69,8 +69,8 @@ a mention there is not a use.
 The lexical pass parses each source file, and the body of each #define on
 its own with tsast.macro_bodies.  It follows each #include whose operand is
 a literal to a tracked file, whatever the suffix of the named file.  Its
-scope is every C and C++ source file that git tracks, and with --compile-db
-each source that the compile database names.  An untracked file is out of
+scope is every C and C++ source file that git tracks, and with --build-dir
+each source that the compile database of that build names.  An untracked file is out of
 scope: the export and the build of a guard run, or the scratch file of
 another tool, can appear under the tree and vanish while this guard reads
 it.  A file or a macro body that the parser cannot read is read from its
@@ -79,7 +79,7 @@ list by its angle brackets.  The store of utils/assay/guard/preprocessed.py
 keeps the uses and the include targets of each file text, so a warm run
 parses no file.
 
-The preprocessed pass runs with --compile-db.  It reads the output of the
+The preprocessed pass runs with --build-dir.  It reads the output of the
 compiler of each database entry with -E and the flags of the build, from
 the shared store of utils/assay/guard/preprocessed.py, so every guard, build
 directory and work tree preprocesses each translation unit one time.
@@ -118,8 +118,8 @@ Exit codes
   3  the pinned tree-sitter kit is not installed
 
 Usage
-  guard check --rule start-lifetime [--compile-db PATH]         check the tree
-  guard check --rule start-lifetime [--compile-db PATH] --list  print each use
+  guard check --rule start-lifetime [--build-dir DIR]           check the tree
+  guard check --rule start-lifetime [--build-dir DIR] --list    print each use
   guard check --rule start-lifetime --self-test                 plant each route
                                                                 and each known
                                                                 bypass, and prove
@@ -133,7 +133,6 @@ import bisect
 import contextlib
 import hashlib
 import io
-import json
 import os
 import re
 import shutil
@@ -150,7 +149,7 @@ from assay.core import ledger as rule_ledger
 from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
 from assay.guard.preprocessed import SETTLE_NS, Expansion, Store, chunk_text, map_batches, text_results
-from assay.readers import tsast
+from assay.readers import compdb, tsast
 
 RULE = "start-lifetime"
 LEDGER = rule_ledger.shown_path(RULE)
@@ -200,15 +199,9 @@ def listed_files(root: Path) -> list[Path]:
     return [root / path for path in tsast.tracked_files(root)]
 
 
-def database_entries(compile_db: Path | None) -> list[dict]:
-    """The entries of the compile database, or none without one."""
-    return [] if compile_db is None else json.loads(compile_db.read_text())
-
-
-def entry_source(command: dict) -> Path:
-    """The source file of a compile database entry, as an absolute path."""
-    source = Path(command["file"])
-    return source if source.is_absolute() else Path(command["directory"]) / source
+def database_sources(build_dir: Path | None) -> list[Path]:
+    """The absolute source file of each entry of the compile database of a build directory, or none without one."""
+    return [] if build_dir is None else [Path(entry.file) for entry in compdb.entries(build_dir)]
 
 
 def is_admitted_path(path: str) -> bool:
@@ -380,7 +373,7 @@ def file_facts(paths: Sequence[Path]) -> list[tuple[str, dict]]:
     return found
 
 
-def lexical_scan(root: Path, compile_db: Path | None) -> Uses:
+def lexical_scan(root: Path, build_dir: Path | None) -> Uses:
     """Record each use in scope, and follow each include directive to the file it names when that file is in scope.
 
     The scope is the tracked files and the sources of the compile database.
@@ -393,7 +386,7 @@ def lexical_scan(root: Path, compile_db: Path | None) -> Uses:
     """
     uses: Uses = defaultdict(list)
     listed = {p.resolve() for p in listed_files(root) if p.is_file()}
-    sources = {entry_source(e).resolve() for e in database_entries(compile_db) if entry_source(e).is_file()}
+    sources = {source.resolve() for source in database_sources(build_dir) if source.is_file()}
     in_scope = listed | sources
     pending = {p for p in listed if is_source(p)} | sources
     seen: set[Path] = set()
@@ -459,7 +452,7 @@ def expansion_uses(batch: list[tuple[str, str, str, list[str]]]) -> list[dict]:
     return found
 
 
-def preprocessed_scan(root: Path, compile_db: Path, failures: list[str]) -> tuple[Expanded, int, int, float]:
+def preprocessed_scan(root: Path, build_dir: Path, failures: list[str]) -> tuple[Expanded, int, int, float]:
     """Read each database entry from the shared store of utils/assay/guard/preprocessed.py.
 
     The store preprocesses a unit one time for every guard that reads it.
@@ -470,7 +463,7 @@ def preprocessed_scan(root: Path, compile_db: Path, failures: list[str]) -> tupl
     times the files each reads, plus one parse of each new expansion text
     that names the function.
     """
-    store = Store(compile_db, root, jobs())
+    store = Store(build_dir, root, jobs())
     results = store.results("start-lifetime", Path(__file__), tsast.parser_identity())
     begin = time.monotonic()
     order: list[Expansion] = []
@@ -550,15 +543,15 @@ def read_ledger(root: Path) -> tuple[dict[str, tuple[int, int]], list[str]]:
     return entries, problems
 
 
-def check(root: Path, compile_db: Path | None, mode: str) -> int:
+def check(root: Path, build_dir: Path | None, mode: str) -> int:
     """Compare each use in the tree with the two places and the ledger, and report to stderr."""
     root = root.resolve()
     entries, problems = read_ledger(root)
-    lexical = lexical_scan(root, compile_db)
+    lexical = lexical_scan(root, build_dir)
     preprocessed: Expanded = defaultdict(set)
     failures: list[str] = []
-    if compile_db is not None:
-        preprocessed, units, cached, seconds = preprocessed_scan(root, compile_db, failures)
+    if build_dir is not None:
+        preprocessed, units, cached, seconds = preprocessed_scan(root, build_dir, failures)
         print(f"check-start-lifetime: preprocessed {units} translation unit(s) in {seconds:.1f} s, "
               f"{cached} from the cache.", file=sys.stderr)
     unreviewed = 0
@@ -731,11 +724,11 @@ def planted_cases() -> int:
             rows_grammar.render([path], ["", rule_ledger.ADMIT_VALUE, key, reason]) + "\n"
             for path, key, reason in rows)
 
-    def run(root: Path, compile_db: Path | None = None) -> tuple[int, str]:
+    def run(root: Path, build_dir: Path | None = None) -> tuple[int, str]:
         """Run the check on the planted root and keep its report."""
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
-            code = check(root, compile_db, "check")
+            code = check(root, build_dir, "check")
         return code, buffer.getvalue()
 
     def expect_reports(name: str, report: str, forbidden: str, keys: Sequence[str]) -> None:
@@ -824,13 +817,13 @@ def planted_cases() -> int:
         (root / "build-planted/gen").mkdir(parents=True)
         (root / "build-planted/gen/Generated.h").write_text(
             "inline void* generated_header(unsigned char* buf) { return std::start_lifetime_as<Proof[15]>(buf); }\n")
-        database = root / "build-planted/compile_commands.json"
-        database.write_text(json.dumps([
+        database = root / "build-planted"
+        compdb.plant(database, [
             {"directory": str(root), "file": "build-planted/generated.gen",
              "command": f"{compiler} -x c++ -c build-planted/generated.gen -o build-planted/generated.o"},
             {"directory": str(root), "file": "src/planted.cpp",
              "command": f"{compiler} -std=c++20 -Ibuild-planted/gen -MD -MF build-planted/planted.d "
-                        f"-c src/planted.cpp -o build-planted/planted.o"}]))
+                        f"-c src/planted.cpp -o build-planted/planted.o"}])
         # A unit gets a variant only when each file that it read is older than
         # the settle period of the store, and the cached runs below read them.
         time.sleep(SETTLE_NS / 1e9 + 0.1)
@@ -858,9 +851,10 @@ def planted_cases() -> int:
 
         # A translation unit the preprocessor cannot read refuses the run.
         (root / "src/broken.cpp").write_text('#include "absent.h"\n')
-        broken = root / "build-planted/broken_commands.json"
-        broken.write_text(json.dumps([{"directory": str(root), "file": "src/broken.cpp",
-                                       "command": f"{compiler} -c src/broken.cpp -o broken.o"}]))
+        broken = root / "build-broken"
+        broken.mkdir()
+        compdb.plant(broken, [{"directory": str(root), "file": "src/broken.cpp",
+                               "command": f"{compiler} -c src/broken.cpp -o broken.o"}])
         for rel in ("test/neg/Twice.h", "include/planted/Routes.h", "lib/Stray.h", "misc/Hidden.txt",
                     "misc/Other.txt", "include/planted/Unit.cppm", "src/planted.cpp"):
             (root / rel).unlink()
@@ -868,7 +862,7 @@ def planted_cases() -> int:
             ("include/foundation/Lifetime.h", "start_lifetime_as_array<Event>", "The planted reviewed site"),
             ("test/neg/fixture.cpp", "start_lifetime_as<Proof>", "The planted fixture")))
         code, report = run(root, broken)
-        if code != 2 or "preprocessor failure: src/broken.cpp" not in report:
+        if code != 2 or f"preprocessor failure: {root / 'src/broken.cpp'}" not in report:
             failures.append(f"a preprocessor failure gave exit {code} without its report:\n{report}")
         (root / "src/broken.cpp").unlink()
 
@@ -962,22 +956,23 @@ def main(argv: list[str]) -> int:
     """
     parser = argparse.ArgumentParser(prog="guard check --rule start-lifetime",
                                      description="Refuse std::start_lifetime_as outside the two admitted places.")
-    parser.add_argument("--compile-db", type=Path, help="also read the preprocessed units of this compile database")
+    parser.add_argument("--build-dir", type=Path,
+                        help="also read the preprocessed units of the compile database of this build directory")
     parser.add_argument("--list", action="store_true", help="print each reviewed use")
     parser.add_argument("--self-test", action="store_true", help="plant each route and prove the verdicts")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
-    if args.compile_db is not None and not args.compile_db.is_file():
-        print(f"guard check --rule start-lifetime: the compile database {args.compile_db} does not exist.",
+    if args.build_dir is not None and not compdb.database_file(args.build_dir).is_file():
+        print(f"guard check --rule start-lifetime: the build directory {args.build_dir} holds no compile database.",
               file=sys.stderr)
         return 2
     try:
         if args.self_test:
             return self_test()
-        compile_db = None if args.compile_db is None else args.compile_db.resolve()
-        return check(REPO_ROOT, compile_db, "list" if args.list else "check")
+        build_dir = None if args.build_dir is None else args.build_dir.resolve()
+        return check(REPO_ROOT, build_dir, "list" if args.list else "check")
     except tsast.KitMissing as exc:
         print(f"check-start-lifetime: {exc}", file=sys.stderr)
         return 3

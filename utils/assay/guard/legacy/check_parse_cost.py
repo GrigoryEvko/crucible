@@ -135,6 +135,7 @@ from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
 from assay.readers import census as build_census
+from assay.readers import compdb
 
 GIGA = 1e9
 CHECKS = ("parse-total", "header-fanout", "instruction-total")
@@ -859,9 +860,9 @@ class Scratch:
 
     def flush(self, state: str = "VALID") -> None:
         """Write the compile database, the inputs of all, the dependency log and the test list."""
-        rows = [{"directory": str(self.build), "file": str(self.root / files[0]), "output": rel}
-                for rel, files in self.objects.values()]
-        (self.build / "compile_commands.json").write_text(json.dumps(rows), encoding="utf-8")
+        rows = [{"directory": str(self.build), "file": str(self.root / files[0]), "output": rel,
+                 "command": f"c++ -o {rel} -c {self.root / files[0]}"} for rel, files in self.objects.values()]
+        compdb.plant(self.build, rows)
         (self.build / "inputs.txt").write_text("".join(f"{rel}\n" for rel, _ in self.objects.values()),
                                                encoding="utf-8")
         deps = []

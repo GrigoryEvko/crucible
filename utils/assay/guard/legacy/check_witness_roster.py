@@ -93,7 +93,6 @@ import io
 import json
 import os
 import re
-import shlex
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -101,7 +100,7 @@ from pathlib import Path
 
 from assay.core import proc
 from assay.core.paths import DATA
-from assay.readers import tsast
+from assay.readers import compdb, tsast
 from assay.setup import pins as cmake_pin
 
 REPO = tsast.REPO_ROOT
@@ -582,7 +581,7 @@ def newest_build_dir(root: Path = REPO) -> Path | None:
     best_stamp = -1.0
     for candidate in sorted(root.glob("build*")):
         stamp = candidate / "test" / "fixy" / "CTestTestfile.cmake"
-        if (candidate / "compile_commands.json").is_file() and stamp.is_file() \
+        if compdb.database_file(candidate).is_file() and stamp.is_file() \
                 and build_source(candidate) == REPO.resolve() and stamp.stat().st_mtime > best_stamp:
             best, best_stamp = candidate, stamp.stat().st_mtime
     return best
@@ -590,9 +589,9 @@ def newest_build_dir(root: Path = REPO) -> Path | None:
 
 def compile_command(build_dir: Path) -> list[str]:
     """Return the compiler and the flags that a committed fixture builds with, from one known target."""
-    for entry in json.loads((build_dir / "compile_commands.json").read_text(encoding="utf-8")):
-        if entry["file"].endswith("test/fixy/test_os_time.cpp"):
-            parts = shlex.split(entry["command"]) if "command" in entry else list(entry["arguments"])
+    for entry in compdb.entries(build_dir):
+        if entry.file.endswith("test/fixy/test_os_time.cpp"):
+            parts = list(entry.argv())
             kept, skip = [], False
             for part in parts[1:]:
                 if skip:
@@ -605,7 +604,7 @@ def compile_command(build_dir: Path) -> list[str]:
                     continue
                 kept.append(part)
             return [parts[0], *kept]
-    raise RosterError(f"{build_dir}/compile_commands.json has no entry for test/fixy/test_os_time.cpp")
+    raise RosterError(f"the compile database of {build_dir} has no entry for test/fixy/test_os_time.cpp")
 
 
 def self_test() -> int:
@@ -638,7 +637,7 @@ def self_test() -> int:
         for name, source, stamp in (("build-this", REPO, 1_000), ("build-other", Path(work) / "copy", 2_000),
                                     ("build-nocache", None, 3_000)):
             (trees / name / "test" / "fixy").mkdir(parents=True)
-            (trees / name / "compile_commands.json").write_text("[]", encoding="utf-8")
+            compdb.plant(trees / name, [])
             registration = trees / name / "test" / "fixy" / "CTestTestfile.cmake"
             registration.write_text("", encoding="utf-8")
             os.utime(registration, (stamp, stamp))
@@ -823,7 +822,7 @@ def self_test() -> int:
         # regexes that the roster implies.
         build_dir = Path(os.environ["WITNESS_BUILD_DIR"]) if os.environ.get("WITNESS_BUILD_DIR") \
             else newest_build_dir()
-        if build_dir is None or not (build_dir / "compile_commands.json").is_file():
+        if build_dir is None or not compdb.database_file(build_dir).is_file():
             expect("a configured build tree supplies the compile flags (set WITNESS_BUILD_DIR)", False)
         elif build_source(build_dir) != REPO.resolve():
             print(f"       {build_dir} was configured from {build_source(build_dir)}, not from {REPO}")

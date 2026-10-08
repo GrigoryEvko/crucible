@@ -56,7 +56,6 @@ import argparse
 import dataclasses
 import json
 import re
-import shlex
 import shutil
 import signal
 import sys
@@ -70,7 +69,7 @@ from assay.core import proc
 from assay.core import rows as rows_grammar
 from assay.core.paths import LOOP, REPO_ROOT
 from assay.mutation import gates as gate_finder
-from assay.readers import tsast
+from assay.readers import compdb, tsast
 from assay.setup import pins as cmake_pin
 
 RULE = "gate-mutants"
@@ -138,9 +137,9 @@ def _strip_output(argv: list[str]) -> list[str]:
     return out
 
 
-def _entry_argv(entry: dict) -> list[str]:
+def _entry_argv(entry: compdb.CompileEntry) -> list[str]:
     """The argument list of one compile-database entry."""
-    return list(entry.get("arguments") or shlex.split(entry["command"]))
+    return list(entry.argv())
 
 
 def _run(argv: list[str], cwd: str, env: dict[str, str], timeout: int = TIMEOUT_S) -> tuple[bool, str]:
@@ -155,35 +154,47 @@ def _run(argv: list[str], cwd: str, env: dict[str, str], timeout: int = TIMEOUT_
 # ── the dependency map ─────────────────────────────────────────────────
 
 
-def _headers_of(entry: dict, src_root: Path) -> tuple[str, list[str]]:
-    """The file of one compile entry and every header under the source root that it reaches."""
+def _headers_of(entry: compdb.CompileEntry, src_root: Path) -> tuple[str, list[str]]:
+    """The file of one compile entry and every header under the source root that it reaches.
+
+    Raises:
+        proc.ToolFailed: If the preprocessor does not exit with 0, because its list of headers is then not complete
+    """
     argv = _strip_output(_entry_argv(entry)) + ["-M", "-MG"]
-    completed = proc.run(proc.Command(argv, timeout_s=TIMEOUT_S, cwd=entry["directory"]))
+    completed = proc.require(proc.run(proc.Command(argv, timeout_s=TIMEOUT_S, cwd=entry.directory)))
     text = completed.out.replace("\\\n", " ")
     deps = text.split(":", 1)[1].split() if ":" in text else []
     headers: list[str] = []
     for dep in deps:
         path = Path(dep)
         if not path.is_absolute():
-            path = Path(entry["directory"]) / path
+            path = Path(entry.directory) / path
         try:
             headers.append(str(path.resolve().relative_to(src_root)))
         except ValueError:
             continue
-    return str(Path(entry["file"]).resolve()), headers
+    return str(Path(entry.file).resolve()), headers
 
 
 def cmd_deps(args: argparse.Namespace) -> int:
     """Write the header set of every compile entry, computed with the preprocessor."""
     build = Path(args.build).resolve()
     src_root = Path(args.src).resolve()
-    entries = json.loads((build / "compile_commands.json").read_text())
+    try:
+        entries = compdb.entries(build)
+    except compdb.CompdbError as error:
+        print(f"mutation: {error}", file=sys.stderr)
+        return 1
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     result: dict[str, list[str]] = {}
-    with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        for file, headers in pool.map(lambda e: _headers_of(e, src_root), entries):
-            result[file] = sorted(h for h in headers if h.startswith("include/"))
+    try:
+        with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+            for file, headers in pool.map(lambda e: _headers_of(e, src_root), entries):
+                result[file] = sorted(h for h in headers if h.startswith("include/"))
+    except proc.ToolFailed as error:
+        print(f"mutation: the header set of a compile cannot be read: {error}", file=sys.stderr)
+        return 1
     (out / "deps.json").write_text(json.dumps(result))
     print(f"deps: {len(result)} compile entries", file=sys.stderr)
     return 0
@@ -309,8 +320,11 @@ def load_candidates(build: Path, deps: dict[str, list[str]]) -> list[Candidate]:
     tests = json.loads(proc.require(proc.run(proc.Command([_build_program(build, "ctest"), "--show-only=json-v1"],
                                                           timeout_s=proc.TOOL_S, cwd=build))).out)["tests"]
     declared = _ctest_commands(build)
-    entries = json.loads((build / "compile_commands.json").read_text())
-    by_file = {str(Path(entry["file"]).resolve()): entry for entry in entries}
+    try:
+        entries = compdb.entries(build)
+    except compdb.CompdbError as error:
+        raise SystemExit(f"mutation: {error}") from None
+    by_file = {str(Path(entry.file).resolve()): entry for entry in entries}
     artifacts = _target_sources(build)
     candidates: list[Candidate] = []
     for test in tests:
@@ -341,7 +355,7 @@ def load_candidates(build: Path, deps: dict[str, list[str]]) -> list[Candidate]:
                 test_sources.append(source)
                 compile_argv = _strip_output(_entry_argv(entry))
                 candidates.append(Candidate(f"syntax:{Path(source).name}", "syntax",
-                                            compile_argv + ["-fsyntax-only"], entry["directory"],
+                                            compile_argv + ["-fsyntax-only"], entry.directory,
                                             {}, source, frozenset(deps.get(source, [])), compile_argv))
             executable = Path(command[0]).resolve()
             if test_sources and executable.is_relative_to(build):
@@ -818,7 +832,7 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         rows = [{"directory": str(tmp), "file": str(tmp / name), "arguments": base + ["-c", str(tmp / name),
                  "-o", str(tmp / (name + ".o"))]}
                 for name in ("neg_take_large.cpp", "neg_widen_double.cpp", "user.cpp")]
-        (tmp / "compile_commands.json").write_text(json.dumps(rows))
+        compdb.plant(tmp, rows)
         fixture = [sys.executable, str(LOOP), FIXTURE_SUBCOMMAND]
         headers = frozenset({"include/planted.h"})
         candidates = [

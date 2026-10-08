@@ -59,10 +59,8 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
-import json
 import os
 import re
-import shlex
 import shutil
 import sys
 import tempfile
@@ -74,6 +72,7 @@ from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
+from assay.readers import compdb
 
 CHECK = "header-constexpr-ops"
 COMMAND = "guard check --rule header-constexpr-ops"
@@ -241,15 +240,15 @@ def read_units(build: Path) -> dict[str, Unit] | None:
     Returns:
         The commands, or None when the database does not exist
     """
-    database = build / "compile_commands.json"
-    if not database.is_file():
+    try:
+        compiles = compdb.entries(build)
+    except compdb.MissingDatabase:
         return None
     units: dict[str, Unit] = {}
-    for row in json.loads(database.read_text(encoding="utf-8")):
-        source = row.get("file", "")
+    for row in compiles:
+        source = row.file
         if "/test/layer/sentinels/" in source:
-            argv = row.get("arguments") or shlex.split(row["command"])
-            units[os.path.normpath(source)] = Unit(tuple(argv), source, row["directory"])
+            units[os.path.normpath(source)] = Unit(row.argv(), source, row.directory)
     return units
 
 
@@ -363,7 +362,7 @@ def run(paths: Paths, warnings_dir: Path | None) -> int:
         report("error", LIST, line, message)
     units = read_units(paths.build)
     if units is None:
-        report("error", LIST, 0, f"{paths.build}/compile_commands.json does not exist, so the guard cannot read the "
+        report("error", LIST, 0, f"{compdb.database_file(paths.build)} does not exist, so the guard cannot read the "
                                  f"one-line units.  Configure the build first.")
         return check_report.emit(findings, CHECK, warnings_dir)
     limits = {row.header: row.limit for row in rows}
@@ -480,7 +479,7 @@ def self_test() -> int:
                 rows.append({"directory": str(build), "file": str(source), "output": f"{source}.o",
                              "arguments": argv + ["-c", str(source), "-o", f"{source}.o"]})
             build.mkdir(parents=True, exist_ok=True)
-            (build / "compile_commands.json").write_text(json.dumps(rows), encoding="utf-8")
+            compdb.plant(build, rows)
 
         def verdict() -> tuple[int, str]:
             """Run the guard on the scratch tree and keep its report."""
@@ -574,9 +573,10 @@ def self_test() -> int:
         listing.write_text(heavy_row, encoding="utf-8")
         write_database()
         expect("the planted tree passes again", verdict()[0] == 0, True)
-        (build / "compile_commands.json").unlink()
+        compdb.database_file(build).unlink()
         code, report = verdict()
-        expect("a missing compile database is an error", code == 1 and "compile_commands.json does not exist" in report)
+        expect("a missing compile database is an error",
+               code == 1 and f"{compdb.database_file(build).name} does not exist" in report)
         write_database()
         listing.unlink()
         code, report = verdict()

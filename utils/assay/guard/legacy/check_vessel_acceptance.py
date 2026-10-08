@@ -30,8 +30,6 @@ failed self-test.
 from __future__ import annotations
 
 import argparse
-import json
-import shlex
 import stat
 import sys
 import tempfile
@@ -40,6 +38,7 @@ from pathlib import Path
 
 from assay.core import proc
 from assay.core.paths import REPO_ROOT
+from assay.readers import compdb
 
 VESSEL_DIR = "vessel/torch"
 LIBRARIES = ("libcrucible_vessel.so", "libcrucible_dispatch.so")
@@ -118,13 +117,14 @@ def check_torch(torch_dir: str, python: str) -> list[str]:
 
 def werror_problems(build_dir: Path, root: Path) -> list[str]:
     """Refuse a vessel source that is absent from the compile database or compiles without -Werror."""
-    database = build_dir / "compile_commands.json"
-    if not database.is_file():
-        return [f"{database} does not exist, so the gate cannot read the compile line of the vessel."]
-    arguments: dict[Path, list[str]] = {}
-    for entry in json.loads(database.read_text()):
-        source = Path(entry.get("directory", "."), entry["file"]).resolve()
-        arguments[source] = entry["arguments"] if "arguments" in entry else shlex.split(entry["command"])
+    database = compdb.database_file(build_dir)
+    try:
+        compiles = compdb.entries(build_dir)
+    except compdb.CompdbError as problem:
+        return [f"{problem}, so the gate cannot read the compile line of the vessel."]
+    arguments: dict[Path, tuple[str, ...]] = {}
+    for entry in compiles:
+        arguments[Path(entry.file).resolve()] = entry.argv()
     problems: list[str] = []
     for source in vessel_sources(root):
         line = arguments.get(source.resolve())
@@ -294,7 +294,7 @@ def self_test() -> int:
                 f"TORCH_DIR:PATH={torch_dir}\nCRUCIBLE_WERROR:BOOL={werror}\nCMAKE_COMMAND:INTERNAL={cmake}\n")
             entries = [{"directory": str(build), "file": str(source), "command": f"g++ {flag} -c {source}"}
                        for source in vessel_sources(REPO_ROOT)]
-            (build / "compile_commands.json").write_text(json.dumps(entries))
+            compdb.plant(build, entries)
             for library in LIBRARIES:
                 (build / "lib" / library).unlink(missing_ok=True)
             for library in libraries:
@@ -321,7 +321,7 @@ def self_test() -> int:
         expect("a vessel that does not compile", check_build(build, str(torch_dir), REPO_ROOT),
                "error: expected declaration")
         plant()
-        (build / "compile_commands.json").write_text("[]")
+        compdb.plant(build, [])
         expect("a vessel source absent from the compile database", check_build(build, str(torch_dir), REPO_ROOT),
                "is not in")
 

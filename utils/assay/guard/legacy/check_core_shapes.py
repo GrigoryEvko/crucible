@@ -72,11 +72,9 @@ check has no expectations for it, so ctest reports a skip.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import platform
 import re
-import shlex
 import shutil
 import sys
 import tempfile
@@ -88,7 +86,7 @@ from typing import Literal
 from assay.core import proc
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
-from assay.readers import tsast
+from assay.readers import compdb, tsast
 
 CHECK = "core-shapes"
 PROBE_SOURCE = "test/shape/core_shapes.cpp"
@@ -622,23 +620,20 @@ def read_database(build_dir: Path, objects: Iterable[Path]) -> dict[Path, Entry]
     Raises:
         CannotRun: If the database cannot be read, or no row writes one of the objects
     """
-    path = build_dir / "compile_commands.json"
+    path = compdb.database_file(build_dir)
     try:
-        rows = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        raise CannotRun(f"the compile database {path} cannot be read: {error}") from None
+        rows = compdb.entries(build_dir)
+    except compdb.CompdbError as error:
+        raise CannotRun(f"the compile database cannot be read: {error}") from None
     wanted = {Path(os.path.normpath(obj)) for obj in objects}
     entries: dict[Path, Entry] = {}
     for row in rows:
-        directory = row.get("directory", str(build_dir))
-        output = row.get("output")
-        if output is None:
+        if row.output is None:
             continue
-        written = Path(os.path.normpath(os.path.join(directory, output)))
+        written = Path(row.output)
         if written not in wanted:
             continue
-        words = row.get("arguments") or shlex.split(row.get("command", ""))
-        entries[written] = Entry(tuple(words), Path(directory), row.get("file", ""), written)
+        entries[written] = Entry(row.argv(), Path(row.directory), row.file, written)
     missing = sorted(str(obj) for obj in wanted - entries.keys())
     if missing:
         raise CannotRun(f"no row of the compile database {path} writes {missing}")
@@ -961,7 +956,7 @@ def main(argv: list[str]) -> int:
         The exit status of the check or of the self-test
     """
     parser = argparse.ArgumentParser(prog="guard check --rule core-shapes", description=__doc__.splitlines()[0])
-    parser.add_argument("--build-dir", type=Path, help="the build directory, with compile_commands.json")
+    parser.add_argument("--build-dir", type=Path, help="the build directory, with its compile database")
     parser.add_argument("--probe-object", type=Path, help="the object of the target core_shape_probes")
     parser.add_argument("--base-objects", type=Path, nargs="+", default=[], help="the objects of the foundation library")
     parser.add_argument("--fixed-flags", default="", help="the fixed flags of the probe object, with spaces between")

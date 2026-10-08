@@ -89,10 +89,8 @@ plugin that does not exist.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
-import shlex
 import shutil
 import signal
 import sys
@@ -107,6 +105,7 @@ from assay.core import proc
 from assay.core import ruletable as layer_rules
 from assay.core.paths import REPO_ROOT
 from assay.loop import stamps as quarantine_stamps
+from assay.readers import compdb
 from assay.readers import sections as quarantine_sections
 
 # The repository.  Its include/foundation/Quarantine.h gives the macros of a
@@ -1474,17 +1473,16 @@ def build_command(build_dir: Path) -> tuple[list[str], Path, str] | None:
     The command is the first one that loads the quarantine plugin, and
     src/foundation/ContractHandler.cpp when the database holds it.
     """
-    database = build_dir / "compile_commands.json"
-    if not database.is_file():
+    try:
+        compiles = compdb.entries(build_dir)
+    except compdb.MissingDatabase:
         return None
-    entries = [entry for entry in json.loads(database.read_text(encoding="utf-8"))
-               if "-fplugin=" in (entry.get("command") or " ".join(entry.get("arguments", [])))]
+    entries = [entry for entry in compiles if "-fplugin=" in entry.command]
     if not entries:
         return None
-    entry = next((entry for entry in entries if entry["file"].endswith("src/foundation/ContractHandler.cpp")),
+    entry = next((entry for entry in entries if entry.file.endswith("src/foundation/ContractHandler.cpp")),
                  entries[0])
-    argv = entry["arguments"] if "arguments" in entry else shlex.split(entry["command"])
-    return list(argv), Path(entry["directory"]), entry["file"]
+    return list(entry.argv()), Path(entry.directory), entry.file
 
 
 # A scratch root whose paths the rule table of the tree classifies: a base file
@@ -1619,7 +1617,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--rules", required=True, type=Path, help="the rule table of the tree")
     parser.add_argument("--jobs", required=True, type=int,
                         help="the most compiler processes at one time: the PROCESSORS of the ctest test")
-    parser.add_argument("--build-dir", type=Path, help="a build directory with compile_commands.json")
+    parser.add_argument("--build-dir", type=Path, help="a build directory with a compile database")
     args = parser.parse_args(argv)
     if args.jobs < 1:
         parser.error(f"--jobs is {args.jobs}, and it must be 1 or more")

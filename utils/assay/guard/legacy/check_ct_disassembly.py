@@ -62,7 +62,6 @@ failure, never a pass.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import pathlib
 import re
@@ -75,7 +74,7 @@ from dataclasses import dataclass
 
 from assay.core import proc
 from assay.core.paths import REPO_ROOT
-from assay.readers import tsast
+from assay.readers import compdb, tsast
 
 WIDTHS = (("u8", "std::uint8_t"), ("u16", "std::uint16_t"), ("u32", "std::uint32_t"), ("u64", "std::uint64_t"))
 CT_NAMESPACE = "::fixy::ct"
@@ -243,21 +242,19 @@ def read_plan(build_dir: pathlib.Path, objects: Iterable[pathlib.Path]) -> tuple
     Raises:
         CannotRun: If the database cannot be read, or no row writes one of the objects
     """
-    path = build_dir / "compile_commands.json"
+    path = compdb.database_file(build_dir)
     try:
-        rows = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        raise CannotRun(f"the compile database {path} cannot be read: {error}") from None
+        rows = compdb.entries(build_dir)
+    except compdb.CompdbError as error:
+        raise CannotRun(f"the compile database cannot be read: {error}") from None
     wanted = {pathlib.Path(os.path.normpath(obj)) for obj in objects}
     commands: dict[pathlib.Path, tuple[list[str], str]] = {}
     for row in rows:
-        directory = row.get("directory", str(build_dir))
-        output = row.get("output")
-        if output is None:
+        if row.output is None:
             continue
-        written = pathlib.Path(os.path.normpath(os.path.join(directory, output)))
+        written = pathlib.Path(row.output)
         if written in wanted:
-            commands[written] = (row.get("arguments") or shlex.split(row.get("command", "")), row.get("file", ""))
+            commands[written] = (list(row.argv()), row.file)
     missing = sorted(str(obj) for obj in wanted - commands.keys())
     if not wanted or missing:
         raise CannotRun(f"no row of the compile database {path} writes the foundation objects {missing}")
@@ -745,7 +742,7 @@ def main(argv: list[str]) -> int:
     """
     parser = argparse.ArgumentParser(prog="guard check --rule ct-disassembly", description=__doc__.splitlines()[0])
     parser.add_argument("--build-dir", type=pathlib.Path, required=True,
-                        help="the build directory, with compile_commands.json")
+                        help="the build directory, with its compile database")
     parser.add_argument("--base-objects", type=pathlib.Path, nargs="+", required=True,
                         help="the objects of the foundation library, whose compile commands give the flags")
     parser.add_argument("--self-test", action="store_true", help="check the checker on planted code")
