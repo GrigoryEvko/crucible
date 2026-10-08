@@ -1,0 +1,4 @@
+# a planted registry: the run of the engine meta does not run the rule of the engine plugin
+format 1
+rule stray-rule engine=meta scope=tracked ledger=none doc=XV | a planted refusal | fix the planted file
+rule object-rule engine=plugin scope=quarantined ledger=none doc=XV | a planted refusal of the objects | fix the planted file

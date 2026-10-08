@@ -1,0 +1,5 @@
+# planted kinds of the plugin
+kind quarantine std-entity
+kind quarantine opted-out
+kind quarantine region
+kind contract-specifier contract-specifier

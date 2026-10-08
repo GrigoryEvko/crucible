@@ -16,9 +16,12 @@ THE TOOL RUN
 THE TIME LIMIT
     Each Command has a time limit, timeout_s, which counts from the start.
     The command runs in a process group of its own.  At the limit, the
-    module sends SIGTERM to the group, waits grace_s for the end of the
-    command, and then sends SIGKILL to the group.  So no process of the
-    group runs on after the limit.  QUICK_S, TOOL_S and BUILD_S are the
+    module sends the stop signal to the group and waits grace_s for the end
+    of the command.  Then it sends SIGKILL to the group.  So no process of
+    the group runs on after the limit.  The stop signal is SIGTERM, or SIGINT
+    for a Command with stop=Stop.INTERRUPT: afl-fuzz writes its state and
+    ends on SIGINT.  Running.stop() sends the same signals in the same
+    sequence.  QUICK_S, TOOL_S and BUILD_S are the
     limits of three classes of work: a query that a tool answers at once,
     one run of a tool, and a build or a test run of the tree.  The module
     reaps the command only after its last signal, so the process group keeps
@@ -131,8 +134,18 @@ REPOSITORY_VARIABLES = (
     "GIT_NAMESPACE",
     "GIT_CEILING_DIRECTORIES",
 )
-# The phases of the end of a run: no signal yet, SIGTERM sent, SIGKILL sent.
+# The phases of the end of a run: no signal yet, the stop signal sent, SIGKILL sent.
 RUNNING, TERMINATED, KILLED = 0, 1, 2
+
+
+class Stop:
+    """The words of the first signal that stops the group of a command (THE TIME LIMIT)."""
+
+    TERMINATE = "terminate"
+    INTERRUPT = "interrupt"
+
+
+STOP_WORDS = frozenset({Stop.TERMINATE, Stop.INTERRUPT})
 
 
 class Output:
@@ -153,12 +166,13 @@ KEPT_WORDS = frozenset({Output.CAPTURE, Output.STREAM})
 class Command:
     """One command: its words, its time limit, its directory, its environment, its input and its outputs."""
 
-    __slots__ = ("argv", "timeout_s", "cwd", "env", "stdin", "stdout", "stderr", "grace_s")
+    __slots__ = ("argv", "timeout_s", "cwd", "env", "stdin", "stdout", "stderr", "grace_s", "stop")
 
     def __init__(self, argv: list[str] | tuple[str, ...], *, timeout_s: float,
                  cwd: str | os.PathLike[str] | None = None, env: dict[str, str] | None = None,
                  stdin: bytes = b"", stdout: str | os.PathLike[str] = Output.CAPTURE,
-                 stderr: str | os.PathLike[str] = Output.CAPTURE, grace_s: float = KILL_GRACE_S) -> None:
+                 stderr: str | os.PathLike[str] = Output.CAPTURE, grace_s: float = KILL_GRACE_S,
+                 stop: str = Stop.TERMINATE) -> None:
         """Hold the parts of one command.
 
         Args:
@@ -169,10 +183,12 @@ class Command:
             stdin: The bytes of the standard input
             stdout: A word of Output other than MERGE, or a path
             stderr: A word of Output other than STREAM, or a path
-            grace_s: The wait between SIGTERM and SIGKILL at the limit, in seconds
+            grace_s: The wait between the stop signal and SIGKILL at the limit, in seconds
+            stop: A word of Stop: the first signal at the limit and of Running.stop()
 
         Raises:
-            ValueError: If argv is empty, a limit is not permitted, or a destination is not permitted
+            ValueError: If argv is empty, a limit is not permitted, a destination is not permitted, or the stop word
+                is not a word of Stop
         """
         words = tuple(os.fspath(word) for word in argv)
         if not words or not all(isinstance(word, str) and word for word in words):
@@ -184,6 +200,9 @@ class Command:
             raise ValueError(f"the standard input of the command {words[0]} is bytes, not {type(stdin).__name__}")
         check_destination(words[0], "stdout", stdout, STDOUT_WORDS)
         check_destination(words[0], "stderr", stderr, STDERR_WORDS)
+        if stop not in STOP_WORDS:
+            raise ValueError(f"the stop word of the command {words[0]} is {stop!r}, and the words are "
+                             f"{', '.join(sorted(STOP_WORDS))}")
         self.argv = words
         self.timeout_s = float(timeout_s)
         self.cwd = None if cwd is None else os.fspath(cwd)
@@ -192,6 +211,7 @@ class Command:
         self.stdout = stdout
         self.stderr = stderr
         self.grace_s = float(grace_s)
+        self.stop = stop
 
     def shown(self) -> str:
         """Return the words of the command as one line for a message, with each word that holds a space quoted."""
@@ -441,12 +461,16 @@ class Running:
         if self._was_interrupted:
             raise KeyboardInterrupt
         if self._timed_out:
+            first = "SIGINT" if self.command.stop == Stop.INTERRUPT else "SIGTERM"
             raise TimedOut(f"the command `{self.command.shown()}` ran past its limit of {self.command.timeout_s:g} s, "
-                           f"so its process group got SIGTERM and then SIGKILL", self.command, self._completed)
+                           f"so its process group got {first} and then SIGKILL", self.command, self._completed)
         return self._completed
 
     def stop(self) -> Completed:
-        """Stop the process group of the command now, as the limit does, and return the result of the command."""
+        """Stop the process group of the command now, as the limit does, and return the result of the command.
+
+        The group gets the stop signal of the command, and SIGKILL when it does not end after grace_s.
+        """
         if self._completed is None and self._phase == RUNNING:
             self._signal_group(TERMINATED)
         while self._completed is None:
@@ -565,13 +589,14 @@ class Running:
             self._close_read(descriptor)
 
     def _signal_group(self, phase: int) -> None:
-        """Send SIGTERM (phase TERMINATED) or SIGKILL (phase KILLED) to the process group of the command."""
+        """Send the stop signal (phase TERMINATED) or SIGKILL (phase KILLED) to the process group of the command."""
         import signal
 
         self._phase = phase
         self._phase_at = time.monotonic()
+        stop_signal = signal.SIGINT if self.command.stop == Stop.INTERRUPT else signal.SIGTERM
         try:
-            os.killpg(self.pid, signal.SIGTERM if phase == TERMINATED else signal.SIGKILL)
+            os.killpg(self.pid, stop_signal if phase == TERMINATED else signal.SIGKILL)
         except ProcessLookupError:
             pass
 

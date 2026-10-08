@@ -1,6 +1,6 @@
 // The flag matrix of the audited standard library names.
 //
-// utils/scripts/quarantine-admitted-audit.txt gives one row for each standard
+// utils/admitted-audit.txt gives one row for each standard
 // library name that quarantined code can name, or that the audit examined as a
 // candidate.  This file holds one static_assert for each property of each of
 // those names: a type, a value, a size, a noexcept state or a result of a

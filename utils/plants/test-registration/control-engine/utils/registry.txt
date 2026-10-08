@@ -1,0 +1,4 @@
+# a planted registry: a labelled test runs each rule, one of them through the run of its engine
+format 1
+rule stray-rule engine=meta scope=tracked ledger=none doc=XV | a planted refusal | fix the planted file
+rule object-rule engine=plugin scope=quarantined ledger=none doc=XV | a planted refusal of the objects | fix the planted file

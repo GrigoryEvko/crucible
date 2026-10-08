@@ -1,0 +1,3 @@
+rule a | one \| two | c\\d | e\\ | \|
+rule b | x \\ | y
+rule c\d | e

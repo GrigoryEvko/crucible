@@ -11,7 +11,6 @@ utils/assay/core/meter.py | print | 2 | meter_compiler | A use of today.  The ch
 utils/assay/core/meter.py | repository-root | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/core/meter.py | subprocess | 1 | measure | A start of the meter of each compile, link and test, outside assay.core.proc on purpose.  An import of proc adds about 0.27 ms to each step (the docstring of assay.core.proc, THE TWO STARTS OUTSIDE THIS MODULE)
 utils/assay/core/report.py | argparse | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/core/ruletable.py | row-bar | 1 | parse | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/core/target.py | print | 1 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/core/target.py | print | 1 | print_rows | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/core/target.py | print | 3 | self_test | A use of today.  The change that calls the owner of the job lowers the count
@@ -187,8 +186,6 @@ utils/assay/guard/legacy/check_permission_storage.py | print | 2 | main | A use 
 utils/assay/guard/legacy/check_permission_storage.py | print | 3 | run | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_permission_storage.py | print | 3 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_permission_storage.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_plugin.py | argparse | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_plugin.py | print | 5 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_process_wide_state.py | print | 3 | check | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_process_wide_state.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_process_wide_state.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
@@ -201,19 +198,6 @@ utils/assay/guard/legacy/check_proof_routes.py | row-bar | 1 | roster_names | A 
 utils/assay/guard/legacy/check_prose_paths.py | print | 3 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_prose_paths.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_prose_paths.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_quarantine_ratchet.py | argparse | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_quarantine_ratchet.py | print | 2 | import_rows | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_quarantine_ratchet.py | print | 2 | list_findings | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_quarantine_ratchet.py | print | 2 | print_rows | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_quarantine_ratchet.py | print | 5 | run | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_quarantine_ratchet.py | print | 3 | self_test | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_quarantine_ratchet.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_quarantine_ratchet.py | print | 7 | write_ledger | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_quarantine_regions.py | argparse | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_quarantine_regions.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_quarantine_regions.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_quarantine_regions.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_quarantine_regions.py | print | 3 | write | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_reconfigure_noop.py | argparse | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_reconfigure_noop.py | print | 3 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_reconfigure_noop.py | print | 4 | self_test | A use of today.  The change that calls the owner of the job lowers the count

@@ -1,0 +1,5 @@
+#pragma once
+struct OutsideType {
+    int value = 0;
+};
+inline int outside_value() { return 1; }

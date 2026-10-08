@@ -1,0 +1,16 @@
+# The type walks read a template argument of an admitted library class, a
+# function type, a default argument that no call uses and the default of a
+# non-type template parameter.
+
+compile report type_walks.cpp
+exit report pass
+finding report quarantine std-object type_walks.cpp:10:49 | std::basic_string (std::type_identity<std::__cxx11::basic_string<char> >)
+finding report quarantine std-entity type_walks.cpp:12:7 | std::basic_string
+finding report quarantine std-entity type_walks.cpp:13:7 | std::vector
+finding report quarantine c-library-call type_walks.cpp:15:61 | strlen
+finding report quarantine c-library-call type_walks.cpp:17:27 | strlen
+finding report quarantine raw-function-pointer type_walks.cpp:20:27 | void (*)(std::string)
+finding report quarantine std-entity type_walks.cpp:20:27 | std::basic_string
+
+compile error type_walks.cpp mode=error out=no errors=report
+exit error fail

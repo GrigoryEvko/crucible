@@ -1,4 +1,4 @@
-"""The test of the rows grammar (assay.core.rows): the reader, the escapes, the numbers, the keys and the writer.
+"""The test of the rows grammar (assay.core.rows): the reader, the escapes, the numbers, the keys, UTF-8, the writer.
 
 `guard selftest tests.core.test_rows` runs the test.  Each case prints one
 line.  Exit 0 when each case holds, else 1.
@@ -87,6 +87,13 @@ def value_cases(expect: Callable[[str, bool], None]) -> None:
     expect("number() refuses a sign, a space, a point and a Unicode digit",
            all(refuses(lambda text=text: rows_grammar.number(text, 100, row, "count"))
                for text in ("-1", "+1", " 1", "1.0", "١", "")))
+    expect("number() permits zeros before the first other digit, also before the maximum",
+           rows_grammar.number("0002147483647", 2147483647, row, "line") == 2147483647
+           and rows_grammar.number("000", 5, row, "count") == 0
+           and rows_grammar.number("0" * 40 + "7", 10, row, "count") == 7)
+    expect("number() refuses a number above its maximum after the zeros",
+           refuses(lambda: rows_grammar.number("0002147483648", 2147483647, row, "line"))
+           and refuses(lambda: rows_grammar.number("0" * 40 + "11", 10, row, "count")))
     expect("decimal() reads a whole number and a fraction",
            rows_grammar.decimal("12", row, "value") == 12.0 and rows_grammar.decimal("0.5", row, "value") == 0.5)
     expect("decimal() refuses an exponent, nan, inf, a lone point and a long number",
@@ -99,6 +106,37 @@ def value_cases(expect: Callable[[str, bool], None]) -> None:
            {kind: len(items) for kind, items in rows_grammar.by_kind(parsed("rule a\npath b\nrule c\n")).items()}
            == {"rule": 2, "path": 1})
     expect("a row refuses an assignment", refuses(lambda: setattr(row, "line", 3), AttributeError))
+
+
+def refused_line(data: bytes) -> int:
+    """Return the line at which read() refuses a file of these bytes, or 0 when it accepts the file."""
+    with tempfile.TemporaryDirectory(prefix="test-rows-") as scratch:
+        path = Path(scratch) / FILE
+        path.write_bytes(data)
+        try:
+            rows_grammar.read(path)
+        except rows_grammar.RowsError as problem:
+            return problem.line
+    return 0
+
+
+def decode_cases(expect: Callable[[str, bool], None]) -> None:
+    """Check decode() and read(): the UTF-8 check of all the bytes, its line, and the line ends that stay."""
+    expect("decode() gives the text of UTF-8 bytes, with a byte order mark and a NUL as they are",
+           rows_grammar.decode("﻿a\x00 | ж\n".encode(), FILE) == "﻿a\x00 | ж\n")
+    expect("decode() refuses bytes that are not UTF-8 at the line of the first bad byte",
+           refuses(lambda: rows_grammar.decode(b"a\nb\n\xc0\x80\n", FILE)) and refused_line(b"a\nb\n\xc0\x80\n") == 3)
+    expect("read() refuses a surrogate, a byte above F4 and a stray continuation byte at their lines",
+           refused_line(b"a\n\xed\xa0\x80\n") == 2 and refused_line(b"a\nb\nc\n\xf5\n") == 4
+           and refused_line(b"\x80\n") == 1)
+    expect("read() refuses a sequence that a line break or the end of the file cuts, at the line of its first byte",
+           refused_line(b"a\nb \xe2\x82\nc\n") == 2 and refused_line(b"a\nb\nc \xf0\x9f\x99") == 3)
+    expect("the UTF-8 check of the whole file comes before the grammar: a bad byte on line 4 wins over line 2",
+           refused_line(b"a\nb | c|d\nc\n\xff\n") == 4)
+    expect("read() keeps a carriage return, and parse() refuses it at its line",
+           refused_line(b"a\nb\r\nc\n") == 2 and refused_line(b"a\r\n") == 1)
+    expect("read() accepts a file of one line break and an empty file",
+           refused_line(b"\n") == 0 and refused_line(b"") == 0)
 
 
 def writer_cases(expect: Callable[[str, bool], None]) -> None:
@@ -142,6 +180,7 @@ def main(argv: list[str]) -> int:
     reader_cases(expect)
     escape_cases(expect)
     value_cases(expect)
+    decode_cases(expect)
     writer_cases(expect)
     if failures:
         print(f"tests.core.test_rows: FAILED, {len(failures)} case(s) did not hold")

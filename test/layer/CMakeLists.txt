@@ -465,7 +465,7 @@ endif()
 
 # The flag matrix of the audited standard library names.
 # admitted_flag_matrix.cpp holds a static_assert for each property of each name
-# of utils/scripts/quarantine-admitted-audit.txt.  One generated unit for each
+# of utils/admitted-audit.txt.  One generated unit for each
 # flag set includes the file, and the COMPILE_OPTIONS property of the unit gives
 # the flags of the set.  A source property comes last on the compile line, so
 # the flags of the set win over the flags of the build, and each build compiles

@@ -1,0 +1,7 @@
+# An enforce row with the mode error makes a finding an error in the mode
+# report.  The report holds the finding too.
+
+compile report enforced.cpp
+exit report fail
+finding report quarantine raw-pointer-object enforced.cpp:4:6 | int*
+error report enforced.cpp:4 | quarantine: raw-pointer-object int*;

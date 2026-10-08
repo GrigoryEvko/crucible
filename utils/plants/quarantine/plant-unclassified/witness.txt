@@ -1,0 +1,6 @@
+# A file under the root that no row of the table holds is an error in the
+# mode report.
+
+compile report unclassified.cpp out=no
+exit report fail
+error report unclassified.cpp:* | quarantine: no layer row and no quarantine row of the rule table holds 'unclassified.cpp'

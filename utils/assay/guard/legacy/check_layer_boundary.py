@@ -7,7 +7,7 @@ or below it:
     include/fixy/        src/fixy/        names  foundation, fixy
     include/crucible/    the rest of src/ names  every project root
 
-The layer rows of utils/scripts/layer-rules.txt give the first two lines.  The
+The layer rows of utils/rule-table.txt give the first two lines.  The
 table has a finer order of layers inside foundation and fixy, and
 guard_layers() of utils/assay/core/ruletable.py folds it into one layer for
 each project root.  A project root is a directory directly under include/,

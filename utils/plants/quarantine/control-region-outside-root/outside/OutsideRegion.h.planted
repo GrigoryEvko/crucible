@@ -1,0 +1,4 @@
+#pragma once
+#pragma quarantine I_KNOW_WHAT_IM_DOING("a header outside the root")
+inline int outside_region_value() { return 1; }
+#pragma quarantine END_I_KNOW_WHAT_IM_DOING

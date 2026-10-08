@@ -1,0 +1,2 @@
+#pragma once
+int outside_pre(int value) pre(value > 0);

@@ -1,0 +1,18 @@
+// A function that is not a template holds a generic lambda.  The body of the
+// lambda is a template, and the front end keeps it in the function.  The
+// plugin of main read no such body, so the names below gave no finding.  The
+// plugin reads the body of each generic lambda.
+
+#include <cstring>
+#include <vector>
+
+int generic_lambda_holder() {
+    auto copy_into = [](auto& target, auto const& source) {
+        std::vector<int> items{1, 2};
+        std::memcpy(&target, &source, sizeof target);
+        return static_cast<int>(items.size());
+    };
+    int target = 0;
+    int const source = 1;
+    return copy_into(target, source);
+}

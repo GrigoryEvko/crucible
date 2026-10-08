@@ -54,6 +54,8 @@ HEADERS = ("gmp.h", "mpfr.h", "mpc.h", "isl/version.h", "zlib.h", "zstd.h")
 CONFIGURE = ("--program-suffix=-16p", "--enable-languages=c,c++,lto", "--disable-multilib", "--disable-bootstrap",
              "--enable-checking=release", "--with-system-zlib")
 COMPILER = Path("usr") / "bin" / "g++-16p"
+# The install prefix of the patched GCC below the home directory, when the environment names none.
+HOME_PREFIX = Path(".local") / "gcc16-patched"
 # The time limit of one step of the build (run), in seconds.  With 8 jobs the build takes approximately 8 minutes,
 # but with one job on a slow host it can take some hours.
 STEP_TIMEOUT_S = 6 * 3600.0
@@ -61,6 +63,23 @@ STEP_TIMEOUT_S = 6 * 3600.0
 
 class BuildError(Exception):
     """A check of the host or a step of the build fails."""
+
+
+def toolchain_compilers() -> tuple[Path, Path]:
+    """Return the C compiler and the C++ compiler of the patched GCC, with the rules of cmake/Toolchain-gcc16.cmake.
+
+    CRUCIBLE_CXX names the g++ first, and its C compiler is the gcc with the same suffix in the same directory.  If
+    CRUCIBLE_CXX is not set, CRUCIBLE_GCC16_PREFIX names the prefix.  If the two variables are not set, the prefix is
+    HOME_PREFIX below the home directory.  The files can be missing, and each caller makes sure that its compiler is
+    there.
+    """
+    named = os.environ.get("CRUCIBLE_CXX", "")
+    if named:
+        cxx = Path(named)
+        return cxx.with_name("gcc" + cxx.name.removeprefix("g++")), cxx
+    prefix_text = os.environ.get("CRUCIBLE_GCC16_PREFIX", "")
+    prefix = Path(prefix_text) if prefix_text else Path.home() / HOME_PREFIX
+    return prefix / COMPILER.with_name("gcc-16p"), prefix / COMPILER
 
 
 def default_jobs() -> int:

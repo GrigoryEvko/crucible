@@ -1,0 +1,4 @@
+# a planted registry: the row of the rule quarantine names the kind door-header, and the plugin does not give it
+format 1
+rule quarantine engine=plugin scope=quarantined ledger=count kinds=std-entity,door-header,opted-out,region doc=XXII | a planted refusal | fix the planted file
+rule contract-specifier engine=plugin scope=tracked ledger=none kinds=contract-specifier doc=XII | a planted refusal | fix the planted file

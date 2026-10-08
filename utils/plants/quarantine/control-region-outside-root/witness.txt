@@ -1,0 +1,6 @@
+# A region of a header outside the root is no error.  The two pragmas of such
+# a header agree: each one does nothing, and the report holds no region.
+
+compile outside region_outside_root.cpp mode=error
+flag outside -I ../outside
+exit outside pass

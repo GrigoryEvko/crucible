@@ -1,0 +1,4 @@
+# a planted registry: each kind of the plugin has its rule row, and each kind of a rule row is a kind of the plugin
+format 1
+rule quarantine engine=plugin scope=quarantined ledger=count kinds=std-entity,replace-pending,opted-out,region doc=XXII | a planted refusal | fix the planted file
+rule contract-specifier engine=plugin scope=tracked ledger=none kinds=contract-specifier doc=XII | a planted refusal | fix the planted file

@@ -2,12 +2,19 @@
 
 usage: guard list [--engine E]
        guard list --path FILE
+       guard list --build-dir DIR [--path FILE|DIRECTORY] [--kind KIND]
 
 The first form prints one line for each rule: its ID, its engine, its
 policy, its thresholds, and the module that holds it (its own module, its
 legacy module or its holder).  The second form prints each ledger row of each
 rule of utils/ledgers/ whose path is FILE, so a reader at the code sees each
 admission of that file.
+
+With --build-dir, the command prints each finding line and each region line
+of the sections of the objects of the build
+(assay.guard.engines.plugin.runner).  --path selects a file or a directory,
+and --kind selects a kind.  The command exits 77 when the build does not
+apply.
 """
 
 import sys
@@ -41,7 +48,17 @@ def main(argv: list[str]) -> int:
     parser = cli.parser("guard list", "print the rules of the registry, or the ledger rows of one file")
     parser.add_argument("--engine", default=None)
     parser.add_argument("--path", default=None, metavar="FILE")
+    parser.add_argument("--build-dir", type=Path, default=None)
+    parser.add_argument("--kind", default=None)
     options = parser.parse_args(argv)
+    if options.build_dir is not None:
+        from assay.guard.engines.plugin import runner as plugin_runner
+
+        return plugin_runner.print_findings(REPO_ROOT, options.build_dir.resolve(), options.path, options.kind)
+    if options.kind is not None:
+        check_report.write_line("guard list: --kind selects the findings of a build: give --build-dir DIR",
+                                is_error=True)
+        return 2
     registry = check.load_registry()
     if registry is None:
         return 2

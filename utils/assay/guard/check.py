@@ -9,11 +9,14 @@ legacy module runs alone: the command calls the function main of the module
 with the words of its mode (legacy-args) and then each ARG, unchanged, and it
 exits with the value that main returns.  A rule with a module of its own runs
 through the runner of its engine, which judges its findings against its ledger
-(assay.core.ledger).  The engines meta and tsast have a runner.  The tsast
-rules of one call share the trees that they read
+(assay.core.ledger).  The engines meta, tsast and plugin have a runner.  The
+tsast rules of one call share the trees that they read
 (assay.guard.engines.tsast.runner, THE SHARED TREES), and --part K/N gives
-them part K of N of their files (THE PARTS).  A measured rule with a holder
-has no run of its own: the holder reads its thresholds.
+them part K of N of their files (THE PARTS).  The plugin rules of one call
+read the sections of the objects of the build one time
+(assay.guard.engines.plugin.runner, THE SECTIONS).  A plugin rule with no
+--build-dir is a usage error.  A measured rule with a holder has no run of its
+own: the holder reads its thresholds.
 
 Each run also holds the cache of the compiled modules of the package under its
 limit, when its turn is due (assay.core.cache, THE COMPILED MODULES).  A
@@ -32,7 +35,7 @@ from assay.core.paths import REPO_ROOT
 USAGE = ("usage: guard check --rule ID [ARG]...  |  guard check [--rule ID]... [--engine E]... [--part K/N] "
          "[--build-dir DIR] [--warnings-dir DIR] [--root DIR]")
 # The engines with a runner at this time.
-RUNNERS = (rule_registry.Engine.META, rule_registry.Engine.TSAST)
+RUNNERS = (rule_registry.Engine.META, rule_registry.Engine.TSAST, rule_registry.Engine.PLUGIN)
 
 
 def load_registry() -> rule_registry.Registry | None:
@@ -123,6 +126,9 @@ def main(argv: list[str]) -> int:
     if not isinstance(chosen, str) and part is not None \
             and any(rule.engine != rule_registry.Engine.TSAST for rule in chosen):
         chosen = "only a rule of the engine tsast reads a part of its files"
+    if not isinstance(chosen, str) and options.build_dir is None \
+            and any(rule.engine == rule_registry.Engine.PLUGIN for rule in chosen):
+        chosen = "a rule of the engine plugin reads the objects of a build: give --build-dir DIR"
     if isinstance(chosen, str):
         print(f"guard check: {chosen}\n{USAGE}", file=sys.stderr)
         return 2
@@ -136,6 +142,11 @@ def main(argv: list[str]) -> int:
         from assay.guard.engines.tsast import runner as tree_runner
 
         statuses += tree_runner.run(tree_rules, root, build_dir, options.warnings_dir, part)
+    plugin_rules = [rule for rule in chosen if rule.engine == rule_registry.Engine.PLUGIN]
+    if plugin_rules:
+        from assay.guard.engines.plugin import runner as plugin_runner
+
+        statuses += plugin_runner.run(plugin_rules, root, build_dir, options.warnings_dir)
     if any(status == 1 for status in statuses):
         return 1
     return runner.SKIPPED if all(status == runner.SKIPPED for status in statuses) else 0

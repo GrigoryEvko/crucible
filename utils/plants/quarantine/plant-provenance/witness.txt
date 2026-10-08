@@ -1,0 +1,14 @@
+# Each directive that changes the file, the line or the system flag of the
+# code after it is an error in the mode report.
+
+compile line-directive line_directive.cpp out=no
+exit line-directive fail
+error line-directive line_directive.cpp:9 | quarantine: 'line_directive.cpp' holds a '#line' directive
+
+compile line-marker line_marker.cpp out=no
+exit line-marker fail
+error line-marker line_marker.cpp:6 | quarantine: a line marker of 'line_marker.cpp' enters 'fake_system.h'
+
+compile system-marked system_marked.cpp out=no
+exit system-marked fail
+error system-marked gapsother/marked/SystemMarked.h:9 | quarantine: 'gapsother/marked/SystemMarked.h' holds a '#line' directive

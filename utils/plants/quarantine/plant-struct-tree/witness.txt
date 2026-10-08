@@ -1,0 +1,10 @@
+# The walk of a struct tree that shares its subtrees visits each class one
+# time, so the compile ends in less than 60 seconds with its finding.
+
+compile report struct_tree.cpp timeout=60
+exit report pass
+finding report quarantine c-array-object struct_tree.cpp:59:19 | unsigned char [1099511627776]
+finding report quarantine replace-pending:std::bit_cast struct_tree.cpp:62:81 | std::bit_cast
+
+compile error struct_tree.cpp mode=error out=no errors=report timeout=60
+exit error fail

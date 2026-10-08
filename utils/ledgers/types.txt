@@ -105,16 +105,6 @@ utils/assay/guard/legacy/check_parse_cost.py | assignment | 1 | evaluate_fanout 
 utils/assay/guard/legacy/check_parse_cost.py | unused-ignore | 1 | run | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_permission_storage.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_permission_storage.py | no-untyped-def | 1 | self_test.captured | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_plugin.py | arg-type | 1 | run_base_files | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_plugin.py | arg-type | 1 | run_table_readers | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_plugin.py | assignment | 2 | run_findings | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_plugin.py | assignment | 1 | run_generated_files | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_plugin.py | assignment | 1 | run_provenance | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_plugin.py | attr-defined | 2 | run_base_files | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_plugin.py | attr-defined | 14 | run_generated_files | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_plugin.py | index | 2 | run_tree_plants | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_plugin.py | misc | 1 | run_tree_plants | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_plugin.py | operator | 1 | run_depth | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_process_wide_state.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | assignment | 2 | extract | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | assignment | 2 | planted_cases | An error of mypy of today.  The change that gives the code its types lowers the count
@@ -136,7 +126,6 @@ utils/assay/guard/legacy/check_proof_routes.py | type-arg | 1 | scan | An error 
 utils/assay/guard/legacy/check_proof_routes.py | type-arg | 2 | specialization_records | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | type-arg | 1 | tree_facts | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | union-attr | 1 | specialization_records | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_quarantine_regions.py | attr-defined | 2 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_refined_pre_subsumption.py | arg-type | 1 | retests | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_refined_pre_subsumption.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_splits_orphan.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count

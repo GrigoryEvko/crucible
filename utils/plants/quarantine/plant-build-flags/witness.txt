@@ -1,0 +1,7 @@
+# With the compile command of a real object of the build directory, which
+# keeps each flag of the preset, an enforce row with the mode error fails the
+# compile of the plant.  The tree is the source root, and the table is the
+# rule table of the command with that row.  The procedure gives skip when
+# the call gives no build directory.
+
+procedure build-flags-error

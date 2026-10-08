@@ -1,0 +1,59 @@
+# A plant of each row kind against the rule table of the repository, in a
+# tree with the paths of the repository: a base file of the layer F1_algebra,
+# a header of the higher layer X1_wrappers and a quarantined file.  In the
+# mode report, the section of the object holds the one finding of the plant,
+# and the file with no plant has no finding.  In the mode error, the plant
+# fails the compile, and the file with no plant passes, so the rule table of
+# the repository loads.
+
+compile report-base src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+exit report-base pass
+
+compile report-quarantined test/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+exit report-quarantined pass
+
+compile report-layer-header src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+flag report-layer-header -DPLANT_LAYER_HEADER
+exit report-layer-header pass
+finding report-layer-header quarantine layer-header src/foundation/Plant.cpp:2:0 | <cmath> in the layer F1_algebra
+
+compile report-door-header src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+flag report-door-header -DPLANT_DOOR_HEADER
+exit report-door-header pass
+finding report-door-header quarantine door-header src/foundation/Plant.cpp:5:0 | <sys/socket.h> has the door include/fixy/os/Socket.h
+
+compile report-upward src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+flag report-upward -DPLANT_UPWARD_INCLUDE
+exit report-upward pass
+finding report-upward quarantine upward-include src/foundation/Plant.cpp:8:0 | include/fixy/PlantHigh.h (the layer X1_wrappers) from the layer F1_algebra
+
+compile report-std-name test/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+flag report-std-name -DPLANT_STD_NAME
+exit report-std-name pass
+finding report-std-name quarantine std-entity test/Plant.cpp:4:14 | std::swap
+
+compile error-base src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+exit error-base pass
+
+compile error-quarantined test/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+exit error-quarantined pass
+
+compile error-layer-header src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+flag error-layer-header -DPLANT_LAYER_HEADER
+exit error-layer-header fail
+error error-layer-header src/foundation/Plant.cpp:2 | quarantine: layer-header <cmath> in the layer F1_algebra;
+
+compile error-door-header src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+flag error-door-header -DPLANT_DOOR_HEADER
+exit error-door-header fail
+error error-door-header src/foundation/Plant.cpp:5 | quarantine: door-header <sys/socket.h> has the door include/fixy/os/Socket.h;
+
+compile error-upward src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+flag error-upward -DPLANT_UPWARD_INCLUDE
+exit error-upward fail
+error error-upward src/foundation/Plant.cpp:8 | quarantine: upward-include include/fixy/PlantHigh.h (the layer X1_wrappers) from the layer F1_algebra;
+
+compile error-std-name test/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+flag error-std-name -DPLANT_STD_NAME
+exit error-std-name fail
+error error-std-name test/Plant.cpp:4 | quarantine: std-entity std::swap;

@@ -1,0 +1,6 @@
+# Through ccache, with the options of utils/tools/quarantine/Quarantine.cmake,
+# a hit gives the section of a real compile.  A changed rule table with a new
+# stamp misses, and it gives the findings of a real compile with that table.
+# The procedure section-cache-keyed of the witness holds the expectations.
+
+procedure section-cache-keyed

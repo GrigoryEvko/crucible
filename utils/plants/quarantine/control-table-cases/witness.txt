@@ -1,0 +1,21 @@
+# The rule tables at the edge of a rule.  The quarantine plugin and
+# assay.core.ruletable accept each one, and the compile of the unit has no
+# error.  Each reader also accepts a white-space character in a comment,
+# other than the carriage return.  assay.core.ruletable reads the table of
+# the plants and the rule table of the repository.
+
+table-unit plant_std.cpp
+
+table tables/the-largest-rank.txt accepted
+table tables/the-largest-rank-with-zeros-before-it.txt accepted
+table tables/a-tab-between-two-words.txt accepted
+table tables/one-entry-as-a-header-and-as-a-name.txt accepted
+
+white-space accepted
+
+reads rules.txt
+reads {repo}/utils/rule-table.txt
+
+# The table of the plants loads in the plugin too.
+compile report plant_std.cpp mode=error
+exit report pass

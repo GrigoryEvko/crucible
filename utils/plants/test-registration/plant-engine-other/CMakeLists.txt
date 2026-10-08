@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.28)
+project(planted NONE)
+enable_testing()
+add_test(NAME guard_meta COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --engine meta)
+set_tests_properties(guard_meta PROPERTIES LABELS "ci_guard")

@@ -1,0 +1,7 @@
+# The mode error refuses a use that an admit row with `until` admits.  The use
+# is an error of its pending kind, and no std-entity.
+
+compile error plant_std.cpp mode=error
+exit error fail
+finding error quarantine replace-pending:std::move plant_std.cpp:14:26 | std::move
+error error plant_std.cpp:14 | quarantine: replace-pending:std::move std::move;

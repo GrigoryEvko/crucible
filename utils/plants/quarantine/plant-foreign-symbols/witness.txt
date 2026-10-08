@@ -1,0 +1,18 @@
+# The foreign symbols of a quarantined file.  A function of C language linkage
+# that the unit defines later is no foreign symbol, also at a call before the
+# definition (lines 11, 17 and 19).
+
+compile report foreign_symbols.cpp
+exit report pass
+finding report quarantine foreign-symbol foreign_symbols.cpp:7:30 | abort (C linkage)
+finding report quarantine foreign-symbol foreign_symbols.cpp:8:17 | write (C linkage)
+finding report quarantine foreign-symbol foreign_symbols.cpp:9:7 | foreign_copy (asm label memcpy)
+finding report quarantine foreign-symbol foreign_symbols.cpp:10:13 | foreign_exit (attribute weakref)
+finding report quarantine c-library-call foreign_symbols.cpp:13:41 | abort (C linkage)
+finding report quarantine c-library-call foreign_symbols.cpp:14:36 | write (C linkage)
+finding report quarantine c-library-call foreign_symbols.cpp:15:69 | foreign_copy (asm label memcpy)
+finding report quarantine c-library-call foreign_symbols.cpp:16:36 | foreign_exit (attribute weakref)
+finding report quarantine inline-asm foreign_symbols.cpp:22:19 | asm register held
+
+compile error foreign_symbols.cpp mode=error out=no errors=report
+exit error fail

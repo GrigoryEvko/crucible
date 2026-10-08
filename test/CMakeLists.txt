@@ -437,8 +437,10 @@ set_tests_properties(cmake_pin cmake_pin_self_test cmake_pin_configure_self_test
 # tree, which name the source root and the build root.  A ccache hit from a
 # different build root must give the object of a compile in the build root,
 # and no object can name its build root, with ccache or without it.  Each
-# relocation case takes a copy of the plugin of this build.
-foreach(ccache_case launcher relocation plain_relocation)
+# relocation case takes a copy of the plugin of this build.  The wrapper case
+# configures with the toolchain file and a compiler wrapper, and its build
+# must load the plugin that the configure builds.
+foreach(ccache_case launcher relocation plain_relocation wrapper)
   crucible_script_test(NAME ccache_${ccache_case}_self_test
     COMMAND ${CMAKE_COMMAND} -DCXX=${CRUCIBLE_REAL_CXX} -DCASE=${ccache_case}
             -DWORK=${CMAKE_CURRENT_BINARY_DIR}/ccache_${ccache_case}_self_test
@@ -5531,33 +5533,27 @@ set_tests_properties(elf_file_self_test PROPERTIES LABELS "ci_guard")
 # object.  The self-test plants objects with and without the section.
 crucible_script_test(NAME quarantine_sections_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest readers.sections)
-# quarantine_ratchet — utils/assay/guard/legacy/check_quarantine_ratchet.py counts the
-# distinct findings of the sections of the objects of all in each file, kind and
-# entity, against utils/ledgers/quarantine.txt (the rule quarantine).  A count above
-# or below its row fails, and so does a finding in a file that the ledger does not
-# hold.  A finding inside an opt-out region counts with the reason of its region.
-# It exits 3 for a build whose compiles do not load the quarantine plugin, for a
-# build of a configuration that the ledger does not have, and for a build that
-# made only some targets.
-crucible_script_test(NAME quarantine_ratchet
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule quarantine --build-dir ${CMAKE_BINARY_DIR}
+# guard_plugin — the runner of the engine plugin
+# (utils/assay/guard/engines/plugin/runner.py) reads the section of each object
+# of all one time, and judges the rules quarantine and contract-specifier.  The
+# rule quarantine counts the distinct findings in each file, kind and entity,
+# and each opt-out region as the kind region, against
+# utils/ledgers/quarantine.txt.  A count above or below its row fails, and so
+# does a finding in a file that the ledger does not hold.  A finding inside an
+# opt-out region counts with the reason of its region.  The test exits 77 for a
+# build whose compiles do not load the plugin, for a build of a configuration
+# that the ledger does not have, and for a build that made only some targets.
+# The witness of the engine is the test guard_plugin_witness
+# (utils/tools/quarantine/Quarantine.cmake).
+crucible_script_test(NAME guard_plugin
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --engine plugin --build-dir ${CMAKE_BINARY_DIR}
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-crucible_script_test(NAME quarantine_ratchet_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule quarantine --self-test)
-set_tests_properties(quarantine_sections_self_test quarantine_ratchet quarantine_ratchet_self_test PROPERTIES
-    LABELS "ci_guard" SKIP_RETURN_CODE 3)
-
-# quarantine_regions — utils/assay/guard/legacy/check_quarantine_regions.py reads each
-# opt-out region of the tracked C++ files through the parse tree, against
-# utils/ledgers/quarantine-regions.txt.  A region with no row and a row
-# with no region fail.  It exits 3 when the kit of the parse tree is missing.
-crucible_script_test(NAME quarantine_regions
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule quarantine-regions
-          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-crucible_script_test(NAME quarantine_regions_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule quarantine-regions --self-test)
-set_tests_properties(quarantine_regions quarantine_regions_self_test PROPERTIES
-    LABELS "ci_guard" SKIP_RETURN_CODE 3)
+crucible_script_test(NAME plugin_runner_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.plugin.test_runner)
+crucible_script_test(NAME plugin_witness_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.plugin.test_witness)
+set_tests_properties(quarantine_sections_self_test guard_plugin plugin_runner_self_test plugin_witness_self_test
+    PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 77)
 
 # affected_tests_self_test — `loop test` (utils/assay/loop/affected.py) builds a tree
 # and runs only the tests whose inputs changed since their last pass.  It is

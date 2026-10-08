@@ -1,0 +1,4 @@
+// The quarantined includer of the file of the language
+// fixy/high/LanguageOther.h (plant-language-other, the language rule).
+
+#include <fixy/high/LanguageOther.h>

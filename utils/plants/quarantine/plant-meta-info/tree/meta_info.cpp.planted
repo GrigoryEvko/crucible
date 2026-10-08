@@ -1,0 +1,7 @@
+// The type of a reflection is a typedef of namespace std::meta.  The table
+// does not admit it, so the declaration is a std-entity finding.  The plant
+// compiles this file with -freflection.
+
+#include <meta>
+
+constexpr std::meta::info meta_info_reflection = ^^int;

@@ -1,0 +1,45 @@
+# The verdict of each file of the corpus.  The two readers of the rows grammar must give it (the rule rows-readers).
+format 1
+file corpus/accept-blank-indent.txt accepted
+file corpus/accept-bom.txt accepted
+file corpus/accept-comments.txt accepted
+file corpus/accept-empty-cell.txt accepted
+file corpus/accept-empty.txt accepted
+file corpus/accept-escapes.txt accepted
+file corpus/accept-many-cells.txt accepted
+file corpus/accept-nul.txt accepted
+file corpus/accept-one-line-break.txt accepted
+file corpus/accept-other-spaces.txt accepted
+file corpus/accept-unicode.txt accepted
+file corpus/accept-word-runs.txt accepted
+file corpus/refuse-backslash-then-bar.txt refused 2
+file corpus/refuse-bad-escape.txt refused 3
+file corpus/refuse-bar-line.txt refused 2
+file corpus/refuse-bare-bar.txt refused 2
+file corpus/refuse-cell-space-end.txt refused 3
+file corpus/refuse-cell-space-start.txt refused 2
+file corpus/refuse-cell-tab-end.txt refused 2
+file corpus/refuse-cr-in-comment.txt refused 3
+file corpus/refuse-cr-in-row.txt refused 2
+file corpus/refuse-crlf.txt refused 1
+file corpus/refuse-double-separator-escape.txt refused 2
+file corpus/refuse-double-separator.txt refused 2
+file corpus/refuse-empty-cell.txt refused 2
+file corpus/refuse-no-final-break.txt refused 3
+file corpus/refuse-no-space-after-bar.txt refused 2
+file corpus/refuse-no-word.txt refused 2
+file corpus/refuse-trailing-backslash.txt refused 2
+file corpus/refuse-trailing-separator.txt refused 2
+file corpus/refuse-utf8-above-max.txt refused 2
+file corpus/refuse-utf8-bad-continuation.txt refused 2
+file corpus/refuse-utf8-cut-file.txt refused 3
+file corpus/refuse-utf8-cut-line.txt refused 2
+file corpus/refuse-utf8-f5.txt refused 2
+file corpus/refuse-utf8-overlong-three.txt refused 3
+file corpus/refuse-utf8-overlong.txt refused 2
+file corpus/refuse-utf8-stray.txt refused 3
+file corpus/refuse-utf8-surrogate.txt refused 3
+file corpus/refuse-utf8-wins.txt refused 5
+file corpus/refuse-word-bar.txt refused 2
+file corpus/refuse-word-escaped-bar.txt refused 2
+file corpus/refuse-word-then-bar.txt refused 2

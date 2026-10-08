@@ -1,0 +1,10 @@
+// The unit of the procedures of the compiler cache.  The table of the plant
+// admits no std::swap, so the call below is a finding.  The procedure adds an
+// admit row of std::swap to a second table, and the call is then no finding.
+
+#include <utility>
+#include <vector>
+
+std::vector<int> cache_numbers;
+
+void cache_swap(int& left, int& right) { std::swap(left, right); }

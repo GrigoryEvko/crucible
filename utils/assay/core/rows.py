@@ -11,6 +11,12 @@ THE GRAMMAR
     cell    = one or more characters except "\\n" and a "|" with no "\\" before it
 
 THE RULES OF THE READER
+    * The file is UTF-8.  decode() examines all the bytes of the file before
+      parse() reads a line.  A byte that is not part of a UTF-8 sequence is
+      then the first problem of the file, at its line.  A problem of the
+      grammar on a line before that byte does not come first.  The decode
+      keeps each line end as it is, and parse() then refuses each carriage
+      return.
     * Only the space and the horizontal tab divide words.  The reader does
       not use str.split() with no argument, because that call also divides
       at "\\v", "\\f" and the Unicode spaces.
@@ -21,9 +27,12 @@ THE RULES OF THE READER
     * The file ends with a line break, and no line holds a carriage return.
     * A word of the form KEY=VALUE is a field.  fields() refuses a key that
       the schema does not give, and a second field with the same key.
-    * A number is a run of decimal digits.  number() refuses a number above
-      the maximum of its type, and decimal() refuses a number that is not a
-      finite decimal.
+    * A number is a run of decimal digits, and zeros before the first other
+      digit are permitted.  number() refuses a number above the maximum of
+      its type, and decimal() refuses a number that is not a finite decimal.
+    * utils/tools/quarantine/rows.h reads the same grammar for the quarantine
+      plugin.  The rule rows-readers gives the same files to the two readers.
+      They must give the same rows, and refuse a file at the same line.
     * The schema of a file gives the key of each row.  unique() refuses a
       second row with the same key, so the order of the rows cannot change a
       result.
@@ -228,14 +237,36 @@ def parse(text: str, path: str) -> tuple[Row, ...]:
     return tuple(rows)
 
 
-def read(path: Path, shown: str | None = None) -> tuple[Row, ...]:
-    """Read the rows of one file.
+def decode(data: bytes, path: str) -> str:
+    """Return the text of the bytes of a file, decoded as UTF-8, with each line end as it is.
+
+    Args:
+        data: The bytes of the file
+        path: The name of the file in the error
 
     Raises:
-        RowsError: If a line does not obey the grammar
+        RowsError: If the bytes are not UTF-8.  The line is the line of the first byte that is not part of a UTF-8
+            sequence: the line breaks before it, plus 1
+
+    Complexity: linear in the number of bytes.
+    """
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as problem:
+        line = data.count(b"\n", 0, problem.start) + 1
+        raise RowsError(path, line, f"the line is not UTF-8 ({problem.reason} at the byte "
+                                    f"0x{data[problem.start]:02x}).  Write the file in UTF-8") from None
+
+
+def read(path: Path, shown: str | None = None) -> tuple[Row, ...]:
+    """Read the rows of one file: decode() and then parse().
+
+    Raises:
+        RowsError: If the file is not UTF-8, or a line does not obey the grammar
         OSError: If the file cannot be read
     """
-    return parse(path.read_text(encoding="utf-8"), shown if shown is not None else str(path))
+    name = shown if shown is not None else str(path)
+    return parse(decode(path.read_bytes(), name), name)
 
 
 def fields(row: Row, allowed: frozenset[str], start: int = 2) -> dict[str, str]:
@@ -261,14 +292,19 @@ def fields(row: Row, allowed: frozenset[str], start: int = 2) -> dict[str, str]:
 def number(text: str, maximum: int, row: Row, what: str) -> int:
     """Read a whole number: a run of decimal digits, at most `maximum`.
 
+    Zeros before the first other digit are permitted.  The length check of the digits after those zeros comes before
+    int().  Then a long text does not cause a long conversion.  number() of utils/tools/quarantine/rows.h gives the
+    same result.
+
     Raises:
         RowsError: If the text is not a run of decimal digits, or the number is above the maximum
     """
     if not text or not all("0" <= character <= "9" for character in text):
         raise row.error(f"the {what} {text!r} is not a run of decimal digits")
-    if len(text) > len(str(maximum)) or int(text) > maximum:
+    significant = text.lstrip("0") or "0"
+    if len(significant) > len(str(maximum)) or int(significant) > maximum:
         raise row.error(f"the {what} {text} is above the maximum {maximum} of its type")
-    return int(text)
+    return int(significant)
 
 
 def decimal(text: str, row: Row, what: str) -> float:

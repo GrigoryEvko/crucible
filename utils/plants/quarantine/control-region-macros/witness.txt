@@ -1,0 +1,6 @@
+# The region macros compile with no plugin: they expand to nothing when
+# CRUCIBLE_QUARANTINE_ACTIVE is not defined, and the compile gives no warning.
+
+compile plain opt_out.cpp plugin=no stage=syntax
+flag plain -Wall -Werror
+exit plain pass

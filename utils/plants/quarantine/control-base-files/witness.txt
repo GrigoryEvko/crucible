@@ -1,0 +1,14 @@
+# A source file of the base reports no finding, also in the mode error.  Each
+# compile with a report writes one report file with no line.
+
+compile floor src/foundation/Floor.cpp
+exit floor pass
+
+compile door src/fixy/Door.cpp
+exit door pass
+
+compile floor-error src/foundation/Floor.cpp mode=error out=no
+exit floor-error pass
+
+compile door-error src/fixy/Door.cpp mode=error out=no
+exit door-error pass

@@ -1,0 +1,44 @@
+# Each planted file compiles in the mode error with no plant, and fails with
+# the one finding of each plant.  The door of <sys/socket.h> includes it with
+# no finding.  The upward include of fixy/Low.h is one finding when the
+# include enters High.h, and when #pragma once stops it.
+
+compile plants-clean src/fixy/Plants.cpp mode=error out=no
+exit plants-clean pass
+
+compile std-clean plant_std.cpp mode=error out=no
+exit std-clean pass
+
+compile door src/fixy/SocketDoor.cpp mode=error out=no
+exit door pass
+
+compile layer-header src/fixy/Plants.cpp mode=error out=no
+flag layer-header -DPLANT_LAYER_HEADER
+exit layer-header fail
+error layer-header src/fixy/Plants.cpp:10 | quarantine: layer-header <cmath> in the layer low;
+
+compile door-header src/fixy/Plants.cpp mode=error out=no
+flag door-header -DPLANT_DOOR_HEADER
+exit door-header fail
+error door-header src/fixy/Plants.cpp:15 | quarantine: door-header <sys/socket.h> has the door src/fixy/SocketDoor.cpp;
+
+compile upward src/fixy/Plants.cpp mode=error out=no
+flag upward -DPLANT_UPWARD_INCLUDE
+exit upward fail
+error upward src/fixy/Plants.cpp:20 | quarantine: upward-include include/fixy/high/High.h (the layer high) from the layer low;
+
+compile std-name plant_std.cpp mode=error out=no
+flag std-name -DPLANT_STD_NAME
+exit std-name fail
+error std-name plant_std.cpp:10 | quarantine: std-entity std::swap;
+
+# The include enters High.h.
+compile low-high low_includes_high.cpp mode=error out=no
+exit low-high fail
+error low-high include/fixy/Low.h:8 | quarantine: upward-include include/fixy/high/High.h (the layer high) from the layer low;
+
+# #pragma once stops the include, and the plugin finds the target among the entered files.
+compile low-high-first low_includes_high.cpp mode=error out=no
+flag low-high-first -DHIGH_FIRST
+exit low-high-first fail
+error low-high-first include/fixy/Low.h:8 | quarantine: upward-include include/fixy/high/High.h (the layer high) from the layer low;

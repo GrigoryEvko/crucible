@@ -1,6 +1,9 @@
 """guard write — write the ledger of one rule through assay.core.ledger, with the checks of its policy.
 
 usage: guard write --rule ID [--raise | --admit] [--reason TEXT] [--root DIR] [--build-dir DIR]
+       guard write --rule ID --build-dir DIR [--raise | --admit] [--reason TEXT] [--add-configuration]
+                                           a rule of the engine plugin
+       guard write --rule ID --import LOG  a rule of the engine plugin with configurations
        guard write --rule ID [ARG]...      a rule with a legacy module
 
 A rule with a module of its own: the command runs the rule and writes its
@@ -13,6 +16,15 @@ A rule of the policy max or baseline judges its ledger itself, so its module
 writes the ledger: the function written(context, ledger, reason) of the module
 gives the new ledger, and --reason gives the reason of a changed row.
 
+A rule of the engine plugin writes through assay.guard.engines.plugin.runner,
+which reads the build of --build-dir.  A module that writes its ledger itself
+gives the function write(rule, request), and its head comment tells its modes.
+The module of the rule quarantine does that.  --add-configuration writes the
+configuration of the build with its name.  --import LOG puts the rows of a
+configuration that a CI leg wrote into the ledger.  The two options apply only
+to such a rule.  The command exits 77 when the rule does not apply to the
+build.
+
 A rule with a legacy module: the command calls the module with the words of
 its mode, then --write, then each ARG, as `guard check --rule ID --write`
 does.
@@ -23,6 +35,7 @@ from pathlib import Path
 
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
+from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
 from assay.guard import check
@@ -53,6 +66,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--reason", default=None)
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
     parser.add_argument("--build-dir", type=Path, default=None)
+    parser.add_argument("--add-configuration", dest="add_configuration", action="store_true")
+    parser.add_argument("--import", dest="import_log", type=Path, default=None, metavar="LOG")
     options = parser.parse_args(argv)
     chosen = check.selected(registry, [options.rule], [])
     if isinstance(chosen, str):
@@ -61,6 +76,20 @@ def main(argv: list[str]) -> int:
     rule = chosen[0]
     root = options.root.resolve()
     build_dir = options.build_dir.resolve() if options.build_dir is not None else None
+    if rule.engine == rule_registry.Engine.PLUGIN:
+        from assay.guard.engines.plugin import runner as plugin_runner
+
+        if build_dir is None and options.import_log is None:
+            check_report.write_line(f"guard write: the rule {rule.id} reads the objects of a build: give --build-dir "
+                                    f"DIR", is_error=True)
+            return 2
+        return plugin_runner.write(rule, plugin_runner.WriteRequest(
+            root, build_dir, options.mode or rule_ledger.WriteMode.LOWER, options.reason, options.add_configuration,
+            options.import_log.resolve() if options.import_log is not None else None))
+    if options.add_configuration or options.import_log is not None:
+        check_report.write_line("guard write: --add-configuration and --import apply only to a rule of the engine "
+                                "plugin", is_error=True)
+        return 2
     context: runner.RuleContext = runner.MetaContext(root, build_dir)
     if rule.engine == rule_registry.Engine.TSAST:
         from assay.guard.engines.tsast import runner as tree_runner

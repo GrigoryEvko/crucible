@@ -1,0 +1,20 @@
+# The uses that an admit row with `until` admits are findings of the kind of
+# the row.  The restriction plain-result refuses a result type that holds a
+# bool on line 13, and a dependent result fails closed on line 22.  A pointer
+# to a dependent type holds no bool on line 42.
+
+compile report pending.cpp
+exit report pass
+finding report quarantine replace-pending:std::bit_cast pending.cpp:11:79 | std::bit_cast
+finding report quarantine std-entity pending.cpp:13:67 | std::bit_cast
+finding report quarantine replace-pending:std::bit_cast pending.cpp:17:17 | std::bit_cast
+finding report quarantine std-entity pending.cpp:22:17 | std::bit_cast
+finding report quarantine replace-pending:std::source_location pending.cpp:25:44 | std::source_location
+finding report quarantine replace-pending:std::source_location pending.cpp:26:31 | std::source_location::line
+finding report quarantine replace-pending:<limits> pending.cpp:30:58 | std::numeric_limits::max
+finding report quarantine replace-pending:<limits> pending.cpp:34:36 | std::numeric_limits::max
+finding report quarantine replace-pending:std::unreachable pending.cpp:37:52 | std::unreachable
+finding report quarantine replace-pending:std::bit_cast pending.cpp:42:17 | std::bit_cast
+
+compile error pending.cpp mode=error out=no errors=report
+exit error fail

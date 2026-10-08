@@ -1,0 +1,7 @@
+#include <utility>
+void plant_quarantined(int& left, int& right) {
+#if defined(PLANT_STD_NAME)
+    std::swap(left, right);
+#endif
+    left = std::move(right);
+}

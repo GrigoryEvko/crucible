@@ -554,7 +554,8 @@ jobs:
       # Two ledgers depend on the build kind and the target tier
       # (utils/assay/core/target.py): the rule quarantine, whose findings
       # of each file, kind and entity can only decrease, and the libstdc++ symbols of
-      # the libraries.  A build that a ledger does not hold gives exit 3 with
+      # the libraries.  A build that a ledger does not hold gives exit 77 for the
+      # rule quarantine and exit 3 for the libstdc++ symbols, with
       # one line that names its tier and the tiers of the ledger, for example
       # the x86_64 release leg on a runner of another native tier.  Then the
       # check prints the rows of the build, and it prints them after a failure
@@ -573,7 +574,7 @@ jobs:
           for rule in quarantine libstdcxx-symbols; do
             status=0
             python3 utils/bin/guard check --rule "$rule" --build-dir "$LEDGER_BUILD" || status=$?
-            if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then failed=1; fi
+            if [ "$status" -ne 0 ] && [ "$status" -ne 3 ] && [ "$status" -ne 77 ]; then failed=1; fi
           done
           exit "$failed"
 
@@ -906,7 +907,7 @@ jobs:
         run: |
           status=0
           python3 utils/bin/guard check --rule quarantine --build-dir build || status=$?
-          if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then exit "$status"; fi
+          if [ "$status" -ne 0 ] && [ "$status" -ne 77 ]; then exit "$status"; fi
       - name: Save ccache
         if: always()
         uses: actions/cache/save@v4

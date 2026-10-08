@@ -1,0 +1,2 @@
+#pragma once
+inline int clean_value = 1;

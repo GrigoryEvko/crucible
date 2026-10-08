@@ -1,0 +1,2 @@
+#pragma once
+inline int* fresh_pointer = nullptr;

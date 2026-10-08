@@ -1,0 +1,31 @@
+# The source files of control-base-files with src/ as the source root.  The
+# class of a file comes from its path under the root, so each use of the
+# library is a finding there, and an error in the mode error.
+
+compile floor src/foundation/Floor.cpp root=src
+exit floor pass
+finding floor quarantine std-object foundation/Floor.cpp:11:18 | std::vector (std::vector<int>)
+finding floor quarantine c-array-object foundation/Floor.cpp:12:6 | char [8]
+finding floor quarantine raw-pointer-object foundation/Floor.cpp:14:24 | char*
+finding floor quarantine c-library-call foundation/Floor.cpp:14:44 | memset
+
+compile door src/fixy/Door.cpp root=src
+exit door pass
+finding door quarantine std-object fixy/Door.cpp:11:18 | std::vector (std::vector<int>)
+finding door quarantine c-array-object fixy/Door.cpp:12:6 | char [8]
+finding door quarantine raw-pointer-object fixy/Door.cpp:14:23 | char*
+finding door quarantine c-library-call fixy/Door.cpp:14:43 | memset
+
+compile floor-error src/foundation/Floor.cpp root=src mode=error out=no
+exit floor-error fail
+error floor-error src/foundation/Floor.cpp:11 | quarantine: std-object std::vector (std::vector<int>);
+error floor-error src/foundation/Floor.cpp:12 | quarantine: c-array-object char [8];
+error floor-error src/foundation/Floor.cpp:14 | quarantine: raw-pointer-object char*;
+error floor-error src/foundation/Floor.cpp:14 | quarantine: c-library-call memset;
+
+compile door-error src/fixy/Door.cpp root=src mode=error out=no
+exit door-error fail
+error door-error src/fixy/Door.cpp:11 | quarantine: std-object std::vector (std::vector<int>);
+error door-error src/fixy/Door.cpp:12 | quarantine: c-array-object char [8];
+error door-error src/fixy/Door.cpp:14 | quarantine: raw-pointer-object char*;
+error door-error src/fixy/Door.cpp:14 | quarantine: c-library-call memset;

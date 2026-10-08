@@ -1,0 +1,10 @@
+# A call of the C library in a file of the language, and a name that a row
+# with `in` admits only in a different file of the language, are errors in
+# the mode report.
+
+compile report language_other_user.cpp
+exit report fail
+finding report quarantine c-library-call include/fixy/high/LanguageOther.h:14:59 | memset
+finding report quarantine std-entity include/fixy/high/LanguageOther.h:16:77 | std::nothrow
+error report include/fixy/high/LanguageOther.h:14 | quarantine: c-library-call memset;
+error report include/fixy/high/LanguageOther.h:16 | quarantine: std-entity std::nothrow;

@@ -26,11 +26,6 @@ utils/assay/guard/legacy/check_no_unity_pch.py | module-import | 1 | argparse | 
 utils/assay/guard/legacy/check_padded_lists.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_padded_lists.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_parse_cost.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/guard/legacy/check_plugin.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/guard/legacy/check_plugin.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/guard/legacy/check_quarantine_ratchet.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/guard/legacy/check_quarantine_ratchet.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/guard/legacy/check_quarantine_regions.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_reconfigure_noop.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_reconfigure_noop.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_start_lifetime.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row

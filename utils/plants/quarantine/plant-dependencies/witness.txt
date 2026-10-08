@@ -1,0 +1,7 @@
+# The plugin names the mode stamp of each file with a finding in the
+# dependency file of the unit, and enforce.txt for a file with no mode stamp.
+# The procedure dependencies-named writes the stamps of the tree first, and
+# then adds app/fresh.h of the directory fresh/, as a file that the tree got
+# after the last configure.
+
+procedure dependencies-named

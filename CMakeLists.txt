@@ -750,11 +750,11 @@ if (CRUCIBLE_HAVE_BPF)
   target_link_libraries(crucible PUBLIC crucible_perf)
   target_compile_definitions(crucible PUBLIC CRUCIBLE_HAVE_BPF=1)
 
-  # The quarantine ratchet (utils/assay/guard/legacy/check_quarantine_ratchet.py)
+  # The rule quarantine (utils/assay/guard/engines/plugin/quarantine.py)
   # counts only the code that a counted configuration compiles, and no
   # configuration of its ledger turns on CRUCIBLE_SENSE_HUB_V2.  These two
   # object libraries compile the SenseHub v2 sources in each build: one with
-  # CRUCIBLE_SENSE_HUB_EXTENDED and one without it.  So the ratchet counts
+  # CRUCIBLE_SENSE_HUB_EXTENDED and one without it.  So the rule counts
   # each preprocessor arm of the two sources and of their headers, and each
   # build does a compile check of the code.  No target links them.
   foreach(_census sense_hub_v2_census sense_hub_v2_extended_census)

@@ -1,0 +1,8 @@
+# A unit with no contract specifier outside an opt-out region compiles in the
+# mode error.  Its report holds the region and the opted-out specifier.
+
+compile error names.cpp mode=error
+flag error -fcontracts
+exit error pass
+finding error quarantine region names.cpp:16:1 | PROBE: the test needs the specifier
+finding error quarantine opted-out names.cpp:17:22 | contract-specifier pre

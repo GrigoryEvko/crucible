@@ -680,7 +680,7 @@ foundation_neg_compile_test(neg_post_violated_at_consteval
   "foundation/contracts/Post\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE."
   "in expansion of macro .CRUCIBLE_POST.")
 
-# The contract rule of utils/tools/quarantine/plugin_core.h rejects each
+# The contract rule of utils/tools/quarantine/contract.cpp rejects each
 # P2900 contract specifier, and each build loads a plugin that applies it.
 # One fixture for each form: a precondition on a function, a postcondition on
 # a function, and a precondition on a member of a class template.  The first

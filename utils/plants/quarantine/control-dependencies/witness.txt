@@ -1,0 +1,6 @@
+# A file with no finding adds no mode stamp, and an opted-out finding adds no
+# dependency.  -fsyntax-only writes the dependency file before the report, so
+# it holds no mode stamp.  The procedure dependencies-absent of the witness
+# holds the expectations.
+
+procedure dependencies-absent

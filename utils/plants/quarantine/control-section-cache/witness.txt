@@ -1,0 +1,7 @@
+# The negative controls of the compiler cache: the stamp alone carries the
+# rule table into the key of the cache.  A changed table with the old stamp
+# hits and gives the old findings, and a key without the stamp gives a section
+# with the stamp of another command, which the rule quarantine refuses.  The
+# procedure section-cache-blind of the witness holds the expectations.
+
+procedure section-cache-blind

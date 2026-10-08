@@ -345,7 +345,7 @@ def quarantine_cases(expect: Expect, scratch: Path) -> None:
     expect("a raise with no change of the plugin or the rule table is an error that names the commit",
            status == 1 and [item.message.split(":")[0] for item in errors_of(found)]
            == [f"the commit {raised[:9]} (Raise a count by hand) raised 1 counts of {QUARANTINE_LEDGER}, and it "
-               f"changes neither the plugin of utils/tools/quarantine/ nor the rule table utils/scripts/layer-rules.txt"])
+               f"changes neither the plugin of utils/tools/quarantine/ nor the rule table utils/rule-table.txt"])
     expect("the raised row gives a warning that names the commit",
            [item.line for item in standing_of(found)] == [5] and raised[:9] in standing_of(found)[0].message
            and "from 2" not in standing_of(found)[0].message and "above 2" in standing_of(found)[0].message)
@@ -355,7 +355,7 @@ def quarantine_cases(expect: Expect, scratch: Path) -> None:
     expect("an admission row of a raise changes the error to a warning",
            status == 0 and not errors_of(found) and any(item.path == ADMISSIONS and "rows of the ledger admit"
                                                         in item.message for item in found))
-    tree.write("utils/tools/quarantine/quarantine.cpp", "// a new rule\n")
+    tree.write("utils/tools/quarantine/plugin.cpp", "// a new rule\n")
     tree.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 4, "test/b.cpp": 3}))
     ruled = tree.commit("Report a new kind in the plugin", "The plugin finds more.")
     status, found = tree.run()
@@ -389,7 +389,7 @@ def quarantine_cases(expect: Expect, scratch: Path) -> None:
     late = Scratch(scratch / "quarantine-stale")
     late.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 2}, {"arm": {"test/a.cpp": 1}}))
     late.commit("Count two configurations", "The first counts.")
-    late.write("utils/tools/quarantine/quarantine.cpp", "// a new rule\n")
+    late.write("utils/tools/quarantine/plugin.cpp", "// a new rule\n")
     late.commit("Report a new kind in the plugin", "The base keeps its counts.")
     late.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 2}, {"arm": {"test/a.cpp": 3}}))
     caught_up = late.commit("Import the rows of the CI leg", "The leg sees the new kind.")
@@ -410,7 +410,7 @@ def quarantine_cases(expect: Expect, scratch: Path) -> None:
     status, found = renamed.run()
     expect("a new name of the base keeps its history, so a raise in the same commit is an error",
            status == 1 and any(hidden[:9] in item.message for item in errors_of(found)))
-    late.write("utils/tools/quarantine/plugin_core.h", "// a second rule\n")
+    late.write("utils/tools/quarantine/plugin.h", "// a second rule\n")
     late.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 5}, {"arm": {"test/a.cpp": 4}}))
     base_raise = late.commit("Report a second kind in the plugin", "The base finds three more.")
     status, found = late.run()
@@ -430,7 +430,7 @@ def quarantine_cases(expect: Expect, scratch: Path) -> None:
     keyed = Scratch(scratch / "quarantine-entity")
     keyed.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 2}))
     keyed.commit("Count each file", "The first counts.")
-    keyed.write("utils/tools/quarantine/quarantine.cpp", "// a new rule\n")
+    keyed.write("utils/tools/quarantine/plugin.cpp", "// a new rule\n")
     keyed.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 3}))
     plugin = keyed.commit("Report a new kind in the plugin", "The plugin finds one more.")
     keyed.write(QUARANTINE_LEDGER, entity_text({("test/a.cpp", "std::span"): 1, ("test/a.cpp", "std::vector"): 2}))
@@ -445,9 +445,9 @@ def quarantine_cases(expect: Expect, scratch: Path) -> None:
     swapped = keyed.commit("Swap an entity", "One std::vector goes and std::map comes.")
     status, found = keyed.run()
     expect("an entity swap with the same count of the file and kind is an error that names the new entity",
-           status == 1 and any(swapped[:9] in item.message and "test/a.cpp std_object std::map in default from 0 to 1"
+           status == 1 and any(swapped[:9] in item.message and "test/a.cpp std-object std::map in default from 0 to 1"
                                in item.message for item in errors_of(found))
-           and any("std_object std::map" in item.message and swapped[:9] in item.message
+           and any("std-object std::map" in item.message and swapped[:9] in item.message
                    for item in standing_of(found)))
 
     covered = Scratch(scratch / "quarantine-regions")
@@ -465,7 +465,47 @@ def quarantine_cases(expect: Expect, scratch: Path) -> None:
     expect("a region that covers more is no error, and its row gives a warning that names the commit",
            status == 0 and not errors_of(found) and any(admitted[:9] in item.message and history.OPTED_OUT
                                                         in item.message for item in standing_of(found)))
+    kind_quarantine_cases(expect, scratch)
     move_quarantine_cases(expect, scratch)
+
+
+def kind_quarantine_cases(expect: Expect, scratch: Path) -> None:
+    """Change the kind names, count the regions and change the rule table, and check each verdict."""
+    span = ("test/a.cpp", "std::span")
+    named = Scratch(scratch / "quarantine-kinds")
+    named.write(QUARANTINE_LEDGER, rows_text({span: 2}))
+    named.commit("Count each entity", "The first counts.")
+    hyphens = rows_text({span: 2}).replace("| std_object |", "| std-object |")
+    named.write(QUARANTINE_LEDGER, hyphens)
+    named.commit("Name the kinds with hyphens", "The report of the plugin has format 2.")
+    status, found = named.run()
+    expect("a change of the kind names with the same counts raises no count",
+           status == 0 and not errors_of(found) and not standing_of(found))
+    regions = hyphens + "test/a.cpp | region | 1 | PROBE: a region | -\n"
+    named.write(QUARANTINE_LEDGER, regions)
+    named.commit("Count the regions", "The ledger counts each region.")
+    status, found = named.run()
+    expect("the first count of the kind region raises no count",
+           status == 0 and not errors_of(found) and not standing_of(found))
+    two_regions = regions.replace("| region | 1 |", "| region | 2 |")
+    named.write(QUARANTINE_LEDGER, two_regions)
+    added = named.commit("Admit a second region", "A probe needs a second region.")
+    status, found = named.run()
+    expect("a new region is no error, and its row gives a warning that names the commit",
+           status == 0 and not errors_of(found)
+           and any(added[:9] in item.message and history.REGION in item.message for item in standing_of(found)))
+    named.write(history.RULE_TABLE, "quarantine test/\n")
+    named.write(QUARANTINE_LEDGER, two_regions.replace("| std-object | 2 |", "| std-object | 3 |"))
+    tabled = named.commit("Admit one name less in the rule table", "The table refuses one more name.")
+    status, found = named.run()
+    expect("a raise with a change of the rule table is no error, and its row gives a warning that names the commit",
+           status == 0 and not errors_of(found) and any(tabled[:9] in item.message for item in standing_of(found)))
+    expect("each kind name of the plugin before format 2 reads as the name of this time",
+           history.current_key("a.cpp", "replace_pending:std::bit_cast", "x")
+           == ("a.cpp", "replace-pending:std::bit_cast", "x")
+           and history.current_key("a.cpp", "opted_out", "ORACLE: a probe | c_library_call memcpy")
+           == ("a.cpp", "opted-out", "ORACLE: a probe | c-library-call memcpy")
+           and history.current_key("a.cpp", "std-entity", "std::move") == ("a.cpp", "std-entity", "std::move"))
 
 
 def move_quarantine_cases(expect: Expect, scratch: Path) -> None:
@@ -494,7 +534,7 @@ def move_quarantine_cases(expect: Expect, scratch: Path) -> None:
     added = moved.commit("Add a finding by hand", "A new entity comes.")
     status, found = moved.run()
     expect("a raise in the rows is an error that names the new entity",
-           status == 1 and any(added[:9] in item.message and "std_object std::vector in default from 0 to 1"
+           status == 1 and any(added[:9] in item.message and "std-object std::vector in default from 0 to 1"
                                in item.message for item in errors_of(found)))
 
     jump = Scratch(scratch / "quarantine-move-raise")

@@ -125,7 +125,15 @@ CLOSURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     ),
     "assay.loop.stamps": (
         frozenset(
-            {"assay", "assay.core", "assay.core.paths", "assay.core.ruletable", "assay.loop", "assay.loop.stamps"}
+            {
+                "assay",
+                "assay.core",
+                "assay.core.paths",
+                "assay.core.rows",
+                "assay.core.ruletable",
+                "assay.loop",
+                "assay.loop.stamps",
+            }
         ),
         PARSER_TOOLS,
     ),

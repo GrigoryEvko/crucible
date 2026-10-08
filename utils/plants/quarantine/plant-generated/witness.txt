@@ -1,0 +1,56 @@
+# A generated file of the build directory has the name @build/ and its path in
+# the build directory, and the row `quarantine @build/` quarantines it.  The
+# contract rule and the opt-out regions apply to it too.  A build directory
+# outside the root gives the same name, and a table with no row for @build/
+# refuses the generated file.  The build directory of the tree is
+# planted-build, because .gitignore holds each directory with the name build.
+
+# A region of a generated file opts out its specifier, and the other one is an error.
+compile error generated_unit.cpp mode=error build=planted-build out=no
+flag error -fcontracts
+exit error fail
+error error planted-build/Generated.h:5 | the 'pre' contract specifier is not permitted in this tree
+error error planted-build/Generated.h:6 | quarantine: raw-pointer-object char*;
+error error planted-build/Generated.h:7 | quarantine: raw-pointer-object char*;
+
+# The place in a generated macro on line 7 is a place of the generated file.
+compile report generated_unit.cpp build=planted-build
+flag report -fcontracts
+exit report fail
+finding report quarantine region @build/Generated.h:2:1 | PROBE: a generated header that the test needs
+finding report quarantine opted-out @build/Generated.h:3:32 | contract-specifier pre
+finding report contract-specifier contract-specifier @build/Generated.h:5:32 | pre
+finding report quarantine raw-pointer-object @build/Generated.h:6:14 | char*
+finding report quarantine raw-pointer-object @build/Generated.h:7:33 | char*
+error report planted-build/Generated.h:5 | the 'pre' contract specifier is not permitted in this tree
+
+# An unclosed region of a generated file is an error in each mode.
+compile unclosed-error unclosed_unit.cpp mode=error build=planted-build out=no
+exit unclosed-error fail
+error unclosed-error {repo}/include/foundation/Quarantine.h:* | this 'CRUCIBLE_I_KNOW_WHAT_IM_DOING' region has no 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING'
+
+compile unclosed-report unclosed_unit.cpp build=planted-build out=no
+exit unclosed-report fail
+error unclosed-report {repo}/include/foundation/Quarantine.h:* | this 'CRUCIBLE_I_KNOW_WHAT_IM_DOING' region has no 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING'
+
+# A build directory outside the root names its generated file @build/Generated.h too.
+compile outside outside_generated_unit.cpp build=../outside-build
+flag outside -fcontracts -iquote ..
+exit outside fail
+finding outside quarantine region @build/Generated.h:2:1 | PROBE: a generated header that the test needs
+finding outside quarantine opted-out @build/Generated.h:3:32 | contract-specifier pre
+finding outside contract-specifier contract-specifier @build/Generated.h:5:32 | pre
+finding outside quarantine raw-pointer-object @build/Generated.h:6:14 | char*
+error outside ../outside-build/Generated.h:5 | the 'pre' contract specifier is not permitted in this tree
+
+compile unrowed generated_unit.cpp rules=rules-without-build.txt build=planted-build out=no
+flag unrowed -fcontracts
+exit unrowed fail
+error unrowed generated_unit.cpp:* | quarantine: no layer row and no quarantine row of the rule table holds '@build/Generated.h'
+error unrowed planted-build/Generated.h:5 | the 'pre' contract specifier is not permitted in this tree
+
+# No out= here: a plugin that accepts the directory must not replace the report of the unit.
+compile missing generated_unit.cpp build=missing out=no
+exit missing fail
+error missing - | quarantine: the build directory 'missing' of '-fplugin-arg-crucible_quarantine-build=PATH' does not exist
+error missing - | failed to initialize plugin {plugin}

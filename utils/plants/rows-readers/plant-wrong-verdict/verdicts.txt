@@ -1,0 +1,3 @@
+# The row gives a refused file as accepted.  The rule gives an error of the kind refused.
+format 1
+file corpus/bare-bar.txt accepted

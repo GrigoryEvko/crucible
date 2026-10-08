@@ -1,0 +1,17 @@
+# The known gaps of the plugin.  Each line below names a library entity, and
+# the plugin gives no finding there, so the report has no line.  A change that
+# closes a gap makes this control fail: that change moves the line and its
+# finding to a plant, so the list only becomes shorter.
+#
+# known_gaps.cpp:11  outside a template, the front end folds the call of strlen in the initializer, the alignof and
+#                    the noexcept to constants while it parses, and keeps no tree of the names
+# known_gaps.cpp:13  a using-declaration of namespace scope is a binding of the namespace, with no tree that has a
+#                    location
+# known_gaps.cpp:14  a using-directive of namespace scope is a list of the namespace, with no tree that has a
+#                    location
+
+compile report known_gaps.cpp
+exit report pass
+
+compile error known_gaps.cpp mode=error out=no
+exit error pass

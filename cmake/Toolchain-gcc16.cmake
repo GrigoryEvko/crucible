@@ -93,6 +93,11 @@ endif()
 
 set(CMAKE_C_COMPILER   "${_crucible_cc}"     CACHE FILEPATH "Crucible patched gcc-16p")
 set(CMAKE_CXX_COMPILER "${_crucible_cxx}"    CACHE FILEPATH "Crucible patched g++-16p")
+# The patched g++ itself, also when -DCMAKE_CXX_COMPILER names a wrapper of it,
+# such as the afl-g++-fast of `loop fuzz`.  The quarantine plugin loads into the
+# cc1plus of this compiler, and utils/tools/quarantine/Quarantine.cmake builds
+# the plugin with it (THE COMPILER OF THE PLUGIN).
+set(CRUCIBLE_TOOLCHAIN_CXX "${_crucible_cxx}")
 set(CMAKE_AR           "${_crucible_ar}"     CACHE FILEPATH "Crucible patched gcc-ar-16p")
 set(CMAKE_NM           "${_crucible_nm}"     CACHE FILEPATH "Crucible patched gcc-nm-16p")
 set(CMAKE_RANLIB       "${_crucible_ranlib}" CACHE FILEPATH "Crucible patched gcc-ranlib-16p")

@@ -1,0 +1,48 @@
+# Each form of a P2900 contract specifier is an error in each mode and with
+# -fsyntax-only, also in base code, and nothing else is an error.  A specifier
+# in a header outside the root is no error, and the opt-out region turns the
+# specifier on line 73 into opted-out.  The error names CRUCIBLE_PRE,
+# CRUCIBLE_POST and the reasons.
+
+compile report contracts.cpp errors=report
+flag report -fcontracts -I ../outside
+exit report fail
+finding report contract-specifier contract-specifier include/fixy/Contracted.h:9:28 | pre
+finding report contract-specifier contract-specifier contracts.cpp:12:26 | pre
+finding report contract-specifier contract-specifier contracts.cpp:13:27 | post
+finding report contract-specifier contract-specifier contracts.cpp:14:31 | pre
+finding report contract-specifier contract-specifier contracts.cpp:14:46 | post
+finding report contract-specifier contract-specifier contracts.cpp:16:27 | pre
+finding report contract-specifier contract-specifier contracts.cpp:20:27 | pre
+finding report contract-specifier contract-specifier contracts.cpp:21:28 | post
+finding report contract-specifier contract-specifier contracts.cpp:23:34 | pre
+finding report contract-specifier contract-specifier contracts.cpp:25:31 | pre
+finding report contract-specifier contract-specifier contracts.cpp:27:39 | pre
+finding report contract-specifier contract-specifier contracts.cpp:29:41 | pre
+finding report contract-specifier contract-specifier contracts.cpp:34:28 | pre
+finding report contract-specifier contract-specifier contracts.cpp:39:34 | pre
+finding report contract-specifier contract-specifier contracts.cpp:41:45 | pre
+finding report contract-specifier contract-specifier contracts.cpp:44:36 | pre
+finding report contract-specifier contract-specifier contracts.cpp:45:38 | pre
+finding report contract-specifier contract-specifier contracts.cpp:48:26 | pre
+finding report contract-specifier contract-specifier contracts.cpp:50:31 | pre
+finding report contract-specifier contract-specifier contracts.cpp:55:36 | pre
+finding report contract-specifier contract-specifier contracts.cpp:57:30 | pre
+finding report quarantine region contracts.cpp:72:1 | PROBE: the test needs the specifier
+finding report quarantine opted-out contracts.cpp:73:22 | contract-specifier pre
+
+compile error contracts.cpp mode=error out=no errors=report
+flag error -fcontracts -I ../outside
+exit error fail
+text error | CRUCIBLE_PRE(condition)
+text error | foundation/contracts/Pre.h
+text error | CRUCIBLE_POST(result, condition)
+text error | foundation/contracts/Post.h
+text error | header unit
+text error | precompiled header
+text error | constant evaluation
+
+# A unit with no report and no object gives a note for the opted-out specifier.
+compile syntax contracts.cpp out=no stage=syntax errors=report notes=report
+flag syntax -fcontracts -I ../outside
+exit syntax fail

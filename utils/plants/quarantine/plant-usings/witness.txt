@@ -1,0 +1,19 @@
+# A using-declaration in a function body or in a class, and a using-directive
+# in a function body, name the library entity that they bring into scope.
+
+compile report usings.cpp
+exit report pass
+finding report quarantine std-entity usings.cpp:11:8 | std::basic_string
+finding report quarantine std-entity usings.cpp:12:24 | std::basic_string::size
+finding report quarantine std-entity usings.cpp:16:16 | std::swap
+finding report quarantine std-entity usings.cpp:17:9 | std::swap
+finding report quarantine std-entity usings.cpp:22:16 | std::swap
+finding report quarantine std-entity usings.cpp:23:9 | std::swap
+finding report quarantine std-entity usings.cpp:26:47 | std::pmr
+finding report quarantine raw-pointer-object usings.cpp:28:29 | char*
+finding report quarantine raw-pointer-object usings.cpp:28:49 | const char*
+finding report quarantine c-library-call usings.cpp:29:16 | memcpy
+finding report quarantine c-library-call usings.cpp:30:11 | memcpy
+
+compile error usings.cpp mode=error out=no errors=report
+exit error fail

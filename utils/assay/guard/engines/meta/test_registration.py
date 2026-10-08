@@ -21,9 +21,10 @@ THE RULE
                     driver `loop fixture` of a negative fixture, are not script tests
       unknown-rule  a test that runs `guard check --rule ID` or `guard witness --rule ID` for an ID that the registry
                     does not hold
-      no-test       a rule of the registry that no test with the label ci_guard runs with `guard check --rule ID`.  A
-                    measured rule with a holder has no run of its own, and the rule does not read it.  The ledger
-                    admits each rule that a CI step or a person runs
+      no-test       a rule of the registry that no test with the label ci_guard runs with `guard check --rule ID`, or
+                    with `guard check --engine E` for a rule of the engine E with a module of its own.  A measured
+                    rule with a holder has no run of its own, and the rule does not read it.  The ledger admits each
+                    rule that a CI step or a person runs
       fixture       a test that runs `guard check --rule ID`, with no --self-test, for a rule whose module reads the
                     parse trees, and that does not require the fixture tsast_trees.  The module reads the parse
                     trees when its import closure in the package holds assay.readers.tsast.  With no fixture, the test
@@ -91,6 +92,12 @@ def place_of(test: ctest_reader.TestEntry, root: Path) -> tuple[str, int]:
 def rule_words(words: Sequence[str]) -> list[str]:
     """Return each ID after --rule in the words of a command of guard."""
     return [words[index + 1] for index, word in enumerate(words[:-1]) if word == "--rule"]
+
+
+def engine_rules(words: Sequence[str], registry: rule_registry.Registry) -> list[rule_registry.Rule]:
+    """Return each rule that `guard check --engine E` runs for each engine E of the words: a rule with a module."""
+    engines = {words[index + 1] for index, word in enumerate(words[:-1]) if word == "--engine"}
+    return [rule for rule in registry.rules.values() if rule.engine.value in engines and rule.has_module]
 
 
 def module_file(root: Path, module: str) -> Path | None:
@@ -183,6 +190,7 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
                 f"{LABEL}, so `ctest -L {LABEL}` does not run it.  Add the label beside its registration", "label", name))
         if master != "guard" or not words or words[0] not in ("check", "witness"):
             continue
+        run_rules: list[rule_registry.Rule] = []
         for rule_id in rule_words(words):
             rule = registry.rules.get(rule_id)
             if rule is None:
@@ -190,8 +198,11 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
                     "error", path, line, RULE, f"the test {name} runs the rule {rule_id}, and the registry has no "
                     f"such rule", "unknown-rule", name))
                 continue
-            if words[0] != "check" or "--self-test" in words:
-                continue
+            run_rules.append(rule)
+        if words[0] != "check" or "--self-test" in words:
+            continue
+        for rule in [*run_rules, *engine_rules(words, registry)]:
+            rule_id = rule.id
             if LABEL in labels:
                 covered.add(rule_id)
             module = implementing_module(rule)

@@ -103,6 +103,7 @@ def start_failure_cases(expect: Callable[[str, bool], None]) -> None:
             ("STREAM as the destination of stderr", lambda: proc.Command(["true"], timeout_s=1,
                                                                         stderr=proc.Output.STREAM)),
             ("an unknown destination", lambda: proc.Command(["true"], timeout_s=1, stdout="file.txt")),
+            ("an unknown stop word", lambda: proc.Command(["true"], timeout_s=1, stop="kill")),
             ("a stream in run()", lambda: proc.run(proc.Command(["true"], timeout_s=1, stdout=proc.Output.STREAM)))):
         expect(f"the module refuses {name}", refuses(action, ValueError) is not None)
 
@@ -221,6 +222,23 @@ def interrupt_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
     reached = interrupted(late.wait, 0.1)
     expect("after one interrupt, the limit still stops a command that ignores SIGINT and SIGTERM",
            reached and is_gone(late.pid) and time.monotonic() - started < 10)
+    summary.unlink(missing_ok=True)
+    ready.unlink(missing_ok=True)
+    gentle = proc.start(proc.Command([*polite, str(summary), str(ready)], timeout_s=SAFE_S, stop=proc.Stop.INTERRUPT))
+    is_ready = wait_for_file(ready)
+    stopped = gentle.stop()
+    expect("stop() of a command with the stop word interrupt sends SIGINT, and the command ends in its own way",
+           is_ready and stopped.exit == 7 and summary.is_file() and summary.read_text() == "summary\n")
+    summary.unlink(missing_ok=True)
+    ready.unlink(missing_ok=True)
+    started = time.monotonic()
+    timed = proc.start(proc.Command([*polite, str(summary), str(ready)], timeout_s=1.0, stop=proc.Stop.INTERRUPT))
+    is_ready = wait_for_file(ready)
+    problem = refuses(timed.wait, proc.TimedOut)
+    expect("the limit of a command with the stop word interrupt sends SIGINT first, and the command ends in its own way",
+           is_ready and isinstance(problem, proc.TimedOut) and problem.completed is not None
+           and problem.completed.exit == 7 and summary.is_file() and "SIGINT" in str(problem)
+           and time.monotonic() - started < 10)
 
 
 def stream_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:

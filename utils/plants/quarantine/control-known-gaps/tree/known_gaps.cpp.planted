@@ -1,0 +1,14 @@
+// The uses that the plugin does not see at this time.  Each line that the
+// manifest of control-known-gaps names holds a library entity, and the plugin
+// gives no finding there.  A change that closes a gap makes the control fail,
+// and that change moves the line and its finding to a plant, so the list of
+// the gaps only becomes shorter.
+
+#include <cstring>
+#include <string>
+#include <utility>
+
+unsigned long gap_folded = std::strlen("abc") + alignof(std::string) + noexcept(std::string{});
+
+using std::swap;
+using namespace std::pmr;

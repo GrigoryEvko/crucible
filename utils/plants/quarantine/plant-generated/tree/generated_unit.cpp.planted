@@ -1,0 +1,3 @@
+#include "planted-build/Generated.h"
+
+GENERATED_POINTER;

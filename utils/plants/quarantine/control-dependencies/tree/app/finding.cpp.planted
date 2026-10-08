@@ -1,0 +1,4 @@
+#include "Header.h"
+#include "Clean.h"
+#include "fresh.h"
+int* finding_pointer = nullptr;

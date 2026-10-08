@@ -1,0 +1,10 @@
+// A quarantined unit that uses a library whose header is outside the source
+// root and is not a system header.  The plant holds OutsideLibrary.h in its
+// directory outside/ and names it with -I, as a build names the header of a
+// third-party library.  A header outside the root is a library file, so the
+// object is a c-library-object and the call is a c-library-call.
+
+#include <OutsideLibrary.h>
+
+OutsideType outside_object;
+int outside_use() { return outside_value(); }

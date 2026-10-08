@@ -91,8 +91,6 @@ utils/assay/guard/legacy/check_process_wide_state.py | near-copy | 1 | main | A 
 utils/assay/guard/legacy/check_process_wide_state.py | near-copy | 1 | self_test.captured | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | copy | 1 | at_namespace_scope | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_prose_paths.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/guard/legacy/check_quarantine_ratchet.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/guard/legacy/check_quarantine_regions.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_reconfigure_noop.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_refined_pre_subsumption.py | near-copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_splits_orphan.py | copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count

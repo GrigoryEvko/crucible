@@ -1,0 +1,15 @@
+# A file of the language with no plant compiles in the mode report with no
+# error and no note.  Its raw pointer, its array, the name that a row with
+# `in` admits there and the members of a std::vector of std::meta::info that a
+# row with consteval-only admits give no finding.  Its one finding is the use
+# of std::nothrow, which a row with `until` and `in` admits there, and it is
+# no error.
+
+compile clean language_user.cpp out=no
+flag clean -freflection
+exit clean pass
+
+compile report language_user.cpp
+flag report -freflection
+exit report pass
+finding report quarantine replace-pending:std::nothrow include/fixy/high/Language.h:52:71 | std::nothrow

@@ -1,0 +1,66 @@
+# Each plant of the file of the language fixy/high/Language.h is an error in
+# the mode report, in the file of the language.
+
+compile high-header language_user.cpp out=no
+flag high-header -freflection -DPLANT_LANGUAGE_HIGH_HEADER
+exit high-header fail
+error high-header include/fixy/high/Language.h:17 | quarantine: layer-header <cstdint> in the layer high, a file of the language with the allowance of the layer low;
+
+compile system-header language_user.cpp out=no
+flag system-header -freflection -DPLANT_LANGUAGE_SYSTEM_HEADER
+exit system-header fail
+error system-header include/fixy/high/Language.h:21 | quarantine: layer-header <unistd.h> in the layer high, a file of the language with the allowance of the layer low;
+
+compile door-header language_user.cpp out=no
+flag door-header -freflection -DPLANT_LANGUAGE_DOOR_HEADER
+exit door-header fail
+error door-header include/fixy/high/Language.h:25 | quarantine: door-header <sys/socket.h> has the door src/fixy/SocketDoor.cpp;
+
+compile member language_user.cpp out=no
+flag member -freflection -DPLANT_LANGUAGE_MEMBER
+exit member fail
+error member include/fixy/high/Language.h:64 | quarantine: std-object std::vector (std::vector<int>);
+
+compile local language_user.cpp out=no
+flag local -freflection -DPLANT_LANGUAGE_LOCAL
+exit local fail
+error local include/fixy/high/Language.h:70 | quarantine: std-object std::vector (std::vector<int>);
+error local include/fixy/high/Language.h:71 | quarantine: std-entity std::vector::size;
+
+compile parameter language_user.cpp out=no
+flag parameter -freflection -DPLANT_LANGUAGE_PARAMETER
+exit parameter fail
+error parameter include/fixy/high/Language.h:76 | quarantine: std-object std::source_location (std::source_location);
+error parameter include/fixy/high/Language.h:76 | quarantine: std-entity std::source_location::line;
+
+compile alias language_user.cpp out=no
+flag alias -freflection -DPLANT_LANGUAGE_ALIAS
+exit alias fail
+error alias include/fixy/high/Language.h:80 | quarantine: std-entity std::vector;
+
+compile typedef language_user.cpp out=no
+flag typedef -freflection -DPLANT_LANGUAGE_TYPEDEF
+exit typedef fail
+error typedef include/fixy/high/Language.h:84 | quarantine: std-entity std::ptrdiff_t;
+
+compile base language_user.cpp out=no
+flag base -freflection -DPLANT_LANGUAGE_BASE
+exit base fail
+error base include/fixy/high/Language.h:88 | quarantine: std-entity std::vector;
+
+compile template language_user.cpp out=no
+flag template -freflection -DPLANT_LANGUAGE_TEMPLATE
+exit template fail
+error template include/fixy/high/Language.h:94 | quarantine: std-object std::vector (std::vector<T>);
+
+compile std-call language_user.cpp out=no
+flag std-call -freflection -DPLANT_LANGUAGE_STD_CALL
+exit std-call fail
+error std-call include/fixy/high/Language.h:55 | quarantine: std-entity std::swap;
+
+# The row with consteval-only admits std::vector only in a constant evaluation of a reflection query.
+compile runtime-vector language_user.cpp out=no
+flag runtime-vector -freflection -DPLANT_LANGUAGE_RUNTIME_VECTOR
+exit runtime-vector fail
+error runtime-vector include/fixy/high/Language.h:59 | quarantine: std-object std::vector (const std::vector<int>&);
+error runtime-vector include/fixy/high/Language.h:59 | quarantine: std-entity std::vector::size;

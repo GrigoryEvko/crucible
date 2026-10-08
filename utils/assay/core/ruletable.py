@@ -1,21 +1,23 @@
 """ruletable — read the rule table of the base layers and of the quarantine.
 
-utils/scripts/layer-rules.txt holds the table, and its head comment gives the
-format and the meaning of each row.  The quarantine plugin of
-utils/tools/quarantine/ reads the same file in C++, and it refuses each table
-that load() refuses.  The plugin test (utils/assay/guard/legacy/check_plugin.py)
-compares the two readers on the tables of
-utils/tools/quarantine/test/table-cases.txt and on a table for each
+utils/rule-table.txt holds the table, and its head comment gives the meaning of
+each row.  The table is a rows file: assay.core.rows reads its grammar, and
+this module reads its schema on those rows.  The quarantine plugin of
+utils/tools/quarantine/ reads the same file in C++.  rows.h reads the grammar
+there, and rule_table.cpp reads the schema.  The plugin refuses each table
+that load() refuses, at the same line.  The plants and the controls of the
+rule quarantine give the two readers the same tables, also a table for each
 white-space character.
 
-The two readers divide the lines only at '\\n' and the words only at a space
-and a tab.  Python str.splitlines() and str.split() also divide at '\\v', '\\f'
-and the Unicode spaces, so this reader does not use them.  A row that holds a
-different white-space character is an error in the two readers.
+The grammar divides the words only at a space and a tab.  A word or a cell
+that holds a different white-space character is an error of the schema, in
+the two readers.  A reader that divides at each white-space character, as
+Python str.split() does, reads different words.
 
 The layer guard (the rule layer-boundary) reads the layer rows.  It names the
-project roots at the granularity of a directory under include/, so
-guard_layers() folds the layers of the table into one layer for each root.
+project roots at the granularity of a directory under include/.
+guard_layers() then folds the layers of the table into one layer for each
+root.
 """
 
 from __future__ import annotations
@@ -23,19 +25,20 @@ from __future__ import annotations
 import dataclasses
 from pathlib import Path
 
-from assay.core.paths import DATA
+from assay.core import rows as rows_grammar
+from assay.core.paths import REPO_ROOT
 
-TABLE = DATA / "layer-rules.txt"
+TABLE = REPO_ROOT / "utils" / "rule-table.txt"
 MODES = ("report", "error")
 ROW_KINDS = ("layer", "allow", "door", "admit", "quarantine", "enforce", "language")
 # The prefix of a path of the build directory.  A file that the build writes
 # has this prefix and its path inside the build directory, as kBuildPrefix of
-# utils/tools/quarantine/plugin_core.h gives it.
+# utils/tools/quarantine/plugin.h gives it.
 BUILD_PREFIX = "@build/"
 # The two characters that divide the words of a row.
-WORD_DIVIDERS = " \t"
+WORD_DIVIDERS = rows_grammar.DIVIDERS
 # The largest number of a rank or an arity: the largest value of the `int` of
-# the reader of plugin_core.h.
+# the reader of rule_table.cpp.
 MAX_NUMBER = 2**31 - 1
 
 
@@ -143,7 +146,7 @@ def _check_header(header: str, where: str) -> None:
 def white_space_message(character: str) -> str:
     """Return the error of a row that holds CHARACTER, a white-space character that is not a space or a tab.
 
-    plugin_core.h gives the same text, and check_plugin.py compares the two.
+    rule_table.cpp gives the same text.
     """
     return (f"the row holds the white-space character U+{ord(character):04X}.  Only a space and a tab divide the "
             f"words of a row")
@@ -162,7 +165,7 @@ def number_value(text: str, where: str) -> int:
     """Return the value of the number TEXT.
 
     Raises:
-        TableError: When the value is more than MAX_NUMBER.  plugin_core.h
+        TableError: When the value is more than MAX_NUMBER.  rule_table.cpp
             gives the same text
     """
     digits = text.lstrip("0") or "0"
@@ -223,7 +226,7 @@ def parse_admit(args: list[str], reason: str, number: int, where: str) -> Admit:
                  consteval_only=bool(fields.get("consteval-only", False)))
 
 
-def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
+def parse(text: str, name: str = TABLE.name) -> RuleTable:
     """Parse the text of a rule table.
 
     Complexity: O(rows squared) for the duplicate checks, and the table has
@@ -234,8 +237,12 @@ def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
         name: The name of the table in each error message
 
     Raises:
-        TableError: When a row does not obey the format of the head comment
+        TableError: When a line does not obey the rows grammar, or a row does not obey the schema of the head comment
     """
+    try:
+        rows = rows_grammar.parse(text, name)
+    except rows_grammar.RowsError as problem:
+        raise TableError(str(problem)) from None
     layers: list[Layer] = []
     allows: list[tuple[str, str]] = []
     doors: list[tuple[str, str]] = []
@@ -249,21 +256,17 @@ def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
     language_lines: list[tuple[str, str]] = []
     language_paths: list[tuple[str, str]] = []
     admit_lines: dict[str, int] = {}  # the entry of each admit row, and its line
-    for number, line in enumerate(text.split("\n"), start=1):
-        content = line.strip(WORD_DIVIDERS)
-        if not content or content.startswith("#"):
-            continue
+    for row in rows:
+        number = row.line
         where = f"{name}:{number}"
-        white_space = next((character for character in content
+        white_space = next((character for part in (*row.words, *row.cells) for character in part
                             if character.isspace() and character not in WORD_DIVIDERS), None)
         if white_space is not None:
             raise TableError(f"{where}: {white_space_message(white_space)}")
-        words_text, _, reason = content.partition("|")
-        words = [word for word in words_text.replace("\t", " ").split(" ") if word]
-        reason = reason.strip(WORD_DIVIDERS)
-        if not words:
-            raise TableError(f"{where}: the row has a reason and no kind")
-        kind, args = words[0], words[1:]
+        if len(row.cells) > 1:
+            raise TableError(f"{where}: a row has at most one cell, the reason of an admit row")
+        kind, args = row.words[0], list(row.words[1:])
+        reason = row.cells[0] if row.cells else ""
         if kind not in ROW_KINDS:
             raise TableError(f"{where}: the row kind {kind!r} is unknown; the kinds are {', '.join(ROW_KINDS)}")
         if kind == "layer":
@@ -362,11 +365,14 @@ def load(path: Path = TABLE) -> RuleTable:
     Path.read_text() would change each '\\r\\n' and each '\\r' to '\\n'.
 
     Raises:
-        TableError: When the table does not obey its format
+        TableError: When the table is not UTF-8, or does not obey its format
         OSError: When the file cannot be read
-        UnicodeDecodeError: When the file is not UTF-8
     """
-    return parse(path.read_bytes().decode("utf-8"), path.name)
+    try:
+        text = rows_grammar.decode(path.read_bytes(), path.name)
+    except rows_grammar.RowsError as problem:
+        raise TableError(str(problem)) from None
+    return parse(text, path.name)
 
 
 def guard_layers(table: RuleTable) -> tuple[tuple[tuple[str, str], ...], dict[str, frozenset[str]]]:

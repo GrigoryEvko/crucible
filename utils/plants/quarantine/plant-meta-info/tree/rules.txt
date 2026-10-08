@@ -1,0 +1,23 @@
+# The rule table of this plant.  The layer, allow, door and admit rows are the
+# same in each table of the plants of the rule quarantine, and the quarantine
+# rows name the files of this plant.
+
+layer low 0 include/fixy/ src/foundation/ src/fixy/
+layer high 1 include/fixy/high/
+
+allow low <cstddef>
+allow low <cstring>
+allow low <source_location>
+allow low <vector>
+
+door <sys/socket.h> src/fixy/SocketDoor.cpp
+
+admit <type_traits> | a type trait is a compile-time query
+admit std::move | a cast to an rvalue reference
+admit std::tuple_size | a compile-time trait of the tuple protocol
+admit <limits> until Scalar | the limits of the fundamental types
+admit std::bit_cast until Scalar plain-result | a copy of the bits into a type that holds no bool and no enumeration
+admit std::source_location until Report | the place of a call
+admit std::unreachable until Report | a hint to the optimizer
+
+quarantine meta_info.cpp

@@ -1,0 +1,6 @@
+# A type tree that shares its subtrees costs one visit for each type, also in
+# a file of the language: the compile ends in less than 60 seconds with no
+# finding.
+
+compile report deep_language_user.cpp timeout=60
+exit report pass

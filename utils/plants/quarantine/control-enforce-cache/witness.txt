@@ -1,0 +1,5 @@
+# The negative control of the enforce modes through ccache: a cache that does
+# not hash enforce.txt hits, and skips the error.  The procedure
+# enforce-cache-blind of the witness holds the expectation.
+
+procedure enforce-cache-blind

@@ -1,0 +1,9 @@
+# The entry <type_traits> admits std::is_same on line 7, and it does not admit
+# a name of experimental/type_traits.
+
+compile report header_exact.cpp
+exit report pass
+finding report quarantine std-entity header_exact.cpp:8:7 | std::experimental::nonesuch
+
+compile error header_exact.cpp mode=error out=no errors=report
+exit error fail

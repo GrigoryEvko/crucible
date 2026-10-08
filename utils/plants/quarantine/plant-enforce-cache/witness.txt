@@ -1,0 +1,6 @@
+# Through ccache, a unit whose file changes to the enforce mode error misses
+# and fails, because the launcher of Quarantine.cmake hashes enforce.txt.  The
+# procedure enforce-cache-keyed of the witness writes the table of each step
+# and holds the expectations.
+
+procedure enforce-cache-keyed

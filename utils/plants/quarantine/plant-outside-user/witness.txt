@@ -1,0 +1,11 @@
+# A header outside the source root with no system flag is a library file.
+
+compile report outside_user.cpp
+flag report -I ../outside
+exit report pass
+finding report quarantine c-library-object outside_user.cpp:9:13 | OutsideType (OutsideType)
+finding report quarantine c-library-call outside_user.cpp:10:41 | outside_value
+
+compile error outside_user.cpp mode=error out=no errors=report
+flag error -I ../outside
+exit error fail

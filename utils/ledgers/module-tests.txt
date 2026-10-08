@@ -48,12 +48,9 @@ utils/assay/guard/legacy/check_no_unity_pch.py | no-test | 1 | assay.guard.legac
 utils/assay/guard/legacy/check_padded_lists.py | no-test | 1 | assay.guard.legacy.check_padded_lists | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_parse_cost.py | no-test | 1 | assay.guard.legacy.check_parse_cost | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_permission_storage.py | no-test | 1 | assay.guard.legacy.check_permission_storage | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/guard/legacy/check_plugin.py | no-test | 1 | assay.guard.legacy.check_plugin | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_process_wide_state.py | no-test | 1 | assay.guard.legacy.check_process_wide_state | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_proof_routes.py | no-test | 1 | assay.guard.legacy.check_proof_routes | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_prose_paths.py | no-test | 1 | assay.guard.legacy.check_prose_paths | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/guard/legacy/check_quarantine_ratchet.py | no-test | 1 | assay.guard.legacy.check_quarantine_ratchet | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/guard/legacy/check_quarantine_regions.py | no-test | 1 | assay.guard.legacy.check_quarantine_regions | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_reconfigure_noop.py | no-test | 1 | assay.guard.legacy.check_reconfigure_noop | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_refined_pre_subsumption.py | no-test | 1 | assay.guard.legacy.check_refined_pre_subsumption | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_splits_orphan.py | no-test | 1 | assay.guard.legacy.check_splits_orphan | A module of today with no test module.  The change that writes the test module removes the row

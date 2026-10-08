@@ -1,0 +1,10 @@
+// The unit of the tables of the two readers of the rule table.  Each table of
+// this control quarantines it.
+
+#include <type_traits>
+#include <utility>
+
+int plant_plain(int value) {
+    int moved = std::move(value);
+    return std::is_same_v<decltype(moved), int> ? moved : 0;
+}

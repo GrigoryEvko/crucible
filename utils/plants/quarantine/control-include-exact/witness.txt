@@ -1,0 +1,5 @@
+# A directive that enters no file resolves through the search chain, not by
+# the end of a path, so the unit has no upward-include and no finding.
+
+compile error include_exact.cpp mode=error
+exit error pass

@@ -1,0 +1,4 @@
+# A pin table of a tree with a cell that holds a bar with no backslash before it.  The rule gives an error of the
+# kind refused, because no verdicts.txt gives the file a verdict.
+format 1
+pin cmake version=4.1.2 | a|b

@@ -1,0 +1,7 @@
+// A header outside the source root opens and closes an opt-out region.  The
+// plant holds OutsideRegion.h in its directory outside/, outside the root.
+// The unit uses no entity of the header, because a header outside the root
+// is a library file.
+#include <OutsideRegion.h>
+
+int read_outside_region() { return 1; }

@@ -1,0 +1,11 @@
+# The type of a reflection is a typedef of namespace std::meta, and the table
+# does not admit it.
+
+compile report meta_info.cpp
+flag report -freflection
+exit report pass
+finding report quarantine std-entity meta_info.cpp:7:27 | std::meta::info
+
+compile error meta_info.cpp mode=error out=no errors=report
+flag error -freflection
+exit error fail

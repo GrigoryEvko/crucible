@@ -1,5 +1,5 @@
 # The test of cmake/Ccache.cmake.  ctest runs it as:
-#   cmake -DCXX=<compiler> -DWORK=<directory> -DCASE=<launcher|relocation|plain_relocation>
+#   cmake -DCXX=<compiler> -DWORK=<directory> -DCASE=<launcher|relocation|plain_relocation|wrapper>
 #         [-DPLUGIN_DIR=<directory>] -P cmake/CcacheSelfTest.cmake
 #
 # Each case configures a small project in WORK that calls the macros of
@@ -34,6 +34,15 @@
 # Each build root gets a copy of the plugin and of its key, so the configure
 # step finds the plugin current and does not build it.  With no PLUGIN_DIR, the
 # first build root builds the plugin, and the other build roots get a copy.
+#
+# CASE=wrapper configures the project with cmake/Toolchain-gcc16.cmake and with
+# a compiler wrapper as CMAKE_CXX_COMPILER, as `loop fuzz` does with
+# afl-g++-fast.  The wrapper links a reference to a symbol that no library
+# defines into each shared library, as an instrumenting wrapper does.  The
+# configure builds the plugin with no copy, and the build of the probe loads it.
+# The two steps pass only when the plugin is built with the compiler of the
+# toolchain file and not with the wrapper (THE COMPILER OF THE PLUGIN in
+# utils/tools/quarantine/Quarantine.cmake).
 cmake_minimum_required(VERSION 3.27)
 
 if(NOT DEFINED CXX OR NOT DEFINED WORK)
@@ -43,6 +52,7 @@ if(NOT DEFINED CASE)
   set(CASE launcher)
 endif()
 set(module "${CMAKE_CURRENT_LIST_DIR}/Ccache.cmake")
+set(toolchain "${CMAKE_CURRENT_LIST_DIR}/Toolchain-gcc16.cmake")
 set(test_launcher "${CMAKE_CURRENT_LIST_DIR}/TestLauncher.cmake")
 set(quarantine "${CMAKE_CURRENT_LIST_DIR}/../utils/tools/quarantine/Quarantine.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -197,9 +207,53 @@ elseif(CASE STREQUAL "relocation" OR CASE STREQUAL "plain_relocation")
                              "build root build_two gives.")
     endif()
   endif()
+elseif(CASE STREQUAL "wrapper")
+  # The object with the undefined reference, and the wrapper that adds it to
+  # each link of a shared library.
+  file(WRITE "${WORK}/bin/marker.cpp"
+    "extern int crucible_wrapper_marker;\n"
+    "int crucible_wrapper_use() { return crucible_wrapper_marker; }\n")
+  execute_process(
+    COMMAND "${CXX}" -fPIC -c "${WORK}/bin/marker.cpp" -o "${WORK}/bin/marker.o"
+    RESULT_VARIABLE code
+    ERROR_VARIABLE output)
+  if(NOT code EQUAL 0)
+    message(FATAL_ERROR "CcacheSelfTest: the marker object did not compile:\n${output}")
+  endif()
+  file(WRITE "${WORK}/bin/g++-wrapper"
+    "#!/bin/sh\n"
+    "for word in \"$@\"; do\n"
+    "  if [ \"$word\" = \"-shared\" ]; then\n"
+    "    exec \"${CXX}\" \"$@\" \"${WORK}/bin/marker.o\"\n"
+    "  fi\n"
+    "done\n"
+    "exec \"${CXX}\" \"$@\"\n")
+  file(CHMOD "${WORK}/bin/g++-wrapper" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE)
+  set(directory "${WORK}/project/build_wrapper")
+  set(ENV{CRUCIBLE_CXX} "${CXX}")
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}" -S "${WORK}/project" -B "${directory}" -G Ninja "-DCMAKE_TOOLCHAIN_FILE=${toolchain}"
+            "-DCMAKE_CXX_COMPILER=${WORK}/bin/g++-wrapper" -DCMAKE_BUILD_TYPE=Debug -DCRUCIBLE_USE_CCACHE=OFF
+            -DWITH_TREE_PLUGIN=ON
+    RESULT_VARIABLE code
+    OUTPUT_VARIABLE output
+    ERROR_VARIABLE output)
+  unset(ENV{CRUCIBLE_CXX})
+  if(NOT code EQUAL 0)
+    string(APPEND failures "\n  With a compiler wrapper, the configure failed:\n${output}")
+  else()
+    execute_process(
+      COMMAND "${CMAKE_COMMAND}" --build "${directory}" --target probe
+      RESULT_VARIABLE code
+      OUTPUT_VARIABLE output
+      ERROR_VARIABLE output)
+    if(NOT code EQUAL 0)
+      string(APPEND failures "\n  With a compiler wrapper, cc1plus did not load the plugin:\n${output}")
+    endif()
+  endif()
 else()
-  message(FATAL_ERROR "CcacheSelfTest.cmake: CASE is '${CASE}', and the cases are launcher, relocation and "
-                      "plain_relocation")
+  message(FATAL_ERROR "CcacheSelfTest.cmake: CASE is '${CASE}', and the cases are launcher, relocation, "
+                      "plain_relocation and wrapper")
 endif()
 file(REMOVE_RECURSE "${WORK}")
 if(NOT failures STREQUAL "")

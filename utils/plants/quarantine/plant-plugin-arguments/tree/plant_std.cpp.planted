@@ -1,0 +1,9 @@
+// A quarantined unit for the compiles with malformed plugin arguments.
+
+#include <type_traits>
+#include <utility>
+
+int plant_plain(int value) {
+    int moved = std::move(value);
+    return std::is_same_v<decltype(moved), int> ? moved : 0;
+}

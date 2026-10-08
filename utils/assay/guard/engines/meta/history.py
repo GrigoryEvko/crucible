@@ -44,15 +44,19 @@ THE FINDINGS
       the rule reads it as the next item says.
     * A commit that raised a count of the quarantine ledger, and that changes
       neither the plugin of utils/tools/quarantine/ nor the rule table
-      utils/scripts/layer-rules.txt, gives an error, of the kind raise.  A
-      raised count of the kind opted_out gives no error, because only
-      `--write --admit` of the rule quarantine writes it.  Each raised count
-      that stays above its count before the commit gives a warning on each
-      run.  read_quarantine_version() reads each version: the rows of
+      utils/rule-table.txt, gives an error, of the kind raise.  The rule table
+      was utils/scripts/layer-rules.txt before it moved.  A raised count of
+      the kind opted-out or region gives no error, because only `guard write
+      --rule quarantine --admit` writes it.  Each raised count that stays above
+      its count before the commit gives a warning on each run.
+      read_quarantine_version() reads each version: the rows of
       assay.core.ledger, and the formats 1 to 4 of the earlier file
       utils/scripts/quarantine-ledger.txt.  The rows hold the counts of format
       4, so the commit of the move compares row by row, and the rules of the
-      formats, the configurations and the moves stay.
+      formats, the configurations and the moves stay.  Each version reads with
+      the kind names of this time (current_key()).  The change of the names to
+      format 2 of the report then gives no finding.  The first count of the
+      kind region gives no finding too.
     * A commit that raised a threshold, and whose body holds no measurement of
       the rule, gives an error, of the kind of its field.
     A rise in the working tree gives a warning only, and the error comes when
@@ -107,8 +111,10 @@ QUARANTINE_LEDGER = rule_ledger.shown_path(QUARANTINE_RULE)
 # The file of the quarantine ledger before it moved to the rows of assay.core.ledger.
 EARLIER_QUARANTINE_LEDGER = "utils/scripts/quarantine-ledger.txt"
 QUARANTINE_PATHS = (QUARANTINE_LEDGER, EARLIER_QUARANTINE_LEDGER)
-# A commit that changes one of these paths can change what the quarantine plugin reports.
-QUARANTINE_MACHINERY = ("utils/tools/quarantine/", "utils/scripts/layer-rules.txt")
+# A commit that changes one of these paths can change what the quarantine plugin reports.  The rule table was
+# utils/scripts/layer-rules.txt before it moved.
+RULE_TABLE = "utils/rule-table.txt"
+QUARANTINE_MACHINERY = ("utils/tools/quarantine/", RULE_TABLE, "utils/scripts/layer-rules.txt")
 # The earlier files of each rule whose ledger moved to the rows of assay.core.ledger.  A state before the move holds
 # the earlier files, and its row count is the sum of their row counts.
 EARLIER_FILES = {
@@ -145,7 +151,6 @@ EARLIER_FILES = {
     "process-wide-state": ("utils/scripts/process-wide-roster.txt",),
     "proof-routes": ("utils/scripts/proof-routes-allowlist.txt",),
     QUARANTINE_RULE: (EARLIER_QUARANTINE_LEDGER,),
-    "quarantine-regions": ("utils/scripts/quarantine-region-ledger.txt",),
     "start-lifetime": ("utils/scripts/start-lifetime-allowlist.txt",),
     "syscall-capability": ("utils/scripts/syscall-capability-allowlist.txt",),
     "test-memory": ("utils/scripts/test-memory-ledger.txt",),
@@ -528,14 +533,50 @@ CountKey = tuple[str, str, str, str]
 RowKey = tuple[str, str, str]
 # The formats of the earlier file utils/scripts/quarantine-ledger.txt.  A format 1 version has no format row and
 # counts directories.  A format 2 version counts files, a format 3 version also keys each count by its entity, and a
-# format 4 version also counts the findings of the kind opted_out.  The rows of assay.core.ledger hold the counts of
+# format 4 version also counts the findings of the kind opted-out.  The rows of assay.core.ledger hold the counts of
 # format 4, so a version of utils/ledgers/quarantine.txt reads as format 4.
 FILE_FORMAT = 2
 ENTITY_FORMAT = 3
 OPTED_OUT_FORMAT = 4
 EARLIER_FORMATS = (FILE_FORMAT, ENTITY_FORMAT, OPTED_OUT_FORMAT)
 DIRECTORY_CONFIGURATION = "default"
-OPTED_OUT = "opted_out"
+OPTED_OUT = "opted-out"
+REGION = "region"
+# The kinds of a raised count that gives no error: only `guard write --rule quarantine --admit` writes such a count.
+ADMITTED_KINDS = frozenset({OPTED_OUT, REGION})
+# The kind names of the plugin before format 2 of its report, and the names of this time.
+EARLIER_KINDS = {
+    "std_entity": "std-entity", "std_object": "std-object", "c_library_object": "c-library-object",
+    "raw_pointer_object": "raw-pointer-object", "raw_function_pointer": "raw-function-pointer",
+    "c_array_object": "c-array-object", "raw_new_delete": "raw-new-delete", "c_library_call": "c-library-call",
+    "foreign_symbol": "foreign-symbol", "compiler_builtin": "compiler-builtin", "inline_asm": "inline-asm",
+    "assert_expansion": "assert-expansion", "layer_header": "layer-header", "door_header": "door-header",
+    "upward_include": "upward-include", "contract_specifier": "contract-specifier", "opted_out": OPTED_OUT,
+}
+EARLIER_PENDING = "replace_pending:"
+PENDING = "replace-pending:"
+# The text between the reason of a region and the inner kind in the entity of an opted-out count.
+REASON_SEPARATOR = " | "
+
+
+def current_kind(kind: str) -> str:
+    """Return the name of this time of a kind of the plugin, also of a kind of an earlier name."""
+    if kind.startswith(EARLIER_PENDING):
+        return PENDING + kind.removeprefix(EARLIER_PENDING)
+    return EARLIER_KINDS.get(kind, kind)
+
+
+def current_key(file: str, kind: str, entity: str) -> RowKey:
+    """Return one count key with the kind names of this time, also the inner kind of an opted-out entity.
+
+    The entity of an opted-out count is "REASON | KIND ENTITY", and the inner kind and its entity hold no separator.
+    """
+    kind = current_kind(kind)
+    reason, separator, rest = entity.rpartition(REASON_SEPARATOR)
+    if kind == OPTED_OUT and separator:
+        inner, space, inner_entity = rest.partition(" ")
+        entity = f"{reason}{separator}{current_kind(inner)}{space}{inner_entity}"
+    return file, kind, entity
 
 
 class VersionError(ValueError):
@@ -607,12 +648,14 @@ def read_rows_version(text: str, where: str) -> QuarantineVersion:
         version.configurations[item.name] = dict(item.facts)
     base = ledger.base_name or ""
     for key, entry in ledger.base.items():
-        version.counts[(key.path, key.kind, key.entity)] = int(entry.value)
-        version.lines[(base, key.path, key.kind, key.entity)] = entry.line
+        row = current_key(key.path, key.kind, key.entity)
+        version.counts[row] = int(entry.value)
+        version.lines[(base, *row)] = entry.line
     for name, table in ledger.deltas.items():
         for key, entry in table.items():
-            version.deltas.setdefault(name, {})[(key.path, key.kind, key.entity)] = int(entry.value)
-            version.lines[(name, key.path, key.kind, key.entity)] = entry.line
+            row = current_key(key.path, key.kind, key.entity)
+            version.deltas.setdefault(name, {})[row] = int(entry.value)
+            version.lines[(name, *row)] = entry.line
     return version
 
 
@@ -645,8 +688,9 @@ def read_directory_row(version: QuarantineVersion, number: int, words: list[str]
     if len(words) != 3 or not words[2].isdigit():
         raise VersionError(f"{where}:{number}: a format 1 row is 'DIRECTORY KIND COUNT'")
     version.configurations.setdefault(DIRECTORY_CONFIGURATION, {})
-    version.counts[(words[0], words[1], "")] = int(words[2])
-    version.lines[(DIRECTORY_CONFIGURATION, words[0], words[1], "")] = number
+    row = current_key(words[0], words[1], "")
+    version.counts[row] = int(words[2])
+    version.lines[(DIRECTORY_CONFIGURATION, *row)] = number
 
 
 def read_file_row(version: QuarantineVersion, number: int, row: str, where: str) -> None:
@@ -682,6 +726,7 @@ def read_file_row(version: QuarantineVersion, number: int, row: str, where: str)
         table = version.counts
     if key[2] != " ".join(key[2].split()):
         raise VersionError(f"{where}:{number}: the entity {key[2]!r} has more than one space between two words")
+    key = current_key(*key)
     if key in table:
         raise VersionError(f"{where}:{number}: the count {key} has a second row in the configuration {name}")
     table[key] = value
@@ -780,8 +825,10 @@ def ledger_rises(before: QuarantineVersion, after: QuarantineVersion, moves: dic
     * A count of a configuration other than the base rises only when its
       difference from the base rises, and not when it comes back to a value of
       its history, `peaks`.
-    * A count of opted_out is no rise when the old version does not count
-      opted_out.
+    * A count of opted-out is no rise when the old version does not count
+      opted-out.
+    * The first count of the kind region gives no finding: the ledger counts
+      the regions from format 2 of the report of the plugin.
 
     Complexity: O(r log r) for r counts, and O(r * d) for d difference rows when the versions compare by file.
     """
@@ -793,13 +840,14 @@ def ledger_rises(before: QuarantineVersion, after: QuarantineVersion, moves: dic
     counts_opted_out = before.format >= OPTED_OUT_FORMAT
     old_counts = {(after.base if name == before.base else name, file, kind, entity): count
                   for (name, file, kind, entity), count in absolute_counts(before, keyed).items()}
+    counts_regions = any(kind == REGION for (_name, _file, kind, _entity) in old_counts)
     new_counts = absolute_counts(after, keyed)
     rises: list[LedgerRise] = []
     for key in sorted(new_counts):
         name, file, kind, entity = key
         new, old = new_counts[key], old_counts.get(key, 0)
         if (new <= old or (name not in before.configurations and name != after.base)
-                or (kind == OPTED_OUT and not counts_opted_out)):
+                or (kind == OPTED_OUT and not counts_opted_out) or (kind == REGION and not counts_regions)):
             continue
         source = moves.get(file)
         if (source is not None and old == 0 and new_counts.get((name, source, kind, entity), 0) == 0
@@ -832,7 +880,8 @@ def quarantine_findings(history: History) -> list[check_report.Finding]:
 
     * A commit that raised a count and that changes neither the plugin nor the
       rule table gives an error of the kind raise, which a row of the ledger of
-      this rule can admit.  A raised count of opted_out gives no error.
+      this rule can admit.  A raised count of opted-out or region gives no
+      error.
     * A configuration other than the base is stale after a commit of the plugin
       or the rule table that did not write its rows.  A raise of a stale
       configuration is no error.
@@ -888,7 +937,7 @@ def quarantine_findings(history: History) -> list[check_report.Finding]:
         later = {name for name in after.configurations if name != after.base}
         written = {name for name in later if before is None or after.deltas.get(name) != before.deltas.get(name)
                    or after.configurations[name] != before.configurations.get(name)}
-        blocking = [rise for rise in rises if rise.kind != OPTED_OUT
+        blocking = [rise for rise in rises if rise.kind not in ADMITTED_KINDS
                     and (rise.configuration not in stale or rise.configuration == after.base)]
         stale = (stale - written) | (later - written if changes_machinery(paths) else set())
         known = later
@@ -900,7 +949,7 @@ def quarantine_findings(history: History) -> list[check_report.Finding]:
             "error", QUARANTINE_LEDGER, 0, RULE,
             f"the commit {commit.short} ({commit.subject}) raised {len(blocking)} counts of {QUARANTINE_LEDGER}, and "
             f"it changes neither the plugin of utils/tools/quarantine/ nor the rule table "
-            f"utils/scripts/layer-rules.txt: {shown}{more}.  A change can only lower a count.  Remove the new findings, "
+            f"{RULE_TABLE}: {shown}{more}.  A change can only lower a count.  Remove the new findings, "
             f"or add a row to {rule_ledger.shown_path(RULE)} that gives the commit and the reason", RAISE_KIND,
             commit.short))
     current = parse(history.text("working", "", path), QUARANTINE_LEDGER)

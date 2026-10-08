@@ -1,0 +1,17 @@
+# The rule table of the plants of the rule contract-specifier.  The layer low
+# holds include/fixy/, so fixy/Contracted.h is base code, and the quarantine
+# rows name the units of the plant.  The contract rule applies to each file
+# under the source root, also to a base file.
+
+layer low 0 include/fixy/ src/foundation/ src/fixy/
+layer high 1 include/fixy/high/
+
+allow low <cstddef>
+allow low <cstring>
+allow low <source_location>
+allow low <vector>
+
+admit <type_traits> | a type trait is a compile-time query
+admit std::move | a cast to an rvalue reference
+
+quarantine contracts.cpp

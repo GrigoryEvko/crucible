@@ -1,0 +1,29 @@
+# The paths around the rules: a typedef of fixy that names a library
+# enumeration, a variable of the C library, the macro errno, builtins, va_arg,
+# asm and assert.  The front end calls the atomic load of the guard of the
+# static local on line 29, and that call is no finding.  The finding
+# assert-expansion stands for __assert_fail, __builtin_FILE and
+# __builtin_LINE, with and without NDEBUG.
+
+compile report gaps.cpp
+exit report pass
+finding report quarantine std-object gaps.cpp:14:16 | std::byte (fixy::GapsByte)
+finding report quarantine c-library-call gaps.cpp:15:19 | optind
+finding report quarantine c-library-call gaps.cpp:17:27 | __errno_location
+finding report quarantine compiler-builtin gaps.cpp:19:34 | __builtin_trap
+finding report quarantine c-library-call gaps.cpp:21:60 | memcpy (__builtin_memcpy)
+finding report quarantine compiler-builtin gaps.cpp:23:51 | __atomic_load_n
+finding report quarantine compiler-builtin gaps.cpp:25:61 | __builtin_bit_cast
+finding report quarantine c-array-object gaps.cpp:34:13 | va_list
+finding report quarantine compiler-builtin gaps.cpp:35:14 | __builtin_c23_va_start
+finding report quarantine compiler-builtin gaps.cpp:36:33 | __builtin_va_arg
+finding report quarantine compiler-builtin gaps.cpp:37:5 | __builtin_va_end
+finding report quarantine inline-asm gaps.cpp:41:21 | asm
+finding report quarantine assert-expansion gaps.cpp:45:30 | assert
+
+compile ndebug gaps.cpp findings=report
+flag ndebug -DNDEBUG
+exit ndebug pass
+
+compile error gaps.cpp mode=error out=no errors=report
+exit error fail

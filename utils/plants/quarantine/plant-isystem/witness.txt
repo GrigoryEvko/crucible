@@ -1,0 +1,11 @@
+# A file of the root that -isystem marks stays a file of the root: its pointer
+# is a finding, and its function on line 7 of the unit is no library entity.
+
+compile report isystem_user.cpp
+flag report -isystem gapsother/sys
+exit report pass
+finding report quarantine raw-pointer-object gapsother/sys/Marked.h:8:13 | int*
+
+compile error isystem_user.cpp mode=error out=no errors=report
+flag error -isystem gapsother/sys
+exit error fail

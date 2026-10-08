@@ -1,0 +1,16 @@
+// A base function whose return type holds a library class.  A quarantined
+// template that holds its result with a placeholder holds an object of that
+// class (plant-deduced, deduced.cpp).
+
+#pragma once
+
+#include <vector>
+
+namespace fixy::deduced_test {
+
+template <class T>
+std::vector<T> make_list(T const& value) {
+    return std::vector<T>{value};
+}
+
+}  // namespace fixy::deduced_test

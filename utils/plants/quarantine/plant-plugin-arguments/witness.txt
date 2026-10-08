@@ -1,0 +1,15 @@
+# The quarantine plugin needs a rule table, and it refuses an unknown mode.
+# A unit with each argument correct compiles.
+
+compile correct plant_std.cpp mode=error
+exit correct pass
+
+compile no-table plant_std.cpp rules=- out=no
+exit no-table fail
+error no-table - | quarantine: give the rule table with '-fplugin-arg-crucible_quarantine-rules=PATH'
+error no-table - | failed to initialize plugin {plugin}
+
+compile unknown-mode plant_std.cpp mode=contracts out=no
+exit unknown-mode fail
+error unknown-mode - | quarantine: mode is 'contracts'; the modes are report and error
+error unknown-mode - | failed to initialize plugin {plugin}

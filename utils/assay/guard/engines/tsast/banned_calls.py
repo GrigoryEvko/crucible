@@ -32,11 +32,11 @@ THE THREE KINDS
                     different namespace or a class.  It reads include/, src/
                     and vessel/, less the kernel dump of
                     include/crucible/perf/bpf/.
-    The rule quarantine refuses the same items in a quarantined file that a
-    counted configuration compiles.  But the plugin gives no finding in the
-    body of a generic lambda, and no counted configuration compiles
-    vessel/torch.  For these two reasons, this rule also reads the
-    quarantined files of its scope.
+    The rule quarantine counts the same calls in a quarantined file that a
+    counted configuration compiles.  But its ledger admits each count of the
+    tree, it gives a reserve call no kind of its own, and no counted
+    configuration compiles vessel/torch.  For these three reasons, this rule
+    also reads the quarantined files of its scope.
 
 THE MACRO BODIES
     The rule reads the parse of each macro body (`tsast.macro_bodies`) with

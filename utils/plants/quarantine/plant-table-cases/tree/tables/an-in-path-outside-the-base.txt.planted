@@ -1,0 +1,3 @@
+layer one 0 a/
+quarantine b/
+admit std::move in b/ | a cast

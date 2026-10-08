@@ -1,0 +1,5 @@
+# With the compile command of a real object of the build directory and the
+# rule table of that command, the plant compiles.  The procedure gives skip
+# when the call gives no build directory.
+
+procedure build-flags-report

@@ -3,14 +3,15 @@
 THE SECTION
     The quarantine plugin of utils/tools/quarantine/ writes the findings of a
     unit into the section .crucible.quarantine of its object (the head comment
-    of quarantine.cpp, THE SECTION).  The section is text in UTF-8.  Its first
-    line is "# crucible-quarantine 1 stamp=TEXT", and each other line is one
-    finding:
+    of plugin.cpp, THE SECTION).  The section is text in UTF-8.  Its first line
+    is "# crucible-guard 2 stamp=TEXT", and each other line is one finding:
 
-        quarantine: KIND FILE:LINE:COLUMN ENTITY
+        RULE KIND FILE:LINE:COLUMN ENTITY
 
-    FILE is relative to the source root.  A report file of the plugin argument
-    out= holds the same finding lines.
+    RULE is a rule of the engine plugin of utils/registry.txt, and KIND is a
+    kind of that rule.  FILE is relative to the source root.  A report file of
+    the plugin argument out= holds the same finding lines, after a comment
+    line.
 
 THE OBJECT
     read_section() reads the section table of an ELF64 little-endian object
@@ -26,6 +27,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import io
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -33,13 +35,16 @@ from pathlib import Path
 from assay.readers import elf as elf_file
 
 SECTION_NAME = b".crucible.quarantine"
-HEAD_PREFIX = "# crucible-quarantine "
-FORMAT = 1
-LINE_PREFIX = "quarantine: "
-OPTED_OUT = "opted_out"
+HEAD_PREFIX = "# crucible-guard "
+FORMAT = 2
+# A finding in an opt-out region.  Its entity is the kind and the entity of the finding in the region.
+OPTED_OUT = "opted-out"
 # A line of this kind is an opt-out region with its reason, and no finding.
 REGION = "region"
 NOT_FINDINGS = frozenset((OPTED_OUT, REGION))
+# The spelling of a rule and of a kind of a finding line (parse_line).
+RULE = re.compile(r"[a-z][a-z0-9-]*")
+KIND = re.compile(r"[a-z][a-z0-9-]*(:\S+)?")
 
 
 class SectionError(ValueError):
@@ -48,17 +53,18 @@ class SectionError(ValueError):
 
 @dataclasses.dataclass(frozen=True, slots=True, order=True)
 class Finding:
-    """One finding of the plugin: its kind, its place and its entity."""
+    """One finding of the plugin: its place, its rule, its kind and its entity."""
 
     file: str
     line: int
     column: int
+    rule: str
     kind: str
     entity: str
 
     def text(self) -> str:
         """Return the finding as one line of a section, with no line break."""
-        return f"{LINE_PREFIX}{self.kind} {self.file}:{self.line}:{self.column} {self.entity}"
+        return f"{self.rule} {self.kind} {self.file}:{self.line}:{self.column} {self.entity}"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -72,18 +78,19 @@ class Section:
 def parse_line(text: str, where: str) -> Finding:
     """Read one finding line of a section or of a report file.
 
+    A rule is a word of lower-case ASCII letters, digits and hyphens.  A kind is such a word too, and the kind of a
+    use that an admit row with `until` admits has a colon and the entry of the row after it.
+
     Raises:
         SectionError: If the line does not have the format
     """
-    if not text.startswith(LINE_PREFIX):
-        raise SectionError(f"{where}: the line {text[:120]!r} is not a finding of the quarantine plugin")
-    words = text[len(LINE_PREFIX):].split(" ", 2)
-    if len(words) < 2:
-        raise SectionError(f"{where}: the line {text[:120]!r} has no place")
-    place = words[1].rsplit(":", 2)
-    if len(place) != 3 or not place[1].isdigit() or not place[2].isdigit() or not place[0]:
-        raise SectionError(f"{where}: the place {words[1]!r} is not FILE:LINE:COLUMN")
-    return Finding(place[0], int(place[1]), int(place[2]), words[0], words[2] if len(words) == 3 else "")
+    words = text.split(" ", 3)
+    if len(words) < 3 or RULE.fullmatch(words[0]) is None or KIND.fullmatch(words[1]) is None:
+        raise SectionError(f"{where}: the line {text[:120]!r} is not 'RULE KIND FILE:LINE:COLUMN ENTITY'")
+    place = words[2].rsplit(":", 2)
+    if len(place) != 3 or not place[0] or not all(part.isascii() and part.isdigit() for part in place[1:]):
+        raise SectionError(f"{where}: the place {words[2]!r} is not FILE:LINE:COLUMN")
+    return Finding(place[0], int(place[1]), int(place[2]), words[0], words[1], words[3] if len(words) == 4 else "")
 
 
 def parse_section(data: bytes, where: str) -> Section:
@@ -103,11 +110,11 @@ def parse_section(data: bytes, where: str) -> Section:
         lines.pop()
     if not lines or not lines[0].startswith(HEAD_PREFIX):
         raise SectionError(f"{where}: the section has no head line {HEAD_PREFIX!r}")
-    head = lines[0][len(HEAD_PREFIX):].split(" ", 1)
+    head = lines[0][len(HEAD_PREFIX) :].split(" ", 1)
     if head[0] != str(FORMAT) or len(head) != 2 or not head[1].startswith("stamp="):
         raise SectionError(f"{where}: the head line {lines[0]!r} is not format {FORMAT} with a stamp")
     findings = tuple(parse_line(line, f"{where}: line {number}") for number, line in enumerate(lines[1:], start=2))
-    return Section(head[1][len("stamp="):], findings)
+    return Section(head[1][len("stamp=") :], findings)
 
 
 def read_section(path: Path) -> bytes | None:
@@ -157,26 +164,62 @@ def self_test() -> int:
             return
         expect(name, False)
 
-    text = (b"# crucible-quarantine 1 stamp=00ab\n"
-            b"quarantine: std_object test/a.cpp:3:7 std::vector (std::vector<int>)\n"
-            b"quarantine: c_library_call include/crucible/B.h:9:1 memcpy\n")
+    text = (
+        b"# crucible-guard 2 stamp=00ab\n"
+        b"quarantine std-object test/a.cpp:3:7 std::vector (std::vector<int>)\n"
+        b"contract-specifier contract-specifier include/crucible/B.h:9:1 pre\n"
+    )
     section = parse_section(text, "a.o")
     expect("parse_section reads the stamp", section.stamp == "00ab")
-    expect("parse_section reads each finding",
-           section.findings == (Finding("test/a.cpp", 3, 7, "std_object", "std::vector (std::vector<int>)"),
-                                Finding("include/crucible/B.h", 9, 1, "c_library_call", "memcpy")))
-    expect("a finding gives its line back", section.findings[0].text()
-           == "quarantine: std_object test/a.cpp:3:7 std::vector (std::vector<int>)")
-    expect("a section with the head line only has no finding",
-           parse_section(b"# crucible-quarantine 1 stamp=\n", "a.o") == Section("", ()))
+    expect(
+        "parse_section reads each finding",
+        section.findings
+        == (
+            Finding("test/a.cpp", 3, 7, "quarantine", "std-object", "std::vector (std::vector<int>)"),
+            Finding("include/crucible/B.h", 9, 1, "contract-specifier", "contract-specifier", "pre"),
+        ),
+    )
+    expect(
+        "a finding gives its line back",
+        section.findings[0].text() == "quarantine std-object test/a.cpp:3:7 std::vector (std::vector<int>)",
+    )
+    expect(
+        "a section with the head line only has no finding",
+        parse_section(b"# crucible-guard 2 stamp=\n", "a.o") == Section("", ()),
+    )
+    expect(
+        "a line with no entity has an empty entity",
+        parse_section(b"# crucible-guard 2 stamp=x\nquarantine region a.cpp:3:1\n", "a.o").findings[0].entity == "",
+    )
     refuses("parse_section refuses a section with no head line", lambda: parse_section(text.split(b"\n", 1)[1], "a.o"))
-    refuses("parse_section refuses another format", lambda: parse_section(b"# crucible-quarantine 2 stamp=x\n", "a.o"))
-    refuses("parse_section refuses a line that is not a finding",
-            lambda: parse_section(b"# crucible-quarantine 1 stamp=x\nnoise\n", "a.o"))
-    refuses("parse_section refuses a place with no column",
-            lambda: parse_section(b"# crucible-quarantine 1 stamp=x\nquarantine: std_object a.cpp:3 x\n", "a.o"))
-    refuses("parse_section refuses bytes that are not UTF-8",
-            lambda: parse_section(b"# crucible-quarantine 1 stamp=x\n\xff\n", "a.o"))
+    refuses("parse_section refuses another format", lambda: parse_section(b"# crucible-guard 1 stamp=x\n", "a.o"))
+    refuses(
+        "parse_section refuses the head line of format 1",
+        lambda: parse_section(b"# crucible-quarantine 1 stamp=x\n", "a.o"),
+    )
+    refuses(
+        "parse_section refuses a line that is not a finding",
+        lambda: parse_section(b"# crucible-guard 2 stamp=x\nnoise\n", "a.o"),
+    )
+    refuses(
+        "parse_section refuses a line of format 1",
+        lambda: parse_section(b"# crucible-guard 2 stamp=x\nquarantine: std_object a.cpp:3:7 x\n", "a.o"),
+    )
+    refuses(
+        "parse_section refuses a place with no column",
+        lambda: parse_section(b"# crucible-guard 2 stamp=x\nquarantine std-object a.cpp:3 x\n", "a.o"),
+    )
+    arabic_digit = chr(0x663)
+    refuses(
+        "parse_section refuses a line number that is not ASCII",
+        lambda: parse_section(
+            f"# crucible-guard 2 stamp=x\nquarantine std-object a.cpp:{arabic_digit}:7 x\n".encode(), "a.o"
+        ),
+    )
+    refuses(
+        "parse_section refuses bytes that are not UTF-8",
+        lambda: parse_section(b"# crucible-guard 2 stamp=x\n\xff\n", "a.o"),
+    )
 
     with tempfile.TemporaryDirectory(prefix="quarantine-sections-") as scratch_text:
         scratch = Path(scratch_text)
@@ -207,8 +250,10 @@ def self_test() -> int:
         with contextlib.redirect_stdout(io.StringIO()) as printed, contextlib.redirect_stderr(io.StringIO()):
             status = print_objects([str(plain)])
             absent_status = print_objects([str(absent)])
-        expect("the command prints the finding lines of an object",
-               status == 0 and printed.getvalue() == "".join(f"{item.text()}\n" for item in section.findings))
+        expect(
+            "the command prints the finding lines of an object",
+            status == 0 and printed.getvalue() == "".join(f"{item.text()}\n" for item in section.findings),
+        )
         expect("the command fails for an object with no section", absent_status == 1)
 
     if failures:

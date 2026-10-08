@@ -1,0 +1,84 @@
+# The restrictions of the admit rows.  restricted.cpp with no plant compiles
+# in the mode error.  Each plant fails with a finding of its restriction, and
+# a unit that defines _GLIBCXX_DEBUG fails because of the row
+# `admit <meta> unless _GLIBCXX_DEBUG`.
+
+compile clean restricted.cpp mode=error
+exit clean pass
+
+# The restriction arity 1 refuses the algorithm of three arguments.
+compile move-algorithm restricted.cpp mode=error out=no
+flag move-algorithm -DPLANT_MOVE_ALGORITHM
+exit move-algorithm fail
+error move-algorithm restricted.cpp:51 | quarantine: raw-pointer-object int*;
+error move-algorithm restricted.cpp:51 | quarantine: raw-pointer-object int*;
+error move-algorithm restricted.cpp:51 | quarantine: raw-pointer-object int*;
+error move-algorithm restricted.cpp:51 | quarantine: std-entity std::move;
+
+# The restriction concepts admits the concepts of <concepts> only.
+compile ranges-swap restricted.cpp mode=error out=no
+flag ranges-swap -DPLANT_RANGES_SWAP
+exit ranges-swap fail
+error ranges-swap restricted.cpp:55 | quarantine: std-entity std::ranges::swap;
+error ranges-swap restricted.cpp:55 | quarantine: std-entity std::ranges::__swap::_Swap::operator();
+
+# The restriction parameters admits the type of a parameter only.
+compile list-object restricted.cpp mode=error out=no
+flag list-object -DPLANT_LIST_OBJECT
+exit list-object fail
+error list-object restricted.cpp:59 | quarantine: std-object std::initializer_list (std::initializer_list<int>);
+
+# The row of std::byte admits the type, and not the functions of the header.
+compile to-integer restricted.cpp mode=error out=no
+flag to-integer -DPLANT_TO_INTEGER
+exit to-integer fail
+error to-integer restricted.cpp:63 | quarantine: std-entity std::to_integer;
+
+compile byte-operator restricted.cpp mode=error out=no
+flag byte-operator -DPLANT_BYTE_OPERATOR
+exit byte-operator fail
+error byte-operator restricted.cpp:67 | quarantine: std-entity std::operator<<;
+
+# The restriction in admits std::align_val_t only in the base.
+compile alignment restricted.cpp mode=error out=no
+flag alignment -DPLANT_ALIGNMENT
+exit alignment fail
+error alignment restricted.cpp:71 | quarantine: std-object std::align_val_t (std::align_val_t);
+
+# The restriction plain-result refuses a result that holds a bool or an
+# enumeration, also in a member, a base or an array, and a dependent result.
+compile bit-cast-bool restricted.cpp mode=error out=no
+flag bit-cast-bool -DPLANT_BIT_CAST_BOOL
+exit bit-cast-bool fail
+error bit-cast-bool restricted.cpp:75 | quarantine: std-entity std::bit_cast;
+
+compile bit-cast-enum restricted.cpp mode=error out=no
+flag bit-cast-enum -DPLANT_BIT_CAST_ENUM
+exit bit-cast-enum fail
+error bit-cast-enum restricted.cpp:79 | quarantine: std-entity std::bit_cast;
+
+compile bit-cast-member restricted.cpp mode=error out=no
+flag bit-cast-member -DPLANT_BIT_CAST_MEMBER
+exit bit-cast-member fail
+error bit-cast-member restricted.cpp:87 | quarantine: std-entity std::bit_cast;
+
+compile bit-cast-base restricted.cpp mode=error out=no
+flag bit-cast-base -DPLANT_BIT_CAST_BASE
+exit bit-cast-base fail
+error bit-cast-base restricted.cpp:97 | quarantine: std-entity std::bit_cast;
+
+compile bit-cast-array restricted.cpp mode=error out=no
+flag bit-cast-array -DPLANT_BIT_CAST_ARRAY
+exit bit-cast-array fail
+error bit-cast-array restricted.cpp:102 | quarantine: c-array-object PlantColor [2];
+error bit-cast-array restricted.cpp:104 | quarantine: std-entity std::bit_cast;
+
+compile bit-cast-dependent restricted.cpp mode=error out=no
+flag bit-cast-dependent -DPLANT_BIT_CAST_DEPENDENT
+exit bit-cast-dependent fail
+error bit-cast-dependent restricted.cpp:110 | quarantine: std-entity std::bit_cast;
+
+compile debug restricted.cpp mode=error out=no
+flag debug -D_GLIBCXX_DEBUG
+exit debug fail
+error debug restricted.cpp:* | quarantine: the unit defines _GLIBCXX_DEBUG, and the rule table admits <meta> only in a unit that does not define it

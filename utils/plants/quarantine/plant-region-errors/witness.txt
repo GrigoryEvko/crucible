@@ -1,0 +1,54 @@
+# Each malformed opt-out region is an error in the mode report.  The define
+# CRUCIBLE_QUARANTINE_ACTIVE with no plugin fails on the unknown pragma, so
+# the define never goes without the plugin.  The pragma of a region macro is
+# on a line of the header of the repository, so those rows name each line of
+# the header.
+
+compile unclosed unclosed_region.cpp out=no
+exit unclosed fail
+error unclosed {repo}/include/foundation/Quarantine.h:* | this 'CRUCIBLE_I_KNOW_WHAT_IM_DOING' region has no 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING'
+
+compile no-reason region_without_reason.cpp out=no
+exit no-reason fail
+error no-reason {repo}/include/foundation/Quarantine.h:* | 'CRUCIBLE_I_KNOW_WHAT_IM_DOING' takes one string that gives the reason
+error no-reason {repo}/include/foundation/Quarantine.h:* | 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING' has no open region
+
+compile end-alone end_without_region.cpp out=no
+exit end-alone fail
+error end-alone {repo}/include/foundation/Quarantine.h:* | 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING' has no open region
+
+compile raw-pragma raw_pragma.cpp out=no
+exit raw-pragma fail
+error raw-pragma raw_pragma.cpp:4 | '#pragma quarantine I_KNOW_WHAT_IM_DOING' comes only from the macro 'CRUCIBLE_I_KNOW_WHAT_IM_DOING'
+error raw-pragma raw_pragma.cpp:6 | '#pragma quarantine END_I_KNOW_WHAT_IM_DOING' comes only from the macro 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING'
+
+compile own-macro own_region_macro.cpp out=no
+exit own-macro fail
+error own-macro own_region_macro.cpp:5 | '#pragma quarantine I_KNOW_WHAT_IM_DOING' comes only from the macro 'CRUCIBLE_I_KNOW_WHAT_IM_DOING'
+error own-macro own_region_macro.cpp:6 | '#pragma quarantine END_I_KNOW_WHAT_IM_DOING' comes only from the macro 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING'
+
+compile no-class reason_without_class.cpp out=no
+exit no-class fail
+error no-class {repo}/include/foundation/Quarantine.h:* | the reason of a region starts with its class
+error no-class {repo}/include/foundation/Quarantine.h:* | 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING' has no open region
+
+compile macro-reason region_macro_reason.cpp out=no
+exit macro-reason fail
+error macro-reason region_macro_reason.cpp:8 | write the reason of a region as one plain string literal in the call
+error macro-reason {repo}/include/foundation/Quarantine.h:* | 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING' has no open region
+
+compile open-wrapper region_wrapper.cpp out=no
+exit open-wrapper fail
+error open-wrapper region_wrapper.cpp:9 | the macro 'CRUCIBLE_I_KNOW_WHAT_IM_DOING' is used inside another macro
+error open-wrapper {repo}/include/foundation/Quarantine.h:* | 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING' has no open region
+
+compile end-wrapper region_end_wrapper.cpp out=no
+exit end-wrapper fail
+error end-wrapper region_end_wrapper.cpp:8 | the macro 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING' is used inside another macro
+error end-wrapper {repo}/include/foundation/Quarantine.h:* | this 'CRUCIBLE_I_KNOW_WHAT_IM_DOING' region has no 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING'
+
+compile leaked opt_out.cpp plugin=no stage=syntax
+flag leaked -DCRUCIBLE_QUARANTINE_ACTIVE -Wall -Werror
+exit leaked fail
+error leaked {repo}/include/foundation/Quarantine.h:* | ignoring '#pragma quarantine I_KNOW_WHAT_IM_DOING'
+error leaked {repo}/include/foundation/Quarantine.h:* | ignoring '#pragma quarantine END_I_KNOW_WHAT_IM_DOING'

@@ -1,0 +1,20 @@
+// The names pre and post, a member post, an assertion statement, and a
+// specifier in an opt-out region are no error of the contract rule.
+
+#include <foundation/Quarantine.h>
+
+namespace probe {
+
+int pre = 1;
+struct Names {
+    int post = 0;
+};
+int asserted(int value) {
+    contract_assert(value > 0);
+    return value;
+}
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test needs the specifier")
+int opted(int value) pre(value > 0);
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+}  // namespace probe

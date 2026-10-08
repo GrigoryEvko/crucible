@@ -6,15 +6,15 @@ row for each name, and the flag matrix gives a static_assert for each property
 of each name.  This check keeps the three sources in step.
 
 THE INPUTS
-    utils/scripts/layer-rules.txt                the rule table.  Its admit
-                                                 rows are the admitted list,
-                                                 and utils/assay/core/ruletable.py
-                                                 reads them
-    utils/scripts/quarantine-admitted-audit.txt  the audit table, one row of
-                                                 nine fields each
-    test/layer/admitted_flag_matrix.cpp          the flag matrix.  The check
-                                                 reads its comments from the
-                                                 parse tree of utils/assay/readers/tsast.py
+    utils/rule-table.txt                 the rule table.  Its admit rows are
+                                         the admitted list, and
+                                         utils/assay/core/ruletable.py reads
+                                         them
+    utils/admitted-audit.txt             the audit table, one row of nine
+                                         fields each
+    test/layer/admitted_flag_matrix.cpp  the flag matrix.  The check reads its
+                                         comments from the parse tree of
+                                         utils/assay/readers/tsast.py
 
 THE RULES
     1. A row has nine fields: NAME | ORIGIN | FLAGS | PREDICTABLE | SAFE |
@@ -37,8 +37,8 @@ THE RULES
     8. The admitted list applies each verdict.  A KEEP verdict and a
        KEEP-RESTRICTED verdict have an entry, and a DROP verdict has none.  The
        plugin enforces each restriction through the restriction words of the
-       entry, and the rule quarantine-plugin (`guard check --rule
-       quarantine-plugin`) holds a plant for each one.  A verdict
+       entry, and the witness of the rule quarantine (`guard witness --rule
+       quarantine`) holds a plant for each one.  A verdict
        `REPLACE: FAMILY` has the entry
        `admit NAME until FAMILY`, and each entry with `until` has the verdict
        REPLACE of that family.
@@ -68,8 +68,8 @@ from assay.core import ruletable as layer_rules
 from assay.readers import tsast
 
 CHECK = "admitted-audit"
-ADMITTED = Path("utils/scripts/layer-rules.txt")
-TABLE = Path("utils/scripts/quarantine-admitted-audit.txt")
+ADMITTED = Path("utils/rule-table.txt")
+TABLE = Path("utils/admitted-audit.txt")
 MATRIX = Path("test/layer/admitted_flag_matrix.cpp")
 FIELDS = ("NAME", "ORIGIN", "FLAGS", "PREDICTABLE", "SAFE", "USES", "COST", "VERDICT", "REASON")
 FAMILIES = frozenset({"Choice", "Record", "Region", "Ref", "Atomic", "Scalar", "Report", "Os"})

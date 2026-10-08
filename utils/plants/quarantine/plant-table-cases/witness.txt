@@ -1,0 +1,57 @@
+# The malformed rule tables.  The quarantine plugin refuses each table when it
+# loads, with the error of the row at its line and no other error, and
+# assay.core.ruletable refuses the table at the same line.  The rows grammar
+# refuses a carriage return on each line, a word that holds a bar and a table
+# with the line ends \r\n, so those messages are the messages of the grammar.
+
+table-unit plant_std.cpp
+
+table tables/an-unknown-row-kind.txt refused 1 | the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce and language
+table tables/a-rank-that-is-not-digits.txt refused 1 | a layer row is 'layer NAME RANK PATH...', with a RANK of digits
+table tables/a-rank-of-two-layers.txt refused 2 | the rank belongs to a second layer
+table tables/a-layer-with-two-rows.txt refused 2 | the layer has a second row
+table tables/a-path-in-a-layer-row-and-a-quarantine-row.txt refused 2 | the path a/ is also in the layer one
+table tables/an-allow-row-of-no-layer.txt refused 1 | the allow row names the layer none, and no layer row gives it
+table tables/a-header-with-no-angle-brackets.txt refused 2 | an allow row is 'allow LAYER HEADER', with a HEADER in angle brackets
+table tables/a-door-whose-owner-is-a-directory.txt refused 1 | a door row is 'door HEADER OWNER', with a HEADER in angle brackets and one OWNER file of the source root
+table tables/a-door-whose-owner-is-a-file-of-the-build-directory.txt refused 1 | a door row is 'door HEADER OWNER', with a HEADER in angle brackets and one OWNER file of the source root
+table tables/a-layer-row-with-a-path-of-the-build-directory.txt refused 1 | a layer row holds no path of the build directory, because the build writes no base file
+table tables/a-language-path-in-the-build-directory.txt refused 3 | the path @build/x.h of a language row is in no layer; it must be a path of the base
+table tables/a-header-with-two-doors.txt refused 2 | the header has a second door
+table tables/an-admit-row-with-no-reason.txt refused 1 | an admit row is 'admit ENTRY [RESTRICTION...] \| REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+table tables/an-admit-row-with-until-and-no-family.txt refused 1 | an admit row is 'admit ENTRY [RESTRICTION...] \| REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+table tables/an-admit-row-with-a-word-that-is-no-restriction.txt refused 1 | an admit row is 'admit ENTRY [RESTRICTION...] \| REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+table tables/a-restriction-two-times.txt refused 1 | an admit row is 'admit ENTRY [RESTRICTION...] \| REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+table tables/an-arity-that-is-not-digits.txt refused 1 | an admit row is 'admit ENTRY [RESTRICTION...] \| REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+table tables/an-arity-of-a-header.txt refused 1 | an admit row is 'admit ENTRY [RESTRICTION...] \| REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+table tables/concepts-of-a-name.txt refused 1 | an admit row is 'admit ENTRY [RESTRICTION...] \| REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+table tables/parameters-of-a-header.txt refused 1 | an admit row is 'admit ENTRY [RESTRICTION...] \| REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+table tables/plain-result-of-a-header.txt refused 1 | an admit row is 'admit ENTRY [RESTRICTION...] \| REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+table tables/plain-result-two-times.txt refused 1 | an admit row is 'admit ENTRY [RESTRICTION...] \| REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+table tables/consteval-only-of-a-header.txt refused 1 | an admit row is 'admit ENTRY [RESTRICTION...] \| REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+table tables/consteval-only-two-times.txt refused 1 | an admit row is 'admit ENTRY [RESTRICTION...] \| REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+table tables/unless-with-no-identifier.txt refused 1 | an admit row is 'admit ENTRY [RESTRICTION...] \| REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+table tables/in-with-no-path.txt refused 2 | an admit row is 'admit ENTRY [RESTRICTION...] \| REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+table tables/an-in-path-outside-the-base.txt refused 3 | the path b/ of an in restriction is in no layer; it must be a path of the base
+table tables/an-absolute-path.txt refused 1 | a quarantine row is 'quarantine PATH', with a PATH relative to the source root
+table tables/a-path-with-a-parent-component.txt refused 1 | a quarantine row is 'quarantine PATH', with a PATH relative to the source root
+table tables/a-path-with-an-empty-component.txt refused 1 | a quarantine row is 'quarantine PATH', with a PATH relative to the source root
+table tables/an-unknown-enforce-mode.txt refused 1 | an enforce row is 'enforce PATH MODE', and MODE is report or error
+table tables/a-path-with-two-enforce-rows.txt refused 2 | the path has a second enforce row
+table tables/a-language-row-with-no-path.txt refused 2 | a language row is 'language LAYER PATH...'
+table tables/a-language-row-of-no-layer.txt refused 2 | the language row names the layer none, and no layer row gives it
+table tables/a-language-path-outside-the-base.txt refused 3 | the path b/x.h of a language row is in no layer; it must be a path of the base
+table tables/a-path-in-two-language-rows.txt refused 3 | the path has a second language row
+table tables/a-reason-with-no-row-kind.txt refused 1 | a word holds a bar.  Put " \| " between a word and a cell
+table tables/a-rank-that-is-more-than-the-largest-number.txt refused 1 | the number 2147483648 is more than 2147483647, the largest number of a rank or an arity
+table tables/a-rank-with-more-digits-than-each-integer-type.txt refused 1 | the number 99999999999999999999999 is more than 2147483647, the largest number of a rank or an arity
+table tables/an-arity-that-is-more-than-the-largest-number.txt refused 1 | the number 4294967297 is more than 2147483647, the largest number of a rank or an arity
+table tables/a-rank-of-arabic-indic-digits.txt refused 1 | a layer row is 'layer NAME RANK PATH...', with a RANK of digits
+table tables/a-rank-of-a-superscript-digit.txt refused 1 | a layer row is 'layer NAME RANK PATH...', with a RANK of digits
+table tables/an-arity-of-arabic-indic-digits.txt refused 1 | an admit row is 'admit ENTRY [RESTRICTION...] \| REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
+table tables/two-admit-rows-of-one-name.txt refused 2 | the entry std::move has a second admit row, and its first admit row is on line 1
+table tables/two-admit-rows-of-one-header.txt refused 3 | the entry <utility> has a second admit row, and its first admit row is on line 1
+
+# The table of each white-space character between two words, in a reason, and
+# the carriage return in a comment and in the line ends \r\n.
+white-space refused

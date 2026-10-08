@@ -1,0 +1,4 @@
+# A rule table whose row of std::move has `until`.
+admit <type_traits> | traits
+admit std::move until Scalar | a cast
+quarantine plant_std.cpp

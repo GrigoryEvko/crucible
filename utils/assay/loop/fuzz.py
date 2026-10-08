@@ -22,8 +22,14 @@ THE ENVIRONMENT
     CRUCIBLE_FUZZ_RESERVED_CPUS  The cores that no instance can use.  The default is 88-95
     CRUCIBLE_FUZZ_JOBS           The build jobs.  The default is 6
     AFL_BIN                      The directory of the AFL++ tools.  The default is $HOME/.local/bin
-    CRUCIBLE_GCC16_PREFIX        The prefix of the patched GCC that the compiler wrappers call.  The default is
-                                 $HOME/.local/gcc16-patched
+    CRUCIBLE_CXX                 The patched g++ that the compiler wrappers call, and the gcc in the same directory
+    CRUCIBLE_GCC16_PREFIX        The prefix of the patched GCC, when CRUCIBLE_CXX is not set.  The default is
+                                 $HOME/.local/gcc16-patched.  cmake/Toolchain-gcc16.cmake reads the two variables
+                                 with the same rules.  The wrappers then call the compiler of the toolchain file
+
+    Each instance stops with SIGINT: at the end of its time, at the limit
+    of assay.core.proc and at an error of the command.  afl-fuzz then
+    writes its state and ends.  SIGKILL comes only STOP_GRACE_S after it.
 
     ASan aborts and does not symbolize, so that afl-fuzz sees each crash.
     The core dumps of this host go to the system handler, so afl-fuzz does
@@ -49,12 +55,14 @@ from pathlib import Path
 from assay.core import proc
 from assay.core.paths import REPO_ROOT
 from assay.readers import cmake as cmake_reader
+from assay.setup import gcc as patched_gcc
 from assay.setup import pins as cmake_pin
 
 DEFAULT_RESERVED = "88-95"
 DEFAULT_JOBS = "6"
 HARNESSES = Path("test/fuzz/boundary/harnesses")
-# The time after SECONDS that an instance gets before SIGINT stops it.
+# The time after SECONDS that an instance gets before SIGINT stops it, and the time after a SIGINT of
+# assay.core.proc before SIGKILL.
 STOP_GRACE_S = 60
 # The time after SECONDS and STOP_GRACE_S that an instance gets before the limit of assay.core.proc stops its process
 # group.  The command `timeout` of the instance sends SIGINT first, and afl-fuzz then writes its state and ends.
@@ -169,6 +177,34 @@ def instance_command(campaign: Campaign, index: int, afl_bin: Path, binary: Path
             "--", str(binary)]
 
 
+def _afl_environment() -> dict[str, str]:
+    """Return the environment of this process, with the compilers of the patched GCC for the AFL++ tools."""
+    c_compiler, cxx_compiler = patched_gcc.toolchain_compilers()
+    return proc.environment({"AFL_CC": str(c_compiler), "AFL_CXX": str(cxx_compiler)})
+
+
+def instance_run(campaign: Campaign, index: int, afl_bin: Path, binary: Path, cmplog_binary: Path,
+                 scratch: Path) -> proc.Command:
+    """Return the Command of one instance: its words, its limit, its log and its stop signal SIGINT.
+
+    Args:
+        campaign: The campaign
+        index: The index of the instance, also of its core in the list
+        afl_bin: The directory of the AFL++ tools
+        binary: The instrumented harness
+        cmplog_binary: The harness of the build BUILD_DIR-cmplog
+        scratch: The directory of the temporary files of the instance (TMPDIR)
+
+    Returns:
+        The command
+    """
+    environment = dict(_afl_environment(), TMPDIR=str(scratch), **SANITIZER_OPTIONS)
+    return proc.Command(instance_command(campaign, index, afl_bin, binary, cmplog_binary),
+                        timeout_s=campaign.seconds + STOP_GRACE_S + INSTANCE_MARGIN_S, env=environment,
+                        stdout=campaign.out_dir / f"instance-{index}.log", stderr=proc.Output.MERGE,
+                        grace_s=STOP_GRACE_S, stop=proc.Stop.INTERRUPT)
+
+
 def instance_status(instance: proc.Running) -> int:
     """Wait for the end of one instance, and return its exit status, or 1 when it ran past its limit.
 
@@ -197,8 +233,7 @@ def run_campaign(root: Path, campaign: Campaign) -> int:
     """
     afl_bin = Path(os.environ.get("AFL_BIN", str(Path.home() / ".local" / "bin")))
     jobs = os.environ.get("CRUCIBLE_FUZZ_JOBS", DEFAULT_JOBS)
-    gcc_bin = Path(os.environ.get("CRUCIBLE_GCC16_PREFIX", str(Path.home() / ".local" / "gcc16-patched"))) / "usr" / "bin"
-    environment = proc.environment({"AFL_CC": str(gcc_bin / "gcc-16p"), "AFL_CXX": str(gcc_bin / "g++-16p")})
+    environment = _afl_environment()
     cmplog_dir = Path(f"{campaign.build_dir}-cmplog")
     configure_and_build(root, campaign.build_dir, campaign.harness, afl_bin, jobs, environment)
     configure_and_build(root, cmplog_dir, campaign.harness, afl_bin, jobs, dict(environment, AFL_GCC_CMPLOG="1"))
@@ -210,14 +245,10 @@ def run_campaign(root: Path, campaign: Campaign) -> int:
         proc.require(proc.run(proc.Command([str(binary), f"--write-seeds={campaign.out_dir / 'seeds'}"],
                                            timeout_s=proc.TOOL_S, env=environment, stdout=proc.Output.INHERIT,
                                            stderr=proc.Output.INHERIT)))
-        fuzz_environment = dict(environment, TMPDIR=str(scratch), **SANITIZER_OPTIONS)
         instances: list[proc.Running] = []
         try:
             for index in range(len(campaign.cpus)):
-                instances.append(proc.start(proc.Command(
-                    instance_command(campaign, index, afl_bin, binary, cmplog_binary),
-                    timeout_s=campaign.seconds + STOP_GRACE_S + INSTANCE_MARGIN_S, env=fuzz_environment,
-                    stdout=campaign.out_dir / f"instance-{index}.log", stderr=proc.Output.MERGE)))
+                instances.append(proc.start(instance_run(campaign, index, afl_bin, binary, cmplog_binary, scratch)))
             print(f"loop fuzz: {len(instances)} instances of fuzz_{campaign.harness} for {campaign.seconds} "
                   f"seconds, output in {campaign.out_dir}/afl", flush=True)
             statuses = [instance_status(instance) for instance in instances]
@@ -280,6 +311,29 @@ def self_test() -> int:
                and main_command[-6:] == ["-M", "main", "-c", "c", "--", "b"])
         expect("each other instance is a secondary one, on its core",
                secondary[2] == "101" and secondary[-4:] == ["-S", "secondary1", "--", "b"])
+        run = instance_run(campaign, 1, afl, Path("b"), Path("c"), Path("scratch"))
+        expect("an instance stops with SIGINT, and gets SIGKILL only STOP_GRACE_S after it",
+               run.stop == proc.Stop.INTERRUPT and run.grace_s == STOP_GRACE_S
+               and run.timeout_s == campaign.seconds + STOP_GRACE_S + INSTANCE_MARGIN_S)
+        expect("an instance has its TMPDIR and the compilers of the patched GCC",
+               run.env is not None and run.env.get("TMPDIR") == "scratch"
+               and run.env.get("AFL_CXX") == str(patched_gcc.toolchain_compilers()[1]))
+        saved = {name: os.environ.get(name) for name in ("CRUCIBLE_CXX", "CRUCIBLE_GCC16_PREFIX")}
+        try:
+            os.environ["CRUCIBLE_CXX"] = "/opt/gcc/bin/g++-16p"
+            os.environ["CRUCIBLE_GCC16_PREFIX"] = "/elsewhere"
+            named = patched_gcc.toolchain_compilers()
+            del os.environ["CRUCIBLE_CXX"]
+            prefixed = patched_gcc.toolchain_compilers()
+        finally:
+            for name, value in saved.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+        expect("the compiler wrappers call the compiler of the toolchain file: CRUCIBLE_CXX first, then the prefix",
+               named == (Path("/opt/gcc/bin/gcc-16p"), Path("/opt/gcc/bin/g++-16p"))
+               and prefixed == (Path("/elsewhere/usr/bin/gcc-16p"), Path("/elsewhere/usr/bin/g++-16p")))
 
     if failures:
         print(f"loop fuzz --self-test: FAILED, {len(failures)} case(s) did not hold")

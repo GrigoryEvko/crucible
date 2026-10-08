@@ -1,0 +1,21 @@
+# Each library name in an unevaluated operand is a use of that name: one
+# finding on each line that names std::string or std::vector.
+
+compile report unevaluated.cpp
+exit report pass
+finding report quarantine std-entity unevaluated.cpp:8:43 | std::basic_string
+finding report quarantine std-entity unevaluated.cpp:12:12 | std::vector
+finding report quarantine std-entity unevaluated.cpp:17:12 | std::vector
+finding report quarantine std-entity unevaluated.cpp:22:12 | std::vector
+finding report quarantine std-entity unevaluated.cpp:27:36 | std::basic_string
+finding report quarantine std-entity unevaluated.cpp:32:12 | std::vector
+finding report quarantine std-entity unevaluated.cpp:37:19 | std::vector
+finding report quarantine std-entity unevaluated.cpp:42:32 | std::vector
+finding report quarantine std-entity unevaluated.cpp:48:19 | std::vector
+finding report quarantine std-entity unevaluated.cpp:50:18 | std::vector
+finding report quarantine std-entity unevaluated.cpp:55:30 | std::vector
+finding report quarantine std-entity unevaluated.cpp:58:14 | std::vector
+finding report quarantine std-entity unevaluated.cpp:62:6 | std::vector
+
+compile error unevaluated.cpp mode=error out=no errors=report
+exit error fail
