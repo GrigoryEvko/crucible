@@ -1,0 +1,40 @@
+# A name of a sealed namespace in the include closure of a sealed root is a
+# finding of the kind sealed-name.  The unit alone.cpp compiles the root alone,
+# as the sentinel unit of a header does, so the closure opens the namespace
+# first: a forward declaration, an opening through an inline namespace, and an
+# opening before a using-directive and a namespace alias.  The unit unit.cpp
+# includes the ledger first, so the closure does not open the namespace: each
+# reference that a file of the closure spells is a finding, a qualified name
+# from :: and a name relative to namespace crucible, and also the body of a
+# macro of the closure that a different file expands.  In the mode error, each
+# finding is an error.
+
+compile forward alone.cpp
+flag forward -DPLANT_FORWARD
+exit forward pass
+finding forward detsafe-ledger sealed-name include/crucible/Root.h:3:21 | the namespace crucible::ledger in the include closure of include/crucible/Root.h
+
+compile inline alone.cpp
+flag inline -DPLANT_INLINE
+exit inline pass
+finding inline detsafe-ledger sealed-name include/crucible/Root.h:10:11 | the namespace crucible::ledger in the include closure of include/crucible/Root.h
+
+compile using alone.cpp
+flag using -DPLANT_USING
+exit using pass
+finding using detsafe-ledger sealed-name include/crucible/Root.h:17:21 | the namespace crucible::ledger in the include closure of include/crucible/Root.h
+
+compile call unit.cpp
+flag call -DPLANT_CALL
+exit call pass
+finding call detsafe-ledger sealed-name include/crucible/Root.h:24:69 | crucible::ledger::verdict_value in the include closure of include/crucible/Root.h
+finding call detsafe-ledger sealed-name include/crucible/Root.h:26:58 | crucible::ledger::verdict_value in the include closure of include/crucible/Root.h
+
+compile macro unit.cpp
+flag macro -DPLANT_MACRO
+exit macro pass
+finding macro detsafe-ledger sealed-name include/crucible/Root.h:30:63 | crucible::ledger::verdict_value in the include closure of include/crucible/Root.h
+
+compile error alone.cpp mode=error out=no errors=forward
+flag error -DPLANT_FORWARD
+exit error fail

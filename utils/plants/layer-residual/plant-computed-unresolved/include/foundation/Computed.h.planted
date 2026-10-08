@@ -1,0 +1,3 @@
+#pragma once
+// A computed include that no object-like macro of this file resolves.
+#include OTHER_HEADER

@@ -1,0 +1,3 @@
+# The rule table of a plant of the rule fast-math-override.
+
+quarantine src/

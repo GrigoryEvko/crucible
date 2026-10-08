@@ -1,0 +1,2 @@
+// A source file of fixy that includes a header of crucible.
+#include <crucible/Arena.h>

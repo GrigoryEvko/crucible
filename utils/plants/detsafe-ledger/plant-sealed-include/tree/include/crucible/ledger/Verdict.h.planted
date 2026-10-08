@@ -1,0 +1,6 @@
+#pragma once
+namespace crucible::ledger {
+struct Verdict {
+    int value = 0;
+};
+}  // namespace crucible::ledger

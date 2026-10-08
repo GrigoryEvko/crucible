@@ -1,0 +1,9 @@
+# The rule table of a plant of the rule layer-boundary.  The root foundation
+# has the rank 0, the root fixy the rank 1, and the root crucible of the
+# quarantine row is above each layer.
+
+layer floor 0 include/foundation/ src/foundation/
+layer wrappers 1 include/fixy/ src/fixy/
+
+quarantine include/crucible/
+quarantine unit.cpp

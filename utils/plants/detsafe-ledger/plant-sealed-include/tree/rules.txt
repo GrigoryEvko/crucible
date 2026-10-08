@@ -1,0 +1,7 @@
+# The rule table of a plant of the rule detsafe-ledger.  The seal row seals
+# include/crucible/ledger/ for the include closure of crucible/Root.h.
+
+quarantine include/crucible/
+quarantine unit.cpp
+
+seal include/crucible/Root.h include/crucible/ledger/

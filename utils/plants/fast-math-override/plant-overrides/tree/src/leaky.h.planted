@@ -1,0 +1,3 @@
+#pragma once
+double before_pragma(double value);
+#pragma GCC optimize("unsafe-math-optimizations")

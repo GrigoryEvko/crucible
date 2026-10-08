@@ -86,8 +86,9 @@ THE NAMES
         force.  A call with no qualifier that no scope resolves can get to a
         function through argument-dependent lookup.  It is then each
         function with that name that no class owns.
-      * a file names only its own layer and the layers below it.  The rule
-        layer-boundary and the layer sentinels make sure of that.
+      * a file names only its own layer and the layers below it.  The rules
+        layer-boundary and layer-residual and the layer sentinels make sure
+        of that.
       * a member that a use gets to through an object, `obj.f()`, or
         through a qualifier that the analysis cannot resolve, `T::f()`, is
         a member edge.  The analysis does not know the class, and a member

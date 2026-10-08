@@ -1,0 +1,5 @@
+#pragma once
+#include <foundation/Low.h>
+namespace fixy {
+inline int wrap_value() { return ::foundation::low_value(); }
+}  // namespace fixy

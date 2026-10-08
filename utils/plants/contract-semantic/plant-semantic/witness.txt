@@ -1,0 +1,35 @@
+# A unit that defines CRUCIBLE_CONTRACT_SEMANTIC_IGNORE with a semantic other
+# than ignore, and a unit with the semantic ignore and no such define, is a
+# finding of the kind contract-semantic at the main file.  GCC uses the last
+# semantic flag, the define can come from a file of -include, and -U after -D
+# removes it.  The finding is an error in each mode.
+
+compile observe unit.cpp
+flag observe -fcontracts -DCRUCIBLE_CONTRACT_SEMANTIC_IGNORE -fcontract-evaluation-semantic=observe
+exit observe fail
+finding observe contract-semantic contract-semantic unit.cpp:0:0 | CRUCIBLE_CONTRACT_SEMANTIC_IGNORE with a semantic other than ignore
+error observe - | quarantine: contract-semantic CRUCIBLE_CONTRACT_SEMANTIC_IGNORE with a semantic other than ignore;
+
+compile late unit.cpp
+flag late -fcontracts -fcontract-evaluation-semantic=ignore -DCRUCIBLE_CONTRACT_SEMANTIC_IGNORE -fcontract-evaluation-semantic=enforce
+exit late fail
+finding late contract-semantic contract-semantic unit.cpp:0:0 | CRUCIBLE_CONTRACT_SEMANTIC_IGNORE with a semantic other than ignore
+error late - | quarantine: contract-semantic CRUCIBLE_CONTRACT_SEMANTIC_IGNORE with a semantic other than ignore;
+
+compile included unit.cpp
+flag included -fcontracts -include define.h
+exit included fail
+finding included contract-semantic contract-semantic unit.cpp:0:0 | CRUCIBLE_CONTRACT_SEMANTIC_IGNORE with a semantic other than ignore
+error included - | quarantine: contract-semantic CRUCIBLE_CONTRACT_SEMANTIC_IGNORE with a semantic other than ignore;
+
+compile alone unit.cpp
+flag alone -fcontracts -fcontract-evaluation-semantic=ignore
+exit alone fail
+finding alone contract-semantic contract-semantic unit.cpp:0:0 | the semantic ignore with no CRUCIBLE_CONTRACT_SEMANTIC_IGNORE
+error alone - | quarantine: contract-semantic the semantic ignore with no CRUCIBLE_CONTRACT_SEMANTIC_IGNORE;
+
+compile removed unit.cpp mode=error
+flag removed -fcontracts -fcontract-evaluation-semantic=ignore -DCRUCIBLE_CONTRACT_SEMANTIC_IGNORE -UCRUCIBLE_CONTRACT_SEMANTIC_IGNORE
+exit removed fail
+finding removed contract-semantic contract-semantic unit.cpp:0:0 | the semantic ignore with no CRUCIBLE_CONTRACT_SEMANTIC_IGNORE
+error removed - | quarantine: contract-semantic the semantic ignore with no CRUCIBLE_CONTRACT_SEMANTIC_IGNORE;

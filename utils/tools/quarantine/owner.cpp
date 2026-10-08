@@ -344,6 +344,7 @@ void check_scope_use(tree scope_ref, location_t location) {
     if (scope == NULL_TREE) {
         return;
     }
+    note_project_reference(scope, location);
     if (TREE_CODE(scope) == NAMESPACE_DECL) {
         record_namespace_name(scope, member, location);
         return;
@@ -372,6 +373,7 @@ void check_using(tree decl) {
     if (scope == NULL_TREE) {
         return;
     }
+    note_project_reference(scope, location);
     Place place = place_of(location, Scope::quarantine);
     const FileEntry* language = language_of(place);
     if (language == nullptr && place.file_class != FileClass::quarantined) {
@@ -436,6 +438,17 @@ void check_using(tree decl) {
 // call, or -1.  EXPLICIT_ARGUMENTS are the explicit template arguments when a
 // template-id names NAMED, or null.
 void check_named(tree named, location_t location, int arguments, tree explicit_arguments) {
+    switch (TREE_CODE(named)) {
+        case FUNCTION_DECL:
+        case VAR_DECL:
+        case TEMPLATE_DECL:
+        case OVERLOAD:
+        case BASELINK:
+            note_project_reference(named, location);
+            break;
+        default:
+            break;
+    }
     switch (TREE_CODE(named)) {
         case FUNCTION_DECL:
             check_function_use(named, location, explicit_arguments);

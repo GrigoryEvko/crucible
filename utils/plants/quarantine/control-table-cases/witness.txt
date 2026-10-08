@@ -10,6 +10,7 @@ table tables/the-largest-rank.txt accepted
 table tables/the-largest-rank-with-zeros-before-it.txt accepted
 table tables/a-tab-between-two-words.txt accepted
 table tables/one-entry-as-a-header-and-as-a-name.txt accepted
+table tables/seal-heavy-and-light-rows.txt accepted
 
 white-space accepted
 

@@ -1,0 +1,5 @@
+#include <crucible/ledger/Verdict.h>
+#include <crucible/Root.h>
+#if defined(PLANT_MACRO)
+inline int expanded() { return PLANT_READ_VERDICT(); }
+#endif

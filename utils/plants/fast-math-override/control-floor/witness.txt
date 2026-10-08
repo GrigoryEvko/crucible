@@ -1,0 +1,7 @@
+# An optimize level, an option of the floor itself and an option outside the
+# fast-math family give no finding, and a comment and a string name no option.
+# The command line holds the floor of cmake/FpStrict.cmake.
+
+compile floor src/plain.cpp mode=error
+flag floor -fno-fast-math -ffp-contract=off -fno-associative-math -fno-reciprocal-math -fno-finite-math-only -fsignaling-nans -frounding-math -ftrapping-math
+exit floor pass

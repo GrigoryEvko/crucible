@@ -14,10 +14,9 @@ that holds a different white-space character is an error of the schema, in
 the two readers.  A reader that divides at each white-space character, as
 Python str.split() does, reads different words.
 
-The layer guard (the rule layer-boundary) reads the layer rows.  It names the
-project roots at the granularity of a directory under include/.
-guard_layers() then folds the layers of the table into one layer for each
-root.
+The seal rows give the rule detsafe-ledger of the plugin, and the heavy and
+light rows give the rule heavy-include.  `loop derive header-costs` writes the
+heavy and light rows from a measure (assay.loop.derive.header_costs).
 """
 
 from __future__ import annotations
@@ -30,7 +29,16 @@ from assay.core.paths import REPO_ROOT
 
 TABLE = REPO_ROOT / "utils" / "rule-table.txt"
 MODES = ("report", "error")
-ROW_KINDS = ("layer", "allow", "door", "admit", "quarantine", "enforce", "language")
+ROW_KINDS = ("layer", "allow", "door", "admit", "quarantine", "enforce", "language", "seal", "heavy", "light")
+# The directory of the headers of the project roots.  A sealed PREFIX is a directory in it.
+INCLUDE_PREFIX = "include/"
+# The error of a seal row that does not obey the format of its words.  rule_table.cpp gives the same text.
+SEAL_FORMAT = (
+    "a seal row is 'seal ROOT PREFIX...', with one ROOT file of the source root and each PREFIX a "
+    "directory under include/ whose parts are identifiers"
+)
+# The error of a row with two cells.  rule_table.cpp gives the same text.
+CELLS_MESSAGE = "a row has at most one cell: the reason of an admit row, or the measure of a heavy or a light row"
 # The prefix of a path of the build directory.  A file that the build writes
 # has this prefix and its path inside the build directory, as kBuildPrefix of
 # utils/tools/quarantine/plugin.h gives it.
@@ -40,6 +48,8 @@ WORD_DIVIDERS = rows_grammar.DIVIDERS
 # The largest number of a rank or an arity: the largest value of the `int` of
 # the reader of rule_table.cpp.
 MAX_NUMBER = 2**31 - 1
+# The rank of a project root of a quarantine row, above each layer: kTopRank of include.cpp.
+TOP_RANK = MAX_NUMBER
 
 
 class TableError(ValueError):
@@ -76,6 +86,29 @@ class Admit:
     consteval_only: bool = False
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class Seal:
+    """One seal row: the include closure of ROOT holds no file in a PREFIX and names no namespace of a PREFIX.
+
+    `namespaces` gives the namespace of each PREFIX, such as ("crucible", "ledger") for include/crucible/ledger/.
+    """
+
+    root: str
+    prefixes: tuple[str, ...]
+    namespaces: tuple[tuple[str, ...], ...]
+    line: int
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class HeaderCost:
+    """One heavy or light row: the header with its angle brackets, its kind, the measure and the line."""
+
+    header: str
+    is_heavy: bool
+    measure: str
+    line: int
+
+
 @dataclasses.dataclass(frozen=True)
 class RuleTable:
     """The rows of one rule table, in the order of the file."""
@@ -89,6 +122,8 @@ class RuleTable:
     # The layer whose allowance caps the outside includes, and the paths of
     # each language row.
     languages: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    seals: tuple[Seal, ...] = ()
+    header_costs: tuple[HeaderCost, ...] = ()
 
     def layer_named(self, name: str) -> Layer | None:
         """Return the layer with NAME, or None."""
@@ -175,6 +210,44 @@ def number_value(text: str, where: str) -> int:
     return int(digits)
 
 
+def seal_namespace(prefix: str) -> tuple[str, ...]:
+    """Return the namespace of a sealed PREFIX: one name for each directory after include/.
+
+    The answer is empty when PREFIX is no directory in include/, or when a part is no identifier.  rule_table.cpp
+    gives the same answer.
+    """
+    if not prefix.startswith(INCLUDE_PREFIX) or not prefix.endswith("/") or len(prefix) <= len(INCLUDE_PREFIX):
+        return ()
+    parts = tuple(prefix[len(INCLUDE_PREFIX) : -1].split("/"))
+    return parts if all(part.isascii() and part.isidentifier() for part in parts) else ()
+
+
+def is_plain_path(path: str) -> bool:
+    """Return True when PATH is a plain path relative to the source root, as _check_path accepts it."""
+    parts = path.removesuffix("/").split("/")
+    return bool(path) and not path.startswith("/") and not any(part in ("", ".", "..") for part in parts)
+
+
+def parse_seal(args: list[str], reason: str, number: int, where: str) -> Seal:
+    """Parse the words of one seal row after the row kind.
+
+    Raises:
+        TableError: When the row does not obey SEAL_FORMAT
+    """
+    if (
+        len(args) < 2
+        or not is_plain_path(args[0])
+        or args[0].endswith("/")
+        or args[0].startswith(BUILD_PREFIX)
+        or reason
+    ):
+        raise TableError(f"{where}: {SEAL_FORMAT}")
+    namespaces = tuple(seal_namespace(prefix) if is_plain_path(prefix) else () for prefix in args[1:])
+    if not all(namespaces):
+        raise TableError(f"{where}: {SEAL_FORMAT}")
+    return Seal(args[0], tuple(args[1:]), namespaces, number)
+
+
 def parse_admit(args: list[str], reason: str, number: int, where: str) -> Admit:
     """Parse the words of one admit row after the row kind.
 
@@ -256,6 +329,10 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
     language_lines: list[tuple[str, str]] = []
     language_paths: list[tuple[str, str]] = []
     admit_lines: dict[str, int] = {}  # the entry of each admit row, and its line
+    seals: list[Seal] = []
+    seal_lines: dict[str, int] = {}  # the root of each seal row, and its line
+    header_costs: list[HeaderCost] = []
+    cost_lines: dict[str, int] = {}  # the header of each heavy and light row, and its line
     for row in rows:
         number = row.line
         where = f"{name}:{number}"
@@ -264,7 +341,7 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
         if white_space is not None:
             raise TableError(f"{where}: {white_space_message(white_space)}")
         if len(row.cells) > 1:
-            raise TableError(f"{where}: a row has at most one cell, the reason of an admit row")
+            raise TableError(f"{where}: {CELLS_MESSAGE}")
         kind, args = row.words[0], list(row.words[1:])
         reason = row.cells[0] if row.cells else ""
         if kind not in ROW_KINDS:
@@ -332,6 +409,28 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
                 language_paths.append((path, where))
             languages.append((args[0], tuple(args[1:])))
             language_lines.append((args[0], where))
+        elif kind == "seal":
+            seal = parse_seal(args, reason, number, where)
+            if seal.root in seal_lines:
+                raise TableError(
+                    f"{where}: the root {seal.root} has a second seal row, and its first seal row is on "
+                    f"line {seal_lines[seal.root]}"
+                )
+            seal_lines[seal.root] = number
+            seals.append(seal)
+        elif kind in ("heavy", "light"):
+            if len(args) != 1:
+                raise TableError(
+                    f"{where}: a {kind} row is '{kind} HEADER [| MEASURE]', with a HEADER in angle brackets"
+                )
+            _check_header(args[0], where)
+            if args[0] in cost_lines:
+                raise TableError(
+                    f"{where}: the header {args[0]} has a second heavy or light row, and its first row "
+                    f"is on line {cost_lines[args[0]]}"
+                )
+            cost_lines[args[0]] = number
+            header_costs.append(HeaderCost(args[0], kind == "heavy", reason, number))
         else:
             if len(args) != 2 or args[1] not in MODES:
                 raise TableError(f"{where}: an enforce row is 'enforce PATH MODE', and MODE is report or error")
@@ -355,7 +454,7 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
             raise TableError(f"{where}: the path {path} of the language row is in no layer.  A path of the "
                              f"language must be a path of the base")
     return RuleTable(tuple(layers), tuple(allows), tuple(doors), tuple(admits), tuple(quarantines),
-                     tuple(enforces), tuple(languages))
+                     tuple(enforces), tuple(languages), tuple(seals), tuple(header_costs))
 
 
 def load(path: Path = TABLE) -> RuleTable:
@@ -375,31 +474,30 @@ def load(path: Path = TABLE) -> RuleTable:
     return parse(text, path.name)
 
 
-def guard_layers(table: RuleTable) -> tuple[tuple[tuple[str, str], ...], dict[str, frozenset[str]]]:
-    """Fold the layers of TABLE into one layer for each project root, for the layer guard.
+def root_of_path(path: str) -> str:
+    """Return the project root of a path: the directory after the first directory, or "" when it has none.
 
-    The root of a layer path is its second component: include/fixy/Fn.h and
-    src/fixy/os/ have the root fixy.  The roots are in the order of the
-    lowest rank of their layers, and a root can name itself and each root
-    before it.
-
-    Returns:
-        The scope prefix of each root, such as ("include/fixy/", "fixy"), and the
-        roots that each root can name
+    include/fixy/Fn.h and src/fixy/os/ have the root fixy.  root_of_path of include.cpp gives the same answer.
     """
-    lowest: dict[str, int] = {}
-    prefixes: list[tuple[str, str]] = []
+    parts = path.split("/")
+    return parts[1] if len(parts) >= 3 else ""
+
+
+def root_ranks(table: RuleTable) -> dict[str, int]:
+    """Return the rank of each project root, as the rule layer-boundary of the plugin reads it.
+
+    The rank of a root is the lowest rank of a layer path of the root in include/ or src/.  A root of a quarantine row
+    in include/ has TOP_RANK, above each layer.  A base file names only a root of its own rank or of a lower rank.
+    Complexity: O(paths of the layer rows and the quarantine rows).
+    """
+    ranks: dict[str, int] = {}
     for layer in table.layers:
         for path in layer.paths:
-            parts = path.split("/")
-            if len(parts) < 3:
-                raise TableError(f"the layer path {path} has no project root: it must start with a directory "
-                                 f"and a root, such as include/fixy/")
-            root = parts[1]
-            lowest[root] = min(lowest.get(root, layer.rank), layer.rank)
-            prefix = f"{parts[0]}/{root}/"
-            if (prefix, root) not in prefixes:
-                prefixes.append((prefix, root))
-    order = sorted(lowest, key=lambda root: lowest[root])
-    allowed = {root: frozenset(order[:index + 1]) for index, root in enumerate(order)}
-    return tuple(prefixes), allowed
+            root = root_of_path(path) if path.startswith((INCLUDE_PREFIX, "src/")) else ""
+            if root:
+                ranks[root] = min(ranks.get(root, layer.rank), layer.rank)
+    for path in table.quarantines:
+        root = root_of_path(path) if path.startswith(INCLUDE_PREFIX) else ""
+        if root:
+            ranks.setdefault(root, TOP_RANK)
+    return ranks

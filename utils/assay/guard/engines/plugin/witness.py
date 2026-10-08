@@ -78,12 +78,14 @@ THE JUDGEMENT
 THE DERIVED DIAGNOSTICS
     In the mode error, each finding that no region opts out is an error at
     its location.  The key errors=OTHER says that the errors of the compile
-    are the finding rows of the compile OTHER.  A finding of the rule
-    quarantine gives an error.  Its message holds "quarantine: KIND ENTITY"
-    with a semicolon after the entity.  A finding of the rule
-    contract-specifier gives the error of the contract rule.  The key
-    notes=OTHER says that each finding row of
-    OTHER gives a note "quarantine: KIND ENTITY" at its location.  A region
+    are the finding rows of the compile OTHER.  A finding of each rule other
+    than contract-specifier gives an error.  Its message holds "quarantine:
+    KIND ENTITY" with a semicolon after the entity.  A finding of the rule
+    contract-specifier gives the error of the contract rule.  A finding at
+    the line 0, a fact of all the unit, gives an error with no location.
+    The key notes=OTHER says that each finding row of OTHER gives a note
+    "quarantine: KIND ENTITY" at its location, other than a finding of the
+    rules of EACH_MODE_RULES, which give an error in each mode.  A region
     line is no finding and gives no diagnostic.  OTHER has the root ".", and
     its paths are paths of the tree.
 
@@ -169,6 +171,8 @@ OPTED_OUT = plugin_sections.OPTED_OUT
 REGION = plugin_sections.REGION
 QUARANTINE_RULE = "quarantine"
 CONTRACT_RULE = "contract-specifier"
+# The rules that give an error in each mode for each finding: the contract rule and the rules of the family unit fact.
+EACH_MODE_RULES = frozenset((CONTRACT_RULE, "contract-semantic", "fast-math-override"))
 # The error of the plugin after a refused rule table.
 FAILED_PLUGIN = "failed to initialize plugin"
 # The error of the rows grammar for a carriage return.  assay.core.rows and rows.h of the plugin give this text.
@@ -585,7 +589,7 @@ def derived_errors(findings: Iterable[plugin_sections.Finding]) -> list[tuple[st
     for finding in findings:
         if finding.kind in (OPTED_OUT, REGION):
             continue
-        place = f"{finding.file}:{finding.line}"
+        place = f"{finding.file}:{finding.line}" if finding.line > 0 else NO_VALUE
         if finding.rule == CONTRACT_RULE:
             errors.append((place, f"the '{finding.entity}' contract specifier is not permitted in this tree"))
         else:
@@ -594,11 +598,14 @@ def derived_errors(findings: Iterable[plugin_sections.Finding]) -> list[tuple[st
 
 
 def derived_notes(findings: Iterable[plugin_sections.Finding]) -> list[tuple[str, str]]:
-    """Return the note of each finding of the rule quarantine, also of each opted-out one (THE DERIVED DIAGNOSTICS)."""
+    """Return the note of each finding that the mode report makes a note, also of each opted-out one.
+
+    The rules of EACH_MODE_RULES give an error in each mode and no note (THE DERIVED DIAGNOSTICS).
+    """
     return [
         (f"{finding.file}:{finding.line}", f"{QUARANTINE_PREFIX}{finding.kind} {finding.entity}")
         for finding in findings
-        if finding.kind != REGION and finding.rule != CONTRACT_RULE
+        if finding.kind != REGION and finding.rule not in EACH_MODE_RULES
     ]
 
 

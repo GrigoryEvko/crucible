@@ -1,0 +1,2 @@
+// The text CRUCIBLE_CONTRACT_SEMANTIC_IGNORE in a comment defines nothing.
+inline int planted_value() { return 1; }

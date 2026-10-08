@@ -1,0 +1,12 @@
+# A base file names only its own root and the roots below it: a fixy header
+# names foundation, and a namespace crucible nested in foundation is no root.
+# A comment and a string name nothing.  A crucible unit names each root, also
+# through an argument of a base macro and through a base template that a
+# crucible type instantiates, with its destructor.  No unit gives a finding, in
+# the mode error.
+
+compile fixy src/fixy/Alone.cpp mode=error
+exit fixy pass
+
+compile unit unit.cpp mode=error
+exit unit pass

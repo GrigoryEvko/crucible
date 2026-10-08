@@ -5,9 +5,11 @@ It reads the rule table through utils/assay/core/ruletable.py and writes these
 files under the directory OUT:
 
     facts.txt     The rows that decide a finding: each layer, allow, door,
-                  admit, quarantine and language row, with the restrictions of
-                  each admit row and with no reason, no comment and no `until`
-                  family.
+                  admit, quarantine, language, seal, heavy and light row, with
+                  the restrictions of each admit row and with no reason, no
+                  measure, no comment and no `until` family.  A new measure of
+                  the header costs that moves no header between heavy and
+                  light then compiles nothing.
                   The lines are sorted.  The stamp of each compile command
                   holds the hash of this file, so a change of a fact compiles
                   each unit again, and a change of a reason compiles nothing.
@@ -84,6 +86,8 @@ def facts_text(table: layer_rules.RuleTable) -> str:
         lines.append(f"admit {' '.join(words)}")
     lines += [f"quarantine {path}" for path in table.quarantines]
     lines += [f"language {layer} {' '.join(sorted(paths))}" for layer, paths in table.languages]
+    lines += [f"seal {seal.root} {' '.join(sorted(seal.prefixes))}" for seal in table.seals]
+    lines += [f"{'heavy' if cost.is_heavy else 'light'} {cost.header}" for cost in table.header_costs]
     return "".join(f"{line}\n" for line in sorted(lines))
 
 

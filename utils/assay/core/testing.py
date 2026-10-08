@@ -13,6 +13,11 @@ THE STATUS
     argument writes the usage to the standard error and returns
     ExitCode.USAGE.
 
+THE OUTPUT OF A CASE
+    captured() runs one action of a case.  It gives the result of the action
+    and the text that the action writes.  The text holds the writes to the
+    standard output and to the standard error, in their sequence.
+
 THE COMPILER
     A test module with compile cases gets the patched compiler from
     patched_compiler().  The variable ASSAY_TEST_CXX names the compiler, and
@@ -24,6 +29,8 @@ THE COMPILER
 `guard selftest tests.core.test_testing` does a test of the module.
 """
 
+import contextlib
+import io
 import os
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -44,6 +51,12 @@ def patched_compiler(environment: Mapping[str, str] = os.environ) -> str:
         return named
     prefix = environment.get(COMPILER_PREFIX, "")
     return str(Path(prefix) / "usr" / "bin" / "g++-16p") if prefix else ""
+
+
+def captured[Result](action: Callable[[], Result]) -> tuple[Result, str]:
+    """Run one action, and give its result and the text of the two standard streams (THE OUTPUT OF A CASE)."""
+    with contextlib.redirect_stdout(io.StringIO()) as printed, contextlib.redirect_stderr(printed):
+        return action(), printed.getvalue()
 
 
 def run(module: str, argv: Sequence[str], groups: Sequence[Group]) -> ExitCode:

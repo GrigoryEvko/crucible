@@ -1,0 +1,16 @@
+#pragma once
+// Prose can cite crucible::value and fixy::Wrap freely.
+namespace foundation {
+inline int low_value() { return 1; }
+namespace crucible {
+struct NestedName {};
+}  // namespace crucible
+template <typename T>
+struct Holder {
+    T held;
+};
+template <typename T>
+inline int read_held(Holder<T> const& holder) { return holder.held.value(); }
+}  // namespace foundation
+static_assert(sizeof(int) >= 2, "crucible::value is a string");
+#define PLANT_CHECK(condition) (!(condition))

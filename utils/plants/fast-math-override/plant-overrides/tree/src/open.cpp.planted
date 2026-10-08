@@ -1,0 +1,2 @@
+#include "leaky.h"
+double after_include(double value) { return value; }

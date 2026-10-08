@@ -1,0 +1,2 @@
+#pragma once
+#define CRUCIBLE_CONTRACT_SEMANTIC_IGNORE 1

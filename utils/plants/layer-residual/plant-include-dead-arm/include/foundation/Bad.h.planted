@@ -1,0 +1,5 @@
+#pragma once
+// An include of a higher root in an arm that no build compiles.
+#if 0
+#include <crucible/Arena.h>
+#endif

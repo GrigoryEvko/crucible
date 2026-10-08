@@ -57,7 +57,7 @@ THE STATUS
 `guard selftest tests.guard.engines.plugin.test_runner` does a test of the module.
 """
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -153,6 +153,23 @@ class Census:
     def errors(self, rule_id: str) -> list[check_report.Finding]:
         """Return each problem of the census as an error of one rule (THE PROBLEMS)."""
         return [check_report.Finding("error", problem.path, 0, rule_id, problem.message) for problem in self.problems]
+
+    def line_errors(
+        self, rule_id: str, message: Callable[[quarantine_sections.Finding], str]
+    ) -> list[check_report.Finding]:
+        """Return each problem of the census, and one error for each finding line of one rule.
+
+        Args:
+            rule_id: The rule of the finding lines
+            message: The function that gives the message of the error of one finding line
+        """
+        return [
+            *self.errors(rule_id),
+            *(
+                check_report.Finding("error", item.file, item.line, rule_id, message(item), item.kind, item.entity)
+                for item in self.of_rule(rule_id)
+            ),
+        ]
 
 
 @dataclass(frozen=True, slots=True)

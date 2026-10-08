@@ -81,8 +81,8 @@
 #                                   stripping the discipline).
 #
 # Two flags from CLAUDE.md §V "NEVER" list are NOT in our SET but
-# ARE in the deny-list of the rule no-ffast-math because they would
-# break the floor if applied per-TU:
+# ARE in the deny-lists of the rules no-ffast-math and fast-math-override
+# because they would break the floor if applied per-TU:
 #
 #   -funsafe-math-optimizations   — global blanket disable; one flag
 #                                   undoes our entire pack.
@@ -102,9 +102,10 @@
 # precisely to localize the effect.
 #
 # Verification: `guard check --rule no-ffast-math` reads the flags of each
-# TU from the compile database and each optimize attribute or pragma
-# from the parse tree. It rejects an override that punches through the
-# floor.
+# TU from the compile database. The rule fast-math-override of the
+# quarantine plugin reads each optimize attribute and GCC optimize pragma
+# that a unit compiles, and an override that punches through the floor is a
+# compile error.
 # `test/test_fp_strict_floor.cpp` is a sentinel TU that links the
 # INTERFACE target and asserts (via a static-assert proxy) that the
 # floor is actually engaged — if the floor ever silently degrades to

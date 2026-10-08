@@ -339,6 +339,7 @@ tree visit_body_node(tree* node_pointer, int* walk_subtrees, void* data) {
         // reads the using-declaration itself.
         case USING_STMT:
             if (tree used = USING_STMT_NAMESPACE(node); used != NULL_TREE && TREE_CODE(used) == NAMESPACE_DECL) {
+                note_project_reference(used, walk.last);
                 record_namespace_name(used, std::string{}, walk.last);
             }
             *walk_subtrees = 0;

@@ -1,0 +1,4 @@
+#include <crucible/Top.h>
+// An argument of a base macro that the unit spells is a name of the unit, and
+// a base template that a crucible type instantiates names nothing in the base.
+inline bool checked() { return PLANT_CHECK(::crucible::read_thing() == 2); }

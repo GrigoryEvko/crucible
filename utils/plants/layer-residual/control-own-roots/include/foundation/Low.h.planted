@@ -1,0 +1,11 @@
+#pragma once
+// Prose can cite crucible::Arena and <crucible/Arena.h> freely.
+// #include <crucible/Arena.h> stays a comment.
+#include <vector>
+#include <foundation/Other.h>
+#include "Sibling.h"
+#define PLANT_SIBLING "Sibling.h"
+#include PLANT_SIBLING
+#if defined(PLANT_OPTION)
+#include <foundation/../foundation/Other.h>
+#endif

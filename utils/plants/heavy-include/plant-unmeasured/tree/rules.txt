@@ -1,0 +1,8 @@
+# The rule table of a plant of the rule heavy-include.  No heavy row and no
+# light row gives <cstdio>.
+
+quarantine include/crucible/
+quarantine unit.cpp
+
+heavy <chrono> | 1.12 s, 70628 lines
+light <cstdint> | 0.02 s, 178 lines

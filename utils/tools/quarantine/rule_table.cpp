@@ -228,6 +228,34 @@ std::string parse_admit(const std::vector<std::string>& args, AdmitRow& row) {
     return {};
 }
 
+// The namespace of a sealed PREFIX: its path after include/, one name for each
+// directory.  Returns an empty list when PREFIX is no directory under include/
+// or a part is no identifier.  ruletable.seal_namespace() gives the same
+// answer.
+std::vector<std::string> seal_namespace(const std::string& prefix) {
+    const std::string include = "include/";
+    if (!has_prefix(prefix, include) || prefix.back() != '/' || prefix.size() <= include.size()) {
+        return {};
+    }
+    std::vector<std::string> names;
+    std::size_t start = include.size();
+    while (start < prefix.size()) {
+        std::size_t end = prefix.find('/', start);
+        std::string part = prefix.substr(start, end - start);
+        if (!is_identifier(part)) {
+            return {};
+        }
+        names.push_back(part);
+        start = end + 1;
+    }
+    return names;
+}
+
+// The error of a seal row that does not obey the format of its words.
+constexpr const char* kSealFormat =
+    "a seal row is 'seal ROOT PREFIX...', with one ROOT file of the source root and each PREFIX a directory under "
+    "include/ whose parts are identifiers";
+
 // The bytes of the file at PATH, or false after an error.
 bool read_bytes(const std::string& path, std::string& text) {
     FILE* stream = fopen(path.c_str(), "rb");
@@ -269,8 +297,11 @@ bool load_rule_table(const std::string& path) {
     std::vector<std::pair<std::string, int>> in_path_lines;  // each path after `in`, and its line
     std::vector<std::pair<std::string, int>> language_layers;  // the layer name of each language row, and its line
     std::vector<std::pair<std::string, int>> language_path_lines;  // each path of a language row, and its line
-    // The entry of each admit row as the table spells it, and its line.
+    // The entry of each admit row as the table spells it, the root of each
+    // seal row and the header of each heavy and light row, and the line of each.
     crucible_rows::KeyLines admit_lines;
+    crucible_rows::KeyLines seal_lines;
+    crucible_rows::KeyLines cost_lines;
     bool is_valid = true;
     int line_number = 0;
     auto refuse = [&](const std::string& message) {
@@ -296,7 +327,7 @@ bool load_rule_table(const std::string& path) {
             continue;
         }
         if (row.cells.size() > 1) {
-            refuse("a row has at most one cell, the reason of an admit row");
+            refuse("a row has at most one cell: the reason of an admit row, or the measure of a heavy or a light row");
             continue;
         }
         const std::string& kind = row.words[0];
@@ -411,9 +442,47 @@ bool load_rule_table(const std::string& path) {
             }
             language_layers.emplace_back(args[0], line_number);
             table.languages.push_back(std::move(language));
+        } else if (kind == "seal") {
+            if (args.size() < 2 || !is_plain_path(args[0]) || args[0].back() == '/' || has_prefix(args[0], kBuildPrefix)
+                || !reason.empty()) {
+                refuse(kSealFormat);
+                continue;
+            }
+            SealRow seal;
+            seal.root = args[0];
+            bool is_valid_row = true;
+            for (std::size_t index = 1; index < args.size() && is_valid_row; ++index) {
+                std::vector<std::string> names = is_plain_path(args[index]) ? seal_namespace(args[index])
+                                                                            : std::vector<std::string>{};
+                is_valid_row = !names.empty();
+                seal.prefixes.push_back(args[index]);
+                seal.namespaces.push_back(std::move(names));
+            }
+            if (!is_valid_row) {
+                refuse(kSealFormat);
+                continue;
+            }
+            if (int first_line = seal_lines.add(seal.root, line_number); first_line > 0) {
+                refuse("the root " + seal.root + " has a second seal row, and its first seal row is on line "
+                       + std::to_string(first_line));
+                continue;
+            }
+            table.seals.push_back(std::move(seal));
+        } else if (kind == "heavy" || kind == "light") {
+            if (args.size() != 1 || !is_header(args[0])) {
+                refuse("a " + kind + " row is '" + kind + " HEADER [| MEASURE]', with a HEADER in angle brackets");
+                continue;
+            }
+            if (int first_line = cost_lines.add(args[0], line_number); first_line > 0) {
+                refuse("the header " + args[0] + " has a second heavy or light row, and its first row is on line "
+                       + std::to_string(first_line));
+                continue;
+            }
+            table.header_costs.emplace(args[0].substr(1, args[0].size() - 2),
+                                       kind == "heavy" ? HeaderCost::heavy : HeaderCost::light);
         } else {
-            refuse("the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce and "
-                   "language");
+            refuse("the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce, language, "
+                   "seal, heavy and light");
         }
     }
     for (std::size_t index = 0; index < allow_layers.size(); ++index) {

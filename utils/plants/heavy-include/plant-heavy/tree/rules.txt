@@ -1,0 +1,14 @@
+# The rule table of a plant of the rule heavy-include.  The layer low holds
+# include/fixy/, so fixy/BaseHeavy.h is base code.  <chrono> has a heavy row,
+# and <cstddef> and <cstdint> have light rows.
+
+layer low 0 include/fixy/
+
+allow low <cstddef>
+
+quarantine include/crucible/
+quarantine unit.cpp
+
+heavy <chrono> | 1.12 s, 70628 lines
+light <cstddef> | 0.02 s, 155 lines
+light <cstdint> | 0.02 s, 178 lines

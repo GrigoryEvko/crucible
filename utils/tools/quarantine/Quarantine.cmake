@@ -73,7 +73,7 @@ endif()
 # The sources of the plugin: one unit for each rule family, and the headers
 # that each unit includes.  rows_reader.cpp is the host program of the rule
 # rows-readers, and no part of the plugin.
-set(_crucible_quarantine_units plugin rule_table regions contract include library owner declaration expression)
+set(_crucible_quarantine_units plugin rule_table regions contract include unit library owner declaration expression)
 set(_crucible_quarantine_headers plugin.h rows.h)
 set(CRUCIBLE_QUARANTINE_SOURCES "")
 foreach(_crucible_quarantine_unit IN LISTS _crucible_quarantine_units)
@@ -229,7 +229,7 @@ endif()
 
 # The witness of the plugin: it compiles each plant and each control of the
 # rules of the engine plugin with the plugin that this configure builds
-# (utils/plants/quarantine/, utils/plants/contract-specifier/).  At most
+# (utils/plants/RULE/ of each such rule).  At most
 # _crucible_quarantine_test_jobs compilers of the test run at one time, and the
 # test asks ctest for the same number of processors.  So ctest -j counts each
 # compiler of the test.

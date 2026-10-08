@@ -1,0 +1,11 @@
+#pragma once
+// The root does not consult crucible::ledger, and #include <crucible/ledger/Verdict.h> stays a comment.
+#include "Sibling.h"
+static_assert(sizeof(int) >= 2, "crucible::ledger::verdict_value");
+namespace crucible::planted {
+struct ledger_like {};
+}  // namespace crucible::planted
+namespace other::ledger {
+struct Thing {};
+}  // namespace other::ledger
+#define PLANT_TWICE(value) ((value) + (value))

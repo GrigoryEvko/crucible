@@ -1,0 +1,4 @@
+#pragma once
+// A header outside the closure of the root reads the ledger.
+#include <crucible/ledger/Verdict.h>
+inline int consume() { return ::crucible::ledger::verdict_value(); }

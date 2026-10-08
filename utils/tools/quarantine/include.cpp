@@ -1,5 +1,6 @@
-// The family include closure: the include rules, the expansions of assert and
-// the provenance of each place.
+// The family include closure: the include rules, the seals, the heavy headers,
+// the names of a higher root, the expansions of assert and the provenance of
+// each place.
 //
 // The include rules apply to each #include directive that a base or a
 // quarantined file holds.  A base file can include a header of its own layer
@@ -7,6 +8,44 @@
 // rows give its layer.  A door header can have only its door as includer.  A
 // file of the language gets the allowance of its own layer and of the layer of
 // its language row, whichever is lower.
+//
+// THE SEALS (the rule detsafe-ledger)
+//     The include closure of a seal ROOT is ROOT and each file that a file of
+//     the closure includes, through each #include directive whose target the
+//     plugin knows.  The closure holds no file under a PREFIX of the row
+//     (sealed-include).  No file of the closure declares the namespace of a
+//     PREFIX, and no file of the closure spells a reference to a declaration
+//     of that namespace (sealed-name).  The report judges each seal one time,
+//     when the unit knows each directive and each reference.  The sentinel
+//     unit of each header of include/ compiles the header alone, so the
+//     namespace of a PREFIX exists there only when the closure declares it.
+//     The plugin reads only the arms that a build compiles.  An #include or a
+//     name in another arm, and a name in a macro body that no unit expands, is
+//     no finding (decision 5 of misc/01_10_2026_quarantine.md).
+//
+// THE HEAVY HEADERS (the rule heavy-include)
+//     A heavy row gives a header outside the root whose compile alone costs
+//     more than the limit of the rule heavy-include of utils/registry.txt, and
+//     a light row gives such a header that costs no more.  `loop derive
+//     header-costs` writes the two kinds of row from a measure.  A file under
+//     include/ that includes a header with a heavy row gets heavy-include, and
+//     one that includes a header outside the root with no row of either kind
+//     gets unmeasured-header: measure it.  A base file gets these findings
+//     beside the findings of the include rules, so an allow row does not make
+//     a heavy header light.  A table with no heavy row and no light row, such
+//     as the table of a plant of a different rule, gives no such finding, and
+//     the rule heavy-include refuses such a table of the tree.
+//
+// THE NAMES OF A HIGHER ROOT (the rule layer-boundary)
+//     The project roots are the directories under include/ of the layer rows
+//     and of the quarantine rows.  The rank of a root is the lowest rank of a
+//     layer row of the root, and a root of a quarantine row is above each
+//     layer.  A base file names only a root of its own rank or of a lower
+//     rank.  So a base file does not open the namespace of a higher root first
+//     in a unit (upward-name), and the code does not spell a reference to a
+//     declaration of a higher root in a base file.  The sentinel unit of each
+//     base header and the unit of each base source file open no namespace of a
+//     higher root before a base file does, when the base file opens one.
 //
 // THE HOOKS
 //     PLUGIN_INCLUDE_FILE    each file that the preprocessor enters.  The file
@@ -67,9 +106,31 @@ const FileEntry* resolve_skipped_include(const PendingInclude& pending) {
     return nullptr;
 }
 
+// The prefix of the path of a file that the rule heavy-include reads.
+constexpr const char* kHeavyScope = "include/";
+
+// The heavy headers: a file under include/ that includes a header outside the
+// root (THE HEAVY HEADERS).  A target that the plugin cannot find is a header
+// outside the root too.
+void check_header_cost(const PendingInclude& pending, const FileEntry* target) {
+    const FileEntry& includer = *pending.place.file;
+    if (state.table.header_costs.empty() || !has_prefix(includer.relative, kHeavyScope)
+        || (target != nullptr && target->file_class != FileClass::outside)) {
+        return;
+    }
+    std::string header = "<" + pending.spelled + ">";
+    auto found = state.table.header_costs.find(pending.spelled);
+    if (found == state.table.header_costs.end()) {
+        add_finding(Kind::unmeasured_header, nullptr, pending.place, header);
+    } else if (found->second == HeaderCost::heavy) {
+        add_finding(Kind::heavy_include, nullptr, pending.place, header);
+    }
+}
+
 // The include rules for one directive and its target.
 void check_include(const PendingInclude& pending, const FileEntry* target) {
     const FileEntry& includer = *pending.place.file;
+    check_header_cost(pending, target);
     if (target != nullptr && target->file_class != FileClass::outside) {
         if (includer.file_class != FileClass::base
             || (target->file_class == FileClass::base && layer_rank(target->layer) <= layer_rank(includer.layer))) {
@@ -161,6 +222,9 @@ void check_rename(const line_map_ordinary* map) {
         const line_map_ordinary* main_map = LINEMAPS_ORDINARY_MAP_AT(line_table, 0);
         state.is_main_started =
             main_map != map && std::strcmp(ORDINARY_MAP_FILE_NAME(main_map), ORDINARY_MAP_FILE_NAME(map)) == 0;
+        if (state.is_main_started) {
+            note_main_started();
+        }
         return;
     }
     unsigned used = LINEMAPS_ORDINARY_USED(line_table);
@@ -265,7 +329,398 @@ void finish_pending_include(const FileEntry* entered) {
     }
     PendingInclude pending = std::move(state.pending);
     state.pending = PendingInclude{};
-    check_include(pending, entered != nullptr ? entered : resolve_skipped_include(pending));
+    const FileEntry* target = entered != nullptr ? entered : resolve_skipped_include(pending);
+    if (target != nullptr && !state.table.seals.empty()) {
+        state.include_edges.push_back(IncludeEdge{pending.place.file, target, pending.place});
+    }
+    check_include(pending, target);
+}
+
+namespace {
+
+// ── The project roots (THE NAMES OF A HIGHER ROOT) ──────────────────────
+
+// The rank of a root of a quarantine row, above each layer.
+constexpr int kTopRank = INT_MAX;
+
+// The project root of a path of the table or of a file: the directory after
+// the first directory, such as fixy for include/fixy/Fn.h or src/fixy/os/, or
+// "" for a path with no such directory.
+std::string root_of_path(const std::string& relative) {
+    std::size_t first = relative.find('/');
+    if (first == std::string::npos) {
+        return {};
+    }
+    std::size_t second = relative.find('/', first + 1);
+    return second == std::string::npos ? std::string{} : relative.substr(first + 1, second - first - 1);
+}
+
+// The rank of each project root, from the rule table.  The table of a unit
+// does not change, so the map is made one time.  Complexity: O(paths of the
+// layer rows and the quarantine rows).
+const std::unordered_map<std::string, int>& root_ranks() {
+    static const std::unordered_map<std::string, int> ranks = [] {
+        std::unordered_map<std::string, int> made;
+        for (const LayerRow& layer : state.table.layers) {
+            for (const std::string& path : layer.paths) {
+                std::string root = has_prefix(path, "include/") || has_prefix(path, "src/") ? root_of_path(path)
+                                                                                           : std::string{};
+                if (root.empty()) {
+                    continue;
+                }
+                auto [entry, is_new] = made.emplace(root, layer.rank);
+                if (!is_new && layer.rank < entry->second) {
+                    entry->second = layer.rank;
+                }
+            }
+        }
+        for (const std::string& path : state.table.quarantines) {
+            std::string root = has_prefix(path, "include/") ? root_of_path(path) : std::string{};
+            if (!root.empty()) {
+                made.emplace(root, kTopRank);
+            }
+        }
+        return made;
+    }();
+    return ranks;
+}
+
+// The rank of a project root, or -1 for a name that is no project root.
+int rank_of_root(const std::string& root) {
+    auto found = root_ranks().find(root);
+    return found != root_ranks().end() ? found->second : -1;
+}
+
+// The lowest rank of a project root, or kTopRank for a table with no root.
+// A declaration of a root of this rank is never the name of a higher root.
+int lowest_root_rank() {
+    static const int lowest = [] {
+        int made = kTopRank;
+        for (const auto& [root, rank] : root_ranks()) {
+            made = std::min(made, rank);
+        }
+        return made;
+    }();
+    return lowest;
+}
+
+// The namespaces of the seal rows, each one time, such as {crucible, ledger}.
+// The table of a unit does not change, so the list is made one time.
+const std::vector<std::vector<std::string>>& sealed_namespaces() {
+    static const std::vector<std::vector<std::string>> namespaces = [] {
+        std::vector<std::vector<std::string>> made;
+        for (const SealRow& seal : state.table.seals) {
+            for (const std::vector<std::string>& names : seal.namespaces) {
+                if (std::find(made.begin(), made.end(), names) == made.end()) {
+                    made.push_back(names);
+                }
+            }
+        }
+        return made;
+    }();
+    return namespaces;
+}
+
+// The facts of a namespace at the top of the global namespace, for the
+// references to its declarations: the rank of its root, and whether a seal row
+// names a namespace in it.  The cache holds the namespace node, and the
+// collection hook of plugin.cpp clears it.  Complexity: O(1) for a namespace
+// that the cache holds.
+const TopFacts& facts_of_top(tree top) {
+    auto found = state.top_facts.find(top);
+    if (found != state.top_facts.end()) {
+        return found->second;
+    }
+    std::string root = simple_name(top);
+    TopFacts facts;
+    facts.rank = rank_of_root(root);
+    for (const std::vector<std::string>& names : sealed_namespaces()) {
+        facts.is_sealed_root = facts.is_sealed_root || names.front() == root;
+    }
+    return state.top_facts.emplace(top, facts).first->second;
+}
+
+// True when the namespaces of DECL, outermost first and with no inline
+// namespace, start with the names of a namespace of a seal row.  This is the
+// test is_in_namespace(namespace_of(DECL), the names of the row) with no text.
+// Complexity: O(depth of the scopes).
+bool is_in_sealed_namespace(tree decl) {
+    tree current = decl;
+    for (int depth = 0; current != NULL_TREE && TREE_CODE(current) != NAMESPACE_DECL && depth < kTypeDepth; ++depth) {
+        current = TYPE_P(current) ? CP_TYPE_CONTEXT(TYPE_MAIN_VARIANT(current))
+                  : DECL_P(current) ? CP_DECL_CONTEXT(current)
+                                    : NULL_TREE;
+    }
+    // The names of the namespaces, innermost first.  A namespace with no name
+    // gives null, which no name of a seal row equals.
+    std::array<const char*, kTypeDepth> names{};
+    std::size_t count = 0;
+    for (tree scope = current; scope != NULL_TREE && scope != global_namespace && count < names.size();
+         scope = CP_DECL_CONTEXT(scope)) {
+        if (TREE_CODE(scope) != NAMESPACE_DECL) {
+            return false;
+        }
+        if (!DECL_NAMESPACE_INLINE_P(scope)) {
+            names[count++] = DECL_NAME(scope) != NULL_TREE ? IDENTIFIER_POINTER(DECL_NAME(scope)) : nullptr;
+        }
+    }
+    for (const std::vector<std::string>& sealed : sealed_namespaces()) {
+        bool is_prefix = sealed.size() <= count;
+        for (std::size_t index = 0; is_prefix && index < sealed.size(); ++index) {
+            const char* name = names[count - 1 - index];
+            is_prefix = name != nullptr && sealed[index] == name;
+        }
+        if (is_prefix) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The namespaces of DECL, outermost first, with no inline namespace: the
+// namespace that holds DECL and each namespace around it.  A namespace gives
+// itself too.  Complexity: O(depth of the scopes).
+std::string namespace_of(tree decl) {
+    tree current = decl;
+    for (int depth = 0; current != NULL_TREE && TREE_CODE(current) != NAMESPACE_DECL && depth < kTypeDepth; ++depth) {
+        current = TYPE_P(current) ? CP_TYPE_CONTEXT(TYPE_MAIN_VARIANT(current))
+                  : DECL_P(current) ? CP_DECL_CONTEXT(current)
+                                    : NULL_TREE;
+    }
+    return current == NULL_TREE || current == global_namespace ? std::string{} : qualified_name(current);
+}
+
+// The text of the names of a namespace of a seal row, such as crucible::ledger.
+std::string joined_names(const std::vector<std::string>& names) {
+    std::string text;
+    for (const std::string& name : names) {
+        text += text.empty() ? name : "::" + name;
+    }
+    return text;
+}
+
+// True when the namespace SCOPE is the namespace NAMES or a namespace in it.
+bool is_in_namespace(const std::string& scope, const std::string& names) {
+    return scope == names || has_prefix(scope, names + "::");
+}
+
+// True when the source spells the name of DECL, or the name of a class or a
+// namespace around it, at the start of LOCATION.  The walk gives a reference
+// the location of the expression that holds it, so an implicit call, such as
+// a destructor, and a name of a macro argument that an expression of the
+// macro body holds have a location where the source spells a different name.
+// Complexity: O(depth of the scopes).
+bool is_named_at(tree decl, location_t location) {
+    std::string spelled = identifier_spelled_at(location);
+    if (spelled.empty()) {
+        return false;
+    }
+    tree current = decl;
+    for (int depth = 0; current != NULL_TREE && current != global_namespace && depth < kTypeDepth; ++depth) {
+        tree named = TYPE_P(current) ? TYPE_MAIN_DECL(TYPE_MAIN_VARIANT(current)) : current;
+        if (named != NULL_TREE && DECL_P(named) && DECL_NAME(named) != NULL_TREE
+            && spelled == IDENTIFIER_POINTER(DECL_NAME(named))) {
+            return true;
+        }
+        current = TYPE_P(current) ? CP_TYPE_CONTEXT(TYPE_MAIN_VARIANT(current))
+                  : DECL_P(current) ? CP_DECL_CONTEXT(current)
+                                    : NULL_TREE;
+    }
+    return false;
+}
+
+// The place of a declaration: the file of the macro expansion point of its
+// location, so a declaration that a macro of a base file makes in a different
+// file is a declaration of that different file.
+Place declaration_place(tree decl) {
+    location_t point = linemap_resolve_location(line_table, DECL_SOURCE_LOCATION(decl),
+                                                LRK_MACRO_EXPANSION_POINT, nullptr);
+    return place_of(point, Scope::quarantine);
+}
+
+// The namespace NAMES of the unit, or null when the unit holds no such
+// namespace.  A qualified lookup finds a namespace through an inline
+// namespace, and an alias gives its namespace.
+tree find_namespace(const std::vector<std::string>& names) {
+    tree current = global_namespace;
+    for (const std::string& name : names) {
+        tree found = lookup_qualified_name(current, get_identifier(name.c_str()), LOOK_want::NAMESPACE, false);
+        if (found == NULL_TREE || found == error_mark_node || TREE_CODE(found) != NAMESPACE_DECL) {
+            return NULL_TREE;
+        }
+        current = ORIGINAL_NAMESPACE(found);
+    }
+    return current;
+}
+
+// The directives of each file of the unit, for the include closures.
+using EdgesOf = std::unordered_map<const FileEntry*, std::vector<const IncludeEdge*>>;
+
+// The include closure of the file ROOT in the unit (THE SEALS), and a
+// sealed-include finding for each directive of the closure whose target is
+// under a PREFIX of SEAL.  The walk does not enter a sealed file.
+// Complexity: O(edges of the unit).
+std::unordered_set<const FileEntry*> sealed_closure(const SealRow& seal, const FileEntry* root,
+                                                   const EdgesOf& edges_of) {
+    std::unordered_set<const FileEntry*> closure{root};
+    std::vector<const FileEntry*> queue{root};
+    while (!queue.empty()) {
+        const FileEntry* current = queue.back();
+        queue.pop_back();
+        auto found = edges_of.find(current);
+        if (found == edges_of.end()) {
+            continue;
+        }
+        for (const IncludeEdge* edge : found->second) {
+            const std::string& target = edge->to->relative;
+            if (target.empty()) {
+                continue;
+            }
+            bool is_sealed = false;
+            for (const std::string& prefix : seal.prefixes) {
+                is_sealed = is_sealed || has_prefix(target, prefix);
+            }
+            if (is_sealed) {
+                add_finding(Kind::sealed_include, nullptr, edge->directive,
+                            target + " in the include closure of " + seal.root);
+            } else if (closure.insert(edge->to).second) {
+                queue.push_back(edge->to);
+            }
+        }
+    }
+    return closure;
+}
+
+// The sealed-name findings of SEAL: the first opening of a sealed namespace in
+// a file of the closure, and each reference that a file of the closure spells.
+void check_sealed_names(const SealRow& seal, const std::unordered_set<const FileEntry*>& closure) {
+    for (const std::vector<std::string>& names : seal.namespaces) {
+        std::string text = joined_names(names);
+        if (tree sealed = find_namespace(names)) {
+            Place place = declaration_place(sealed);
+            if (place.file != nullptr && closure.count(place.file) != 0) {
+                add_finding(Kind::sealed_name, nullptr, place,
+                            "the namespace " + text + " in the include closure of " + seal.root);
+            }
+        }
+        for (const SealedReference& reference : state.sealed_references) {
+            if (closure.count(reference.place.file) != 0 && is_in_namespace(reference.scope, text)) {
+                add_finding(Kind::sealed_name, nullptr, reference.place,
+                            reference.entity + " in the include closure of " + seal.root);
+            }
+        }
+    }
+}
+
+// The first opening of the namespace of each root above the lowest root, when
+// a base file of a lower root opens it (THE NAMES OF A HIGHER ROOT).  The roots
+// are read in the order of their names, so the report has one order.
+void check_upward_namespaces() {
+    std::vector<std::pair<std::string, int>> roots(root_ranks().begin(), root_ranks().end());
+    std::sort(roots.begin(), roots.end());
+    for (const auto& [root, rank] : roots) {
+        tree opened = find_namespace({root});
+        if (opened == NULL_TREE) {
+            continue;
+        }
+        Place place = declaration_place(opened);
+        if (place.file_class != FileClass::base) {
+            continue;
+        }
+        int file_rank = rank_of_root(root_of_path(place.file->relative));
+        if (file_rank >= 0 && file_rank < rank) {
+            add_finding(Kind::upward_name, nullptr, place,
+                        "the namespace " + root + " from the root " + root_of_path(place.file->relative));
+        }
+    }
+}
+
+}  // namespace
+
+// One reference of the code to the declaration or the namespace NAMED at
+// LOCATION, from the walk of a body or of a declaration.  The reference
+// counts only when the source spells a name of it at LOCATION (is_named_at).
+// The walk reads no body of a template instantiation, so a name that only an
+// instantiation resolves is no reference of the source.  A reference to a
+// declaration of a sealed namespace waits for the report (THE SEALS).  A
+// reference that a base file spells to a declaration of a higher root is an
+// upward-name (THE NAMES OF A HIGHER ROOT).  The plugin reads the place and
+// the source text of a reference only when one of the two rules can judge it.
+// Complexity: O(depth of the scopes) for a declaration of a project root, and
+// O(1) for each other.
+void note_project_reference(tree named, location_t location) {
+    if (named == NULL_TREE || location <= BUILTINS_LOCATION) {
+        return;
+    }
+    tree decl = named;
+    if (TREE_CODE(decl) == BASELINK) {
+        decl = BASELINK_FUNCTIONS(decl);
+    }
+    if (TREE_CODE(decl) == OVERLOAD) {
+        decl = OVL_FIRST(decl);
+    }
+    if (TYPE_P(decl)) {
+        decl = TYPE_MAIN_DECL(TYPE_MAIN_VARIANT(decl));
+    }
+    if (decl == NULL_TREE || !DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl)) {
+        return;
+    }
+    tree top = top_namespace(decl);
+    if (top == global_namespace || top == std_node) {
+        return;
+    }
+    const TopFacts& facts = facts_of_top(top);
+    // A reference waits for the seals only when its declaration is in a sealed
+    // namespace, and it can be an upward-name only when a root has a lower
+    // rank.  Each other reference stops here, before the place and the text.
+    bool is_sealed = facts.is_sealed_root && is_in_sealed_namespace(decl);
+    bool can_be_upward = facts.rank > lowest_root_rank();
+    if (!is_sealed && !can_be_upward) {
+        return;
+    }
+    Place place = place_of(location, Scope::quarantine);
+    if (place.file == nullptr) {
+        return;
+    }
+    int file_rank = place.file_class == FileClass::base ? rank_of_root(root_of_path(place.file->relative)) : -1;
+    bool is_upward = file_rank >= 0 && file_rank < facts.rank;
+    if ((!is_sealed && !is_upward) || !is_named_at(decl, location)) {
+        return;
+    }
+    std::string entity = TREE_CODE(decl) == NAMESPACE_DECL ? "the namespace " + qualified_name(decl)
+                                                           : qualified_name(decl);
+    if (is_sealed) {
+        state.sealed_references.push_back(SealedReference{place, namespace_of(decl), entity});
+    }
+    if (is_upward) {
+        add_finding(Kind::upward_name, nullptr, place, entity + " from the root " + root_of_path(place.file->relative));
+    }
+}
+
+// The findings of the include closure that the report judges when the unit
+// knows each directive and each reference: the seals and the namespaces of a
+// higher root.  Complexity: O(seals * edges) and O(roots).
+void report_include_closure() {
+    check_upward_namespaces();
+    if (state.table.seals.empty()) {
+        return;
+    }
+    std::unordered_map<std::string, const FileEntry*> by_relative;
+    for (const auto& [real, entry] : state.entries) {
+        if (!entry.relative.empty()) {
+            by_relative.emplace(entry.relative, &entry);
+        }
+    }
+    EdgesOf edges_of;
+    for (const IncludeEdge& edge : state.include_edges) {
+        edges_of[edge.from].push_back(&edge);
+    }
+    for (const SealRow& seal : state.table.seals) {
+        auto root = by_relative.find(seal.root);
+        if (root != by_relative.end()) {
+            check_sealed_names(seal, sealed_closure(seal, root->second, edges_of));
+        }
+    }
 }
 
 // Registers the callbacks of libcpp and the hooks of the include rules and of

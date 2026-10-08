@@ -29,9 +29,9 @@
 # After the last target, crucible_check_contract_ignore_pairs() examines
 # each scope of the build.  It rejects a scope that has one of the two items
 # without the other, and a target that has the two items without the
-# property.  The ci_guard test contract_semantic reads the compile database,
-# and it rejects a compile whose last semantic flag does not agree with the
-# define.
+# property.  The rule contract-semantic of the quarantine plugin reads the
+# semantic and the define of each unit, and a unit whose semantic does not
+# agree with the define is a compile error.
 
 set(CRUCIBLE_CONTRACT_IGNORE_FLAG -fcontract-evaluation-semantic=ignore)
 set(CRUCIBLE_CONTRACT_IGNORE_DEFINE CRUCIBLE_CONTRACT_SEMANTIC_IGNORE)

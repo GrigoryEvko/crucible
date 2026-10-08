@@ -1,8 +1,7 @@
 # The rule table of the base layers and of the quarantine.
 #
 # The quarantine plugin of utils/tools/quarantine/ reads this table through
-# utils/tools/quarantine/rows.h, and the layer guard
-# utils/assay/guard/legacy/check_layer_boundary.py reads it through
+# utils/tools/quarantine/rows.h, and the Python rules read it through
 # utils/assay/core/ruletable.py.  So each rule has one source.  The two readers
 # obey the rows grammar of utils/assay/core/rows.py, and the rule rows-readers
 # compares them.
@@ -90,6 +89,26 @@
 #       Each other finding in a file of the language is a compile error in
 #       each build.  A PATH is in one language row at most, and it must be a
 #       path of the base
+#   seal ROOT PREFIX...
+#       The include closure of the file ROOT holds no file under a PREFIX,
+#       and no file of the closure names the namespace of a PREFIX.  The
+#       namespace of a PREFIX has one name for each directory after
+#       include/, such as crucible::ledger for include/crucible/ledger/.  Each
+#       PREFIX is a directory under include/, and a ROOT has one seal row at
+#       most.  The rule detsafe-ledger holds each seal row.  It also makes sure
+#       that each ROOT exists, and that each row seals each directory named
+#       ledger under include/ and the namespace ledger of each project root
+#   heavy HEADER | MEASURE
+#   light HEADER | MEASURE
+#       The header HEADER outside the source root costs more than the limit of
+#       the rule heavy-include of utils/registry.txt (heavy), or no more
+#       (light).  MEASURE gives the seconds and the lines of a compile of the
+#       header alone, or `unmeasured:` and the reason, and an unmeasured header
+#       is heavy.  `loop derive header-costs` (utils/assay/loop/derive/
+#       header_costs.py) writes these rows after the marker comment at the end
+#       of the table, and no other row can be after that comment.  A file under
+#       include/ that includes a header outside the source root with no heavy
+#       row and no light row is a finding of the rule heavy-include
 #
 # THE LONGEST PATH
 #   When the PATHs of two rows hold one file, the longer PATH decides.  A
@@ -196,3 +215,194 @@ enforce utils/tools/ report
 enforce vessel/ report
 
 language F0_primitives include/foundation/core/ include/fixy/Core.h
+
+# The hashing path: content_hash and merkle_hash, the IR whose shape the hashes
+# read, the memory plan, the deterministic RNG, the choice of a BITEXACT recipe,
+# the on-disk form of all of these, and the identity of a Cog with the key of the
+# kernel cache.  A verdict of the hardware ledger is a property of one machine,
+# so it must not reach the hashing path (axiom 8, DetSafe).
+seal include/crucible/Types.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+seal include/crucible/MerkleDag.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+seal include/crucible/KernelCache.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+seal include/crucible/DimHash.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+seal include/crucible/TraceGraph.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+seal include/crucible/Graph.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+seal include/crucible/Expr.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+seal include/crucible/ExprPool.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+seal include/crucible/CKernel.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+seal include/crucible/StorageNbytes.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+seal include/crucible/PoolAllocator.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+seal include/crucible/Philox.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+seal include/crucible/NumericalRecipe.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+seal include/crucible/RecipeRegistry.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+seal include/crucible/Serialize.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+seal include/crucible/cog/CogIdentity.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+seal include/crucible/mimic/CogMimic.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+
+# The heavy and the light rows.  `python3 utils/bin/loop derive header-costs --measure BUILD_DIR` writes each line after this one.
+# Measured 2026-10-01 on AMD EPYC 9655 96-Core Processor, 376 threads, load average 789.  An empty translation unit costs 0.01 s.
+light <algorithm> | 0.17 s, 27907 lines
+light <any> | 0.04 s, 3480 lines
+heavy <arm_neon.h> | unmeasured: it does not compile alone with the flags of test/foundation/test_row_hash.cpp: arm_neon.h: No such file or directory
+light <array> | 0.30 s, 27822 lines
+light <atomic> | 0.09 s, 9365 lines
+light <barrier> | 0.45 s, 44122 lines
+light <bit> | 0.03 s, 3284 lines
+light <bitset> | 0.32 s, 28586 lines
+light <bpf/bpf.h> | 0.02 s, 2441 lines
+heavy <bpf/bpf_core_read.h> | unmeasured: it does not compile alone with the flags of test/foundation/test_row_hash.cpp: invalid conversion from ‘void*’ to ‘void* (*)(void*, const void*)’ [-fpermissive]
+heavy <bpf/bpf_helpers.h> | unmeasured: it does not compile alone with the flags of test/foundation/test_row_hash.cpp: invalid conversion from ‘void*’ to ‘void* (*)(void*, const void*)’ [-fpermissive]
+heavy <bpf/bpf_tracing.h> | unmeasured: it does not compile alone with the flags of test/foundation/test_row_hash.cpp: invalid conversion from ‘void*’ to ‘void* (*)(void*, const void*)’ [-fpermissive]
+light <bpf/libbpf.h> | 0.04 s, 3559 lines
+light <bpf/libbpf_legacy.h> | 0.02 s, 2117 lines
+light <cassert> | 0.02 s, 63 lines
+heavy <ccomplex> | unmeasured: it does not compile alone with the flags of test/foundation/test_row_hash.cpp: #warning "<ccomplex> is deprecated in C++17, use <complex> instead" [-Werror=cpp]
+light <cctype> | 0.02 s, 204 lines
+light <cerrno> | 0.01 s, 59 lines
+light <cfenv> | 0.01 s, 159 lines
+light <cfloat> | 0.01 s, 53 lines
+light <charconv> | 0.05 s, 4033 lines
+heavy <chrono> | 1.12 s, 70628 lines
+light <cinttypes> | 0.02 s, 213 lines
+heavy <ciso646> | unmeasured: it does not compile alone with the flags of test/foundation/test_row_hash.cpp: #warning "<ciso646> is not a standard header since C++20, use <version> to detect implementation-specific macros" [-Werror=cpp]
+light <climits> | 0.02 s, 62 lines
+light <clocale> | 0.02 s, 105 lines
+light <cmath> | 0.38 s, 33852 lines
+light <codecvt> | 0.38 s, 37523 lines
+light <compare> | 0.04 s, 3416 lines
+heavy <complex.h> | 0.99 s, 62020 lines
+heavy <complex> | 0.95 s, 62018 lines
+light <concepts> | 0.03 s, 2495 lines
+heavy <condition_variable> | 0.52 s, 51559 lines
+light <contracts> | 0.03 s, 2824 lines
+light <coroutine> | 0.04 s, 3583 lines
+light <cpuid.h> | 0.02 s, 38 lines
+light <csetjmp> | 0.02 s, 85 lines
+light <csignal> | 0.04 s, 1378 lines
+heavy <cstdalign> | unmeasured: it does not compile alone with the flags of test/foundation/test_row_hash.cpp: #warning "<cstdalign> is deprecated in C++17, remove the #include" [-Werror=cpp]
+light <cstdarg> | 0.02 s, 59 lines
+heavy <cstdbool> | unmeasured: it does not compile alone with the flags of test/foundation/test_row_hash.cpp: #warning "<cstdbool> is deprecated in C++17, remove the #include" [-Werror=cpp]
+light <cstddef> | 0.02 s, 155 lines
+light <cstdint> | 0.02 s, 178 lines
+light <cstdio> | 0.03 s, 736 lines
+light <cstdlib> | 0.03 s, 984 lines
+light <cstring> | 0.02 s, 468 lines
+heavy <ctgmath> | unmeasured: it does not compile alone with the flags of test/foundation/test_row_hash.cpp: #warning "<ctgmath> is deprecated in C++17, use <complex> or <cmath> instead" [-Werror=cpp]
+light <ctime> | 0.02 s, 282 lines
+light <cuchar> | 0.03 s, 868 lines
+light <cwchar> | 0.02 s, 776 lines
+light <cwctype> | 0.02 s, 224 lines
+light <cxxabi.h> | 0.02 s, 567 lines
+light <debugging> | 0.01 s, 62 lines
+light <deque> | 0.32 s, 30825 lines
+light <emmintrin.h> | 0.04 s, 3840 lines
+light <exception> | 0.03 s, 2863 lines
+heavy <execution> | 0.67 s, 77502 lines
+light <expected> | 0.05 s, 6299 lines
+light <fcntl.h> | 0.02 s, 360 lines
+light <fenv.h> | 0.02 s, 143 lines
+heavy <filesystem> | 0.98 s, 62106 lines
+heavy <flat_map> | 0.62 s, 70778 lines
+light <flat_set> | 0.43 s, 48252 lines
+heavy <format> | 0.82 s, 50714 lines
+light <forward_list> | 0.15 s, 19341 lines
+heavy <fstream> | 0.84 s, 54455 lines
+light <functional> | 0.42 s, 41516 lines
+heavy <future> | 0.64 s, 53791 lines
+heavy <generator> | 0.49 s, 52700 lines
+heavy <immintrin.h> | 0.58 s, 62192 lines
+light <initializer_list> | 0.01 s, 89 lines
+light <inplace_vector> | 0.33 s, 35958 lines
+heavy <iomanip> | 0.87 s, 54504 lines
+light <ios> | 0.40 s, 40836 lines
+light <iosfwd> | 0.03 s, 977 lines
+heavy <iostream> | 0.84 s, 53096 lines
+heavy <istream> | 0.85 s, 53084 lines
+light <iterator> | 0.38 s, 38627 lines
+light <latch> | 0.08 s, 8173 lines
+light <limits> | 0.02 s, 1217 lines
+light <linux/io_uring.h> | 0.02 s, 879 lines
+light <linux/mempolicy.h> | 0.01 s, 10 lines
+light <linux/netlink.h> | 0.01 s, 169 lines
+light <linux/ptp_clock.h> | 0.02 s, 129 lines
+light <list> | 0.14 s, 19729 lines
+light <locale> | 0.43 s, 43912 lines
+light <map> | 0.31 s, 31600 lines
+light <math.h> | 0.41 s, 33922 lines
+light <mdspan> | 0.34 s, 31332 lines
+heavy <memory> | 0.52 s, 49400 lines
+light <memory_resource> | 0.37 s, 35189 lines
+light <meta> | 0.37 s, 34799 lines
+light <mmintrin.h> | 0.02 s, 659 lines
+light <mutex> | 0.15 s, 17513 lines
+light <new> | 0.02 s, 209 lines
+light <nmmintrin.h> | 0.05 s, 4501 lines
+light <numbers> | 0.03 s, 2278 lines
+light <numeric> | 0.11 s, 15240 lines
+light <optional> | 0.11 s, 13229 lines
+heavy <ostream> | 0.93 s, 51737 lines
+light <pmmintrin.h> | 0.05 s, 3913 lines
+heavy <print> | 0.81 s, 50911 lines
+light <pthread.h> | 0.02 s, 878 lines
+heavy <queue> | 0.52 s, 58916 lines
+heavy <random> | 0.59 s, 55286 lines
+heavy <ranges> | 0.48 s, 51530 lines
+light <ratio> | 0.03 s, 2733 lines
+heavy <regex> | 0.65 s, 77448 lines
+light <sched.h> | 0.01 s, 185 lines
+light <scoped_allocator> | 0.12 s, 15109 lines
+light <semaphore> | 0.11 s, 11291 lines
+light <set> | 0.15 s, 21571 lines
+light <shared_mutex> | 0.08 s, 8550 lines
+light <signal.h> | 0.03 s, 1319 lines
+light <simd> | 0.46 s, 42024 lines
+light <smmintrin.h> | 0.05 s, 4501 lines
+light <source_location> | 0.02 s, 94 lines
+light <span> | 0.29 s, 28214 lines
+heavy <spanstream> | 0.85 s, 53407 lines
+heavy <sstream> | 0.82 s, 54052 lines
+heavy <stack> | 0.50 s, 55075 lines
+heavy <stacktrace> | 0.89 s, 55543 lines
+light <stdatomic.h> | 0.09 s, 9446 lines
+light <stdbit.h> | 0.04 s, 3610 lines
+light <stdckdint.h> | 0.03 s, 2528 lines
+light <stdexcept> | 0.30 s, 27522 lines
+light <stdfloat> | 0.01 s, 61 lines
+light <stdlib.h> | 0.02 s, 1017 lines
+light <stop_token> | 0.46 s, 47632 lines
+light <streambuf> | 0.36 s, 38171 lines
+light <string> | 0.29 s, 27506 lines
+light <string_view> | 0.29 s, 27506 lines
+heavy <syncstream> | 0.91 s, 55889 lines
+light <sys/auxv.h> | 0.02 s, 461 lines
+light <sys/ioctl.h> | 0.01 s, 10 lines
+light <sys/mman.h> | 0.01 s, 108 lines
+light <sys/prctl.h> | 0.01 s, 77 lines
+light <sys/resource.h> | 0.01 s, 217 lines
+light <sys/sendfile.h> | 0.02 s, 298 lines
+light <sys/socket.h> | 0.02 s, 538 lines
+light <sys/stat.h> | 0.02 s, 261 lines
+light <sys/syscall.h> | 0.01 s, 0 lines
+light <sys/types.h> | 0.02 s, 292 lines
+light <system_error> | 0.30 s, 27780 lines
+light <text_encoding> | 0.34 s, 35460 lines
+heavy <tgmath.h> | 0.95 s, 62020 lines
+heavy <thread> | 0.94 s, 57961 lines
+light <time.h> | 0.01 s, 209 lines
+light <tmmintrin.h> | 0.04 s, 4078 lines
+light <tuple> | 0.10 s, 14005 lines
+light <type_traits> | 0.02 s, 2210 lines
+light <typeindex> | 0.04 s, 3570 lines
+light <typeinfo> | 0.01 s, 157 lines
+light <unistd.h> | 0.02 s, 752 lines
+light <unordered_map> | 0.31 s, 32709 lines
+light <unordered_set> | 0.32 s, 32567 lines
+light <utility> | 0.05 s, 5451 lines
+light <valarray> | 0.46 s, 47527 lines
+light <variant> | 0.06 s, 8231 lines
+light <vector> | 0.37 s, 31966 lines
+light <version> | 0.01 s, 53 lines
+light <wmmintrin.h> | 0.04 s, 3862 lines
+light <x86gprintrin.h> | 0.04 s, 1407 lines
+heavy <x86intrin.h> | 0.59 s, 63155 lines
+light <xmmintrin.h> | 0.04 s, 3840 lines

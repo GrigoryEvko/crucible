@@ -6,7 +6,7 @@
 
 table-unit plant_std.cpp
 
-table tables/an-unknown-row-kind.txt refused 1 | the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce and language
+table tables/an-unknown-row-kind.txt refused 1 | the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce, language, seal, heavy and light
 table tables/a-rank-that-is-not-digits.txt refused 1 | a layer row is 'layer NAME RANK PATH...', with a RANK of digits
 table tables/a-rank-of-two-layers.txt refused 2 | the rank belongs to a second layer
 table tables/a-layer-with-two-rows.txt refused 2 | the layer has a second row
@@ -51,6 +51,16 @@ table tables/a-rank-of-a-superscript-digit.txt refused 1 | a layer row is 'layer
 table tables/an-arity-of-arabic-indic-digits.txt refused 1 | an admit row is 'admit ENTRY [RESTRICTION...] \| REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
 table tables/two-admit-rows-of-one-name.txt refused 2 | the entry std::move has a second admit row, and its first admit row is on line 1
 table tables/two-admit-rows-of-one-header.txt refused 3 | the entry <utility> has a second admit row, and its first admit row is on line 1
+table tables/a-seal-row-with-no-prefix.txt refused 1 | a seal row is 'seal ROOT PREFIX...', with one ROOT file of the source root and each PREFIX a directory under include/ whose parts are identifiers
+table tables/a-seal-prefix-outside-include.txt refused 1 | a seal row is 'seal ROOT PREFIX...', with one ROOT file of the source root and each PREFIX a directory under include/ whose parts are identifiers
+table tables/a-seal-prefix-that-is-no-identifier.txt refused 1 | a seal row is 'seal ROOT PREFIX...', with one ROOT file of the source root and each PREFIX a directory under include/ whose parts are identifiers
+table tables/a-seal-prefix-that-is-a-file.txt refused 1 | a seal row is 'seal ROOT PREFIX...', with one ROOT file of the source root and each PREFIX a directory under include/ whose parts are identifiers
+table tables/a-seal-row-with-a-reason.txt refused 1 | a seal row is 'seal ROOT PREFIX...', with one ROOT file of the source root and each PREFIX a directory under include/ whose parts are identifiers
+table tables/a-seal-root-with-two-rows.txt refused 2 | the root include/crucible/Root.h has a second seal row, and its first seal row is on line 1
+table tables/a-heavy-row-with-no-angle-brackets.txt refused 1 | a heavy row is 'heavy HEADER [\| MEASURE]', with a HEADER in angle brackets
+table tables/a-heavy-row-with-two-headers.txt refused 1 | a heavy row is 'heavy HEADER [\| MEASURE]', with a HEADER in angle brackets
+table tables/a-header-with-a-heavy-and-a-light-row.txt refused 2 | the header <chrono> has a second heavy or light row, and its first row is on line 1
+table tables/a-light-row-with-two-cells.txt refused 1 | a row has at most one cell: the reason of an admit row, or the measure of a heavy or a light row
 
 # The table of each white-space character between two words, in a reason, and
 # the carriage return in a comment and in the line ends \r\n.

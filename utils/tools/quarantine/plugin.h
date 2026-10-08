@@ -13,8 +13,11 @@
 //         declaration.cpp  the family declaration property: the walk of the
 //                          namespaces, the classes and the templates
 //         expression.cpp   the family expression shape: the walk of a body
-//         include.cpp      the family include closure: the include rules and
-//                          the provenance of each place
+//         include.cpp      the family include closure: the include rules, the
+//                          seals, the heavy headers, the names of a higher
+//                          root and the provenance of each place
+//         unit.cpp         the family unit fact: the contract semantic of the
+//                          unit and the optimize options of each function
 //         contract.cpp     the contract rule
 //
 // THE RULE TABLE
@@ -118,6 +121,31 @@
 //     The rule contract-specifier:
 //     contract-specifier    a `pre` or a `post` contract specifier (in each file
 //                           under the root and in each mode)
+//     The rule detsafe-ledger (the seal rows, include.cpp):
+//     sealed-include        an #include of a file under a sealed PREFIX by a
+//                           file of the include closure of its seal ROOT
+//     sealed-name           a declaration of the namespace of a sealed PREFIX
+//                           in a file of that closure, or a reference to a
+//                           declaration of that namespace that such a file
+//                           spells
+//     The rule heavy-include (the heavy and light rows, include.cpp):
+//     heavy-include         an include of a header with a heavy row by a file
+//                           under include/
+//     unmeasured-header     an include of a header outside the root that no
+//                           heavy row and no light row gives, by such a file
+//     The rule layer-boundary (include.cpp):
+//     upward-name           a declaration of the namespace of a higher project
+//                           root in a base file, or a reference to such a
+//                           declaration that a base file spells
+//     The rule contract-semantic (unit.cpp, in each mode):
+//     contract-semantic     a unit whose contract semantic is not ignore and
+//                           whose command line defines
+//                           CRUCIBLE_CONTRACT_SEMANTIC_IGNORE, or the reverse
+//     The rule fast-math-override (unit.cpp, in each mode):
+//     fast-math-override    a function of a file under the root whose optimize
+//                           attribute or GCC optimize pragma turns on a
+//                           fast-math option that the command line does not
+//                           turn on
 //     The rules of the family declaration property (declaration.cpp, THE
 //     FAMILY) read each quarantined file, and the base file that the unit
 //     compiles or that the argument sentinel names.  A finding of such a rule
@@ -163,6 +191,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <climits>
 #include <cstddef>
@@ -297,6 +326,23 @@ struct AdmitRow {
     std::vector<std::string> in_paths;
 };
 
+// One seal row: the include closure of ROOT holds no file under a PREFIX, and
+// no file of that closure names the namespace of a PREFIX.  The namespace of
+// a PREFIX is its path after include/, with "::" for each '/', such as
+// crucible::ledger for include/crucible/ledger/.  Each namespace keeps its
+// names, outermost first.
+struct SealRow {
+    std::string root;
+    std::vector<std::string> prefixes;
+    std::vector<std::vector<std::string>> namespaces;
+};
+
+// The cost of a header outside the root, as a heavy or a light row gives it.
+enum class HeaderCost : std::uint8_t {
+    light,
+    heavy,
+};
+
 // The rows of the rule table, in the order of the file.  A header keeps the
 // name inside its angle brackets.
 struct RuleTable {
@@ -307,6 +353,8 @@ struct RuleTable {
     std::vector<std::string> quarantines;
     std::vector<EnforceRow> enforces;
     std::vector<LanguageRow> languages;
+    std::vector<SealRow> seals;
+    std::unordered_map<std::string, HeaderCost> header_costs;  // by the name inside the angle brackets
 };
 
 // ── The rules and the kinds ─────────────────────────────────────────────
@@ -314,6 +362,11 @@ struct RuleTable {
 enum class Rule : std::uint8_t {
     quarantine,
     contract_specifier,
+    detsafe_ledger,
+    heavy_include,
+    layer_boundary,
+    contract_semantic,
+    fast_math_override,
     mint_pattern,
     no_raw_array_member,
     permission_storage,
@@ -341,6 +394,13 @@ enum class Kind : std::uint8_t {
     upward_include,
     replace_pending,
     contract_specifier,
+    sealed_include,
+    sealed_name,
+    heavy_include,
+    unmeasured_header,
+    upward_name,
+    contract_semantic,
+    fast_math_override,
     mint_record,
     mint_not_nodiscard,
     mint_not_constexpr,
@@ -363,6 +423,16 @@ inline const char* rule_name(Rule rule) {
             return "quarantine";
         case Rule::contract_specifier:
             return "contract-specifier";
+        case Rule::detsafe_ledger:
+            return "detsafe-ledger";
+        case Rule::heavy_include:
+            return "heavy-include";
+        case Rule::layer_boundary:
+            return "layer-boundary";
+        case Rule::contract_semantic:
+            return "contract-semantic";
+        case Rule::fast_math_override:
+            return "fast-math-override";
         case Rule::mint_pattern:
             return "mint-pattern";
         case Rule::no_raw_array_member:
@@ -413,6 +483,20 @@ inline const char* kind_name(Kind kind) {
             return "replace-pending";
         case Kind::contract_specifier:
             return "contract-specifier";
+        case Kind::sealed_include:
+            return "sealed-include";
+        case Kind::sealed_name:
+            return "sealed-name";
+        case Kind::heavy_include:
+            return "heavy-include";
+        case Kind::unmeasured_header:
+            return "unmeasured-header";
+        case Kind::upward_name:
+            return "upward-name";
+        case Kind::contract_semantic:
+            return "contract-semantic";
+        case Kind::fast_math_override:
+            return "fast-math-override";
         case Kind::mint_record:
             return "mint";
         case Kind::mint_not_nodiscard:
@@ -445,11 +529,25 @@ inline const char* kind_name(Kind kind) {
     return "unknown";
 }
 
-// The rule of each kind (THE RULES AND THE KINDS).
+// The rule of each kind: the kinds of THE RULES AND THE KINDS above that a
+// rule other than the quarantine rule lists, and the quarantine rule for each
+// other kind.
 inline Rule rule_of(Kind kind) {
     switch (kind) {
         case Kind::contract_specifier:
             return Rule::contract_specifier;
+        case Kind::sealed_include:
+        case Kind::sealed_name:
+            return Rule::detsafe_ledger;
+        case Kind::heavy_include:
+        case Kind::unmeasured_header:
+            return Rule::heavy_include;
+        case Kind::upward_name:
+            return Rule::layer_boundary;
+        case Kind::contract_semantic:
+            return Rule::contract_semantic;
+        case Kind::fast_math_override:
+            return Rule::fast_math_override;
         case Kind::mint_record:
         case Kind::mint_not_nodiscard:
         case Kind::mint_not_constexpr:
@@ -474,12 +572,26 @@ inline Rule rule_of(Kind kind) {
     }
 }
 
+// True for a kind whose finding is an error in each mode: the contract rule and
+// the unit facts.  No enforce mode changes such a finding.
+inline bool is_each_mode_kind(Kind kind) {
+    return kind == Kind::contract_specifier || kind == Kind::contract_semantic || kind == Kind::fast_math_override;
+}
+
 // True when a rule of the family declaration property gives the kind.  Such
 // a finding is an error only in the mode error, no opt-out region covers it,
 // and no enforce mode changes it.
 inline bool is_property_kind(Kind kind) {
-    Rule rule = rule_of(kind);
-    return rule != Rule::quarantine && rule != Rule::contract_specifier;
+    switch (rule_of(kind)) {
+        case Rule::mint_pattern:
+        case Rule::no_raw_array_member:
+        case Rule::permission_storage:
+        case Rule::escape_doors:
+        case Rule::stub_discipline:
+            return true;
+        default:
+            return false;
+    }
 }
 
 // True when a line of the kind is a record: a fact for a reader of the
@@ -520,6 +632,13 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"quarantine", "opted-out"},
     {"quarantine", "region"},
     {"contract-specifier", "contract-specifier"},
+    {"detsafe-ledger", "sealed-include"},
+    {"detsafe-ledger", "sealed-name"},
+    {"heavy-include", "heavy-include"},
+    {"heavy-include", "unmeasured-header"},
+    {"layer-boundary", "upward-name"},
+    {"contract-semantic", "contract-semantic"},
+    {"fast-math-override", "fast-math-override"},
     {"mint-pattern", "mint"},
     {"mint-pattern", "mint-not-nodiscard"},
     {"mint-pattern", "mint-not-constexpr"},
@@ -540,9 +659,26 @@ inline constexpr RuleKind kRuleKinds[] = {
 // a kind at one place, with different entities, are two findings.  Each other
 // kind has one finding for each place.
 inline bool is_name_kind(Kind kind) {
-    return kind == Kind::std_entity || kind == Kind::c_library_call || kind == Kind::foreign_symbol
-        || kind == Kind::compiler_builtin || kind == Kind::layer_header || kind == Kind::door_header
-        || kind == Kind::upward_include || kind == Kind::replace_pending || is_property_kind(kind);
+    switch (kind) {
+        case Kind::std_entity:
+        case Kind::c_library_call:
+        case Kind::foreign_symbol:
+        case Kind::compiler_builtin:
+        case Kind::layer_header:
+        case Kind::door_header:
+        case Kind::upward_include:
+        case Kind::replace_pending:
+        case Kind::sealed_include:
+        case Kind::sealed_name:
+        case Kind::heavy_include:
+        case Kind::unmeasured_header:
+        case Kind::upward_name:
+        case Kind::contract_semantic:
+        case Kind::fast_math_override:
+            return true;
+        default:
+            return is_property_kind(kind);
+    }
 }
 
 inline bool is_include_kind(Kind kind) {
@@ -621,6 +757,31 @@ struct LibraryClasses {
     [[nodiscard]] bool is_full() const { return refused != NULL_TREE && pending != NULL_TREE; }
 };
 
+// One #include directive of a base or a quarantined file whose target the
+// plugin knows: the file of the directive, its target and its place.
+struct IncludeEdge {
+    const FileEntry* from = nullptr;
+    const FileEntry* to = nullptr;
+    Place directive;
+};
+
+// A reference of the code to a declaration of a namespace of a seal row, at
+// a place in a base or a quarantined file.  The report judges it when it
+// knows the include closure of each seal root (include.cpp, THE SEALS).
+struct SealedReference {
+    Place place;
+    std::string scope;  // the namespace of the declaration, such as crucible::ledger
+    std::string entity;
+};
+
+// The facts of a namespace at the top of the global namespace, for each
+// reference to a declaration in it (include.cpp, facts_of_top): the rank of
+// its project root or -1, and whether a seal row names a namespace in it.
+struct TopFacts {
+    int rank = -1;
+    bool is_sealed_root = false;
+};
+
 // A use of a function or a variable of C language linkage that a file of the
 // root declares, at a place in a quarantined file.  The DECL_UID names the
 // declaration, because a garbage collection can free a tree before the report.
@@ -677,6 +838,20 @@ struct State {
     // The include rules.
     IncludeCallback previous_include = nullptr;
     PendingInclude pending;
+    // The include closure (include.cpp, THE SEALS): each directive whose
+    // target the plugin knows, and each reference to a declaration of a
+    // sealed namespace.
+    std::vector<IncludeEdge> include_edges;
+    std::vector<SealedReference> sealed_references;
+    // The facts of each top namespace that a reference named.  The key is a
+    // tree, so the collection hook clears the cache.
+    std::unordered_map<tree, TopFacts> top_facts;
+
+    // The unit facts (unit.cpp): the command line defines
+    // CRUCIBLE_CONTRACT_SEMANTIC_IGNORE, and the DECL_UID of each function
+    // whose optimize options the plugin read.
+    bool is_ignore_defined = false;
+    std::unordered_set<unsigned> optimized_functions;
 
     // The foreign symbols: the DECL_UID of each function and variable of C
     // language linkage that the unit defines, and each use in a quarantined
@@ -1102,10 +1277,17 @@ void walk_root(tree* root, location_t location, bool is_pattern);
 void walk_body(tree function, bool is_pattern);
 void register_expressions(const char* plugin_name);
 
-// include.cpp: the family include closure, the include rules and the
-// provenance.
+// include.cpp: the family include closure, the include rules, the seals, the
+// heavy headers, the names of a higher root and the provenance.
 void register_includes(const char* plugin_name);
 void finish_pending_include(const FileEntry* entered);
+void note_project_reference(tree named, location_t location);
+void report_include_closure();
+
+// unit.cpp: the family unit fact.
+void register_unit_facts(const char* plugin_name);
+void note_main_started();
+void report_unit_facts();
 
 // contract.cpp: the contract rule.
 void register_contract_rule(const char* plugin_name);

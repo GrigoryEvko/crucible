@@ -1,0 +1,13 @@
+# An include of a header with a heavy row by a file under include/ is a
+# finding of the kind heavy-include, also in a base file, where the include
+# rules also give layer-header.  An include of a header with a light row is no
+# finding.  In the mode error, each finding is an error.
+
+compile report unit.cpp
+exit report pass
+finding report heavy-include heavy-include include/crucible/Heavy.h:2:0 | <chrono>
+finding report heavy-include heavy-include include/fixy/BaseHeavy.h:3:0 | <chrono>
+finding report quarantine layer-header include/fixy/BaseHeavy.h:3:0 | <chrono> in the layer low
+
+compile error unit.cpp mode=error out=no errors=report
+exit error fail

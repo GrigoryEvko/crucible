@@ -1,0 +1,40 @@
+# A base file that opens the namespace of a higher project root first in a
+# unit is a finding of the kind upward-name: a foundation header that opens
+# fixy, a foundation header that opens crucible::deep, and a fixy header that
+# opens crucible.  The units src/foundation/Alone.cpp and src/fixy/Alone.cpp
+# compile the headers alone, as the sentinel unit of a header does.  There, a
+# base file that names a higher root with no opening of its namespace does not
+# compile, because no other file of the unit can declare it.  The unit
+# unit.cpp opens crucible and fixy before it includes the foundation header,
+# and the body of a base macro that the unit expands is a finding at the macro.
+# In the mode error, each finding is an error.
+
+compile open-fixy src/foundation/Alone.cpp
+flag open-fixy -DPLANT_OPEN_FIXY
+exit open-fixy pass
+finding open-fixy layer-boundary upward-name include/foundation/Up.h:3:11 | the namespace fixy from the root foundation
+
+compile open-crucible src/foundation/Alone.cpp
+flag open-crucible -DPLANT_OPEN_CRUCIBLE
+exit open-crucible pass
+finding open-crucible layer-boundary upward-name include/foundation/Up.h:8:11 | the namespace crucible from the root foundation
+
+compile fixy-up src/fixy/Alone.cpp
+flag fixy-up -DPLANT_FIXY_UP
+exit fixy-up pass
+finding fixy-up layer-boundary upward-name include/fixy/Wrap.h:3:11 | the namespace crucible from the root fixy
+
+compile names src/foundation/Alone.cpp out=no
+flag names -DPLANT_CALL
+exit names fail
+error names include/foundation/Up.h:13 | crucible
+error names include/foundation/Up.h:15 | fixy
+
+compile macro unit.cpp
+flag macro -DPLANT_MACRO
+exit macro pass
+finding macro layer-boundary upward-name include/foundation/Up.h:19:42 | crucible::value from the root foundation
+
+compile error src/foundation/Alone.cpp mode=error out=no errors=open-fixy
+flag error -DPLANT_OPEN_FIXY
+exit error fail

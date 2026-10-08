@@ -1,0 +1,9 @@
+// A comment that names [[gnu::optimize("fast-math")]] and #pragma GCC optimize("fast-math") is no option.
+static_assert(sizeof(double) == 8, "__attribute__((optimize(\"fast-math\")))");
+#pragma GCC optimize("O2")
+__attribute__((optimize("O3"))) double plain_level(double value) { return value; }
+#pragma GCC push_options
+#pragma GCC optimize("fp-contract=off,trapping-math")
+double floor_again(double value) { return value; }
+#pragma GCC pop_options
+[[gnu::optimize("no-unroll-loops")]] double other_option(double value) { return value; }

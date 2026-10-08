@@ -33,7 +33,7 @@ project(crucible LANGUAGES CXX)
 # The CMake file API writes the code model, the cache, the CMake files and the
 # toolchains of each configure as JSON in .cmake/api/v1/reply.  Each module of
 # utils/assay reads them through assay.readers.cmake, and no module reads
-# CMakeCache.txt.  check_no_ffast_math.py reads the link line of each target
+# CMakeCache.txt.  The rule no-ffast-math reads the link line of each target
 # from the code model, because the compile database holds no link flag.  The
 # command is the reason for the CMake 3.27 minimum.
 cmake_file_api(QUERY API_VERSION 1 CODEMODEL 2 CACHE 2 CMAKEFILES 1 TOOLCHAINS 1)
@@ -359,8 +359,8 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # include/foundation/ (namespace ::foundation) is the algebra and the
 # discharge mechanisms; include/fixy/ (namespace ::fixy) is the axis table,
 # the atoms, the gate and the OS leaves.  Neither names crucible:: —
-# utils/assay/guard/legacy/check_layer_boundary.py enforces the order foundation < fixy <
-# crucible.
+# the rules layer-boundary and layer-residual enforce the order foundation <
+# fixy < crucible.
 #
 # `foundation` is a static library.  It owns the weak contract handler and
 # the CRUCIBLE_PRE / CRUCIBLE_POST failure arm for every binary that links

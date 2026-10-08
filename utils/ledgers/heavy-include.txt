@@ -1,65 +1,109 @@
-# The ledger of the rule heavy-include: the includes of heavy standard headers in the headers
-# under include/.  `python3 utils/bin/guard explain heavy-include` tells the rule.
+# The ledger of the rule heavy-include: the includes of heavy headers outside the source root by the
+# files under include/, in each configuration of a build.  `python3 utils/bin/guard explain heavy-include`
+# tells the rule.
 #
-# A header that each translation unit compiles must not include a heavy header for one function.
-# utils/scripts/header-costs.txt gives the cost of each header.  A header is heavy when it costs
-# more than <meta> times the factor of the measured rule heavy-include of utils/registry.txt.
+# A header that each translation unit compiles must not include a heavy header for one function.  The
+# heavy and light rows of utils/rule-table.txt give the cost of each header.  A header is heavy when it
+# costs more than <meta> times the factor of the measured rule heavy-include of utils/registry.txt.
 #
-# A count row:  PATH | - | 1 | <header> | -
-#   An include that the tree holds today.  Each run gives a warning for it.  When you remove the
-#   include, run python3 utils/bin/guard check --rule heavy-include --write in the same commit.
-#
-# A keep row:   PATH | - | 1 | <header> | REASON
-#   A header that owns a heavy header on purpose, for example the one door of a system facility.
-#   The reason makes the row a keep row, and the row gives no warning.
+# The rows of assay.core.ledger with the policy count, and the configurations of
+# assay.guard.engines.plugin.counted:
+#   PATH | heavy-include | COUNT | <header> | -
+#     The includes that the base configuration holds today.  Each run gives a warning for the row.  When
+#     you remove the include, run python3 utils/bin/guard write --rule heavy-include --build-dir DIR in
+#     the same commit.
+#   PATH | heavy-include | COUNT | <header> | REASON
+#     A header that owns a heavy header on purpose, for example the one door of a system facility.  The
+#     reason makes the row a keep row, and the row gives no warning.
+#   @NAME | PATH | heavy-include | DELTA | <header> | -
+#     The difference of the configuration NAME from the base count.
 format 1
 rule heavy-include
-include/crucible/BackgroundThread.h | - | 1 | <memory> | -
-include/crucible/CKernel.h | - | 1 | <memory> | -
-include/crucible/Cipher.h | - | 1 | <filesystem> | -
-include/crucible/SchemaTable.h | - | 1 | <memory> | -
-include/crucible/Serialize.h | - | 1 | <memory> | -
-include/crucible/SwissTable.h | - | 1 | <arm_neon.h> | -
-include/crucible/TraceLoader.h | - | 1 | <memory> | -
-include/crucible/Vigil.h | - | 1 | <memory> | -
-include/crucible/canopy/bpf/common.h | - | 1 | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
-include/crucible/cntp/CongestionControl.h | - | 1 | <filesystem> | -
-include/crucible/cntp/Fec.h | - | 1 | <arm_neon.h> | -
-include/crucible/cntp/RoceConfig.h | - | 1 | <filesystem> | -
-include/crucible/cntp/bpf/common.h | - | 1 | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
-include/crucible/cntp/dataplane/bpf/common.h | - | 1 | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
-include/crucible/cog/bpf/common.h | - | 1 | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
-include/crucible/ledger/HostFingerprint.h | - | 1 | <filesystem> | -
-include/crucible/ledger/LedgerStore.h | - | 1 | <chrono> | -
-include/crucible/ledger/LedgerStore.h | - | 1 | <filesystem> | -
-include/crucible/ledger/ProbeSupport.h | - | 1 | <chrono> | -
-include/crucible/ledger/RefreshDaemon.h | - | 1 | <chrono> | -
-include/crucible/ledger/RefreshDaemon.h | - | 1 | <memory> | -
-include/crucible/ledger/RefreshDaemon.h | - | 1 | <thread> | -
-include/crucible/ledger/probes/CacheTier.h | - | 1 | <thread> | -
-include/crucible/observe/SdcDetect.h | - | 1 | <memory> | -
-include/crucible/observe/bpf/common.h | - | 1 | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
-include/crucible/perf/LockContention.h | - | 1 | <memory> | -
-include/crucible/perf/PmuSample.h | - | 1 | <memory> | -
-include/crucible/perf/ProcGauges.h | - | 1 | <memory> | -
-include/crucible/perf/SchedSwitch.h | - | 1 | <memory> | -
-include/crucible/perf/SchedTpBtf.h | - | 1 | <memory> | -
-include/crucible/perf/SenseHub.h | - | 1 | <memory> | -
-include/crucible/perf/SenseHubV2.h | - | 1 | <memory> | -
-include/crucible/perf/SyscallLatency.h | - | 1 | <memory> | -
-include/crucible/perf/SyscallTpBtf.h | - | 1 | <memory> | -
-include/crucible/perf/bpf/common.h | - | 1 | <bpf/bpf_core_read.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
-include/crucible/perf/bpf/common.h | - | 1 | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
-include/crucible/perf/bpf/common.h | - | 1 | <bpf/bpf_tracing.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
-include/crucible/perf/detail/BpfHub.h | - | 1 | <memory> | -
-include/crucible/topology/AsymmetricFailure.h | - | 1 | <memory> | -
-include/crucible/topology/CongestionTelemetryWorker.h | - | 1 | <memory> | -
-include/crucible/topology/Health.h | - | 1 | <memory> | -
-include/crucible/topology/Pingmesh.h | - | 1 | <chrono> | -
-include/crucible/topology/bpf/common.h | - | 1 | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
-include/crucible/warden/bpf/common.h | - | 1 | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
-include/fixy/Borrowed.h | - | 1 | <ranges> | -
-include/fixy/Budgeted.h | - | 1 | <memory> | -
-include/fixy/EpochVersioned.h | - | 1 | <memory> | -
-include/fixy/Path.h | - | 1 | <filesystem> | the path type is a Tagged over std::filesystem::path, so this header is the one owner of <filesystem> in fixy
-include/fixy/SelfContained.h | - | 1 | <ranges> | -
+configuration x86_64-debug-asan kind x86_64-debug-asan
+configuration x86_64-debug-asan tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-asan CMAKE_BUILD_TYPE Debug
+configuration x86_64-debug-asan CMAKE_CXX_FLAGS unset
+configuration x86_64-debug-asan CRUCIBLE_SANITIZE on
+configuration x86_64-debug-asan CRUCIBLE_TSAN off
+configuration x86_64-debug-asan CRUCIBLE_UBSAN_STRICT off
+configuration x86_64-debug-asan CRUCIBLE_ANALYZER off
+configuration x86_64-debug-asan CRUCIBLE_VERIFY off
+configuration x86_64-debug-asan CRUCIBLE_PGO off
+configuration x86_64-debug-asan CRUCIBLE_BENCH off
+configuration x86_64-debug-asan CRUCIBLE_FUZZ off
+configuration x86_64-debug-asan CRUCIBLE_EXAMPLES on
+configuration x86_64-debug-asan CRUCIBLE_HAVE_BPF on
+configuration x86_64-debug-asan CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-debug-asan CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-debug-asan TORCH_DIR unset
+configuration x86_64-release kind x86_64-release
+configuration x86_64-release tier znver5-f612fd24
+configuration x86_64-release CMAKE_BUILD_TYPE Release
+configuration x86_64-release CMAKE_CXX_FLAGS -O1_-march=native_-DNDEBUG_-g
+configuration x86_64-release CRUCIBLE_SANITIZE on
+configuration x86_64-release CRUCIBLE_TSAN off
+configuration x86_64-release CRUCIBLE_UBSAN_STRICT off
+configuration x86_64-release CRUCIBLE_ANALYZER off
+configuration x86_64-release CRUCIBLE_VERIFY off
+configuration x86_64-release CRUCIBLE_PGO off
+configuration x86_64-release CRUCIBLE_BENCH off
+configuration x86_64-release CRUCIBLE_FUZZ off
+configuration x86_64-release CRUCIBLE_EXAMPLES on
+configuration x86_64-release CRUCIBLE_HAVE_BPF on
+configuration x86_64-release CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-release CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-release TORCH_DIR unset
+configuration x86_64-debug-asan-bench-fuzz kind x86_64-debug-asan
+configuration x86_64-debug-asan-bench-fuzz tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-asan-bench-fuzz CMAKE_BUILD_TYPE Debug
+configuration x86_64-debug-asan-bench-fuzz CMAKE_CXX_FLAGS unset
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SANITIZE on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_TSAN off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_UBSAN_STRICT off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_ANALYZER off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VERIFY off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_PGO off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_BENCH on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_EXAMPLES on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_HAVE_BPF on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-debug-asan-bench-fuzz TORCH_DIR unset
+include/crucible/BackgroundThread.h | heavy-include | 1 | <memory> | -
+include/crucible/CKernel.h | heavy-include | 1 | <memory> | -
+include/crucible/Cipher.h | heavy-include | 1 | <filesystem> | -
+include/crucible/SchemaTable.h | heavy-include | 1 | <memory> | -
+include/crucible/Serialize.h | heavy-include | 1 | <memory> | -
+include/crucible/TraceLoader.h | heavy-include | 1 | <memory> | -
+include/crucible/Vigil.h | heavy-include | 1 | <memory> | -
+include/crucible/cntp/CongestionControl.h | heavy-include | 1 | <filesystem> | -
+include/crucible/cntp/RoceConfig.h | heavy-include | 1 | <filesystem> | -
+include/crucible/ledger/HostFingerprint.h | heavy-include | 1 | <filesystem> | -
+include/crucible/ledger/LedgerStore.h | heavy-include | 1 | <chrono> | -
+include/crucible/ledger/LedgerStore.h | heavy-include | 1 | <filesystem> | -
+include/crucible/ledger/ProbeSupport.h | heavy-include | 1 | <chrono> | -
+include/crucible/ledger/RefreshDaemon.h | heavy-include | 1 | <chrono> | -
+include/crucible/ledger/RefreshDaemon.h | heavy-include | 1 | <memory> | -
+include/crucible/ledger/RefreshDaemon.h | heavy-include | 1 | <thread> | -
+include/crucible/ledger/probes/CacheTier.h | heavy-include | 1 | <thread> | -
+include/crucible/observe/SdcDetect.h | heavy-include | 1 | <memory> | -
+include/crucible/perf/LockContention.h | heavy-include | 1 | <memory> | -
+include/crucible/perf/PmuSample.h | heavy-include | 1 | <memory> | -
+include/crucible/perf/ProcGauges.h | heavy-include | 1 | <memory> | -
+include/crucible/perf/SchedSwitch.h | heavy-include | 1 | <memory> | -
+include/crucible/perf/SchedTpBtf.h | heavy-include | 1 | <memory> | -
+include/crucible/perf/SenseHub.h | heavy-include | 1 | <memory> | -
+include/crucible/perf/SenseHubV2.h | heavy-include | 1 | <memory> | -
+include/crucible/perf/SyscallLatency.h | heavy-include | 1 | <memory> | -
+include/crucible/perf/SyscallTpBtf.h | heavy-include | 1 | <memory> | -
+include/crucible/perf/detail/BpfHub.h | heavy-include | 1 | <memory> | -
+include/crucible/topology/AsymmetricFailure.h | heavy-include | 1 | <memory> | -
+include/crucible/topology/CongestionTelemetryWorker.h | heavy-include | 1 | <memory> | -
+include/crucible/topology/Health.h | heavy-include | 1 | <memory> | -
+include/crucible/topology/Pingmesh.h | heavy-include | 1 | <chrono> | -
+include/fixy/Borrowed.h | heavy-include | 1 | <ranges> | -
+include/fixy/Budgeted.h | heavy-include | 1 | <memory> | -
+include/fixy/EpochVersioned.h | heavy-include | 1 | <memory> | -
+include/fixy/Path.h | heavy-include | 1 | <filesystem> | the path type is a Tagged over std::filesystem::path, so this header is the one owner of <filesystem> in fixy
+include/fixy/SelfContained.h | heavy-include | 1 | <ranges> | -

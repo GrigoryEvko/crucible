@@ -1,0 +1,11 @@
+# The rule table of a control of the rule heavy-include.  A light row gives
+# each header that a file under include/ includes, also <cstdio>.  A file
+# outside include/ includes <chrono>, which has a heavy row.
+
+quarantine include/crucible/
+quarantine src/
+quarantine unit.cpp
+
+heavy <chrono> | 1.12 s, 70628 lines
+light <cstdint> | 0.02 s, 178 lines
+light <cstdio> | 0.03 s, 736 lines

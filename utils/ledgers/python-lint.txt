@@ -66,7 +66,6 @@ utils/assay/guard/legacy/check_cache_size.py | format | 1 | findings | An issue 
 utils/assay/guard/legacy/check_clang_format.py | ISC004 | 1 | check_tree | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_clang_format.py | format | 1 | settings_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_compile_cost.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_contract_semantic.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_core_shapes.py | FURB188 | 1 | function_name | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_core_shapes.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_ct_disassembly.py | ISC004 | 1 | wrapper_source | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
@@ -76,17 +75,13 @@ utils/assay/guard/legacy/check_ctx_init_door.py | ISC004 | 2 | self_test | An is
 utils/assay/guard/legacy/check_ctx_init_door.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_ctx_testing_boundary.py | format | 1 | scope_files | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_detail_namespace.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_detsafe_ledger.py | format | 1 | NameTables.add | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_federation_admission.py | RUF100 | 1 | macro_sites | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_federation_admission.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_fixy_dim_prose.py | format | 1 | scan | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_header_constexpr_ops.py | F541 | 2 | run | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_header_constexpr_ops.py | ISC004 | 3 | read_rows | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_header_constexpr_ops.py | format | 1 | threshold_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_heavy_includes.py | format | 1 | read_table | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_host_owners.py | format | 1 | attribute_end | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_layer_boundary.py | ISC004 | 2 | self_test | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_layer_boundary.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | I001 | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | ISC004 | 1 | self_test | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
@@ -97,7 +92,6 @@ utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | format | 1 | token_
 utils/assay/guard/legacy/check_no_coordination_refs.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_ffast_math.py | ISC004 | 1 | build_violations | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_ffast_math.py | ISC004 | 1 | link_violations | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_no_ffast_math.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_throw_no_rtti.py | ISC004 | 1 | scan_artifact | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_throw_no_rtti.py | format | 1 | rows_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | B023 | 3 | expanded.line_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count

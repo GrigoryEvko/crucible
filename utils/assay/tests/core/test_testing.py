@@ -8,6 +8,7 @@ import contextlib
 import io
 from collections.abc import Sequence
 
+from assay.core import report as check_report
 from assay.core import testing
 from assay.core.exit import ExitCode
 
@@ -58,6 +59,25 @@ def run_cases(expect: testing.Expect) -> None:
     expect("a run with no group returns OK", status == ExitCode.OK and out == "tests.planted: each case holds.\n")
 
 
+def writes_two_streams() -> tuple[str, int]:
+    """A planted action: it writes to the two standard streams and returns a value that is not a status."""
+    check_report.write_line("first")
+    check_report.write_line("second", is_error=True)
+    check_report.write_line("third")
+    return "result", 3
+
+
+def output_cases(expect: testing.Expect) -> None:
+    """Check the output of one action of a case (THE OUTPUT OF A CASE)."""
+    result, text = testing.captured(writes_two_streams)
+    expect(
+        "captured gives the result of the action and the two streams in the sequence of the writes",
+        result == ("result", 3) and text == "first\nsecond\nthird\n",
+    )
+    nothing, empty = testing.captured(lambda: None)
+    expect("captured of an action that writes nothing gives an empty text", nothing is None and not empty)
+
+
 def compiler_cases(expect: testing.Expect) -> None:
     """Check the patched compiler of each environment."""
     expect("ASSAY_TEST_CXX names the compiler", testing.patched_compiler({"ASSAY_TEST_CXX": "/opt/cxx"}) == "/opt/cxx")
@@ -74,4 +94,4 @@ def compiler_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (run_cases, compiler_cases))
+    return testing.run(__name__.removeprefix("assay."), argv, (run_cases, output_cases, compiler_cases))

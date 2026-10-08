@@ -1,0 +1,4 @@
+#pragma once
+// A computed include that an object-like macro of this file resolves to crucible.
+#define PLANT_HEADER <crucible/Arena.h>
+#include PLANT_HEADER

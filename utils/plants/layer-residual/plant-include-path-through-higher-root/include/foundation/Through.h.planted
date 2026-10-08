@@ -1,0 +1,3 @@
+#pragma once
+// An angle include whose first directory is a higher root names that root.
+#include <fixy/../foundation/Other.h>

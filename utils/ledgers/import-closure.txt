@@ -9,15 +9,12 @@ utils/assay/guard/legacy/check_build_order.py | module-import | 1 | argparse | A
 utils/assay/guard/legacy/check_cache_size.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_clang_format.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_compile_cost.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/guard/legacy/check_contract_semantic.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_core_shapes.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_ct_disassembly.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_header_checks.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_header_checks.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_header_constexpr_ops.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_header_constexpr_ops.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/guard/legacy/check_heavy_includes.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/guard/legacy/check_heavy_includes.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_no_ffast_math.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row

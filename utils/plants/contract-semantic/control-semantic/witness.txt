@@ -1,0 +1,22 @@
+# The semantic ignore with the define, in each spelling, and a semantic other
+# than ignore with no define give no finding, in the mode error.
+
+compile ignore unit.cpp mode=error
+flag ignore -fcontracts -fcontract-evaluation-semantic=ignore -DCRUCIBLE_CONTRACT_SEMANTIC_IGNORE=1
+exit ignore pass
+
+compile ignore-last unit.cpp mode=error
+flag ignore-last -fcontracts -fcontract-evaluation-semantic=observe -O1 -fcontract-evaluation-semantic=ignore -D CRUCIBLE_CONTRACT_SEMANTIC_IGNORE
+exit ignore-last pass
+
+compile observe unit.cpp mode=error
+flag observe -fcontracts -fcontract-evaluation-semantic=observe
+exit observe pass
+
+compile enforce unit.cpp mode=error
+flag enforce -fcontracts -fcontract-evaluation-semantic=enforce
+exit enforce pass
+
+compile neither unit.cpp mode=error
+flag neither -fcontracts
+exit neither pass

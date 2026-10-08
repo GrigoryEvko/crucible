@@ -688,10 +688,11 @@ set_tests_properties(ctx_init_door ctx_init_door_self_test PROPERTIES
 # The fast-math family is banned (CLAUDE.md §V, cmake/FpStrict.cmake is
 # the floor).  utils/assay/guard/legacy/check_no_ffast_math.py reads the compile flags of
 # this build from its compile database, the link line of each target from
-# the CMake file API, the flag variables of every configure preset, and each
-# optimize attribute, GCC optimize pragma and _Pragma from the parse tree,
-# macro bodies included.  The self-test configures a planted project, so a
-# flag inside a generator expression is judged as the compiler receives it.
+# the CMake file API, and the flag variables of every configure preset.  The
+# rule fast-math-override of the quarantine plugin reads each optimize
+# attribute and GCC optimize pragma that a unit compiles (test guard_plugin).
+# The self-test configures a planted project, so a flag inside a generator
+# expression is judged as the compiler receives it.
 crucible_script_test(NAME no_ffast_math_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-ffast-math
           --self-test --cmake ${CMAKE_COMMAND} --cxx ${CMAKE_CXX_COMPILER})
@@ -699,7 +700,7 @@ crucible_script_test(NAME no_ffast_math
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-ffast-math
           --build-dir ${CMAKE_BINARY_DIR})
 set_tests_properties(no_ffast_math no_ffast_math_self_test PROPERTIES
-    LABELS "ci_guard" SKIP_RETURN_CODE 3)
+    LABELS "ci_guard")
 # The fixy doc-blocks name an axis by the enum spelling
 # "DimensionAxis::<Name> = <ordinal>", because the retired FX numbering no
 # longer matches the enum ordinals.  utils/assay/guard/legacy/check_fixy_dim_prose.py reads the
@@ -727,20 +728,6 @@ crucible_script_test(NAME syscall_capability_self_test
 crucible_script_test(NAME syscall_capability
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule syscall-capability)
 set_tests_properties(syscall_capability syscall_capability_self_test PROPERTIES
-    LABELS "ci_guard"
-    SKIP_RETURN_CODE 3)
-# DetSafe on the hashing path.  A ledger verdict is a property of one
-# machine, so no header of content_hash, merkle_hash, the memory plan or
-# the BITEXACT recipe choice may reach the ledger.
-# utils/assay/guard/legacy/check_detsafe_ledger.py walks the transitive include closure of
-# the hashing-path roots on the parse tree, and it also catches a name of
-# the ledger namespace without the include.  There is no allowlist.  Exit 3
-# when the kit is absent reports a skip.
-crucible_script_test(NAME detsafe_ledger_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule detsafe-ledger --self-test)
-crucible_script_test(NAME detsafe_ledger
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule detsafe-ledger)
-set_tests_properties(detsafe_ledger detsafe_ledger_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 
@@ -5215,11 +5202,17 @@ endif()
 #
 # include/foundation/ and include/fixy/ are the canonical substrate.  These
 # guards hold it to its rules.  cmake/Guards.cmake registers the tests of the
-# tsast rules, such as guard_derived_pins, guard_header_checks and
-# guard_walk_units.
+# tsast rules, such as guard_derived_pins, guard_header_checks,
+# guard_layer_residual and guard_walk_units.  The test guard_plugin runs the
+# rules of the quarantine plugin, such as layer-boundary, detsafe-ledger and
+# heavy-include.
 #
-#   layer_boundary      — foundation < fixy < crucible; a file names only its
-#                         own layer and the layers below it.  No allowlist.
+#   guard_layer_residual — foundation < fixy < crucible: an #include of a base
+#                         file in each preprocessor arm names only its own
+#                         project root and the roots below it, and a base
+#                         directory holds only C++ files and prose.  The rule
+#                         layer-boundary of the plugin reads the names of
+#                         each arm that a build compiles.  No allowlist.
 #   guard_header_checks — a header holds no self-test namespace, no
 #                         namespace-scope static_assert, no static_assert in
 #                         a function that is not a template, and no
@@ -5236,13 +5229,6 @@ endif()
 #                         listed file after each header that can add to such
 #                         a namespace.  Each row holds a weight, and a row
 #                         with no measured weight gives a warning.
-crucible_script_test(NAME layer_boundary_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule layer-boundary --self-test)
-crucible_script_test(NAME layer_boundary
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule layer-boundary)
-set_tests_properties(layer_boundary layer_boundary_self_test PROPERTIES
-    LABELS "ci_guard;substrate"
-    SKIP_RETURN_CODE 3)
 
 # The compile-time checks report each finding as a warning or an error, in the
 # format of utils/assay/core/report.py.  An error fails the check, and a
@@ -5265,22 +5251,6 @@ crucible_script_test(NAME report_check_warnings_self_test
 set_tests_properties(check_report_self_test guard_warnings_self_test report_check_warnings_self_test PROPERTIES
     LABELS "ci_guard")
 
-# heavy_includes — a header under include/ includes no heavy standard header.
-# A header is heavy when its compile time alone is more than the time of
-# <meta> alone times the factor of the rule heavy-include of
-# utils/registry.txt.  utils/scripts/header-costs.txt holds the
-# measured times.  Each include that the tree holds today is a row of
-# utils/ledgers/heavy-include.txt and gives a warning.  A new one is
-# an error.
-crucible_script_test(NAME heavy_includes_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule heavy-include --self-test)
-crucible_script_test(NAME heavy_includes
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule heavy-include
-          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-set_tests_properties(heavy_includes heavy_includes_self_test PROPERTIES
-    LABELS "ci_guard"
-    SKIP_RETURN_CODE 3)
-
 # no_unity_pch — no target compiles as a unity build or with a precompiled
 # header, because the reflection walks of this tree see each header that a
 # translation unit includes.  The check reads the compile database of this
@@ -5291,18 +5261,6 @@ crucible_script_test(NAME no_unity_pch
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-unity-pch
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 set_tests_properties(no_unity_pch no_unity_pch_self_test PROPERTIES LABELS "ci_guard")
-
-# contract_semantic — the last contract semantic flag of each compile agrees
-# with the define CRUCIBLE_CONTRACT_SEMANTIC_IGNORE.  GCC uses the last flag,
-# and CRUCIBLE_PRE reads the define.  The configure step sees each scope but
-# not the order of the final compile line, so the check reads the compile
-# database of this build.
-crucible_script_test(NAME contract_semantic_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule contract-semantic --self-test)
-crucible_script_test(NAME contract_semantic
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule contract-semantic
-          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-set_tests_properties(contract_semantic contract_semantic_self_test PROPERTIES LABELS "ci_guard")
 
 # padded_lists — the element type of a large fixed list has no padding bit.
 # With -ftrivial-auto-var-init=zero, GCC writes one store for each padding
@@ -5455,13 +5413,15 @@ set_tests_properties(build_target_self_test PROPERTIES LABELS "ci_guard")
 # guard_plugin — the runner of the engine plugin
 # (utils/assay/guard/engines/plugin/runner.py) reads the section of each object
 # of all one time, and judges each rule of the engine plugin of
-# utils/registry.txt.  The rule quarantine counts the distinct findings in each file, kind and entity,
-# and each opt-out region as the kind region, against
+# utils/registry.txt.  The rule quarantine counts the distinct findings in each
+# file, kind and entity, and each opt-out region as the kind region, against
 # utils/ledgers/quarantine.txt.  A count above or below its row fails, and so
 # does a finding in a file that the ledger does not hold.  A finding inside an
-# opt-out region counts with the reason of its region.  The test exits 77 for a
-# build whose compiles do not load the plugin, for a build of a configuration
-# that the ledger does not have, and for a build that made only some targets.
+# opt-out region counts with the reason of its region.  The rule heavy-include
+# counts the includes of a heavy header in the same way, against
+# utils/ledgers/heavy-include.txt.  The test exits 77 for a build whose
+# compiles do not load the plugin, for a build of a configuration that a ledger
+# does not have, and for a build that made only some targets.
 # The witness of the engine is the test guard_plugin_witness
 # (utils/tools/quarantine/Quarantine.cmake).
 crucible_script_test(NAME guard_plugin
@@ -5643,15 +5603,17 @@ endforeach()
 # of the rows grammar, the registry, the ledgers, the rule history, the
 # process module, the git module, the paths, the run of the cases, the reader
 # of the compile database, the Python reader, the reader of the reports of
-# mypy and ruff, the package scope, the STE table and the writer of the walk
-# list plant their input in throwaway trees.  The test of the import
+# mypy and ruff, the package scope, the STE table, the counted rules of the
+# engine plugin, the writer of the walk list and the writer of the header
+# costs plant their input in throwaway trees.  The test of the import
 # closure imports the module of each hidden subcommand of the masters in a
 # new interpreter.
 crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR})
 foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test_proc core.test_git
         core.test_paths core.test_testing readers.test_compdb readers.test_python readers.test_tool_reports
         readers.test_sections guard.test_history guard.test_import_closure guard.engines.meta.test_package
-        guard.engines.meta.test_ste_dictionary loop.derive.test_walk_units)
+        guard.engines.meta.test_ste_dictionary guard.engines.plugin.test_counted loop.derive.test_walk_units
+        loop.derive.test_header_costs)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})

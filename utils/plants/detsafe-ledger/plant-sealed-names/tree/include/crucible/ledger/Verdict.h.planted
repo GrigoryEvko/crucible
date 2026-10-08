@@ -1,0 +1,4 @@
+#pragma once
+namespace crucible::ledger {
+inline int verdict_value() { return 1; }
+}  // namespace crucible::ledger

@@ -1,0 +1,17 @@
+# A file of the include closure of a sealed root that includes a file under a
+# sealed prefix is a finding of the kind sealed-include at the directive, also
+# through a header between the two and with a quoted path.  The walk does not
+# enter the sealed file, so its namespace is no sealed-name.  In the mode
+# error, each finding is an error.
+
+compile report unit.cpp
+exit report pass
+finding report detsafe-ledger sealed-include include/crucible/Middle.h:5:0 | include/crucible/ledger/Verdict.h in the include closure of include/crucible/Root.h
+
+compile quoted unit.cpp
+flag quoted -DPLANT_QUOTED
+exit quoted pass
+finding quoted detsafe-ledger sealed-include include/crucible/Middle.h:3:0 | include/crucible/ledger/Verdict.h in the include closure of include/crucible/Root.h
+
+compile error unit.cpp mode=error out=no errors=report
+exit error fail

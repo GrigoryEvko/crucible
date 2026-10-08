@@ -1,0 +1,6 @@
+#pragma once
+#if defined(PLANT_QUOTED)
+#include "ledger/Verdict.h"
+#else
+#include <crucible/ledger/Verdict.h>
+#endif

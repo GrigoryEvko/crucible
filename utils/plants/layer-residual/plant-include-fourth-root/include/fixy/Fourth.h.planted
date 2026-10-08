@@ -1,0 +1,3 @@
+#pragma once
+// A project root that no row of the rule table gives a layer.
+#include <newroot/Thing.h>

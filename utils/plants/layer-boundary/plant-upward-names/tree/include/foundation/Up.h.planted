@@ -1,0 +1,20 @@
+#pragma once
+#if defined(PLANT_OPEN_FIXY)
+namespace fixy {
+struct Opened {};
+}  // namespace fixy
+#endif
+#if defined(PLANT_OPEN_CRUCIBLE)
+namespace crucible::deep {
+struct Opened {};
+}  // namespace crucible::deep
+#endif
+#if defined(PLANT_CALL)
+inline int read_up() { return ::crucible::value(); }
+namespace foundation {
+inline int read_relative() { return fixy::fixy_value(); }
+}  // namespace foundation
+#endif
+#if defined(PLANT_MACRO)
+#define PLANT_CALL_UP() ::crucible::value()
+#endif

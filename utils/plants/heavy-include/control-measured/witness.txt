@@ -1,0 +1,10 @@
+# An include of a header with a light row, of a project header and of a
+# sibling is no finding of a file under include/, and a comment includes
+# nothing.  A file outside include/ includes <chrono>, which has a heavy row,
+# and that is no finding.
+
+compile unit unit.cpp mode=error
+exit unit pass
+
+compile source src/Clock.cpp mode=error
+exit source pass

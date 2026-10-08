@@ -1,0 +1,6 @@
+#pragma once
+#if defined(PLANT_FIXY_UP)
+namespace crucible {
+struct FromFixy;
+}  // namespace crucible
+#endif

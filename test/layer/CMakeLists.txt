@@ -1,8 +1,9 @@
 # The layer rule, enforced by the compiler.
 #
 # foundation names only foundation and std, and fixy names only foundation,
-# fixy and std.  utils/assay/guard/legacy/check_layer_boundary.py reads that rule from the
-# parse tree.  This directory makes the compiler hold it too: a header that
+# fixy and std.  The rule layer-boundary of the quarantine plugin and the rule
+# layer-residual of the parse tree hold that rule.  This directory makes the
+# compiler hold it too: a header that
 # includes or names a higher layer does not compile, whatever the spelling.
 #
 # Each layer gets its own include root in the build tree.  The root holds a

@@ -1,0 +1,11 @@
+# The closure of the root names no sealed namespace: a comment, a string, a
+# longer name and a namespace ledger outside a project root name nothing.  A
+# header outside the closure includes and reads the ledger, and so does the
+# unit, also through an argument of a macro of the root.  No unit gives a
+# finding, in the mode error.
+
+compile alone alone.cpp mode=error
+exit alone pass
+
+compile unit unit.cpp mode=error
+exit unit pass

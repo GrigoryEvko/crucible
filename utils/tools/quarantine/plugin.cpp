@@ -196,7 +196,7 @@ void add_mode_dependencies() {
     std::unordered_set<const FileEntry*> files;
     bool needs_enforce = false;
     for (const Finding& finding : state.findings) {
-        if (finding.kind == Kind::contract_specifier || is_property_kind(finding.kind) || finding.file == nullptr
+        if (is_each_mode_kind(finding.kind) || is_property_kind(finding.kind) || finding.file == nullptr
             || is_opted_out(finding) || !files.insert(finding.file).second) {
             continue;
         }
@@ -292,6 +292,41 @@ bool write_kinds(const std::string& path) {
     return true;
 }
 
+// The action of a finding of a rule other than the quarantine rule, after the
+// kind and the entity of its error.
+const char* kind_action(Kind kind) {
+    switch (kind) {
+        case Kind::sealed_include:
+        case Kind::sealed_name:
+            return "a ledger verdict is a property of one machine, so it must not reach the hashing path.  Move the "
+                   "consumer off the hashing path, or pass the verdict in above it (CLAUDE.md section II, DetSafe)";
+        case Kind::heavy_include:
+            return "each translation unit that includes the header pays its cost.  Use a builtin or a lower header, "
+                   "or move the code that needs it to a source file (CLAUDE.md section XV, rule 4)";
+        case Kind::unmeasured_header:
+            return "no heavy row and no light row of the rule table gives the cost of the header.  Measure it with "
+                   "`python3 utils/bin/loop derive header-costs --measure BUILD_DIR HEADER`";
+        case Kind::upward_name:
+            return "a base file names only its own root and the roots below it.  Move the code to its layer, or move "
+                   "the declaration that it names down (CLAUDE.md section XXII)";
+        case Kind::contract_semantic:
+            return "give the target or the source file both items of CRUCIBLE_CONTRACT_IGNORE_OPTIONS of "
+                   "cmake/ContractSemantic.cmake, or neither (CLAUDE.md section XII)";
+        case Kind::fast_math_override:
+            return "keep the FP floor of cmake/FpStrict.cmake: remove the option from the optimize attribute or the "
+                   "GCC optimize pragma (CLAUDE.md section V)";
+        default:
+            return "";
+    }
+}
+
+// The error of a unit fact, in each mode.  A fact of the whole unit has no
+// location.
+void report_unit_fact(const Finding& finding) {
+    error_at(finding.spelling, "quarantine: %s %s; %s", kind_name(finding.kind), finding.entity.c_str(),
+             kind_action(finding.kind));
+}
+
 void on_finish_unit(void*, void*) {
     walk_declarations();
     report(true);
@@ -319,6 +354,7 @@ void on_collection(void*, void*) {
     state.default_argument_of.clear();
     state.walked.clear();
     state.contract_walked.clear();
+    state.top_facts.clear();
 }
 
 }  // namespace
@@ -337,6 +373,8 @@ void report(bool can_add_dependencies) {
             add_finding(Kind::c_library_call, nullptr, use.place, use.entity);
         }
     }
+    report_include_closure();
+    report_unit_facts();
     report_open_regions();
     report_unclassified();
     if (can_add_dependencies) {
@@ -368,11 +406,19 @@ void report(bool can_add_dependencies) {
         lines.push_back(report_line(rule, kind, *finding.file, finding.line, finding.column, entity));
         // A use that a row with `until` and `in` admits in a file of the
         // language is a finding and no error, as it is in a quarantined file.
-        bool is_language = finding.file->language_layer >= 0 && finding.pending == nullptr;
+        // The rule of the language files is the quarantine rule.
+        Rule rule_of_finding = rule_of(finding.kind);
+        bool is_language = finding.file->language_layer >= 0 && finding.pending == nullptr
+                        && rule_of_finding == Rule::quarantine;
         bool is_error = state.is_error_mode || finding.file->is_error_mode || is_language;
-        // The contract rule gives an error in each mode.
+        // The contract rule and the unit facts give an error in each mode.
         if (finding.kind == Kind::contract_specifier && !is_out) {
             report_contract(finding);
+        } else if (is_each_mode_kind(finding.kind) && !is_out) {
+            report_unit_fact(finding);
+        } else if (rule_of_finding != Rule::quarantine && is_error && !is_out) {
+            error_at(finding.spelling, "quarantine: %s %s; %s", kind.c_str(), entity.c_str(),
+                     kind_action(finding.kind));
         } else if (is_language && !is_out && !is_include_kind(finding.kind)) {
             error_at(finding.spelling,
                      "quarantine: %s %s; a language row of the rule table holds this file, so each declaration "
@@ -492,6 +538,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     register_includes(plugin_info->base_name);
     register_regions(plugin_info->base_name);
     register_contract_rule(plugin_info->base_name);
+    register_unit_facts(plugin_info->base_name);
     register_expressions(plugin_info->base_name);
     register_declarations(plugin_info->base_name);
     register_callback(plugin_info->base_name, PLUGIN_FINISH_UNIT, on_finish_unit, nullptr);

@@ -1,0 +1,6 @@
+#include <crucible/Root.h>
+#include <crucible/Consumer.h>
+// The unit is outside the closure of the root, and an argument of a macro of
+// the root that the unit spells is a name of the unit.
+inline int read_twice() { return PLANT_TWICE(::crucible::ledger::verdict_value()); }
+inline int read_direct() { return ::crucible::ledger::verdict_value() + consume(); }

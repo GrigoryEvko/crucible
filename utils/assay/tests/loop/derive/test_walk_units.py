@@ -5,11 +5,9 @@ plants its input in a throwaway repository or directory, and writes one line.
 Exit 0 when each case holds, else 1.
 """
 
-import contextlib
-import io
 import sys
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 
 from assay.core import git, testing
@@ -43,12 +41,6 @@ UNIT_DIRECTORY = "/build/test/layer/walk_units/0"
 FAKE_COMPILER = "import sys; open(sys.argv[sys.argv.index('-o') + 1], 'wb').close()"
 
 
-def captured(action: Callable[[], int]) -> tuple[int, str]:
-    """Run one action and give its status and the text that it writes to the two standard streams."""
-    with contextlib.redirect_stdout(io.StringIO()) as printed, contextlib.redirect_stderr(printed):
-        return action(), printed.getvalue()
-
-
 def unit_command(build: Path, has_include: bool = True) -> Mapping[str, object]:
     """Return a compile of the database of a test: a walk unit that the compiler of the test compiles.
 
@@ -69,7 +61,7 @@ def unit_command(build: Path, has_include: bool = True) -> Mapping[str, object]:
 def write_cases(expect: testing.Expect) -> None:
     """Check --write: the rows of the joined check files, the head comment, the weights that stay and a parse error."""
     with git.scratch_repository(TREE) as root:
-        status, _text = captured(lambda: writer.written(root))
+        status, _text = testing.captured(lambda: writer.written(root))
         listed = (root / rule.LIST).read_text(encoding="utf-8")
         expect(
             "--write writes a row for the check file that joins, with the weight unmeasured",
@@ -81,11 +73,11 @@ def write_cases(expect: testing.Expect) -> None:
             not [found for found in rule.findings(TsastContext(root)) if found.level == "error"],
         )
         (root / rule.LIST).write_text(listed.replace(rule.UNMEASURED, "2.5"), encoding="utf-8")
-        captured(lambda: writer.written(root))
+        testing.captured(lambda: writer.written(root))
         kept = (root / rule.LIST).read_text(encoding="utf-8")
         expect("--write keeps the weight of a row that stays", USES_ROW.format(weight="2.5") in kept)
         (root / rule.CHECKS / "crucible/Broken.cpp").write_text("static_assert(1 == 1;\n", encoding="utf-8")
-        status, text = captured(lambda: writer.written(root))
+        status, text = testing.captured(lambda: writer.written(root))
         expect(
             "--write writes nothing while a file does not parse",
             status == ExitCode.FINDINGS
@@ -145,7 +137,7 @@ def measure_cases(expect: testing.Expect) -> None:
         list_path = root / rule.LIST
         malformed = rule.LIST_HEADER + "a row with no separator\n"
         list_path.write_text(malformed, encoding="utf-8")
-        status, text = captured(lambda: writer.measured(build, list_path, 1))
+        status, text = testing.captured(lambda: writer.measured(build, list_path, 1))
         expect(
             "--measure refuses a list with a malformed row, and writes nothing",
             status == ExitCode.FINDINGS
@@ -154,7 +146,7 @@ def measure_cases(expect: testing.Expect) -> None:
         )
         listed = rule.LIST_HEADER + USES_ROW.format(weight=rule.UNMEASURED)
         list_path.write_text(listed, encoding="utf-8")
-        status, text = captured(lambda: writer.measured(build, list_path, 1))
+        status, text = testing.captured(lambda: writer.measured(build, list_path, 1))
         expect(
             "--measure refuses a build with no compile database, and writes nothing",
             status == ExitCode.FINDINGS
@@ -164,7 +156,7 @@ def measure_cases(expect: testing.Expect) -> None:
         compdb.plant(build, [unit_command(build)])
         probe = cost_meter.open_instruction_counter()
         has_counter = probe is not None and cost_meter.read_instruction_counter(probe) is not None
-        status, text = captured(lambda: writer.measured(build, list_path, 2))
+        status, text = testing.captured(lambda: writer.measured(build, list_path, 2))
         rows = rule.read_list(list_path).rows
         if has_counter:
             expect(
@@ -184,7 +176,7 @@ def measure_cases(expect: testing.Expect) -> None:
 def explain_cases(expect: testing.Expect) -> None:
     """Check --explain: the path of a walk to the call of members_of, and a target that is not a check file."""
     with git.scratch_repository(TREE) as root:
-        status, text = captured(lambda: writer.explained(root, f"{rule.CHECKS}/fixy/Uses.cpp"))
+        status, text = testing.captured(lambda: writer.explained(root, f"{rule.CHECKS}/fixy/Uses.cpp"))
         expect(
             "--explain prints the path of the walk to the call of members_of",
             status == ExitCode.OK
@@ -192,22 +184,22 @@ def explain_cases(expect: testing.Expect) -> None:
             and "::foundation::tags" in text
             and "members_of at include/foundation/Walk.h" in text,
         )
-        status, text = captured(lambda: writer.explained(root, "crucible/NoWalk.cpp"))
+        status, text = testing.captured(lambda: writer.explained(root, "crucible/NoWalk.cpp"))
         expect(
             "--explain takes a check file with no prefix, and tells that it does not join",
             status == ExitCode.OK and "does not join" in text,
         )
-        status, _text = captured(lambda: writer.explained(root, "crucible/Missing.cpp"))
+        status, _text = testing.captured(lambda: writer.explained(root, "crucible/Missing.cpp"))
         expect("--explain refuses a target that is not a check file", status == ExitCode.USAGE)
 
 
 def usage_cases(expect: testing.Expect) -> None:
     """Check the usage errors of main: no mode, two modes and a number of jobs that is not 1 or more."""
-    expect("main refuses a call with no mode", captured(lambda: writer.main([]))[0] == ExitCode.USAGE)
-    expect("main refuses two modes", captured(lambda: writer.main(["--write", "--check"]))[0] == ExitCode.USAGE)
+    expect("main refuses a call with no mode", testing.captured(lambda: writer.main([]))[0] == ExitCode.USAGE)
+    expect("main refuses two modes", testing.captured(lambda: writer.main(["--write", "--check"]))[0] == ExitCode.USAGE)
     expect(
         "main refuses --jobs 0",
-        captured(lambda: writer.main(["--measure", "build", "--jobs", "0"]))[0] == ExitCode.USAGE,
+        testing.captured(lambda: writer.main(["--measure", "build", "--jobs", "0"]))[0] == ExitCode.USAGE,
     )
 
 

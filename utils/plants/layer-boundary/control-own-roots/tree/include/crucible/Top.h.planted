@@ -1,0 +1,12 @@
+#pragma once
+#include <fixy/Wrap.h>
+namespace crucible {
+struct Thing {
+    int value() const { return ::fixy::wrap_value(); }
+    ~Thing() {}
+};
+inline int read_thing() {
+    ::foundation::Holder<Thing> holder{};
+    return ::foundation::read_held(holder);
+}
+}  // namespace crucible

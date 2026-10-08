@@ -1,0 +1,6 @@
+#pragma once
+// A comment that names <chrono> and #include <thread> includes nothing.
+#include <cstdint>
+#include <cstdio>
+#include <crucible/Other.h>
+#include "Other.h"

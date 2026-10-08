@@ -1,0 +1,34 @@
+# A function whose optimize attribute or GCC optimize pragma turns on a
+# fast-math option, or cancels a flag of the floor, is a finding of the kind
+# fast-math-override at the function: an attribute in each spelling, a pragma
+# between push_options and pop_options, a _Pragma, an attribute from a macro, a
+# declaration with no body, and each option of the family.  A pragma that a
+# header leaves on gives its options to the function after the include.  The
+# command line holds the floor of cmake/FpStrict.cmake.  The finding is an
+# error in each mode.
+
+compile overrides src/fast.cpp
+flag overrides -fno-fast-math -ffp-contract=off -fno-associative-math -fno-reciprocal-math -fno-finite-math-only -fsignaling-nans -frounding-math -ftrapping-math
+exit overrides fail
+finding overrides fast-math-override fast-math-override src/fast.cpp:1:39 | gnu_attribute (unsafe-math-optimizations,associative-math,reciprocal-math,finite-math-only,no-signed-zeros,no-trapping-math,no-signaling-nans,no-rounding-math)
+finding overrides fast-math-override fast-math-override src/fast.cpp:2:49 | ofast_option (Ofast)
+finding overrides fast-math-override fast-math-override src/fast.cpp:5:8 | pushed_pragma (associative-math)
+finding overrides fast-math-override fast-math-override src/fast.cpp:8:8 | underscore_pragma (reciprocal-math)
+finding overrides fast-math-override fast-math-override src/fast.cpp:11:19 | macro_attribute (finite-math-only)
+finding overrides fast-math-override fast-math-override src/fast.cpp:12:46 | floor_cancel (no-trapping-math)
+finding overrides fast-math-override fast-math-override src/fast.cpp:13:46 | contract_fast (fp-contract=fast)
+finding overrides fast-math-override fast-math-override src/fast.cpp:14:45 | declared_only (no-signed-zeros)
+error overrides src/fast.cpp:1 | quarantine: fast-math-override gnu_attribute (unsafe-math-optimizations,associative-math,reciprocal-math,finite-math-only,no-signed-zeros,no-trapping-math,no-signaling-nans,no-rounding-math);
+error overrides src/fast.cpp:2 | quarantine: fast-math-override ofast_option (Ofast);
+error overrides src/fast.cpp:5 | quarantine: fast-math-override pushed_pragma (associative-math);
+error overrides src/fast.cpp:8 | quarantine: fast-math-override underscore_pragma (reciprocal-math);
+error overrides src/fast.cpp:11 | quarantine: fast-math-override macro_attribute (finite-math-only);
+error overrides src/fast.cpp:12 | quarantine: fast-math-override floor_cancel (no-trapping-math);
+error overrides src/fast.cpp:13 | quarantine: fast-math-override contract_fast (fp-contract=fast);
+error overrides src/fast.cpp:14 | quarantine: fast-math-override declared_only (no-signed-zeros);
+
+compile leaky src/open.cpp
+flag leaky -fno-fast-math -ffp-contract=off -fno-associative-math -fno-reciprocal-math -fno-finite-math-only -fsignaling-nans -frounding-math -ftrapping-math
+exit leaky fail
+finding leaky fast-math-override fast-math-override src/open.cpp:2:8 | after_include (unsafe-math-optimizations,associative-math,reciprocal-math,no-signed-zeros,no-trapping-math)
+error leaky src/open.cpp:2 | quarantine: fast-math-override after_include (unsafe-math-optimizations,associative-math,reciprocal-math,no-signed-zeros,no-trapping-math);

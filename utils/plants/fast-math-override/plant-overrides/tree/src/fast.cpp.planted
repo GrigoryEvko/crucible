@@ -1,0 +1,15 @@
+[[gnu::optimize("fast-math")]] double gnu_attribute(double value) { return value; }
+__attribute__((hot, optimize("-Ofast"))) double ofast_option(double value) { return value; }
+#pragma GCC push_options
+#pragma GCC optimize("associative-math")
+double pushed_pragma(double value) { return value; }
+#pragma GCC pop_options
+_Pragma("GCC push_options") _Pragma("GCC optimize(\"reciprocal-math\")")
+double underscore_pragma(double value) { return value; }
+_Pragma("GCC pop_options")
+#define PLANT_FAST [[gnu::optimize("finite-math-only")]]
+PLANT_FAST double macro_attribute(double value) { return value; }
+[[gnu::optimize("no-trapping-math")]] double floor_cancel(double value) { return value; }
+[[gnu::optimize("fp-contract=fast")]] double contract_fast(double value) { return value; }
+[[gnu::optimize("no-signed-zeros")]] double declared_only(double value);
+double plain(double value) { return value; }

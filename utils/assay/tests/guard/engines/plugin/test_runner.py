@@ -35,7 +35,7 @@ from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.core import ruletable, testing
-from assay.guard.engines.plugin import quarantine, runner
+from assay.guard.engines.plugin import counted, quarantine, runner
 from assay.readers import cmake, compdb, elf
 from assay.readers import sections as quarantine_sections
 
@@ -254,7 +254,7 @@ class Scratch:
 
     def counts(self) -> dict[Row, int]:
         """Return the count of each file, kind and entity of the planted objects."""
-        return as_tuples(quarantine.counts_of(quarantine.findings(runner.PluginContext(self.root, self.build))))
+        return as_tuples(counted.counts_of(quarantine.findings(runner.PluginContext(self.root, self.build))))
 
     def ledger_rows(self) -> rule_ledger.Ledger:
         """Read the planted ledger."""
@@ -453,7 +453,7 @@ def census_cases(expect: testing.Expect) -> None:
     )
     configuration = runner.BuildConfiguration("planted", (("kind", "planted"), ("tier", "x86-64-0")))
     context = runner.PluginContext(Path("/planted"), None, census, configuration)
-    counts = as_tuples(quarantine.counts_of(quarantine.findings(context)))
+    counts = as_tuples(counted.counts_of(quarantine.findings(context)))
     expect(
         "a planted census gives the counts of the rule quarantine, with a region row and an opted-out row",
         counts

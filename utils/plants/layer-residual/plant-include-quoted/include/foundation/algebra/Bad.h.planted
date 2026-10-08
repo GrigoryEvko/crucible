@@ -1,0 +1,3 @@
+#pragma once
+// A quoted include that resolves beside the file names crucible.
+#include "../../crucible/Arena.h"

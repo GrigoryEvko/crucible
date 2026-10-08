@@ -1,0 +1,31 @@
+#pragma once
+#if defined(PLANT_FORWARD)
+namespace crucible::ledger {
+struct Verdict;
+}  // namespace crucible::ledger
+#endif
+#if defined(PLANT_INLINE)
+namespace crucible {
+inline namespace v1 {
+namespace ledger {
+struct Inline;
+}  // namespace ledger
+}  // namespace v1
+}  // namespace crucible
+#endif
+#if defined(PLANT_USING)
+namespace crucible::ledger {
+int verdict_value();
+}  // namespace crucible::ledger
+using namespace crucible::ledger;
+namespace planted_alias = crucible::ledger;
+#endif
+#if defined(PLANT_CALL)
+inline int read_verdict() { return ::crucible::ledger::verdict_value(); }
+namespace crucible {
+inline int read_relative() { return ledger::verdict_value(); }
+}  // namespace crucible
+#endif
+#if defined(PLANT_MACRO)
+#define PLANT_READ_VERDICT() ::crucible::ledger::verdict_value()
+#endif

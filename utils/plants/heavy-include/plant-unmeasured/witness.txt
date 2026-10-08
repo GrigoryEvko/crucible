@@ -1,0 +1,10 @@
+# An include of a header outside the root that no heavy row and no light row
+# gives is a finding of the kind unmeasured-header, because the rule cannot
+# tell its cost.  In the mode error, it is an error.
+
+compile report unit.cpp
+exit report pass
+finding report heavy-include unmeasured-header include/crucible/Unmeasured.h:3:0 | <cstdio>
+
+compile error unit.cpp mode=error out=no errors=report
+exit error fail
