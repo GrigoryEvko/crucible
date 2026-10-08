@@ -1,4 +1,4 @@
-# contract-form-allowlist.txt: the files that utils/scripts/check-contract-form.py admits.
+# contract-form-allowlist.txt: the files that utils/assay/guard/legacy/check_contract_form.py admits.
 #
 # A row is `path | reason`.  The subject of each listed file is the P2900
 # contract specifier itself, so the file holds one.  A listed file that holds

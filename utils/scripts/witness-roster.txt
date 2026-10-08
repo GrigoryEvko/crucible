@@ -1,7 +1,7 @@
 # utils/scripts/witness-roster.txt -- every type in include/foundation and
 # include/fixy that attests to a fact it cannot see, and the door it keeps.
 #
-# Read by utils/scripts/check-witness-roster.py (the walk, the generator and
+# Read by utils/assay/guard/legacy/check_witness_roster.py (the walk, the generator and
 # the drift check) and by test/fixy/CMakeLists.txt (one negative-compile
 # test per closed line).  This file is the only place a witness is
 # named.

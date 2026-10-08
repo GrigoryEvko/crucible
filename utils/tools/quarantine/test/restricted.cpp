@@ -1,4 +1,4 @@
-// The plants of the restrictions of the admit rows.  check_plugin.py compiles
+// The plants of the restrictions of the admit rows.  utils/assay/guard/legacy/check_plugin.py compiles
 // this quarantined file in error mode with restricted.txt, one time with no
 // plant and one time with each PLANT_ macro.  Each plant gives a finding of
 // its restriction, and the file with no plant gives none.

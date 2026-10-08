@@ -1,10 +1,10 @@
 # utils/scripts/libstdcxx-symbols-ledger.txt — the libstdc++ symbols that the libraries of the base and
-# libcrucible.a use, for each build kind.  utils/scripts/check-libstdcxx-symbols.py reads it (the test
+# libcrucible.a use, for each build kind.  utils/assay/guard/legacy/check_libstdcxx_symbols.py reads it (the test
 # libstdcxx_symbols), and the head comment of the check gives the rules.
 #
 # A kind row:    kind | KIND | TARGET
 #   The ledger holds the sets of the build kind KIND (BUILD_DIR/build-kind.txt) on the target TARGET, the
-#   target tier of utils/scripts/build_target.py.  A build of a kind or a target that the ledger does not
+#   target tier of utils/assay/core/target.py.  A build of a kind or a target that the ledger does not
 #   hold prints its rows, and --import LOG puts them here.
 #
 # A symbol row:  KIND | LIBRARY | MARK | CLASS | SYMBOL | DEMANGLED NAME
@@ -14,7 +14,7 @@
 #
 # A new symbol fails the test.  A row whose symbol goes fails too, until the same commit writes the rows
 # of the kind again:
-#   python3 utils/scripts/check-libstdcxx-symbols.py --build-dir build --write
+#   python3 utils/bin/guard check --rule libstdcxx-symbols --build-dir build --write
 # --write refuses a new ratchet symbol.  The head comment of the check gives the reasons for --raise.
 
 kind | x86_64-debug-asan | x86-64-eb53fd1c

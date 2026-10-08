@@ -1,7 +1,7 @@
 # utils/scripts/brand-drain.txt — the sites on the erased brand, one count per
-# file.  utils/scripts/check-brand-drain.py reads this ledger.  A count can only
-# decrease.  Where a new spelling is necessary, write the brand.  Run
-# --refresh in the commit that removes a site.
+# file.  The rule brand-drain (`guard check --rule brand-drain`) reads this
+# ledger.  A count can only decrease.  Where a new spelling is necessary,
+# write the brand.  Run --refresh in the commit that removes a site.
 #
 # This ledger holds the counts of 2026-09-24, when the guard moved onto
 # the parse tree and into CI.  These counts replace the smaller counts of

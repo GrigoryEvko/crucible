@@ -1,7 +1,7 @@
 // The paths around the rules of the plugin: a typedef of fixy that names a
 // library enumeration, a global variable of the C library, a macro of a system
 // header, builtins that the code calls, a builtin that the front end calls,
-// va_arg, an asm statement and assert.  check_plugin.py gives the finding of
+// va_arg, an asm statement and assert.  utils/assay/guard/legacy/check_plugin.py gives the finding of
 // each line in LIBRARY_NAMES and the lines with no finding in
 // LIBRARY_NAMES_ABSENT, and it compiles the file with and without NDEBUG.
 

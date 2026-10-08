@@ -31,7 +31,7 @@
 //
 // DetSafe (axiom 8): a store path, a TTL and a confidence grade can change
 // how fast the runtime goes and must never change what it computes.
-// utils/scripts/check-detsafe-ledger.py asserts no ledger symbol is reachable
+// utils/assay/guard/legacy/check_detsafe_ledger.py asserts no ledger symbol is reachable
 // from content_hash, merkle_hash or the memory plan.
 
 #include <crucible/ledger/Competence.h>

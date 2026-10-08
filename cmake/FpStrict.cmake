@@ -81,7 +81,7 @@
 #                                   stripping the discipline).
 #
 # Two flags from CLAUDE.md §V "NEVER" list are NOT in our SET but
-# ARE in the `check-no-ffast-math.py` deny-list because they would
+# ARE in the deny-list of the rule no-ffast-math because they would
 # break the floor if applied per-TU:
 #
 #   -funsafe-math-optimizations   — global blanket disable; one flag
@@ -101,7 +101,7 @@
 # uses no fp-strict math).  We add to a target, not CMAKE_CXX_FLAGS,
 # precisely to localize the effect.
 #
-# Verification: `utils/scripts/check-no-ffast-math.py` reads the flags of each
+# Verification: `guard check --rule no-ffast-math` reads the flags of each
 # TU from the compile database and each optimize attribute or pragma
 # from the parse tree. It rejects an override that punches through the
 # floor.

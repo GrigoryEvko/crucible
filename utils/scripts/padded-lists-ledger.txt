@@ -1,5 +1,5 @@
 # utils/scripts/padded-lists-ledger.txt — the fixed lists whose element type has a padding bit.
-# utils/scripts/check-padded-lists.py reads this ledger.
+# The rule padded-list (`guard check --rule padded-list`) reads this ledger.
 #
 # With -ftrivial-auto-var-init=zero, GCC writes one store for each padding hole of each element of
 # a fixed list in an automatic object, with no loop.  Make each padding byte a member.  The row
@@ -7,8 +7,8 @@
 #
 # A count row:  path | role | declaration | element type
 #   A padded list that the tree holds today.  Each run gives a warning for it.  When you remove the
-#   padding, run python3 utils/scripts/check-padded-lists.py --build-dir BUILD_DIR --write in the
-#   same commit.
+#   padding, run python3 utils/bin/guard check --rule padded-list --build-dir BUILD_DIR --write in
+#   the same commit.
 #
 # A keep row:   keep | path | role | declaration | element type | reason
 #   An element type with padding on purpose.  The reason is mandatory.

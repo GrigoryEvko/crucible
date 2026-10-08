@@ -15,8 +15,8 @@
 #
 # Scope: the PATH half of the key, and nothing else.  Whether the line
 # or the code text beside it still matches is each owning guard's
-# business — check-syscall-capability.py holds the sentence,
-# check-fullness-guard.py reports its own stale rows.  This one
+# business — the rule syscall-capability holds the sentence,
+# the rule fullness-guard reports its own stale rows.  This one
 # answers the single question none of them can answer once the file is
 # gone.
 #

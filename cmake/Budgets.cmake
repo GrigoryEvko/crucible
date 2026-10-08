@@ -4,7 +4,7 @@
 #
 #     check | warn | error | unit | meaning
 #
-# utils/scripts/check_report.py is the parser of the table for the Python checks.  A limit that GCC
+# utils/assay/core/report.py is the parser of the table for the Python checks.  A limit that GCC
 # enforces, such as -fconstexpr-ops-limit, has no warning form, so its row has two equal thresholds,
 # and the build reads the error threshold here.
 

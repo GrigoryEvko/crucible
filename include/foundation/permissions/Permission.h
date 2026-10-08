@@ -17,7 +17,7 @@
 // rests on.  A spelling that names no brand is the erased identity
 // DefaultBrand.  permission_erase_brand drops the brand of a token where
 // its holder cannot name the brand, and no conversion drops it.
-// utils/scripts/check-brand-drain.py lists every spelling on the erased
+// utils/assay/guard/legacy/check_brand_drain.py lists every spelling on the erased
 // identity.
 //
 // Nothing ties a tag to the memory it names, and nothing confines the
@@ -217,7 +217,7 @@ concept DistinctTags = tags_are_distinct({^^Tags...});
 //   1. an edge `edge<Tag, Row<...>>` in permission_rows, the enumerable
 //      form, which every_class_in_has_edge audits for the canonical tags.
 //      Only this header, ReadView.h and test/ may open the namespace, and
-//      utils/scripts/check-trait-injection.py refuses it in any other file;
+//      utils/assay/guard/legacy/check_trait_injection.py refuses it in any other file;
 //   2. `using permission_row = Row<...>;` inside the tag, for a tag
 //      template such as a channel's Whole<UserTag>, whose instances
 //      cannot each be an edge;
@@ -818,7 +818,7 @@ private:
 // friend.  A reflection check cannot refuse it: GCC gives the location
 // of the primary template for an instance of a partial specialization,
 // and a #line directive moves any location.  The guard
-// utils/scripts/check-federation-admission.py refuses, outside
+// utils/assay/guard/legacy/check_federation_admission.py refuses, outside
 // fixy/Federation.h, each class head of FederationAdmission and each
 // qualified definition that names one of its members.
 template <typename Org>

@@ -7,7 +7,7 @@
 # utils/scripts/install-cmake.sh installs the same wheel with no pip.  Each CI
 # job that configures or tests runs that script.  The configure step rejects a
 # CMake of another version (cmake/CMakePin.cmake).  The test cmake_pin rejects
-# a ctest of another version (utils/scripts/cmake_pin.py).
+# a ctest of another version (utils/assay/setup/pins.py).
 #
 # To change the version, write the new version and the SHA256 of each wheel
 # from https://pypi.org/project/cmake/ on the two lines.

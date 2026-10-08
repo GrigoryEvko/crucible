@@ -22,7 +22,7 @@ using IoCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO>>;
 
 // The borrows are spelled at a named brand rather than at the erased
 // one.  A borrow spelled with no brand argument is DefaultBrand, which
-// utils/scripts/check-brand-drain.py counts and does not let a new file add,
+// utils/assay/guard/legacy/check_brand_drain.py counts and does not let a new file add,
 // and every claim below reads the same at either brand.
 struct probe_brand {};
 

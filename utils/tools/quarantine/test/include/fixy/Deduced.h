@@ -1,6 +1,6 @@
 // A base function whose return type holds a library class.  A quarantined
 // template that holds its result with a placeholder holds an object of that
-// class (check_plugin.py, deduced.cpp).
+// class (utils/assay/guard/legacy/check_plugin.py, deduced.cpp).
 
 #pragma once
 

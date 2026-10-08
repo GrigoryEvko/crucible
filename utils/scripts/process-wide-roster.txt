@@ -1,5 +1,5 @@
 # The objects with static storage duration that are correct with one copy in
-# each shared library.  utils/scripts/check-process-wide-state.py reads this file.
+# each shared library.  utils/assay/guard/legacy/check_process_wide_state.py reads this file.
 #
 # One row:  path | qualified name | reason
 #

@@ -1,6 +1,6 @@
 // Templates that hold the result of a base function with a placeholder and a
 // dependent initializer.  The pattern keeps the placeholder, and each
-// instantiation deduces std::vector, so check_plugin.py expects one finding on
+// instantiation deduces std::vector, so utils/assay/guard/legacy/check_plugin.py expects one finding on
 // the line of each placeholder.  A type that a template parameter gives is no
 // finding in the instantiation: the code spells it where it names the template.
 

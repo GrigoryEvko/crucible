@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""loop — the master command of the build and test loop of the tree.
+
+usage: loop SUBCOMMAND [ARG]...
+
+The master does four steps and no other step:
+  1. It refuses a Python that is older than the pinned version 3.14.
+  2. It sets sys.pycache_prefix to the directory pycache in the cache root of
+     assay.core.cache (THE ROOT), so no __pycache__ directory goes into the
+     tree.  When CRUCIBLE_CACHE_DIR is "off", no compiled module is written.
+  3. It puts utils/ at the front of the module path.
+  4. It finds the subcommand in SUBCOMMANDS, imports only the module of the
+     subcommand, and calls the function main of that module with the words
+     after the subcommand.  The exit status is the value that main returns.
+
+CMake starts `loop step` for each compile and each link, ccache starts `loop
+meter-compiler` for the compiler run of a miss, and ctest starts `loop
+test-step` for each test and `loop fixture` for each negative fixture.  So this
+file imports only os and sys, and the import of the module of the subcommand is
+the only other import of the dispatch.
+
+Steps 1 to 3 run at the top level of this file.  A child process of
+multiprocessing runs this file again as __mp_main__, so the child gets the
+same module path and the same place for compiled modules.  Step 4 runs only
+when the file is __main__.
+"""
+
+import os
+import sys
+
+if sys.version_info < (3, 14):
+    sys.exit(f"loop: this Python is {sys.version_info[0]}.{sys.version_info[1]}, and the tree pins Python 3.14.  "
+             f"Run the master with Python 3.14 or a subsequent version.")
+_CACHE_ROOT = os.environ.get("CRUCIBLE_CACHE_DIR", "")
+if _CACHE_ROOT == "off":
+    sys.dont_write_bytecode = True
+else:
+    sys.pycache_prefix = os.path.join(
+        _CACHE_ROOT or os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache"),
+                                    "crucible"), "pycache")
+_UTILS = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+if sys.path[:1] != [_UTILS]:
+    sys.path.insert(0, _UTILS)
+
+# Each subcommand: its module, and the line of the help text.  A subcommand
+# with no line is for a tool (CMake, ccache, ctest or a guard), and the help
+# text does not list it.
+SUBCOMMANDS = {
+    "test": ("assay.loop.affected", "build, and then run each test with an input that changed: loop test BUILD_DIR"),
+    "gauge": ("assay.loop.gauge", "measure the edit loop in a clone, or a sample of units with --sample"),
+    "history": ("assay.loop.history", "print the loop history of a build directory: loop history BUILD_DIR"),
+    "derive": ("assay.loop.derive", "write or compare a generated file: loop derive TARGET [ARG]..."),
+    "step": ("assay.loop.step", None),
+    "meter-compiler": ("assay.loop.meter_compiler", None),
+    "test-step": ("assay.loop.teststep", None),
+    "fixture": ("assay.loop.fixture.store", None),
+    "stamps": ("assay.loop.stamps", None),
+    "cache": ("assay.core.cache", None),
+    "budget": ("assay.core.report", None),
+}
+
+if __name__ == "__main__":
+    _words = sys.argv[1:]
+    _entry = SUBCOMMANDS.get(_words[0]) if _words else None
+    if _entry is None:
+        _asked = _words[:1] in (["-h"], ["--help"])
+        print("usage: loop SUBCOMMAND [ARG]...\n\nsubcommands:", file=sys.stdout if _asked else sys.stderr)
+        for _name, (_module, _line) in SUBCOMMANDS.items():
+            if _line:
+                print(f"  {_name:10} {_line}", file=sys.stdout if _asked else sys.stderr)
+        if _words and not _asked:
+            print(f"loop: {_words[0]!r} is not a subcommand.", file=sys.stderr)
+        sys.exit(0 if _asked else 2)
+    __import__(_entry[0])
+    sys.exit(sys.modules[_entry[0]].main(_words[1:]))

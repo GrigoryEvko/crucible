@@ -8,12 +8,12 @@
 // return statement makes.  For a fixed list of such objects, it writes one
 // store for each padding hole of each element, with no loop.  A list of 256
 // padded elements, returned through std::expected, gave a function of 934 KB
-// of machine code.  utils/scripts/check-padded-lists.py rejects a new padded
+// of machine code.  utils/assay/guard/legacy/check_padded_lists.py rejects a new padded
 // list, and a test of the element type calls expect_no_padding_byte, so that
 // the type keeps each padding byte as a member.
 //
 // The count reads the layout by reflection, with the walk of
-// utils/scripts/check-padded-lists.py.  The value bits of a type are the bit
+// utils/assay/guard/legacy/check_padded_lists.py.  The value bits of a type are the bit
 // ranges that its scalar members, its bit-fields and its bases hold, at their
 // offsets, and each other bit is padding.  A floating-point member has no
 // padding bit, and long double holds 80 value bits.  __builtin_clear_padding

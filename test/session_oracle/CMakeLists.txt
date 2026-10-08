@@ -3,7 +3,7 @@
 # 2023), their subject-reduction development (ECOOP 2025), the subtyping
 # relation of Ekici (ITP 2025), and mpstk-crash-stop (CONCUR 2022).
 #
-# utils/tools/session_oracle/ writes golden.csv, the generated_*.cpp
+# utils/assay/oracle/ writes golden.csv, the generated_*.cpp
 # files and generated_sources.cmake.  Each test is one executable whose
 # rows go into several generated files (shards), so that no translation
 # unit holds all the rows of a test.  generated_sources.cmake lists the

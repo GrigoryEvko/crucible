@@ -1,16 +1,16 @@
 # utils/scripts/instruction-total-ledger.txt — the baseline of the user instructions of the compiles of
-# one build.  utils/scripts/check-parse-cost.py reads it, and --write writes the row of one build kind
+# one build.  utils/assay/guard/legacy/check_parse_cost.py reads it, and --write writes the row of one build kind
 # again.
 #
 # A row:  total | KIND | OBJECT INSTRUCTIONS | FIXTURE INSTRUCTIONS | reason
 #   The sum, over each object of the target all and over each negative fixture, of the user
 #   instructions of the compiler run of its last real compile, at the last --write.  A direct compile
-#   and a ccache miss give the same count (utils/scripts/cost_meter.py, A COMPILE THROUGH CCACHE).
+#   and a ccache miss give the same count (utils/assay/core/meter.py, A COMPILE THROUGH CCACHE).
 #
 # A growth over the warning threshold of the row instruction-total of utils/scripts/budgets.txt gives a
 # warning, and over its error threshold an error.  A fall of more than the warning threshold is an error
 # too.  The count covers the template instantiation and the constant evaluation that the bytes of
 # utils/scripts/parse-total-ledger.txt do not see.  To accept a growth, raise the baseline in the same
 # commit with a reason:
-#   python3 utils/scripts/check-parse-cost.py --check instruction-total --build-dir build --write --reason TEXT
+#   python3 utils/bin/guard check --rule parse-cost --check instruction-total --build-dir build --write --reason TEXT
 total | x86_64-debug-asan | 9553998204930 | 8625579563039 | the measure of the Debug build of all and of each negative fixture at 751d38a23 on 2026-10-02.  The total fell 15.9 % from the first baseline, with the compile-time work of the same day

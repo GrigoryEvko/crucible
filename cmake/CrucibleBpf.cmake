@@ -197,7 +197,7 @@ function(crucible_bpf_program name source)
   # the generator.  The depfile names each header that the compile reads,
   # also common.h, vmlinux.h and the libbpf headers.  Ninja moves the list
   # into its dependency log, so an edit of a header compiles the object
-  # again.  The test custom_deps (utils/scripts/check-build-order.py) holds
+  # again.  The test custom_deps (utils/assay/guard/legacy/check_build_order.py) holds
   # this for each object that a custom command compiles.
   #
   # The kernel compiles with -fms-extensions, so vmlinux.h has members such

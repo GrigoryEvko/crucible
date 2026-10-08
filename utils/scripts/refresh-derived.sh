@@ -103,9 +103,9 @@ run_() {
 if [ "$MODE" = refresh ]; then
     printf 'refresh-derived: regenerating\n' >&2
     state_before=$(tree_state_)
-    run_ 'mint inventory'            python3 utils/scripts/gen-mint-inventory.py --write
-    run_ 'witness roster fixtures'   python3 utils/scripts/check-witness-roster.py --gen
-    run_ 'walk units'                python3 utils/scripts/check-walk-units.py --write
+    run_ 'mint inventory'            python3 utils/bin/loop derive mint-inventory --write
+    run_ 'witness roster fixtures'   python3 utils/bin/guard check --rule witness-roster --gen
+    run_ 'walk units'                python3 utils/bin/guard check --rule walk-units --write
     state_after=$(tree_state_)
 fi
 
@@ -114,9 +114,9 @@ fi
 # In the order that a moved path breaks them.
 printf 'refresh-derived: checking\n' >&2
 run_ 'allowlist keys and prose'      bash utils/scripts/check-allowlist-keys.sh
-run_ 'mint inventory'                python3 utils/scripts/gen-mint-inventory.py --check
-run_ 'witness roster'                python3 utils/scripts/check-witness-roster.py --check
-run_ 'walk units'                    python3 utils/scripts/check-walk-units.py
+run_ 'mint inventory'                python3 utils/bin/loop derive mint-inventory --check
+run_ 'witness roster'                python3 utils/bin/guard check --rule witness-roster --check
+run_ 'walk units'                    python3 utils/bin/guard check --rule walk-units
 
 # ── What the refresh rewrote ─────────────────────────────────────────
 if [ "$MODE" = refresh ]; then

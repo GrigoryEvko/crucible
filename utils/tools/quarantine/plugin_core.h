@@ -10,7 +10,7 @@
 //     admitted entities of the standard library, the quarantined directories,
 //     the enforce mode of each path and the files of the language (the base
 //     files that a language row holds).  Its head comment gives the format,
-//     and utils/scripts/layer_rules.py reads the same format.  The plugin
+//     and utils/assay/core/ruletable.py reads the same format.  The plugin
 //     takes the table as rules=PATH.
 //
 // THE FILES
@@ -62,7 +62,7 @@
 //     The rule cannot see a specifier in a preprocessor arm that the unit does
 //     not compile, or on a member function of a local class in a template when
 //     the class declares the function and does not define it.
-//     utils/scripts/check-contract-form.py reads the parse tree of each
+//     utils/assay/guard/legacy/check_contract_form.py reads the parse tree of each
 //     tracked file, and it finds these specifiers too.
 //
 // THE OPT-OUT REGION
@@ -73,7 +73,7 @@
 //     pragma of a file under the root that the macros do not make, a use of a
 //     macro inside another macro, a reason that is not one plain string
 //     literal in the call, and a reason that does not start with its class.
-//     utils/scripts/check-quarantine-regions.py reads each region of that form
+//     utils/assay/guard/legacy/check_quarantine_regions.py reads each region of that form
 //     from the source.  A finding inside a region is reported as opted_out
 //     and is not an error.
 //
@@ -855,7 +855,7 @@ inline void report_open_regions() {
 // ── The reader of the rule table ────────────────────────────────────────
 //
 // The reader divides the lines only at '\n' and the words only at a space and
-// a tab, as utils/scripts/layer_rules.py does.  A row that holds a different
+// a tab, as utils/assay/core/ruletable.py does.  A row that holds a different
 // white-space character is an error, because Python divides at it.
 
 // The two characters that divide the words of a row.
@@ -910,7 +910,7 @@ inline long white_space_code(const std::string& text) {
 }
 
 // The error of a row that holds the white-space character CODE.
-// layer_rules.white_space_message() gives the same text.
+// ruletable.white_space_message() gives the same text.
 inline std::string white_space_message(long code) {
     std::string hex;  // at least four upper-case digits, as the format U+%04X gives
     for (long rest = code; rest > 0 || hex.size() < 4; rest >>= 4) {
@@ -964,7 +964,7 @@ inline bool is_digits(const std::string& text) {
     return true;
 }
 
-// The largest number of a rank or an arity.  layer_rules.MAX_NUMBER gives the
+// The largest number of a rank or an arity.  ruletable.MAX_NUMBER gives the
 // same value.
 inline constexpr int kMaxNumber = INT_MAX;
 
@@ -983,7 +983,7 @@ inline bool number_value(const std::string& text, int& value) {
     return true;
 }
 
-// The error of a number that is more than kMaxNumber.  layer_rules.number_value()
+// The error of a number that is more than kMaxNumber.  ruletable.number_value()
 // gives the same text.
 inline std::string number_message(const std::string& text) {
     return "the number " + text + " is more than " + std::to_string(kMaxNumber)
@@ -1075,7 +1075,7 @@ inline std::string parse_admit(const std::vector<std::string>& args, AdmitRow& r
 }
 
 // Reads the rule table at PATH into core.table.  The format and each check
-// are those of utils/scripts/layer_rules.py.  check_plugin.py gives the two
+// are those of utils/assay/core/ruletable.py.  utils/assay/guard/legacy/check_plugin.py gives the two
 // readers the tables of test/table-cases.txt and a table for each
 // white-space character, and each reader must give the same verdict.  Returns
 // false after an error.

@@ -1,7 +1,7 @@
 # utils/scripts/test-time-ledger.txt — the tests that take more wall time than the error threshold of
 # the row test-time of utils/scripts/budgets.txt, for one kind of build.
-# utils/scripts/test-launcher.py reads it after each executable test, and
-# utils/scripts/check-test-time.py reads it for the other tests of a ctest run.
+# utils/assay/loop/teststep.py reads it after each executable test, and
+# utils/assay/guard/legacy/check_test_time.py reads it for the other tests of a ctest run.
 #
 # A row:  kind | test | value | reason
 #

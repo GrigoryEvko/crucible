@@ -1,5 +1,5 @@
 // A file of the language: language.txt holds it in a language row with the
-// layer low, and its own layer is high.  check_plugin.py compiles
+// layer low, and its own layer is high.  utils/assay/guard/legacy/check_plugin.py compiles
 // language_user.cpp, which includes this header, in report mode with no plant
 // and with each PLANT_LANGUAGE_ macro.  Each plant is an error.  The header
 // with no plant has one finding and no error: the use of std::nothrow, which a

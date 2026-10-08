@@ -1,6 +1,6 @@
 // A using-declaration in a function body or in a class, and a
 // using-directive in a function body, name the library entity that they
-// bring into scope.  check_plugin.py expects one finding on each line that
+// bring into scope.  utils/assay/guard/legacy/check_plugin.py expects one finding on each line that
 // spells one.  At namespace scope the front end keeps no tree with a
 // location, and KNOWN_GAPS pins that gap.
 

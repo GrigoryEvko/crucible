@@ -92,7 +92,7 @@
 //                           CRUCIBLE_I_KNOW_WHAT_IM_DOING("CLASS: reason") opens
 //     region                no finding: each region of a file under the root,
 //                           with its reason, for the ledger of the regions
-//                           (utils/scripts/check-quarantine-regions.py)
+//                           (utils/assay/guard/legacy/check_quarantine_regions.py)
 //
 // THE HOOKS
 //     PLUGIN_PRE_GENERICIZE  the body of each function that is not a template:
@@ -149,7 +149,7 @@
 //                    the build system compile again
 //
 // THE DEPENDENCIES
-//     utils/scripts/quarantine_stamps.py writes DIR/modes/PATH for each source
+//     utils/assay/loop/stamps.py writes DIR/modes/PATH for each source
 //     file of a row of the table, with the enforce mode of that file.  At
 //     PLUGIN_FINISH_UNIT, the plugin adds the mode stamp of each file with a
 //     finding that a mode can make an error to the dependency file of the
@@ -164,7 +164,7 @@
 //     "# crucible-quarantine 1 stamp=TEXT" and then one line for each finding.
 //     So a compiler cache stores the report with the object.  The flag "e"
 //     (SHF_EXCLUDE) keeps the section out of each executable and each shared
-//     library that the linker writes.  utils/scripts/quarantine_sections.py
+//     library that the linker writes.  utils/assay/readers/sections.py
 //     reads the section.  The plugin writes the directives at
 //     PLUGIN_FINISH_UNIT, which runs before the end of the assembler output.
 //     A unit that writes no object (-fsyntax-only, -E) has no section.
@@ -194,7 +194,7 @@
 // it.  An explicit temporary, such as std::vector<int>{1, 2} that the code
 // passes to a template, names its class where the source spells it, and it
 // is a std_entity there (check_temporary).
-// KNOWN_GAPS of test/check_plugin.py pins each such gap on a line of a
+// KNOWN_GAPS of utils/assay/guard/legacy/check_plugin.py pins each such gap on a line of a
 // fixture, and the list only becomes shorter.
 
 #include <algorithm>
@@ -1788,7 +1788,7 @@ void check_temporary(tree target) {
 // A using-declaration in a function body or in a class: the library entity
 // that it brings into scope.  The front end keeps a using-declaration of
 // namespace scope as a binding of the namespace, with no tree that has a
-// location (KNOWN_GAPS of test/check_plugin.py).
+// location (KNOWN_GAPS of utils/assay/guard/legacy/check_plugin.py).
 void check_using(tree decl) {
     location_t location = DECL_SOURCE_LOCATION(decl);
     tree scope = USING_DECL_SCOPE(decl);

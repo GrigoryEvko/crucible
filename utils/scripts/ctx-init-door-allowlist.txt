@@ -1,6 +1,6 @@
 # ctx-init-door allowlist — the scopes of production code that may name
 # host::InitOwner, the owner of the one door to the init context.
-# utils/scripts/check-ctx-init-door.py reads this file.
+# utils/assay/guard/legacy/check_ctx_init_door.py reads this file.
 #
 # The door gives an init context, and an init context permits the effects
 # of process startup.  So a call of the door from a scope gives that scope

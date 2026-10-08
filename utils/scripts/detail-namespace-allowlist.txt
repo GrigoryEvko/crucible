@@ -1,5 +1,5 @@
 # detail-namespace-allowlist — the test files that may use a detail namespace
-# of foundation or fixy, read by utils/scripts/check-detail-namespace.py.
+# of foundation or fixy, read by utils/assay/guard/legacy/check_detail_namespace.py.
 #
 # A row is PATH NAMESPACE xN — REASON.  NAMESPACE is the detail namespace,
 # N the number of uses in the file.  Only a file under test/ may take a row.

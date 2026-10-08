@@ -1,5 +1,5 @@
 # utils/scripts/mint-pattern-allowlist.txt — the reviewed exemptions of
-# utils/scripts/check-mint-pattern.py from the five §XXI axes.
+# utils/assay/guard/legacy/check_mint_pattern.py from the five §XXI axes.
 #
 # A row is `path:mint_name:axis-ok`, with no space, where the axis is one
 # of nodiscard, noexcept, constexpr, requires and ctxfit.  A line that

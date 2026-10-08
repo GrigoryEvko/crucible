@@ -1,19 +1,19 @@
 # utils/scripts/quarantine-ledger.txt — the findings of the quarantine plugin in each file, kind and entity.
 #
-# utils/scripts/check-quarantine-ratchet.py generates each row of this file.  Do not edit a row by
+# utils/assay/guard/legacy/check_quarantine_ratchet.py generates each row of this file.  Do not edit a row by
 # hand.  The test quarantine_ratchet reads the section .crucible.quarantine of each object of the
 # target all, and it counts each distinct finding one time.  A count above its row fails the test,
 # because a change can only lower a count (rule R11 of misc/01_10_2026_quarantine.md).  So a change
 # that removes std::vector from a file and adds std::map to it fails.  A file that the ledger does
 # not hold and that has a finding fails too: a new file has no finding.  A count below its row also
 # fails, until the same commit writes the rows again:
-#     python3 utils/scripts/check-quarantine-ratchet.py --build-dir build --write
+#     python3 utils/bin/guard check --rule quarantine-ratchet --build-dir build --write
 # On a merge conflict in this file, take the version of main, build, and write the rows again.
 #
 # THE ROWS
 #   format 4                       The format of the rows.
 #   configuration NAME KEY VALUE   A build that counts: the build kind and the target tier of
-#                                  utils/scripts/build_target.py, and each cache variable that changes
+#                                  utils/assay/core/target.py, and each cache variable that changes
 #                                  the objects of all or their preprocessor arms.  NAME is the build
 #                                  kind, with -bench and -fuzz for those options.  The first
 #                                  configuration is the base.
@@ -21,7 +21,7 @@
 #                                  the file, in the base configuration.  ENTITY is the rest of the
 #                                  line.  The head comment of utils/tools/quarantine/quarantine.cpp
 #                                  gives the kinds, and THE ENTITY of
-#                                  utils/scripts/check-quarantine-ratchet.py gives the entity of each
+#                                  utils/assay/guard/legacy/check_quarantine_ratchet.py gives the entity of each
 #                                  kind.  The entity holds no line, so a move of code keeps each row.
 #   NAME FILE KIND DELTA ENTITY    The count of the configuration NAME, as a difference from the
 #                                  base count (+N or -N).
@@ -30,7 +30,7 @@
 #   A finding inside an opt-out region has the kind opted_out, and its entity is "REASON | KIND
 #   ENTITY": the reason of the region, and the kind and the entity of the finding.  So these rows
 #   hold what each region covers.  A region that covers more fails the test until
-#       python3 utils/scripts/check-quarantine-ratchet.py --build-dir build --write --admit
+#       python3 utils/bin/guard check --rule quarantine-ratchet --build-dir build --write --admit
 #   writes the new count.  Use --admit only for a region of a reason class of CLAUDE.md section
 #   XXII, and give the reason in the commit.  The test budget_history gives a warning for each such
 #   count on each run.  utils/scripts/quarantine-region-ledger.txt holds the regions themselves.

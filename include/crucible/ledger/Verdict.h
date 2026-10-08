@@ -28,7 +28,7 @@
 // DetSafe (axiom 8): a verdict may change how fast something runs and must
 // never change what it computes. Nothing here is reachable from
 // content_hash, merkle_hash or the memory plan, and
-// utils/scripts/check-detsafe-ledger.py asserts it stays that way.
+// utils/assay/guard/legacy/check_detsafe_ledger.py asserts it stays that way.
 
 #include <crucible/cog/Calibrate.h>
 #include <crucible/cog/OpcodeLatencyTable.h>

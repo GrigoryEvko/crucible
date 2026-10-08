@@ -2,10 +2,10 @@
 #
 # cmake/CompileFirst.cmake gives each target of this list one more edge in the Ninja graph, so
 # Ninja starts its compiles before the compiles of the other tests.  The test compile_first
-# (utils/scripts/check-build-order.py) holds the list equal to the records of the build launcher
+# (utils/assay/guard/legacy/check_build_order.py) holds the list equal to the records of the build launcher
 # in a build of the kind of the row `kind`, with the thresholds of the row compile-first in
 # utils/scripts/budgets.txt.  Write the list again from such a build:
-#   python3 utils/scripts/check-build-order.py --check compile-first --build-dir build --write
+#   python3 utils/bin/guard check --rule build-order --check compile-first --build-dir build --write
 kind x86_64-debug-asan
 crucible_cipher
 crucible_hwprobe

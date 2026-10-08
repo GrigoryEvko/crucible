@@ -1,5 +1,5 @@
 # host-owner-roster — the one file that defines each class of the namespace
-# foundation::effects::host, read by utils/scripts/check-host-owners.py.
+# foundation::effects::host, read by utils/assay/guard/legacy/check_host_owners.py.
 #
 # A row is OWNER — PATH — REASON.  A class that the host namespace declares
 # is a door to a context key: the first definition in any translation unit

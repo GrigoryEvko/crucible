@@ -49,11 +49,11 @@ set(_ct_disassembly_arguments
   --build-dir ${CMAKE_BINARY_DIR}
   --base-objects $<TARGET_OBJECTS:foundation>)
 add_test(NAME check_ct_disassembly
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/utils/scripts/check-ct-disassembly.py
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ct-disassembly
           ${_ct_disassembly_arguments}
   COMMAND_EXPAND_LISTS)
 add_test(NAME check_ct_disassembly_self_test
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/utils/scripts/check-ct-disassembly.py
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ct-disassembly
           ${_ct_disassembly_arguments} --self-test
   COMMAND_EXPAND_LISTS)
 set_tests_properties(check_ct_disassembly check_ct_disassembly_self_test

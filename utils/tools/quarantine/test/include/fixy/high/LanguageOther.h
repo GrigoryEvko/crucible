@@ -1,4 +1,4 @@
-// A second file of the language.  check_plugin.py compiles
+// A second file of the language.  utils/assay/guard/legacy/check_plugin.py compiles
 // language_other_user.cpp, which includes this header, in report mode, and
 // each body below gives one error.  The call of memset names a function of
 // the C library.  The row of std::nothrow has `until` and `in`, and it admits

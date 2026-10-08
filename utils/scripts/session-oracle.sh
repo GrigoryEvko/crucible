@@ -3,7 +3,7 @@
 # published mechanisations.
 #
 # The relations in include/fixy/session are decision procedures.  The
-# comparison in utils/tools/session_oracle/ gives each one a reference that
+# comparison in utils/assay/oracle/ gives each one a reference that
 # does not share its code:
 #
 #   projection         the computable projection of Tirore, Bengtson and
@@ -21,10 +21,10 @@
 #                      Glabbeek (ITP 2026), github.com/omerskeskin/mpstlive.
 #                      No licence.  coqc applies it to fixy's projected
 #                      context of each multiparty case, with a certificate
-#                      for its four premises (utils/tools/session_oracle/coq).
+#                      for its four premises (utils/assay/oracle/coq).
 #   implementability   Sprout(A) of Li and Wies (PLDI 2026), built natively
 #                      from the pinned sources that
-#                      utils/tools/session_oracle/sprout.py names (artifact doi
+#                      utils/assay/oracle/sprout.py names (artifact doi
 #                      10.5281/zenodo.19600644, CC BY 4.0).  It decides
 #                      implementability on per-pair FIFO queues, a mailbox
 #                      and a bag for each receiver.  Only the verdict of the
@@ -37,7 +37,7 @@
 #                      MIT licence.  It model-checks the context of each
 #                      crash-stop projection with mCRL2.
 #   runs               a breadth-first run of each typing context in
-#                      utils/tools/session_oracle/execution.py, with the label
+#                      utils/assay/oracle/execution.py, with the label
 #                      word of a keyed choice on the wire.
 #
 # Each oracle downloads a pinned commit as a tarball into
@@ -60,7 +60,7 @@
 #                  Then make sure that the drift check sees a one-line
 #                  change and a stale generated file.  The units run
 #                  in parallel, at most 64 at one time.  The store of
-#                  utils/tools/session_oracle/unit_store.py keeps the
+#                  utils/assay/oracle/unit_store.py keeps the
 #                  result of each unit, so a unit whose inputs did not
 #                  change builds nothing.  CRUCIBLE_CACHE_DIR=off turns
 #                  the store off.  Give the compiler as the second
@@ -119,7 +119,7 @@
 #      The first run builds the development, which takes about ten
 #      minutes.  SESSION_ORACLE_KESKIN_SWITCH names a different switch.
 #   4. The implementability oracle builds Sprout(A) and its solver MuVal
-#      natively, from the pinned sources that utils/tools/session_oracle/sprout.py
+#      natively, from the pinned sources that utils/assay/oracle/sprout.py
 #      names.  It needs a switch with OCaml 5.2.1 and the package versions
 #      of the artifact's MuVal build, which the debug information of the
 #      artifact's MuVal binary names:
@@ -142,13 +142,13 @@
 #      SESSION_ORACLE_SPROUT_SWITCH names a different switch.
 #   5. The crash-stop oracle needs a Java 17 runtime, sbt, and the mCRL2
 #      tools mcrl22lps, lps2pbes and pbes2bool.  Install nothing by hand:
-#      utils/tools/session_oracle/toolchain.py downloads a pinned release of each
+#      utils/assay/setup/oracle.py downloads a pinned release of each
 #      into the cache (Temurin JDK 17.0.20.1+1, sbt 1.10.7, mCRL2
 #      202607.0), checks its SHA-256, and unpacks it there.  The build of
 #      the pinned commit then asks sbt for sbt 1.6.1 and downloads it into
 #      the same cache.  The host needs rpm2cpio and cpio, which unpack the
 #      mCRL2 package.  To install ahead of a run:
-#        python3 utils/tools/session_oracle/session_oracle.py install-toolchain
+#        python3 utils/bin/guard check --rule session-oracle install-toolchain
 #
 # How to regenerate after a relation changes:
 #
@@ -171,7 +171,7 @@
 set -euo pipefail
 
 . "$(dirname -- "${BASH_SOURCE[0]}")/repo_root.sh"
-driver="$REPO_ROOT/utils/tools/session_oracle/session_oracle.py"
+driver="$REPO_ROOT/utils/bin/guard"
 # The oracle writes no bytecode into the source tree.
 export PYTHONDONTWRITEBYTECODE=1
 
@@ -190,7 +190,7 @@ USAGE
 }
 
 if ! command -v python3 >/dev/null 2>&1; then
-    echo "session-oracle.sh: python3 is not on PATH.  Install Python 3.11 or a later version." >&2
+    echo "session-oracle.sh: python3 is not on PATH.  Install Python 3.14 or a subsequent version." >&2
     exit 2
 fi
 
@@ -231,9 +231,9 @@ at_option() {
 
 case "${1:-}" in
     --check)
-        exec python3 "$driver" check ;;
+        exec python3 "$driver" check --rule session-oracle check ;;
     --emit)
-        exec python3 "$driver" emit ;;
+        exec python3 "$driver" check --rule session-oracle emit ;;
     --self-test)
         shift
         need_cxx "${1:-}"
@@ -249,20 +249,20 @@ case "${1:-}" in
             shift 2
         fi
         at="$(at_option "${1:-}")" || exit 2
-        exec python3 "$driver" self-test --cxx "$cxx" "${part[@]}" ${at:+"$at"} ;;
+        exec python3 "$driver" check --rule session-oracle self-test --cxx "$cxx" "${part[@]}" ${at:+"$at"} ;;
     --regenerate)
         shift
         need_cxx "${1:-}"
         at="$(at_option "${2:-}")" || exit 2
         activate_opam
-        exec python3 "$driver" regenerate --cxx "$1" ${at:+"$at"} ;;
+        exec python3 "$driver" check --rule session-oracle regenerate --cxx "$1" ${at:+"$at"} ;;
     --derive)
         shift
         if [[ -n "${1:-}" ]]; then
             need_cxx "$1"
-            exec python3 "$driver" derive --cxx "$1"
+            exec python3 "$driver" check --rule session-oracle derive --cxx "$1"
         fi
-        exec python3 "$driver" derive ;;
+        exec python3 "$driver" check --rule session-oracle derive ;;
     -h|--help)
         usage
         exit 0 ;;

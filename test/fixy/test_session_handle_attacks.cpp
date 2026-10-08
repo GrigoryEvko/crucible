@@ -874,7 +874,7 @@ static_assert(ledger_matches_the_campaign(),
               "attack");
 
 // A child that ends on a signal writes a core dump, and the parent waits until
-// the kernel completes it.  The test launcher (utils/scripts/test-launcher.py)
+// the kernel completes it.  The test launcher (utils/assay/loop/teststep.py)
 // gives the test a soft core limit of 1 byte, and each child gets that limit,
 // so no child writes a core dump under ctest.  The parent refuses a core dump
 // that the limit could stop, because each dump costs approximately 0.2 s and

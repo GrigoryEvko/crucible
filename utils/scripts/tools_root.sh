@@ -6,7 +6,7 @@
 #
 # THE ROOT
 #   The pinned tools live in the tools directory of the shared cache root of
-#   utils/scripts/cache_dir.py: $XDG_CACHE_HOME/crucible/tools, else
+#   utils/assay/core/cache.py: $XDG_CACHE_HOME/crucible/tools, else
 #   ~/.cache/crucible/tools.  The root is outside each checkout, so each
 #   checkout, each work tree and each export of a guard run uses one install.
 #   $CRUCIBLE_CACHE_DIR does not move the tools.  A self-test points that

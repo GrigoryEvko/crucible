@@ -1,6 +1,6 @@
 # fullness-guard-allowlist.txt — admitted `== <capacity>` sites.
 #
-# utils/scripts/check-fullness-guard.py reads this file.  A row is
+# utils/assay/guard/legacy/check_fullness_guard.py reads this file.  A row is
 # `path:text — reason`, where `text` is the first line of the comparison,
 # trimmed.  The key is the content of the line, not its number, so an edit
 # above the site does not move it.  One row admits every site of the file

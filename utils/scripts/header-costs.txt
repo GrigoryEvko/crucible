@@ -1,5 +1,6 @@
 # utils/scripts/header-costs.txt — the measured cost of each standard and system header.
-# utils/scripts/check-heavy-includes.py reads this table, and --measure BUILD_DIR writes it.
+# The rule heavy-include (`guard check --rule heavy-include`) reads this table, and --measure BUILD_DIR
+# writes it.
 #
 # A row:  <header> | seconds | preprocessed lines
 #         <header> | unmeasured | reason

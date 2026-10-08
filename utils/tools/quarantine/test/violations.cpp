@@ -1,5 +1,5 @@
 // Each class of finding that the quarantine plugin reports, and uses that it
-// must not report.  check_plugin.py holds the line of each expectation.
+// must not report.  utils/assay/guard/legacy/check_plugin.py holds the line of each expectation.
 
 #include <fixy/Shelf.h>
 

@@ -1,5 +1,5 @@
 # utils/scripts/escape-doors.txt — the escape surface the guard locks.
-# Read by utils/scripts/check-escape-doors.py.
+# Read by the rule escape-doors (`guard check --rule escape-doors`).
 #
 # hatch-total pins the count of discouraged, type-checked escape
 # hatches (from_raw, from_raw_nonnull, into_raw, release,

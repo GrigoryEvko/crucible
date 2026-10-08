@@ -18,7 +18,7 @@
 // Each section starts with one line `// name: NAME` for each name that it
 // examines.  A property that the audit found to change with a flag is in a
 // block that the flag removes, after one line `// varies: MACRO`.  The check
-// utils/scripts/check-admitted-audit.py makes sure that each row of the audit
+// utils/assay/guard/legacy/check_admitted_audit.py makes sure that each row of the audit
 // table has a section and that each section has a row.  It also makes sure
 // that the row of a section with a `varies` line records that variance.
 //

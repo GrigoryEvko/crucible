@@ -30,7 +30,7 @@
 # The maps do not use -ffile-prefix-map, which also sets -fmacro-prefix-map.
 # That map changes __FILE__ and the file name of a source location, and a
 # reflection check compares that name with the path of a header
-# (utils/scripts/check-padded-lists.py).
+# (utils/assay/guard/legacy/check_padded_lists.py).
 #
 # The producer string of the debug information records the options of the
 # compile, and GCC applies no map to them.  The plugin options of the tree name
@@ -105,7 +105,7 @@ macro(crucible_ccache_after_project)
     # a home directory, also makes the headers of the compiler relative.  A
     # hit in a build directory at a different depth then records headers that
     # do not exist, and Ninja compiles the object again on each build.
-    # utils/scripts/check-reconfigure-noop.py finds such a dependency.
+    # The rule reconfigure-noop (utils/assay/guard/legacy/check_reconfigure_noop.py) finds such a dependency.
     # ccache does not hash base_dir, so an entry that a launcher with another
     # base_dir stored can still give such a dependency file.  The namespace
     # keeps the entries of this launcher apart from those entries.

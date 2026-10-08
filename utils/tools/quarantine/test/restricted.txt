@@ -1,4 +1,4 @@
-# The rule table of the plants of the restrictions.  check_plugin.py compiles
+# The rule table of the plants of the restrictions.  utils/assay/guard/legacy/check_plugin.py compiles
 # restricted.cpp with it.  Each admit row has the restriction of a verdict of
 # the audit, and the row of std::byte has none, because the type itself is the
 # restriction.

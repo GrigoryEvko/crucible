@@ -1,126 +1,161 @@
-# The engine of each script, which utils/scripts/check-guard-engines.py holds to the code.
+# The engine of each script, which the rule guard-engines (`guard check --rule guard-engines`) holds to the code.
 #
 # One row for each script:  path | engine[,engine...] | the input that is not C++ source
 #
 # An engine is how the script decides a fact.  tsast is the parse tree of
-# utils/scripts/tsast.py, and preprocessor is the store of utils/scripts/preprocessed.py.
+# utils/assay/readers/tsast.py, and preprocessor is the store of utils/assay/guard/preprocessed.py.
 # compiler, json, cmake-api (the CMake file API), python-ast, ast-grep-bash and
 # git are the other engines.  text is input that is not C++ source, such as an
 # allowlist or compiler output.  A text row must name that input in the third
 # cell.  none marks a script that decides no fact.  kit marks a module that
 # implements an engine, and the code rules do not read it.
 
-test/build_launcher_test.py | compiler,json,text | the output, the status and the records of utils/scripts/build-launcher.py
-test/contract_header_unit_test.py | compiler,text | the diagnostics of the compiler and its -H list
 test/fuzz/run-afl.sh | none |
-test/guard_attacks/test_use_after_move_attacks.py | tsast |
 test/harness/check_output.py | text | the output and the status of the probes of the test harness
-test/neg_compile_driver.py | none |
-test/neg_compile_driver_test.py | compiler,json,text | the output of test/neg_compile_driver.py, planted search lists and lists of the loader, planted budget tables and ledgers, and the compile database and CMakeCache.txt of the build
-test/neg_compile_store.py | compiler,json,text | the compile database, CMakeCache.txt, the diagnostics, the dependency file, the search list of the compiler, the search directories of the compiler driver and the list of the loader, the budget table, the ledgers of the fixture budgets and the ledger of the reason of a failure
-utils/scripts/audit-decide-cite-ratio.py | tsast,git | the history of Decide.h
-utils/scripts/audit-pre-callsite-count.py | tsast,json | the contract baseline utils/scripts/contracts-baseline.json
+utils/assay/__init__.py | none |
+utils/assay/core/__init__.py | none |
+utils/assay/core/cache.py | none |
+utils/assay/core/git.py | git |
+utils/assay/core/meter.py | compiler,text | the ccache stats log of a compile, the counts of the compile meter, the records, the budget table and the ledger rows
+utils/assay/core/paths.py | none |
+utils/assay/core/report.py | text | the budget table utils/scripts/budgets.txt and the warnings files of the checks
+utils/assay/core/ruletable.py | text | the rule table utils/scripts/layer-rules.txt
+utils/assay/core/target.py | compiler,text | the build kind, CMakeCache.txt, the target help of the compiler and the rows of a log
+utils/assay/guard/__init__.py | none |
+utils/assay/guard/check.py | none |
+utils/assay/guard/engines/__init__.py | none |
+utils/assay/guard/engines/tsast/__init__.py | none |
+utils/assay/guard/engines/tsast/decide_catalog.py | tsast |
+utils/assay/guard/legacy/__init__.py | none |
+utils/assay/guard/legacy/audit_decide_cite_ratio.py | tsast,git | the history of Decide.h
+utils/assay/guard/legacy/audit_pre_callsite_count.py | tsast,json | the contract baseline utils/scripts/contracts-baseline.json
+utils/assay/guard/legacy/check_admitted_audit.py | tsast,text | the rows of utils/scripts/quarantine-admitted-audit.txt and the admit rows of utils/scripts/layer-rules.txt
+utils/assay/guard/legacy/check_banned_calls.py | tsast,text | the allowlist rows and utils/scripts/fixy-only-paths.txt
+utils/assay/guard/legacy/check_brand_drain.py | tsast,text | the ledger utils/scripts/brand-drain.txt
+utils/assay/guard/legacy/check_budget_history.py | git,text | the git history of utils/scripts/budgets.txt and of each ledger, the subjects and bodies of its commits, and utils/scripts/budget-history-ledger.txt
+utils/assay/guard/legacy/check_build_order.py | json,text | build.ninja of the build directory, the dependency log of Ninja, the compile database, the records of the build launcher, utils/scripts/compile-first.txt, the list of targets that cmake/CompileFirst.cmake writes, the build kind and the budget table
+utils/assay/guard/legacy/check_cache_size.py | text | the budget table and the sizes of the files under the root of the caches
+utils/assay/guard/legacy/check_ci_guard_labels.py | json | the test list of ctest --show-only=json-v1
+utils/assay/guard/legacy/check_compile_cost.py | compiler,json,text | the records of the build launcher, the ELF tables of the objects through utils/assay/readers/elf.py, the file API reply, the ninja dependency log, the ledger rows and the budget table
+utils/assay/guard/legacy/check_contract_form.py | tsast,text | the allowlist rows
+utils/assay/guard/legacy/check_contract_semantic.py | json,text | the compile commands of the compile database
+utils/assay/guard/legacy/check_core_shapes.py | tsast,compiler,json,text | the objdump disassembly of the probe object and the compile commands of the compile database
+utils/assay/guard/legacy/check_ct_disassembly.py | tsast,compiler,text | the objdump disassembly of the compiled wrappers
+utils/assay/guard/legacy/check_ctx_init_door.py | tsast,text | the rows of the two door allowlists
+utils/assay/guard/legacy/check_ctx_testing_boundary.py | tsast,text | the allowlist rows
+utils/assay/guard/legacy/check_derived_pins.py | tsast,text | the allowlist rows
+utils/assay/guard/legacy/check_detail_namespace.py | tsast,text | the allowlist rows
+utils/assay/guard/legacy/check_detsafe_ledger.py | tsast |
+utils/assay/guard/legacy/check_escape_doors.py | tsast,text | the rows of the escape-door ledger
+utils/assay/guard/legacy/check_federation_admission.py | tsast,preprocessor,json | the compile database
+utils/assay/guard/legacy/check_fixy_dim_prose.py | tsast |
+utils/assay/guard/legacy/check_fixy_hw_discipline.py | tsast |
+utils/assay/guard/legacy/check_fullness_guard.py | tsast,text | the allowlist rows
+utils/assay/guard/legacy/check_git_isolation.py | python-ast,ast-grep-bash,json |
+utils/assay/guard/legacy/check_guard_engines.py | python-ast,ast-grep-bash,json,text | the rows of this roster
+utils/assay/guard/legacy/check_header_checks.py | tsast,compiler,json,text | the ledger rows, the rows of test/layer/crucible-not-standalone.txt and the exit status of the compiler
+utils/assay/guard/legacy/check_header_constexpr_ops.py | compiler,json,text | the budget table, the rows of test/layer/header-constexpr-ops.txt and of test/layer/crucible-not-standalone.txt, and the diagnostics of the compiler
+utils/assay/guard/legacy/check_heavy_includes.py | tsast,compiler,text | the cost table utils/scripts/header-costs.txt, the ledger rows, the budget table, and in --measure the diagnostics and the -E output of the compiler
+utils/assay/guard/legacy/check_host_owners.py | tsast,text | the roster utils/scripts/host-owner-roster.txt
+utils/assay/guard/legacy/check_layer_boundary.py | tsast,text | the layer rows of the rule table utils/scripts/layer-rules.txt
+utils/assay/guard/legacy/check_libstdcxx_symbols.py | compiler,text | the nm symbol lists of the static libraries and of the libstdc++ of the compiler, the c++filt names, the build kind and the target tier of utils/assay/core/target.py, the inputs file, the ledger rows and the rows of a log
+utils/assay/guard/legacy/check_lifetime_twin.py | tsast |
+utils/assay/guard/legacy/check_lock_free_asserts.py | tsast |
+utils/assay/guard/legacy/check_mint_pattern.py | tsast,text | the allowlist rows
+utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | tsast |
+utils/assay/guard/legacy/check_no_coordination_refs.py | tsast,text | the lines of shell, CMake, YAML and data files, and the tokens of Python files
+utils/assay/guard/legacy/check_no_ffast_math.py | tsast,json,cmake-api,text | the compile database, CMakePresets.json and the allowlist rows
+utils/assay/guard/legacy/check_no_raw_array_member.py | tsast,text | the allowlist rows
+utils/assay/guard/legacy/check_no_unchecked_access.py | tsast,preprocessor,json,text | the allowlist rows
+utils/assay/guard/legacy/check_no_unity_pch.py | json,text | the compile commands of the compile database, and the CMake files of the tree, read with a CMake lexer
+utils/assay/guard/legacy/check_padded_lists.py | tsast,compiler,json,text | the compile database, the ledger rows, test/layer/crucible-not-standalone.txt and the compile-time messages of the probe compiles
+utils/assay/guard/legacy/check_parse_clean.py | tsast |
+utils/assay/guard/legacy/check_parse_cost.py | json,text | the census of utils/assay/readers/census.py, the ledger rows and the budget table
+utils/assay/guard/legacy/check_permission_storage.py | tsast |
+utils/assay/guard/legacy/check_plugin.py | compiler,json,text | the diagnostics and the exit status of the plugin compiles, the sections of their objects, the planted rule tables and the expectations of utils/tools/quarantine/test
+utils/assay/guard/legacy/check_process_wide_state.py | tsast,text | the roster utils/scripts/process-wide-roster.txt
+utils/assay/guard/legacy/check_proof_routes.py | tsast,preprocessor,json,text | the witness roster, the allowlist rows and the proof names of test_forgeable_proofs
+utils/assay/guard/legacy/check_quarantine_ratchet.py | git,json,text | the census of utils/assay/readers/census.py, the sections of utils/assay/readers/sections.py, the ledger rows, the rule table, CMakeCache.txt, the build kind and the target tier of utils/assay/core/target.py, the rows of a log, and the moves of `git diff --find-renames`
+utils/assay/guard/legacy/check_quarantine_regions.py | tsast,text | the ledger rows of the opt-out regions
+utils/assay/guard/legacy/check_reconfigure_noop.py | text | CMakeCache.txt, the ninja log, the dependency log of Ninja and the symbolic links of the build directory
+utils/assay/guard/legacy/check_refined_pre_subsumption.py | tsast |
+utils/assay/guard/legacy/check_row_contains_discipline.py | tsast |
+utils/assay/guard/legacy/check_splits_orphan.py | tsast |
+utils/assay/guard/legacy/check_start_lifetime.py | tsast,preprocessor,json,text | the allowlist rows
+utils/assay/guard/legacy/check_stub_discipline.py | tsast |
+utils/assay/guard/legacy/check_syscall_capability.py | tsast,text | the allowlist rows and their reasons
+utils/assay/guard/legacy/check_syscall_grant_coverage.py | tsast |
+utils/assay/guard/legacy/check_test_time.py | json,text | the log of a ctest run, the descriptors of the parent ctest in /proc, the test list of ctest --show-only=json-v1, the build kind and the ledger rows
+utils/assay/guard/legacy/check_trait_injection.py | tsast |
+utils/assay/guard/legacy/check_use_after_move.py | tsast,text | the allowlist rows
+utils/assay/guard/legacy/check_vessel_acceptance.py | compiler,json,text | CMakeCache.txt and the output of the torch probe
+utils/assay/guard/legacy/check_walk_units.py | tsast,compiler,json,text | the rows of test/layer/walk-checks.txt, and in --measure the compile database and the instruction count of each compile
+utils/assay/guard/legacy/check_witness_roster.py | tsast,json,compiler,text | the witness roster rows and the compiler diagnostics of its fixtures
+utils/assay/guard/legacy/contract_header_unit_test.py | compiler,text | the diagnostics of the compiler and its -H list
+utils/assay/guard/legacy/test_use_after_move_attacks.py | tsast |
+utils/assay/guard/legacy_rules.py | none |
+utils/assay/guard/preprocessed.py | kit |
+utils/assay/guard/selftest.py | none |
+utils/assay/guard/warnings.py | json,text | the warnings files of the checks, the records of the test launcher, the census of utils/assay/readers/census.py and the budget table
+utils/assay/loop/__init__.py | none |
+utils/assay/loop/affected.py | json,text | the test list of ctest --show-only=json-v1, the JUnit report of ctest, CMakeCache.txt and the data sections of each ELF file of a test, through utils/assay/readers/elf.py
+utils/assay/loop/derive/__init__.py | none |
+utils/assay/loop/derive/aten_ops.py | tsast,python-ast,text | native_functions.yaml through a YAML parser, and each schema string through torchgen
+utils/assay/loop/derive/mint_inventory.py | tsast,text | misc/mint-inventory.md and the HS14 floor allowlist
+utils/assay/loop/derive/mint_model.py | tsast |
+utils/assay/loop/fixture/__init__.py | none |
+utils/assay/loop/fixture/store.py | compiler,json,text | the compile database, CMakeCache.txt, the diagnostics, the dependency file, the search list of the compiler, the search directories of the compiler driver and the list of the loader, the budget table, the ledgers of the fixture budgets and the ledger of the reason of a failure
+utils/assay/loop/gauge.py | tsast,git,json,text | the exit status and the logs of the configure, the build and ctest of its copy, /proc/meminfo and the budget table
+utils/assay/loop/gauge_sample.py | compiler,json,text | the compile database, the file of --compare, and the diagnostics of a failed compile
+utils/assay/loop/history.py | json,git,text | the ninja log, build.ninja, the records of the build launcher, /proc/stat and the lines of the history
+utils/assay/loop/meter_compiler.py | none |
+utils/assay/loop/stamps.py | text | the rule table utils/scripts/layer-rules.txt and the names of the files under its rows
+utils/assay/loop/step.py | compiler,text | the ccache stats log of each compile, the budget table and the ledger rows of the memory checks
+utils/assay/loop/teststep.py | text | the budget table, the build kind, the ledger rows of test-time and test-memory, the variable CRUCIBLE_TEST_CORES, and the records and warnings files that it writes
+utils/assay/mutation/__init__.py | none |
+utils/assay/mutation/gates.py | tsast |
+utils/assay/mutation/run.py | tsast,cmake-api,json,compiler,text | the compile database, the file API reply, the compiler and test output, and the exemption rows
+utils/assay/oracle/__init__.py | none |
+utils/assay/oracle/ekici.py | text | the output of the Ekici oracle that it runs
+utils/assay/oracle/emit.py | text | the rows of the golden CSV and the type spellings in them
+utils/assay/oracle/execution.py | none |
+utils/assay/oracle/keskin.py | text | the Rocq output of the liveness check and the axioms that it prints
+utils/assay/oracle/labelled.py | none |
+utils/assay/oracle/model.py | none |
+utils/assay/oracle/mpstk.py | text | the rows of the golden CSV and the output of the crash-stop verifier
+utils/assay/oracle/probe.py | compiler,text | the diagnostics of the probe compiles
+utils/assay/oracle/rocq.py | json,text | the build output of the Rocq developments and the answers of their drivers
+utils/assay/oracle/runner.py | compiler,text | the golden CSV, the answers of the oracles and the diagnostics of the compiler
+utils/assay/oracle/semantics.py | none |
+utils/assay/oracle/sprout.py | text | the output of the Sprout tools
+utils/assay/oracle/sr.py | none |
+utils/assay/oracle/unit_store.py | compiler,json,text | the dependency files of the unit compiles and the entries of its store
+utils/assay/readers/__init__.py | none |
+utils/assay/readers/census.py | json,text | the compile database, the output of ninja -t inputs and -t deps, the test list of ctest --show-only=json-v1, the records of the fixture driver and of the build launcher, and CMakeCache.txt
+utils/assay/readers/elf.py | text | the ELF header, the section header table, the section names and the symbol tables of an ELF file
+utils/assay/readers/ninja.py | text | build.ninja and the ninja log of a build directory
+utils/assay/readers/sections.py | text | the section .crucible.quarantine of an ELF object, through utils/assay/readers/elf.py
+utils/assay/readers/tsast.py | kit |
+utils/assay/setup/__init__.py | none |
+utils/assay/setup/oracle.py | text | the release checksums of the toolchain of the crash-stop oracle
+utils/assay/setup/pins.py | text | the pin file utils/toolchain/cmake/requirements.txt, CMakeCache.txt, the version line of cmake and ctest, and the stat, comm and exe entries of the ancestor processes in /proc
+utils/assay/tests/__init__.py | none |
+utils/assay/tests/loop/__init__.py | none |
+utils/assay/tests/loop/test_fixture.py | compiler,json,text | the output of `loop fixture`, planted search lists and lists of the loader, planted budget tables and ledgers, and the compile database and CMakeCache.txt of the build
+utils/assay/tests/loop/test_step.py | compiler,json,text | the output, the status and the records of `loop step`
+utils/bin/guard | none |
+utils/bin/loop | none |
+utils/bin/setup | none |
 utils/scripts/build-gauge.sh | compiler,git,text | the ninja log, the /usr/bin/time report and the ctest log
-utils/scripts/build-launcher.py | compiler,text | the ccache stats log of each compile, the budget table and the ledger rows of the memory checks
-utils/scripts/build_census.py | json,text | the compile database, the output of ninja -t inputs and -t deps, the test list of ctest --show-only=json-v1, the records of the fixture driver and of the build launcher, and CMakeCache.txt
-utils/scripts/build_target.py | compiler,text | the build kind, CMakeCache.txt, the target help of the compiler and the rows of a log
-utils/scripts/cache_dir.py | none |
-utils/scripts/check-admitted-audit.py | tsast,text | the rows of utils/scripts/quarantine-admitted-audit.txt and the admit rows of utils/scripts/layer-rules.txt
 utils/scripts/check-allowlist-keys.sh | text | the keys of the allowlists, and the paths in the Markdown guidance
-utils/scripts/check-atom-roster-joined.sh | compiler,text | the diagnostics of the sentinel compile, and the row constexpr-ops of utils/scripts/budgets.txt through utils/scripts/check_report.py
-utils/scripts/check-banned-calls.py | tsast,text | the allowlist rows and utils/scripts/fixy-only-paths.txt
-utils/scripts/check-brand-drain.py | tsast,text | the ledger utils/scripts/brand-drain.txt
-utils/scripts/check-budget-history.py | git,text | the git history of utils/scripts/budgets.txt and of each ledger, the subjects and bodies of its commits, and utils/scripts/budget-history-ledger.txt
-utils/scripts/check-build-order.py | json,text | build.ninja of the build directory, the dependency log of Ninja, the compile database, the records of the build launcher, utils/scripts/compile-first.txt, the list of targets that cmake/CompileFirst.cmake writes, the build kind and the budget table
-utils/scripts/check-cache-size.py | text | the budget table and the sizes of the files under the root of the caches
-utils/scripts/check-ci-guard-labels.py | json | the test list of ctest --show-only=json-v1
+utils/scripts/check-atom-roster-joined.sh | compiler,text | the diagnostics of the sentinel compile, and the row constexpr-ops of utils/scripts/budgets.txt through `loop budget`
 utils/scripts/check-clang-format.sh | text | the diagnostics of clang-format, the file list of fd and the cache of the hashes of clean files
-utils/scripts/check-compile-cost.py | compiler,json,text | the records of the build launcher, the ELF tables of the objects through elf_file.py, the file API reply, the ninja dependency log, the ledger rows and the budget table
-utils/scripts/check-contract-form.py | tsast,text | the allowlist rows
-utils/scripts/check-contract-semantic.py | json,text | the compile commands of the compile database
-utils/scripts/check-core-shapes.py | tsast,compiler,json,text | the objdump disassembly of the probe object and the compile commands of the compile database
-utils/scripts/check-ct-disassembly.py | tsast,compiler,text | the objdump disassembly of the compiled wrappers
-utils/scripts/check-ctx-init-door.py | tsast,text | the rows of the two door allowlists
-utils/scripts/check-ctx-testing-boundary.py | tsast,text | the allowlist rows
-utils/scripts/check-derived-pins.py | tsast,text | the allowlist rows
-utils/scripts/check-detail-namespace.py | tsast,text | the allowlist rows
-utils/scripts/check-detsafe-ledger.py | tsast |
-utils/scripts/check-escape-doors.py | tsast,text | the rows of the escape-door ledger
-utils/scripts/check-federation-admission.py | tsast,preprocessor,json | the compile database
-utils/scripts/check-fixy-dim-prose.py | tsast |
-utils/scripts/check-fixy-hw-discipline.py | tsast |
-utils/scripts/check-fullness-guard.py | tsast,text | the allowlist rows
-utils/scripts/check-git-isolation.py | python-ast,ast-grep-bash,json |
-utils/scripts/check-guard-engines.py | python-ast,ast-grep-bash,json,text | the rows of this roster
-utils/scripts/check-header-checks.py | tsast,compiler,json,text | the ledger rows, the rows of test/layer/crucible-not-standalone.txt and the exit status of the compiler
-utils/scripts/check-header-constexpr-ops.py | compiler,json,text | the budget table, the rows of test/layer/header-constexpr-ops.txt and of test/layer/crucible-not-standalone.txt, and the diagnostics of the compiler
-utils/scripts/check-heavy-includes.py | tsast,compiler,text | the cost table utils/scripts/header-costs.txt, the ledger rows, the budget table, and in --measure the diagnostics and the -E output of the compiler
-utils/scripts/check-host-owners.py | tsast,text | the roster utils/scripts/host-owner-roster.txt
-utils/scripts/check-layer-boundary.py | tsast,text | the layer rows of the rule table utils/scripts/layer-rules.txt
-utils/scripts/check-libstdcxx-symbols.py | compiler,text | the nm symbol lists of the static libraries and of the libstdc++ of the compiler, the c++filt names, the build kind and the target tier of build_target.py, the inputs file, the ledger rows and the rows of a log
-utils/scripts/check-lifetime-twin.py | tsast |
-utils/scripts/check-lock-free-asserts.py | tsast |
-utils/scripts/check-mint-pattern.py | tsast,text | the allowlist rows
-utils/scripts/check-no-combine-ids-duplicate.py | tsast |
-utils/scripts/check-no-coordination-refs.py | tsast,text | the lines of shell, CMake, YAML and data files, and the tokens of Python files
-utils/scripts/check-no-ffast-math.py | tsast,json,cmake-api,text | the compile database, CMakePresets.json and the allowlist rows
-utils/scripts/check-no-raw-array-member.py | tsast,text | the allowlist rows
 utils/scripts/check-no-throw-no-rtti.sh | compiler,text | the nm symbol lists of the built artifacts
-utils/scripts/check-no-unchecked-access.py | tsast,preprocessor,json,text | the allowlist rows
-utils/scripts/check-no-unity-pch.py | json,text | the compile commands of the compile database, and the CMake files of the tree, read with a CMake lexer
-utils/scripts/check-padded-lists.py | tsast,compiler,json,text | the compile database, the ledger rows, test/layer/crucible-not-standalone.txt and the compile-time messages of the probe compiles
-utils/scripts/check-parse-clean.py | tsast |
-utils/scripts/check-parse-cost.py | json,text | the census of utils/scripts/build_census.py, the ledger rows and the budget table
-utils/scripts/check-permission-storage.py | tsast |
-utils/scripts/check-process-wide-state.py | tsast,text | the roster utils/scripts/process-wide-roster.txt
-utils/scripts/check-proof-routes.py | tsast,preprocessor,json,text | the witness roster, the allowlist rows and the proof names of test_forgeable_proofs
-utils/scripts/check-quarantine-ratchet.py | git,json,text | the census of utils/scripts/build_census.py, the sections of quarantine_sections.py, the ledger rows, the rule table, CMakeCache.txt, the build kind and the target tier of build_target.py, the rows of a log, and the moves of `git diff --find-renames`
-utils/scripts/check-quarantine-regions.py | tsast,text | the ledger rows of the opt-out regions
-utils/scripts/check-reconfigure-noop.py | text | CMakeCache.txt, the ninja log, the dependency log of Ninja and the symbolic links of the build directory
-utils/scripts/check-refined-pre-subsumption.py | tsast |
-utils/scripts/check-row-contains-discipline.py | tsast |
-utils/scripts/check-splits-orphan.py | tsast |
-utils/scripts/check-start-lifetime.py | tsast,preprocessor,json,text | the allowlist rows
-utils/scripts/check-stub-discipline.py | tsast |
-utils/scripts/check-syscall-capability.py | tsast,text | the allowlist rows and their reasons
-utils/scripts/check-syscall-grant-coverage.py | tsast |
-utils/scripts/check-test-time.py | json,text | the log of a ctest run, the descriptors of the parent ctest in /proc, the test list of ctest --show-only=json-v1, the build kind and the ledger rows
-utils/scripts/check-trait-injection.py | tsast |
-utils/scripts/check-use-after-move.py | tsast,text | the allowlist rows
-utils/scripts/check-vessel-acceptance.py | compiler,json,text | CMakeCache.txt and the output of the torch probe
-utils/scripts/check-walk-units.py | tsast,compiler,json,text | the rows of test/layer/walk-checks.txt, and in --measure the compile database and the instruction count of each compile
-utils/scripts/check-witness-roster.py | tsast,json,compiler,text | the witness roster rows and the compiler diagnostics of its fixtures
-utils/scripts/check_report.py | text | the budget table utils/scripts/budgets.txt and the warnings files of the checks
-utils/scripts/cmake_pin.py | text | the pin file utils/toolchain/cmake/requirements.txt, CMakeCache.txt, the version line of cmake and ctest, and the stat, comm and exe entries of the ancestor processes in /proc
-utils/scripts/compile-meter.py | none |
-utils/scripts/cost_meter.py | compiler,text | the ccache stats log of a compile, the counts of the compile meter, the records, the budget table and the ledger rows
-utils/scripts/decide_catalog.py | tsast |
-utils/scripts/edit-loop-gauge.py | tsast,git,json,text | the exit status and the logs of the configure, the build and ctest of its copy, /proc/meminfo and the budget table
-utils/scripts/elf_file.py | text | the ELF header, the section header table, the section names and the symbol tables of an ELF file
-utils/scripts/gen-aten-op-table.py | tsast,python-ast,text | native_functions.yaml through a YAML parser, and each schema string through torchgen
-utils/scripts/gen-mint-inventory.py | tsast,text | misc/mint-inventory.md and the HS14 floor allowlist
 utils/scripts/install-ast-grep.sh | text,json | the release checksum, the version line and the matches of its fixture
-utils/scripts/install-cmake.sh | text | the pin that utils/scripts/cmake_pin.py prints, the SHA256 of the wheel and the version line of cmake and ctest
+utils/scripts/install-cmake.sh | text | the pin that `setup check --print-pin` prints, the SHA256 of the wheel and the version line of cmake and ctest
 utils/scripts/install-tree-sitter.sh | text | the release checksum, the kit manifest and the parse of its fixture
-utils/scripts/layer_rules.py | text | the rule table utils/scripts/layer-rules.txt
-utils/scripts/loop_history.py | json,git,text | the ninja log, build.ninja, the records of the build launcher, /proc/stat and the lines of the history
-utils/scripts/mintmodel.py | tsast |
-utils/scripts/ninja_files.py | text | build.ninja and the ninja log of a build directory
 utils/scripts/pgo-bootstrap.sh | cmake-api,git |
-utils/scripts/preprocessed.py | kit |
-utils/scripts/quarantine_sections.py | text | the section .crucible.quarantine of an ELF object, through elf_file.py
-utils/scripts/quarantine_stamps.py | text | the rule table utils/scripts/layer-rules.txt and the names of the files under its rows
 utils/scripts/refresh-derived.sh | git |
-utils/scripts/repo_root.py | none |
 utils/scripts/repo_root.sh | none |
-utils/scripts/report-check-warnings.py | json,text | the warnings files of the checks, the records of the test launcher, the census of utils/scripts/build_census.py and the budget table
-utils/scripts/run-affected-tests.py | json,text | the test list of ctest --show-only=json-v1, the JUnit report of ctest, CMakeCache.txt and the data sections of each ELF file of a test, through elf_file.py
 utils/scripts/session-oracle.sh | git,text | the switch list that opam prints
-utils/scripts/test-launcher.py | text | the budget table, the build kind, the ledger rows of test-time and test-memory, the variable CRUCIBLE_TEST_CORES, and the records and warnings files that it writes
-utils/scripts/throwaway_repo.py | git |
 utils/scripts/tools_root.sh | none |
-utils/scripts/tsast.py | kit |
-utils/scripts/tu-sample.py | compiler,json,text | the compile database, the file of --compare, and the diagnostics of a failed compile
-utils/tools/mutation/gates.py | tsast |
-utils/tools/mutation/run.py | tsast,cmake-api,json,compiler,text | the compile database, the file API reply, the compiler and test output, and the exemption rows
-utils/tools/session_oracle/emit.py | text | the rows of the golden CSV and the type spellings in them

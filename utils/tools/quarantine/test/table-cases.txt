@@ -1,10 +1,10 @@
-# The rule tables of the two readers.  check_plugin.py writes each table to a
+# The rule tables of the two readers.  utils/assay/guard/legacy/check_plugin.py writes each table to a
 # file of its own, and gives that file to the two readers of the rule table:
-# the quarantine plugin and utils/scripts/layer_rules.py.  Most tables are
+# the quarantine plugin and utils/assay/core/ruletable.py.  Most tables are
 # malformed, and each reader must refuse such a table at the line of the
 # case.  The plugin must give the error of the case and no other error, and it
 # must stop when it loads.  Each reader must accept each other table, which
-# is at the edge of a rule.  check_plugin.py adds the tables of each
+# is at the edge of a rule.  utils/assay/guard/legacy/check_plugin.py adds the tables of each
 # white-space character.
 #
 # THE FORMAT

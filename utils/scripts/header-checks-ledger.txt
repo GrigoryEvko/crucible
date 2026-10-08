@@ -1,6 +1,6 @@
 # utils/scripts/header-checks-ledger.txt — the compile-time work that each header under include/
-# still does in each translation unit that includes it.  utils/scripts/check-header-checks.py
-# reads this ledger.
+# still does in each translation unit that includes it.  The rule header-checks
+# (`guard check --rule header-checks`) reads this ledger.
 #
 # A header holds no self-test namespace, no static_assert at namespace scope and no static_assert
 # in the body of a function that is not a template.  Such a check belongs in the check file of the
@@ -18,7 +18,7 @@
 #               eager fold | path | count
 #   Each item of a row gives a warning on each run.  The counts can only decrease.  A header with no
 #   item of a kind has no row of that kind.  When you move a check or make an evaluation lazy, run
-#   python3 utils/scripts/check-header-checks.py --write in the same commit.
+#   python3 utils/bin/guard check --rule header-checks --write in the same commit.
 #
 # A keep row:   keep | path | kind | key | reason
 #   One item that stays in its header, because its result depends on the translation unit that

@@ -1,6 +1,6 @@
 # ctx-bg-door allowlist — the scopes of production code that may name
 # host::BackgroundOwner, the owner of the one door to the background context.
-# utils/scripts/check-ctx-init-door.py reads this file.
+# utils/assay/guard/legacy/check_ctx_init_door.py reads this file.
 #
 # The door gives a background context, and a background context permits the
 # effects of a background thread: Bg, Alloc, IO and Block.  So a call of the

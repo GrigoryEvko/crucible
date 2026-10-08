@@ -1,5 +1,5 @@
 // The plants of the include rules.  The test table puts this file in the
-// layer low.  check_plugin.py compiles it in error mode with no plant, and
+// layer low.  utils/assay/guard/legacy/check_plugin.py compiles it in error mode with no plant, and
 // one time for each PLANT_ macro.  Each plant gives one finding, and the file
 // with no plant gives none.
 

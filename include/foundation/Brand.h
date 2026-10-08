@@ -53,7 +53,7 @@
 // the brand.  A borrow (Borrowed, BorrowedRef, ScopedView) converts to its
 // erased spelling implicitly.  Nothing converts an erased value back to a
 // brand, so no caller can give an erased value to code that asks for a
-// brand.  utils/scripts/check-brand-drain.py lists
+// brand.  utils/assay/guard/legacy/check_brand_drain.py lists
 // each spelling on DefaultBrand, and the count of those sites can only
 // decrease.
 

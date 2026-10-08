@@ -15,7 +15,7 @@
 # Actions cache.  On a CI runner, the script puts the bin directory first in
 # PATH for the steps after it.  The configure step of the tree rejects a CMake
 # of another version (cmake/CMakePin.cmake).  The test cmake_pin rejects a
-# ctest of another version (utils/scripts/cmake_pin.py).
+# ctest of another version (`setup check`, utils/assay/setup/pins.py).
 #
 # FAIL-CLOSED PINNING.  The wheel must hash to the pinned SHA256.  After the
 # unpack, cmake and ctest must give the pinned version.  A failure at each step
@@ -58,11 +58,11 @@ host_machine() {
 }
 
 # Set PIN_VERSION and PIN_SHA to the pinned version and the SHA256 of the
-# wheel of a machine.  utils/scripts/cmake_pin.py reads the pin file.
+# wheel of a machine.  `setup check --print-pin` (utils/assay/setup/pins.py) reads the pin file.
 read_pin() {
     local machine="$1" fields
     command -v python3 >/dev/null 2>&1 || { printf 'install-cmake: python3 is required.\n' >&2; return 4; }
-    fields="$(python3 "$SCRIPTS/cmake_pin.py" --print-pin "$machine")" || return 4
+    fields="$(python3 "$SCRIPTS/../bin/setup" check --print-pin "$machine")" || return 4
     PIN_VERSION="${fields%% *}"
     PIN_SHA="${fields##* }"
 }

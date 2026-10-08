@@ -1,5 +1,5 @@
 // A source file of the base.  With the test directory as the source root, the
-// uses of the library below are not findings.  check_plugin.py compiles this
+// uses of the library below are not findings.  utils/assay/guard/legacy/check_plugin.py compiles this
 // file a second time with src/ as the root.  The file is quarantined there,
 // and each use below is a finding.
 

@@ -1,5 +1,5 @@
 # utils/scripts/heavy-includes-ledger.txt — the includes of heavy standard headers in the headers
-# under include/.  utils/scripts/check-heavy-includes.py reads this ledger.
+# under include/.  The rule heavy-include (`guard check --rule heavy-include`) reads this ledger.
 #
 # A header that each translation unit compiles must not include a heavy header for one function.
 # utils/scripts/header-costs.txt gives the cost of each header.  A header is heavy when it costs
@@ -7,7 +7,7 @@
 #
 # A count row:  path | <header>
 #   An include that the tree holds today.  Each run gives a warning for it.  When you remove the
-#   include, run python3 utils/scripts/check-heavy-includes.py --write in the same commit.
+#   include, run python3 utils/bin/guard check --rule heavy-include --write in the same commit.
 #
 # A keep row:   keep | path | <header> | reason
 #   A header that owns a heavy header on purpose, for example the one door of a system facility.

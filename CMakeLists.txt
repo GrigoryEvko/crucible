@@ -15,7 +15,7 @@ endif()
 # The time of the configure.  The deferred call runs after the last line of
 # this file, before CMake writes build.ninja.  It writes the start and the end
 # of the configure to configure-time.txt, and the time of build.ninja gives
-# the end of the generate step (utils/scripts/loop_history.py, configure_time).
+# the end of the generate step (utils/assay/loop/history.py, configure_time).
 string(TIMESTAMP CRUCIBLE_CONFIGURE_START "%s.%f" UTC)
 function(crucible_write_configure_time)
   string(TIMESTAMP _crucible_configure_end "%s.%f" UTC)
@@ -30,7 +30,7 @@ crucible_ccache_before_project()
 
 project(crucible LANGUAGES CXX)
 
-# utils/scripts/check-no-ffast-math.py reads the link line of each target from the
+# utils/assay/guard/legacy/check_no_ffast_math.py reads the link line of each target from the
 # codemodel reply of the CMake file API, because the compile database holds
 # no link flag.  The command is the reason for the CMake 3.27 minimum.
 cmake_file_api(QUERY API_VERSION 1 CODEMODEL 2)
@@ -355,7 +355,7 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # include/foundation/ (namespace ::foundation) is the algebra and the
 # discharge mechanisms; include/fixy/ (namespace ::fixy) is the axis table,
 # the atoms, the gate and the OS leaves.  Neither names crucible:: —
-# utils/scripts/check-layer-boundary.py enforces the order foundation < fixy <
+# utils/assay/guard/legacy/check_layer_boundary.py enforces the order foundation < fixy <
 # crucible.
 #
 # `foundation` is a static library.  It owns the weak contract handler and
@@ -757,7 +757,7 @@ if (CRUCIBLE_HAVE_BPF)
   target_link_libraries(crucible PUBLIC crucible_perf)
   target_compile_definitions(crucible PUBLIC CRUCIBLE_HAVE_BPF=1)
 
-  # The quarantine ratchet (utils/scripts/check-quarantine-ratchet.py)
+  # The quarantine ratchet (utils/assay/guard/legacy/check_quarantine_ratchet.py)
   # counts only the code that a counted configuration compiles, and no
   # configuration of its ledger turns on CRUCIBLE_SENSE_HUB_V2.  These two
   # object libraries compile the SenseHub v2 sources in each build: one with

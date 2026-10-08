@@ -1,8 +1,8 @@
 # The rule table of the base layers and of the quarantine.
 #
 # The quarantine plugin of utils/tools/quarantine/ reads this table, and the
-# layer guard utils/scripts/check-layer-boundary.py reads it through
-# utils/scripts/layer_rules.py.  So each rule has one source.
+# layer guard utils/assay/guard/legacy/check_layer_boundary.py reads it through
+# utils/assay/core/ruletable.py.  So each rule has one source.
 #
 # THE FORMAT
 #   One row on each line.  A space or a tab divides the words of a row, and a
@@ -36,7 +36,7 @@
 #         until FAMILY  The family of the base that replaces the entry.  The
 #                       row goes when that family lands, and `rg 'until
 #                       FAMILY'` finds the rows of one family.
-#                       utils/scripts/check-admitted-audit.py makes sure that
+#                       utils/assay/guard/legacy/check_admitted_audit.py makes sure that
 #                       each such row has the verdict REPLACE of that family.
 #                       Each use that the row admits is a finding of the kind
 #                       replace_pending:ENTRY, so the ratchet refuses a new use

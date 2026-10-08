@@ -1,5 +1,5 @@
 # utils/scripts/header-fanout-ledger.txt — the headers of include/ whose bytes alone times readers were
-# the largest at the last --write.  utils/scripts/check-parse-cost.py reads it, and --write writes the
+# the largest at the last --write.  utils/assay/guard/legacy/check_parse_cost.py reads it, and --write writes the
 # rows of one build kind again.
 #
 # A row:  header | KIND | HEADER | ALONE BYTES | READERS
@@ -9,7 +9,7 @@
 # A header that enters the ten largest products, and a header whose product changes by more than the
 # threshold of the row header-fanout of utils/scripts/budgets.txt, give a warning.  To accept the cost,
 # write the rows again:
-#   python3 utils/scripts/check-parse-cost.py --check header-fanout --build-dir build --write
+#   python3 utils/bin/guard check --rule parse-cost --check header-fanout --build-dir build --write
 header | x86_64-debug-asan | include/foundation/effects/Row.h | 2841116 | 2702
 header | x86_64-debug-asan | include/fixy/Qtt.h | 4242884 | 1751
 header | x86_64-debug-asan | include/foundation/algebra/Graded.h | 2848584 | 2593

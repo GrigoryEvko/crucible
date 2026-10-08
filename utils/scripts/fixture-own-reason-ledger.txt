@@ -1,5 +1,5 @@
 # utils/scripts/fixture-own-reason-ledger.txt — the negative fixtures whose compile gives an error that
-# no regex of the fixture matches.  test/neg_compile_driver.py reads it after each compile and each result
+# no regex of the fixture matches.  utils/assay/loop/fixture/store.py reads it after each compile and each result
 # from its store.
 #
 # A row:  fixture | note

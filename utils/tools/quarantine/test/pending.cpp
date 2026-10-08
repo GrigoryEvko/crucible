@@ -1,4 +1,4 @@
-// The uses that an admit row with `until FAMILY` admits.  check_plugin.py
+// The uses that an admit row with `until FAMILY` admits.  utils/assay/guard/legacy/check_plugin.py
 // compiles this quarantined file in report mode with rules.txt.  Each such use
 // is a finding of the kind of its row, and a use that a restriction of the
 // row refuses is a std_entity.

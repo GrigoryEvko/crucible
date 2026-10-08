@@ -422,7 +422,7 @@ namespace host {
 // door.
 //
 // The door is a static member, so the name of the owner is in each call.
-// utils/scripts/check-ctx-init-door.py rejects a call of the door outside the
+// utils/assay/guard/legacy/check_ctx_init_door.py rejects a call of the door outside the
 // process entry points in utils/scripts/ctx-init-door-allowlist.txt.
 struct InitOwner final {
     [[nodiscard]] static constexpr Init mint_init_context() noexcept {
@@ -440,7 +440,7 @@ struct InitOwner final {
 // Bg, Alloc, IO and Block, so the foreground thread must never hold one: its
 // hot path would then claim the right to block.  The door is a static
 // member, so the name of the owner is in each call, and
-// utils/scripts/check-ctx-init-door.py rejects a call outside the thread entry
+// utils/assay/guard/legacy/check_ctx_init_door.py rejects a call outside the thread entry
 // points in utils/scripts/ctx-bg-door-allowlist.txt.
 struct BackgroundOwner final {
     [[nodiscard]] static constexpr Bg mint_background_context() noexcept {

@@ -1,6 +1,6 @@
 // The probes of the shape check of the core families.
 //
-// utils/scripts/check-core-shapes.py reads the disassembly of this unit.  Each
+// utils/assay/guard/legacy/check_core_shapes.py reads the disassembly of this unit.  Each
 // probe is a pair of functions.  The first function does one hot operation of a
 // family of include/foundation/core.  The second function does the same work in
 // the raw form that the family replaces: a std::atomic operation, a raw pointer

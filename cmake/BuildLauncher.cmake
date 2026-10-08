@@ -1,6 +1,6 @@
 # The build launcher.
 #
-# utils/scripts/build-launcher.py runs in front of each C and C++ compile of
+# `loop step` (utils/assay/loop/step.py) runs in front of each C and C++ compile of
 # each build, in front of ccache when ccache is the compiler launcher, and in
 # front of each link of an executable or a shared library.  It runs the step,
 # writes its CPU time, wall time and peak memory to <output>.cost, and exits
@@ -8,7 +8,7 @@
 # and holds no time.  The launcher also holds the budget of the step: a step
 # over the memory error threshold fails, and RLIMIT_CPU stops a step that
 # runs away (the docstring of the launcher gives the rules).
-# utils/scripts/check-compile-cost.py reads the records and the outputs.
+# The rule compile-cost (`guard check --rule compile-cost`) reads the records and the outputs.
 #
 # This file comes after each block that sets or clears the compiler
 # launcher: the ccache block, the PGO block and the quarantine plugin.  It
@@ -24,7 +24,7 @@
 #
 # python3 -S skips the site module, which saves about 5 ms of each step.  A
 # host with no python3 builds with no launcher, because a measurement never
-# stops a build.  The checks of check-compile-cost.py then find no record, and
+# stops a build.  The checks of the rule compile-cost then find no record, and
 # they fail.
 #
 # The build kind names the preset of the build for the ledger rows, because
@@ -35,12 +35,12 @@
 
 find_program(CRUCIBLE_PYTHON3 NAMES python3 DOC "The Python interpreter of the build launcher")
 if(NOT CRUCIBLE_PYTHON3)
-  message(WARNING "The build launcher utils/scripts/build-launcher.py needs python3, and no python3 is on PATH, so "
+  message(WARNING "The build launcher `loop step` (utils/bin/loop) needs python3, and no python3 is on PATH, so "
                   "no compile and no link writes a cost record.  Install Python 3, or give its path with "
                   "-DCRUCIBLE_PYTHON3=<path>.")
   return()
 endif()
-set(CRUCIBLE_BUILD_LAUNCHER "${CRUCIBLE_PYTHON3}" -S "${CMAKE_SOURCE_DIR}/utils/scripts/build-launcher.py")
+set(CRUCIBLE_BUILD_LAUNCHER "${CRUCIBLE_PYTHON3}" -S "${CMAKE_SOURCE_DIR}/utils/bin/loop" step)
 foreach(_crucible_launcher_language C CXX)
   set(CMAKE_${_crucible_launcher_language}_COMPILER_LAUNCHER
       ${CRUCIBLE_BUILD_LAUNCHER} ${CMAKE_${_crucible_launcher_language}_COMPILER_LAUNCHER})

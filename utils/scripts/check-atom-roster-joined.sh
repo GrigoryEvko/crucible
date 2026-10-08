@@ -51,7 +51,7 @@
 # their recorded contents reads the variant and starts no compile.  A
 # compile that a signal stopped, or that failed with no diagnostic, is not
 # kept, because its verdict says nothing about the inputs.  The cache is
-# the "atom-roster" directory of the root that utils/scripts/cache_dir.py
+# the "atom-roster" directory of the root that utils/assay/core/cache.py
 # describes, and CRUCIBLE_CACHE_DIR=off turns it off.  The cache stays under
 # its row of LIMITS in that file: a variant that no run used for 14 days goes,
 # and then the variants with the oldest use.  The limit of the cache key is the
@@ -114,7 +114,7 @@ find_cxx() {
 # escape sequences land inside identifiers and defeat matching on the
 # message.  The operation limit is the limit of the build, the row
 # constexpr-ops of utils/scripts/budgets.txt.
-ops_limit="$(python3 "$REPO_ROOT/utils/scripts/check_report.py" --error-threshold constexpr-ops)"
+ops_limit="$(python3 "$REPO_ROOT/utils/bin/loop" budget --error-threshold constexpr-ops)"
 sentinel_flags=(-std=c++26 -freflection -fcontracts -fsyntax-only -w
                 -fdiagnostics-color=never "-fconstexpr-ops-limit=$ops_limit"
                 -DCRUCIBLE_FP_STRICT_FLOOR=1)
@@ -236,7 +236,7 @@ keep_variant() {
 
 # Holds the verdict cache under its row of LIMITS when its eviction turn is due.
 hold_cache_bound() {
-    python3 "$REPO_ROOT/utils/scripts/cache_dir.py" --evict atom-roster >/dev/null 2>&1 || true
+    python3 "$REPO_ROOT/utils/bin/loop" cache --evict atom-roster >/dev/null 2>&1 || true
 }
 
 # Compiles the sentinel and classifies the outcome, or reads the verdict

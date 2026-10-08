@@ -5,7 +5,7 @@
 # for one machine.  The root CMakeLists.txt calls crucible_cmake_pin_problem()
 # with CMAKE_VERSION before project(), so a configure with a CMake of another
 # version stops before CMake tests the compiler.  The test cmake_pin rejects a
-# ctest of another version (utils/scripts/cmake_pin.py).
+# ctest of another version (`setup check`, utils/assay/setup/pins.py).
 # cmake/CMakePinSelfTest.cmake is the test of this file.
 
 # Set OUT_VAR to the pinned version of PIN_FILE, or to an empty string when the

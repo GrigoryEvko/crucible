@@ -204,9 +204,9 @@ fi
 
 # The configure ran the cmake of PATH, and it rejects a cmake off the pin.
 # The build and the tests run the cmake and the ctest that the build
-# directory names, not a ctest of PATH (utils/scripts/cmake_pin.py).
-build_cmake="$(python3 "$REPO_ROOT/utils/scripts/cmake_pin.py" --print-program "$build_dir" cmake)"
-build_ctest="$(python3 "$REPO_ROOT/utils/scripts/cmake_pin.py" --print-program "$build_dir" ctest)"
+# directory names, not a ctest of PATH (`setup check`, utils/assay/setup/pins.py).
+build_cmake="$(python3 "$REPO_ROOT/utils/bin/setup" check --print-program "$build_dir" cmake)"
+build_ctest="$(python3 "$REPO_ROOT/utils/bin/setup" check --print-program "$build_dir" ctest)"
 
 build_args=(--build "$build_dir" -j "$jobs")
 if [[ ${#targets[@]} -gt 0 ]]; then

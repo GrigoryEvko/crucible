@@ -28,7 +28,7 @@
 // sched_setaffinity call, a call from another thread that names this
 // thread, and a taskset from outside the process move the thread with no
 // record, and a proof then stays in force for a mask the thread no
-// longer has.  utils/scripts/check-syscall-capability.py refuses the first
+// longer has.  utils/assay/guard/legacy/check_syscall_capability.py refuses the first
 // two in include/, src/ and vessel/: a sched_setaffinity or a
 // pthread_setaffinity_np outside detail::set_calling_thread_affinity is a
 // violation that no marker and no allowlist line admits.  Nothing refuses

@@ -1,5 +1,5 @@
 // Each library name in an unevaluated operand is a use of that name, and
-// check_plugin.py expects one finding on each line that names std::string or
+// utils/assay/guard/legacy/check_plugin.py expects one finding on each line that names std::string or
 // std::vector below.  Outside a template, the front end keeps only the sizeof.
 
 #include <string>

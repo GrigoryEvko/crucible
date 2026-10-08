@@ -1,5 +1,5 @@
 # test/layer/walk-checks.txt — the check files that the walk units compile a second time.
-# utils/scripts/check-walk-units.py --write writes this file from the tree, and the test
+# `guard check --rule walk-units --write` writes this file from the tree, and the test
 # walk_units fails when the file and the tree disagree.  Do not edit it by hand.
 #
 # A check file joins when one of its checks can call members_of on the reflection of a

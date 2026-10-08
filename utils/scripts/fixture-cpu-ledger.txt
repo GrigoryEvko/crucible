@@ -1,6 +1,6 @@
 # utils/scripts/fixture-cpu-ledger.txt — the negative fixtures whose cold compile takes more CPU time
 # than the error threshold of the row fixture-cpu of utils/scripts/budgets.txt.
-# test/neg_compile_driver.py reads it after each compile and each result from its store.
+# utils/assay/loop/fixture/store.py reads it after each compile and each result from its store.
 #
 # A row:  fixture | note
 #

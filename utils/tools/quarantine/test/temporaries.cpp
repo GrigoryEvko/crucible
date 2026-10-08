@@ -1,6 +1,6 @@
 // An explicit temporary names its class where the source spells it, and an
 // implicit conversion to a parameter of a library type names nothing at the
-// call.  check_plugin.py expects one finding on each line of an explicit
+// call.  utils/assay/guard/legacy/check_plugin.py expects one finding on each line of an explicit
 // temporary below, and no finding on the line of each implicit conversion.
 
 #include <string>

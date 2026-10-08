@@ -1,6 +1,6 @@
 # utils/scripts/open-gate-reads.txt — the open reads of each template that a gate of
-# include/foundation, include/fixy or include/crucible reads, read by
-# utils/scripts/check-trait-injection.py (Family E).  A gate is a concept definition or a
+# include/foundation, include/fixy or include/crucible reads, read by the rule
+# trait-guard (`guard check --rule trait-guard`, Family E).  A gate is a concept definition or a
 # requires clause, in a header or in the check file of a header (test/layer/checks/).  An
 # open read names a variable template, a function template, or a class template for its
 # value or its type: a translation unit can specialize each, and the specialization
@@ -13,7 +13,7 @@
 # The row of a template that a gate of include/crucible reads gives a reason.  Each such
 # read that a count row admits gives a warning.
 #
-# Run check-trait-injection.py --refresh in the commit that removes a read.
+# Run `guard check --rule trait-guard --refresh` in the commit that removes a read.
 crucible::canopy::admit_gossiped | open | the requires-expression of Crdt asks only whether a call of the function compiles.  An explicit specialization keeps the type of the call, so it can delete the call and refuse a type, but it cannot admit one
 crucible::cipher::can_demote_tier_v | 1 | a specialization admits a tier move that foundation::decide::tier_replaces refuses.  DemotableTier can call tier_replaces itself, and then the read closes
 crucible::cipher::can_promote_tier_v | 1 | a specialization admits a tier move that foundation::decide::tier_replaces refuses.  PromotableTier can call tier_replaces itself, and then the read closes
@@ -148,8 +148,8 @@ foundation::effects::detail::rows_sum_fit_ | 1
 foundation::effects::detail::sums_fit_pairwise_ | 1
 foundation::effects::extract_bare | 1
 foundation::lifetime::start_as_array | 1
-foundation::permissions::can_split_into_pack_v | open | a split manifest is an extension point by design, and utils/scripts/check-splits-orphan.py admits each specialization only beside the tags that it names
-foundation::permissions::has_split_pack_authoring_witness_v | open | the witness of a split manifest, an extension point by design, and utils/scripts/check-splits-orphan.py admits each specialization only beside the tags that it names
+foundation::permissions::can_split_into_pack_v | open | a split manifest is an extension point by design, and utils/assay/guard/legacy/check_splits_orphan.py admits each specialization only beside the tags that it names
+foundation::permissions::has_split_pack_authoring_witness_v | open | the witness of a split manifest, an extension point by design, and utils/assay/guard/legacy/check_splits_orphan.py admits each specialization only beside the tags that it names
 foundation::permissions::mint_read_loan | open | the reads are self-test concepts in the check file of ReadView.h that ask whether a call of the loan mint compiles.  No mint reads them, and the mint is the door that they probe
 foundation::permissions::with_read_view | open | the reads are self-test concepts in the check file of ReadView.h that ask whether a call of the read door compiles.  No mint reads them, and the door is what they probe
 foundation::reflect::any_component_satisfies | 1

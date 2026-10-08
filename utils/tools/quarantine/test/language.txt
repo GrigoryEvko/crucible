@@ -1,4 +1,4 @@
-# The rule table of the part of check_plugin.py for the language rule.  The
+# The rule table of the part of utils/assay/guard/legacy/check_plugin.py for the language rule.  The
 # file of the language is in the layer high, and its language row caps its
 # outside includes at the allowance of the layer low.
 

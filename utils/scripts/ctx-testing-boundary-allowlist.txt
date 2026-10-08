@@ -1,6 +1,6 @@
 # ctx-testing-boundary allowlist — the files that ship and may use the
 # testing door, foundation::effects::testing.
-# utils/scripts/check-ctx-testing-boundary.py reads this file.
+# utils/assay/guard/legacy/check_ctx_testing_boundary.py reads this file.
 #
 # The door mints a context with no key, and a context is what every
 # ctx-bound mint checks for, so a use in code that ships hands out

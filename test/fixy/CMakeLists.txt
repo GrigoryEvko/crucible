@@ -54,7 +54,7 @@ function(fixy_neg_compile_test name)
   add_executable(${name} EXCLUDE_FROM_ALL neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE fixy)
   add_test(NAME ${name}
-    COMMAND python3 -S ${CMAKE_SOURCE_DIR}/test/neg_compile_driver.py
+    COMMAND python3 -S ${CMAKE_SOURCE_DIR}/utils/bin/loop fixture
             --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR}
             ${CMAKE_BINARY_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/neg/${name}.cpp
@@ -3593,7 +3593,7 @@ fixy_neg_compile_test(neg_ring_value_owns_a_resource
 #
 # The split relation for each channel's tag triple is declared in the
 # channel's own header, which is why include/fixy/concurrent/ is an
-# authoring location in utils/scripts/check-splits-orphan.py.
+# authoring location in utils/assay/guard/legacy/check_splits_orphan.py.
 fixy_test(test_concurrent_channels)
 fixy_test(test_channel_moved_from)
 fixy_test(test_channel_identity)
@@ -4703,7 +4703,7 @@ fixy_neg_compile_test(neg_os_cipher_durable_head_advancer_extras_engage_atomic_w
 # ── The witness roster: one fixture per closed line ──────────────────
 #
 # utils/scripts/witness-roster.txt names every type that attests to a fact it
-# cannot see.  utils/scripts/check-witness-roster.py --gen writes
+# cannot see.  `guard check --rule witness-roster --gen` writes
 # neg/neg_witness_<slug>_direct_construction.cpp for each closed line,
 # and it writes neg/witness-fixtures.json with one record per fixture:
 # the test name, the refusal reason, and the refused constructor as the
@@ -4719,7 +4719,7 @@ file(READ ${_witness_manifest} _witness_json)
 string(JSON _witness_count ERROR_VARIABLE _witness_error LENGTH "${_witness_json}" fixtures)
 if(_witness_error)
   message(FATAL_ERROR "${_witness_manifest}: ${_witness_error}.  "
-    "Run utils/scripts/check-witness-roster.py --gen.")
+    "Run python3 utils/bin/guard check --rule witness-roster --gen.")
 endif()
 if(_witness_count GREATER 0)
   math(EXPR _witness_last "${_witness_count} - 1")

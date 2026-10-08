@@ -12,7 +12,7 @@
 #
 #   REPORT  The default.  Each object holds the findings of its unit in the
 #           section .crucible.quarantine (the head comment of quarantine.cpp,
-#           THE SECTION), and utils/scripts/quarantine_sections.py reads the
+#           THE SECTION), and utils/assay/readers/sections.py reads the
 #           section.  A finding in a file whose enforce mode is error is a
 #           compile error, and each other finding stops nothing.
 #   ERROR   Each finding that no opt-out region covers is a compile error.
@@ -23,7 +23,7 @@
 # not a target and it is not built with itself loaded.
 #
 # THE INPUTS OF A COMPILE
-#   utils/scripts/quarantine_stamps.py runs at each configure.  It writes the
+#   `loop stamps` (utils/assay/loop/stamps.py) runs at each configure.  It writes the
 #   facts of the rule table (facts.txt), its enforce rows (enforce.txt) and a
 #   mode stamp for each source file of a row into ${CMAKE_BINARY_DIR}/quarantine.
 #   It writes a file only when its content changes.
@@ -56,7 +56,9 @@ endif()
 set(CRUCIBLE_QUARANTINE_SOURCE "${CMAKE_CURRENT_LIST_DIR}/quarantine.cpp")
 set(CRUCIBLE_PLUGIN_CORE "${CMAKE_CURRENT_LIST_DIR}/plugin_core.h")
 cmake_path(SET _crucible_quarantine_scripts NORMALIZE "${CMAKE_CURRENT_LIST_DIR}/../../scripts")
-set(CRUCIBLE_QUARANTINE_STAMPS_SCRIPT "${_crucible_quarantine_scripts}/quarantine_stamps.py")
+cmake_path(SET _crucible_quarantine_utils NORMALIZE "${CMAKE_CURRENT_LIST_DIR}/../..")
+set(CRUCIBLE_GUARD "${_crucible_quarantine_utils}/bin/guard")
+set(CRUCIBLE_LOOP "${_crucible_quarantine_utils}/bin/loop")
 if(NOT DEFINED CRUCIBLE_RULE_TABLE)
   set(CRUCIBLE_RULE_TABLE "${_crucible_quarantine_scripts}/layer-rules.txt")
 endif()
@@ -80,7 +82,7 @@ set(CRUCIBLE_QUARANTINE_PLUGIN_FLAGS
   "-Wl,-rpath,${_crucible_quarantine_library_dir}")
 
 add_test(NAME quarantine_stamps_self_test
-  COMMAND "${CRUCIBLE_PYTHON3}" "${CRUCIBLE_QUARANTINE_STAMPS_SCRIPT}" --self-test)
+  COMMAND "${CRUCIBLE_PYTHON3}" "${CRUCIBLE_GUARD}" selftest loop.stamps)
 set_tests_properties(quarantine_stamps_self_test PROPERTIES LABELS "ci_guard")
 
 if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -122,7 +124,7 @@ endif()
 # The plugin builds when its key changed.  The compile runs in the directory
 # of the sources and maps that directory to `.`, so the plugin bytes hold no
 # path of the work tree, and two work trees build the same bytes.  The result
-# store of the negative fixtures keys these bytes (test/neg_compile_store.py).
+# store of the negative fixtures keys these bytes (utils/assay/loop/fixture/store.py).
 # The key names the map with no path, so the key and the stamp stay the same
 # in each work tree.
 file(SHA256 "${CRUCIBLE_QUARANTINE_SOURCE}" _crucible_quarantine_source_hash)
@@ -157,7 +159,7 @@ endif()
 # with no bound it took 1.0 s.
 set(_crucible_quarantine_test_jobs 16)
 add_test(NAME quarantine_plugin
-  COMMAND "${CRUCIBLE_PYTHON3}" "${CMAKE_CURRENT_LIST_DIR}/test/check_plugin.py"
+  COMMAND "${CRUCIBLE_PYTHON3}" "${CRUCIBLE_GUARD}" check --rule quarantine-plugin
           --cxx "${CRUCIBLE_REAL_CXX}"
           --plugin "${CRUCIBLE_QUARANTINE_PLUGIN}"
           --rules "${CRUCIBLE_RULE_TABLE}"
@@ -167,7 +169,7 @@ set_tests_properties(quarantine_plugin PROPERTIES LABELS "ci_guard" PROCESSORS $
 
 # The facts, the enforce rows and the mode stamps of the rule table.
 execute_process(
-  COMMAND "${CRUCIBLE_PYTHON3}" "${CRUCIBLE_QUARANTINE_STAMPS_SCRIPT}"
+  COMMAND "${CRUCIBLE_PYTHON3}" "${CRUCIBLE_LOOP}" stamps
           --root "${CMAKE_SOURCE_DIR}" --rules "${CRUCIBLE_RULE_TABLE}" --out "${_crucible_quarantine_out}"
           --build "${CMAKE_BINARY_DIR}"
   RESULT_VARIABLE _crucible_quarantine_result
@@ -177,7 +179,8 @@ if(NOT _crucible_quarantine_result EQUAL 0)
 endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CRUCIBLE_QUARANTINE_SOURCE}" "${CRUCIBLE_PLUGIN_CORE}" "${CRUCIBLE_RULE_TABLE}"
-  "${CRUCIBLE_QUARANTINE_STAMPS_SCRIPT}" "${_crucible_quarantine_scripts}/layer_rules.py")
+  "${CRUCIBLE_LOOP}" "${_crucible_quarantine_utils}/assay/loop/stamps.py"
+  "${_crucible_quarantine_utils}/assay/core/ruletable.py" "${_crucible_quarantine_utils}/assay/core/paths.py")
 
 string(TOLOWER "${CRUCIBLE_QUARANTINE_MODE}" _crucible_quarantine_mode)
 file(SHA256 "${_crucible_quarantine_out}/facts.txt" _crucible_quarantine_facts_hash)

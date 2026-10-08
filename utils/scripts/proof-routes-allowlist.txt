@@ -1,4 +1,4 @@
-# proof-routes-allowlist.txt: the reviewed sites that utils/scripts/check-proof-routes.py admits.
+# proof-routes-allowlist.txt: the reviewed sites that utils/assay/guard/legacy/check_proof_routes.py admits.
 #
 # Format: path:rule:key, or path:rule:key xN for N sites.  The key is the
 # one the guard prints.  Each paragraph starts with a comment that gives

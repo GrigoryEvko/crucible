@@ -3,7 +3,7 @@
 // regexes are the boilerplate reason ("constraints not satisfied") and
 // the concept's name as the compiler spells it in the satisfaction
 // note; neither can be met by this file's echoed source, because
-// test/neg_compile_driver.py strips the caret display before matching.
+// the command `python3 -S utils/bin/loop fixture` strips the caret display before matching.
 //
 // A contract_assert violated during constant evaluation does not fit
 // this probe.  GCC 16.2 reports it as one line with no

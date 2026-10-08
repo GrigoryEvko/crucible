@@ -1,5 +1,5 @@
 # utils/scripts/parse-total-ledger.txt — the baseline of the bytes that the compiles of one build read.
-# utils/scripts/check-parse-cost.py reads it, and --write writes the rows of one build kind again.
+# utils/assay/guard/legacy/check_parse_cost.py reads it, and --write writes the rows of one build kind again.
 #
 # A total row:  total | KIND | OBJECT BYTES | FIXTURE BYTES | reason
 #   The sum, over each object of the target all, and over each negative fixture, of the bytes of each
@@ -12,7 +12,7 @@
 # A growth over the baseline gives a warning, and over the error threshold of the row parse-total of
 # utils/scripts/budgets.txt an error.  A fall of more than the warning threshold is an error too.  To
 # accept a growth, raise the baseline in the same commit with a reason:
-#   python3 utils/scripts/check-parse-cost.py --check parse-total --build-dir build --write --reason TEXT
+#   python3 utils/bin/guard check --rule parse-cost --check parse-total --build-dir build --write --reason TEXT
 total | x86_64-debug-asan | 4532739123 | 9335389182 | the measure of the Debug build of all and of each negative fixture on 2026-10-03.  The families Choice, Report and Scalar, the walk tables of FailClosed.h, and 129 more units of new tests and fixtures add 3.4 %.  The include of diag/Catalog.h in AlignedBuffer.h gives Catalog.h 316 more readers, 42 MB
 file | x86_64-debug-asan | <system>/c++/16.2.1/bits/basic_string.h | 177023 | 2998
 file | x86_64-debug-asan | <system>/c++/16.2.1/type_traits | 133451 | 3096

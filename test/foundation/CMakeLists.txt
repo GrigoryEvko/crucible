@@ -54,7 +54,7 @@ foundation_test(test_brand)
 #
 # A fixture is a translation unit that must fail to compile.  The test
 # passes only when every regex given here appears in what the compiler
-# itself said (test/neg_compile_driver.py strips the caret display, so a
+# itself said (`loop fixture` strips the caret display, so a
 # fixture's own echoed source cannot satisfy a regex).
 #
 # Two regexes are the minimum, by construction: the boilerplate reason
@@ -91,7 +91,7 @@ function(foundation_neg_compile_test name)
   add_executable(${name} EXCLUDE_FROM_ALL neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE foundation)
   add_test(NAME ${name}
-    COMMAND python3 -S ${CMAKE_SOURCE_DIR}/test/neg_compile_driver.py
+    COMMAND python3 -S ${CMAKE_SOURCE_DIR}/utils/bin/loop fixture
             --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR}
             ${CMAKE_BINARY_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/neg/${name}.cpp

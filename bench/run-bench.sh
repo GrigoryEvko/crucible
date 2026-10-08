@@ -74,8 +74,8 @@ done
 
 [[ -f "$BUILD_DIR/CMakeCache.txt" ]] || \
     die "$BUILD_DIR not configured — run: cmake --preset $PRESET"
-# The cmake that configured BUILD_DIR builds it, not a cmake of PATH (utils/scripts/cmake_pin.py).
-BUILD_CMAKE="$(python3 "$REPO_ROOT/utils/scripts/cmake_pin.py" --print-program "$BUILD_DIR" cmake)" || \
+# The cmake that configured BUILD_DIR builds it, not a cmake of PATH (utils/assay/setup/pins.py).
+BUILD_CMAKE="$(python3 "$REPO_ROOT/utils/bin/setup" check --print-program "$BUILD_DIR" cmake)" || \
     die "$BUILD_DIR names no cmake that exists — configure it again: cmake --preset $PRESET"
 
 if [[ "$list_only" == 1 ]]; then

@@ -1,11 +1,11 @@
 // Uses after move that the use_after_move guard does not report.
 //
 // This file is not compiled.  The guard scans it with the rest of the
-// tree, and test_use_after_move_attacks.py scans it alone.  Each function
+// tree, and utils/assay/guard/legacy/test_use_after_move_attacks.py scans it alone.  Each function
 // is one evasion: legal C++ that uses a name after moving it, in a shape
 // the guard does not read.  When the guard learns a shape, it reports the
 // function here, the tree-wide guard turns red, and the function and its
-// ledger row in test_use_after_move_attacks.py are deleted.  The ledger
+// ledger row in utils/assay/guard/legacy/test_use_after_move_attacks.py are deleted.  The ledger
 // only shrinks.
 //
 // The self-test of the guard holds each shape that the guard learned from

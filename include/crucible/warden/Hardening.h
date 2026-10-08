@@ -457,7 +457,7 @@ public:
 // replaces them. Leaving the two read halves out made the declared set
 // smaller than the truth while every check beside it stayed green.
 //
-// utils/scripts/check-syscall-grant-coverage.py derives this set from the
+// utils/assay/guard/legacy/check_syscall_grant_coverage.py derives this set from the
 // call sites in this header and fails when the two disagree, so the
 // list is checked against the code rather than against its own prose.
 // The two affinity calls come through fixy::sched::apply_affinity_to_cpu,

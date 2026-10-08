@@ -1,7 +1,7 @@
 # The shape check of the core families.
 #
 # core_shapes.cpp pairs each hot operation of include/foundation/core with
-# the raw form that it replaces.  utils/scripts/check-core-shapes.py compiles
+# the raw form that it replaces.  utils/assay/guard/legacy/check_core_shapes.py compiles
 # the unit with the command of the object of this directory in the compile
 # database, reads the disassembly, and compares the two functions of each pair
 # with the expectation of the pair.  The build compiles the object too, so the
@@ -29,11 +29,11 @@
 # builds no object, and each test exits with status 3, which ctest reports as
 # a skip.
 
-set(_core_shapes_script ${CMAKE_SOURCE_DIR}/utils/scripts/check-core-shapes.py)
+set(_core_shapes_command ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule core-shapes)
 
 if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-  add_test(NAME core_shapes COMMAND python3 ${_core_shapes_script})
-  add_test(NAME core_shapes_self_test COMMAND python3 ${_core_shapes_script} --self-test)
+  add_test(NAME core_shapes COMMAND python3 ${_core_shapes_command})
+  add_test(NAME core_shapes_self_test COMMAND python3 ${_core_shapes_command} --self-test)
   set_tests_properties(core_shapes core_shapes_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
   return()
 endif()
@@ -76,14 +76,14 @@ set(_core_shapes_arguments
 
 # The check: the flags of the object, then the shape of each pair.
 add_test(NAME core_shapes
-  COMMAND python3 ${_core_shapes_script} ${_core_shapes_arguments}
+  COMMAND python3 ${_core_shapes_command} ${_core_shapes_arguments}
   COMMAND_EXPAND_LISTS)
 
 # The self-test: each finding of the check on planted disassembly, each
 # finding of the flag comparison on planted compile commands, and the object
 # compiled again with a second bounds test planted in View::window.
 add_test(NAME core_shapes_self_test
-  COMMAND python3 ${_core_shapes_script} --self-test ${_core_shapes_arguments}
+  COMMAND python3 ${_core_shapes_command} --self-test ${_core_shapes_arguments}
   COMMAND_EXPAND_LISTS)
 
 set_tests_properties(core_shapes core_shapes_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)

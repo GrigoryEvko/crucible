@@ -1,7 +1,7 @@
 # The layer rule, enforced by the compiler.
 #
 # foundation names only foundation and std, and fixy names only foundation,
-# fixy and std.  utils/scripts/check-layer-boundary.py reads that rule from the
+# fixy and std.  utils/assay/guard/legacy/check_layer_boundary.py reads that rule from the
 # parse tree.  This directory makes the compiler hold it too: a header that
 # includes or names a higher layer does not compile, whatever the spelling.
 #
@@ -26,7 +26,7 @@
 # namespace-scope static_asserts of include/<layer>/<path>.h, and its first
 # line of code includes that header.  One translation unit evaluates those
 # checks one time, and an includer of the header does not evaluate them
-# again.  utils/scripts/check-header-checks.py keeps the checks out of the
+# again.  utils/assay/guard/legacy/check_header_checks.py keeps the checks out of the
 # headers and examines the first line of each check file.  This file refuses
 # a check file that has no header.
 #
@@ -304,13 +304,13 @@ endforeach()
 # each check file of walk_checks.h.  walk-checks.txt lists each check file
 # whose checks can call members_of on the reflection of a namespace that a
 # header opens, one row `<layer>/<path>.cpp | weight | namespaces` each.
-# utils/scripts/check-walk-units.py writes the list from the parse tree, and
+# utils/assay/guard/legacy/check_walk_units.py writes the list from the parse tree, and
 # the test walk_units fails when the list and the tree disagree.  Each build
 # compiles the units, so a refused member stops the build.  file(CONFIGURE)
 # rewrites a list only when its text changes.
 #
 # The weight of a row is the share of its check file in a unit, in units of
-# 10^9 user instructions.  check-walk-units.py --measure BUILD_DIR writes the
+# 10^9 user instructions.  `guard check --rule walk-units --measure BUILD_DIR` writes the
 # weights.  A row with no measured weight gets the mean weight of the measured
 # rows.  When no row has a measured weight, each row weighs 1.0.  The number
 # of units is the total weight divided by _walk_weight_per_unit, rounded up.
@@ -351,7 +351,7 @@ foreach(_row IN LISTS _walk_rows)
   if(NOT _row MATCHES "^([^ |]+) [|] (([0-9]+)[.]([0-9])|unmeasured) [|] [^|]+$")
     message(FATAL_ERROR "test/layer/walk-checks.txt: the row `${_row}` is malformed.  A row is "
                         "`<layer>/<path>.cpp | weight | namespaces`, and a weight is a number with one decimal or "
-                        "unmeasured.  Write the list again: python3 utils/scripts/check-walk-units.py --write")
+                        "unmeasured.  Write the list again: python3 utils/bin/guard check --rule walk-units --write")
   endif()
   set(_check "${CMAKE_MATCH_1}")
   set(_weight "${CMAKE_MATCH_2}")
@@ -359,11 +359,11 @@ foreach(_row IN LISTS _walk_rows)
   set(_weight_tenths "${CMAKE_MATCH_4}")
   if(NOT _check IN_LIST _check_files)
     message(FATAL_ERROR "test/layer/walk-checks.txt: ${_check} is not a check file under test/layer/checks.  Write "
-                        "the list again: python3 utils/scripts/check-walk-units.py --write")
+                        "the list again: python3 utils/bin/guard check --rule walk-units --write")
   endif()
   if(_check IN_LIST _walk_checks)
     message(FATAL_ERROR "test/layer/walk-checks.txt: ${_check} has two rows.  Write the list again: python3 "
-                        "utils/scripts/check-walk-units.py --write")
+                        "utils/bin/guard check --rule walk-units --write")
   endif()
   list(APPEND _walk_checks "${_check}")
   if(_weight STREQUAL "unmeasured")
@@ -377,7 +377,7 @@ endforeach()
 list(LENGTH _walk_checks _walk_count)
 if(_walk_count EQUAL 0)
   message(FATAL_ERROR "test/layer/walk-checks.txt lists no check file, so the walks of the check files run with no "
-                      "header in view.  Write the list again: python3 utils/scripts/check-walk-units.py --write")
+                      "header in view.  Write the list again: python3 utils/bin/guard check --rule walk-units --write")
 endif()
 set(_walk_mean_weight 10)
 if(_walk_measured_count GREATER 0)
@@ -514,9 +514,9 @@ target_include_directories(layer_admitted_flag_matrix PRIVATE "${CMAKE_CURRENT_S
 # table and one section in the flag matrix, and each row and each section
 # names an audited name.
 add_test(NAME admitted_audit_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-admitted-audit.py --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule admitted-audit --self-test)
 add_test(NAME admitted_audit
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-admitted-audit.py
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule admitted-audit
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 set_tests_properties(admitted_audit admitted_audit_self_test PROPERTIES
     LABELS "ci_guard;substrate"
@@ -527,7 +527,7 @@ set_tests_properties(admitted_audit admitted_audit_self_test PROPERTIES
 # command comes from the compile database, so the test needs no target of
 # its own, and no unit that fails to preprocess enters the database.
 add_test(NAME layer_not_standalone
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-header-checks.py
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-checks
           --standalone ${CMAKE_BINARY_DIR})
 set_tests_properties(layer_not_standalone PROPERTIES LABELS "ci_guard;substrate" SKIP_RETURN_CODE 3)
 
@@ -535,9 +535,9 @@ set_tests_properties(layer_not_standalone PROPERTIES LABELS "ci_guard;substrate"
 # header-constexpr-ops.txt is still necessary: its header compiles alone at
 # the limit of the row and not at the threshold.  Each row gives a warning.
 add_test(NAME header_constexpr_ops_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-header-constexpr-ops.py --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-constexpr-ops --self-test)
 add_test(NAME header_constexpr_ops
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-header-constexpr-ops.py ${CMAKE_BINARY_DIR}
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-constexpr-ops ${CMAKE_BINARY_DIR}
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 set_tests_properties(header_constexpr_ops header_constexpr_ops_self_test PROPERTIES LABELS "ci_guard;substrate")
 
@@ -549,7 +549,7 @@ function(layer_neg_compile_test name)
   target_link_libraries(${name} PRIVATE crucible_dialect)
   target_include_directories(${name} PRIVATE "${_layer_roots}/foundation")
   add_test(NAME ${name}
-    COMMAND python3 -S ${CMAKE_SOURCE_DIR}/test/neg_compile_driver.py
+    COMMAND python3 -S ${CMAKE_SOURCE_DIR}/utils/bin/loop fixture
             --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR}
             ${CMAKE_BINARY_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/${name}.cpp

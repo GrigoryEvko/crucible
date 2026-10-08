@@ -1,5 +1,5 @@
 # utils/scripts/budget-history-ledger.txt — the rises of a budget threshold whose commits give no measurement.
-# utils/scripts/check-budget-history.py reads it.
+# utils/assay/guard/legacy/check_budget_history.py reads it.
 #
 # A row:  COMMIT | ROW | COLUMN | REASON
 #
