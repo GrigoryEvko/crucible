@@ -484,11 +484,9 @@ concept CtxFitsSenseHubV2Mint = ::foundation::effects::IsExecCtx<Ctx>
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSenseHubV2Mint<Ctx>
-// §XXI carve-out: cx=alloc — the load path maps the counter and gauge
-// arrays and heap-allocates State.  Compile-time evaluation would lie
-// about the runtime cost.
 [[deprecated("CRUCIBLE_STUB: the v2 hub loads no BPF object, and the mint always returns an empty result")]]
-[[nodiscard]] inline std::optional<SenseHubV2> mint_sense_hub_v2(Ctx const&, ::fixy::InitLoadCtx const& init) noexcept {
+[[nodiscard]] inline std::optional<SenseHubV2>
+mint_sense_hub_v2(Ctx const&, ::fixy::InitLoadCtx const& init) noexcept {
     // The mint forwards to the stub load, so it takes the deprecation of
     // the load on itself.
 #pragma GCC diagnostic push

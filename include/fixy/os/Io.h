@@ -307,8 +307,6 @@ concept CtxFitsCopyRangeTransfer =
 
 // Declared before the class so the class can name it as its sole friend.
 // The definition follows the class, because it builds one.
-//
-// §XXI carve-out: cx=alloc — setting up a ring is a kernel side effect.
 template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsIoUringMint<Ctx, Atoms...>
 [[nodiscard]] std::expected<Linear<IoUringRing>, std::error_code> mint_io_uring_ring(Ctx const&) noexcept;

@@ -116,9 +116,6 @@ concept CtxFitsSyscallTpBtfMint = ::foundation::effects::IsExecCtx<Ctx>
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSyscallTpBtfMint<Ctx>
-// §XXI carve-out: cx=alloc — the load path maps the timeline ring and
-// heap-allocates State.  Compile-time evaluation would lie about the
-// runtime cost.
 [[nodiscard]] inline std::optional<SyscallTpBtf> mint_syscall_tp_btf(Ctx const&,
                                                                      ::fixy::InitLoadCtx const& init) noexcept {
     return SyscallTpBtf::load(init);

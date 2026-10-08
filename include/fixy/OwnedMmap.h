@@ -242,8 +242,6 @@ public:
     //
     // The permission is read and not consumed.  The caller keeps it, and
     // presents it again to fixy::mmap::advise_release_aware.
-    //
-    // §XXI carve-out: cx=alloc — mapping is a kernel side effect.
     template <typename... Modifiers, ::foundation::effects::IsExecCtx Ctx>
         requires mmap::CtxFitsRegionMint<Ctx, Prot, Share, Modifiers...>
     [[nodiscard]] static std::expected<OwnedMmap, std::error_code>

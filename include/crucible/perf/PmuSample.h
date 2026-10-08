@@ -153,9 +153,6 @@ concept CtxFitsPmuSampleMint = ::foundation::effects::IsExecCtx<Ctx>
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsPmuSampleMint<Ctx>
-// §XXI carve-out: cx=alloc — the load path opens per-CPU perf event
-// descriptors, maps the sample ring, and heap-allocates State.
-// Compile-time evaluation would lie about the runtime cost.
 [[nodiscard]] inline std::optional<PmuSample> mint_pmu_sample(Ctx const&, ::fixy::InitLoadCtx const& init) noexcept {
     return PmuSample::load(init);
 }

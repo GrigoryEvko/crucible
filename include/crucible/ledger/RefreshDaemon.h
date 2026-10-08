@@ -413,8 +413,7 @@ private:
 // It returns a unique_ptr rather than a value because the refresh thread
 // captures `this`, so the daemon cannot be moved after construction and a
 // by-value return would have to move it. §XXI allows an allocating mint to
-// drop constexpr, and the marker on the signature line is how the scanner
-// is told so.
+// drop constexpr, and a row of utils/ledgers/mint-pattern.txt admits it.
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsRefreshDaemon<Ctx>
 [[nodiscard]] inline std::unique_ptr<RefreshDaemon> mint_refresh_daemon(

@@ -84,7 +84,6 @@ template <typename SelfProto, typename PeerProto, typename SelfTag, typename Pee
           && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>
           && detail::ForkedEndpointBody<SelfBody, SelfProto, ResourceSelf, Policy, SelfTag, Brand, Ctx>
           && detail::ForkedEndpointBody<PeerBody, PeerProto, ResourcePeer, Policy, PeerTag, Brand, Ctx>
-// §XXI carve-out: cx=alloc — starting a thread is a kernel side effect.
 [[nodiscard]] ::foundation::permissions::Permission<Parent, Brand>
 mint_forked_async_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                           ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body,

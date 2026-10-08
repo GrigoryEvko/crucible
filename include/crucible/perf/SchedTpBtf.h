@@ -114,9 +114,6 @@ concept CtxFitsSchedTpBtfMint = ::foundation::effects::IsExecCtx<Ctx>
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSchedTpBtfMint<Ctx>
-// §XXI carve-out: cx=alloc — the load path maps the timeline ring and
-// heap-allocates State.  Compile-time evaluation would lie about the
-// runtime cost.
 [[nodiscard]] inline std::optional<SchedTpBtf> mint_sched_tp_btf(Ctx const&, ::fixy::InitLoadCtx const& init) noexcept {
     return SchedTpBtf::load(init);
 }

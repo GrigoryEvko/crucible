@@ -147,8 +147,7 @@ private:
 //
 // The mint is not constexpr: opening and reading a file invokes the
 // kernel, and constexpr would lie about the cost. §XXI allows that for an
-// allocating mint, and the marker on the signature line is how the
-// scanner is told so.
+// allocating mint, and a row of utils/ledgers/mint-pattern.txt admits it.
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsLedgerStore<Ctx>
 [[nodiscard]] inline LedgerView mint_ledger_view(
@@ -167,8 +166,8 @@ template <::foundation::effects::IsExecCtx Ctx>
     return LedgerView{std::move(*loaded), now};
 }
 
-// The fingerprint-probing overload. Same carve-out: it reads sysfs and
-// then a file.
+// The fingerprint-probing overload. The same reason holds: it reads sysfs
+// and then a file.
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsLedgerStore<Ctx>
 [[nodiscard]] inline LedgerView mint_ledger_view(

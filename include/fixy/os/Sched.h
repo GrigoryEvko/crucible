@@ -206,12 +206,10 @@ template <AffinityMask Mask, PinningPosture Posture, eff::IsExecCtx Ctx>
 // declaration.
 template <SchedulerPolicy_v Policy, std::uint64_t RuntimeNs = 0, std::uint64_t DeadlineNs = 0,
           std::uint64_t PeriodNs = 0, eff::IsExecCtx Ctx>
-// §XXI carve-out: cx=alloc — setting a scheduler policy is a kernel side effect.
     requires CtxFitsSchedPolicyMint<Ctx, Policy>
 [[nodiscard]] std::expected<sf::SchedClass<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>, int>
 mint_scheduler_policy(Ctx const&, int rt_priority = 0) noexcept;
 
-// §XXI carve-out: cx=alloc — setpriority is a kernel side effect.
 template <int Nice, eff::IsExecCtx Ctx>
     requires CtxFitsPriorityMint<Ctx, Nice>
 [[nodiscard]] std::expected<SchedPriority<Nice>, int> mint_priority(Ctx const&) noexcept;

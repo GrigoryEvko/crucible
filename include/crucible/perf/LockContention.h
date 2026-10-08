@@ -138,9 +138,6 @@ concept CtxFitsLockContentionMint = ::foundation::effects::IsExecCtx<Ctx>
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsLockContentionMint<Ctx>
-// §XXI carve-out: cx=alloc — the load path maps the timeline ring and
-// heap-allocates State.  Compile-time evaluation would lie about the
-// runtime cost.
 [[nodiscard]] inline std::optional<LockContention> mint_lock_contention(Ctx const&,
                                                                         ::fixy::InitLoadCtx const& init) noexcept {
     return LockContention::load(init);

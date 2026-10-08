@@ -198,9 +198,6 @@ concept CtxFitsSenseHubMint = ::foundation::effects::IsExecCtx<Ctx>
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSenseHubMint<Ctx>
-// §XXI carve-out: cx=alloc — the load path maps the kernel counter
-// array and heap-allocates State.  Compile-time evaluation would lie
-// about the runtime cost.
 [[nodiscard]] inline std::optional<SenseHub> mint_sense_hub(Ctx const&, ::fixy::InitLoadCtx const& init) noexcept {
     return SenseHub::load(init);
 }

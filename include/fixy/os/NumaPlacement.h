@@ -102,8 +102,6 @@ concept CtxFitsNumaBind =
 
 // Declared here and defined below the class, because the class names it
 // as its sole friend, and a friend must already have been declared.
-//
-// §XXI carve-out: cx=alloc — binding memory is a kernel side effect.
 template <typename Tag, typename Prot, typename Brand, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsNumaBind<Ctx>
 [[nodiscard]] std::expected<::fixy::NumaPlacement<Tag, Prot, Brand>, std::error_code>
@@ -210,7 +208,6 @@ public:
 
 namespace numa {
 
-// §XXI carve-out: cx=alloc — binding memory is a kernel side effect.
 template <typename Tag, typename Prot, typename Brand, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsNumaBind<Ctx>
 [[nodiscard]] std::expected<::fixy::NumaPlacement<Tag, Prot, Brand>, std::error_code>

@@ -194,7 +194,6 @@ concept CtxFitsAffinityMint = sched::CtxFitsRuntimeAffinity<Ctx> && (Posture != 
 // definition.
 namespace sched {
 
-// §XXI carve-out: cx=alloc — setting affinity is a kernel side effect.
 template <AffinityMask Mask, PinningPosture Posture = PinningPosture::PinnedExplicit,
           ::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::CtxFitsAffinityMint<Ctx, Posture>

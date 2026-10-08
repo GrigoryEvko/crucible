@@ -89,8 +89,6 @@ concept CtxFitsSocketMint = eff::IsExecCtx<Ctx> && eff::CtxAdmits<Ctx, socket_ro
 //
 // Declared here and defined below SocketDoor, because SocketDoor names it
 // as its friend, and a friend must already have been declared.
-//
-// §XXI carve-out: cx=alloc — opening a socket invokes the kernel.
 template <typename Kind, eff::IsExecCtx Ctx>
     requires CtxFitsSocketMint<Ctx, Kind>
 [[nodiscard]] inline std::expected<Linear<::fixy::fs::OwnedFd>, std::error_code> mint_socket(Ctx const&) noexcept;

@@ -296,8 +296,6 @@ concept CtxFitsCommitAtomic =
 // Declared here and defined below FileDoor, because FileDoor names it as
 // a friend, and a friend must already have been declared.  The default
 // argument belongs to this declaration.
-//
-// §XXI carve-out: cx=alloc — opening a file invokes the kernel.
 template <typename... Atoms, eff::IsExecCtx Ctx>
     requires CtxFitsFileMint<Ctx, Atoms...>
 [[nodiscard]] inline std::expected<Linear<OwnedFd>, std::error_code>
@@ -487,8 +485,6 @@ using read_only = ::fixy::atom::fs::mode<open_mode::ReadOnly>;
 // The durable and atomic_write atoms only declare intent.  The mint
 // opens the file.  The caller still calls sync<Fsync> after writing and
 // then commit_atomic<Rename> to move the result into place.
-//
-// §XXI carve-out: cx=alloc — opening a file invokes the kernel.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsFileMint<Ctx, ::fixy::atom::fs::mode<open_mode::WriteTruncate>,
                              ::fixy::atom::fs::durable<sync_op::Fsync>,
@@ -506,8 +502,6 @@ mint_durable_truncate_file(Ctx const& ctx, Path<tags::source::Sanitized> path, :
 //
 // There is no atomic_write atom.  An append-only file has no
 // tmp-to-target rename phase.  The file is the target.
-//
-// §XXI carve-out: cx=alloc — opening a file invokes the kernel.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsFileMint<Ctx, ::fixy::atom::fs::mode<open_mode::WriteAppend>,
                              ::fixy::atom::fs::durable<sync_op::Fdatasync>, ::fixy::atom::fs::with_flag<flag::DataSync>>

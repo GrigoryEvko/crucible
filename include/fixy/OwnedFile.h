@@ -156,7 +156,6 @@ class OwnedFileDoor final : ::foundation::NoObject<OwnedFileDoor> {
 
 // Opens the named path with the std::fopen mode.  Returns the errno on
 // failure and no handle.
-// §XXI carve-out: cx=alloc — opening a stream invokes the kernel.
 template <typename Ctx>
     requires CtxFitsFileOpen<Ctx>
 [[nodiscard]] std::expected<OwnedFile, int> mint_owned_file(Ctx const&, const char* path, const char* mode) noexcept {
@@ -165,7 +164,6 @@ template <typename Ctx>
 
 // Opens an anonymous stream that the OS unlinks.  Returns the errno on
 // failure and no handle.
-// §XXI carve-out: cx=alloc — opening a stream invokes the kernel.
 template <typename Ctx>
     requires CtxFitsFileOpen<Ctx>
 [[nodiscard]] std::expected<OwnedFile, int> mint_temporary_file(Ctx const&) noexcept {

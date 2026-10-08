@@ -120,20 +120,16 @@ class CipherDurableHandle;
 // its only constructor; defined after it.  The default argument belongs
 // to these declarations and is absent from the friend declarations and
 // the definitions.
-//
-// §XXI carve-out: cx=alloc — opening a file invokes the kernel.
 template <typename... Extras, eff::IsExecCtx Ctx>
     requires ::fixy::cipher::durable::CtxFitsDurableMint<Ctx, warm_writer_stance, Extras...>
 [[nodiscard]] std::expected<Linear<CipherDurableHandle<warm_writer_stance>>, std::error_code>
 mint_warm_writer(Ctx const&, Path<tags::source::Sanitized>, ::mode_t perms = 0644) noexcept;
 
-// §XXI carve-out: cx=alloc — opening a file invokes the kernel.
 template <typename... Extras, eff::IsExecCtx Ctx>
     requires ::fixy::cipher::durable::CtxFitsDurableMint<Ctx, cold_writer_stance, Extras...>
 [[nodiscard]] std::expected<Linear<CipherDurableHandle<cold_writer_stance>>, std::error_code>
 mint_cold_writer(Ctx const&, Path<tags::source::Sanitized>, ::mode_t perms = 0644) noexcept;
 
-// §XXI carve-out: cx=alloc — opening a file invokes the kernel.
 template <typename... Extras, eff::IsExecCtx Ctx>
     requires ::fixy::cipher::durable::CtxFitsDurableMint<Ctx, head_advance_stance, Extras...>
 [[nodiscard]] std::expected<Linear<CipherDurableHandle<head_advance_stance>>, std::error_code>

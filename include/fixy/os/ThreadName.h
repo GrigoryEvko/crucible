@@ -53,7 +53,6 @@ concept CtxIsInitPhase =
     std::same_as<std::remove_cvref_t<Ctx>, ::foundation::effects::Init>
     || ::foundation::effects::CtxOwnsCapability<std::remove_cvref_t<Ctx>, ::foundation::effects::Effect::Init>;
 
-// §XXI carve-out: cx=alloc — naming a thread is a kernel side effect.
 template <ThreadNameLiteral Name, typename Ctx>
     requires CtxIsInitPhase<Ctx>
 [[nodiscard]] inline ThreadNamed<Name> mint_thread_name(Ctx const&) noexcept;
@@ -118,7 +117,6 @@ concept IsThreadNamed = detail::thread_name_extract::is_thread_named_v<std::remo
 // first naming call consumed would end the phase it exists to describe.
 //
 // Not constexpr: the body performs a kernel side effect.
-// §XXI carve-out: cx=alloc — naming a thread is a kernel side effect.
 template <ThreadNameLiteral Name, typename Ctx>
     requires CtxIsInitPhase<Ctx>
 [[nodiscard]] inline ThreadNamed<Name> mint_thread_name(Ctx const&) noexcept {

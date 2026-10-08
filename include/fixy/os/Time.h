@@ -605,8 +605,6 @@ template <ClockSource_v Source, eff::IsExecCtx Ctx>
 // Gives a reader that owns the pin, or operation_not_permitted when the
 // pin is not in force on the calling thread.  A pin that another thread
 // earned, and a pin whose thread pinned again, are refused.
-//
-// §XXI carve-out: cx=alloc — the mint reads the pin event of the calling thread.
 template <TscMode Mode, eff::IsExecCtx Ctx, typename PinT>
     requires CtxFitsTscReaderMint<Ctx, Mode, PinT>
 [[nodiscard]] std::expected<TscReader<Mode, std::remove_cvref_t<PinT>>, std::error_code>
@@ -625,8 +623,6 @@ template <std::uint64_t MaxNanos, eff::IsExecCtx Ctx>
 
 // Opens /dev/ptpN read-only through PtpDeviceDoor and returns its reader,
 // or the errno of a failed open.
-//
-// §XXI carve-out: cx=alloc — opening /dev/ptpN invokes the kernel.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsPtpClockReaderMint<Ctx>
 [[nodiscard]] std::expected<PtpClockReader, std::error_code> mint_ptp_clock_reader(Ctx const&,

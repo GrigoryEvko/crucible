@@ -328,8 +328,6 @@ concept CtxFitsReleaseAwareAdvise = CtxAdmitsAdvise<Ctx> && DiscardsPages<Advice
 //
 // The descriptor is a plain int rather than an owning handle type, so
 // that a descriptor from any source reaches this without a conversion.
-//
-// §XXI carve-out: cx=alloc — mapping is a kernel side effect.
 template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Tag, typename Brand>
     requires CtxFitsMmapMint<Ctx, Atoms...>
 [[nodiscard]] inline std::expected<
@@ -352,8 +350,6 @@ mint_mmap(Ctx const& ctx, ::foundation::permissions::Permission<Tag, Brand> cons
 // An anonymous mapping takes a descriptor of -1 and an offset of 0,
 // which is the convention mmap(2) states.  The permission is read as in
 // mint_mmap.
-//
-// §XXI carve-out: cx=alloc — mapping is a kernel side effect.
 template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Tag, typename Brand>
     requires CtxFitsAnonMmapMint<Ctx, Atoms...>
 [[nodiscard]] inline std::expected<

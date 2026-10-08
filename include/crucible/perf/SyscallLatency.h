@@ -137,9 +137,6 @@ concept CtxFitsSyscallLatencyMint = ::foundation::effects::IsExecCtx<Ctx>
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSyscallLatencyMint<Ctx>
-// §XXI carve-out: cx=alloc — the load path maps the timeline ring and
-// heap-allocates State.  Compile-time evaluation would lie about the
-// runtime cost.
 [[nodiscard]] inline std::optional<SyscallLatency> mint_syscall_latency(Ctx const&,
                                                                         ::fixy::InitLoadCtx const& init) noexcept {
     return SyscallLatency::load(init);
