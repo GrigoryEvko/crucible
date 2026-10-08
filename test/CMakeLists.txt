@@ -5888,10 +5888,11 @@ endforeach()
 # the git history of utils/registry.txt and of each ledger: a threshold that
 # rose with no measurement in its commit is an error, and a threshold or a
 # ledger above its lowest committed value gives a warning.  The test modules
-# of the rows grammar, the registry, the ledgers and the rule history plant
-# their input in throwaway trees.
+# of the rows grammar, the registry, the ledgers, the rule history, the
+# process module and the git module plant their input in throwaway trees.
 crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR})
-foreach(_assay_test core.test_rows core.test_registry core.test_ledger guard.test_history)
+foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test_proc core.test_git
+        guard.test_history)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   add_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})

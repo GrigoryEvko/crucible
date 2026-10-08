@@ -55,12 +55,10 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
-import os
 import re
 import shlex
 import shutil
 import signal
-import subprocess
 import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -68,6 +66,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from assay.core import ledger as rule_ledger
+from assay.core import proc
 from assay.core import rows as rows_grammar
 from assay.core.paths import LOOP, REPO_ROOT
 from assay.mutation import gates as gate_finder
@@ -146,13 +145,11 @@ def _entry_argv(entry: dict) -> list[str]:
 
 def _run(argv: list[str], cwd: str, env: dict[str, str], timeout: int = TIMEOUT_S) -> tuple[bool, str]:
     """Run one check and say whether it passed, with the tail of its output."""
-    full_env = dict(os.environ)
-    full_env.update(env)
     try:
-        proc = subprocess.run(argv, cwd=cwd, env=full_env, capture_output=True, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
+        completed = proc.run(proc.Command(argv, timeout_s=timeout, cwd=cwd, env=proc.environment(env)))
+    except proc.TimedOut:
         return False, "timeout"
-    return proc.returncode == 0, (proc.stdout + proc.stderr)[-2000:]
+    return completed.exit == 0, (completed.out + completed.err)[-2000:]
 
 
 # ── the dependency map ─────────────────────────────────────────────────
@@ -161,8 +158,8 @@ def _run(argv: list[str], cwd: str, env: dict[str, str], timeout: int = TIMEOUT_
 def _headers_of(entry: dict, src_root: Path) -> tuple[str, list[str]]:
     """The file of one compile entry and every header under the source root that it reaches."""
     argv = _strip_output(_entry_argv(entry)) + ["-M", "-MG"]
-    proc = subprocess.run(argv, cwd=entry["directory"], capture_output=True, text=True, timeout=TIMEOUT_S)
-    text = proc.stdout.replace("\\\n", " ")
+    completed = proc.run(proc.Command(argv, timeout_s=TIMEOUT_S, cwd=entry["directory"]))
+    text = completed.out.replace("\\\n", " ")
     deps = text.split(":", 1)[1].split() if ":" in text else []
     headers: list[str] = []
     for dep in deps:
@@ -255,8 +252,10 @@ def _ctest_commands(build: Path) -> dict[str, list[str]]:
         listing = Path(tmp_name) / "tests.jsonl"
         shim.write_text(CTEST_SHIM)
         listing.write_text("")
-        subprocess.run([_build_program(build, "cmake"), f"-DCRUCIBLE_TESTS_FILE={build / 'CTestTestfile.cmake'}",
-                        f"-DCRUCIBLE_TESTS_OUT={listing}", "-P", str(shim)], check=True, capture_output=True)
+        proc.require(proc.run(proc.Command([_build_program(build, "cmake"),
+                                            f"-DCRUCIBLE_TESTS_FILE={build / 'CTestTestfile.cmake'}",
+                                            f"-DCRUCIBLE_TESTS_OUT={listing}", "-P", str(shim)],
+                                           timeout_s=proc.TOOL_S)))
         commands: dict[str, list[str]] = {}
         for line in listing.read_text().splitlines():
             name, *command = json.loads(line)
@@ -280,7 +279,7 @@ def _target_sources(build: Path) -> dict[str, list[str]]:
     if not query.exists():
         query.parent.mkdir(parents=True, exist_ok=True)
         query.write_text("")
-        subprocess.run([_build_program(build, "cmake"), str(build)], check=True, capture_output=True)
+        proc.require(proc.run(proc.Command([_build_program(build, "cmake"), str(build)], timeout_s=proc.TOOL_S)))
     indexes = sorted((api / "reply").glob("index-*.json"))
     if not indexes:
         raise SystemExit(f"mutation: the CMake file API left no reply under {api / 'reply'}")
@@ -307,8 +306,8 @@ def _fixture_word(command: list[str]) -> int | None:
 
 def load_candidates(build: Path, deps: dict[str, list[str]]) -> list[Candidate]:
     """Every negative fixture and every test source of the configured build, as candidates."""
-    tests = json.loads(subprocess.run([_build_program(build, "ctest"), "--show-only=json-v1"], cwd=build,
-                                      capture_output=True, text=True, check=True).stdout)["tests"]
+    tests = json.loads(proc.require(proc.run(proc.Command([_build_program(build, "ctest"), "--show-only=json-v1"],
+                                                          timeout_s=proc.TOOL_S, cwd=build))).out)["tests"]
     declared = _ctest_commands(build)
     entries = json.loads((build / "compile_commands.json").read_text())
     by_file = {str(Path(entry["file"]).resolve()): entry for entry in entries}
@@ -493,10 +492,10 @@ def _probe(header_abs: Path, flags_from: Candidate | None, compiler_argv: list[s
             argv = argv + ["-fsyntax-only", "-fdiagnostics-color=never", str(probe)]
             cwd = flags_from.cwd if flags_from.kind == "syntax" else str(Path(flags_from.source).parent)
         try:
-            proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=TIMEOUT_S, check=False)
-        except subprocess.TimeoutExpired:
+            completed = proc.run(proc.Command(argv, timeout_s=TIMEOUT_S, cwd=cwd))
+        except proc.TimedOut:
             return False, "timeout"
-        return proc.returncode == 0, proc.stdout + proc.stderr
+        return completed.exit == 0, completed.out + completed.err
 
 
 def run_header(header: str, src_root: Path, candidates: list[Candidate], jobs: int, neg_cap: int,
@@ -771,10 +770,10 @@ def _selftest_build_model(work: Path, args: argparse.Namespace) -> list[str]:
         cmake = args.cmake or cmake_pin.pinned_program("cmake")
     except cmake_pin.PinError as error:
         return [str(error)]
-    configured = subprocess.run([cmake, "-S", str(source), "-B", str(build), *generator,
-                                 f"-DCMAKE_CXX_COMPILER={args.compiler}"], capture_output=True, text=True)
-    if configured.returncode != 0:
-        return [f"the planted project does not configure:\n{configured.stderr[-2000:]}"]
+    configured = proc.run(proc.Command([cmake, "-S", str(source), "-B", str(build), *generator,
+                                        f"-DCMAKE_CXX_COMPILER={args.compiler}"], timeout_s=proc.TOOL_S))
+    if configured.exit != 0:
+        return [f"the planted project does not configure:\n{configured.err[-2000:]}"]
     failures: list[str] = []
     executable = str((build / "planted_test").resolve())
     commands = _ctest_commands(build)

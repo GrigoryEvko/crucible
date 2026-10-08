@@ -177,7 +177,6 @@ import io
 import json
 import os
 import re
-import subprocess
 import sys
 import tempfile
 from collections import Counter
@@ -805,9 +804,8 @@ class Scratch:
         self.build = root / "build"
         self.build.mkdir(parents=True)
         throwaway_repo.init(root)
-        self.environment = dict(os.environ, GIT_AUTHOR_NAME="crucible-selftest",
-                                GIT_AUTHOR_EMAIL="crucible-selftest@invalid", GIT_COMMITTER_NAME="crucible-selftest",
-                                GIT_COMMITTER_EMAIL="crucible-selftest@invalid")
+        self.identity = {"GIT_AUTHOR_NAME": "crucible-selftest", "GIT_AUTHOR_EMAIL": "crucible-selftest@invalid",
+                         "GIT_COMMITTER_NAME": "crucible-selftest", "GIT_COMMITTER_EMAIL": "crucible-selftest@invalid"}
         for rel in SOURCES:
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(f"// {rel}\n", encoding="utf-8")
@@ -849,9 +847,8 @@ class Scratch:
             f"CMAKE_CXX_FLAGS:STRING={flags}\n{extra}", encoding="utf-8")
 
     def git(self, *arguments: str) -> None:
-        """Run one git command in the scratch repository."""
-        subprocess.run(["git", "-C", str(self.root), *arguments], check=True, capture_output=True,
-                       env=self.environment)
+        """Run one git command in the scratch repository, with the identity of the self-test."""
+        throwaway_repo.run(self.root, *arguments, extra=self.identity)
 
     def add(self, name: str, lines: list[str], stamp: str = STAMP_VALUE, has_section: bool = True) -> None:
         """Plant one object of all with its finding lines, or with no section."""
@@ -935,7 +932,6 @@ def self_test() -> int:
     Returns:
         0 when each case holds, else 2
     """
-    throwaway_repo.isolate()
     failures: list[str] = []
 
     def expect(name: str, holds: bool, detail: object = "") -> None:
@@ -1337,6 +1333,5 @@ def main(argv: list[str]) -> int:
             or ((args.allow_raise or args.admit or args.add_configuration) and not args.write)):
         parser.print_usage(sys.stderr)
         return 2
-    throwaway_repo.isolate()
     return run(args.build_dir.resolve(), root, root / LEDGER, root / RULES, args.warnings_dir,
                Request(args.write, args.allow_raise, args.add_configuration, args.listed, args.admit))

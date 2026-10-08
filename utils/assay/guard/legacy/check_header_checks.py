@@ -250,7 +250,6 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
 import sys
 import tempfile
 from collections import Counter
@@ -259,6 +258,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from assay.core import ledger as rule_ledger
+from assay.core import proc
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.readers import tsast
@@ -2675,8 +2675,8 @@ def standalone(root: Path, build_dir: Path) -> int:
             index, (header, _line) = item
             unit = Path(work) / f"alone_{index}.cpp"
             unit.write_text(f"#include <{header}>\n", encoding="utf-8")
-            done = subprocess.run(syntax_argv(argv, source, unit), cwd=directory, capture_output=True, check=False)
-            return done.returncode == 0
+            done = proc.run(proc.Command(syntax_argv(argv, source, unit), timeout_s=proc.TOOL_S, cwd=directory))
+            return done.exit == 0
 
         with ThreadPoolExecutor(max_workers=min(16, max(1, len(rows)))) as pool:
             verdicts = list(pool.map(compiles, enumerate(rows)))

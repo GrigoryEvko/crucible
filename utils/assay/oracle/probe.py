@@ -14,15 +14,14 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import os
 import re
-import subprocess
 import tempfile
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import proc
 from assay.core import report as check_report
 from assay.oracle.model import (LChoice, LEnd, LRec, LVar, Local, PRELUDE_NS, cpp_prelude)
 
@@ -77,11 +76,11 @@ def pch_heads(cxx: str, include: Path) -> Iterator[Path]:
         for kind, text in HEADS.items():
             header = root / f"session_oracle_head_{kind}.h"
             header.write_text(text, encoding="utf-8")
-            proc = subprocess.run([cxx, *_FLAGS, f"-I{include}", "-x", "c++-header", str(header),
-                                   "-o", f"{header}.gch"], capture_output=True, text=True,
-                                  env={**os.environ, "LC_ALL": "C"})
-            if proc.returncode != 0:
-                raise RuntimeError(f"cannot precompile the {kind} probe head:\n{proc.stderr[-2000:]}")
+            completed = proc.run(proc.Command([cxx, *_FLAGS, f"-I{include}", "-x", "c++-header", str(header),
+                                               "-o", f"{header}.gch"], timeout_s=proc.TOOL_S,
+                                              env=proc.environment({"LC_ALL": "C"})))
+            if completed.exit != 0:
+                raise RuntimeError(f"cannot precompile the {kind} probe head:\n{completed.err[-2000:]}")
         yield root
 
 
@@ -90,11 +89,11 @@ def run_probe(cxx: str, include: Path, source: str, heads: Path) -> Measured:
     with tempfile.TemporaryDirectory(prefix="session_oracle_") as tmp:
         path = Path(tmp) / "probe.cpp"
         path.write_text(source, encoding="utf-8")
-        proc = subprocess.run(
+        completed = proc.run(proc.Command(
             [cxx, *_FLAGS, f"-I{heads}", f"-I{include}", "-Winvalid-pch",
              "-fsyntax-only", "-fmax-errors=0", str(path)],
-            capture_output=True, text=True, env={**os.environ, "LC_ALL": "C"})
-    out = proc.stdout + proc.stderr
+            timeout_s=proc.TOOL_S, env=proc.environment({"LC_ALL": "C"})))
+    out = completed.out + completed.err
     values = {m.group(1): canonical(m.group(2)) for m in _SHOW.finditer(out)}
     rejection = None
     for line in out.splitlines():

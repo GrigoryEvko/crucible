@@ -23,10 +23,11 @@ Complexity: linear in the size of the scripts.
 """
 
 import json
-import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from assay.core import proc
 
 INSTALL_COMMAND = "python3 utils/bin/setup install ast-grep"
 TIMEOUT_S = 300.0
@@ -125,14 +126,16 @@ def read(root: Path, paths: Sequence[str], program: str | None = None) -> dict[s
         return {}
     executable = program or binary()
     try:
-        completed = subprocess.run([executable, "scan", "--inline-rules", RULES, "--json=compact", *paths],
-                                   capture_output=True, text=True, cwd=root, timeout=TIMEOUT_S, check=False)
-    except (OSError, subprocess.TimeoutExpired) as problem:
+        completed = proc.run(proc.Command([executable, "scan", "--inline-rules", RULES, "--json=compact", *paths],
+                                          timeout_s=TIMEOUT_S, cwd=root))
+    except proc.CannotStart as problem:
+        raise ShellError(f"ast-grep cannot run: {problem.error}") from None
+    except proc.TimedOut as problem:
         raise ShellError(f"ast-grep cannot run: {problem}") from None
-    if completed.returncode != 0:
-        raise ShellError(f"ast-grep failed (exit {completed.returncode}): {completed.stderr.strip()}")
+    if completed.exit != 0:
+        raise ShellError(f"ast-grep failed (exit {completed.exit}): {completed.err.strip()}")
     try:
-        matches = json.loads(completed.stdout or "[]")
+        matches = json.loads(completed.out or "[]")
     except json.JSONDecodeError as problem:
         raise ShellError(f"ast-grep printed output that is not JSON: {problem}") from None
     commands: dict[str, list[ShellCommand]] = {path: [] for path in paths}

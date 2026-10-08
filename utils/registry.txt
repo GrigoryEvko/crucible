@@ -110,7 +110,7 @@ rule rule-witness engine=meta scope=utils/plants/,utils/registry.txt ledger=admi
 rule session-oracle engine=build scope=include/fixy/session/ ledger=none legacy=oracle.runner doc=XIII | an answer of a session relation that the golden table of the oracle does not give | correct the relation, or write the golden table again from the oracles
 rule splits-orphan engine=tsast scope=tracked ledger=none legacy=guard.legacy.check_splits_orphan doc=IX | a specialization of a split trait away from the declarations of its tags | specialize the trait beside its tags
 rule start-lifetime engine=tsast scope=tracked ledger=admit legacy=guard.legacy.check_start_lifetime doc=II | std::start_lifetime_as or std::start_lifetime_as_array outside foundation/Lifetime.h | use the doors of foundation/Lifetime.h
-rule structured-reads engine=meta scope=package,tracked ledger=count doc=XV | a read of C++ as text, a regex call outside a reader, a read of a structured format outside its reader, and a git write that does not isolate its repository | read the input through its reader, and isolate a throwaway repository with assay.core.git
+rule structured-reads engine=meta scope=package,tracked ledger=count doc=XV | a read of C++ as text, a regex call outside a reader, a read of a structured format outside its reader, a git command outside assay.core.git, and a git write that does not isolate its repository | read the input through its reader, run git through assay.core.git, and isolate a throwaway repository with assay.core.git
 rule stub-discipline engine=tsast scope=include/ ledger=none legacy=guard.legacy.check_stub_discipline doc=XVIII | a stub marker with no CRUCIBLE_STUB deprecation in its header, or a deprecation with no marker | put the marker and the deprecation together
 rule syscall-capability engine=tsast scope=tracked ledger=admit legacy=guard.legacy.check_syscall_capability doc=XXII.R4 | a raw system call with no reviewed capability claim, and a call of the affinity doors outside their door | add the claim with its reason, or call the door
 rule syscall-grant-coverage engine=tsast scope=include/ ledger=none legacy=guard.legacy.check_syscall_grant_coverage doc=XXII.R4 | a hardening grant set that is not the set of the system calls of its apply path | give the grant set the calls of the path
@@ -128,6 +128,9 @@ rule use-after-move-attacks engine=tsast scope=tracked ledger=none legacy=guard.
 rule vessel-acceptance engine=build scope=vessel/ ledger=none legacy=guard.legacy.check_vessel_acceptance doc=XIII | a vessel that does not build or whose Python tests fail | correct the vessel
 rule walk-units engine=tsast scope=test/layer/ ledger=none legacy=guard.legacy.check_walk_units doc=XV.1 | a check file that walks a namespace and that test/layer/walk-checks.txt does not list, and a listed file that walks none | write the list again with --write
 rule witness-roster engine=tsast scope=include/ ledger=admit legacy=guard.legacy.check_witness_roster doc=XXI | a door class with no roster row, and a fixture that its roster row does not produce | add the row, and write the fixtures again with --gen
+
+job git module=assay.core.git | each git command resolves the repository of the directory that it names, has a time limit, and gives the answer that its caller asks for
+job subprocess module=assay.core.proc | each process start has a time limit, a known environment and no shell, and the process group of a command stops at its limit
 
 path test/harness/check_output.py | a test of two C++ probes of the product, as a C++ test executable is.  It is outside the utils system
 path utils/assay/**/*.py | the modules of the package

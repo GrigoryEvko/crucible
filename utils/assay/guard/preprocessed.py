@@ -208,7 +208,6 @@ import random
 import re
 import shlex
 import shutil
-import subprocess
 import sys
 import tempfile
 import threading
@@ -220,6 +219,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import cache as cache_dir
+from assay.core import proc
 from assay.core.paths import REPO_ROOT
 
 # Bumped when the store reads or writes the output or a manifest differently,
@@ -529,9 +529,8 @@ def compiler_identity(argv: list[str], directory: str) -> list:
 def _cc1plus(binary: str) -> str | None:
     """Return the cc1plus that a driver runs, or None when the driver does not say."""
     try:
-        found = subprocess.run([binary, "-print-prog-name=cc1plus"], capture_output=True, text=True,
-                               timeout=60).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
+        found = proc.run(proc.Command([binary, "-print-prog-name=cc1plus"], timeout_s=60.0)).out.strip()
+    except proc.ToolFailed:
         return None
     return found if os.path.isabs(found) else None
 
@@ -1009,14 +1008,14 @@ def fill(plan: Plan, reader: _Reader, wait: bool = True) -> tuple[Unit, bool] | 
         if plan.latest_start_ns is not None:
             started_ns = min(started_ns, plan.latest_start_ns)
         try:
-            result = subprocess.run([*plan.run_argv, "-MD", "-MF", depfile], cwd=plan.directory,
-                                    capture_output=True)
+            result = proc.run(proc.Command([*plan.run_argv, "-MD", "-MF", depfile], timeout_s=proc.TOOL_S,
+                                           cwd=plan.directory))
             names = dependency_names(Path(depfile).read_text(errors="replace"), plan.directory, reader.files.real)
         finally:
             os.unlink(depfile)
-        if result.returncode != 0:
+        if result.exit != 0:
             first = result.stderr.decode(errors="replace").strip().splitlines()[:1]
-            failure = f"{plan.file}: {first[0] if first else 'exit ' + str(result.returncode)}"
+            failure = f"{plan.file}: {first[0] if first else 'exit ' + str(result.exit)}"
             return Unit(plan.file, (), failure), True
         records, holds_root = _file_records(result.stdout, plan.directory, plan.root, store, reader)
         files = reader.files

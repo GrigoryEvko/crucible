@@ -52,8 +52,6 @@ import logging
 import os
 import re
 import shutil
-import signal
-import subprocess
 import tarfile
 import tempfile
 import urllib.request
@@ -61,6 +59,7 @@ import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from assay.core import proc
 from assay.oracle.keskin import GlobalStates, Premise
 from assay.oracle.model import Global, read_global
 from assay.oracle.rocq import OracleError, answer_cache_path, cache_root, load_answers, save_answers
@@ -122,10 +121,9 @@ def _opam() -> str:
     return tool
 
 
-def _in_switch(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    """Run a command of the opam switch SWITCH in ``cwd``."""
-    return subprocess.run([_opam(), "exec", f"--switch={SWITCH}", "--", *args], cwd=cwd,
-                          capture_output=True, text=True, check=False)
+def _in_switch(args: list[str], cwd: Path, timeout_s: float) -> proc.Completed:
+    """Run a command of the opam switch SWITCH in ``cwd``, with a time limit of ``timeout_s`` seconds."""
+    return proc.run(proc.Command([_opam(), "exec", f"--switch={SWITCH}", "--", *args], timeout_s=timeout_s, cwd=cwd))
 
 
 def _download(url: str) -> bytes:
@@ -189,16 +187,16 @@ def build() -> tuple[Path, str]:
     for where, target in ((coar, "main.exe"), (front, "./main.exe")):
         if not (where / "_build" / "default" / "main.exe").is_file():
             LOG.info("building %s in %s", target, where)
-            proc = _in_switch(["dune", "build", target], where)
-            if proc.returncode != 0 or not (where / "_build" / "default" / "main.exe").is_file():
-                raise OracleError(f"building {where} failed:\n{(proc.stdout + proc.stderr)[-4000:]}")
-    versions = _in_switch(["ocamlfind", "query", "-format", "%v", "z3"], coar)
-    ocaml = _in_switch(["ocamlc", "-version"], coar)
-    if versions.returncode != 0 or ocaml.returncode != 0:
+            built = _in_switch(["dune", "build", target], where, proc.BUILD_S)
+            if built.exit != 0 or not (where / "_build" / "default" / "main.exe").is_file():
+                raise OracleError(f"building {where} failed:\n{(built.out + built.err)[-4000:]}")
+    versions = _in_switch(["ocamlfind", "query", "-format", "%v", "z3"], coar, proc.QUICK_S)
+    ocaml = _in_switch(["ocamlc", "-version"], coar, proc.QUICK_S)
+    if versions.exit != 0 or ocaml.exit != 0:
         raise OracleError(f"the opam switch '{SWITCH}' has no ocamlc or no z3 package:\n"
-                          f"{versions.stderr}{ocaml.stderr}")
-    ident = (f"coar {COAR_COMMIT}, source.zip sha256 {SOURCE_SHA256}, OCaml {ocaml.stdout.strip()}, "
-             f"z3 {versions.stdout.strip()}, {os.uname().machine}")
+                          f"{versions.err}{ocaml.err}")
+    ident = (f"coar {COAR_COMMIT}, source.zip sha256 {SOURCE_SHA256}, OCaml {ocaml.out.strip()}, "
+             f"z3 {versions.out.strip()}, {os.uname().machine}")
     return front / "_build" / "default" / "main.exe", ident
 
 
@@ -233,17 +231,15 @@ def _run(exe: Path, text: str, network: str, mode: str) -> dict[str, object]:
     """
     with tempfile.TemporaryDirectory(prefix="session_oracle_sprout_") as tmp:
         Path(tmp, "protocol").write_text(text, encoding="utf-8")
-        proc = subprocess.Popen([str(exe), "protocol", network, str(QUERY_TIMEOUT), mode, "parallel"], cwd=tmp,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
         try:
-            out, err = proc.communicate(timeout=RUN_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL)
-            proc.communicate()
+            completed = proc.run(proc.Command([str(exe), "protocol", network, str(QUERY_TIMEOUT), mode, "parallel"],
+                                              timeout_s=RUN_TIMEOUT, cwd=tmp))
+        except proc.TimedOut:
             return {"verdict": "inconclusive", "valid": []}
+    out, err = completed.out, completed.err
     found = _RESULT.findall(out)
-    if proc.returncode != 0 or not found:
-        LOG.warning("sprout gave no verdict (exit %d): %s", proc.returncode, " ".join((out + err).split())[-300:])
+    if completed.exit != 0 or not found:
+        LOG.warning("sprout gave no verdict (exit %d): %s", completed.exit, " ".join((out + err).split())[-300:])
         return {"verdict": "inconclusive", "valid": []}
     verdict = found[-1].strip()
     return {"verdict": verdict if verdict in VERDICTS else "inconclusive", "valid": sorted(_VALID.findall(out))}

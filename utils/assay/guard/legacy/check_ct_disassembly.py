@@ -68,12 +68,12 @@ import pathlib
 import re
 import shlex
 import shutil
-import subprocess
 import sys
 import tempfile
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
+from assay.core import proc
 from assay.core.paths import REPO_ROOT
 from assay.readers import tsast
 
@@ -343,9 +343,9 @@ def compile_object(compiler: str, flags: list[str], source: pathlib.Path, obj: p
     """
     cmd = [compiler, *flags, "-fno-asynchronous-unwind-tables", f"-I{REPO_ROOT / 'include'}",
            "-c", str(source), "-o", str(obj)]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise CannotRun(f"the compile failed for {target}:\n{shlex.join(cmd)}\n{result.stderr}")
+    result = proc.run(proc.Command(cmd, timeout_s=proc.TOOL_S))
+    if result.exit != 0:
+        raise CannotRun(f"the compile failed for {target}:\n{shlex.join(cmd)}\n{result.err}")
 
 
 class Insn:
@@ -368,16 +368,16 @@ def disassemble(obj: pathlib.Path) -> dict[str, list[Insn]]:
     Raises:
         CannotRun: If objdump fails
     """
-    result = subprocess.run(["objdump", "-dr", "--no-show-raw-insn", "-M", "intel", str(obj)],
-                            capture_output=True, text=True)
-    if result.returncode != 0:
-        raise CannotRun(f"objdump failed:\n{result.stderr}")
+    result = proc.run(proc.Command(["objdump", "-dr", "--no-show-raw-insn", "-M", "intel", str(obj)],
+                                   timeout_s=proc.TOOL_S))
+    if result.exit != 0:
+        raise CannotRun(f"objdump failed:\n{result.err}")
     functions: dict[str, list[Insn]] = {}
     current: str | None = None
     head = re.compile(r"^[0-9a-f]+ <([^>]+)>:$")
     reloc = re.compile(r"^\s+[0-9a-f]+:\s+R_\w+\s+(\S+)")
     insn = re.compile(r"^\s+[0-9a-f]+:\s+(.*)$")
-    for line in result.stdout.splitlines():
+    for line in result.out.splitlines():
         match = head.match(line)
         if match:
             current = match.group(1)
@@ -723,11 +723,11 @@ def run_self_test(plan: Plan) -> int:
         with tempfile.TemporaryDirectory(prefix="ct-disassembly-census-") as tmp:
             source = pathlib.Path(tmp) / "census.cpp"
             source.write_text(tu)
-            result = subprocess.run([plan.compiler, "-std=c++26", "-freflection", "-fsyntax-only", str(source)],
-                                    capture_output=True, text=True)
-        fired = result.returncode != 0 and "census fired" in result.stderr
+            result = proc.run(proc.Command([plan.compiler, "-std=c++26", "-freflection", "-fsyntax-only", str(source)],
+                                           timeout_s=proc.TOOL_S))
+        fired = result.exit != 0 and "census fired" in result.err
         if fired != must_fail:
-            print(f"self-test: the census over {fake} {'did not fire' if must_fail else 'fired'}: {result.stderr[:400]}")
+            print(f"self-test: the census over {fake} {'did not fire' if must_fail else 'fired'}: {result.err[:400]}")
             failures += 1
     failures += self_test_case_list()
     print("self-test:", "PASS" if failures == 0 else f"FAIL ({failures})")

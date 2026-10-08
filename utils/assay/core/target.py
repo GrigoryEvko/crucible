@@ -45,13 +45,13 @@ from __future__ import annotations
 import hashlib
 import re
 import shlex
-import subprocess
 import sys
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
 from assay.core import meter as cost_meter
+from assay.core import proc
 from assay.readers import census as build_census
 
 NOT_APPLICABLE = 3
@@ -103,14 +103,13 @@ def target_tier(compiler: str, flags: list[str]) -> str:
     """
     command = [compiler, *flags, "-Q", "--help=target"]
     try:
-        done = subprocess.run(command, capture_output=True, text=True, check=False, timeout=120,
-                              stdin=subprocess.DEVNULL)
-    except (OSError, subprocess.TimeoutExpired) as problem:
+        done = proc.run(proc.Command(command, timeout_s=proc.QUICK_S))
+    except proc.ToolFailed as problem:
         raise TierError(f"{shlex.join(command)} cannot run: {problem}") from None
-    if done.returncode != 0 or not any(TIER_LINE.fullmatch(line) for line in done.stdout.splitlines()):
-        raise TierError(f"{shlex.join(command)} exits {done.returncode} and prints no -march, -mcpu or -mtune line, "
-                        f"so the target of the build is unknown: {done.stderr.strip()[:300]}")
-    return tier_of(done.stdout)
+    if done.exit != 0 or not any(TIER_LINE.fullmatch(line) for line in done.out.splitlines()):
+        raise TierError(f"{shlex.join(command)} exits {done.exit} and prints no -march, -mcpu or -mtune line, "
+                        f"so the target of the build is unknown: {done.err.strip()[:300]}")
+    return tier_of(done.out)
 
 
 def build_tier(build_dir: Path, compiler: str, commands: Iterable[str] = ()) -> str:

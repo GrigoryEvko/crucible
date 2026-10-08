@@ -153,15 +153,15 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 from collections import defaultdict
 from pathlib import Path
 
 from assay.core import cache as cache_dir
-from assay.core import git as throwaway_repo
+from assay.core import git
 from assay.core import ledger as rule_ledger
+from assay.core import proc
 from assay.core import rows as rows_grammar
 from assay.core.paths import GUARD, REPO_ROOT
 from assay.guard.preprocessed import Expansion, Store, chunk_text, text_results
@@ -492,8 +492,8 @@ def reflected_names(binary: str | None) -> dict[str, set[str]]:
     names: dict[str, set[str]] = defaultdict(set)
     if not binary:
         return names
-    result = subprocess.run([binary, "--proof-names"], capture_output=True, text=True, check=True)
-    for line in result.stdout.splitlines():
+    result = proc.require(proc.run(proc.Command([binary, "--proof-names"], timeout_s=proc.QUICK_S)))
+    for line in result.out.splitlines():
         spelled, _, qualified = line.strip().partition("\t")
         if spelled:
             names[spelled].add(qualified or spelled)
@@ -1033,12 +1033,13 @@ def planted_cases(caches: Path) -> int:
             # A ledger with no rows has no file.
             ledger.unlink()
             for attempt in ("cold", "cached"):
-                report = subprocess.run([sys.executable, str(GUARD), "check", "--rule", "proof-routes", "--scan-root",
-                                         str(root), "--compile-db", str(database)], capture_output=True, text=True)
-                if (report.returncode != 1 or "a.cpp:union:Hidden" not in report.stderr
-                        or "PROOF-ROUTE unread input" in report.stderr):
+                report = proc.run(proc.Command([sys.executable, str(GUARD), "check", "--rule", "proof-routes",
+                                                "--scan-root", str(root), "--compile-db", str(database)],
+                                               timeout_s=proc.TOOL_S))
+                if (report.exit != 1 or "a.cpp:union:Hidden" not in report.err
+                        or "PROOF-ROUTE unread input" in report.err):
                     failures.append(f"the {attempt} preprocessed pass missed a union formed by token pasting:\n"
-                                    f"{report.stderr}")
+                                    f"{report.err}")
             if not any((caches / "preprocessed" / "results").glob("proof-routes-*/*/*.json")):
                 failures.append("the preprocessed pass wrote no result to the store")
             if not any((caches / "preprocessed" / "chunks").glob("*/*")):
@@ -1057,28 +1058,29 @@ def planted_cases(caches: Path) -> int:
             database.write_text(json.dumps([{"directory": str(root), "file": "fixture.cpp",
                                              "command": f"{compiler} -std=c++20 -Ilayer-stage -c fixture.cpp "
                                                         f"-o fixture.o"}]))
-            report = subprocess.run([sys.executable, str(GUARD), "check", "--rule", "proof-routes", "--scan-root",
-                                     str(root), "--compile-db", str(database)], capture_output=True, text=True)
-            if "fixture.cpp:union:Staged" not in report.stderr or "PROOF-ROUTE unread input" in report.stderr:
+            report = proc.run(proc.Command([sys.executable, str(GUARD), "check", "--rule", "proof-routes",
+                                            "--scan-root", str(root), "--compile-db", str(database)],
+                                           timeout_s=proc.TOOL_S))
+            if "fixture.cpp:union:Staged" not in report.err or "PROOF-ROUTE unread input" in report.err:
                 failures.append(f"a layer fixture under a staged root was not read with the include directory:\n"
-                                f"{report.stderr}")
-        missing = subprocess.run([sys.executable, str(GUARD), "check", "--rule", "proof-routes", "--scan-root",
-                                  str(root), "--proof-names-binary", str(root / "not-built")],
-                                 capture_output=True, text=True)
-        if missing.returncode != 3 or "is not built" not in missing.stderr:
-            failures.append(f"a proof-name binary that is not built did not skip with exit 3:\n{missing.stderr}")
+                                f"{report.err}")
+        missing = proc.run(proc.Command([sys.executable, str(GUARD), "check", "--rule", "proof-routes", "--scan-root",
+                                         str(root), "--proof-names-binary", str(root / "not-built")],
+                                        timeout_s=proc.TOOL_S))
+        if missing.exit != 3 or "is not built" not in missing.err:
+            failures.append(f"a proof-name binary that is not built did not skip with exit 3:\n{missing.err}")
     # In a work tree, an untracked file is out of scope, because the export
     # of a guard run can appear under the tree while the guard reads it.
     with tempfile.TemporaryDirectory() as scratch:
         root = Path(scratch)
-        throwaway_repo.init(root)
+        git.init(root)
         (root / "clean.cpp").write_text("int clean = 0;\n")
-        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        git.run(root, "add", "-A")
         (root / "grun" / "change").mkdir(parents=True)
         (root / "grun" / "change" / "export.cpp").write_text("union Exported { int a; float b; };\n")
         if scan(root, None, None, "check") != 0:
             failures.append("an untracked file was read")
-        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        git.run(root, "add", "-A")
         report = io.StringIO()
         with contextlib.redirect_stderr(report):
             verdict = scan(root, None, None, "check")

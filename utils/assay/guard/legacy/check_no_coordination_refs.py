@@ -66,7 +66,6 @@ import hashlib
 import io
 import os
 import re
-import subprocess
 import sys
 import tempfile
 import tokenize
@@ -422,7 +421,7 @@ def self_test() -> int:
         Args:
             root: The scratch repository root
         """
-        subprocess.run(["git", "-C", str(root), "add", "-A", "--", "."], check=True, capture_output=True)
+        throwaway_repo.run(root, "add", "-A", "--", ".")
 
     def expect(name: str, root: Path, want_status: int, named: list[str], unnamed: list[str]) -> None:
         """Run the scan and compare its status and the sites it names.

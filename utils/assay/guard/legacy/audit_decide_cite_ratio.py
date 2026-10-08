@@ -41,13 +41,12 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
-import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-from assay.core import git as throwaway_repo
+from assay.core import git
+from assay.core import proc
 from assay.core.paths import GUARD, REPO_ROOT
 from assay.guard.engines.tsast import decide_catalog
 from assay.guard.legacy import audit_pre_callsite_count
@@ -59,11 +58,6 @@ GRACE_DAYS = 180
 
 class Unjudgeable(Exception):
     """The audit cannot give a true verdict: the history is cut or the tree does not parse."""
-
-
-def git(root: Path, *args: str) -> str:
-    """Run one git command in the repository at root and return its output."""
-    return subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True).stdout
 
 
 def cite_counts(root: Path) -> dict[str, int]:
@@ -78,25 +72,28 @@ def cite_counts(root: Path) -> dict[str, int]:
 def definition_days(root: Path) -> dict[str, datetime.date]:
     """The day of the first commit whose Decide.h defines each procedure.
 
-    Complexity: one `git show` for each commit and path, and one kit run over
-    every version.  The parse is strict, so a version the kit cannot read
-    stops the audit instead of dating a procedure late."""
-    if git(root, "rev-parse", "--is-shallow-repository").strip() == "true":
+    Complexity: one `git cat-file --batch` reads each commit and path, and
+    one kit run parses each version.  The parse is strict, so a version the
+    kit cannot read stops the audit instead of dating a procedure late."""
+    if git.is_shallow(root):
         raise Unjudgeable(f"{root} is a shallow clone, so the history of Decide.h is cut and no procedure has a "
                           f"true date.  Fetch the whole history (git fetch --unshallow, or fetch-depth: 0 in CI).")
-    log = git(root, "log", "--reverse", "--format=%H %ad", "--date=short", "--", *decide_catalog.DECIDE_HEADERS)
+    log = git.run(root, "log", "--reverse", "--format=%H %ad", "--date=short", "--",
+                  *decide_catalog.DECIDE_HEADERS).decode()
+    entries = [entry.split() for entry in log.splitlines()]
+    contents = iter(git.blobs(root, [f"{commit}:{header}" for commit, _day in entries
+                                     for header in decide_catalog.DECIDE_HEADERS]))
     days: dict[str, datetime.date] = {}
     with tempfile.TemporaryDirectory(prefix="decide-history-") as tmp_name:
         versions: list[Path] = []
         version_days: list[datetime.date] = []
-        for entry in log.splitlines():
-            commit, day = entry.split()
-            for header in decide_catalog.DECIDE_HEADERS:
-                shown = subprocess.run(["git", "-C", str(root), "show", f"{commit}:{header}"], capture_output=True)
-                if shown.returncode != 0:
+        for _commit, day in entries:
+            for _header in decide_catalog.DECIDE_HEADERS:
+                content = next(contents)
+                if content is None:
                     continue
                 version = Path(tmp_name) / f"{len(versions):05d}.h"
-                version.write_bytes(shown.stdout)
+                version.write_bytes(content)
                 versions.append(version)
                 version_days.append(datetime.date.fromisoformat(day))
         try:
@@ -218,33 +215,32 @@ def self_test() -> int:
         decide = root / decide_catalog.DECIDE_HEADERS[0]
         decide.parent.mkdir(parents=True)
 
-        throwaway_repo.init(root)
-        env = dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null",
-                   GIT_AUTHOR_NAME="crucible-selftest", GIT_AUTHOR_EMAIL="crucible-selftest@invalid",
-                   GIT_COMMITTER_NAME="crucible-selftest", GIT_COMMITTER_EMAIL="crucible-selftest@invalid")
+        git.init(root)
+        identity = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null",
+                    "GIT_AUTHOR_NAME": "crucible-selftest", "GIT_AUTHOR_EMAIL": "crucible-selftest@invalid",
+                    "GIT_COMMITTER_NAME": "crucible-selftest", "GIT_COMMITTER_EMAIL": "crucible-selftest@invalid"}
         for day, defined in ((old_day, [VIOLATION, *GOOD]), (new_day, [VIOLATION, *GOOD, GRACE])):
             decide.write_text(_decide_header(defined))
-            stamp = dict(env, GIT_AUTHOR_DATE=f"{day.isoformat()}T12:00:00",
+            stamp = dict(identity, GIT_AUTHOR_DATE=f"{day.isoformat()}T12:00:00",
                          GIT_COMMITTER_DATE=f"{day.isoformat()}T12:00:00")
-            subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, env=stamp, capture_output=True)
-            subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", f"define through {defined[-1]}"],
-                           check=True, env=stamp, capture_output=True)
+            git.run(root, "add", "-A", extra=stamp)
+            git.run(root, "commit", "-q", "-m", f"define through {defined[-1]}", extra=stamp)
         # A definition that no commit holds yet.
         decide.write_text(_decide_header([VIOLATION, *GOOD, GRACE, NEW]))
 
-        def invoke(*extra: str, at: Path = root) -> subprocess.CompletedProcess[str]:
-            return subprocess.run([sys.executable, str(GUARD), "check", "--rule", "decide-cite-ratio", "--root",
-                                   str(at), *extra], capture_output=True, text=True)
+        def invoke(*extra: str, at: Path = root) -> proc.Completed:
+            return proc.run(proc.Command([sys.executable, str(GUARD), "check", "--rule", "decide-cite-ratio", "--root",
+                                          str(at), *extra], timeout_s=proc.TOOL_S))
 
         plain = invoke()
-        if plain.returncode != 1 or f"decide::{VIOLATION}" not in plain.stdout:
+        if plain.exit != 1 or f"decide::{VIOLATION}" not in plain.out:
             failures.append(f"the planted violation must fail the audit with 1 and be named, not "
-                            f"{plain.returncode}: {plain.stderr.strip()}")
+                            f"{plain.exit}: {plain.err.strip()}")
         soft = invoke("--json", "--soft")
-        if soft.returncode != 0:
-            failures.append(f"--json --soft must exit 0, not {soft.returncode}: {soft.stderr.strip()}")
+        if soft.exit != 0:
+            failures.append(f"--json --soft must exit 0, not {soft.exit}: {soft.err.strip()}")
         else:
-            report = json.loads(soft.stdout)
+            report = json.loads(soft.out)
             rows = {row["name"]: row for row in report["procedures"]}
             want_summary = {"good": len(GOOD), "grace": 2, "violation": 1}
             if report["summary"] != want_summary:
@@ -255,14 +251,13 @@ def self_test() -> int:
                 if got != (day.isoformat(), bucket):
                     failures.append(f"decide::{name} reads {got}, expected ({day.isoformat()!r}, {bucket!r})")
         for knob in (("--soft",), ("--min-cites", "1"), ("--grace-days", "100000")):
-            if invoke(*knob).returncode != 0:
+            if invoke(*knob).exit != 0:
                 failures.append(f"{' '.join(knob)} must clear the planted violation")
         shallow = root / "shallow"
-        subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{root}", str(shallow)], check=True,
-                       env=env, capture_output=True)
+        git.run(root, "clone", "-q", "--depth", "1", f"file://{root}", str(shallow), extra=identity)
         cut = invoke(at=shallow)
-        if cut.returncode != 2 or "shallow clone" not in cut.stderr:
-            failures.append(f"a shallow clone must stop the audit with 2, not {cut.returncode}: {cut.stderr.strip()}")
+        if cut.exit != 2 or "shallow clone" not in cut.err:
+            failures.append(f"a shallow clone must stop the audit with 2, not {cut.exit}: {cut.err.strip()}")
     for line in failures:
         print(f"audit-decide-cite-ratio: SELF-TEST FAILED, {line}", file=sys.stderr)
     if failures:

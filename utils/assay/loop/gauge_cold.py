@@ -60,15 +60,13 @@ import argparse
 import os
 import shutil
 import socket
-import subprocess
 import sys
 import tempfile
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from assay.core import git
+from assay.core import git, proc
 from assay.core.paths import REPO_ROOT
 from assay.loop import history as loop_history
 from assay.readers import cmake as cmake_files
@@ -122,7 +120,9 @@ class Report:
 
 
 def timed_step(name: str, command: list[str], cwd: Path, environment: dict[str, str], log: Path) -> StepCost:
-    """Run one step with its output in a log, and measure it with wait4.
+    """Run one step with its output in a log, and measure it with wait4 through assay.core.proc.
+
+    A step that runs past the limit BUILD_S of assay.core.proc gets the status of its end on the signal of the limit.
 
     Args:
         name: The name of the step
@@ -133,15 +133,20 @@ def timed_step(name: str, command: list[str], cwd: Path, environment: dict[str, 
 
     Returns:
         The cost of the step
+
+    Raises:
+        proc.CannotStart: If the program of the step cannot start
     """
-    started = time.monotonic()
-    with log.open("wb") as output:
-        process = subprocess.Popen(command, cwd=cwd, env=environment, stdout=output, stderr=subprocess.STDOUT,
-                                   stdin=subprocess.DEVNULL)
-        _pid, wait_status, usage = os.wait4(process.pid, 0)
-        process.returncode = os.waitstatus_to_exitcode(wait_status)
-    status = process.returncode if process.returncode >= 0 else 128 - process.returncode
-    return StepCost(name, time.monotonic() - started, usage.ru_utime, usage.ru_stime, usage.ru_maxrss, status)
+    step = proc.Command(command, timeout_s=proc.BUILD_S, cwd=cwd, env=environment, stdout=log,
+                        stderr=proc.Output.MERGE)
+    try:
+        completed = proc.run(step)
+    except proc.TimedOut as problem:
+        if problem.completed is None:
+            raise
+        completed = problem.completed
+    status = completed.exit if completed.exit >= 0 else 128 - completed.exit
+    return StepCost(name, completed.wall_s, completed.user_s, completed.system_s, completed.peak_kb, status)
 
 
 def source_of(output: str) -> str:
@@ -259,7 +264,7 @@ def measure(root: Path, options: argparse.Namespace, step: Callable[..., StepCos
                f"({state['tree'] or 'unknown'}), "
                f"preset {options.preset}, {options.jobs} jobs")
     report.say(f"loop gauge --cold: build directory {build_dir}, no compiler cache in the configure and the build")
-    no_cache = dict(os.environ, CCACHE_DISABLE="1")
+    no_cache = proc.environment({"CCACHE_DISABLE": "1"})
     jobs = str(options.jobs)
     configured = step("configure", ["cmake", "--preset", options.preset, "-B", str(build_dir),
                                     "-DCRUCIBLE_USE_CCACHE=OFF"], root, no_cache, build_dir / "gauge-configure.log")
@@ -284,7 +289,7 @@ def measure(root: Path, options: argparse.Namespace, step: Callable[..., StepCos
                         "--no-tests=error"]
         if options.test_regex:
             test_command += ["-R", options.test_regex]
-        tested = step("tests", test_command, root, dict(os.environ), test_log)
+        tested = step("tests", test_command, root, proc.environment(), test_log)
         report.say(tested.line())
         if tested.status != 0:
             status = 1
@@ -324,7 +329,7 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory(prefix="loop-gauge-cold-") as work:
         root = Path(work)
         cost = timed_step("probe", [sys.executable, "-c", "import sys; sum(range(10**6)); sys.exit(3)"], root,
-                          dict(os.environ), root / "probe.log")
+                          proc.environment(), root / "probe.log")
         expect("a step gives its status, a CPU time from wait4 and a peak resident set",
                cost.status == 3 and cost.user_s + cost.system_s > 0 and cost.peak_kb > 1000)
         expect("the line of a step names its times, its peak in MB and its status",
@@ -412,6 +417,6 @@ def main(argv: list[str]) -> int:
         return 2
     try:
         return measure(REPO_ROOT, options)
-    except cmake_pin.PinError as problem:
+    except (cmake_pin.PinError, proc.CannotStart) as problem:
         print(f"loop gauge --cold: {problem}", file=sys.stderr)
         return 1

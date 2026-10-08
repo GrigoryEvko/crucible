@@ -139,7 +139,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import subprocess
 import sys
 import tempfile
 from collections import Counter
@@ -147,6 +146,7 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import git
 from assay.core import ledger as rule_ledger
 from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
@@ -1405,22 +1405,21 @@ def scan_trees(paths: list[str], display: dict[str, str] | None = None) -> list[
 
 def tracked_sources(root: Path) -> list[str] | None:
     """The C++ files under SCAN_ROOTS that git tracks or does not ignore, or None outside a checkout."""
-    result = subprocess.run(["git", "-C", str(root), "ls-files", "--cached", "--others", "--exclude-standard",
-                             "--", *SCAN_ROOTS], capture_output=True, text=True)
-    if result.returncode != 0:
+    try:
+        listed = git.tracked_files(root, SCAN_ROOTS, with_new=True)
+    except git.GitError as problem:
         print(f"check-use-after-move: git ls-files failed in {root}, so the guard cannot list the tree.  "
-              f"Run it in a git checkout, or name the files.\n{result.stderr.strip()}", file=sys.stderr)
+              f"Run it in a git checkout, or name the files.\n{problem}", file=sys.stderr)
         return None
     out = []
-    for rel in result.stdout.split("\n"):
-        if not rel or not tsast.is_in_cpp_scope(rel):
+    for rel in listed:
+        if not tsast.is_in_cpp_scope(rel):
             continue
         parts = Path(rel).parts
         if any(part == "neg" or part.endswith("_neg") for part in parts[:-1]):
             continue
-        if (root / rel).is_file():
-            out.append(rel)
-    return sorted(out)
+        out.append(rel)
+    return out
 
 
 def read_ledger(root: Path = REPO_ROOT, file: Path | None = None) -> tuple[dict[LedgerKey, tuple[int, int]], list[str]]:

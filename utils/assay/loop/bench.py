@@ -44,12 +44,12 @@ error or a failed self-test.
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import proc
 from assay.core.paths import REPO_ROOT
 from assay.readers import cmake as cmake_files
 from assay.setup import pins as cmake_pin
@@ -179,11 +179,10 @@ def pin_core(isolated_text: str | None, fallback: str) -> tuple[str, bool]:
 
 def apply_capabilities(binary: Path) -> None:
     """Give a bench binary the capabilities of bench-caps, unless it has them, with `sudo -n setcap`."""
-    current = subprocess.run(["getcap", str(binary)], capture_output=True, text=True, check=False).stdout
+    current = proc.run(proc.Command(["getcap", str(binary)], timeout_s=proc.QUICK_S)).out
     if CAPABILITIES in current:
         return
-    if subprocess.run(["sudo", "-n", "setcap", CAPABILITIES, str(binary)], capture_output=True,
-                      check=False).returncode == 0:
+    if proc.run(proc.Command(["sudo", "-n", "setcap", CAPABILITIES, str(binary)], timeout_s=proc.QUICK_S)).exit == 0:
         log(f"  caps: {CAPABILITIES} applied (eBPF sensory line enabled)")
     else:
         warn("  caps: could not setcap (no passwordless sudo?) — eBPF sensory line")
@@ -214,8 +213,8 @@ def run(root: Path, request: Request, settings: Settings) -> int:
                          f"{settings.preset}") from None
     if request.should_list:
         log(f"buildable bench targets in {build_dir}:")
-        listed = subprocess.run([build_cmake, "--build", str(build_dir), "--target", "help"], capture_output=True,
-                                text=True, check=False).stdout
+        listed = proc.run(proc.Command([build_cmake, "--build", str(build_dir), "--target", "help"],
+                                       timeout_s=proc.TOOL_S)).out
         for name in bench_targets(listed):
             print(name)
         return 0
@@ -239,14 +238,18 @@ def run(root: Path, request: Request, settings: Settings) -> int:
         binary = build_dir / "bench" / target
         if request.should_build:
             log(f"build {target}")
-            if subprocess.run([build_cmake, "--build", str(build_dir), "--target", target, "-j", settings.jobs],
-                              stdout=subprocess.DEVNULL, check=False).returncode != 0:
+            built = proc.run(proc.Command([build_cmake, "--build", str(build_dir), "--target", target, "-j",
+                                           settings.jobs], timeout_s=proc.BUILD_S, stdout=proc.Output.DISCARD,
+                                          stderr=proc.Output.INHERIT))
+            if built.exit != 0:
                 raise BenchError(f"build failed: {target} (known-drifted bench? try another target)")
         if not os.access(binary, os.X_OK):
             raise BenchError(f"missing binary: {binary} (build it first, drop --no-build)")
         apply_capabilities(binary)
         log(f"run  {target}   (taskset -c {core})")
-        status = subprocess.run(["taskset", "-c", core, str(binary), *request.bench_args], check=False).returncode
+        status = proc.run(proc.Command(["taskset", "-c", core, str(binary), *request.bench_args],
+                                       timeout_s=proc.BUILD_S, stdout=proc.Output.INHERIT,
+                                       stderr=proc.Output.INHERIT)).exit
         if status != 0:
             return status
         print()
@@ -322,6 +325,6 @@ def main(argv: list[str]) -> int:
         return 2
     try:
         return run(REPO_ROOT, request, Settings.from_environment())
-    except BenchError as problem:
+    except (BenchError, proc.ToolFailed) as problem:
         print(f"\033[1;31m✗ {problem}\033[0m", file=sys.stderr)
         return 1

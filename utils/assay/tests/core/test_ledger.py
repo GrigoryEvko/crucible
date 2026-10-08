@@ -235,7 +235,6 @@ def main(argv: list[str]) -> int:
         if not holds:
             failures.append(name)
 
-    git.isolate()
     table = rules()
     reader_cases(expect, table)
     policy_cases(expect, table)

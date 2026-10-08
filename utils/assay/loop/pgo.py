@@ -19,8 +19,9 @@ THE COLLECTION
        rebuilt object replaces its counter file, and a bench that runs again
        adds to it, so this removes only what an older collection left for
        objects that no longer exist.
-    5. It runs each bench, with its output in BUILD_DIR/pgo-run/NAME.log.  A
-       bench that runs for longer than its time limit gets SIGTERM.
+    5. It runs each bench, with its output in BUILD_DIR/pgo-run/NAME.log.  The
+       process group of a bench that runs for longer than its time limit gets
+       SIGTERM, and SIGKILL after TERMINATE_GRACE_S.
     6. It writes the record COLLECTION beside the counters: the commit, the
        state of the tree, the time, the host, the tier, the benches of each
        outcome and the count of counter files.  CMakeLists.txt reads the
@@ -54,13 +55,13 @@ import fnmatch
 import json
 import os
 import socket
-import subprocess
 import sys
 import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import proc
 from assay.core.paths import REPO_ROOT
 from assay.loop import history as loop_history
 from assay.setup import pins as cmake_pin
@@ -169,7 +170,9 @@ def select(benches: tuple[str, ...], patterns: tuple[str, ...]) -> tuple[tuple[s
 
 
 def run_bench(command: list[str], log: Path, timeout_s: float) -> int | None:
-    """Run one bench with its output in a log, and send SIGTERM when it runs longer than its limit.
+    """Run one bench with its output in a log, and stop its process group when it runs longer than its limit.
+
+    At the limit, the group gets SIGTERM, and SIGKILL after TERMINATE_GRACE_S.
 
     Args:
         command: The bench and its arguments
@@ -179,18 +182,11 @@ def run_bench(command: list[str], log: Path, timeout_s: float) -> int | None:
     Returns:
         The exit status, or None when the bench ran too long
     """
-    with log.open("wb") as output:
-        process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
-        try:
-            return process.wait(timeout=timeout_s)
-        except subprocess.TimeoutExpired:
-            process.terminate()
-            try:
-                process.wait(timeout=TERMINATE_GRACE_S)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-            return None
+    try:
+        return proc.run(proc.Command(command, timeout_s=timeout_s, stdout=log, stderr=proc.Output.MERGE,
+                                     grace_s=TERMINATE_GRACE_S)).exit
+    except proc.TimedOut:
+        return None
 
 
 def run_benches(binaries: Path, benches: tuple[str, ...], logs: Path, timeout_s: float) -> Outcomes:
@@ -287,7 +283,8 @@ def collect(root: Path) -> int:
     configure = ["cmake", "--preset", PRESET]
     if os.environ.get("CRUCIBLE_PGO_DIR"):
         configure.append(f"-DCRUCIBLE_PGO_DIR={os.environ['CRUCIBLE_PGO_DIR']}")
-    if subprocess.run(configure, cwd=root, check=False).returncode != 0:
+    if proc.run(proc.Command(configure, timeout_s=proc.BUILD_S, cwd=root, stdout=proc.Output.INHERIT,
+                             stderr=proc.Output.INHERIT)).exit != 0:
         print(f"loop pgo: the configure of the preset {PRESET} failed.", file=sys.stderr)
         return 1
     facts = read_facts(build_dir)
@@ -301,8 +298,10 @@ def collect(root: Path) -> int:
         print("loop pgo: nothing to run.", file=sys.stderr)
         return 1
     build_cmake = cmake_pin.configured_program(build_dir, "cmake")
-    if subprocess.run([build_cmake, "--build", str(build_dir), "-j", str(jobs), "--target", *benches], cwd=root,
-                      check=False).returncode != 0:
+    built = proc.run(proc.Command([build_cmake, "--build", str(build_dir), "-j", str(jobs), "--target", *benches],
+                                  timeout_s=proc.BUILD_S, cwd=root, stdout=proc.Output.INHERIT,
+                                  stderr=proc.Output.INHERIT))
+    if built.exit != 0:
         print("loop pgo: the build of the instrumented benches failed.", file=sys.stderr)
         return 1
     facts.profile_dir.mkdir(parents=True, exist_ok=True)
@@ -451,6 +450,6 @@ def main(argv: list[str]) -> int:
         return 2
     try:
         return collect(REPO_ROOT)
-    except (PgoError, cmake_pin.PinError) as problem:
+    except (PgoError, cmake_pin.PinError, proc.ToolFailed) as problem:
         print(f"loop pgo: {problem}", file=sys.stderr)
         return 1

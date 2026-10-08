@@ -540,7 +540,6 @@ def main(argv: list[str]) -> int:
         if not holds:
             failures.append(name)
 
-    git.isolate()
     measurement_cases(expect)
     with tempfile.TemporaryDirectory(prefix="test-history-") as scratch_name:
         scratch = Path(scratch_name)

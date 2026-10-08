@@ -25,10 +25,11 @@ Complexity: linear in the size of the JSON or of the output.
 
 import json
 import re
-import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from assay.core import proc
 
 TIMEOUT_S = 300.0
 # The line of one test that ends: its name, and its wall time in seconds.
@@ -115,13 +116,13 @@ def listing(ctest: str, build_dir: Path) -> list[CtestTest]:
         CtestError: If ctest cannot run or fails, or its output is not the JSON of the listing
     """
     try:
-        completed = subprocess.run([ctest, "--show-only=json-v1", "--test-dir", str(build_dir)], capture_output=True,
-                                   text=True, timeout=TIMEOUT_S, check=False)
-    except (OSError, subprocess.TimeoutExpired) as problem:
+        completed = proc.run(proc.Command([ctest, "--show-only=json-v1", "--test-dir", str(build_dir)],
+                                          timeout_s=TIMEOUT_S))
+    except proc.ToolFailed as problem:
         raise CtestError(f"ctest cannot run: {problem}") from None
-    if completed.returncode != 0:
-        raise CtestError(f"ctest exited {completed.returncode} on {build_dir}: {completed.stderr.strip()}")
-    return parse(completed.stdout)
+    if completed.exit != 0:
+        raise CtestError(f"ctest exited {completed.exit} on {build_dir}: {completed.err.strip()}")
+    return parse(completed.out)
 
 
 def test_times(text: str) -> dict[str, float]:

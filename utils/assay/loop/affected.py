@@ -105,7 +105,6 @@ import os
 import re
 import shutil
 import struct
-import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ElementTree
@@ -113,6 +112,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import LOOP
@@ -267,13 +267,16 @@ def build_program(build_dir: Path, name: str) -> str:
 
 def list_tests(build_dir: Path) -> list[TestRecord]:
     """Return each test of the build directory, from `ctest --show-only=json-v1`."""
-    result = subprocess.run([build_program(build_dir, "ctest"), "--test-dir", str(build_dir), "--show-only=json-v1"],
-                            capture_output=True, text=True, check=False)
-    if result.returncode != 0:
-        raise RunnerError(f"`ctest --show-only=json-v1` failed with exit code {result.returncode}:\n"
-                          f"{result.stderr.strip()}")
     try:
-        data = json.loads(result.stdout)
+        result = proc.run(proc.Command([build_program(build_dir, "ctest"), "--test-dir", str(build_dir),
+                                        "--show-only=json-v1"], timeout_s=proc.TOOL_S))
+    except proc.ToolFailed as problem:
+        raise RunnerError(f"`ctest --show-only=json-v1` cannot run: {problem}") from None
+    if result.exit != 0:
+        raise RunnerError(f"`ctest --show-only=json-v1` failed with exit code {result.exit}:\n"
+                          f"{result.err.strip()}")
+    try:
+        data = json.loads(result.out)
     except json.JSONDecodeError as error:
         raise RunnerError(f"`ctest --show-only=json-v1` did not give JSON: {error}") from error
     tests: list[TestRecord] = []
@@ -631,6 +634,25 @@ def write_list(path: Path, names: list[str]) -> None:
     path.write_text("".join(f"{name}\n" for name in names))
 
 
+def run_inherited(command: list[str]) -> int:
+    """Run a build or a test run with the standard streams of this process, and return its exit code.
+
+    A command that runs past the limit BUILD_S of assay.core.proc gives the exit code of its end on the signal of the
+    limit.
+
+    Raises:
+        RunnerError: If the program cannot start
+    """
+    try:
+        return proc.run(proc.Command(command, timeout_s=proc.BUILD_S, stdout=proc.Output.INHERIT,
+                                     stderr=proc.Output.INHERIT)).exit
+    except proc.TimedOut as problem:
+        print(f"loop test: {problem}")
+        return problem.completed.exit if problem.completed is not None else 2
+    except proc.CannotStart as problem:
+        raise RunnerError(str(problem)) from None
+
+
 def run_tests(build_dir: Path, names: list[str], state_dir: Path, jobs: int,
               ctest_arguments: list[str]) -> tuple[int, dict[str, str]]:
     """Run the named tests with ctest, and return its exit code and the status of each test."""
@@ -640,7 +662,7 @@ def run_tests(build_dir: Path, names: list[str], state_dir: Path, jobs: int,
     report.unlink(missing_ok=True)
     command = [build_program(build_dir, "ctest"), "--test-dir", str(build_dir), "--tests-from-file", str(selection),
                "--output-junit", str(report), f"-j{jobs}", *ctest_arguments]
-    status = subprocess.run(command, check=False).returncode
+    status = run_inherited(command)
     if not report.is_file():
         return (status or 2), {}
     try:
@@ -651,8 +673,7 @@ def run_tests(build_dir: Path, names: list[str], state_dir: Path, jobs: int,
 
 def build(build_dir: Path, jobs: int) -> int:
     """Build the tree with the cmake of the build directory, and return the exit code of the build."""
-    return subprocess.run([build_program(build_dir, "cmake"), "--build", str(build_dir), f"-j{jobs}"],
-                          check=False).returncode
+    return run_inherited([build_program(build_dir, "cmake"), "--build", str(build_dir), f"-j{jobs}"])
 
 
 def update_state(state: dict[str, object], planner: Planner, decisions: list[Decision],
@@ -859,10 +880,10 @@ class SelfTest:
 
         With `path`, the script runs with that PATH.
         """
-        environment = dict(os.environ, PATH=path) if path is not None else None
-        result = subprocess.run([sys.executable, str(LOOP), "test", str(self.build_dir), "--no-build", "-j4", *extra],
-                                capture_output=True, text=True, check=False, env=environment)
-        return result.returncode, result.stdout + result.stderr
+        environment = proc.environment({"PATH": path}) if path is not None else None
+        result = proc.run(proc.Command([sys.executable, str(LOOP), "test", str(self.build_dir), "--no-build", "-j4",
+                                        *extra], timeout_s=proc.TOOL_S, env=environment))
+        return result.exit, result.out + result.err
 
     def skipped(self) -> list[str]:
         """Return the names in skipped.txt."""
@@ -1011,8 +1032,8 @@ def self_test(ctest: str) -> int:
         expect("a cache that names no ctest gives exit code 2 and the reason",
                status == 2 and "has no entry CMAKE_CTEST_COMMAND" in output, output)
 
-    status, output = subprocess.run([sys.executable, str(LOOP), "test", "/nonexistent/build"],
-                                    capture_output=True, text=True, check=False).returncode, ""
+    status, output = proc.run(proc.Command([sys.executable, str(LOOP), "test", "/nonexistent/build"],
+                                           timeout_s=proc.TOOL_S)).exit, ""
     expect("a missing build directory gives exit code 2", status == 2, output)
 
     for failure in failures:

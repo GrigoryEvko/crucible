@@ -44,13 +44,13 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from assay.core import meter as cost_meter
+from assay.core import proc
 
 # The command of a negative fixture runs the master loop with the subcommand fixture.
 FIXTURE_MASTER = "utils/bin/loop"
@@ -168,16 +168,21 @@ def tools_of(build_dir: Path) -> tuple[str, str | None]:
 def run_tool(command: list[str]) -> str:
     """Run one tool of the build and return its standard output.
 
+    A byte of the output that is not UTF-8 stays as a surrogate escape, so a
+    path in the output names its file.
+
     Raises:
-        CensusError: If the tool cannot start or fails
+        CensusError: If the tool cannot start, runs past its limit, or fails
     """
     try:
-        result = subprocess.run(command, capture_output=True, text=True, errors="surrogateescape", check=False)
-    except OSError as problem:
-        raise CensusError(f"{command[0]} cannot start: {problem}") from None
-    if result.returncode != 0:
-        raise CensusError(f"{' '.join(command[:4])} exited {result.returncode}: {result.stderr.strip()[:300]}")
-    return result.stdout
+        result = proc.run(proc.Command(command, timeout_s=proc.TOOL_S))
+    except proc.CannotStart as problem:
+        raise CensusError(f"{command[0]} cannot start: {problem.error}") from None
+    except proc.TimedOut:
+        raise CensusError(f"{' '.join(command[:4])} ran past its limit of {proc.TOOL_S:g} s") from None
+    if result.exit != 0:
+        raise CensusError(f"{' '.join(command[:4])} exited {result.exit}: {result.err.strip()[:300]}")
+    return proc.decoded(result.stdout, "surrogateescape")
 
 
 def objects_of_all(build_dir: Path, ninja: str, root: Path) -> list[tuple[Path, str]]:

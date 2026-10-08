@@ -94,7 +94,7 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
+import signal
 import sys
 import tempfile
 import threading
@@ -103,6 +103,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import proc
 from assay.core import ruletable as layer_rules
 from assay.core.paths import REPO_ROOT
 from assay.loop import stamps as quarantine_stamps
@@ -376,24 +377,29 @@ class Checker:
         self.plugin = plugin
         self.slots = threading.BoundedSemaphore(jobs)
 
-    def run_compiler(self, command: list[str], **options: object) -> subprocess.CompletedProcess[str]:
-        """Run one compiler COMMAND when a slot is free, with the OPTIONS of subprocess.run.
+    def run_compiler(self, command: list[str], cwd: Path | None = None, env: dict[str, str] | None = None,
+                     timeout_s: float = proc.TOOL_S) -> proc.Completed:
+        """Run one compiler COMMAND when a slot is free, in CWD, with the environment ENV and the limit TIMEOUT_S.
 
         Each compiler process of the test goes through this gate, so the
         processors that ctest gives the test bound the processes.
+
+        Raises:
+            proc.CannotStart: If the compiler cannot start
+            proc.TimedOut: If the compiler runs past its limit
         """
         with self.slots:
-            return subprocess.run(command, capture_output=True, text=True, **options)  # type: ignore[call-overload]
+            return proc.run(proc.Command(command, timeout_s=timeout_s, cwd=cwd, env=env))
 
     def compile(self, fixture: str, arguments: dict[str, str],
                 stage: tuple[str, ...] = ("-S", "-o", os.devnull),
                 extra: tuple[str, ...] = (), launcher: tuple[str, ...] = (),
-                env: dict[str, str] | None = None, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
+                env: dict[str, str] | None = None, timeout_s: float = proc.TOOL_S) -> proc.Completed:
         """Compile one fixture with the plugin, the given plugin arguments, stage flags and extra flags.
 
         LAUNCHER goes in front of the compiler, as a compiler cache does, and
         ENV is the environment of the compile.  A compile that runs longer than
-        TIMEOUT seconds stops, and its result has the exit status -9 and the
+        TIMEOUT_S seconds stops, and its result has the exit status -9 and the
         error text "timeout".
         """
         command = [*launcher, self.cxx, "-std=c++26", "-I", str(HERE / "include"), "-I", str(REPO / "include"),
@@ -401,9 +407,10 @@ class Checker:
         command += [f"-fplugin-arg-{PLUGIN}-{key}={value}" for key, value in arguments.items()]
         command += ["-fdiagnostics-color=never", *stage, str(HERE / fixture)]
         try:
-            return self.run_compiler(command, env=env, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            return subprocess.CompletedProcess(command, -9, "", "timeout")
+            return self.run_compiler(command, env=env, timeout_s=timeout_s)
+        except proc.TimedOut as problem:
+            # The raw wait status of an end by a signal is the number of the signal, so the exit is -9.
+            return proc.Completed(problem.command, signal.SIGKILL, b"", b"timeout", 0.0, 0.0, 0.0, 0)
 
 
 class Section:
@@ -429,7 +436,7 @@ class Section:
         if not holds:
             self.failures.append(f"{name}{': ' + detail if detail else ''}")
 
-    def compile_all(self, calls: list[tuple[object, ...]]) -> list[subprocess.CompletedProcess[str]]:
+    def compile_all(self, calls: list[tuple[object, ...]]) -> list[proc.Completed]:
         """Run the compiles of ``calls``, each the positional arguments of compile, at the same time.
 
         Return the results in the order of the calls.
@@ -492,7 +499,7 @@ def run_findings(section: Section, arguments: dict[str, str]) -> None:
     """Compile the three fixtures in report mode, and judge each finding that must be present or absent."""
     for fixture in ("violations.cpp", "opt_out.cpp", "type_walks.cpp"):
         compiled = section.compile(fixture, arguments)
-        section.expect(f"{fixture} compiles in report mode", compiled.returncode == 0, compiled.stderr[-2000:])
+        section.expect(f"{fixture} compiles in report mode", compiled.exit == 0, compiled.err[-2000:])
     findings = read_reports(Path(arguments["out"]))
 
     for kind, file, line, text in PRESENT:
@@ -519,15 +526,15 @@ def run_pragma_errors(section: Section) -> None:
     """
     for fixture, text in PRAGMA_ERRORS:
         compiled = section.compile(fixture, {"root": str(HERE), "mode": "report", "rules": str(TEST_RULES)})
-        section.expect(f"{fixture} is an error", compiled.returncode != 0 and text in compiled.stderr,
-                       compiled.stderr[-2000:])
+        section.expect(f"{fixture} is an error", compiled.exit != 0 and text in compiled.err,
+                       compiled.err[-2000:])
     plain = [section.cxx, "-std=c++26", "-I", str(HERE / "include"), "-I", str(REPO / "include"), "-Wall", "-Werror",
              "-fdiagnostics-color=never", "-fsyntax-only", str(HERE / "opt_out.cpp")]
     without = section.run_compiler(plain)
-    section.expect("the region macros compile with no plugin", without.returncode == 0, without.stderr[-2000:])
+    section.expect("the region macros compile with no plugin", without.exit == 0, without.err[-2000:])
     leaked = section.run_compiler([*plain, "-DCRUCIBLE_QUARANTINE_ACTIVE"])
     section.expect("CRUCIBLE_QUARANTINE_ACTIVE with no plugin fails on the unknown pragma",
-                   leaked.returncode != 0 and "pragma" in leaked.stderr, leaked.stderr[-2000:])
+                   leaked.exit != 0 and "pragma" in leaked.err, leaked.err[-2000:])
 
 
 def run_modes(section: Section, arguments: dict[str, str], rules: Path) -> None:
@@ -549,25 +556,25 @@ def run_modes(section: Section, arguments: dict[str, str], rules: Path) -> None:
         ("violations.cpp", {"root": str(HERE), "mode": "report"}),
     ])
     section.expect("report mode without out= and with no object gives notes and succeeds",
-                   noted.returncode == 0 and "note: quarantine: raw_new_delete new" in noted.stderr,
-                   noted.stderr[-2000:])
+                   noted.exit == 0 and "note: quarantine: raw_new_delete new" in noted.err,
+                   noted.err[-2000:])
     section.expect("error mode makes a finding an error",
-                   failed.returncode != 0 and "error: quarantine: c_library_call memcpy" in failed.stderr,
-                   failed.stderr[-2000:])
-    opted_lines = {int(row.split(":")[1]) for row in opted.stderr.splitlines()
+                   failed.exit != 0 and "error: quarantine: c_library_call memcpy" in failed.err,
+                   failed.err[-2000:])
+    opted_lines = {int(row.split(":")[1]) for row in opted.err.splitlines()
                    if "error: quarantine:" in row and row.startswith(str(HERE / "opt_out.cpp") + ":")}
     section.expect("error mode does not stop an opted-out finding",
-                   opted.returncode != 0 and opted_lines == {8, 14}, opted.stderr[-2000:])
+                   opted.exit != 0 and opted_lines == {8, 14}, opted.err[-2000:])
 
-    syntax_findings = read_reports(syntax_reports) if syntax.returncode == 0 else []
+    syntax_findings = read_reports(syntax_reports) if syntax.exit == 0 else []
     section.expect("-fsyntax-only reports the namespace walk too",
-                   any(f.kind == "std_object" and f.line == 15 for f in syntax_findings), syntax.stderr[-2000:])
-    section.expect("-E writes no report", preprocessed.returncode == 0 and not preprocessed_reports.exists(),
-                   preprocessed.stderr[-2000:])
+                   any(f.kind == "std_object" and f.line == 15 for f in syntax_findings), syntax.err[-2000:])
+    section.expect("-E writes no report", preprocessed.exit == 0 and not preprocessed_reports.exists(),
+                   preprocessed.err[-2000:])
 
-    section.expect("the rule table of the tree loads", real.returncode == 0, real.stderr[-2000:])
+    section.expect("the rule table of the tree loads", real.exit == 0, real.err[-2000:])
     section.expect("the quarantine plugin needs a rule table",
-                   missing.returncode != 0 and "give the rule table" in missing.stderr, missing.stderr[-2000:])
+                   missing.exit != 0 and "give the rule table" in missing.err, missing.err[-2000:])
 
 
 def run_base_files(section: Section, arguments: dict[str, str]) -> None:
@@ -586,17 +593,17 @@ def run_base_files(section: Section, arguments: dict[str, str]) -> None:
         compiled = next(results)
         found = read_reports(base_reports)
         section.expect(f"{fixture} is base code: the unit reports no finding",
-                       compiled.returncode == 0 and any(base_reports.glob("*.quarantine")) and not found,
-                       compiled.stderr[-2000:] + "; ".join(map(str, found)))
+                       compiled.exit == 0 and any(base_reports.glob("*.quarantine")) and not found,
+                       compiled.err[-2000:] + "; ".join(map(str, found)))
         moved_reports = section.work / f"moved-reports-{name}"
         moved = next(results)
         moved_found = read_reports(moved_reports)
         relative = Path(fixture).relative_to("src").as_posix()
         for line, kind, text in BASE_FINDINGS:
-            holds = moved.returncode == 0 and any(f.file == relative and f.line == line and f.kind == kind
+            holds = moved.exit == 0 and any(f.file == relative and f.line == line and f.kind == kind
                                                   and text in f.entity for f in moved_found)
             section.expect(f"{kind} at {relative}:{line} with src/ as the root ({text})", holds,
-                           moved.stderr[-2000:])
+                           moved.err[-2000:])
 
 
 def contract_errors(stderr: str, root: Path = HERE) -> list[tuple[str, int, str]]:
@@ -637,18 +644,18 @@ def run_generated_files(section: Section) -> None:
     )
     for name, arguments in runs:
         compiled = section.compile(str(unit), arguments, extra=("-fcontracts",))
-        found = contract_errors(compiled.stderr, tree)
+        found = contract_errors(compiled.err, tree)
         section.expect(f"{name}: a region of a generated file opts out its specifier, and the other one is an error",
-                       compiled.returncode != 0 and found == GENERATED_CONTRACT_ERRORS,
-                       f"errors {found}; " + compiled.stderr[-2000:])
+                       compiled.exit != 0 and found == GENERATED_CONTRACT_ERRORS,
+                       f"errors {found}; " + compiled.err[-2000:])
         compiled = section.compile(str(unclosed), arguments)
         section.expect(f"{name}: an unclosed region of a generated file is an error",
-                       compiled.returncode != 0 and "region has no" in compiled.stderr, compiled.stderr[-2000:])
+                       compiled.exit != 0 and "region has no" in compiled.err, compiled.err[-2000:])
     # No out= here: a plugin that accepts the directory must not replace the
     # report of the unit.
     missing = section.compile(str(unit), {"root": str(tree), "build": str(tree / "missing"), **test_rules})
     section.expect("a build directory that does not exist is an error",
-                   missing.returncode != 0 and "does not exist" in missing.stderr, missing.stderr[-2000:])
+                   missing.exit != 0 and "does not exist" in missing.err, missing.err[-2000:])
     # The second unit includes the header of the build directory outside the
     # root through -iquote.
     outside_unit = tree / "outside_generated_unit.cpp"
@@ -662,8 +669,8 @@ def run_generated_files(section: Section) -> None:
     unrowed = section.compile(str(unit), {**places, "mode": "report", "rules": str(unrowed_rules)},
                               extra=("-fcontracts",))
     section.expect("a generated file that no row of the table holds is an error",
-                   unrowed.returncode != 0 and "no quarantine row of the rule table holds '@build/Generated.h'"
-                   in ascii_quotes(unrowed.stderr), unrowed.stderr[-2000:])
+                   unrowed.exit != 0 and "no quarantine row of the rule table holds '@build/Generated.h'"
+                   in ascii_quotes(unrowed.err), unrowed.err[-2000:])
     found = read_reports(generated_reports)
     section.expect("the region of the generated file turns the specifier on line 3 into opted_out",
                    any(f.kind == "opted_out" and f.file == "@build/Generated.h" and f.line == 3
@@ -682,7 +689,7 @@ def run_generated_files(section: Section) -> None:
     section.expect("a build directory outside the root names its generated file @build/Generated.h too",
                    any(f.kind == "raw_pointer_object" and f.file == "@build/Generated.h" and f.line == 6
                        for f in outside_found),
-                   outside.stderr[-2000:] + "; ".join(map(str, outside_found)))
+                   outside.err[-2000:] + "; ".join(map(str, outside_found)))
 
 
 def run_contract_rule(section: Section) -> None:
@@ -695,7 +702,7 @@ def run_contract_rule(section: Section) -> None:
     compiled = section.compile("region_outside_root.cpp", {"root": str(HERE), "mode": "error", **test_rules},
                                extra=("-I", str(outside)))
     section.expect("a region of a header outside the root is no error",
-                   compiled.returncode == 0 and "region" not in compiled.stderr, compiled.stderr[-2000:])
+                   compiled.exit == 0 and "region" not in compiled.err, compiled.err[-2000:])
     extra = ("-fcontracts", "-I", str(outside))
     expected = sorted(CONTRACT_ERRORS)
     contract_reports = section.work / "contract-reports"
@@ -708,11 +715,11 @@ def run_contract_rule(section: Section) -> None:
     )
     results = [section.compile("contracts.cpp", arguments, stage, extra) for _, arguments, stage in runs]
     for (name, _, _), compiled in zip(runs, results, strict=True):
-        found = contract_errors(compiled.stderr)
+        found = contract_errors(compiled.err)
         missing = sorted(set(expected) - set(found))
         unexpected = [error for error in found if error not in expected or found.count(error) > 1]
         section.expect(f"{name}: each contract specifier gives one error, and nothing else does",
-                       compiled.returncode != 0 and not missing and not unexpected,
+                       compiled.exit != 0 and not missing and not unexpected,
                        f"missing {missing}, unexpected {sorted(set(unexpected))}")
     opted = [f for f in read_reports(contract_reports)
              if f.kind == "opted_out" and f.file == "contracts.cpp" and f.line == 73]
@@ -721,15 +728,15 @@ def run_contract_rule(section: Section) -> None:
 
     named = results[0]
     section.expect("the error names CRUCIBLE_PRE, CRUCIBLE_POST and the reasons",
-                   all(text in named.stderr for text in ("CRUCIBLE_PRE(condition)", "foundation/contracts/Pre.h",
+                   all(text in named.err for text in ("CRUCIBLE_PRE(condition)", "foundation/contracts/Pre.h",
                                                          "CRUCIBLE_POST(result, condition)",
                                                          "foundation/contracts/Post.h", "header unit",
                                                          "precompiled header", "constant evaluation")),
-                   named.stderr[-2000:])
+                   named.err[-2000:])
     unknown = section.compile("violations.cpp", {"root": str(HERE), "mode": "contracts"})
     section.expect("an unknown mode is an error",
-                   unknown.returncode != 0 and "the modes are report and error" in unknown.stderr,
-                   unknown.stderr[-2000:])
+                   unknown.exit != 0 and "the modes are report and error" in unknown.err,
+                   unknown.err[-2000:])
 
 
 def quarantine_errors(stderr: str, kind: str) -> list[str]:
@@ -761,30 +768,30 @@ def run_include_rules(section: Section) -> None:
     results = iter(section.compile_all(calls))
     for fixture in sorted({fixture for _, fixture, _, _ in PLANTS}):
         clean = next(results)
-        section.expect(f"{fixture} with no plant compiles in error mode", clean.returncode == 0, clean.stderr[-2000:])
+        section.expect(f"{fixture} with no plant compiles in error mode", clean.exit == 0, clean.err[-2000:])
     for macro, fixture, kind, text in PLANTS:
         planted = next(results)
-        errors = quarantine_errors(planted.stderr, kind)
+        errors = quarantine_errors(planted.err, kind)
         section.expect(f"{fixture} with {macro} fails with one {kind} ({text})",
-                       planted.returncode != 0 and len(errors) == 1 and text in errors[0], planted.stderr[-2000:])
+                       planted.exit != 0 and len(errors) == 1 and text in errors[0], planted.err[-2000:])
     door = next(results)
-    section.expect("the door of <sys/socket.h> includes it with no finding", door.returncode == 0, door.stderr[-2000:])
+    section.expect("the door of <sys/socket.h> includes it with no finding", door.exit == 0, door.err[-2000:])
     for name in ("an include that enters High.h", "an include that #pragma once stops"):
         compiled = next(results)
-        errors = quarantine_errors(compiled.stderr, "upward_include")
+        errors = quarantine_errors(compiled.err, "upward_include")
         section.expect(f"{name}: fixy/Low.h has one upward include",
-                       compiled.returncode != 0 and len(errors) == 1 and "include/fixy/Low.h:8:" in errors[0]
+                       compiled.exit != 0 and len(errors) == 1 and "include/fixy/Low.h:8:" in errors[0]
                        and "include/fixy/high/High.h (the layer high) from the layer low" in errors[0],
-                       compiled.stderr[-2000:])
+                       compiled.err[-2000:])
     enforced = next(results)
     section.expect("an enforce row with the mode error makes a finding an error in report mode",
-                   enforced.returncode != 0 and len(quarantine_errors(enforced.stderr, "raw_pointer_object")) == 1,
-                   enforced.stderr[-2000:])
+                   enforced.exit != 0 and len(quarantine_errors(enforced.err, "raw_pointer_object")) == 1,
+                   enforced.err[-2000:])
     unclassified = next(results)
     section.expect("a file that no row of the table holds is an error",
-                   unclassified.returncode != 0 and "no layer row and no quarantine row of the rule table holds "
-                   "'unclassified.cpp'" in unclassified.stderr.replace("‘", "'").replace("’", "'"),
-                   unclassified.stderr[-2000:])
+                   unclassified.exit != 0 and "no layer row and no quarantine row of the rule table holds "
+                   "'unclassified.cpp'" in unclassified.err.replace("‘", "'").replace("’", "'"),
+                   unclassified.err[-2000:])
 
 
 # (fixture, extra flags, line, kind, the whole entity of the one finding of that
@@ -920,7 +927,7 @@ def run_library_names(section: Section) -> None:
     findings: dict[tuple[str, tuple[str, ...]], list[Finding]] = {}
     for index, ((fixture, extra), compiled) in enumerate(zip(fixtures, results, strict=False)):
         section.expect(f"{fixture} {' '.join(extra)} compiles in report mode".replace("  ", " "),
-                       compiled.returncode == 0, compiled.stderr[-2000:])
+                       compiled.exit == 0, compiled.err[-2000:])
         findings[(fixture, extra)] = read_reports(section.work / f"library-names-{index}")
     for fixture, extra, line, kind, entity in LIBRARY_NAMES:
         hits = [f for f in findings[(fixture, extra)] if f.kind == kind and f.file == fixture and f.line == line]
@@ -934,7 +941,7 @@ def run_library_names(section: Section) -> None:
         section.expect(f"no {kind} at {fixture}:{line}", not hits, "; ".join(map(str, hits)))
     exact = results[-1]
     section.expect("a directive that enters no file resolves through the search chain, not by the end of a path",
-                   exact.returncode == 0 and "upward_include" not in exact.stderr, exact.stderr[-2000:])
+                   exact.exit == 0 and "upward_include" not in exact.err, exact.err[-2000:])
 
 
 # (fixture, extra flags, a text that the error holds, with ASCII quotes): each
@@ -981,11 +988,11 @@ def run_provenance(section: Section) -> None:
     results = section.compile_all(calls)
     for (fixture, _, text), compiled in zip(PROVENANCE_ERRORS, results, strict=False):
         section.expect(f"{fixture} fails in report mode: {text}",
-                       compiled.returncode != 0 and text in ascii_quotes(compiled.stderr), compiled.stderr[-2000:])
+                       compiled.exit != 0 and text in ascii_quotes(compiled.err), compiled.err[-2000:])
     findings: dict[tuple[str, tuple[str, ...]], list[Finding]] = {}
     for index, ((fixture, extra), compiled) in enumerate(zip(reported, results[len(PROVENANCE_ERRORS):], strict=True)):
         section.expect(f"{fixture} {' '.join(extra)} compiles in report mode".replace("  ", " "),
-                       compiled.returncode == 0, compiled.stderr[-2000:])
+                       compiled.exit == 0, compiled.err[-2000:])
         findings[(fixture, extra)] = read_reports(section.work / f"provenance-{index}")
     for fixture, extra, file, line, kind, text in PROVENANCE_FINDINGS:
         hits = [f for f in findings[(fixture, extra)] if f.file == file and f.line == line and f.kind == kind]
@@ -1019,7 +1026,7 @@ def run_depth(section: Section) -> None:
     findings: dict[str, list[Finding]] = {}
     for index, ((fixture, _), compiled) in enumerate(zip(fixtures, results, strict=True)):
         section.expect(f"{fixture} compiles in report mode in less than {DEPTH_TIMEOUT:.0f} s",
-                       compiled.returncode == 0, compiled.stderr[-2000:])
+                       compiled.exit == 0, compiled.err[-2000:])
         findings[fixture] = read_reports(section.work / f"depth-{index}")
     for fixture, _, line, kind, text in DEPTH_CASES:
         if line is None:
@@ -1056,7 +1063,7 @@ def run_known_gaps(section: Section) -> None:
         calls.append((fixture, arguments, ("-S", "-o", os.devnull)))
     findings: dict[str, list[Finding]] = {}
     for index, ((fixture, _), compiled) in enumerate(zip(fixtures, section.compile_all(calls), strict=True)):
-        section.expect(f"{fixture} compiles in report mode", compiled.returncode == 0, compiled.stderr[-2000:])
+        section.expect(f"{fixture} compiles in report mode", compiled.exit == 0, compiled.err[-2000:])
         findings[fixture] = read_reports(section.work / f"gaps-{index}")
     for fixture, _, file, line, reason in KNOWN_GAPS:
         hits = [f for f in findings[fixture] if f.file == file and f.line == line]
@@ -1097,15 +1104,15 @@ def run_restrictions(section: Section) -> None:
     calls.append(("restricted.cpp", error_mode, ("-S", "-o", os.devnull), ("-D_GLIBCXX_DEBUG",)))
     results = iter(section.compile_all(calls))
     clean = next(results)
-    section.expect("restricted.cpp with no plant compiles in error mode", clean.returncode == 0, clean.stderr[-2000:])
+    section.expect("restricted.cpp with no plant compiles in error mode", clean.exit == 0, clean.err[-2000:])
     for macro, kind, text in RESTRICTION_PLANTS:
         planted = next(results)
         section.expect(f"restricted.cpp with {macro} fails with a {kind} of {text}",
-                       planted.returncode != 0 and any(text in row for row in quarantine_errors(planted.stderr, kind)),
-                       planted.stderr[-2000:])
+                       planted.exit != 0 and any(text in row for row in quarantine_errors(planted.err, kind)),
+                       planted.err[-2000:])
     debug = next(results)
     section.expect("a unit that defines _GLIBCXX_DEBUG fails, because <meta> is admitted unless it does",
-                   debug.returncode != 0 and "the unit defines _GLIBCXX_DEBUG" in debug.stderr, debug.stderr[-2000:])
+                   debug.exit != 0 and "the unit defines _GLIBCXX_DEBUG" in debug.err, debug.err[-2000:])
 
 
 # (the macro of a plant of fixy/high/Language.h, the kind of its error, a text
@@ -1158,24 +1165,24 @@ def run_language(section: Section) -> None:
     results = iter(section.compile_all(calls))
     clean = next(results)
     section.expect("a file of the language with no plant compiles with no error and no note",
-                   clean.returncode == 0 and "quarantine:" not in clean.stderr, clean.stderr[-2000:])
+                   clean.exit == 0 and "quarantine:" not in clean.err, clean.err[-2000:])
     reported = next(results)
-    findings = read_reports(out) if reported.returncode == 0 else []
+    findings = read_reports(out) if reported.exit == 0 else []
     expected = [Finding("replace_pending:std::nothrow", "include/fixy/high/Language.h", 52, "std::nothrow")]
     section.expect("the use of std::nothrow in fixy/high/Language.h is its one finding, and no error",
-                   reported.returncode == 0 and findings == expected,
-                   reported.stderr[-2000:] + "; ".join(map(str, findings)))
+                   reported.exit == 0 and findings == expected,
+                   reported.err[-2000:] + "; ".join(map(str, findings)))
     other = next(results)
     for line, kind, text in LANGUAGE_OTHER_ERRORS:
-        errors = [row for row in quarantine_errors(other.stderr, kind)
+        errors = [row for row in quarantine_errors(other.err, kind)
                   if f"include/fixy/high/LanguageOther.h:{line}:" in row]
         section.expect(f"fixy/high/LanguageOther.h:{line} fails in report mode with a {kind} of {text}",
-                       other.returncode != 0 and len(errors) == 1 and text in errors[0], other.stderr[-2000:])
+                       other.exit != 0 and len(errors) == 1 and text in errors[0], other.err[-2000:])
     for macro, kind, text in LANGUAGE_PLANTS:
         planted = next(results)
-        errors = [row for row in quarantine_errors(planted.stderr, kind) if "include/fixy/high/Language.h:" in row]
+        errors = [row for row in quarantine_errors(planted.err, kind) if "include/fixy/high/Language.h:" in row]
         section.expect(f"a file of the language with {macro} fails in report mode with a {kind} of {text}",
-                       planted.returncode != 0 and len(errors) == 1 and text in errors[0], planted.stderr[-2000:])
+                       planted.exit != 0 and len(errors) == 1 and text in errors[0], planted.err[-2000:])
 
 
 def table_refusals(stderr: str, table: Path) -> list[tuple[int, str]]:
@@ -1225,15 +1232,15 @@ def run_table_readers(section: Section) -> None:
         verdict = python_verdict(path)
         if case.line == 0:
             section.expect(f"the plugin accepts {case.name}",
-                           compiled.returncode == 0 and "error:" not in compiled.stderr, compiled.stderr[-2000:])
+                           compiled.exit == 0 and "error:" not in compiled.err, compiled.err[-2000:])
             section.expect(f"ruletable.py accepts {case.name}", verdict == "accepted", verdict)
             continue
-        errors = [row for row in compiled.stderr.splitlines() if "error: quarantine: " in row]
+        errors = [row for row in compiled.err.splitlines() if "error: quarantine: " in row]
         section.expect(f"the plugin refuses {case.name} at line {case.line} with the error of the case, and with "
                        f"no other error",
-                       compiled.returncode != 0 and "failed to initialize plugin" in compiled.stderr
-                       and table_refusals(compiled.stderr, path) == [(case.line, case.message)] and len(errors) == 1,
-                       compiled.stderr[-2000:])
+                       compiled.exit != 0 and "failed to initialize plugin" in compiled.err
+                       and table_refusals(compiled.err, path) == [(case.line, case.message)] and len(errors) == 1,
+                       compiled.err[-2000:])
         section.expect(f"ruletable.py refuses {case.name} at line {case.line}",
                        verdict.startswith(f"{path.name}:{case.line}: "), verdict)
     until_table = tables / "until.txt"
@@ -1241,8 +1248,8 @@ def run_table_readers(section: Section) -> None:
                            "quarantine plant_std.cpp\n", encoding="utf-8")
     until = section.compile("plant_std.cpp", {"root": str(HERE), "mode": "error", "rules": str(until_table)})
     section.expect("the mode error refuses a use that an admit row with `until` admits",
-                   until.returncode != 0 and quarantine_errors(until.stderr, "replace_pending:std::move")
-                   and not quarantine_errors(until.stderr, "std_entity"), until.stderr[-2000:])
+                   until.exit != 0 and quarantine_errors(until.err, "replace_pending:std::move")
+                   and not quarantine_errors(until.err, "std_entity"), until.err[-2000:])
     for name, path in (("the test table", TEST_RULES), ("the tree table", layer_rules.TABLE)):
         try:
             layer_rules.load(path)
@@ -1272,7 +1279,7 @@ def section_of(path: Path) -> tuple[str, list[str]] | None:
 
 def ccache_hits(environment: dict[str, str]) -> int:
     """Return the hits that the statistics of the cache of ENVIRONMENT count."""
-    printed = subprocess.run(["ccache", "--print-stats"], capture_output=True, text=True, env=environment).stdout
+    printed = proc.run(proc.Command(["ccache", "--print-stats"], timeout_s=proc.QUICK_S, env=environment)).out
     counts = dict(line.split("\t", 1) for line in printed.splitlines() if "\t" in line)
     return sum(int(counts.get(name, "0")) for name in ("direct_cache_hit", "preprocessed_cache_hit"))
 
@@ -1300,13 +1307,14 @@ def run_section(section: Section) -> None:
     def chain(name: str, steps: list[tuple[str, dict[str, str], tuple[str, ...]]]) -> list[tuple[int, object]]:
         """Compile each step through ccache, in order, and return its hits and its exit status and section."""
         (work / f"{name}.conf").write_text("", encoding="utf-8")
-        environment = {**os.environ, "CCACHE_DIR": str(work / name), "CCACHE_CONFIGPATH": str(work / f"{name}.conf")}
+        environment = proc.environment({"CCACHE_DIR": str(work / name),
+                                        "CCACHE_CONFIGPATH": str(work / f"{name}.conf")})
         results: list[tuple[int, object]] = []
         for output, arguments, used in steps:
             before = ccache_hits(environment)
             result = section.compile("violations.cpp", arguments, ("-c", "-o", str(work / f"{output}.o")),
                                      launcher=used, env=environment)
-            results.append((ccache_hits(environment) - before, (result.returncode, section_of(work / f"{output}.o"))))
+            results.append((ccache_hits(environment) - before, (result.exit, section_of(work / f"{output}.o"))))
         return results
 
     has_ccache = shutil.which("ccache") is not None
@@ -1331,18 +1339,18 @@ def run_section(section: Section) -> None:
     report = [row for path in sorted(reports.glob("*.quarantine"))
               for row in path.read_text(encoding="utf-8").splitlines() if row.startswith("quarantine: ")]
     section.expect("the section of the object holds the stamp and the lines of the report file",
-                   compiled.returncode == 0 and found is not None and found[0] == SECTION_STAMP
-                   and found[1] == report and len(report) > 10, compiled.stderr[-2000:] + f"; {found}")
+                   compiled.exit == 0 and found is not None and found[0] == SECTION_STAMP
+                   and found[1] == report and len(report) > 10, compiled.err[-2000:] + f"; {found}")
     section.expect("a unit that writes an object gives no note, and its section holds the findings",
-                   quiet.returncode == 0 and "note: quarantine:" not in quiet.stderr
-                   and section_of(work / "quiet.o") == found, quiet.stderr[-2000:])
+                   quiet.exit == 0 and "note: quarantine:" not in quiet.err
+                   and section_of(work / "quiet.o") == found, quiet.err[-2000:])
     opted_found = section_of(work / "opted.o")
     section.expect("the section holds an opted_out finding",
-                   opted.returncode == 0 and opted_found is not None
+                   opted.exit == 0 and opted_found is not None
                    and any(line.startswith("quarantine: opted_out opt_out.cpp:11:") for line in opted_found[1]),
-                   opted.stderr[-2000:])
-    section.expect("-fsyntax-only writes no object", syntax.returncode == 0 and not (work / "syntax.o").exists(),
-                   syntax.stderr[-2000:])
+                   opted.err[-2000:])
+    section.expect("-fsyntax-only writes no object", syntax.exit == 0 and not (work / "syntax.o").exists(),
+                   syntax.err[-2000:])
     if not has_ccache:
         section.lines.append("  skip the cases through ccache: no ccache on PATH")
         return
@@ -1354,7 +1362,7 @@ def run_section(section: Section) -> None:
     has_swap = [found is not None and any(SECTION_SWAP.fullmatch(line) for line in found[1]),
                 swap_found is not None and any(SECTION_SWAP.fullmatch(line) for line in swap_found[1])]
     section.expect("a changed rule table with a new stamp misses, and gives the findings of a real compile",
-                   real_swap.returncode == 0 and has_swap == [True, False] and new_hits == 0
+                   real_swap.exit == 0 and has_swap == [True, False] and new_hits == 0
                    and new == (0, swap_found), f"{has_swap} {new_hits}")
     section.expect("negative control: a changed table with the old stamp hits, and gives the old findings",
                    found is not None and stale_hits == 1 and stale == (0, found), f"{stale_hits} {stale}")
@@ -1394,7 +1402,7 @@ def run_dependencies(section: Section) -> None:
     write_tree(tree, {"app/fresh.h": "#pragma once\ninline int* fresh_pointer = nullptr;\n"})
     arguments = {"root": str(tree), "rules": str(tree / "rules.txt"), "stamps": str(stamps), "mode": "report"}
 
-    def dependencies(unit: str, stage: tuple[str, ...]) -> tuple[subprocess.CompletedProcess[str], str]:
+    def dependencies(unit: str, stage: tuple[str, ...]) -> tuple[proc.Completed, str]:
         depfile = section.work / f"dependency-{Path(unit).stem}-{stage[0][1:]}.d"
         compiled = section.compile(str(tree / unit), arguments, stage, ("-MD", "-MF", str(depfile)))
         return compiled, depfile.read_text(encoding="utf-8") if depfile.is_file() else ""
@@ -1402,15 +1410,15 @@ def run_dependencies(section: Section) -> None:
     modes = stamps / "modes" / "app"
     found, text = dependencies("app/finding.cpp", ("-c", "-o", str(section.work / "dependency-finding.o")))
     section.expect("a unit names the mode stamp of each file with a finding, and enforce.txt for a file with none",
-                   found.returncode == 0 and str(modes / "finding.cpp") in text and str(modes / "Header.h") in text
-                   and str(stamps / "enforce.txt") in text, found.stderr[-2000:] + text)
+                   found.exit == 0 and str(modes / "finding.cpp") in text and str(modes / "Header.h") in text
+                   and str(stamps / "enforce.txt") in text, found.err[-2000:] + text)
     section.expect("a file with no finding adds no mode stamp", str(modes / "Clean.h") not in text, text)
     opted, text = dependencies("app/opted.cpp", ("-c", "-o", str(section.work / "dependency-opted.o")))
     section.expect("an opted-out finding adds no dependency",
-                   opted.returncode == 0 and str(stamps) not in text, opted.stderr[-2000:] + text)
+                   opted.exit == 0 and str(stamps) not in text, opted.err[-2000:] + text)
     syntax, text = dependencies("app/finding.cpp", ("-fsyntax-only",))
     section.expect("-fsyntax-only writes the dependency file before the report, so it holds no mode stamp",
-                   syntax.returncode == 0 and str(stamps) not in text, syntax.stderr[-2000:] + text)
+                   syntax.exit == 0 and str(stamps) not in text, syntax.err[-2000:] + text)
 
 
 def run_enforce_cache(section: Section) -> None:
@@ -1425,13 +1433,13 @@ def run_enforce_cache(section: Section) -> None:
         return
     ignored = " ".join(f"-fplugin-arg-{PLUGIN}-{key}=*" for key in ("root", "build", "rules", "stamps"))
 
-    def chain(name: str, is_keyed: bool) -> list[tuple[int, subprocess.CompletedProcess[str]]]:
+    def chain(name: str, is_keyed: bool) -> list[tuple[int, proc.Completed]]:
         tree = section.work / f"{name}-tree"
         write_tree(tree, {"app/unit.cpp": "int* cached_pointer = nullptr;\n"})
         rules, stamps = tree / "rules.txt", tree / "stamps"
         (section.work / f"{name}.conf").write_text("", encoding="utf-8")
-        environment = {**os.environ, "CCACHE_DIR": str(section.work / name),
-                       "CCACHE_CONFIGPATH": str(section.work / f"{name}.conf")}
+        environment = proc.environment({"CCACHE_DIR": str(section.work / name),
+                                        "CCACHE_CONFIGPATH": str(section.work / f"{name}.conf")})
         launcher = ("ccache", f"ignore_options=-fplugin=* {ignored}",
                     *((f"extra_files_to_hash={stamps / 'enforce.txt'}",) if is_keyed else ()))
         arguments = {"root": str(tree), "rules": str(rules), "stamps": str(stamps), "mode": "report",
@@ -1452,12 +1460,12 @@ def run_enforce_cache(section: Section) -> None:
         keyed, blind = keyed_future.result(), blind_future.result()
     (_, stored), (error_hits, failed), (_, back) = keyed
     section.expect("through ccache, a unit whose file changes to the mode error misses and fails",
-                   stored.returncode == 0 and error_hits == 0 and failed.returncode != 0
-                   and "error: quarantine: raw_pointer_object" in failed.stderr and back.returncode == 0,
-                   f"{error_hits} " + failed.stderr[-2000:])
+                   stored.exit == 0 and error_hits == 0 and failed.exit != 0
+                   and "error: quarantine: raw_pointer_object" in failed.err and back.exit == 0,
+                   f"{error_hits} " + failed.err[-2000:])
     _, (blind_hits, skipped), _ = blind
     section.expect("negative control: a cache that does not hash enforce.txt hits, and skips the error",
-                   blind_hits == 1 and skipped.returncode == 0, f"{blind_hits} " + skipped.stderr[-2000:])
+                   blind_hits == 1 and skipped.exit == 0, f"{blind_hits} " + skipped.err[-2000:])
 
 
 def build_command(build_dir: Path) -> tuple[list[str], Path, str] | None:
@@ -1534,13 +1542,13 @@ def run_tree_plants(section: Section, rules: Path) -> None:
                         if line.startswith(f"quarantine: {kind} {fixture}:")]
                 clean_rows = [line for line in (section_of(objects[(fixture, None)]) or ("", []))[1]
                               if line.startswith(f"quarantine: {kind} {fixture}:")]
-                holds = (planted.returncode == 0 and clean.returncode == 0 and len(rows) == 1
+                holds = (planted.exit == 0 and clean.exit == 0 and len(rows) == 1
                          and rows[0].endswith(f" {entity}") and not clean_rows)
-                detail = f"{rows} {clean_rows} " + planted.stderr[-1000:]
+                detail = f"{rows} {clean_rows} " + planted.err[-1000:]
             else:
-                errors = quarantine_errors(planted.stderr, kind)
-                holds = planted.returncode != 0 and len(errors) == 1 and entity in errors[0] and clean.returncode == 0
-                detail = planted.stderr[-1000:] + clean.stderr[-1000:]
+                errors = quarantine_errors(planted.err, kind)
+                holds = planted.exit != 0 and len(errors) == 1 and entity in errors[0] and clean.exit == 0
+                detail = planted.err[-1000:] + clean.err[-1000:]
             section.expect(f"the tree table, mode {mode}: {macro} in {fixture} gives one {kind} ({entity})", holds,
                            detail)
 
@@ -1569,7 +1577,7 @@ def run_build_flags(section: Section) -> None:
     error_table.write_text(tree_table.read_text(encoding="utf-8")
                            + f"enforce {plant.relative_to(root).as_posix()} error\n", encoding="utf-8")
 
-    def compile_plant(table: Path) -> subprocess.CompletedProcess[str]:
+    def compile_plant(table: Path) -> proc.Completed:
         argv: list[str] = []
         skip_next = False
         for arg in command:
@@ -1589,10 +1597,10 @@ def run_build_flags(section: Section) -> None:
     with ThreadPoolExecutor(max_workers=2) as pool:
         failed, passed = pool.map(compile_plant, (error_table, tree_table))
     section.expect("with the flags of the build, an enforce row with the mode error fails the compile of the plant",
-                   failed.returncode != 0 and "error: quarantine: raw_pointer_object" in failed.stderr,
-                   failed.stderr[-2000:])
+                   failed.exit != 0 and "error: quarantine: raw_pointer_object" in failed.err,
+                   failed.err[-2000:])
     section.expect("with the flags of the build and the table of the tree, the plant compiles",
-                   passed.returncode == 0, passed.stderr[-2000:])
+                   passed.exit == 0, passed.err[-2000:])
 
 
 def main(argv: list[str]) -> int:

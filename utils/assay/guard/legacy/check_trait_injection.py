@@ -185,14 +185,13 @@ import contextlib
 import fnmatch
 import io
 import os
-import subprocess
 import sys
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from assay.core import git as throwaway_repo
+from assay.core import git
 from assay.core import ledger as rule_ledger
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
@@ -1287,17 +1286,17 @@ def self_test() -> int:
 
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
-        throwaway_repo.init(root)
+        git.init(root)
         for rel, text in owners.items():
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(text, encoding="utf-8")
-        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        git.run(root, "add", "-A")
         untracked = root / "grun" / "change" / "src" / "orphan_variable.cpp"
         untracked.parent.mkdir(parents=True)
         untracked.write_text(planted["src/planted/orphan_variable.cpp"], encoding="utf-8")
         expect("an untracked file, such as the export of a guard run, is out of scope",
                captured(lambda: run(root, points))[0] == 0, True)
-        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        git.run(root, "add", "-A")
         code, report = captured(lambda: run(root, points))
         expect("the same file is refused once git tracks it",
                code == 1 and "grun/change/src/orphan_variable.cpp:1" in report, True)

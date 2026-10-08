@@ -1,4 +1,4 @@
-"""structured-reads — each input is read through its reader, no module reads C++ as text, and each git write isolates its repository.
+"""structured-reads — each input is read through its reader, no module reads C++ as text, and git runs only in its module.
 
 THE SCOPE
     Each Python file and each shell script that git tracks, or that is new
@@ -26,10 +26,16 @@ THE KINDS
                         pipeline that hands such a root to such a tool through xargs.  The pattern or the program of
                         the tool is not a file
     git-isolation       a script that runs git init, commit, update-ref, reset, checkout, fetch or apply and does not
-                        isolate its repository.  A Python file calls init() of assay.core.git, which clears the
-                        repository variables and stops unless git resolves the repository.  A shell script names
-                        each repository variable in an unset command and passes --absolute-git-dir to a command.
-                        utils/assay/core/git.py is the implementation, and the rule does not read it
+                        isolate its repository.  A Python file calls init() of assay.core.git, which stops unless
+                        git resolves the repository.  A shell script names each repository variable in an unset
+                        command and passes --absolute-git-dir to a command.  utils/assay/core/git.py is the
+                        implementation, and the rule does not read it
+    git-command         a list or a tuple of words whose first word is "git" and whose second word is a git option,
+                        a git command of GIT_VERBS or an expression, in a Python file outside utils/assay/core/git.py.
+                        assay.core.git is the one reader of git (the plan, section 18.4): it runs each git command
+                        through assay.core.proc, with a time limit and with no repository variable.  A tuple of
+                        program names that starts with "git", such as the tools that a check of the host looks for,
+                        is not a git command
     regex-call          a call of a function of the module re outside a reader.  A call whose subject is the result
                         of prose_text() reads prose, and the rule admits it
     format-read         a string constant that names a structured file outside its reader: CMakeCache.txt,
@@ -44,7 +50,9 @@ WHAT THE RULE CANNOT SEE
     node-text-variable reads one local variable, assigned in the same
     function.  A text that goes through a call or an attribute passes.  A
     shell argument that reaches a tool through a variable set elsewhere
-    passes.  Review holds the rest.
+    passes.  git-command reads the literal word "git": a variable that holds
+    the word, or a git command that is not in GIT_VERBS after a constant
+    first word, passes.  Review holds the rest.
 
 Complexity: linear in the size of the files of the scope.
 """
@@ -53,7 +61,7 @@ import ast
 from collections.abc import Iterator
 from pathlib import PurePosixPath
 
-from assay.core import git
+from assay.core import proc
 from assay.core import report as check_report
 from assay.guard.engines.meta.runner import PLANTS, MetaContext, NotApplicable
 from assay.readers import shell as shell_reader
@@ -81,6 +89,16 @@ FORMATS = {"CMakeCache.txt": "assay.readers.cmake", "compile_commands.json": "as
            "build.ninja": "assay.readers.ninja", ".ninja_log": "assay.readers.ninja",
            "--show-only=json-v1": "assay.readers.ctest"}
 MUTATING = frozenset({"init", "commit", "update-ref", "reset", "checkout", "fetch", "apply"})
+# The git commands that a second word of an argv can name (the kind git-command).
+GIT_VERBS = frozenset({
+    "add", "am", "apply", "archive", "bisect", "blame", "branch", "bundle", "cat-file", "check-attr", "check-ignore",
+    "checkout", "checkout-index", "cherry-pick", "clean", "clone", "commit", "commit-tree", "config", "describe",
+    "diff", "diff-files", "diff-index", "diff-tree", "fetch", "for-each-ref", "format-patch", "fsck", "gc", "grep",
+    "hash-object", "init", "log", "ls-files", "ls-remote", "ls-tree", "merge", "merge-base", "mktree", "mv", "notes",
+    "pull", "push", "read-tree", "rebase", "reflog", "remote", "repack", "reset", "restore", "rev-list", "rev-parse",
+    "revert", "rm", "show", "show-ref", "sparse-checkout", "stash", "status", "submodule", "switch", "symbolic-ref",
+    "tag", "update-index", "update-ref", "var", "verify-commit", "version", "worktree", "write-tree",
+})
 # A global git option that takes the next argument as its value when it is not written with '='.
 OPTIONS_WITH_VALUE = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path",
                                 "--config-env", "--super-prefix"})
@@ -296,7 +314,7 @@ def shell_findings(path: str, script: shell_reader.ShellScript) -> Iterator[chec
     verbs = {verb for command in script.commands if is_git_command(command.name)
              if (verb := git_verb(command.arguments)) in MUTATING}
     if verbs:
-        missing = [name for name in git.REPOSITORY_VARIABLES if name not in script.unset_names]
+        missing = [name for name in proc.REPOSITORY_VARIABLES if name not in script.unset_names]
         reasons = ([f"it does not unset {', '.join(missing)}"] if missing else []) + (
             [] if script.checks_git_dir else ["it never checks --absolute-git-dir"])
         if reasons:
@@ -335,6 +353,16 @@ def is_prose_read(node: ast.AST) -> bool:
     return isinstance(node, ast.Call) and (
         (isinstance(node.func, ast.Attribute) and node.func.attr == PROSE_READ)
         or (isinstance(node.func, ast.Name) and node.func.id == PROSE_READ))
+
+
+def holds_git_argv(node: ast.List | ast.Tuple) -> bool:
+    """Whether a list or a tuple holds the words of a git command: "git", then an option, a verb or an expression."""
+    if len(node.elts) < 2 or not (isinstance(node.elts[0], ast.Constant) and node.elts[0].value == "git"):
+        return False
+    second = node.elts[1]
+    if isinstance(second, ast.Constant):
+        return isinstance(second.value, str) and (second.value.startswith("-") or second.value in GIT_VERBS)
+    return True
 
 
 def docstring_nodes(tree: ast.Module) -> set[int]:
@@ -445,6 +473,16 @@ class PythonReads(ast.NodeVisitor):
                     self.add(node, "node-text-variable", "an `in` test over a variable that holds the text of a tsast "
                              "node.  Read the answer from the children of the node")
         self.generic_visit(node)
+
+    def visit_sequence(self, node: ast.List | ast.Tuple) -> None:
+        """Refuse the words of a git command outside assay.core.git."""
+        if self.path != GIT_IMPLEMENTATION and holds_git_argv(node):
+            self.add(node, "git-command", "a git command outside assay.core.git.  Call a function of assay.core.git, "
+                     "which runs git through assay.core.proc with a time limit and with no repository variable")
+        self.generic_visit(node)
+
+    visit_List = visit_sequence
+    visit_Tuple = visit_sequence
 
     def visit_Constant(self, node: ast.Constant) -> None:
         """Refuse a constant that names a structured file outside its reader."""

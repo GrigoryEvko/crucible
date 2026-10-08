@@ -53,7 +53,6 @@ from __future__ import annotations
 import functools
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 from collections.abc import Callable
@@ -61,6 +60,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import pins as pin_table
+from assay.core import proc
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT, SETUP
@@ -148,12 +148,11 @@ def program_version(program: str | Path) -> tuple[str, str] | None:
         ("cmake" or "ctest", version), or None when the program does not run or gives no such line
     """
     try:
-        result = subprocess.run([str(program), "--version"], capture_output=True, text=True, errors="replace",
-                                timeout=VERSION_TIMEOUT_SECONDS, check=False)
-    except (OSError, subprocess.TimeoutExpired):
+        result = proc.run(proc.Command([str(program), "--version"], timeout_s=VERSION_TIMEOUT_SECONDS))
+    except proc.ToolFailed:
         return None
-    lines = result.stdout.splitlines()
-    words = lines[0].split(" ") if result.returncode == 0 and lines else []
+    lines = result.out.splitlines()
+    words = lines[0].split(" ") if result.exit == 0 and lines else []
     if len(words) == 3 and words[0] in CACHE_ENTRIES and words[1] == "version" and words[2]:
         return words[0], words[2]
     return None
@@ -563,14 +562,22 @@ def real_run(work: Path, cmake: str, ctest: str, make_program: str, expect: Call
         "cmake_minimum_required(VERSION 3.25)\nproject(cmake_pin_probe NONE)\nenable_testing()\n"
         f'add_test(NAME probe COMMAND "{sys.executable}" "{SETUP}" check --build-dir "{build_dir}")\n',
         encoding="utf-8")
-    configured = subprocess.run([cmake, "-S", str(source), "-B", str(build_dir), "-G", "Ninja",
-                                 f"-DCMAKE_MAKE_PROGRAM={make_program}"], capture_output=True, text=True, check=False)
-    expect("the scratch project configures", configured.returncode == 0, configured.stdout + configured.stderr)
-    if configured.returncode != 0:
+    try:
+        configured = proc.run(proc.Command([cmake, "-S", str(source), "-B", str(build_dir), "-G", "Ninja",
+                                            f"-DCMAKE_MAKE_PROGRAM={make_program}"], timeout_s=proc.TOOL_S))
+    except proc.ToolFailed as problem:
+        expect("the scratch project configures", False, str(problem))
         return
-    run = subprocess.run([ctest, "--test-dir", str(build_dir), "--output-on-failure"], capture_output=True, text=True,
-                         check=False)
-    expect("the check passes under the ctest of the build", run.returncode == 0, run.stdout + run.stderr)
+    expect("the scratch project configures", configured.exit == 0, configured.out + configured.err)
+    if configured.exit != 0:
+        return
+    try:
+        run = proc.run(proc.Command([ctest, "--test-dir", str(build_dir), "--output-on-failure"],
+                                    timeout_s=proc.TOOL_S))
+    except proc.ToolFailed as problem:
+        expect("the check passes under the ctest of the build", False, str(problem))
+        return
+    expect("the check passes under the ctest of the build", run.exit == 0, run.out + run.err)
 
 
 # ── Main ───────────────────────────────────────────────────────────────────

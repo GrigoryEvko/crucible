@@ -57,7 +57,9 @@ A FAILED BATCH
     violation line did not check its files: a configuration that the
     formatter cannot read, or a crash.  A batch that exits 0 with a violation
     line, or with another status, is also a failure.  So a formatter that
-    checked nothing never reads as a clean tree.
+    checked nothing never reads as a clean tree.  With --fix, a batch whose
+    `-i` run exits with a status that is not 0 is a failure too, and the
+    report gives the output of the formatter.
 
 Usage
     guard check --rule clang-format            check, and exit 1 on a drift
@@ -65,7 +67,7 @@ Usage
     guard check --rule clang-format --self-test
 
 Exit 0 when each file agrees with the configuration, 1 on a drift, 2 on a usage error, with no formatter or fd, or
-when the formatter failed on a batch, so that a file was not checked.
+when the formatter failed on a batch, so that a file was not checked or, with --fix, not reformatted.
 """
 
 from __future__ import annotations
@@ -73,15 +75,16 @@ from __future__ import annotations
 import concurrent.futures
 import hashlib
 import os
+import shlex
 import shutil
 import stat
-import subprocess
 import sys
 import tempfile
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from assay.core import proc
 from assay.core.paths import REPO_ROOT
 
 RULE = "clang-format"
@@ -131,11 +134,10 @@ class Verdict:
 def version_of(formatter: str) -> str:
     """Return the version line of a formatter, as `FORMATTER --version || echo unknown` gives it, with no newline."""
     try:
-        done = subprocess.run([formatter, "--version"], capture_output=True, text=True, errors="replace",
-                              stdin=subprocess.DEVNULL, check=False)
-    except OSError:
+        done = proc.run(proc.Command([formatter, "--version"], timeout_s=proc.QUICK_S))
+    except proc.CannotStart:
         return "unknown"
-    return (done.stdout + ("unknown\n" if done.returncode != 0 else "")).rstrip("\n")
+    return (done.out + ("unknown\n" if done.exit != 0 else "")).rstrip("\n")
 
 
 def is_verified(version: str) -> bool:
@@ -223,9 +225,8 @@ def list_files(root: Path, settings: Settings) -> list[str]:
         command += ["-e", suffix]
     for pattern in EXCLUDED:
         command += ["-E", pattern]
-    done = subprocess.run([*command, "."], cwd=root, capture_output=True, text=True, stdin=subprocess.DEVNULL,
-                          check=False)
-    return [line for line in done.stdout.splitlines() if line]
+    done = proc.run(proc.Command([*command, "."], timeout_s=proc.QUICK_S, cwd=root))
+    return [line for line in done.out.splitlines() if line]
 
 
 def hash_line(root: Path, path: str) -> str:
@@ -294,15 +295,15 @@ def run_batch(root: Path, formatter: str, files: list[str]) -> tuple[set[str], s
     Returns:
         The files that drift, and None; or an empty set and the report of a failed batch
     """
-    done = subprocess.run([formatter, "--dry-run", "-Werror", *files], cwd=root, stdin=subprocess.DEVNULL,
-                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace", check=False)
-    output = done.stdout
+    done = proc.run(proc.Command([formatter, "--dry-run", "-Werror", *files], timeout_s=proc.TOOL_S, cwd=root,
+                                 stderr=proc.Output.MERGE))
+    output = done.out
     drift = {path for line in output.splitlines() if (path := violation_path(line)) is not None}
-    if (done.returncode == 0 and not drift) or (done.returncode == 1 and drift):
+    if (done.exit == 0 and not drift) or (done.exit == 1 and drift):
         return drift, None
     shown = "\n".join(output.splitlines()[:FAILED_OUTPUT_LINES])
     return set(), (f"check-clang-format: the formatter failed on a batch of {len(files)} files (exit "
-                   f"{done.returncode}, {len(drift)} violation lines):\n{shown}")
+                   f"{done.exit}, {len(drift)} violation lines):\n{shown}")
 
 
 def batches(root: Path, files: list[str], settings: Settings) -> list[list[str]]:
@@ -381,9 +382,18 @@ def check_tree(root: Path, settings: Settings, should_fix: bool = False) -> Verd
     if should_fix:
         if not ordered:
             return Verdict(0, (*report, "check-clang-format: already clean — nothing to reformat."))
+        notes = len(report)
         for start in range(0, len(ordered), settings.batch):
-            subprocess.run([settings.formatter, "-i", *ordered[start:start + settings.batch]], cwd=root,
-                           stdin=subprocess.DEVNULL, check=False)
+            group = ordered[start:start + settings.batch]
+            done = proc.run(proc.Command([settings.formatter, "-i", *group], timeout_s=proc.TOOL_S, cwd=root,
+                                         stderr=proc.Output.MERGE))
+            if done.exit != 0:
+                shown = "\n".join(done.out.splitlines()[:FAILED_OUTPUT_LINES])
+                report.append(f"check-clang-format: the formatter failed to reformat a batch of {len(group)} files "
+                              f"(exit {done.exit}):\n{shown}")
+        if len(report) > notes:
+            report.append("check-clang-format: the fix did not reformat each file that drifts.")
+            return Verdict(2, tuple(report))
         return Verdict(0, (*report, f"check-clang-format: reformatted {len(ordered)} file(s)."))
     if not ordered:
         return Verdict(0, (*report, f"check-clang-format: clean — all {len(files)} files match .clang-format "
@@ -435,8 +445,8 @@ def self_test(settings: Settings) -> int:
         clean = tree / "include" / "crucible" / "planted_clean.h"
         clean.write_text(CLEAN_HEADER, encoding="utf-8")
         # The clean file is what this configuration gives, and not what looks tidy to a person.
-        subprocess.run([settings.formatter, "-i", "include/crucible/planted_clean.h"], cwd=tree,
-                       stdin=subprocess.DEVNULL, check=False)
+        proc.run(proc.Command([settings.formatter, "-i", "include/crucible/planted_clean.h"], timeout_s=proc.TOOL_S,
+                              cwd=tree, stdout=proc.Output.INHERIT, stderr=proc.Output.INHERIT))
         formatted = clean.read_bytes()
         expect("a formatted tree passes", check_tree(tree, planted).status == 0)
         second = check_tree(tree, planted)
@@ -454,8 +464,8 @@ def self_test(settings: Settings) -> int:
         (config_root / "include" / "crucible").mkdir(parents=True)
         (config_root / ".clang-format").write_text("---\nBasedOnStyle: LLVM\nIndentWidth: 4\n...\n", encoding="utf-8")
         (config_root / "include" / "crucible" / "planted_clean.h").write_bytes(formatted)
-        subprocess.run([settings.formatter, "-i", "include/crucible/planted_clean.h"], cwd=config_root,
-                       stdin=subprocess.DEVNULL, check=False)
+        proc.run(proc.Command([settings.formatter, "-i", "include/crucible/planted_clean.h"], timeout_s=proc.TOOL_S,
+                              cwd=config_root, stdout=proc.Output.INHERIT, stderr=proc.Output.INHERIT))
         expect("a tree formatted with its own configuration passes", check_tree(config_root, planted).status == 0)
         (config_root / ".clang-format").write_text("---\nBasedOnStyle: LLVM\nIndentWidth: 2\n...\n", encoding="utf-8")
         expect("a cached file is checked again under a changed configuration",
@@ -489,8 +499,7 @@ def self_test(settings: Settings) -> int:
                 f"struct    Drift{index} {{  int x=0; }};\n", encoding="utf-8")
         stub = root / "reads_stdin_formatter"
         real = settings.formatter_path or settings.formatter
-        stub.write_text(f"#!{sys.executable}\nimport os, sys\nsys.stdin.buffer.read()\n"
-                        f"os.execv({real!r}, [{real!r}, *sys.argv[1:]])\n", encoding="utf-8")
+        stub.write_text(f"#!/bin/sh\ncat >/dev/null\nexec {shlex.quote(real)} \"$@\"\n", encoding="utf-8")
         stub.chmod(0o755)
         reading = check_tree(stdin_root, replace(planted, formatter=str(stub), formatter_path=str(stub),
                                                  is_parallel=False))
@@ -501,13 +510,27 @@ def self_test(settings: Settings) -> int:
                == "include/a.h" and violation_path("  include/a.h:3:7: error: code should be clang-formatted") is None
                and violation_path("include/a.txt:3:7: error: code should be clang-formatted") is None)
 
+        fix_root = root / "fix"
+        (fix_root / "include" / "crucible").mkdir(parents=True)
+        shutil.copyfile(REPO_ROOT / ".clang-format", fix_root / ".clang-format")
+        (fix_root / "include" / "crucible" / "drift.h").write_text("struct    Drift {  int x=0; };\n", encoding="utf-8")
+        refusing = root / "refusing_formatter"
+        refusing.write_text("#!/bin/sh\nif [ \"$1\" = -i ]; then echo 'planted formatter: no write' >&2; exit 3; fi\n"
+                            "shift 2\nfor file in \"$@\"; do echo \"$file:1:1: error: code should be clang-formatted\"; "
+                            "done\nexit 1\n", encoding="utf-8")
+        refusing.chmod(0o755)
+        fixed = check_tree(fix_root, replace(planted, formatter=str(refusing), formatter_path=str(refusing),
+                                             is_parallel=False), should_fix=True)
+        expect("a fix whose formatter fails on a file exits 2 and gives the error of the formatter",
+               fixed.status == 2 and "planted formatter: no write" in "\n".join(fixed.report))
+
     if failures:
         print(f"check-clang-format: SELF-TEST FAILED — {len(failures)} case(s) did not hold", file=sys.stderr)
         return 2
     print("check-clang-format: self-test passed — a formatted tree passes and fills the cache, planted drift exits 1, "
           "a cached file that drifts or a configuration change is checked again, parallel batches report each file, "
-          "a failing formatter or an unreadable configuration exits 2, and a formatter that reads stdin sees every "
-          "file.", file=sys.stderr)
+          "a failing formatter, a failed fix or an unreadable configuration exits 2, and a formatter that reads stdin "
+          "sees every file.", file=sys.stderr)
     return 0
 
 

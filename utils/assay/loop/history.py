@@ -104,15 +104,15 @@ import argparse
 import json
 import os
 import resource
-import subprocess
 import sys
 import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from assay.core import git as throwaway_repo
+from assay.core import git
 from assay.core import meter as cost_meter
+from assay.core import proc
 from assay.core import report as check_report
 from assay.readers import ninja as ninja_files
 
@@ -637,18 +637,13 @@ def git_state(source: Path) -> dict[str, object]:
     Returns:
         The commit, "clean" or "dirty", and the count; each is None when git cannot read the tree
     """
-    environment = {name: value for name, value in os.environ.items()
-                   if name not in throwaway_repo.REPOSITORY_VARIABLES}
     try:
-        result = subprocess.run(["git", "-C", str(source), "status", "--porcelain=v2", "--branch",
-                                 "--untracked-files=no"], capture_output=True, text=True, check=False, env=environment)
-    except OSError:
-        return {"commit": None, "tree": None, "changed_files": None}
-    if result.returncode != 0:
+        status = git.run(source, "status", "--porcelain=v2", "--branch", "--untracked-files=no")
+    except git.GitError:
         return {"commit": None, "tree": None, "changed_files": None}
     commit = None
     changed = 0
-    for line in result.stdout.splitlines():
+    for line in proc.decoded(status).splitlines():
         if line.startswith("# branch.oid "):
             commit = line.split()[2]
         elif not line.startswith("#"):
@@ -1015,7 +1010,9 @@ def self_test() -> int:
         expect("read_lines gives no line for a build with no history", read_lines(build) == [])
         recorder = Recorder(build, build, 4)
         with recorder.start_build():
-            subprocess.run([sys.executable, "-c", "sum(range(20_000_000))"], check=True)
+            proc.require(proc.run(proc.Command([sys.executable, "-c", "sum(range(20_000_000))"],
+                                               timeout_s=proc.TOOL_S, stdout=proc.Output.INHERIT,
+                                               stderr=proc.Output.INHERIT)))
         recorder.finish_build(0)
         with recorder.test_timer:
             pass

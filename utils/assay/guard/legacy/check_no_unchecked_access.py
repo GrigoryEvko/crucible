@@ -147,14 +147,13 @@ import io
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
 from assay.core import cache as cache_dir
-from assay.core import git as throwaway_repo
+from assay.core import git
 from assay.core import ledger as rule_ledger
 from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
@@ -1058,7 +1057,7 @@ def planted_cases(caches: Path) -> int:
 
     def captured(root: Path, cwd: Path | None = None, compile_db: Path | None = None) -> tuple[int, str]:
         """Track each planted file, run the check on the planted repository and keep its report."""
-        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        git.run(root, "add", "-A")
         buffer = io.StringIO()
         previous = Path.cwd()
         if cwd is not None:
@@ -1083,7 +1082,7 @@ def planted_cases(caches: Path) -> int:
 
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
-        throwaway_repo.init(root)
+        git.init(root)
         write(root, "include/foundation/Walk.h",
               "auto m = std::meta::members_of(^^T, std::meta::access_context::unchecked());\n"
               "#define WALK_DOOR std::meta::access_context::unchecked()\n"
@@ -1256,7 +1255,7 @@ def planted_cases(caches: Path) -> int:
 
         # An untracked file is out of scope, because the export of a guard run
         # can appear under the tree while the guard reads it.
-        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        git.run(root, "add", "-A")
         write(root, "src/Untracked.cpp", "auto c = std::meta::access_context::unchecked();\n")
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):

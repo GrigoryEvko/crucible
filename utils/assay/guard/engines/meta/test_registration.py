@@ -33,10 +33,10 @@ Complexity: O(t * a) for t tests of a arguments, and linear in the size of the m
 """
 
 import ast
-import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
+from assay.core import proc
 from assay.core import report as check_report
 from assay.core import registry as rule_registry
 from assay.guard.engines.meta.runner import MetaContext, NotApplicable, copy_tree
@@ -235,8 +235,7 @@ def plant_context(plant: Path, scratch: Path) -> MetaContext:
         cmake = pins.pinned_program("cmake")
     except pins.PinError as problem:
         raise NotApplicable(str(problem)) from None
-    completed = subprocess.run([cmake, "-S", str(scratch), "-B", str(build)], capture_output=True, text=True,
-                               timeout=CMAKE_TIMEOUT_S, check=False)
-    if completed.returncode != 0:
-        raise NotApplicable(f"the planted project does not configure: {completed.stderr.strip()}")
+    completed = proc.run(proc.Command([cmake, "-S", str(scratch), "-B", str(build)], timeout_s=CMAKE_TIMEOUT_S))
+    if completed.exit != 0:
+        raise NotApplicable(f"the planted project does not configure: {completed.err.strip()}")
     return MetaContext(context.root, build)

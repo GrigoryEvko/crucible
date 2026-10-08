@@ -25,13 +25,13 @@ import hashlib
 import io
 import logging
 import os
-import subprocess
 import tarfile
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from assay.core import pins as pin_table
+from assay.core import proc
 from assay.oracle.rocq import OracleError, cache_root
 
 LOG = logging.getLogger("session_oracle.toolchain")
@@ -89,12 +89,19 @@ def _unpack(release: Release, data: bytes, target: Path) -> None:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
             tar.extractall(staging, filter="data")
     else:
-        rpm = subprocess.run(["rpm2cpio", "-"], input=data, capture_output=True)
-        if rpm.returncode != 0:
-            raise OracleError(f"rpm2cpio failed on {release.url}: {rpm.stderr.decode()[-2000:]}")
-        cpio = subprocess.run(["cpio", "-idm", "--quiet"], input=rpm.stdout, cwd=staging, capture_output=True)
-        if cpio.returncode != 0:
-            raise OracleError(f"cpio failed on {release.url}: {cpio.stderr.decode()[-2000:]}")
+        try:
+            rpm = proc.run(proc.Command(["rpm2cpio", "-"], timeout_s=proc.TOOL_S, stdin=data))
+        except proc.ToolFailed as problem:
+            raise OracleError(f"rpm2cpio cannot run on {release.url}: {problem}") from None
+        if rpm.exit != 0:
+            raise OracleError(f"rpm2cpio failed on {release.url}: {rpm.err[-2000:]}")
+        try:
+            cpio = proc.run(proc.Command(["cpio", "-idm", "--quiet"], timeout_s=proc.TOOL_S, cwd=staging,
+                                         stdin=rpm.stdout))
+        except proc.ToolFailed as problem:
+            raise OracleError(f"cpio cannot run on {release.url}: {problem}") from None
+        if cpio.exit != 0:
+            raise OracleError(f"cpio failed on {release.url}: {cpio.err[-2000:]}")
     staging.rename(target)
 
 

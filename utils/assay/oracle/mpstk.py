@@ -30,13 +30,13 @@ import hashlib
 import io
 import logging
 import shutil
-import subprocess
 import tarfile
 import tempfile
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from assay.core import proc
 from assay.oracle.model import LBranch, LChoice, LEnd, LMsg, LRec, LVar, Local
 from assay.oracle.rocq import OracleError, answer_cache_path, cache_root, load_answers, save_answers
 from assay.setup import oracle as toolchain
@@ -88,10 +88,10 @@ def build(root: Path) -> str:
     classpath = root / "target" / "CLASSPATH"
     if not classpath.is_file():
         LOG.info("building mpstk in %s", root)
-        proc = subprocess.run([_tool("sbt"), "-batch", "package"], cwd=root, capture_output=True, text=True,
-                              env=_environment())
-        if proc.returncode != 0 or not classpath.is_file():
-            raise OracleError(f"building mpstk failed:\n{(proc.stdout + proc.stderr)[-4000:]}")
+        completed = proc.run(proc.Command([_tool("sbt"), "-batch", "package"], timeout_s=proc.BUILD_S, cwd=root,
+                                          env=_environment()))
+        if completed.exit != 0 or not classpath.is_file():
+            raise OracleError(f"building mpstk failed:\n{(completed.out + completed.err)[-4000:]}")
     return classpath.read_text(encoding="utf-8").strip()
 
 
@@ -161,11 +161,11 @@ def _verify_batch(classpath: str, texts: list[str]) -> list[dict[str, bool]]:
             path.write_text(text, encoding="utf-8")
             files.append(str(path))
         out = root / "out.csv"
-        proc = subprocess.run([_tool("java"), "-cp", classpath, "mpstk.tool.Verifier",
-                               "-p", ",".join(PROPERTIES), "-o", str(out), *files],
-                              capture_output=True, text=True, cwd=tmp, env=_environment())
-        if proc.returncode != 0 or not out.is_file():
-            raise OracleError(f"mpstk failed:\n{(proc.stdout + proc.stderr)[-4000:]}")
+        completed = proc.run(proc.Command([_tool("java"), "-cp", classpath, "mpstk.tool.Verifier",
+                                           "-p", ",".join(PROPERTIES), "-o", str(out), *files],
+                                          timeout_s=proc.TOOL_S, cwd=tmp, env=_environment()))
+        if completed.exit != 0 or not out.is_file():
+            raise OracleError(f"mpstk failed:\n{(completed.out + completed.err)[-4000:]}")
         table = {Path(row["protocol"]).name: row for row in csv.DictReader(io.StringIO(out.read_text()))}
     results = []
     for i in range(len(texts)):

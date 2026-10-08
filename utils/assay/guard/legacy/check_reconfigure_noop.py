@@ -52,7 +52,6 @@ import contextlib
 import io
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 from collections.abc import Callable
@@ -60,6 +59,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import proc
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
 from assay.readers.ninja import LOG_NAME, read_log, ran_outputs
@@ -162,18 +162,23 @@ def open_build(build: Path) -> tuple[BuildDir | None, str]:
     return BuildDir(build, Path(source), cmake, ninja), ""
 
 
-def run(argv: list[str], cwd: Path | None = None) -> tuple[int, str]:
+def run(argv: list[str], timeout_s: float, cwd: Path | None = None) -> tuple[int, str]:
     """Run one command and return its exit code and its combined output.
 
     Args:
         argv: The command
+        timeout_s: The time limit of the command, in seconds
         cwd: The working directory, or None for the current one
 
     Returns:
         The exit code and the output
+
+    Raises:
+        proc.CannotStart: If the program cannot start
+        proc.TimedOut: If the command runs past its limit
     """
-    proc = subprocess.run(argv, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
-    return proc.returncode, proc.stdout
+    done = proc.run(proc.Command(argv, timeout_s=timeout_s, cwd=cwd, stderr=proc.Output.MERGE))
+    return done.exit, done.out
 
 
 def read_links(build: Path) -> dict[str, LinkState]:
@@ -210,7 +215,7 @@ def build_once(tree: BuildDir, jobs: int) -> tuple[int, str]:
     Returns:
         The exit code and the output
     """
-    return run([tree.cmake, "--build", str(tree.path), "--parallel", str(jobs), "--", "-d", "explain"])
+    return run([tree.cmake, "--build", str(tree.path), "--parallel", str(jobs), "--", "-d", "explain"], proc.BUILD_S)
 
 
 def tail(text: str) -> str:
@@ -236,7 +241,7 @@ def missing_dependencies(tree: BuildDir) -> tuple[dict[str, list[str]], str]:
     Returns:
         The missing dependencies of each output, and an error text when the log cannot be read
     """
-    code, output = run([tree.ninja, "-C", str(tree.path), "-t", "deps"])
+    code, output = run([tree.ninja, "-C", str(tree.path), "-t", "deps"], proc.QUICK_S)
     if code != 0:
         return {}, f"`ninja -t deps` failed: {tail(output)}"
     # Ninja can list one output two times, under a relative and an absolute
@@ -278,7 +283,7 @@ def evaluate(build: Path, jobs: int, root: Path) -> tuple[list[check_report.Find
     if not (build / LOG_NAME).is_file():
         return [finding(place, f"the build wrote no {LOG_NAME}, so the check cannot see which edges ran.")], ""
     links_before = read_links(build)
-    code, output = run([tree.cmake, "-S", str(tree.source), "-B", str(build)])
+    code, output = run([tree.cmake, "-S", str(tree.source), "-B", str(build)], proc.BUILD_S)
     if code != 0:
         return [finding(place, "the second configure fails.")], tail(output)
     log = read_log(build)
@@ -384,7 +389,8 @@ def plant_project(work: Path, plant: str, cmake: str, ninja: str) -> tuple[Path,
     (source / "src" / "input.txt").write_text("input\n", encoding="utf-8")
     (source / "CMakeLists.txt").write_text(PROJECT + PLANTS[plant], encoding="utf-8")
     build = work / "build"
-    code, output = run([cmake, "-G", "Ninja", f"-DCMAKE_MAKE_PROGRAM={ninja}", "-S", str(source), "-B", str(build)])
+    code, output = run([cmake, "-G", "Ninja", f"-DCMAKE_MAKE_PROGRAM={ninja}", "-S", str(source), "-B", str(build)],
+                       proc.TOOL_S)
     return build, "" if code == 0 else output
 
 
@@ -416,10 +422,10 @@ def self_test(cmake: str, ninja: str) -> int:
             if plant == "clean":
                 # A build after a change of a configure dependency makes Ninja
                 # run CMake, so the ninja log holds the outputs of that run.
-                run([cmake, "--build", str(build)])
+                run([cmake, "--build", str(build)], proc.TOOL_S)
                 listing = work / "source" / "CMakeLists.txt"
                 listing.write_text(listing.read_text(encoding="utf-8") + "# changed\n", encoding="utf-8")
-                code, output = run([cmake, "--build", str(build)])
+                code, output = run([cmake, "--build", str(build)], proc.TOOL_S)
                 if code != 0 or "Re-running CMake" not in output:
                     return plant, [], f"the build after the change did not run CMake:\n{output}"
             found, _ = evaluate(build, 2, work)

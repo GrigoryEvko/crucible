@@ -115,7 +115,6 @@ import json
 import multiprocessing
 import os
 import re
-import subprocess
 import sys
 import tempfile
 import threading
@@ -128,6 +127,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from assay.core import cache as cache_dir
+from assay.core import proc
 from assay.core.paths import REPO_ROOT
 
 # One output line for one node.  The type is non-greedy so that a `MISSING ";"`
@@ -320,6 +320,9 @@ def pp_tokens(text: str, first_row: int = 0) -> list[Token]:
 
 
 _KIT_CACHE: Path | None = None
+# The time limit of one run of the CLI, in seconds.  The limit counts from the start, also while a caller holds the
+# generator of _parse_cli() between two trees.
+_PARSE_TIMEOUT_S = proc.TOOL_S
 
 
 def kit_dir() -> Path:
@@ -790,30 +793,18 @@ def _parse_cli(paths: Sequence[Path], strict: bool) -> Iterator[Tree]:
         ParseError: As for parse()
     """
     kit = kit_dir()
-    listing = "\n".join(str(p) for p in paths) + "\n"
-
-    # stderr goes to a file, not a pipe, so a long error text cannot fill a
-    # pipe buffer and stall the CLI while this loop reads stdout.
-    with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as errors:
-        proc = subprocess.Popen(
-            [
-                str(kit / "bin" / "tree-sitter"), "parse",
-                "--lib-path", str(kit / "lib" / "cpp.so"),
-                "--lang-name", "cpp",
-                "--paths", "/dev/stdin",
-            ],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=errors,
-            text=True,
-            bufsize=1 << 20,
-            cwd=REPO_ROOT,
-            env={**os.environ, "NO_COLOR": "1"},
-        )
-        assert proc.stdin is not None and proc.stdout is not None
-        proc.stdin.write(listing)
-        proc.stdin.close()
-
+    listing = ("\n".join(str(p) for p in paths) + "\n").encode()
+    # assay.core.proc reads the lines and the error text in one loop, so a long error text cannot fill a pipe and
+    # stop the CLI.  An early end of the caller stops the CLI in the finally block.
+    try:
+        running = proc.start(proc.Command(
+            [str(kit / "bin" / "tree-sitter"), "parse", "--lib-path", str(kit / "lib" / "cpp.so"), "--lang-name",
+             "cpp", "--paths", "/dev/stdin"],
+            timeout_s=_PARSE_TIMEOUT_S, cwd=REPO_ROOT, env=proc.environment({"NO_COLOR": "1"}), stdin=listing,
+            stdout=proc.Output.STREAM))
+    except proc.CannotStart as problem:
+        raise ParseError(f"tree-sitter parse cannot start: {problem}") from None
+    try:
         tree: Tree | None = None
         # open_at[depth] holds the node index that currently owns depth + 1.
         open_at: list[int] = []
@@ -822,7 +813,7 @@ def _parse_cli(paths: Sequence[Path], strict: bool) -> Iterator[Tree]:
         saw_diagnostic = False
         delivered = 0
 
-        for line in proc.stdout:
+        for line in running:
             match = _NODE_LINE.match(line)
             if match is None:
                 diag = _DIAG_LINE.match(line)
@@ -859,10 +850,13 @@ def _parse_cli(paths: Sequence[Path], strict: bool) -> Iterator[Tree]:
         if tree is not None:
             delivered += 1
             yield _finish(tree, diagnostics, strict)
-        proc.stdout.close()
-        code = proc.wait()
-        errors.seek(0)
-        error_text = errors.read().strip()
+        completed = running.wait()
+    except proc.TimedOut as problem:
+        raise ParseError(f"tree-sitter parse {problem}") from None
+    finally:
+        running.stop()
+    code = completed.exit
+    error_text = completed.err.strip()
 
     # The CLI stops at the first path it cannot read and exits 1, after the
     # trees of the paths before it.  So a short count is a tool failure, even
@@ -1294,9 +1288,11 @@ def tracked_files(root: Path) -> list[str]:
     A guard reads what the commit holds.  An untracked file is out of scope:
     the export and the build of a guard run, or the scratch file of a CMake
     check, can appear under the root while a guard runs and vanish before it
-    reads them.  Outside a work tree, for example in the scratch tree of a
-    self-test, the walk takes every file and skips each version control,
-    build and vendor directory.
+    reads them.  assay.core.git lists the index, so an exported GIT_DIR does
+    not change the list.  Each entry of the index is in the list, also a
+    symbolic link whose target is missing.  Outside a work tree, for example
+    in the scratch tree of a self-test, the walk takes every file and skips
+    each version control, build and vendor directory.
 
     Complexity: linear in the number of files under the root.
 
@@ -1306,11 +1302,12 @@ def tracked_files(root: Path) -> list[str]:
     Returns:
         The paths relative to the root, in sorted order
     """
+    from assay.core import git
+
     try:
-        out = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached"],
-                             check=True, capture_output=True).stdout.decode(errors="replace")
-        return sorted(path for path in out.split("\0") if path)
-    except (OSError, subprocess.CalledProcessError):
+        listed = git.run(root, "ls-files", "-z", "--cached").decode("utf-8", "surrogateescape")
+        return sorted(path for path in listed.split("\0") if path)
+    except git.GitError:
         found: list[str] = []
         for directory, dirs, names in os.walk(root):
             dirs[:] = sorted(d for d in dirs if not d.startswith(_WALK_SKIPPED))
@@ -3486,6 +3483,8 @@ def _self_test() -> int:
         _self_test_macros(check, parse_text)
         _self_test_lookup(check, parse_text)
         _self_test_cache(check, Path(work))
+        _self_test_tracked_files(check)
+        _self_test_parse_limit(check, Path(work))
 
     # Negative control: a rostered file is admitted, and it really does carry an
     # error, so the roster entry is not stale.
@@ -3509,6 +3508,57 @@ def _self_test() -> int:
         return 2
     print(f"tsast --self-test: every check passes, {len(negatives)} of them negative controls.")
     return 0
+
+
+def _self_test_parse_limit(check: Callable[..., None], work: Path) -> None:
+    """Check that a CLI that runs past its limit ends the parse with ParseError soon after the limit."""
+    global _KIT_CACHE, _PARSE_TIMEOUT_S
+    kit = work / "slow-kit"
+    (kit / "bin").mkdir(parents=True)
+    (kit / "lib").mkdir()
+    cli = kit / "bin" / "tree-sitter"
+    cli.write_text("#!/bin/sh\nexec sleep 600\n", encoding="utf-8")
+    cli.chmod(0o755)
+    source = work / "slow.cpp"
+    source.write_text("int slow;\n", encoding="utf-8")
+    saved = (_KIT_CACHE, _PARSE_TIMEOUT_S)
+    _KIT_CACHE, _PARSE_TIMEOUT_S = kit, 0.5
+    started = time.monotonic()
+    failure: ParseError | None = None
+    try:
+        list(_parse_cli([source], False))
+    except ParseError as problem:
+        failure = problem
+    finally:
+        _KIT_CACHE, _PARSE_TIMEOUT_S = saved
+    check("a CLI that runs past its limit ends the parse with ParseError soon after the limit",
+          failure is not None and "limit" in str(failure) and time.monotonic() - started < 20)
+
+
+def _self_test_tracked_files(check: Callable[..., None]) -> None:
+    """Check that tracked_files() lists the files of its root also when this process exports GIT_DIR of another repo."""
+    from assay.core import git
+
+    with git.scratch_repository({"own.cpp": b"int own;\n"}) as own, \
+            git.scratch_repository({"other.cpp": b"int other;\n"}) as other:
+        saved = os.environ.get("GIT_DIR")
+        os.environ["GIT_DIR"] = str(other / ".git")
+        try:
+            listed = tracked_files(own)
+        finally:
+            if saved is None:
+                os.environ.pop("GIT_DIR")
+            else:
+                os.environ["GIT_DIR"] = saved
+    check("tracked_files lists the files of its root, also with GIT_DIR of another repository exported",
+          listed == ["own.cpp"])
+
+    with git.scratch_repository({"kept.cpp": b"int kept;\n"}) as linked:
+        (linked / "dangling.md").symlink_to("missing-target.md")
+        git.commit_all(linked, "add a link")
+        listed = tracked_files(linked)
+    check("tracked_files keeps a tracked symbolic link whose target is missing",
+          listed == ["dangling.md", "kept.cpp"])
 
 
 def _self_test_helpers(

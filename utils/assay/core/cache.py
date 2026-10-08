@@ -566,7 +566,8 @@ def self_test() -> int:
         0 when every case holds, else 2
     """
     import random
-    import subprocess
+
+    from assay.core import proc
 
     failures: list[str] = []
 
@@ -637,15 +638,15 @@ def self_test() -> int:
         from assay.core.paths import LOOP
 
         command = [sys.executable, str(LOOP), "cache"]
-        refused = subprocess.run([*command, "--evict", "no-such-cache"], capture_output=True, text=True)
-        expect("--evict refuses a cache with no row of LIMITS", refused.returncode == 2 and "LIMITS" in refused.stderr)
+        refused = proc.run(proc.Command([*command, "--evict", "no-such-cache"], timeout_s=proc.TOOL_S))
+        expect("--evict refuses a cache with no row of LIMITS", refused.exit == 2 and "LIMITS" in refused.err)
         roster = root / "atom-roster" / ("a" * 64)
         roster.mkdir(parents=True)
         (roster / "variant.log").write_bytes(bytes(8192))
         os.utime(roster / "variant.log", (time.time() - 2 * MAX_AGE, time.time() - 2 * MAX_AGE))
-        done = subprocess.run([*command, "--evict", "atom-roster"], capture_output=True, text=True,
-                              env={**os.environ, ROOT_VARIABLE: str(root)})
-        expect("--evict holds a cache of LIMITS under its limits", done.returncode == 0
+        done = proc.run(proc.Command([*command, "--evict", "atom-roster"], timeout_s=proc.TOOL_S,
+                                     env=proc.environment({ROOT_VARIABLE: str(root)})))
+        expect("--evict holds a cache of LIMITS under its limits", done.exit == 0
                and not (roster / "variant.log").exists())
 
         compiled = root / COMPILED_CACHE

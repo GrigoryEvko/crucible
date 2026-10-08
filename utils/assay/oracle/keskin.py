@@ -44,7 +44,6 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
 import tarfile
 import tempfile
 import urllib.request
@@ -53,6 +52,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import proc
 from assay.oracle.execution import _SPIN, head
 from assay.oracle.model import GBranch, GEnd, GMsg, GRec, GVar, Global, LChoice, LEnd, Local
 from assay.oracle.rocq import OracleError, answer_cache_path, cache_root, load_answers, save_answers
@@ -127,10 +127,10 @@ def build(root: Path) -> None:
     LOG.info("building the ITP 2026 development in %s (about ten minutes)", root)
     for cmd in ([*_switch(), "coq_makefile", "-f", "_CoqProject", "-o", "Makefile"],
                 [*_switch(), "make", f"-j{BUILD_JOBS}"]):
-        proc = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
-        if proc.returncode != 0:
+        completed = proc.run(proc.Command(cmd, timeout_s=proc.BUILD_S, cwd=root))
+        if completed.exit != 0:
             raise OracleError(f"building the ITP 2026 development failed at {' '.join(cmd[-3:])}:\n"
-                              f"{(proc.stdout + proc.stderr)[-3000:]}")
+                              f"{(completed.out + completed.err)[-3000:]}")
 
 
 def library(root: Path) -> Path:
@@ -146,11 +146,11 @@ def library(root: Path) -> Path:
         return out
     out.mkdir(parents=True, exist_ok=True)
     (out / "LiveOracle.v").write_text(text, encoding="utf-8")
-    proc = subprocess.run([*coqc(), "-R", str(root), "live_mpst", "-R", str(out), "SessionOracle",
-                           str(out / "LiveOracle.v")], cwd=out, capture_output=True, text=True)
-    if proc.returncode != 0:
+    completed = proc.run(proc.Command([*coqc(), "-R", str(root), "live_mpst", "-R", str(out), "SessionOracle",
+                                       str(out / "LiveOracle.v")], timeout_s=proc.TOOL_S, cwd=out))
+    if completed.exit != 0:
         raise OracleError(f"coq/LiveOracle.v does not compile against the ITP 2026 development:\n"
-                          f"{(proc.stdout + proc.stderr)[-3000:]}")
+                          f"{(completed.out + completed.err)[-3000:]}")
     return out
 
 
@@ -642,13 +642,13 @@ def _check(root: Path, lib: Path, blocks: list[tuple[str, str]]) -> tuple[bool, 
         path = Path(tmp) / "KeskinCertificates.v"
         path.write_text(text, encoding="utf-8")
         try:
-            proc = subprocess.run([*coqc(), "-R", str(root), "live_mpst", "-R", str(lib), "SessionOracle",
-                                   str(path)], cwd=tmp, capture_output=True, text=True, timeout=CHUNK_TIMEOUT)
-        except subprocess.TimeoutExpired:
+            completed = proc.run(proc.Command([*coqc(), "-R", str(root), "live_mpst", "-R", str(lib), "SessionOracle",
+                                               str(path)], timeout_s=CHUNK_TIMEOUT, cwd=tmp))
+        except proc.TimedOut:
             return False, f"timeout after {CHUNK_TIMEOUT} s"
-    if proc.returncode != 0:
-        return False, "coqc refused the certificate: " + " ".join((proc.stdout + proc.stderr).split())[-300:]
-    extra = set(_AXIOM.findall(proc.stdout)) - EXPECTED_AXIOMS
+    if completed.exit != 0:
+        return False, "coqc refused the certificate: " + " ".join((completed.out + completed.err).split())[-300:]
+    extra = set(_AXIOM.findall(completed.out)) - EXPECTED_AXIOMS
     if extra:
         return False, f"the proof rests on axioms outside the expected set: {sorted(extra)}"
     return True, ""
@@ -672,7 +672,7 @@ def _planted(inst: Instance) -> Instance:
 
 def coq_version() -> str:
     """Return the version line of the coqc that checks the certificates."""
-    out = subprocess.run([*coqc(), "--version"], check=True, capture_output=True, text=True).stdout
+    out = proc.require(proc.run(proc.Command([*coqc(), "--version"], timeout_s=proc.QUICK_S))).out
     return out.strip().splitlines()[0]
 
 

@@ -1,6 +1,8 @@
-"""A planted script whose git calls only read."""
+"""A planted script whose git calls only read, through assay.core.git, and which holds the word commit outside a command."""
 
-import subprocess
+from pathlib import Path
 
-subprocess.run(["git", "log", "-1"], check=False)
+from assay.core import git
+
+LAST = git.run(Path("."), "log", "-1")
 VERB = "commit"

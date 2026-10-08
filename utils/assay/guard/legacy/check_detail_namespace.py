@@ -94,7 +94,6 @@ import hashlib
 import io
 import os
 import re
-import subprocess
 import sys
 import tempfile
 from collections import Counter
@@ -540,12 +539,13 @@ def decoded_facts(rel: str, includes: list[str], fact: dict) -> FileFacts:
 
 
 def listed_files(root: Path, roots: tuple[str, ...]) -> list[str]:
-    """Return the C++ files under the given roots that git does not ignore, relative to the root, sorted."""
-    listed = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard",
-                             "--", *roots], capture_output=True, check=False)
-    if listed.returncode == 0:
-        paths = {p for p in listed.stdout.decode().split("\0") if p}
-    else:
+    """Return the C++ files under the given roots that git does not ignore, relative to the root, sorted.
+
+    When git cannot list the files, each file under the roots counts.
+    """
+    try:
+        paths = set(throwaway_repo.tracked_files(root, roots, with_new=True))
+    except throwaway_repo.GitError:
         paths = {str(p.relative_to(root)) for r in roots for p in (root / r).rglob("*") if p.is_file()}
     return sorted(p for p in paths if tsast.is_in_cpp_scope(p) and (root / p).is_file())
 

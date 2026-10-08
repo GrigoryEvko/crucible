@@ -39,15 +39,14 @@ self-test.
 
 from __future__ import annotations
 
-import contextlib
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import proc
 from assay.core.paths import REPO_ROOT
 from assay.readers import cmake as cmake_files
 from assay.setup import pins as cmake_pin
@@ -57,6 +56,9 @@ DEFAULT_JOBS = "6"
 HARNESSES = Path("test/fuzz/boundary/harnesses")
 # The time after SECONDS that an instance gets before SIGINT stops it.
 STOP_GRACE_S = 60
+# The time after SECONDS and STOP_GRACE_S that an instance gets before the limit of assay.core.proc stops its process
+# group.  The command `timeout` of the instance sends SIGINT first, and afl-fuzz then writes its state and ends.
+INSTANCE_MARGIN_S = 120
 SANITIZER_OPTIONS = {
     "ASAN_OPTIONS": "abort_on_error=1:symbolize=0:detect_leaks=0:allocator_may_return_null=1",
     "UBSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:symbolize=0",
@@ -131,19 +133,20 @@ def configure_and_build(root: Path, build_dir: Path, harness: str, afl_bin: Path
     configured the directory (`setup check`, utils/assay/setup/pins.py).
 
     Raises:
-        subprocess.CalledProcessError: If the configure or the build fails
+        proc.ToolFailed: If the configure or the build cannot start, runs past its limit or fails
         cmake_pin.PinError: If the build directory names no cmake
     """
     if not cmake_files.is_configured(build_dir):
-        subprocess.run(["cmake", "-S", str(root), "-B", str(build_dir), "-G", "Ninja",
-                        f"-DCMAKE_TOOLCHAIN_FILE={root / 'cmake' / 'Toolchain-gcc16.cmake'}",
-                        f"-DCMAKE_C_COMPILER={afl_bin / 'afl-gcc-fast'}",
-                        f"-DCMAKE_CXX_COMPILER={afl_bin / 'afl-g++-fast'}",
-                        "-DCMAKE_BUILD_TYPE=Debug", "-DCRUCIBLE_BENCH=OFF", "-DCRUCIBLE_WERROR=ON",
-                        "-DCRUCIBLE_FUZZ=ON"], env=environment, check=True)
+        proc.require(proc.run(proc.Command(
+            ["cmake", "-S", str(root), "-B", str(build_dir), "-G", "Ninja",
+             f"-DCMAKE_TOOLCHAIN_FILE={root / 'cmake' / 'Toolchain-gcc16.cmake'}",
+             f"-DCMAKE_C_COMPILER={afl_bin / 'afl-gcc-fast'}", f"-DCMAKE_CXX_COMPILER={afl_bin / 'afl-g++-fast'}",
+             "-DCMAKE_BUILD_TYPE=Debug", "-DCRUCIBLE_BENCH=OFF", "-DCRUCIBLE_WERROR=ON", "-DCRUCIBLE_FUZZ=ON"],
+            timeout_s=proc.BUILD_S, env=environment, stdout=proc.Output.INHERIT, stderr=proc.Output.INHERIT)))
     build_cmake = cmake_pin.configured_program(build_dir, "cmake")
-    subprocess.run(["nice", "-n", "10", build_cmake, "--build", str(build_dir), "-j", jobs, "--target",
-                    f"fuzz_{harness}"], env=environment, check=True)
+    proc.require(proc.run(proc.Command(
+        ["nice", "-n", "10", build_cmake, "--build", str(build_dir), "-j", jobs, "--target", f"fuzz_{harness}"],
+        timeout_s=proc.BUILD_S, env=environment, stdout=proc.Output.INHERIT, stderr=proc.Output.INHERIT)))
 
 
 def instance_command(campaign: Campaign, index: int, afl_bin: Path, binary: Path, cmplog_binary: Path) -> list[str]:
@@ -166,6 +169,22 @@ def instance_command(campaign: Campaign, index: int, afl_bin: Path, binary: Path
             "--", str(binary)]
 
 
+def instance_status(instance: proc.Running) -> int:
+    """Wait for the end of one instance, and return its exit status, or 1 when it ran past its limit.
+
+    Args:
+        instance: The started instance
+
+    Returns:
+        The exit status
+    """
+    try:
+        return instance.wait().exit
+    except proc.TimedOut as problem:
+        print(f"loop fuzz: {problem}", file=sys.stderr)
+        return 1
+
+
 def run_campaign(root: Path, campaign: Campaign) -> int:
     """Build the two instrumented builds, write the seeds, and run one instance on each core.
 
@@ -179,7 +198,7 @@ def run_campaign(root: Path, campaign: Campaign) -> int:
     afl_bin = Path(os.environ.get("AFL_BIN", str(Path.home() / ".local" / "bin")))
     jobs = os.environ.get("CRUCIBLE_FUZZ_JOBS", DEFAULT_JOBS)
     gcc_bin = Path(os.environ.get("CRUCIBLE_GCC16_PREFIX", str(Path.home() / ".local" / "gcc16-patched"))) / "usr" / "bin"
-    environment = dict(os.environ, AFL_CC=str(gcc_bin / "gcc-16p"), AFL_CXX=str(gcc_bin / "g++-16p"))
+    environment = proc.environment({"AFL_CC": str(gcc_bin / "gcc-16p"), "AFL_CXX": str(gcc_bin / "g++-16p")})
     cmplog_dir = Path(f"{campaign.build_dir}-cmplog")
     configure_and_build(root, campaign.build_dir, campaign.harness, afl_bin, jobs, environment)
     configure_and_build(root, cmplog_dir, campaign.harness, afl_bin, jobs, dict(environment, AFL_GCC_CMPLOG="1"))
@@ -188,17 +207,24 @@ def run_campaign(root: Path, campaign: Campaign) -> int:
     scratch = campaign.out_dir / "tmp"
     scratch.mkdir(parents=True, exist_ok=True)
     try:
-        subprocess.run([str(binary), f"--write-seeds={campaign.out_dir / 'seeds'}"], env=environment, check=True)
+        proc.require(proc.run(proc.Command([str(binary), f"--write-seeds={campaign.out_dir / 'seeds'}"],
+                                           timeout_s=proc.TOOL_S, env=environment, stdout=proc.Output.INHERIT,
+                                           stderr=proc.Output.INHERIT)))
         fuzz_environment = dict(environment, TMPDIR=str(scratch), **SANITIZER_OPTIONS)
-        with contextlib.ExitStack() as logs:
-            instances = []
+        instances: list[proc.Running] = []
+        try:
             for index in range(len(campaign.cpus)):
-                log = logs.enter_context((campaign.out_dir / f"instance-{index}.log").open("wb"))
-                instances.append(subprocess.Popen(instance_command(campaign, index, afl_bin, binary, cmplog_binary),
-                                                  stdout=log, stderr=subprocess.STDOUT, env=fuzz_environment))
+                instances.append(proc.start(proc.Command(
+                    instance_command(campaign, index, afl_bin, binary, cmplog_binary),
+                    timeout_s=campaign.seconds + STOP_GRACE_S + INSTANCE_MARGIN_S, env=fuzz_environment,
+                    stdout=campaign.out_dir / f"instance-{index}.log", stderr=proc.Output.MERGE)))
             print(f"loop fuzz: {len(instances)} instances of fuzz_{campaign.harness} for {campaign.seconds} "
                   f"seconds, output in {campaign.out_dir}/afl", flush=True)
-            statuses = [process.wait() for process in instances]
+            statuses = [instance_status(instance) for instance in instances]
+        finally:
+            # An instance that the loop did not wait for, after an error or an interrupt, stops with its group.
+            for instance in instances:
+                instance.stop()
         return 0 if all(status == 0 for status in statuses) else 1
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
@@ -280,6 +306,6 @@ def main(argv: list[str]) -> int:
         return 2
     try:
         return run_campaign(REPO_ROOT, campaign)
-    except (subprocess.CalledProcessError, cmake_pin.PinError, OSError) as problem:
+    except (proc.ToolFailed, cmake_pin.PinError, OSError) as problem:
         print(f"loop fuzz: {problem}", file=sys.stderr)
         return 1

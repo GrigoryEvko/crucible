@@ -47,7 +47,6 @@ import logging
 import os
 import re
 import shutil
-import subprocess
 import tarfile
 import tempfile
 import urllib.request
@@ -56,6 +55,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from assay.core import proc
 from assay.oracle.model import Global, Local, coq_global, decode_local
 
 LOG = logging.getLogger("session_oracle.rocq")
@@ -108,8 +108,7 @@ def _tool(name: str) -> str:
 
 def coq_version() -> str:
     """Return the version line of coqc on PATH."""
-    out = subprocess.run([_tool("coqc"), "--version"], check=True,
-                         capture_output=True, text=True).stdout
+    out = proc.require(proc.run(proc.Command([_tool("coqc"), "--version"], timeout_s=proc.QUICK_S))).out
     return out.strip().splitlines()[0]
 
 
@@ -234,10 +233,10 @@ def _build_sources(dev: Development, root: Path, prefix: str, subroots: bool, ma
     LOG.info("building %s in %s", dev.name, root)
     for path in _build_order(root, prefix, subroots, targets):
         LOG.info("coqc %s", path.relative_to(root))
-        proc = subprocess.run([_tool("coqc"), *dev.load_path(root), str(path)], cwd=root,
-                              capture_output=True, text=True)
-        if proc.returncode != 0:
-            tail = "\n".join((proc.stdout + proc.stderr).splitlines()[-30:])
+        completed = proc.run(proc.Command([_tool("coqc"), *dev.load_path(root), str(path)], timeout_s=proc.TOOL_S,
+                                          cwd=root))
+        if completed.exit != 0:
+            tail = "\n".join((completed.out + completed.err).splitlines()[-30:])
             raise OracleError(f"building {dev.name} failed at {path}:\n{tail}")
     if not stamp.is_file():
         raise OracleError(f"{stamp} is missing after the build")
@@ -306,15 +305,15 @@ def _run_chunk(dev: Development, root: Path, work: Path, chunk: list[tuple[int, 
         driver.write_text(dev.driver_head + "".join(
             f"Eval vm_compute in ({key}, {expr}).\n" for key, expr in chunk), encoding="utf-8")
         try:
-            proc = subprocess.run([_tool("coqc"), *dev.load_path(root), str(driver)], cwd=tmp,
-                                  capture_output=True, text=True, timeout=timeout)
-        except subprocess.TimeoutExpired:
+            completed = proc.run(proc.Command([_tool("coqc"), *dev.load_path(root), str(driver)], timeout_s=timeout,
+                                              cwd=tmp))
+        except proc.TimedOut:
             return None
-    if proc.returncode != 0:
-        raise OracleError(f"coqc failed on a {dev.name} driver chunk:\n{proc.stdout[-4000:]}\n"
-                          f"{proc.stderr[-4000:]}")
+    if completed.exit != 0:
+        raise OracleError(f"coqc failed on a {dev.name} driver chunk:\n{completed.out[-4000:]}\n"
+                          f"{completed.err[-4000:]}")
     results: dict[int, list[int]] = {}
-    for match in _RESULT.finditer(proc.stdout):
+    for match in _RESULT.finditer(completed.out):
         key = int(match.group(1))
         codes = [int(tok) for tok in match.group(2).replace("\n", " ").split(";") if tok.strip()]
         if key in results:

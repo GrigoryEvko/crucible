@@ -85,7 +85,6 @@ import json
 import os
 import shlex
 import shutil
-import subprocess
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -96,6 +95,7 @@ from urllib.parse import unquote
 
 from assay.core import cache as cache_dir
 from assay.core import ledger as rule_ledger
+from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
@@ -796,10 +796,10 @@ def compiler_identity(compiler: str) -> str:
     The digests stay in the cache directory, keyed by the path, the size and
     the modification time of each binary, so a run hashes each binary one time.
     """
-    done = subprocess.run([compiler, "-print-prog-name=cc1plus"], capture_output=True, text=True, check=False)
+    done = proc.run(proc.Command([compiler, "-print-prog-name=cc1plus"], timeout_s=proc.QUICK_S))
     binaries = [shutil.which(compiler) or compiler]
-    if os.path.isabs(done.stdout.strip()) and os.path.isfile(done.stdout.strip()):
-        binaries.append(done.stdout.strip())
+    if os.path.isabs(done.out.strip()) and os.path.isfile(done.out.strip()):
+        binaries.append(done.out.strip())
     store = cache_dir.cache_root("padded-list")
     digests: list[str] = []
     for binary in binaries:
@@ -927,8 +927,8 @@ def run_probes(root: Path, build_dir: Path, targets: list[Target], limit: int) -
                 str(source), "-o", str(directory / f"{stem}.o"), "-MD", "-MF", str(directory / f"{stem}.d")]
         if launcher is not None:
             argv = [launcher, f"compiler_check=string:{identities[command.compiler]}", *argv]
-        done = subprocess.run(argv, cwd=command.directory, capture_output=True, text=True, check=False)
-        return target, done.returncode, done.stderr
+        done = proc.run(proc.Command(argv, timeout_s=proc.TOOL_S, cwd=command.directory))
+        return target, done.exit, done.err
 
     compilers = {command.compiler for command in [sentinel, *sources.values()] if command is not None}
     if launcher is not None:

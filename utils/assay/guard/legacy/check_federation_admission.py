@@ -93,14 +93,13 @@ import contextlib
 import io
 import json
 import os
-import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import cache as cache_dir
-from assay.core import git as throwaway_repo
+from assay.core import git
 from assay.guard import preprocessed
 from assay.readers import tsast
 
@@ -724,15 +723,15 @@ def planted_cases() -> int:
     # holds a copy of the authored file at another path.
     with tempfile.TemporaryDirectory() as work:
         root = Path(work).resolve()
-        throwaway_repo.init(root)
+        git.init(root)
         (root / AUTHORED).parent.mkdir(parents=True)
         (root / AUTHORED).write_text(authored, encoding="utf-8")
-        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        git.run(root, "add", "-A")
         copy = root / "grun" / "change" / AUTHORED
         copy.parent.mkdir(parents=True)
         copy.write_text(authored, encoding="utf-8")
         expect("an untracked copy of the authored file is out of scope", captured(lambda: run(root))[0] == 0)
-        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        git.run(root, "add", "-A")
         code, report = captured(lambda: run(root))
         expect("the same copy fails once git tracks it", code == 1 and f"grun/change/{AUTHORED}:2" in report, True)
 

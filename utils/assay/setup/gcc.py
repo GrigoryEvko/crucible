@@ -27,8 +27,9 @@ development files of GMP, MPFR, MPC, ISL, zlib and zstd.  On Fedora:
 
 A repository variable in the environment of the caller wins over `git -C`.
 With GIT_DIR exported, the init, the fetch and the apply would write to the
-repository that GIT_DIR names.  assay.core.git.init() clears each such
-variable, and it stops unless git resolves the new repository itself.
+repository that GIT_DIR names.  assay.core.proc removes each such variable
+from the environment of each command, and assay.core.git.init() stops
+unless git resolves the new repository itself.
 
 Exit status: 0 when the compiler is installed, 1 when a step fails, 2 on a
 usage error.
@@ -36,13 +37,13 @@ usage error.
 
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 from assay.core import git
 from assay.core import pins as pin_table
+from assay.core import proc
 from assay.core.paths import REPO_ROOT
 
 PIN_NAME = "gcc"
@@ -53,6 +54,9 @@ HEADERS = ("gmp.h", "mpfr.h", "mpc.h", "isl/version.h", "zlib.h", "zstd.h")
 CONFIGURE = ("--program-suffix=-16p", "--enable-languages=c,c++,lto", "--disable-multilib", "--disable-bootstrap",
              "--enable-checking=release", "--with-system-zlib")
 COMPILER = Path("usr") / "bin" / "g++-16p"
+# The time limit of one step of the build (run), in seconds.  With 8 jobs the build takes approximately 8 minutes,
+# but with one job on a slow host it can take some hours.
+STEP_TIMEOUT_S = 6 * 3600.0
 
 
 class BuildError(Exception):
@@ -74,9 +78,13 @@ def check_host(environment: dict[str, str]) -> None:
         if shutil.which(tool) is None:
             raise BuildError(f"'{tool}' is not on PATH.  Install it, then run the command again.")
     probe = "".join(f"#include <{header}>\n" for header in HEADERS)
-    completed = subprocess.run(["g++", "-E", "-x", "c++", "-"], input=probe, text=True, stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, env=environment, check=False)
-    if completed.returncode != 0:
+    try:
+        completed = proc.run(proc.Command(["g++", "-E", "-x", "c++", "-"], timeout_s=proc.TOOL_S, env=environment,
+                                          stdin=probe.encode(), stdout=proc.Output.DISCARD,
+                                          stderr=proc.Output.DISCARD))
+    except proc.ToolFailed as problem:
+        raise BuildError(f"the check of the development headers cannot run: {problem}") from None
+    if completed.exit != 0:
         raise BuildError("a development header is missing.  Install the GMP, MPFR, MPC, ISL, zlib and zstd "
                          "development packages.")
 
@@ -94,29 +102,44 @@ def patches() -> list[Path]:
 
 
 def run(argv: list[str], environment: dict[str, str], cwd: Path | None = None) -> None:
-    """Run one step of the build, with its output on the terminal.
+    """Run one step of the build, with its output on the terminal, and a time limit of STEP_TIMEOUT_S.
 
     Raises:
-        BuildError: If the step exits with a status that is not 0
+        BuildError: If the step cannot start, runs past its limit, or exits with a status that is not 0
     """
-    completed = subprocess.run(argv, cwd=cwd, env=environment, check=False)
-    if completed.returncode != 0:
-        raise BuildError(f"the step `{' '.join(argv)}` exits with {completed.returncode}")
+    try:
+        completed = proc.run(proc.Command(argv, timeout_s=STEP_TIMEOUT_S, cwd=cwd, env=environment,
+                                          stdout=proc.Output.INHERIT, stderr=proc.Output.INHERIT))
+    except proc.ToolFailed as problem:
+        raise BuildError(f"the step `{' '.join(argv)}` cannot run: {problem}") from None
+    if completed.exit != 0:
+        raise BuildError(f"the step `{' '.join(argv)}` exits with {completed.exit}")
 
 
 def extract(source: Path, environment: dict[str, str]) -> None:
-    """Extract the tree of FETCH_HEAD into the source directory: `git archive FETCH_HEAD | tar -x -C SOURCE`.
+    """Extract the tree of FETCH_HEAD into the source directory, through a tar file beside it.
+
+    git archive writes the tree to SOURCE.tar, the source directory with the
+    suffix .tar, and tar unpacks that file into the source directory.  The
+    function removes the tar file at its end.
 
     Raises:
         BuildError: If git or tar fails
     """
-    archive = subprocess.Popen(["git", "-C", str(source), "archive", "FETCH_HEAD"], stdout=subprocess.PIPE,
-                               env=git.clean_environment(environment))
-    assert archive.stdout is not None
-    unpack = subprocess.run(["tar", "-x", "-C", str(source)], stdin=archive.stdout, env=environment, check=False)
-    archive.stdout.close()
-    if archive.wait() != 0 or unpack.returncode != 0:
-        raise BuildError(f"the extract of FETCH_HEAD into {source} fails")
+    archive = source.with_name(f"{source.name}.tar")
+    try:
+        try:
+            git.run(source, "archive", "--format=tar", f"--output={archive}", "FETCH_HEAD", extra={"LC_ALL": "C"},
+                    timeout_s=proc.TOOL_S)
+            unpacked = proc.run(proc.Command(["tar", "-x", "-f", str(archive), "-C", str(source)],
+                                             timeout_s=proc.TOOL_S, env=environment, stdout=proc.Output.INHERIT,
+                                             stderr=proc.Output.INHERIT))
+        except (git.GitError, proc.ToolFailed) as problem:
+            raise BuildError(f"the extract of FETCH_HEAD into {source} fails: {problem}") from None
+        if unpacked.exit != 0:
+            raise BuildError(f"the extract of FETCH_HEAD into {source} fails")
+    finally:
+        archive.unlink(missing_ok=True)
 
 
 def build(prefix: Path, jobs: int, dry_run: bool) -> None:
@@ -129,13 +152,14 @@ def build(prefix: Path, jobs: int, dry_run: bool) -> None:
     if pin is None or pin.via != pin_table.Via.GIT:
         raise BuildError(f"{pin_table.PINS_PATH} has no pin {PIN_NAME} with via=git")
     applied = patches()
-    environment = {**os.environ, "LC_ALL": "C"}
+    environment = proc.environment({"LC_ALL": "C"})
     check_host(environment)
     configure = [str(Path("SOURCE") / "configure"), f"--prefix={prefix / 'usr'}", *CONFIGURE]
     if dry_run:
         print(f"setup gcc: download {pin.source} at {pin.commit} (GCC {pin.version})")
         print(f"  git -C SOURCE init -q, then git -C SOURCE fetch -q --depth 1 {pin.source} {pin.commit}")
-        print("  git -C SOURCE archive FETCH_HEAD | tar -x -C SOURCE")
+        print("  git -C SOURCE archive --format=tar --output=SOURCE.tar FETCH_HEAD, "
+              "then tar -x -f SOURCE.tar -C SOURCE")
         for patch in applied:
             print(f"  git -C SOURCE apply {patch}")
         print(f"  cd OBJECT && {' '.join(configure)}")
@@ -153,7 +177,7 @@ def build(prefix: Path, jobs: int, dry_run: bool) -> None:
             git.init(source)
             git.run(source, "fetch", "-q", "--depth", "1", pin.source, pin.commit, extra={"LC_ALL": "C"})
             fetched = git.run(source, "rev-parse", "FETCH_HEAD").decode().strip()
-        except (git.GitError, git.NotIsolated, subprocess.CalledProcessError) as error:
+        except (git.GitError, git.NotIsolated) as error:
             raise BuildError(str(error)) from None
         if fetched != pin.commit:
             raise BuildError(f"the download is not commit {pin.commit}")

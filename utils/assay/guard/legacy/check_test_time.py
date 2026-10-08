@@ -106,7 +106,6 @@ import io
 import json
 import os
 import re
-import subprocess
 import sys
 import tempfile
 from collections.abc import Callable
@@ -114,6 +113,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import meter as cost_meter
+from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
@@ -291,13 +291,13 @@ def read_places(build: Path, ctest: str) -> dict[str, Place]:
 
     Raises:
         ValueError: If ctest cannot list the tests of the build
+        proc.ToolFailed: If ctest cannot start, or it runs past its limit
     """
-    proc = subprocess.run([ctest, "--test-dir", str(build), "--show-only=json-v1"], capture_output=True, text=True,
-                          check=False)
-    if proc.returncode != 0:
-        raise ValueError(f"`ctest --show-only=json-v1` failed for {build}: {proc.stderr.strip()}")
+    shown = proc.run(proc.Command([ctest, "--test-dir", str(build), "--show-only=json-v1"], timeout_s=proc.TOOL_S))
+    if shown.exit != 0:
+        raise ValueError(f"`ctest --show-only=json-v1` failed for {build}: {shown.err.strip()}")
     try:
-        listing = json.loads(proc.stdout)
+        listing = json.loads(shown.out)
         graph = listing["backtraceGraph"]
         files, nodes = graph["files"], graph["nodes"]
         places: dict[str, Place] = {}
@@ -445,7 +445,7 @@ def run(build: Path, log: Path | None, ctest: str, warnings_dir: Path | None, sh
         ledger = read_ledger(ledger_path, kind)
         needs_places = bool(ledger) or has_finding(run_log.times, run_log.launched, budget)
         places = read_places(build, ctest) if needs_places and not should_write else {}
-    except (ValueError, KeyError, OSError) as exc:
+    except (ValueError, KeyError, OSError, proc.ToolFailed) as exc:
         problem = f"the measured rule {CHECK} is missing from the registry" if isinstance(exc, KeyError) else str(exc)
         return check_report.emit([check_report.Finding("error", shown_log, 0, CHECK,
                                                        f"the check cannot read its input: {problem}")],
@@ -685,12 +685,11 @@ def through_ctest(work: Path, cmake: str, ctest: str, expect: Callable[[str, boo
         f'add_test(NAME planted_script COMMAND "{python}" "{source / "busy.py"}" 0.05)\n'
         f'add_test(NAME planted_wrapped COMMAND "${{CMAKE_COMMAND}}" -E env A=1 "{python}" "{source / "busy.py"}" 0.05)\n'
         f'add_test(NAME planted_launched COMMAND "{python}" "{launcher}" {LAUNCHER[1]} 0.05)\n', encoding="utf-8")
-    configured = subprocess.run([cmake, "-S", str(source), "-B", str(build)], capture_output=True, text=True,
-                                check=False)
+    configured = proc.run(proc.Command([cmake, "-S", str(source), "-B", str(build)], timeout_s=proc.TOOL_S))
     expect("a scratch project that includes cmake/TestLauncher.cmake configures",
-           configured.returncode == 0 and (build / "CTestCustom.cmake").is_file())
-    if configured.returncode != 0:
-        print(configured.stdout + configured.stderr)
+           configured.exit == 0 and (build / "CTestCustom.cmake").is_file())
+    if configured.exit != 0:
+        print(configured.out + configured.err)
         return
     (build / cost_meter.KIND_FILE).write_text("x86_64-debug-asan\n", encoding="utf-8")
     registry = work / "registry.txt"
@@ -703,9 +702,9 @@ def through_ctest(work: Path, cmake: str, ctest: str, expect: Callable[[str, boo
         environment = dict(os.environ, **{REGISTRY_ENV: str(registry), LEDGERS_ENV: str(ledgers)})
         environment.pop(cost_meter.GITHUB_ACTIONS_ENV, None)
         environment.update(extra)
-        proc = subprocess.run([ctest, "--test-dir", str(build), "-j3", *arguments], capture_output=True, text=True,
-                              env=environment, check=False)
-        return proc.returncode, proc.stdout + proc.stderr
+        done = proc.run(proc.Command([ctest, "--test-dir", str(build), "-j3", *arguments], timeout_s=proc.TOOL_S,
+                                     env=environment))
+        return done.exit, done.out + done.err
 
     ledger = Path(cost_meter.ledger_file(CHECK, str(ledgers)))
     status, said = ctest_run(0, 0)

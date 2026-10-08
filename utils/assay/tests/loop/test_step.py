@@ -42,7 +42,6 @@ import json
 import os
 import shutil
 import signal
-import subprocess
 import sys
 import tempfile
 import time
@@ -51,6 +50,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from assay.core import meter as cost_meter
+from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import LOOP
@@ -58,6 +58,10 @@ from assay.core.paths import LOOP
 # The launcher as CMake starts it: the master loop with the subcommand step.
 LAUNCHER = (str(LOOP), "step")
 KIND = "test-kind"
+# The time limit of one run of the launcher, also of the case that interrupts it, in seconds.
+LAUNCH_TIMEOUT_S = 60.0
+# The time limit of a run of the program that the real compiler links, in seconds.
+PROGRAM_TIMEOUT_S = 30.0
 
 PLANTED_TOOL = """\
 import os, signal, subprocess, sys, time
@@ -165,8 +169,8 @@ class Bench:
         self.ledgers.mkdir()
         self.registry = root / "registry.txt"
         self.registry.write_text(QUIET, encoding="utf-8")
-        self.env = dict(os.environ, CRUCIBLE_BUILD_REGISTRY=str(self.registry),
-                        CRUCIBLE_BUILD_LEDGERS=str(self.ledgers))
+        self.env = proc.environment({"CRUCIBLE_BUILD_REGISTRY": str(self.registry),
+                                     "CRUCIBLE_BUILD_LEDGERS": str(self.ledgers)})
         # A case that needs a CI runner sets GITHUB_ACTIONS itself, so each
         # verdict is the same on a CI runner and on the build host.
         for name in ("CCACHE_STATSLOG", "CCACHE_DISABLE", "CCACHE_RECACHE", "CCACHE_READONLY", "GITHUB_ACTIONS",
@@ -181,10 +185,10 @@ class Bench:
         return [sys.executable, "-S", *LAUNCHER, *tool, "-o", target, "-c", str(self.source)]
 
     def launch(self, tool: list[str], link: bool = False, output: Path | None = None,
-               **env: str) -> subprocess.CompletedProcess[bytes]:
+               **env: str) -> proc.Completed:
         """Run the launcher in front of one tool and wait for it."""
-        return subprocess.run(self.argv(tool, link, output), capture_output=True, env={**self.env, **env},
-                              timeout=60)
+        return proc.run(proc.Command(self.argv(tool, link, output), timeout_s=LAUNCH_TIMEOUT_S,
+                                     env={**self.env, **env}))
 
     def record(self, output: Path | None = None) -> dict[str, object]:
         """Return the record of an output, or an empty dictionary."""
@@ -238,7 +242,7 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
     expect = verdicts.expect
     result = bench.launch(bench.tool)
     expect("a compile passes its status and its output unchanged",
-           result.returncode == 0 and result.stdout == b"tool stdout\n" and result.stderr == b"tool stderr\n")
+           result.exit == 0 and result.stdout == b"tool stdout\n" and result.stderr == b"tool stderr\n")
     first = bench.record()
     expect("a compile gives a built record with its time, its source and the output size",
            first.get("step") == "compile" and first.get("result") == "built"
@@ -258,24 +262,24 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
 
     result = bench.launch(bench.tool, PLANTED_MODE="fail")
     expect("a failed compile passes status 1 and gives a failed record",
-           result.returncode == 1 and bench.record().get("result") == "failed")
+           result.exit == 1 and bench.record().get("result") == "failed")
 
     result = bench.launch(bench.tool, PLANTED_MODE="term")
     expect("a compile that ends on SIGTERM makes the launcher end on SIGTERM",
-           result.returncode == -signal.SIGTERM and b"Traceback" not in result.stderr)
+           result.exit == -signal.SIGTERM and b"Traceback" not in result.stderr)
 
     bench.record_path.unlink()
-    result = subprocess.run([sys.executable, "-S", *LAUNCHER, sys.executable, "-c", "print(7)"],
-                            capture_output=True, env=bench.env, timeout=60)
+    result = proc.run(proc.Command([sys.executable, "-S", *LAUNCHER, sys.executable, "-c", "print(7)"],
+                                   timeout_s=LAUNCH_TIMEOUT_S, env=bench.env))
     expect("a command with no output runs and writes no record",
-           result.returncode == 0 and result.stdout == b"7\n" and not bench.record_path.exists())
+           result.exit == 0 and result.stdout == b"7\n" and not bench.record_path.exists())
 
     bench.launch(bench.tool)
     compiled = bench.record()["cost"]
     result = bench.launch([*bench.ccache, *bench.tool], PLANTED_HIT="1")
     hit = bench.record()
     expect("a ccache hit gives a hit record with no time that keeps the last cost",
-           result.returncode == 0 and hit.get("result") == "hit" and "cost" not in hit
+           result.exit == 0 and hit.get("result") == "hit" and "cost" not in hit
            and hit.get("last_cost") == compiled and hit.get("output_bytes") == len(b"cached object"))
     bench.launch([*bench.ccache, *bench.tool], PLANTED_HIT="1")
     expect("a second hit keeps the same last cost", bench.record().get("last_cost") == compiled)
@@ -284,7 +288,7 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
     outer = bench.root / "outer.log"
     result = bench.launch([*bench.ccache, *bench.tool], PLANTED_HIT="0", CCACHE_STATSLOG=str(outer))
     expect("a ccache miss gives a built record, and the counters reach the stats log of the build",
-           result.returncode == 0 and bench.record().get("result") == "built"
+           result.exit == 0 and bench.record().get("result") == "built"
            and "cache_miss" in outer.read_text(encoding="utf-8"))
     missed = bench.record().get("cost", {})
     compiler_count = missed.get(cost_meter.COMPILER_COUNT_KEY)
@@ -297,12 +301,12 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
            and result.stdout == b"tool stdout\n" and result.stderr == b"tool stderr\n" and not count_file.exists())
     result = bench.launch([*bench.ccache, *bench.tool], PLANTED_HIT="0", CCACHE_PREFIX=shutil.which("env") or "env")
     expect("with CCACHE_PREFIX in the environment, the launcher sets no meter, and the record holds no count",
-           result.returncode == 0 and bench.record().get("result") == "built"
+           result.exit == 0 and bench.record().get("result") == "built"
            and cost_meter.COMPILER_COUNT_KEY not in bench.record()["cost"]
            and cost_meter.CCACHE_COUNT_KEY not in bench.record()["cost"])
     result = bench.launch([*bench.ccache, *bench.tool], PLANTED_HIT="0", PLANTED_MODE="fail")
     expect("a failed compile through ccache passes status 1 and the output of the compiler through the meter",
-           result.returncode == 1 and bench.record().get("result") == "failed" and result.stdout == b"tool stdout\n"
+           result.exit == 1 and bench.record().get("result") == "failed" and result.stdout == b"tool stdout\n"
            and result.stderr == b"tool stderr\n" and not count_file.exists())
 
     bench.table(planted_registry(("compile-cpu", 0, 1000, "s"), ("compile-memory", 0, 1000, "GB")))
@@ -310,13 +314,13 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
     lines = result.stderr.decode().splitlines()
     found = [check_report.parse_line(line) for line in lines[1:]]
     expect("a compile over two warning thresholds prints one warning line after the tool output",
-           result.returncode == 0 and lines[0] == "tool stderr" and len(found) == 1 and found[0] is not None
+           result.exit == 0 and lines[0] == "tool stderr" and len(found) == 1 and found[0] is not None
            and found[0].level == "warning" and found[0].check == "compile-cpu"
            and "peak memory" in found[0].message)
     bench.table(planted_registry(("compile-cpu", 0, 1, "s")).replace(" warn=0 ", " warn=zero "))
     result = bench.launch(bench.tool)
     expect("a broken registry changes neither the status nor the output",
-           result.returncode == 0 and result.stderr == b"tool stderr\n")
+           result.exit == 0 and result.stderr == b"tool stderr\n")
 
 
 def run_memory_ledger(bench: Bench, verdicts: Verdicts) -> None:
@@ -326,35 +330,35 @@ def run_memory_ledger(bench: Bench, verdicts: Verdicts) -> None:
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
     expect("a compile over the memory error threshold fails, removes the object and gives a rejected record",
-           result.returncode == 1 and not bench.object.exists() and bench.record().get("result") == "rejected"
+           result.exit == 1 and not bench.object.exists() and bench.record().get("result") == "rejected"
            and found_line is not None and found_line.level == "error" and found_line.check == "compile-memory"
            and "no row of" in found_line.message)
     bench.ledger("compile-memory", f"@build/out/source.o | {KIND} | 0.01 | - | the test admits it\n")
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
     expect("a ledger row with a reason admits the compile, with a warning that names the row",
-           result.returncode == 0 and bench.object.exists() and bench.record().get("result") == "built"
+           result.exit == 0 and bench.object.exists() and bench.record().get("result") == "built"
            and found_line is not None and found_line.level == "warning" and "the test admits it" in
            found_line.message and "compile-memory.txt:4 " in found_line.message)
     bench.ledger("compile-memory", "@build/out/source.o | other-kind | 0.01 | - | another kind\n")
     result = bench.launch(bench.tool)
-    expect("a row of another kind does not admit the compile", result.returncode == 1)
+    expect("a row of another kind does not admit the compile", result.exit == 1)
     bench.ledger("compile-memory", f"out/source.o | {KIND} | 0.01 | - | not an output of the build directory\n")
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
     expect("a row whose PATH does not name an output of the build directory does not admit the compile, and the "
            "error gives the line of the row",
-           result.returncode == 1 and found_line is not None and "compile-memory.txt:4: " in found_line.message)
+           result.exit == 1 and found_line is not None and "compile-memory.txt:4: " in found_line.message)
     bench.ledger("compile-memory", f"@build/out/source.o | {KIND} | 0.01 | - | -\n")
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
     expect("a row with no reason does not admit the compile, and the error gives the line of the row",
-           result.returncode == 1 and found_line is not None and "compile-memory.txt:4: " in found_line.message)
+           result.exit == 1 and found_line is not None and "compile-memory.txt:4: " in found_line.message)
     (bench.root / "build-kind.txt").unlink()
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
     expect("with no build kind, no row admits the compile",
-           result.returncode == 1 and found_line is not None and "build-kind.txt" in found_line.message)
+           result.exit == 1 and found_line is not None and "build-kind.txt" in found_line.message)
 
 
 def run_cpu_limit(bench: Bench, verdicts: Verdicts) -> None:
@@ -365,13 +369,13 @@ def run_cpu_limit(bench: Bench, verdicts: Verdicts) -> None:
     result = bench.launch(bench.tool, PLANTED_MODE="spin")
     found_line = last_finding(result.stderr)
     expect("a compile that runs away ends at the CPU limit, with an error line",
-           result.returncode == 1 and time.monotonic() - started < 15 and found_line is not None
+           result.exit == 1 and time.monotonic() - started < 15 and found_line is not None
            and found_line.level == "error" and found_line.check == "compile-cpu"
            and "hard limit of 1 s" in found_line.message and bench.record().get("result") == "failed")
     result = bench.launch(bench.tool, PLANTED_MODE="spin", PLANTED_SPIN_S="1.5", GITHUB_ACTIONS="true")
     found_line = last_finding(result.stderr)
     expect("on a CI runner, a compile past the CPU limit runs to its end, and its time error is a warning",
-           result.returncode == 0 and bench.object.exists() and bench.record().get("result") == "built"
+           result.exit == 0 and bench.object.exists() and bench.record().get("result") == "built"
            and found_line is not None and found_line.level == "warning" and found_line.check == "compile-cpu"
            and "hard limit of 0.9 s" in found_line.message and "demoted" in found_line.message)
 
@@ -382,7 +386,7 @@ def run_ci_memory(bench: Bench, verdicts: Verdicts) -> None:
     result = bench.launch(bench.tool, GITHUB_ACTIONS="true")
     found_line = last_finding(result.stderr)
     verdicts.expect("on a CI runner, a compile over the memory error threshold still fails and removes the object",
-                    result.returncode == 1 and not bench.object.exists()
+                    result.exit == 1 and not bench.object.exists()
                     and bench.record().get("result") == "rejected" and found_line is not None
                     and found_line.level == "error" and found_line.check == "compile-memory")
 
@@ -395,29 +399,31 @@ def run_link(bench: Bench, verdicts: Verdicts) -> None:
     result = bench.launch(bench.tool, link=True, output=linked)
     link_record = bench.record(linked)
     expect("a link gives a built record of step link, with no source and no instruction count",
-           result.returncode == 0 and link_record.get("step") == "link" and link_record.get("result") == "built"
+           result.exit == 0 and link_record.get("step") == "link" and link_record.get("result") == "built"
            and "source" not in link_record and link_record.get("output") == str(linked)
            and not any(key.endswith("instructions") for key in link_record["cost"]))
     bench.table(planted_registry(("link-time", 1000, 2000, "s"), ("link-memory", 0.0001, 0.0002, "GB")))
     result = bench.launch(bench.tool, link=True, output=linked)
     found_line = last_finding(result.stderr)
     expect("a link over the memory error threshold fails with a link-memory error",
-           result.returncode == 1 and not linked.exists() and found_line is not None
+           result.exit == 1 and not linked.exists() and found_line is not None
            and found_line.check == "link-memory")
 
 
 def run_interrupt(bench: Bench, verdicts: Verdicts) -> None:
     """An interrupt of the process group makes the launcher end on SIGINT."""
-    process = subprocess.Popen(bench.argv(bench.tool), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               start_new_session=True, env={**bench.env, "PLANTED_MODE": "sleep"})
+    # assay.core.proc starts the launcher in a process group of its own, and the ID of that group is the pid of the
+    # launcher.
+    running = proc.start(proc.Command(bench.argv(bench.tool), timeout_s=LAUNCH_TIMEOUT_S,
+                                      env={**bench.env, "PLANTED_MODE": "sleep"}))
     marker = Path(f"{bench.object}.started")
     deadline = time.monotonic() + 20
     while not marker.exists() and time.monotonic() < deadline:
         time.sleep(0.02)
-    os.killpg(process.pid, signal.SIGINT)
-    _, err = process.communicate(timeout=30)
+    os.killpg(running.pid, signal.SIGINT)
+    interrupted = running.wait()
     verdicts.expect("an interrupt of the process group makes the launcher end on SIGINT, with no traceback",
-                    process.returncode == -signal.SIGINT and b"Traceback" not in err)
+                    interrupted.exit == -signal.SIGINT and b"Traceback" not in interrupted.stderr)
 
 
 def run_real_tools(bench: Bench, verdicts: Verdicts, cxx: str | None) -> None:
@@ -430,9 +436,10 @@ def run_real_tools(bench: Bench, verdicts: Verdicts, cxx: str | None) -> None:
         compiled_run = bench.launch([cxx])
         linked_run = bench.launch([cxx], link=True, output=program)
         expect("the real compiler: a compile and a link give built records",
-               compiled_run.returncode == 0 and linked_run.returncode == 0
+               compiled_run.exit == 0 and linked_run.exit == 0
                and bench.record().get("result") == "built" and bench.record(program).get("result") == "built"
-               and subprocess.run([str(program)], timeout=30).returncode == 0)
+               and proc.run(proc.Command([str(program)], timeout_s=PROGRAM_TIMEOUT_S, stdout=proc.Output.INHERIT,
+                                         stderr=proc.Output.INHERIT)).exit == 0)
 
         bench.source.write_text(SPIN_SOURCE, encoding="utf-8")
         bench.table(planted_registry(("compile-cpu", 0.1, 0.3, "s"), ("compile-memory", 1000, 2000, "GB")))
@@ -441,7 +448,7 @@ def run_real_tools(bench: Bench, verdicts: Verdicts, cxx: str | None) -> None:
         found_line = last_finding(stopped_run.stderr)
         expect("the real compiler: a compile at the CPU limit ends with status 1 and an error line, and the "
                "driver reports no internal compiler error",
-               stopped_run.returncode == 1 and time.monotonic() - started < 15
+               stopped_run.exit == 1 and time.monotonic() - started < 15
                and b"internal compiler error" not in stopped_run.stderr and found_line is not None
                and found_line.check == "compile-cpu" and "hard limit of 1 s" in found_line.message)
         bench.table(QUIET)
@@ -466,7 +473,7 @@ def run_real_tools(bench: Bench, verdicts: Verdicts, cxx: str | None) -> None:
         warm = bench.record()
         bench.source.write_text("int main() { return 0; }\n", encoding="utf-8")
         expect("the real ccache: a cold cache gives a built record, and a warm cache a hit",
-               cold_run.returncode == 0 and warm_run.returncode == 0 and cold.get("result") == "built"
+               cold_run.exit == 0 and warm_run.exit == 0 and cold.get("result") == "built"
                and warm.get("result") == "hit" and warm.get("last_cost") == cold.get("cost"))
         if host_gives_counter():
             counts = [record.get("cost", {}).get(cost_meter.COMPILER_COUNT_KEY) for record in (direct, disabled, cold)]
@@ -476,7 +483,7 @@ def run_real_tools(bench: Bench, verdicts: Verdicts, cxx: str | None) -> None:
             expect(f"the real ccache: a direct compile, a compile with CCACHE_DISABLE and a compile through a cold "
                    f"cache give counts of the compiler run within {COUNT_TOLERANCE:.1%}, and the miss records the "
                    f"preprocessor run and ccache apart (counts {counts}, rest {rest})",
-                   direct_run.returncode == 0 and disabled_run.returncode == 0 and agree
+                   direct_run.exit == 0 and disabled_run.exit == 0 and agree
                    and isinstance(rest, int) and rest > 0)
         else:
             verdicts.lines.append("  skip the comparison of the counts: the host gives no exact counter")

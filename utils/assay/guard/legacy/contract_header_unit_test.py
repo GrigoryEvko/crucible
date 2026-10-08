@@ -30,10 +30,11 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+from assay.core import proc
 
 FLAGS = ("-std=c++26", "-fcontracts", "-freflection", "-fdiagnostics-color=never")
 MACRO_HEADER = """#pragma once
@@ -81,10 +82,10 @@ class Runner:
         self.work = work
         self.failures: list[str] = []
 
-    def compile(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+    def compile(self, *arguments: str) -> proc.Completed:
         """Run the compiler in the scratch directory with the common flags."""
         command = [self.cxx, *FLAGS, "-I", str(self.include), "-I", str(self.work), *arguments]
-        return subprocess.run(command, cwd=self.work, capture_output=True, text=True)
+        return proc.run(proc.Command(command, timeout_s=proc.TOOL_S, cwd=self.work))
 
     def expect(self, name: str, holds: bool, detail: str = "") -> None:
         """Record the verdict of one case."""
@@ -92,7 +93,7 @@ class Runner:
         if not holds:
             self.failures.append(f"{name}{': ' + detail[-1500:] if detail else ''}")
 
-    def use(self, header_line: str, body: str, stem: str) -> subprocess.CompletedProcess[str]:
+    def use(self, header_line: str, body: str, stem: str) -> proc.Completed:
         """Compile one use of a header with -fsyntax-only."""
         source = self.work / f"{stem}.cpp"
         source.write_text(header_line + body, encoding="utf-8")
@@ -111,41 +112,41 @@ def run_form(runner: Runner, header: str, name: str, is_macro: bool) -> None:
         (runner.work / directory).mkdir()
         (runner.work / directory / "witness.h").write_text(header, encoding="utf-8")
     unit = runner.compile("-fmodules", "-fmodule-header=user", "-x", "c++-header", f"{name}/witness.h")
-    runner.expect(f"{name}: the header unit builds", unit.returncode == 0, unit.stderr)
+    runner.expect(f"{name}: the header unit builds", unit.exit == 0, unit.err)
     if is_macro:
         pch = runner.compile("-x", "c++-header", f"{precompiled_dir}/witness.h", "-o",
                              f"{precompiled_dir}/witness.h.gch")
-        runner.expect(f"{name}: the precompiled header builds", pch.returncode == 0, pch.stderr)
+        runner.expect(f"{name}: the precompiled header builds", pch.exit == 0, pch.err)
     for contract, body in USES.items():
         included = runner.use(f'#include "{name}/witness.h"\n', body, f"{name}_{contract}_include")
         runner.expect(f"{name}: the include reads no precompiled header and stops the evaluation that breaks the "
-                      f"{contract}", included.returncode != 0 and STOPPED.search(included.stderr) is not None
-                      and ".gch" not in included.stderr, included.stderr)
+                      f"{contract}", included.exit != 0 and STOPPED.search(included.err) is not None
+                      and ".gch" not in included.err, included.err)
         imported = runner.use(f'import "{name}/witness.h";\n', body, f"{name}_{contract}_import")
         if not is_macro:
             runner.expect(f"{name}: the header unit loses the {contract} (GCC keeps it: give the contract rule a "
-                          f"new reason)", imported.returncode == 0, imported.stderr)
+                          f"new reason)", imported.exit == 0, imported.err)
             continue
         runner.expect(f"{name}: the header unit stops the evaluation that breaks the {contract}",
-                      imported.returncode != 0 and STOPPED.search(imported.stderr) is not None, imported.stderr)
+                      imported.exit != 0 and STOPPED.search(imported.err) is not None, imported.err)
         precompiled = runner.use(f'#include "{precompiled_dir}/witness.h"\n', body, f"{name}_{contract}_pch")
         runner.expect(f"{name}: the compile reads the precompiled header and stops the evaluation that breaks the "
-                      f"{contract}", f"! {precompiled_dir}/witness.h.gch" in precompiled.stderr
-                      and precompiled.returncode != 0 and STOPPED.search(precompiled.stderr) is not None,
-                      precompiled.stderr)
+                      f"{contract}", f"! {precompiled_dir}/witness.h.gch" in precompiled.err
+                      and precompiled.exit != 0 and STOPPED.search(precompiled.err) is not None,
+                      precompiled.err)
 
 
 def run_mutation(runner: Runner) -> None:
     """Import fixy/Mutation.h as a header unit, and break the bound of BoundedMonotonic."""
     header = runner.include / "fixy" / "Mutation.h"
     unit = runner.compile("-fmodules", "-fmodule-header", "-x", "c++-header", str(header))
-    runner.expect("fixy/Mutation.h: the header unit builds", unit.returncode == 0, unit.stderr)
+    runner.expect("fixy/Mutation.h: the header unit builds", unit.exit == 0, unit.err)
     imported = runner.use("import <fixy/Mutation.h>;\n", MUTATION_USE, "mutation_import")
     runner.expect("fixy/Mutation.h: the header unit stops the evaluation that breaks the bound",
-                  imported.returncode != 0 and STOPPED.search(imported.stderr) is not None, imported.stderr)
+                  imported.exit != 0 and STOPPED.search(imported.err) is not None, imported.err)
     included = runner.use("#include <fixy/Mutation.h>\n", MUTATION_USE, "mutation_include")
     runner.expect("fixy/Mutation.h: the include stops the evaluation that breaks the bound",
-                  included.returncode != 0 and STOPPED.search(included.stderr) is not None, included.stderr)
+                  included.exit != 0 and STOPPED.search(included.err) is not None, included.err)
 
 
 def main(argv: list[str]) -> int:

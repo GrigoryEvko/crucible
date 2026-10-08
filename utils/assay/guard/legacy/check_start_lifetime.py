@@ -137,7 +137,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
@@ -146,7 +145,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from assay.core import cache as cache_dir
-from assay.core import git as throwaway_repo
+from assay.core import git
 from assay.core import ledger as rule_ledger
 from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
@@ -920,10 +919,10 @@ def planted_cases() -> int:
     # tracked include does not bring an untracked file into scope either.
     with tempfile.TemporaryDirectory() as work:
         root = Path(work).resolve()
-        throwaway_repo.init(root)
+        git.init(root)
         (root / "src").mkdir()
         (root / "src/Clean.h").write_text('#pragma once\n#include "../grun/Included.txt"\n')
-        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        git.run(root, "add", "-A")
         (root / "grun/change").mkdir(parents=True)
         (root / "grun/change/Export.h").write_text(
             "inline void* exported(unsigned char* buf) { return std::start_lifetime_as<Proof[20]>(buf); }\n")
@@ -932,7 +931,7 @@ def planted_cases() -> int:
         code, report = run(root)
         if code != 0:
             failures.append(f"an untracked file was read (exit {code}):\n{report}")
-        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        git.run(root, "add", "-A")
         code, report = run(root)
         if code != 1 or "grun/change/Export.h:start_lifetime_as<Proof[20]>" not in report \
                 or "grun/Included.txt:start_lifetime_as<Proof[21]>" not in report:

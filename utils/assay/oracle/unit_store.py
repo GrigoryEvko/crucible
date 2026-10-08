@@ -93,7 +93,6 @@ import os
 import re
 import shutil
 import stat
-import subprocess
 import sys
 import tempfile
 import threading
@@ -104,6 +103,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from assay.core import cache as cache_dir
+from assay.core import proc
 from assay.loop.fixture import store as compile_store
 
 # The name of the store in utils/assay/core/cache.py.
@@ -200,6 +200,11 @@ class _Inputs:
 def _digest(data: bytes) -> str:
     """Return the SHA-256 of ``data`` as hexadecimal text."""
     return hashlib.sha256(data).hexdigest()
+
+
+def _kept(data: bytes) -> str:
+    """Return the output of a tool as text that keeps each byte that is not UTF-8, so a path still names its file."""
+    return proc.decoded(data, "surrogateescape")
 
 
 def _encode(stdout: str, stderr: str) -> str:
@@ -387,8 +392,8 @@ class UnitStore:
         with self._lock:
             if program in self._program_paths:
                 return self._program_paths[program]
-        found = subprocess.run([self.cxx, f"-print-prog-name={program}"], cwd=directory, env=self.environment,
-                               capture_output=True, text=True, check=False).stdout.strip()
+        found = proc.run(proc.Command([self.cxx, f"-print-prog-name={program}"], timeout_s=proc.QUICK_S,
+                                      cwd=directory, env=self.environment)).out.strip()
         if found and not os.path.isabs(found):
             found = shutil.which(found, path=self.environment.get("PATH")) or ""
         path = found if found and os.path.isfile(found) else None
@@ -435,7 +440,7 @@ class UnitStore:
     # ── One compile ─────────────────────────────────────────────────
 
     def _compile(self, argv: list[str], directory: Path, source: Path,
-                 work: Path) -> tuple[subprocess.CompletedProcess[str], _Inputs | None]:
+                 work: Path) -> tuple[proc.Completed, _Inputs | None]:
         """Run one compile, and return its result and its inputs, or None when the inputs are not known.
 
         ``argv`` ends with -MF and the dependency file.  ``work`` is a
@@ -445,10 +450,9 @@ class UnitStore:
         """
         depfile = Path(argv[-1])
         depfile.unlink(missing_ok=True)
-        proc = subprocess.run(argv, cwd=directory, env=self.environment, capture_output=True, text=True,
-                              errors="surrogateescape", check=False)
+        completed = proc.run(proc.Command(argv, timeout_s=proc.TOOL_S, cwd=directory, env=self.environment))
         if self.store is None:
-            return proc, None
+            return completed, None
         inputs = _Inputs()
         try:
             text: str | None = depfile.read_text(errors="surrogateescape")
@@ -457,18 +461,18 @@ class UnitStore:
         if text is not None:
             parsed = compile_store.parse_dependency_file(text)
             if parsed is None:
-                return proc, None
+                return completed, None
             inputs.dependencies = list(dict.fromkeys(os.path.join(directory, name) for name in parsed))
         else:
             present, missing, _reason = compile_store.dependency_pass(argv, directory, work, self.environment)
             if present is None:
-                return proc, None
+                return completed, None
             inputs.dependencies, inputs.missing = present, missing
         named, _reason = compile_store.search_directories(argv, directory, source, work, self.environment)
         if named is None:
-            return proc, None
+            return completed, None
         inputs.named = named
-        return proc, inputs
+        return completed, inputs
 
     def _record(self, key: str, result: UnitResult, inputs: _Inputs, started_ns: int) -> None:
         """Store ``result`` with its inputs.  The store refuses it when an input changed in the settle period."""
@@ -561,9 +565,9 @@ class UnitStore:
         if self.latest_start_ns is not None:
             started_ns = min(started_ns, self.latest_start_ns)
         if unit.kind == "static":
-            proc, inputs = self._compile(unit.compiles[0], unit.directory, unit.sources[0], unit.work)
-            result = UnitResult(proc.returncode, proc.stdout, proc.stderr)
-            is_storable = proc.returncode in (0, 1)
+            completed, inputs = self._compile(unit.compiles[0], unit.directory, unit.sources[0], unit.work)
+            result = UnitResult(completed.exit, _kept(completed.stdout), _kept(completed.stderr))
+            is_storable = completed.exit in (0, 1)
         else:
             result, inputs, is_storable = self._build_program(unit)
         if inputs is not None:
@@ -602,21 +606,20 @@ class UnitStore:
             built = list(pool.map(lambda job: self._compile(job[0], directory, job[1], job[2]),
                                   zip(compiles, unit.sources, scratches, strict=True)))
         inputs: _Inputs | None = _Inputs()
-        for _proc, compiled in built:
+        for _completed, compiled in built:
             if compiled is None or inputs is None:
                 inputs = None
             else:
                 inputs.add(compiled)
-        failed = next((proc for proc, _ in built if proc.returncode != 0), None)
+        failed = next((completed for completed, _ in built if completed.exit != 0), None)
         if failed is not None:
-            is_storable = all(proc.returncode in (0, 1) for proc, _ in built)
-            return UnitResult(failed.returncode, failed.stdout, failed.stderr), inputs, is_storable
-        linked = subprocess.run(link, cwd=directory, env=self.environment, capture_output=True, text=True,
-                                errors="surrogateescape", check=False)
+            is_storable = all(completed.exit in (0, 1) for completed, _ in built)
+            return UnitResult(failed.exit, _kept(failed.stdout), _kept(failed.stderr)), inputs, is_storable
+        linked = proc.run(proc.Command(link, timeout_s=proc.TOOL_S, cwd=directory, env=self.environment))
         if inputs is not None:
-            inputs.add(parse_link_report(linked.stdout, directory, work))
-        if linked.returncode != 0:
-            return UnitResult(linked.returncode, linked.stdout, linked.stderr), inputs, linked.returncode == 1
+            inputs.add(parse_link_report(_kept(linked.stdout), directory, work))
+        if linked.exit != 0:
+            return UnitResult(linked.exit, _kept(linked.stdout), _kept(linked.stderr)), inputs, linked.exit == 1
         if inputs is not None:
             loaded = self._loaded(program, directory)
             if loaded is None:
@@ -626,12 +629,11 @@ class UnitStore:
         empty = work / "run"
         empty.mkdir()
         try:
-            ran = subprocess.run([str(program), *unit.arguments], cwd=empty, capture_output=True, text=True,
-                                 errors="surrogateescape", timeout=RUN_TIMEOUT_S, check=False)
-        except subprocess.TimeoutExpired:
+            ran = proc.run(proc.Command([str(program), *unit.arguments], timeout_s=RUN_TIMEOUT_S, cwd=empty))
+        except proc.TimedOut:
             return UnitResult(124, "", f"the run of the program took more than {RUN_TIMEOUT_S} s"), inputs, False
-        result = UnitResult(ran.returncode, ran.stdout, ran.stderr)
-        return result, inputs, ran.returncode >= 0 and unit.is_stable(result)
+        result = UnitResult(ran.exit, _kept(ran.stdout), _kept(ran.stderr))
+        return result, inputs, ran.exit >= 0 and unit.is_stable(result)
 
     def _loaded(self, program: Path, directory: Path) -> _Inputs | None:
         """Return each path that the loader tries for ``program``, or None.
@@ -646,9 +648,10 @@ class UnitStore:
             return _Inputs()
         environment = {name: value for name, value in os.environ.items() if name != "LD_DEBUG_OUTPUT"}
         environment["LD_DEBUG"] = "libs"
-        proc = subprocess.run([interpreter, "--list", str(program)], cwd=directory, env=environment,
-                              capture_output=True, text=True, errors="surrogateescape", check=False)
-        parsed = compile_store.parse_loader_list(proc.stdout, proc.stderr, directory) if proc.returncode == 0 else None
+        listed = proc.run(proc.Command([interpreter, "--list", str(program)], timeout_s=proc.QUICK_S, cwd=directory,
+                                       env=environment))
+        parsed = (compile_store.parse_loader_list(_kept(listed.stdout), _kept(listed.stderr), directory)
+                  if listed.exit == 0 else None)
         if parsed is None:
             return None
         objects, tried, caches = parsed
@@ -703,8 +706,8 @@ def _build_library(cxx: str, directory: Path, value: int) -> bool:
     """Build directory/libvalue.so, whose library_value returns ``value``.  Return True when it builds."""
     source = directory / "value.cpp"
     source.write_text(f"int library_value() {{ return {value}; }}\n", encoding="utf-8")
-    return subprocess.run([cxx, "-shared", "-fPIC", str(source), "-o", str(directory / "libvalue.so")],
-                          capture_output=True, text=True, check=False).returncode == 0
+    return proc.run(proc.Command([cxx, "-shared", "-fPIC", str(source), "-o", str(directory / "libvalue.so")],
+                                 timeout_s=proc.TOOL_S)).exit == 0
 
 
 def self_test(cxx: str) -> int:

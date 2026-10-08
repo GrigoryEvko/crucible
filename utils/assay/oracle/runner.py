@@ -176,7 +176,6 @@ import io
 import logging
 import os
 import shutil
-import subprocess
 import sys
 import tarfile
 import tempfile
@@ -187,6 +186,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from assay.core import git as tree_git
+from assay.core import proc
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
 from assay.oracle.emit import (SHARD_BUDGET, WIRE_FAMILIES, GoldenError, Row, emit_all, read_golden,
@@ -1390,7 +1390,7 @@ def evaluate_sprout(rows: list[Row]) -> list[Row]:
 
 def _runtime_flags(cxx: str) -> list[str]:
     """Return the link flags that let a test binary find the runtime of ``cxx``."""
-    lib = subprocess.run([cxx, "-print-file-name=libstdc++.so"], capture_output=True, text=True).stdout.strip()
+    lib = proc.run(proc.Command([cxx, "-print-file-name=libstdc++.so"], timeout_s=proc.QUICK_S)).out.strip()
     return ["-pthread", f"-Wl,-rpath,{Path(lib).parent}"] if lib else ["-pthread"]
 
 
@@ -1406,27 +1406,27 @@ def _cxx_flags(include: Path) -> list[str]:
             f"-I{include}", f"-I{TEST_DIR}", "-fdiagnostics-color=never"]
 
 
-def compile_object(cxx: str, include: Path, source: Path, obj: Path) -> subprocess.CompletedProcess[str]:
+def compile_object(cxx: str, include: Path, source: Path, obj: Path) -> proc.Completed:
     """Compile ``source``, which can include wire_driver.h, into the object file ``obj``."""
-    return subprocess.run([cxx, *_cxx_flags(include), "-c", str(source), "-o", str(obj)],
-                          capture_output=True, text=True)
+    return proc.run(proc.Command([cxx, *_cxx_flags(include), "-c", str(source), "-o", str(obj)],
+                                 timeout_s=proc.TOOL_S))
 
 
-def link_and_run(cxx: str, objects: list[Path], binary: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+def link_and_run(cxx: str, objects: list[Path], binary: Path, args: list[str]) -> proc.Completed:
     """Link ``objects`` into ``binary``, and run it with ``args``.
 
     A failed link returns the linker's result.  The run has a time limit
     of ten minutes.
     """
     # -fcontracts links the library that holds the default contract violation handler.
-    linked = subprocess.run([cxx, "-fcontracts", *(str(obj) for obj in objects), "-o", str(binary),
-                             *_runtime_flags(cxx)], capture_output=True, text=True)
-    if linked.returncode != 0:
+    linked = proc.run(proc.Command([cxx, "-fcontracts", *(str(obj) for obj in objects), "-o", str(binary),
+                                    *_runtime_flags(cxx)], timeout_s=proc.TOOL_S))
+    if linked.exit != 0:
         return linked
-    return subprocess.run([str(binary), *args], capture_output=True, text=True, timeout=600)
+    return proc.run(proc.Command([str(binary), *args], timeout_s=600))
 
 
-def build_and_run(cxx: str, include: Path, source: str, args: list[str]) -> subprocess.CompletedProcess[str]:
+def build_and_run(cxx: str, include: Path, source: str, args: list[str]) -> proc.Completed:
     """Compile ``source`` beside wire_driver.h, link it, and run it with ``args``.
 
     A failed build returns the compiler's result.
@@ -1436,7 +1436,7 @@ def build_and_run(cxx: str, include: Path, source: str, args: list[str]) -> subp
         src.write_text(source, encoding="utf-8")
         obj = Path(tmp) / "run.o"
         built = compile_object(cxx, include, src, obj)
-        if built.returncode != 0:
+        if built.exit != 0:
             return built
         return link_and_run(cxx, [obj], Path(tmp) / "run", args)
 
@@ -1488,11 +1488,11 @@ def evaluate_wire(cases: list[Case], sync_rows: list[Row], env: Env) -> dict[str
         entries = [(wire_label(c.ident, role), *wire_pair(text, role), "-") for role in roles]
         # One block, so the program is one shard.
         (source,) = wire_shards([entries])
-        proc = build_and_run(env.cxx, env.include, source, ["--measure"])
-        if proc.returncode != 0:
-            raise RuntimeError(f"wire case {c.ident}: the program failed:\n{(proc.stdout + proc.stderr)[-3000:]}")
+        completed = build_and_run(env.cxx, env.include, source, ["--measure"])
+        if completed.exit != 0:
+            raise RuntimeError(f"wire case {c.ident}: the program failed:\n{(completed.out + completed.err)[-3000:]}")
         outcomes: dict[str, str] = {}
-        for line in proc.stdout.splitlines():
+        for line in completed.out.splitlines():
             label, _, outcome = line.rpartition(" ")
             outcomes[label] = outcome
         return outcomes
@@ -2315,22 +2315,26 @@ def measured_tree(at: str | None) -> Iterator[tuple[Path, str]]:
     during it.  Without ``at``, the tree is the working tree, named by the
     HEAD at the start and by whether the session headers hold edits.
     """
-    def git(*args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(["git", "-C", str(REPO_ROOT), *args], capture_output=True, text=True)
-
     if at is None:
-        head = git("rev-parse", "HEAD").stdout.strip() or "unknown"
-        dirty = git("diff", "--quiet", "HEAD", "--", "include/fixy/session",
-                    "include/foundation/algebra/Transition.h").returncode != 0
+        try:
+            head = tree_git.head(REPO_ROOT)
+        except tree_git.GitError:
+            head = "unknown"
+        try:
+            dirty = not tree_git.is_clean(REPO_ROOT,
+                                          ("include/fixy/session", "include/foundation/algebra/Transition.h"))
+        except tree_git.GitError:
+            dirty = True
         yield REPO_ROOT / "include", f"{head}{', the working tree with edits in the session headers' if dirty else ''}"
         return
-    resolved = git("rev-parse", "--verify", f"{at}^{{commit}}")
-    if resolved.returncode != 0:
-        raise SystemExit(f"session_oracle: {at!r} names no commit: {resolved.stderr.strip()}")
-    commit = resolved.stdout.strip()
+    try:
+        commit = tree_git.resolve(REPO_ROOT, at)
+    except tree_git.GitError as problem:
+        raise SystemExit(f"session_oracle: {at!r} names no commit: {problem}") from None
+    if commit is None:
+        raise SystemExit(f"session_oracle: {at!r} names no commit")
     with tempfile.TemporaryDirectory(prefix="session_oracle_tree_") as tmp:
-        archive = subprocess.run(["git", "-C", str(REPO_ROOT), "archive", commit, "include"],
-                                 capture_output=True, check=True).stdout
+        archive = tree_git.run(REPO_ROOT, "archive", commit, "include")
         with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
             tar.extractall(tmp, filter="data")
         yield Path(tmp) / "include", commit
@@ -2778,12 +2782,11 @@ def activate_opam() -> None:
     opam = shutil.which("opam") or (str(OPAM_LOCAL) if OPAM_LOCAL.is_file() else None)
     if opam is None:
         return
-    listed = subprocess.run([opam, "switch", "list", "--short"], capture_output=True, text=True, check=False)
-    if listed.returncode != 0 or OPAM_SWITCH not in listed.stdout.split():
+    listed = proc.run(proc.Command([opam, "switch", "list", "--short"], timeout_s=proc.QUICK_S))
+    if listed.exit != 0 or OPAM_SWITCH not in listed.out.split():
         return
-    shown = subprocess.run([opam, "exec", f"--switch={OPAM_SWITCH}", "--", "env", "-0"], capture_output=True,
-                           check=False)
-    if shown.returncode != 0:
+    shown = proc.run(proc.Command([opam, "exec", f"--switch={OPAM_SWITCH}", "--", "env", "-0"], timeout_s=proc.QUICK_S))
+    if shown.exit != 0:
         return
     for item in shown.stdout.split(b"\0"):
         name, separator, value = item.partition(b"=")

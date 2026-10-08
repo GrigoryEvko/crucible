@@ -83,15 +83,15 @@ import secrets
 import shutil
 import socket
 import statistics
-import subprocess
 import sys
 import tempfile
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from assay.core import git as throwaway_repo
+from assay.core import git
 from assay.core import meter as cost_meter
+from assay.core import proc
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
 from assay.loop import gauge_cold, gauge_sample
@@ -201,22 +201,16 @@ def edited_text(original: bytes, offset: int, mark: int) -> bytes:
 # ── The copy ───────────────────────────────────────────────────────────────
 
 
-def git_environment() -> dict[str, str]:
-    """Return the environment of this process with no repository variable, so git finds the repository of its path."""
-    return {name: value for name, value in os.environ.items() if name not in throwaway_repo.REPOSITORY_VARIABLES}
-
-
 def head_commit(tree: Path) -> str:
     """Return the HEAD commit of a work tree.
 
     Raises:
         GaugeError: If git cannot read the tree
     """
-    result = subprocess.run(["git", "-C", str(tree), "rev-parse", "HEAD"], capture_output=True, text=True,
-                            check=False, env=git_environment())
-    if result.returncode != 0:
-        raise GaugeError(f"git cannot read the HEAD commit of {tree}: {result.stderr.strip()}")
-    return result.stdout.strip()
+    try:
+        return git.head(tree)
+    except git.GitError as problem:
+        raise GaugeError(f"git cannot read the HEAD commit of {tree}: {problem}") from None
 
 
 def clone_tree(source: Path, destination: Path) -> str:
@@ -233,10 +227,12 @@ def clone_tree(source: Path, destination: Path) -> str:
         GaugeError: If the clone fails or has another commit than the source
     """
     commit = head_commit(source)
-    result = subprocess.run(["git", "clone", "--quiet", "--shared", str(source), str(destination)],
-                            capture_output=True, text=True, check=False, env=git_environment())
-    if result.returncode != 0:
-        raise GaugeError(f"git clone of {source} failed: {result.stderr.strip()}")
+    try:
+        # The clone writes each file of the tree, so it gets the limit of one run of a tool.
+        git.run(source, "clone", "--quiet", "--shared", str(source.absolute()), str(destination.absolute()),
+                timeout_s=proc.TOOL_S)
+    except git.GitError as problem:
+        raise GaugeError(f"git clone of {source} failed: {problem}") from None
     copied = head_commit(destination)
     if copied != commit:
         raise GaugeError(f"the clone {destination} has the commit {copied}, and the source has {commit}")
@@ -259,13 +255,21 @@ def run_step(name: str, command: list[str], cwd: Path, environment: dict[str, st
         build: For a build step, the build directory, whose ninja log gives the edges that ran
 
     Returns:
-        The measures
+        The measures.  A step that runs past the limit BUILD_S of assay.core.proc gets the status of its end on the
+        signal of the limit
+
+    Raises:
+        proc.CannotStart: If the program of the step cannot start
     """
     before = ninja_files.read_log(build) if build is not None else {}
     counter = cost_meter.open_instruction_counter()
-    with (logs / f"{name}.log").open("w", encoding="utf-8") as log, loop_history.StepTimer() as timer:
-        status = subprocess.run(command, cwd=cwd, env=environment, stdout=log, stderr=subprocess.STDOUT,
-                                check=False).returncode
+    step_command = proc.Command(command, timeout_s=proc.BUILD_S, cwd=cwd, env=environment,
+                                stdout=logs / f"{name}.log", stderr=proc.Output.MERGE)
+    with loop_history.StepTimer() as timer:
+        try:
+            status = proc.run(step_command).exit
+        except proc.TimedOut as problem:
+            status = problem.completed.exit if problem.completed is not None else 1
     instructions = cost_meter.read_instruction_counter(counter) if counter is not None else None
     result = timer.result
     step = StepResult(name, status, float(result["wall_s"]), float(result["cpu_s"]), float(result["system_s"]),
@@ -407,11 +411,13 @@ def original_header(tree: Path) -> bytes:
     Raises:
         GaugeError: If git cannot read the header
     """
-    result = subprocess.run(["git", "-C", str(tree), "show", f"HEAD:{EDIT_HEADER.as_posix()}"], capture_output=True,
-                            check=False, env=git_environment())
-    if result.returncode != 0:
-        raise GaugeError(f"git cannot read {EDIT_HEADER} of the commit of {tree}: {result.stderr.decode().strip()}")
-    return result.stdout
+    try:
+        text = git.show(tree, "HEAD", EDIT_HEADER.as_posix())
+    except git.GitError as problem:
+        raise GaugeError(f"git cannot read {EDIT_HEADER} of the commit of {tree}: {problem}") from None
+    if text is None:
+        raise GaugeError(f"git cannot read {EDIT_HEADER} of the commit of {tree}: the commit has no such file")
+    return text
 
 
 def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int, bool]:
@@ -436,7 +442,7 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
     else:
         commit = head_commit(tree)
     build = tree / "build"
-    environment = dict(git_environment(), CRUCIBLE_CACHE_DIR=str(work / "cache"))
+    environment = proc.environment({"CRUCIBLE_CACHE_DIR": str(work / "cache")})
     jobs = str(options.jobs)
     print(f"edit-loop-gauge: host {socket.gethostname()}, commit {commit[:12]}, {state.get('changed_files')} changed "
           f"file(s) in the source work tree that the copy does not hold, preset {options.preset}, {jobs} jobs, "
@@ -571,12 +577,9 @@ def self_test() -> int:
 
         source = root / "source"
         source.mkdir()
-        throwaway_repo.init(source)
+        git.init(source)
         (source / "tracked.txt").write_text("one\n", encoding="utf-8")
-        identity = dict(git_environment(), GIT_AUTHOR_NAME="gauge", GIT_AUTHOR_EMAIL="gauge@invalid",
-                        GIT_COMMITTER_NAME="gauge", GIT_COMMITTER_EMAIL="gauge@invalid")
-        subprocess.run(["git", "-C", str(source), "add", "tracked.txt"], check=True, env=identity)
-        subprocess.run(["git", "-C", str(source), "commit", "-q", "-m", "one"], check=True, env=identity)
+        git.commit_all(source, "one")
         (source / "tracked.txt").write_text("changed in the work tree\n", encoding="utf-8")
         copy = root / "copy"
         commit = clone_tree(source, copy)
@@ -702,7 +705,7 @@ def main(argv: list[str]) -> int:
     status, should_keep = 1, True
     try:
         status, should_keep = measure(REPO_ROOT, work, options)
-    except GaugeError as problem:
+    except (GaugeError, proc.CannotStart) as problem:
         print(f"edit-loop-gauge: {problem}", file=sys.stderr)
     finally:
         if work.exists() and not (options.keep or should_keep):

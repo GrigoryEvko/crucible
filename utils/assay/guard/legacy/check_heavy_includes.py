@@ -85,7 +85,6 @@ import datetime
 import io
 import os
 import statistics
-import subprocess
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -94,6 +93,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
 from assay.core import ledger as rule_ledger
+from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
@@ -599,10 +599,10 @@ def measure(root: Path, build_dir: Path, extra: list[str], table: Path) -> int:
             if failed is not None:
                 first = next((line.strip() for line in failed.diagnostics.splitlines() if "error" in line), "")
                 return seconds, 0, failed.exit_code, first
-            done = subprocess.run([reference.compiler, *flags, "-E", "-P", str(source)], cwd=reference.directory,
-                                  capture_output=True, text=True, check=False)
-            lines = sum(1 for line in done.stdout.splitlines() if line.strip())
-            return seconds, lines, done.returncode, ""
+            done = proc.run(proc.Command([reference.compiler, *flags, "-E", "-P", str(source)], timeout_s=proc.TOOL_S,
+                                         cwd=reference.directory))
+            lines = sum(1 for line in done.out.splitlines() if line.strip())
+            return seconds, lines, done.exit, ""
 
         with ThreadPoolExecutor(max_workers=MEASURE_JOBS) as pool:
             results = list(pool.map(one, [empty, *units]))

@@ -310,10 +310,10 @@ def self_test() -> int:
     import json
     import resource
     import signal
-    import subprocess
     import tempfile
     from pathlib import Path
 
+    from assay.core import proc
     from assay.core import registry as rule_registry
 
     failures: list[str] = []
@@ -356,7 +356,7 @@ def self_test() -> int:
         def environment_of(extra: dict[str, str]) -> dict[str, str]:
             # A case that needs a CI runner or kept cores sets the variable
             # itself, so each verdict is the same in each environment.
-            environment = dict(os.environ, **{REGISTRY_ENV: str(table), LEDGERS_ENV: str(ledgers)})
+            environment = proc.environment({REGISTRY_ENV: str(table), LEDGERS_ENV: str(ledgers)})
             environment.pop(cost_meter.GITHUB_ACTIONS_ENV, None)
             environment.pop(CORES_ENV, None)
             environment.update(extra)
@@ -366,20 +366,16 @@ def self_test() -> int:
         launcher = [sys.executable, "-S", cost_meter.LOOP_MASTER, "test-step"]
 
         def launch(target: Path, *args: str, **extra: str) -> tuple[int, str]:
-            proc = subprocess.run([*launcher, "--warnings-dir", str(warnings), str(target), *args],
-                                  env=environment_of(extra), capture_output=True, text=True, check=False)
-            return proc.returncode, proc.stderr
+            done = proc.run(proc.Command([*launcher, "--warnings-dir", str(warnings), str(target), *args],
+                                         timeout_s=proc.TOOL_S, env=environment_of(extra)))
+            return done.exit, done.err
 
         def launch_for_wait_status(target: Path, **extra: str) -> int:
             # The wait status itself, because a return code hides the core dump bit.
-            log = root / "wait-status.log"
-            child = os.posix_spawn(sys.executable, [*launcher, "--warnings-dir", str(warnings), str(target)],
-                                   environment_of(extra),
-                                   file_actions=[(os.POSIX_SPAWN_OPEN, 1, str(log),
-                                                  os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644),
-                                                 (os.POSIX_SPAWN_DUP2, 1, 2)])
-            _, wait_status = os.waitpid(child, 0)
-            return wait_status
+            done = proc.run(proc.Command([*launcher, "--warnings-dir", str(warnings), str(target)],
+                                         timeout_s=proc.TOOL_S, env=environment_of(extra),
+                                         stdout=root / "wait-status.log", stderr=proc.Output.MERGE))
+            return done.wait_status
 
         ledger("test-time", "")
         ledger("test-memory", "")

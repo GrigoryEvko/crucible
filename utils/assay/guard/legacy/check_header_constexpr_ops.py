@@ -64,13 +64,13 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
 import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
@@ -306,11 +306,11 @@ def compile_alone(unit: Unit, limit: int, root: Path) -> Outcome:
     Returns:
         Whether the compile passes, each owner, and the other errors
     """
-    done = subprocess.run(syntax_argv(unit, limit), cwd=unit.directory, capture_output=True, text=True, check=False)
+    done = proc.run(proc.Command(syntax_argv(unit, limit), timeout_s=proc.TOOL_S, cwd=unit.directory))
     owners: list[str] = []
     others: list[str] = []
     first: str | None = None
-    for line in done.stderr.splitlines():
+    for line in done.err.splitlines():
         match = LOCATION.match(line)
         if match is None:
             continue
@@ -324,10 +324,10 @@ def compile_alone(unit: Unit, limit: int, root: Path) -> Outcome:
             else:
                 others.append(f"{where}: {rest}")
             first = None
-    if done.returncode != 0 and not owners and not others:
-        others.append(f"the compiler exits with {done.returncode} and gives no error line: "
-                      f"{' '.join(done.stderr.split())[:300]}")
-    return Outcome(done.returncode == 0, tuple(dict.fromkeys(owners)), tuple(others))
+    if done.exit != 0 and not owners and not others:
+        others.append(f"the compiler exits with {done.exit} and gives no error line: "
+                      f"{' '.join(done.err.split())[:300]}")
+    return Outcome(done.exit == 0, tuple(dict.fromkeys(owners)), tuple(others))
 
 
 def run(paths: Paths, warnings_dir: Path | None) -> int:

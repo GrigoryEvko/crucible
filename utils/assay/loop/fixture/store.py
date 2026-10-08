@@ -6,8 +6,8 @@ CTest runs `loop fixture` for each fixture, and the master loop calls main()
 of this module.  Python compiles the script that it runs on each start, and it
 keeps the compiled form of each module that it imports in the cache root.  The
 master is small, so a run that uses the store does not compile this module
-again.  This module imports the modules of a compile (subprocess, shutil,
-resource) only when it compiles or when a memo misses.  It imports
+again.  This module imports the modules of a compile (assay.core.proc,
+shutil, resource) only when it compiles or when a memo misses.  It imports
 utils/assay/core/report.py only when it has a finding to report, when a
 warnings file of the fixture exists, or when the memo of the budget misses.
 
@@ -879,30 +879,27 @@ def run_compile(argv: list[str], directory: Path, env: Mapping[str, str]) -> Com
     use of its waited children over the call is the use of this compile and of
     each process that it waited for.  The instruction counter counts the
     compile and each process that it starts, and not the driver.
+
+    Raises:
+        proc.ToolFailed: If the compiler cannot start, or the compile runs past the limit TOOL_S of assay.core.proc.
+            The fixture then fails, because a compile that did not end proves no rejection
     """
     import resource
-    import subprocess
+
+    from assay.core import proc
 
     meter = _cost_meter_module()
     counter = meter.open_instruction_counter()
     before = resource.getrusage(resource.RUSAGE_CHILDREN)
     try:
-        proc = subprocess.run(
-            argv,
-            cwd=directory,
-            env=env,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-        )
+        done = proc.run(proc.Command(argv, timeout_s=proc.TOOL_S, cwd=directory, env=dict(env)))
     except BaseException:
         if counter is not None:
             os.close(counter)
         raise
     after = resource.getrusage(resource.RUSAGE_CHILDREN)
     instructions = meter.read_instruction_counter(counter) if counter is not None else None
-    return CompileResult(proc.returncode, proc.stdout + proc.stderr, after.ru_utime - before.ru_utime,
+    return CompileResult(done.exit, done.out + done.err, after.ru_utime - before.ru_utime,
                          after.ru_stime - before.ru_stime, instructions)
 
 
@@ -1045,13 +1042,17 @@ def file_digest(path: str, memo_dir: Path) -> str:
 def _ask_driver(driver: str, option: str, directory: Path, env: Mapping[str, str]) -> tuple[str, str]:
     """Return what the compiler driver prints for one option on its standard output and its standard error.
 
-    The output is empty when the driver fails.  The driver prints the answer
-    of the last `-print-*` option only, so each question is one run.
+    The output is empty when the driver fails, cannot start or runs past the
+    limit QUICK_S of assay.core.proc.  The driver prints the answer of the last
+    `-print-*` option only, so each question is one run.
     """
-    import subprocess
+    from assay.core import proc
 
-    proc = subprocess.run([driver, option], cwd=directory, env=env, text=True, capture_output=True, check=False)
-    return (proc.stdout.strip(), proc.stderr) if proc.returncode == 0 else ("", "")
+    try:
+        done = proc.run(proc.Command([driver, option], timeout_s=proc.QUICK_S, cwd=directory, env=dict(env)))
+    except proc.ToolFailed:
+        return "", ""
+    return (done.out.strip(), done.err) if done.exit == 0 else ("", "")
 
 
 def _is_usable(path: str, mode: int) -> bool:
@@ -1514,14 +1515,20 @@ def shared_objects(program: str, interpreter: str, directory: Path, env: Mapping
             return list(recorded["objects"]), ""
     except (OSError, ValueError, KeyError, TypeError):
         pass
-    import subprocess
+    from assay.core import proc
 
     loader_env = {name: value for name, value in env.items() if name != "LD_DEBUG_OUTPUT"}
     loader_env["LD_DEBUG"] = "libs"
     started_ns = _now_ns()
-    proc = subprocess.run([interpreter, "--list", program], cwd=directory, env=loader_env, capture_output=True,
-                          text=True, errors="surrogateescape", check=False)
-    parsed = parse_loader_list(proc.stdout, proc.stderr, directory) if proc.returncode == 0 else None
+    parsed = None
+    try:
+        done = proc.run(proc.Command([interpreter, "--list", program], timeout_s=proc.QUICK_S, cwd=directory,
+                                     env=loader_env))
+        if done.exit == 0:
+            parsed = parse_loader_list(proc.decoded(done.stdout, "surrogateescape"),
+                                       proc.decoded(done.stderr, "surrogateescape"), directory)
+    except proc.ToolFailed:
+        pass
     if parsed is None:
         return None, f"the loader {interpreter} cannot list the shared objects of {program}"
     objects, tried, caches = parsed
@@ -1594,22 +1601,22 @@ def search_directories(argv: list[str], directory: Path, source: Path, scratch: 
     The query preprocesses an empty file with the suffix of the source, with
     the options of the compile, so GCC gives the same search list.
     """
-    import subprocess
+    from assay.core import proc
 
     empty = scratch / f"search-query{source.suffix}"
     command = [arg for arg in _command_without_output(argv)
                if arg.startswith("-") or os.path.realpath(os.path.join(directory, arg)) != str(source)]
     try:
         empty.write_bytes(b"")
-        proc = subprocess.run([*command, "-E", "-v", str(empty), "-o", os.devnull], cwd=directory, env=env,
-                              capture_output=True, text=True, errors="surrogateescape", check=False)
-    except OSError as error:
+        done = proc.run(proc.Command([*command, "-E", "-v", str(empty), "-o", os.devnull], timeout_s=proc.TOOL_S,
+                                     cwd=directory, env=dict(env)))
+    except (OSError, proc.ToolFailed) as error:
         return None, f"the search query cannot run: {error}"
     finally:
         empty.unlink(missing_ok=True)
-    named = parse_search_list(proc.stderr)
+    named = parse_search_list(proc.decoded(done.stderr, "surrogateescape"))
     if named is None:
-        return None, f"the compiler prints no search list (exit code {proc.returncode})"
+        return None, f"the compiler prints no search list (exit code {done.exit})"
     return [os.path.join(directory, name) for name in named], ""
 
 
@@ -1621,22 +1628,22 @@ def dependency_pass(argv: list[str], directory: Path, scratch: Path,
     dependency rule.  A name in the rule that does not name a file is a header
     that the preprocess did not find, as the source spells it.
     """
-    import subprocess
+    from assay.core import proc
 
     depfile = scratch / "dependency-pass.d"
     # A -Wfatal-errors of the command stops the pass at the first error, before
     # it writes the rule, and the last of the two options applies.
     pass_options = ["-M", "-MG", "-MF", str(depfile), "-Wno-fatal-errors"]
     try:
-        proc = subprocess.run([*_command_without_output(argv), *pass_options], cwd=directory,
-                              env=env, capture_output=True, text=True, errors="surrogateescape", check=False)
+        done = proc.run(proc.Command([*_command_without_output(argv), *pass_options], timeout_s=proc.TOOL_S,
+                                     cwd=directory, env=dict(env)))
         parsed = parse_dependency_file(depfile.read_text(errors="surrogateescape")) if depfile.exists() else None
-    except OSError as error:
+    except (OSError, proc.ToolFailed) as error:
         return None, [], f"the dependency pass cannot run: {error}"
     finally:
         depfile.unlink(missing_ok=True)
     if parsed is None:
-        return None, [], f"the preprocess with -M -MG writes no dependency rule (exit code {proc.returncode})"
+        return None, [], f"the preprocess with -M -MG writes no dependency rule (exit code {done.exit})"
     present: list[str] = []
     missing: list[str] = []
     for name in dict.fromkeys(parsed):

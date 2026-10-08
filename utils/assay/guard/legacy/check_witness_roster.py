@@ -94,12 +94,12 @@ import json
 import os
 import re
 import shlex
-import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import proc
 from assay.core.paths import DATA
 from assay.readers import tsast
 from assay.setup import pins as cmake_pin
@@ -830,21 +830,21 @@ def self_test() -> int:
             expect("the build tree that supplies the compile flags is configured from this repository", False)
         else:
             command = compile_command(build_dir)
-            opened = subprocess.run([*command, f"-I{scratch / 'inc'}", "-fdiagnostics-color=never", "-fsyntax-only",
-                                     str(fixture)], cwd=REPO, capture_output=True, text=True)
-            expect("a fixture over a public constructor compiles, which is the red", opened.returncode == 0, True)
+            opened = proc.run(proc.Command([*command, f"-I{scratch / 'inc'}", "-fdiagnostics-color=never",
+                                            "-fsyntax-only", str(fixture)], timeout_s=proc.TOOL_S, cwd=REPO))
+            expect("a fixture over a public constructor compiles, which is the red", opened.exit == 0, True)
             mirror = next(entry for entry in entries if entry.status == "closed")
-            refused = subprocess.run([*command, "-fdiagnostics-color=never", "-fsyntax-only",
-                                      str(FIXTURE_DIR / fixture_name(mirror.type_))], cwd=REPO,
-                                     capture_output=True, text=True)
-            output = refused.stdout + refused.stderr
+            refused = proc.run(proc.Command([*command, "-fdiagnostics-color=never", "-fsyntax-only",
+                                             str(FIXTURE_DIR / fixture_name(mirror.type_))], timeout_s=proc.TOOL_S,
+                                            cwd=REPO))
+            output = refused.out + refused.err
             expect(f"the mirror over {mirror.type_} is refused with both regexes",
-                   refused.returncode != 0 and re.search(REASONS[mirror.reason], output) is not None
+                   refused.exit != 0 and re.search(REASONS[mirror.reason], output) is not None
                    and re.search(rf"\b{re.escape(base_name(mirror.type_))}\(", output) is not None, True)
             # ctest registers exactly the fixtures on disk.  The ctest of the build tree lists them.
-            listed = subprocess.run([cmake_pin.configured_program(build_dir, "ctest"), "-N", "-R",
-                                     "^neg_witness_.*_direct_construction$"], cwd=build_dir,
-                                    capture_output=True, text=True).stdout
+            listed = proc.run(proc.Command([cmake_pin.configured_program(build_dir, "ctest"), "-N", "-R",
+                                            "^neg_witness_.*_direct_construction$"], timeout_s=proc.TOOL_S,
+                                           cwd=build_dir)).out
             registered = sorted(set(re.findall(r"neg_witness_[a-z0-9_]+_direct_construction", listed)))
             on_disk = sorted(path.stem for path in FIXTURE_DIR.glob(FIXTURE_GLOB))
             if registered != on_disk:

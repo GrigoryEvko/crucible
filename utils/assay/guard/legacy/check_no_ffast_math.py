@@ -69,7 +69,6 @@ from __future__ import annotations
 import argparse
 import json
 import shlex
-import subprocess
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -77,6 +76,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import ledger as rule_ledger
+from assay.core import proc
 from assay.core import rows as rows_grammar
 from assay.guard.preprocessed import split_command
 from assay.readers import tsast
@@ -620,11 +620,11 @@ def self_test(cmake: str, cxx: str) -> int:
                           ("third_party/CMakeLists.txt", PLANTED_VENDOR_CMAKE)):
             (root / rel).write_text(text, encoding="utf-8")
         build = Path(work) / "build"
-        configured = subprocess.run([cmake, "-S", str(root), "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug",
-                                     "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON", f"-DCMAKE_CXX_COMPILER={cxx}"],
-                                    capture_output=True, text=True)
-        expect("the planted build configures", configured.returncode == 0)
-        if configured.returncode == 0:
+        configured = proc.run(proc.Command([cmake, "-S", str(root), "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug",
+                                            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON", f"-DCMAKE_CXX_COMPILER={cxx}"],
+                                           timeout_s=proc.TOOL_S))
+        expect("the planted build configures", configured.exit == 0)
+        if configured.exit == 0:
             build_found, build_lost = build_violations(build, root)
             shown = " ".join(violation.what for violation in build_found)
             expect("the compile database reads", not build_lost)

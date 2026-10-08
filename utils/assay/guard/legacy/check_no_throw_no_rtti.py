@@ -82,14 +82,14 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from assay.core import ledger as rule_ledger
+from assay.core import proc
 from assay.core import rows as rows_grammar
 from assay.core.registry import Policy
 
@@ -186,10 +186,10 @@ def listing(*command: str) -> list[str]:
     Raises:
         ReadError: If the tool fails or prints nothing
     """
-    done = subprocess.run(command, capture_output=True, text=True, errors="replace", check=False)
-    if done.returncode != 0 or not done.stdout.strip():
-        raise ReadError(f"{command[0]} cannot read {command[-1]}: {done.stderr.strip()}")
-    return done.stdout.splitlines()
+    done = proc.run(proc.Command(command, timeout_s=proc.TOOL_S))
+    if done.exit != 0 or not done.out.strip():
+        raise ReadError(f"{command[0]} cannot read {command[-1]}: {done.err.strip()}")
+    return done.out.splitlines()
 
 
 def member_of_file_line(line: str, current: str) -> str:
@@ -268,8 +268,8 @@ def references(artifact: str, wanted: Sequence[str]) -> list[Reference]:
         found.append((not is_dead, symbol, hit_member, thrown, function or f"(section {hit_section})"))
     if not found:
         return []
-    demangled = subprocess.run(["c++filt"], input="\n".join(entry[4] for entry in found), capture_output=True,
-                               text=True, check=False).stdout.splitlines()
+    demangled = proc.run(proc.Command(["c++filt"], timeout_s=proc.QUICK_S,
+                                      stdin="\n".join(entry[4] for entry in found).encode())).out.splitlines()
     if len(demangled) != len(found):
         raise ReadError(f"c++filt did not demangle each function name of {artifact}")
     return [Reference(entry[0], entry[1], entry[2], entry[3], name) for entry, name in zip(found, demangled)]
@@ -293,8 +293,12 @@ def scan_artifact(artifact: str, run: Run) -> tuple[int, list[str]]:
     run.scanned.add(name)
     # An empty read is not a pass: a failed nm, or an archive with no symbols,
     # gives nothing to match, the shape of a guard that cannot fail.
-    undefined_text = subprocess.run(["nm", "--undefined-only", "--no-demangle", artifact], capture_output=True,
-                                    text=True, errors="replace", check=False).stdout.rstrip("\n")
+    undefined_read = proc.run(proc.Command(["nm", "--undefined-only", "--no-demangle", artifact],
+                                           timeout_s=proc.TOOL_S))
+    if undefined_read.exit != 0:
+        return 2, [f"check-no-throw-no-rtti: nm cannot read the undefined symbols of {artifact} (exit "
+                   f"{undefined_read.exit}), so nothing was checked: {undefined_read.err.strip()}"]
+    undefined_text = undefined_read.out.rstrip("\n")
     if not undefined_text:
         return 2, [f"check-no-throw-no-rtti: nm read no undefined symbols from {artifact}, so nothing was checked. "
                    f"An artifact that calls nothing is not an artifact that throws nothing."]
@@ -333,8 +337,12 @@ def scan_artifact(artifact: str, run: Run) -> tuple[int, list[str]]:
     # A defined typeinfo or vtable: a polymorphic type was compiled in.  A
     # reference to the typeinfo or the vtable of a library class is not a
     # definition, and the object that defines it holds the violation.
-    defined = subprocess.run(["nm", "--defined-only", "--demangle", artifact], capture_output=True, text=True,
-                             errors="replace", check=False).stdout.splitlines()
+    defined_read = proc.run(proc.Command(["nm", "--defined-only", "--demangle", artifact], timeout_s=proc.TOOL_S))
+    if defined_read.exit != 0:
+        messages.append(f"check-no-throw-no-rtti: nm cannot read the defined symbols of {artifact} (exit "
+                        f"{defined_read.exit}), so no typeinfo or vtable was checked: {defined_read.err.strip()}")
+        return 2, messages
+    defined = defined_read.out.splitlines()
     unadmitted = [line for line in defined if (" typeinfo for " in line or " vtable for " in line)
                   and run.admitting_row(name, "vtable", line.partition(" for ")[2]) is None]
     if unadmitted:
@@ -373,16 +381,16 @@ def check(artifacts: Sequence[str], ledger: rule_ledger.Ledger, shown: str) -> i
         result, messages = scan_artifact(artifact, run)
         for message in messages:
             print(message, file=sys.stderr)
-        if result != 0:
-            status = 1
+        # An artifact that the tools cannot read gives 2, and a violation in another artifact does not hide it.
+        status = max(status, result)
     if scanned == 0:
         print("check-no-throw-no-rtti: none of the named artifacts is built, so nothing was checked.", file=sys.stderr)
         return NOT_RUNNABLE
     for message in stale_rows(run):
         print(message, file=sys.stderr)
-        status = 1
+        status = max(status, 1)
     if status != 0:
-        return 1
+        return status
     print(f"check-no-throw-no-rtti: {scanned} artifact(s) hold both properties ({run.symbols_read} symbols read, "
           f"{run.allocation_failures} throw(s) of a failed allocation, {len(run.matched)} ledger row(s) used) — "
           f"nothing else throws and nothing else dispatches at runtime")
@@ -431,6 +439,32 @@ def planted_ledger(work: Path, rows: str) -> tuple[rule_ledger.Ledger, str]:
     return read_ledger(file)
 
 
+def _self_test_failed_defined_read(work: Path, expect: Callable[[str, bool], None]) -> None:
+    """Check that a failed nm read of the defined symbols gives 2, and does not pass the class check.
+
+    A planted nm on PATH fails for --defined-only and runs the real nm for each other read.  The archive of the
+    fixture `polymorphic` defines a vtable, and a run with no row reports it, so a pass hides the failure.
+    """
+    real_nm = shutil.which("nm")
+    if real_nm is None:
+        expect("nm is on PATH for the case of a failed read", False)
+        return
+    stub_dir = work / "failing-nm"
+    stub_dir.mkdir()
+    stub = stub_dir / "nm"
+    stub.write_text(f'#!/bin/sh\nif [ "$1" = --defined-only ]; then echo "nm: planted failure" >&2; exit 1; fi\n'
+                    f'exec "{real_nm}" "$@"\n', encoding="utf-8")
+    stub.chmod(0o755)
+    saved_path = os.environ.get("PATH", "")
+    os.environ["PATH"] = f"{stub_dir}{os.pathsep}{saved_path}"
+    try:
+        status, messages = scan_artifact(str(work / "libpolymorphic.a"), Run((), "planted"))
+    finally:
+        os.environ["PATH"] = saved_path
+    expect("a failed nm read of the defined symbols gives 2 and names the failure",
+           status == 2 and any("cannot read the defined symbols" in message for message in messages))
+
+
 def self_test() -> int:
     """Plant a throw, a downcast and their look-alikes in archives, and check each verdict.
 
@@ -452,12 +486,12 @@ def self_test() -> int:
         work = Path(work_text)
         for unit, source in FIXTURES.items():
             (work / f"{unit}.cpp").write_text(source, encoding="utf-8")
-            compiled = subprocess.run([compiler, "-std=c++17", "-O1", "-ffunction-sections", "-c",
-                                       str(work / f"{unit}.cpp"), "-o", str(work / f"{unit}.o")],
-                                      capture_output=True, check=False)
-            archived = subprocess.run(["ar", "rcs", str(work / f"lib{unit}.a"), str(work / f"{unit}.o")],
-                                      capture_output=True, check=False)
-            if compiled.returncode != 0 or archived.returncode != 0:
+            compiled = proc.run(proc.Command([compiler, "-std=c++17", "-O1", "-ffunction-sections", "-c",
+                                              str(work / f"{unit}.cpp"), "-o", str(work / f"{unit}.o")],
+                                             timeout_s=proc.TOOL_S))
+            archived = proc.run(proc.Command(["ar", "rcs", str(work / f"lib{unit}.a"), str(work / f"{unit}.o")],
+                                             timeout_s=proc.QUICK_S))
+            if compiled.exit != 0 or archived.exit != 0:
                 print(f"check-no-throw-no-rtti: SELF-TEST FAILED — could not build the {unit} fixture",
                       file=sys.stderr)
                 return 2
@@ -489,6 +523,11 @@ def self_test() -> int:
         status, text = scanned("mixed")
         expect("an int throw beside a throw of std::bad_alloc is reported",
                status == 1 and "__cxa_throw in mixed.o, in mixed_entry(int)." in text)
+
+        (work / "libjunk.a").write_text("not an archive\n", encoding="utf-8")
+        expect("an artifact that nm cannot read gives 2, also beside an artifact with a violation",
+               check([str(work / "libthrows.a"), str(work / "libjunk.a")], ledger, shown) == 2)
+        _self_test_failed_defined_read(work, expect)
 
         ledger, shown = planted_ledger(work, PLANTED_ROWS + "@build/libclean.a | throw | admit | no_such_function | "
                                                             "a row that matches nothing\n")

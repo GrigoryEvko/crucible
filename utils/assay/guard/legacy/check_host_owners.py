@@ -56,7 +56,6 @@ import contextlib
 import io
 import os
 import re
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -112,12 +111,13 @@ def read_roster(root: Path) -> list[tuple[str, str]]:
 
 
 def scope_files(root: Path) -> list[str]:
-    """Return the C++ files under the scan roots that git does not ignore, without the negative fixtures."""
-    listed = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard",
-                             "--", *SCAN_ROOTS], capture_output=True, check=False)
-    if listed.returncode == 0:
-        paths = {p for p in listed.stdout.decode().split("\0") if p}
-    else:
+    """Return the C++ files under the scan roots that git does not ignore, without the negative fixtures.
+
+    When git cannot list the files, each file under the scan roots counts.
+    """
+    try:
+        paths = set(throwaway_repo.tracked_files(root, SCAN_ROOTS, with_new=True))
+    except throwaway_repo.GitError:
         paths = {str(p.relative_to(root)) for r in SCAN_ROOTS for p in (root / r).rglob("*") if p.is_file()}
     return sorted(p for p in paths if tsast.is_in_cpp_scope(p) and not NEG_FIXTURE.search(p) and (root / p).is_file())
 

@@ -71,7 +71,6 @@ import hashlib
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
@@ -82,6 +81,7 @@ from pathlib import Path, PurePosixPath
 
 from assay.core import cache
 from assay.core import pins as pin_table
+from assay.core import proc
 
 OK = 0
 NOT_PINNED = 2
@@ -252,15 +252,15 @@ def run_program(argv: list[str], environment: dict[str, str] | None = None, with
     """Run an installed program, and return its exit status and its output.
 
     With with_errors, the output holds the errors of the program too.  A
-    program that cannot start gives the status 127.
+    program that cannot start or that runs past PROGRAM_TIMEOUT_S gives the
+    status 127.
     """
     try:
-        completed = subprocess.run(argv, stdout=subprocess.PIPE,
-                                   stderr=subprocess.STDOUT if with_errors else subprocess.DEVNULL, text=True,
-                                   errors="replace", env=environment, timeout=PROGRAM_TIMEOUT_S, check=False)
-    except (OSError, subprocess.TimeoutExpired) as error:
+        completed = proc.run(proc.Command(argv, timeout_s=PROGRAM_TIMEOUT_S, env=environment,
+                                          stderr=proc.Output.MERGE if with_errors else proc.Output.DISCARD))
+    except proc.ToolFailed as error:
         return 127, str(error)
-    return completed.returncode, completed.stdout
+    return completed.exit, completed.out
 
 
 def is_executable(path: Path) -> bool:
@@ -468,13 +468,15 @@ def verify_ast_grep(directory: Path, pin: pin_table.Pin, table: Pins) -> None:
     with tempfile.TemporaryDirectory(prefix="setup-ast-grep-") as scratch:
         fixture = Path(scratch) / "fixture.sh"
         fixture.write_text(AST_GREP_FIXTURE, encoding="utf-8")
-        completed = subprocess.run([str(binary), "run", "--lang", "bash", "-p", AST_GREP_PATTERN, "--json=compact",
-                                    str(fixture)], capture_output=True, text=True, timeout=PROGRAM_TIMEOUT_S,
-                                   check=False)
-    if completed.returncode != 0:
-        raise InstallError(f"the fixture run fails.\n{completed.stdout}{completed.stderr}", NOT_PINNED)
+        try:
+            completed = proc.run(proc.Command([str(binary), "run", "--lang", "bash", "-p", AST_GREP_PATTERN,
+                                               "--json=compact", str(fixture)], timeout_s=PROGRAM_TIMEOUT_S))
+        except proc.ToolFailed as problem:
+            raise InstallError(f"the fixture run fails.\n{problem}", NOT_PINNED) from None
+    if completed.exit != 0:
+        raise InstallError(f"the fixture run fails.\n{completed.out}{completed.err}", NOT_PINNED)
     try:
-        matches = json.loads(completed.stdout)
+        matches = json.loads(completed.out)
     except json.JSONDecodeError:
         raise InstallError("the output of the fixture run is not JSON.", NOT_PINNED) from None
     check_fixture_lines(",".join(str(match["range"]["start"]["line"]) for match in matches))

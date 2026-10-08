@@ -1,4 +1,13 @@
-"""The git commands of the package: the files, the history and the moves of a tree, and a throwaway repository.
+"""The one module of the package that runs git: the files, the history and the moves of a tree, and a throwaway repository.
+
+THE COMMAND
+    run() runs one git command in a tree, through assay.core.proc, with a
+    time limit of TIMEOUT_S, and it returns the standard output.  A command
+    that cannot start, that runs past its limit, or that exits with a status
+    that is not 0 raises GitError.  run_any_exit() gives the result for each
+    exit, for a command whose exit is its answer.  head(), resolve(),
+    is_clean() and show() give the answers that callers ask for most, so a
+    caller reads no output of git itself.
 
 THE ISOLATION
     A repository variable in the environment of the caller wins over
@@ -7,11 +16,10 @@ THE ISOLATION
     there.  On 2026-09-24 an exported GIT_DIR sent the fixture commits of one
     self-test into the real repository and emptied its main branch.
 
-    isolate() removes each such variable from the environment of this
-    process.  run() gives each git command an environment with no such
-    variable, so a read of this module resolves its repository from its own
-    path also when the process keeps the variables.  init() makes a
-    repository and stops unless git resolves the directory itself.
+    assay.core.proc gives no child a variable of proc.REPOSITORY_VARIABLES,
+    so each git command of this module resolves its repository from the
+    directory of -C, also when this process holds such a variable.  init()
+    makes a repository and stops unless git resolves the directory itself.
 
 THE HISTORY
     path_history() reads the commits that changed some paths, with one `git
@@ -22,25 +30,13 @@ THE HISTORY
 """
 
 import contextlib
-import os
-import subprocess
 import tempfile
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Each variable that tells git which repository, index or object store to
-# use, whatever directory it runs in.
-REPOSITORY_VARIABLES = (
-    "GIT_DIR",
-    "GIT_WORK_TREE",
-    "GIT_INDEX_FILE",
-    "GIT_OBJECT_DIRECTORY",
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    "GIT_COMMON_DIR",
-    "GIT_NAMESPACE",
-    "GIT_CEILING_DIRECTORIES",
-)
+from assay.core import proc
+
 # The separators of the fields and the records of `git log`, which no subject or body holds.
 FIELD = "\x1f"
 RECORD = "\x1e"
@@ -86,33 +82,31 @@ class PathHistory:
     working: Mapping[str, bytes | None] = field(default_factory=dict)
 
 
-def isolate() -> None:
-    """Remove every repository variable from the environment of this process."""
-    for name in REPOSITORY_VARIABLES:
-        os.environ.pop(name, None)
+def run_any_exit(root: Path, *arguments: str, stdin: bytes = b"", extra: Mapping[str, str] | None = None,
+                 timeout_s: float = TIMEOUT_S) -> proc.Completed:
+    """Run one git command in a tree, and return its result whatever its exit.
+
+    Raises:
+        GitError: If git cannot start, or it runs past its limit
+    """
+    command = proc.Command(["git", "-C", str(root), *arguments], timeout_s=timeout_s, stdin=stdin,
+                           env=proc.environment(dict(extra or {})))
+    try:
+        return proc.run(command)
+    except proc.ToolFailed as problem:
+        raise GitError(f"git {' '.join(arguments[:2])} cannot run in {root}: {problem}") from None
 
 
-def clean_environment(extra: Mapping[str, str] | None = None) -> dict[str, str]:
-    """Return the environment of this process with no repository variable, and with the extra variables."""
-    environment = {name: value for name, value in os.environ.items() if name not in REPOSITORY_VARIABLES}
-    environment.update(extra or {})
-    return environment
-
-
-def run(root: Path, *arguments: str, stdin: bytes | None = None, extra: Mapping[str, str] | None = None) -> bytes:
+def run(root: Path, *arguments: str, stdin: bytes = b"", extra: Mapping[str, str] | None = None,
+        timeout_s: float = TIMEOUT_S) -> bytes:
     """Run one git command in a tree, and return its standard output.
 
     Raises:
-        GitError: If git cannot run, or it exits with a status that is not 0
+        GitError: If git cannot start, it runs past its limit, or it exits with a status that is not 0
     """
-    try:
-        completed = subprocess.run(["git", "-C", str(root), *arguments], input=stdin, capture_output=True,
-                                   env=clean_environment(extra), timeout=TIMEOUT_S, check=False)
-    except (OSError, subprocess.TimeoutExpired) as problem:
-        raise GitError(f"git {' '.join(arguments[:2])} cannot run in {root}: {problem}") from None
-    if completed.returncode != 0:
-        raise GitError(f"`git {' '.join(arguments[:2])}` failed in {root}: "
-                       f"{completed.stderr.decode(errors='replace').strip()}")
+    completed = run_any_exit(root, *arguments, stdin=stdin, extra=extra, timeout_s=timeout_s)
+    if completed.exit != 0:
+        raise GitError(f"`git {' '.join(arguments[:2])}` failed in {root}: {completed.err.strip()}")
     return completed.stdout
 
 
@@ -120,12 +114,11 @@ def init(root: Path) -> None:
     """Make a repository in root, and refuse to go on unless git resolves root itself.
 
     Raises:
+        GitError: If git fails
         NotIsolated: If git resolves a repository outside root
     """
-    isolate()
-    subprocess.run(["git", "-C", str(root), "init", "-q"], check=True, capture_output=True)
-    resolved = subprocess.run(["git", "-C", str(root), "rev-parse", "--absolute-git-dir"], check=True,
-                              capture_output=True, text=True).stdout.strip()
+    run(root, "init", "-q")
+    resolved = run(root, "rev-parse", "--absolute-git-dir").decode().strip()
     if Path(resolved).resolve() != (root / ".git").resolve():
         raise NotIsolated(f"the fixture repository {root} resolves to {resolved}; the self-test stops before it "
                           f"writes to a repository that is not its own")
@@ -138,6 +131,50 @@ def toplevel(root: Path) -> Path:
         GitError: If root is not in a git work tree
     """
     return Path(run(root, "rev-parse", "--show-toplevel").decode().strip())
+
+
+def head(root: Path) -> str:
+    """Return the full hash of the HEAD commit of a tree.
+
+    Raises:
+        GitError: If root is not in a git work tree, or it has no commit
+    """
+    return run(root, "rev-parse", "HEAD").decode().strip()
+
+
+def resolve(root: Path, revision: str) -> str | None:
+    """Return the full hash of the commit that a revision names, or None when it names no commit.
+
+    Raises:
+        GitError: If git cannot start, or root is not in a git work tree
+    """
+    completed = run_any_exit(root, "rev-parse", "--verify", "--quiet", f"{revision}^{{commit}}")
+    if completed.exit == 0:
+        return completed.out.strip()
+    if completed.exit == 1:
+        return None
+    raise GitError(f"`git rev-parse --verify {revision}` failed in {root}: {completed.err.strip()}")
+
+
+def is_clean(root: Path, pathspec: Sequence[str] = ()) -> bool:
+    """Whether the tracked files of a tree, or of the pathspec, are the same as in the HEAD commit.
+
+    Raises:
+        GitError: If git cannot start, or root is not in a git work tree with a commit
+    """
+    completed = run_any_exit(root, "diff", "--quiet", "HEAD", "--", *pathspec)
+    if completed.exit in (0, 1):
+        return completed.exit == 0
+    raise GitError(f"`git diff --quiet HEAD` failed in {root}: {completed.err.strip()}")
+
+
+def show(root: Path, revision: str, path: str) -> bytes | None:
+    """Return the content of a file at a revision, or None when the revision has no such file.
+
+    Raises:
+        GitError: If git fails
+    """
+    return blobs(root, [f"{revision}:{path}"])[0]
 
 
 def is_shallow(root: Path) -> bool:

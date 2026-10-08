@@ -38,7 +38,6 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
@@ -46,6 +45,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from assay.core import ledger as rule_ledger
+from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core.paths import LOOP
 from assay.loop.fixture import store
@@ -217,21 +217,19 @@ class StoreTest:
         env["CRUCIBLE_CACHE_DIR"] = str(self.caches)
         env.update(environment)
         options = ["--warnings-dir", str(warnings_dir)] if warnings_dir is not None else []
-        proc = subprocess.run(
+        done = proc.run(proc.Command(
             [sys.executable, *DRIVER, *options, str(self.build), str(self.root / "neg" / f"{fixture}.cpp"), fixture,
              *regexes],
+            timeout_s=proc.TOOL_S,
             env=env,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
+        ))
         prefix = f"neg-compile {fixture}: "
         notes = [
             line[len(prefix) :]
-            for line in proc.stderr.splitlines()
+            for line in done.err.splitlines()
             if line.startswith(prefix) and "error diagnostic" not in line
         ]
-        return proc.returncode, proc.stdout, proc.stderr, notes
+        return done.exit, done.out, done.err, notes
 
     def expect(self, is_true: bool, what: str) -> None:
         """Record the failure `what` when `is_true` is False."""
@@ -447,18 +445,17 @@ class StoreTest:
 
     def check_loader(self) -> None:
         """A shared object of cc1plus in a directory of LD_LIBRARY_PATH changes the key of the compile."""
-        cc1plus = subprocess.run([self.cxx, "-print-prog-name=cc1plus"], text=True, capture_output=True,
-                                 check=False).stdout.strip()
+        cc1plus = proc.run(proc.Command([self.cxx, "-print-prog-name=cc1plus"], timeout_s=proc.QUICK_S)).out.strip()
         interpreter = store.elf_interpreter(cc1plus) if os.path.isfile(cc1plus) else None
         if interpreter is None:
             self.skip(f"cc1plus ({cc1plus}) has no program interpreter")
             return
-        listed = subprocess.run([interpreter, "--list", cc1plus], text=True, capture_output=True, check=False)
-        parsed = store.parse_loader_list(listed.stdout, "", self.root)
+        listed = proc.run(proc.Command([interpreter, "--list", cc1plus], timeout_s=proc.QUICK_S)).out
+        parsed = store.parse_loader_list(listed, "", self.root)
         system = [path for path in (parsed[0] if parsed else []) if path.startswith(("/lib", "/usr/lib"))
                   and not os.path.basename(path).startswith("ld-linux")]
         if not system:
-            self.skip(f"cc1plus maps no shared object from a system directory: {listed.stdout.strip()}")
+            self.skip(f"cc1plus maps no shared object from a system directory: {listed.strip()}")
             return
         chosen = next((path for path in system if os.path.basename(path).startswith("libz")), system[0])
         library = self.root / "lib"
@@ -478,10 +475,9 @@ class StoreTest:
         base = {name: value for name, value in os.environ.items() if name not in ("LC_ALL", "LC_MESSAGES")}
         chosen = ""
         for candidate in ("en_US.UTF-8", "en_US.utf8", "en_GB.UTF-8", "de_DE.UTF-8"):
-            raw = subprocess.run([self.cxx, "-fsyntax-only", "-I", str(self.root / "include"), str(source)],
-                                 env={**base, "LC_ALL": candidate, "LANGUAGE": "de"}, text=True, capture_output=True,
-                                 check=False)
-            if raw.returncode == 1 and CONVERT[0] not in raw.stderr:
+            raw = proc.run(proc.Command([self.cxx, "-fsyntax-only", "-I", str(self.root / "include"), str(source)],
+                                        timeout_s=proc.TOOL_S, env={**base, "LC_ALL": candidate, "LANGUAGE": "de"}))
+            if raw.exit == 1 and CONVERT[0] not in raw.err:
                 chosen = candidate
                 break
         if not chosen:
@@ -1139,14 +1135,14 @@ class StoreTest:
         The result is None when the GCC driver refuses `command` and prints no
         command of cc1plus, so a refused command never looks like a clean one.
         """
-        proc = subprocess.run([self.cxx, "-###", *command[1:]], capture_output=True, text=True, check=False)
+        shown = proc.run(proc.Command([self.cxx, "-###", *command[1:]], timeout_s=proc.QUICK_S))
         words: list[str] = []
-        for line in proc.stderr.splitlines():
+        for line in shown.err.splitlines():
             parts = shlex.split(line) if line.startswith(" ") else []
             if parts and parts[0].endswith("/cc1plus"):
                 words = parts
                 break
-        if proc.returncode != 0 or not words:
+        if shown.exit != 0 or not words:
             return None
         options = [word for word in words if word.startswith(("-fplugin=", "-fplugin-arg-"))]
         names = [following for word, following in zip(words, words[1:]) if word == "-D"]

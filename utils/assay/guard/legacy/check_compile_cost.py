@@ -148,7 +148,6 @@ import io
 import json
 import os
 import re
-import subprocess
 import sys
 import tempfile
 from collections.abc import Iterable
@@ -156,6 +155,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import meter as cost_meter
+from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
@@ -490,10 +490,10 @@ def demangled(names: Iterable[str]) -> dict[str, str]:
     if not unique:
         return {}
     try:
-        result = subprocess.run(["c++filt"], input="\n".join(unique) + "\n", capture_output=True, text=True,
-                                check=True)
-        readable = result.stdout.splitlines()
-    except (OSError, subprocess.CalledProcessError):
+        result = proc.require(proc.run(proc.Command(["c++filt"], timeout_s=proc.QUICK_S,
+                                                    stdin=("\n".join(unique) + "\n").encode())))
+        readable = result.out.splitlines()
+    except proc.ToolFailed:
         readable = unique
     if len(readable) != len(unique):
         readable = unique
@@ -546,14 +546,19 @@ def read_dependencies(ninja: str, build_dir: Path, keys: list[str]) -> dict[str,
         For each output in the log: its state (VALID, STALE or MISSING) and its files
 
     Raises:
-        OSError: If ninja cannot start or fails
+        OSError: If ninja cannot start, runs past its limit, or fails
     """
-    result = subprocess.run([ninja, "-C", str(build_dir), "-t", "deps", *keys], capture_output=True, text=True)
-    if result.returncode != 0:
-        raise OSError(f"{ninja} -t deps exited {result.returncode}: {result.stderr.strip()[:300]}")
+    try:
+        result = proc.run(proc.Command([ninja, "-C", str(build_dir), "-t", "deps", *keys], timeout_s=proc.QUICK_S))
+    except proc.CannotStart as problem:
+        raise problem.error from None
+    except proc.TimedOut:
+        raise OSError(f"{ninja} -t deps ran past its limit of {proc.QUICK_S:g} s") from None
+    if result.exit != 0:
+        raise OSError(f"{ninja} -t deps exited {result.exit}: {result.err.strip()[:300]}")
     lists: dict[str, tuple[str, list[str]]] = {}
     current: list[str] | None = None
-    for line in result.stdout.splitlines():
+    for line in result.out.splitlines():
         if not line.strip():
             continue
         if line.startswith((" ", "\t")):

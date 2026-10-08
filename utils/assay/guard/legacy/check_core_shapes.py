@@ -78,7 +78,6 @@ import platform
 import re
 import shlex
 import shutil
-import subprocess
 import sys
 import tempfile
 from collections.abc import Iterable
@@ -86,6 +85,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from assay.core import proc
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
 from assay.readers import tsast
@@ -476,11 +476,11 @@ def disassemble(obj: Path) -> dict[str, Code]:
     Raises:
         CannotRun: If objdump fails
     """
-    result = subprocess.run(["objdump", "-drC", "--no-show-raw-insn", "-M", "intel", str(obj)], capture_output=True,
-                            text=True)
-    if result.returncode != 0:
-        raise CannotRun(f"objdump failed on {obj}: {result.stderr.strip()}")
-    return parse_disassembly(result.stdout)
+    result = proc.run(proc.Command(["objdump", "-drC", "--no-show-raw-insn", "-M", "intel", str(obj)],
+                                   timeout_s=proc.TOOL_S))
+    if result.exit != 0:
+        raise CannotRun(f"objdump failed on {obj}: {result.err.strip()}")
+    return parse_disassembly(result.out)
 
 
 # ── The judgment of one probe ───────────────────────────────────────────────
@@ -726,9 +726,9 @@ def compile_probe(entry: Entry, obj: Path, include_dir: Path | None = None) -> N
         if include_dir is None or not is_plugin_word:
             words.append(word)
         index += 1
-    result = subprocess.run(words, capture_output=True, text=True, cwd=entry.directory)
-    if result.returncode != 0:
-        raise CannotRun(f"the compile of {PROBE_SOURCE} failed:\n{result.stderr}")
+    result = proc.run(proc.Command(words, timeout_s=proc.TOOL_S, cwd=entry.directory))
+    if result.exit != 0:
+        raise CannotRun(f"the compile of {PROBE_SOURCE} failed:\n{result.err}")
 
 
 def probe_functions(entry: Entry, include_dir: Path | None = None) -> dict[str, Code]:

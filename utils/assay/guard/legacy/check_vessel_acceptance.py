@@ -31,15 +31,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shlex
 import stat
-import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
 
+from assay.core import proc
 from assay.core.paths import REPO_ROOT
 
 VESSEL_DIR = "vessel/torch"
@@ -47,6 +46,8 @@ LIBRARIES = ("libcrucible_vessel.so", "libcrucible_dispatch.so")
 TARGETS = ("crucible_vessel", "crucible_dispatch")
 TEST_GLOB = "test_*.py"
 TEST_TIMEOUT_SECONDS = 1800
+# The limit of one probe of the interpreter, in seconds.
+PROBE_TIMEOUT_SECONDS = 300
 # register.cpp alone compiles for about 10 minutes in a Release build.
 BUILD_TIMEOUT_SECONDS = 2400
 FAILURE_TAIL_LINES = 40
@@ -100,12 +101,12 @@ def check_torch(torch_dir: str, python: str) -> list[str]:
              "print(os.path.dirname(os.path.dirname(torch.__file__)))\n"
              "print(hasattr(torch._C.DispatchKey, 'Crucible'))\n")
     try:
-        done = subprocess.run([python, "-c", probe], capture_output=True, text=True, timeout=300)
-    except OSError as exc:
-        return [f"the interpreter {python} does not start: {exc}"]
-    if done.returncode != 0:
-        return [f"the interpreter {python} cannot import torch: {done.stderr.strip()[-400:]}"]
-    lines = done.stdout.strip().splitlines()
+        done = proc.run(proc.Command([python, "-c", probe], timeout_s=PROBE_TIMEOUT_SECONDS))
+    except proc.CannotStart as exc:
+        return [f"the interpreter {python} does not start: {exc.error}"]
+    if done.exit != 0:
+        return [f"the interpreter {python} cannot import torch: {done.err.strip()[-400:]}"]
+    lines = done.out.strip().splitlines()
     problems: list[str] = []
     if not lines or not same_path(lines[0], torch_dir):
         problems.append(f"the interpreter {python} imports torch from {lines[0] if lines else '(nothing)'}, and the "
@@ -163,12 +164,12 @@ def check_build(build_dir: Path, torch_dir: str, root: Path) -> list[str]:
     if not cmake:
         return [f"{build_dir}/CMakeCache.txt has no entry CMAKE_COMMAND.  Configure the build directory again."]
     try:
-        done = subprocess.run([cmake, "--build", str(build_dir), "--target", *TARGETS], capture_output=True,
-                              text=True, timeout=BUILD_TIMEOUT_SECONDS)
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        done = proc.run(proc.Command([cmake, "--build", str(build_dir), "--target", *TARGETS],
+                                     timeout_s=BUILD_TIMEOUT_SECONDS))
+    except (proc.CannotStart, proc.TimedOut) as exc:
         return [f"the build of the targets {' '.join(TARGETS)} does not finish: {exc}"]
-    if done.returncode != 0:
-        tail = "\n".join((done.stdout + done.stderr).splitlines()[-FAILURE_TAIL_LINES:])
+    if done.exit != 0:
+        tail = "\n".join((done.out + done.err).splitlines()[-FAILURE_TAIL_LINES:])
         return [f"the build of the targets {' '.join(TARGETS)} fails:\n{tail}"]
     for library in LIBRARIES:
         if not (build_dir / "lib" / library).is_file():
@@ -190,13 +191,13 @@ def check_uninstrumented(build_dir: Path, python: str, root: Path) -> list[str]:
              "    print(None if runtime is None else runtime.sanitizer)\n")
     paths = [str(build_dir / "lib" / library) for library in LIBRARIES]
     try:
-        done = subprocess.run([python, "-c", probe, *paths], capture_output=True, text=True, timeout=300)
-    except OSError as exc:
-        return [f"the interpreter {python} does not start: {exc}"]
-    if done.returncode != 0:
-        return [f"the sanitizer probe of the vessel libraries failed: {done.stderr.strip()[-400:]}"]
+        done = proc.run(proc.Command([python, "-c", probe, *paths], timeout_s=PROBE_TIMEOUT_SECONDS))
+    except proc.CannotStart as exc:
+        return [f"the interpreter {python} does not start: {exc.error}"]
+    if done.exit != 0:
+        return [f"the sanitizer probe of the vessel libraries failed: {done.err.strip()[-400:]}"]
     problems: list[str] = []
-    for path, verdict in zip(paths, done.stdout.strip().splitlines()):
+    for path, verdict in zip(paths, done.out.strip().splitlines()):
         if verdict != "None":
             problems.append(f"{path} carries the runtime {verdict}.  The gate runs Python with no sanitizer "
                             f"runtime preloaded, so Python cannot load it.  Use a build of the release or bench "
@@ -206,16 +207,17 @@ def check_uninstrumented(build_dir: Path, python: str, root: Path) -> list[str]:
 
 def run_tests(build_dir: Path, python: str, root: Path) -> list[str]:
     """Operate each vessel test against the libraries of the build, and refuse each that does not exit 0."""
-    environment = dict(os.environ, CRUCIBLE_BUILD_DIR=str(build_dir))
+    environment = proc.environment({"CRUCIBLE_BUILD_DIR": str(build_dir)})
     problems: list[str] = []
     for test in vessel_tests(root):
         started = time.monotonic()
         try:
-            done = subprocess.run([python, str(test)], cwd=root / VESSEL_DIR, env=environment, capture_output=True,
-                                  text=True, timeout=TEST_TIMEOUT_SECONDS)
-            code, output = done.returncode, done.stdout + done.stderr
-        except subprocess.TimeoutExpired as exc:
-            code, output = None, f"{exc.stdout or ''}{exc.stderr or ''}"
+            done = proc.run(proc.Command([python, str(test)], timeout_s=TEST_TIMEOUT_SECONDS, cwd=root / VESSEL_DIR,
+                                         env=environment))
+            code, output = done.exit, done.out + done.err
+        except proc.TimedOut as exc:
+            stopped = exc.completed
+            code, output = None, "" if stopped is None else stopped.out + stopped.err
         elapsed = time.monotonic() - started
         if code == 0:
             print(f"  ok    {test.name} ({elapsed:.1f} s)")

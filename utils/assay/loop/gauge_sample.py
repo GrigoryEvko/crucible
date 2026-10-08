@@ -53,15 +53,14 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
-import os
 import shlex
 import statistics
-import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import proc
 from assay.core.paths import REPO_ROOT
 
 # The fixed sample: the path of each source, and whether it is a negative
@@ -203,30 +202,28 @@ def command_of(row: dict[str, object]) -> Command:
     return Command(directory, str(words[0]), tuple(flags), str(source))
 
 
-def measure(argv: list[str], directory: Path, scratch: Path) -> Run:
+def measure(argv: list[str], directory: Path) -> Run:
     """Run one compiler command and return its CPU time, its peak memory and its exit code.
 
     The CPU time is the user plus system time that wait4 gives, which includes
-    each child that the driver waited for.  The diagnostics go to a scratch
-    file, so a long error text cannot fill a pipe.
+    each child that the driver waited for.  assay.core.proc reads the
+    diagnostics while the command runs, so a long error text cannot fill a pipe.
 
     Args:
         argv: The full command
         directory: The working directory of the command
-        scratch: A directory for the diagnostics file
 
     Returns:
         The resource use of the run
+
+    Raises:
+        SampleError: If the compiler cannot start, or the run goes past the limit TOOL_S of assay.core.proc
     """
-    with tempfile.NamedTemporaryFile(dir=scratch, suffix=".err", delete=False) as err_file:
-        err_path = Path(err_file.name)
-        process = subprocess.Popen(argv, cwd=directory, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                   stderr=err_file)
-        _, status, usage = os.wait4(process.pid, 0)
-    process.returncode = os.waitstatus_to_exitcode(status)
-    diagnostics = err_path.read_text(encoding="utf-8", errors="replace")
-    err_path.unlink()
-    return Run(usage.ru_utime + usage.ru_stime, usage.ru_maxrss // 1024, process.returncode, diagnostics)
+    try:
+        completed = proc.run(proc.Command(argv, timeout_s=proc.TOOL_S, cwd=directory, stdout=proc.Output.DISCARD))
+    except proc.ToolFailed as problem:
+        raise SampleError(str(problem)) from None
+    return Run(completed.cpu_s, completed.peak_kb // 1024, completed.exit, completed.err)
 
 
 def argv_for(command: Command, mode: str, scratch: Path, stem: str) -> list[str]:
@@ -318,7 +315,7 @@ def measure_all(jobs: list[tuple[str, str, Command, tuple[str, ...]]], runs: int
         index, mode, repeat = item
         _, _, command, _ = jobs[index]
         stem = f"row{index}_{mode}_{repeat}"
-        run = measure(argv_for(command, mode, scratch, stem), command.directory, scratch)
+        run = measure(argv_for(command, mode, scratch, stem), command.directory)
         (scratch / f"{stem}.o").unlink(missing_ok=True)
         return index, mode, run
 

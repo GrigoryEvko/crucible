@@ -39,13 +39,12 @@ returns.
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from assay.core import git
+from assay.core import git, proc
 from assay.core.paths import GUARD, LOOP, REPO_ROOT
 
 
@@ -131,16 +130,22 @@ def run_step(label: str, command: Sequence[str], root: Path) -> bool:
         root: The working directory
 
     Returns:
-        Whether the step passed
+        Whether the step passed.  A step that cannot start, or that runs past the limit TOOL_S of assay.core.proc,
+        did not pass
     """
     print(f"  {label:<{LABEL_WIDTH}} ", end="", file=sys.stderr, flush=True)
-    completed = subprocess.run(list(command), cwd=root, capture_output=True, text=True, errors="replace",
-                               check=False)
-    if completed.returncode == 0:
+    completed: proc.Completed | None
+    try:
+        completed = proc.run(proc.Command(list(command), timeout_s=proc.TOOL_S, cwd=root))
+        failure = "" if completed.exit == 0 else f"exit {completed.exit}"
+    except proc.ToolFailed as problem:
+        completed, failure = problem.completed, str(problem)
+    if not failure:
         print("ok", file=sys.stderr)
         return True
-    print(f"FAILED (exit {completed.returncode})", file=sys.stderr)
-    for line in (completed.stdout + completed.stderr).splitlines():
+    print(f"FAILED ({failure})", file=sys.stderr)
+    output = "" if completed is None else completed.out + completed.err
+    for line in output.splitlines():
         print(f"      {line}", file=sys.stderr)
     return False
 

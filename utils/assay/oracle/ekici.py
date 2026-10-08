@@ -40,7 +40,6 @@ import logging
 import os
 import shlex
 import shutil
-import subprocess
 import tarfile
 import tempfile
 import urllib.request
@@ -48,6 +47,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from assay.core import proc
 from assay.oracle.execution import _SPIN, head
 from assay.oracle.model import LChoice, LEnd, Local
 from assay.oracle.rocq import OracleError, answer_cache_path, cache_root, load_answers, save_answers
@@ -107,11 +107,11 @@ def build(root: Path) -> None:
         return
     for source in SOURCES:
         LOG.info("coqc %s", source)
-        proc = subprocess.run([*coqc(), "-R", str(root), "SST", str(root / source)], cwd=root,
-                              capture_output=True, text=True)
-        if proc.returncode != 0:
+        completed = proc.run(proc.Command([*coqc(), "-R", str(root), "SST", str(root / source)],
+                                          timeout_s=proc.TOOL_S, cwd=root))
+        if completed.exit != 0:
             raise OracleError(f"building the ITP 2025 development failed at {source}:\n"
-                              f"{(proc.stdout + proc.stderr)[-3000:]}")
+                              f"{(completed.out + completed.err)[-3000:]}")
 
 
 # ── Certificates ─────────────────────────────────────────────────────
@@ -290,20 +290,25 @@ def certificate(key: str, t: Local, u: Local) -> tuple[str, bool, str]:
     return "".join(text), verdict, reason
 
 
-def _check(root: Path, blocks: list[str]) -> subprocess.CompletedProcess[str]:
+def _check(root: Path, blocks: list[str]) -> tuple[int, str]:
+    """Compile the certificates ``blocks`` in one file.  Return the exit of coqc and its output.
+
+    A run past CHUNK_TIMEOUT gives the exit 124 and the text of the timeout.
+    """
     with tempfile.TemporaryDirectory(prefix="session_oracle_ekici_") as tmp:
         path = Path(tmp) / "EkiciCertificates.v"
         path.write_text(_HEAD + "".join(blocks), encoding="utf-8")
         try:
-            return subprocess.run([*coqc(), "-R", str(root), "SST", str(path)], cwd=tmp, capture_output=True,
-                                  text=True, timeout=CHUNK_TIMEOUT)
-        except subprocess.TimeoutExpired as exc:
-            return subprocess.CompletedProcess(exc.cmd, 124, "", f"timeout after {CHUNK_TIMEOUT} s")
+            completed = proc.run(proc.Command([*coqc(), "-R", str(root), "SST", str(path)],
+                                              timeout_s=CHUNK_TIMEOUT, cwd=tmp))
+        except proc.TimedOut:
+            return 124, f"timeout after {CHUNK_TIMEOUT} s"
+        return completed.exit, completed.out + completed.err
 
 
 def coq_version() -> str:
     """Return the version line of the coqc that checks the certificates."""
-    out = subprocess.run([*coqc(), "--version"], check=True, capture_output=True, text=True).stdout
+    out = proc.require(proc.run(proc.Command([*coqc(), "--version"], timeout_s=proc.QUICK_S))).out
     return out.strip().splitlines()[0]
 
 
@@ -349,21 +354,20 @@ def decide(pairs: list[tuple[Local, Local]], workers: int = 16) -> list[tuple[bo
         with ThreadPoolExecutor(max_workers=workers) as pool:
             outcomes = list(pool.map(lambda ch: _check(root, [certs[i][0] for i in ch]), chunks))
             retry: list[int] = []
-            for chunk, proc in zip(chunks, outcomes, strict=True):
-                if proc.returncode == 0:
+            for chunk, (status, _output) in zip(chunks, outcomes, strict=True):
+                if status == 0:
                     for i in chunk:
                         results[i] = (certs[i][1], certs[i][2])
                         cache[keys[i]] = [certs[i][1], certs[i][2]]
                 else:
                     retry += chunk
             singles = list(pool.map(lambda i: (i, _check(root, [certs[i][0]])), retry))
-        for i, proc in singles:
-            if proc.returncode == 0:
+        for i, (status, output) in singles:
+            if status == 0:
                 results[i] = (certs[i][1], certs[i][2])
                 cache[keys[i]] = [certs[i][1], certs[i][2]]
             else:
-                results[i] = (None, "coqc refused the certificate: "
-                                    + " ".join((proc.stdout + proc.stderr).split())[-300:])
+                results[i] = (None, "coqc refused the certificate: " + " ".join(output.split())[-300:])
     finally:
         save_answers(cache_path, cache)
     for i, c in enumerate(certs):

@@ -145,7 +145,6 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
 import sys
 import tempfile
 from collections import Counter
@@ -156,6 +155,7 @@ from pathlib import Path
 
 from assay.core import ledger as rule_ledger
 from assay.core import meter as cost_meter
+from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
@@ -398,15 +398,17 @@ def tool_output(command: list[str], data: str | None = None) -> str:
     """Run a tool and return its standard output.
 
     Raises:
-        InputError: If the tool cannot start or exits with a status that is not 0
+        InputError: If the tool cannot start, runs past its limit, or exits with a status that is not 0
     """
     try:
-        done = subprocess.run(command, input=data, capture_output=True, text=True, check=False)
-    except OSError as problem:
-        raise InputError(f"{command[0]} cannot start: {problem.strerror}") from None
-    if done.returncode != 0:
-        raise InputError(f"{shlex.join(command)[:300]} exits {done.returncode}: {done.stderr.strip()[:400]}")
-    return done.stdout
+        done = proc.run(proc.Command(command, timeout_s=proc.TOOL_S, stdin=b"" if data is None else data.encode()))
+    except proc.CannotStart as problem:
+        raise InputError(f"{command[0]} cannot start: {problem.error.strerror}") from None
+    except proc.TimedOut:
+        raise InputError(f"{shlex.join(command)[:300]} runs past its limit of {proc.TOOL_S:g} s") from None
+    if done.exit != 0:
+        raise InputError(f"{shlex.join(command)[:300]} exits {done.exit}: {done.err.strip()[:400]}")
+    return done.out
 
 
 def libstdcxx_exports(compiler: str) -> frozenset[str]:
