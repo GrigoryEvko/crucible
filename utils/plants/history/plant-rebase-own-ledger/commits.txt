@@ -1,0 +1,2 @@
+# A rebase row names the ledger of the rule history, whose rows the rule does not count.
+commit 1 | Add the planted registry and the ledger of the rule | The ledger admits nothing.

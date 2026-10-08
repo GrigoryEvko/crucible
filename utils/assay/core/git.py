@@ -274,6 +274,18 @@ def changes(root: Path, paths: Sequence[str]) -> dict[str, tuple[frozenset[str],
     return found
 
 
+def changed_paths(root: Path, revision: str) -> frozenset[str]:
+    """Return each path that one commit changed against its first parent, or each of its paths for a root commit.
+
+    Raises:
+        GitError: If git fails
+
+    Complexity: linear in the number of the paths of the commit.
+    """
+    names = run(root, "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", revision).decode("utf-8", "replace")
+    return frozenset(name for name in names.split("\n") if name)
+
+
 def path_history(root: Path, paths: Sequence[str], groups: Sequence[Sequence[str]] = ()) -> PathHistory:
     """Read each commit that changed one of the paths, and each path at each such commit, its parent, HEAD and the
     working tree.

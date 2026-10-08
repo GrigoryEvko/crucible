@@ -123,6 +123,20 @@ def reader_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
         and rule_ledger.count_rows("# head\na | b\nc | d\n") == 2
         and rule_ledger.count_rows(None) is None,
     )
+    expect(
+        "format_row() gives the format row, an empty text for an earlier format, and None for no row",
+        rule_ledger.format_row(text) == "format 1"
+        and rule_ledger.format_row("# head\na | b\n") == ""
+        and rule_ledger.format_row("# head only\n") is None
+        and rule_ledger.format_row(None) is None,
+    )
+    expect(
+        "version_keys() gives the key of each base row and difference row of format 1, and each line of an earlier "
+        "format",
+        rule_ledger.version_keys(text) == {("a.py", "kind", ""), ("b.py", "kind", "name"), ("@arm", "a.py", "kind", "")}
+        and rule_ledger.version_keys("# head\na | b\n") == {("a | b",)}
+        and rule_ledger.version_keys(None) == frozenset(),
+    )
     with tempfile.TemporaryDirectory(prefix="test-ledger-") as scratch:
         root = Path(scratch)
         (root / rule_ledger.LEDGER_DIRECTORY).mkdir(parents=True)

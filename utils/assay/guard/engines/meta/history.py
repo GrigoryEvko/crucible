@@ -28,7 +28,10 @@ WHAT THE RULE READS
       `utils/registry.txt | COLUMN | admit | COMMIT RULE | REASON` admits the
       rise of the warn or error threshold of RULE, and a row
       `utils/ledgers/quarantine.txt | raise | admit | COMMIT | REASON` admits
-      a raise of the quarantine ledger.  COMMIT is the hash in 9 characters.
+      a raise of the quarantine ledger.  A row
+      `utils/ledgers/RULE.txt | rebase | admit | COMMIT | REASON` starts the
+      lowest count of a ledger again at a commit that changed its key or its
+      format (THE REBASE).  COMMIT is the hash in 9 characters.
 
 THE FINDINGS
     * A threshold (the warn or the error field of a measured rule) above its
@@ -40,8 +43,11 @@ THE FINDINGS
     * A ledger whose row count is above its lowest committed count gives a
       warning on each run (assay.core.ledger.count_rows).  A ledger of a rule
       with the policy baseline holds the sums that --write writes again, and
-      the rule does not count its rows.  The quarantine ledger has counts, so
-      the rule reads it as the next item says.
+      the rule does not count its rows.  The rule does not count the rows of
+      its own ledger.  Each row admits an event of the history, and an event
+      of the history cannot change.  Each row gives the warning of an admitted
+      finding.  The quarantine ledger has counts, so the rule reads it as the
+      next item says.
     * A commit that raised a count of the quarantine ledger, and that changes
       neither the plugin of utils/tools/quarantine/ nor the rule table
       utils/rule-table.txt, gives an error, of the kind raise.  The rule table
@@ -61,6 +67,30 @@ THE FINDINGS
       the rule, gives an error, of the kind of its field.
     A rise in the working tree gives a warning only, and the error comes when
     the rise lands without a measurement.
+
+THE REBASE
+    A change of the key or the format of a ledger changes its row count, and
+    the items of the ledger stay the same.  The lowest count before such a
+    change then does not compare with a count after it.  A rebase row names
+    such a commit, and the lowest count of the ledger starts again at that
+    commit.  The commit changed the ledger or an earlier file of it, and one
+    of these facts holds there:
+    * The set of the files of the ledger changed, and the ledger had a file
+      before and after the commit.  Then two ledgers joined, or the ledger
+      moved to a different file.
+    * The format row of a file of the ledger changed.
+    * No key of the ledger stayed (assay.core.ledger.version_keys), and the
+      commit changed the code of the guards.  The code of the guards is each
+      file of utils/ that is not in utils/ledgers/ or utils/plants/.
+    A rebase row is an error, of the kind row, in each of these cases:
+    * Its commit is not such a commit.
+    * It names the quarantine ledger or the ledger of this rule.
+    * The rule does not count the rows of its ledger.
+    When the ledger is above its lowest count of the full history, the rule
+    gives an error of the kind rebase.  The row admits it, and the warning of
+    the admitted finding then stays on each run.  When the ledger falls to
+    that lowest count, the row admits nothing, and the rule refuses it.  A
+    second row for one ledger at an older commit admits nothing too.
 
 THE MEASUREMENT
     A measurement of a rule is a number with the unit of the rule: "s" for
@@ -91,7 +121,8 @@ Complexity: O(c * r) for c commits and r measured rules, and linear in the size 
 
 import math
 import shutil
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from assay.core import git
 from assay.core import ledger as rule_ledger
@@ -159,7 +190,13 @@ EARLIER_FILES = {
     "use-after-move": ("utils/scripts/use-after-move-allowlist.txt",),
 }
 EARLIER_PATHS = {rule_ledger.shown_path(rule_id): paths for rule_id, paths in EARLIER_FILES.items()}
+OWN_LEDGER = rule_ledger.shown_path(RULE)
 RAISE_KIND = "raise"
+REBASE_KIND = "rebase"
+ROW_KIND = "row"
+# A commit that changes a path of the code of the guards can change the keys of a ledger (THE REBASE).
+GUARD_CODE = "utils/"
+NOT_GUARD_CODE = (f"{LEDGER_DIRECTORY}/", "utils/plants/")
 COLUMNS = ("warn", "error")
 WORKING_TREE = "the working tree"
 TOTAL = "(the total of the kind)"
@@ -193,6 +230,15 @@ class Rise:
     def described(self) -> str:
         """Return the rise as words for a message."""
         return f"{self.where} ({self.subject}) from {number_text(self.old)} to {number_text(self.new)}"
+
+
+@dataclass(frozen=True, slots=True)
+class Rebase:
+    """A rebase row that applies (THE REBASE): its commit, the index of the commit in the history, and the cause."""
+
+    commit: git.Commit
+    index: int
+    cause: str
 
 
 @dataclass(slots=True)
@@ -491,12 +537,25 @@ def ledger_rows(history: History, place: str, sha: str, path: str) -> int | None
     return sum(held) if held else None
 
 
-def ledger_findings(history: History, registry: rule_registry.Registry) -> list[check_report.Finding]:
-    """Compare the row count of each ledger with its lowest committed count."""
+def counts_rows(path: str, registry: rule_registry.Registry) -> bool:
+    """Return True when the rule compares the row count of a ledger with its history.
+
+    The quarantine ledger, the ledger of this rule and a ledger of the policy baseline give False.
+    """
+    rule = registry.rules.get(ledger_rule(path))
+    is_baseline = rule is not None and rule.policy == rule_registry.Policy.BASELINE
+    return path not in (QUARANTINE_LEDGER, OWN_LEDGER) and not is_baseline
+
+
+def ledger_findings(history: History, registry: rule_registry.Registry,
+                    rebases: Mapping[str, Rebase]) -> list[check_report.Finding]:
+    """Compare the row count of each ledger with its lowest committed count, after the rebase of the ledger.
+
+    Complexity: O(c * l) for c commits and l ledgers, and linear in the bytes of the versions of the ledgers.
+    """
     findings: list[check_report.Finding] = []
     for path in history.ledgers:
-        rule = registry.rules.get(ledger_rule(path))
-        if path == QUARANTINE_LEDGER or (rule is not None and rule.policy == rule_registry.Policy.BASELINE):
+        if not counts_rows(path, registry):
             continue
         paths = (path, *EARLIER_PATHS.get(path, ()))
         states: list[float | None] = []
@@ -514,15 +573,106 @@ def ledger_findings(history: History, registry: rule_registry.Registry) -> list[
         current = rule_ledger.count_rows(history.text("working", "", (path,)))
         working_rise = (Rise(WORKING_TREE, "not committed", committed, current)
                         if committed is not None and current is not None and current > committed else None)
-        above = rises_after_lowest(states, rises, float(current) if current is not None else None, working_rise)
+        value = float(current) if current is not None else None
+        above = rises_after_lowest(states, rises, value, working_rise)
+        rebase = rebases.get(path)
+        since = ""
+        if above is not None and rebase is not None:
+            findings.append(check_report.Finding(
+                "error", path, 0, RULE,
+                f"the ledger holds {current} rows, more than its lowest committed count {number_text(above[0])}, and "
+                f"the commit {rebase.commit.short} ({rebase.commit.subject}) changed its key or its format: "
+                f"{rebase.cause}.  The lowest count starts again at that commit.  A row of {OWN_LEDGER} gives the "
+                f"reason", REBASE_KIND, rebase.commit.short))
+            above = rises_after_lowest(states[:rebase.index + 1],
+                                       [item for item in rises if item[0] <= rebase.index], value, working_rise)
+            since = f" after the rebase at {rebase.commit.short}"
         if above is not None:
             lowest, named = above
             raised = "; ".join(rise.described() for rise in named) if named else "by no single commit"
             findings.append(check_report.Finding(
                 "warning", path, 0, RULE,
-                f"the ledger holds {current} rows, more than its lowest committed count {number_text(lowest)}.  Rows "
-                f"added: {raised}.  Remove a row when its item is fixed", "ledger-grew", path))
+                f"the ledger holds {current} rows, more than its lowest committed count {number_text(lowest)}{since}.  "
+                f"Rows added: {raised}.  Remove a row when its item is fixed", "ledger-grew", path))
     return findings
+
+
+def is_guard_code(path: str) -> bool:
+    """Return True for a file of the code of the guards: a file of utils/ that is not a ledger and not a plant."""
+    return path.startswith(GUARD_CODE) and not path.startswith(NOT_GUARD_CODE)
+
+
+def change_cause(history: History, commit: git.Commit, path: str, changed: frozenset[str]) -> str | None:
+    """Return how a commit changed the key or the format of a ledger, or None when it did not change them (THE REBASE).
+
+    `changed` holds each path that the commit changed.  Complexity: linear in the bytes of the versions of the ledger
+    at the commit and at its parent.
+    """
+    paths = (path, *EARLIER_PATHS.get(path, ()))
+    before = {item: text for item in paths if (text := history.text("before", commit.sha, (item,))) is not None}
+    after = {item: text for item in paths if (text := history.text("at", commit.sha, (item,))) is not None}
+    if not before or not after:
+        return None
+    if set(before) != set(after):
+        return (f"the files of the ledger changed from {', '.join(sorted(before))} to {', '.join(sorted(after))}, so "
+                f"two ledgers joined or the ledger moved to another file")
+    if any(rule_ledger.format_row(before[item]) != rule_ledger.format_row(after[item]) for item in before):
+        return "the format row of the ledger changed"
+    old_keys = frozenset().union(*(rule_ledger.version_keys(text) for text in before.values()))
+    new_keys = frozenset().union(*(rule_ledger.version_keys(text) for text in after.values()))
+    if old_keys and new_keys and not old_keys & new_keys and any(is_guard_code(item) for item in changed):
+        return (f"no key of the {len(old_keys)} rows stayed in the {len(new_keys)} rows, and the commit changed the "
+                f"code of the guards")
+    return None
+
+
+def rebase_findings(history: History, ledger: rule_ledger.Ledger | None, registry: rule_registry.Registry,
+                    root: Path) -> tuple[dict[str, Rebase], list[check_report.Finding]]:
+    """Read the rebase rows of the ledger of this rule (THE REBASE).
+
+    Returns the rebase of each ledger at the newest commit of its rows.  It
+    also returns an error of the kind row for each row that names no such
+    commit.
+
+    Raises:
+        NotApplicable: If git fails
+
+    Complexity: one `git diff-tree` for each rebase row, and linear in the versions of the ledger.
+    """
+    applied: dict[str, Rebase] = {}
+    errors: list[check_report.Finding] = []
+    if ledger is None:
+        return applied, errors
+    index_of = {commit.short: index for index, commit in enumerate(history.states.commits)}
+    for key, entry in sorted(ledger.base.items()):
+        if key.kind != REBASE_KIND:
+            continue
+        paths = (key.path, *EARLIER_PATHS.get(key.path, ()))
+        index = index_of.get(key.entity)
+        commit = history.states.commits[index] if index is not None else None
+        cause: str | None = None
+        if key.path not in history.ledgers or not counts_rows(key.path, registry):
+            problem = (f"the rule does not compare the row count of {key.path} with its history.  The quarantine "
+                       f"ledger, the ledger of this rule and a ledger of the policy baseline have no rebase")
+        elif commit is None or not any(item in commit.paths for item in paths):
+            problem = f"the commit {key.entity} did not change {key.path} or an earlier file of it"
+        else:
+            try:
+                changed = git.changed_paths(root, commit.sha)
+            except git.GitError as failure:
+                raise NotApplicable(str(failure)) from None
+            cause = change_cause(history, commit, key.path, changed)
+            problem = (f"the commit {commit.short} ({commit.subject}) did not change the key or the format of "
+                       f"{key.path}")
+        if index is None or commit is None or cause is None:
+            errors.append(check_report.Finding(
+                "error", OWN_LEDGER, entry.line, RULE,
+                f"{problem}.  A rebase row names a commit that changed the key or the format of a ledger that the "
+                f"rule counts.  Remove the row, or name such a commit", ROW_KIND, str(entry.line)))
+            continue
+        if key.path not in applied or index < applied[key.path].index:
+            applied[key.path] = Rebase(commit, index, cause)
+    return applied, errors
 
 
 # ── The quarantine ledger ──────────────────────────────────────────
@@ -976,14 +1126,23 @@ def quarantine_findings(history: History) -> list[check_report.Finding]:
     return findings
 
 
-def admission_findings(context: MetaContext) -> list[check_report.Finding]:
-    """Refuse a row of the ledger of this rule whose key does not have the form of an admission."""
+def own_ledger(context: MetaContext) -> rule_ledger.Ledger | None:
+    """Return the ledger of this rule in the tree, or None when the registry of the tree has no such rule.
+
+    A ledger that does not read gives None here, and the run of the rule reports it (runner.judged()).
+    """
     rule = context.registry.rules.get(RULE)
     if rule is None:
-        return []
+        return None
     try:
-        ledger = rule_ledger.read(rule, context.root)
+        return rule_ledger.read(rule, context.root)
     except (rows_grammar.RowsError, OSError):
+        return None
+
+
+def admission_findings(ledger: rule_ledger.Ledger | None) -> list[check_report.Finding]:
+    """Refuse a row of the ledger of this rule whose key does not have the form of an admission or a rebase."""
+    if ledger is None:
         return []
     found: list[check_report.Finding] = []
     for key, entry in sorted(ledger.base.items()):
@@ -992,12 +1151,14 @@ def admission_findings(context: MetaContext) -> list[check_report.Finding]:
         is_commit = len(commit) == 9 and set(commit) <= HEX_DIGITS
         is_threshold = key.path == REGISTRY and key.kind in COLUMNS and len(words) == 2 and is_commit
         is_raise = key.path == QUARANTINE_LEDGER and key.kind == RAISE_KIND and len(words) == 1 and is_commit
-        if not (is_threshold or is_raise):
+        is_rebase = (key.kind == REBASE_KIND and key.path.startswith(f"{LEDGER_DIRECTORY}/")
+                     and key.path.endswith(".txt") and len(words) == 1 and is_commit)
+        if not (is_threshold or is_raise or is_rebase):
             found.append(check_report.Finding(
-                "error", rule_ledger.shown_path(RULE), entry.line, RULE,
-                f"a row is '{REGISTRY} | warn|error | admit | COMMIT RULE | REASON' or '{QUARANTINE_LEDGER} | "
-                f"{RAISE_KIND} | admit | COMMIT | REASON', with a commit of 9 hexadecimal characters", "row",
-                str(entry.line)))
+                "error", OWN_LEDGER, entry.line, RULE,
+                f"a row is '{REGISTRY} | warn|error | admit | COMMIT RULE | REASON', '{QUARANTINE_LEDGER} | "
+                f"{RAISE_KIND} | admit | COMMIT | REASON' or '{LEDGER_DIRECTORY}/RULE.txt | {REBASE_KIND} | admit | "
+                f"COMMIT | REASON', with a commit of 9 hexadecimal characters", ROW_KIND, str(entry.line)))
     return found
 
 
@@ -1005,14 +1166,19 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
     """Give each rise of a threshold or a ledger in the history of the tree, and each raise of the quarantine ledger."""
     history = read_history(context.root)
     registry = context.registry
-    return (threshold_findings(history, registry) + quarantine_findings(history) + ledger_findings(history, registry)
-            + admission_findings(context))
+    ledger = own_ledger(context)
+    rebases, refused = rebase_findings(history, ledger, registry, context.root)
+    return (threshold_findings(history, registry) + quarantine_findings(history)
+            + ledger_findings(history, registry, rebases) + admission_findings(ledger) + refused)
 
 
 # ── The plants ─────────────────────────────────────────────────────
 
 COMMITS = "commits.txt"
 WORK = "work"
+# The entity "{commit N}" of a row of the ledger of this rule in the working tree of a plant names commit N.
+COMMIT_NAME_START = "{commit "
+COMMIT_NAME_END = "}"
 
 
 def plant_context(plant: Path, scratch: Path) -> MetaContext:
@@ -1021,10 +1187,12 @@ def plant_context(plant: Path, scratch: Path) -> MetaContext:
     A plant holds commits.txt, whose rows are `commit N | SUBJECT | BODY`, and
     one directory N for each commit with each file of the tree at that
     commit.  A directory work, when it exists, is the working tree after the
-    last commit.
+    last commit.  A plant cannot know the hash of a commit.  The ledger of
+    this rule in the directory work names commit N with the entity
+    "{commit N}" (name_commits()).
 
     Raises:
-        NotApplicable: If commits.txt does not obey its form
+        NotApplicable: If commits.txt does not obey its form, or a ledger names a commit that the plant does not have
     """
     try:
         rows = rows_grammar.read(plant / COMMITS, f"{plant.name}/{COMMITS}")
@@ -1032,14 +1200,41 @@ def plant_context(plant: Path, scratch: Path) -> MetaContext:
         raise NotApplicable(f"the plant has no history: {problem}") from None
     scratch.mkdir(parents=True)
     git.init(scratch)
+    hashes: dict[str, str] = {}
     for row in rows:
         if row.words[0] != "commit" or len(row.words) != 2 or len(row.cells) != 2:
             raise NotApplicable(f"{plant.name}/{COMMITS}:{row.line}: a row is 'commit N | SUBJECT | BODY'")
         replace_tree(scratch, plant / row.words[1])
-        git.commit_all(scratch, row.cells[0], row.cells[1])
+        hashes[row.words[1]] = git.commit_all(scratch, row.cells[0], row.cells[1])
     if (plant / WORK).is_dir():
         replace_tree(scratch, plant / WORK)
+        name_commits(scratch, hashes)
     return MetaContext(scratch)
+
+
+def name_commits(root: Path, hashes: Mapping[str, str]) -> None:
+    """Give each entity "{commit N}" of the ledger of this rule in a planted tree the hash of commit N in 9 characters.
+
+    Raises:
+        NotApplicable: If the ledger does not read, or an entity names a commit that the plant does not have
+    """
+    if not (root / OWN_LEDGER).is_file():
+        return
+    try:
+        ledger = rule_ledger.read(rule_ledger.rule_of(RULE), root)
+    except rows_grammar.RowsError as problem:
+        raise NotApplicable(f"the planted ledger does not read: {problem}") from None
+    base: dict[rule_ledger.Key, rule_ledger.Entry] = {}
+    for key, entry in ledger.base.items():
+        name = key.entity.removeprefix(COMMIT_NAME_START).removesuffix(COMMIT_NAME_END)
+        if not key.entity.startswith(COMMIT_NAME_START) or not key.entity.endswith(COMMIT_NAME_END):
+            base[key] = entry
+            continue
+        if name not in hashes:
+            raise NotApplicable(f"the planted ledger names the commit {name}, and the plant has no such commit")
+        named = replace(key, entity=hashes[name][:9])
+        base[named] = replace(entry, key=named)
+    rule_ledger.store(replace(ledger, base=base), root)
 
 
 def replace_tree(root: Path, source: Path) -> None:

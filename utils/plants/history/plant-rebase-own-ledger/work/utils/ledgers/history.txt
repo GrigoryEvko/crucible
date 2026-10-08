@@ -1,0 +1,4 @@
+# a planted ledger
+format 1
+rule history
+utils/ledgers/history.txt | rebase | admit | {commit 1} | a rebase of the ledger of the rule itself

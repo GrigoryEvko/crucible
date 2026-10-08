@@ -1,0 +1,3 @@
+# A rebase row names a commit that added a row and kept the other key.  That commit changed neither the key nor the format.
+commit 1 | Admit one slow test | The test takes 21 s.
+commit 2 | Admit a second slow test | The test takes 22 s.

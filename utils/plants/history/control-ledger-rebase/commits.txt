@@ -1,0 +1,3 @@
+# A commit keys a ledger again and changes the rule table.  A rebase row at that commit starts the lowest count again.
+commit 1 | Admit one slow test | The test takes 21 s.
+commit 2 | Key the slow tests by case | Each case of a test has a row.

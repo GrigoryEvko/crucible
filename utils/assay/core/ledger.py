@@ -972,6 +972,51 @@ def count_rows(text: str | None) -> int | None:
     return sum(1 for line in rows if rows_grammar.SEPARATOR in line)
 
 
+def format_row(text: str | None) -> str | None:
+    """Return the format row of one version of a ledger: 'format N', "" for an earlier format with no such row, or None.
+
+    A version of an earlier format starts with a row that is not a format row.  None is the result for no text and
+    for a text with no row.
+    """
+    if text is None:
+        return None
+    rows = [line.strip(" \t") for line in text.splitlines() if line.strip(" \t") and not line.lstrip().startswith("#")]
+    if not rows:
+        return None
+    return rows[0] if rows[0].split(" ")[0] == "format" else ""
+
+
+def version_keys(text: str | None) -> frozenset[tuple[str, ...]]:
+    """Return the keys of the rows of one version of a ledger, of each format.
+
+    A version of format 1 gives the head, the KIND and the ENTITY of each base
+    row.  It gives the head, the PATH, the KIND and the ENTITY of each
+    difference row.  A version of an earlier format gives each line that is
+    not empty and not a comment.  A version of format 1 that does not obey the
+    grammar gives its lines too.  Complexity: linear in the bytes of the text.
+    """
+    if text is None:
+        return frozenset()
+    lines = frozenset(
+        line.strip(" \t") for line in text.splitlines() if line.strip(" \t") and not line.lstrip().startswith("#")
+    )
+    if format_row(text) != f"format {FORMAT}":
+        return frozenset((line,) for line in lines)
+    try:
+        rows = rows_grammar.parse(text, "a version of a ledger")
+    except rows_grammar.RowsError:
+        return frozenset((line,) for line in lines)
+    keys: set[tuple[str, ...]] = set()
+    for row in rows:
+        if len(row.words) != 1:
+            continue
+        if is_delta_head(row.words[0]) and len(row.cells) == 5:
+            keys.add((row.words[0], row.cells[0], row.cells[1], row.cells[3]))
+        elif len(row.cells) == 4:
+            keys.add((row.words[0], row.cells[0], row.cells[2]))
+    return frozenset(keys)
+
+
 def history(rule: Rule, root: Path = REPO_ROOT, earlier: Iterable[str] = ()) -> list[tuple[str, str, int | None]]:
     """Return the row count of the ledger of a rule at each commit that changed it, newest first.
 

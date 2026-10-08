@@ -1,0 +1,4 @@
+# a planted ledger
+format 1
+rule history
+utils/ledgers/slow-row.txt | rebase | admit | {commit 2} | the planted rule keys each case of a test, so no key stayed

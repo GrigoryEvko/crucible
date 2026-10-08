@@ -52,9 +52,14 @@ def answer_cases(expect: Callable[[str, bool], None]) -> None:
         expect("is_clean reads only the pathspec", git.is_clean(root, ("a.txt",)) and not git.is_clean(root, ("sub",)))
         expect("show gives a file at a revision", git.show(root, "HEAD", "sub/b.txt") == b"two\n")
         expect("show gives None for a file that the revision does not hold", git.show(root, "HEAD", "none.txt") is None)
-        git.commit_all(root, "A dated commit", date="2025-01-02T12:00:00")
+        dated = git.commit_all(root, "A dated commit", date="2025-01-02T12:00:00")
         dates = git.run(root, "log", "-1", "--format=%ad %cd", "--date=short").decode().split()
         expect("commit_all gives a date to the author and to the committer", dates == ["2025-01-02", "2025-01-02"])
+        expect(
+            "changed_paths gives each path of a commit against its parent, and each path of a root commit",
+            git.changed_paths(root, dated) == {"sub/b.txt"}
+            and git.changed_paths(root, commit) == {"a.txt", "sub/b.txt"},
+        )
 
 
 def isolation_cases(expect: Callable[[str, bool], None]) -> None:

@@ -254,9 +254,9 @@ def move_cases(expect: Expect, scratch: Path) -> None:
     expect("a move of the thresholds into the registry keeps the history of each rule",
            status == 0 and any(raised[:9] in item.message and "count-row is 120 G" in item.message for item in found)
            and not any("slow-row" in item.message for item in found))
-    expect("a ledger that moved to utils/ledgers/ counts the rows of its earlier path",
-           any(item.path == ADMISSIONS and "holds 1 rows, more than its lowest committed count 0" in item.message
-               for item in found))
+    expect("the rule does not count the rows of its own ledger, also after a move to utils/ledgers/",
+           not any(item.path == ADMISSIONS and "rows, more than its lowest committed count" in item.message
+                   for item in found))
 
     group = Scratch(scratch / "move-group")
     doors = "utils/ledgers/ctx-init-door.txt"
@@ -276,6 +276,91 @@ def move_cases(expect: Expect, scratch: Path) -> None:
     expect("a ledger with two earlier files counts the rows of the two, also at a commit that changed one",
            status == 0 and len(grew) == 1 and "holds 8 rows, more than its lowest committed count 7" in grew[0]
            and f"{added[:9]} (Admit one more bg door) from 7 to 8" in grew[0])
+
+
+def rebase_row(path: str, sha: str) -> str:
+    """Return a rebase row of the ledger of the rule history for a ledger and a commit."""
+    return f"{path} | {history.REBASE_KIND} | admit | {sha[:9]} | the planted keys changed"
+
+
+def rebase_cases(expect: Expect, scratch: Path) -> None:
+    """Start the lowest count of a ledger again at a commit that changed its key or its format, and refuse the other
+    rebase rows."""
+    tree = Scratch(scratch / "rebase")
+    head = LEDGER_HEAD.format(rule="slow-row")
+    tree.write(SLOW_LEDGER, head + "test/a | time | 21 | - | r\n")
+    added = tree.commit("Admit one slow test", "The test takes 21 s.")
+    tree.write(SLOW_LEDGER, head + "test/x | time | 21 | first | r\ntest/x | time | 22 | second | r\n")
+    tree.write("utils/assay/guard/engines/buildsys/slow_row.py", "# the planted rule\n")
+    rekeyed = tree.commit("Key the slow tests by case", "Each case of a test has a row.")
+
+    def grew(found: list[check_report.Finding]) -> list[check_report.Finding]:
+        """Return the warnings of the slow ledger above its lowest count."""
+        return [item for item in found if item.path == SLOW_LEDGER and item.kind == "ledger-grew"]
+
+    tree.write(ADMISSIONS, admission_text([rebase_row(SLOW_LEDGER, rekeyed)]))
+    status, found = tree.run()
+    expect("a rebase at a commit that kept no key and changed the code of the guards starts the lowest count again, "
+           "and the row admits the rebase",
+           status == 0 and not grew(found)
+           and any(item.path == ADMISSIONS and f"{SLOW_LEDGER} has 1 findings" in item.message for item in found))
+    tree.write(ADMISSIONS, admission_text([rebase_row(SLOW_LEDGER, added)]))
+    status, found = tree.run()
+    expect("a rebase at a commit that only added a row is an error, and the ledger above its lowest count still warns",
+           status == 1 and len(grew(found)) == 1
+           and any(item.kind == history.ROW_KIND and "did not change the key or the format" in item.message
+                   for item in found))
+    for ledger in (QUARANTINE_LEDGER, ADMISSIONS, BASE_LEDGER):
+        tree.write(ADMISSIONS, admission_text([rebase_row(SLOW_LEDGER, rekeyed), rebase_row(ledger, rekeyed)]))
+        status, found = tree.run()
+        expect(f"a rebase row of {ledger} is an error",
+               status == 1 and any(item.kind == history.ROW_KIND and "does not compare the row count" in item.message
+                                   for item in found))
+    size_ledger = "utils/ledgers/size-row.txt"
+    tree.write(ADMISSIONS, admission_text([rebase_row(SLOW_LEDGER, rekeyed), rebase_row(size_ledger, rekeyed)]))
+    tree.write(size_ledger, "# an earlier format\nlink/a\n")
+    tree.commit("Admit one large link", "The link takes 5 GB.")
+    tree.write(size_ledger, LEDGER_HEAD.format(rule="size-row") + "link/a | size | 5 | - | r\nlink/b | size | 6 | - | r\n")
+    moved = tree.commit("Move the size ledger to the rows", "Each link has a row.")
+    status, found = tree.run()
+    expect("a rebase row at a commit that did not change its ledger is an error",
+           status == 1 and any(item.kind == history.ROW_KIND and "did not change" in item.message for item in found))
+    tree.write(ADMISSIONS, admission_text([rebase_row(SLOW_LEDGER, rekeyed), rebase_row(size_ledger, moved)]))
+    status, found = tree.run()
+    expect("a change of the format row is a change of the format, also with no change of the code of the guards",
+           status == 0 and not any(item.path == size_ledger and item.kind == "ledger-grew" for item in found))
+    tree.write(size_ledger, LEDGER_HEAD.format(rule="size-row") + "link/c | size | 5 | - | r\nlink/d | size | 6 | - | r\n"
+                                                                  "link/e | size | 7 | - | r\n")
+    tree.write("utils/assay/guard/engines/buildsys/size_row.py", "# the planted rule\n")
+    renamed = tree.commit("Name the large links by their outputs", "Each link has a row.")
+    rows = [rebase_row(SLOW_LEDGER, rekeyed), rebase_row(size_ledger, moved), rebase_row(size_ledger, renamed)]
+    tree.write(ADMISSIONS, admission_text(rows))
+    status, found = tree.run()
+    expect("of two rebase rows of one ledger, the row at the newer commit applies, and the older row admits nothing",
+           status == 1 and any(item.path == ADMISSIONS and "admits no finding" in item.message
+                               and moved[:9] in item.message for item in found)
+           and not any(item.path == size_ledger and item.kind == "ledger-grew" for item in found))
+    tree.write(ADMISSIONS, admission_text([rebase_row(SLOW_LEDGER, rekeyed), rebase_row(size_ledger, renamed)]))
+    tree.write(SLOW_LEDGER, head + "test/x | time | 21 | first | r\ntest/x | time | 22 | second | r\n"
+                                   "test/y | time | 23 | - | r\n")
+    later = tree.commit("Admit a third slow test", "The test takes 23 s.")
+    status, found = tree.run()
+    expect("a row added after the rebase gives a warning that names only the commits after the rebase",
+           status == 0 and len(grew(found)) == 1 and f"after the rebase at {rekeyed[:9]}" in grew(found)[0].message
+           and later[:9] in grew(found)[0].message and added[:9] not in grew(found)[0].message)
+    tree.write(SLOW_LEDGER, head + "test/z | time | 23 | - | r\ntest/w | time | 24 | - | r\n"
+                                   "test/v | time | 25 | - | r\n")
+    plain = tree.commit("Key the slow tests by name again", "Each test has a row.")
+    tree.write(ADMISSIONS, admission_text([rebase_row(SLOW_LEDGER, plain), rebase_row(size_ledger, renamed)]))
+    status, found = tree.run()
+    expect("a commit that kept no key and changed no code of the guards changed no key",
+           status == 1 and any(item.kind == history.ROW_KIND and plain[:9] in item.message for item in found))
+    tree.write(SLOW_LEDGER, head)
+    tree.commit("Make each slow test fast", "Each row goes.")
+    tree.write(ADMISSIONS, admission_text([rebase_row(SLOW_LEDGER, rekeyed), rebase_row(size_ledger, renamed)]))
+    status, found = tree.run()
+    expect("a rebase row of a ledger at its lowest count admits nothing, and the rule refuses it",
+           status == 1 and any(item.path == ADMISSIONS and "admits no finding" in item.message for item in found))
 
 
 def quarantine_text(base: dict[str, int], deltas: dict[str, dict[str, int]] | None = None) -> str:
@@ -586,6 +671,7 @@ def main(argv: list[str]) -> int:
         tree = threshold_cases(expect, scratch)
         ledger_cases(expect, tree)
         move_cases(expect, scratch)
+        rebase_cases(expect, scratch)
         quarantine_cases(expect, scratch)
         applicability_cases(expect, tree, scratch)
     if failures:

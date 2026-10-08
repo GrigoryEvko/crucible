@@ -1,10 +1,18 @@
-# The ledger of the rule history: the rises of the past that no measurement in a commit admits.
+# The ledger of the rule history: the rises of the past that no measurement in a commit admits, and
+# the commits that changed the key or the format of a ledger.
 # A row PATH | KIND | admit | ENTITY | REASON admits one error of the rule.  The row
 # utils/registry.txt | warn|error | admit | COMMIT RULE | REASON admits the rise of a threshold, and
 # the row utils/ledgers/quarantine.txt | raise | admit | COMMIT | REASON admits a raise of the
-# quarantine ledger.  COMMIT is the hash in 9 characters.  REASON gives the measurement that the commit
-# did not give.  A row that admits no finding is an error.  `python3 utils/bin/guard explain history`
+# quarantine ledger.  REASON gives the measurement that the commit did not give.  The row
+# utils/ledgers/RULE.txt | rebase | admit | COMMIT | REASON starts the lowest count of a ledger again
+# at a commit that changed its key or its format, and REASON tells the change.  COMMIT is the hash in
+# 9 characters.  A row that admits no finding is an error.  `python3 utils/bin/guard explain history`
 # tells the rule.
 format 1
 rule history
+utils/ledgers/artifact-symbols.txt | rebase | admit | 7a593b460 | The ledger of the libstdc++ symbols began at this commit, and its rows joined the throw and vtable rows. Before this commit, the ledger held only those rows
+utils/ledgers/escape-doors.txt | rebase | admit | 789d5940a | The move into the quarantine plugin keys each row by the qualified name of its function, and the plugin reads each base header in its sentinel unit. No key stayed
+utils/ledgers/fullness-guard.txt | rebase | admit | 805f38cfa | The module of the parse tree keys each row by its function and its comparison, and no key of the line texts stayed
+utils/ledgers/mint-pattern.txt | rebase | admit | 31b099a27 | The move into the quarantine plugin keys each row by the qualified name of its mint and the missing axis, and each marker of the source became a row. No key stayed
 utils/ledgers/quarantine.txt | raise | admit | fd5f25863 | Each build compiles the SenseHub v2 sources, and no configuration compiled them before. The 143 new findings were in the tree, and the commit adds no code to a quarantined file
+utils/ledgers/trait-guard.txt | rebase | admit | 51b0ded90 | The move into the family home of the quarantine plugin keys each row by its file, and no key of the 142 rows stayed
