@@ -13,7 +13,6 @@ utils/assay/guard/legacy/check_ct_disassembly.py | regex-call | 2 | <module> | A
 utils/assay/guard/legacy/check_ct_disassembly.py | regex-call | 4 | disassemble | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_detail_namespace.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_fixy_dim_prose.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_header_constexpr_ops.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_header_constexpr_ops.py | regex-call | 1 | c_identifier | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_host_owners.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | regex-call | 5 | <module> | A read of today.  The change that moves the read into its reader lowers the count
@@ -22,7 +21,7 @@ utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | node-text-variable 
 utils/assay/guard/legacy/check_no_coordination_refs.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | node-text-variable | 3 | open_members | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_permission_storage.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_plugin.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
+utils/assay/guard/legacy/check_plugin.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_quarantine_ratchet.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_splits_orphan.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
@@ -41,7 +40,6 @@ utils/assay/guard/legacy/check_trait_injection.py | node-text-variable | 2 | clo
 utils/assay/guard/legacy/check_witness_roster.py | regex-call | 4 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_witness_roster.py | regex-call | 3 | self_test | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_witness_roster.py | regex-call | 1 | slug | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/contract_header_unit_test.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/preprocessed.py | node-text | 3 | _self_test_cases | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/preprocessed.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/preprocessed.py | regex-call | 1 | _self_test_cases | A read of today.  The change that moves the read into its reader lowers the count
@@ -50,14 +48,14 @@ utils/assay/loop/affected.py | regex-call | 1 | <module> | A read of today.  The
 utils/assay/loop/affected.py | regex-call | 1 | name_pattern | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/loop/affected.py | regex-call | 1 | source_paths_in | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/loop/derive/mint_model.py | node-text-variable | 2 | extract | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/loop/fixture/store.py | regex-call | 7 | <module> | A read of today.  The change that moves the read into its reader lowers the count
+utils/assay/loop/fixture/store.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/loop/fixture/store.py | regex-call | 2 | evaluate | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/loop/fixture/store.py | regex-call | 1 | unmatched_errors | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/mutation/gates.py | node-text-variable | 1 | entity_users | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/mutation/gates.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/mutation/gates.py | regex-call | 1 | entity_users | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/mutation/run.py | node-text-variable | 1 | _rank | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/mutation/run.py | regex-call | 3 | <module> | A read of today.  The change that moves the read into its reader lowers the count
+utils/assay/mutation/run.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/oracle/emit.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/oracle/keskin.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/oracle/probe.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count

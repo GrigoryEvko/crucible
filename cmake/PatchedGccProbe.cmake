@@ -41,18 +41,57 @@ function(crucible_real_compiler cxx out_var)
                       "'${link_dir}' for ccache to run.  Configure with the full path of the compiler.")
 endfunction()
 
-# Compile PROBE (a file in cmake/probes/) with CXX, -fsyntax-only.  Set
-# EXIT_VAR to the exit status and OUTPUT_VAR to the diagnostics.
+# Compile PROBE (a file in cmake/probes/) with CXX, -fsyntax-only, and each
+# argument after OUTPUT_VAR.  Set EXIT_VAR to the exit status and OUTPUT_VAR
+# to the diagnostics.  The probe file is the last argument of the compiler.
 function(crucible_run_gcc_probe cxx probe exit_var output_var)
   execute_process(
     COMMAND "${CMAKE_COMMAND}" -E env LC_ALL=C
-            "${cxx}" -std=c++26 -fcontracts -fsyntax-only -fdiagnostics-color=never
+            "${cxx}" -std=c++26 -fcontracts -fsyntax-only -fdiagnostics-color=never ${ARGN}
             "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/probes/${probe}"
     RESULT_VARIABLE exit_code
     OUTPUT_VARIABLE probe_output
     ERROR_VARIABLE probe_output)
   set(${exit_var} "${exit_code}" PARENT_SCOPE)
   set(${output_var} "${probe_output}" PARENT_SCOPE)
+endfunction()
+
+# Set OUT_VAR to TRUE if the file SARIF holds a SARIF log with a related
+# location whose property "gcc/context" is "constraint" and whose message
+# starts with "required for the satisfaction of".  Set it to FALSE if the
+# file is missing, is not JSON, or has no such location.  The walk is
+# O(results x related locations) of the log of one probe.
+function(crucible_sarif_has_constraint_context sarif out_var)
+  set(${out_var} FALSE PARENT_SCOPE)
+  if(NOT EXISTS "${sarif}")
+    return()
+  endif()
+  file(READ "${sarif}" log)
+  string(JSON result_count ERROR_VARIABLE problem LENGTH "${log}" runs 0 results)
+  if(problem OR result_count EQUAL 0)
+    return()
+  endif()
+  math(EXPR last_result "${result_count} - 1")
+  foreach(result RANGE ${last_result})
+    string(JSON location_count ERROR_VARIABLE problem LENGTH "${log}" runs 0 results ${result} relatedLocations)
+    if(problem OR location_count EQUAL 0)
+      continue()
+    endif()
+    math(EXPR last_location "${location_count} - 1")
+    foreach(location RANGE ${last_location})
+      string(JSON context ERROR_VARIABLE problem
+             GET "${log}" runs 0 results ${result} relatedLocations ${location} properties gcc/context)
+      if(problem OR NOT context STREQUAL "constraint")
+        continue()
+      endif()
+      string(JSON text ERROR_VARIABLE problem
+             GET "${log}" runs 0 results ${result} relatedLocations ${location} message text)
+      if(NOT problem AND text MATCHES "^required for the satisfaction of ")
+        set(${out_var} TRUE PARENT_SCOPE)
+        return()
+      endif()
+    endforeach()
+  endforeach()
 endfunction()
 
 # Set OUT_VAR to an empty string if CXX passes every probe.  Otherwise set it to
@@ -85,6 +124,28 @@ function(crucible_patched_gcc_problem cxx out_var)
     string(APPEND problems " at run time at -O1 and above.")
     string(APPEND problems "  The probe cmake/probes/memchr_offset.cpp gave the exit status")
     string(APPEND problems " '${exit_code}' and this output:\n${probe_output}")
+  endif()
+
+  # The patched compiler refuses the probe, and its SARIF log holds the
+  # constraint chain of the error.  The stock compiler writes that chain only
+  # to its text output.  The log goes in a directory of the build tree that
+  # the function removes after the check.
+  set(sarif_directory "${CMAKE_BINARY_DIR}/CMakeFiles/crucible-sarif-probe")
+  file(REMOVE_RECURSE "${sarif_directory}")
+  file(MAKE_DIRECTORY "${sarif_directory}")
+  set(sarif "${sarif_directory}/sarif_context.sarif")
+  crucible_run_gcc_probe("${cxx}" sarif_context.cpp exit_code probe_output
+                         "-fdiagnostics-add-output=sarif:file=${sarif}")
+  crucible_sarif_has_constraint_context("${sarif}" has_context)
+  file(REMOVE_RECURSE "${sarif_directory}")
+  if(exit_code EQUAL 0 OR NOT has_context)
+    string(APPEND problems "\n- The fix that writes the C++ context of a diagnostic to the SARIF output")
+    string(APPEND problems " (utils/toolchain/gcc/patches/0003-*.patch) is missing.  That compiler writes")
+    string(APPEND problems " the function, instantiation, constexpr, constraint and macro lines of an")
+    string(APPEND problems " error only to its text output.  The negative-compile fixtures read each")
+    string(APPEND problems " diagnostic from the SARIF log, and without the fix they cannot see these lines.")
+    string(APPEND problems "  The probe cmake/probes/sarif_context.cpp gave the exit status")
+    string(APPEND problems " '${exit_code}', and its SARIF log has no constraint line.  The output:\n${probe_output}")
   endif()
 
   if(problems STREQUAL "")

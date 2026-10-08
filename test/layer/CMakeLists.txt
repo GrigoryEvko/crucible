@@ -543,7 +543,8 @@ set_tests_properties(layer_not_standalone layer_not_standalone_self_test PROPERT
 # header-constexpr-ops.txt is still necessary: its header compiles alone at
 # the limit of the row and not at the threshold.  Each row gives a warning.
 crucible_script_test(NAME header_constexpr_ops_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-constexpr-ops --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-constexpr-ops --self-test
+          --cxx ${CRUCIBLE_REAL_CXX})
 crucible_script_test(NAME header_constexpr_ops
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-constexpr-ops ${CMAKE_BINARY_DIR}
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})

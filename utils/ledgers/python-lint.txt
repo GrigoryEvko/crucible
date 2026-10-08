@@ -159,7 +159,6 @@ utils/assay/loop/derive/aten_ops.py | RUF100 | 1 | yaml_funcs | An issue of ruff
 utils/assay/loop/derive/aten_ops.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/derive/mint_inventory.py | format | 1 | build_rows | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/derive/mint_model.py | format | 1 | _is_borrow_projection | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/loop/fixture/store.py | RUF007 | 1 | unmatched_errors | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/fixture/store.py | RUF023 | 1 | BudgetRow | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/fixture/store.py | RUF023 | 1 | CompileResult | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/fixture/store.py | RUF023 | 1 | CostBudget | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count

@@ -54,8 +54,8 @@ foundation_test(test_brand)
 #
 # A fixture is a translation unit that must fail to compile.  The test
 # passes only when every regex given here appears in what the compiler
-# itself said (`loop fixture` strips the caret display, so a
-# fixture's own echoed source cannot satisfy a regex).
+# itself said (`loop fixture` reads the SARIF log of the compile, which
+# holds no source line, so the source of a fixture cannot satisfy a regex).
 #
 # Two regexes are the minimum, by construction: the boilerplate reason
 # and a project-specific token.  A gate made of one bare identifier is

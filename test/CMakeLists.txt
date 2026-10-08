@@ -1201,9 +1201,10 @@ crucible_test(test_registration_seal_race
 # diagnostics of the compiler match each regex.  A fixture that compiles
 # fails.  This gate is stronger than WILL_FAIL.
 #
-# The driver removes the caret display of GCC before it matches.  A regex
-# then cannot match the source text that the compiler quotes back.  The driver
-# also reports how many lines of the fixture give an error.  Set
+# The driver matches each regex against the lines of the SARIF log of the
+# compile, which hold no source line.  A regex then cannot match the source
+# text that the compiler quotes back.  The driver also reports how many lines
+# of the fixture give an error.  Set
 # CRUCIBLE_NEG_STRICT_SINGLE_ERROR=1 in the environment to make a fixture
 # that fails for more than one reason a failure.
 #
@@ -1308,14 +1309,15 @@ endfunction()
 # fail a fixture that keeps the plugin, and the region macros must work with
 # no plugin and with the plugin kept.  It also makes each spelling that GCC
 # takes for the plugin flags of this build, and GCC must show that the driver
-# removes each one.  Each check waits about one second for
+# removes each one.  A compile that writes no SARIF log must fail its fixture.
+# Each check waits about one second for
 # the files of its tree to age, and the checks run as
 # FIXTURE_STORE_SELF_TEST_PARTS parts at the same time.  Part K runs each check
 # whose position modulo the count of parts is K, and the count of parts is the
 # count of checks, so each part runs one check.  Exit 3 reports a skip when
 # the compiler cannot run, or when the host cannot give the condition of each
 # check of the part, for example an instruction counter.
-set(FIXTURE_STORE_SELF_TEST_PARTS 32)
+set(FIXTURE_STORE_SELF_TEST_PARTS 33)
 math(EXPR fixture_store_last_part "${FIXTURE_STORE_SELF_TEST_PARTS} - 1")
 foreach(part RANGE ${fixture_store_last_part})
   crucible_script_test(NAME fixture_store_self_test_${part}
@@ -1443,6 +1445,7 @@ crucible_neg_compile_test(neg_effect_row_atom_underlying_widened
 #   future per-Cog Mimic factories from accepting non-compute Cogs
 #   as compute targets.
 crucible_neg_compile_test(neg_cog_identity_content_hash_zero_uuid
+    "non-constant condition for static assertion"
     "in .constexpr. expansion of .crucible::cog::content_hash\\(ZERO_UUID_FIXTURE\\)."
     "cog/CogIdentity.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 crucible_neg_compile_test(neg_cog_identity_compute_kind_rejects_nic
@@ -4519,6 +4522,7 @@ crucible_neg_compile_test(neg_forge_comm_phase_strict_compress
   "no matching function for call to .accepts_compress_before_send<StrictRecipe>\\(\\)."
   "required for the satisfaction of .CommFusionRecipeAllowed<Recipe, crucible::forge::_wip::phases::comm::CommFusionPattern::CompressBeforeSend>. .with Recipe = StrictRecipe.")
 crucible_neg_compile_test(neg_forge_comm_phase_unknown_pattern
+  "non-constant condition for static assertion"
   "call to non-.constexpr. function .void foundation::core::unreachable\\(Site\\)."
   "in .constexpr. expansion of .crucible::forge::_wip::phases::comm::comm_fusion_shape\\(\\(\\(crucible::forge::_wip::phases::comm::CommFusionPattern\\)kUnlistedPattern\\)\\).")
 crucible_neg_compile_test(neg_forge_comm_phase_wrong_lane
@@ -5748,6 +5752,15 @@ crucible_script_test(NAME assay_readers_test_ctest
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.readers.test_ctest)
 set_tests_properties(assay_readers_test_ctest PROPERTIES LABELS "ci_guard;meta"
   ENVIRONMENT "ASSAY_TEST_CMAKE=${CMAKE_COMMAND};ASSAY_TEST_CTEST=${CMAKE_CTEST_COMMAND}")
+# The tests of the SARIF reader and of the reader of the include trace compare
+# each reader with the text output of the compiler of this build.
+foreach(_assay_test readers.test_sarif readers.test_include_trace)
+  string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
+  crucible_script_test(NAME ${_assay_test_name}
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})
+  set_tests_properties(${_assay_test_name} PROPERTIES LABELS "ci_guard;meta"
+    ENVIRONMENT "ASSAY_TEST_CXX=${CRUCIBLE_REAL_CXX}")
+endforeach()
 
 add_subdirectory(foundation)
 add_subdirectory(fixy)

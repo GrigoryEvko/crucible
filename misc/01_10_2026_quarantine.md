@@ -2114,7 +2114,7 @@ The files of `utils/tools/`, `utils/toolchain/`, `test/` and `bench/` that table
 | `utils/tools/session_oracle/coq/LiveOracle.v` | Rocq source of the liveness certificate | `assay/oracle/coq/LiveOracle.v`, as data beside its reader |
 | `utils/toolchain/gcc/build.sh` | The build of the patched GCC | `setup gcc`, in `assay/setup/gcc.py` |
 | `utils/toolchain/gcc/BASE`, `utils/toolchain/cmake/requirements.txt` | Pins | Rows of `utils/pins.txt` |
-| The 2 files of `utils/toolchain/gcc/patches/` | The GCC patches | They stay |
+| The 3 files of `utils/toolchain/gcc/patches/` | The GCC patches | They stay |
 | `test/neg_compile_driver.py` | The fixture driver | `loop fixture`. The master sets the cache of the compiled modules, as the driver does today |
 | `test/neg_compile_store.py` | The fixture store, its cost and its matcher | `assay/loop/fixture/store.py`, `cost.py` and `driver.py` |
 | `test/neg_compile_driver_test.py`, `test/build_launcher_test.py` | The tests of the fixture store and of the build launcher | `assay/tests/loop/test_fixture.py` and `assay/tests/loop/test_step.py` |

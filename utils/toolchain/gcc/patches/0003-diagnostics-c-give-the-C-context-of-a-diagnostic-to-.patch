@@ -1,0 +1,1752 @@
+From a5f525303df3242880ef0fb5066bf18438f691bf Mon Sep 17 00:00:00 2001
+From: Grigory Evko <grigory@evko.io>
+Date: Thu, 8 Oct 2026 07:17:22 +0200
+Subject: [PATCH] diagnostics, c++: give the C++ context of a diagnostic to
+ SARIF output
+
+The C++ front end prints the context of a diagnostic only to the text
+sink: the function line, the instantiation chain, the constexpr calls,
+the constraint chain and the macro expansion trace.  A SARIF log has
+none of these lines.  A reader of the SARIF log cannot see why a
+constraint is not satisfied, or which instantiation caused an error.
+
+A new callback of the diagnostic context collects the context lines
+when a sink other than the text sink is active.  The C++ front end
+gives each context printer one output object, which prints to the
+text sink or adds a line to a list.  The SARIF sink writes each line
+as a related location with its message and these properties: its kind
+("gcc/context"), the diagnostic that owns it ("gcc/contextOf") and its
+place before or after that diagnostic ("gcc/placement").
+
+A related location of a nested diagnostic has no level, so the SARIF
+sink also gives each nested diagnostic its kind ("gcc/kind") and its
+option ("gcc/option").  Each result, each nested diagnostic and each
+context line also gets the location that the text output prints
+("gcc/textLocation").
+
+When an internal error follows an error, GCC prints "confused by
+earlier errors, bailing out" and exits.  That path did not finish the
+sinks, so a SARIF file stayed empty.  It now finishes them, as the
+paths for an internal error and for a fatal error do.
+
+When a C family front end reads a precompiled header, gt_pch_restore
+replaces line_table.  The SARIF sink and the HTML sink kept the line
+maps that they were created with, and the include chain of the first
+SARIF location after the read used freed memory.  The compiler
+crashed, and after an error the crash took the "confused by earlier
+errors" path with no result in the log.  c_common_read_pch now gives
+the new line maps to each sink.
+
+The text output does not change.  When a text sink is active, only
+the text sink updates the state of the context printers.
+
+gcc/ChangeLog:
+
+	* diagnostics/diagnostic-info.h (struct context_line): New.
+	(class context_lines): New.
+	(diagnostic_info::m_context_lines): New field.
+	* diagnostics/context.h (context_lines_fn): New typedef.
+	(context::set_context_lines_callback): New.
+	(context::inhibit_notes_p): New.
+	(context::set_line_maps): New.
+	(context::m_context_lines_cb): New field.
+	* diagnostics/context.cc (context::initialize): Clear
+	m_context_lines_cb.
+	(context::set_line_maps): New.
+	(context::report_diagnostic): Collect the context lines when a
+	sink other than the text sink is active.  Finish the sinks before
+	the exit after an internal error that follows an error.
+	* diagnostics/sink.h (sink::set_line_maps): New vfunc.
+	* diagnostics/html-sink.cc (html_builder::set_line_maps): New.
+	(html_sink::set_line_maps): New.
+	* diagnostics/macro-unwinding.cc (walk_expanded_macro_loc): New,
+	from maybe_unwind_expanded_macro_loc.
+	(maybe_unwind_expanded_macro_loc): Use it.
+	(collect_expanded_macro_context): New.
+	* diagnostics/macro-unwinding.h (collect_expanded_macro_context):
+	Declare.
+	* diagnostics/sarif-sink.cc (make_rule_id_for_diagnostic_kind):
+	Declare.
+	(make_text_location_object, get_text_location)
+	(set_text_location): New.
+	(sarif_result::add_context_lines): New.
+	(sarif_result::m_num_nested_diagnostics): New field.
+	(sarif_result::on_nested_diagnostic): Add the context lines, the
+	kind, the option and the text location of the nested diagnostic.
+	(sarif_builder::make_result_object): Add the context lines and the
+	text location of the result.
+	(sarif_builder::set_line_maps): New.
+	(sarif_sink::set_line_maps): New.
+
+gcc/c-family/ChangeLog:
+
+	* c-pch.cc (c_common_read_pch): Give the restored line_table to
+	the diagnostic sinks.
+
+gcc/cp/ChangeLog:
+
+	* error.cc: Include "diagnostics/macro-unwinding.h".
+	(class cp_context_out): New.
+	(class auto_context_line): Take a cp_context_out.
+	(cp_print_error_function, print_instantiation_full_context)
+	(print_instantiation_partial_context_line)
+	(print_instantiation_partial_context)
+	(maybe_print_instantiation_context, maybe_print_constexpr_context)
+	(print_constrained_decl_info, print_concept_check_info)
+	(print_constraint_context_head, print_requires_expression_info)
+	(maybe_print_single_constraint_context)
+	(maybe_print_constraint_context): Take a cp_context_out.  Update
+	the state of the printers only when the output object permits it.
+	(print_failed_constraint_chain): New, from
+	maybe_print_constraint_context.
+	(cp_collect_context_lines): New.
+	(cxx_initialize_diagnostics): Register it.
+	(cxx_print_error_function, cp_diagnostic_text_starter): Use a
+	cp_context_out for the text sink.
+	* constexpr.cc (cx_error_context): Add a parameter that tells if
+	the call updates last_cx_error_tick.
+	* cp-tree.h (cx_error_context): Likewise.
+
+gcc/testsuite/ChangeLog:
+
+	* g++.dg/sarif-output/context-lines-1.C: New test.
+	* g++.dg/sarif-output/context-lines-1.py: New test.
+	* g++.dg/sarif-output/context-lines-2.C: New test.
+	* g++.dg/sarif-output/context-lines-2.py: New test.
+	* g++.dg/pch/sarif-1.C: New test.
+	* g++.dg/pch/sarif-1.Hs: New test.
+---
+ gcc/c-family/c-pch.cc                         |   3 +
+ gcc/cp/constexpr.cc                           |  10 +-
+ gcc/cp/cp-tree.h                              |   2 +-
+ gcc/cp/error.cc                               | 339 +++++++++++++-----
+ gcc/diagnostics/context.cc                    |  45 +++
+ gcc/diagnostics/context.h                     |  25 ++
+ gcc/diagnostics/diagnostic-info.h             |  65 +++-
+ gcc/diagnostics/html-sink.cc                  |  13 +
+ gcc/diagnostics/macro-unwinding.cc            |  77 +++-
+ gcc/diagnostics/macro-unwinding.h             |   6 +
+ gcc/diagnostics/sarif-sink.cc                 | 163 ++++++++-
+ gcc/diagnostics/sink.h                        |   5 +
+ gcc/testsuite/g++.dg/pch/sarif-1.C            |  15 +
+ gcc/testsuite/g++.dg/pch/sarif-1.Hs           |   3 +
+ .../g++.dg/sarif-output/context-lines-1.C     |  43 +++
+ .../g++.dg/sarif-output/context-lines-1.py    | 111 ++++++
+ .../g++.dg/sarif-output/context-lines-2.C     |  32 ++
+ .../g++.dg/sarif-output/context-lines-2.py    |  25 ++
+ 18 files changed, 876 insertions(+), 106 deletions(-)
+ create mode 100644 gcc/testsuite/g++.dg/pch/sarif-1.C
+ create mode 100644 gcc/testsuite/g++.dg/pch/sarif-1.Hs
+ create mode 100644 gcc/testsuite/g++.dg/sarif-output/context-lines-1.C
+ create mode 100644 gcc/testsuite/g++.dg/sarif-output/context-lines-1.py
+ create mode 100644 gcc/testsuite/g++.dg/sarif-output/context-lines-2.C
+ create mode 100644 gcc/testsuite/g++.dg/sarif-output/context-lines-2.py
+
+diff --git a/gcc/c-family/c-pch.cc b/gcc/c-family/c-pch.cc
+index 8976edfe851..8e6ca6ae690 100644
+--- a/gcc/c-family/c-pch.cc
++++ b/gcc/c-family/c-pch.cc
+@@ -344,6 +344,9 @@ c_common_read_pch (cpp_reader *pfile, const char *name,
+ 
+   gt_pch_restore (f);
+   cpp_set_line_map (pfile, line_table);
++  /* The diagnostic sinks hold the line maps that they were created
++     with, and gt_pch_restore has replaced them.  */
++  global_dc->set_line_maps (line_table);
+   rebuild_location_adhoc_htab (line_table);
+   line_table->trace_includes = saved_trace_includes;
+ 
+diff --git a/gcc/cp/constexpr.cc b/gcc/cp/constexpr.cc
+index a038eda72b4..aa3e57246e8 100644
+--- a/gcc/cp/constexpr.cc
++++ b/gcc/cp/constexpr.cc
+@@ -3109,14 +3109,20 @@ pop_cx_call_context (void)
+   call_stack.pop ();
+ }
+ 
++/* Return the constexpr calls of the current evaluation, or an empty vector
++   when no call changed after the last error context.  When UPDATE_STATE is
++   true, record that the caller printed the context, so the next call gives
++   an empty vector until the calls change.  */
++
+ vec<tree>
+-cx_error_context (void)
++cx_error_context (bool update_state)
+ {
+   vec<tree> r = vNULL;
+   if (call_stack_tick != last_cx_error_tick
+       && !call_stack.is_empty ())
+     r = call_stack;
+-  last_cx_error_tick = call_stack_tick;
++  if (update_state)
++    last_cx_error_tick = call_stack_tick;
+   return r;
+ }
+ 
+diff --git a/gcc/cp/cp-tree.h b/gcc/cp/cp-tree.h
+index 16e5317e151..6f36a12e9cb 100644
+--- a/gcc/cp/cp-tree.h
++++ b/gcc/cp/cp-tree.h
+@@ -9434,7 +9434,7 @@ extern bool var_in_constexpr_fn                 (tree);
+ extern bool var_in_maybe_constexpr_fn           (tree);
+ extern bool maybe_constexpr_fn			(tree);
+ extern void explain_invalid_constexpr_fn        (tree);
+-extern vec<tree> cx_error_context               (void);
++extern vec<tree> cx_error_context               (bool = true);
+ extern tree fold_sizeof_expr			(tree);
+ extern void clear_cv_and_fold_caches		(void);
+ extern tree unshare_constructor			(tree CXX_MEM_STAT_INFO);
+diff --git a/gcc/cp/error.cc b/gcc/cp/error.cc
+index 55edd51ee01..2907780682e 100644
+--- a/gcc/cp/error.cc
++++ b/gcc/cp/error.cc
+@@ -40,6 +40,7 @@ along with GCC; see the file COPYING3.  If not see
+ #include "attribs.h"
+ #include "pretty-print-format-impl.h"
+ #include "diagnostics/text-sink.h"
++#include "diagnostics/macro-unwinding.h"
+ 
+ #define pp_separate_with_comma(PP) pp_cxx_separate_with (PP, ',')
+ #define pp_separate_with_semicolon(PP) pp_cxx_separate_with (PP, ';')
+@@ -97,16 +98,102 @@ static void dump_scope (cxx_pretty_printer *, tree, int);
+ static void dump_template_parms (cxx_pretty_printer *, tree, int, int);
+ static int get_non_default_template_args_count (tree, int);
+ static const char *function_category (tree);
+-static void maybe_print_constexpr_context (diagnostics::text_sink &);
+-static void maybe_print_instantiation_context (diagnostics::text_sink &);
+-static void print_instantiation_full_context (diagnostics::text_sink &);
+-static void print_instantiation_partial_context (diagnostics::text_sink &,
++
++/* Where the C++ context of a diagnostic goes: the function, the template
++   instantiation, the constexpr calls and the constraints that hold the
++   diagnostic.  For a text sink, each printer of the context prints its
++   lines into the text sink.  For each other sink, each line goes into a
++   list of context lines, with no location prefix and no indentation
++   (diagnostics::context::set_context_lines_callback).  */
++
++class cp_context_out
++{
++public:
++  /* Print the context into TEXT_OUTPUT.  The printers change the state that
++     tells them which context to print, for example to print an
++     instantiation context only one time.  */
++  explicit cp_context_out (diagnostics::text_sink &text_output)
++  : m_text_output (&text_output),
++    m_context (text_output.get_context ()),
++    m_printer (nullptr),
++    m_lines (nullptr),
++    m_update_state (true),
++    m_kind (nullptr)
++  {}
++
++  /* Add the context to LINES, with PP to format each line.  The printers
++     change their state only when UPDATE_STATE is true.  */
++  cp_context_out (diagnostics::context &context, pretty_printer &pp,
++		  diagnostics::context_lines &lines, bool update_state)
++  : m_text_output (nullptr),
++    m_context (context),
++    m_printer (&pp),
++    m_lines (&lines),
++    m_update_state (update_state),
++    m_kind (nullptr)
++  {}
++
++  /* Return the text sink, or null when the lines go into a list.  */
++  diagnostics::text_sink *text_output () const { return m_text_output; }
++
++  diagnostics::context &get_context () const { return m_context; }
++
++  /* Return the printer that formats the current line.  */
++  pretty_printer *get_printer () const
++  {
++    return m_text_output ? m_text_output->get_printer () : m_printer;
++  }
++
++  bool update_state_p () const { return m_update_state; }
++
++  /* Set the kind of the lines that go into the list after this call.  */
++  void set_kind (const char *kind) { m_kind = kind; }
++
++  /* Start a line of the list.  */
++  void begin_line () { pp_clear_output_area (m_printer); }
++
++  /* Add the text of the current line to the list, with LOC and with no
++     trailing newline.  A text sink prints the location of a context line as
++     print_location does: the expansion of LOC, with its column only when
++     the context shows columns.  */
++  void end_line (location_t loc)
++  {
++    char *text = xstrdup (pp_formatted_text (m_printer));
++    size_t length = strlen (text);
++    while (length > 0 && text[length - 1] == '\n')
++      text[--length] = '\0';
++    expanded_location text_location = expand_location (loc);
++    if (!m_context.m_show_column)
++      text_location.column = -1;
++    m_lines->add (loc, text_location, text, m_kind, false);
++    free (text);
++    pp_clear_output_area (m_printer);
++  }
++
++private:
++  diagnostics::text_sink *m_text_output;
++  diagnostics::context &m_context;
++  pretty_printer *m_printer;
++  diagnostics::context_lines *m_lines;
++  bool m_update_state;
++  const char *m_kind;
++};
++
++static void maybe_print_constexpr_context (cp_context_out &);
++static void maybe_print_instantiation_context (cp_context_out &);
++static void print_instantiation_full_context (cp_context_out &);
++static void print_instantiation_partial_context (cp_context_out &,
+ 						 struct tinst_level *,
+ 						 location_t);
+-static void maybe_print_constraint_context (diagnostics::text_sink &);
++static void maybe_print_constraint_context (cp_context_out &);
+ static void cp_diagnostic_text_starter (diagnostics::text_sink &,
+ 					const diagnostics::diagnostic_info *);
+-static void cp_print_error_function (diagnostics::text_sink &,
++static void cp_collect_context_lines (diagnostics::context &,
++				      const diagnostics::diagnostic_info &,
++				      pretty_printer &,
++				      diagnostics::context_lines &,
++				      bool);
++static void cp_print_error_function (cp_context_out &,
+ 				     const diagnostics::diagnostic_info *);
+ 
+ static bool cp_printer (pretty_printer *, text_info *, const char *,
+@@ -307,6 +394,7 @@ cxx_initialize_diagnostics (diagnostics::context *context)
+ 
+   c_common_diagnostics_set_defaults (context);
+   diagnostics::text_starter (context) = cp_diagnostic_text_starter;
++  context->set_context_lines_callback (cp_collect_context_lines);
+   /* diagnostic_finalizer is already c_diagnostic_text_finalizer.  */
+   context->set_format_decoder (cp_printer);
+   context->set_adjust_diagnostic_info_callback (cp_adjust_diagnostic_info);
+@@ -3979,7 +4067,8 @@ cxx_print_error_function (diagnostics::text_sink &text_output,
+   lhd_print_error_function (text_output, file, diagnostic);
+ 
+   pp_set_prefix (text_output.get_printer (), prefix);
+-  maybe_print_instantiation_context (text_output);
++  cp_context_out out (text_output);
++  maybe_print_instantiation_context (out);
+ }
+ 
+ static void
+@@ -3989,18 +4078,41 @@ cp_diagnostic_text_starter (diagnostics::text_sink &text_output,
+   pp_set_prefix (text_output.get_printer (),
+ 		 text_output.build_indent_prefix (true));
+   text_output.report_current_module (diagnostic_location (diagnostic));
+-  cp_print_error_function (text_output, diagnostic);
+-  maybe_print_instantiation_context (text_output);
+-  maybe_print_constexpr_context (text_output);
+-  maybe_print_constraint_context (text_output);
++  cp_context_out out (text_output);
++  cp_print_error_function (out, diagnostic);
++  maybe_print_instantiation_context (out);
++  maybe_print_constexpr_context (out);
++  maybe_print_constraint_context (out);
+   pp_set_prefix (text_output.get_printer (),
+ 		 text_output.build_prefix (*diagnostic));
+ }
+ 
++/* Add the C++ context of DIAGNOSTIC to LINES for the sinks that are not
++   text sinks (diagnostics::context::set_context_lines_callback).  The lines
++   are the lines that cp_diagnostic_text_starter prints before the
++   diagnostic, and the macro expansion trace that
++   c_diagnostic_text_finalizer prints after it.  */
++
++static void
++cp_collect_context_lines (diagnostics::context &context,
++			  const diagnostics::diagnostic_info &diagnostic,
++			  pretty_printer &pp,
++			  diagnostics::context_lines &lines,
++			  bool update_state)
++{
++  cp_context_out out (context, pp, lines, update_state);
++  cp_print_error_function (out, &diagnostic);
++  maybe_print_instantiation_context (out);
++  maybe_print_constexpr_context (out);
++  maybe_print_constraint_context (out);
++  diagnostics::collect_expanded_macro_context
++    (context, diagnostic_location (&diagnostic), pp, lines);
++}
++
+ /* Print current function onto BUFFER, in the process of reporting
+    a diagnostic message.  Called from cp_diagnostic_starter.  */
+ static void
+-cp_print_error_function (diagnostics::text_sink &text_output,
++cp_print_error_function (cp_context_out &out,
+ 			 const diagnostics::diagnostic_info *diagnostic)
+ {
+   /* If we are in an instantiation context, current_function_decl is likely
+@@ -4010,17 +4122,25 @@ cp_print_error_function (diagnostics::text_sink &text_output,
+   /* The above is true for constraint satisfaction also.  */
+   if (current_failed_constraint)
+     return;
+-  diagnostics::context *const context = &text_output.get_context ();
++  diagnostics::context *const context = &out.get_context ();
+   if (diagnostic_last_function_changed (context, diagnostic))
+     {
+-      pretty_printer *const pp = text_output.get_printer ();
+-      char *old_prefix = pp_take_prefix (pp);
+-      const char *file = LOCATION_FILE (diagnostic_location (diagnostic));
++      diagnostics::text_sink *const text_output = out.text_output ();
++      out.set_kind ("function");
++      pretty_printer *const pp = out.get_printer ();
+       tree abstract_origin = diagnostic_abstract_origin (diagnostic);
+-      char *new_prefix = (file && abstract_origin == NULL)
+-			 ? text_output.file_name_as_prefix (file) : NULL;
++      char *old_prefix = nullptr;
++      if (text_output)
++	{
++	  old_prefix = pp_take_prefix (pp);
++	  const char *file = LOCATION_FILE (diagnostic_location (diagnostic));
++	  char *new_prefix = (file && abstract_origin == NULL)
++			     ? text_output->file_name_as_prefix (file) : NULL;
+ 
+-      pp_set_prefix (pp, new_prefix);
++	  pp_set_prefix (pp, new_prefix);
++	}
++      else
++	out.begin_line ();
+ 
+       if (current_function_decl == NULL)
+ 	pp_string (pp, _("At global scope:"));
+@@ -4080,7 +4200,7 @@ cp_print_error_function (diagnostics::text_sink &text_output,
+ 		  pp_newline (pp);
+ 		  if (s.file != NULL)
+ 		    {
+-		      if (text_output.show_column_p () && s.column != 0)
++		      if (context->m_show_column && s.column != 0)
+ 			pp_printf (pp,
+ 				   G_("    inlined from %qD at %r%s:%d:%d%R"),
+ 				   fndecl,
+@@ -4100,9 +4220,13 @@ cp_print_error_function (diagnostics::text_sink &text_output,
+ 	  pp_character (pp, ':');
+ 	}
+       pp_newline (pp);
++      if (!text_output)
++	out.end_line (diagnostic_location (diagnostic));
+ 
+-      diagnostic_set_last_function (context, diagnostic);
+-      pp->set_prefix (old_prefix);
++      if (out.update_state_p ())
++	diagnostic_set_last_function (context, diagnostic);
++      if (text_output)
++	pp->set_prefix (old_prefix);
+     }
+ }
+ 
+@@ -4186,19 +4310,27 @@ inform_tree_category (tree t)
+ /* Report the full context of a current template instantiation,
+    onto BUFFER.  */
+ static void
+-print_instantiation_full_context (diagnostics::text_sink &text_output)
++print_instantiation_full_context (cp_context_out &out)
+ {
+   struct tinst_level *p = current_instantiation ();
+   location_t location = input_location;
+ 
+   if (p)
+     {
++      /* A line of a list of context lines has no indentation and no file
++	 name, because the location of the line gives the file.  */
++      diagnostics::text_sink *const text_output = out.text_output ();
+       bool show_file
+-	= ((!text_output.show_nesting_p ())
+-	   || text_output.show_locations_in_nesting_p ());
+-      char *indent = text_output.build_indent_prefix (true);
++	= (text_output
++	   && ((!text_output->show_nesting_p ())
++	       || text_output->show_locations_in_nesting_p ()));
++      char *indent = (text_output
++		      ? text_output->build_indent_prefix (true)
++		      : xstrdup (""));
+       bool expansion_stmt_p = TREE_CODE (p->tldcl) == TEMPLATE_FOR_STMT;
+-      pp_verbatim (text_output.get_printer (),
++      if (!text_output)
++	out.begin_line ();
++      pp_verbatim (out.get_printer (),
+ 		   expansion_stmt_p
+ 		   ? G_("%s%s%sIn instantiation of %<template for%> "
+ 			"iteration %E:\n")
+@@ -4211,12 +4343,15 @@ print_instantiation_full_context (diagnostics::text_sink &text_output)
+ 		   expansion_stmt_p
+ 		   ? TREE_VEC_ELT (p->targs, 0)
+ 		   : p->get_node ());
++      if (!text_output)
++	out.end_line (location);
+       free (indent);
+       location = p->locus;
+       p = p->next;
+     }
+ 
+-  print_instantiation_partial_context (text_output, p, location);
++  out.set_kind ("instantiation-step");
++  print_instantiation_partial_context (out, p, location);
+ }
+ 
+ static void
+@@ -4244,41 +4379,56 @@ print_location (diagnostics::text_sink &text_output,
+ 
+    Otherwise (when the text output has !show_nesting_p), the ctor prints
+    the location as leading information on the same line, and the
+-   dtor optionally calls diagnostic_show_locus.  */
++   dtor optionally calls diagnostic_show_locus.
++
++   When the context goes into a list of context lines (cp_context_out),
++   the ctor starts a line and the dtor adds it to the list with the
++   location, with no indentation and no source display.  */
+ 
+ class auto_context_line
+ {
+ public:
+-  auto_context_line (diagnostics::text_sink &text_output,
++  auto_context_line (cp_context_out &out,
+ 		     location_t loc,
+ 		     bool show_locus = false)
+-  : m_text_output (text_output),
++  : m_out (out),
++    m_text_output (out.text_output ()),
+     m_loc (loc),
+     m_show_locus (show_locus),
+-    m_nesting_level (text_output.get_context ().get_diagnostic_nesting_level ()),
++    m_nesting_level (out.get_context ().get_diagnostic_nesting_level ()),
+     m_location_printed (false)
+   {
+-    char *indent = m_text_output.build_indent_prefix (true);
+-    pp_verbatim (m_text_output.get_printer (), indent);
++    if (!m_text_output)
++      {
++	m_out.begin_line ();
++	return;
++      }
++    char *indent = m_text_output->build_indent_prefix (true);
++    pp_verbatim (m_text_output->get_printer (), indent);
+     free (indent);
+-    if (m_nesting_level == 0 || !m_text_output.show_nesting_p ())
++    if (m_nesting_level == 0 || !m_text_output->show_nesting_p ())
+       {
+-	print_location (m_text_output, m_loc);
++	print_location (*m_text_output, m_loc);
+ 	m_location_printed = true;
+       }
+   }
+   ~auto_context_line ()
+   {
+-    pretty_printer *const pp = m_text_output.get_printer ();
+-    if (m_text_output.show_nesting_p ())
++    if (!m_text_output)
+       {
+-	if (m_text_output.show_locations_in_nesting_p ())
++	m_out.end_line (m_loc);
++	return;
++      }
++    pretty_printer *const pp = m_text_output->get_printer ();
++    if (m_text_output->show_nesting_p ())
++      {
++	if (m_text_output->show_locations_in_nesting_p ())
+ 	  {
+-	    char *indent = m_text_output.build_indent_prefix (false);
++	    char *indent = m_text_output->build_indent_prefix (false);
+ 	    if (!m_location_printed)
+ 	      {
+ 		pp_verbatim (pp, indent);
+-		print_location (m_text_output, m_loc);
++		print_location (*m_text_output, m_loc);
+ 		pp_newline (pp);
+ 		m_location_printed = true;
+ 	      }
+@@ -4286,8 +4436,8 @@ public:
+ 	    char *saved_prefix = pp_take_prefix (pp);
+ 	    pp_set_prefix (pp, indent);
+ 	    gcc_rich_location rich_loc (m_loc);
+-	    diagnostic_show_locus (&m_text_output.get_context (),
+-				   m_text_output.get_source_printing_options (),
++	    diagnostic_show_locus (&m_text_output->get_context (),
++				   m_text_output->get_source_printing_options (),
+ 				   &rich_loc,
+ 				   diagnostics::kind::note, pp);
+ 	    pp_set_prefix (pp, saved_prefix);
+@@ -4298,15 +4448,16 @@ public:
+ 	char *saved_prefix = pp_take_prefix (pp);
+ 	pp_set_prefix (pp, nullptr);
+ 	gcc_rich_location rich_loc (m_loc);
+-	diagnostic_show_locus (&m_text_output.get_context (),
+-			       m_text_output.get_source_printing_options (),
++	diagnostic_show_locus (&m_text_output->get_context (),
++			       m_text_output->get_source_printing_options (),
+ 			       &rich_loc,
+ 			       diagnostics::kind::note, pp);
+ 	pp_set_prefix (pp, saved_prefix);
+       }
+   }
+ private:
+-  diagnostics::text_sink &m_text_output;
++  cp_context_out &m_out;
++  diagnostics::text_sink *const m_text_output;
+   location_t m_loc;
+   bool m_show_locus;
+   int m_nesting_level;
+@@ -4317,16 +4468,16 @@ private:
+    prints a single line of instantiation context.  */
+ 
+ static void
+-print_instantiation_partial_context_line (diagnostics::text_sink &text_output,
++print_instantiation_partial_context_line (cp_context_out &out,
+ 					  struct tinst_level *t,
+ 					  location_t loc, bool recursive_p)
+ {
+   if (loc == UNKNOWN_LOCATION)
+     return;
+ 
+-  auto_context_line sentinel (text_output, loc, true);
++  auto_context_line sentinel (out, loc, true);
+ 
+-  pretty_printer *const pp = text_output.get_printer ();
++  pretty_printer *const pp = out.get_printer ();
+ 
+   if (t != NULL)
+     {
+@@ -4362,7 +4513,7 @@ print_instantiation_partial_context_line (diagnostics::text_sink &text_output,
+ /* Same as print_instantiation_full_context but less verbose.  */
+ 
+ static void
+-print_instantiation_partial_context (diagnostics::text_sink &text_output,
++print_instantiation_partial_context (cp_context_out &out,
+ 				     struct tinst_level *t0, location_t loc)
+ {
+   struct tinst_level *t;
+@@ -4396,15 +4547,15 @@ print_instantiation_partial_context (diagnostics::text_sink &text_output,
+ 	{
+ 	  gcc_assert (t != NULL);
+ 	  if (loc != t->locus)
+-	    print_instantiation_partial_context_line (text_output, t, loc,
++	    print_instantiation_partial_context_line (out, t, loc,
+ 						      /*recursive_p=*/false);
+ 	  loc = t->locus;
+ 	  t = t->next;
+ 	}
+       if (t != NULL && skip > 0)
+ 	{
+-	  auto_context_line sentinel (text_output, loc);
+-	  pp_verbatim (text_output.get_printer (),
++	  auto_context_line sentinel (out, loc);
++	  pp_verbatim (out.get_printer (),
+ 		       G_("[ skipping %d instantiation contexts,"
+ 			  " use -ftemplate-backtrace-limit=0 to disable ]\n"),
+ 		       skip);
+@@ -4422,40 +4573,43 @@ print_instantiation_partial_context (diagnostics::text_sink &text_output,
+ 	  loc = t->locus;
+ 	  t = t->next;
+ 	}
+-      print_instantiation_partial_context_line (text_output, t, loc,
++      print_instantiation_partial_context_line (out, t, loc,
+ 						t->locus == loc);
+       loc = t->locus;
+       t = t->next;
+     }
+-  print_instantiation_partial_context_line (text_output, NULL, loc,
++  print_instantiation_partial_context_line (out, NULL, loc,
+ 					    /*recursive_p=*/false);
+ }
+ 
+ /* Called from cp_thing to print the template context for an error.  */
+ static void
+-maybe_print_instantiation_context (diagnostics::text_sink &text_output)
++maybe_print_instantiation_context (cp_context_out &out)
+ {
+   if (!problematic_instantiation_changed () || current_instantiation () == 0)
+     return;
+ 
+-  record_last_problematic_instantiation ();
+-  print_instantiation_full_context (text_output);
++  out.set_kind ("instantiation");
++  if (out.update_state_p ())
++    record_last_problematic_instantiation ();
++  print_instantiation_full_context (out);
+ }
+ 
+ /* Report what constexpr call(s) we're trying to expand, if any.  */
+ 
+ void
+-maybe_print_constexpr_context (diagnostics::text_sink &text_output)
++maybe_print_constexpr_context (cp_context_out &out)
+ {
+-  vec<tree> call_stack = cx_error_context ();
++  vec<tree> call_stack = cx_error_context (out.update_state_p ());
+   unsigned ix;
+   tree t;
+ 
++  out.set_kind ("constexpr");
+   FOR_EACH_VEC_ELT (call_stack, ix, t)
+     {
+       const char *s = expr_as_string (t, 0);
+-      pretty_printer *const pp = text_output.get_printer ();
+-      auto_context_line sentinel (text_output, EXPR_LOCATION (t));
++      pretty_printer *const pp = out.get_printer ();
++      auto_context_line sentinel (out, EXPR_LOCATION (t));
+       pp_verbatim (pp,
+ 		   G_("in %<constexpr%> expansion of %qs"),
+ 		   s);
+@@ -4465,26 +4619,26 @@ maybe_print_constexpr_context (diagnostics::text_sink &text_output)
+ 
+ 
+ static void
+-print_constrained_decl_info (diagnostics::text_sink &text_output,
++print_constrained_decl_info (cp_context_out &out,
+ 			     tree decl)
+ {
+-  auto_context_line sentinel (text_output, DECL_SOURCE_LOCATION (decl));
+-  pretty_printer *const pp = text_output.get_printer ();
++  auto_context_line sentinel (out, DECL_SOURCE_LOCATION (decl));
++  pretty_printer *const pp = out.get_printer ();
+   pp_verbatim (pp, G_("required by the constraints of %q#D\n"), decl);
+ }
+ 
+ static void
+-print_concept_check_info (diagnostics::text_sink &text_output,
++print_concept_check_info (cp_context_out &out,
+ 			  tree expr, tree map, tree args)
+ {
+   gcc_assert (concept_check_p (expr));
+ 
+   tree tmpl = TREE_OPERAND (expr, 0);
+ 
+-  auto_context_line sentinel (text_output, DECL_SOURCE_LOCATION (tmpl));
++  auto_context_line sentinel (out, DECL_SOURCE_LOCATION (tmpl));
+ 
+   cxx_pretty_printer *const pp
+-    = (cxx_pretty_printer *)text_output.get_printer ();
++    = (cxx_pretty_printer *)out.get_printer ();
+   pp_verbatim (pp, G_("required for the satisfaction of %qE"), expr);
+   if (map && map != error_mark_node)
+     {
+@@ -4499,31 +4653,31 @@ print_concept_check_info (diagnostics::text_sink &text_output,
+    context, if any.  */
+ 
+ static tree
+-print_constraint_context_head (diagnostics::text_sink &text_output,
++print_constraint_context_head (cp_context_out &out,
+ 			       tree cxt, tree args)
+ {
+   tree src = TREE_VALUE (cxt);
+   if (!src)
+     {
+-      auto_context_line sentinel (text_output, input_location);
+-      pretty_printer *const pp = text_output.get_printer ();
++      auto_context_line sentinel (out, input_location);
++      pretty_printer *const pp = out.get_printer ();
+       pp_verbatim (pp, G_("required for constraint satisfaction\n"));
+       return NULL_TREE;
+     }
+   if (DECL_P (src))
+     {
+-      print_constrained_decl_info (text_output, src);
++      print_constrained_decl_info (out, src);
+       return NULL_TREE;
+     }
+   else
+     {
+-      print_concept_check_info (text_output, src, TREE_PURPOSE (cxt), args);
++      print_concept_check_info (out, src, TREE_PURPOSE (cxt), args);
+       return TREE_CHAIN (cxt);
+     }
+ }
+ 
+ static void
+-print_requires_expression_info (diagnostics::text_sink &text_output,
++print_requires_expression_info (cp_context_out &out,
+ 				tree constr, tree args)
+ {
+ 
+@@ -4533,9 +4687,9 @@ print_requires_expression_info (diagnostics::text_sink &text_output,
+   if (map == error_mark_node)
+     return;
+ 
+-  auto_context_line sentinel (text_output, cp_expr_loc_or_input_loc (expr));
++  auto_context_line sentinel (out, cp_expr_loc_or_input_loc (expr));
+   cxx_pretty_printer *const pp
+-    = static_cast <cxx_pretty_printer *> (text_output.get_printer ());
++    = static_cast <cxx_pretty_printer *> (out.get_printer ());
+ 
+   tree parms = TREE_OPERAND (expr, 0);
+   pp_verbatim (pp, parms ? G_("in requirements with ")
+@@ -4553,7 +4707,7 @@ print_requires_expression_info (diagnostics::text_sink &text_output,
+ }
+ 
+ void
+-maybe_print_single_constraint_context (diagnostics::text_sink &text_output,
++maybe_print_single_constraint_context (cp_context_out &out,
+ 				       tree failed)
+ {
+   if (!failed)
+@@ -4568,36 +4722,47 @@ maybe_print_single_constraint_context (diagnostics::text_sink &text_output,
+   tree args = TREE_PURPOSE (failed);
+ 
+   /* Print the stack of requirements.  */
+-  cxt = print_constraint_context_head (text_output, cxt, args);
++  cxt = print_constraint_context_head (out, cxt, args);
+   while (cxt && !DECL_P (TREE_VALUE (cxt)))
+     {
+       tree expr = TREE_VALUE (cxt);
+       tree map = TREE_PURPOSE (cxt);
+-      print_concept_check_info (text_output, expr, map, args);
++      print_concept_check_info (out, expr, map, args);
+       cxt = TREE_CHAIN (cxt);
+     }
+ 
+   /* For certain constraints, we can provide additional context.  */
+   if (TREE_CODE (constr) == ATOMIC_CONSTR
+       && TREE_CODE (ATOMIC_CONSTR_EXPR (constr)) == REQUIRES_EXPR)
+-    print_requires_expression_info (text_output, constr, args);
++    print_requires_expression_info (out, constr, args);
++}
++
++/* Print the context of each failed constraint of the chain CUR, the last
++   (the outermost) first.  */
++
++static void
++print_failed_constraint_chain (cp_context_out &out, tree cur)
++{
++  if (TREE_CHAIN (cur))
++    print_failed_constraint_chain (out, TREE_CHAIN (cur));
++  maybe_print_single_constraint_context (out, cur);
+ }
+ 
+ void
+-maybe_print_constraint_context (diagnostics::text_sink &text_output)
++maybe_print_constraint_context (cp_context_out &out)
+ {
+   if (!current_failed_constraint)
+     return;
+ 
++  out.set_kind ("constraint");
+   tree cur = current_failed_constraint;
+ 
+-  /* Recursively print nested contexts.  */
+-  current_failed_constraint = TREE_CHAIN (current_failed_constraint);
+-  if (current_failed_constraint)
+-    maybe_print_constraint_context (text_output);
++  /* The chain prints one time: the first diagnostic of a failed constraint
++     empties the chain before its contexts print.  */
++  if (out.update_state_p ())
++    current_failed_constraint = NULL_TREE;
+ 
+-  /* Print this context.  */
+-  maybe_print_single_constraint_context (text_output, cur);
++  print_failed_constraint_chain (out, cur);
+ }
+ 
+ /* Return true iff TYPE_A and TYPE_B are template types that are
+diff --git a/gcc/diagnostics/context.cc b/gcc/diagnostics/context.cc
+index 98af6ecb1b6..8c024671eea 100644
+--- a/gcc/diagnostics/context.cc
++++ b/gcc/diagnostics/context.cc
+@@ -166,6 +166,7 @@ context::initialize (int n_opts)
+   m_max_errors = 0;
+   m_internal_error = nullptr;
+   m_adjust_diagnostic_info = nullptr;
++  m_context_lines_cb = nullptr;
+   m_text_callbacks.m_begin_diagnostic = default_text_starter;
+   m_text_callbacks.m_text_start_span
+     = default_start_span_fn<to_text>;
+@@ -529,6 +530,16 @@ context::set_main_input_filename (const char *filename)
+     sink_->set_main_input_filename (filename);
+ }
+ 
++/* Notify each sink that LINE_MAPS replaces the line maps of the
++   translation unit, e.g. after reading a precompiled header.  */
++
++void
++context::set_line_maps (const line_maps *line_maps)
++{
++  for (auto sink_ : m_sinks)
++    sink_->set_line_maps (line_maps);
++}
++
+ std::unique_ptr<client_data_hooks>
+ context::set_client_data_hooks (std::unique_ptr<client_data_hooks> hooks)
+ {
+@@ -1473,6 +1484,10 @@ context::report_diagnostic (diagnostic_info *diagnostic)
+ 	    = expand_location (diagnostic_location (diagnostic));
+ 	  fnotice (stderr, "%s:%d: confused by earlier errors, bailing out\n",
+ 		   s.file, s.line);
++	  /* Write the outputs of the earlier diagnostics, as the paths for
++	     an ICE and for a fatal error do.  Without this, a .sarif file
++	     stays empty.  */
++	  finish ();
+ 	  exit (ICE_EXIT_CODE);
+ 	}
+       if (m_internal_error)
+@@ -1506,6 +1521,35 @@ context::report_diagnostic (diagnostic_info *diagnostic)
+     }
+   m_diagnostic_groups.m_emission_count++;
+ 
++  /* A text sink prints the context of the diagnostic through its starter
++     and its finalizer, and these can change the state that gives the
++     context.  So collect the context lines for the other sinks here, before
++     the first sink.  */
++  context_lines lines;
++  if (m_context_lines_cb)
++    {
++      bool has_text_sink = false;
++      bool has_other_sink = false;
++      for (auto sink_ : m_sinks)
++	if (sink_->dyn_cast_text_sink ())
++	  has_text_sink = true;
++	else
++	  has_other_sink = true;
++      if (has_other_sink)
++	{
++	  std::unique_ptr<pretty_printer> pp = clone_printer ();
++	  pp_show_color (pp.get ()) = false;
++	  pp->set_url_format (URL_FORMAT_NONE);
++	  pp_set_prefix (pp.get (), nullptr);
++	  /* The printer only formats the text of the lines.  A flush, for
++	     example in the dump of a tree, must keep the text in the buffer and
++	     write nothing to the stream of the printer.  */
++	  pp_buffer (pp.get ())->m_flush_p = false;
++	  m_context_lines_cb (*this, *diagnostic, *pp, lines, !has_text_sink);
++	  diagnostic->m_context_lines = &lines;
++	}
++    }
++
+   va_list *orig_args = diagnostic->m_message.m_args_ptr;
+   for (auto sink_ : m_sinks)
+     {
+@@ -1534,6 +1578,7 @@ context::report_diagnostic (diagnostic_info *diagnostic)
+ 	 phase 3 of formatting, and for printing the result.  */
+       sink_->on_report_diagnostic (*diagnostic, orig_diag_kind);
+     }
++  diagnostic->m_context_lines = nullptr;
+ 
+   const int tabstop = get_column_options ().m_tabstop;
+ 
+diff --git a/gcc/diagnostics/context.h b/gcc/diagnostics/context.h
+index dcfb80760b6..29c8335ce29 100644
+--- a/gcc/diagnostics/context.h
++++ b/gcc/diagnostics/context.h
+@@ -87,6 +87,18 @@ typedef void (*text_finalizer_fn) (text_sink &,
+ 				   const diagnostic_info *,
+ 				   enum kind);
+ 
++/* A client hook that adds the context lines of a diagnostic to LINES, with
++   PP to format the text of each line.  When UPDATE_STATE is true, no text
++   sink reports the diagnostic, and the hook changes its state as the text
++   starter does, for example to print an instantiation context only one
++   time.  When UPDATE_STATE is false, the hook changes no state, because the
++   text sinks change it after the hook.  */
++typedef void (*context_lines_fn) (context &,
++				  const diagnostic_info &,
++				  pretty_printer &pp,
++				  context_lines &lines,
++				  bool update_state);
++
+ /* A bundle of state for determining column numbers in diagnostics
+    (tab stops, whether to start at 0 or 1, etc).
+    Uses a file_cache to handle tabs.  */
+@@ -580,6 +592,7 @@ public:
+   }
+ 
+   void set_main_input_filename (const char *filename);
++  void set_line_maps (const line_maps *line_maps);
+ 
+   void
+   set_permissive_option (option_id opt_permissive)
+@@ -608,8 +621,16 @@ public:
+     m_adjust_diagnostic_info = cb;
+   }
+ 
++  void
++  set_context_lines_callback (context_lines_fn cb)
++  {
++    m_context_lines_cb = cb;
++  }
++
+   void
+   inhibit_notes () { m_inhibit_notes_p = true; }
++  bool
++  inhibit_notes_p () const { return m_inhibit_notes_p; }
+ 
+   source_printing_options &
+   get_source_printing_options ()
+@@ -743,6 +764,10 @@ private:
+      about to issue, such as its kind.  */
+   void (*m_adjust_diagnostic_info)(const context &, diagnostic_info *);
+ 
++  /* Client hook that gives the context lines of a diagnostic to the sinks
++     that are not text sinks, or null.  */
++  context_lines_fn m_context_lines_cb;
++
+   /* Owned by the context; this would be a std::unique_ptr if
+      context had a proper ctor.  */
+   option_id_manager *m_option_id_mgr;
+diff --git a/gcc/diagnostics/diagnostic-info.h b/gcc/diagnostics/diagnostic-info.h
+index 66c6be51bb2..dd70c4542a6 100644
+--- a/gcc/diagnostics/diagnostic-info.h
++++ b/gcc/diagnostics/diagnostic-info.h
+@@ -24,6 +24,64 @@ namespace diagnostics {
+ 
+ class metadata;
+ 
++/* One line of the context of a diagnostic, for example a step of a template
++   instantiation or of a macro expansion.  A text sink prints these lines
++   itself, through its starter and its finalizer.  For each other sink, the
++   client gives them through context::set_context_lines_callback.  */
++
++struct context_line
++{
++  /* The location of the line.  */
++  location_t m_location;
++
++  /* The file, the line and the column that a text sink prints for the
++     line.  The column is -1 when the text sink prints no column.  */
++  expanded_location m_text_location;
++
++  /* The formatted text of the line, with no location and no trailing
++     newline.  Owned by the context_lines that holds the line.  */
++  char *m_text;
++
++  /* A static string that tells what gives the line, such as
++     "instantiation", "constexpr", "constraint", "function" or "macro".  */
++  const char *m_kind;
++
++  /* True when a text sink prints the line after the diagnostic, and false
++     when it prints the line before the diagnostic.  */
++  bool m_after;
++};
++
++/* The context lines of one diagnostic, in the sequence of the text output.  */
++
++class context_lines
++{
++public:
++  context_lines () {}
++  ~context_lines ()
++  {
++    for (auto &line : m_lines)
++      free (line.m_text);
++  }
++  context_lines (const context_lines &) = delete;
++  context_lines &operator= (const context_lines &) = delete;
++
++  /* Add a line at LOCATION with a copy of TEXT.  A text sink prints the
++     line at TEXT_LOCATION.  */
++  void add (location_t location, const expanded_location &text_location,
++	    const char *text, const char *kind, bool after)
++  {
++    context_line line;
++    line.m_location = location;
++    line.m_text_location = text_location;
++    line.m_text = xstrdup (text);
++    line.m_kind = kind;
++    line.m_after = after;
++    m_lines.safe_push (line);
++  }
++
++  auto_vec<context_line> m_lines;
++};
++
+ /* A diagnostic is described by the MESSAGE to send, the FILE and LINE of
+    its context and its KIND (ice, error, warning, note, ...)  See complete
+    list in diagnostics/kinds.def.  */
+@@ -37,7 +95,8 @@ struct diagnostic_info
+     m_x_data (),
+     m_kind (),
+     m_option_id (),
+-    m_iinfo ()
++    m_iinfo (),
++    m_context_lines ()
+   { }
+ 
+   /* Text to be formatted.  */
+@@ -68,6 +127,10 @@ struct diagnostic_info
+     /* Set if every M_ILOCS element is in a system header.  */
+     bool m_allsyslocs;
+   } m_iinfo;
++
++  /* The context lines of the diagnostic for the sinks that are not text
++     sinks, or null.  Set only while the context reports the diagnostic.  */
++  const context_lines *m_context_lines;
+ };
+ 
+ } // namespace diagnostics
+diff --git a/gcc/diagnostics/html-sink.cc b/gcc/diagnostics/html-sink.cc
+index 58442e9a62b..1bc1856cdef 100644
+--- a/gcc/diagnostics/html-sink.cc
++++ b/gcc/diagnostics/html-sink.cc
+@@ -132,6 +132,13 @@ public:
+   void
+   set_main_input_filename (const char *name);
+ 
++  void
++  set_line_maps (const line_maps *line_maps)
++  {
++    gcc_assert (line_maps);
++    m_line_maps = line_maps;
++  }
++
+   void on_report_diagnostic (const diagnostic_info &diagnostic,
+ 			     enum kind orig_diag_kind,
+ 			     html_sink_buffer *buffer);
+@@ -1415,6 +1422,12 @@ public:
+     m_builder.set_main_input_filename (name);
+   }
+ 
++  void
++  set_line_maps (const line_maps *line_maps) final override
++  {
++    m_builder.set_line_maps (line_maps);
++  }
++
+   std::unique_ptr<per_sink_buffer>
+   make_per_sink_buffer () final override
+   {
+diff --git a/gcc/diagnostics/macro-unwinding.cc b/gcc/diagnostics/macro-unwinding.cc
+index 997ed8d7598..39c4399ca1d 100644
+--- a/gcc/diagnostics/macro-unwinding.cc
++++ b/gcc/diagnostics/macro-unwinding.cc
+@@ -72,11 +72,16 @@ struct loc_map_pair
+    The part that goes from the third to the fifth line of this
+    diagnostic (the lines containing the 'note:' string) is called the
+    unwound macro expansion trace.  That's the part generated by this
+-   function.  */
++   function.
+ 
+-void
+-maybe_unwind_expanded_macro_loc (text_sink &text_output,
+-                                 location_t where)
++   The walk calls EMIT (IS_DEFINITION, LOCATION, MACRO_NAME) for each
++   line of the trace, in the sequence of the trace.  IS_DEFINITION is true
++   for an "in definition of macro" line, and false for an "in expansion of
++   macro" line.  */
++
++template <typename Emit>
++static void
++walk_expanded_macro_loc (location_t where, Emit emit)
+ {
+   const struct line_map *map;
+   auto_vec<loc_map_pair> loc_vec;
+@@ -180,9 +185,8 @@ maybe_unwind_expanded_macro_loc (text_sink &text_output,
+ 	const int resolved_def_loc_line = SOURCE_LINE (m, l0);
+         if (ix == 0 && saved_location_line != resolved_def_loc_line)
+           {
+-	    text_output.append_note (resolved_def_loc,
+-				     "in definition of macro %qs",
+-				     linemap_map_get_macro_name (iter->map));
++	    emit (true, resolved_def_loc,
++		  linemap_map_get_macro_name (iter->map));
+             /* At this step, as we've printed the context of the macro
+                definition, we don't want to print the context of its
+                expansion, otherwise, it'd be redundant.  */
+@@ -197,12 +201,65 @@ maybe_unwind_expanded_macro_loc (text_sink &text_output,
+                                     iter->map->get_expansion_point_location (),
+                                     LRK_MACRO_DEFINITION_LOCATION, nullptr);
+ 
+-	text_output.append_note (resolved_exp_loc,
+-				 "in expansion of macro %qs",
+-				 linemap_map_get_macro_name (iter->map));
++	emit (false, resolved_exp_loc,
++	      linemap_map_get_macro_name (iter->map));
+       }
+ }
+ 
++void
++maybe_unwind_expanded_macro_loc (text_sink &text_output,
++				 location_t where)
++{
++  walk_expanded_macro_loc
++    (where,
++     [&text_output] (bool is_definition, location_t loc,
++		     const char *macro_name)
++     {
++       if (is_definition)
++	 text_output.append_note (loc, "in definition of macro %qs",
++				  macro_name);
++       else
++	 text_output.append_note (loc, "in expansion of macro %qs",
++				  macro_name);
++     });
++}
++
++/* Add the lines of the macro expansion trace of WHERE to LINES, with PP to
++   format the text of each line.  The lines have the text that
++   maybe_unwind_expanded_macro_loc prints as notes.  As text_sink::append_note
++   does, the function adds no line when DC inhibits notes.  The text location
++   of a line is the location that a text sink prints for such a note: the
++   spelling point of its caret, with the column of the column policy of DC
++   when DC shows columns.  */
++
++void
++collect_expanded_macro_context (const context &dc,
++				location_t where,
++				pretty_printer &pp,
++				context_lines &lines)
++{
++  if (dc.inhibit_notes_p ())
++    return;
++  walk_expanded_macro_loc
++    (where,
++     [&dc, &pp, &lines] (bool is_definition, location_t loc,
++			 const char *macro_name)
++     {
++       pp_clear_output_area (&pp);
++       if (is_definition)
++	 pp_verbatim (&pp, _("in definition of macro %qs"), macro_name);
++       else
++	 pp_verbatim (&pp, _("in expansion of macro %qs"), macro_name);
++       rich_location rich_loc (line_table, loc);
++       expanded_location text_location = rich_loc.get_expanded_location (0);
++       text_location.column
++	 = (dc.m_show_column
++	    ? column_policy (dc).converted_column (text_location)
++	    : -1);
++       lines.add (loc, text_location, pp_formatted_text (&pp), "macro", true);
++     });
++}
++
+ /*  This is a diagnostic finalizer implementation that is aware of
+     virtual locations produced by libcpp.
+ 
+diff --git a/gcc/diagnostics/macro-unwinding.h b/gcc/diagnostics/macro-unwinding.h
+index 71d6b01d340..48dfaf0b586 100644
+--- a/gcc/diagnostics/macro-unwinding.h
++++ b/gcc/diagnostics/macro-unwinding.h
+@@ -23,6 +23,7 @@ along with GCC; see the file COPYING3.  If not see
+ namespace diagnostics {
+ 
+ struct diagnostic_info;
++class context_lines;
+ 
+ extern void virt_loc_aware_text_finalizer (text_sink &,
+ 					   const diagnostic_info *);
+@@ -30,6 +31,11 @@ extern void virt_loc_aware_text_finalizer (text_sink &,
+ extern void maybe_unwind_expanded_macro_loc (text_sink &,
+ 					     location_t where);
+ 
++extern void collect_expanded_macro_context (const context &,
++					    location_t where,
++					    pretty_printer &pp,
++					    context_lines &lines);
++
+ } // namespace diagnostics
+ 
+ #endif /* ! GCC_DIAGNOSTICS_MACRO_UNWINDING_H */
+diff --git a/gcc/diagnostics/sarif-sink.cc b/gcc/diagnostics/sarif-sink.cc
+index 1e25b459c64..66a175fe713 100644
+--- a/gcc/diagnostics/sarif-sink.cc
++++ b/gcc/diagnostics/sarif-sink.cc
+@@ -468,7 +468,8 @@ class sarif_result : public sarif_location_manager
+ {
+ public:
+   sarif_result (unsigned idx_within_parent)
+-  : m_idx_within_parent (idx_within_parent)
++  : m_idx_within_parent (idx_within_parent),
++    m_num_nested_diagnostics (0)
+   {}
+ 
+   unsigned get_index_within_parent () const { return m_idx_within_parent; }
+@@ -480,8 +481,16 @@ public:
+   void on_diagram (const diagram &d,
+ 		   sarif_builder &builder);
+ 
++  void
++  add_context_lines (const diagnostic_info &diagnostic,
++		     bool after,
++		     sarif_builder &builder);
++
+ private:
+   const unsigned m_idx_within_parent;
++
++  /* The number of nested diagnostics that the result holds.  */
++  unsigned m_num_nested_diagnostics;
+ };
+ 
+ /* Subclass of sarif_object for SARIF "location" objects
+@@ -809,6 +818,13 @@ public:
+   void
+   set_main_input_filename (const char *name);
+ 
++  void
++  set_line_maps (const line_maps *line_maps)
++  {
++    gcc_assert (line_maps);
++    m_line_maps = line_maps;
++  }
++
+   void on_report_diagnostic (const diagnostic_info &diagnostic,
+ 			     enum kind orig_diag_kind,
+ 			     sarif_sink_buffer *buffer);
+@@ -1344,11 +1360,71 @@ sarif_location_manager::process_worklist_item (sarif_builder &builder,
+    so we lazily set this property and populate the array if and when
+    secondary diagnostics occur (such as notes to a warning).  */
+ 
++static char *
++make_rule_id_for_diagnostic_kind (enum kind diag_kind);
++
++/* Return a "gcc/textLocation" object for TEXT_LOCATION: the file, the line
++   and the column that a text sink prints for a diagnostic or a context
++   line.  Return null when TEXT_LOCATION has no file.  The object has no line
++   when the line is 0, and no column when the column is less than 0.  */
++
++static std::unique_ptr<json::object>
++make_text_location_object (const expanded_location &text_location)
++{
++  if (!text_location.file)
++    return nullptr;
++  auto text_location_obj = std::make_unique<json::object> ();
++  text_location_obj->set_string ("file", text_location.file);
++  if (text_location.line > 0)
++    {
++      text_location_obj->set_integer ("line", text_location.line);
++      if (text_location.column >= 0)
++	text_location_obj->set_integer ("column", text_location.column);
++    }
++  return text_location_obj;
++}
++
++/* Return the file, the line and the column that a text sink prints for
++   DIAGNOSTIC, as text_sink::get_location_text gives them: the spelling point
++   of the caret, and the column of the column policy of DC when DC shows
++   columns.  The column is -1 when DC shows no column.  */
++
++static expanded_location
++get_text_location (const context &dc, const diagnostic_info &diagnostic)
++{
++  expanded_location text_location = diagnostic_expand_location (&diagnostic);
++  if (text_location.file
++      && !strcmp (text_location.file, special_fname_builtin ()))
++    text_location.line = 0;
++  text_location.column = (dc.m_show_column
++			  ? column_policy (dc).converted_column (text_location)
++			  : -1);
++  return text_location;
++}
++
++/* Set the property "gcc/textLocation" of BAG to the location that a text
++   sink prints for DIAGNOSTIC.  */
++
++static void
++set_text_location (sarif_property_bag &bag, const context &dc,
++		   const diagnostic_info &diagnostic)
++{
++  if (auto text_location_obj
++	= make_text_location_object (get_text_location (dc, diagnostic)))
++    bag.set ("gcc/textLocation", std::move (text_location_obj));
++}
++
+ void
+ sarif_result::on_nested_diagnostic (const diagnostic_info &diagnostic,
+-				    enum kind /*orig_diag_kind*/,
++				    enum kind orig_diag_kind,
+ 				    sarif_builder &builder)
+ {
++  m_num_nested_diagnostics++;
++
++  /* The context lines that a text sink prints before the diagnostic come
++     before its location.  */
++  add_context_lines (diagnostic, false, builder);
++
+   /* We don't yet generate meaningful logical locations for notes;
+      sometimes these will related to current_function_decl, but
+      often they won't.  */
+@@ -1367,7 +1443,70 @@ sarif_result::on_nested_diagnostic (const diagnostic_info &diagnostic,
+   bag.set_integer ("nestingLevel",
+ 		   builder.get_context ().get_diagnostic_nesting_level ());
+ 
++  /* A location object has no "level" property, so give the kind of the
++     nested diagnostic, such as "error" or "note", and its option, as the
++     "ruleId" of a result gives them.  */
++  char *kind_text = make_rule_id_for_diagnostic_kind (diagnostic.m_kind);
++  bag.set_string ("gcc/kind", kind_text);
++  free (kind_text);
++  if (char *option_text
++	= builder.get_context ().make_option_name (diagnostic.m_option_id,
++						   orig_diag_kind,
++						   diagnostic.m_kind))
++    {
++      bag.set_string ("gcc/option", option_text);
++      free (option_text);
++    }
++  set_text_location (bag, builder.get_context (), diagnostic);
++
+   add_related_location (std::move (location_obj), builder);
++
++  add_context_lines (diagnostic, true, builder);
++}
++
++/* Add each context line of DIAGNOSTIC whose m_after is AFTER as a related
++   location, with its message and the nesting level of DIAGNOSTIC.  The
++   property "gcc/context" gives the kind of the line.  The property
++   "gcc/contextOf" gives the diagnostic of the line: 0 for the result
++   itself, and N for the Nth nested diagnostic of the result.  The property
++   "gcc/placement" tells whether a text sink prints the line "before" or
++   "after" that diagnostic.  */
++
++void
++sarif_result::add_context_lines (const diagnostic_info &diagnostic,
++				 bool after,
++				 sarif_builder &builder)
++{
++  if (!diagnostic.m_context_lines)
++    return;
++  for (const context_line &line : diagnostic.m_context_lines->m_lines)
++    {
++      if (line.m_after != after)
++	continue;
++      std::unique_ptr<sarif_location> location_obj;
++      if (line.m_location > BUILTINS_LOCATION)
++	{
++	  rich_location rich_loc (line_table, line.m_location);
++	  location_obj
++	    = builder.make_location_object (this, rich_loc,
++					    logical_locations::key (),
++					    diagnostic_artifact_role::result_file);
++	}
++      else
++	location_obj = std::make_unique<sarif_location> ();
++      location_obj->set<sarif_message> ("message",
++					builder.make_message_object (line.m_text));
++      sarif_property_bag &bag = location_obj->get_or_create_properties ();
++      bag.set_integer ("nestingLevel",
++		       builder.get_context ().get_diagnostic_nesting_level ());
++      bag.set_string ("gcc/context", line.m_kind);
++      bag.set_integer ("gcc/contextOf", m_num_nested_diagnostics);
++      bag.set_string ("gcc/placement", after ? "after" : "before");
++      if (auto text_location_obj
++	    = make_text_location_object (line.m_text_location))
++	bag.set ("gcc/textLocation", std::move (text_location_obj));
++      add_related_location (std::move (location_obj), builder);
++    }
+ }
+ 
+ /* Handle diagrams that occur within a diagnostic group.
+@@ -2125,6 +2264,11 @@ sarif_builder::make_result_object (const diagnostic_info &diagnostic,
+   pp_clear_output_area (m_printer);
+   result_obj->set<sarif_message> ("message", std::move (message_obj));
+ 
++  /* The location that a text sink prints for the diagnostic, which can be
++     a point of the source other than the start of the region.  */
++  set_text_location (result_obj->get_or_create_properties (), m_context,
++		     diagnostic);
++
+   /* "locations" property (SARIF v2.1.0 section 3.27.12).  */
+   result_obj->set<json::array>
+     ("locations",
+@@ -2157,9 +2301,12 @@ sarif_builder::make_result_object (const diagnostic_info &diagnostic,
+ 	  result_obj->set<json::array> ("graphs", std::move (graphs_arr));
+       }
+ 
+-  /* The "relatedLocations" property (SARIF v2.1.0 section 3.27.22) is
+-     set up later, if any nested diagnostics occur within this diagnostic
+-     group.  */
++  /* The "relatedLocations" property (SARIF v2.1.0 section 3.27.22) holds
++     the context lines of the diagnostic first, such as the instantiation
++     context of a C++ diagnostic.  It gets more locations later, if any
++     nested diagnostics occur within this diagnostic group.  */
++  result_obj->add_context_lines (diagnostic, false, *this);
++  result_obj->add_context_lines (diagnostic, true, *this);
+ 
+   /* "fixes" property (SARIF v2.1.0 section 3.27.30).  */
+   const rich_location *richloc = diagnostic.m_richloc;
+@@ -4027,6 +4174,12 @@ public:
+     m_builder.set_main_input_filename (name);
+   }
+ 
++  void
++  set_line_maps (const line_maps *line_maps) final override
++  {
++    m_builder.set_line_maps (line_maps);
++  }
++
+   std::unique_ptr<per_sink_buffer>
+   make_per_sink_buffer () final override
+   {
+diff --git a/gcc/diagnostics/sink.h b/gcc/diagnostics/sink.h
+index bf33037f963..de02816a8ce 100644
+--- a/gcc/diagnostics/sink.h
++++ b/gcc/diagnostics/sink.h
+@@ -67,6 +67,11 @@ public:
+      e.g. for titles of HTML, for SARIF's artifact metadata.  */
+   virtual void set_main_input_filename (const char *) {}
+ 
++  /* Vfunc for notifying this format that the line maps of the
++     translation unit have changed, e.g. when the C family frontends
++     read a precompiled header, which replaces "line_table".  */
++  virtual void set_line_maps (const line_maps *) {}
++
+   /* Vfunc for making an appropriate per_sink_buffer
+      subclass for this format.  */
+   virtual std::unique_ptr<per_sink_buffer>
+diff --git a/gcc/testsuite/g++.dg/pch/sarif-1.C b/gcc/testsuite/g++.dg/pch/sarif-1.C
+new file mode 100644
+index 00000000000..0a36db779c1
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/pch/sarif-1.C
+@@ -0,0 +1,15 @@
++/* Verify that the SARIF sink reads the locations of a diagnostic after a
++   precompiled header replaces line_table.  The SARIF sink kept the line maps
++   of the time before the read, and it crashed on the warning.
++   { dg-options "-fdiagnostics-add-output=sarif:file=sarif-1.C.sarif" } */
++
++#include "sarif-1.H"
++
++int
++f ()
++{
++  return pch_value (); // { dg-warning "deprecated" }
++}
++
++/* { dg-prune-output "declared here" }
++   { dg-final { scan-sarif-file {"text": "declared here"} } } */
+diff --git a/gcc/testsuite/g++.dg/pch/sarif-1.Hs b/gcc/testsuite/g++.dg/pch/sarif-1.Hs
+new file mode 100644
+index 00000000000..802aa52de5a
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/pch/sarif-1.Hs
+@@ -0,0 +1,3 @@
++/* The header of sarif-1.C.  */
++
++[[deprecated]] int pch_value ();
+diff --git a/gcc/testsuite/g++.dg/sarif-output/context-lines-1.C b/gcc/testsuite/g++.dg/sarif-output/context-lines-1.C
+new file mode 100644
+index 00000000000..e7655537ffd
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/sarif-output/context-lines-1.C
+@@ -0,0 +1,43 @@
++/* { dg-do compile { target c++20 } } */
++/* { dg-additional-options "-fdiagnostics-add-output=sarif" } */
++
++/* Verify that SARIF output holds the C++ context of a diagnostic: the
++   function, the instantiation, the constexpr calls and the constraints
++   before the diagnostic, and the macro expansions after it.  The text output
++   gets each diagnostic too, and each dg-message holds a context line of it.
++   The line numbers of this file are in context-lines-1.py.  */
++
++template<typename T> concept has_size = requires (T t) { t.size (); }; // { dg-message "required for the satisfaction of .has_size" }
++template<typename T> concept container = has_size<T>; // { dg-message "required for the satisfaction of .container" }
++template<container T> void use (T) {}
++
++void test_constraint ()
++{
++  use (42); // { dg-error "no matching function" }
++}
++
++template<typename T> struct holder
++{
++  T value;
++  void reset () { value = nullptr; } // { dg-error "cannot convert" }
++};
++
++void test_instantiation ()
++{
++  holder<int> h;
++  h.reset (); // { dg-message "required from here" }
++}
++
++constexpr int divide (int x) { return 1 / x; } // { dg-error "not a constant expression" }
++constexpr int bad = divide (0); // { dg-message "in .constexpr. expansion of" }
++
++#define ASSIGN(dst, src) dst = src // { dg-message "in definition of macro" }
++
++void test_macro ()
++{
++  int *p;
++  ASSIGN (p, 1.0); // { dg-error "cannot convert" }
++}
++
++/* { dg-final { verify-sarif-file } }
++   { dg-final { run-sarif-pytest context-lines-1.C "context-lines-1.py" } } */
+diff --git a/gcc/testsuite/g++.dg/sarif-output/context-lines-1.py b/gcc/testsuite/g++.dg/sarif-output/context-lines-1.py
+new file mode 100644
+index 00000000000..d21822e930b
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/sarif-output/context-lines-1.py
+@@ -0,0 +1,111 @@
++from sarif import *
++
++import pytest
++
++@pytest.fixture(scope='function', autouse=True)
++def sarif():
++    return sarif_from_env()
++
++expected_filename = 'context-lines-1.C'
++
++def context_lines(result):
++    """Return (kind, text, line) for each context line of RESULT."""
++    lines = []
++    for location in result.get('relatedLocations', []):
++        properties = location.get('properties', {})
++        if 'gcc/context' in properties:
++            region = location.get('physicalLocation', {}).get('region', {})
++            lines.append((properties['gcc/context'],
++                          location['message']['text'],
++                          region.get('startLine')))
++    return lines
++
++def context_owners(result):
++    """Return (gcc/contextOf, gcc/placement) for each context line of RESULT."""
++    return [(location['properties']['gcc/contextOf'],
++             location['properties']['gcc/placement'])
++            for location in result.get('relatedLocations', [])
++            if 'gcc/context' in location.get('properties', {})]
++
++def test_results(sarif):
++    results = sarif['runs'][0]['results']
++    assert len(results) == 4
++    for result in results:
++        assert result['level'] == 'error'
++        assert get_location_artifact_uri(result['locations'][0]).endswith(expected_filename)
++
++def test_constraint_context(sarif):
++    result = sarif['runs'][0]['results'][0]
++    assert 'no matching function' in result['message']['text']
++
++    # The region starts at 'use', and the text names the caret at '('.
++    assert result['locations'][0]['physicalLocation']['region']['startColumn'] == 3
++    text_location = result['properties']['gcc/textLocation']
++    assert text_location['file'].endswith(expected_filename)
++    assert text_location['line'] == 16
++    assert text_location['column'] == 7
++    lines = context_lines(result)
++    kinds = [kind for kind, _, _ in lines]
++    assert kinds == ['function', 'instantiation', 'instantiation-step',
++                     'constraint', 'constraint', 'constraint']
++    assert 'In function' in lines[0][1] and 'test_constraint' in lines[0][1]
++    assert lines[1][1].startswith('In substitution of')
++    assert lines[2][1] == 'required from here'
++    assert lines[2][2] == 16
++    step = [location for location in result['relatedLocations']
++            if location.get('properties', {}).get('gcc/context') == 'instantiation-step'][0]
++    assert step['properties']['gcc/textLocation']['line'] == 16
++    assert step['properties']['gcc/textLocation']['column'] == 7
++    assert lines[3][1].startswith('required for the satisfaction of')
++    assert 'has_size<T>' in lines[3][1] and '[with T = int]' in lines[3][1]
++    assert lines[4][1].startswith('required for the satisfaction of')
++    assert 'container<T>' in lines[4][1]
++    assert lines[5][1].startswith('in requirements with')
++
++    # Each nested diagnostic gives its kind, because a location object
++    # has no level.
++    nested = [location for location in result['relatedLocations']
++              if 'gcc/kind' in location.get('properties', {})]
++    assert nested
++    for location in nested:
++        assert location['properties']['gcc/kind'] == 'note'
++
++    # The function line belongs to the error itself.  The instantiation and
++    # constraint lines belong to the fifth nested diagnostic, the note on
++    # the invalid required expression, and the text prints them before it.
++    owners = context_owners(result)
++    assert owners[0] == (0, 'before')
++    assert owners[1:] == [(5, 'before')] * 5
++    assert 'the required expression' in nested[4]['message']['text']
++
++def test_constexpr_context(sarif):
++    result = sarif['runs'][0]['results'][1]
++    assert 'not a constant expression' in result['message']['text']
++    lines = context_lines(result)
++    assert [kind for kind, _, _ in lines] == ['function', 'constexpr']
++    assert lines[0][1] == 'At global scope:'
++    assert 'constexpr' in lines[1][1] and 'divide(0)' in lines[1][1]
++    assert lines[1][2] == 32
++
++def test_macro_context(sarif):
++    result = sarif['runs'][0]['results'][2]
++    assert 'cannot convert' in result['message']['text']
++    lines = context_lines(result)
++    assert [kind for kind, _, _ in lines] == ['function', 'macro']
++    assert 'test_macro' in lines[0][1]
++    assert lines[1][1].startswith('in definition of macro')
++    assert 'ASSIGN' in lines[1][1]
++    assert lines[1][2] == 34
++    # The text prints the macro trace after the error.
++    assert context_owners(result) == [(0, 'before'), (0, 'after')]
++
++def test_instantiation_context(sarif):
++    result = sarif['runs'][0]['results'][3]
++    assert 'cannot convert' in result['message']['text']
++    lines = context_lines(result)
++    assert [kind for kind, _, _ in lines] == ['instantiation',
++                                              'instantiation-step']
++    assert lines[0][1].startswith('In instantiation of')
++    assert 'holder<T>::reset()' in lines[0][1]
++    assert lines[1][1] == 'required from here'
++    assert lines[1][2] == 28
+diff --git a/gcc/testsuite/g++.dg/sarif-output/context-lines-2.C b/gcc/testsuite/g++.dg/sarif-output/context-lines-2.C
+new file mode 100644
+index 00000000000..53f89f713ad
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/sarif-output/context-lines-2.C
+@@ -0,0 +1,32 @@
++/* { dg-do compile } */
++/* { dg-options "-fdiagnostics-format=sarif-file" } */
++
++/* Verify the C++ context of diagnostics in SARIF output with no text sink.
++   The text output prints an instantiation context one time for each change
++   of the instantiation.  With no text sink, the SARIF sink gets the same
++   context lines.  */
++
++template<typename T> struct pair_holder
++{
++  T first;
++  T second;
++  void reset ()
++  {
++    first = nullptr;
++    second = nullptr;
++  }
++};
++
++void test_instantiation ()
++{
++  pair_holder<int> h;
++  h.reset ();
++}
++
++/* We expect a failing compile due to the errors, but the use of
++   -fdiagnostics-format=sarif-file means there should be no output to stderr.
++   DejaGnu injects this message; ignore it:
++   { dg-prune-output "exit status is 1" } */
++
++/* { dg-final { verify-sarif-file } }
++   { dg-final { run-sarif-pytest context-lines-2.C "context-lines-2.py" } } */
+diff --git a/gcc/testsuite/g++.dg/sarif-output/context-lines-2.py b/gcc/testsuite/g++.dg/sarif-output/context-lines-2.py
+new file mode 100644
+index 00000000000..993f92319a9
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/sarif-output/context-lines-2.py
+@@ -0,0 +1,25 @@
++from sarif import *
++
++import pytest
++
++@pytest.fixture(scope='function', autouse=True)
++def sarif():
++    return sarif_from_env()
++
++def context_kinds(result):
++    """Return the kind of each context line of RESULT."""
++    return [location['properties']['gcc/context']
++            for location in result.get('relatedLocations', [])
++            if 'gcc/context' in location.get('properties', {})]
++
++def test_instantiation_context_one_time(sarif):
++    results = sarif['runs'][0]['results']
++    assert len(results) == 2
++    for result in results:
++        assert result['level'] == 'error'
++        assert 'cannot convert' in result['message']['text']
++
++    # The first error holds the instantiation context, and the second error
++    # in the same instantiation holds none, as in the text output.
++    assert context_kinds(results[0]) == ['instantiation', 'instantiation-step']
++    assert context_kinds(results[1]) == []
+-- 
+2.55.0
+

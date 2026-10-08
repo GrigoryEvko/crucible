@@ -69,7 +69,7 @@ from assay.core import proc
 from assay.core import rows as rows_grammar
 from assay.core.paths import LOOP, REPO_ROOT
 from assay.mutation import gates as gate_finder
-from assay.readers import cmake, compdb, ninja, tsast
+from assay.readers import cmake, compdb, ninja, sarif, tsast
 from assay.readers import ctest as ctest_reader
 from assay.setup import pins as cmake_pin
 
@@ -457,44 +457,52 @@ SELF_TEST_REFUSAL = re.compile(r"static assertion failed|non-constant condition 
                                r"constraints not satisfied|template constraint failure|use of deleted function|"
                                r"no matching function for call|is ambiguous|is private within this context|"
                                r"is not a constant expression|call to non-.constexpr. function")
-FIRST_ERROR = re.compile(r"\berror: (.*)$", re.MULTILINE)
 
 
-def probe_verdict(output: str) -> str:
-    """The verdict on a mutant whose header alone no longer compiles, read from the compiler's output.
+def probe_verdict(log: sarif.Log | None) -> str:
+    """Return the verdict on a mutant whose header alone no longer compiles, from the SARIF log of the probe.
 
-    Only the first error decides, because each later error can follow
-    from it.  A refusal by one of the header's own checks kills the mutant.
-    A parse error anywhere, or a first error that no check makes, says the
-    mutant is malformed."""
-    first = FIRST_ERROR.search(output)
-    if first is None or PARSE_ERROR.search(output):
+    Only the first error decides, because each later error can follow from
+    it.  A refusal by one of the checks of the header kills the mutant.  A
+    parse error in a record, a first error that no check makes, or a probe
+    with no log makes the mutant invalid.
+    """
+    records = sarif.records(log) if log is not None else []
+    first = next((record for record in records if record.is_error), None)
+    if first is None or any(PARSE_ERROR.search(record.message) for record in records):
         return "invalid"
-    return "killed" if SELF_TEST_REFUSAL.search(first.group(1)) else "invalid"
+    return "killed" if SELF_TEST_REFUSAL.search(first.message) else "invalid"
 
 
-def _probe(header_abs: Path, flags_from: Candidate | None, compiler_argv: list[str] | None) -> tuple[bool, str]:
-    """Compile a TU that only includes the header, and say whether it compiled, with its whole output.
+def _probe(header_abs: Path, flags_from: Candidate | None,
+           compiler_argv: list[str] | None) -> tuple[bool, sarif.Log | None]:
+    """Compile a unit that only includes the header, and return whether it compiled, with the records of its log.
 
-    The output is uncoloured and whole, because the verdict reads the first
-    error in it, and a colour escape or a cut would hide the words."""
+    The verdict reads the errors from the SARIF log of the compile.  The log
+    is None when the compile runs longer than its limit or writes no log that
+    the reader reads."""
     with tempfile.TemporaryDirectory() as tmp:
         probe = Path(tmp) / "probe.cpp"
         probe.write_text(f'#include "{header_abs}"\n')
+        log_flag = f"{sarif.SARIF_FLAG}{Path(tmp) / 'probe.sarif'}"
         if compiler_argv is not None:
-            argv = compiler_argv + ["-fsyntax-only", "-fdiagnostics-color=never", str(probe)]
+            argv = compiler_argv + ["-fsyntax-only", "-fdiagnostics-color=never", log_flag, str(probe)]
             cwd = tmp
         else:
             assert flags_from is not None
             argv = [a for a in flags_from.compile_argv if Path(a).resolve() != Path(flags_from.source)
                     and not a.endswith(".cpp")]
-            argv = argv + ["-fsyntax-only", "-fdiagnostics-color=never", str(probe)]
+            argv = argv + ["-fsyntax-only", "-fdiagnostics-color=never", log_flag, str(probe)]
             cwd = flags_from.cwd if flags_from.kind == "syntax" else str(Path(flags_from.source).parent)
         try:
             completed = proc.run(proc.Command(argv, timeout_s=TIMEOUT_S, cwd=cwd))
         except proc.TimedOut:
-            return False, "timeout"
-        return completed.exit == 0, completed.out + completed.err
+            return False, None
+        try:
+            log: sarif.Log | None = sarif.read(Path(tmp) / "probe.sarif")
+        except (OSError, sarif.SarifError):
+            log = None
+        return completed.exit == 0, log
 
 
 def run_header(header: str, src_root: Path, candidates: list[Candidate], jobs: int, neg_cap: int,
@@ -569,11 +577,11 @@ def run_header(header: str, src_root: Path, candidates: list[Candidate], jobs: i
             outcome = Outcome(gate.key, header, gate.kind, gate.line, gate.entity, gate.original[:200],
                               "survived", candidates=len(chosen) + len(runs))
             header_abs.write_bytes(gate_finder.apply(original, gate))
-            probe_ok, probe_out = _probe(header_abs, probe_from, probe_argv) if base_probe else (True, "")
+            probe_ok, probe_log = _probe(header_abs, probe_from, probe_argv) if base_probe else (True, None)
             if not probe_ok:
                 # The header alone no longer compiles.  A refusal by one of
                 # the header's own checks is a witness of the gate.
-                outcome.status = probe_verdict(probe_out)
+                outcome.status = probe_verdict(probe_log)
                 if outcome.status == "killed":
                     outcome.killer = "header-self-test"
             else:
@@ -896,15 +904,22 @@ def cmd_selftest(args: argparse.Namespace) -> int:
                 if f"{exemption}:3:" not in str(refusal):
                     failures.append(f"the refusal of a row with {label} names no place: {refusal}")
         # Only a refusal by a check of the header kills a mutant at the probe.
-        probe_cases = {"planted.h:3:1: error: static assertion failed: small": "killed",
-                       "planted.h:3:1: error: call of overloaded 'take(int)' is ambiguous": "killed",
-                       "planted.h:3:1: error: 'requirestrue' does not name a type": "invalid",
-                       "planted.h:3:1: error: expected ';' before '}' token": "invalid",
-                       "planted.h:3:1: error: redeclaration of 'template<class T>  requires  true struct S' with "
-                       "different constraints\nplanted.h:9:1: error: static assertion failed": "invalid"}
-        for text, verdict in probe_cases.items():
-            if probe_verdict(text) != verdict:
-                failures.append(f"the probe output {text!r} must read as {verdict}, not {probe_verdict(text)}")
+        probe_cases = {("static assertion failed: small",): "killed",
+                       ("call of overloaded 'take(int)' is ambiguous",): "killed",
+                       ("'requirestrue' does not name a type",): "invalid",
+                       ("expected ';' before '}' token",): "invalid",
+                       ("redeclaration of 'template<class T>  requires  true struct S' with different constraints",
+                        "static assertion failed"): "invalid",
+                       (): "invalid"}
+        for messages, verdict in probe_cases.items():
+            planted_log = sarif.Log("cc1plus", tuple(
+                sarif.Diagnostic(sarif.Kind.ERROR, None, "planted.h", 3, 1, 0, message, "", 0, False, "", ())
+                for message in messages))
+            if probe_verdict(planted_log) != verdict:
+                failures.append(f"the probe errors {messages!r} must read as {verdict}, not "
+                                f"{probe_verdict(planted_log)}")
+        if probe_verdict(None) != "invalid":
+            failures.append("a probe with no log must read as invalid")
         if (tmp / "include" / "planted.h").read_text() != PLANTED:
             failures.append("the planted header was not restored")
         failures.extend(_selftest_build_model(tmp / "api", args))

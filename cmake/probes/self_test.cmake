@@ -5,7 +5,7 @@
 # and the configure must stop.  A ccache link must resolve to the compiler
 # that ccache runs.
 #
-# The compiler of the build must pass every probe.  Five stub compilers in
+# The compiler of the build must pass every probe.  Six stub compilers in
 # WORK must each get the result that their behaviour calls for:
 #   - A stub that accepts every file stands for a compiler without the
 #     contract fix.  The probes must refuse it.
@@ -16,6 +16,8 @@
 #     refusal.
 #   - A stub that has the contract fix but refuses the memchr probe stands
 #     for a compiler without the memchr fix.  The probes must refuse it.
+#   - A stub that writes a SARIF log without the constraint line stands for
+#     a compiler without the SARIF fix.  The probes must refuse it.
 #   - A stub that does what the patched compiler does must pass.
 cmake_minimum_required(VERSION 3.25)
 include("${CMAKE_CURRENT_LIST_DIR}/../PatchedGccProbe.cmake")
@@ -28,22 +30,43 @@ file(MAKE_DIRECTORY "${WORK}")
 set(contract_error
   "contract_cache.cpp:6:22: error: call to consteval function 'held_value(42)' is not a constant expression")
 set(memchr_error "memchr_offset.cpp:19:37: error: static assertion failed")
+set(sarif_error "sarif_context.cpp:16:19: error: no matching function for call to 'use(int)'")
+# The SARIF log of the probe with the constraint line, and the log that a
+# compiler without the SARIF fix writes.
+set(sarif_with_context
+  "{\"runs\": [{\"results\": [{\"level\": \"error\", \"relatedLocations\": [{\"message\": {\"text\": \"required for the satisfaction of has_size<T> [with T = int]\"}, \"properties\": {\"gcc/context\": \"constraint\"}}]}]}]}")
+set(sarif_without_context
+  "{\"runs\": [{\"results\": [{\"level\": \"error\", \"relatedLocations\": [{\"message\": {\"text\": \"constraints not satisfied\"}, \"properties\": {\"nestingLevel\": 4}}]}]}]}")
 
 # Write the stub compiler WORK/NAME.  Its body runs with the name of the
-# probe file in $probe.
+# probe file in $probe, and the path of the SARIF log of the compile, or an
+# empty string, in $sarif.
 function(write_stub name body)
-  file(WRITE "${WORK}/${name}" "#!/bin/sh\nfor probe; do :; done\n${body}")
+  file(WRITE "${WORK}/${name}"
+       "#!/bin/sh\nfor probe; do :; done\nsarif=''\n"
+       "for argument; do case \"$argument\" in -fdiagnostics-add-output=sarif:file=*) "
+       "sarif=\"\${argument#-fdiagnostics-add-output=sarif:file=}\" ;; esac; done\n${body}")
   file(CHMOD "${WORK}/${name}" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE)
 endfunction()
+
+# The body of a stub that refuses the SARIF probe and writes the log LOG.
+function(sarif_case out_var log)
+  set(${out_var} "*sarif_context.cpp) echo \"${sarif_error}\" >&2; printf '%s\\n' '${log}' > \"$sarif\"; exit 1 ;;\n"
+      PARENT_SCOPE)
+endfunction()
+sarif_case(patched_sarif_case "${sarif_with_context}")
+sarif_case(unpatched_sarif_case "${sarif_without_context}")
 
 write_stub(accepts_all "exit 0\n")
 write_stub(refuses_all "echo 'probe.cpp:1:1: error: unrelated' >&2\nexit 1\n")
 write_stub(warns_only
-  "case \"$probe\" in\n*contract_cache.cpp) echo \"${contract_error}\" >&2 ;;\nesac\nexit 0\n")
+  "case \"$probe\" in\n*contract_cache.cpp) echo \"${contract_error}\" >&2 ;;\n${patched_sarif_case}esac\nexit 0\n")
 write_stub(lacks_memchr_fix
-  "case \"$probe\" in\n*contract_cache.cpp) echo \"${contract_error}\" >&2; exit 1 ;;\n*memchr_offset.cpp) echo \"${memchr_error}\" >&2; exit 1 ;;\nesac\nexit 0\n")
+  "case \"$probe\" in\n*contract_cache.cpp) echo \"${contract_error}\" >&2; exit 1 ;;\n*memchr_offset.cpp) echo \"${memchr_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
+write_stub(lacks_sarif_fix
+  "case \"$probe\" in\n*contract_cache.cpp) echo \"${contract_error}\" >&2; exit 1 ;;\n${unpatched_sarif_case}esac\nexit 0\n")
 write_stub(acts_patched
-  "case \"$probe\" in\n*contract_cache.cpp) echo \"${contract_error}\" >&2; exit 1 ;;\nesac\nexit 0\n")
+  "case \"$probe\" in\n*contract_cache.cpp) echo \"${contract_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
 
 function(expect_pass cxx label)
   crucible_patched_gcc_problem("${cxx}" problem)
@@ -63,6 +86,7 @@ endfunction()
 
 set(contract_reason "constexpr cache of contracts")
 set(memchr_reason "constant evaluation of memchr")
+set(sarif_reason "context of a diagnostic to the SARIF output")
 
 # A ccache masquerade link resolves to the program of the same name that PATH
 # holds outside the directory of the link.  Any other compiler is itself.
@@ -88,8 +112,11 @@ expect_pass("${WORK}/acts_patched" "a stub that acts as the patched compiler")
 expect_refusal("${WORK}/accepts_all" "a stub that accepts every file" "${contract_reason}")
 expect_refusal("${WORK}/refuses_all" "a stub that refuses every file" "${contract_reason}")
 expect_refusal("${WORK}/refuses_all" "a stub that refuses every file" "${memchr_reason}")
+expect_refusal("${WORK}/accepts_all" "a stub that accepts every file" "${sarif_reason}")
+expect_refusal("${WORK}/refuses_all" "a stub that refuses every file" "${sarif_reason}")
 expect_refusal("${WORK}/warns_only" "a stub that only warns" "${contract_reason}")
 expect_refusal("${WORK}/lacks_memchr_fix" "a stub without the memchr fix" "${memchr_reason}")
+expect_refusal("${WORK}/lacks_sarif_fix" "a stub without the SARIF fix" "${sarif_reason}")
 
 # A configure of the tree, without the toolchain file, with a compiler that
 # lacks a fix, stops at the check after project().  The wrapper runs the

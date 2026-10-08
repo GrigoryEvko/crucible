@@ -186,6 +186,7 @@ fixy_neg_compile_test(neg_mutation_bounded_monotonic_negative_bound
 # At max(), the precondition of bump() refuses the step.  Under constant
 # evaluation, the refusal stops the evaluation.
 fixy_neg_compile_test(neg_mutation_bounded_monotonic_bump_past_max
+  "non-constant condition for static assertion"
   "in .constexpr. expansion of .counter\\.fixy::BoundedMonotonic<unsigned int, 2, std::less<unsigned int> >::bump\\(\\)."
   ".__builtin_trap\\(\\). is not a constant expression")
 
@@ -1011,9 +1012,11 @@ fixy_neg_compile_test(neg_refined_implication_not_admitted
 # header.  An edge or a rule added after it stops the build at the first
 # implication query that reads the seal after it.
 fixy_neg_compile_test(neg_refined_edge_after_the_header
+  "non-constant condition for static assertion"
   "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
   "in .constexpr. expansion of .fixy::refined::predicate_implies\\(\\^\\^fixy::refined::predicate_t<fixy::InRange<0, 7>\\(\\)>, \\^\\^fixy::refined::predicate_t<fixy::IsPositive\\(\\)>\\).")
 fixy_neg_compile_test(neg_refined_rule_after_the_header
+  "non-constant condition for static assertion"
   "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
   "in .constexpr. expansion of .fixy::refined::predicate_implies\\(\\^\\^fixy::refined::predicate_t<fixy::BoundedBelow<2>\\(\\)>, \\^\\^fixy::refined::predicate_t<fixy::IsNonZero\\(\\)>\\).")
 
@@ -1101,11 +1104,13 @@ fixy_neg_compile_test(neg_refined_chain_wrong_direction
 # also stands outside the seal of the relation, so each query of the
 # walk also stops at the seal, and the last two regexes pin that refusal.
 fixy_neg_compile_test(neg_refined_implication_cycle_edges
+  "non-constant condition for static assertion"
   "call to non-.constexpr. function .void fixy::refined::implication_cycle_between_two_names_for_one_predicate\\(\\)."
   "in .constexpr. expansion of .fixy::refined::predicate_implies\\(\\^\\^planted::<lambda\\(auto:[0-9]+\\)>, \\^\\^fixy::detail::refined_edge_walk::unreachable_conclusion\\)."
   "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
   "in .constexpr. expansion of .foundation::fail_closed::require_seal_holds\\(\\^\\^fixy::refined::admitted_implications\\).")
 fixy_neg_compile_test(neg_refined_implication_cycle_ring
+  "non-constant condition for static assertion"
   "call to non-.constexpr. function .void fixy::refined::implication_cycle_between_two_names_for_one_predicate\\(\\)."
   "in .constexpr. expansion of .fixy::refined::predicate_implies\\(\\^\\^planted::<lambda\\(auto:[0-9]+\\)>, \\^\\^fixy::detail::refined_edge_walk::unreachable_conclusion\\)."
   "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."

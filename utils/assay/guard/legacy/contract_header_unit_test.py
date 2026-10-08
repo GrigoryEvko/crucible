@@ -21,6 +21,11 @@ header, because the result of GCC 16 changes from one precompiled header to
 the next: of 25 precompiled headers of the same file, 2 kept the
 postcondition of the class template member.
 
+Each use compiles with a SARIF log and with the include trace of -H.  The test
+reads the diagnostics from the log (assay.readers.sarif), and the precompiled
+headers from the trace (assay.readers.include_trace).  For that reason,
+`--cxx` names the patched compiler.
+
 usage: guard check --rule contract-header-unit --cxx CXX --include INCLUDE_DIR
 
 Exit 0 when each case holds, 1 when one fails, 2 on a usage error.
@@ -29,12 +34,13 @@ Exit 0 when each case holds, 1 when one fails, 2 on a usage error.
 from __future__ import annotations
 
 import argparse
-import re
+import dataclasses
 import sys
 import tempfile
 from pathlib import Path
 
 from assay.core import proc
+from assay.readers import include_trace, sarif
 
 FLAGS = ("-std=c++26", "-fcontracts", "-freflection", "-fdiagnostics-color=never")
 MACRO_HEADER = """#pragma once
@@ -68,9 +74,41 @@ USES = {
 }
 MUTATION_USE = "static_assert(::fixy::mint_bounded_monotonic<unsigned, 4u>(9u).get() == 9u);\n"
 # The macro form stops the static assertion.  The specifier form reports the
-# contract itself.
-STOPPED = re.compile(r"non-constant condition for static assertion|contract predicate is false|"
-                     r"contract condition is not constant")
+# contract itself.  A record of the log with one of these texts in its message
+# shows that the compile stopped the evaluation.
+STOPPED = ("non-constant condition for static assertion", "contract predicate is false",
+           "contract condition is not constant")
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Use:
+    """One compile of a use: the completed process, the records of its SARIF log, and its include trace.
+
+    `log` is None when the compile wrote no log that the reader reads, and
+    `problem` then gives the reason.
+    """
+
+    done: proc.Completed
+    log: sarif.Log | None
+    problem: str
+    trace: tuple[include_trace.IncludeStep, ...]
+
+    @property
+    def is_stopped(self) -> bool:
+        """Return True when the compile fails and a record of the log names a stopped evaluation (STOPPED)."""
+        if self.done.exit == 0 or self.log is None:
+            return False
+        return any(text in record.message for record in sarif.records(self.log) for text in STOPPED)
+
+    @property
+    def reads_precompiled(self) -> bool:
+        """Return True when the trace names a precompiled header, in use or not."""
+        return any(step.path.endswith(".gch") for step in self.trace)
+
+    @property
+    def detail(self) -> str:
+        """Return the text of a case that does not hold: the reason of a missing log and the standard error."""
+        return f"{self.problem}\n{self.done.err}" if self.problem else self.done.err
 
 
 class Runner:
@@ -93,12 +131,20 @@ class Runner:
         if not holds:
             self.failures.append(f"{name}{': ' + detail[-1500:] if detail else ''}")
 
-    def use(self, header_line: str, body: str, stem: str) -> proc.Completed:
-        """Compile one use of a header with -fsyntax-only."""
+    def use(self, header_line: str, body: str, stem: str) -> Use:
+        """Compile one use of a header with -fsyntax-only, the SARIF log and the include trace."""
         source = self.work / f"{stem}.cpp"
         source.write_text(header_line + body, encoding="utf-8")
         modules = ("-fmodules",) if header_line.startswith("import") else ()
-        return self.compile(*modules, "-fsyntax-only", "-H", source.name)
+        log_path = self.work / f"{stem}.sarif"
+        done = self.compile(*modules, "-fsyntax-only", include_trace.TRACE_FLAG, f"{sarif.SARIF_FLAG}{log_path}",
+                            source.name)
+        try:
+            log: sarif.Log | None = sarif.read(log_path)
+            problem = ""
+        except (OSError, sarif.SarifError) as error:
+            log, problem = None, f"the compile wrote no SARIF log that the test can read: {error}"
+        return Use(done, log, problem, include_trace.read(done.err))
 
 
 def run_form(runner: Runner, header: str, name: str, is_macro: bool) -> None:
@@ -120,20 +166,19 @@ def run_form(runner: Runner, header: str, name: str, is_macro: bool) -> None:
     for contract, body in USES.items():
         included = runner.use(f'#include "{name}/witness.h"\n', body, f"{name}_{contract}_include")
         runner.expect(f"{name}: the include reads no precompiled header and stops the evaluation that breaks the "
-                      f"{contract}", included.exit != 0 and STOPPED.search(included.err) is not None
-                      and ".gch" not in included.err, included.err)
+                      f"{contract}", included.is_stopped and not included.reads_precompiled, included.detail)
         imported = runner.use(f'import "{name}/witness.h";\n', body, f"{name}_{contract}_import")
         if not is_macro:
             runner.expect(f"{name}: the header unit loses the {contract} (GCC keeps it: give the contract rule a "
-                          f"new reason)", imported.exit == 0, imported.err)
+                          f"new reason)", imported.done.exit == 0, imported.detail)
             continue
         runner.expect(f"{name}: the header unit stops the evaluation that breaks the {contract}",
-                      imported.exit != 0 and STOPPED.search(imported.err) is not None, imported.err)
+                      imported.is_stopped, imported.detail)
         precompiled = runner.use(f'#include "{precompiled_dir}/witness.h"\n', body, f"{name}_{contract}_pch")
+        in_use = include_trace.precompiled(precompiled.trace)
         runner.expect(f"{name}: the compile reads the precompiled header and stops the evaluation that breaks the "
-                      f"{contract}", f"! {precompiled_dir}/witness.h.gch" in precompiled.err
-                      and precompiled.exit != 0 and STOPPED.search(precompiled.err) is not None,
-                      precompiled.err)
+                      f"{contract}", f"{precompiled_dir}/witness.h.gch" in in_use and precompiled.is_stopped,
+                      precompiled.detail)
 
 
 def run_mutation(runner: Runner) -> None:
@@ -143,10 +188,10 @@ def run_mutation(runner: Runner) -> None:
     runner.expect("fixy/Mutation.h: the header unit builds", unit.exit == 0, unit.err)
     imported = runner.use("import <fixy/Mutation.h>;\n", MUTATION_USE, "mutation_import")
     runner.expect("fixy/Mutation.h: the header unit stops the evaluation that breaks the bound",
-                  imported.exit != 0 and STOPPED.search(imported.err) is not None, imported.err)
+                  imported.is_stopped, imported.detail)
     included = runner.use("#include <fixy/Mutation.h>\n", MUTATION_USE, "mutation_include")
     runner.expect("fixy/Mutation.h: the include stops the evaluation that breaks the bound",
-                  included.exit != 0 and STOPPED.search(included.err) is not None, included.err)
+                  included.is_stopped, included.detail)
 
 
 def main(argv: list[str]) -> int:

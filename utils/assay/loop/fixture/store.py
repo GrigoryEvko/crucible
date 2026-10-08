@@ -28,30 +28,26 @@ in the same clock tick cannot hide.
 
 How the regexes apply
 ---------------------
-GCC shows the source line of a diagnostic again, below the message.  A regex
-can find its text in that line, which is the text of the fixture and not a
-message of the compiler.  Then the test of a fixture can pass although the
-compiler does not reject the fixture for the documented reason.
-
-`strip_source_echo` removes the caret display before the driver applies the
-regexes.  The text that stays is the text that the compiler wrote: the message
-lines, the `note:` lines, the `In file included from` chain, the bullet lines of
-GCC 16 and the headers of each instantiation context.  These lines can contain
-a type name, a concept name or a list of template arguments, and a regex must
-find its text there.  The driver prints the full output for the reader, and it
-applies the regexes to the output without the caret display.
+Each compile writes a SARIF log of its diagnostics (assay.readers.sarif).  The
+driver applies the regexes to the lines that render() gives for the records of
+the log: the message lines, the `note:` lines, the bullet lines of GCC 16, and
+the context lines of each function, instantiation, constant evaluation,
+constraint and macro.  These lines can contain a type name, a concept name or
+a list of template arguments, and a regex must find its text there.  The lines
+hold no source line, no caret line and no include chain.  A regex then cannot
+find its text in a source line of the fixture, which is not a message of the
+compiler.  The driver prints the text output of the compile for the reader.
 
 The reason of the failure
 -------------------------
 A fixture must fail only for its own reason.  When each regex matches, the
-driver also makes sure that each error of the output has a regex
-(`unmatched_errors`).  The diagnostic of an error is its header line, the
-context lines that GCC prints before the header, and the lines after the
-header up to the context of the next error.  A regex match in one of these
-lines gives the error a regex.  An error with no regex fails the fixture, also
-when the regexes match its other errors.  An error with no regex can hide a
-change: a fixture can keep its own error and get a second error from a
-different cause.
+driver also makes sure that each error of the log has a regex
+(`unmatched_errors`).  The diagnostic of an error is the group of its head in
+the rendering: the head line, its context lines, and each line after the head
+up to the next head.  A regex match in one of these lines gives the error a
+regex.  An error with no regex fails the fixture, also when the regexes match
+its other errors.  An error with no regex can hide a change: a fixture can keep
+its own error and get a second error from a different cause.
 
 The ledger utils/ledgers/fixture-own-reason.txt names the fixtures that had
 an error with no regex when the rule started, `- | - | admit | FIXTURE |
@@ -82,15 +78,16 @@ fails the fixture.
 The result store
 ----------------
 Without the store, CTest compiles each fixture again on each run, and these
-compiles are most of the cost of the run.  The driver keeps the exit code and
-the combined output of each compile in a store in `~/.cache/crucible/neg/`.
+compiles are most of the cost of the run.  The driver keeps the exit code, the
+combined output and the records of the SARIF log of each compile in a store in
+`~/.cache/crucible/neg/`.
 The store is the "neg" cache of utils/assay/core/cache.py, so
 CRUCIBLE_CACHE_DIR moves it with every other cache, and the value "off" turns
 it off.  When the store holds a correct entry for the compile, the driver uses
-the stored exit code and output, and it does not compile.  Then it does the
-same checks as after a compile: the removal of the caret display, the regexes
-and the independence report.  The store holds the output of the compiler, and
-not the decision to pass or fail.
+the stored exit code, output and log, and it does not compile.  Then it does
+the same checks as after a compile: the regexes, the rule of the reason and the
+independence report.  The store holds the output and the log of the compiler,
+and not the decision to pass or fail.
 
 One entry holds the results of at most four compiles of one key, newest
 first.  Each result has its own inputs (items 2 to 4 below).  The driver uses
@@ -139,7 +136,9 @@ makes.  The store makes sure of each input:
    The key also holds the bytes of each file that the command names, for
    example a plugin.  When the command contains `-march=native`, the key holds
    the model and the flags of the host CPU.  In each item, a mark takes the
-   place of each text of the source root and of the build root (item 8).
+   place of each text of the source root and of the build root (item 8).  In
+   the command, a placeholder replaces the path of the dependency file and
+   the path of the SARIF log, because the two paths name the process.
 2. Each result lists each file that GCC read, from the dependency file of the
    compile, with a hash of its bytes.  The driver compares the hash of each
    file now with the hash in the result.  `NAME.digests` in the scratch
@@ -225,11 +224,12 @@ Why a result from a different root is the result of the compile
    the compile command keeps them.  The key
    holds a mark in place of each text of a root: in the command, in each path
    and in the environment.  A result holds the marks in each path, in each
-   hash of the names under a root, and in the output.  A lookup changes each
-   mark to the root of this build, and it does the checks of items 2 to 4 at
-   the paths that it gets.  It gives the output with the paths of this build,
-   so each regex sees the paths of this build.  A compile in a different root
-   gives the same output with the other roots when these conditions hold:
+   hash of the names under a root, and in the output and the log.  A lookup
+   changes each mark to the root of this build, and it does the checks of
+   items 2 to 4 at the paths that it gets.  It gives the output and the log
+   with the paths of this build, so each regex sees the paths of this build.
+   A compile in a different root gives the same output and the same log with
+   the other roots when these conditions hold:
    - The command, the environment and the names under each root are the same
      with the marks (item 1, item 3 and item 4).
    - Each dependency has the same bytes (item 2).  No dependency holds the
@@ -247,7 +247,8 @@ Why a result from a different root is the result of the compile
    A root takes part only when it is an absolute path of two components or
    more, because GCC writes no such text on its own.  A mark holds a NUL
    character, and no path and no command holds one.  The store keeps no
-   output that holds a NUL character, so a mark stands for its root only.
+   output and no log that holds a NUL character, so a mark stands for its
+   root only.
 
 A new file in a root changes the key of each compile that searches that root,
 also when no lookup names the new file.  A new header in `include/` then
@@ -261,8 +262,10 @@ The driver stores no result in these conditions:
 - An input changed in the settle period of item 7, or the key changed during
   the compile (item 6).
 - The driver cannot read a root or a probed path.
-- The output holds a NUL character, or a dependency holds the text of a root
-  (item 8).
+- The output or the log holds a NUL character, or a dependency holds the text
+  of a root (item 8).
+- The compile writes no SARIF log, or the reader refuses its log.  The test of
+  the fixture then fails, and the reason names the log.
 - A search directory holds a precompiled header (a name that ends in `.gch`),
   or a probed path of item 4 is one.  GCC reads its bytes, and the dependency
   file does not name it.
@@ -373,67 +376,7 @@ from pathlib import Path
 from types import ModuleType
 
 from assay.core.paths import LOOP, REPO_ROOT
-from assay.readers import compdb
-
-# ── Diagnostic-text normalisation ──────────────────────────────────
-#
-# The replayed command carries `-fdiagnostics-color=always` (see the
-# top-level CMakeLists), so every highlighted token is wrapped in SGR
-# escapes and each line carries an EL (`ESC [ K`) sequence.  A regex
-# such as `concept GradedWrapper` would not match `concept
-# <SGR>GradedWrapper<SGR>`, so escapes are removed before matching.
-# Removing them can only make matching see MORE of what the compiler
-# actually said; it never invents text.
-_ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
-
-# A GCC caret-display line.  With `-fdiagnostics-show-line-numbers`
-# (default since GCC 9, and appended below so the shape is guaranteed
-# rather than assumed) every such line carries a left gutter that ends
-# in `|`:
-#
-#     `   19 |     static_assert(GradedWrapper<int>);`   source echo
-#     `      |                   ~~~~~^~~~~~~~~~~~~`     caret / range
-#     `  +++ |+    #include <foo>`                       fix-it insert
-#     `      |                   replacement`            fix-it replace
-#
-# The gutter is never colourised, and no GCC MESSAGE line begins with
-# an optional line number followed by `|` -- messages begin with a
-# path, with `In file included from`, with `In function`, with the
-# GCC 16 bullet, or with `from`/`required from` continuations.
-#
-# One known over-reach: `-fanalyzer`'s inline-events path art also draws
-# a `|` gutter, so an analyzer path would be removed along with the
-# source it quotes.  Neg-compile fixtures assert compile-time rejections
-# and never gate on analyzer path text, and `-fanalyzer` is confined to
-# its own preset, so nothing in the corpus depends on it.
-_GUTTER = re.compile(r"^[ \t]*(?:\d+|\+\+\+)?[ \t]*\|")
-
-# GCC's line-elision marker between two non-adjacent quoted lines.
-# Carries no diagnostic text of its own.
-_ELISION = re.compile(r"^[ \t]*\.{3,}[ \t]*$")
-
-# A primary diagnostic header.  GCC 16 renders sub-reasons as indented
-# `•` bullets belonging to the preceding header, so counting headers
-# counts distinct diagnostics rather than lines.  The `:line:col` part is
-# optional inside the location, which is how `cc1plus: error: ...` and
-# `<built-in>: error: ...` are counted; both carry no fixture line and so
-# contribute to the total without being attributed to the fixture.
-_ERROR_HEADER = re.compile(
-    r"^(?:(?P<file>[^\s:][^:]*):(?:(?P<line>\d+):(?:\d+:)?)?[ \t]*)?"
-    r"(?:error|fatal error):[ \t]",
-)
-
-# A line that GCC prints before a diagnostic to give its context: a line of
-# the include chain, the function or the instantiation that holds the
-# diagnostic (`FILE: In instantiation of ...:`), and a step of the
-# instantiation (`FILE:LINE:COLUMN:   required from here`).  A run of such
-# lines right before an error header belongs to that error
-# (`unmatched_errors`).
-_CONTEXT = re.compile(
-    r"^(?:In file included from |[ \t]+from |[ \t]+inlined from "
-    r"|[^:\s][^:]*: (?:In |At global scope:)"
-    r"|[^:\s][^:]*:\d+:\d+:[ \t]+(?:recursively )?required (?:from|by) )"
-)
+from assay.readers import compdb, sarif
 
 # A fixture name is a key of a warnings file, so it obeys WRITER_KEY of
 # utils/assay/core/report.py.  The test of the driver holds the two
@@ -442,8 +385,8 @@ _FIXTURE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]*")
 
 # The marks that stand for the build root and the source root in a key and in
 # a stored result (the module text, item 8).  A path and a command hold no NUL
-# character, and the store keeps no output that holds one, so a mark stands
-# for its root only.
+# character, and the store keeps no output and no log that holds one, so a mark
+# stands for its root only.
 _BUILD_MARK = "\x00build root\x00"
 _SOURCE_MARK = "\x00source root\x00"
 
@@ -534,118 +477,86 @@ def build_roots(build_dir: Path) -> Roots:
     return Roots(*root_texts(build_dir))
 
 
-def strip_source_echo(text: str) -> str:
-    """Return `text` with ANSI escapes and GCC's caret display removed.
+def summarise_errors(rendering: sarif.Rendering, source: Path) -> tuple[int, list[int]]:
+    """Return the number of error heads of a rendering, and the sorted lines of the fixture that hold one.
 
-    Only the caret display is discarded -- the quoted source line, its
-    caret/range underline, and fix-it hint lines.  Every line the
-    compiler wrote as prose survives, including the ones that quote a
-    type name, a concept name or a template argument list.
+    A fixture that fails for one reason has one such line.  More than one line
+    means that the fixture fails for more than one reason, and a regex can then
+    match a rejection other than the one that the fixture documents.  An error
+    with no file or no line counts in the number, and it gives no line.
+    Complexity: linear in the number of error heads.
     """
-    kept: list[str] = []
-    for line in text.splitlines():
-        plain = _ANSI.sub("", line)
-        if _GUTTER.match(plain) or _ELISION.match(plain):
-            continue
-        kept.append(plain)
-    return "\n".join(kept)
-
-
-def summarise_errors(stripped: str, source: Path) -> tuple[int, list[int]]:
-    """Count primary error diagnostics and locate the fixture-local ones.
-
-    Returns the total number of error headers and the sorted distinct
-    `line` numbers at which the FIXTURE'S OWN source produced one.  A
-    fixture that rejects for exactly one reason reports a single
-    fixture-local line; more than one means the file triggers more than
-    one independent rejection, and the registered regex may be matching
-    a rejection other than the one the fixture documents.
-    """
-    total = 0
     own: set[int] = set()
-    resolved = str(source)
-    for line in stripped.splitlines():
-        match = _ERROR_HEADER.match(line)
-        if match is None:
-            continue
-        total += 1
-        where = match.group("file")
-        lineno = match.group("line")
-        if where is None or lineno is None:
+    for error in rendering.errors:
+        if not error.path or not error.line:
             continue
         try:
-            if Path(where).resolve() == source:
-                own.add(int(lineno))
-        except OSError:  # pragma: no cover - defensive
-            if where == resolved:
-                own.add(int(lineno))
-    return total, sorted(own)
+            is_own = Path(error.path).resolve() == source
+        except OSError:
+            is_own = error.path == str(source)
+        if is_own:
+            own.add(error.line)
+    return len(rendering.errors), sorted(own)
 
 
-def unmatched_errors(stripped: str, expected_regexes: list[str]) -> list[str]:
-    """Return the header line of each error diagnostic of `stripped` that no match of a regex reaches.
+def unmatched_errors(rendering: sarif.Rendering, expected_regexes: list[str]) -> list[str]:
+    """Return the head line of each error of a rendering that no match of a regex reaches.
 
-    `stripped` is the output without the caret display (`strip_source_echo`).
-    The diagnostic of an error is its header line, the run of context lines
-    right before the header (_CONTEXT), and each line after the header up to
-    the context of the next error.  The lines before the first error belong
-    to the first error.  A match reaches a diagnostic when its span holds a
-    character of one of these lines, so one match can reach two diagnostics.
-    A regex applies as in `evaluate`, with re.MULTILINE.  The cost is
-    O(n + m log n) for n lines and m matches, plus the cost of the searches.
+    The regexes apply to the lines of the rendering, joined with line breaks,
+    as in `evaluate`, with re.MULTILINE.  The diagnostic of an error is the
+    group of its head (sarif.Rendering).  A match reaches a diagnostic when its
+    span holds a character of a line of its group, so one match can reach two
+    diagnostics.  The cost is O(n + m log n) for n lines and m matches, plus
+    the cost of the searches.
     """
-    lines = stripped.split("\n")
-    headers = [number for number, line in enumerate(lines) if _ERROR_HEADER.match(line)]
-    if not headers:
+    if not rendering.errors:
         return []
+    text = "\n".join(rendering.lines)
     starts: list[int] = []
     offset = 0
-    for line in lines:
+    for line in rendering.lines:
         starts.append(offset)
         offset += len(line) + 1
-    is_reached = [False] * len(lines)
+    reached: set[int] = set()
     for pattern in expected_regexes:
-        for match in re.finditer(pattern, stripped, flags=re.MULTILINE):
+        for match in re.finditer(pattern, text, flags=re.MULTILINE):
             first = bisect.bisect_right(starts, match.start()) - 1
             last = bisect.bisect_right(starts, max(match.start(), match.end() - 1)) - 1
-            for number in range(first, last + 1):
-                is_reached[number] = True
-    firsts = [0]
-    for earlier, header in zip(headers, headers[1:]):
-        first = header
-        while first > earlier + 1 and _CONTEXT.match(lines[first - 1]):
-            first -= 1
-        firsts.append(first)
-    ends = [*firsts[1:], len(lines)]
-    return [lines[header] for header, first, end in zip(headers, firsts, ends) if not any(is_reached[first:end])]
+            reached.update(rendering.groups[number] for number in range(first, last + 1))
+    return [rendering.lines[head] for group, head in enumerate(rendering.heads) if group not in reached]
 
 
 # ── The compile command ────────────────────────────────────────────
 
 
 class CompileResult:
-    """The exit code, the combined standard output and error, the cost and the inputs of one compile.
+    """The exit code, the combined standard output and error, the log, the cost and the inputs of one compile.
 
-    `user_s` and `system_s` are the user and the system CPU time of the
-    compile in seconds, and `cpu_s` is their sum, which the budget reads.
-    `instructions` is the exact count of its user
-    instructions, or None when the host gives no exact count.  `inputs` is
-    each file that the compile read, by absolute path, or None when the driver
-    does not know them.  A result from the store gives the cost and the inputs
-    of the compile that made it.
+    `log` holds the records of the SARIF log of the compile, or None when the
+    compile wrote no log that the reader reads, and `log_problem` then gives
+    the reason.  `user_s` and `system_s` are the user and the system CPU time
+    of the compile in seconds, and `cpu_s` is their sum, which the budget
+    reads.  `instructions` is the exact count of its user instructions, or
+    None when the host gives no exact count.  `inputs` is each file that the
+    compile read, by absolute path, or None when the driver does not know
+    them.  A result from the store gives the log, the cost and the inputs of
+    the compile that made it.
     """
 
-    __slots__ = ("returncode", "output", "user_s", "system_s", "instructions", "inputs")
+    __slots__ = ("returncode", "output", "user_s", "system_s", "instructions", "inputs", "log", "log_problem")
 
     def __init__(self, returncode: int, output: str, user_s: float, system_s: float, instructions: int | None,
-                 inputs: tuple[str, ...] | None = None) -> None:
-        """Hold the exit code, the output, the two CPU times, the instruction count and the inputs of a compile."""
+                 inputs: tuple[str, ...] | None = None, log: sarif.Log | None = None,
+                 log_problem: str = "the compile wrote no SARIF log") -> None:
+        """Hold the exit code, the output, the two CPU times, the instruction count, the inputs and the log."""
         self.returncode = returncode
         self.output = output
         self.user_s = user_s
         self.system_s = system_s
         self.instructions = instructions
         self.inputs = inputs
+        self.log = log
+        self.log_problem = "" if log is not None else log_problem
 
     @property
     def cpu_s(self) -> float:
@@ -654,7 +565,13 @@ class CompileResult:
 
     def with_inputs(self, inputs: tuple[str, ...] | None) -> CompileResult:
         """Return the same result with the inputs `inputs`."""
-        return CompileResult(self.returncode, self.output, self.user_s, self.system_s, self.instructions, inputs)
+        return CompileResult(self.returncode, self.output, self.user_s, self.system_s, self.instructions, inputs,
+                             self.log, self.log_problem)
+
+    def with_log(self, log: sarif.Log | None, log_problem: str) -> CompileResult:
+        """Return the same result with the log `log`, or with no log and the reason `log_problem`."""
+        return CompileResult(self.returncode, self.output, self.user_s, self.system_s, self.instructions,
+                             self.inputs, log, log_problem)
 
 
 def _replace_output(argv: list[str], output: Path) -> list[str]:
@@ -777,11 +694,12 @@ def _strip_plugin_flags(argv: list[str], keep: bool) -> list[str]:
     return result
 
 
-def compile_argv(command: list[str], output: Path, depfile: Path) -> list[str]:
+def compile_argv(command: list[str], output: Path, depfile: Path, sarif_log: Path) -> list[str]:
     """Return the command that compiles the fixture.
 
-    The object file goes to `output`, and GCC writes the list of the files that
-    it read to `depfile`.  The last two arguments are `-MF` and `depfile`.
+    The object file goes to `output`, GCC writes the SARIF log of its
+    diagnostics to `sarif_log`, and it writes the list of the files that it
+    read to `depfile`.  The last two arguments are `-MF` and `depfile`.
     """
     keep = os.environ.get("CRUCIBLE_NEG_KEEP_PLUGIN", "") == "1"
     argv = _replace_output(_strip_plugin_flags(_strip_dependency_flags(command), keep), output)
@@ -812,12 +730,9 @@ def compile_argv(command: list[str], output: Path, depfile: Path) -> list[str]:
 
         argv.extend(shlex.split(extra))
 
-    # `strip_source_echo` recognises the caret display by its left
-    # gutter, which exists only while line numbers are shown.  That is
-    # GCC's default, but a preset (or a future default change) could
-    # turn it off and silently reopen the echo hole, so pin it here.
-    # GCC honours the LAST occurrence.
-    argv.append("-fdiagnostics-show-line-numbers")
+    # The regexes read the records of the SARIF log (the module text, How the
+    # regexes apply).  The text output stays, for the reader of the test.
+    argv.append(f"{sarif.SARIF_FLAG}{sarif_log}")
 
     # GCC writes the dependency file also for a compile that fails with an
     # error.  It writes none after a fatal error.
@@ -937,7 +852,7 @@ def run_compile(argv: list[str], directory: Path, env: Mapping[str, str]) -> Com
 
 # ── The result store ───────────────────────────────────────────────
 
-_STORE_MAGIC = b"crucible-neg-store 7\n"
+_STORE_MAGIC = b"crucible-neg-store 8\n"
 # An entry holds at most this number of results of one key (the module text).
 _RESULTS_PER_ENTRY = 4
 # A change in this period before the compile started can be a change that the
@@ -957,6 +872,8 @@ _MEMO_SWEEP_SECONDS = 120
 # The stamp of the last sweep of the memos, in the directory of the store.
 _MEMO_SWEEP_STAMP = "memo-swept"
 _DEPFILE_PLACEHOLDER = "<dependency file>"
+# The path of the SARIF log of a compile names the process.  The key holds this text for that path.
+_SARIF_PLACEHOLDER = f"{sarif.SARIF_FLAG}<SARIF log>"
 # The environment variables that GCC reads.  Each one can change the files
 # that GCC finds or the text of a diagnostic.  The variables of the loader
 # (LD_*) can change the shared objects of the compiler.
@@ -1365,7 +1282,8 @@ def compile_key(argv: list[str], directory: Path, protected: set[str], memo_dir:
     is_native = any(arg.startswith("-m") and arg.endswith("=native") for arg in argv)
     material = json.dumps(
         roots.relabel_tree({
-            "argv": argv[:-1] + [_DEPFILE_PLACEHOLDER],
+            "argv": [_SARIF_PLACEHOLDER if arg.startswith(sarif.SARIF_FLAG) else arg for arg in argv[:-1]]
+                    + [_DEPFILE_PLACEHOLDER],
             "codeset": locale_codeset(env),
             "directory": str(directory),
             "driver": _driver_digest(),
@@ -1585,9 +1503,10 @@ def shared_objects(program: str, interpreter: str, directory: Path, env: Mapping
 
 
 def _command_without_output(argv: list[str]) -> list[str]:
-    """Return `argv` without `-c`, the object file and the dependency options.
+    """Return `argv` without `-c`, the object file, the SARIF log and the dependency options.
 
-    The search query and the dependency pass give their own mode and output.
+    The search query and the dependency pass give their own mode and output,
+    and they write no SARIF log.
     """
     result: list[str] = []
     skip_next = False
@@ -1598,7 +1517,7 @@ def _command_without_output(argv: list[str]) -> list[str]:
         if arg == "-o":
             skip_next = True
             continue
-        if arg == "-c" or (arg.startswith("-o") and len(arg) > 2):
+        if arg == "-c" or (arg.startswith("-o") and len(arg) > 2) or arg.startswith(sarif.SARIF_FLAG):
             continue
         result.append(arg)
     return result
@@ -1930,9 +1849,25 @@ def _is_index_pairs(value: object, count: int) -> bool:
     )
 
 
+def _is_log(value: object) -> bool:
+    """Return True when `value` is None or a log in the stored shape of assay.readers.sarif (sarif.to_json).
+
+    A result of the fixture driver always holds a log.  A result of a
+    different user of the store, such as assay.oracle.unit_store, can hold
+    none.
+    """
+    if value is None:
+        return True
+    try:
+        sarif.from_json(value)
+    except sarif.SarifError:
+        return False
+    return True
+
+
 def _is_result(value: object, path_count: int) -> bool:
     """Return True when `value` is a correct result of an entry with `path_count` dependency paths."""
-    if not isinstance(value, dict):
+    if not isinstance(value, dict) or not _is_log(value.get("log")):
         return False
     returncode = value.get("returncode")
     times = (value.get("user_s"), value.get("system_s"))
@@ -2219,9 +2154,12 @@ class ResultStore:
             except OSError:
                 pass
             inputs = tuple(roots.restore(name) for name, _ in result["dependencies"])  # type: ignore[attr-defined]
+            stored_log = result["log"]
+            log = sarif.map_texts(sarif.from_json(stored_log), roots.restore) if stored_log is not None else None
             return CompileResult(result["returncode"], roots.restore(result["output"]),  # type: ignore[arg-type]
                                  float(result["user_s"]), float(result["system_s"]),  # type: ignore[arg-type]
-                                 result["instructions"], inputs), ""  # type: ignore[arg-type]
+                                 result["instructions"], inputs, log,  # type: ignore[arg-type]
+                                 "the stored result holds no SARIF log"), ""
         return None, newest_reason
 
     def record(
@@ -2241,17 +2179,21 @@ class ResultStore:
         list.  The function refuses a result whose inputs changed in the settle
         period before `started_ns`, and a result that a precompiled header or a
         root that it cannot read can change.  It also refuses a result whose
-        output holds a NUL character, or a dependency that holds the text of a
-        root of `roots`.  The result names each path and its output names each
-        root with the marks of `roots` (the module text, item 8).  The new
+        output or log holds a NUL character.  It refuses a dependency that
+        holds the text of a root of `roots`.  The result names each path, and
+        its output and its log name each root, with the marks of `roots` (the
+        module text, item 8).  A result with no log keeps no log: the fixture
+        driver stores no such result, and a different user of the store can
+        (`_is_log`).  The new
         result goes first in the entry.  The entry drops each earlier result
         with the same inputs, and keeps at most _RESULTS_PER_ENTRY results.  Two
         writers of one entry at the same time can lose one result, which costs
         one compile later.  The cost is O(n + d) for n bytes of dependencies and
         d directories under the roots, plus a walk of each root that has no memo.
         """
-        if "\x00" in result.output:
-            return False, "the output holds a NUL character, which the store uses in a mark"
+        log_texts = sarif.texts(result.log) if result.log is not None else []
+        if "\x00" in result.output or any("\x00" in text for text in log_texts):
+            return False, "the output or the log holds a NUL character, which the store uses in a mark"
         settled_ns = started_ns - _SETTLE_NS
         recorded: list[list[str]] = []
         for name in dependencies:
@@ -2293,6 +2235,7 @@ class ResultStore:
             "probes": roots.relabel_tree([[path, state] for path, state in probe_states.items()]),
             "listings": listings,
             "output": roots.relabel(result.output),
+            "log": sarif.to_json(sarif.map_texts(result.log, roots.relabel)) if result.log is not None else None,
             "returncode": result.returncode,
             "user_s": round(result.user_s, 3),
             "system_s": round(result.system_s, 3),
@@ -2804,14 +2747,25 @@ def write_inputs_record(scratch: Path, fixture_name: str, result: CompileResult,
         pass
 
 
+def read_log(path: Path) -> tuple[sarif.Log | None, str]:
+    """Return the records of the SARIF log at `path`, or None and the reason when the reader cannot read it."""
+    try:
+        return sarif.read(path), ""
+    except OSError as error:
+        return None, f"the compile wrote no SARIF log that the driver can read: {error}"
+    except sarif.SarifError as error:
+        return None, f"the reader refuses the SARIF log of the compile: {error}"
+
+
 def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: Path, output: Path,
                   budget: CostBudget, store: ResultStore | None, store_reason: str,
-                  roots: Roots) -> tuple[CompileResult, bool]:
+                  roots: Roots, sarif_log: Path) -> tuple[CompileResult, bool]:
     """Return the result of the compile, from the store or from a compile, and True when it comes from the store.
 
-    `argv` ends with `-MF` and the dependency file of this process.  After a
-    compile, the dependency file goes to the name of the fixture in the scratch
-    directory, which also holds the digest memo of the fixture.  The compile
+    `argv` ends with `-MF` and the dependency file of this process, and it
+    names `sarif_log` for the SARIF log.  After a compile, the dependency file
+    and the log get the name of the fixture.  The scratch directory of the
+    fixture holds them and the digest memo of the fixture.  The compile
     runs in the compile environment, with or without the store, and
     `store_reason` tells why `store` is None.  The key and the stored result
     hold the marks of `roots` in place of the source root and the build root.
@@ -2836,8 +2790,15 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
             return stored, True
     _note(fixture_name, f"compiled ({reason})")
     depfile.unlink(missing_ok=True)
+    sarif_log.unlink(missing_ok=True)
     started_ns = _now_ns()
     result = run_compile(argv, directory, env)
+    log, log_problem = read_log(sarif_log)
+    result = result.with_log(log, log_problem)
+    try:
+        os.replace(sarif_log, sarif_log.with_name(f"{fixture_name}.sarif"))
+    except OSError:
+        pass
     dependencies: list[str] | None = None
     missing: list[str] = []
     dependency_reason = "the dependency file of GCC does not hold exactly one rule"
@@ -2858,6 +2819,8 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
     if store is not None and key is not None:
         if dependencies is None:
             is_stored, why = False, dependency_reason
+        elif result.log is None:
+            is_stored, why = False, result.log_problem
         elif result.returncode not in (0, 1):
             # A signal or an internal error of the compiler can give a different
             # output on the next run.
@@ -2949,12 +2912,9 @@ def evaluate(fixture_name: str, source: Path, expected_regexes: list[str],
     for that cause.  The function gives the same values and the same messages
     for a stored result and for a fresh compile.
     """
-    combined = result.output
-    # The HUMAN sees the compiler's output verbatim, carets and all.
-    sys.stdout.write(combined)
-    # Matching sees only what the compiler said, never what the fixture
-    # wrote.  See the module docstring.
-    matchable = strip_source_echo(combined)
+    # The reader of the test sees the text output of the compiler, with each
+    # source line and caret line.
+    sys.stdout.write(result.output)
 
     if result.returncode == 0:
         print(
@@ -2962,6 +2922,13 @@ def evaluate(fixture_name: str, source: Path, expected_regexes: list[str],
             file=sys.stderr,
         )
         return 1, None
+    if result.log is None:
+        _report_module().write_line(f"negative fixture {fixture_name}: {result.log_problem}", is_error=True)
+        return 1, None
+    # The regexes read only the text of the compiler, and not the text of the
+    # fixture (the module text, How the regexes apply).
+    rendering = sarif.render(result.log)
+    matchable = "\n".join(rendering.lines)
 
     # Independence report.  A fixture documents ONE rejection; if its
     # own source produces error headers at several distinct lines it is
@@ -2970,7 +2937,7 @@ def evaluate(fixture_name: str, source: Path, expected_regexes: list[str],
     # unconditionally so the count shows up in CI logs; promoted to a
     # failure under CRUCIBLE_NEG_STRICT_SINGLE_ERROR=1 so the discipline
     # can be swept without editing 2,000+ registrations.
-    total_errors, own_lines = summarise_errors(matchable, source)
+    total_errors, own_lines = summarise_errors(rendering, source)
     strict = os.environ.get("CRUCIBLE_NEG_STRICT_SINGLE_ERROR") == "1"
     not_independent = len(own_lines) > 1
     if not_independent:
@@ -3000,17 +2967,17 @@ def evaluate(fixture_name: str, source: Path, expected_regexes: list[str],
         if not re.search(pattern, matchable, flags=re.MULTILINE)
     ]
     if missing:
+        quoted = "\n".join(record.snippet for record in sarif.records(result.log) if record.snippet)
         for pattern in missing:
             print(
                 f"expected diagnostic not found for {fixture_name}: "
                 f"{pattern}",
                 file=sys.stderr,
             )
-            # The most common cause, by a wide margin, is a regex that
-            # was only ever satisfied by GCC quoting the fixture's own
-            # source back at it.  Say so instead of leaving the author
-            # to rediscover it.
-            if re.search(pattern, _ANSI.sub("", combined), flags=re.MULTILINE):
+            # The most frequent cause is a regex that only a source line of
+            # the fixture matches, which GCC quotes below a diagnostic.  The
+            # note names that cause.
+            if re.search(pattern, quoted, flags=re.MULTILINE):
                 print(
                     f"  note: {fixture_name} matched this pattern ONLY in "
                     f"the quoted source line, not in any diagnostic the "
@@ -3021,7 +2988,7 @@ def evaluate(fixture_name: str, source: Path, expected_regexes: list[str],
         return 1, None
     # The regex verdict is the more informative one, so it is reported
     # first; the strict-mode verdict is applied only after it.
-    return (1 if (strict and not_independent) else 0), unmatched_errors(matchable, expected_regexes)
+    return (1 if (strict and not_independent) else 0), unmatched_errors(rendering, expected_regexes)
 
 
 def main(argv: list[str]) -> int:
@@ -3082,15 +3049,16 @@ def run_fixture(build_dir: Path, source: Path, fixture_name: str, expected_regex
     command, directory, roots = found
     output = scratch / f"{fixture_name}.o"
     depfile = scratch / f"{fixture_name}.{os.getpid()}.d"
+    sarif_log = scratch / f"{fixture_name}.{os.getpid()}.sarif"
     try:
-        argv = compile_argv(command, output, depfile)
+        argv = compile_argv(command, output, depfile, sarif_log)
     except PluginFlagError as error:
         _report_module().write_line(f"neg-compile {fixture_name}: {error}", is_error=True)
         return 2, None
     store, store_reason = open_store()
     budget = read_cost_budget(store.memo if store is not None else None)
     result, is_stored = obtain_result(fixture_name, argv, directory, source, output, budget, store, store_reason,
-                                      roots)
+                                      roots, sarif_log)
     write_inputs_record(scratch, fixture_name, result, is_stored)
     verdict, unmatched = evaluate(fixture_name, source, expected_regexes, result)
     sys.stdout.flush()

@@ -300,7 +300,6 @@ utils/assay/tests/loop/test_fixture.py | arg-type | 1 | StoreTest.check_instruct
 utils/assay/tests/loop/test_fixture.py | arg-type | 2 | StoreTest.check_plugin_extra_error | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/tests/loop/test_fixture.py | arg-type | 1 | StoreTest.check_region_macros | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/tests/loop/test_fixture.py | arg-type | 5 | StoreTest.check_unmatched_error | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/tests/loop/test_fixture.py | index | 2 | StoreTest.check_stored_output_is_evaluated | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/tests/loop/test_fixture.py | index | 1 | check_entry_format | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/tests/loop/test_fixture.py | operator | 1 | StoreTest.check_cpu_budget | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/tests/loop/test_step.py | arg-type | 6 | run_real_tools | An error of mypy of today.  The change that gives the code its types lowers the count

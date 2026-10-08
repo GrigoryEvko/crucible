@@ -48,7 +48,7 @@ WHAT THE GUARD CANNOT SEE
 
 Usage
     guard check --rule header-constexpr-ops BUILD_DIR [--warnings-dir DIR]
-    guard check --rule header-constexpr-ops --self-test
+    guard check --rule header-constexpr-ops --self-test [--cxx COMPILER]
 
 Exit 0 with no error finding, 1 with one or more, 2 on a usage error or a
 failed self-test.
@@ -72,7 +72,7 @@ from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
-from assay.readers import compdb
+from assay.readers import compdb, sarif
 
 CHECK = "header-constexpr-ops"
 COMMAND = "guard check --rule header-constexpr-ops"
@@ -84,8 +84,6 @@ LAYERS = ("foundation", "fixy", "crucible")
 SEPARATOR = " | "
 LIMIT_FLAG = "-fconstexpr-ops-limit="
 OPS_ERROR = "evaluation operation count exceeds limit"
-# A diagnostic line of GCC: the location, then the rest.
-LOCATION = re.compile(r"^(?P<path>[^ :][^:]*):(?P<line>\d+):(?P<column>\d+):\s+(?P<rest>.*)$")
 
 
 @dataclass(frozen=True)
@@ -291,11 +289,11 @@ def shown_path(path: str, directory: str, root: Path) -> str:
 
 
 def compile_alone(unit: Unit, limit: int, root: Path) -> Outcome:
-    """Compile one header alone at one limit and read the evaluations that exceed it.
+    """Compile one header alone at one limit and read the evaluations that exceed it from the SARIF log.
 
-    The owner of an evaluation is the first `in 'constexpr' expansion of`
-    location before its error: the expression where the evaluation starts.
-    An evaluation with no such line starts at its error.
+    The owner of an evaluation is the first constexpr context line of its
+    error (`in 'constexpr' expansion of`): the expression where the
+    evaluation starts.  An evaluation with no such line starts at its error.
 
     Args:
         unit: The compile command of the one-line unit
@@ -305,24 +303,29 @@ def compile_alone(unit: Unit, limit: int, root: Path) -> Outcome:
     Returns:
         Whether the compile passes, each owner, and the other errors
     """
-    done = proc.run(proc.Command(syntax_argv(unit, limit), timeout_s=proc.TOOL_S, cwd=unit.directory))
     owners: list[str] = []
     others: list[str] = []
-    first: str | None = None
-    for line in done.err.splitlines():
-        match = LOCATION.match(line)
-        if match is None:
+    with tempfile.TemporaryDirectory(prefix="constexpr-ops-") as scratch:
+        log_path = Path(scratch) / "unit.sarif"
+        argv = [*syntax_argv(unit, limit), f"{sarif.SARIF_FLAG}{log_path}"]
+        done = proc.run(proc.Command(argv, timeout_s=proc.TOOL_S, cwd=unit.directory))
+        try:
+            log: sarif.Log | None = sarif.read(log_path)
+        except (OSError, sarif.SarifError) as problem:
+            log = None
+            others.append(f"the compiler gives no SARIF log that the guard can read: {problem}")
+    diagnostics = log.diagnostics if log is not None else ()
+    tool = log.tool if log is not None else "cc1plus"
+    for error in diagnostics:
+        if not error.is_error_head:
             continue
-        where = f"{shown_path(match['path'], unit.directory, root)}:{match['line']}"
-        rest = match["rest"]
-        if rest.startswith("in ") and "expansion of" in rest:
-            first = first or where
-        elif rest.startswith("error:"):
-            if OPS_ERROR in rest:
-                owners.append(first or where)
-            else:
-                others.append(f"{where}: {rest}")
-            first = None
+        where = f"{shown_path(error.path, unit.directory, root)}:{error.line}" if error.path else tool
+        if OPS_ERROR in error.message:
+            starts = [line for line in error.contexts(0) if line.context is sarif.Context.CONSTEXPR and line.path]
+            owners.append(f"{shown_path(starts[0].path, unit.directory, root)}:{starts[0].line}" if starts else where)
+        else:
+            kind = error.kind.value if error.kind is not None else "error"
+            others.append(f"{where}: {kind}: {error.message}")
     if done.exit != 0 and not owners and not others:
         others.append(f"the compiler exits with {done.exit} and gives no error line: "
                       f"{' '.join(done.err.split())[:300]}")
@@ -413,8 +416,12 @@ def run(paths: Paths, warnings_dir: Path | None) -> int:
     return check_report.emit(findings, CHECK, warnings_dir)
 
 
-def self_test() -> int:
-    """Plant each case in a scratch tree, with the host compiler, and examine each verdict.
+def self_test(cxx: str | None) -> int:
+    """Plant each case in a scratch tree, with the compiler `cxx`, and examine each verdict.
+
+    The guard reads the SARIF log of each compile.  The self-test then uses
+    the patched compiler of the build as `cxx`.  With no `cxx`, the self-test
+    takes c++ or g++ of PATH, which can give a log that the reader refuses.
 
     Returns:
         0 when every case holds, 2 otherwise
@@ -430,7 +437,7 @@ def self_test() -> int:
         if not holds:
             failures.append(name)
 
-    compiler = shutil.which("c++") or shutil.which("g++")
+    compiler = cxx or shutil.which("c++") or shutil.which("g++")
     if compiler is None:
         print("check-header-constexpr-ops --self-test: FAILED — no host C++ compiler")
         return 2
@@ -615,13 +622,14 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog=COMMAND)
     parser.add_argument("build_dir", nargs="?", type=Path, help="the configured build directory")
     parser.add_argument("--self-test", action="store_true", help="plant each case and examine each verdict")
+    parser.add_argument("--cxx", default=None, help="the patched compiler of the self-test")
     check_report.add_arguments(parser)
     try:
         options = parser.parse_args(argv)
     except SystemExit as stop:
         return 0 if stop.code == 0 else 2
     if options.self_test:
-        return self_test()
+        return self_test(options.cxx)
     if options.build_dir is None:
         print(f"usage: {COMMAND} BUILD_DIR [--warnings-dir DIR] | --self-test", file=sys.stderr)
         return 2

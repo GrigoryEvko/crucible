@@ -28,7 +28,8 @@ other table.
 
 contracts.cpp holds each form of a P2900 contract specifier that the contract
 rule rejects, also in base code.  The test compiles it in each mode and with
--fsyntax-only, and compares the errors with CONTRACT_ERRORS.  A form that the
+-fsyntax-only, and compares the errors of its SARIF log (assay.readers.sarif)
+with CONTRACT_ERRORS.  A form that the
 plugin stops seeing, a second error for one specifier and an error outside
 the list each fail the test.
 
@@ -105,7 +106,7 @@ from assay.core import proc
 from assay.core import ruletable as layer_rules
 from assay.core.paths import REPO_ROOT
 from assay.loop import stamps as quarantine_stamps
-from assay.readers import compdb
+from assay.readers import compdb, sarif
 from assay.readers import sections as quarantine_sections
 
 # The repository.  Its include/foundation/Quarantine.h gives the macros of a
@@ -232,8 +233,9 @@ CONTRACT_ERRORS = (
     ("contracts.cpp", 55, "pre"),  # an explicit specialization
     ("contracts.cpp", 57, "pre"),  # the spelling in a macro
 )
-CONTRACT_ERROR = re.compile(r"^(?P<path>.+?):(?P<line>\d+):\d+: error: the .(?P<specifier>pre|post). contract "
-                            r"specifier is not permitted in this tree", re.MULTILINE)
+# The message of an error of the contract rule is CONTRACT_HEAD, the quoted specifier and CONTRACT_TAIL.
+CONTRACT_HEAD = "the "
+CONTRACT_TAIL = " contract specifier is not permitted in this tree"
 OUTSIDE_HEADER = "#pragma once\nint outside_pre(int value) pre(value > 0);\n"
 # A region that a header outside the root opens and closes.  The two pragmas
 # of such a header agree: each one does nothing.
@@ -393,18 +395,21 @@ class Checker:
     def compile(self, fixture: str, arguments: dict[str, str],
                 stage: tuple[str, ...] = ("-S", "-o", os.devnull),
                 extra: tuple[str, ...] = (), launcher: tuple[str, ...] = (),
-                env: dict[str, str] | None = None, timeout_s: float = proc.TOOL_S) -> proc.Completed:
+                env: dict[str, str] | None = None, timeout_s: float = proc.TOOL_S,
+                log: Path | None = None) -> proc.Completed:
         """Compile one fixture with the plugin, the given plugin arguments, stage flags and extra flags.
 
         LAUNCHER goes in front of the compiler, as a compiler cache does, and
-        ENV is the environment of the compile.  A compile that runs longer than
-        TIMEOUT_S seconds stops, and its result has the exit status -9 and the
-        error text "timeout".
+        ENV is the environment of the compile.  With LOG, the compile writes
+        its SARIF log there.  A compile that runs longer than TIMEOUT_S seconds
+        stops, and its result has the exit status -9 and the error text
+        "timeout".
         """
         command = [*launcher, self.cxx, "-std=c++26", "-I", str(HERE / "include"), "-I", str(REPO / "include"),
                    "-DCRUCIBLE_QUARANTINE_ACTIVE", *extra, f"-fplugin={self.plugin}"]
         command += [f"-fplugin-arg-{PLUGIN}-{key}={value}" for key, value in arguments.items()]
-        command += ["-fdiagnostics-color=never", *stage, str(HERE / fixture)]
+        command += ["-fdiagnostics-color=never", *([f"{sarif.SARIF_FLAG}{log}"] if log is not None else []), *stage,
+                    str(HERE / fixture)]
         try:
             return self.run_compiler(command, env=env, timeout_s=timeout_s)
         except proc.TimedOut as problem:
@@ -605,13 +610,27 @@ def run_base_files(section: Section, arguments: dict[str, str]) -> None:
                            moved.err[-2000:])
 
 
-def contract_errors(stderr: str, root: Path = HERE) -> list[tuple[str, int, str]]:
-    """Return each error of the contract rule in STDERR, with the path relative to ROOT."""
+def contract_errors(log_path: Path, root: Path = HERE) -> list[tuple[str, int, str]]:
+    """Return each error of the contract rule in the SARIF log at LOG_PATH, with the path relative to ROOT.
+
+    An error of the rule is an error head with the message CONTRACT_HEAD, a
+    specifier in quotation marks and CONTRACT_TAIL.  The marks change with the
+    codeset of the compile.  A log that the reader cannot read gives no error,
+    and the case that compares the errors then fails.
+    """
+    try:
+        log = sarif.read(log_path)
+    except (OSError, sarif.SarifError):
+        return []
     errors: list[tuple[str, int, str]] = []
-    for match in CONTRACT_ERROR.finditer(stderr):
-        path = Path(match["path"])
+    for record in log.diagnostics:
+        message = record.message
+        if not record.is_error_head or not message.startswith(CONTRACT_HEAD) or CONTRACT_TAIL not in message:
+            continue
+        specifier = message[len(CONTRACT_HEAD) : message.index(CONTRACT_TAIL)].strip("'‘’")
+        path = Path(record.path)
         relative = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
-        errors.append((relative, int(match["line"]), match["specifier"]))
+        errors.append((relative, record.line, specifier))
     return sorted(errors)
 
 
@@ -642,8 +661,9 @@ def run_generated_files(section: Section) -> None:
         ("mode=report", {**places, "mode": "report", "out": str(generated_reports), **test_rules}),
     )
     for name, arguments in runs:
-        compiled = section.compile(str(unit), arguments, extra=("-fcontracts",))
-        found = contract_errors(compiled.err, tree)
+        log = section.work / f"generated-{arguments['mode']}.sarif"
+        compiled = section.compile(str(unit), arguments, extra=("-fcontracts",), log=log)
+        found = contract_errors(log, tree)
         section.expect(f"{name}: a region of a generated file opts out its specifier, and the other one is an error",
                        compiled.exit != 0 and found == GENERATED_CONTRACT_ERRORS,
                        f"errors {found}; " + compiled.err[-2000:])
@@ -712,9 +732,11 @@ def run_contract_rule(section: Section) -> None:
          ("-S", "-o", os.devnull)),
         ("mode=report with -fsyntax-only", {"root": str(HERE), "mode": "report", **test_rules}, ("-fsyntax-only",)),
     )
-    results = [section.compile("contracts.cpp", arguments, stage, extra) for _, arguments, stage in runs]
-    for (name, _, _), compiled in zip(runs, results, strict=True):
-        found = contract_errors(compiled.err)
+    logs = [section.work / f"contracts-{index}.sarif" for index in range(len(runs))]
+    results = [section.compile("contracts.cpp", arguments, stage, extra, log=log)
+               for (_, arguments, stage), log in zip(runs, logs, strict=True)]
+    for (name, _, _), compiled, log in zip(runs, results, logs, strict=True):
+        found = contract_errors(log)
         missing = sorted(set(expected) - set(found))
         unexpected = [error for error in found if error not in expected or found.count(error) > 1]
         section.expect(f"{name}: each contract specifier gives one error, and nothing else does",

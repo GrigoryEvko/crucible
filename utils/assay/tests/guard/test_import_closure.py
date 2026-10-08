@@ -118,6 +118,7 @@ CLOSURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
                 "assay.loop.fixture.store",
                 "assay.readers",
                 "assay.readers.compdb",
+                "assay.readers.sarif",
             }
         ),
         PATH_TOOLS | frozenset({"bisect", "hashlib", "json", "zlib"}),

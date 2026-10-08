@@ -51,7 +51,7 @@ from assay.core import registry as rule_registry
 from assay.core.paths import LOOP
 from assay.loop import teststep as test_launcher
 from assay.loop.fixture import store
-from assay.readers import cmake, compdb
+from assay.readers import cmake, compdb, sarif
 
 # The driver of a fixture as CTest starts it: the master loop with the subcommand fixture.
 DRIVER = (str(LOOP), "fixture")
@@ -522,6 +522,30 @@ class StoreTest:
                                                              "compile"),
                     f"a compiler that changes during the compile stores no result: {changed[0]} {changed[3]}")
 
+    def check_missing_log(self) -> None:
+        """A compile that writes no SARIF log fails the fixture, and the store keeps no result of it.
+
+        A wrapper compiler removes the option of the SARIF log from each
+        command.  The compile then writes the text output only.
+        """
+        wrapper = self.root / "no_log.sh"
+        wrapper.write_text("#!/bin/sh\n"
+                           'for argument; do shift; case "$argument" in -fdiagnostics-add-output=*) ;; '
+                           '*) set -- "$@" "$argument" ;; esac; done\n'
+                           f'exec "{self.cxx}" "$@"\n')
+        wrapper.chmod(0o755)
+        rows = self.database_rows()
+        for row in rows:
+            row["arguments"] = [str(wrapper), *row["arguments"][1:]]
+        compdb.plant(self.build, rows)
+        self.settle()
+        missing = self.run("neg_convert", *CONVERT)
+        self.expect(missing[0] == 1 and "wrote no SARIF log" in missing[2] and CONVERT[0] in missing[1],
+                    f"a compile with no SARIF log fails, and the driver prints its text output: {missing[0]} "
+                    f"{missing[2]}")
+        self.expect(self.has(missing[3], "not stored (the compile wrote no SARIF log"),
+                    f"the store keeps no result of a compile with no SARIF log: {missing[3]}")
+
     def check_store_off(self) -> None:
         """With CRUCIBLE_NEG_CACHE=0 or CRUCIBLE_CACHE_DIR=off, the driver compiles and writes no entry."""
         off = self.run("neg_convert", *CONVERT, CRUCIBLE_NEG_CACHE="0")
@@ -560,15 +584,22 @@ class StoreTest:
                     f"a damaged entry is a miss: {damaged[3]}")
         planted = store.decode_entry(entry.read_bytes())
         self.expect(planted is not None, "the compile after a damaged entry stores a correct entry")
-        if planted is None:
+        rows = planted["results"] if planted is not None else None
+        if planted is None or not isinstance(rows, list) or not isinstance(rows[0], dict):
             return
-        planted["results"][0]["output"] = "planted output\n"
+        newest = rows[0]
+        # The planted output holds the text of each regex, and the planted log does not.
+        planted_output = f"planted output: {CONVERT[0]} {CONVERT[1]}\n"
+        newest["output"] = planted_output
+        planted_log = sarif.Log("cc1plus", (planted_record(sarif.Kind.ERROR, None, str(self.root / "neg/x.cpp"), 1,
+                                                           1, "a planted error"),))
+        newest["log"] = sarif.to_json(planted_log)
         entry.write_bytes(store.encode_entry(planted))
         replaced = self.run("neg_convert", *CONVERT)
         self.expect(replaced[0] == 1 and "expected diagnostic not found for neg_convert" in replaced[2]
-                    and replaced[1] == "planted output\n",
-                    f"the regexes apply to the stored output: {replaced[0]} {replaced[3]}")
-        planted["results"][0]["returncode"] = 0
+                    and replaced[1] == planted_output,
+                    f"the regexes apply to the stored log and not to the stored output: {replaced[0]} {replaced[3]}")
+        newest["returncode"] = 0
         entry.write_bytes(store.encode_entry(planted))
         compiled = self.run("neg_convert", *CONVERT)
         self.expect(compiled[0] == 1 and "compiled successfully" in compiled[2],
@@ -1423,6 +1454,7 @@ CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_loader,
     StoreTest.check_message_language,
     StoreTest.check_identity_change,
+    StoreTest.check_missing_log,
     StoreTest.check_store_off,
     StoreTest.check_stored_output_is_evaluated,
     StoreTest.check_eviction,
@@ -1472,31 +1504,55 @@ LOADER_DEBUG = """\
 """
 
 
-# A planted output of GCC with three errors.  The include chain, the
-# instantiation line and its step come before the first error, and the
-# function line comes before the third error.
-UNMATCHED_OUTPUT = """\
-In file included from /w/neg/neg_three.cpp:1:
-/w/include/a/A.h: In instantiation of ‘struct S<int>’:
-/w/neg/neg_three.cpp:4:12:   required from here
-/w/include/a/A.h:3:5: error: static assertion failed: the first reason
-/w/include/a/A.h:3:5: note: ‘false’ evaluates to false
-/w/neg/neg_three.cpp:6:13: error: ‘undeclared_name’ was not declared in this scope
-/w/neg/neg_three.cpp: In function ‘int main()’:
-/w/neg/neg_three.cpp:9:3: error: expected ‘;’ before ‘}’ token"""
+def planted_record(kind: sarif.Kind | None, context: sarif.Context | None, path: str, line: int, column: int,
+                   message: str, nesting: int = 0, children: tuple[sarif.Diagnostic, ...] = ()) -> sarif.Diagnostic:
+    """Return one record of a planted log, a diagnostic or a context line of the result."""
+    return sarif.Diagnostic(kind, context, path, line, column, nesting, message, "", 0, False, "", children)
+
+
+# A planted log of GCC with three errors.  The instantiation line and its step
+# come before the first error, a note comes after it, and the function line
+# comes before the third error.  UNMATCHED_LINES gives the lines of render().
+UNMATCHED_LOG = sarif.Log("cc1plus", (
+    planted_record(sarif.Kind.ERROR, None, "/w/include/a/A.h", 3, 5, "static assertion failed: the first reason",
+                   children=(
+                       planted_record(None, sarif.Context.INSTANTIATION, "/w/include/a/A.h", 0, 0,
+                                      "In instantiation of 'struct S<int>':"),
+                       planted_record(None, sarif.Context.INSTANTIATION_STEP, "/w/neg/neg_three.cpp", 4, 12,
+                                      "required from here"),
+                       planted_record(sarif.Kind.NOTE, None, "/w/include/a/A.h", 3, 5, "'false' evaluates to false",
+                                      nesting=1),
+                   )),
+    planted_record(sarif.Kind.ERROR, None, "/w/neg/neg_three.cpp", 6, 13,
+                   "'undeclared_name' was not declared in this scope"),
+    planted_record(sarif.Kind.ERROR, None, "/w/neg/neg_three.cpp", 9, 3, "expected ';' before '}' token",
+                   children=(planted_record(None, sarif.Context.FUNCTION, "/w/neg/neg_three.cpp", 0, 0,
+                                            "In function 'int main()':"),)),
+))
+UNMATCHED_LINES = (
+    "/w/include/a/A.h: In instantiation of 'struct S<int>':",
+    "/w/neg/neg_three.cpp:4:12:   required from here",
+    "/w/include/a/A.h:3:5: error: static assertion failed: the first reason",
+    "  • 'false' evaluates to false",
+    "/w/neg/neg_three.cpp:6:13: error: 'undeclared_name' was not declared in this scope",
+    "/w/neg/neg_three.cpp: In function 'int main()':",
+    "/w/neg/neg_three.cpp:9:3: error: expected ';' before '}' token",
+)
 
 
 def check_unmatched_errors(failures: list[str]) -> None:
-    """Do a check of the errors of a planted output that each set of regexes reaches."""
-    lines = UNMATCHED_OUTPUT.split("\n")
-    first, second, third = lines[3], lines[5], lines[7]
+    """Do a check of the errors of a planted log that each set of regexes reaches."""
+    rendering = sarif.render(UNMATCHED_LOG)
+    if rendering.lines != UNMATCHED_LINES:
+        failures.append(f"the planted log renders as {rendering.lines}")
+    first, second, third = UNMATCHED_LINES[2], UNMATCHED_LINES[4], UNMATCHED_LINES[6]
     cases: tuple[tuple[list[str], list[str]], ...] = (
         (["the first reason"], [second, third]),
-        # A note after the header belongs to its error, and a step before the
-        # header belongs to the error after it.
+        # A note after the head is a part of its error, and a step before the
+        # head is a part of the error after it.
         (["evaluates to false", "was not declared", "expected .;."], []),
         (["required from here", "was not declared", "expected .;."], []),
-        # The function line after the second error belongs to the third error.
+        # The function line after the second error is a part of the third error.
         (["the first reason", "In function"], [second]),
         (["the first reason", "was not declared"], [third]),
         # A match that spans two lines reaches the diagnostic of each line.
@@ -1504,15 +1560,21 @@ def check_unmatched_errors(failures: list[str]) -> None:
         ([], [first, second, third]),
     )
     for regexes, expected in cases:
-        found = store.unmatched_errors(UNMATCHED_OUTPUT, regexes)
+        found = store.unmatched_errors(rendering, regexes)
         if found != expected:
             failures.append(f"with the regexes {regexes}, the errors that no regex reaches are {found}")
-    if store.unmatched_errors("In file included from /w/x.cpp:1:\n/w/x.h:1:1: note: a note", []):
-        failures.append("an output with no error has no error that no regex reaches")
-    fatal = "/w/x.cpp:1:10: fatal error: nope/none.h: No such file or directory\ncompilation terminated."
-    if (store.unmatched_errors(fatal, []) != [fatal.split("\n")[0]]
-            or store.unmatched_errors(fatal, ["compilation terminated"])):
-        failures.append("a fatal error is an error, and a line after its header belongs to it")
+    notes = sarif.Log("cc1plus", (planted_record(sarif.Kind.NOTE, None, "/w/x.h", 1, 1, "a note"),))
+    if store.unmatched_errors(sarif.render(notes), []):
+        failures.append("a log with no error has no error that no regex reaches")
+    fatal = sarif.Log("cc1plus", (planted_record(sarif.Kind.FATAL, None, "/w/x.cpp", 1, 10,
+                                                 "nope/none.h: No such file or directory"),))
+    fatal_rendering = sarif.render(fatal)
+    if (store.unmatched_errors(fatal_rendering, []) != [fatal_rendering.lines[0]]
+            or store.unmatched_errors(fatal_rendering, ["compilation terminated"])):
+        failures.append("a fatal error is an error, and the line after its head is a part of it")
+    own = store.summarise_errors(rendering, Path("/w/neg/neg_three.cpp"))
+    if own != (3, [6, 9]):
+        failures.append(f"the errors of the planted log at lines of the fixture are {own}")
 
 
 def check_parsers(failures: list[str]) -> None:
@@ -1629,18 +1691,38 @@ def check_roots(failures: list[str]) -> None:
         dependency.write_text("int value;\n")
         (base / "store" / "memo").mkdir(parents=True)
         result_store = store.ResultStore(base / "store", 1 << 20)
-        is_stored, why = result_store.record("0" * 64, store.CompileResult(1, "a\x00b\n", 0.1, 0.0, None),
-                                             [str(dependency)], [], [str(base)], time.time_ns() + 2 * store._SETTLE_NS,
-                                             roots)
-        if is_stored or "NUL" not in why:
-            failures.append(f"the store refuses an output with a NUL character: {is_stored} {why}")
+        settled_ns = time.time_ns() + 2 * store._SETTLE_NS
+        empty_log = sarif.Log("cc1plus", ())
+        nul_log = sarif.Log("cc1plus", (planted_record(sarif.Kind.ERROR, None, "/w/x.cpp", 1, 1, "a\x00b"),))
+        cases = (
+            (store.CompileResult(1, "a\x00b\n", 0.1, 0.0, None, log=empty_log), "an output with a NUL character"),
+            (store.CompileResult(1, "a\n", 0.1, 0.0, None, log=nul_log), "a log with a NUL character"),
+        )
+        for result, label in cases:
+            is_stored, why = result_store.record("0" * 64, result, [str(dependency)], [], [str(base)], settled_ns,
+                                                 roots)
+            if is_stored or "NUL" not in why:
+                failures.append(f"the store refuses {label}: {is_stored} {why}")
+        # A different user of the store, such as the oracle, keeps a result with no log.  The directory of the
+        # dependency holds no part of the store, because each record changes the tree of the store.
+        search = base / "search"
+        search.mkdir()
+        searched_dependency = search / "dependency.h"
+        searched_dependency.write_text("int value;\n")
+        is_stored, why = result_store.record("1" * 64, store.CompileResult(1, "a\n", 0.1, 0.0, None),
+                                             [str(searched_dependency)], [], [str(search)], settled_ns, roots)
+        found, reason = result_store.lookup("1" * 64, store.DigestMemo(None, roots), roots)
+        if not is_stored or found is None or found.log is not None or "no SARIF log" not in found.log_problem:
+            failures.append(f"the store keeps a result with no log, and gives it back with no log: {is_stored} {why} "
+                            f"{reason}")
 
 
 def planted_result(digest: str, output: str = "planted output\n") -> dict[str, object]:
     """Return a result whose first dependency has the hash `digest`."""
     return {"dependencies": [["/w/a.h", digest], ["/w/b.h", "b" * 32]], "roots": [["/w", ["dir", "/w"]]],
-            "probes": [], "listings": [["/w", "c" * 32]], "output": output, "returncode": 1, "user_s": 0.5,
-            "system_s": 0.1, "instructions": None}
+            "probes": [], "listings": [["/w", "c" * 32]], "output": output,
+            "log": sarif.to_json(sarif.Log("cc1plus", ())), "returncode": 1, "user_s": 0.5, "system_s": 0.1,
+            "instructions": None}
 
 
 def check_entry_format(failures: list[str]) -> None:
@@ -1659,6 +1741,13 @@ def check_entry_format(failures: list[str]) -> None:
     outside["results"][0]["dependencies"][0][0] = 2
     if store.decode_entry(store.encode_entry(outside)) is not None:
         failures.append("a dependency index outside the path list is refused")
+    for log, label in ((["cc1plus", [[None]]], "a log with a malformed record"), ("a text", "a log that is a text")):
+        malformed = store.pack_entry([{**planted_result("a" * 32), "log": log}])
+        if store.decode_entry(store.encode_entry(malformed)) is not None:
+            failures.append(f"a result with {label} is refused")
+    without_log = store.pack_entry([{**planted_result("a" * 32), "log": None}])
+    if store.decode_entry(store.encode_entry(without_log)) is None:
+        failures.append("a result with no log, as a different user of the store keeps it, decodes")
     newest = planted_result("e" * 32, "newest output\n")
     if store.merge_results(newest, results) != [newest, *results[: count - 1]]:
         failures.append("a new result goes first, and the oldest result goes from a full entry")
