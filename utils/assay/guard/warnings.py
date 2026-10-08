@@ -15,6 +15,12 @@ a test again after the test goes from the tree.  Before it reads the files,
 and it removes the file of each test that the build does not register.  When
 it cannot read the tests, it keeps each file and tells why.
 
+Each writer of a warnings file names a rule of the registry.  No run writes the
+file of a rule again after the rule goes from the registry.  `guard warnings`
+also removes the file of each rule that the registry does not name.  When it
+cannot read the registry, it keeps each file and tells why.  Each line that it
+writes about the files and the totals starts with cost_budgets.TOTAL_PREFIX.
+
     python3 utils/bin/guard warnings BUILD_DIR
     python3 utils/bin/guard selftest guard.warnings
 
@@ -30,7 +36,9 @@ from pathlib import Path
 
 from assay.core import meter as cost_meter
 from assay.core import record as cost_record
+from assay.core import registry as rule_registry
 from assay.core import report as check_report
+from assay.core import rows as rows_grammar
 from assay.core import testing
 from assay.core.exit import ExitCode
 from assay.guard.engines.buildsys import cost_budgets
@@ -39,6 +47,7 @@ from assay.readers import cmake as cmake_reader
 from assay.readers import ctest as ctest_reader
 
 USAGE = "usage: guard warnings BUILD_DIR | guard selftest guard.warnings"
+PREFIX = cost_budgets.TOTAL_PREFIX
 # The checks that use the name of one test as the writer key (assay.core.report, THE WARNINGS DIRECTORY).
 TEST_KEYED_CHECKS = frozenset({"test-time", "test-memory", "fixture-cpu", "fixture-instructions"})
 
@@ -66,17 +75,35 @@ def remove_gone_tests(build_dir: Path, warnings_dir: Path) -> None:
         registered = {test.name for test in ctest_reader.tests(build_dir)}
     except ctest_reader.CtestError as problem:
         check_report.write_line(
-            f"guard warnings: each warnings file of a test stays, because the tests of the build are not known: "
-            f"{problem}"
+            f"{PREFIX} each warnings file of a test stays, because the tests of the build are not known: {problem}"
         )
         return
     for check, test in keyed:
         if test not in registered:
             check_report.write_warnings(warnings_dir, check, [], test)
             check_report.write_line(
-                f"guard warnings: removed {warnings_dir / f'{check}.{test}.txt'}, because the build registers no "
-                f"test {test}"
+                f"{PREFIX} removed {warnings_dir / f'{check}.{test}.txt'}, because the build registers no test {test}"
             )
+
+
+def remove_gone_rules(warnings_dir: Path, registry_path: Path = rule_registry.REGISTRY) -> None:
+    """Remove the warnings file of each rule that the registry does not name, and write one line for each.
+
+    Complexity: one read of the registry when the directory holds a file, and linear in the files.
+    """
+    files = sorted(warnings_dir.glob("*.txt")) if warnings_dir.is_dir() else []
+    if not files:
+        return
+    try:
+        rules = rule_registry.load(registry_path).rules
+    except (rows_grammar.RowsError, OSError) as problem:
+        check_report.write_line(f"{PREFIX} each warnings file stays, because the registry cannot be read: {problem}")
+        return
+    for path in files:
+        rule_id = path.name.split(".", 1)[0]
+        if rule_id not in rules:
+            path.unlink(missing_ok=True)
+            check_report.write_line(f"{PREFIX} removed {path}, because the registry names no rule {rule_id}")
 
 
 def main(argv: list[str]) -> int:
@@ -96,6 +123,7 @@ def main(argv: list[str]) -> int:
     build_dir = Path(argv[0]).resolve()
     warnings_dir = build_dir / check_report.WARNINGS_SUBDIR
     remove_gone_tests(build_dir, warnings_dir)
+    remove_gone_rules(warnings_dir)
     findings, problems = check_report.read_warnings_dir(warnings_dir)
     findings += cost_budgets.total_report_totals(build_dir)
     findings += cost_budgets.total_report_build(build_dir)
@@ -109,8 +137,7 @@ def main(argv: list[str]) -> int:
     counts = Counter(found.check for found in findings)
     summary = ", ".join(f"{check} {count}" for check, count in sorted(counts.items()))
     check_report.write_line(
-        f"guard warnings: {len(findings)} warning(s) in {warnings_dir} and the totals"
-        + (f": {summary}" if summary else "")
+        f"{PREFIX} {len(findings)} warning(s) in {warnings_dir} and the totals" + (f": {summary}" if summary else "")
     )
     return ExitCode.FINDINGS if problems else ExitCode.OK
 
@@ -121,15 +148,21 @@ def print_cases(expect: testing.Expect) -> None:
         build = Path(scratch)
         warnings_dir = build / check_report.WARNINGS_SUBDIR
         warnings_dir.mkdir()
-        (warnings_dir / "alpha.txt").write_text(
-            check_report.Finding("warning", "a.h", 1, "alpha", "m").text() + "\n", encoding="utf-8"
+        (warnings_dir / "history.txt").write_text(
+            check_report.Finding("warning", "a.h", 1, "history", "m").text() + "\n", encoding="utf-8"
         )
         status, text = testing.captured(lambda: main([str(build)]))
         expect(
             "a build with no census prints the warnings and tells why it has no totals",
-            status == 0 and "a.h:1: warning: [alpha] m" in text and "no time totals" in text,
+            status == 0 and "a.h:1: warning: [history] m" in text and "no time totals" in text,
         )
-        (warnings_dir / "alpha.txt").write_text("not a finding\n", encoding="utf-8")
+        expect(
+            "each line about the totals and the summary starts with the name of the command",
+            "guard warnings: no time totals" in text
+            and "guard warnings: 1 warning(s)" in text
+            and "report-check-warnings" not in text,
+        )
+        (warnings_dir / "history.txt").write_text("not a finding\n", encoding="utf-8")
         status, _ = testing.captured(lambda: main([str(build)]))
         expect("a warnings file with a line of a different shape gives status 1", status == 1)
     status, _ = testing.captured(lambda: main([]))
@@ -141,7 +174,7 @@ def gone_test_cases(expect: testing.Expect) -> None:
     with tempfile.TemporaryDirectory(prefix="guard-warnings-") as scratch:
         build = Path(scratch)
         warnings_dir = build / check_report.WARNINGS_SUBDIR
-        for check, key in (("test-memory", "kept_test"), ("test-memory", "gone_test"), ("alpha", "gone_test")):
+        for check, key in (("test-memory", "kept_test"), ("test-memory", "gone_test"), ("history", "gone_test")):
             found = check_report.Finding("warning", "a.h", 1, check, f"{check} {key}")
             check_report.write_warnings(warnings_dir, check, [found], key)
         status, text = testing.captured(lambda: main([str(build)]))
@@ -161,8 +194,35 @@ def gone_test_cases(expect: testing.Expect) -> None:
             and "because the build registers no test gone_test" in text
             and "test-memory gone_test" not in text
             and "test-memory kept_test" in text
-            and "alpha gone_test" in text
+            and "history gone_test" in text
             and test_keyed_files(warnings_dir) == [("test-memory", "kept_test")],
+        )
+
+
+def gone_rule_cases(expect: testing.Expect) -> None:
+    """Remove the warnings file of a rule that the registry does not name, and keep the file of a named rule."""
+    with tempfile.TemporaryDirectory(prefix="guard-warnings-") as scratch:
+        build = Path(scratch)
+        warnings_dir = build / check_report.WARNINGS_SUBDIR
+        for check, key in (("history", None), ("gone-rule", None), ("gone-rule", "part1")):
+            found = check_report.Finding("warning", "a.h", 1, check, f"{check} {key}")
+            check_report.write_warnings(warnings_dir, check, [found], key)
+        broken = build / "registry.txt"
+        broken.write_text("format 1\nrule gone-rule\n", encoding="utf-8")
+        _, text = testing.captured(lambda: remove_gone_rules(warnings_dir, broken))
+        expect(
+            "a registry that cannot be read keeps each warnings file, and tells why",
+            "each warnings file stays" in text and len(sorted(warnings_dir.glob("*.txt"))) == 3,
+        )
+        status, text = testing.captured(lambda: main([str(build)]))
+        expect(
+            "the files of a rule that the registry does not name go, and the file of a named rule stays",
+            status == 0
+            and "because the registry names no rule gone-rule" in text
+            and "gone-rule None" not in text
+            and "gone-rule part1" not in text
+            and "history None" in text
+            and [path.name for path in sorted(warnings_dir.glob("*.txt"))] == ["history.txt"],
         )
 
 
@@ -285,5 +345,7 @@ def record_cases(expect: testing.Expect) -> None:
 def self_test() -> int:
     """Run each case of the print of the warnings files and of the totals, and write one line for each."""
     return testing.run(
-        "guard.warnings", [], (print_cases, gone_test_cases, time_total_cases, build_total_cases, record_cases)
+        "guard.warnings",
+        [],
+        (print_cases, gone_test_cases, gone_rule_cases, time_total_cases, build_total_cases, record_cases),
     )

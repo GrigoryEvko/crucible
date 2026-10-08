@@ -180,7 +180,8 @@ TOTAL_TIMES = (
     ("total-test-cpu", "test", "each executable test in its last run"),
 )
 TOTAL_NO_RULE = ", no measured rule"
-TOTAL_PREFIX = "report-check-warnings:"
+# The prefix of each line that `guard warnings` (assay.guard.warnings) writes about the warnings and the totals.
+TOTAL_PREFIX = "guard warnings:"
 
 
 class Quantity(enum.StrEnum):
