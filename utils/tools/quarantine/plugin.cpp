@@ -56,9 +56,10 @@
 //                    PATH, one row `kind RULE KIND`, and do no other work.  The
 //                    rule plugin-kinds compares the file with the registry
 //     sentinel=PATH  the base header, relative to the source root, whose
-//                    declarations the family declaration property reads in
-//                    this unit (declaration.cpp, THE FAMILY).  test/layer gives
-//                    the sentinel unit of each base header this argument
+//                    declarations and bodies the families declaration
+//                    property and expression shape read in this unit (THE
+//                    SENTINEL in plugin.h).  test/layer gives the sentinel
+//                    unit of each base header this argument
 //
 // THE DEPENDENCIES
 //     utils/assay/loop/stamps.py writes DIR/modes/PATH for each source file of
@@ -68,8 +69,7 @@
 //     unit.  A file with no mode stamp adds DIR/enforce.txt.  A change of the
 //     mode of a file then compiles again only the units with such a finding in
 //     that file.  An opted-out finding, a finding of the contract rule and a
-//     finding of the family declaration property add nothing, because no mode
-//     changes them.
+//     finding of a family rule add nothing, because no mode changes them.
 //
 // THE SECTION
 //     A unit that writes an object puts the report into the section
@@ -196,7 +196,7 @@ void add_mode_dependencies() {
     std::unordered_set<const FileEntry*> files;
     bool needs_enforce = false;
     for (const Finding& finding : state.findings) {
-        if (is_each_mode_kind(finding.kind) || is_property_kind(finding.kind) || finding.file == nullptr
+        if (is_each_mode_kind(finding.kind) || is_family_kind(finding.kind) || finding.file == nullptr
             || is_opted_out(finding) || !files.insert(finding.file).second) {
             continue;
         }
@@ -230,12 +230,12 @@ std::string report_line(const char* rule, const std::string& kind, const FileEnt
          + std::to_string(column) + " " + entity;
 }
 
-// One finding of the family declaration property: a line of the report, an
+// One finding of a family rule (is_family_kind): a line of the report, an
 // error in the mode error, and a note when the unit writes no report.  A
-// record, such as a mint record, is a line and no finding.  No opt-out region
-// covers such a finding, and no enforce mode makes it an error, because the
-// ledger of its rule judges it.
-void report_property(const Finding& finding, std::vector<std::string>& lines, bool has_section) {
+// record, such as a mint record, is a line and no finding (is_record_kind).
+// No opt-out region covers such a finding, and no enforce mode makes it an
+// error, because the ledger of its rule judges it.
+void report_family(const Finding& finding, std::vector<std::string>& lines, bool has_section) {
     std::string kind = kind_text(finding);
     const char* rule = rule_name(rule_of(finding.kind));
     lines.push_back(report_line(rule, kind, *finding.file, finding.line, finding.column, finding.entity));
@@ -244,7 +244,7 @@ void report_property(const Finding& finding, std::vector<std::string>& lines, bo
     }
     if (state.is_error_mode) {
         error_at(finding.spelling,
-                 "quarantine: %s %s; the rule %s refuses this declaration, and %<python3 utils/bin/guard explain %s%> "
+                 "quarantine: %s %s; the rule %s refuses this code, and %<python3 utils/bin/guard explain %s%> "
                  "gives the rule and its action",
                  kind.c_str(), finding.entity.c_str(), rule, rule);
     } else if (state.out_dir.empty() && !has_section) {
@@ -329,6 +329,7 @@ void report_unit_fact(const Finding& finding) {
 
 void on_finish_unit(void*, void*) {
     walk_declarations();
+    finish_expression_rules();
     report(true);
 }
 
@@ -339,6 +340,7 @@ void on_finish_unit(void*, void*) {
 void on_finish(void*, void*) {
     if (!state.was_reported && flag_syntax_only && !seen_error()) {
         walk_declarations();
+        finish_expression_rules();
     }
     report(false);
 }
@@ -394,8 +396,8 @@ void report(bool can_add_dependencies) {
     }
     std::vector<std::string> lines;
     for (const Finding& finding : state.findings) {
-        if (is_property_kind(finding.kind)) {
-            report_property(finding, lines, has_section);
+        if (is_family_kind(finding.kind)) {
+            report_family(finding, lines, has_section);
             continue;
         }
         bool is_out = is_opted_out(finding);

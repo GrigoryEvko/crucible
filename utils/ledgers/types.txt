@@ -107,8 +107,6 @@ utils/assay/guard/legacy/check_proof_routes.py | type-arg | 1 | scan | An error 
 utils/assay/guard/legacy/check_proof_routes.py | type-arg | 2 | specialization_records | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | type-arg | 1 | tree_facts | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | union-attr | 1 | specialization_records | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_refined_pre_subsumption.py | arg-type | 1 | retests | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_refined_pre_subsumption.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_splits_orphan.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | type-arg | 2 | expansion_uses | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | type-arg | 2 | file_facts | An error of mypy of today.  The change that gives the code its types lowers the count
@@ -118,9 +116,6 @@ utils/assay/guard/legacy/check_syscall_capability.py | arg-type | 1 | scan | An 
 utils/assay/guard/legacy/check_syscall_capability.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | union-attr | 1 | scan | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | var-annotated | 1 | self_test | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_syscall_grant_coverage.py | attr-defined | 4 | main | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_syscall_grant_coverage.py | misc | 1 | issued | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_syscall_grant_coverage.py | union-attr | 1 | catalog_names | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_trait_injection.py | arg-type | 10 | self_test | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_trait_injection.py | attr-defined | 2 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_trait_injection.py | misc | 1 | scan | An error of mypy of today.  The change that gives the code its types lowers the count

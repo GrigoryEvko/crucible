@@ -1,0 +1,4 @@
+# The ledger of the rule refined-pre-subsumption in this control.
+format 1
+rule refined-pre-subsumption
+src/admitted.cpp | retest | 1 | planted::kept: count: decide::positive | A planted deliberate test, which the ledger admits with its reason

@@ -262,10 +262,11 @@ string(SHA256 _crucible_quarantine_stamp
   "${_crucible_quarantine_key} ${_crucible_quarantine_mode} ${_crucible_quarantine_facts_hash}")
 string(SUBSTRING "${_crucible_quarantine_stamp}" 0 16 _crucible_quarantine_stamp)
 set(_crucible_quarantine_argument "-fplugin-arg-crucible_quarantine")
-# The family declaration property reads a base header only in the sentinel
-# unit of that header.  test/layer/CMakeLists.txt gives each sentinel unit this
-# argument with the path of its header under the root (the head comment of
-# declaration.cpp, THE SCOPE).
+# The families declaration property and expression shape read a base header
+# only in the sentinel unit of that header (THE SENTINEL of plugin.h).
+# test/layer/CMakeLists.txt gives each sentinel unit this argument with the
+# path of its header under the root.  The path is relative to the source
+# root, so each work tree gives ccache one text.
 set(CRUCIBLE_QUARANTINE_SENTINEL_ARGUMENT "${_crucible_quarantine_argument}-sentinel")
 # CRUCIBLE_QUARANTINE_ACTIVE makes the region macros of
 # include/foundation/Quarantine.h expand to the pragmas of the plugin.

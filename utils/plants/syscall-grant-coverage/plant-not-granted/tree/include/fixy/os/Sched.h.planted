@@ -1,0 +1,24 @@
+// A planted door: it reads the affinity of the thread, and pins it through
+// the door of fixy/os/CpuPinned.h.
+#pragma once
+
+#include <fixy/os/CpuPinned.h>
+
+#include <sched.h>
+
+namespace fixy::sched {
+
+inline int open_door(int cpu) noexcept {
+    cpu_set_t prior;
+    CPU_ZERO(&prior);
+    if (::sched_getaffinity(0, sizeof(prior), &prior) != 0) {
+        return -1;
+    }
+    return ::fixy::detail::pin_door(cpu);
+}
+
+inline int quiet(int cpu) noexcept {
+    return cpu;
+}
+
+}  // namespace fixy::sched

@@ -457,11 +457,12 @@ public:
 // replaces them. Leaving the two read halves out made the declared set
 // smaller than the truth while every check beside it stayed green.
 //
-// utils/assay/guard/legacy/check_syscall_grant_coverage.py derives this set from the
-// call sites in this header and fails when the two disagree, so the
-// list is checked against the code rather than against its own prose.
-// The two affinity calls come through fixy::sched::apply_affinity_to_cpu,
-// and the guard follows the calls of that door through fixy/os/Sched.h and
+// The grant row of utils/rule-table.txt names this alias.  The rule
+// syscall-grant-coverage of the quarantine plugin derives the set from the
+// call sites in this header and fails when the two disagree, so the list is
+// checked against the code rather than against its own prose.  The two
+// affinity calls come through fixy::sched::apply_affinity_to_cpu, and the
+// plugin follows the calls of that door through fixy/os/Sched.h and
 // fixy/os/CpuPinned.h to find them.
 using hardening_syscall_atoms =
     std::tuple<::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::sched_setaffinity>,

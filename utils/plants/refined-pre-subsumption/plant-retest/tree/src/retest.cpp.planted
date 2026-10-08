@@ -1,0 +1,38 @@
+// Each function tests again the predicate that the type of its parameter
+// proves: a plain parameter, a bound of a template argument, a const
+// parameter, an alias, a sealed refinement, and a name over two lines.
+#include <fixy/Refined.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Pre.h>
+
+namespace planted {
+
+using PositiveInt = fixy::Refined<fixy::positive, int>;
+
+void plain(fixy::Refined<fixy::positive, int> count) {
+    CRUCIBLE_PRE(foundation::decide::positive(count.value()));
+}
+
+void nested_bound(fixy::Refined<fixy::bounded_above<8u>, unsigned> index) {
+    CRUCIBLE_PRE(foundation::decide::in_range(index.value(), 0u, 7u));
+}
+
+void const_parameter(fixy::Refined<fixy::positive, int> const count) {
+    CRUCIBLE_PRE_FAST(foundation::decide::positive(count.value()));
+}
+
+void through_alias(PositiveInt count) {
+    CRUCIBLE_PRE_MSG(foundation::decide::positive(count.value()), "a test again");
+}
+
+int sealed(fixy::SealedRefined<fixy::non_zero, int> divisor) {
+    CRUCIBLE_PRE(foundation::decide::is_non_zero(divisor.value()));
+    return 10 / divisor.value();
+}
+
+void split_over_lines(fixy::Refined<fixy::positive, int> count) {
+    CRUCIBLE_PRE(::foundation::decide::
+                     positive(count.value()));
+}
+
+}  // namespace planted

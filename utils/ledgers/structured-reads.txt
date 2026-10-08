@@ -25,8 +25,6 @@ utils/assay/guard/legacy/check_start_lifetime.py | regex-call | 1 | planted_case
 utils/assay/guard/legacy/check_syscall_capability.py | regex-call | 4 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | regex-call | 1 | prose_findings | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | regex-call | 1 | via_names | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_syscall_grant_coverage.py | node-text-variable | 1 | root_issued | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_syscall_grant_coverage.py | regex-call | 1 | self_test | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_trait_injection.py | node-text-variable | 2 | closing_angle | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_witness_roster.py | regex-call | 4 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_witness_roster.py | regex-call | 3 | self_test | A read of today.  The change that moves the read into its reader lowers the count

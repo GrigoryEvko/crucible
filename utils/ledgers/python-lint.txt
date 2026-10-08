@@ -104,14 +104,12 @@ utils/assay/guard/legacy/check_proof_routes.py | I001 | 1 | <module> | An issue 
 utils/assay/guard/legacy/check_proof_routes.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_prose_paths.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_reconfigure_noop.py | format | 1 | evaluate | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_refined_pre_subsumption.py | format | 1 | preconditions | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_splits_orphan.py | ISC004 | 3 | self_test | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_splits_orphan.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | B023 | 1 | file_facts | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | SIM905 | 2 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_syscall_grant_coverage.py | format | 1 | catalog_names | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_trait_injection.py | ISC004 | 4 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_trait_injection.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_vessel_acceptance.py | format | 1 | check_torch | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count

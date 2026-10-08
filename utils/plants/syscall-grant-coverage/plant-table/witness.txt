@@ -1,0 +1,11 @@
+# The plugin and assay.core.ruletable refuse a grant row that does not obey
+# its format at the same line with the same message: a second row of one
+# file, a row with no enumeration, an alias that is not a qualified name,
+# and a row with a reason.  Each reader accepts the correct rows.
+
+table-unit src/unit.cpp
+table tables/grant-second.txt refused 3 | the file include/Grant.h has a second grant row, and its first grant row is on line 2
+table tables/grant-short.txt refused 2 | a grant row is 'grant FILE ALIAS ENUMERATION [DOOR...]', with the grant file, the qualified names of its alias and of the enumeration of the system calls, and each door file
+table tables/grant-unqualified.txt refused 2 | a grant row is 'grant FILE ALIAS ENUMERATION [DOOR...]', with the grant file, the qualified names of its alias and of the enumeration of the system calls, and each door file
+table tables/grant-cell.txt refused 2 | a grant row is 'grant FILE ALIAS ENUMERATION [DOOR...]', with the grant file, the qualified names of its alias and of the enumeration of the system calls, and each door file
+table tables/grant-accepted.txt accepted

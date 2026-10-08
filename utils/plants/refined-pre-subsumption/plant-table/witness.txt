@@ -1,0 +1,11 @@
+# The plugin and assay.core.ruletable refuse a cite row that does not obey
+# its format at the same line with the same message: a second row of one
+# predicate, a row with no procedure, a row with a reason, and a predicate
+# that is not a qualified name.  Each reader accepts the correct rows.
+
+table-unit src/unit.cpp
+table tables/cite-second.txt refused 2 | the predicate fixy::IsPositive has a second cite row, and its first cite row is on line 1
+table tables/cite-no-procedure.txt refused 2 | a cite row is 'cite PREDICATE PROCEDURE...', with the qualified name of a predicate class and the name of each decide procedure that tests it
+table tables/cite-cell.txt refused 2 | a cite row is 'cite PREDICATE PROCEDURE...', with the qualified name of a predicate class and the name of each decide procedure that tests it
+table tables/cite-unqualified.txt refused 2 | a cite row is 'cite PREDICATE PROCEDURE...', with the qualified name of a predicate class and the name of each decide procedure that tests it
+table tables/cite-accepted.txt accepted

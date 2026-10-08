@@ -1,0 +1,15 @@
+# Two macro bodies of the grant file issue mlock and munlock, which the alias
+# does not grant.  The grant file expands the first macro, and the unit
+# expands the second macro.  Each system call is a finding of the kind
+# not-granted in the macro body of the grant file.
+
+compile uses src/uses.cpp rules=utils/rule-table.txt stage=c
+exit uses pass
+judge uses
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:13:45 | mlock
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:14:46 | munlock
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:19:21 | syscall
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:24:20 | madvise
+finding uses syscall-grant-coverage not-granted include/crucible/warden/Hardening.h:13:45 | mlock
+finding uses syscall-grant-coverage not-granted include/crucible/warden/Hardening.h:14:46 | munlock
+finding uses syscall-grant-coverage compared include/crucible/warden/Hardening.h:31:7 | 6 issued, 4 granted

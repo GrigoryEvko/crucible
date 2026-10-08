@@ -1,0 +1,3 @@
+quarantine src/
+grant include/Grant.h planted::grant_atoms planted::SyscallId
+grant include/Grant.h planted::other_atoms planted::SyscallId

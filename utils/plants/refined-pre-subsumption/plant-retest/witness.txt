@@ -1,0 +1,13 @@
+# Each precondition of src/retest.cpp tests again the predicate that the type
+# of its parameter proves, so each one is a finding of the kind retest.  The
+# rule gives an error for each finding, because no ledger row admits one.
+
+compile retest src/retest.cpp stage=c
+exit retest pass
+judge retest
+finding retest refined-pre-subsumption retest src/retest.cpp:13:46 | planted::plain: count: decide::positive
+finding retest refined-pre-subsumption retest src/retest.cpp:17:46 | planted::nested_bound: index: decide::in_range
+finding retest refined-pre-subsumption retest src/retest.cpp:21:51 | planted::const_parameter: count: decide::positive
+finding retest refined-pre-subsumption retest src/retest.cpp:25:50 | planted::through_alias: count: decide::positive
+finding retest refined-pre-subsumption retest src/retest.cpp:29:49 | planted::sealed: divisor: decide::is_non_zero
+finding retest refined-pre-subsumption retest src/retest.cpp:35:30 | planted::split_over_lines: count: decide::positive

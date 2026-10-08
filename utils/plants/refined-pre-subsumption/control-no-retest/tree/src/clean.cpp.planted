@@ -1,0 +1,42 @@
+// No precondition here tests again a predicate that the type of its
+// parameter proves: no precondition, a plain parameter, a different
+// parameter, a test in a comment, a test that a lambda owns, and a
+// procedure that the cite row of the predicate does not name.
+#include <fixy/Refined.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Pre.h>
+
+namespace planted {
+
+int no_cite(fixy::Refined<fixy::positive, int> count) {
+    return count.value();
+}
+
+void bare_parameter(int count) {
+    CRUCIBLE_PRE(foundation::decide::positive(count));
+}
+
+int other_identifier(fixy::Refined<fixy::positive, int> count, int other) {
+    CRUCIBLE_PRE(foundation::decide::positive(other));
+    return count.value();
+}
+
+int comment_only(fixy::Refined<fixy::positive, int> count) {
+    // CRUCIBLE_PRE(foundation::decide::positive(count.value()));
+    return count.value();
+}
+
+int lambda_owns_it(fixy::Refined<fixy::positive, int> count) {
+    auto inner = [](int value) {
+        CRUCIBLE_PRE(foundation::decide::positive(value));
+        return value;
+    };
+    return inner(count.value());
+}
+
+int other_predicate(fixy::Refined<fixy::non_zero, int> divisor) {
+    CRUCIBLE_PRE(foundation::decide::positive(divisor.value()));
+    return 10 / divisor.value();
+}
+
+}  // namespace planted

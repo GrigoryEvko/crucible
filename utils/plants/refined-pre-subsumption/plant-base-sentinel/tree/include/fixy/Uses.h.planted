@@ -1,0 +1,42 @@
+// A base header with a precondition that tests again the predicate of a
+// refined parameter.  The finding counts only in the unit whose sentinel
+// argument names this header.
+#pragma once
+
+#include <fixy/Refined.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Pre.h>
+
+namespace planted {
+
+inline int header_retest(fixy::Refined<fixy::positive, int> count) {
+    CRUCIBLE_PRE(foundation::decide::positive(count.value()));
+    return count.value();
+}
+
+template <typename Value>
+int template_retest(fixy::Refined<fixy::positive, int> count, Value) {
+    CRUCIBLE_PRE(foundation::decide::positive(count.value()));
+    return count.value();
+}
+
+template <typename Value>
+struct Holder {
+    int member_retest(fixy::Refined<fixy::positive, int> count) {
+        CRUCIBLE_PRE(foundation::decide::positive(count.value()));
+        return count.value();
+    }
+};
+
+template <typename Value>
+int local_class_retest() {
+    struct Local {
+        int retest(fixy::Refined<fixy::positive, int> count) {
+            CRUCIBLE_PRE(foundation::decide::positive(count.value()));
+            return count.value();
+        }
+    };
+    return 0;
+}
+
+}  // namespace planted

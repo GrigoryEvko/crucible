@@ -1,0 +1,32 @@
+// A planted stand-in of the refinement of fixy: the class Refinement, its two
+// aliases, and the predicate classes that the cite rows of rules.txt name.
+#pragma once
+
+namespace fixy {
+
+struct IsPositive {};
+struct IsNonZero {};
+template <unsigned Max>
+struct BoundedAbove {};
+
+inline constexpr IsPositive positive{};
+inline constexpr IsNonZero non_zero{};
+template <unsigned Max>
+inline constexpr BoundedAbove<Max> bounded_above{};
+
+template <auto Pred, class T, bool IsSealed>
+class Refinement {
+public:
+    constexpr explicit Refinement(T held) noexcept : held_{held} {}
+    constexpr T value() const noexcept { return held_; }
+
+private:
+    T held_;
+};
+
+template <auto Pred, class T>
+using Refined = Refinement<Pred, T, false>;
+template <auto Pred, class T>
+using SealedRefined = Refinement<Pred, T, true>;
+
+}  // namespace fixy

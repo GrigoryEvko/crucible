@@ -146,10 +146,12 @@
 //                           attribute or GCC optimize pragma turns on a
 //                           fast-math option that the command line does not
 //                           turn on
-//     The rules of the family declaration property (declaration.cpp, THE
-//     FAMILY) read each quarantined file, and the base file that the unit
-//     compiles or that the argument sentinel names.  A finding of such a rule
-//     is an error only in the mode error, and no opt-out region covers it.
+//     The rules of the families declaration property (declaration.cpp, THE
+//     FAMILY) and expression shape (expression.cpp) read each quarantined
+//     file, and a base file in its sentinel unit (THE SENTINEL).  A finding of
+//     such a rule is an error only in the mode error, no opt-out region covers
+//     it, and the module of its rule judges it against the ledger of the rule
+//     (is_family_kind).  A record is no finding (is_record_kind).
 //     The rule mint-pattern:
 //     mint                  no finding: one record of each mint, with its facts,
 //                           for the inventory of the mints
@@ -188,6 +190,30 @@
 //     The rule lifetime-twin:
 //     missing-twin          a parameter that CRUCIBLE_LIFETIMEBOUND marks, with
 //                           no deleted overload that refuses a temporary there
+//     The rule refined-pre-subsumption (expression.cpp, THE REFINED PARAMETERS):
+//     retest                a precondition that tests again the predicate of a
+//                           refined parameter
+//     The rule syscall-grant-coverage (expression.cpp, THE GRANTS):
+//     not-granted           a system call that the grant file issues and that
+//                           its grant alias does not name
+//     not-issued            a system call that the grant alias names and that
+//                           the grant file does not issue
+//     wrong-helper          a helper NAME_sys whose syscall() number is not
+//                           SYS_NAME
+//     unread-grant          a grant file whose alias, enumeration, grants or
+//                           calls the plugin cannot read
+//     compared              no finding: the unit compared the two sets
+//
+// THE SENTINEL
+//     The argument sentinel=PATH names a base header, relative to the source
+//     root.  Only test/layer/CMakeLists.txt gives it, to the one unit of the
+//     target all that is the sentinel of that header.  The family declaration
+//     property reads the declarations of a base file, and the family
+//     expression shape reads its bodies, only in the unit whose sentinel names
+//     it, or in the base unit whose main file it is.  The rules of the
+//     quarantine do not read a base file.  A finding of a family rule in a
+//     base file counts only in that unit.
+//     So each base file costs one walk in each build.
 //
 // THE SECTION
 //     A unit that writes an object puts its report into the section
@@ -263,6 +289,8 @@ enum class FileClass : std::uint8_t {
 // path, because the build writes no base file.
 inline constexpr const char* kBuildPrefix = "@build/";
 
+struct GrantRow;
+
 struct FileEntry {
     FileClass file_class = FileClass::outside;
     std::string relative;  // empty when the file is outside the root
@@ -272,6 +300,13 @@ struct FileEntry {
     // The index of the layer of the language row of a base file of the
     // language, whose allowance caps the outside includes, or -1.
     int language_layer = -1;
+    // A base file that the argument sentinel names, or the base main file of
+    // the unit (THE SENTINEL).
+    bool is_sentinel = false;
+    // The grant row whose grant file this file is, or null, and the grant row
+    // whose door file this file is, or null (expression.cpp, THE GRANTS).
+    const GrantRow* grant = nullptr;
+    const GrantRow* grant_door = nullptr;
 };
 
 // The files that can own a place.
@@ -355,6 +390,25 @@ enum class HeaderCost : std::uint8_t {
     heavy,
 };
 
+// One cite row: the predicate class of a refinement, and the decide
+// procedures that test that predicate (expression.cpp, THE REFINED
+// PARAMETERS).
+struct CiteRow {
+    std::string predicate;  // the qualified name of the class, with no template arguments
+    std::vector<std::string> procedures;
+};
+
+// One grant row: the grant file, the qualified name of its grant alias, the
+// qualified name of the enumeration of the system calls, and the door files
+// whose functions stand for the system calls of their bodies
+// (expression.cpp, THE GRANTS).
+struct GrantRow {
+    std::string file;
+    std::string alias;
+    std::string enumeration;
+    std::vector<std::string> doors;
+};
+
 // The rows of the rule table, in the order of the file.  A header keeps the
 // name inside its angle brackets.
 struct RuleTable {
@@ -367,6 +421,8 @@ struct RuleTable {
     std::vector<LanguageRow> languages;
     std::vector<SealRow> seals;
     std::unordered_map<std::string, HeaderCost> header_costs;  // by the name inside the angle brackets
+    std::vector<CiteRow> cites;
+    std::vector<GrantRow> grants;
 };
 
 // ── The rules and the kinds ─────────────────────────────────────────────
@@ -386,6 +442,8 @@ enum class Rule : std::uint8_t {
     stub_discipline,
     process_wide_state,
     lifetime_twin,
+    refined_pre_subsumption,
+    syscall_grant_coverage,
 };
 
 // The kinds of a finding (THE RULES AND THE KINDS above).  opted-out and
@@ -435,6 +493,12 @@ enum class Kind : std::uint8_t {
     marker_not_inline,
     marker_without_object,
     missing_twin,
+    refined_retest,
+    grant_not_granted,
+    grant_not_issued,
+    grant_wrong_helper,
+    grant_unread,
+    grant_compared,
 };
 
 inline const char* rule_name(Rule rule) {
@@ -467,6 +531,10 @@ inline const char* rule_name(Rule rule) {
             return "process-wide-state";
         case Rule::lifetime_twin:
             return "lifetime-twin";
+        case Rule::refined_pre_subsumption:
+            return "refined-pre-subsumption";
+        case Rule::syscall_grant_coverage:
+            return "syscall-grant-coverage";
     }
     return "unknown";
 }
@@ -561,6 +629,18 @@ inline const char* kind_name(Kind kind) {
             return "marker-without-object";
         case Kind::missing_twin:
             return "missing-twin";
+        case Kind::refined_retest:
+            return "retest";
+        case Kind::grant_not_granted:
+            return "not-granted";
+        case Kind::grant_not_issued:
+            return "not-issued";
+        case Kind::grant_wrong_helper:
+            return "wrong-helper";
+        case Kind::grant_unread:
+            return "unread-grant";
+        case Kind::grant_compared:
+            return "compared";
     }
     return "unknown";
 }
@@ -611,6 +691,14 @@ inline Rule rule_of(Kind kind) {
             return Rule::process_wide_state;
         case Kind::missing_twin:
             return Rule::lifetime_twin;
+        case Kind::refined_retest:
+            return Rule::refined_pre_subsumption;
+        case Kind::grant_not_granted:
+        case Kind::grant_not_issued:
+        case Kind::grant_wrong_helper:
+        case Kind::grant_unread:
+        case Kind::grant_compared:
+            return Rule::syscall_grant_coverage;
         default:
             return Rule::quarantine;
     }
@@ -622,16 +710,20 @@ inline bool is_each_mode_kind(Kind kind) {
     return kind == Kind::contract_specifier || kind == Kind::contract_semantic || kind == Kind::fast_math_override;
 }
 
-// True when a rule of the family declaration property gives the kind.  Such
-// a finding is an error only in the mode error, no opt-out region covers it,
-// and no enforce mode changes it.
-inline bool is_property_kind(Kind kind) {
+// True when a rule of the families declaration property (declaration.cpp) and
+// expression shape (expression.cpp) gives the kind.  Such a finding is an
+// error only in the mode error, no opt-out region covers it, and no enforce
+// mode changes it.  The module of its rule judges it against the ledger of
+// the rule.
+inline bool is_family_kind(Kind kind) {
     switch (rule_of(kind)) {
         case Rule::mint_pattern:
         case Rule::no_raw_array_member:
         case Rule::permission_storage:
         case Rule::escape_doors:
         case Rule::stub_discipline:
+        case Rule::refined_pre_subsumption:
+        case Rule::syscall_grant_coverage:
             return true;
         default:
             return false;
@@ -639,8 +731,9 @@ inline bool is_property_kind(Kind kind) {
 }
 
 // True when a line of the kind is a record: a fact for a reader of the
-// records, and no finding of its rule.
-inline bool is_record_kind(Kind kind) { return kind == Kind::mint_record; }
+// records, and no finding of its rule.  The record of a mint, and the line of
+// a grant set that the unit compared.
+inline bool is_record_kind(Kind kind) { return kind == Kind::mint_record || kind == Kind::grant_compared; }
 
 // The two kinds of a line of the report that the rule quarantine gives for
 // each rule: a finding inside an opt-out region, and the region itself.
@@ -703,6 +796,12 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"process-wide-state", "marker-not-inline"},
     {"process-wide-state", "marker-without-object"},
     {"lifetime-twin", "missing-twin"},
+    {"refined-pre-subsumption", "retest"},
+    {"syscall-grant-coverage", "not-granted"},
+    {"syscall-grant-coverage", "not-issued"},
+    {"syscall-grant-coverage", "wrong-helper"},
+    {"syscall-grant-coverage", "unread-grant"},
+    {"syscall-grant-coverage", "compared"},
 };
 
 // True when the entity is part of the key of a finding: two findings of such
@@ -727,7 +826,7 @@ inline bool is_name_kind(Kind kind) {
         case Kind::fast_math_override:
             return true;
         default:
-            return is_property_kind(kind);
+            return is_family_kind(kind);
     }
 }
 
@@ -858,6 +957,10 @@ struct State {
     std::string plugin_name;
     std::string root;  // the real path of the source root, without a final '/'
     std::string build;  // the real path of the build directory, or empty
+    // The base header of the argument sentinel, relative to the root, or
+    // empty, and the real path of the main file of the unit (THE SENTINEL).
+    std::string sentinel;
+    std::string main_real;
     bool was_reported = false;
     RuleTable table;
 
@@ -920,11 +1023,9 @@ struct State {
     // The expansions of assert.
     MacroCallback previous_used = nullptr;
 
-    // The family declaration property (declaration.cpp, THE FAMILY): the path
-    // that the argument sentinel names, relative to the source root, or empty.
+    // The family declaration property (declaration.cpp, THE FAMILY).
     // DECL_UID keys the facts of a body that PLUGIN_PRE_GENERICIZE reads,
     // because a garbage collection can free a tree before the walk.
-    std::string sentinel;
     std::unordered_set<unsigned> defined_functions;  // each mint that the unit defines
     std::unordered_set<unsigned> projection_bodies;  // each mint whose body is a borrow projection
 
@@ -1017,6 +1118,18 @@ inline void classify_by_table(FileEntry& entry) {
             has_mode = true;
         }
     }
+    for (const GrantRow& grant : state.table.grants) {
+        if (grant.file == entry.relative) {
+            entry.grant = &grant;
+        }
+        for (const std::string& door : grant.doors) {
+            if (door == entry.relative) {
+                entry.grant_door = &grant;
+            }
+        }
+    }
+    entry.is_sentinel = entry.file_class == FileClass::base
+                     && ((!state.sentinel.empty() && entry.relative == state.sentinel) || entry.real == state.main_real);
 }
 
 // True when RESOLVED is a file of the build directory.  A build directory that
@@ -1027,11 +1140,16 @@ inline bool is_build_file(const std::string& resolved) {
         && !has_prefix(state.root + "/", state.build + "/");
 }
 
-// The entry of one real path, made and kept on the first request.
+// The entry of one real path, made and kept on the first request.  The first
+// request also resolves the main file of the unit, so classify_by_table knows
+// the base main file (THE SENTINEL).
 inline const FileEntry& entry_of_real_path(const std::string& resolved) {
     auto found = state.entries.find(resolved);
     if (found != state.entries.end()) {
         return found->second;
+    }
+    if (state.main_real.empty() && main_input_filename != nullptr) {
+        state.main_real = real_path(main_input_filename);
     }
     FileEntry entry;
     entry.real = resolved;
@@ -1130,12 +1248,25 @@ inline const FileEntry* language_file_of(location_t location) {
 
 // A quarantined file and a file of the language get a walk.  A declaration
 // that a macro expansion makes can hold tokens that a quarantined file
-// spells, even when the name token is spelled elsewhere.
-inline bool is_worth_a_walk(location_t location) {
-    Place place = place_of(location, Scope::quarantine);
+// spells, even when the name token is spelled elsewhere.  PLACE is the place
+// of LOCATION in the scope quarantine.  A sentinel base file gets only the
+// walk of the family expression shape (expression.cpp, walk_family_body).
+inline bool is_worth_a_walk_at(const Place& place, location_t location) {
     return place.file_class == FileClass::quarantined || (place.file != nullptr && place.file->language_layer >= 0)
         || (location > BUILTINS_LOCATION && !in_library_file_at(location)
             && linemap_location_from_macro_expansion_p(line_table, location));
+}
+
+inline bool is_worth_a_walk(location_t location) {
+    return is_worth_a_walk_at(place_of(location, Scope::quarantine), location);
+}
+
+// True when a finding of a rule with a base scope counts at PLACE in this
+// unit: in a quarantined file, and in a base file only in its sentinel unit
+// (THE SENTINEL).
+inline bool counts_in_unit(const Place& place) {
+    return place.file_class == FileClass::quarantined
+        || (place.file_class == FileClass::base && place.file != nullptr && place.file->is_sentinel);
 }
 
 // ── The record of a finding ─────────────────────────────────────────────
@@ -1322,10 +1453,13 @@ void walk_declarations();
 void register_declarations(const char* plugin_name);
 std::string function_signature(tree function);
 
-// expression.cpp: the family expression shape, the walk of a body.
+// expression.cpp: the family expression shape, the walk of a body, and the
+// rules refined-pre-subsumption and syscall-grant-coverage.
 void walk_root(tree* root, location_t location, bool is_pattern);
 void walk_body(tree function, bool is_pattern);
 void register_expressions(const char* plugin_name);
+void finish_expression_rules();
+void walk_family_pattern(tree function);
 
 // include.cpp: the family include closure, the include rules, the seals, the
 // heavy headers, the names of a higher root and the provenance.

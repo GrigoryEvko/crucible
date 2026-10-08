@@ -158,9 +158,6 @@ utils/assay/guard/legacy/check_reconfigure_noop.py | argparse | 1 | <module> | A
 utils/assay/guard/legacy/check_reconfigure_noop.py | print | 3 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_reconfigure_noop.py | print | 4 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_reconfigure_noop.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_refined_pre_subsumption.py | print | 4 | check | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_refined_pre_subsumption.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_refined_pre_subsumption.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_splits_orphan.py | print | 5 | check | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_splits_orphan.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_splits_orphan.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
@@ -173,10 +170,6 @@ utils/assay/guard/legacy/check_syscall_capability.py | print | 12 | check | A us
 utils/assay/guard/legacy/check_syscall_capability.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_syscall_grant_coverage.py | print | 8 | check | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_syscall_grant_coverage.py | print | 5 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_syscall_grant_coverage.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_syscall_grant_coverage.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_trait_injection.py | argparse | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_trait_injection.py | print | 1 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_trait_injection.py | print | 3 | refresh | A use of today.  The change that calls the owner of the job lowers the count

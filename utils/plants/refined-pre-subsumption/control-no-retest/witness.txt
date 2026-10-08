@@ -1,0 +1,12 @@
+# No precondition of src/clean.cpp tests again a proved predicate, so the
+# unit gives no finding.  The unit of test/ gives one finding, and the rule
+# gives no error for it, because its scope is include/ and src/.
+
+compile clean src/clean.cpp stage=c
+exit clean pass
+judge clean
+
+compile scoped test/scoped.cpp stage=c
+exit scoped pass
+judge scoped
+finding scoped refined-pre-subsumption retest test/scoped.cpp:10:46 | planted::out_of_scope: count: decide::positive

@@ -1,0 +1,22 @@
+// A planted door: the pin of the calling thread, and a helper of the door
+// that issues the number of mlock in place of its own system call.
+#pragma once
+
+#include <sched.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+
+namespace fixy::detail {
+
+inline int pin_door(int cpu) noexcept {
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+    CPU_SET(cpu, &mask);
+    return ::sched_setaffinity(0, sizeof(mask), &mask);
+}
+
+inline long sched_getaffinity_sys(int cpu) noexcept {
+    return ::syscall(SYS_mlock, 0, cpu);
+}
+
+}  // namespace fixy::detail

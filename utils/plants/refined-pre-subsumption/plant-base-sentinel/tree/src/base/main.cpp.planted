@@ -1,0 +1,14 @@
+// A base unit with a precondition that tests again the predicate of a refined
+// parameter.  The main file of a base unit is its own sentinel.
+#include <fixy/Refined.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Pre.h>
+
+namespace planted {
+
+int main_retest(fixy::Refined<fixy::positive, int> count) {
+    CRUCIBLE_PRE(foundation::decide::positive(count.value()));
+    return count.value();
+}
+
+}  // namespace planted

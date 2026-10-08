@@ -1,0 +1,11 @@
+# The door open_door reads the affinity of the thread, and the alias does
+# not grant sched_getaffinity.  The read is a finding of the kind not-granted
+# at the call of the door in the grant file.
+
+compile uses src/uses.cpp rules=utils/rule-table.txt stage=c
+exit uses pass
+judge uses
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:15:21 | syscall
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:20:20 | madvise
+finding uses syscall-grant-coverage not-granted include/crucible/warden/Hardening.h:19:35 | sched_getaffinity
+finding uses syscall-grant-coverage compared include/crucible/warden/Hardening.h:26:7 | 4 issued, 3 granted

@@ -1,0 +1,24 @@
+// A planted catalog of the system calls, and the classes of a grant list.
+#pragma once
+
+namespace fixy::atom::syscall {
+
+enum class SyscallId : unsigned short {
+    sched_setaffinity,
+    sched_getaffinity,
+    madvise,
+    mlock,
+    mlock2,
+    munlock,
+    prctl,
+    ptrace,
+    close,
+};
+
+template <SyscallId Id>
+struct per {};
+
+template <class... Grants>
+struct grant_list {};
+
+}  // namespace fixy::atom::syscall

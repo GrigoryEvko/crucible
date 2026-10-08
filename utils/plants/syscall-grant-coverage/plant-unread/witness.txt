@@ -1,0 +1,11 @@
+# The grant row names the alias hardening_syscall_atoms, and the grant file
+# declares no such alias.  The unit cannot read the grant set, so the grant
+# file is a finding of the kind unread-grant, and the unit gives no line
+# compared.
+
+compile uses src/uses.cpp rules=utils/rule-table.txt stage=c
+exit uses pass
+judge uses
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:15:21 | syscall
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:20:20 | madvise
+finding uses syscall-grant-coverage unread-grant include/crucible/warden/Hardening.h:1:1 | no alias crucible::warden::hardening_syscall_atoms

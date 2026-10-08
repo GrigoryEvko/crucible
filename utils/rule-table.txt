@@ -109,6 +109,23 @@
 #       of the table, and no other row can be after that comment.  A file under
 #       include/ that includes a header outside the source root with no heavy
 #       row and no light row is a finding of the rule heavy-include
+#   cite PREDICATE PROCEDURE...
+#       A parameter of a refinement type of fixy whose predicate is an object
+#       or a type of the class PREDICATE, a qualified name with no template
+#       arguments, carries the proof of that predicate.  A precondition of the
+#       same function that calls decide::PROCEDURE on the parameter tests the
+#       proof again, and the rule refined-pre-subsumption refuses it.  A
+#       PREDICATE has one cite row at most
+#   grant FILE ALIAS ENUMERATION [DOOR...]
+#       The type alias ALIAS of the file FILE names each system call that the
+#       code of FILE issues, as an enumerator of ENUMERATION.  The code of FILE
+#       is each body of FILE, and each expression that a macro body of FILE
+#       spells where a unit expands the macro.  A function of a DOOR file that
+#       the code of FILE calls stands for each system call that its body
+#       issues.  The rule syscall-grant-coverage refuses each system
+#       call of one set that the other set does not hold.  ALIAS and
+#       ENUMERATION are qualified names, and each FILE and DOOR is one file of
+#       the source root.  A FILE has one grant row at most
 #
 # THE LONGEST PATH
 #   When the PATHs of two rows hold one file, the longer PATH decides.  A
@@ -238,6 +255,15 @@ seal include/crucible/RecipeRegistry.h include/crucible/ledger/ include/fixy/led
 seal include/crucible/Serialize.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
 seal include/crucible/cog/CogIdentity.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
 seal include/crucible/mimic/CogMimic.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
+
+cite fixy::IsPositive positive
+cite fixy::IsNonNegative non_negative
+cite fixy::IsNonZero is_non_zero non_zero
+cite fixy::InRange in_range all_in_range
+cite fixy::BoundedAbove in_range bounded_above
+cite fixy::BoundedBelow in_range bounded_below
+
+grant include/crucible/warden/Hardening.h crucible::warden::hardening_syscall_atoms fixy::atom::syscall::SyscallId include/fixy/os/Sched.h include/fixy/os/CpuPinned.h
 
 # The heavy and the light rows.  `python3 utils/bin/loop derive header-costs --measure BUILD_DIR` writes each line after this one.
 # Measured 2026-10-01 on AMD EPYC 9655 96-Core Processor, 376 threads, load average 789.  An empty translation unit costs 0.01 s.

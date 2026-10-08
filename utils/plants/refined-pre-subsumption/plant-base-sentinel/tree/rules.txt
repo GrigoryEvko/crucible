@@ -1,0 +1,8 @@
+# The rule table of this plant.  The planted headers of include/ and the unit
+# of src/base/ are base files, and the unit of src/ is quarantined.
+
+layer floor 0 include/ src/base/
+
+cite fixy::IsPositive positive
+
+quarantine src/

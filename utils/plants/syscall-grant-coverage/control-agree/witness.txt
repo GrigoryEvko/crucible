@@ -1,0 +1,11 @@
+# The grant set of include/crucible/warden/Hardening.h is the set of its
+# system calls: madvise and mlock2 of the grant file, and sched_getaffinity
+# and sched_setaffinity through the two doors.  The unit gives the line
+# compared, which is no error.
+
+compile uses src/uses.cpp rules=utils/rule-table.txt stage=c
+exit uses pass
+judge uses
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:28:21 | syscall
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:33:20 | madvise
+finding uses syscall-grant-coverage compared include/crucible/warden/Hardening.h:43:7 | 4 issued, 4 granted

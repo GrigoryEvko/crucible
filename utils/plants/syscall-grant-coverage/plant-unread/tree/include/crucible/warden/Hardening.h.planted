@@ -1,0 +1,30 @@
+// A planted grant file whose alias has a name that the grant row does not
+// give, so the unit cannot read the grant set.
+#pragma once
+
+#include <fixy/atoms/Syscall.h>
+#include <fixy/os/Sched.h>
+
+#include <sys/mman.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+
+namespace crucible::warden {
+
+inline long mlock2_sys(unsigned long length) noexcept {
+    return ::syscall(SYS_mlock2, 0, length, 0);
+}
+
+inline void apply(int cpu) noexcept {
+    (void)::fixy::sched::open_door(cpu);
+    (void)::madvise(nullptr, 0, MADV_NORMAL);
+    (void)mlock2_sys(0);
+}
+
+namespace sc = ::fixy::atom::syscall;
+
+using renamed_atoms =
+    sc::grant_list<sc::per<sc::SyscallId::sched_setaffinity>, sc::per<sc::SyscallId::sched_getaffinity>,
+                   sc::per<sc::SyscallId::madvise>, sc::per<sc::SyscallId::mlock2>>;
+
+}  // namespace crucible::warden

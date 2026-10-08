@@ -1,0 +1,21 @@
+// A planted stand-in of the decide procedures of foundation.
+#pragma once
+
+namespace foundation::decide {
+
+template <class T>
+constexpr bool positive(T value) noexcept {
+    return value > 0;
+}
+
+template <class T>
+constexpr bool is_non_zero(T value) noexcept {
+    return value != 0;
+}
+
+template <class T>
+constexpr bool in_range(T value, T low, T high) noexcept {
+    return low <= value && value <= high;
+}
+
+}  // namespace foundation::decide

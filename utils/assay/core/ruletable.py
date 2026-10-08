@@ -16,7 +16,9 @@ Python str.split() does, reads different words.
 
 The seal rows give the rule detsafe-ledger of the plugin, and the heavy and
 light rows give the rule heavy-include.  `loop derive header-costs` writes the
-heavy and light rows from a measure (assay.loop.derive.header_costs).
+heavy and light rows from a measure (assay.loop.derive.header_costs).  The
+cite rows give the rule refined-pre-subsumption, and the grant rows give the
+rule syscall-grant-coverage.
 """
 
 from __future__ import annotations
@@ -29,7 +31,30 @@ from assay.core.paths import REPO_ROOT
 
 TABLE = REPO_ROOT / "utils" / "rule-table.txt"
 MODES = ("report", "error")
-ROW_KINDS = ("layer", "allow", "door", "admit", "quarantine", "enforce", "language", "seal", "heavy", "light")
+ROW_KINDS = (
+    "layer",
+    "allow",
+    "door",
+    "admit",
+    "quarantine",
+    "enforce",
+    "language",
+    "seal",
+    "heavy",
+    "light",
+    "cite",
+    "grant",
+)
+# The errors of a cite row and of a grant row that do not obey the format of their words.  rule_table.cpp gives
+# the same texts.
+CITE_FORMAT = (
+    "a cite row is 'cite PREDICATE PROCEDURE...', with the qualified name of a predicate class and the "
+    "name of each decide procedure that tests it"
+)
+GRANT_FORMAT = (
+    "a grant row is 'grant FILE ALIAS ENUMERATION [DOOR...]', with the grant file, the qualified names "
+    "of its alias and of the enumeration of the system calls, and each door file"
+)
 # The directory of the headers of the project roots.  A sealed PREFIX is a directory in it.
 INCLUDE_PREFIX = "include/"
 # The error of a seal row that does not obey the format of its words.  rule_table.cpp gives the same text.
@@ -109,6 +134,24 @@ class HeaderCost:
     line: int
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class Cite:
+    """One cite row: the full name of a predicate class, and the names of the procedures that test that predicate."""
+
+    predicate: str
+    procedures: tuple[str, ...]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Grant:
+    """One grant row: the grant file, its alias, the enumeration of the system calls and the door files."""
+
+    file: str
+    alias: str
+    enumeration: str
+    doors: tuple[str, ...]
+
+
 @dataclasses.dataclass(frozen=True)
 class RuleTable:
     """The rows of one rule table, in the order of the file."""
@@ -124,6 +167,8 @@ class RuleTable:
     languages: tuple[tuple[str, tuple[str, ...]], ...] = ()
     seals: tuple[Seal, ...] = ()
     header_costs: tuple[HeaderCost, ...] = ()
+    cites: tuple[Cite, ...] = ()
+    grants: tuple[Grant, ...] = ()
 
     def layer_named(self, name: str) -> Layer | None:
         """Return the layer with NAME, or None."""
@@ -185,6 +230,36 @@ def white_space_message(character: str) -> str:
     """
     return (f"the row holds the white-space character U+{ord(character):04X}.  Only a space and a tab divide the "
             f"words of a row")
+
+
+def is_identifier(text: str) -> bool:
+    """Return True when TEXT is an identifier of ASCII letters, digits and underscores that does not start with a digit.
+
+    rule_table.cpp gives the same test.  str.isidentifier() alone also accepts a letter of a different script.
+    """
+    return (
+        bool(text)
+        and text.isascii()
+        and not text[0].isdigit()
+        and all(character.isalnum() or character == "_" for character in text)
+    )
+
+
+def is_qualified_name(text: str) -> bool:
+    """Return True when TEXT is one or more identifiers with "::" between two of them, and no "::" at its start."""
+    return all(is_identifier(part) for part in text.split("::"))
+
+
+def is_file_path(text: str) -> bool:
+    """Return True when TEXT is the path of one file of the source root, not of the build directory."""
+    parts = text.split("/")
+    return (
+        bool(text)
+        and not text.startswith("/")
+        and not text.endswith("/")
+        and not text.startswith(BUILD_PREFIX)
+        and all(part not in ("", ".", "..") for part in parts)
+    )
 
 
 def is_number(text: str) -> bool:
@@ -328,6 +403,10 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
     in_path_lines: list[tuple[str, str]] = []
     language_lines: list[tuple[str, str]] = []
     language_paths: list[tuple[str, str]] = []
+    cites: list[Cite] = []
+    cite_lines: dict[str, int] = {}  # the predicate of each cite row, and its line
+    grants: list[Grant] = []
+    grant_lines: dict[str, int] = {}  # the grant file of each grant row, and its line
     admit_lines: dict[str, int] = {}  # the entry of each admit row, and its line
     seals: list[Seal] = []
     seal_lines: dict[str, int] = {}  # the root of each seal row, and its line
@@ -431,6 +510,33 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
                 )
             cost_lines[args[0]] = number
             header_costs.append(HeaderCost(args[0], kind == "heavy", reason, number))
+        elif kind == "cite":
+            if len(args) < 2 or reason or not is_qualified_name(args[0]) or not all(map(is_identifier, args[1:])):
+                raise TableError(f"{where}: {CITE_FORMAT}")
+            if args[0] in cite_lines:
+                raise TableError(
+                    f"{where}: the predicate {args[0]} has a second cite row, and its first cite row is on "
+                    f"line {cite_lines[args[0]]}"
+                )
+            cite_lines[args[0]] = number
+            cites.append(Cite(args[0], tuple(args[1:])))
+        elif kind == "grant":
+            if (
+                len(args) < 3
+                or reason
+                or not is_file_path(args[0])
+                or not is_qualified_name(args[1])
+                or not is_qualified_name(args[2])
+                or not all(map(is_file_path, args[3:]))
+            ):
+                raise TableError(f"{where}: {GRANT_FORMAT}")
+            if args[0] in grant_lines:
+                raise TableError(
+                    f"{where}: the file {args[0]} has a second grant row, and its first grant row is on "
+                    f"line {grant_lines[args[0]]}"
+                )
+            grant_lines[args[0]] = number
+            grants.append(Grant(args[0], args[1], args[2], tuple(args[3:])))
         else:
             if len(args) != 2 or args[1] not in MODES:
                 raise TableError(f"{where}: an enforce row is 'enforce PATH MODE', and MODE is report or error")
@@ -454,7 +560,8 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
             raise TableError(f"{where}: the path {path} of the language row is in no layer.  A path of the "
                              f"language must be a path of the base")
     return RuleTable(tuple(layers), tuple(allows), tuple(doors), tuple(admits), tuple(quarantines),
-                     tuple(enforces), tuple(languages), tuple(seals), tuple(header_costs))
+                     tuple(enforces), tuple(languages), tuple(seals), tuple(header_costs), tuple(cites),
+                     tuple(grants))
 
 
 def load(path: Path = TABLE) -> RuleTable:

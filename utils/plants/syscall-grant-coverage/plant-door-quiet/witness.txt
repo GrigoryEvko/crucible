@@ -1,0 +1,12 @@
+# The grant file calls the door function quiet, which issues nothing, so the
+# grants of sched_setaffinity and sched_getaffinity are findings of the kind
+# not-issued at the alias.
+
+compile uses src/uses.cpp rules=utils/rule-table.txt stage=c
+exit uses pass
+judge uses
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:15:21 | syscall
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:20:20 | madvise
+finding uses syscall-grant-coverage not-issued include/crucible/warden/Hardening.h:26:7 | sched_getaffinity
+finding uses syscall-grant-coverage not-issued include/crucible/warden/Hardening.h:26:7 | sched_setaffinity
+finding uses syscall-grant-coverage compared include/crucible/warden/Hardening.h:26:7 | 2 issued, 4 granted

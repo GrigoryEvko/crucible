@@ -1,0 +1,23 @@
+# A test of a proved predicate in a base file counts only in the sentinel
+# unit of that file: the unit whose argument sentinel names the header, and
+# the base unit whose main file holds the test.  The quarantined unit with no
+# argument reads the header and gives no finding.  The sentinel unit reads a
+# function template, a member of a class template and a member of a local
+# class of a function template too.
+
+compile sentinel src/uses.cpp sentinel=include/fixy/Uses.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel refined-pre-subsumption retest include/fixy/Uses.h:13:46 | planted::header_retest: count: decide::positive
+finding sentinel refined-pre-subsumption retest include/fixy/Uses.h:19:46 | planted::template_retest: count: decide::positive
+finding sentinel refined-pre-subsumption retest include/fixy/Uses.h:26:50 | planted::Holder::member_retest: count: decide::positive
+finding sentinel refined-pre-subsumption retest include/fixy/Uses.h:35:54 | planted::local_class_retest::Local::retest: count: decide::positive
+
+compile plain src/uses.cpp stage=c
+exit plain pass
+judge plain
+
+compile main src/base/main.cpp stage=c
+exit main pass
+judge main
+finding main refined-pre-subsumption retest src/base/main.cpp:10:46 | planted::main_retest: count: decide::positive

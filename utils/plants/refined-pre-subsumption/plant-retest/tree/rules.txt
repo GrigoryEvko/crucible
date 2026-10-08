@@ -1,0 +1,11 @@
+# The rule table of this plant.  The planted headers of include/ are base
+# files, the unit of src/ is quarantined, and each cite row names the decide
+# procedures that test one predicate class.
+
+layer floor 0 include/
+
+cite fixy::IsPositive positive
+cite fixy::IsNonZero is_non_zero non_zero
+cite fixy::BoundedAbove in_range bounded_above
+
+quarantine src/

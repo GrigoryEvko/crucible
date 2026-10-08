@@ -1,0 +1,15 @@
+// A deliberate test of a proved predicate.  The ledger of the rule admits it
+// with a reason.  The comment on the statement is the marker that the parse
+// tree module of the rule read before the ledger held such a row.
+#include <fixy/Refined.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Pre.h>
+
+namespace planted {
+
+int kept(fixy::Refined<fixy::positive, int> count) {
+    CRUCIBLE_PRE(foundation::decide::positive(count.value()));  // REFINED-PRE-OK: a planted deliberate test
+    return count.value();
+}
+
+}  // namespace planted

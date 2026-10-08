@@ -1,0 +1,12 @@
+// A planted stand-in of the three precondition macros of foundation.  Each
+// one tests its condition and traps when the condition does not hold.
+#pragma once
+
+#define CRUCIBLE_PRE(cond)          \
+    do {                            \
+        if (!(cond)) [[unlikely]] { \
+            __builtin_trap();       \
+        }                           \
+    } while (0)
+#define CRUCIBLE_PRE_FAST(cond) CRUCIBLE_PRE(cond)
+#define CRUCIBLE_PRE_MSG(cond, msg) CRUCIBLE_PRE(cond)

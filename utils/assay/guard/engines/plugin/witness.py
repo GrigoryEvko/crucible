@@ -31,6 +31,8 @@ THE MANIFEST
       white-space accepted|refused           the tables of THE WHITE SPACE
       reads PATH                             assay.core.ruletable reads the table PATH
       procedure WORD                         one procedure of THE PROCEDURES
+      judge NAME                             the module of the rule judges the finding lines of NAME
+                                             (THE KINDS OF A PLANT)
     A LOCATION is FILE:LINE, FILE:* for each line of FILE, or "-" for a
     diagnostic with no file.  The cell "-" of a finding row is an empty
     entity.  Each compile has one exit row.
@@ -115,9 +117,17 @@ THE PROCEDURES
     ccache or no build directory, writes "skip" and gives no failure.
 
 THE KINDS OF A PLANT
-    A plant has a compile with the exit fail, a refused table or a
-    procedure.  A control has no compile with the exit fail, no error row and
-    no refused table.
+    A plant has a compile with the exit fail, a refused table, a procedure or
+    a judge row.  A control has no compile with the exit fail, no error row
+    and no refused table.
+
+    A ledger of a family rule judges its findings, and the compile in the
+    mode report does not fail.  A judge row names a compile, and the module
+    of the rule judges the finding lines of that compile (runner.census_of
+    and runner.PluginContext).  The module uses the ledger of the tree of
+    the plant, which is empty when the plant holds none.  The judged
+    compiles of a plant give a minimum of one error, and the judged compiles
+    of a control give none.
 
 THE STATUS
     witness() returns 0 when each plant and each control holds, and 1 when
@@ -157,7 +167,7 @@ NO_VALUE = "-"
 # The line of a location FILE:* of a diagnostic row, which holds each line of FILE.
 ANY_LINE = "*"
 # The plugin arguments of a compile row, and the default of each one that has a default.
-PLUGIN_KEYS = ("root", "rules", "mode", "build", "stamps", "stamp")
+PLUGIN_KEYS = ("root", "rules", "mode", "build", "stamps", "stamp", "sentinel")
 PATH_KEYS = frozenset({"root", "rules", "build", "stamps"})
 DEFAULTS = {"root": ".", "rules": "rules.txt", "mode": "report"}
 COMPILE_KEYS = frozenset({*PLUGIN_KEYS, "out", "stage", "plugin", "timeout", "findings", "errors", "notes"})
@@ -258,6 +268,7 @@ class Manifest:
     white_space: tuple[str, ...] = ()
     reads: tuple[str, ...] = ()
     procedures: tuple[str, ...] = ()
+    judged: tuple[str, ...] = ()
 
     @property
     def is_refused(self) -> bool:
@@ -267,6 +278,7 @@ class Manifest:
             or any(case.line > 0 for case in self.tables)
             or "refused" in self.white_space
             or bool(self.procedures)
+            or bool(self.judged)
         )
 
     @property
@@ -371,6 +383,7 @@ def parse_manifest(text: str, path: str) -> Manifest:
     white_space: list[str] = []
     reads: list[str] = []
     procedures: list[str] = []
+    judged: list[str] = []
     named: list[rows_grammar.Row] = []
     for row in rows_grammar.parse(text, path):
         kind = row.words[0]
@@ -441,10 +454,16 @@ def parse_manifest(text: str, path: str) -> Manifest:
             if row.words[1] not in PROCEDURES:
                 raise row.error(f"the procedure {row.words[1]!r} is not one of {', '.join(sorted(PROCEDURES))}")
             procedures.append(row.words[1])
+        elif kind == "judge":
+            shape(row, 2, 0)
+            if row.words[1] in judged:
+                raise row.error("a judge row is 'judge NAME', one for each compile")
+            judged.append(row.words[1])
+            named.append(row)
         else:
             raise row.error(
                 f"the row kind {kind!r} is unknown.  The kinds are compile, flag, exit, finding, error, "
-                f"note, text, missing, table-unit, table, white-space, reads and procedure"
+                f"note, text, missing, table-unit, table, white-space, reads, procedure and judge"
             )
     for row in named:
         if row.words[1] not in compiles:
@@ -508,7 +527,9 @@ def parse_manifest(text: str, path: str) -> Manifest:
         )
         for name, item in full.items()
     }
-    return Manifest(full, expected, table_unit, tuple(tables), tuple(white_space), tuple(reads), tuple(procedures))
+    return Manifest(
+        full, expected, table_unit, tuple(tables), tuple(white_space), tuple(reads), tuple(procedures), tuple(judged)
+    )
 
 
 def read_manifest(path: Path) -> Manifest:
@@ -1401,8 +1422,31 @@ def copy_plant(plant: Path, work: Path) -> None:
     (work / TREE).mkdir(exist_ok=True)
 
 
-def run_plant(compiler: Compiler, plant: Path) -> tuple[list[str], int, bool]:
-    """Run each row of one plant or control in a throwaway work directory.
+def given_lines(outcome: Outcome) -> tuple[plugin_sections.Finding, ...]:
+    """Return the finding lines of one compile: its report, else the section of its object, else none."""
+    if outcome.report is not None:
+        return outcome.report
+    return outcome.section.findings if outcome.section is not None else ()
+
+
+def module_errors(rule_id: str, tree: Path, lines: Sequence[plugin_sections.Finding]) -> list[str]:
+    """Return the errors that the module of a rule gives on the finding lines of a plant (THE KINDS OF A PLANT).
+
+    The module judges the lines against the ledger of the tree of the plant.  Complexity: linear in the lines.
+    """
+    from assay.core import registry as rule_registry
+    from assay.guard.engines.plugin import runner as plugin_runner
+
+    rule = rule_registry.load().rules[rule_id]
+    section = plugin_sections.Section("", tuple(lines))
+    census = plugin_runner.census_of([plugin_runner.ObjectSection("plant", "", section)])
+    context = plugin_runner.PluginContext(tree, census=census)
+    findings = meta_runner.judged(rule, tree, context.findings_of(rule))
+    return [item.text() for item in findings if item.level == "error"]
+
+
+def run_plant(compiler: Compiler, plant: Path, rule_id: str = QUARANTINE_RULE) -> tuple[list[str], int, bool]:
+    """Run each row of one plant or control of a rule in a throwaway work directory.
 
     Returns:
         The failures, the number of cases that the plant ran, and True when a procedure gave SKIP
@@ -1416,9 +1460,10 @@ def run_plant(compiler: Compiler, plant: Path) -> tuple[list[str], int, bool]:
     is_plant = plant.name.startswith(meta_runner.PLANT_PREFIX)
     failures: list[str] = []
     if is_plant and not manifest.is_refused:
-        failures.append("the plant has no compile with the exit fail, no refused table and no procedure")
+        failures.append("the plant has no compile with the exit fail, no refused table, no procedure and no judge row")
     if not is_plant and manifest.has_errors:
         failures.append("the control has a compile with the exit fail, an error row or a refused table")
+    lines: list[plugin_sections.Finding] = []
     with tempfile.TemporaryDirectory(prefix=f"witness-{plant.name}-") as scratch:
         work = Path(scratch).resolve()
         copy_plant(plant, work)
@@ -1429,7 +1474,10 @@ def run_plant(compiler: Compiler, plant: Path) -> tuple[list[str], int, bool]:
             table_results = [pool.submit(table_failures, compiler, work, manifest.table_unit, case) for case in tables]
             for item, future in zip(compiles, outcomes, strict=True):
                 try:
-                    failures += judge(item, manifest.expected[item.name], future.result(), manifest)
+                    outcome = future.result()
+                    failures += judge(item, manifest.expected[item.name], outcome, manifest)
+                    if item.name in manifest.judged:
+                        lines += given_lines(outcome)
                 except (OSError, proc.ToolFailed) as problem:
                     failures.append(f"{item.name}: the compile cannot run: {problem}")
             for table_future in table_results:
@@ -1442,6 +1490,12 @@ def run_plant(compiler: Compiler, plant: Path) -> tuple[list[str], int, bool]:
                 ruletable.load(Path(compiler.resolved(path, work)))
             except (ruletable.TableError, OSError) as problem:
                 failures.append(f"ruletable.py does not read {path}: {problem}")
+        if manifest.judged:
+            errors = module_errors(rule_id, work / TREE, lines)
+            if is_plant and not errors:
+                failures.append(f"the module of {rule_id} gives no error on the finding lines of the judged compiles")
+            if not is_plant and errors:
+                failures += [f"the module of {rule_id} gives an error: {error}" for error in errors]
         skipped = False
         cases = len(compiles) + len(tables) + len(manifest.reads)
         for word in manifest.procedures:
@@ -1492,7 +1546,7 @@ def witness(
         return ExitCode.FINDINGS
     compiler = Compiler(program, plugin.resolve(), root.resolve(), build_dir, max(1, jobs))
     with ThreadPoolExecutor(max_workers=len(plants)) as pool:
-        results = list(pool.map(lambda plant: run_plant(compiler, plant), plants))
+        results = list(pool.map(lambda plant: run_plant(compiler, plant, rule_id), plants))
     failures: list[str] = []
     for plant, (found, cases, skipped) in zip(plants, results, strict=True):
         verdict = "FAIL" if found else ("skip" if skipped and cases == 0 else "ok  ")

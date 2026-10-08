@@ -1,0 +1,10 @@
+# The alias grants ptrace, and no code of the grant file or of its doors
+# issues it, so the grant is a finding of the kind not-issued at the alias.
+
+compile uses src/uses.cpp rules=utils/rule-table.txt stage=c
+exit uses pass
+judge uses
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:15:21 | syscall
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:20:20 | madvise
+finding uses syscall-grant-coverage not-issued include/crucible/warden/Hardening.h:26:7 | ptrace
+finding uses syscall-grant-coverage compared include/crucible/warden/Hardening.h:26:7 | 4 issued, 5 granted

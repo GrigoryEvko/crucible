@@ -1,0 +1,26 @@
+# The grant file issues seven system calls that its alias does not grant,
+# each through a different shape.  Each one is a finding of the kind
+# not-granted at its first site.
+
+compile uses src/uses.cpp rules=utils/rule-table.txt stage=c
+exit uses pass
+judge uses
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:18:21 | syscall
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:22:21 | syscall
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:27:20 | madvise
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:29:18 | mlock
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:30:18 | munlock
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:31:20 | prctl
+finding uses quarantine raw-function-pointer include/crucible/warden/Hardening.h:31:10 | int (*)(int, ...) noexcept
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:33:21 | close
+finding uses quarantine raw-function-pointer include/crucible/warden/Hardening.h:33:10 | int (*)(int)
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:35:20 | syscall
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:38:4 | munlockall
+finding uses syscall-grant-coverage not-granted include/crucible/warden/Hardening.h:29:18 | mlock
+finding uses syscall-grant-coverage not-granted include/crucible/warden/Hardening.h:30:18 | munlock
+finding uses syscall-grant-coverage not-granted include/crucible/warden/Hardening.h:31:20 | prctl
+finding uses syscall-grant-coverage not-granted include/crucible/warden/Hardening.h:33:21 | close
+finding uses syscall-grant-coverage not-granted include/crucible/warden/Hardening.h:35:20 | ptrace
+finding uses syscall-grant-coverage not-granted include/crucible/warden/Hardening.h:36:23 | mlockall
+finding uses syscall-grant-coverage not-granted include/crucible/warden/Hardening.h:38:4 | munlockall
+finding uses syscall-grant-coverage compared include/crucible/warden/Hardening.h:43:7 | 11 issued, 4 granted

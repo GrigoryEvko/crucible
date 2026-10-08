@@ -1,0 +1,10 @@
+// A quarantined unit that includes the base header fixy/Uses.h.
+#include <fixy/Uses.h>
+
+namespace planted {
+
+int call_header() {
+    return header_retest(fixy::Refined<fixy::positive, int>{1});
+}
+
+}  // namespace planted

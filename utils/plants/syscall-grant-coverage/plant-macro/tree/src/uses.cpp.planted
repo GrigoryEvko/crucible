@@ -1,0 +1,7 @@
+// A unit that reads the grant file and expands its second macro.
+#include <crucible/warden/Hardening.h>
+
+int unlock_region() noexcept {
+    int region_page = 0;
+    return CRUCIBLE_PLANT_UNLOCK(region);
+}

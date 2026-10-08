@@ -1,0 +1,7 @@
+# The plugin gives the finding of the deliberate test, and the ledger of the
+# tree admits it, so the rule gives no error.
+
+compile admitted src/admitted.cpp stage=c
+exit admitted pass
+judge admitted
+finding admitted refined-pre-subsumption retest src/admitted.cpp:11:46 | planted::kept: count: decide::positive

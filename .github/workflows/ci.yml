@@ -181,11 +181,6 @@ jobs:
           python3 utils/bin/guard check --rule decide-cite-ratio --self-test
           python3 utils/bin/guard check --rule decide-cite-ratio
 
-      - name: refined/pre subsumption (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule refined-pre-subsumption --self-test
-          python3 utils/bin/guard check --rule refined-pre-subsumption
-
       - name: mint pattern (self-test + scan)
         run: |
           python3 utils/bin/guard check --rule mint-pattern --self-test
@@ -195,11 +190,6 @@ jobs:
         run: |
           python3 utils/bin/guard check --rule permission-storage --self-test
           python3 utils/bin/guard check --rule permission-storage
-
-      - name: hardening grant coverage (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule syscall-grant-coverage --self-test
-          python3 utils/bin/guard check --rule syscall-grant-coverage
 
       # The rules of the engine meta read the registry, the ledgers, the plants,
       # the modules of the package and the git history.  The witness runs each

@@ -1,0 +1,47 @@
+// A planted grant file that issues system calls that its alias does not
+// grant: a call qualified from ::, a bare call, an address, a function
+// pointer, a direct syscall number, a call of a helper, and a name that a
+// line splice cuts in two.
+#pragma once
+
+#include <fixy/atoms/Syscall.h>
+#include <fixy/os/Sched.h>
+
+#include <sys/mman.h>
+#include <sys/prctl.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+
+namespace crucible::warden {
+
+inline long mlock2_sys(unsigned long length) noexcept {
+    return ::syscall(SYS_mlock2, 0, length, 0);
+}
+
+inline long mlockall_sys(int flags) noexcept {
+    return ::syscall(SYS_mlockall, flags);
+}
+
+inline void apply(int cpu) noexcept {
+    (void)::fixy::sched::open_door(cpu);
+    (void)::madvise(nullptr, 0, MADV_NORMAL);
+    (void)mlock2_sys(0);
+    (void)::mlock(nullptr, 0);
+    (void)munlock(nullptr, 0);
+    auto control = &::prctl;
+    (void)control;
+    auto closer = ::close;
+    (void)closer(-1);
+    (void)::syscall(SYS_ptrace, 0, 0, 0, 0);
+    (void)mlockall_sys(0);
+    (void)::munlock\
+all();
+}
+
+namespace sc = ::fixy::atom::syscall;
+
+using hardening_syscall_atoms =
+    sc::grant_list<sc::per<sc::SyscallId::sched_setaffinity>, sc::per<sc::SyscallId::sched_getaffinity>,
+                   sc::per<sc::SyscallId::madvise>, sc::per<sc::SyscallId::mlock2>>;
+
+}  // namespace crucible::warden

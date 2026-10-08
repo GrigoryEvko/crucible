@@ -1,0 +1,12 @@
+# The rule table of this plant.  The doors and the catalog of include/fixy/
+# are base files, and the grant file and the unit are quarantined.  The grant
+# row names the grant file, its alias, the catalog and the two doors.
+
+layer floor 0 include/fixy/
+
+allow floor <sched.h>
+
+quarantine include/crucible/
+quarantine src/
+
+grant include/crucible/warden/Hardening.h crucible::warden::hardening_syscall_atoms fixy::atom::syscall::SyscallId include/fixy/os/Sched.h include/fixy/os/CpuPinned.h

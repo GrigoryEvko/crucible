@@ -1,0 +1,13 @@
+# The helper mlock2_sys of the grant file and the helper
+# sched_getaffinity_sys of a door each call syscall() with the number of
+# mlock, which is not their own system call.  Each one is a finding of the
+# kind wrong-helper.
+
+compile uses src/uses.cpp rules=utils/rule-table.txt stage=c
+exit uses pass
+judge uses
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:15:21 | syscall
+finding uses quarantine c-library-call include/crucible/warden/Hardening.h:20:20 | madvise
+finding uses syscall-grant-coverage wrong-helper include/crucible/warden/Hardening.h:15:21 | mlock2_sys: SYS_mlock
+finding uses syscall-grant-coverage wrong-helper include/fixy/os/CpuPinned.h:19:21 | sched_getaffinity_sys: SYS_mlock
+finding uses syscall-grant-coverage compared include/crucible/warden/Hardening.h:26:7 | 4 issued, 4 granted

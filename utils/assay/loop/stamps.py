@@ -88,6 +88,11 @@ def facts_text(table: layer_rules.RuleTable) -> str:
     lines += [f"language {layer} {' '.join(sorted(paths))}" for layer, paths in table.languages]
     lines += [f"seal {seal.root} {' '.join(sorted(seal.prefixes))}" for seal in table.seals]
     lines += [f"{'heavy' if cost.is_heavy else 'light'} {cost.header}" for cost in table.header_costs]
+    lines += [f"cite {cite.predicate} {' '.join(sorted(cite.procedures))}" for cite in table.cites]
+    lines += [
+        f"grant {grant.file} {grant.alias} {grant.enumeration} {' '.join(sorted(grant.doors))}".rstrip()
+        for grant in table.grants
+    ]
     return "".join(f"{line}\n" for line in sorted(lines))
 
 

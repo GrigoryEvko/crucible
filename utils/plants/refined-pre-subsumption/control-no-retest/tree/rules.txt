@@ -1,0 +1,10 @@
+# The rule table of this control.  The planted headers of include/ are base
+# files, and the units of src/ and test/ are quarantined.
+
+layer floor 0 include/
+
+cite fixy::IsPositive positive
+cite fixy::IsNonZero is_non_zero non_zero
+
+quarantine src/
+quarantine test/

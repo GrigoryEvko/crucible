@@ -228,6 +228,37 @@ std::string parse_admit(const std::vector<std::string>& args, AdmitRow& row) {
     return {};
 }
 
+// True when TEXT is a qualified name: identifiers that "::" divides, with no
+// leading "::".
+bool is_qualified_name(const std::string& text) {
+    std::size_t start = 0;
+    while (true) {
+        std::size_t end = text.find("::", start);
+        if (!is_identifier(text.substr(start, end == std::string::npos ? std::string::npos : end - start))) {
+            return false;
+        }
+        if (end == std::string::npos) {
+            return true;
+        }
+        start = end + 2;
+    }
+}
+
+// True when TEXT is the path of one file of the source root, not of the build
+// directory.
+bool is_file_path(const std::string& text) {
+    return is_plain_path(text) && text.back() != '/' && !has_prefix(text, kBuildPrefix);
+}
+
+// The error of a cite row and of a grant row that do not obey the format of
+// their words.  ruletable.py gives the same texts.
+constexpr const char* kCiteFormat =
+    "a cite row is 'cite PREDICATE PROCEDURE...', with the qualified name of a predicate class and the name of each "
+    "decide procedure that tests it";
+constexpr const char* kGrantFormat =
+    "a grant row is 'grant FILE ALIAS ENUMERATION [DOOR...]', with the grant file, the qualified names of its alias "
+    "and of the enumeration of the system calls, and each door file";
+
 // The namespace of a sealed PREFIX: its path after include/, one name for each
 // directory.  Returns an empty list when PREFIX is no directory under include/
 // or a part is no identifier.  ruletable.seal_namespace() gives the same
@@ -302,6 +333,8 @@ bool load_rule_table(const std::string& path) {
     crucible_rows::KeyLines admit_lines;
     crucible_rows::KeyLines seal_lines;
     crucible_rows::KeyLines cost_lines;
+    crucible_rows::KeyLines cite_lines;
+    crucible_rows::KeyLines grant_lines;
     bool is_valid = true;
     int line_number = 0;
     auto refuse = [&](const std::string& message) {
@@ -480,9 +513,41 @@ bool load_rule_table(const std::string& path) {
             }
             table.header_costs.emplace(args[0].substr(1, args[0].size() - 2),
                                        kind == "heavy" ? HeaderCost::heavy : HeaderCost::light);
+        } else if (kind == "cite") {
+            bool is_valid_row = args.size() >= 2 && reason.empty() && is_qualified_name(args[0]);
+            for (std::size_t index = 1; index < args.size() && is_valid_row; ++index) {
+                is_valid_row = is_identifier(args[index]);
+            }
+            if (!is_valid_row) {
+                refuse(kCiteFormat);
+                continue;
+            }
+            if (int first_line = cite_lines.add(args[0], line_number); first_line > 0) {
+                refuse("the predicate " + args[0] + " has a second cite row, and its first cite row is on line "
+                       + std::to_string(first_line));
+                continue;
+            }
+            table.cites.push_back(CiteRow{args[0], std::vector<std::string>(args.begin() + 1, args.end())});
+        } else if (kind == "grant") {
+            bool is_valid_row = args.size() >= 3 && reason.empty() && is_file_path(args[0])
+                             && is_qualified_name(args[1]) && is_qualified_name(args[2]);
+            for (std::size_t index = 3; index < args.size() && is_valid_row; ++index) {
+                is_valid_row = is_file_path(args[index]);
+            }
+            if (!is_valid_row) {
+                refuse(kGrantFormat);
+                continue;
+            }
+            if (int first_line = grant_lines.add(args[0], line_number); first_line > 0) {
+                refuse("the file " + args[0] + " has a second grant row, and its first grant row is on line "
+                       + std::to_string(first_line));
+                continue;
+            }
+            table.grants.push_back(
+                GrantRow{args[0], args[1], args[2], std::vector<std::string>(args.begin() + 3, args.end())});
         } else {
             refuse("the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce, language, "
-                   "seal, heavy and light");
+                   "seal, heavy, light, cite and grant");
         }
     }
     for (std::size_t index = 0; index < allow_layers.size(); ++index) {

@@ -1,0 +1,14 @@
+// A test spells a test of a proved predicate on purpose.  The plugin gives
+// its finding, and the rule keeps only the files of include/ and src/.
+#include <fixy/Refined.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Pre.h>
+
+namespace planted {
+
+int out_of_scope(fixy::Refined<fixy::positive, int> count) {
+    CRUCIBLE_PRE(foundation::decide::positive(count.value()));
+    return count.value();
+}
+
+}  // namespace planted

@@ -771,19 +771,7 @@ namespace {
 
 // True when the family reads FILE in this unit (THE SCOPE).
 bool is_property_file(const FileEntry* file) {
-    if (file == nullptr) {
-        return false;
-    }
-    if (file->file_class == FileClass::quarantined) {
-        return true;
-    }
-    if (file->file_class != FileClass::base) {
-        return false;
-    }
-    if (!state.sentinel.empty() && file->relative == state.sentinel) {
-        return true;
-    }
-    return main_input_filename != nullptr && &classify_file(main_input_filename) == file;
+    return file != nullptr && (file->file_class == FileClass::quarantined || file->is_sentinel);
 }
 
 // The place of the declaration at LOCATION (THE SCOPE), or an empty place
@@ -1914,6 +1902,9 @@ struct PropertyWalk {
     // so the test of an instantiation reads the scope of a pattern and not the
     // pattern itself.
     void function(tree function, bool is_pattern) {
+        if (is_pattern) {
+            walk_family_pattern(function);
+        }
         bool is_mint_name = is_mint(function);
         bool is_door = returns_raw(function);
         bool is_stub = has_stub_deprecation(function);

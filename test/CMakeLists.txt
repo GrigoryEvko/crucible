@@ -478,19 +478,6 @@ crucible_script_test(NAME contract_decide_cite_ratio
 set_tests_properties(contract_decide_cite_ratio contract_decide_cite_ratio_self_test PROPERTIES
   LABELS "ci_guard;ast"
   SKIP_RETURN_CODE 3)
-# A Refined or SealedRefined parameter carries the proof of its predicate.
-# A precondition in the same function that cites the decide:: procedure of
-# that predicate on that parameter re-tests a proved fact, and the guard
-# refuses it.  The guard reads parameters, aliases and CRUCIBLE_PRE calls
-# from the parse tree.
-crucible_script_test(NAME refined_pre_subsumption_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule refined-pre-subsumption
-          --self-test)
-crucible_script_test(NAME refined_pre_subsumption
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule refined-pre-subsumption)
-set_tests_properties(refined_pre_subsumption refined_pre_subsumption_self_test PROPERTIES
-  LABELS "ci_guard;ast"
-  SKIP_RETURN_CODE 3)
 # GCC 16 does not keep the P2900 specifier of a template in a header unit or
 # in a precompiled header, and CRUCIBLE_PRE and CRUCIBLE_POST stay.  The test
 # requires the same contract error from an include, a header unit and a
@@ -522,18 +509,6 @@ crucible_script_test(NAME witness_roster
 set_tests_properties(witness_roster witness_roster_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
-# The hardening grant set.  utils/assay/guard/legacy/check_syscall_grant_coverage.py
-# derives the system calls that the hardening apply path issues from the
-# parse tree, and fails when that set and the declared
-# hardening_syscall_atoms tuple disagree.  Exit 3 when the kit is absent
-# reports a skip.
-crucible_script_test(NAME syscall_grant_coverage_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule syscall-grant-coverage --self-test)
-crucible_script_test(NAME syscall_grant_coverage
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule syscall-grant-coverage)
-set_tests_properties(syscall_grant_coverage syscall_grant_coverage_self_test PROPERTIES
-    LABELS "ci_guard"
-    SKIP_RETURN_CODE 3)
 # A spelling of a branded type that names no brand is the erased
 # identity.  utils/assay/guard/legacy/check_brand_drain.py reads those spellings from the
 # parse tree, and utils/ledgers/brand-drain.txt holds one count per file.  A
