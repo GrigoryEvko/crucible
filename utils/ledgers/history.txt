@@ -15,4 +15,5 @@ utils/ledgers/escape-doors.txt | rebase | admit | 789d5940a | The move into the 
 utils/ledgers/fullness-guard.txt | rebase | admit | 805f38cfa | The module of the parse tree keys each row by its function and its comparison, and no key of the line texts stayed
 utils/ledgers/mint-pattern.txt | rebase | admit | 31b099a27 | The move into the quarantine plugin keys each row by the qualified name of its mint and the missing axis, and each marker of the source became a row. No key stayed
 utils/ledgers/quarantine.txt | raise | admit | fd5f25863 | Each build compiles the SenseHub v2 sources, and no configuration compiled them before. The 143 new findings were in the tree, and the commit adds no code to a quarantined file
+utils/ledgers/syscall-capability.txt | rebase | admit | fae822439 | The move into the owner family of the quarantine plugin keys each row by its holder and the system call, and each marker of the source became a row. No key stayed
 utils/ledgers/trait-guard.txt | rebase | admit | 51b0ded90 | The move into the family home of the quarantine plugin keys each row by its file, and no key of the 142 rows stayed
