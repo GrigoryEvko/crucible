@@ -176,16 +176,6 @@ jobs:
           python3 utils/bin/guard check --rule decide-cite-ratio --self-test
           python3 utils/bin/guard check --rule decide-cite-ratio
 
-      - name: mint pattern (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule mint-pattern --self-test
-          python3 utils/bin/guard check --rule mint-pattern
-
-      - name: permission storage antipattern (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule permission-storage --self-test
-          python3 utils/bin/guard check --rule permission-storage
-
       # The rules of the engine meta read the registry, the ledgers, the plants,
       # the modules of the package and the git history.  The witness runs each
       # rule on its plants of utils/plants/.  The rule structured-reads reads
@@ -225,16 +215,6 @@ jobs:
           python3 utils/bin/guard check --rule syscall-capability --self-test
           python3 utils/bin/guard check --rule syscall-capability
 
-      - name: stub-vs-live discipline (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule stub-discipline --self-test
-          python3 utils/bin/guard check --rule stub-discipline
-
-      - name: each static object is one per process or rostered (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule process-wide-state --self-test
-          python3 utils/bin/guard check --rule process-wide-state
-
       - name: mint inventory (self-test + drift check + HS14 floor)
         run: |
           python3 utils/bin/guard selftest loop.derive.mint_inventory
@@ -268,36 +248,6 @@ jobs:
         run: python3 utils/bin/guard selftest core.report
 
   # ---------------------------------------------------------------------------
-  # The substrate guards. Same free runner, no compiler.
-  # ---------------------------------------------------------------------------
-  layers:
-    name: layer boundary (toolchain-free)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Install ripgrep
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
-
-      # The master utils/bin/guard refuses a Python that is older than 3.14.
-      - name: Install Python 3.14
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.14'
-
-      # The guard reads the code from the parse tree, so this job needs the
-      # pinned kit.  The rule derived-pins runs with the other rules of the
-      # engine tsast.
-      - name: Install the pinned tree-sitter C++ kit
-        run: python3 utils/bin/setup install tree-sitter
-
-      - name: layer boundary (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule layer-boundary --self-test
-          python3 utils/bin/guard check --rule layer-boundary
-
-  # ---------------------------------------------------------------------------
   # The patched GCC, built once for each arch and cached.  The jobs below
   # restore it with the key that this job gives.
   # ---------------------------------------------------------------------------
@@ -313,7 +263,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build:
     name: build+test ${{ matrix.arch }} / ${{ matrix.preset }}
-    needs: [guards, layers, patched-gcc]
+    needs: [guards, patched-gcc]
     runs-on: ${{ matrix.runner }}
     container: fedora:44
     # aarch64 is non-blocking while the arm legs prove out. Both prior

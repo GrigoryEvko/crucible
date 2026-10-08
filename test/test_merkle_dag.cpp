@@ -897,7 +897,7 @@ namespace {
         // child, no test shows that the three preconditions fire.
         auto dies = [&](auto&& body) {
             std::fflush(nullptr);
-            const pid_t child = ::fork();  // SPAWN-PROCESS-OK: observing a [[noreturn]] contract handler needs a child
+            const pid_t child = ::fork();
             assert(child >= 0 && "fork failed");
             if (child == 0) {
                 if (::freopen("/dev/null", "w", stderr) == nullptr) ::_exit(2);
@@ -905,7 +905,7 @@ namespace {
                 ::_exit(0);  // the clause did not fire
             }
             int status = 0;
-            assert(::waitpid(child, &status, 0) == child);  // SPAWN-PROCESS-OK: reaps the child forked just above
+            assert(::waitpid(child, &status, 0) == child);
             return WIFSIGNALED(status) != 0;
         };
 
