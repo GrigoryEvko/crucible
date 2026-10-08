@@ -70,40 +70,40 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_HAVE_BPF on
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-asan-bench-fuzz TORCH_DIR unset
-include/crucible/BackgroundThread.h | heavy-include | 1 | <memory> | -
-include/crucible/CKernel.h | heavy-include | 1 | <memory> | -
-include/crucible/Cipher.h | heavy-include | 1 | <filesystem> | -
-include/crucible/SchemaTable.h | heavy-include | 1 | <memory> | -
-include/crucible/Serialize.h | heavy-include | 1 | <memory> | -
-include/crucible/TraceLoader.h | heavy-include | 1 | <memory> | -
-include/crucible/Vigil.h | heavy-include | 1 | <memory> | -
-include/crucible/cntp/CongestionControl.h | heavy-include | 1 | <filesystem> | -
-include/crucible/cntp/RoceConfig.h | heavy-include | 1 | <filesystem> | -
-include/crucible/ledger/HostFingerprint.h | heavy-include | 1 | <filesystem> | -
-include/crucible/ledger/LedgerStore.h | heavy-include | 1 | <chrono> | -
-include/crucible/ledger/LedgerStore.h | heavy-include | 1 | <filesystem> | -
-include/crucible/ledger/ProbeSupport.h | heavy-include | 1 | <chrono> | -
-include/crucible/ledger/RefreshDaemon.h | heavy-include | 1 | <chrono> | -
-include/crucible/ledger/RefreshDaemon.h | heavy-include | 1 | <memory> | -
-include/crucible/ledger/RefreshDaemon.h | heavy-include | 1 | <thread> | -
-include/crucible/ledger/probes/CacheTier.h | heavy-include | 1 | <thread> | -
-include/crucible/observe/SdcDetect.h | heavy-include | 1 | <memory> | -
-include/crucible/perf/LockContention.h | heavy-include | 1 | <memory> | -
-include/crucible/perf/PmuSample.h | heavy-include | 1 | <memory> | -
-include/crucible/perf/ProcGauges.h | heavy-include | 1 | <memory> | -
-include/crucible/perf/SchedSwitch.h | heavy-include | 1 | <memory> | -
-include/crucible/perf/SchedTpBtf.h | heavy-include | 1 | <memory> | -
-include/crucible/perf/SenseHub.h | heavy-include | 1 | <memory> | -
-include/crucible/perf/SenseHubV2.h | heavy-include | 1 | <memory> | -
-include/crucible/perf/SyscallLatency.h | heavy-include | 1 | <memory> | -
-include/crucible/perf/SyscallTpBtf.h | heavy-include | 1 | <memory> | -
-include/crucible/perf/detail/BpfHub.h | heavy-include | 1 | <memory> | -
-include/crucible/topology/AsymmetricFailure.h | heavy-include | 1 | <memory> | -
-include/crucible/topology/CongestionTelemetryWorker.h | heavy-include | 1 | <memory> | -
-include/crucible/topology/Health.h | heavy-include | 1 | <memory> | -
-include/crucible/topology/Pingmesh.h | heavy-include | 1 | <chrono> | -
-include/fixy/Borrowed.h | heavy-include | 1 | <ranges> | -
-include/fixy/Budgeted.h | heavy-include | 1 | <memory> | -
-include/fixy/EpochVersioned.h | heavy-include | 1 | <memory> | -
+include/crucible/BackgroundThread.h | heavy-include | 1 | <memory> | the class holds its stage pipeline in a std::unique_ptr, and run_on_publish_stage takes the address of the job with std::addressof
+include/crucible/CKernel.h | heavy-include | 1 | <memory> | clear() makes the bounded counter again with std::construct_at, because the counter refuses each decrease, also a step back to 0
+include/crucible/Cipher.h | heavy-include | 1 | <filesystem> | the store makes its object directory with std::filesystem::create_directories, and it makes the path of HEAD with the operator / of std::filesystem::path
+include/crucible/SchemaTable.h | heavy-include | 1 | <memory> | clear() makes the bounded counter again with std::construct_at, because the counter refuses each decrease, also a step back to 0
+include/crucible/Serialize.h | heavy-include | 1 | <memory> | the reader makes the variant counter of a node with std::construct_at, because the counter refuses a step to the value 0 that a file can hold
+include/crucible/TraceLoader.h | heavy-include | 1 | <memory> | the loaders give the loaded trace in a std::unique_ptr, which std::make_unique makes
+include/crucible/Vigil.h | heavy-include | 1 | <memory> | the class holds its ring, its metadata log, its store, its senses and its watchdog in std::unique_ptr members
+include/crucible/cntp/CongestionControl.h | heavy-include | 1 | <filesystem> | the reader gives fixy::mint_tagged a std::filesystem::path of the sysfs file that lists the available congestion controls
+include/crucible/cntp/RoceConfig.h | heavy-include | 1 | <filesystem> | the reader holds the sysfs root of the network devices in a std::filesystem::path, and it makes each file path with its operator /
+include/crucible/ledger/HostFingerprint.h | heavy-include | 1 | <filesystem> | the reader gives fixy::sanitize_path a tagged std::filesystem::path, because that function takes no other path type
+include/crucible/ledger/LedgerStore.h | heavy-include | 1 | <chrono> | the store reads the wall clock with std::chrono::system_clock, because the time to live of an entry is an age across processes and reboots
+include/crucible/ledger/LedgerStore.h | heavy-include | 1 | <filesystem> | the store makes its directories and its file paths, and removes its files, with std::filesystem
+include/crucible/ledger/ProbeSupport.h | heavy-include | 1 | <chrono> | monotonic_nanos() reads the monotonic clock with std::chrono::steady_clock for the age of a memo of a measurement
+include/crucible/ledger/RefreshDaemon.h | heavy-include | 1 | <chrono> | the wait for the next refresh gives std::chrono::seconds to try_acquire_for of the wakeup semaphore
+include/crucible/ledger/RefreshDaemon.h | heavy-include | 1 | <memory> | the daemon publishes its view in a std::shared_ptr, and mint_refresh_daemon gives the daemon in a std::unique_ptr
+include/crucible/ledger/RefreshDaemon.h | heavy-include | 1 | <thread> | the daemon does its loop on a std::jthread, and the loop stops at the std::stop_token of that thread
+include/crucible/ledger/probes/CacheTier.h | heavy-include | 1 | <thread> | the probe pins a std::thread to the CPU that it measures, and a second std::thread writes the remote region first, on the remote node
+include/crucible/observe/SdcDetect.h | heavy-include | 1 | <memory> | the compare and the slot lookup take each address with std::addressof, and an overloaded operator & of a result type cannot change it
+include/crucible/perf/LockContention.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, and the header declares the State class only
+include/crucible/perf/PmuSample.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, and the header declares the State class only
+include/crucible/perf/ProcGauges.h | heavy-include | 1 | <memory> | the class holds its scratch buffer of 128 KB in a std::unique_ptr, because one buffer serves each source in /proc
+include/crucible/perf/SchedSwitch.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, and the header declares the State class only
+include/crucible/perf/SchedTpBtf.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, and the header declares the State class only
+include/crucible/perf/SenseHub.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, and the header declares the State class only
+include/crucible/perf/SenseHubV2.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, which its constructor takes, and the header declares the State class only
+include/crucible/perf/SyscallLatency.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, and the header declares the State class only
+include/crucible/perf/SyscallTpBtf.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, and the header declares the State class only
+include/crucible/perf/detail/BpfHub.h | heavy-include | 1 | <memory> | load_ring gives the state of a ring in a std::unique_ptr, which std::make_unique makes, because the state of a ring cannot move
+include/crucible/topology/AsymmetricFailure.h | heavy-include | 1 | <memory> | the slot lookups give the address of a slot with std::addressof, and an overloaded operator & of the slot type cannot change it
+include/crucible/topology/CongestionTelemetryWorker.h | heavy-include | 1 | <memory> | the slot lookup gives the address of a slot with std::addressof, and an overloaded operator & of the slot type cannot change it
+include/crucible/topology/Health.h | heavy-include | 1 | <memory> | the slot lookups give the address of a slot with std::addressof, and an overloaded operator & of the slot type cannot change it
+include/crucible/topology/Pingmesh.h | heavy-include | 1 | <chrono> | detect_anomalies takes its window as a std::chrono::nanoseconds parameter
+include/fixy/Borrowed.h | heavy-include | 1 | <ranges> | the constructors from a range accept only a std::ranges::contiguous_range that is a std::ranges::borrowed_range, and they read std::ranges::data and std::ranges::size
+include/fixy/Budgeted.h | heavy-include | 1 | <memory> | a moved-from source gets the unbounded grade again through std::destroy_at and std::construct_at, because Graded sets its grade only when it makes the object
+include/fixy/EpochVersioned.h | heavy-include | 1 | <memory> | a moved-from source gets the genesis version again through std::destroy_at and std::construct_at, because Graded sets its grade only when it makes the object
 include/fixy/Path.h | heavy-include | 1 | <filesystem> | the path type is a Tagged over std::filesystem::path, so this header is the one owner of <filesystem> in fixy
-include/fixy/SelfContained.h | heavy-include | 1 | <ranges> | -
+include/fixy/SelfContained.h | heavy-include | 1 | <ranges> | the predicates of a self-contained type read std::ranges::range, view, borrowed_range and range_value_t, and the walk of a range reads std::ranges::begin and end
