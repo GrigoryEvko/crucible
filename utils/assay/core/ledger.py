@@ -38,7 +38,11 @@ THE POLICIES
     on each run, one warning for each PATH, so each admitted item stays in
     the output of the rule.  The text of the warning tells the action of the
     policy: a count falls when its findings go, and an admit row goes with
-    the finding that it admits.
+    the finding that it admits.  A count row with a reason is a keep row: its
+    reason tells why its findings stay.  The text of a keep row gives that
+    reason as the cause, and it does not tell the reader to remove a finding.
+    The text of a count row with no reason tells the reader to remove a
+    finding and to lower its count.
 
 A MODULE OUTSIDE THE ENGINES
     A legacy module that reads its own ledger gets its rule with rule_of(),
@@ -190,6 +194,16 @@ class Ledger:
         if self.policy != Policy.COUNT:
             return {}
         return {key: entry for key, entry in self.base.items() if entry.value == ADMIT_VALUE}
+
+    def reason_of(self, key: Key, name: str | None = None) -> str:
+        """Return the reason of the row of a key: of its difference row in a configuration, else of its base row.
+
+        A difference row with no reason takes the reason of its base row, because the base row says why the key stays.
+        The result is "" for a key with no row and for a row with no reason.
+        """
+        delta = self.deltas.get(name, {}).get(key) if name is not None else None
+        base = self.base.get(key)
+        return (delta.reason if delta is not None else "") or (base.reason if base is not None else "")
 
     def line_of(self, key: Key, name: str | None = None) -> int:
         """Return the line of the row of a key: the difference row, else the base row, else the first row of its path.
@@ -480,36 +494,46 @@ def described(key: Key) -> str:
     return " ".join(parts) if parts else "the finding"
 
 
-def admitted_text(rule: Rule, path: str, total: int, shown: str, by_admit: int = 0) -> str:
+def admitted_text(rule: Rule, path: str, total: int, shown: str, by_admit: int = 0, by_reason: int = 0) -> str:
     """Return the message of the warning of one path with admitted findings, with the action of the policy.
 
     `by_admit` is the number of the findings that a row with the value admit admits (THE PART OF NO CONFIGURATION).
+    `by_reason` is the number of the findings that keep rows count: count rows with a reason (THE POLICIES).
     """
     admit = (f"{path} has {total} findings that rows of the ledger admit: {shown}.  Each row gives its reason, and a "
              f"row goes in the change that removes its finding.  `python3 utils/bin/guard explain {rule.id}` gives the "
              f"rule")
     if rule.policy != Policy.COUNT or by_admit == total:
         return admit
+    command = f"`python3 utils/bin/guard write --rule {rule.id}`"
+    admit_part = (f".  Rows with the value admit admit {by_admit} of them, each with its reason, and such a row goes in "
+                  f"the change that removes its finding") if by_admit else ""
+    if by_admit + by_reason == total:
+        return (f"{path} has {total} findings that rows of the ledger keep, each with its reason: {shown}.  The reason of "
+                f"each row tells why its findings stay.  A count decreases only in the change that removes one of its "
+                f"findings, and that change writes the ledger with {command}{admit_part}")
     counted = (f"{path} keeps {total} findings that the ledger counts: {shown}.  Remove a finding, and lower its count "
-               f"in the same change with `python3 utils/bin/guard write --rule {rule.id}`")
-    if by_admit:
-        counted += (f".  Rows with the value admit admit {by_admit} of them, each with its reason, and such a row goes "
-                    f"in the change that removes its finding")
-    return counted
+               f"in the same change with {command}")
+    if by_reason:
+        counted += f".  Keep rows count {by_reason} of them, and the reason of each such row tells why its findings stay"
+    return counted + admit_part
 
 
 def admitted_warnings(rule: Rule, admitted: Mapping[str, Counter[str]], lines: Mapping[str, int],
-                      by_admit: Mapping[str, int] | None = None) -> list[check_report.Finding]:
+                      by_admit: Mapping[str, int] | None = None,
+                      by_reason: Mapping[str, int] | None = None) -> list[check_report.Finding]:
     """Return one warning for each path with admitted findings: the number of findings of each kind.
 
-    `by_admit` gives the number of the findings of each path that a row with the value admit admits.
+    `by_admit` gives the number of the findings of each path that a row with the value admit admits, and `by_reason`
+    the number that keep rows count.
     """
     findings: list[check_report.Finding] = []
     for path, kinds in sorted(admitted.items()):
         shown = ", ".join(f"{kind or 'no kind'} {count}" for kind, count in sorted(kinds.items()))
         findings.append(check_report.Finding(
             "warning", shown_path(rule.id), lines.get(path, 0), rule.id,
-            admitted_text(rule, path, sum(kinds.values()), shown, (by_admit or {}).get(path, 0)), "admitted", path))
+            admitted_text(rule, path, sum(kinds.values()), shown, (by_admit or {}).get(path, 0),
+                          (by_reason or {}).get(path, 0)), "admitted", path))
     return findings
 
 
@@ -537,6 +561,7 @@ def compare(rule: Rule, ledger: Ledger, findings: Sequence[check_report.Finding]
     admitted: dict[str, Counter[str]] = {}
     lines: dict[str, int] = {}
     by_admit: Counter[str] = Counter()
+    by_reason: Counter[str] = Counter()
     if rule.policy == Policy.COUNT:
         expected = ledger.expected(configuration)
         admits = ledger.admits()
@@ -561,13 +586,15 @@ def compare(rule: Rule, ledger: Ledger, findings: Sequence[check_report.Finding]
             else:
                 admitted.setdefault(key.path, Counter())[key.kind] += measured
                 lines.setdefault(key.path, line)
+                if ledger.reason_of(key, configuration):
+                    by_reason[key.path] += measured
     else:
         for key, items in sorted(by_key.items()):
             if key not in ledger.base:
                 result += items
         for key, entry in sorted(ledger.base.items()):
             result += admit_verdict(rule, key, entry, len(by_key.get(key, [])), admitted, lines)
-    return result + admitted_warnings(rule, admitted, lines, by_admit)
+    return result + admitted_warnings(rule, admitted, lines, by_admit, by_reason)
 
 
 def admit_verdict(rule: Rule, key: Key, entry: Entry, measured: int, admitted: dict[str, Counter[str]],

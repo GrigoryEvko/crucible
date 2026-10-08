@@ -126,12 +126,14 @@ def policy_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     """Check compare() for the policies count and admit."""
     count = table["count-rule"]
     ledger = rule_ledger.write(count, rule_ledger.empty(count), [finding("a.py"), finding("a.py")],
-                               mode=rule_ledger.WriteMode.ADMIT, reason="a planted reason")
+                               mode=rule_ledger.WriteMode.RAISE)
     judged = rule_ledger.compare(count, ledger, [finding("a.py"), finding("a.py")])
     expect("findings at their count give one warning for each path, and no error",
            not errors(judged) and len(judged) == 1 and "keeps 2 findings" in judged[0].message)
-    expect("the warning of the policy count tells the reader to remove a finding and to lower its count",
-           "lower its count" in judged[0].message and "guard write --rule count-rule" in judged[0].message)
+    expect("the warning of a count row with no reason tells the reader to remove a finding and to lower its count",
+           "Remove a finding" in judged[0].message and "lower its count" in judged[0].message
+           and "guard write --rule count-rule" in judged[0].message)
+    keep_cases(expect, count)
     judged = rule_ledger.compare(count, ledger, [finding("a.py")] * 3)
     expect("a count above its row is an error at each finding", len(errors(judged)) == 3)
     judged = rule_ledger.compare(count, ledger, [finding("a.py")])
@@ -158,6 +160,30 @@ def policy_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     expect("compare() refuses the policy max, which the rule judges itself",
            refuses(lambda: rule_ledger.compare(table["max-rule"], rule_ledger.empty(table["max-rule"]), []),
                    rule_ledger.LedgerError))
+
+
+def keep_cases(expect: Expect, count: rule_registry.Rule) -> None:
+    """Check the warning of a keep row: a count row with a reason, which tells why its findings stay."""
+    kept = rule_ledger.write(count, rule_ledger.empty(count), [finding("a.py"), finding("a.py")],
+                             mode=rule_ledger.WriteMode.ADMIT, reason="a planted reason")
+    judged = rule_ledger.compare(count, kept, [finding("a.py"), finding("a.py")])
+    message = judged[0].message if len(judged) == 1 else ""
+    expect("the warning of a keep row gives its reason as the cause, and it asks for no removal",
+           not errors(judged) and "each with its reason" in message and "tells why its findings stay" in message
+           and "Remove" not in message and "guard write --rule count-rule" in message)
+    mixed = rule_ledger.write(count, kept, [finding("a.py"), finding("a.py"), finding("a.py", kind="other")],
+                              mode=rule_ledger.WriteMode.RAISE)
+    judged = rule_ledger.compare(count, mixed, [finding("a.py"), finding("a.py"), finding("a.py", kind="other")])
+    message = judged[0].message if len(judged) == 1 else ""
+    expect("a path with a keep row and a count row with no reason asks for a removal, and names the keep rows",
+           not errors(judged) and "Remove a finding" in message and "Keep rows count 2 of them" in message)
+    text = ("format 1\nrule count-rule\nconfiguration base machine x86_64\nconfiguration arm machine aarch64\n"
+            "a.py | kind | 2 | - | a planted reason\n@arm | a.py | kind | +1 | - | -\n")
+    based = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
+    judged = rule_ledger.compare(count, based, [finding("a.py")] * 3, "arm")
+    message = judged[0].message if len(judged) == 1 else ""
+    expect("a difference row with no reason takes the reason of its base row, so its key is a keep row",
+           not errors(judged) and "each with its reason" in message and "Remove" not in message)
 
 
 def write_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
