@@ -48,11 +48,6 @@ utils/assay/guard/engines/tsast/runner.py | RUF023 | 1 | TsastContext | An issue
 utils/assay/guard/engines/tsast/runner.py | format | 1 | TsastContext | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/explain.py | format | 1 | main | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/listing.py | format | 1 | main | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/preprocessed.py | FURB167 | 1 | _self_test_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/preprocessed.py | FURB188 | 1 | _Files.name_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/preprocessed.py | RUF015 | 2 | _self_test_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/preprocessed.py | SIM115 | 1 | Store._hold_generation | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/preprocessed.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/write.py | I001 | 1 | main | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/write.py | format | 1 | main | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/affected.py | F541 | 3 | SelfTest.write_tests | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count

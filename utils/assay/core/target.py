@@ -264,7 +264,6 @@ def main(argv: list[str]) -> int:
     Returns:
         The exit status of the self-test, or 2 on a usage error
     """
-    if argv == ["--self-test"]:
-        return self_test()
-    print("usage: guard selftest core.target", file=sys.stderr)
-    return 2
+    from assay.core import report
+
+    return report.self_test_main(argv, self_test, "core.target")

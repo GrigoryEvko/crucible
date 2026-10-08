@@ -59,7 +59,6 @@ SUBCOMMANDS = {
     "test-step": ("assay.loop.teststep", None),
     "fixture": ("assay.loop.fixture.store", None),
     "stamps": ("assay.loop.stamps", None),
-    "cache": ("assay.core.cache", None),
     "budget": ("assay.core.report", None),
 }
 

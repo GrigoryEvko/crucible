@@ -85,10 +85,7 @@ lookup is one open of one file.
 The driver of each negative fixture imports this module on each run, so the
 module imports at load time only what cache_root() uses.
 
-`loop cache --evict NAME` holds the cache NAME under its row of LIMITS, when
-its turn is due.  A shell guard uses it for a cache whose entries are files
-one level below a directory of the cache.  `guard selftest core.cache` runs
-the self-test.
+`guard selftest core.cache` runs the self-test.
 """
 
 from __future__ import annotations
@@ -96,7 +93,6 @@ from __future__ import annotations
 import contextlib
 import fcntl
 import os
-import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -121,12 +117,10 @@ SAMPLE_FANS = 16
 FULL_WALK = 60_000
 # The size limit of each subdirectory of the root, in allocated bytes (THE LIMITS).
 LIMITS: dict[str, int] = {
-    "preprocessed": 4 << 30,
     "tsast": 2 << 30,
     "neg": 1 << 30,
     # The pinned toolchain and the checkouts of the proofs are about 1.1 GB of it.
     "session_oracle": 2 << 30,
-    "atom-roster": 512 << 20,
     "clang-format": 64 << 20,
     # The hits of the rule prose-bans, one small entry for each file: 27 MB for the 6496 files of one tree on 2026-10-08.
     "prose-bans": 64 << 20,
@@ -606,33 +600,13 @@ def hold_compiled_bound(max_age: float = MAX_AGE) -> bool:
     return hold_tree_bound(base / COMPILED_CACHE, LIMITS[COMPILED_CACHE], COMPILED_SUFFIXES, max_age=max_age)
 
 
-def evict_main(name: str) -> int:
-    """Hold the cache NAME under its row of LIMITS when its turn is due, for a shell guard.
-
-    Returns:
-        0, or 2 when LIMITS has no row for the name
-    """
-    if name not in LIMITS:
-        print(
-            f"loop cache --evict: the cache {name!r} has no row in LIMITS.  Add one to utils/assay/core/cache.py.",
-            file=sys.stderr,
-        )
-        return 2
-    directory = cache_root(name)
-    if directory is not None:
-        hold_bound(directory, LIMITS[name])
-    return 0
-
-
 def self_test() -> int:
-    """Do a test of the sample, the turn, the bound and the command line on scratch caches.
+    """Do a test of the sample, the turn and the bound on scratch caches.
 
     Returns:
         0 when every case holds, else 2
     """
     import random
-
-    from assay.core import proc
 
     failures: list[str] = []
 
@@ -710,26 +684,6 @@ def self_test() -> int:
             write_atomic(fanned / "new" / "entry", b"y") is None and (fanned / "new" / "entry").read_bytes() == b"y",
         )
 
-        from assay.core.paths import LOOP
-
-        command = [sys.executable, str(LOOP), "cache"]
-        refused = proc.run(proc.Command([*command, "--evict", "no-such-cache"], timeout_s=proc.TOOL_S))
-        expect("--evict refuses a cache with no row of LIMITS", refused.exit == 2 and "LIMITS" in refused.err)
-        roster = root / "atom-roster" / ("a" * 64)
-        roster.mkdir(parents=True)
-        (roster / "variant.log").write_bytes(bytes(8192))
-        os.utime(roster / "variant.log", (time.time() - 2 * MAX_AGE, time.time() - 2 * MAX_AGE))
-        done = proc.run(
-            proc.Command(
-                [*command, "--evict", "atom-roster"],
-                timeout_s=proc.TOOL_S,
-                env=proc.environment({ROOT_VARIABLE: str(root)}),
-            )
-        )
-        expect(
-            "--evict holds a cache of LIMITS under its limits", done.exit == 0 and not (roster / "variant.log").exists()
-        )
-
         compiled = root / COMPILED_CACHE
         stale_module = compiled / "home" / "tree" / "utils" / "assay" / "core" / "cache.cpython-314.pyc"
         fresh_module = compiled / "home" / "tree" / "utils" / "assay" / "core" / "paths.cpython-314.pyc"
@@ -737,7 +691,6 @@ def self_test() -> int:
             module.parent.mkdir(parents=True, exist_ok=True)
             module.write_bytes(bytes(4096))
         os.utime(stale_module, (time.time() - 2 * MAX_AGE, time.time() - 2 * MAX_AGE))
-        # The masters of the --evict runs above also wrote their compiled modules to this cache.
         expect(
             "the compiled modules are each .pyc file at each depth",
             {stale_module, fresh_module} <= {entry.path for entry in files_below(compiled, COMPILED_SUFFIXES)}
@@ -789,17 +742,14 @@ def self_test() -> int:
 
 
 def main(argv: list[str]) -> int:
-    """Run the self-test, or hold one cache under its limit (`loop cache --evict NAME`).
+    """Run the self-test (`guard selftest core.cache`).
 
     Args:
-        argv: --self-test, or --evict NAME
+        argv: --self-test
 
     Returns:
-        The exit status of the mode, or 2 on a usage error
+        The exit status of the self-test, or 2 on a usage error
     """
-    if argv == ["--self-test"]:
-        return self_test()
-    if len(argv) == 2 and argv[0] == "--evict":
-        return evict_main(argv[1])
-    print("usage: loop cache --evict NAME | guard selftest core.cache", file=sys.stderr)
-    return 2
+    from assay.core import report
+
+    return report.self_test_main(argv, self_test, "core.cache")

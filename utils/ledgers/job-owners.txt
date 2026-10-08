@@ -2,8 +2,6 @@
 # and `python3 utils/bin/guard write --rule job-owners` writes this file.
 format 1
 rule job-owners
-utils/assay/core/cache.py | print | 1 | evict_main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/core/cache.py | print | 1 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/core/cache.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/core/cache.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/core/meter.py | cost-record | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
@@ -11,7 +9,6 @@ utils/assay/core/meter.py | print | 2 | meter_compiler | A use of today.  The ch
 utils/assay/core/meter.py | repository-root | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/core/meter.py | subprocess | 1 | measure | A start of the meter of each compile, link and test, outside assay.core.proc on purpose.  An import of proc adds about 0.27 ms to each step (the docstring of assay.core.proc, THE TWO STARTS OUTSIDE THIS MODULE)
 utils/assay/core/report.py | argparse | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/core/target.py | print | 1 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/core/target.py | print | 1 | print_rows | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/core/target.py | print | 3 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/core/target.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
@@ -22,10 +19,6 @@ utils/assay/guard/engines/meta/runner.py | print | 2 | run | A use of today.  Th
 utils/assay/guard/engines/meta/runner.py | print | 4 | witness | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/explain.py | print | 14 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/listing.py | print | 5 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/preprocessed.py | print | 2 | fill_main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/preprocessed.py | print | 1 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/preprocessed.py | print | 3 | self_test | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/preprocessed.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/witness.py | print | 1 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/write.py | print | 4 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/affected.py | argparse | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count

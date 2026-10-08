@@ -137,7 +137,6 @@ CLOSURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
         ),
         PARSER_TOOLS,
     ),
-    "assay.core.cache": (frozenset({"assay", "assay.core", "assay.core.cache"}), PATH_TOOLS),
     "assay.core.report": (
         frozenset(
             {

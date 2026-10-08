@@ -3,8 +3,6 @@
 format 1
 rule import-closure
 utils/assay/core/report.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/guard/preprocessed.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/guard/preprocessed.py | module-import | 1 | multiprocessing | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/loop/affected.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/loop/derive/aten_ops.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/loop/gauge.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row

@@ -1,5 +1,0 @@
-# The ledger of the rule rule-implementations.  `python3 utils/bin/guard explain rule-implementations` tells the rule and its policy,
-# and `python3 utils/bin/guard write --rule rule-implementations` writes this file.
-format 1
-rule rule-implementations
-utils/registry.txt | legacy | admit | preprocessed-fill | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row

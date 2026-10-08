@@ -20,7 +20,6 @@ RULES = (
     "rule gamma engine=build scope=builddir ledger=none doc=XV | a planted rule of the build | change nothing",
     "rule held engine=build scope=builddir ledger=none warn=1 error=2 unit=s held-by=alpha doc=XV | a value | lower it",
     "rule delta engine=plugin scope=include/ ledger=none doc=XV | a planted rule of the plugin | change nothing",
-    "rule epsilon engine=meta scope=data/ ledger=none doc=XV | a rule that reads the store | change nothing",
 )
 # The files of the planted tree.  The check imports the runner of each engine in a function, and the closure of a
 # rule follows only the runner of its own engine.
@@ -37,14 +36,12 @@ FILES = {
     ),
     "utils/assay/guard/witness.py": "from assay.guard import check\n",
     "utils/assay/guard/selftest.py": "import importlib\n",
-    "utils/assay/guard/preprocessed.py": "VALUE = 1\n",
     "utils/assay/core/rows.py": "VALUE = 1\n",
     "utils/assay/core/pins.py": "VALUE = 1\n",
     "utils/assay/core/registry.py": "VALUE = 1\n",
     "utils/assay/guard/engines/meta/runner.py": "from assay.core import pins\n",
     "utils/assay/guard/engines/meta/alpha.py": "from .helper import VALUE\n",
     "utils/assay/guard/engines/meta/helper.py": "VALUE = 1\n",
-    "utils/assay/guard/engines/meta/epsilon.py": "from assay.guard import preprocessed\n",
     "utils/assay/guard/engines/tsast/runner.py": "VALUE = 1\n",
     "utils/assay/guard/engines/tsast/beta.py": "VALUE = 1\n",
     "utils/assay/guard/engines/plugin/runner.py": "VALUE = 1\n",
@@ -177,11 +174,6 @@ def rule_cases(expect: testing.Expect) -> None:
         expect(
             "the witness of a rule that reads the build directory has inputs",
             gamma_witness is not None and not gamma_witness.always and bool(gamma_witness.files),
-        )
-        epsilon = deriver.test_inputs(["check", "--rule", "epsilon"], ())
-        expect(
-            "a rule whose closure holds the preprocessed store runs on each call",
-            epsilon is not None and "preprocessed store" in epsilon.always,
         )
         plugin = deriver.test_inputs(["witness", "--engine", "plugin", "--cxx", "/c", "--build-dir", "/b"], ())
         plugin_files = relative(root, plugin) if plugin is not None else set()

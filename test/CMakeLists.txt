@@ -404,16 +404,6 @@ crucible_script_test(NAME assay_loop_derive_test_witness_fixtures
 set_tests_properties(assay_loop_derive_test_witness_fixtures PROPERTIES
   LABELS "ci_guard"
   ENVIRONMENT "ASSAY_TEST_CXX=${CRUCIBLE_REAL_CXX};ASSAY_TEST_BUILD_DIR=${CMAKE_BINARY_DIR}")
-# utils/assay/guard/preprocessed.py preprocesses each unit of the compile database
-# one time for every guard that reads the preprocessed output, in a store that
-# every build directory and every work tree share.  The self-test proves that
-# a warm run reads the store, that a second work tree reads the units of the
-# first, that a changed header makes its units stale, that two runs at one
-# time share work, and that an eviction keeps the store under its bound.
-crucible_script_test(NAME preprocessed_store_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.preprocessed)
-set_tests_properties(preprocessed_store_self_test PROPERTIES
-    LABELS "ci_guard")
 # utils/assay/core/cache.py gives each cache its limit, its eviction turn and
 # a sample of its size.  The self-test proves that a sample gives the size,
 # that a cache over its limit gets its turn at the next sample, and that an
@@ -554,22 +544,6 @@ crucible_test(test_background_thread_run_in_row test_background_thread_run_in_ro
   test_background_thread_run_in_row_drain.cpp test_background_thread_run_in_row_publish.cpp
   test_background_thread_run_in_row_meta.cpp)
 crucible_test(test_computation_cache_federation)
-
-# The guard that reads the preprocessed store starts on a full store.  Eight
-# setup tests fill it, each one the entries whose index is its shard modulo
-# eight, so no one test preprocesses the whole database.  ctest adds the setup
-# tests to a run that selects the guard.
-set(CRUCIBLE_STORE_SHARDS 8)
-math(EXPR crucible_last_store_shard "${CRUCIBLE_STORE_SHARDS} - 1")
-foreach(crucible_store_shard RANGE ${crucible_last_store_shard})
-  crucible_script_test(NAME preprocessed_store_fill_${crucible_store_shard}
-           COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule preprocessed-fill
-                   ${CMAKE_BINARY_DIR}
-                   --shard ${crucible_store_shard} --of ${CRUCIBLE_STORE_SHARDS})
-  set_tests_properties(preprocessed_store_fill_${crucible_store_shard} PROPERTIES
-      LABELS "ci_guard"
-      FIXTURES_SETUP preprocessed_store)
-endforeach()
 
 crucible_test(test_vessel_api_typed)
 crucible_test(test_storage_nbytes_simd)

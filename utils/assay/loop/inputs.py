@@ -13,8 +13,7 @@ THE TESTS
     that reads a build gets a reason to run on each call.  These rule tests
     read a build:
       * a check of a rule with the scope word builddir
-      * a check of an engine, such as `guard check --engine plugin`
-      * a rule with assay.guard.preprocessed in its import closure.
+      * a check of an engine, such as `guard check --engine plugin`.
 
 THE INPUTS OF A RULE
     Each rule of a rule test gives these inputs:
@@ -107,7 +106,6 @@ META_RUNNER = "assay.guard.engines.meta.runner"
 PLUGIN_WITNESS = "assay.guard.engines.plugin.witness"
 # The module of the judge of the holder of a measured rule with a holder, which its witness runs.
 HELD_WITNESS = "assay.guard.engines.buildsys.held"
-PREPROCESSED = "assay.guard.preprocessed"
 REGISTRY_MODULE = "assay.core.registry"
 # The files of the tree that a module reads, and that no scope of a rule names.
 MODULE_DATA = {
@@ -397,8 +395,6 @@ class Deriver:
         if subcommand == "check" and BUILD_SCOPE in rule.scope:
             return Inputs(always=f"the rule {rule_id} reads the build directory (the scope word {BUILD_SCOPE})")
         modules = self.closure(self.rule_modules(rule, subcommand))
-        if PREPROCESSED in modules:
-            return Inputs(always=f"the rule {rule_id} reads the preprocessed store of the build ({PREPROCESSED})")
         cpp_only = rule.engine == rule_registry.Engine.TSAST
         files = [*MASTERS, RULE_TABLE, f"{LEDGERS}/{rule_id}.txt"]
         files += [file for name in modules if (file := self.module_file(name)) is not None]

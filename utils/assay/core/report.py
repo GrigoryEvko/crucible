@@ -66,7 +66,7 @@ import os
 import re
 import sys
 import tempfile
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -182,6 +182,23 @@ def write_line(text: str, *, is_error: bool = False) -> None:
     The rule job-owners holds that no different module of the package writes to a standard stream.
     """
     print(text, file=sys.stderr if is_error else sys.stdout)
+
+
+def self_test_main(argv: list[str], self_test: Callable[[], int], module: str) -> int:
+    """Run the self-test of a module with a main that has no other mode (`guard selftest MODULE`).
+
+    Args:
+        argv: The words of the command line, which must be --self-test
+        self_test: The self-test of the module
+        module: The name of the module in the package, such as core.cache
+
+    Returns:
+        The exit status of the self-test, or 2 on a usage error
+    """
+    if argv == ["--self-test"]:
+        return self_test()
+    write_line(f"usage: guard selftest {module}", is_error=True)
+    return 2
 
 
 def parse_line(text: str) -> Finding | None:

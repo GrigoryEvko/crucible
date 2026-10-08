@@ -14,7 +14,6 @@ utils/assay/guard/engines/tsast/decide_catalog.py | no-test | 1 | assay.guard.en
 utils/assay/guard/engines/tsast/runner.py | no-test | 1 | assay.guard.engines.tsast.runner | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/explain.py | no-test | 1 | assay.guard.explain | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/listing.py | no-test | 1 | assay.guard.listing | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/guard/preprocessed.py | no-test | 1 | assay.guard.preprocessed | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/selftest.py | no-test | 1 | assay.guard.selftest | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/warnings.py | no-test | 1 | assay.guard.warnings | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/witness.py | no-test | 1 | assay.guard.witness | A module of today with no test module.  The change that writes the test module removes the row
