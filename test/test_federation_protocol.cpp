@@ -12,6 +12,7 @@
 #include <crucible/cipher/FederationProtocol.h>
 #include <crucible/Serialize.h>  // CDAG_MAGIC
 #include <crucible/Types.h>
+#include <fixy/Core.h>
 #include <fixy/Federation.h>
 #include <foundation/effects/Effect.h>
 
@@ -90,12 +91,12 @@ static void test_cold_blob_layout_predicate() {
     crucible::test::pass("  test_cold_blob_layout_predicate:                PASSED\n");
 }
 
-// The bytes C, F, E, D appear in increasing address order on the wire.
-// On a little-endian load that means the constant is spelled 0x44454643,
-// which reads backwards and is worth stating once.
+// The federation entry wire format puts the magic at offset 0 of the
+// header, as the bytes 'C', 'F', 'E', 'D' in increasing address order.
+// These checks compare the magic with the letters of the format.  A change
+// of the constant fails them.
 
 static void test_magic_byte_order() {
-    static_assert(fed::FEDERATION_MAGIC == 0x44454643u);
     static_assert((fed::FEDERATION_MAGIC & 0xFFu) == 'C');
     static_assert(((fed::FEDERATION_MAGIC >> 8) & 0xFFu) == 'F');
     static_assert(((fed::FEDERATION_MAGIC >> 16) & 0xFFu) == 'E');
@@ -112,6 +113,26 @@ static void test_magic_byte_order() {
     assert(bytes[3] == 'D');
 
     crucible::test::pass("  test_magic_byte_order:                          PASSED\n");
+}
+
+// The federation entry wire format puts the protocol version at offset 4
+// of the header, as a 16-bit little-endian word.  Version 1 is the byte
+// 0x01 at offset 4 and the byte 0x00 at offset 5.  The codec copies the
+// header to the wire with no byte swap.  As a result, the bytes of the
+// constant in memory are the bytes on the wire.
+
+struct VersionFieldBytes {
+    std::uint8_t at_offset_4 = 0;
+    std::uint8_t at_offset_5 = 0;
+};
+
+static void test_version_byte_order() {
+    constexpr VersionFieldBytes version_bytes =
+        fixy::decode<VersionFieldBytes>(fed::FEDERATION_PROTOCOL_V1).value_or(VersionFieldBytes{});
+    static_assert(version_bytes.at_offset_4 == 0x01);
+    static_assert(version_bytes.at_offset_5 == 0x00);
+
+    crucible::test::pass("  test_version_byte_order:                        PASSED\n");
 }
 
 static void test_round_trip_basic() {
@@ -852,8 +873,6 @@ static_assert(fed::federation_error_name(fed::FederationError::BadMagic) == "Bad
 static_assert(fed::federation_error_name(fed::FederationError::UniverseCardinalityTooHigh)
               == "UniverseCardinalityTooHigh");
 
-static_assert(fed::FEDERATION_MAGIC == 0x44454643u);
-static_assert(fed::FEDERATION_PROTOCOL_V1 == 1u);
 static_assert(fed::FEDERATION_HEADER_BYTES == 32u);
 }  // namespace constexpr_witnesses
 
@@ -875,7 +894,6 @@ static void test_constexpr_witnesses() {
 // headers to pin the inequality in one place.
 
 static void test_magic_collision_with_cdag() {
-    static_assert(fed::FEDERATION_MAGIC == 0x44454643u);
     static_assert(fed::FEDERATION_MAGIC != crucible::CDAG_MAGIC, "FEDERATION_MAGIC must not collide with CDAG_MAGIC.");
 
     // The first byte on the wire already differs, so a decoder that
@@ -997,6 +1015,7 @@ int main() {
     test_header_layout_invariants();
     test_cold_blob_layout_predicate();
     test_magic_byte_order();
+    test_version_byte_order();
     test_round_trip_basic();
     test_round_trip_empty_payload();
     test_serialize_rejects_sentinel();
@@ -1028,6 +1047,6 @@ int main() {
     test_magic_collision_with_cdag();
     test_field_width_pins();
     test_vector_buffer_roundtrip();
-    crucible::test::pass("test_federation_protocol: 34 groups, all passed\n");
+    crucible::test::pass("test_federation_protocol: 35 groups, all passed\n");
     return 0;
 }

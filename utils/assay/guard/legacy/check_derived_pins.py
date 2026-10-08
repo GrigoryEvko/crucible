@@ -26,16 +26,23 @@ WHAT COUNTS AS A PIN
     its header include/<layer>/<path>.h.  Each file sees each header of the
     scope that an #include of its parse tree names, as include/<path> for an
     angle-bracket path and beside the file for a quoted path.  A header that
-    the file reaches only through another header is not read.  A qualifier
-    that starts with a namespace alias does not resolve.  A constant of
+    the file reaches only through another header is not read.  A constant of
     a function body or of an unnamed class of a header is local to that
-    header, so no other file sees it.  An initializer and a literal count as the
-    same integer through a suffix, a digit separator, a base prefix,
-    parentheses, a static_cast, a braced initializer and a builtin-type
-    conversion.  A different literal, a derived operand, a call and a
-    comparison outside a static_assert are not pins.  A floor or a ceiling
-    (`>=`, `<=`) that equals the constant is a bound, such as the upper limit
-    of an API, and not a copy, so it is not read.
+    header, so no other file sees it.
+
+    A qualifier that starts with a namespace alias resolves to the target of
+    the alias.  The alias of the innermost scope that encloses the pin wins,
+    in the file or in a header that the pin can see.  An alias of an alias
+    resolves too, and a cycle of aliases reaches no constant.  An alias of a
+    function body of a header is local to that header.
+
+    An initializer and a literal count as the same integer through a suffix,
+    a digit separator, a base prefix, parentheses, a static_cast, a braced
+    initializer and a builtin-type conversion.  A different literal, a
+    derived operand, a call and a comparison outside a static_assert are not
+    pins.  A floor or a ceiling (`>=`, `<=`) that equals the constant is a
+    bound, such as the upper limit of an API, and not a copy, so it is not
+    read.
 
 WHAT THE PARSER CANNOT READ
     A pin inside a macro body is not read.  A parse error in a file of the
@@ -61,6 +68,7 @@ row, a usage error or a failed self-test, 3 when the kit is not installed.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import io
 import os
 import re
@@ -86,6 +94,11 @@ LOCAL_SCOPE_PREFIXES = ("(function@", "(class@")
 
 # A constant: its scope and its name, then each literal value with the file that declares it.
 Constants = dict[tuple[tuple[str, ...], str], set[tuple[int, str]]]
+# A namespace alias: its scope and its name, then whether its target starts at the global scope, and the parts
+# of the target.
+Aliases = dict[tuple[tuple[str, ...], str], tuple[bool, tuple[str, ...]]]
+# The number of aliases that one qualifier passes through at most, so that a cycle of aliases ends.
+ALIAS_DEPTH = 8
 
 
 def literal_of(node: tsast.Node | None) -> int | None:
@@ -201,6 +214,62 @@ def exported(constants: Constants) -> Constants:
     unnamed class.  The scope parts of those two name a line of the header, which means nothing in another file."""
     return {key: values for key, values in constants.items()
             if not any(part.startswith(LOCAL_SCOPE_PREFIXES) for part in key[0])}
+
+
+def namespace_aliases(tree: tsast.Tree) -> Aliases:
+    """Return each namespace alias of a file, by its scope and its name, with the target that it names.
+
+    Complexity: linear in the number of nodes of the file.
+
+    Args:
+        tree: The parse tree of the file
+    """
+    found: Aliases = {}
+    for node in tree.find("namespace_alias_definition"):
+        named = node.child_by_field("name")
+        targets = [child for child in node.children if child.type != "comment" and child.field != "name"]
+        if named is None or len(targets) != 1:
+            continue
+        target = tsast.qualified_parts(targets[0])
+        if target is not None:
+            found[(scope_of(node), named.text)] = target
+    return found
+
+
+def exported_aliases(aliases: Aliases) -> Aliases:
+    """Return the aliases of a header that another file can see: each one outside a function body."""
+    return {key: target for key, target in aliases.items()
+            if not any(part.startswith(LOCAL_SCOPE_PREFIXES) for part in key[0])}
+
+
+def resolve_aliases(comparison: Comparison, aliases: Aliases) -> Comparison:
+    """Return the comparison with the namespace alias at the head of its qualifier replaced by its target.
+
+    The alias of the innermost scope that encloses the comparison wins, as the
+    compiler looks it up.  The names of a target that does not start at the
+    global scope resolve from the scope of the alias, so the comparison then
+    looks up its name from that scope.  An alias whose target starts with
+    another alias resolves again, at most ALIAS_DEPTH times.
+
+    Complexity: O(ALIAS_DEPTH * the depth of the scope).
+
+    Args:
+        comparison: A comparison of the file
+        aliases: The aliases that the file can see
+    """
+    for _ in range(ALIAS_DEPTH):
+        if comparison.is_global or not comparison.qualifier:
+            return comparison
+        head = comparison.qualifier[0]
+        scope = comparison.scope
+        found = next((scope[:depth] for depth in range(len(scope), -1, -1) if (scope[:depth], head) in aliases),
+                     None)
+        if found is None:
+            return comparison
+        is_global, target = aliases[(found, head)]
+        comparison = dataclasses.replace(comparison, is_global=is_global, qualifier=target + comparison.qualifier[1:],
+                                         scope=found)
+    return comparison
 
 
 def header_of_check_file(rel: str) -> str | None:
@@ -339,9 +408,10 @@ def scope_files(root: Path) -> list[Path]:
 
 @dataclass(frozen=True, slots=True)
 class FileFacts:
-    """What the scan reads from one file: its constants, the headers that it sees, and its comparisons."""
+    """What the scan reads from one file: its constants, its aliases, the headers that it sees, and its comparisons."""
 
     constants: Constants
+    aliases: Aliases
     headers: tuple[str, ...]
     comparisons: tuple[Comparison, ...]
 
@@ -349,10 +419,11 @@ class FileFacts:
 def scan(root: Path) -> tuple[list[tuple[str, int, str, int, tuple[str, ...]]], list[str]]:
     """Find each vacuous pin in scope.
 
-    The scan reads each file one time.  Then it looks up the name of each
-    comparison in the constants of its file and of the headers that the file
-    sees.  Complexity: linear in the total size of the files in scope, plus
-    the constants of each seen header for each file.
+    The scan reads each file one time.  Then it resolves the namespace alias
+    at the head of the qualifier of each comparison, and it looks up the name
+    in the constants of its file and of the headers that the file sees.
+    Complexity: linear in the total size of the files in scope, plus the
+    constants and the aliases of each seen header for each file.
 
     Returns:
         Each pin as (path, line, name, literal, the files that declare the literal), and each parse failure
@@ -368,8 +439,10 @@ def scan(root: Path) -> tuple[list[tuple[str, int, str, int, tuple[str, ...]]], 
         checked = header_of_check_file(rel)
         if checked is not None:
             headers.append(checked)
-        facts[rel] = FileFacts(literal_constants(tree, rel), tuple(dict.fromkeys(headers)), tuple(comparisons(tree)))
+        facts[rel] = FileFacts(literal_constants(tree, rel), namespace_aliases(tree), tuple(dict.fromkeys(headers)),
+                               tuple(comparisons(tree)))
     shared = {rel: exported(fact.constants) for rel, fact in facts.items()}
+    shared_aliases = {rel: exported_aliases(fact.aliases) for rel, fact in facts.items()}
     found: list[tuple[str, int, str, int, tuple[str, ...]]] = []
     for rel, fact in facts.items():
         if not fact.comparisons:
@@ -378,8 +451,14 @@ def scan(root: Path) -> tuple[list[tuple[str, int, str, int, tuple[str, ...]]], 
         for source in (fact.constants, *(shared[header] for header in fact.headers if header in shared)):
             for key, values in source.items():
                 constants[key] |= values
+        # An alias of the file hides an alias of a header with the same scope and name.
+        aliases: Aliases = dict(fact.aliases)
+        for header in fact.headers:
+            for key, target in shared_aliases.get(header, {}).items():
+                aliases.setdefault(key, target)
+        resolved = [resolve_aliases(comparison, aliases) for comparison in fact.comparisons]
         found.extend((rel, row + 1, name, value, origins)
-                     for row, name, value, origins in sorted(set(pins(fact.comparisons, constants))))
+                     for row, name, value, origins in sorted(set(pins(resolved, constants))))
     return sorted(found), failures
 
 
@@ -465,6 +544,76 @@ SEEN_HEADER_CONTROLS = (
     ("test/not_included.cpp", "a pin against a constant of a header that the file does not include"),
     ("test/other_value.cpp", "a pin against another literal than the constant of a header"),
     ("test/local_hidden.cpp", "a pin against a constant of a function body of a header"),
+)
+
+# A tree for the pins through a namespace alias.  It goes into the root with
+# SEEN_HEADER_TREE, so its files see include/fixy/Seen.h.  The two functions
+# of alias_other_function.cpp start on different rows, so their scopes have
+# different names.  The function with_alias() of Aliased.h and the function
+# user() of alias_header_local.cpp start on the same row, so their scopes
+# have the same name.
+ALIAS_TREE = {
+    "include/fixy/Aliased.h": ("#pragma once\n"
+                               "namespace fixy::aliased_space {\n"
+                               "inline constexpr int deep = 21;\n"
+                               "}\n"
+                               "namespace fixy { namespace ahead = ::fixy::aliased_space; }\n"
+                               "inline void with_alias() { namespace hidden_alias = ::fixy::aliased_space; }\n"),
+    "test/alias_header_local.cpp": ("#include <fixy/Aliased.h>\n"
+                                    "// The function below starts on the row of with_alias() in Aliased.h.\n"
+                                    "\n"
+                                    "\n"
+                                    "\n"
+                                    "inline void user() { static_assert(hidden_alias::deep == 21); }\n"),
+    "test/alias_file_scope.cpp": ("#include <fixy/Seen.h>\n"
+                                  "namespace sp = fixy::seen_space;\n"
+                                  "static_assert(sp::seen == 12);\n"),
+    "test/alias_global.cpp": ("#include <fixy/Seen.h>\n"
+                              "namespace gs = ::fixy::seen_space;\n"
+                              "static_assert(gs::seen == 12);\n"),
+    "test/alias_anonymous.cpp": ("#include <fixy/Seen.h>\n"
+                                 "namespace {\n"
+                                 "namespace an = fixy::seen_space;\n"
+                                 "static_assert(an::seen == 12);\n"
+                                 "}\n"),
+    "test/alias_function.cpp": ("#include <fixy/Seen.h>\n"
+                                "inline void user() {\n"
+                                "    namespace fn_alias = fixy::seen_space;\n"
+                                "    static_assert(fn_alias::seen == 12);\n"
+                                "}\n"),
+    "test/alias_chain.cpp": ("#include <fixy/Seen.h>\n"
+                             "namespace first = fixy;\n"
+                             "namespace second = first::seen_space;\n"
+                             "static_assert(second::seen == 12);\n"),
+    "test/alias_header.cpp": "#include <fixy/Aliased.h>\nnamespace fixy {\nstatic_assert(ahead::deep == 21);\n}\n",
+    "test/alias_other_value.cpp": ("#include <fixy/Seen.h>\n"
+                                   "namespace sp = fixy::seen_space;\n"
+                                   "static_assert(sp::seen == 13);\n"),
+    "test/alias_other_function.cpp": ("#include <fixy/Seen.h>\n"
+                                      "inline void owner() { namespace hidden = fixy::seen_space; }\n"
+                                      "inline void other() { static_assert(hidden::seen == 12); }\n"),
+    "test/alias_elsewhere.cpp": ("#include <fixy/Seen.h>\n"
+                                 "namespace elsewhere = fixy::other_space;\n"
+                                 "static_assert(elsewhere::seen == 12);\n"),
+    "test/alias_cycle.cpp": ("#include <fixy/Seen.h>\n"
+                             "namespace loop_a = loop_b;\n"
+                             "namespace loop_b = loop_a;\n"
+                             "static_assert(loop_a::seen == 12);\n"),
+}
+ALIAS_PLANTS = (
+    ("test/alias_file_scope.cpp", "seen", "a pin through an alias at file scope"),
+    ("test/alias_global.cpp", "seen", "a pin through an alias whose target starts at the global scope"),
+    ("test/alias_anonymous.cpp", "seen", "a pin through an alias of an unnamed namespace"),
+    ("test/alias_function.cpp", "seen", "a pin through an alias of the function body of the pin"),
+    ("test/alias_chain.cpp", "seen", "a pin through an alias of an alias"),
+    ("test/alias_header.cpp", "deep", "a pin through an alias that a seen header declares"),
+)
+ALIAS_CONTROLS = (
+    ("test/alias_other_value.cpp", "a pin through an alias against another literal"),
+    ("test/alias_other_function.cpp", "a pin through an alias of another function body"),
+    ("test/alias_elsewhere.cpp", "a pin through an alias of a namespace with no such constant"),
+    ("test/alias_cycle.cpp", "a pin through a cycle of aliases"),
+    ("test/alias_header_local.cpp", "a pin through an alias of a function body of a header"),
 )
 
 
@@ -601,6 +750,17 @@ def self_test() -> int:
         expect("the report of a pin against a constant of a header names the header",
                any(pin[0] == "test/layer/checks/fixy/Seen.cpp" and pin[4] == ("include/fixy/Seen.h",)
                    for pin in found))
+    with tempfile.TemporaryDirectory() as work:
+        root = Path(work)
+        for rel, text in {**SEEN_HEADER_TREE, **ALIAS_TREE}.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding="utf-8")
+        found, broken = scan(root)
+        expect("the tree of the aliases parses", not broken, True)
+        for rel, name, label in ALIAS_PLANTS:
+            expect(f"caught: {label}", any(pin[0] == rel and pin[2] == name for pin in found))
+        for rel, label in ALIAS_CONTROLS:
+            expect(f"not caught: {label}", not any(pin[0] == rel for pin in found), True)
     if failures:
         print(f"check-derived-pins --self-test: FAILED — {len(failures)} case(s) did not hold")
         return 2

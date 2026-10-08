@@ -19,30 +19,31 @@ namespace {
 
 namespace v2 = crucible::perf::v2;
 
-constexpr std::uint64_t expected_layout_hash(std::uint64_t counters, std::uint64_t gauges,
-                                             std::uint64_t build_tag) noexcept {
-    return (counters << 48) | (gauges << 32) | (std::uint64_t{v2::SENSE_HUB_VERSION} << 16) | build_tag;
-}
-
-static_assert(v2::SENSE_HUB_VERSION == 2);
-static_assert(v2::SENSE_HUB_MAGIC == 0x4352424CU);
+// The record sense_meta of include/crucible/perf/bpf/sense_hub_v2.bpf.c
+// holds the magic at offset 0.  The format writes the magic as the four
+// letters 'CRBL'.  A C compiler makes these letters into one 32-bit word,
+// with 'C' as the most significant byte.
+static_assert(v2::SENSE_HUB_MAGIC
+              == ((std::uint32_t{'C'} << 24) | (std::uint32_t{'R'} << 16) | (std::uint32_t{'B'} << 8)
+                  | std::uint32_t{'L'}));
 static_assert(sizeof(v2::sense_meta) == 64);
 
 #if defined(CRUCIBLE_EXPECT_SENSE_HUB_EXTENDED) && !defined(CRUCIBLE_SENSE_HUB_EXTENDED)
 #error "CMake enabled CRUCIBLE_SENSE_HUB_EXTENDED but userspace target did not receive the compile definition"
 #endif
 
+// The record sense_meta holds the layout word at offset 16.  Bits 48 to 63
+// hold the number of counters, and bits 32 to 47 hold the number of gauges.
+// Bits 16 to 31 hold the version 2, and bits 0 to 15 hold the build tag.
+// Each word here is the value that the BPF program calculates for its
+// build.  A change of one constant of SenseHubV2.h fails this check.
 #ifdef CRUCIBLE_SENSE_HUB_EXTENDED
-static_assert(v2::NUM_COUNTERS == 256);
-static_assert(v2::NUM_GAUGES == 64);
-static_assert(v2::BUILD_TAG == 0xDEB6);
-static_assert(v2::SENSE_HUB_LAYOUT_HASH == expected_layout_hash(256, 64, 0xDEB6));
+static_assert(v2::SENSE_HUB_LAYOUT_HASH == 0x0100'0040'0002'DEB6ULL,
+              "The extended build has 256 counters, 64 gauges, version 2 and the build tag 0xDEB6.");
 static_assert(static_cast<std::uint32_t>(v2::Idx::SKB_DROP_NEIGH_FAILED) == 128);
 #else
-static_assert(v2::NUM_COUNTERS == 128);
-static_assert(v2::NUM_GAUGES == 32);
-static_assert(v2::BUILD_TAG == 0xBA51);
-static_assert(v2::SENSE_HUB_LAYOUT_HASH == expected_layout_hash(128, 32, 0xBA51));
+static_assert(v2::SENSE_HUB_LAYOUT_HASH == 0x0080'0020'0002'BA51ULL,
+              "The basic build has 128 counters, 32 gauges, version 2 and the build tag 0xBA51.");
 #endif
 
 static_assert(sizeof(v2::CounterSnapshot) == v2::NUM_COUNTERS * sizeof(std::uint64_t));

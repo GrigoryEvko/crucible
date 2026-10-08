@@ -71,8 +71,6 @@ static_assert(std::is_same_v<th::InstructionTier, fah::scalar>,
               "the ring issues loads, stores and a prefetch hint, which is the scalar tier.");
 static_assert(!fah::at_or_above(th::InstructionTier::tier, fah::HwInstruction::NonDeterministicTsc),
               "the append runs on the hot path, which refuses the timestamp and privileged tiers.");
-static_assert(th::kPrefetchLocality == 3, "the wired prefetch locality must be 3, the highest reuse, which is the "
-                                          "value the four __builtin_prefetch calls share.");
 
 }  // namespace
 
@@ -97,7 +95,5 @@ int main() {
     // H2 tag 5 is unique at index 5 within any group width.
     if (!static_cast<bool>(fives)) return 4;
     if (fives.lowest() != 5U) return 5;
-
-    // The return value ODR-uses the declared locality constant.
-    return (th::kPrefetchLocality == 3) ? 0 : 6;
+    return 0;
 }
