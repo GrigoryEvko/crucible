@@ -1,0 +1,53 @@
+#pragma once
+
+#include <array>
+#include <cstdint>
+
+namespace plant {
+
+struct Padded {
+    std::uint64_t wide = 0;
+    std::uint8_t narrow = 0;
+};
+
+// Each level holds the level below it two times.  A walk that does not keep
+// the answer of each type reads 2^40 classes.
+template <int Depth>
+struct Tree {
+    Tree<Depth - 1> left;
+    Tree<Depth - 1> right;
+};
+
+template <>
+struct Tree<0> {
+    std::array<Padded, 2> leaves;
+};
+
+// The tree holds 2^40 lists of two elements.  The longest list of plant::Padded
+// has two elements, and the module keeps no line of it.
+using DeepTree = Tree<40>;
+
+struct Raw {
+    std::uint64_t wide;
+    std::uint8_t narrow;
+};
+
+// Each element of Raw holds one value range, so one block holds 120 value
+// ranges in two lists of 60 elements.
+struct Block {
+    std::array<Raw, 60> first;
+    std::array<Raw, 60> second;
+};
+
+// The members of the union have 4801 value ranges, more than the rule keeps,
+// so the union holds the value bits of its largest member, blocks.  The rule
+// then counts 268800 padding bits.  The union has 134400, because lows holds
+// the first half of the union.
+union Wide {
+    std::array<Block, 40> blocks;
+    std::array<std::uint64_t, 4800> lows;
+};
+
+using WideList = std::array<Wide, 4>;
+
+}  // namespace plant

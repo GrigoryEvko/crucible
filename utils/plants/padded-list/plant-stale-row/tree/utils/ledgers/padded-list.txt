@@ -1,0 +1,4 @@
+# The ledger of the plant: a row of a padded list that the tree no longer has.
+format 1
+rule padded-list
+include/fixy/Slots.h | padded-member | 1 | plant::Registry::slots: plant::Slot | -

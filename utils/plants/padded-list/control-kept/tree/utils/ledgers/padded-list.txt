@@ -1,0 +1,4 @@
+# The ledger of the control: a keep row with its reason.
+format 1
+rule padded-list
+include/fixy/Slots.h | padded-member | 1 | plant::Registry::slots: plant::Slot | each slot fills one cache line on purpose

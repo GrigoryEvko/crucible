@@ -1,0 +1,8 @@
+# A padded list in a quarantined header is a finding of the rule padded-list
+# in a unit that is not the sentinel unit of the header.  The rule quarantine
+# gives the object of std::array a line too.
+compile unit test/store.cpp stage=c
+exit unit pass
+judge unit
+finding unit padded-list padded-member include/crucible/Store.h:13:29 | plant::Store::slots: plant::Padded \| count=100 holes=56
+finding unit quarantine std-object include/crucible/Store.h:13:29 | std::array (std::array<plant::Padded, 100>)

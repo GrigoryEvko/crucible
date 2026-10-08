@@ -1,0 +1,10 @@
+#include <fixy/Lists.h>
+
+#include <cstddef>
+
+// The unit completes each specialization that an alias of the header names,
+// and an instantiation of the class template.
+std::size_t completed_size() noexcept {
+    return sizeof(plant::ShortList) + sizeof(plant::PackedList) + sizeof(plant::FloatList) + sizeof(plant::Scalars)
+         + sizeof(plant::Pointers) + sizeof(plant::Templated<plant::Padded>) + sizeof(plant::Template<plant::Padded>);
+}

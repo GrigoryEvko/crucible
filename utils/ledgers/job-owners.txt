@@ -63,14 +63,6 @@ utils/assay/guard/legacy/check_no_unchecked_access.py | print | 3 | check | A us
 utils/assay/guard/legacy/check_no_unchecked_access.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | print | 5 | planted_cases | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | print | 1 | planted_cases.expect | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | argparse | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | print | 1 | check | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | print | 1 | evaluate | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | print | 1 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | print | 4 | self_test | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | print | 3 | write | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | row-bar | 1 | parse_probe_output | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_prose_paths.py | print | 3 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_prose_paths.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_prose_paths.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count

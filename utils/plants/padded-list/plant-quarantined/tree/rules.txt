@@ -1,0 +1,4 @@
+# The rule table of a plant of the rule padded-list: include/crucible/ and
+# test/ are quarantined.
+quarantine include/crucible/
+quarantine test/

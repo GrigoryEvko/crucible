@@ -5021,24 +5021,6 @@ crucible_script_test(NAME guard_warnings_self_test
 set_tests_properties(check_report_self_test guard_warnings_self_test PROPERTIES
     LABELS "ci_guard")
 
-# padded_lists — the element type of a large fixed list has no padding bit.
-# With -ftrivial-auto-var-init=zero, GCC writes one store for each padding
-# hole of each element of a fixed list in an automatic object, with no loop.
-# The check selects files from the parse tree, compiles one probe for each
-# through ccache, and reads the counts and the padding with reflection.  The
-# rule padded-list of utils/registry.txt gives the count.  Each padded
-# list that the tree holds today is a row of utils/ledgers/padded-list.txt
-# and gives a warning.  A new one is an error.
-crucible_script_test(NAME padded_lists_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule padded-list
-          --build-dir ${CMAKE_BINARY_DIR} --self-test)
-crucible_script_test(NAME padded_lists
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule padded-list
-          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-set_tests_properties(padded_lists padded_lists_self_test PROPERTIES
-    LABELS "ci_guard"
-    SKIP_RETURN_CODE 3)
-
 # The test launcher (cmake/TestLauncher.cmake) runs in front of each test
 # except a negative fixture, and it holds the rules test-time and test-memory
 # of utils/registry.txt while the test runs.  The fixture driver holds them for
@@ -5252,7 +5234,7 @@ set_tests_properties(mutation_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RE
 # require the fixture.  These tests read the trees and their registrations
 # give no label ast, so they get the label here.
 set_property(TEST brand_drain start_lifetime fixy_dim_prose syscall_capability no_coordination_refs
-    mint_inventory_check_floor padded_lists guard_plugin APPEND PROPERTY LABELS ast)
+    mint_inventory_check_floor guard_plugin APPEND PROPERTY LABELS ast)
 crucible_tsast_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} 8)
 set_property(TEST guard_parse_proof_routes APPEND PROPERTY FIXTURES_REQUIRED preprocessed_store)
 get_property(crucible_directory_tests DIRECTORY PROPERTY TESTS)

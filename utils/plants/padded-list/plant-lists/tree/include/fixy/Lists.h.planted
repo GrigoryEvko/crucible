@@ -1,0 +1,49 @@
+#pragma once
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <inplace_vector>
+
+namespace plant {
+
+struct Padded {
+    std::uint64_t wide = 0;
+    std::uint8_t narrow = 0;
+};
+
+struct Bits {
+    std::uint32_t low : 3 = 0;
+};
+
+struct Wide {
+    long double value = 0.0L;
+};
+
+template <class T, std::size_t N>
+struct Ring {
+    std::array<T, N> slots{};
+};
+
+using PaddedList = std::inplace_vector<Padded, 64>;
+using BitList = std::array<Bits, 128>;
+using WideList = std::array<Wide, 64>;
+using Nested = std::array<std::array<Padded, 16>, 8>;
+using Wrapped = Ring<Padded, 100>;
+using Raw = Padded[65];
+
+struct Holder {
+    std::array<Padded, 70> slots{};
+};
+
+struct RawHolder {
+    Padded raw[71];
+};
+
+inline std::array<Padded, 80> table{};
+
+inline std::array<Padded, 90> make_list() noexcept { return {}; }
+
+inline void take_list(std::array<Padded, 91> list) noexcept { static_cast<void>(list); }
+
+}  // namespace plant

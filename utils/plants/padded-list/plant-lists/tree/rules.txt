@@ -1,0 +1,9 @@
+# The rule table of a plant of the rule padded-list: include/fixy/ and src/
+# are base code, and the layer can include the standard headers of the plant.
+# test/ is quarantined.
+layer low 0 include/fixy/ src/
+allow low <array>
+allow low <cstddef>
+allow low <cstdint>
+allow low <inplace_vector>
+quarantine test/

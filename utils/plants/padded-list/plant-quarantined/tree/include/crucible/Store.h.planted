@@ -1,0 +1,16 @@
+#pragma once
+
+#include <array>
+
+namespace plant {
+
+struct Padded {
+    unsigned long wide = 0;
+    unsigned char narrow = 0;
+};
+
+struct Store {
+    std::array<Padded, 100> slots{};
+};
+
+}  // namespace plant

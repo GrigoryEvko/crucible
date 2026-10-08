@@ -1,0 +1,7 @@
+# The rule table of a control of the rule padded-list: include/fixy/ and src/
+# are base code, and the layer can include the standard headers of the
+# control.
+layer low 0 include/fixy/ src/
+allow low <array>
+allow low <cstddef>
+allow low <cstdint>

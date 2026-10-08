@@ -1,0 +1,7 @@
+# The record has no padding bit, and a row of the ledger of the tree still
+# counts its list.  The count is less than the row, so the rule gives an
+# error until the commit writes the ledger again.
+compile sentinel src/slots.cpp sentinel=include/fixy/Slots.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel no-raw-array-member array-member include/fixy/Slots.h:11:19 | plant::Slot::pad

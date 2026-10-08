@@ -1,0 +1,6 @@
+# The plugin gives the line of a padded list on purpose, and a keep row of the
+# ledger of the tree admits it with its reason, so the rule gives no error.
+compile sentinel src/slots.cpp sentinel=include/fixy/Slots.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel padded-list padded-member include/fixy/Slots.h:15:27 | plant::Registry::slots: plant::Slot \| count=128 holes=448

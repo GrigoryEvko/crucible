@@ -28,9 +28,8 @@
 # debugger that starts in the build root finds each source file.
 #
 # The maps do not use -ffile-prefix-map, which also sets -fmacro-prefix-map.
-# That map changes __FILE__ and the file name of a source location, and a
-# reflection check compares that name with the path of a header
-# (utils/assay/guard/legacy/check_padded_lists.py).
+# That map changes __FILE__ and the file name of a source location, and the
+# tree gives no macro map at this time.
 #
 # The producer string of the debug information records the options of the
 # compile, and GCC applies no map to them.  The plugin options of the tree name

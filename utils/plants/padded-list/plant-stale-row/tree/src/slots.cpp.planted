@@ -1,0 +1,3 @@
+#include <fixy/Slots.h>
+
+unsigned long registry_size() noexcept { return sizeof(plant::Registry); }

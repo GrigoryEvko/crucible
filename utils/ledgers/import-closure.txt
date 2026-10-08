@@ -7,8 +7,6 @@ utils/assay/guard/legacy/audit_decide_cite_ratio.py | module-import | 1 | argpar
 utils/assay/guard/legacy/check_admitted_audit.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_clang_format.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_no_unchecked_access.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/guard/legacy/check_padded_lists.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/guard/legacy/check_padded_lists.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_start_lifetime.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_vessel_acceptance.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/contract_header_unit_test.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row

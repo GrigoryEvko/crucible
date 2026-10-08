@@ -1,0 +1,5 @@
+#include <fixy/Lists.h>
+
+// A quarantined unit that includes the base header and is not its sentinel
+// unit.  The rule reads a base file only in its sentinel unit.
+int other_unit() noexcept { return 0; }

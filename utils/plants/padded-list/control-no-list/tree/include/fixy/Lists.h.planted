@@ -1,0 +1,47 @@
+#pragma once
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+
+namespace plant {
+
+struct Padded {
+    std::uint64_t wide = 0;
+    std::uint8_t narrow = 0;
+};
+
+struct Packed {
+    std::uint64_t wide = 0;
+    std::uint64_t other = 0;
+};
+
+struct Floats {
+    double first = 0.0;
+    float second = 0.0f;
+    float third = 0.0f;
+};
+
+using ShortList = std::array<Padded, 63>;
+using PackedList = std::array<Packed, 256>;
+using FloatList = std::array<Floats, 256>;
+using Scalars = std::array<char, 4096>;
+using Pointers = std::array<Padded*, 4096>;
+
+template <class T>
+using Templated = std::array<T, 100>;
+
+template <class T>
+struct Template {
+    std::array<Padded, 93> inside{};
+    std::array<T, 96> generic{};
+};
+
+inline void borrow_list(const std::array<Padded, 92>& list) noexcept { static_cast<void>(list); }
+
+inline void local_list() noexcept {
+    std::array<Padded, 94> local{};
+    static_cast<void>(local);
+}
+
+}  // namespace plant

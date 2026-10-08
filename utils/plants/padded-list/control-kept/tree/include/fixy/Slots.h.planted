@@ -1,0 +1,18 @@
+#pragma once
+
+#include <array>
+#include <cstdint>
+
+namespace plant {
+
+// One record fills one cache line on purpose, so two writers of two records
+// never share a line.
+struct alignas(64) Slot {
+    std::uint64_t value = 0;
+};
+
+struct Registry {
+    std::array<Slot, 128> slots{};
+};
+
+}  // namespace plant

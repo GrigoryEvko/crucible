@@ -1047,64 +1047,6 @@ utils/assay/guard/legacy/check_no_unchecked_access.py | refused-word | 1 | walk_
 utils/assay/guard/legacy/check_no_unchecked_access.py | refused-word | 1 | walk_members: order | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | refused-word | 1 | walk_members: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | refused-word | 1 | with_defines: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | long-sentence | 11 | <module> | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | long-sentence | 1 | compiler_identity | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | long-sentence | 1 | list_names | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | long-sentence | 1 | run_probes.probe | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | long-sentence | 1 | select_targets | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | <module>: another | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | <module>: any | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | <module>: decide | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | <module>: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | <module>: failed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 8 | <module>: fix | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | <module>: form | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | <module>: inside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | <module>: neither | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | <module>: once | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 2 | <module>: outside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | <module>: rest | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 2 | <module>: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 4 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | <module>: track | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 2 | <module>: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 3 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | Site.key: shift | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | Site.key: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | Site: fix | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | array_parts: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | array_parts: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | command_of: quote | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | compiler_identity: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | compiler_identity: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | is_scalar_type: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | is_small_count: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | list_names: another | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 2 | list_names: fix | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | list_names: grow | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 2 | list_names: pass | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 2 | list_names: round | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | list_names: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 3 | list_sites: fix | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 2 | list_sites: inside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | list_sites: outside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | list_sites: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | list_sites: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | load_commands: quote | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | load_commands: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | namespace_scopes: inside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | namespace_scopes: need | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | namespace_scopes: reach | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | namespace_scopes: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | parse_probe_output: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | run_probes.probe: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | run_probes.probe: warn | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | self_test: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | self_test: otherwise | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | template_parts: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | write: exist | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | write_if_changed: another | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | refused-word | 1 | write_if_changed: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_prose_paths.py | long-sentence | 7 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_prose_paths.py | refused-word | 1 | <module>: among | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_prose_paths.py | refused-word | 1 | <module>: both | A text of today.  The change that writes the text again in STE lowers the count

@@ -1,0 +1,6 @@
+#include <fixy/Tree.h>
+
+#include <cstddef>
+
+// The unit completes each class that an alias of the header names.
+std::size_t completed_size() noexcept { return sizeof(plant::DeepTree) + sizeof(plant::WideList); }

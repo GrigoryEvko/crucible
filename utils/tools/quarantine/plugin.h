@@ -208,6 +208,15 @@
 //     The rule witness-roster:
 //     unrostered-witness    a class of a base file with a door shape and no
 //                           witness row of the rule table
+//     The rule padded-list:
+//     padded-alias          an alias with a type that holds a fixed list of
+//                           two or more elements, and the element type has a
+//                           padding bit.  The entity ends with the count and
+//                           the padding bits of the list
+//     padded-member         the same, for a variable or a data member
+//     padded-return         the same, for the return type of a function
+//     padded-parameter      the same, for a parameter that a function takes by
+//                           value
 //     The rule refined-pre-subsumption (expression.cpp, THE REFINED PARAMETERS):
 //     retest                a precondition that tests again the predicate of a
 //                           refined parameter
@@ -481,6 +490,7 @@ enum class Rule : std::uint8_t {
     lifetime_twin,
     witness_roster,
     proof_routes,
+    padded_list,
     refined_pre_subsumption,
     syscall_grant_coverage,
     federation_admission,
@@ -573,6 +583,10 @@ enum class Kind : std::uint8_t {
     route_function_specialization,
     route_member_pointer_specialization,
     route_friend_template_specialization,
+    padded_alias,
+    padded_member,
+    padded_return,
+    padded_parameter,
     refined_retest,
     grant_not_granted,
     grant_not_issued,
@@ -629,6 +643,8 @@ inline const char* rule_name(Rule rule) {
             return "witness-roster";
         case Rule::proof_routes:
             return "proof-routes";
+        case Rule::padded_list:
+            return "padded-list";
         case Rule::refined_pre_subsumption:
             return "refined-pre-subsumption";
         case Rule::syscall_grant_coverage:
@@ -755,6 +771,14 @@ inline const char* kind_name(Kind kind) {
             return "member-pointer-specialization";
         case Kind::route_friend_template_specialization:
             return "friend-template-specialization";
+        case Kind::padded_alias:
+            return "padded-alias";
+        case Kind::padded_member:
+            return "padded-member";
+        case Kind::padded_return:
+            return "padded-return";
+        case Kind::padded_parameter:
+            return "padded-parameter";
         case Kind::refined_retest:
             return "retest";
         case Kind::grant_not_granted:
@@ -845,6 +869,11 @@ inline Rule rule_of(Kind kind) {
         case Kind::route_member_pointer_specialization:
         case Kind::route_friend_template_specialization:
             return Rule::proof_routes;
+        case Kind::padded_alias:
+        case Kind::padded_member:
+        case Kind::padded_return:
+        case Kind::padded_parameter:
+            return Rule::padded_list;
         case Kind::refined_retest:
             return Rule::refined_pre_subsumption;
         case Kind::grant_not_granted:
@@ -896,6 +925,7 @@ inline bool is_family_kind(Kind kind) {
         case Rule::stub_discipline:
         case Rule::witness_roster:
         case Rule::proof_routes:
+        case Rule::padded_list:
         case Rule::refined_pre_subsumption:
         case Rule::syscall_grant_coverage:
             return true;
@@ -996,6 +1026,10 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"proof-routes", "function-specialization"},
     {"proof-routes", "member-pointer-specialization"},
     {"proof-routes", "friend-template-specialization"},
+    {"padded-list", "padded-alias"},
+    {"padded-list", "padded-member"},
+    {"padded-list", "padded-return"},
+    {"padded-list", "padded-parameter"},
     {"refined-pre-subsumption", "retest"},
     {"syscall-grant-coverage", "not-granted"},
     {"syscall-grant-coverage", "not-issued"},

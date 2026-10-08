@@ -1,0 +1,18 @@
+#pragma once
+
+#include <array>
+#include <cstdint>
+
+namespace plant {
+
+// The padding is gone: each byte of the record is a member.
+struct Slot {
+    std::uint64_t value = 0;
+    std::uint64_t pad[7]{};
+};
+
+struct Registry {
+    std::array<Slot, 128> slots{};
+};
+
+}  // namespace plant

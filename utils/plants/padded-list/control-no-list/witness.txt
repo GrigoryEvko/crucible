@@ -1,0 +1,10 @@
+# No declaration here gives a finding of the rule padded-list: a list of 63
+# elements is at the threshold, so the module keeps no line of it.  An
+# element with no padding bit, an element with float members, a list of
+# scalars and a list of pointers give no line.  An alias template, a class
+# template and its instantiation, a parameter by reference and a local
+# variable give no line either.
+compile sentinel src/lists.cpp sentinel=include/fixy/Lists.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel padded-list padded-alias include/fixy/Lists.h:25:7 | plant::ShortList: plant::Padded \| count=63 holes=56

@@ -1,0 +1,5 @@
+#include <crucible/Store.h>
+
+// A unit that includes the quarantined header.  The rule reads a quarantined
+// file in each unit that includes it.
+unsigned long store_size() noexcept { return sizeof(plant::Store); }

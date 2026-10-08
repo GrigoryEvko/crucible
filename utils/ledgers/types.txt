@@ -54,9 +54,6 @@ utils/assay/guard/legacy/check_no_unchecked_access.py | type-arg | 1 | expanded 
 utils/assay/guard/legacy/check_no_unchecked_access.py | type-arg | 2 | expansion_results | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | type-arg | 2 | file_facts | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | type-arg | 1 | lexical | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | arg-type | 2 | self_test | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_padded_lists.py | attr-defined | 1 | self_test | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | type-arg | 2 | expansion_uses | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | type-arg | 2 | file_facts | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | type-arg | 1 | lexical_scan | An error of mypy of today.  The change that gives the code its types lowers the count

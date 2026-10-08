@@ -160,6 +160,43 @@
 //     the function of a local class is no part of it.  A class in a
 //     preprocessor arm that no build selects gives no finding (decision 5 of
 //     misc/01_10_2026_quarantine.md).
+//
+// THE RULE padded-list (CLAUDE.md section XV, "Compile time", rule 7)
+//     With -ftrivial-auto-var-init=zero, GCC writes one store for each
+//     padding hole of each element of a fixed list in an automatic object,
+//     with no loop.  A fixed list is an array of a class or a union, or such
+//     an array that a specialization of a class template or a class with no
+//     name holds, at each depth.  The array of std::array is one.  The count
+//     of a list of lists is the product of the counts.  The value bits of a
+//     type are the bit ranges of its scalar members, its named bit-fields, its
+//     bases and its pointer to the virtual table.  The other bits are padding.
+//     A floating-point type holds the bits of its precision, and the 80-bit
+//     long double of x86-64 then has padding.  A union holds the union of the
+//     bit ranges of its members.  When the members have more than kMostRanges
+//     ranges, the union holds the value bits of its largest member, and the
+//     rule then fails closed.  The rule reads the type of each alias,
+//     variable and data member, and the return type and each parameter that a
+//     function takes by value, in code that no template holds.  It reads the
+//     files of include/ and src/ (kPaddedListDirectories).  For each element
+//     type that has a padding bit, the longest list of two or more elements
+//     in the declared type is a line of the kind padded-alias, padded-member,
+//     padded-return or padded-parameter.  The module of the rule keeps one
+//     finding for each declaration and element type, and the longest list
+//     then decides it.  The entity is DECLARATION: ELEMENT, and then
+//     " | count=N holes=H": the element count and the padding bits of one
+//     element.  DECLARATION is the
+//     qualified name of an alias, a variable or a member, the
+//     function_signature of a function, and for a parameter the
+//     function_signature and " parameter I", the index from 1.  The module of
+//     the rule keeps the lists of more elements than the threshold of its row
+//     of utils/registry.txt.  The rule reads a list only in a type that the
+//     unit completes.  An alias of a specialization that the unit only names,
+//     and a function that the unit only declares, give no line, because GCC
+//     does not instantiate the class.  A unit with no object of the list
+//     writes no store for it (decision 5 of misc/01_10_2026_quarantine.md).
+//     A quarantined file gives its line in each unit that completes the
+//     type.  A base file gives its line only in its sentinel unit (THE
+//     SCOPE).
 
 #include "plugin.h"
 
@@ -1756,20 +1793,25 @@ bool has_process_wide_marker(tree decl) {
 // process-wide-state.  A test or a bench program has one copy of each object.
 constexpr const char* kLibraryDirectories[] = {"include/", "src/", "vessel/"};
 
-// The place at LOCATION when the rule process-wide-state reads its file, or
-// an empty place.
-Place library_place(location_t location) {
+// The place at LOCATION when the family reads its file and one of DIRECTORIES
+// holds the file, or an empty place.
+template <std::size_t Count>
+Place place_under(location_t location, const char* const (&directories)[Count]) {
     Place place = property_place(location);
     if (place.file == nullptr) {
         return place;
     }
-    for (const char* directory : kLibraryDirectories) {
+    for (const char* directory : directories) {
         if (place.file->relative.compare(0, std::strlen(directory), directory) == 0) {
             return place;
         }
     }
     return Place{};
 }
+
+// The place at LOCATION when the rule process-wide-state reads its file, or
+// an empty place.
+Place library_place(location_t location) { return place_under(location, kLibraryDirectories); }
 
 // True when DECL is a variable with static or thread storage duration that
 // can change: not constexpr, not const and no reference.
@@ -2161,15 +2203,496 @@ void on_finish_function_property(void* gcc_data, void*) {
     check_static_locals(function, processing_template_decl != 0);
 }
 
+// ── The rule padded-list ────────────────────────────────────────────────
+
+// The headers and the sources of the rule padded-list.
+constexpr const char* kPaddedListDirectories[] = {"include/", "src/"};
+// The smallest element count of a list that gives a line.  The module of the
+// rule applies the threshold of its row of utils/registry.txt.
+constexpr std::uint64_t kSmallestList = 2;
+
+// The size of TYPE in bits, or 0 when the size is no constant.
+std::uint64_t size_in_bits(tree type) {
+    tree size = TYPE_SIZE(type);
+    return size != NULL_TREE && TREE_CODE(size) == INTEGER_CST && tree_fits_uhwi_p(size) ? tree_to_uhwi(size) : 0;
+}
+
+// The element count of the array type TYPE, or 0 when its bound is no
+// constant.
+std::uint64_t array_extent(tree type) {
+    tree domain = TYPE_DOMAIN(type);
+    tree maximum = domain != NULL_TREE ? TYPE_MAX_VALUE(domain) : NULL_TREE;
+    if (maximum == NULL_TREE || TREE_CODE(maximum) != INTEGER_CST || !tree_fits_uhwi_p(maximum)) {
+        return 0;
+    }
+    return tree_to_uhwi(maximum) + 1;
+}
+
+// The product of two counts, or the largest count when the product does not
+// fit.  A list that large is a finding, and the overflow then fails closed.
+std::uint64_t saturated_product(std::uint64_t left, std::uint64_t right) {
+    std::uint64_t product = 0;
+    return __builtin_mul_overflow(left, right, &product) ? UINT64_MAX : product;
+}
+
+// The sum of two counts, or the largest count when the sum does not fit.
+std::uint64_t saturated_sum(std::uint64_t left, std::uint64_t right) {
+    std::uint64_t sum = 0;
+    return __builtin_add_overflow(left, right, &sum) ? UINT64_MAX : sum;
+}
+
+// A half-open range of bits of an object, [first, last).
+using BitRange = std::pair<std::uint64_t, std::uint64_t>;
+
+// The largest number of value ranges that the rule keeps for one type.  Only
+// a union needs the ranges of its members.  When the members have more
+// ranges, the union holds the value bits of its largest member, and the rule
+// then fails closed.
+constexpr std::size_t kMostRanges = 4096;
+
+// The value ranges of a type, joined and sorted.  is_complete is false, and
+// ranges is empty, when the type has more than kMostRanges ranges.
+struct RangeFacts {
+    std::vector<BitRange> ranges;
+    bool is_complete = true;
+};
+
+// The longest fixed list of one element type that has a padding bit, and its
+// element count.
+struct PaddedList {
+    tree element = NULL_TREE;
+    std::uint64_t count = 0;
+};
+
+// The answers of the rule padded-list for each type, for one walk.  The walk
+// runs at PLUGIN_FINISH_UNIT and causes no garbage collection, and each type
+// then keeps its address while the answers live.  A reference to a value of
+// an unordered_map stays valid when the map grows.
+struct PaddingFacts {
+    std::unordered_map<tree, std::uint64_t> value_bits;
+    std::unordered_map<tree, RangeFacts> value_ranges;
+    std::unordered_map<tree, std::vector<PaddedList>> lists;
+};
+
+// Sorts RANGES and joins each two that touch or overlap.  Complexity:
+// O(r log r) for r ranges.
+void join_ranges(std::vector<BitRange>& ranges) {
+    std::sort(ranges.begin(), ranges.end());
+    std::size_t kept = 0;
+    for (const BitRange& range : ranges) {
+        if (kept != 0 && range.first <= ranges[kept - 1].second) {
+            ranges[kept - 1].second = std::max(ranges[kept - 1].second, range.second);
+        } else {
+            ranges[kept++] = range;
+        }
+    }
+    ranges.resize(kept);
+}
+
+// True when FIELD of a class or a union has a constant size: a data member, a
+// base or the pointer to the virtual table.
+bool has_constant_size(tree field) {
+    if (TREE_CODE(field) != FIELD_DECL || DECL_SIZE(field) == NULL_TREE) {
+        return false;
+    }
+    return TREE_CODE(DECL_SIZE(field)) == INTEGER_CST && tree_fits_uhwi_p(DECL_SIZE(field));
+}
+
+const RangeFacts& value_ranges(tree type, PaddingFacts& facts, int depth);
+std::uint64_t value_bits(tree type, PaddingFacts& facts, int depth);
+
+// Appends the value ranges of TYPE, moved by OFFSET bits, to RESULT.  RESULT
+// becomes incomplete when it would hold more than kMostRanges ranges.
+void append_ranges(tree type, std::uint64_t offset, RangeFacts& result, PaddingFacts& facts, int depth) {
+    const RangeFacts& inner = value_ranges(type, facts, depth);
+    if (!inner.is_complete || inner.ranges.size() > kMostRanges - result.ranges.size()) {
+        result.is_complete = false;
+        return;
+    }
+    for (const BitRange& range : inner.ranges) {
+        result.ranges.emplace_back(offset + range.first, offset + range.second);
+    }
+}
+
+// The value ranges of the class or union TYPE: each field at its bit
+// position.  A bit-field with no name is padding, and a field with no
+// constant size or place holds no value bit.
+void record_ranges(tree type, RangeFacts& result, PaddingFacts& facts, int depth) {
+    for (tree field = TYPE_FIELDS(type); field != NULL_TREE && result.is_complete; field = DECL_CHAIN(field)) {
+        if (!has_constant_size(field)) {
+            continue;
+        }
+        tree position = bit_position(field);
+        if (TREE_CODE(position) != INTEGER_CST || !tree_fits_uhwi_p(position)) {
+            continue;
+        }
+        std::uint64_t first = tree_to_uhwi(position);
+        if (DECL_BIT_FIELD_TYPE(field) == NULL_TREE) {
+            append_ranges(TREE_TYPE(field), first, result, facts, depth + 1);
+        } else if (DECL_NAME(field) != NULL_TREE && result.ranges.size() < kMostRanges) {
+            result.ranges.emplace_back(first, first + tree_to_uhwi(DECL_SIZE(field)));
+        } else if (DECL_NAME(field) != NULL_TREE) {
+            result.is_complete = false;
+        }
+    }
+}
+
+// The value ranges of the array type TYPE: one range when an element has no
+// padding, and else the ranges of each element at its place.  Complexity:
+// O(kMostRanges) at most.
+void array_ranges(tree type, RangeFacts& result, PaddingFacts& facts, int depth) {
+    tree element = TREE_TYPE(type);
+    std::uint64_t count = array_extent(type);
+    std::uint64_t element_bits = size_in_bits(element);
+    if (count == 0 || element_bits == 0) {
+        return;
+    }
+    const RangeFacts& inner = value_ranges(element, facts, depth + 1);
+    if (!inner.is_complete) {
+        result.is_complete = false;
+        return;
+    }
+    if (inner.ranges.size() == 1 && inner.ranges[0] == BitRange{0, element_bits}) {
+        result.ranges.emplace_back(0, saturated_product(count, element_bits));
+        return;
+    }
+    if (inner.ranges.empty()) {
+        return;
+    }
+    if (count > kMostRanges / inner.ranges.size()) {
+        result.is_complete = false;
+        return;
+    }
+    for (std::uint64_t index = 0; index < count; ++index) {
+        std::uint64_t offset = index * element_bits;
+        for (const BitRange& range : inner.ranges) {
+            result.ranges.emplace_back(offset + range.first, offset + range.second);
+        }
+    }
+}
+
+// The bit ranges of an object of TYPE that hold a value, joined and sorted
+// (THE RULE padded-list).  Only the value bits of a union read them.  A
+// reference holds a pointer, and a floating-point type holds the bits of its
+// precision.  A type deeper than kTypeDepth holds no value bit, and the walk
+// then fails closed.  The walk keeps the answer of each type.
+// Complexity: O(kMostRanges log kMostRanges) at most, one time for each type.
+const RangeFacts& value_ranges(tree type, PaddingFacts& facts, int depth) {
+    static const RangeFacts kNoRange;
+    type = TYPE_MAIN_VARIANT(type);
+    auto cached = facts.value_ranges.find(type);
+    if (cached != facts.value_ranges.end()) {
+        return cached->second;
+    }
+    if (depth > kTypeDepth) {
+        return kNoRange;
+    }
+    RangeFacts result;
+    if (TYPE_REF_P(type)) {
+        result.ranges.emplace_back(0, size_in_bits(ptr_type_node));
+    } else if (TREE_CODE(type) == ARRAY_TYPE) {
+        array_ranges(type, result, facts, depth);
+    } else if (RECORD_OR_UNION_TYPE_P(type)) {
+        record_ranges(type, result, facts, depth);
+    } else if (TREE_CODE(type) == REAL_TYPE) {
+        result.ranges.emplace_back(0, static_cast<std::uint64_t>(TYPE_PRECISION(type)));
+    } else if (std::uint64_t bits = size_in_bits(type); bits != 0) {
+        result.ranges.emplace_back(0, bits);
+    }
+    if (result.is_complete) {
+        join_ranges(result.ranges);
+    } else {
+        result.ranges.clear();
+    }
+    return facts.value_ranges.emplace(type, std::move(result)).first->second;
+}
+
+// The value bits of FIELD of a class or a union: the bits of a named
+// bit-field, or the value bits of the type of the field.  A bit-field with no
+// name, and a field with no constant size, hold no value bit.
+std::uint64_t field_value_bits(tree field, PaddingFacts& facts, int depth) {
+    if (!has_constant_size(field)) {
+        return 0;
+    }
+    if (DECL_BIT_FIELD_TYPE(field) != NULL_TREE) {
+        return DECL_NAME(field) != NULL_TREE ? tree_to_uhwi(DECL_SIZE(field)) : 0;
+    }
+    return value_bits(TREE_TYPE(field), facts, depth);
+}
+
+// The value bits of the union TYPE: the bits of the union of the value ranges
+// of its members.  When the members have more than kMostRanges ranges, the
+// union holds the value bits of its largest member, and the rule then fails
+// closed.
+std::uint64_t union_value_bits(tree type, PaddingFacts& facts, int depth) {
+    const RangeFacts& ranges = value_ranges(type, facts, depth);
+    std::uint64_t covered = 0;
+    if (ranges.is_complete) {
+        for (const BitRange& range : ranges.ranges) {
+            covered = saturated_sum(covered, range.second - range.first);
+        }
+        return covered;
+    }
+    for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+        covered = std::max(covered, field_value_bits(field, facts, depth + 1));
+    }
+    return covered;
+}
+
+// The number of the bits of an object of TYPE that hold a value (THE RULE
+// padded-list).  The fields of a class do not overlap in their value bits,
+// and the value bits of a class are then the sum of the value bits of its
+// fields.  An array holds the value bits of each element.  A type deeper
+// than kTypeDepth holds no value bit, and the walk then fails closed.  The
+// walk keeps the answer of each type.
+// Complexity: linear in the fields of the type, one time for each type.
+std::uint64_t value_bits(tree type, PaddingFacts& facts, int depth) {
+    type = TYPE_MAIN_VARIANT(type);
+    auto cached = facts.value_bits.find(type);
+    if (cached != facts.value_bits.end()) {
+        return cached->second;
+    }
+    if (depth > kTypeDepth) {
+        return 0;
+    }
+    std::uint64_t bits = 0;
+    if (TYPE_REF_P(type)) {
+        bits = size_in_bits(ptr_type_node);
+    } else if (TREE_CODE(type) == ARRAY_TYPE) {
+        bits = saturated_product(array_extent(type), value_bits(TREE_TYPE(type), facts, depth + 1));
+    } else if (TREE_CODE(type) == UNION_TYPE || TREE_CODE(type) == QUAL_UNION_TYPE) {
+        bits = union_value_bits(type, facts, depth);
+    } else if (RECORD_OR_UNION_TYPE_P(type)) {
+        for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+            bits = saturated_sum(bits, field_value_bits(field, facts, depth + 1));
+        }
+    } else if (TREE_CODE(type) == REAL_TYPE) {
+        bits = static_cast<std::uint64_t>(TYPE_PRECISION(type));
+    } else {
+        bits = size_in_bits(type);
+    }
+    facts.value_bits.emplace(type, bits);
+    return bits;
+}
+
+// True when the search of a list enters the class TYPE: a specialization of
+// a class template, such as std::array, or a class with no name.  A class
+// with a name of its own is a list only where the code declares an array of
+// it.
+bool is_list_holder(tree type) {
+    if (!CLASS_TYPE_P(type) || LAMBDA_TYPE_P(type)) {
+        return false;
+    }
+    if (TYPE_UNNAMED_P(type)) {
+        return true;
+    }
+    tree info = CLASSTYPE_TEMPLATE_INFO(type);
+    return info != NULL_TREE && TREE_CODE(TI_TEMPLATE(info)) == TEMPLATE_DECL && PRIMARY_TEMPLATE_P(TI_TEMPLATE(info));
+}
+
+// Puts the list of COUNT elements of ELEMENT into LISTS.  LISTS keeps the
+// longest list of each element type, in the order of the search.
+// Complexity: linear in the lists of LISTS.
+void merge_list(std::vector<PaddedList>& lists, tree element, std::uint64_t count) {
+    for (PaddedList& list : lists) {
+        if (list.element == element) {
+            list.count = std::max(list.count, count);
+            return;
+        }
+    }
+    lists.push_back(PaddedList{element, count});
+}
+
+const std::vector<PaddedList>& lists_of(tree type, PaddingFacts& facts, int depth);
+
+// The lists of the array type TYPE: the array of arrays to its first element
+// that is no array, with the product of the counts.  The element is a list
+// when it is a complete class or union with a padding bit.  A list in the
+// element is a list of the product of the two counts.
+void array_lists(tree type, std::vector<PaddedList>& found, PaddingFacts& facts, int depth) {
+    std::uint64_t total = 1;
+    tree leaf = type;
+    for (; TREE_CODE(leaf) == ARRAY_TYPE; leaf = TYPE_MAIN_VARIANT(TREE_TYPE(leaf))) {
+        std::uint64_t extent = array_extent(leaf);
+        if (extent == 0) {
+            return;
+        }
+        total = saturated_product(total, extent);
+    }
+    if (!RECORD_OR_UNION_TYPE_P(leaf) || !COMPLETE_TYPE_P(leaf)) {
+        return;
+    }
+    std::uint64_t bits = size_in_bits(leaf);
+    if (bits != 0 && value_bits(leaf, facts, depth + 1) < bits) {
+        merge_list(found, leaf, total);
+    }
+    for (const PaddedList& inner : lists_of(leaf, facts, depth + 1)) {
+        merge_list(found, inner.element, saturated_product(total, inner.count));
+    }
+}
+
+// The lists of the class TYPE that is_list_holder enters: the lists of its
+// bases and of its data members.
+void holder_lists(tree type, std::vector<PaddedList>& found, PaddingFacts& facts, int depth) {
+    if (tree binfo = TYPE_BINFO(type)) {
+        for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
+            for (const PaddedList& inner : lists_of(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), facts, depth + 1)) {
+                merge_list(found, inner.element, inner.count);
+            }
+        }
+    }
+    for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+        if (TREE_CODE(field) == FIELD_DECL && !DECL_FIELD_IS_BASE(field) && DECL_BIT_FIELD_TYPE(field) == NULL_TREE) {
+            for (const PaddedList& inner : lists_of(TREE_TYPE(field), facts, depth + 1)) {
+                merge_list(found, inner.element, inner.count);
+            }
+        }
+    }
+}
+
+// The longest fixed list of each element type with a padding bit in one
+// object of TYPE (THE RULE padded-list).  The search reads an array, and the
+// bases and the data members of a class that is_list_holder enters.  A type
+// deeper than kTypeDepth holds no list.  The walk keeps the answer of each
+// type, so a type that holds one class two times reads that class one time.
+// Complexity: linear in the fields of the type times its lists, one time for
+// each type.
+const std::vector<PaddedList>& lists_of(tree type, PaddingFacts& facts, int depth) {
+    static const std::vector<PaddedList> kNoList;
+    type = TYPE_MAIN_VARIANT(type);
+    auto cached = facts.lists.find(type);
+    if (cached != facts.lists.end()) {
+        return cached->second;
+    }
+    if (depth > kTypeDepth) {
+        return kNoList;
+    }
+    std::vector<PaddedList> found;
+    if (TREE_CODE(type) == ARRAY_TYPE) {
+        array_lists(type, found, facts, depth);
+    } else if (RECORD_OR_UNION_TYPE_P(type) && COMPLETE_TYPE_P(type) && is_list_holder(type)) {
+        holder_lists(type, found, facts, depth);
+    }
+    return facts.lists.emplace(type, std::move(found)).first->second;
+}
+
+// True when the search can find a list in a declaration of TYPE: an array or
+// a class, which no pointer and no reference holds.  The test reads no place.
+bool can_hold_list(tree type) {
+    if (type == NULL_TREE || type == error_mark_node || TYPE_REF_P(type) || TREE_CODE(type) == POINTER_TYPE) {
+        return false;
+    }
+    tree main_type = TYPE_MAIN_VARIANT(type);
+    return TREE_CODE(main_type) == ARRAY_TYPE || RECORD_OR_UNION_TYPE_P(main_type);
+}
+
+// True when LISTS holds a list of kSmallestList or more elements.
+bool has_line(const std::vector<PaddedList>& lists) {
+    return std::any_of(lists.begin(), lists.end(), [](const PaddedList& list) { return list.count >= kSmallestList; });
+}
+
+// One line at PLACE for each list of kSmallestList or more elements of LISTS
+// (THE RULE padded-list).  DECLARATION names the declaration in the entity.
+void record_padded_lists(Kind kind, const Place& place, const std::vector<PaddedList>& lists,
+                         const std::string& declaration, PaddingFacts& facts) {
+    for (const PaddedList& list : lists) {
+        if (list.count < kSmallestList) {
+            continue;
+        }
+        std::uint64_t holes = size_in_bits(list.element) - value_bits(list.element, facts, 0);
+        record_property(kind, place,
+                        declaration + ": " + type_text(list.element) + " | count=" + std::to_string(list.count)
+                            + " holes=" + std::to_string(holes));
+    }
+}
+
+// The place of the declaration DECL when the rule padded-list reads its file,
+// or an empty place.
+Place padded_list_place(tree decl) { return place_under(DECL_SOURCE_LOCATION(decl), kPaddedListDirectories); }
+
+// The type of an alias, a variable or a data member DECL (THE RULE
+// padded-list).  The function reads the place first, and a declaration
+// outside the scope of the rule then reads no type.
+void check_padded_declaration(tree decl, Kind kind, PaddingFacts& facts) {
+    if (!can_hold_list(TREE_TYPE(decl))) {
+        return;
+    }
+    Place place = padded_list_place(decl);
+    if (place.file == nullptr) {
+        return;
+    }
+    const std::vector<PaddedList>& lists = lists_of(TREE_TYPE(decl), facts, 0);
+    if (has_line(lists)) {
+        record_padded_lists(kind, place, lists, qualified_name(decl), facts);
+    }
+}
+
+// True when the function FUNCTION returns or takes by value a type that can
+// hold a list.  The test reads no place.
+bool can_take_list(tree function) {
+    if (can_hold_list(TREE_TYPE(TREE_TYPE(function)))) {
+        return true;
+    }
+    for (tree type = FUNCTION_FIRST_USER_PARMTYPE(function); type != NULL_TREE && type != void_list_node;
+         type = TREE_CHAIN(type)) {
+        if (can_hold_list(TREE_VALUE(type))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The return type and each parameter by value of the function FUNCTION (THE
+// RULE padded-list).  A constructor and a destructor have no return type of
+// their own, and a function that the compiler declares is no declaration of
+// the code.  The function reads the place first, and a function outside the
+// scope of the rule then reads no type.
+void check_padded_signature(tree function, PaddingFacts& facts) {
+    if (DECL_ARTIFICIAL(function)) {
+        return;
+    }
+    Place place = padded_list_place(function);
+    if (place.file == nullptr) {
+        return;
+    }
+    std::string signature;
+    auto signature_of = [&signature, function]() -> const std::string& {
+        if (signature.empty()) {
+            signature = function_signature(function);
+        }
+        return signature;
+    };
+    tree result = TREE_TYPE(TREE_TYPE(function));
+    if (!DECL_CONSTRUCTOR_P(function) && !DECL_DESTRUCTOR_P(function) && can_hold_list(result)) {
+        const std::vector<PaddedList>& lists = lists_of(result, facts, 0);
+        if (has_line(lists)) {
+            record_padded_lists(Kind::padded_return, place, lists, signature_of(), facts);
+        }
+    }
+    int index = 0;
+    for (tree type = FUNCTION_FIRST_USER_PARMTYPE(function); type != NULL_TREE && type != void_list_node;
+         type = TREE_CHAIN(type), ++index) {
+        if (!can_hold_list(TREE_VALUE(type))) {
+            continue;
+        }
+        const std::vector<PaddedList>& lists = lists_of(TREE_VALUE(type), facts, 0);
+        if (has_line(lists)) {
+            record_padded_lists(Kind::padded_parameter, place, lists,
+                                signature_of() + " parameter " + std::to_string(index + 1), facts);
+        }
+    }
+}
+
 // ── The walk of the family ──────────────────────────────────────────────
 
 struct PropertyWalk {
     std::unordered_set<tree> visited;
     StubFiles& stubs = stub_files;
+    PaddingFacts padding;
 
     // Each rule of a function first asks a test that reads no place: its name,
-    // its return type or its attributes.  A pattern has template information,
-    // so the test of an instantiation reads the scope of a pattern and not the
+    // its types or its attributes.  A pattern has template information, so
+    // the test of an instantiation reads the scope of a pattern and not the
     // pattern itself.
     void function(tree function, bool is_pattern) {
         if (is_pattern) {
@@ -2180,7 +2703,8 @@ struct PropertyWalk {
         bool is_stub = has_stub_deprecation(function);
         bool is_marked = has_process_wide_marker(function);
         bool is_claimed = is_pattern && !lifetime_bound_parameters.empty();
-        if (!is_mint_name && !is_door && !is_stub && !is_marked && !is_claimed) {
+        bool is_listed = !is_pattern && can_take_list(function);
+        if (!is_mint_name && !is_door && !is_stub && !is_marked && !is_claimed && !is_listed) {
             return;
         }
         tree tested = is_pattern ? CP_DECL_CONTEXT(function) : function;
@@ -2202,6 +2726,9 @@ struct PropertyWalk {
         if (is_claimed) {
             note_lifetime_claims(function);
         }
+        if (is_listed) {
+            check_padded_signature(function, padding);
+        }
     }
 
     // A variable at namespace scope or a static data member.  IS_TEMPLATED
@@ -2211,15 +2738,22 @@ struct PropertyWalk {
             check_permission_member(decl);
         }
         check_process_wide_variable(decl, is_templated);
+        if (!is_templated) {
+            check_padded_declaration(decl, Kind::padded_member, padding);
+        }
         if (is_honesty_marker(decl)) {
             note_stub(stubs, property_place(DECL_SOURCE_LOCATION(decl)), qualified_name(decl), true);
         }
     }
 
-    // An alias or a typedef, which is no class that it names.
-    void alias(tree decl) {
+    // An alias or a typedef, which is no class that it names.  IS_PATTERN is
+    // true for an alias template and for an alias of a class template.
+    void alias(tree decl, bool is_pattern) {
         if (!DECL_ARTIFICIAL(decl) && !DECL_IMPLICIT_TYPEDEF_P(decl)) {
             check_array_declaration(decl, Kind::array_alias);
+            if (!is_pattern) {
+                check_padded_declaration(decl, Kind::padded_alias, padding);
+            }
         }
     }
 
@@ -2240,7 +2774,7 @@ struct PropertyWalk {
             return;
         }
         if (TREE_CODE(result) == TYPE_DECL && !DECL_IMPLICIT_TYPEDEF_P(result)) {
-            alias(result);
+            alias(result, true);
             return;
         }
         if (TREE_CODE(result) != TYPE_DECL || !CLASS_TYPE_P(TREE_TYPE(result))) {
@@ -2282,6 +2816,9 @@ struct PropertyWalk {
                     } else if (!DECL_ARTIFICIAL(member)) {
                         check_array_declaration(member, Kind::array_member);
                         check_permission_member(member);
+                        if (!is_pattern) {
+                            check_padded_declaration(member, Kind::padded_member, padding);
+                        }
                     }
                     break;
                 case VAR_DECL:
@@ -2297,7 +2834,7 @@ struct PropertyWalk {
                     if (DECL_IMPLICIT_TYPEDEF_P(member) && CLASS_TYPE_P(TREE_TYPE(member))) {
                         class_type(TREE_TYPE(member), is_pattern);
                     } else {
-                        alias(member);
+                        alias(member, is_pattern);
                     }
                     break;
                 case TEMPLATE_DECL:
@@ -2357,7 +2894,7 @@ struct PropertyWalk {
                 if (DECL_IMPLICIT_TYPEDEF_P(decl) && CLASS_TYPE_P(TREE_TYPE(decl))) {
                     class_type(TREE_TYPE(decl), false);
                 } else {
-                    alias(decl);
+                    alias(decl, false);
                 }
                 break;
             case VAR_DECL:

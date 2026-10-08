@@ -1,0 +1,24 @@
+#include <fixy/Lists.h>
+
+#include <cstddef>
+
+namespace {
+
+plant::Padded source_table[200]{};
+
+namespace inner {
+plant::Padded inner_table[100]{};
+}  // namespace inner
+
+// The unit completes each specialization that an alias of the header names.
+// The rule reads a list only in a type that the unit completes.
+[[maybe_unused]] std::size_t completed_size() noexcept {
+    return sizeof(plant::PaddedList) + sizeof(plant::BitList) + sizeof(plant::WideList) + sizeof(plant::Nested)
+         + sizeof(plant::Wrapped) + sizeof(source_table) + sizeof(inner::inner_table);
+}
+
+}  // namespace
+
+extern "C" {
+plant::Padded planted_c_table[72]{};
+}
