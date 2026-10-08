@@ -2669,7 +2669,7 @@ def main(argv: list[str]) -> int:
         The exit status of the mode, or 2 on a usage error
     """
     parser = argparse.ArgumentParser(prog="guard check --rule session-oracle", description=__doc__.split("\n\n")[0])
-    parser.add_argument("mode", choices=("regenerate", "derive", "emit", "check", "self-test", "install-toolchain"))
+    parser.add_argument("mode", choices=("regenerate", "derive", "emit", "check", "self-test"))
     parser.add_argument("--cxx", help="the project compiler (regenerate, self-test)")
     parser.add_argument("--jobs", type=int, default=None,
                         help="parallel compiles of the probes (regenerate, derive; 32 without the option) or of "
@@ -2699,10 +2699,6 @@ def main(argv: list[str]) -> int:
         return check()
     if args.mode == "check":
         return check()
-    if args.mode == "install-toolchain":
-        from assay.setup import oracle as toolchain
-        LOG.info("the crash-stop toolchain is in %s", toolchain.install())
-        return 0
     return self_test(args.cxx, args.at, args.jobs or min(SELF_TEST_JOBS, os.cpu_count() or 1), args.part)
 
 

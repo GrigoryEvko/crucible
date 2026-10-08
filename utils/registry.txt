@@ -131,14 +131,12 @@ path utils/assay/**/*.py | the modules of the package
 path utils/assay/oracle/coq/*.v | the Rocq source of the liveness certificate, data beside its reader
 path utils/bin/* | the three masters guard, loop and setup: the only commands of utils/
 path utils/ledgers/*.txt | the ledgers of the rules, one file for each rule with rows
+path utils/pins.txt | the pin table: the version and the SHA256 of each tool that the tree downloads, and the base commit of the patched GCC
 path utils/plants/** | the plants and the controls of each rule, one directory for each rule
 path utils/registry.txt | the registry of the rules, the jobs and the permitted paths
 path utils/scripts/*.json | the baseline of the contract cites.  The change that moves the ledgers to utils/ledgers/ deletes it
 path utils/scripts/*.sh | the shell scripts of the tree.  The change that makes the shell scripts modules of the package deletes them
 path utils/scripts/*.txt | the ledgers, allowlists, rosters and tables of the legacy modules.  The change that moves the ledgers to utils/ledgers/ and the rule table to utils/ deletes them
-path utils/toolchain/cmake/requirements.txt | the pin of cmake and ctest.  The pin table utils/pins.txt replaces it
-path utils/toolchain/gcc/BASE | the base commit of the patched GCC.  The pin table utils/pins.txt replaces it
-path utils/toolchain/gcc/build.sh | the build of the patched GCC.  The subcommand setup gcc replaces it
 path utils/toolchain/gcc/patches/*.patch | the GCC patches
 path utils/tools/*.cpp | the hardware probe and dump_row_hashes, which are C++ tools
 path utils/tools/*.h | the probe list of the hardware probe

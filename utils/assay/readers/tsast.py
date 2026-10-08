@@ -8,8 +8,8 @@ WHY THE PINNED CLI IS THE ONLY ENGINE
     The kit's C++ grammar declares ABI 1019, and no upstream tree-sitter
     runtime loads that.  The `tree_sitter` package on PyPI carries an upstream
     runtime, so it cannot load the grammar either.  The kit's own CLI is the one
-    consumer that can.  `utils/scripts/install-tree-sitter.sh` installs it and this
-    module asks that script where it landed.
+    consumer that can.  `setup install tree-sitter` (assay.setup.install)
+    installs it, and this module asks that module where it landed.
 
 WHY `parse` AND NOT `query`
     Measured on 2026-09-21 over this tree.  `tree-sitter parse` reads 3,871
@@ -331,19 +331,13 @@ def kit_dir() -> Path:
     global _KIT_CACHE
     if _KIT_CACHE is not None:
         return _KIT_CACHE
-    installer = REPO_ROOT / "utils" / "scripts" / "install-tree-sitter.sh"
-    done = subprocess.run(
-        ["bash", str(installer), "--print-kit"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if done.returncode != 0:
-        raise KitMissing(
-            "the pinned tree-sitter kit is not installed. "
-            "Run: bash utils/scripts/install-tree-sitter.sh\n" + done.stderr.strip()
-        )
-    _KIT_CACHE = Path(done.stdout.strip())
+    from assay.setup import install
+
+    try:
+        _KIT_CACHE = install.installed("tree-sitter")
+    except install.InstallError as error:
+        raise KitMissing(f"the pinned tree-sitter kit is not installed. Run: python3 utils/bin/setup install "
+                         f"tree-sitter\n{error}") from None
     return _KIT_CACHE
 
 

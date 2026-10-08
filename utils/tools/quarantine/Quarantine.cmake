@@ -92,7 +92,7 @@ endif()
 if(NOT EXISTS "${_crucible_quarantine_gcc_plugin_dir}/include/gcc-plugin.h")
   message(FATAL_ERROR "The quarantine rule and the contract rule of the tree load a GCC plugin, and "
     "'${CRUCIBLE_REAL_CXX} -print-file-name=plugin' gave '${_crucible_quarantine_gcc_plugin_dir}', which holds no "
-    "include/gcc-plugin.h. Use a compiler with plugin support: utils/toolchain/gcc/build.sh builds one.")
+    "include/gcc-plugin.h. Use a compiler with plugin support: python3 utils/bin/setup gcc PREFIX builds one.")
 endif()
 
 # A plugin must match the cc1plus that loads it, so the compiler is part of

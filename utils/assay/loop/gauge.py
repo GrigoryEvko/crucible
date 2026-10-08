@@ -552,7 +552,7 @@ def self_test() -> int:
         try:
             offset = edit_offset(header)
         except tsast.KitMissing:
-            print("edit-loop-gauge --self-test: the parse-tree kit is not installed; run utils/scripts/install-tree-sitter.sh")
+            print("edit-loop-gauge --self-test: the parse-tree kit is not installed; run python3 utils/bin/setup install tree-sitter")
             return NOT_RUNNABLE
         edited = edited_text(header.read_bytes(), offset, 42).decode()
         expect("the edit goes into the body of foundation::detail::breakpoint, and not into another breakpoint",

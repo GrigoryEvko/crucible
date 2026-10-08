@@ -1,60 +1,57 @@
-"""pins — the pinned version of CMake and ctest, the programs of a build directory, and the check of both.
+"""setup check — make sure that each installed tool and the cmake and the ctest of a build agree with their pins.
 
-utils/toolchain/cmake/requirements.txt pins one version of CMake and ctest.
-The configure step rejects a CMake of another version (cmake/CMakePin.cmake).
-This module reads the same pin for the scripts, and it is the check that
-rejects a ctest of another version.
+THE PIN OF CMAKE
+    The rows of the pin cmake of utils/pins.txt give one version of CMake and
+    ctest, with the SHA-256 of the manylinux wheel of CMake on PyPI for each
+    platform.  The rows must give one version.  read_pin() reads them.  The
+    configure step rejects a CMake of another version (cmake/CMakePin.cmake),
+    and this module is the check that rejects a ctest of another version.
 
-THE PIN
-    Each requirement of the pin file gives the version and the SHA256 of the
-    manylinux wheel of CMake on PyPI for one machine:
-
-        cmake==X.Y.Z ; platform_machine == "MACHINE" \\
-            --hash=sha256:DIGEST
-
-    A line that starts with '#' is a comment.  Each other line is an error,
-    and the requirements must give one version.  read_pin() reads the file.
-    utils/scripts/install-cmake.sh reads it with `setup check --print-pin`.
+THE INSTALLED TOOLS
+    `setup check [TOOL]...` makes sure that each installed tool of the tools
+    directory (assay.setup.install) meets its pin, by default tree-sitter,
+    ast-grep and cmake: the stamp, then the checks of the tool.  No network.
 
 THE PROGRAMS OF A BUILD DIRECTORY
     CMakeCache.txt of a configured build directory holds CMAKE_COMMAND and
     CMAKE_CTEST_COMMAND: the cmake that configured the directory, and the
-    ctest of the same install.  A script that operates on a build directory
+    ctest of the same install.  A module that operates on a build directory
     runs these two programs (configured_program), and it does not look in
     PATH.  PATH can hold a ctest of another version, and ctest does not
-    reject a build directory that another version configured.  A script that
+    reject a build directory that another version configured.  A module that
     configures a new build directory runs the cmake of PATH, and the
     configure step rejects that cmake when its version is not the pin.  A
-    script that runs cmake or ctest with no build directory, for example a
+    module that runs cmake or ctest with no build directory, for example a
     self-test outside ctest, takes the program of PATH only when that program
     gives the pinned version (pinned_program).
 
-THE CHECK (`setup check --build-dir BUILD_DIR`, the test cmake_pin)
+THE CHECK OF A BUILD (`setup check --build-dir BUILD_DIR`, the test cmake_pin)
     Each of these programs must give the pinned version:
     * The ctest that runs the check: the nearest ancestor process whose name
       in /proc/PID/comm is ctest.  The check runs /proc/PID/exe --version, so
       it reads the program of that process, also when a wrapper started it.
     * CMAKE_COMMAND and CMAKE_CTEST_COMMAND of the build directory.
     A program of another version is an error.  A run with no ctest ancestor,
-    a program whose version the check cannot read and a pin file that the
+    a program whose version the check cannot read and a pin table that the
     check cannot read are errors too.  Each finding has the place of the
-    first requirement of the pin file.
+    first row of the pin cmake.
 
 Usage
+    setup check [TOOL]...
     setup check --build-dir BUILD_DIR [--warnings-dir DIR]
     setup check --print-program BUILD_DIR cmake|ctest
-    setup check --print-pin [MACHINE]
     guard selftest setup.pins [--cmake CMAKE --ctest CTEST --make-program NINJA]
 
-Exit 0 with no error, 1 on an error, 2 on a usage error or a failed self-test.
+Exit 0 with no error, 1 on an error of a build, 2 on a usage error or a failed
+self-test.  For the installed tools: 2 when a tool does not meet its pin, 3
+when a tool is absent, 4 when the host has no pin of a tool, and the largest
+of these when more than one tool fails.
 """
 
 from __future__ import annotations
 
-import argparse
 import functools
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -63,20 +60,17 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import pins as pin_table
 from assay.core import report as check_report
+from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT, SETUP
 
 CHECK = "cmake-pin"
 ROOT = REPO_ROOT
-PIN_RELATIVE = "utils/toolchain/cmake/requirements.txt"
-PIN_FILE = ROOT / PIN_RELATIVE
+PIN_NAME = "cmake"
 PROC = Path("/proc")
 # The cache entry of each program of a build directory.
 CACHE_ENTRIES = {"cmake": "CMAKE_COMMAND", "ctest": "CMAKE_CTEST_COMMAND"}
-REQUIREMENT = re.compile(
-    r'cmake==(?P<version>[0-9]+\.[0-9]+\.[0-9]+) *; *platform_machine *== *"(?P<machine>[A-Za-z0-9_]+)"'
-    r" +--hash=sha256:(?P<digest>[0-9a-f]{64}) *")
-VERSION_LINE = re.compile(r"(?P<name>cmake|ctest) version (?P<version>\S+)")
 # A program that gives no version in this time is broken.
 VERSION_TIMEOUT_SECONDS = 60
 # The longest chain of ancestors that the check walks.  A chain from a test to
@@ -85,17 +79,17 @@ ANCESTOR_LIMIT = 64
 
 
 class PinError(Exception):
-    """The pin file, a build directory or a program does not give what the caller needs."""
+    """The pin table, a build directory or a program does not give what the caller needs."""
 
     def __init__(self, message: str, line: int = 0) -> None:
-        """Keep the message and the line of the pin file that it is about, or 0."""
+        """Keep the message and the line of the pin table that it is about, or 0."""
         super().__init__(message)
         self.line = line
 
 
-@dataclass(frozen=True)
-class Pin:
-    """The pinned version, the SHA256 of the wheel of each machine, and the line of the first requirement."""
+@dataclass(frozen=True, slots=True)
+class CmakePin:
+    """The pinned version of CMake, the SHA-256 of the wheel of each platform, and the line of the first row."""
 
     version: str
     digests: dict[str, str]
@@ -105,80 +99,38 @@ class Pin:
 # ── The pin ────────────────────────────────────────────────────────────────
 
 
-def logical_lines(text: str) -> list[tuple[int, str]]:
-    """Return each line that is not a comment or blank, with a line that ends in a backslash joined to the next.
+def read_pin(table: tuple[pin_table.Pin, ...] | None = None) -> CmakePin:
+    """Read the rows of the pin cmake.
+
+    Complexity: O(n) in the rows of the table.
 
     Args:
-        text: The text of a pin file
+        table: The pins, by default the pin table of the tree
 
     Returns:
-        The number of the first physical line and the joined text of each line
-    """
-    joined: list[tuple[int, str]] = []
-    pending: list[str] = []
-    first = 0
-    for number, raw in enumerate(text.splitlines(), start=1):
-        stripped = raw.strip()
-        if not pending and (not stripped or stripped.startswith("#")):
-            continue
-        if not pending:
-            first = number
-        if stripped.endswith("\\"):
-            pending.append(stripped[:-1].strip())
-            continue
-        pending.append(stripped)
-        joined.append((first, " ".join(pending)))
-        pending = []
-    if pending:
-        joined.append((first, " ".join(pending)))
-    return joined
-
-
-def read_pin(path: Path = PIN_FILE) -> Pin:
-    """Read the pin file.
-
-    Complexity: O(n) in the size of the file.
-
-    Args:
-        path: The pin file
-
-    Returns:
-        The pin
+        The pin of CMake
 
     Raises:
-        PinError: If the file is absent, holds a line that is not a requirement, holds no
-            requirement, gives two versions or gives two digests for one machine
+        PinError: If the table cannot be read, has no row of cmake, or its rows give two versions
     """
     try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise PinError(f"the pin file {path} cannot be read: {error.strerror}") from None
-    version = ""
-    first_line = 0
-    digests: dict[str, str] = {}
-    for number, line in logical_lines(text):
-        found = REQUIREMENT.fullmatch(line)
-        if found is None:
-            raise PinError(f"the line {number} of {path} is not a requirement "
-                           f"'cmake==X.Y.Z ; platform_machine == \"MACHINE\" --hash=sha256:DIGEST': {line}", number)
-        if version and found["version"] != version:
-            raise PinError(f"{path} gives the two versions {version} and {found['version']}.  Give one version on "
-                           f"each line.", number)
-        if found["machine"] in digests:
-            raise PinError(f"{path} gives two requirements for the machine {found['machine']}.", number)
-        version = version or found["version"]
-        first_line = first_line or number
-        digests[found["machine"]] = found["digest"]
-    if not version:
-        raise PinError(f"{path} holds no requirement 'cmake==X.Y.Z'.")
-    return Pin(version=version, digests=digests, line=first_line)
+        pins = pin_table.load() if table is None else table
+    except (rows_grammar.RowsError, OSError) as error:
+        raise PinError(f"the pin table cannot be read: {error}", getattr(error, "line", 0)) from None
+    rows = sorted(pin_table.named(pins, PIN_NAME), key=lambda pin: pin.line)
+    if not rows:
+        raise PinError(f"{pin_table.PINS_PATH} has no row of the pin {PIN_NAME}.")
+    versions = sorted({pin.version for pin in rows})
+    if len(versions) > 1:
+        raise PinError(f"{pin_table.PINS_PATH} gives the two versions {versions[0]} and {versions[1]} of "
+                       f"{PIN_NAME}.  Give one version on each row.", rows[1].line)
+    return CmakePin(version=versions[0], digests={pin.platform: pin.digest for pin in rows}, line=rows[0].line)
 
 
 def install_hint() -> str:
     """Return the sentence that tells how to install the pinned CMake and ctest."""
-    return (f"Install the pinned CMake and ctest with `bash {ROOT}/utils/scripts/install-cmake.sh`, and put the bin "
-            f"directory that it prints first in PATH.  A Python environment can take them with "
-            f"`python3 -m pip install --require-hashes -r {PIN_FILE}`.")
+    return (f"Install the pinned CMake and ctest with `python3 {ROOT}/utils/bin/setup install cmake`, and put the bin "
+            f"directory that `python3 {ROOT}/utils/bin/setup install --print-bin cmake` prints first in PATH.")
 
 
 # ── Programs ───────────────────────────────────────────────────────────────
@@ -186,6 +138,8 @@ def install_hint() -> str:
 
 def program_version(program: str | Path) -> tuple[str, str] | None:
     """Return the name and the version that `PROGRAM --version` gives on its first line, or None.
+
+    The first line is `cmake version X` or `ctest version X`.
 
     Args:
         program: The path of a cmake or a ctest
@@ -199,8 +153,10 @@ def program_version(program: str | Path) -> tuple[str, str] | None:
     except (OSError, subprocess.TimeoutExpired):
         return None
     lines = result.stdout.splitlines()
-    found = VERSION_LINE.fullmatch(lines[0].strip()) if result.returncode == 0 and lines else None
-    return (found["name"], found["version"]) if found else None
+    words = lines[0].split(" ") if result.returncode == 0 and lines else []
+    if len(words) == 3 and words[0] in CACHE_ENTRIES and words[1] == "version" and words[2]:
+        return words[0], words[2]
+    return None
 
 
 def configured_program(build_dir: Path, name: str) -> str:
@@ -258,8 +214,8 @@ def pinned_program(name: str) -> str:
     found = program_version(program)
     if found != (name, pin.version):
         shown = f"{found[0]} {found[1]}" if found else "no version"
-        raise PinError(f"the {name} of PATH, {program}, gives {shown}, but {PIN_RELATIVE} pins {pin.version}.  "
-                       f"{install_hint()}")
+        raise PinError(f"the {name} of PATH, {program}, gives {shown}, but {pin_table.PINS_PATH} pins "
+                       f"{pin.version}.  {install_hint()}")
     return program
 
 
@@ -304,10 +260,10 @@ def ancestor_ctest(proc_root: Path = PROC, pid: int | None = None) -> Path | Non
     return None
 
 
-# ── The check ──────────────────────────────────────────────────────────────
+# ── The check of a build ───────────────────────────────────────────────────
 
 
-def judge_program(pin: Pin, name: str, program: str | Path, what: str, remedy: str) -> check_report.Finding | None:
+def judge_program(pin: CmakePin, name: str, program: str | Path, what: str, remedy: str) -> check_report.Finding | None:
     """Return an error when a program does not give the pinned version, else None.
 
     Args:
@@ -321,7 +277,7 @@ def judge_program(pin: Pin, name: str, program: str | Path, what: str, remedy: s
     if found == (name, pin.version):
         return None
     shown = f"{found[0]} {found[1]}" if found else "no version on the first line of --version"
-    return check_report.Finding("error", PIN_RELATIVE, pin.line, CHECK,
+    return check_report.Finding("error", pin_table.PINS_PATH, pin.line, CHECK,
                                 f"{what} gives {shown}, but this file pins {name} {pin.version}.  {remedy}")
 
 
@@ -333,7 +289,8 @@ def link_target(link: Path) -> str:
         return str(link)
 
 
-def check(build_dir: Path, warnings_dir: Path | None, proc_root: Path = PROC, pid: int | None = None) -> int:
+def check(build_dir: Path, warnings_dir: Path | None, proc_root: Path = PROC, pid: int | None = None,
+          table: tuple[pin_table.Pin, ...] | None = None) -> int:
     """Check the ctest that runs this process and the two programs of the build directory against the pin.
 
     Args:
@@ -341,14 +298,15 @@ def check(build_dir: Path, warnings_dir: Path | None, proc_root: Path = PROC, pi
         warnings_dir: The warnings directory, or None
         proc_root: The process file system, or a copy of its shape in a self-test
         pid: The process whose ctest ancestor the check reads, by default this process
+        table: The pins, by default the pin table of the tree
 
     Returns:
         1 when one finding or more is an error, else 0
     """
     try:
-        pin = read_pin()
+        pin = read_pin(table)
     except PinError as error:
-        return check_report.emit([check_report.Finding("error", PIN_RELATIVE, error.line, CHECK, str(error))],
+        return check_report.emit([check_report.Finding("error", pin_table.PINS_PATH, error.line, CHECK, str(error))],
                                  CHECK, warnings_dir)
     findings: list[check_report.Finding] = []
     try:
@@ -358,7 +316,7 @@ def check(build_dir: Path, warnings_dir: Path | None, proc_root: Path = PROC, pi
     runner = ancestor_ctest(proc_root, pid)
     if runner is None:
         findings.append(check_report.Finding(
-            "error", PIN_RELATIVE, pin.line, CHECK,
+            "error", pin_table.PINS_PATH, pin.line, CHECK,
             f"no ctest runs this check, so it cannot read the version of the ctest of the run.  Run the test "
             f"cmake_pin with {configured_ctest}."))
     else:
@@ -369,7 +327,7 @@ def check(build_dir: Path, warnings_dir: Path | None, proc_root: Path = PROC, pi
         try:
             program = configured_program(build_dir, name)
         except PinError as error:
-            findings.append(check_report.Finding("error", PIN_RELATIVE, pin.line, CHECK, str(error)))
+            findings.append(check_report.Finding("error", pin_table.PINS_PATH, pin.line, CHECK, str(error)))
             continue
         found = judge_program(pin, name, program, f"{entry} of {build_dir} ({program})",
                               f"Configure the build directory again with the pinned CMake.  {install_hint()}")
@@ -378,6 +336,39 @@ def check(build_dir: Path, warnings_dir: Path | None, proc_root: Path = PROC, pi
         print(f"cmake-pin: the ctest of the run and the cmake and the ctest of {build_dir} give {pin.version}, the "
               f"pinned version.")
     return check_report.emit(findings, CHECK, warnings_dir)
+
+
+# ── The check of the installed tools ───────────────────────────────────────
+
+
+def check_tools(names: list[str], root: Path | None = None) -> int:
+    """Make sure that each named tool of the tools directory meets its pin (THE INSTALLED TOOLS).
+
+    Args:
+        names: The tools, each a tool of assay.setup.install
+        root: The tools directory, by default tools_root() of assay.core.cache
+
+    Returns:
+        0 when each tool meets its pin, else the largest exit status of a tool that fails
+    """
+    from assay.core import cache
+    from assay.setup import install
+
+    table = pin_table.load()
+    base = cache.tools_root() if root is None else root
+    worst = 0
+    for name in names:
+        tool = install.TOOLS[name]
+        try:
+            pin = install.pin_of(tool, table)
+            directory = install.directory_of(tool, pin, base)
+            install.verify_installed(tool, directory, pin, table)
+        except install.InstallError as error:
+            print(f"setup check {name}: {error}", file=sys.stderr)
+            worst = max(worst, error.status)
+            continue
+        print(f"setup check {name}: {directory} is at the pin ({pin.version}).", file=sys.stderr)
+    return worst
 
 
 # ── Self-test ──────────────────────────────────────────────────────────────
@@ -401,6 +392,15 @@ def write_process(proc_root: Path, pid: int, parent: int, name: str, exe: Path |
         (directory / "exe").symlink_to(exe)
 
 
+def planted_table(*versions: str) -> tuple[pin_table.Pin, ...]:
+    """Return a pin table with one row of cmake for each version, each for a platform of its own."""
+    platforms = ("linux-x86_64", "linux-aarch64", "darwin-x86_64")
+    rows = [f"pin cmake via=archive version={version} platform={platforms[index]} "
+            f"source=https://example.invalid/cmake.whl sha256={'0' * 64} | a planted pin"
+            for index, version in enumerate(versions)]
+    return pin_table.parse("# a planted pin table\nformat 1\n" + "".join(f"{row}\n" for row in rows), "planted")
+
+
 def self_test(cmake: str | None, ctest: str | None, make_program: str | None) -> int:
     """Plant each kind of pin, program, cache and process chain, and check each verdict.
 
@@ -418,60 +418,30 @@ def self_test(cmake: str | None, ctest: str | None, make_program: str | None) ->
         if not holds:
             failures.append(f"{name}\n{detail}" if detail else name)
 
-    def refuses(name: str, action: Callable[[], object], pattern: str) -> None:
-        """Expect ACTION to raise a PinError whose message matches PATTERN."""
+    def refuses(name: str, action: Callable[[], object], fragment: str) -> None:
+        """Expect ACTION to raise a PinError whose message holds FRAGMENT."""
         try:
             action()
         except PinError as error:
-            expect(name, re.search(pattern, str(error)) is not None, str(error))
+            expect(name, fragment in str(error), str(error))
             return
         expect(name, False, "no PinError")
 
     print("setup.pins --self-test")
     tree = read_pin()
-    expect("the pin of the tree gives one version X.Y.Z", re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", tree.version)
-           is not None)
-    expect("the pin of the tree gives a digest for x86_64 and for aarch64",
-           set(tree.digests) == {"x86_64", "aarch64"} and all(len(digest) == 64 for digest in tree.digests.values()))
-    expect("the first requirement of the tree is the place of a finding",
-           PIN_FILE.read_text(encoding="utf-8").splitlines()[tree.line - 1].startswith("cmake=="))
+    numbers = tree.version.split(".")
+    expect("the pin of the tree gives one version X.Y.Z", len(numbers) == 3 and all(part.isdigit() for part in numbers))
+    expect("the pin of the tree gives a digest for linux-x86_64 and for linux-aarch64",
+           set(tree.digests) == {"linux-x86_64", "linux-aarch64"} and all(len(d) == 64 for d in tree.digests.values()))
+    expect("the first row of cmake of the tree is the place of a finding",
+           pin_table.PINS.read_text(encoding="utf-8").splitlines()[tree.line - 1].startswith("pin cmake "))
+    expect("a pin of two platforms reads", read_pin(planted_table("4.4.2", "4.4.2")).version == "4.4.2")
+    refuses("a pin of two versions is an error", lambda: read_pin(planted_table("4.4.2", "4.4.3")),
+            "two versions 4.4.2 and 4.4.3")
+    refuses("a table with no row of cmake is an error", lambda: read_pin(planted_table()), "has no row of the pin")
 
-    digest = "0" * 64
     with tempfile.TemporaryDirectory(prefix="cmake-pin-") as directory:
         work = Path(directory)
-
-        def pin_file(name: str, *lines: str) -> Path:
-            path = work / "pins" / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("# a pin of the self-test\n" + "".join(f"{line}\n" for line in lines), encoding="utf-8")
-            return path
-
-        def requirement(version: str, machine: str) -> str:
-            return f'cmake=={version} ; platform_machine == "{machine}" \\\n    --hash=sha256:{digest}'
-
-        good = read_pin(pin_file("good", requirement("4.4.2", "x86_64"), requirement("4.4.2", "aarch64")))
-        expect("a pin of two machines reads", good.version == "4.4.2" and good.line == 2
-               and good.digests == {"x86_64": digest, "aarch64": digest})
-        refuses("an absent pin file is an error", lambda: read_pin(work / "absent"), "cannot be read")
-        refuses("a pin file with no requirement is an error", lambda: read_pin(pin_file("empty")), "no requirement")
-        refuses("a pin of two versions is an error",
-                lambda: read_pin(pin_file("two", requirement("4.4.2", "x86_64"), requirement("4.4.3", "aarch64"))),
-                "two versions 4.4.2 and 4.4.3")
-        refuses("a pin of one machine two times is an error",
-                lambda: read_pin(pin_file("twice", requirement("4.4.2", "x86_64"), requirement("4.4.2", "x86_64"))),
-                "two requirements for the machine x86_64")
-        refuses("a requirement with no hash is an error",
-                lambda: read_pin(pin_file("unhashed", 'cmake==4.4.2 ; platform_machine == "x86_64"')),
-                "line 2 .* is not a requirement")
-        refuses("a requirement with no machine is an error",
-                lambda: read_pin(pin_file("unmarked", f"cmake==4.4.2 --hash=sha256:{digest}")), "is not a requirement")
-        refuses("a requirement of another project is an error",
-                lambda: read_pin(pin_file("other", requirement("4.4.2", "x86_64"),
-                                          f'ninja==1.13.0 ; platform_machine == "x86_64" --hash=sha256:{digest}')),
-                "line 4 .* is not a requirement")
-        refuses("a version that is not X.Y.Z is an error",
-                lambda: read_pin(pin_file("short", requirement("4.4", "x86_64"))), "is not a requirement")
-
         programs = work / "programs"
         pinned_ctest = write_program(programs / "pinned" / "ctest", f"ctest version {tree.version}")
         pinned_cmake = write_program(programs / "pinned" / "cmake", f"cmake version {tree.version}")
@@ -510,7 +480,7 @@ def self_test(cmake: str | None, ctest: str | None, make_program: str | None) ->
             os.environ["PATH"] = f"{programs / 'other'}:{saved_path}"
             pinned_program.cache_clear()
             refuses("a ctest of another version in PATH is an error", lambda: pinned_program("ctest"),
-                    "gives ctest 4.3.0, but .* pins")
+                    "gives ctest 4.3.0, but ")
             os.environ["PATH"] = f"{programs / 'pinned'}:{saved_path}"
             pinned_program.cache_clear()
             expect("the pinned ctest in PATH is the program", pinned_program("ctest") == str(pinned_ctest))
@@ -554,7 +524,7 @@ def self_test(cmake: str | None, ctest: str | None, make_program: str | None) ->
         status, said = verdict("other_runner", chain("other_runner", other_ctest), pinned_build)
         expect("the check reports a ctest of another version that runs the tests",
                status == 1 and "the ctest that runs the tests" in said and "gives ctest 4.3.0" in said
-               and f"{PIN_RELATIVE}:{tree.line}: error: [cmake-pin]" in said, said)
+               and f"{pin_table.PINS_PATH}:{tree.line}: error: [cmake-pin]" in said, said)
         status, said = verdict("other_cmake", chain("other_cmake", pinned_ctest),
                                build("other_cmake", other_cmake, pinned_ctest))
         expect("the check reports a CMAKE_COMMAND of another version",
@@ -607,9 +577,7 @@ def real_run(work: Path, cmake: str, ctest: str, make_program: str, expect: Call
 
 
 def main(argv: list[str]) -> int:
-    """Parse the arguments and run the check, a print mode or the self-test.
-
-    With no mode, the command is the check of the build directory of --build-dir.
+    """Parse the arguments and run the check of a build, the check of the installed tools, a print mode or the self-test.
 
     Args:
         argv: The words after `setup check`, or --self-test and its words
@@ -617,39 +585,36 @@ def main(argv: list[str]) -> int:
     Returns:
         The exit status of the mode
     """
-    parser = argparse.ArgumentParser(prog="setup check", description=__doc__.split("\n", 1)[0])
+    from assay.core import cli
+    from assay.setup import install
+
+    parser = cli.parser("setup check", __doc__.split("\n", 1)[0])
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--print-program", nargs=2, metavar=("BUILD_DIR", "PROGRAM"),
                       help="print the cmake or the ctest of a configured build directory")
-    mode.add_argument("--print-pin", nargs="?", const=os.uname().machine, metavar="MACHINE",
-                      help="print the pinned version and the digest of the wheel of MACHINE (default: this host)")
+    mode.add_argument("--build-dir", type=Path, help="check the cmake and the ctest of a build directory")
     mode.add_argument("--self-test", action="store_true", help="plant each case and check each verdict")
-    parser.add_argument("--build-dir", type=Path, help="the build directory of --check")
     parser.add_argument("--cmake", help="the cmake of the real run of --self-test")
     parser.add_argument("--ctest", help="the ctest of the real run of --self-test")
     parser.add_argument("--make-program", help="the ninja of the real run of --self-test")
+    parser.add_argument("tools", nargs="*", metavar="TOOL", help=f"one of {', '.join(install.TOOLS)}")
     check_report.add_arguments(parser)
     options = parser.parse_args(argv)
     if options.self_test:
         return self_test(options.cmake, options.ctest, options.make_program)
-    try:
-        if options.print_program:
-            build_dir, name = options.print_program
-            if name not in CACHE_ENTRIES:
-                parser.error(f"the program is cmake or ctest, not {name}")
+    unknown = [name for name in options.tools if name not in install.TOOLS]
+    if unknown:
+        parser.error(f"{', '.join(unknown)} is not a tool.  The tools are {', '.join(install.TOOLS)}")
+    if options.print_program:
+        build_dir, name = options.print_program
+        if name not in CACHE_ENTRIES:
+            parser.error(f"the program is cmake or ctest, not {name}")
+        try:
             print(configured_program(Path(build_dir), name))
-            return 0
-        if options.print_pin:
-            pin = read_pin()
-            if options.print_pin not in pin.digests:
-                print(f"setup check: {PIN_RELATIVE} pins no wheel for the machine {options.print_pin}.  It pins "
-                      f"{', '.join(sorted(pin.digests))}.", file=sys.stderr)
-                return 1
-            print(f"{pin.version} {pin.digests[options.print_pin]}")
-            return 0
-    except PinError as error:
-        print(f"setup check: {error}", file=sys.stderr)
-        return 1
-    if options.build_dir is None:
-        parser.error("the check needs --build-dir")
-    return check(options.build_dir.resolve(), options.warnings_dir)
+        except PinError as error:
+            print(f"setup check: {error}", file=sys.stderr)
+            return 1
+        return 0
+    if options.build_dir is not None:
+        return check(options.build_dir.resolve(), options.warnings_dir)
+    return check_tools(options.tools or list(install.DEFAULT_TOOLS))

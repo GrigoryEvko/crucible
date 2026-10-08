@@ -2,13 +2,13 @@
 #   cmake -DWORK=<directory> -DMAKE_PROGRAM=<ninja> -P cmake/CMakePinSelfTest.cmake
 #
 # The check must accept the pinned version, and it must reject each other
-# version with a message that gives the pin and the two install commands.  It
-# must reject a pin file that is absent, that has no requirement, that gives
-# no version X.Y.Z or that gives two versions.  The pin of the tree must give
-# the version of the CMake that runs this test.  Two configures of a scratch
-# project that makes the call of the root CMakeLists.txt show the whole path.
-# A pin of another version stops the configure with the message, and a pin of
-# the running version lets the configure complete.
+# version with a message that gives the pin and the install command.  It must
+# reject a pin table that is absent, that has no row of cmake, that gives no
+# version X.Y.Z or that gives two versions.  The pin table of the tree must
+# give the version of the CMake that runs this test.  Two configures of a
+# scratch project that makes the call of the root CMakeLists.txt show the
+# whole path.  A pin of another version stops the configure with the message,
+# and a pin of the running version lets the configure complete.
 cmake_minimum_required(VERSION 3.25)
 include("${CMAKE_CURRENT_LIST_DIR}/CMakePin.cmake")
 
@@ -27,12 +27,20 @@ endif()
 math(EXPR other_major "${CMAKE_MATCH_1} + 1")
 set(other "${other_major}.0.0")
 
-# Write the pin file WORK/NAME with one requirement for each version.
+# Write the pin table WORK/NAME with one row of cmake for each version, each
+# for a platform of its own, and one row of another tool.  The cell of each row
+# holds a semicolon, which divides the line into two elements of a CMake list.
 function(write_pin name)
-  set(text "# A pin of the test.\n")
+  set(text "# A pin table of the test.\nformat 1\n")
+  set(platforms linux-x86_64 linux-aarch64 darwin-x86_64)
+  set(index 0)
   foreach(version IN LISTS ARGN)
-    string(APPEND text "cmake==${version} ; platform_machine == \"x86_64\" \\\n    --hash=sha256:${digest}\n")
+    list(GET platforms ${index} platform)
+    math(EXPR index "${index} + 1")
+    string(APPEND text "pin cmake via=archive version=${version} platform=${platform} "
+                       "source=https://example.invalid/cmake.whl sha256=${digest} | a pin; of the test\n")
   endforeach()
+  string(APPEND text "pin other via=host version=9.9.9 | another tool\n")
   file(WRITE "${WORK}/${name}" "${text}")
 endfunction()
 
@@ -66,20 +74,20 @@ write_pin(empty.txt)
 write_pin(two_versions.txt "${CMAKE_VERSION}" "${other}")
 write_pin(short_version.txt "4.4")
 
-expect_pass("the pin of the tree" "${CMAKE_CURRENT_LIST_DIR}/../utils/toolchain/cmake/requirements.txt"
-            "${CMAKE_VERSION}")
-expect_pass("a pin of the running version on two lines" "${WORK}/running.txt" "${CMAKE_VERSION}")
+expect_pass("the pin table of the tree" "${CMAKE_CURRENT_LIST_DIR}/../utils/pins.txt" "${CMAKE_VERSION}")
+expect_pass("a pin of the running version on two rows" "${WORK}/running.txt" "${CMAKE_VERSION}")
 string(REPLACE "." "\\." escaped_running "${CMAKE_VERSION}")
 string(REPLACE "." "\\." escaped_other "${other}")
 expect_refusal("a pin of another version" "${WORK}/other.txt" "${CMAKE_VERSION}"
                "CMake ${escaped_running} runs this configure, but .* pins CMake ${escaped_other}\\."
-               "bash .*/utils/scripts/install-cmake\\.sh"
-               "python3 -m pip install --require-hashes -r .*/other\\.txt")
+               "python3 .*/utils/bin/setup install cmake\n"
+               "setup install --print-bin cmake")
 expect_refusal("a version with a suffix" "${WORK}/running.txt" "${CMAKE_VERSION}-rc1" "pins CMake")
 expect_refusal("a version with one more digit" "${WORK}/running.txt" "${CMAKE_VERSION}0" "pins CMake")
-expect_refusal("an absent pin file" "${WORK}/absent.txt" "${CMAKE_VERSION}" "does not exist")
-expect_refusal("a pin file with no requirement" "${WORK}/empty.txt" "${CMAKE_VERSION}" "has no line 'cmake==X\\.Y\\.Z'")
-expect_refusal("a pin file with two versions" "${WORK}/two_versions.txt" "${CMAKE_VERSION}" "gives the two versions")
+expect_refusal("an absent pin table" "${WORK}/absent.txt" "${CMAKE_VERSION}" "does not exist")
+expect_refusal("a pin table with no row of cmake" "${WORK}/empty.txt" "${CMAKE_VERSION}"
+               "has no row 'pin cmake \\.\\.\\. version=X\\.Y\\.Z'")
+expect_refusal("a pin table with two versions" "${WORK}/two_versions.txt" "${CMAKE_VERSION}" "gives the two versions")
 expect_refusal("a version that is not X.Y.Z" "${WORK}/short_version.txt" "${CMAKE_VERSION}"
                "does not give a version X\\.Y\\.Z")
 

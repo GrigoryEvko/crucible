@@ -1,0 +1,37 @@
+# utils/pins.txt — the pinned tools of the tree.  This file is the only place that gives their versions.
+#
+# assay.core.pins reads this file for Python, and cmake/CMakePin.cmake reads the rows of cmake for CMake.  The
+# rows obey the rows grammar of assay.core.rows: a word is a field KEY=VALUE, and " | " divides the cells.
+#
+#   pin NAME via=VIA version=VERSION [source=URL] [sha256=DIGEST | commit=SHA] [platform=PLATFORM] | WHAT IT IS
+#
+# via=archive  `setup install` downloads the source, makes sure that its SHA-256 is the digest, and unpacks it
+# via=pip      `setup install` writes a requirements file with the digest, and pip makes sure of the digest
+# via=git      the source is a git repository at the commit
+# via=host     the host gives the tool, and the version is the minimum version.  The row has no source
+#
+# A platform is the system and the machine of a host, such as linux-x86_64 or darwin-aarch64.  A row with a
+# platform serves only that host, and a row with no platform serves each host.  The key of a row is its name and
+# its platform.
+#
+# To change a pin, write the new version, the new source and the SHA-256 of the new download, and read the
+# digest from the download itself, not from a SHA256SUMS file of the release.  `python3 utils/bin/setup list`
+# prints the table, `python3 utils/bin/setup install` installs the tools, and `python3 utils/bin/setup check`
+# makes sure that each installed tool agrees with its pin.
+format 1
+
+pin ast-grep via=archive version=0.45.3 platform=darwin-aarch64 source=https://github.com/ast-grep/ast-grep/releases/download/0.45.3/app-aarch64-apple-darwin.zip sha256=6d2279dea5bea2ad79c66ea93f5fe54ba926e398a8a26de76c56db68fe59eac6 | ast-grep, which reads each shell script with its bash grammar.  The digests come from a download of each asset of the release on 2026-09-26
+pin ast-grep via=archive version=0.45.3 platform=linux-aarch64 source=https://github.com/ast-grep/ast-grep/releases/download/0.45.3/app-aarch64-unknown-linux-gnu.zip sha256=b39cfbc58da4b869a88b8a4bc57bd5deb0d24541e704cf7c257da7b53ec81c8f | ast-grep, which reads each shell script with its bash grammar
+pin ast-grep via=archive version=0.45.3 platform=linux-x86_64 source=https://github.com/ast-grep/ast-grep/releases/download/0.45.3/app-x86_64-unknown-linux-gnu.zip sha256=f8ac830881339d1edee6b2652f54798c0f4da5a827f2db38a08ee31117783ce8 | ast-grep, which reads each shell script with its bash grammar
+pin cmake via=archive version=4.4.2 platform=linux-aarch64 source=https://files.pythonhosted.org/packages/py3/c/cmake/cmake-4.4.2-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl sha256=fc9d9f95dc9a542db99ca96cba1c275adeeb497ff2e134c780a9677b8578bd05 | the manylinux wheel of CMake on PyPI, which gives the cmake and the ctest that configure, build and test the tree
+pin cmake via=archive version=4.4.2 platform=linux-x86_64 source=https://files.pythonhosted.org/packages/py3/c/cmake/cmake-4.4.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl sha256=27b024e903ef985b37183d754a5c61230b56b41fe0971cd44b71b80c787ec594 | the manylinux wheel of CMake on PyPI, which gives the cmake and the ctest that configure, build and test the tree
+pin gcc via=git version=16.2.1 source=https://github.com/gcc-mirror/gcc.git commit=61bc257e5e02e48952ebc4e25a730c4a49794df1 | the commit of the releases/gcc-16 branch that the patches of utils/toolchain/gcc/patches/ apply to.  `setup gcc` builds the patched compiler g++-16p from it
+pin mcrl2 via=archive version=202607.0 platform=linux-x86_64 source=https://github.com/mCRL2org/mCRL2/releases/download/mcrl2-202607.0/mcrl2-202607.0_x86_64.rpm sha256=6f27c9f976ffe7ae8d6cd3ee69bba3052f7fec86aed07ae91d546f12aaf22967 | the mCRL2 tools mcrl22lps, lps2pbes and pbes2bool, which the crash-stop oracle of the session oracle calls
+pin python via=host version=3.14 | the minimum version of Python.  The masters utils/bin/guard, utils/bin/loop and utils/bin/setup refuse an older Python
+pin sbt via=archive version=1.10.7 source=https://github.com/sbt/sbt/releases/download/v1.10.7/sbt-1.10.7.tgz sha256=32c15233c636c233ee25a2c31879049db7021cfef70807c187515c39b96b0fe6 | the build tool that builds the crash-stop oracle of the session oracle
+pin temurin-jdk via=archive version=17.0.20.1+1 platform=linux-x86_64 source=https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz sha256=3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e | the Java 17 runtime of the crash-stop oracle of the session oracle
+pin tree-sitter-grammar via=git version=1019 source=https://github.com/GrigoryEvko/tree-sitter-cpp commit=c19c6bdfeb1398b70ad035d2d8ef94687f1286ce | the C++ grammar fork of the tree-sitter kit.  The version is the grammar ABI, and MANIFEST.txt of the kit must name this commit and this ABI
+pin tree-sitter-kit via=archive version=cpp-fork-v4 platform=darwin-aarch64 source=https://github.com/GrigoryEvko/tree-sitter-cpp/releases/download/cpp-fork-v4/tree-sitter-cpp-fork-cpp-fork-v4-macos-arm64.tar.gz sha256=a2651a3e82d82bb62fedf4eb54688f9057d8e5f1abea2960992d85c05763c7ae | the tree-sitter kit: the CLI of the runtime fork and the C++ grammar fork, which read the C++ of the tree.  The digests come from the release cpp-fork-v4 on 2026-09-21 and a download of each asset
+pin tree-sitter-kit via=archive version=cpp-fork-v4 platform=linux-aarch64 source=https://github.com/GrigoryEvko/tree-sitter-cpp/releases/download/cpp-fork-v4/tree-sitter-cpp-fork-cpp-fork-v4-linux-arm64.tar.gz sha256=aa27cdbc2895dff50f2b46c9dd0e5c759daaf2dc172474a6c99f3e79e13c7fe5 | the tree-sitter kit: the CLI of the runtime fork and the C++ grammar fork, which read the C++ of the tree
+pin tree-sitter-kit via=archive version=cpp-fork-v4 platform=linux-x86_64 source=https://github.com/GrigoryEvko/tree-sitter-cpp/releases/download/cpp-fork-v4/tree-sitter-cpp-fork-cpp-fork-v4-linux-x64.tar.gz sha256=228eb401ee03c9fef8657ae7705d1b1bab78b1996f42308b9d16b5c7c3a65e67 | the tree-sitter kit: the CLI of the runtime fork and the C++ grammar fork, which read the C++ of the tree
+pin tree-sitter-runtime via=git version=v0.27.0-cpp-fork.8 source=https://github.com/GrigoryEvko/tree-sitter commit=31a914d29f8e909125df50f82512bf6477097568 | the runtime fork of the tree-sitter kit, which declares the grammar ABI 1019.  MANIFEST.txt of the kit must name this commit and this tag

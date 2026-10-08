@@ -1,16 +1,15 @@
-# The CMake and the ctest that utils/toolchain/cmake/requirements.txt pins.
+# The CMake and the ctest that the rows of cmake of utils/pins.txt pin.
 #
-# utils/scripts/install-cmake.sh installs them into the tools directory of the
-# shared cache root, and it puts their bin directory first in PATH for the
-# steps after this action.  The Actions cache keeps the install directory.
-# Its key is the name of that directory, which carries the pinned version, the
-# machine and the start of the pinned SHA256, and the hash of the install
-# script.  A cache miss downloads one wheel of about 30 MB from PyPI.  The
-# step that saves the cache runs at once after the install, so a job that
-# fails after it still keeps the install.
+# `setup install cmake` (utils/assay/setup/install.py) installs them into the
+# tools directory of the shared cache root, and it puts their bin directory
+# first in PATH for the steps after this action.  The Actions cache keeps the
+# install directory.  Its key is the name of that directory, which carries the
+# pinned version, the machine and the start of the pinned SHA256, and the hash
+# of the install module.  A cache miss downloads one wheel of about 30 MB from
+# PyPI.  The step that saves the cache runs at once after the install, so a job
+# that fails after it still keeps the install.
 #
-# The job must check out the tree first, and it must have bash, python3, curl
-# and sha256sum.
+# The job must check out the tree first, and it must have Python 3.14.
 name: pinned CMake
 description: Install the pinned CMake and ctest, and put them first in PATH.
 runs:
@@ -20,8 +19,8 @@ runs:
       id: locate
       shell: bash
       run: |
-        dir="$(bash utils/scripts/install-cmake.sh --print-dir)"
-        printf 'dir=%s\nkey=%s-%s\n' "$dir" "${dir##*/}" "${{ hashFiles('utils/scripts/install-cmake.sh') }}" \
+        dir="$(python3 utils/bin/setup install --print-dir cmake)"
+        printf 'dir=%s\nkey=%s-%s\n' "$dir" "${dir##*/}" "${{ hashFiles('utils/assay/setup/install.py') }}" \
           >> "$GITHUB_OUTPUT"
 
     - name: Restore the pinned CMake
@@ -33,7 +32,7 @@ runs:
 
     - name: Install the pinned CMake
       shell: bash
-      run: bash utils/scripts/install-cmake.sh
+      run: python3 utils/bin/setup install cmake
 
     - name: Save the pinned CMake
       if: steps.restore.outputs.cache-hit != 'true'

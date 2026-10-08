@@ -124,9 +124,6 @@ utils/assay/oracle/rocq.py | regex-call | 2 | <module> | A read of today.  The c
 utils/assay/oracle/sprout.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/oracle/unit_store.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/setup/pins.py | format-read | 2 | CMakeCache.txt | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/setup/pins.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/setup/pins.py | regex-call | 1 | self_test | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/setup/pins.py | regex-call | 1 | self_test.refuses | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/tests/loop/test_fixture.py | format-read | 4 | CMakeCache.txt | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/tests/loop/test_fixture.py | format-read | 8 | compile_commands.json | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/tests/loop/test_fixture.py | regex-call | 1 | StoreTest.entry_path | A read of today.  The change that moves the read into its reader lowers the count

@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.27)
 
 # The tree configures, builds and tests only with the CMake and the ctest that
-# utils/toolchain/cmake/requirements.txt pins.  A configure with a CMake of
-# another version stops here, before CMake tests the compiler.  A change of
-# the pin makes the next build configure again (cmake/CMakePin.cmake).
+# the rows of cmake of utils/pins.txt pin.  A configure with a CMake of another
+# version stops here, before CMake tests the compiler.  A change of the pin
+# table makes the next build configure again (cmake/CMakePin.cmake).
 include(cmake/CMakePin.cmake)
-set(CRUCIBLE_CMAKE_PIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/utils/toolchain/cmake/requirements.txt")
+set(CRUCIBLE_CMAKE_PIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/utils/pins.txt")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CRUCIBLE_CMAKE_PIN_FILE}")
 crucible_cmake_pin_problem("${CRUCIBLE_CMAKE_PIN_FILE}" "${CMAKE_VERSION}" CRUCIBLE_CMAKE_PIN_PROBLEM)
 if(NOT CRUCIBLE_CMAKE_PIN_PROBLEM STREQUAL "")

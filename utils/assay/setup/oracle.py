@@ -1,11 +1,13 @@
-"""Install the toolchain of the crash-stop oracle into the cache.
+"""Install the toolchain of the crash-stop oracle into the cache (`setup install oracle`).
 
 utils/assay/oracle/mpstk.py builds mpstk-crash-stop with sbt and runs its
 verifier on a Java 17 runtime, and the verifier calls the mCRL2 tools
-mcrl22lps, lps2pbes and pbes2bool.  This module downloads a pinned release of
-each into the cache of utils/assay/oracle/rocq.py
+mcrl22lps, lps2pbes and pbes2bool.  The pins temurin-jdk, sbt and mcrl2 of
+utils/pins.txt give a release of each.  This module downloads each release
+into the cache of utils/assay/oracle/rocq.py
 (~/.cache/crucible/session_oracle, or SESSION_ORACLE_CACHE),
-checks its SHA-256, and unpacks it there.  It does not depend on any tool
+checks its SHA-256, and unpacks it there.  The directory of a release has the
+name and the version of its pin.  The module does not depend on any tool
 that the host has, except rpm2cpio and cpio for the mCRL2 package.
 
 sbt keeps its launcher, its global base, its Ivy home and the Coursier
@@ -27,11 +29,16 @@ import subprocess
 import tarfile
 import urllib.request
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
+from assay.core import pins as pin_table
 from assay.oracle.rocq import OracleError, cache_root
 
 LOG = logging.getLogger("session_oracle.toolchain")
+# The pins of the toolchain: the Java runtime, sbt and mCRL2.
+JDK_PIN = "temurin-jdk"
+SBT_PIN = "sbt"
+MCRL2_PIN = "mcrl2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,16 +51,17 @@ class Release:
     kind: str  # "tar.gz" or "rpm"
 
 
-JDK = Release("temurin-jdk-17.0.20.1+1",
-              "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/"
-              "OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz",
-              "3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e", "tar.gz")
-SBT = Release("sbt-1.10.7", "https://github.com/sbt/sbt/releases/download/v1.10.7/sbt-1.10.7.tgz",
-              "32c15233c636c233ee25a2c31879049db7021cfef70807c187515c39b96b0fe6", "tar.gz")
-MCRL2 = Release("mcrl2-202607.0",
-                "https://github.com/mCRL2org/mCRL2/releases/download/mcrl2-202607.0/mcrl2-202607.0_x86_64.rpm",
-                "6f27c9f976ffe7ae8d6cd3ee69bba3052f7fec86aed07ae91d546f12aaf22967", "rpm")
-RELEASES = (JDK, SBT, MCRL2)
+def release(name: str) -> Release:
+    """Return the release of one pin of the toolchain for this host.
+
+    Raises:
+        OracleError: If the pin table has no such pin for this host
+    """
+    pin = pin_table.find(pin_table.load(), name)
+    if pin is None:
+        raise OracleError(f"{pin_table.PINS_PATH} has no pin {name} for the platform {pin_table.host_platform()}")
+    kind = "rpm" if PurePosixPath(pin.source).suffix == ".rpm" else "tar.gz"
+    return Release(f"{pin.name}-{pin.version}", pin.source, pin.digest, kind)
 
 
 def toolchain_root() -> Path:
@@ -94,14 +102,14 @@ def install() -> Path:
     """Download, check and unpack each release that the cache lacks.  Return the toolchain root."""
     root = toolchain_root()
     root.mkdir(parents=True, exist_ok=True)
-    for release in RELEASES:
-        target = root / release.name
+    for pinned in (release(JDK_PIN), release(SBT_PIN), release(MCRL2_PIN)):
+        target = root / pinned.name
         if target.is_dir():
             continue
         partial = target.with_name(target.name + ".partial")
         if partial.exists():
             raise OracleError(f"{partial} is left from an install that stopped.  Remove it and run again.")
-        _unpack(release, _download(release), target)
+        _unpack(pinned, _download(pinned), target)
     return root
 
 
@@ -120,9 +128,9 @@ def environment() -> dict[str, str]:
     root.
     """
     root = install()
-    java_home = _only_child(root / JDK.name)
-    sbt_home = root / SBT.name / "sbt"
-    mcrl2 = root / MCRL2.name / "usr"
+    java_home = _only_child(root / release(JDK_PIN).name)
+    sbt_home = root / release(SBT_PIN).name / "sbt"
+    mcrl2 = root / release(MCRL2_PIN).name / "usr"
     env = dict(os.environ)
     env["JAVA_HOME"] = str(java_home)
     env["PATH"] = os.pathsep.join([str(java_home / "bin"), str(sbt_home / "bin"), str(mcrl2 / "bin"),

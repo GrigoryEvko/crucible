@@ -1,12 +1,13 @@
 # CMakePin.cmake: reject a CMake of another version than the pin.
 #
-# utils/toolchain/cmake/requirements.txt pins one version of CMake and ctest.
-# Each line `cmake==X.Y.Z ; platform_machine == "MACHINE"` gives that version
-# for one machine.  The root CMakeLists.txt calls crucible_cmake_pin_problem()
-# with CMAKE_VERSION before project(), so a configure with a CMake of another
-# version stops before CMake tests the compiler.  The test cmake_pin rejects a
-# ctest of another version (`setup check`, utils/assay/setup/pins.py).
-# cmake/CMakePinSelfTest.cmake is the test of this file.
+# The rows of the pin cmake of utils/pins.txt give one version of CMake and
+# ctest.  Each row `pin cmake via=archive version=X.Y.Z platform=... | ...`
+# gives that version for one platform.  The root CMakeLists.txt calls
+# crucible_cmake_pin_problem() with CMAKE_VERSION before project(), so a
+# configure with a CMake of another version stops before CMake tests the
+# compiler.  The test cmake_pin rejects a ctest of another version (`setup
+# check`, utils/assay/setup/pins.py).  cmake/CMakePinSelfTest.cmake is the test
+# of this file.
 
 # Set OUT_VAR to the pinned version of PIN_FILE, or to an empty string when the
 # file gives no version.  Set PROBLEM_VAR to an empty string, or to a message
@@ -17,31 +18,37 @@ function(crucible_cmake_pin_version pin_file out_var problem_var)
     set(${problem_var} "Crucible CMake pin: the pin file ${pin_file} does not exist." PARENT_SCOPE)
     return()
   endif()
-  # A line of the pin ends in a backslash and holds a semicolon, so a CMake
-  # list of the lines would join two lines.  Each match stops before the
-  # first blank, semicolon or backslash.
-  file(READ "${pin_file}" text)
-  string(REGEX MATCHALL "\ncmake==[^ ;\n\\\\]*" requirements "\n${text}")
+  # Each line is one element of the list.  A semicolon in the cell of a row
+  # divides that row into two elements, and only the first starts with the
+  # head of the row.
+  file(STRINGS "${pin_file}" rows REGEX "^pin cmake ")
   set(pinned "")
-  foreach(requirement IN LISTS requirements)
-    string(STRIP "${requirement}" requirement)
-    if(NOT requirement MATCHES "^cmake==([0-9]+\\.[0-9]+\\.[0-9]+)$")
-      string(CONCAT problem "Crucible CMake pin: the requirement '${requirement}' of ${pin_file} does not give "
-                            "a version X.Y.Z.")
+  foreach(row IN LISTS rows)
+    if(NOT row MATCHES "^pin cmake ")
+      continue()
+    endif()
+    if(NOT row MATCHES "^pin cmake[^|]* version=([^ |]+)")
+      set(${problem_var} "Crucible CMake pin: the row '${row}' of ${pin_file} gives no field version." PARENT_SCOPE)
+      return()
+    endif()
+    set(version "${CMAKE_MATCH_1}")
+    if(NOT version MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+      string(CONCAT problem "Crucible CMake pin: the row of cmake with version=${version} of ${pin_file} does not "
+                            "give a version X.Y.Z.")
       set(${problem_var} "${problem}" PARENT_SCOPE)
       return()
     endif()
     if(pinned STREQUAL "")
-      set(pinned "${CMAKE_MATCH_1}")
-    elseif(NOT pinned STREQUAL CMAKE_MATCH_1)
-      string(CONCAT problem "Crucible CMake pin: ${pin_file} gives the two versions ${pinned} and "
-                            "${CMAKE_MATCH_1}.  Give one version on each line.")
+      set(pinned "${version}")
+    elseif(NOT pinned STREQUAL version)
+      string(CONCAT problem "Crucible CMake pin: ${pin_file} gives the two versions ${pinned} and ${version} of "
+                            "cmake.  Give one version on each row.")
       set(${problem_var} "${problem}" PARENT_SCOPE)
       return()
     endif()
   endforeach()
   if(pinned STREQUAL "")
-    set(${problem_var} "Crucible CMake pin: ${pin_file} has no line 'cmake==X.Y.Z'." PARENT_SCOPE)
+    set(${problem_var} "Crucible CMake pin: ${pin_file} has no row 'pin cmake ... version=X.Y.Z'." PARENT_SCOPE)
     return()
   endif()
   set(${out_var} "${pinned}" PARENT_SCOPE)
@@ -50,7 +57,7 @@ endfunction()
 
 # Set OUT_VAR to an empty string when VERSION is the version that PIN_FILE
 # pins.  Otherwise set it to a message that gives the pinned version and the
-# commands that install it.
+# command that installs it.
 function(crucible_cmake_pin_problem pin_file version out_var)
   crucible_cmake_pin_version("${pin_file}" pinned problem)
   if(NOT problem STREQUAL "")
@@ -65,10 +72,9 @@ function(crucible_cmake_pin_problem pin_file version out_var)
   string(CONCAT report
     "Crucible CMake pin: CMake ${version} runs this configure, but ${pin_file} pins CMake ${pinned}.  "
     "The tree configures, builds and tests only with the pinned CMake and ctest.  "
-    "Install them with one of these two commands:\n"
-    "  bash ${root}/utils/scripts/install-cmake.sh\n"
-    "  python3 -m pip install --require-hashes -r ${pin_file}\n"
-    "Then put the bin directory of that install first in PATH.  The first command prints that directory.  "
-    "Then configure again.")
+    "Install them with this command:\n"
+    "  python3 ${root}/utils/bin/setup install cmake\n"
+    "Then put the bin directory of that install first in PATH.  "
+    "`python3 ${root}/utils/bin/setup install --print-bin cmake` prints that directory.  Then configure again.")
   set(${out_var} "${report}" PARENT_SCOPE)
 endfunction()

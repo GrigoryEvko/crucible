@@ -10,11 +10,12 @@ THE ROOT
     "neg".
 
 THE TOOLS
-    The pinned tools (the tree-sitter kit and ast-grep) live in the tools
-    subdirectory of the default root, and utils/scripts/tools_root.sh owns
-    them.  $CRUCIBLE_CACHE_DIR does not move them, because a self-test points
-    it at a scratch directory and "off" turns each cache off.  No eviction of
-    this module reads that subdirectory.
+    The pinned tools (the tree-sitter kit, ast-grep and cmake) live in the
+    tools subdirectory of the default root, tools_root(), and
+    utils/assay/setup/install.py owns them.  $CRUCIBLE_CACHE_DIR does not
+    move them, because a self-test points it at a scratch directory and
+    "off" turns each cache off.  No eviction of this module reads that
+    subdirectory.
 
 THE LIMITS
     LIMITS gives the size limit of each subdirectory of the root, in
@@ -147,6 +148,16 @@ def base_root() -> Path | None:
         return Path(chosen)
     home = os.environ.get("XDG_CACHE_HOME", "")
     return (Path(home) if home else Path.home() / ".cache") / "crucible"
+
+
+def tools_root() -> Path:
+    """Return the directory of the pinned tools (THE TOOLS).  The function makes no directory.
+
+    The directory is $XDG_CACHE_HOME/crucible/tools, else ~/.cache/crucible/tools.
+    $CRUCIBLE_CACHE_DIR does not move it, and "off" does not hide it.
+    """
+    home = os.environ.get("XDG_CACHE_HOME", "")
+    return (Path(home) if home else Path.home() / ".cache") / "crucible" / "tools"
 
 
 def cache_root(name: str) -> Path | None:

@@ -8,7 +8,7 @@
 # Tiers:
 #   * guards  — bash/ripgrep discipline suite. ubuntu-latest, no compiler.
 #   * patched-gcc — builds the patched GCC for each arch with
-#               utils/toolchain/gcc/build.sh, and caches the install
+#               `setup gcc` (utils/assay/setup/gcc.py), and caches the install
 #               (.github/workflows/patched-gcc.yml).
 #   * build   — matrix(arch × preset) full compile + ctest, in a fedora:44
 #               container with the patched GCC 16.2.1
@@ -19,12 +19,12 @@
 #   * fuzz    — default+CRUCIBLE_FUZZ, build + run the Philox-seeded smoke.
 #
 # The toolchain: each job that compiles Crucible uses the patched GCC from the
-# patched-gcc job, which is the upstream commit in utils/toolchain/gcc/BASE plus the
-# patches in utils/toolchain/gcc/patches.  Local development builds the same compiler
-# with the same script.  cmake/Toolchain-gcc16.cmake refuses a compiler without
-# each fix, so no job can compile with the stock g++ of the container.  Each job
-# that configures or tests runs the CMake and the ctest that
-# utils/toolchain/cmake/requirements.txt pins (.github/actions/pinned-cmake).
+# patched-gcc job, which is the upstream commit of the pin gcc of utils/pins.txt
+# plus the patches in utils/toolchain/gcc/patches.  Local development builds the
+# same compiler with the same command.  cmake/Toolchain-gcc16.cmake refuses a
+# compiler without each fix, so no job can compile with the stock g++ of the
+# container.  Each job that configures or tests runs the CMake and the ctest
+# that the rows of cmake of utils/pins.txt pin (.github/actions/pinned-cmake).
 #
 # Caching (public repo, free cache): ccache wraps the compiler — objects restored
 # per (arch,preset) across runs, split restore/save so even a failed run banks
@@ -106,29 +106,28 @@ jobs:
       # fork's grammar declares ABI 1019, which no upstream runtime loads.  So
       # the kit carries both halves, and the installer is the only way onto it.
       #
-      # The installer verifies the release tarball against a SHA256 hardcoded in
-      # the script, checks the grammar and runtime lineage in the kit manifest,
-      # and parses a fixture that only the fork parses.  A failure installs
-      # nothing.  The kit lands in the tools directory of the shared cache
-      # root (utils/scripts/tools_root.sh, under the home directory of the
-      # runner), and the installer appends its bin directory to GITHUB_PATH.
+      # `setup install` (utils/assay/setup/install.py) verifies the release
+      # tarball against the SHA256 of its pin in utils/pins.txt, checks the
+      # grammar and runtime lineage in the kit manifest, and parses a fixture
+      # that only the fork parses.  A failure installs nothing.  The kit lands
+      # in the tools directory of the shared cache root (assay.core.cache,
+      # under the home directory of the runner), and the install appends its
+      # bin directory to GITHUB_PATH.  The test of the install runs first.
       #
       # This step stays FREE: the download is one 43 MB release asset from
       # GitHub, and no runner label changes.
       - name: Install the pinned tree-sitter C++ kit (self-test + install)
         run: |
-          bash utils/scripts/install-tree-sitter.sh --self-test
-          bash utils/scripts/install-tree-sitter.sh
+          python3 utils/bin/guard selftest tests.setup.test_install
+          python3 utils/bin/setup install tree-sitter
 
       # The guards read shell scripts with ast-grep's bash grammar, so a git
-      # call inside a heredoc body or a comment is not a call.  The installer
-      # verifies the release zip against a SHA256 hardcoded in the script and
-      # runs a fixture through the binary.  The binary lands in the tools
-      # directory of the shared cache root.
-      - name: Install the pinned ast-grep (self-test + install)
-        run: |
-          bash utils/scripts/install-ast-grep.sh --self-test
-          bash utils/scripts/install-ast-grep.sh
+      # call inside a heredoc body or a comment is not a call.  The install
+      # verifies the release zip against the SHA256 of its pin and runs a
+      # fixture through the binary.  The binary lands in the tools directory
+      # of the shared cache root.
+      - name: Install the pinned ast-grep
+        run: python3 utils/bin/setup install ast-grep
 
       # The self-test of the rule no-ffast-math and the plants of the rule
       # test-registration configure a scratch project.
@@ -336,7 +335,7 @@ jobs:
       # The two guards read the code from the parse tree, so this job needs
       # the pinned kit.
       - name: Install the pinned tree-sitter C++ kit
-        run: bash utils/scripts/install-tree-sitter.sh
+        run: python3 utils/bin/setup install tree-sitter
 
       - name: layer boundary (self-test + scan)
         run: |
@@ -432,16 +431,14 @@ jobs:
       # last library it needs.  The patched GCC carries its own sanitizer
       # runtimes and libstdc++.  gmp-devel gives gmp.h, which the GCC plugin
       # headers include when the configure step builds the contract plugin.
-      # curl, tar and coreutils serve utils/scripts/install-tree-sitter.sh and
-      # utils/scripts/install-cmake.sh: each downloads one file, checks its
-      # SHA256 and unpacks it. The fedora:44 base carries none of the three
-      # reliably, and weak deps are off.  CMake comes from the pin, not dnf.
+      # `setup install` downloads each pinned tool with Python, checks its
+      # SHA256 and unpacks it, so the job needs no download tool.  CMake comes
+      # from the pin, not dnf.
       - name: Install toolchain + BPF stack + ccache
         run: >
           dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
           gcc-c++ isl gmp-devel ninja-build git ripgrep ccache diffutils
           clang llvm xxd bpftool libbpf-devel
-          curl tar coreutils
 
       # The patched GCC that the patched-gcc job built.  CRUCIBLE_CXX names it.
       - name: Restore the patched GCC
@@ -492,11 +489,11 @@ jobs:
       # the compile rather than before the test step, so a kit failure costs one
       # download instead of a full build.  The pin covers both matrix arches.
       - name: Install the pinned tree-sitter C++ kit
-        run: bash utils/scripts/install-tree-sitter.sh
+        run: python3 utils/bin/setup install tree-sitter
 
       # The rule structured-reads reads shell scripts with the pinned ast-grep.
       - name: Install the pinned ast-grep
-        run: bash utils/scripts/install-ast-grep.sh
+        run: python3 utils/bin/setup install ast-grep
 
       - name: Install the pinned CMake and ctest
         uses: ./.github/actions/pinned-cmake

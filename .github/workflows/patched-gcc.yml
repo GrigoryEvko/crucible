@@ -6,10 +6,12 @@
 # refuses a compiler without each fix, so a job that uses a different compiler
 # fails at the configure step.
 #
-# utils/toolchain/gcc/build.sh builds the compiler from utils/toolchain/gcc/BASE
-# and utils/toolchain/gcc/patches/.  The cache key is a hash of those files and
-# of the script, so a change to one of them builds the compiler again.  A cache hit
-# skips the build, and the job then takes approximately one minute.
+# `setup gcc` (utils/assay/setup/gcc.py) builds the compiler from the commit of
+# the pin gcc of utils/pins.txt and utils/toolchain/gcc/patches/.  The cache key
+# is a hash of the pin table, the patches and the module, so a change to one of
+# them builds the compiler again.  A change of another pin of the table builds
+# it again too.  A cache hit skips the build, and the job then takes
+# approximately one minute.
 #
 # BILLING: the same rules as the billing block in ci.yml.  Standard runners
 # only, no cache limit change, no upload-artifact.  The install is
@@ -22,7 +24,7 @@ on:
   workflow_call:
     inputs:
       ref:
-        description: "The commit to read utils/toolchain/gcc from.  Empty means the commit of the run."
+        description: "The commit to read the pin table and the patches from.  Empty means the commit of the run."
         required: false
         type: string
         default: ""
@@ -68,7 +70,7 @@ jobs:
       # arch.  The consumers append the arch.
       - name: Compute the cache key
         id: key
-        run: echo "key=patched-gcc-fedora44-${{ hashFiles('utils/toolchain/gcc/BASE', 'utils/toolchain/gcc/patches/*.patch', 'utils/toolchain/gcc/build.sh') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=patched-gcc-fedora44-${{ hashFiles('utils/pins.txt', 'utils/toolchain/gcc/patches/*.patch', 'utils/assay/setup/gcc.py') }}" >> "$GITHUB_OUTPUT"
 
       - name: Look up the cached install
         id: cache
@@ -82,12 +84,12 @@ jobs:
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
         run: >
           dnf install -y --setopt=install_weak_deps=False
-          gcc-c++ make flex git tar diffutils findutils gawk file perl
+          gcc-c++ make flex git tar diffutils findutils gawk file perl python3
           gmp-devel mpfr-devel libmpc-devel isl-devel zlib-devel libzstd-devel
 
       - name: Build and install the patched GCC
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
-        run: bash utils/toolchain/gcc/build.sh /opt/crucible-gcc "$(nproc)"
+        run: python3 utils/bin/setup gcc /opt/crucible-gcc "$(nproc)"
 
       - name: Save the install
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}

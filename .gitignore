@@ -21,8 +21,8 @@ Testing/
 # every scan.
 .worktrees/
 
-# The install scripts put the pinned tools in the shared cache
-# (utils/scripts/tools_root.sh), and no script writes .tools/. A checkout or an
+# `setup install` puts the pinned tools in the shared cache
+# (tools_root() of utils/assay/core/cache.py), and no script writes .tools/. A checkout or an
 # export can still hold a copy or a link of the tools there. The guards list
 # files with git ls-files --exclude-standard, so this line keeps that copy out
 # of every scan and out of every commit.

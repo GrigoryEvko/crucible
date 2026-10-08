@@ -406,13 +406,15 @@ add_test(NAME patched_gcc_probe_self_test
 set_tests_properties(patched_gcc_probe_self_test PROPERTIES LABELS "ci_guard")
 
 # The tree configures, builds and tests only with the CMake and the ctest that
-# utils/toolchain/cmake/requirements.txt pins.  cmake_pin rejects a ctest of
+# the rows of cmake of utils/pins.txt pin.  cmake_pin rejects a ctest of
 # another version that runs the tests, and a cmake or a ctest of another
-# version in CMakeCache.txt (`setup check`, utils/assay/setup/pins.py).  The configure
-# self-test plants each kind of pin against cmake/CMakePin.cmake, and a
-# configure of a scratch project with a pin of another version must stop.
-# The install self-test plants each kind of install against
-# utils/scripts/install-cmake.sh.
+# version in CMakeCache.txt (`setup check`, utils/assay/setup/pins.py).  The
+# configure self-test plants each kind of pin against cmake/CMakePin.cmake,
+# and a configure of a scratch project with a pin of another version must
+# stop.  The test of the pin table plants each kind of pin row, and it makes
+# sure that each master refuses a Python older than the pin python.  The test
+# of the install plants each kind of install against
+# utils/assay/setup/install.py, and it installs a planted tool with no network.
 add_test(NAME cmake_pin
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/setup check --build-dir ${CMAKE_BINARY_DIR})
 add_test(NAME cmake_pin_self_test
@@ -421,10 +423,12 @@ add_test(NAME cmake_pin_self_test
 add_test(NAME cmake_pin_configure_self_test
   COMMAND ${CMAKE_COMMAND} -DWORK=${CMAKE_CURRENT_BINARY_DIR}/cmake_pin_configure_self_test
           -DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM} -P ${CMAKE_SOURCE_DIR}/cmake/CMakePinSelfTest.cmake)
-add_test(NAME install_cmake_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/install-cmake.sh --self-test)
-set_tests_properties(cmake_pin cmake_pin_self_test cmake_pin_configure_self_test install_cmake_self_test
-  PROPERTIES LABELS "ci_guard")
+add_test(NAME assay_core_test_pins
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.core.test_pins)
+add_test(NAME assay_setup_test_install
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.setup.test_install)
+set_tests_properties(cmake_pin cmake_pin_self_test cmake_pin_configure_self_test assay_core_test_pins
+  assay_setup_test_install PROPERTIES LABELS "ci_guard")
 
 # The tests of cmake/Ccache.cmake.  Each one configures a small project.  The
 # launcher case tries CRUCIBLE_USE_CCACHE=OFF with ccache in the environment
@@ -5823,8 +5827,8 @@ set_tests_properties(atom_roster_joined atom_roster_joined_self_test PROPERTIES
 # a path that no longer exists — so the roster in utils/assay/readers/tsast.py cannot rot.
 #
 # Exit 3 (the pinned kit is absent) is a SKIP here.  A developer who has not
-# run utils/scripts/install-tree-sitter.sh gets the instruction rather than a
-# failure.  CI installs the kit in both the guards job and the build job, so CI
+# run `python3 utils/bin/setup install tree-sitter` gets the instruction rather
+# than a failure.  CI installs the kit in both the guards job and the build job, so CI
 # always enforces.
 add_test(NAME parse_clean_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule parse-clean --self-test)

@@ -4,8 +4,8 @@ THE ENGINE
     The pinned ast-grep reads each script with its bash grammar, in one run
     for each call, and it prints its matches as JSON.  So the text of a
     heredoc body or of a comment is not a command, and a command over two
-    lines is one command.  utils/scripts/install-ast-grep.sh installs the
-    binary, and `install-ast-grep.sh --print-bin` gives its path.
+    lines is one command.  `setup install ast-grep` (assay.setup.install)
+    installs the binary, and that module gives its path.
 
 WHAT THE READER GIVES
     For each script:
@@ -28,10 +28,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from assay.core.paths import REPO_ROOT
-
-INSTALLER = "utils/scripts/install-ast-grep.sh"
-MISSING_STATUS = 3
+INSTALL_COMMAND = "python3 utils/bin/setup install ast-grep"
 TIMEOUT_S = 300.0
 # The rules of ast-grep.  A regex in a rule is data of ast-grep, in its own dialect.
 RULES = """\
@@ -100,23 +97,21 @@ class ShellScript:
     checks_git_dir: bool = False
 
 
-def binary(root: Path = REPO_ROOT) -> str:
+def binary() -> str:
     """Return the path of the pinned ast-grep binary.
 
     Raises:
-        AstGrepMissing: If the installer reports that the binary is absent
-        ShellError: If the installer fails in another way
+        AstGrepMissing: If the binary is absent or does not meet its pin
+        ShellError: If the host has no pin of ast-grep
     """
+    from assay.setup import install
+
     try:
-        completed = subprocess.run(["bash", str(root / INSTALLER), "--print-bin"], capture_output=True, text=True,
-                                   timeout=TIMEOUT_S, check=False)
-    except (OSError, subprocess.TimeoutExpired) as problem:
-        raise ShellError(f"{INSTALLER} --print-bin cannot run: {problem}") from None
-    if completed.returncode == MISSING_STATUS:
-        raise AstGrepMissing(f"the pinned ast-grep is not installed.  Run: bash {INSTALLER}")
-    if completed.returncode != 0:
-        raise ShellError(f"{INSTALLER} --print-bin failed: {completed.stderr.strip()}")
-    return completed.stdout.strip()
+        return str(install.program("ast-grep"))
+    except install.InstallError as problem:
+        if problem.status == install.ABSENT:
+            raise AstGrepMissing(f"the pinned ast-grep is not installed.  Run: {INSTALL_COMMAND}\n{problem}") from None
+        raise ShellError(f"the pinned ast-grep cannot be found: {problem}") from None
 
 
 def read(root: Path, paths: Sequence[str], program: str | None = None) -> dict[str, ShellScript]:
@@ -128,7 +123,7 @@ def read(root: Path, paths: Sequence[str], program: str | None = None) -> dict[s
     """
     if not paths:
         return {}
-    executable = program or binary(REPO_ROOT)
+    executable = program or binary()
     try:
         completed = subprocess.run([executable, "scan", "--inline-rules", RULES, "--json=compact", *paths],
                                    capture_output=True, text=True, cwd=root, timeout=TIMEOUT_S, check=False)

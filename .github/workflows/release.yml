@@ -73,7 +73,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # The patched GCC of the tag, built once for each arch and cached.  A cache
-  # entry from a CI run of the same utils/toolchain/gcc files is a hit.
+  # entry from a CI run of the same pin table, patches and module is a hit.
   # ---------------------------------------------------------------------------
   patched-gcc:
     uses: ./.github/workflows/patched-gcc.yml
@@ -162,10 +162,12 @@ jobs:
         run: git config --global --add safe.directory '*'
 
       # The CMake and the ctest that the tag pins come first in PATH.  A tag
-      # from before the pin has no pin file, and it configures with the dnf
-      # cmake.
+      # pins its CMake in utils/pins.txt, and an older tag in
+      # utils/toolchain/cmake/requirements.txt.  The action of the tag reads its
+      # own pin.  A tag from before the pin has neither file, and it configures
+      # with the dnf cmake.
       - name: Install the pinned CMake and ctest
-        if: ${{ hashFiles('utils/toolchain/cmake/requirements.txt') != '' }}
+        if: ${{ hashFiles('utils/pins.txt', 'utils/toolchain/cmake/requirements.txt') != '' }}
         uses: ./.github/actions/pinned-cmake
 
       # Portable static configure. ccache launchers compose with the gcc16

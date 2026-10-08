@@ -148,7 +148,7 @@
 #      the pinned commit then asks sbt for sbt 1.6.1 and downloads it into
 #      the same cache.  The host needs rpm2cpio and cpio, which unpack the
 #      mCRL2 package.  To install ahead of a run:
-#        python3 utils/bin/guard check --rule session-oracle install-toolchain
+#        python3 utils/bin/setup install oracle
 #
 # How to regenerate after a relation changes:
 #

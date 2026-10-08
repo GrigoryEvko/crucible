@@ -38,7 +38,10 @@ if sys.path[:1] != [_UTILS]:
 
 # Each subcommand: its module, and the line of the help text.
 SUBCOMMANDS = {
-    "check": ("assay.setup.pins", "make sure that cmake and ctest are the pinned version, or print a pinned program"),
+    "install": ("assay.setup.install", "install each pinned tool, or print the program of one: setup install [TOOL]..."),
+    "check": ("assay.setup.pins", "make sure that each installed tool and the cmake of a build agree with the pins"),
+    "gcc": ("assay.setup.gcc", "build the patched GCC from the pinned commit: setup gcc PREFIX [JOBS]"),
+    "list": ("assay.setup.listing", "print the pin table of utils/pins.txt"),
 }
 
 if __name__ == "__main__":
