@@ -1,0 +1,9 @@
+# A friend beside a public constructor, a template that befriends its own
+# specializations, an operator and a swap friend, a friend beside a copy and a
+# deleted constructor, a static function that returns an expected of a nested
+# class or of a pointer, a union, a door that a witness row names and a door in
+# a quarantined file give no finding of the rule witness-roster.  The unit
+# compiles in the mode error.
+compile error doors.cpp mode=error
+flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Shapes.h
+exit error pass

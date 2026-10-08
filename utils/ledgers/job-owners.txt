@@ -134,10 +134,6 @@ utils/assay/guard/legacy/check_vessel_acceptance.py | print | 1 | main | A use o
 utils/assay/guard/legacy/check_vessel_acceptance.py | print | 3 | run_tests | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_vessel_acceptance.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_vessel_acceptance.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_witness_roster.py | print | 3 | check | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_witness_roster.py | print | 5 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_witness_roster.py | print | 4 | self_test | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_witness_roster.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/contract_header_unit_test.py | argparse | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/contract_header_unit_test.py | print | 1 | Runner.expect | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/contract_header_unit_test.py | print | 3 | main | A use of today.  The change that calls the owner of the job lowers the count

@@ -192,6 +192,9 @@
 //     The rule lifetime-twin:
 //     missing-twin          a parameter that CRUCIBLE_LIFETIMEBOUND marks, with
 //                           no deleted overload that refuses a temporary there
+//     The rule witness-roster:
+//     unrostered-witness    a class of a base file with a door shape and no
+//                           witness row of the rule table
 //     The rule refined-pre-subsumption (expression.cpp, THE REFINED PARAMETERS):
 //     retest                a precondition that tests again the predicate of a
 //                           refined parameter
@@ -434,9 +437,10 @@ struct GrantRow {
 };
 
 // One witness row: a class that attests to a fact that it cannot see.  The
-// row also gives the expression of a forger.  Only the writer of the negative
-// fixtures reads it (utils/assay/loop/derive/witness_fixtures.py), and the
-// plugin keeps no copy of it.
+// rule witness-roster reads the name of the class (declaration.cpp, THE RULE
+// witness-roster).  The writer of the negative fixtures reads the header, the
+// refusal and the expression of a forger
+// (utils/assay/loop/derive/witness_fixtures.py).
 struct WitnessRow {
     std::string header;  // the name inside the angle brackets
     std::string refusal;  // private, deleted or no-match
@@ -461,6 +465,7 @@ enum class Rule : std::uint8_t {
     stub_discipline,
     process_wide_state,
     lifetime_twin,
+    witness_roster,
     refined_pre_subsumption,
     syscall_grant_coverage,
     federation_admission,
@@ -546,6 +551,7 @@ enum class Kind : std::uint8_t {
     marker_not_inline,
     marker_without_object,
     missing_twin,
+    unrostered_witness,
     refined_retest,
     grant_not_granted,
     grant_not_issued,
@@ -598,6 +604,8 @@ inline const char* rule_name(Rule rule) {
             return "process-wide-state";
         case Rule::lifetime_twin:
             return "lifetime-twin";
+        case Rule::witness_roster:
+            return "witness-roster";
         case Rule::refined_pre_subsumption:
             return "refined-pre-subsumption";
         case Rule::syscall_grant_coverage:
@@ -710,6 +718,8 @@ inline const char* kind_name(Kind kind) {
             return "marker-without-object";
         case Kind::missing_twin:
             return "missing-twin";
+        case Kind::unrostered_witness:
+            return "unrostered-witness";
         case Kind::refined_retest:
             return "retest";
         case Kind::grant_not_granted:
@@ -791,6 +801,8 @@ inline Rule rule_of(Kind kind) {
             return Rule::process_wide_state;
         case Kind::missing_twin:
             return Rule::lifetime_twin;
+        case Kind::unrostered_witness:
+            return Rule::witness_roster;
         case Kind::refined_retest:
             return Rule::refined_pre_subsumption;
         case Kind::grant_not_granted:
@@ -840,6 +852,7 @@ inline bool is_family_kind(Kind kind) {
         case Rule::permission_storage:
         case Rule::escape_doors:
         case Rule::stub_discipline:
+        case Rule::witness_roster:
         case Rule::refined_pre_subsumption:
         case Rule::syscall_grant_coverage:
             return true;
@@ -933,6 +946,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"process-wide-state", "marker-not-inline"},
     {"process-wide-state", "marker-without-object"},
     {"lifetime-twin", "missing-twin"},
+    {"witness-roster", "unrostered-witness"},
     {"refined-pre-subsumption", "retest"},
     {"syscall-grant-coverage", "not-granted"},
     {"syscall-grant-coverage", "not-issued"},

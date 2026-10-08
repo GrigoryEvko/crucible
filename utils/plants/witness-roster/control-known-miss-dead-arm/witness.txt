@@ -1,0 +1,9 @@
+# A known miss: the plugin reads only the arms that a unit selects, so a class
+# with a door shape in an arm that no build selects gives no finding.  The
+# legacy walk of the parse tree read such a class.  Decision 5 of
+# misc/01_10_2026_quarantine.md accepts this gap for each plugin rule other
+# than contract-form, layer-residual and the vessel part of banned-calls.  The
+# plant plant-doors holds a class in an arm that its unit selects.
+compile error doors.cpp mode=error
+flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Shapes.h
+exit error pass

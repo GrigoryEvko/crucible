@@ -1,0 +1,12 @@
+#pragma once
+
+namespace control {
+
+// A class with a door shape in an arm that no build selects.
+#if 0
+class DeadArm {
+    friend DeadArm mint_dead();
+};
+#endif
+
+}  // namespace control

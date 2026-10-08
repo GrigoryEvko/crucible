@@ -1,0 +1,5 @@
+# The rule table of the control of the rule witness-roster: include/fixy/ is
+# base code, doors.cpp is quarantined, and a witness row names Rostered.
+layer low 0 include/fixy/
+quarantine doors.cpp
+witness <fixy/Shapes.h> private | control::Rostered | control::Rostered{}

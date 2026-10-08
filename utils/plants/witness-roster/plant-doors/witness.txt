@@ -1,0 +1,33 @@
+# Each class of a base header with a door shape and no witness row is a
+# finding of the rule witness-roster: a mint_ friend behind an attribute macro,
+# in a class head over two lines and beside a raw string, a passkey class, a
+# passkey constructor, a static factory that returns expected of the class,
+# also inside a different template, a type friend and a named friend function
+# with a private constructor, a nested class, a class template, a local class,
+# a class in an arm that the unit selects and a class that a macro writes.  In
+# the mode error each finding is an error, and the module of the rule judges
+# each line.
+compile report doors.cpp
+flag report -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Shapes.h
+exit report pass
+finding report witness-roster unrostered-witness include/fixy/Shapes.h:18:17 | plant::MintFriend
+finding report witness-roster unrostered-witness include/fixy/Shapes.h:29:1 | plant::HeadOverTwoLines
+finding report witness-roster unrostered-witness include/fixy/Shapes.h:35:7 | plant::RawString
+finding report witness-roster unrostered-witness include/fixy/Shapes.h:42:8 | plant::detail::passkey_key
+finding report witness-roster unrostered-witness include/fixy/Shapes.h:44:8 | plant::Passkey
+finding report witness-roster unrostered-witness include/fixy/Shapes.h:51:8 | plant::Factory
+finding report witness-roster unrostered-witness include/fixy/Shapes.h:54:8 | plant::LeadingFactory
+finding report witness-roster unrostered-witness include/fixy/Shapes.h:57:8 | plant::WrappedFactory
+finding report witness-roster unrostered-witness include/fixy/Shapes.h:62:8 | plant::plain_key
+finding report witness-roster unrostered-witness include/fixy/Shapes.h:65:7 | plant::Handle
+finding report witness-roster unrostered-witness include/fixy/Shapes.h:69:7 | plant::Opener
+finding report witness-roster unrostered-witness include/fixy/Shapes.h:77:11 | plant::detail::Outer::Nested
+finding report witness-roster unrostered-witness include/fixy/Shapes.h:85:7 | plant::grade_key
+finding report witness-roster unrostered-witness include/fixy/Shapes.h:90:7 | plant::Graded
+finding report witness-roster unrostered-witness include/fixy/Shapes.h:98:11 | plant::Local
+finding report witness-roster unrostered-witness include/fixy/Shapes.h:106:7 | plant::SelectedArm
+finding report witness-roster unrostered-witness include/fixy/Shapes.h:110:1 | plant::MacroDoor
+judge report
+compile error doors.cpp mode=error findings=report errors=report
+flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Shapes.h
+exit error fail

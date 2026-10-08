@@ -133,6 +133,33 @@
 //     PLUGIN_FINISH_PARSE_FUNCTION, and the walk gives the parameters of the
 //     pattern of each template.  The entity is the function_signature of F
 //     and the number of the parameter.
+//
+// THE RULE witness-roster (CLAUDE.md section XXI)
+//     A class of a base file with a door shape attests to a fact that it
+//     cannot see, and a witness row of the rule table names it.  A class with
+//     a door shape and no witness row is the kind unrostered-witness.  A
+//     strong shape makes a door:
+//       - the class befriends a function whose name starts with mint_
+//       - the name of the class ends with _key or Key, as a passkey does
+//       - the first parameter of a constructor has a passkey type, which is
+//         not the class: lowercase letters and underscores that end with
+//         _key, or letters and underscores that end with Key
+//       - a static member function returns expected<CLASS, ...>, also as a
+//         template argument of its return type
+//     A weak shape makes a door only with a closed constructor: a private or
+//     protected constructor that the code declares, which is no copy, no move
+//     and not deleted.  The weak shapes:
+//       - the class befriends a named function that is no operator and no
+//         swap
+//       - the class befriends a type with a different name.  A template that
+//         befriends its other specializations befriends its own name
+//     The name of a type is the name that the code spells, through a pointer,
+//     a reference and an alias.  A union is no door.  The walk of the family
+//     reads each class, and PLUGIN_FINISH_TYPE gives each local class.  The
+//     entity is the full name of the class with no template arguments, and
+//     the function of a local class is no part of it.  A class in a
+//     preprocessor arm that no build selects gives no finding (decision 5 of
+//     misc/01_10_2026_quarantine.md).
 
 #include "plugin.h"
 
@@ -1335,6 +1362,248 @@ void check_escape(tree function, bool is_defined) {
     record_property(kind, place, entity);
 }
 
+// ── The rule witness-roster ─────────────────────────────────────────────
+
+bool has_suffix(const std::string& text, const char* suffix) {
+    std::size_t length = std::strlen(suffix);
+    return text.size() >= length && text.compare(text.size() - length, length, suffix) == 0;
+}
+
+// True when each character of TEXT before END is a letter or an underscore,
+// and a lowercase letter when IS_LOWERCASE_ONLY is true.
+bool has_only_name_letters(const std::string& text, std::size_t end, bool is_lowercase_only) {
+    for (std::size_t index = 0; index < end; ++index) {
+        char letter = text[index];
+        bool is_lowercase = letter >= 'a' && letter <= 'z';
+        bool is_uppercase = letter >= 'A' && letter <= 'Z';
+        if (!(letter == '_' || is_lowercase || (is_uppercase && !is_lowercase_only))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// True when NAME is a passkey type (THE RULE witness-roster): lowercase
+// letters and underscores that end with _key, or letters and underscores that
+// end with Key.
+bool is_passkey_type_name(const std::string& name) {
+    if (has_suffix(name, "_key")) {
+        return has_only_name_letters(name, name.size() - 4, true);
+    }
+    return has_suffix(name, "Key") && has_only_name_letters(name, name.size() - 3, false);
+}
+
+// The name that the code spells for TYPE, through each pointer, reference and
+// array, with no template arguments, or an empty text.  An alias keeps its own
+// name, as the source spells it.
+std::string spelled_type_name(tree type) {
+    for (int depth = 0; type != NULL_TREE && depth < kTypeDepth; ++depth) {
+        if (TREE_CODE(type) == POINTER_TYPE || TREE_CODE(type) == REFERENCE_TYPE || TREE_CODE(type) == ARRAY_TYPE) {
+            type = TREE_TYPE(type);
+            continue;
+        }
+        if (TREE_CODE(type) == TEMPLATE_DECL) {
+            return identifier_text(DECL_NAME(type));
+        }
+        if (!TYPE_P(type)) {
+            return {};
+        }
+        tree name = TYPE_NAME(type);
+        if (name != NULL_TREE && TREE_CODE(name) == TYPE_DECL) {
+            name = DECL_NAME(name);
+        }
+        return name != NULL_TREE && TREE_CODE(name) == IDENTIFIER_NODE ? identifier_text(name) : std::string{};
+    }
+    return {};
+}
+
+// True when TYPE holds expected<OWNER, ...>: the type itself, the type that a
+// pointer, a reference or an array holds, or a template argument of a class.
+// The first argument of expected names OWNER, or a class with its NAME, and it
+// is no pointer and no reference.  Complexity: O(nodes of the type).
+bool holds_expected_of(tree type, tree owner, const std::string& name, int depth) {
+    if (type == NULL_TREE || depth > kTypeDepth) {
+        return false;
+    }
+    switch (TREE_CODE(type)) {
+        case POINTER_TYPE:
+        case REFERENCE_TYPE:
+        case ARRAY_TYPE:
+            return holds_expected_of(TREE_TYPE(type), owner, name, depth + 1);
+        case RECORD_TYPE:
+        case UNION_TYPE:
+            break;
+        default:
+            return false;
+    }
+    tree main_type = TYPE_MAIN_VARIANT(type);
+    tree info = CLASS_TYPE_P(main_type) ? CLASSTYPE_TEMPLATE_INFO(main_type) : NULL_TREE;
+    if (info == NULL_TREE || TI_TEMPLATE(info) == NULL_TREE || !DECL_P(TI_TEMPLATE(info))) {
+        return false;
+    }
+    tree arguments = INNERMOST_TEMPLATE_ARGS(TI_ARGS(info));
+    int count = arguments != NULL_TREE ? TREE_VEC_LENGTH(arguments) : 0;
+    if (count > 0 && identifier_text(DECL_NAME(TI_TEMPLATE(info))) == "expected") {
+        tree first = TREE_VEC_ELT(arguments, 0);
+        if (first != NULL_TREE && TYPE_P(first) && !INDIRECT_TYPE_P(first)
+            && (TYPE_MAIN_VARIANT(first) == owner || spelled_type_name(first) == name)) {
+            return true;
+        }
+    }
+    for (int index = 0; index < count; ++index) {
+        tree argument = TREE_VEC_ELT(arguments, index);
+        if (argument != NULL_TREE && TYPE_P(argument) && holds_expected_of(argument, owner, name, depth + 1)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The door shapes of one class (THE RULE witness-roster).
+struct DoorShapes {
+    bool is_strong = false;
+    bool is_weak = false;
+    bool has_closed_constructor = false;
+};
+
+// The shapes of one constructor that the code declares.  ACCESS_HOLDER is the
+// declaration that holds the access of the constructor: the template of a
+// constructor template, and else the constructor.
+void read_constructor(tree function, tree access_holder, const std::string& name, DoorShapes& shapes) {
+    if (DECL_ARTIFICIAL(function) || DECL_CLONED_FUNCTION_P(function)) {
+        return;
+    }
+    // The walk runs at PLUGIN_FINISH_UNIT, after GCC drops the parameters of
+    // a defined function, so the rule reads the types of the function type.
+    tree types = TYPE_ARG_TYPES(TREE_TYPE(function));
+    tree parameters = types != NULL_TREE ? FUNCTION_FIRST_USER_PARMTYPE(function) : NULL_TREE;
+    tree parameter_type = parameters != NULL_TREE && parameters != void_list_node ? TREE_VALUE(parameters) : NULL_TREE;
+    std::string parameter_name = spelled_type_name(parameter_type);
+    if (parameter_name != name && is_passkey_type_name(parameter_name)) {
+        shapes.is_strong = true;
+    }
+    bool is_copy = parameter_type != NULL_TREE && TREE_CODE(parameter_type) == REFERENCE_TYPE && parameter_name == name;
+    bool is_deleted = DECL_LANG_SPECIFIC(function) != nullptr && DECL_DELETED_FN(function);
+    bool is_closed = TREE_PRIVATE(access_holder) || TREE_PROTECTED(access_holder);
+    if (is_closed && !is_copy && !is_deleted) {
+        shapes.has_closed_constructor = true;
+    }
+}
+
+// The shapes of the members and the friends of the class MAIN_TYPE, whose
+// name is NAME.  Complexity: O(members + friends).
+DoorShapes door_shapes(tree main_type, const std::string& name) {
+    DoorShapes shapes;
+    shapes.is_strong = has_suffix(name, "_key") || has_suffix(name, "Key");
+    for (tree member = TYPE_FIELDS(main_type); member != NULL_TREE; member = DECL_CHAIN(member)) {
+        tree function = TREE_CODE(member) == TEMPLATE_DECL ? DECL_TEMPLATE_RESULT(member) : member;
+        if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
+            continue;
+        }
+        if (DECL_CONSTRUCTOR_P(function)) {
+            read_constructor(function, member, name, shapes);
+        } else if (DECL_STATIC_FUNCTION_P(function) && !DECL_ARTIFICIAL(function)
+                   && holds_expected_of(TREE_TYPE(TREE_TYPE(function)), main_type, name, 0)) {
+            shapes.is_strong = true;
+        }
+    }
+    for (tree entry = DECL_FRIENDLIST(TYPE_MAIN_DECL(main_type)); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
+        tree friend_name = FRIEND_NAME(entry);
+        if (friend_name == NULL_TREE || TREE_CODE(friend_name) != IDENTIFIER_NODE) {
+            continue;
+        }
+        std::string text = identifier_text(friend_name);
+        if (has_prefix(text, "mint_")) {
+            shapes.is_strong = true;
+        } else if (!IDENTIFIER_ANY_OP_P(friend_name) && text != "swap" && !has_prefix(text, "operator")) {
+            shapes.is_weak = true;
+        }
+    }
+    for (tree entry = CLASSTYPE_FRIEND_CLASSES(main_type); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
+        if (TREE_VALUE(entry) != NULL_TREE && spelled_type_name(TREE_VALUE(entry)) != name) {
+            shapes.is_weak = true;
+        }
+    }
+    return shapes;
+}
+
+// The full name of the class TYPE with no template arguments: its namespaces
+// and its enclosing classes.  An anonymous namespace and the function of a
+// local class are no part of it.
+std::string witness_class_name(tree type) {
+    std::vector<std::string> parts;
+    tree current = type;
+    for (int depth = 0; current != NULL_TREE && current != global_namespace && depth < kTypeDepth; ++depth) {
+        if (TYPE_P(current)) {
+            tree main_type = TYPE_MAIN_VARIANT(current);
+            tree decl = TYPE_NAME(main_type);
+            if (decl == NULL_TREE || TREE_CODE(decl) != TYPE_DECL) {
+                break;
+            }
+            parts.push_back(identifier_text(DECL_NAME(decl)));
+            current = CP_TYPE_CONTEXT(main_type);
+        } else if (TREE_CODE(current) == NAMESPACE_DECL) {
+            if (DECL_NAME(current) != NULL_TREE) {
+                parts.push_back(identifier_text(DECL_NAME(current)));
+            }
+            current = CP_DECL_CONTEXT(current);
+        } else if (DECL_P(current)) {
+            current = CP_DECL_CONTEXT(current);
+        } else {
+            break;
+        }
+    }
+    std::string joined;
+    for (auto part = parts.rbegin(); part != parts.rend(); ++part) {
+        joined += joined.empty() ? *part : "::" + *part;
+    }
+    return joined;
+}
+
+// The name of each witness row of the rule table.
+const std::unordered_set<std::string>& witness_names() {
+    static const std::unordered_set<std::string> names = [] {
+        std::unordered_set<std::string> found;
+        for (const WitnessRow& row : state.table.witnesses) {
+            found.insert(row.name);
+        }
+        return found;
+    }();
+    return names;
+}
+
+// A class of a base file with a door shape and no witness row (THE RULE
+// witness-roster).
+void check_witness(tree type) {
+    tree main_type = TYPE_MAIN_VARIANT(type);
+    tree decl = TYPE_MAIN_DECL(main_type);
+    bool is_named_class = TREE_CODE(main_type) == RECORD_TYPE && CLASS_TYPE_P(main_type) && !LAMBDA_TYPE_P(main_type)
+                       && decl != NULL_TREE && DECL_NAME(decl) != NULL_TREE && !IDENTIFIER_ANON_P(DECL_NAME(decl));
+    if (!is_named_class || !COMPLETE_TYPE_P(main_type)) {
+        return;
+    }
+    Place place = base_place(DECL_SOURCE_LOCATION(decl));
+    if (place.file == nullptr) {
+        return;
+    }
+    DoorShapes shapes = door_shapes(main_type, identifier_text(DECL_NAME(decl)));
+    if (!shapes.is_strong && !(shapes.is_weak && shapes.has_closed_constructor)) {
+        return;
+    }
+    std::string name = witness_class_name(main_type);
+    if (witness_names().count(name) == 0) {
+        record_property(Kind::unrostered_witness, place, name);
+    }
+}
+
+// PLUGIN_FINISH_TYPE: a local class, which no namespace walk reaches.
+void on_finish_witness_type(void* gcc_data, void*) {
+    tree type = static_cast<tree>(gcc_data);
+    if (type != NULL_TREE && type != error_mark_node && CLASS_TYPE_P(type) && LOCAL_CLASS_P(type)) {
+        check_witness(type);
+    }
+}
+
 // ── The rule stub-discipline ────────────────────────────────────────────
 
 constexpr const char kStubPrefix[] = "CRUCIBLE_STUB:";
@@ -2003,6 +2272,7 @@ struct PropertyWalk {
         if (decl == NULL_TREE || property_place(DECL_SOURCE_LOCATION(decl)).file == nullptr) {
             return;
         }
+        check_witness(main_type);
         for (tree member = TYPE_FIELDS(main_type); member != NULL_TREE; member = DECL_CHAIN(member)) {
             switch (TREE_CODE(member)) {
                 case FIELD_DECL:
@@ -2155,6 +2425,7 @@ void register_declarations(const char* plugin_name) {
     register_callback(plugin_name, PLUGIN_FINISH_DECL, on_finish_lifetime_declaration, nullptr);
     register_callback(plugin_name, PLUGIN_START_PARSE_FUNCTION, on_start_function_property, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_PARSE_FUNCTION, on_finish_function_property, nullptr);
+    register_callback(plugin_name, PLUGIN_FINISH_TYPE, on_finish_witness_type, nullptr);
 }
 
 }  // namespace crucible_plugin

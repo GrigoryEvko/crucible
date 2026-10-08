@@ -1,0 +1,4 @@
+# The rule table of a known miss of the rule witness-roster: include/fixy/ is
+# base code, and doors.cpp is quarantined.
+layer low 0 include/fixy/
+quarantine doors.cpp

@@ -1,0 +1,59 @@
+#pragma once
+
+namespace control {
+
+template <class T, class E>
+struct expected {};
+
+// A type friend beside a public constructor is a shortcut, and no door.
+class ShortcutFriend {
+public:
+    explicit ShortcutFriend(int) noexcept;
+    friend class Owner;
+};
+
+// A template that befriends its own other specializations.
+template <class T>
+class OwnSpecializations {
+    OwnSpecializations(int) noexcept;
+    template <class U>
+    friend class OwnSpecializations;
+};
+
+// An operator friend and a swap friend.
+class Vocabulary {
+    Vocabulary(int) noexcept;
+    friend bool operator==(Vocabulary const&, Vocabulary const&) = default;
+    friend void swap(Vocabulary&, Vocabulary&) noexcept;
+};
+
+// A type friend beside a private copy constructor and a deleted constructor.
+class CopyOnly {
+    CopyOnly(CopyOnly const&) = default;
+    CopyOnly(int) = delete;
+    friend class Owner;
+};
+
+// A static function that returns an expected of a nested class.
+struct NestedResult {
+    struct Inner {};
+    static auto make() noexcept -> expected<NestedResult::Inner, int>;
+};
+
+// A static function that returns an expected of a pointer to the class.
+struct PointerResult {
+    static expected<PointerResult*, int> make() noexcept;
+};
+
+// A union is no door.
+union Bits {
+    friend Bits mint_bits();
+    int raw;
+};
+
+// A door that a witness row names.
+class Rostered {
+    friend Rostered mint_rostered();
+};
+
+}  // namespace control

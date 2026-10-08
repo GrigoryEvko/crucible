@@ -1,0 +1,7 @@
+#include <fixy/Shapes.h>
+
+// A class with a door shape in a quarantined file is outside the scope of the
+// rule.
+class QuarantinedDoor {
+    friend QuarantinedDoor mint_quarantined();
+};

@@ -65,4 +65,3 @@ utils/registry.txt | no-plant | admit | total-fixture-cpu | The rule has no plan
 utils/registry.txt | no-plant | admit | total-link-cpu | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | total-test-cpu | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | vessel-acceptance | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
-utils/registry.txt | no-plant | admit | witness-roster | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row

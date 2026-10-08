@@ -65,4 +65,3 @@ utils/registry.txt | legacy | admit | start-lifetime | The rule has no module of
 utils/registry.txt | legacy | admit | syscall-capability | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | test-time | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | vessel-acceptance | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | legacy | admit | witness-roster | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row

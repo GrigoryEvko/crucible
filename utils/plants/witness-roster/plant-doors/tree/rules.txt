@@ -1,0 +1,4 @@
+# The rule table of the plant of the rule witness-roster: include/fixy/ is base
+# code, doors.cpp is quarantined, and no witness row names a planted class.
+layer low 0 include/fixy/
+quarantine doors.cpp

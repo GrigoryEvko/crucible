@@ -1,0 +1,112 @@
+#pragma once
+
+#define PLANT_ABI [[gnu::abi_tag("plant")]]
+// A macro that writes a class with a door shape, and the unit expands it.
+#define PLANT_DOOR_CLASS(name) \
+    class name {               \
+        friend name mint_##name(); \
+    };
+
+namespace plant {
+
+template <class T, class E>
+struct expected {};
+template <class T>
+struct Option {};
+
+// A mint_ friend behind an attribute macro in the head of the class.
+class PLANT_ABI MintFriend {
+    constexpr explicit MintFriend(int) noexcept {}
+    template <typename T>
+    friend constexpr MintFriend mint_friend(T) noexcept;
+
+public:
+    MintFriend() = default;
+};
+
+// A class head over two lines, with a brace in a block comment.
+class
+HeadOverTwoLines {
+    /* a brace in a block comment: { */
+    friend HeadOverTwoLines mint_two_lines() noexcept;
+};
+
+// A raw string that holds braces.
+class RawString {
+    static constexpr const char* text = R"(}}})";
+    friend RawString mint_raw_string() noexcept;
+};
+
+// A passkey type, and a constructor that takes it first, over two lines.
+namespace detail {
+struct passkey_key {};
+}  // namespace detail
+struct Passkey {
+    explicit Passkey(
+        detail::passkey_key) noexcept;
+};
+
+// A static factory with a trailing and with a leading expected return, and
+// one that returns the expected inside a different template.
+struct Factory {
+    static auto open_path(int) noexcept -> expected<Factory, int>;
+};
+struct LeadingFactory {
+    static expected<LeadingFactory, int> open(int) noexcept;
+};
+struct WrappedFactory {
+    static Option<expected<WrappedFactory, int>> open() noexcept;
+};
+
+// A passkey class.
+struct plain_key {};
+
+// A type friend and a named friend function, each with a private constructor.
+class Handle {
+    Handle(int) noexcept;
+    friend class Owner;
+};
+class Opener {
+    explicit Opener(int) noexcept;
+    friend Opener open_dirfd(int) noexcept;
+};
+
+// A nested class, named through its enclosing class.
+namespace detail {
+struct Outer {
+    class Nested {
+        friend Nested mint_nested();
+    };
+};
+}  // namespace detail
+
+// A class template that is a passkey, and one whose constructor takes it.
+template <class Authority>
+class grade_key {
+    grade_key() = default;
+    friend Authority;
+};
+template <class T>
+class Graded {
+public:
+    explicit Graded(grade_key<T>, T value) noexcept;
+};
+
+// A local class with a named friend and a private constructor.
+inline void hold_local() noexcept {
+    void open_local();
+    class Local {
+        Local(int) noexcept;
+        friend void open_local();
+    };
+}
+
+// An arm that the unit selects, and a class that a macro writes.
+#if defined(PLANT_SELECTED_ARM)
+class SelectedArm {
+    friend SelectedArm mint_selected();
+};
+#endif
+PLANT_DOOR_CLASS(MacroDoor)
+
+}  // namespace plant

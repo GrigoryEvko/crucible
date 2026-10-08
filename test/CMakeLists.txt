@@ -409,18 +409,11 @@ set_tests_properties(contract_header_unit PROPERTIES LABELS "foundation;ci_guard
 # The witness rows.  Each type that attests to a fact that it cannot see,
 # such as a pin, a mapping, a descriptor, a permission or a context, has a
 # witness row in utils/rule-table.txt with the expression of a forger, and
-# test/fixy/CMakeLists.txt registers one written fixture for each row.
-# --check walks include/fixy and include/foundation, and it fails for a class
-# with a door shape and no row: a mint_ friend, a passkey, a static factory,
-# or a named friend or a friend type beside a closed constructor.  The walk
-# reads the parse tree.  Exit 3 when the kit is absent reports a skip.
-crucible_script_test(NAME witness_roster_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule witness-roster --self-test)
-crucible_script_test(NAME witness_roster
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule witness-roster --check)
-set_tests_properties(witness_roster witness_roster_self_test PROPERTIES
-  LABELS "ci_guard"
-  SKIP_RETURN_CODE 3)
+# test/fixy/CMakeLists.txt registers one written fixture for each row.  The
+# rule witness-roster of the quarantine plugin refuses a class of
+# include/fixy or include/foundation with a door shape and no row: a mint_
+# friend, a passkey, a static factory, or a named friend or a friend type
+# beside a closed constructor (the test guard_plugin).
 # The fixtures of the witness rows.  witness_fixtures_check fails when a
 # fixture or the manifest is not what `loop derive witness-fixtures --write`
 # writes from the rows.  The test of the writer compiles a planted fixture

@@ -144,7 +144,7 @@ rule types engine=meta scope=package ledger=count doc=XV | an error of the pinne
 rule use-after-move engine=tsast scope=include/,src/,test/,vessel/,utils/tools/ ledger=count doc=XVI | a use of a local after std::move on a path, with no assignment that builds it again first | use the value before the move, or build it again
 rule vessel-acceptance engine=build scope=vessel/ ledger=none legacy=guard.legacy.check_vessel_acceptance doc=XIII | a vessel that does not build or whose Python tests fail | correct the vessel
 rule walk-units engine=tsast scope=test/layer/ ledger=none inputs=include/ doc=XV.1 | a check file that walks a namespace and that test/layer/walk-checks.txt does not list, and a listed file that walks none | write the list again with `loop derive walk-units --write`
-rule witness-roster engine=tsast scope=include/ ledger=admit legacy=guard.legacy.check_witness_roster doc=XXI | a class of the base with a door shape and no witness row of utils/rule-table.txt | add the witness row, and write the fixtures with `loop derive witness-fixtures --write`
+rule witness-roster engine=plugin scope=include/foundation/,include/fixy/ ledger=admit kinds=unrostered-witness doc=XXI | a class of the base with a door shape and no witness row of utils/rule-table.txt | add the witness row, and write the fixtures with `loop derive witness-fixtures --write`
 
 job argparse module=assay.core.cli | the import of argparse costs 6.3 ms.  One module imports it, at the first call of a parser
 job cache-root module=assay.core.cache | one module finds the cache root, and each cache of the package is under that root
