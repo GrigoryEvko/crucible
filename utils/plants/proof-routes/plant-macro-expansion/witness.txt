@@ -1,11 +1,17 @@
-# A union and a cast that a macro of a base header makes, and a union that the
-# operator ## makes, count at the place where the quarantined unit expands the
-# macro.  The body of a macro that no unit expands gives no finding.
+# A union, a cast, an explicit instantiation and a raw allocation that a
+# macro of a base header makes, and a union and an explicit instantiation that
+# the operator ## makes, count at the place where the quarantined unit expands
+# the macro.  The sizeof of a raw allocation can come from a macro that the
+# call holds.  The body of a macro that no unit expands gives no finding.
 
 compile macros src/macros.cpp stage=c
 exit macros pass
 judge macros
-finding macros proof-routes union src/macros.cpp:8:1 | union: Packed
-finding macros proof-routes pointer-cast src/macros.cpp:10:35 | pointer-cast: forge::Door
-finding macros proof-routes union src/macros.cpp:12:21 | union: Pasted
-finding macros quarantine raw-pointer-object src/macros.cpp:10:21 | void*
+finding macros proof-routes union src/macros.cpp:11:1 | union: Packed
+finding macros proof-routes pointer-cast src/macros.cpp:13:35 | pointer-cast: forge::Door
+finding macros proof-routes union src/macros.cpp:15:21 | union: Pasted
+finding macros proof-routes explicit-instantiation src/macros.cpp:19:1 | explicit-instantiation: forge::Box<int>
+finding macros proof-routes explicit-instantiation src/macros.cpp:21:1 | explicit-instantiation: forge::Box<char>
+finding macros proof-routes raw-allocation src/macros.cpp:23:31 | raw-allocation: forge::Door
+finding macros proof-routes raw-allocation src/macros.cpp:25:46 | raw-allocation: forge::Door
+finding macros quarantine raw-pointer-object src/macros.cpp:13:21 | void*

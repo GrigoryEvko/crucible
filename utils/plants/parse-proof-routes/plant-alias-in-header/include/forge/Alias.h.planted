@@ -1,9 +1,0 @@
-#pragma once
-
-// An alias at namespace scope of a header is a proof name in each file that
-// includes the header.
-namespace forge {
-
-using Handle = ::foundation::effects::Bg;
-
-}  // namespace forge

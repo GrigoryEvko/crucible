@@ -1,0 +1,13 @@
+# No shape of src/near.cpp is an explicit instantiation or an allocation with
+# the sizeof of a proof type in its arguments, so the rule gives no finding.
+# The quarantine rule gives its findings for the calls of the allocation
+# functions.
+
+compile near src/near.cpp stage=c
+exit near pass
+judge near
+finding near quarantine c-library-call src/near.cpp:14:36 | malloc
+finding near quarantine raw-new-delete src/near.cpp:16:61 | new
+finding near quarantine raw-new-delete src/near.cpp:18:72 | new
+finding near quarantine c-library-call src/near.cpp:22:35 | malloc
+finding near quarantine c-library-call src/near.cpp:24:44 | aligned_alloc

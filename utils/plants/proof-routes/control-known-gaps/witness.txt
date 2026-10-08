@@ -1,9 +1,11 @@
-# The rule gives no finding for an explicit instantiation or for an
-# allocation with the size of a proof type in a function that is not a
-# template, because GCC keeps no tree of them that the plugin can read.  This
-# control pins the two gaps.  The rule parse-proof-routes refuses each shape
-# on the parse tree (utils/plants/parse-proof-routes/).
+# The rule gives no finding for these three allocations with the size of a
+# proof type: the sizeof of a template parameter in an instantiation, a
+# function that allocates under a different name, and a size that a variable
+# holds.  This control pins the three gaps.  The quarantine rule gives its
+# findings for the calls of the C library.
 
 compile gaps src/gaps.cpp stage=c
 exit gaps pass
 judge gaps
+finding gaps quarantine c-library-call src/gaps.cpp:13:59 | malloc
+finding gaps quarantine c-library-call src/gaps.cpp:21:23 | malloc

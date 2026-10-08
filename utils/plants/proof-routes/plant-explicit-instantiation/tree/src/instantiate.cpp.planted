@@ -1,0 +1,22 @@
+#include <forge/Door.h>
+
+// Each explicit instantiation directive is a route, also an explicit
+// instantiation declaration: the access check does not apply to the names in
+// it, so a pointer to a private member of a proof type can escape through one.
+namespace forge {
+
+template struct Box<int>;
+
+extern template struct Box<long>;
+
+template struct Box<Door>;
+
+template int count<int>(int*);
+
+template int count(Door*);
+
+template int Holder<char>::shared;
+
+template void Holder<char>::touch();
+
+}  // namespace forge

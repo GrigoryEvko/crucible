@@ -5,15 +5,18 @@
 compile sentinel src/uses.cpp sentinel=include/forge/Pool.h stage=c
 exit sentinel pass
 judge sentinel
-finding sentinel proof-routes union include/forge/Pool.h:13:7 | union: Cell
-finding sentinel proof-routes allocator include/forge/Pool.h:19:26 | allocator: forge::Door
-finding sentinel proof-routes allocator include/forge/Pool.h:23:7 | allocator: forge::Door
-finding sentinel proof-routes allocator include/forge/Pool.h:26:26 | allocator: forge::Door
-finding sentinel proof-routes allocator include/forge/Pool.h:29:13 | allocator: forge::Door
-finding sentinel proof-routes allocator include/forge/Pool.h:31:8 | allocator: forge::Door
-finding sentinel proof-routes pointer-cast include/forge/Pool.h:33:44 | pointer-cast: forge::Door
-finding sentinel escape-doors bare-door include/forge/Pool.h:33:14 | forge::cast_back(void*)
-finding sentinel escape-doors bare-door include/forge/Pool.h:35:23 | forge::rebind(void*)
+finding sentinel proof-routes union include/forge/Pool.h:14:7 | union: Cell
+finding sentinel proof-routes allocator include/forge/Pool.h:20:26 | allocator: forge::Door
+finding sentinel proof-routes allocator include/forge/Pool.h:24:7 | allocator: forge::Door
+finding sentinel proof-routes allocator include/forge/Pool.h:27:26 | allocator: forge::Door
+finding sentinel proof-routes allocator include/forge/Pool.h:30:13 | allocator: forge::Door
+finding sentinel proof-routes allocator include/forge/Pool.h:32:8 | allocator: forge::Door
+finding sentinel proof-routes pointer-cast include/forge/Pool.h:34:44 | pointer-cast: forge::Door
+finding sentinel proof-routes explicit-instantiation include/forge/Pool.h:42:1 | explicit-instantiation: forge::Slot<int>
+finding sentinel proof-routes raw-allocation include/forge/Pool.h:44:48 | raw-allocation: forge::Door
+finding sentinel escape-doors bare-door include/forge/Pool.h:34:14 | forge::cast_back(void*)
+finding sentinel escape-doors bare-door include/forge/Pool.h:36:23 | forge::rebind(void*)
+finding sentinel escape-doors bare-door include/forge/Pool.h:44:14 | forge::raw_slot()
 
 compile plain src/uses.cpp stage=c
 exit plain pass

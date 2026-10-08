@@ -734,25 +734,23 @@ static_assert(is_proof_shape(^^fe::ExecCtx<>) && !is_forgeable(^^fe::ExecCtx<>),
 // The rule proof-routes of the quarantine plugin refuses the two routes in
 // the tree.  It refuses each union definition outside a reviewed list, and
 // each cast to a pointer or a reference and each allocator whose type names
-// a proof type.  The parse-tree rule parse-proof-routes refuses each raw
-// allocation with the size of a proof type.  This file is on the list as
-// the probe.  Two shapes pass these rules, and they stay open with this
-// argument:
+// a proof type.  It also refuses each raw allocation with the size of a
+// proof type.  This file is on the list as the probe.  Two shapes pass the
+// rule, and they stay open with this argument:
 //
 //   a cast whose target is a         static_cast<T*>(buffer) in an arena
-//   template parameter               or a container names T.  The rules
+//   template parameter               or a container names T.  The rule
 //                                    cannot know which argument reaches T,
 //                                    and every allocator of the standard
 //                                    library is such a site
 //   a pointer value copied with      the copy names no proof type at the
 //   std::memcpy                      call, so no text shows the route
 //
-// The two rules refuse three routes that turn off the access check: an
-// explicit instantiation (parse-proof-routes), an explicit specialization
-// of a function template, and an explicit specialization whose template
-// argument is a pointer to a member.  The plugin also refuses a
-// specialization of a class template that a proof type befriends, outside
-// the file that defines it.
+// The rule refuses three routes that turn off the access check: an
+// explicit instantiation, an explicit specialization of a function
+// template, and an explicit specialization whose template argument is a
+// pointer to a member.  It also refuses a specialization of a class
+// template that a proof type befriends, outside the file that defines it.
 
 // True when the checked lifetime start refuses each of the four routes
 // that left the ledger for the proof type.
@@ -847,57 +845,6 @@ static_assert(!std::is_default_constructible_v<DerivedFromContextBase>
                   && !std::is_copy_constructible_v<DerivedFromContextBase>,
               "a class derived from the base of a context must not be buildable");
 
-// The name of a declaration with each enclosing scope, from the global
-// namespace down, so that a report of the guard names the real class.
-// Complexity: linear in the depth of the scopes.
-[[nodiscard]] consteval std::string qualified_name(std::meta::info declaration) {
-    std::string name = "::" + std::string{std::meta::identifier_of(declaration)};
-    for (std::meta::info scope = std::meta::parent_of(declaration); scope != ^^::;
-         scope = std::meta::parent_of(scope)) {
-        const std::string_view part =
-            std::meta::has_identifier(scope) ? std::meta::identifier_of(scope) : std::string_view{"(anonymous)"};
-        name = "::" + std::string{part} + name;
-    }
-    return name;
-}
-
-// One line of the dump: the name that a source spells, a tab, and the
-// qualified name.
-[[nodiscard]] consteval const char* proof_name_line(std::meta::info declaration) {
-    return std::define_static_string(std::string{std::meta::identifier_of(declaration)} + '\t'
-                                     + qualified_name(declaration));
-}
-
-// The names of the proof types, for the parse-tree rule parse-proof-routes:
-// each class of the two namespaces that has the shape of a proof, and the
-// template of each witness.  main() prints them under --proof-names.
-// Complexity: linear in the number of declarations under the namespace.
-consteval void collect_proof_names(std::meta::info ns, std::vector<const char*>& out) {
-    for (const std::meta::info member : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
-        if (std::meta::is_namespace(member) && !std::meta::is_namespace_alias(member)) {
-            collect_proof_names(member, out);
-            continue;
-        }
-        if (!std::meta::is_type(member) || std::meta::is_type_alias(member)) continue;
-        if (std::meta::has_template_arguments(member) || !std::meta::has_identifier(member)) continue;
-        if (is_proof_shape(member)) out.push_back(proof_name_line(member));
-    }
-}
-
-[[nodiscard]] consteval std::vector<const char*> proof_names() {
-    std::vector<const char*> names;
-    collect_proof_names(^^::foundation, names);
-    collect_proof_names(^^::fixy, names);
-    for (const std::meta::info witness : template_witnesses) {
-        names.push_back(proof_name_line(std::meta::template_of(std::meta::dealias(witness))));
-    }
-    return names;
-}
-
-inline constexpr auto proof_name_list = std::define_static_array(proof_names());
-static_assert(proof_name_list.size() > std::size(template_witnesses),
-              "the walk found no proof-shaped class, so the name list proves nothing");
-
 // A plain count, because the verdict holds reflections and cannot reach
 // run time.
 inline constexpr std::size_t witnesses_checked = std::size(template_witnesses);
@@ -906,13 +853,8 @@ inline constexpr std::size_t unions_walked = unions.unions_walked;
 
 }  // namespace forgeable_proofs
 
-int main(int argc, char** argv) {
+int main() {
     namespace fps = forgeable_proofs;
-    if (argc > 1 && std::string_view{argv[1]} == "--proof-names") {
-        for (const char* name : fps::proof_name_list)
-            std::printf("%s\n", name);
-        return 0;
-    }
     // Two routes for each of the five pinned proof types.  A route that no
     // longer gives a pointer lowers the count, and the entry must leave
     // the ledger.

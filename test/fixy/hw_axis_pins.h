@@ -120,7 +120,8 @@ struct pinned_row {
 // The row itself.  Reading it instantiates pinned_row, so its assertion
 // runs.  A row is a static_assert and not an explicit instantiation,
 // because an explicit instantiation turns off the access check for the
-// names in it, and the parse-tree rule parse-proof-routes refuses that shape.
+// names in it, and the rule proof-routes of the quarantine plugin refuses
+// that shape.
 template <std::meta::info Block, ::fixy::Axis... Listed>
 inline constexpr bool pinned = pinned_row<Block, Listed...>::holds;
 

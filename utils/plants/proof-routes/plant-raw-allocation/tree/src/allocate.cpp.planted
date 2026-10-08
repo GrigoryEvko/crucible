@@ -1,0 +1,33 @@
+#include <cstdlib>
+#include <new>
+
+#include <forge/Door.h>
+
+// Each call gives raw storage with the size of forge::Door, and a cast of
+// that storage makes a proof with no call to its door: through operator new
+// and operator new[], through each allocation function of the C library,
+// through an alias of the file and of a header, through a pointer, through an
+// expression of the proof type, in a sum, and in the pattern of a template.
+namespace forge {
+
+using Context = Door;
+
+void* by_operator() { return ::operator new(sizeof(Door)); }
+
+void* by_array_operator() { return ::operator new[](sizeof(Door)); }
+
+void* by_malloc() { return std::malloc(sizeof(Context)); }
+
+void* by_calloc() { return std::calloc(1, sizeof(Handle)); }
+
+void* by_realloc(void* old) { return std::realloc(old, 2 * sizeof(Door*)); }
+
+void* by_aligned_alloc() { return std::aligned_alloc(alignof(int), sizeof(Door)); }
+
+void* by_expression(const Door& door) { return std::malloc(sizeof(door)); }
+
+void* in_sum() { return std::malloc(sizeof(int) + sizeof(Door)); }
+
+template <class T> void* in_pattern() { return std::malloc(sizeof(Door)); }
+
+}  // namespace forge

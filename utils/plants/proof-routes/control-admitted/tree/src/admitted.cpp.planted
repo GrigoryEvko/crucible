@@ -1,7 +1,8 @@
 #include <forge/Door.h>
 
-// A union of scalars and a reviewed cast.  The ledger of the tree admits each
-// one with its reason.
+// A union of scalars, a reviewed cast, an explicit instantiation over an
+// integer argument and a reviewed raw allocation.  The ledger of the tree
+// admits each one with its reason.
 namespace forge {
 
 union Scalars {
@@ -10,5 +11,9 @@ union Scalars {
 };
 
 Door* reviewed(void* raw) { return static_cast<Door*>(raw); }
+
+template struct Ring<4>;
+
+void* reviewed_storage() { return ::operator new(sizeof(Door)); }
 
 }  // namespace forge

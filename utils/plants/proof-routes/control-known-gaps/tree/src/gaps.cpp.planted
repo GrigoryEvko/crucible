@@ -1,17 +1,24 @@
+#include <cstdlib>
+
 #include <forge/Door.h>
 
-// The two shapes that the compiler keeps no tree of.  An explicit
-// instantiation of a class has the location of its template at the end of
-// the unit, and an explicit instantiation of a function is on no list of the
-// plugin interface.  In a function that is not a template, GCC folds the
-// sizeof of an allocation to a constant before the plugin reads the body.  The
-// rule parse-proof-routes refuses each shape on the parse tree.
+// Three allocations with the size of forge::Door that the rule cannot see.
+// The sizeof of a template parameter names the proof type only in an
+// instantiation, and GCC gives no parser event for an instantiation.  A
+// function with a name that is not the name of an allocation function can
+// allocate.  A size that a variable holds is not a sizeof in the arguments of
+// the call.
 namespace forge {
 
-template struct Box<Door>;
+template <class T> void* storage_of() { return std::malloc(sizeof(T)); }
 
-template int count<Door>(Door*);
+void* through_template() { return storage_of<Door>(); }
 
-void* raw_storage() { return ::operator new(sizeof(Door)); }
+void* through_wrapper() { return allocate(sizeof(Door)); }
+
+void* through_variable() {
+    const unsigned long size = sizeof(Door);
+    return std::malloc(size);
+}
 
 }  // namespace forge

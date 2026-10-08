@@ -2,14 +2,18 @@
 # with no call to its door.
 # A row PATH | ROUTE | N | ENTITY | REASON admits N sites of the route ROUTE with the entity ENTITY in
 # the file PATH.  ROUTE is union, pointer-cast, allocator, function-specialization,
-# member-pointer-specialization or friend-template-specialization, and ENTITY is ROUTE: KEY with the
-# key that the quarantine plugin prints.  REASON tells why the site builds no proof type, and each row
+# member-pointer-specialization, friend-template-specialization, explicit-instantiation or
+# raw-allocation, and ENTITY is ROUTE: KEY with the key that the quarantine plugin prints.  REASON tells why the site builds no proof type, and each row
 # gives one.  A row above the count of sites in the tree is stale, and the rule refuses it, so the
 # ledger only becomes shorter.
 # A reviewer writes each row.  `python3 utils/bin/guard explain proof-routes` tells the rule.
 format 1
 rule proof-routes
 include/foundation/core/Choice.h | union | 5 | union: <anonymous> | The storage of an Option and of a Result.  The union of an Option holds an empty marker or the payload, and the union of a Result holds the value or the error.  Each one builds a member only from a value that the caller gives, and it reads only the member that its flag names, so the union builds no object from bytes.  A plain Option has two unions, one for each order of its flag and its payload.
+src/observe/HdrHistogram.cpp | explicit-instantiation | 1 | explicit-instantiation: crucible::observe::ConcurrentHdrHistogram<3, 3600000000000, 4> | Explicit instantiations over integer arguments.  They name no proof type and no member pointer, so the access check they turn off reaches no private name.
+src/observe/HdrHistogram.cpp | explicit-instantiation | 1 | explicit-instantiation: crucible::observe::HdrHistogram<3, 3600000000000> | Explicit instantiations over integer arguments.  They name no proof type and no member pointer, so the access check they turn off reaches no private name.
+src/topology/Pingmesh.cpp | explicit-instantiation | 1 | explicit-instantiation: crucible::topology::Pingmesh<2> | Explicit instantiations over integer arguments.  They name no proof type and no member pointer, so the access check they turn off reaches no private name.
+src/topology/Pingmesh.cpp | explicit-instantiation | 1 | explicit-instantiation: crucible::topology::Pingmesh<4> | Explicit instantiations over integer arguments.  They name no proof type and no member pointer, so the access check they turn off reaches no private name.
 test/fixy/test_forgeable_proofs.cpp | union | 1 | union: HoldsNestedProof | Probe unions of the attack and ledger tests.  Each one holds a proof type on purpose: the tests prove that the discipline refuses the union, or pin the route that a union opens.
 test/fixy/test_forgeable_proofs.cpp | union | 1 | union: Inner | Probe unions of the attack and ledger tests.  Each one holds a proof type on purpose: the tests prove that the discipline refuses the union, or pin the route that a union opens.
 test/fixy/test_forgeable_proofs.cpp | union | 1 | union: Plain | Probe unions of the attack and ledger tests.  Each one holds a proof type on purpose: the tests prove that the discipline refuses the union, or pin the route that a union opens.

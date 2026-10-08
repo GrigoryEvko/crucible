@@ -2,7 +2,10 @@
 #include <forge/Macros.h>
 
 // Each shape comes from a macro of a base header, and its finding is at the
-// place where this unit expands the macro.
+// place where this unit expands the macro: a union, a cast, a union and an
+// explicit instantiation that the operator ## makes, an explicit
+// instantiation, and a raw allocation with the call and the sizeof in one
+// macro, or with the sizeof in a macro and the call in this file.
 namespace forge {
 
 FORGE_UNION(Packed);
@@ -12,5 +15,13 @@ Door* through(void* raw) { return FORGE_CAST(raw); }
 FORGE_JOIN(uni, on) Pasted {
     int value;
 };
+
+FORGE_INSTANTIATE(int)
+
+FORGE_JOIN(tem, plate) struct Box<char>;
+
+void* raw_in_macro() { return FORGE_RAW(Door); }
+
+void* size_in_macro() { return ::operator new(FORGE_SIZE(Door)); }
 
 }  // namespace forge

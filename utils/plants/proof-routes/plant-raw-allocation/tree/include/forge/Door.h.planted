@@ -1,0 +1,15 @@
+#pragma once
+
+// A proof type: a witness row of the rule table names it.  Its constructor is
+// private.  An alias of a header names it in each file that includes the
+// header.
+namespace forge {
+
+class Door {
+    int secret = 0;
+    Door() = default;
+};
+
+using Handle = Door;
+
+}  // namespace forge

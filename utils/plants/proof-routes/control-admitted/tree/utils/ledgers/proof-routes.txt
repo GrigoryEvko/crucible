@@ -1,4 +1,6 @@
 format 1
 rule proof-routes
+src/admitted.cpp | explicit-instantiation | 1 | explicit-instantiation: forge::Ring<4> | The plant of an instantiation over an integer argument.
 src/admitted.cpp | pointer-cast | 1 | pointer-cast: forge::Door | The plant of a reviewed cast.
+src/admitted.cpp | raw-allocation | 1 | raw-allocation: forge::Door | The plant of a reviewed raw allocation.
 src/admitted.cpp | union | 1 | union: Scalars | The plant of a union of scalars.

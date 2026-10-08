@@ -19,13 +19,15 @@ THE RULE
                                       a class of include/ befriends, in a file
                                       that does not hold the definition of the
                                       template
+      explicit-instantiation          an explicit instantiation directive
+      raw-allocation                  a call of operator new, malloc, calloc,
+                                      realloc or aligned_alloc with the sizeof
+                                      of a proof type in its arguments
     A witness row of utils/rule-table.txt names a proof type.  A class of
     foundation or fixy with the shape of a proof is a proof type too.  The
-    entity of a finding is `KIND: KEY`.
-
-    The rule parse-proof-routes reads two shapes that the compiler keeps no
-    tree of: an explicit instantiation, and an allocation with `sizeof` of a
-    proof type in a function that is not a template.
+    entity of a finding is `KIND: KEY`.  The plugin reads the last two shapes
+    from two events of the parser of the patched GCC
+    (utils/toolchain/gcc/patches/0004-*.patch).
 
     The rule reads the finding lines in the sections of the objects of the
     target all of one build (assay.guard.engines.plugin.runner, THE
@@ -54,6 +56,10 @@ DANGER = {
     "function-specialization": "a specialization of a door is a friend of each class that befriends the door",
     "member-pointer-specialization": "an explicit specialization does no access check of its template arguments",
     "friend-template-specialization": "a specialization of a befriended template is a friend of the proof type",
+    "explicit-instantiation": "an explicit instantiation does no access check of the names in it, so a pointer to a "
+    "private member of a proof type can become available through it",
+    "raw-allocation": "the call gives raw storage with the size of a proof type, and a cast of that storage makes a "
+    "proof with no call to its door",
 }
 
 

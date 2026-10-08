@@ -1,0 +1,16 @@
+#pragma once
+
+// A proof type: a witness row of the rule table names it.  Its constructor is
+// private.
+namespace forge {
+
+class Door {
+    int secret = 0;
+    Door() = default;
+};
+
+template <class T> struct Box {
+    T* value = nullptr;
+};
+
+}  // namespace forge

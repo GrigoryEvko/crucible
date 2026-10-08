@@ -9,10 +9,6 @@ class Door {
     Door() = default;
 };
 
-template <class T> struct Box {
-    T* value = nullptr;
-};
-
-template <class T> int count(T*) { return 0; }
+void* allocate(unsigned long size);
 
 }  // namespace forge

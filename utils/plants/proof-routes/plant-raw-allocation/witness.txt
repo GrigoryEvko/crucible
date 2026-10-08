@@ -1,0 +1,29 @@
+# Each allocation of src/allocate.cpp has the sizeof of a type that holds
+# forge::Door in its arguments, so a cast of its storage makes a proof with no
+# call to the door.  The finding is at the call, and its key is the proof
+# type.  No ledger row admits one, so the rule gives an error for each
+# finding.  The quarantine rule gives its findings for the calls of the
+# allocation functions and for the raw pointer.
+
+compile allocate src/allocate.cpp stage=c
+exit allocate pass
+judge allocate
+finding allocate proof-routes raw-allocation src/allocate.cpp:15:44 | raw-allocation: forge::Door
+finding allocate proof-routes raw-allocation src/allocate.cpp:17:52 | raw-allocation: forge::Door
+finding allocate proof-routes raw-allocation src/allocate.cpp:19:39 | raw-allocation: forge::Door
+finding allocate proof-routes raw-allocation src/allocate.cpp:21:39 | raw-allocation: forge::Door
+finding allocate proof-routes raw-allocation src/allocate.cpp:23:50 | raw-allocation: forge::Door
+finding allocate proof-routes raw-allocation src/allocate.cpp:25:53 | raw-allocation: forge::Door
+finding allocate proof-routes raw-allocation src/allocate.cpp:27:59 | raw-allocation: forge::Door
+finding allocate proof-routes raw-allocation src/allocate.cpp:29:36 | raw-allocation: forge::Door
+finding allocate proof-routes raw-allocation src/allocate.cpp:31:59 | raw-allocation: forge::Door
+finding allocate quarantine raw-new-delete src/allocate.cpp:15:44 | new
+finding allocate quarantine raw-new-delete src/allocate.cpp:17:52 | new
+finding allocate quarantine c-library-call src/allocate.cpp:19:39 | malloc
+finding allocate quarantine c-library-call src/allocate.cpp:21:39 | calloc
+finding allocate quarantine raw-pointer-object src/allocate.cpp:23:24 | void*
+finding allocate quarantine c-library-call src/allocate.cpp:23:50 | realloc
+finding allocate quarantine c-library-call src/allocate.cpp:25:53 | aligned_alloc
+finding allocate quarantine c-library-call src/allocate.cpp:27:59 | malloc
+finding allocate quarantine c-library-call src/allocate.cpp:29:36 | malloc
+finding allocate quarantine c-library-call src/allocate.cpp:31:59 | malloc

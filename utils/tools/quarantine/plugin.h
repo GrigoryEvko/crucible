@@ -210,6 +210,11 @@
 //                           a specialization of a class template that a class
 //                           of include/ befriends, outside the file that
 //                           defines the template
+//     explicit-instantiation
+//                           an explicit instantiation directive
+//     raw-allocation        a call of operator new, malloc, calloc, realloc or
+//                           aligned_alloc with the sizeof of a proof type in its
+//                           arguments
 //     The rule witness-roster:
 //     unrostered-witness    a class of a base file with a door shape and no
 //                           witness row of the rule table
@@ -632,6 +637,8 @@ enum class Kind : std::uint8_t {
     route_function_specialization,
     route_member_pointer_specialization,
     route_friend_template_specialization,
+    route_explicit_instantiation,
+    route_raw_allocation,
     padded_alias,
     padded_member,
     padded_return,
@@ -833,6 +840,10 @@ inline const char* kind_name(Kind kind) {
             return "member-pointer-specialization";
         case Kind::route_friend_template_specialization:
             return "friend-template-specialization";
+        case Kind::route_explicit_instantiation:
+            return "explicit-instantiation";
+        case Kind::route_raw_allocation:
+            return "raw-allocation";
         case Kind::padded_alias:
             return "padded-alias";
         case Kind::padded_member:
@@ -937,6 +948,8 @@ inline Rule rule_of(Kind kind) {
         case Kind::route_function_specialization:
         case Kind::route_member_pointer_specialization:
         case Kind::route_friend_template_specialization:
+        case Kind::route_explicit_instantiation:
+        case Kind::route_raw_allocation:
             return Rule::proof_routes;
         case Kind::padded_alias:
         case Kind::padded_member:
@@ -1107,6 +1120,8 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"proof-routes", "function-specialization"},
     {"proof-routes", "member-pointer-specialization"},
     {"proof-routes", "friend-template-specialization"},
+    {"proof-routes", "explicit-instantiation"},
+    {"proof-routes", "raw-allocation"},
     {"padded-list", "padded-alias"},
     {"padded-list", "padded-member"},
     {"padded-list", "padded-return"},

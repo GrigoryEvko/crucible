@@ -1,0 +1,26 @@
+#pragma once
+
+// A proof type: a witness row of the rule table names it.  Its constructor is
+// private.  The templates below give an explicit instantiation of a class, of
+// a function, of a static data member and of a member function.
+namespace forge {
+
+class Door {
+    int secret = 0;
+    Door() = default;
+};
+
+template <class T> struct Box {
+    T* value = nullptr;
+};
+
+template <class T> int count(T*) { return 0; }
+
+template <class T> struct Holder {
+    static int shared;
+    void touch() {}
+};
+
+template <class T> int Holder<T>::shared = 0;
+
+}  // namespace forge

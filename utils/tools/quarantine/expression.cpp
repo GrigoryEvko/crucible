@@ -86,21 +86,35 @@
 //                       template friend, outside the file that defines the
 //                       template with a body.  The specialization is a friend
 //                       of that class
-//     The entity of a finding is ROUTE: KEY.  KEY is the name of the union, the
-//     qualified name of the proof type, or the qualified name of the
-//     specialized template.  The place of a route is the expansion point of
-//     its location, so a route that a macro forms counts in the file that
-//     expands the macro.
-//     Two routes are not kinds of this rule, because GCC keeps no tree of
-//     them that the plugin can read.  The parse-tree rule parse-proof-routes
-//     holds them:
-//       * An explicit instantiation, which turns off the access check for the
-//         names in it.  At PLUGIN_FINISH_UNIT, an explicit instantiation of a
-//         class has the place of its template, and an explicit instantiation
-//         of a function is on no list that a plugin can read
-//       * An allocation with the size of a proof type.  Outside a template,
-//         GCC folds each sizeof in the arguments of a call to a constant
-//         before PLUGIN_PRE_GENERICIZE
+//       explicit-instantiation
+//                       each explicit instantiation directive, also an
+//                       explicit instantiation declaration.  The access check
+//                       does not apply to the names in a directive, so a
+//                       pointer to a private member can escape through one
+//       raw-allocation  a call of operator new, operator new[], malloc,
+//                       calloc, realloc or aligned_alloc, of each namespace
+//                       and class, whose arguments hold a sizeof of a type
+//                       that holds a proof type.  The operand of the sizeof
+//                       is a type, or an expression with that type.  A cast of
+//                       that storage makes a proof with no call to its door
+//     GCC keeps no tree of the last two routes that a plugin can read.  At
+//     PLUGIN_FINISH_UNIT, an explicit instantiation of a class has the place of
+//     its template, and an explicit instantiation of a function is on no list.
+//     Outside a template, GCC folds each sizeof in the arguments of a call to
+//     a constant before PLUGIN_PRE_GENERICIZE.  The patched GCC gives two
+//     events of the parser for them (utils/toolchain/gcc/patches/0004-*.patch).
+//     PLUGIN_EXPLICIT_INSTANTIATION gives each directive with its place.
+//     PLUGIN_SIZEOF_OR_ALIGNOF gives each sizeof before the fold.  The plugin
+//     keeps the place of each sizeof of a proof type, and a call of an
+//     allocation function whose source range holds such a place is the route.
+//     An instantiation of a template gives no event, so the sizeof of a
+//     template parameter is no route.
+//     The entity of a finding is ROUTE: KEY.  KEY is the name of the union,
+//     the qualified name of the proof type, the qualified name of the
+//     specialized template, or the instantiated class or declaration with its
+//     template arguments.  The place of a route is the expansion point of its
+//     location, so a route that a macro forms counts in the file that expands
+//     the macro.
 //
 // THE REFINED PARAMETERS (the rule refined-pre-subsumption)
 //     A parameter of a specialization of fixy::Refinement, the class of
@@ -184,6 +198,9 @@ struct Names {
     tree fixy = NULL_TREE;
     tree static_cast_keyword = NULL_TREE;
     tree reinterpret_cast_keyword = NULL_TREE;
+    // The names of the allocation functions of the route raw-allocation, other
+    // than the operators new.
+    std::unordered_set<tree> allocators;
     // The qualified name of the class of each witness row, and the last name
     // of each one, which a test asks before it makes a qualified name.
     std::unordered_set<std::string> witnessed;
@@ -216,6 +233,17 @@ struct RouteTemplates {
 };
 
 RouteTemplates route_templates;
+
+// The place of each sizeof of a type that holds a proof type, in the sequence
+// of the parse, with the qualified name of that proof type (the route
+// raw-allocation).  The entries hold no tree, so a collection frees nothing
+// that they name.
+struct ProofSize {
+    location_t location = UNKNOWN_LOCATION;
+    std::string proof;
+};
+
+std::vector<ProofSize> proof_sizes;
 
 // ── The findings of the family ──────────────────────────────────────────
 
@@ -1062,8 +1090,48 @@ void collect_macro_facts(tree node, location_t location) {
 
 // ── The routes of a call (THE PROOF ROUTES) ─────────────────────────────
 
-// A bit_cast, and a call of a member of an allocator of a proof type.
+// True when FUNCTION gives raw storage: an operator new or new[] of each
+// scope, or a function with a name of names.allocators.
+bool is_raw_allocator(tree function) {
+    tree name = DECL_NAME(function);
+    return name != NULL_TREE && (IDENTIFIER_NEW_OP_P(name) || names.allocators.count(name) != 0);
+}
+
+// True when the source range of RANGE holds the token at LOCATION.  Two
+// tokens of one macro expansion compare by their position in the expansion.
+bool range_holds(const source_range& range, location_t location) {
+    return linemap_compare_locations(line_table, range.m_start, location) >= 0
+        && linemap_compare_locations(line_table, location, range.m_finish) >= 0;
+}
+
+// A call of an allocation function whose source range holds the sizeof of a
+// proof type: the route raw-allocation.  A call has one finding, with the
+// first such sizeof of its range.  A unit with no sizeof of a proof type
+// pays one test for each call.  Complexity: O(sizeofs of proof types) for
+// each call of an allocation function.
+void check_raw_allocation(tree call) {
+    if (proof_sizes.empty() || !EXPR_HAS_LOCATION(call)) {
+        return;
+    }
+    bool is_allocation = false;
+    for_each_function(callee_of(call), [&](tree function) { is_allocation = is_allocation || is_raw_allocator(function); });
+    if (!is_allocation) {
+        return;
+    }
+    location_t location = EXPR_LOCATION(call);
+    source_range range = get_range_from_loc(line_table, location);
+    for (const ProofSize& size : proof_sizes) {
+        if (range_holds(range, size.location)) {
+            record_route(Kind::route_raw_allocation, location, size.proof);
+            return;
+        }
+    }
+}
+
+// A bit_cast, a call of a member of an allocator of a proof type, and a raw
+// allocation with the size of a proof type.
 void check_call_routes(tree call, location_t location) {
+    check_raw_allocation(call);
     tree callee = callee_of(call);
     bool is_bit_cast = false;
     tree allocator = NULL_TREE;
@@ -1967,6 +2035,51 @@ void on_route_collection(void*, void*) {
     caches.allocator_proof.clear();
 }
 
+// The key of an explicit instantiation: the instantiated class, or the
+// instantiated function or variable with its scope and its template
+// arguments, as GCC prints them.
+std::string instantiation_key(tree entity) {
+    if (TYPE_P(entity)) {
+        return type_text(TYPE_MAIN_VARIANT(entity));
+    }
+    const char* printed = decl_as_string(entity, TFF_NO_TEMPLATE_BINDINGS);
+    return printed != nullptr ? std::string(printed) : qualified_name(entity);
+}
+
+// PLUGIN_EXPLICIT_INSTANTIATION gives each explicit instantiation directive
+// that the parser reads, with the place of its first token: the route
+// explicit-instantiation.
+void on_explicit_instantiation(void* gcc_data, void*) {
+    const auto* data = static_cast<const plugin_explicit_instantiation_data*>(gcc_data);
+    if (data == nullptr || data->entity == NULL_TREE || data->entity == error_mark_node) {
+        return;
+    }
+    record_route(Kind::route_explicit_instantiation, data->location, instantiation_key(data->entity));
+}
+
+// PLUGIN_SIZEOF_OR_ALIGNOF gives each sizeof and alignof that the parser
+// reads, before GCC folds it.  The plugin keeps the place of each sizeof of a
+// type that holds a proof type, for check_raw_allocation.  The operand is a
+// type, or an expression with a type.  A sizeof that the parser reads one
+// more time, when it parses tentatively, adds one more place of the same
+// tokens, and a call has one finding.  Complexity: the cached type walk of
+// held_proof_of for each sizeof.
+void on_sizeof_or_alignof(void* gcc_data, void*) {
+    const auto* data = static_cast<const plugin_sizeof_or_alignof_data*>(gcc_data);
+    if (data == nullptr || data->code != SIZEOF_EXPR || data->operand == NULL_TREE
+        || data->operand == error_mark_node) {
+        return;
+    }
+    tree operand = data->operand;
+    tree type = TYPE_P(operand) ? operand : TREE_TYPE(tree_strip_any_location_wrapper(operand));
+    if (type == NULL_TREE || !TYPE_P(type)) {
+        return;
+    }
+    if (tree proof = held_proof_of(type, 0)) {
+        proof_sizes.push_back(ProofSize{data->location, qualified_name(TYPE_MAIN_DECL(proof))});
+    }
+}
+
 }  // namespace
 
 // An alias of a namespace or of a class that the walk of the declarations
@@ -2082,6 +2195,9 @@ void register_expressions(const char* plugin_name) {
     names.fixy = get_identifier("fixy");
     names.static_cast_keyword = get_identifier("static_cast");
     names.reinterpret_cast_keyword = get_identifier("reinterpret_cast");
+    for (const char* allocator : {"malloc", "calloc", "realloc", "aligned_alloc"}) {
+        names.allocators.insert(get_identifier(allocator));
+    }
     for (const WitnessRow& witness : state.table.witnesses) {
         names.witnessed.insert(witness.name);
         std::size_t last = witness.name.rfind("::");
@@ -2093,6 +2209,8 @@ void register_expressions(const char* plugin_name) {
     register_callback(plugin_name, PLUGIN_FINISH_DECL, on_finish_route_decl, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_PARSE_FUNCTION, on_finish_route_function, nullptr);
     register_callback(plugin_name, PLUGIN_GGC_START, on_route_collection, nullptr);
+    register_callback(plugin_name, PLUGIN_EXPLICIT_INSTANTIATION, on_explicit_instantiation, nullptr);
+    register_callback(plugin_name, PLUGIN_SIZEOF_OR_ALIGNOF, on_sizeof_or_alignof, nullptr);
 }
 
 }  // namespace crucible_plugin

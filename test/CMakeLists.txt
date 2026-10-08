@@ -608,12 +608,10 @@ crucible_test(test_background_thread_run_in_row test_background_thread_run_in_ro
   test_background_thread_run_in_row_meta.cpp)
 crucible_test(test_computation_cache_federation)
 
-# The three guards that read the preprocessed store start on a full store.
-# Eight setup tests fill it, each one the entries whose index is its shard
-# modulo eight, so no one test preprocesses the whole database.  ctest adds
-# the setup tests to a run that selects one of the three guards.  The third
-# guard, guard_parse_proof_routes, gets the fixture after the registration of
-# the tsast rule tests at the end of this file.
+# The guard that reads the preprocessed store starts on a full store.  Eight
+# setup tests fill it, each one the entries whose index is its shard modulo
+# eight, so no one test preprocesses the whole database.  ctest adds the setup
+# tests to a run that selects the guard.
 set(CRUCIBLE_STORE_SHARDS 8)
 math(EXPR crucible_last_store_shard "${CRUCIBLE_STORE_SHARDS} - 1")
 foreach(crucible_store_shard RANGE ${crucible_last_store_shard})
@@ -5069,7 +5067,6 @@ set_tests_properties(selftest_mutation PROPERTIES LABELS "ci_guard" SKIP_RETURN_
 # give no label ast, so they get the label here.
 set_property(TEST guard_plugin APPEND PROPERTY LABELS ast)
 crucible_tsast_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} 8)
-set_property(TEST guard_parse_proof_routes APPEND PROPERTY FIXTURES_REQUIRED preprocessed_store)
 get_property(crucible_directory_tests DIRECTORY PROPERTY TESTS)
 foreach(crucible_guard_test IN LISTS crucible_directory_tests)
   get_test_property(${crucible_guard_test} LABELS crucible_guard_labels)

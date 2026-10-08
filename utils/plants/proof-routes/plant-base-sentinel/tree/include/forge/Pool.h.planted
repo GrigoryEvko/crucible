@@ -5,9 +5,10 @@
 #include <forge/Door.h>
 
 // The shapes of a base header: a union, an allocator of the proof type in a
-// local, an alias, a member, a signature and a base class, and a cast to a
-// pointer to the proof type.  A cast to a template parameter names no proof
-// type.
+// local, an alias, a member, a signature and a base class, a cast to a
+// pointer to the proof type, an explicit instantiation declaration and a raw
+// allocation with the size of the proof type.  A cast to a template parameter
+// names no proof type.
 namespace forge {
 
 union Cell {
@@ -33,5 +34,13 @@ struct Derived : std::allocator<Door> {};
 inline Door* cast_back(void* raw) { return static_cast<Door*>(raw); }
 
 template <class T> T* rebind(void* raw) { return static_cast<T*>(raw); }
+
+template <class T> struct Slot {
+    T* value = nullptr;
+};
+
+extern template struct Slot<int>;
+
+inline void* raw_slot() { return ::operator new(sizeof(Door)); }
 
 }  // namespace forge

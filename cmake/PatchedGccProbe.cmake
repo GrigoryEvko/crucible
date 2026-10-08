@@ -148,6 +148,27 @@ function(crucible_patched_gcc_problem cxx out_var)
     string(APPEND problems " '${exit_code}', and its SARIF log has no constraint line.  The output:\n${probe_output}")
   endif()
 
+  # The patched compiler gives a plugin six events of the C++ front end, and
+  # the plugin.def of its plugin headers names each one.  The stock compiler
+  # has no such event, and the probe refuses it.
+  execute_process(
+    COMMAND "${cxx}" -print-file-name=plugin
+    RESULT_VARIABLE plugin_query_code
+    OUTPUT_VARIABLE plugin_directory
+    ERROR_QUIET
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+  crucible_run_gcc_probe("${cxx}" plugin_events.cpp exit_code probe_output -isystem "${plugin_directory}/include")
+  if(NOT plugin_query_code EQUAL 0 OR NOT exit_code EQUAL 0)
+    string(APPEND problems "\n- The plugin events of the C++ front end (utils/toolchain/gcc/patches/0004-*.patch)")
+    string(APPEND problems " are missing.  That compiler gives a plugin no event for an explicit instantiation, a")
+    string(APPEND problems " sizeof, a name use, a using form, a member access or a reflection.  The rule")
+    string(APPEND problems " proof-routes of the quarantine plugin then cannot read two of its shapes, and the")
+    string(APPEND problems " plugin does not build.")
+    string(APPEND problems "  The plugin headers are in '${plugin_directory}/include', and the probe")
+    string(APPEND problems " cmake/probes/plugin_events.cpp gave the exit status '${exit_code}' and this output:\n")
+    string(APPEND problems "${probe_output}")
+  endif()
+
   if(problems STREQUAL "")
     set(${out_var} "" PARENT_SCOPE)
     return()

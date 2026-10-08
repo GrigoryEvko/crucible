@@ -1,0 +1,34 @@
+#include <cstdlib>
+#include <new>
+
+#include <forge/Door.h>
+
+// Each shape of this unit is next to an explicit instantiation or a raw
+// allocation, and builds no proof type: an allocation of a scalar, a
+// template parameter and a parameter of a generic lambda that hide the proof
+// type of that name, a sizeof outside the arguments of the call, an alignment
+// of the proof type, an explicit specialization, an implicit instantiation, a
+// rebind of a template, and a comment that spells a directive.
+namespace forge {
+
+void* scalar() { return std::malloc(sizeof(int)); }
+
+template <class Door> void* hidden() { return ::operator new(sizeof(Door)); }
+
+inline constexpr auto lambda = []<class Door>() { return ::operator new(sizeof(Door)); };
+
+inline constexpr unsigned long door_size = sizeof(Door);
+
+void* later() { return std::malloc(door_size); }
+
+void* aligned() { return std::aligned_alloc(alignof(Door), 64); }
+
+template <> struct Box<char> {};
+
+inline constexpr Box<float> implicit_box{};
+
+template <class T> using Rebound = typename T::template rebind<int>;
+
+// template struct Box<int>;
+
+}  // namespace forge

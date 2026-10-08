@@ -1,0 +1,17 @@
+# Each explicit instantiation directive of src/instantiate.cpp is a route: of
+# a class, of a class with a proof type, of an explicit instantiation
+# declaration, of a function, of a static data member and of a member
+# function.  The key is the class, or the declaration with its template
+# arguments.  No ledger row admits one, so the rule gives an error for each
+# finding.
+
+compile instantiate src/instantiate.cpp stage=c
+exit instantiate pass
+judge instantiate
+finding instantiate proof-routes explicit-instantiation src/instantiate.cpp:8:1 | explicit-instantiation: forge::Box<int>
+finding instantiate proof-routes explicit-instantiation src/instantiate.cpp:10:1 | explicit-instantiation: forge::Box<long int>
+finding instantiate proof-routes explicit-instantiation src/instantiate.cpp:12:1 | explicit-instantiation: forge::Box<forge::Door>
+finding instantiate proof-routes explicit-instantiation src/instantiate.cpp:14:1 | explicit-instantiation: forge::count<int>(int*)
+finding instantiate proof-routes explicit-instantiation src/instantiate.cpp:16:1 | explicit-instantiation: forge::count<Door>(Door*)
+finding instantiate proof-routes explicit-instantiation src/instantiate.cpp:18:1 | explicit-instantiation: forge::Holder<char>::shared
+finding instantiate proof-routes explicit-instantiation src/instantiate.cpp:20:1 | explicit-instantiation: forge::Holder<char>::touch()

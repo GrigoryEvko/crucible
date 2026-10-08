@@ -1,0 +1,1559 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Grigory Evko <grigory@evko.io>
+Date: Thu, 8 Oct 2026 19:28:34 +0200
+Subject: [PATCH] c++: plugin events for instantiations, sizeof, names, using
+ forms, members and reflections
+
+A plugin that checks C++ source sees the semantic tree after the front end
+folds it.  Some facts are not in that tree any more.  An explicit
+instantiation directive leaves no node in the tree.  The front end folds a
+sizeof or an alignof to a constant before PLUGIN_PRE_GENERICIZE, also in
+the argument of a call.  It also folds a use of a constexpr or consteval
+function or variable in a constant initializer, a static_assert, a template
+argument or an unevaluated operand.  A using-declaration, a using-directive
+and a namespace alias at namespace scope keep no tree with a location.  A
+reflect-expression and a splice leave only the entity that they name.
+
+Six new events give these facts to a plugin while the front end reads
+them.  PLUGIN_EXPLICIT_INSTANTIATION gives the type or the declaration that
+a directive instantiates, the location of the directive and the extern
+flag.  PLUGIN_SIZEOF_OR_ALIGNOF gives the operand of a sizeof or an alignof
+before the fold, with the location of the operator.  PLUGIN_NAME_USE gives
+the declaration that the parser resolves a name to, with the location of
+the name.  PLUGIN_USING_FORM gives the kind, the declaration, the target and
+the location of a using-declaration, a using-directive, a namespace alias
+and an alias declaration, at each scope.  PLUGIN_MEMBER_ACCESS gives the
+member that a class member access with . or -> designates, the type of the
+object and the location, also for a splice and at instantiation.
+PLUGIN_REFLECTION gives the entity of a reflect-expression and of a splice,
+with the kind and the location.
+
+The output of the compiler does not change.  Each event puts its data on
+the stack.  The new inline plugin_event_has_callback_p tells if a plugin
+reads an event, and the front end tests it before the two frequent events,
+PLUGIN_NAME_USE and PLUGIN_MEMBER_ACCESS, which a cold helper invokes.
+invoke_plugin_callbacks_full now returns before it starts the timer of the
+plugins when an event has no callback.  do_namespace_alias and
+finish_nonmember_using_decl now return the declaration that they make, for
+the event of the parser.
+
+gcc/ChangeLog:
+
+	* plugin.def (PLUGIN_EXPLICIT_INSTANTIATION)
+	(PLUGIN_SIZEOF_OR_ALIGNOF, PLUGIN_NAME_USE, PLUGIN_USING_FORM)
+	(PLUGIN_MEMBER_ACCESS, PLUGIN_REFLECTION): New events.
+	* plugin.cc (plugin_callbacks): No longer static.
+	(register_callback): Handle the new events.
+	(invoke_plugin_callbacks_full): Likewise.  Return before
+	timevar_push when the event has no callback.
+	* plugin.h (plugin_callbacks): Declare.
+	(plugin_event_has_callback_p): New.
+	* doc/plugins.texi (Plugin callbacks): Document the new events and
+	plugin_event_has_callback_p.
+
+gcc/cp/ChangeLog:
+
+	* cp-tree.h (struct plugin_explicit_instantiation_data)
+	(struct plugin_sizeof_or_alignof_data, struct plugin_name_use_data)
+	(enum plugin_using_form_kind, struct plugin_using_form_data)
+	(struct plugin_member_access_data, enum plugin_reflection_kind)
+	(struct plugin_reflection_data): New.
+	* parser.cc (cp_parser_name_use_event): New.
+	(cp_parser_lookup_name): Call it when a plugin reads
+	PLUGIN_NAME_USE.
+	(cp_parser_unary_expression): Invoke PLUGIN_SIZEOF_OR_ALIGNOF, and
+	PLUGIN_REFLECTION for a reflect-expression.
+	(cp_parser_explicit_instantiation): Invoke
+	PLUGIN_EXPLICIT_INSTANTIATION.
+	(cp_parser_namespace_alias_definition, cp_parser_using_declaration)
+	(cp_parser_alias_declaration, cp_parser_using_directive): Invoke
+	PLUGIN_USING_FORM.
+	(finish_using_decl): Return the USING_DECL of a using-declaration
+	outside a class.
+	* typeck.cc: Include plugin.h.
+	(member_access_event): New.
+	(finish_class_member_access_expr): Call it when a plugin reads
+	PLUGIN_MEMBER_ACCESS.
+	* reflect.cc: Include plugin.h.
+	(splice): Invoke PLUGIN_REFLECTION.
+	* name-lookup.cc (do_namespace_alias): Return the alias, or
+	NULL_TREE after an error.
+	(finish_nonmember_using_decl): Return the USING_DECL, or NULL_TREE
+	after an error.
+	* name-lookup.h (do_namespace_alias, finish_nonmember_using_decl):
+	Return tree.
+
+gcc/testsuite/ChangeLog:
+
+	* g++.dg/plugin/plugin.exp: Add the six tests that follow.
+	* g++.dg/plugin/explicit_instantiation_plugin.cc: New test plugin.
+	* g++.dg/plugin/explicit-instantiation-plugin-test.C: New test.
+	* g++.dg/plugin/sizeof_plugin.cc: New test plugin.
+	* g++.dg/plugin/sizeof-plugin-test.C: New test.
+	* g++.dg/plugin/name_use_plugin.cc: New test plugin.
+	* g++.dg/plugin/name-use-plugin-test.C: New test.
+	* g++.dg/plugin/using_form_plugin.cc: New test plugin.
+	* g++.dg/plugin/using-form-plugin-test.C: New test.
+	* g++.dg/plugin/member_access_plugin.cc: New test plugin.
+	* g++.dg/plugin/member-access-plugin-test.C: New test.
+	* g++.dg/plugin/reflection_plugin.cc: New test plugin.
+	* g++.dg/plugin/reflection-plugin-test.C: New test.
+---
+ gcc/cp/cp-tree.h                              | 135 ++++++++++++++++++
+ gcc/cp/name-lookup.cc                         |  20 +--
+ gcc/cp/name-lookup.h                          |   4 +-
+ gcc/cp/parser.cc                              |  86 ++++++++++-
+ gcc/cp/reflect.cc                             |   3 +
+ gcc/cp/typeck.cc                              |  19 +++
+ gcc/doc/plugins.texi                          | 115 +++++++++++++++
+ gcc/plugin.cc                                 |  27 +++-
+ gcc/plugin.def                                |  34 +++++
+ gcc/plugin.h                                  |  21 +++
+ .../explicit-instantiation-plugin-test.C      |  30 ++++
+ .../plugin/explicit_instantiation_plugin.cc   |  44 ++++++
+ .../g++.dg/plugin/member-access-plugin-test.C |  40 ++++++
+ .../g++.dg/plugin/member_access_plugin.cc     |  57 ++++++++
+ .../g++.dg/plugin/name-use-plugin-test.C      |  51 +++++++
+ .../g++.dg/plugin/name_use_plugin.cc          |  67 +++++++++
+ gcc/testsuite/g++.dg/plugin/plugin.exp        |   7 +
+ .../g++.dg/plugin/reflection-plugin-test.C    |  31 ++++
+ .../g++.dg/plugin/reflection_plugin.cc        |  57 ++++++++
+ .../g++.dg/plugin/sizeof-plugin-test.C        |  48 +++++++
+ gcc/testsuite/g++.dg/plugin/sizeof_plugin.cc  |  43 ++++++
+ .../g++.dg/plugin/using-form-plugin-test.C    |  40 ++++++
+ .../g++.dg/plugin/using_form_plugin.cc        |  58 ++++++++
+ 23 files changed, 1020 insertions(+), 17 deletions(-)
+ create mode 100644 gcc/testsuite/g++.dg/plugin/explicit-instantiation-plugin-test.C
+ create mode 100644 gcc/testsuite/g++.dg/plugin/explicit_instantiation_plugin.cc
+ create mode 100644 gcc/testsuite/g++.dg/plugin/member-access-plugin-test.C
+ create mode 100644 gcc/testsuite/g++.dg/plugin/member_access_plugin.cc
+ create mode 100644 gcc/testsuite/g++.dg/plugin/name-use-plugin-test.C
+ create mode 100644 gcc/testsuite/g++.dg/plugin/name_use_plugin.cc
+ create mode 100644 gcc/testsuite/g++.dg/plugin/reflection-plugin-test.C
+ create mode 100644 gcc/testsuite/g++.dg/plugin/reflection_plugin.cc
+ create mode 100644 gcc/testsuite/g++.dg/plugin/sizeof-plugin-test.C
+ create mode 100644 gcc/testsuite/g++.dg/plugin/sizeof_plugin.cc
+ create mode 100644 gcc/testsuite/g++.dg/plugin/using-form-plugin-test.C
+ create mode 100644 gcc/testsuite/g++.dg/plugin/using_form_plugin.cc
+
+diff --git a/gcc/cp/cp-tree.h b/gcc/cp/cp-tree.h
+index 6f36a12e9cb..e078bdb20b4 100644
+--- a/gcc/cp/cp-tree.h
++++ b/gcc/cp/cp-tree.h
+@@ -8153,6 +8153,141 @@ extern tree attr_chainon (tree, tree);
+ extern tree maybe_add_dummy_lambda_op (tree);
+ extern void remove_dummy_lambda_op (tree, tree);
+ 
++/* The data of the plugin event PLUGIN_EXPLICIT_INSTANTIATION.  The parser
++   invokes the event one time for each explicit instantiation directive that
++   it parses with no error, after it does the instantiation.  */
++
++struct plugin_explicit_instantiation_data
++{
++  /* The type that the directive instantiates, or the declaration of the
++     function or variable that it instantiates.  */
++  tree entity;
++  /* The location of the first token of the directive: the "template"
++     keyword, or the storage class or function specifier before it.  */
++  location_t location;
++  /* True for an explicit instantiation declaration: "extern template".  */
++  bool extern_p;
++};
++
++/* The data of the plugin event PLUGIN_SIZEOF_OR_ALIGNOF.  The parser invokes
++   the event for each sizeof or alignof expression that it parses with no
++   error, also in a template, before the operand is folded to a constant.
++   The parser can read one expression more than one time when it parses
++   tentatively, so a plugin can see one operator more than one time.  */
++
++struct plugin_sizeof_or_alignof_data
++{
++  /* The operand as the parser read it: a type, or an expression.  */
++  tree operand;
++  /* The location of the expression, from the keyword to the end of the
++     operand.  */
++  location_t location;
++  /* SIZEOF_EXPR or ALIGNOF_EXPR.  */
++  enum tree_code code;
++};
++
++/* The data of the plugin event PLUGIN_NAME_USE.  The parser invokes the
++   event each time that it resolves a name to a declaration: an
++   id-expression, a qualified name, a type name, a template name and a
++   namespace name, also in a constant expression, in a template argument and
++   in an unevaluated operand.  The name of a member after "." or "->" is
++   resolved later, so it gives no event, and PLUGIN_MEMBER_ACCESS gives that
++   member.  The parser can read one name more
++   than one time when it parses tentatively, so a plugin can see one use more
++   than one time.  */
++
++struct plugin_name_use_data
++{
++  /* The declaration that the name resolves to, or the OVERLOAD or BASELINK
++     of a set of overloaded functions.  */
++  tree decl;
++  /* The location of the name.  For a qualified name, it is the location of
++     its last name, or a range from its first name to its last name.  */
++  location_t location;
++};
++
++/* The kinds of a form of the plugin event PLUGIN_USING_FORM.  */
++
++enum plugin_using_form_kind
++{
++  PLUGIN_USING_DECLARATION,
++  PLUGIN_USING_DIRECTIVE,
++  PLUGIN_NAMESPACE_ALIAS,
++  PLUGIN_ALIAS_DECLARATION
++};
++
++/* The data of the plugin event PLUGIN_USING_FORM.  The parser invokes the
++   event for each using-declaration, using-directive, namespace alias and
++   alias declaration that it parses with no error, at each scope.  A
++   using-declaration with a list of names gives one event for each name.  */
++
++struct plugin_using_form_data
++{
++  enum plugin_using_form_kind kind;
++  /* What the form declares: the USING_DECL of a using-declaration, the
++     NAMESPACE_DECL of a namespace alias, the TYPE_DECL of an alias
++     declaration, or NULL_TREE for a using-directive.  */
++  tree decl;
++  /* What the form names: the declarations that a using-declaration names,
++     the namespace that a using-directive nominates or that a namespace alias
++     names, or the type that an alias declaration names.  */
++  tree target;
++  /* The location of the name that the form names or declares.  */
++  location_t location;
++};
++
++/* The data of the plugin event PLUGIN_MEMBER_ACCESS.  The front end invokes
++   the event each time that it resolves the member of a class member access
++   expression with "." or "->", also a member that a splice designates.  It
++   does so at parse time, and again at the instantiation of a template, so a
++   plugin can see one access more than one time.  An access that the front
++   end makes itself, as for a range-based for or a structured binding, gives
++   the event too.  */
++
++struct plugin_member_access_data
++{
++  /* The member: a FIELD_DECL, a VAR_DECL, the BASELINK of a set of member
++     functions, or a TEMPLATE_ID_EXPR for a member template.  */
++  tree member;
++  /* The class type of the object.  */
++  tree object_type;
++  /* The location of the access: input_location when the front end resolves
++     the member, at parse time the last token of the member name.  */
++  location_t location;
++  /* True when a splice designates the member: OBJECT.[:R:].  */
++  bool splice_p;
++};
++
++/* The kinds of the plugin event PLUGIN_REFLECTION.  */
++
++enum plugin_reflection_kind
++{
++  /* A reflect-expression: ^^X.  */
++  PLUGIN_REFLECT_OPERATOR,
++  /* A splice-specifier: [:R:].  */
++  PLUGIN_SPLICE
++};
++
++/* The data of the plugin event PLUGIN_REFLECTION.  The parser invokes the
++   event for each reflect-expression that it parses with no error.  The
++   front end invokes it each time that it resolves a splice-specifier, at
++   parse time, or at the instantiation of a template when the splice is
++   dependent.  The parser can read one expression more than one time when it
++   parses tentatively, so a plugin can see one reflection more than one
++   time.  */
++
++struct plugin_reflection_data
++{
++  enum plugin_reflection_kind kind;
++  /* The entity that the reflection represents, or that the splice
++     designates: a declaration, a type, a namespace, or a TREE_BINFO of a
++     direct base.  */
++  tree entity;
++  /* The location of the operand of the reflect-expression, or
++     input_location when the front end resolves the splice.  */
++  location_t location;
++};
++
+ /* in pt.cc */
+ extern tree canonical_type_parameter		(tree);
+ extern void push_access_scope			(tree);
+diff --git a/gcc/cp/name-lookup.cc b/gcc/cp/name-lookup.cc
+index 1db4a314571..bec8db29aa2 100644
+--- a/gcc/cp/name-lookup.cc
++++ b/gcc/cp/name-lookup.cc
+@@ -6898,13 +6898,14 @@ pop_decl_namespace (void)
+   decl_namespace_list->pop ();
+ }
+ 
+-/* Process a namespace-alias declaration.  */
++/* Process a namespace-alias declaration.  Return the NAMESPACE_DECL of the
++   alias, or NULL_TREE after an error.  */
+ 
+-void
++tree
+ do_namespace_alias (location_t loc, tree alias, tree name_space)
+ {
+   if (name_space == error_mark_node)
+-    return;
++    return NULL_TREE;
+ 
+   if (TREE_CODE (name_space) == NAMESPACE_DECL)
+     name_space = ORIGINAL_NAMESPACE (name_space);
+@@ -6921,7 +6922,7 @@ do_namespace_alias (location_t loc, tree alias, tree name_space)
+   alias = pushdecl (alias);
+ 
+   if (!DECL_P (alias) || !DECL_NAMESPACE_ALIAS (alias))
+-    return;
++    return NULL_TREE;
+ 
+   set_originating_module (alias);
+   check_module_decl_linkage (alias);
+@@ -6929,6 +6930,7 @@ do_namespace_alias (location_t loc, tree alias, tree name_space)
+   /* Emit debug info for namespace alias.  */
+   if (!building_stmt_list_p ())
+     (*debug_hooks->early_global_decl) (alias);
++  return alias;
+ }
+ 
+ /* Like pushdecl, only it places DECL in the current namespace,
+@@ -6994,21 +6996,22 @@ push_using_decl_bindings (tree name, tree value)
+   push_using_decl_bindings (nullptr, name, value);
+ }
+ 
+-/* Process a using declaration in non-class scope.  */
++/* Process a using declaration in non-class scope.  Return its USING_DECL,
++   or NULL_TREE after an error.  */
+ 
+-void
++tree
+ finish_nonmember_using_decl (tree scope, tree name)
+ {
+   gcc_checking_assert (current_binding_level->kind != sk_class);
+ 
+   if (scope == error_mark_node || name == error_mark_node)
+-    return;
++    return NULL_TREE;
+ 
+   name_lookup lookup (name);
+ 
+   tree using_decl = lookup_using_decl (scope, lookup);
+   if (!using_decl)
+-    return;
++    return NULL_TREE;
+ 
+   /* Emit debug info.  */
+   if (!processing_template_decl)
+@@ -7114,6 +7117,7 @@ finish_nonmember_using_decl (tree scope, tree name)
+ 	lookup.value = using_decl;
+       push_using_decl_bindings (&lookup, name, NULL_TREE);
+     }
++  return using_decl;
+ }
+ 
+ /* Return the declarations that are members of the namespace NS.  */
+diff --git a/gcc/cp/name-lookup.h b/gcc/cp/name-lookup.h
+index cd0799a80de..165927ee284 100644
+--- a/gcc/cp/name-lookup.h
++++ b/gcc/cp/name-lookup.h
+@@ -485,7 +485,7 @@ extern tree cp_namespace_decls (tree);
+ extern void set_decl_namespace (tree, tree, bool);
+ extern void push_decl_namespace (tree);
+ extern void pop_decl_namespace (void);
+-extern void do_namespace_alias (location_t, tree, tree);
++extern tree do_namespace_alias (location_t, tree, tree);
+ extern tree do_class_using_decl (tree, tree);
+ extern tree lookup_arg_dependent (tree, tree, vec<tree, va_gc> *,
+ 				  bool tentative = false);
+@@ -503,7 +503,7 @@ extern bool decl_in_scope_p (tree);
+ extern cxx_binding *outer_binding (tree, cxx_binding *, bool);
+ extern void cp_emit_debug_info_for_using (tree, tree);
+ 
+-extern void finish_nonmember_using_decl (tree scope, tree name);
++extern tree finish_nonmember_using_decl (tree scope, tree name);
+ extern void finish_using_directive (tree target, tree attribs);
+ void push_local_extern_decl_alias (tree decl);
+ extern tree pushdecl (tree, bool hiding = false);
+diff --git a/gcc/cp/parser.cc b/gcc/cp/parser.cc
+index bf981945aa0..68a12cdfbe7 100644
+--- a/gcc/cp/parser.cc
++++ b/gcc/cp/parser.cc
+@@ -10293,6 +10293,12 @@ cp_parser_unary_expression (cp_parser *parser, cp_id_kind * pidk,
+ 		ret = cxx_sizeof_or_alignof_expr (compound_loc, operand, op,
+ 						  std_alignof, true);
+ 	      }
++	    if (ret != error_mark_node)
++	      {
++		plugin_sizeof_or_alignof_data data = { operand, compound_loc,
++						       op };
++		invoke_plugin_callbacks (PLUGIN_SIZEOF_OR_ALIGNOF, &data);
++	      }
+ 	    /* For SIZEOF_EXPR, just issue diagnostics, but keep
+ 	       SIZEOF_EXPR with the original operand.  */
+ 	    if (op == SIZEOF_EXPR && ret != error_mark_node)
+@@ -10481,7 +10487,17 @@ cp_parser_unary_expression (cp_parser *parser, cp_id_kind * pidk,
+ 	return cp_parser_delete_expression (parser);
+     }
+   else if (cp_lexer_next_token_is (parser->lexer, CPP_REFLECT_OP))
+-    return cp_parser_reflect_expression (parser);
++    {
++      tree reflection = cp_parser_reflect_expression (parser);
++      if (REFLECT_EXPR_P (reflection))
++	{
++	  plugin_reflection_data data
++	    = { PLUGIN_REFLECT_OPERATOR, REFLECT_EXPR_HANDLE (reflection),
++		EXPR_LOCATION (reflection) };
++	  invoke_plugin_callbacks (PLUGIN_REFLECTION, &data);
++	}
++      return reflection;
++    }
+ 
+   /* Look for a unary operator.  */
+   unary_operator = cp_parser_unary_operator (token);
+@@ -22119,6 +22135,10 @@ cp_parser_explicit_instantiation (cp_parser* parser)
+   int declares_class_or_enum;
+   cp_decl_specifier_seq decl_specifiers;
+   tree extension_specifier = NULL_TREE;
++  /* The type or the declaration that the directive instantiates, for the
++     plugin event PLUGIN_EXPLICIT_INSTANTIATION.  */
++  tree instantiated = NULL_TREE;
++  location_t start_loc = cp_lexer_peek_token (parser->lexer)->location;
+ 
+   auto_timevar tv (TV_TEMPLATE_INST);
+ 
+@@ -22165,8 +22185,12 @@ cp_parser_explicit_instantiation (cp_parser* parser)
+ 	 template instantiation.  */
+       pop_deferring_access_checks ();
+       if (type)
+-	do_type_instantiation (type, extension_specifier,
+-			       /*complain=*/tf_error);
++	{
++	  do_type_instantiation (type, extension_specifier,
++				 /*complain=*/tf_error);
++	  if (type != error_mark_node)
++	    instantiated = type;
++	}
+     }
+   else
+     {
+@@ -22208,6 +22232,8 @@ cp_parser_explicit_instantiation (cp_parser* parser)
+ 	  pop_deferring_access_checks ();
+ 	  /* Do the explicit instantiation.  */
+ 	  do_decl_instantiation (decl, extension_specifier);
++	  if (decl && decl != error_mark_node)
++	    instantiated = decl;
+ 	}
+       else
+ 	{
+@@ -22216,6 +22242,13 @@ cp_parser_explicit_instantiation (cp_parser* parser)
+ 	  cp_parser_skip_to_end_of_statement (parser);
+ 	}
+     }
++  if (instantiated)
++    {
++      plugin_explicit_instantiation_data data
++	= { instantiated, start_loc,
++	    extension_specifier == ridpointers[(int) RID_EXTERN] };
++      invoke_plugin_callbacks (PLUGIN_EXPLICIT_INSTANTIATION, &data);
++    }
+   /* We're done with the instantiation.  */
+   end_explicit_instantiation ();
+ 
+@@ -24543,7 +24576,14 @@ cp_parser_namespace_alias_definition (cp_parser* parser)
+   cp_parser_require (parser, CPP_SEMICOLON, RT_SEMICOLON);
+ 
+   /* Register the alias in the symbol table.  */
+-  do_namespace_alias (id_location, identifier, namespace_specifier);
++  if (tree alias = do_namespace_alias (id_location, identifier,
++				       namespace_specifier))
++    {
++      plugin_using_form_data data
++	= { PLUGIN_NAMESPACE_ALIAS, alias, DECL_NAMESPACE_ALIAS (alias),
++	    id_location };
++      invoke_plugin_callbacks (PLUGIN_USING_FORM, &data);
++    }
+ }
+ 
+ /* Parse a qualified-namespace-specifier.
+@@ -24592,7 +24632,7 @@ finish_using_decl (tree qscope, tree identifier, bool typename_p = false)
+       finish_member_declaration (decl);
+     }
+   else
+-    finish_nonmember_using_decl (qscope, identifier);
++    decl = finish_nonmember_using_decl (qscope, identifier);
+   return decl;
+ }
+ 
+@@ -24763,6 +24803,13 @@ cp_parser_using_declaration (cp_parser* parser,
+ 	  cp_parser_require (parser, CPP_SEMICOLON, RT_SEMICOLON);
+ 	  return false;
+ 	}
++      if (decl)
++	{
++	  plugin_using_form_data data
++	    = { PLUGIN_USING_DECLARATION, decl, USING_DECL_DECLS (decl),
++		token->location };
++	  invoke_plugin_callbacks (PLUGIN_USING_FORM, &data);
++	}
+     }
+ 
+   if (!access_declaration_p
+@@ -24981,6 +25028,10 @@ cp_parser_alias_declaration (cp_parser* parser)
+   if (pushed_scope)
+     pop_scope (pushed_scope);
+ 
++  plugin_using_form_data data
++    = { PLUGIN_ALIAS_DECLARATION, decl, type, id_location };
++  invoke_plugin_callbacks (PLUGIN_USING_FORM, &data);
++
+   /* If decl is a template, return its TEMPLATE_DECL so that it gets
+      added into the symbol table; otherwise, return the TYPE_DECL.  */
+   if (DECL_LANG_SPECIFIC (decl)
+@@ -25021,6 +25072,7 @@ cp_parser_using_directive (cp_parser* parser)
+   cp_parser_require_keyword (parser, RID_USING, RT_USING);
+   /* And the `namespace' keyword.  */
+   cp_parser_require_keyword (parser, RID_NAMESPACE, RT_NAMESPACE);
++  location_t name_location = cp_lexer_peek_token (parser->lexer)->location;
+   if (cp_parser_nth_token_starts_splice_without_nns_p (parser, 1))
+     namespace_decl = cp_parser_splice_specifier (parser);
+   else
+@@ -25043,6 +25095,12 @@ cp_parser_using_directive (cp_parser* parser)
+ 
+   /* Update the symbol table.  */
+   finish_using_directive (namespace_decl, attribs);
++  if (namespace_decl != error_mark_node)
++    {
++      plugin_using_form_data data
++	= { PLUGIN_USING_DIRECTIVE, NULL_TREE, namespace_decl, name_location };
++      invoke_plugin_callbacks (PLUGIN_USING_FORM, &data);
++    }
+ 
+   /* Look for the final `;'.  */
+   cp_parser_require (parser, CPP_SEMICOLON, RT_SEMICOLON);
+@@ -35227,6 +35285,21 @@ prefer_type_arg (tag_types tag_type)
+     }
+ }
+ 
++/* Invoke the plugin event PLUGIN_NAME_USE for DECL, which a name at
++   LOCATION resolves to.  cp_parser_lookup_name calls this function only
++   when a plugin reads the event, and it keeps the event out of its own
++   code.  */
++
++static void ATTRIBUTE_COLD __attribute__ ((__noinline__))
++cp_parser_name_use_event (tree decl, location_t location)
++{
++  if (DECL_P (decl) || TREE_CODE (decl) == OVERLOAD || BASELINK_P (decl))
++    {
++      plugin_name_use_data data = { decl, location };
++      invoke_plugin_callbacks (PLUGIN_NAME_USE, &data);
++    }
++}
++
+ /* Looks up NAME in the current scope, as given by PARSER->SCOPE.
+    NAME should have one of the representations used for an
+    id-expression.  If NAME is the ERROR_MARK_NODE, the ERROR_MARK_NODE
+@@ -35554,6 +35627,9 @@ cp_parser_lookup_name (cp_parser *parser, tree name,
+ 
+   maybe_record_typedef_use (decl);
+ 
++  if (plugin_event_has_callback_p (PLUGIN_NAME_USE))
++    cp_parser_name_use_event (decl, name_location);
++
+   return cp_expr (decl, name_location);
+ }
+ 
+diff --git a/gcc/cp/reflect.cc b/gcc/cp/reflect.cc
+index 34189ffc80d..119c8db165e 100644
+--- a/gcc/cp/reflect.cc
++++ b/gcc/cp/reflect.cc
+@@ -31,6 +31,7 @@ along with GCC; see the file COPYING3.  If not see
+ #include "c-family/c-pragma.h" // for parse_in
+ #include "gimplify.h" // for unshare_expr
+ #include "metafns.h"
++#include "plugin.h"
+ 
+ static tree eval_is_function_type (tree);
+ static tree eval_is_object_type (location_t, const constexpr_ctx *, tree,
+@@ -8772,6 +8773,8 @@ splice (tree refl)
+     return error_mark_node;
+ 
+   refl = REFLECT_EXPR_HANDLE (refl);
++  plugin_reflection_data data = { PLUGIN_SPLICE, refl, input_location };
++  invoke_plugin_callbacks (PLUGIN_REFLECTION, &data);
+   /* Function templates are wrapped in OVERLOAD from name lookup
+      and a lot of places assume that.  Furthermore, if reflection comes
+      from ^^fntmpl, it is wrapped with OVERLOAD already, only when
+diff --git a/gcc/cp/typeck.cc b/gcc/cp/typeck.cc
+index 31972a07e63..dbe4b3a5765 100644
+--- a/gcc/cp/typeck.cc
++++ b/gcc/cp/typeck.cc
+@@ -40,6 +40,7 @@ along with GCC; see the file COPYING3.  If not see
+ #include "attribs.h"
+ #include "asan.h"
+ #include "gimplify.h"
++#include "plugin.h"
+ 
+ static tree cp_build_addr_expr_strict (tree, tsubst_flags_t);
+ static tree cp_build_function_call (tree, tree, tsubst_flags_t);
+@@ -3464,6 +3465,20 @@ complain_about_unrecognized_member (tree access_path, tree name,
+     }
+ }
+ 
++/* Invoke the plugin event PLUGIN_MEMBER_ACCESS for MEMBER, which a class
++   member access designates in an object of type OBJECT_TYPE.  SPLICE_P is
++   true when a splice designates the member.
++   finish_class_member_access_expr calls this function only when a plugin
++   reads the event, and it keeps the event out of its own code.  */
++
++static void ATTRIBUTE_COLD __attribute__ ((__noinline__))
++member_access_event (tree member, tree object_type, bool splice_p)
++{
++  plugin_member_access_data data
++    = { member, object_type, input_location, splice_p };
++  invoke_plugin_callbacks (PLUGIN_MEMBER_ACCESS, &data);
++}
++
+ /* This function is called by the parser to process a class member
+    access expression of the form OBJECT.NAME.  NAME is a node used by
+    the parser to represent a name; it is not yet a DECL, except when
+@@ -3784,6 +3799,10 @@ finish_class_member_access_expr (cp_expr object, tree name, bool template_p,
+ 	}
+     }
+ 
++  if (plugin_event_has_callback_p (PLUGIN_MEMBER_ACCESS)
++      && member != error_mark_node)
++    member_access_event (member, object_type, splice_p);
++
+   if (TREE_UNAVAILABLE (member))
+     error_unavailable_use (member, NULL_TREE);
+   else if (TREE_DEPRECATED (member))
+diff --git a/gcc/doc/plugins.texi b/gcc/doc/plugins.texi
+index ff0b5866f25..27f165963e5 100644
+--- a/gcc/doc/plugins.texi
++++ b/gcc/doc/plugins.texi
+@@ -217,6 +217,24 @@ enum plugin_event
+    This could happen many times.  The event data is the included file path,
+    as a const char* pointer.  */
+   PLUGIN_INCLUDE_FILE,
++  /* Called by the C++ front end after it parses an explicit instantiation
++     directive.  */
++  PLUGIN_EXPLICIT_INSTANTIATION,
++  /* Called by the C++ front end after it parses a sizeof or an alignof
++     expression.  */
++  PLUGIN_SIZEOF_OR_ALIGNOF,
++  /* Called by the C++ front end after its parser resolves a name to a
++     declaration.  */
++  PLUGIN_NAME_USE,
++  /* Called by the C++ front end after it parses a using-declaration, a
++     using-directive, a namespace alias or an alias declaration.  */
++  PLUGIN_USING_FORM,
++  /* Called by the C++ front end when it resolves the member of a class
++     member access expression.  */
++  PLUGIN_MEMBER_ACCESS,
++  /* Called by the C++ front end after it parses a reflect-expression, and
++     when it resolves a splice-specifier.  */
++  PLUGIN_REFLECTION,
+ 
+   PLUGIN_EVENT_FIRST_DYNAMIC    /* Dummy event used for indexing callback
+                                    array.  */
+@@ -252,6 +270,103 @@ The @i{PLUGIN_INCLUDE_FILE} event, with a @code{const char*} file path as
+ GCC data, is triggered for processing of @code{#include} or
+ @code{#line} directives.
+ 
++The @i{PLUGIN_EXPLICIT_INSTANTIATION} event is triggered by the C++ front
++end for each explicit instantiation directive that it parses with no
++error, after it does the instantiation.  The GCC data is a pointer to a
++@code{struct plugin_explicit_instantiation_data}, declared in
++@file{cp/cp-tree.h}.  Its field @code{entity} is the type that the
++directive instantiates, or the declaration of the function or variable
++that it instantiates.  Its field @code{location} is the location of the
++first token of the directive, and its field @code{extern_p} is true for
++an explicit instantiation declaration.  A plugin cannot find this
++information later: at the end of the translation unit, an instantiated
++class has the location of its template, and no list of the front end
++holds the directive.
++
++The @i{PLUGIN_SIZEOF_OR_ALIGNOF} event is triggered by the C++ front end
++for each @code{sizeof} or @code{alignof} expression that it parses with
++no error, also in a template.  The GCC data is a pointer to a
++@code{struct plugin_sizeof_or_alignof_data}, declared in
++@file{cp/cp-tree.h}.  Its field @code{operand} is the operand as the
++parser read it, a type or an expression.  Its field @code{location} is
++the location of the expression, and its field @code{code} is
++@code{SIZEOF_EXPR} or @code{ALIGNOF_EXPR}.  The event comes before the
++front end folds the expression to a constant.  The parser can read one
++expression more than one time when it parses tentatively, so a plugin can
++see one operator more than one time.  The event does not come for the
++instantiation of a template.
++
++The @i{PLUGIN_NAME_USE} event is triggered by the C++ front end each time
++that its parser resolves a name to a declaration: an id-expression, a
++qualified name, a type name, a template name or a namespace name.  The
++GCC data is a pointer to a @code{struct plugin_name_use_data}, declared
++in @file{cp/cp-tree.h}.  Its field @code{decl} is the declaration that the
++name resolves to, or the @code{OVERLOAD} or @code{BASELINK} of a set of
++overloaded functions.  Its field @code{location} is the location of the
++name.  For a qualified name, it is the location of the last name, or a
++range from the first name to the last name.  The event comes before any
++constant folding, so a plugin sees each
++name of a constant expression, of a @code{static_assert}, of a template
++argument and of an unevaluated operand.  The name of a member after
++@code{.} or @code{->} is resolved later, so it gives no event, and the
++@i{PLUGIN_MEMBER_ACCESS} event gives that member.  The parser can read one
++name more than one time when it parses tentatively, so a plugin can see
++one use more than one time.  The event does not come for the instantiation
++of a template.
++
++The @i{PLUGIN_USING_FORM} event is triggered by the C++ front end for each
++using-declaration, using-directive, namespace alias and alias declaration
++that it parses with no error, at each scope.  The GCC data is a pointer to
++a @code{struct plugin_using_form_data}, declared in @file{cp/cp-tree.h}.
++Its field @code{kind} names the form.  Its field @code{decl} is what the
++form declares: the @code{USING_DECL} of a using-declaration, the
++@code{NAMESPACE_DECL} of a namespace alias or the @code{TYPE_DECL} of an
++alias declaration, and it is null for a using-directive.  Its field
++@code{target} is what the form names: the declarations that a
++using-declaration names, the namespace that a using-directive nominates or
++that a namespace alias names, or the type that an alias declaration names.
++Its field @code{location} is the location of the name that the form names
++or declares.  A using-declaration with a list of names gives one event for
++each name.
++
++The @i{PLUGIN_MEMBER_ACCESS} event is triggered by the C++ front end each
++time that it resolves the member of a class member access expression with
++@code{.} or @code{->}, also a member that a splice designates.  The GCC
++data is a pointer to a @code{struct plugin_member_access_data}, declared
++in @file{cp/cp-tree.h}.  Its field @code{member} is the member: a
++@code{FIELD_DECL}, a @code{VAR_DECL}, the @code{BASELINK} of a set of
++member functions, or a @code{TEMPLATE_ID_EXPR} for a member template.  Its
++field @code{object_type} is the class type of the object.  Its field
++@code{location} is @code{input_location} when the front end resolves the
++member; at parse time it is the last token of the member name.  Its field
++@code{splice_p} is true when a splice designates the member.  The event
++comes at parse time and again at the instantiation of a template, so a
++plugin can see one access more than one time.  A member access that the
++front end makes itself, as for a range-based @code{for} or a structured
++binding, gives the event too.
++
++The @i{PLUGIN_REFLECTION} event is triggered by the C++ front end for each
++reflect-expression (@code{^^X}) that its parser parses with no error, and
++each time that it resolves a splice-specifier (@code{[:R:]}).  The GCC
++data is a pointer to a @code{struct plugin_reflection_data}, declared in
++@file{cp/cp-tree.h}.  Its field @code{kind} is
++@code{PLUGIN_REFLECT_OPERATOR} or @code{PLUGIN_SPLICE}.  Its field
++@code{entity} is the entity that the reflection represents or that the
++splice designates.  Its field @code{location} is the location of the
++operand of the reflect-expression, or @code{input_location} when the
++front end resolves the splice.  A splice resolves at parse time, or at the
++instantiation of a template when it is dependent.  The parser can read one
++expression more than one time when it parses tentatively, so a plugin can
++see one reflection more than one time.  A name in the operand of a
++reflect-expression also gives the @i{PLUGIN_NAME_USE} event, so a plugin
++can tell a reflection of a name from a plain use of it.
++
++The front end tests @code{plugin_event_has_callback_p}, declared in
++@file{plugin.h}, before it builds the data of the @i{PLUGIN_NAME_USE} and
++@i{PLUGIN_MEMBER_ACCESS} events, which occur very often.  When no plugin
++registered a callback for an event, @code{invoke_plugin_callbacks_full}
++returns before it starts the timer of the plugins.
++
+ The @i{PLUGIN_FINISH} event is the last time that plugins can call GCC
+ functions, notably emit diagnostics with @code{warning}, @code{error}
+ etc.
+diff --git a/gcc/plugin.cc b/gcc/plugin.cc
+index 436be5e0147..521ac8598ad 100644
+--- a/gcc/plugin.cc
++++ b/gcc/plugin.cc
+@@ -109,9 +109,10 @@ struct callback_info
+   struct callback_info *next;
+ };
+ 
+-/* An array of lists of 'callback_info' objects indexed by the event id.  */
++/* An array of lists of 'callback_info' objects indexed by the event id.
++   plugin_event_has_callback_p in plugin.h reads it.  */
+ static struct callback_info *plugin_callbacks_init[PLUGIN_EVENT_FIRST_DYNAMIC];
+-static struct callback_info **plugin_callbacks = plugin_callbacks_init;
++struct callback_info **plugin_callbacks = plugin_callbacks_init;
+ 
+ /* For invoke_plugin_callbacks(), see plugin.h.  */
+ bool flag_plugin_added = false;
+@@ -499,6 +500,12 @@ register_callback (const char *plugin_name,
+       case PLUGIN_EARLY_GIMPLE_PASSES_END:
+       case PLUGIN_NEW_PASS:
+       case PLUGIN_INCLUDE_FILE:
++      case PLUGIN_EXPLICIT_INSTANTIATION:
++      case PLUGIN_SIZEOF_OR_ALIGNOF:
++      case PLUGIN_NAME_USE:
++      case PLUGIN_USING_FORM:
++      case PLUGIN_MEMBER_ACCESS:
++      case PLUGIN_REFLECTION:
+         {
+           struct callback_info *new_callback;
+           if (!callback)
+@@ -547,6 +554,16 @@ invoke_plugin_callbacks_full (int event, void *gcc_data)
+ {
+   int retval = PLUGEVT_SUCCESS;
+ 
++  /* An event with no callback does no work, so it does not start the
++     timer of the plugins.  This keeps a frequent event cheap when a
++     plugin is loaded that does not read it.  */
++  if (event >= 0
++      && event < event_last
++      && event != PLUGIN_PASS_MANAGER_SETUP
++      && event != PLUGIN_REGISTER_GGC_ROOTS
++      && plugin_callbacks[event] == NULL)
++    return PLUGEVT_NO_CALLBACK;
++
+   timevar_push (TV_PLUGIN_RUN);
+ 
+   switch (event)
+@@ -579,6 +596,12 @@ invoke_plugin_callbacks_full (int event, void *gcc_data)
+       case PLUGIN_EARLY_GIMPLE_PASSES_END:
+       case PLUGIN_NEW_PASS:
+       case PLUGIN_INCLUDE_FILE:
++      case PLUGIN_EXPLICIT_INSTANTIATION:
++      case PLUGIN_SIZEOF_OR_ALIGNOF:
++      case PLUGIN_NAME_USE:
++      case PLUGIN_USING_FORM:
++      case PLUGIN_MEMBER_ACCESS:
++      case PLUGIN_REFLECTION:
+         {
+           /* Iterate over every callback registered with this event and
+              call it.  */
+diff --git a/gcc/plugin.def b/gcc/plugin.def
+index b2fd27fa6e1..f1bdc645c9b 100644
+--- a/gcc/plugin.def
++++ b/gcc/plugin.def
+@@ -99,6 +99,40 @@ DEFEVENT (PLUGIN_NEW_PASS)
+    as a const char* pointer.  */
+ DEFEVENT (PLUGIN_INCLUDE_FILE)
+ 
++/* Called by the C++ front end after it parses an explicit instantiation
++   directive.  The event data is a pointer to a struct
++   plugin_explicit_instantiation_data, declared in cp/cp-tree.h.  */
++DEFEVENT (PLUGIN_EXPLICIT_INSTANTIATION)
++
++/* Called by the C++ front end after it parses a sizeof or an alignof
++   expression, before the operand is folded to a constant.  The event data
++   is a pointer to a struct plugin_sizeof_or_alignof_data, declared in
++   cp/cp-tree.h.  */
++DEFEVENT (PLUGIN_SIZEOF_OR_ALIGNOF)
++
++/* Called by the C++ front end after its parser resolves a name to a
++   declaration, before any constant folding.  The event data is a pointer
++   to a struct plugin_name_use_data, declared in cp/cp-tree.h.  */
++DEFEVENT (PLUGIN_NAME_USE)
++
++/* Called by the C++ front end after it parses a using-declaration, a
++   using-directive, a namespace alias or an alias declaration.  The event
++   data is a pointer to a struct plugin_using_form_data, declared in
++   cp/cp-tree.h.  */
++DEFEVENT (PLUGIN_USING_FORM)
++
++/* Called by the C++ front end when it resolves the member of a class
++   member access expression, at parse time and at the instantiation of a
++   template.  The event data is a pointer to a struct
++   plugin_member_access_data, declared in cp/cp-tree.h.  */
++DEFEVENT (PLUGIN_MEMBER_ACCESS)
++
++/* Called by the C++ front end after it parses a reflect-expression, and
++   when it resolves a splice-specifier, at parse time and at the
++   instantiation of a template.  The event data is a pointer to a struct
++   plugin_reflection_data, declared in cp/cp-tree.h.  */
++DEFEVENT (PLUGIN_REFLECTION)
++
+ /* When adding a new hard-coded plugin event, don't forget to edit in
+    file plugin.cc the functions register_callback and
+    invoke_plugin_callbacks_full accordingly!  */
+diff --git a/gcc/plugin.h b/gcc/plugin.h
+index 00a8de8ec90..185763cf095 100644
+--- a/gcc/plugin.h
++++ b/gcc/plugin.h
+@@ -197,6 +197,27 @@ invoke_plugin_callbacks (int event ATTRIBUTE_UNUSED,
+   return PLUGEVT_NO_CALLBACK;
+ }
+ 
++/* The lists of callbacks, indexed by the event identifier.  The test
++   below reads them.  */
++struct callback_info;
++extern struct callback_info **plugin_callbacks;
++
++/* Called from inside GCC.  Return true if a plugin registered a callback
++   for EVENT, which is not a dynamic event.  A front end calls it before it
++   builds the data of an event that occurs very frequently, so a compile
++   with no plugin, or with plugins that do not read the event, does almost
++   no work for it.  */
++
++inline bool
++plugin_event_has_callback_p (int event ATTRIBUTE_UNUSED)
++{
++#ifdef ENABLE_PLUGIN
++  return flag_plugin_added && plugin_callbacks[event] != NULL;
++#else
++  return false;
++#endif
++}
++
+ /* In attribs.cc.  */
+ 
+ extern void register_attribute (const struct attribute_spec *attr);
+diff --git a/gcc/testsuite/g++.dg/plugin/explicit-instantiation-plugin-test.C b/gcc/testsuite/g++.dg/plugin/explicit-instantiation-plugin-test.C
+new file mode 100644
+index 00000000000..860e1661f77
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/explicit-instantiation-plugin-test.C
+@@ -0,0 +1,30 @@
++// Test the plugin event PLUGIN_EXPLICIT_INSTANTIATION: one event for each
++// explicit instantiation directive, also in a macro, and no event for an
++// explicit specialization or an implicit instantiation.
++// { dg-do compile }
++
++template <class T> struct Box { T value; };
++template <class T> int count (T *) { return 0; }
++template <class T> struct Holder
++{
++  static T shared;
++  void touch () {}
++};
++template <class T> T Holder<T>::shared;
++
++template struct Box<int>; // { dg-warning "explicit instantiation definition of class 'Box<int>'" }
++extern template struct Box<long>; // { dg-warning "explicit instantiation declaration of class 'Box<long int>'" }
++
++template int count<int> (int *); // { dg-warning "explicit instantiation definition of function 'int count\\(T\\*\\) \\\[with T = int\\\]'" }
++template int count (char *); // { dg-warning "explicit instantiation definition of function 'int count\\(T\\*\\) \\\[with T = char\\\]'" }
++extern template int count<long> (long *); // { dg-warning "explicit instantiation declaration of function 'int count\\(T\\*\\) \\\[with T = long int\\\]'" }
++
++template int Holder<int>::shared; // { dg-warning "explicit instantiation definition of variable 'Holder<int>::shared'" }
++template void Holder<char>::touch (); // { dg-warning "explicit instantiation definition of function 'void Holder<T>::touch\\(\\) \\\[with T = char\\\]'" }
++
++#define INSTANTIATE_BOX(TYPE) template struct Box<TYPE>;
++INSTANTIATE_BOX (short) // { dg-warning "explicit instantiation definition of class 'Box<short int>'" }
++
++template <> struct Box<double> { };
++Box<float> implicit_box;
++int implicit_count = count<unsigned> (nullptr);
+diff --git a/gcc/testsuite/g++.dg/plugin/explicit_instantiation_plugin.cc b/gcc/testsuite/g++.dg/plugin/explicit_instantiation_plugin.cc
+new file mode 100644
+index 00000000000..0b62c6addce
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/explicit_instantiation_plugin.cc
+@@ -0,0 +1,44 @@
++/* A plugin that gives a warning for each explicit instantiation directive
++   that PLUGIN_EXPLICIT_INSTANTIATION reports, at the place where the source
++   spells the directive or expands the macro that spells it.  */
++
++#include "gcc-plugin.h"
++#include <stdlib.h>
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "tree.h"
++#include "intl.h"
++#include "cp/cp-tree.h"
++#include "diagnostic.h"
++
++int plugin_is_GPL_compatible;
++
++static void
++plugin_explicit_instantiation (void *event_data, void *)
++{
++  plugin_explicit_instantiation_data *data
++    = (plugin_explicit_instantiation_data *) event_data;
++  location_t loc = linemap_resolve_location (line_table, data->location,
++					      LRK_MACRO_EXPANSION_POINT,
++					      NULL);
++  const char *form = (data->extern_p
++		      ? "explicit instantiation declaration"
++		      : "explicit instantiation definition");
++  tree entity = data->entity;
++  if (TYPE_P (entity))
++    warning_at (loc, 0, "%s of class %qT", form, entity);
++  else if (TREE_CODE (entity) == FUNCTION_DECL)
++    warning_at (loc, 0, "%s of function %qD", form, entity);
++  else
++    warning_at (loc, 0, "%s of variable %qD", form, entity);
++}
++
++int
++plugin_init (struct plugin_name_args *plugin_info,
++	     struct plugin_gcc_version *)
++{
++  register_callback (plugin_info->base_name, PLUGIN_EXPLICIT_INSTANTIATION,
++		     plugin_explicit_instantiation, NULL);
++  return 0;
++}
+diff --git a/gcc/testsuite/g++.dg/plugin/member-access-plugin-test.C b/gcc/testsuite/g++.dg/plugin/member-access-plugin-test.C
+new file mode 100644
+index 00000000000..828998ae1a7
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/member-access-plugin-test.C
+@@ -0,0 +1,40 @@
++// Test the plugin event PLUGIN_MEMBER_ACCESS: one event for each member
++// that a class member access with "." or "->" designates, also through a
++// splice, in a macro and at the instantiation of a template, and no event
++// for a member that a member function names with no object.
++// { dg-do compile }
++// { dg-options "-std=c++26 -freflection" }
++
++struct tracked_holder
++{
++  int tracked_field = 0;
++  static int tracked_static;
++  int tracked_method () const { return tracked_field; }
++  template <class T> T tracked_template () const { return T (); }
++};
++
++int tracked_holder::tracked_static = 1;
++
++int
++use (tracked_holder holder, tracked_holder *pointer)
++{
++  int sum = holder.tracked_field; // { dg-warning "access to data member 'tracked_field' of 'tracked_holder'" }
++  sum += pointer->tracked_field; // { dg-warning "access to data member 'tracked_field' of 'tracked_holder'" }
++  sum += holder.tracked_static; // { dg-warning "access to static data member 'tracked_static' of 'tracked_holder'" }
++  sum += holder.tracked_method (); // { dg-warning "access to member function 'tracked_method' of 'tracked_holder'" }
++  sum += pointer->template tracked_template<int> (); // { dg-warning "access to member template 'tracked_template' of 'tracked_holder'" }
++  sum += holder.[: ^^tracked_holder::tracked_field :]; // { dg-warning "access to data member 'tracked_field' of 'tracked_holder' through a splice" }
++  return sum;
++}
++
++#define TRACKED_FIELD(object) (object).tracked_field
++int expanded = TRACKED_FIELD (tracked_holder {}); // { dg-warning "access to data member 'tracked_field' of 'tracked_holder'" }
++
++template <class T>
++int
++pattern (T object)
++{
++  return object.tracked_field; // { dg-warning "access to data member 'tracked_field' of 'tracked_holder'" }
++}
++
++int instantiated = pattern (tracked_holder {});
+diff --git a/gcc/testsuite/g++.dg/plugin/member_access_plugin.cc b/gcc/testsuite/g++.dg/plugin/member_access_plugin.cc
+new file mode 100644
+index 00000000000..37eca48a08a
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/member_access_plugin.cc
+@@ -0,0 +1,57 @@
++/* A plugin that gives a warning for each member whose name starts with
++   "tracked_" that PLUGIN_MEMBER_ACCESS reports, at the place where the
++   source spells the access or expands the macro that spells it.  */
++
++#include "gcc-plugin.h"
++#include <stdlib.h>
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "tree.h"
++#include "intl.h"
++#include "cp/cp-tree.h"
++#include "diagnostic.h"
++
++int plugin_is_GPL_compatible;
++
++static void
++plugin_member_access (void *event_data, void *)
++{
++  plugin_member_access_data *data = (plugin_member_access_data *) event_data;
++  tree member = data->member;
++  const char *kind = "member";
++  if (BASELINK_P (member))
++    {
++      kind = "member function";
++      member = BASELINK_FUNCTIONS (member);
++    }
++  if (TREE_CODE (member) == TEMPLATE_ID_EXPR)
++    {
++      kind = "member template";
++      member = TREE_OPERAND (member, 0);
++    }
++  if (TREE_CODE (member) == OVERLOAD)
++    member = OVL_FIRST (member);
++  if (TREE_CODE (member) == FIELD_DECL)
++    kind = "data member";
++  else if (VAR_P (member))
++    kind = "static data member";
++  if (!DECL_P (member) || DECL_NAME (member) == NULL_TREE
++      || strncmp (IDENTIFIER_POINTER (DECL_NAME (member)), "tracked_", 8) != 0)
++    return;
++  location_t loc = linemap_resolve_location (line_table, data->location,
++					      LRK_MACRO_EXPANSION_POINT,
++					      NULL);
++  warning_at (loc, 0, "access to %s %qs of %qT%s", kind,
++	      IDENTIFIER_POINTER (DECL_NAME (member)), data->object_type,
++	      data->splice_p ? " through a splice" : "");
++}
++
++int
++plugin_init (struct plugin_name_args *plugin_info,
++	     struct plugin_gcc_version *)
++{
++  register_callback (plugin_info->base_name, PLUGIN_MEMBER_ACCESS,
++		     plugin_member_access, NULL);
++  return 0;
++}
+diff --git a/gcc/testsuite/g++.dg/plugin/name-use-plugin-test.C b/gcc/testsuite/g++.dg/plugin/name-use-plugin-test.C
+new file mode 100644
+index 00000000000..c25319b278c
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/name-use-plugin-test.C
+@@ -0,0 +1,51 @@
++// Test the plugin event PLUGIN_NAME_USE: one event for each name that the
++// parser resolves, also in a constant initializer, a static_assert, a
++// template argument, an unevaluated operand and a macro, and no event for a
++// member after "." or for the instantiation of a template.
++// { dg-do compile }
++// { dg-options "-std=c++20" }
++
++namespace tracked_ns
++{
++  constexpr int tracked_value = 1;
++  consteval int tracked_door () { return 2; }
++  struct tracked_type { int tracked_member = 0; };
++  template <class T> struct tracked_box {};
++}
++
++constexpr int folded = tracked_ns::tracked_value; // { dg-warning "use of namespace 'tracked_ns'" }
++// { dg-warning "use of variable 'tracked_value'" "" { target *-*-* } .-1 }
++static_assert (tracked_ns::tracked_door () == 2); // { dg-warning "use of namespace 'tracked_ns'" }
++// { dg-warning "use of function 'tracked_door'" "" { target *-*-* } .-1 }
++tracked_ns::tracked_box<tracked_ns::tracked_type> boxed; // { dg-warning "use of namespace 'tracked_ns'" }
++// { dg-warning "use of template 'tracked_box'" "" { target *-*-* } .-1 }
++// { dg-warning "use of type 'tracked_type'" "" { target *-*-* } .-2 }
++unsigned long size = sizeof (tracked_ns::tracked_type); // { dg-warning "use of namespace 'tracked_ns'" }
++// { dg-warning "use of type 'tracked_type'" "" { target *-*-* } .-1 }
++decltype (tracked_ns::tracked_value) typed = 0; // { dg-warning "use of namespace 'tracked_ns'" }
++// { dg-warning "use of variable 'tracked_value'" "" { target *-*-* } .-1 }
++bool checked = noexcept (tracked_ns::tracked_door ()); // { dg-warning "use of namespace 'tracked_ns'" }
++// { dg-warning "use of function 'tracked_door'" "" { target *-*-* } .-1 }
++template <class T>
++concept probe = requires { tracked_ns::tracked_door (); }; // { dg-warning "use of namespace 'tracked_ns'" }
++// { dg-warning "use of function 'tracked_door'" "" { target *-*-* } .-1 }
++int member = tracked_ns::tracked_type {}.tracked_member; // { dg-warning "use of namespace 'tracked_ns'" }
++// { dg-warning "use of type 'tracked_type'" "" { target *-*-* } .-1 }
++struct derived : tracked_ns::tracked_type {}; // { dg-warning "use of namespace 'tracked_ns'" }
++// { dg-warning "use of type 'tracked_type'" "" { target *-*-* } .-1 }
++
++using namespace tracked_ns; // { dg-warning "use of namespace 'tracked_ns'" }
++int unqualified = tracked_value; // { dg-warning "use of variable 'tracked_value'" }
++
++#define TRACKED_USE tracked_ns::tracked_value
++int expanded = TRACKED_USE; // { dg-warning "use of namespace 'tracked_ns'" }
++// { dg-warning "use of variable 'tracked_value'" "" { target *-*-* } .-1 }
++
++template <class T>
++int
++pattern ()
++{
++  return tracked_value; // { dg-warning "use of variable 'tracked_value'" }
++}
++
++int instantiated = pattern<int> ();
+diff --git a/gcc/testsuite/g++.dg/plugin/name_use_plugin.cc b/gcc/testsuite/g++.dg/plugin/name_use_plugin.cc
+new file mode 100644
+index 00000000000..a9ac3a8396b
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/name_use_plugin.cc
+@@ -0,0 +1,67 @@
++/* A plugin that gives a warning for each use of a declaration whose name
++   starts with "tracked_" that PLUGIN_NAME_USE reports, at the place where
++   the source spells the name or expands the macro that spells it.  */
++
++#include "gcc-plugin.h"
++#include <stdlib.h>
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "tree.h"
++#include "intl.h"
++#include "cp/cp-tree.h"
++#include "diagnostic.h"
++
++int plugin_is_GPL_compatible;
++
++static void
++plugin_name_use (void *event_data, void *)
++{
++  plugin_name_use_data *data = (plugin_name_use_data *) event_data;
++  tree decl = data->decl;
++  if (BASELINK_P (decl))
++    decl = BASELINK_FUNCTIONS (decl);
++  if (TREE_CODE (decl) == OVERLOAD)
++    decl = OVL_FIRST (decl);
++  if (!DECL_P (decl) || DECL_NAME (decl) == NULL_TREE
++      || strncmp (IDENTIFIER_POINTER (DECL_NAME (decl)), "tracked_", 8) != 0)
++    return;
++  const char *kind = "declaration";
++  switch (TREE_CODE (decl))
++    {
++    case NAMESPACE_DECL:
++      kind = "namespace";
++      break;
++    case TYPE_DECL:
++      kind = "type";
++      break;
++    case TEMPLATE_DECL:
++      kind = "template";
++      break;
++    case FUNCTION_DECL:
++      kind = "function";
++      break;
++    case VAR_DECL:
++      kind = "variable";
++      break;
++    case FIELD_DECL:
++      kind = "member";
++      break;
++    default:
++      break;
++    }
++  location_t loc = linemap_resolve_location (line_table, data->location,
++					      LRK_MACRO_EXPANSION_POINT,
++					      NULL);
++  warning_at (loc, 0, "use of %s %qs", kind,
++	      IDENTIFIER_POINTER (DECL_NAME (decl)));
++}
++
++int
++plugin_init (struct plugin_name_args *plugin_info,
++	     struct plugin_gcc_version *)
++{
++  register_callback (plugin_info->base_name, PLUGIN_NAME_USE,
++		     plugin_name_use, NULL);
++  return 0;
++}
+diff --git a/gcc/testsuite/g++.dg/plugin/plugin.exp b/gcc/testsuite/g++.dg/plugin/plugin.exp
+index ab04ce10834..931e970b0ee 100644
+--- a/gcc/testsuite/g++.dg/plugin/plugin.exp
++++ b/gcc/testsuite/g++.dg/plugin/plugin.exp
+@@ -94,6 +94,13 @@ set plugin_test_list [list \
+ 	  std-module-exports-c++23.C \
+ 	  std-module-exports-c++26.C } \
+     { comment_plugin.cc comments-1.C } \
++    { explicit_instantiation_plugin.cc \
++	  explicit-instantiation-plugin-test.C } \
++    { sizeof_plugin.cc sizeof-plugin-test.C } \
++    { name_use_plugin.cc name-use-plugin-test.C } \
++    { using_form_plugin.cc using-form-plugin-test.C } \
++    { member_access_plugin.cc member-access-plugin-test.C } \
++    { reflection_plugin.cc reflection-plugin-test.C } \
+ ]
+ 
+ foreach file [find $PLUGIN_DEFAULT_REPO *.gcm] {
+diff --git a/gcc/testsuite/g++.dg/plugin/reflection-plugin-test.C b/gcc/testsuite/g++.dg/plugin/reflection-plugin-test.C
+new file mode 100644
+index 00000000000..ebce28a8501
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/reflection-plugin-test.C
+@@ -0,0 +1,31 @@
++// Test the plugin event PLUGIN_REFLECTION: one event for each
++// reflect-expression, and one for each splice-specifier that the front end
++// resolves, at parse time or at the instantiation of a template.
++// { dg-do compile }
++// { dg-options "-std=c++26 -freflection" }
++
++namespace tracked_ns
++{
++  int tracked_var = 1;
++  struct tracked_type { int tracked_field = 0; };
++  int tracked_fn ();
++}
++
++constexpr auto reflected_ns = ^^tracked_ns; // { dg-warning "reflection of namespace 'tracked_ns'" }
++constexpr auto reflected_type = ^^tracked_ns::tracked_type; // { dg-warning "reflection of type 'tracked_type'" }
++constexpr auto reflected_fn = ^^tracked_ns::tracked_fn; // { dg-warning "reflection of function 'tracked_fn'" }
++int spliced = [: ^^tracked_ns::tracked_var :]; // { dg-warning "reflection of variable 'tracked_var'" }
++// { dg-warning "splice of variable 'tracked_var'" "" { target *-*-* } .-1 }
++typename [: ^^tracked_ns::tracked_type :] object {}; // { dg-warning "reflection of type 'tracked_type'" }
++// { dg-warning "splice of type 'tracked_type'" "" { target *-*-* } .-1 }
++int member = object.[: ^^tracked_ns::tracked_type::tracked_field :]; // { dg-warning "reflection of data member 'tracked_field'" }
++// { dg-warning "splice of data member 'tracked_field'" "" { target *-*-* } .-1 }
++
++template <auto R>
++int
++pattern ()
++{
++  return [: R :]; // { dg-warning "splice of variable 'tracked_var'" }
++}
++
++int instantiated = pattern<^^tracked_ns::tracked_var> (); // { dg-warning "reflection of variable 'tracked_var'" }
+diff --git a/gcc/testsuite/g++.dg/plugin/reflection_plugin.cc b/gcc/testsuite/g++.dg/plugin/reflection_plugin.cc
+new file mode 100644
+index 00000000000..a4f10f2a0e3
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/reflection_plugin.cc
+@@ -0,0 +1,57 @@
++/* A plugin that gives a warning for each entity whose name starts with
++   "tracked_" that PLUGIN_REFLECTION reports, with the kind of the event.  */
++
++#include "gcc-plugin.h"
++#include <stdlib.h>
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "tree.h"
++#include "intl.h"
++#include "cp/cp-tree.h"
++#include "diagnostic.h"
++
++int plugin_is_GPL_compatible;
++
++static void
++plugin_reflection (void *event_data, void *)
++{
++  plugin_reflection_data *data = (plugin_reflection_data *) event_data;
++  tree entity = data->entity;
++  if (BASELINK_P (entity))
++    entity = BASELINK_FUNCTIONS (entity);
++  if (TREE_CODE (entity) == OVERLOAD)
++    entity = OVL_FIRST (entity);
++  const char *kind = "declaration";
++  if (TYPE_P (entity))
++    {
++      kind = "type";
++      entity = TYPE_NAME (entity);
++    }
++  else if (TREE_CODE (entity) == NAMESPACE_DECL)
++    kind = "namespace";
++  else if (TREE_CODE (entity) == FUNCTION_DECL)
++    kind = "function";
++  else if (VAR_P (entity))
++    kind = "variable";
++  else if (TREE_CODE (entity) == FIELD_DECL)
++    kind = "data member";
++  if (entity == NULL_TREE || !DECL_P (entity) || DECL_NAME (entity) == NULL_TREE
++      || strncmp (IDENTIFIER_POINTER (DECL_NAME (entity)), "tracked_", 8) != 0)
++    return;
++  location_t loc = linemap_resolve_location (line_table, data->location,
++					      LRK_MACRO_EXPANSION_POINT,
++					      NULL);
++  warning_at (loc, 0, "%s of %s %qs",
++	      data->kind == PLUGIN_REFLECT_OPERATOR ? "reflection" : "splice",
++	      kind, IDENTIFIER_POINTER (DECL_NAME (entity)));
++}
++
++int
++plugin_init (struct plugin_name_args *plugin_info,
++	     struct plugin_gcc_version *)
++{
++  register_callback (plugin_info->base_name, PLUGIN_REFLECTION,
++		     plugin_reflection, NULL);
++  return 0;
++}
+diff --git a/gcc/testsuite/g++.dg/plugin/sizeof-plugin-test.C b/gcc/testsuite/g++.dg/plugin/sizeof-plugin-test.C
+new file mode 100644
+index 00000000000..9c52aa8d5b4
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/sizeof-plugin-test.C
+@@ -0,0 +1,48 @@
++// Test the plugin event PLUGIN_SIZEOF_OR_ALIGNOF: one event for each sizeof
++// and alignof that the parser reads, also in a template, in a macro and in
++// the arguments of a call, and no event for the instantiation of a template.
++// { dg-do compile }
++
++struct Box { int value; };
++using Alias = Box;
++
++unsigned long of_type = sizeof (Box); // { dg-warning "sizeof of type 'Box'" }
++unsigned long of_alias = sizeof (Alias); // { dg-warning "sizeof of type 'Alias'" }
++unsigned long of_align = alignof (double); // { dg-warning "alignof of type 'double'" }
++unsigned long of_gnu_align = __alignof__ (long); // { dg-warning "alignof of type 'long int'" }
++
++Box box;
++unsigned long of_expression = sizeof box; // { dg-warning "sizeof of an expression of type 'Box'" }
++
++void *
++storage ()
++{
++  return __builtin_malloc (sizeof (Box)); // { dg-warning "sizeof of type 'Box'" }
++}
++
++template <class T>
++unsigned long
++size_of ()
++{
++  return sizeof (T); // { dg-warning "sizeof of type 'T'" }
++}
++
++template <class T>
++unsigned long
++size_of_value (T value)
++{
++  return sizeof value // { dg-warning "sizeof of a type-dependent expression" }
++	 + sizeof (value + 1); // { dg-warning "sizeof of a type-dependent expression" }
++}
++
++template <class... Types>
++unsigned long
++count_of ()
++{
++  return sizeof... (Types); // { dg-warning "sizeof of type" }
++}
++
++unsigned long instantiated = size_of<char> () + size_of_value (1) + count_of<int, char> ();
++
++#define SIZE_OF(TYPE) sizeof (TYPE)
++unsigned long of_macro = SIZE_OF (short); // { dg-warning "sizeof of type 'short int'" }
+diff --git a/gcc/testsuite/g++.dg/plugin/sizeof_plugin.cc b/gcc/testsuite/g++.dg/plugin/sizeof_plugin.cc
+new file mode 100644
+index 00000000000..bec8c5d6c39
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/sizeof_plugin.cc
+@@ -0,0 +1,43 @@
++/* A plugin that gives a warning for each sizeof and alignof expression that
++   PLUGIN_SIZEOF_OR_ALIGNOF reports, at the place where the source spells the
++   expression or expands the macro that spells it.  */
++
++#include "gcc-plugin.h"
++#include <stdlib.h>
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "tree.h"
++#include "intl.h"
++#include "cp/cp-tree.h"
++#include "diagnostic.h"
++
++int plugin_is_GPL_compatible;
++
++static void
++plugin_sizeof_or_alignof (void *event_data, void *)
++{
++  plugin_sizeof_or_alignof_data *data
++    = (plugin_sizeof_or_alignof_data *) event_data;
++  location_t loc = linemap_resolve_location (line_table, data->location,
++					      LRK_MACRO_EXPANSION_POINT,
++					      NULL);
++  const char *name = data->code == SIZEOF_EXPR ? "sizeof" : "alignof";
++  tree operand = data->operand;
++  if (TYPE_P (operand))
++    warning_at (loc, 0, "%s of type %qT", name, operand);
++  else if (type_dependent_expression_p (operand))
++    warning_at (loc, 0, "%s of a type-dependent expression", name);
++  else
++    warning_at (loc, 0, "%s of an expression of type %qT", name,
++		TREE_TYPE (operand));
++}
++
++int
++plugin_init (struct plugin_name_args *plugin_info,
++	     struct plugin_gcc_version *)
++{
++  register_callback (plugin_info->base_name, PLUGIN_SIZEOF_OR_ALIGNOF,
++		     plugin_sizeof_or_alignof, NULL);
++  return 0;
++}
+diff --git a/gcc/testsuite/g++.dg/plugin/using-form-plugin-test.C b/gcc/testsuite/g++.dg/plugin/using-form-plugin-test.C
+new file mode 100644
+index 00000000000..692338e0957
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/using-form-plugin-test.C
+@@ -0,0 +1,40 @@
++// Test the plugin event PLUGIN_USING_FORM: one event for each
++// using-declaration, using-directive, namespace alias and alias declaration,
++// at each scope, also in a macro, and one event for each name of a list.
++// { dg-do compile }
++// { dg-options "-std=c++20" }
++
++namespace tracked_ns
++{
++  int tracked_fn ();
++  int tracked_fn (int);
++  struct tracked_base { void member (); };
++}
++
++using tracked_ns::tracked_fn; // { dg-warning "using-declaration of 'tracked_fn': target overload at namespace scope" }
++using namespace tracked_ns; // { dg-warning "using-directive of namespace 'tracked_ns' at namespace scope" }
++namespace tracked_alias = tracked_ns; // { dg-warning "namespace alias 'tracked_alias' of 'tracked_ns' at namespace scope" }
++using tracked_type = tracked_ns::tracked_base; // { dg-warning "alias declaration 'tracked_type' of 'tracked_ns::tracked_base' at namespace scope" }
++template <class T>
++using tracked_pointer = T *; // { dg-warning "alias declaration 'tracked_pointer' of 'T.' at namespace scope" }
++
++struct derived : tracked_ns::tracked_base
++{
++  using tracked_ns::tracked_base::member; // { dg-warning "using-declaration of 'member': target function_decl in a class" }
++  using member_type = int; // { dg-warning "alias declaration 'member_type' of 'int' in a class" }
++};
++
++void
++block ()
++{
++  using tracked_ns::tracked_fn; // { dg-warning "using-declaration of 'tracked_fn': target overload in a block" }
++  using namespace tracked_ns; // { dg-warning "using-directive of namespace 'tracked_ns' in a block" }
++  namespace local_alias = tracked_ns; // { dg-warning "namespace alias 'local_alias' of 'tracked_ns' in a block" }
++  using local_type = int; // { dg-warning "alias declaration 'local_type' of 'int' in a block" }
++}
++
++#define USE_TRACKED using namespace tracked_ns;
++USE_TRACKED // { dg-warning "using-directive of namespace 'tracked_ns' at namespace scope" }
++
++using tracked_ns::tracked_fn, tracked_ns::tracked_base; // { dg-warning "using-declaration of 'tracked_fn': target overload at namespace scope" }
++// { dg-warning "using-declaration of 'tracked_base': target type_decl at namespace scope" "" { target *-*-* } .-1 }
+diff --git a/gcc/testsuite/g++.dg/plugin/using_form_plugin.cc b/gcc/testsuite/g++.dg/plugin/using_form_plugin.cc
+new file mode 100644
+index 00000000000..4798271c45a
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/using_form_plugin.cc
+@@ -0,0 +1,58 @@
++/* A plugin that gives a warning for each using form that PLUGIN_USING_FORM
++   reports, with its scope, at the place where the source spells the form or
++   expands the macro that spells it.  */
++
++#include "gcc-plugin.h"
++#include <stdlib.h>
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "tree.h"
++#include "intl.h"
++#include "cp/cp-tree.h"
++#include "diagnostic.h"
++
++int plugin_is_GPL_compatible;
++
++static void
++plugin_using_form (void *event_data, void *)
++{
++  plugin_using_form_data *data = (plugin_using_form_data *) event_data;
++  location_t loc = linemap_resolve_location (line_table, data->location,
++					      LRK_MACRO_EXPANSION_POINT,
++					      NULL);
++  const char *scope = (at_namespace_scope_p () ? "at namespace scope"
++		       : at_class_scope_p () ? "in a class" : "in a block");
++  switch (data->kind)
++    {
++    case PLUGIN_USING_DECLARATION:
++      warning_at (loc, 0, "using-declaration of %qE: target %s %s",
++		  DECL_NAME (data->decl),
++		  (data->target != NULL_TREE
++		   ? get_tree_code_name (TREE_CODE (data->target))
++		   : "dependent name"),
++		  scope);
++      break;
++    case PLUGIN_USING_DIRECTIVE:
++      warning_at (loc, 0, "using-directive of namespace %qD %s",
++		  data->target, scope);
++      break;
++    case PLUGIN_NAMESPACE_ALIAS:
++      warning_at (loc, 0, "namespace alias %qD of %qD %s", data->decl,
++		  data->target, scope);
++      break;
++    case PLUGIN_ALIAS_DECLARATION:
++      warning_at (loc, 0, "alias declaration %qE of %qT %s",
++		  DECL_NAME (data->decl), data->target, scope);
++      break;
++    }
++}
++
++int
++plugin_init (struct plugin_name_args *plugin_info,
++	     struct plugin_gcc_version *)
++{
++  register_callback (plugin_info->base_name, PLUGIN_USING_FORM,
++		     plugin_using_form, NULL);
++  return 0;
++}

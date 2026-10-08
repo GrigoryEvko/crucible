@@ -1,9 +1,0 @@
-// The alias of include/forge/Alias.h names a proof type, and this file names
-// no proof type itself.
-#include <forge/Alias.h>
-
-namespace forge {
-
-void* storage() { return ::operator new(sizeof(Handle)); }
-
-}  // namespace forge

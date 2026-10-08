@@ -24,8 +24,7 @@ THE RULE
 
     test/fixy/test_forgeable_proofs.cpp gives the other ways to a proof that
     stay open.  Examples are a void pointer, an allocator and a member of a
-    union that is not active.  The rules proof-routes and parse-proof-routes
-    read them.
+    union that is not active.  The rule proof-routes reads them.
 
 THE LEDGER
     The rule has no ledger, and each finding is an error.  A negative fixture
