@@ -1,0 +1,10 @@
+#include <fixy/Twins.h>
+
+namespace quarantined {
+
+struct Arena {};
+
+int control(Arena& arena CRUCIBLE_LIFETIMEBOUND) noexcept;
+int control(Arena&&) = delete("the twin");
+
+}  // namespace quarantined

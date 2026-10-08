@@ -70,6 +70,8 @@ namespace {
                                                                    CRUCIBLE_LIFETIMEBOUND) noexcept {
     return mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>();
 }
+TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry&&) =
+    delete("the result points into the entry, and a temporary entry ends before the result");
 
 // ── Shape of the traced op ─────────────────────────────────────────
 

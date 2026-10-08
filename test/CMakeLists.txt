@@ -449,18 +449,6 @@ foreach(ccache_case launcher relocation plain_relocation wrapper)
   set_tests_properties(ccache_${ccache_case}_self_test PROPERTIES LABELS "ci_guard")
 endforeach()
 
-# Every site that claims a lifetime bound carries the deleted overload
-# that enforces it.  CRUCIBLE_LIFETIMEBOUND expands to nothing on the
-# only compiler this tree builds with, so the claim is checked here
-# rather than by an attribute no compiler reads.
-crucible_script_test(NAME lifetime_twin_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule lifetime-twin --self-test)
-crucible_script_test(NAME lifetime_twin
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule lifetime-twin --quiet)
-set_tests_properties(lifetime_twin lifetime_twin_self_test PROPERTIES
-  LABELS "ci_guard"
-  SKIP_RETURN_CODE 3)
-
 # A substrate trait or a fail-closed relation is specialized only beside
 # the declarations it names.  utils/assay/guard/legacy/check_trait_injection.py reads each
 # specialization and each reopening of a relation namespace from the parse
@@ -532,19 +520,6 @@ crucible_script_test(NAME witness_roster_self_test
 crucible_script_test(NAME witness_roster
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule witness-roster --check)
 set_tests_properties(witness_roster witness_roster_self_test PROPERTIES
-  LABELS "ci_guard"
-  SKIP_RETURN_CODE 3)
-# Each object with static storage duration is one per process, through
-# CRUCIBLE_PROCESS_WIDE, or a row of utils/ledgers/process-wide-state.txt says why one copy
-# in each shared library is correct.  The build hides symbols, so an inline
-# object that two shared libraries compile has two copies without the marker.
-# utils/assay/guard/legacy/check_process_wide_state.py reads each object from the parse tree.
-# Exit 3 when the kit is absent reports a skip.
-crucible_script_test(NAME process_wide_state_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule process-wide-state --self-test)
-crucible_script_test(NAME process_wide_state
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule process-wide-state)
-set_tests_properties(process_wide_state process_wide_state_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
 # The hardening grant set.  utils/assay/guard/legacy/check_syscall_grant_coverage.py

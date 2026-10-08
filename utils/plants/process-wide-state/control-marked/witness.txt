@@ -1,0 +1,10 @@
+# A marked inline variable, a marked thread_local variable, a marked function
+# and a marked member function with a static local, a marked static data
+# member and its marked out-of-class definition give no finding of the rule
+# process-wide-state.  A constexpr, const or reference variable, a const
+# pointer, an extern declaration, a static data member that the unit does not
+# define, a const static local and an automatic local are no object.  The
+# unit compiles in the mode error.
+compile error wide.cpp mode=error
+flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Wide.h
+exit error pass

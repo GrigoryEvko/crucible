@@ -1,0 +1,13 @@
+#if defined(CRUCIBLE_QUARANTINE_ACTIVE)
+#define CRUCIBLE_PROCESS_WIDE [[gnu::visibility("default"), quarantine::process_wide]]
+#else
+#define CRUCIBLE_PROCESS_WIDE [[gnu::visibility("default")]]
+#endif
+
+namespace quarantined {
+
+struct Holder {
+    CRUCIBLE_PROCESS_WIDE int field = 0;
+};
+
+}  // namespace quarantined

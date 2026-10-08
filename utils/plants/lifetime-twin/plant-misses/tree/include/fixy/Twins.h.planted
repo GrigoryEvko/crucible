@@ -1,0 +1,55 @@
+#pragma once
+
+#if defined(CRUCIBLE_QUARANTINE_ACTIVE)
+#define CRUCIBLE_LIFETIMEBOUND [[quarantine::lifetimebound]]
+#else
+#define CRUCIBLE_LIFETIMEBOUND
+#endif
+
+namespace plant {
+
+struct Carrier {};
+struct Other {};
+
+struct Unguarded {
+    explicit Unguarded(Carrier const& carrier CRUCIBLE_LIFETIMEBOUND) noexcept;
+};
+
+int wrong_arity(Carrier const& carrier CRUCIBLE_LIFETIMEBOUND, int count) noexcept;
+int wrong_arity(Carrier const&&) = delete;
+
+int wrong_position(int count, Carrier const& carrier CRUCIBLE_LIFETIMEBOUND) noexcept;
+int wrong_position(Carrier const&&, int) = delete;
+
+int wrong_type(Carrier const& carrier CRUCIBLE_LIFETIMEBOUND) noexcept;
+int wrong_type(Other const&&) = delete;
+
+int lvalue_twin(Carrier const& carrier CRUCIBLE_LIFETIMEBOUND) noexcept;
+int lvalue_twin(Carrier&) = delete;
+
+int alive_twin(Carrier const& carrier CRUCIBLE_LIFETIMEBOUND) noexcept;
+int alive_twin(Carrier const&&) noexcept;
+
+namespace elsewhere {
+int other_scope(Carrier const&&) = delete;
+}
+int other_scope(Carrier const& carrier CRUCIBLE_LIFETIMEBOUND) noexcept;
+
+int packish(Carrier const& carrier CRUCIBLE_LIFETIMEBOUND, int count) noexcept;
+template <class... Ts>
+int packish(Carrier const&&, decltype(sizeof...(Ts)) extra, long more) = delete;
+
+template <class T>
+int declared_then_defined(T& value CRUCIBLE_LIFETIMEBOUND) noexcept;
+
+template <class T>
+int declared_then_defined(T& value) noexcept {
+    return sizeof(value) > 0 ? 1 : 0;
+}
+
+int defined_later(Carrier const& carrier CRUCIBLE_LIFETIMEBOUND) noexcept;
+inline int defined_later(Carrier const& carrier) noexcept { return sizeof(carrier) > 0 ? 1 : 0; }
+
+int twin_in_other_file(Carrier const& carrier CRUCIBLE_LIFETIMEBOUND) noexcept;
+
+}  // namespace plant

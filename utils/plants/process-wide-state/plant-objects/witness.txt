@@ -1,0 +1,56 @@
+# Each object with static storage duration that can change and that has no
+# CRUCIBLE_PROCESS_WIDE is a finding of the rule process-wide-state: a
+# variable, a static local, a static local of a lambda, an object of a
+# template, a static data member and its out-of-class definition, and a
+# variable that one unit declares through a macro.  A marker in a template,
+# a marker with internal linkage, a marker on a function that is not inline
+# and a marker that holds no object are findings too.  In the mode error each
+# finding is an error.
+compile report src/wide.cpp
+flag report -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Wide.h
+exit report pass
+finding report process-wide-state unmarked-static include/fixy/Wide.h:18:16 | plant::unmarked_function()::instance
+finding report process-wide-state unmarked-static include/fixy/Wide.h:19:22 | plant::unmarked_function()::per_thread
+finding report process-wide-state unmarked-static include/fixy/Wide.h:25:20 | plant::lambda_holder()::in_lambda
+finding report process-wide-state unmarked-static include/fixy/Wide.h:35:16 | plant::unmarked_template_function()::instance
+finding report process-wide-state unmarked-static include/fixy/Wide.h:42:20 | plant::Holder::unmarked_record()::instance
+finding report process-wide-state marker-in-template include/fixy/Wide.h:47:20 | plant::Holder::marked_record()::instance
+finding report process-wide-state marker-in-template include/fixy/Wide.h:61:20 | plant::Plain::marked_member_template()::instance
+finding report process-wide-state marker-not-inline src/wide.cpp:8:16 | plant::not_inline_function()::instance
+finding report process-wide-state unmarked-static include/fixy/Wide.h:76:1 | plant::macro_counter
+finding report process-wide-state marker-without-object include/fixy/Wide.h:73:40 | plant::marked_constant
+finding report process-wide-state marker-without-object include/fixy/Wide.h:72:34 | plant::nothing_held()
+finding report process-wide-state marker-internal-linkage include/fixy/Wide.h:69:34 | plant::(anonymous namespace)::hidden_variable
+finding report process-wide-state unmarked-static include/fixy/Wide.h:56:23 | plant::Plain::unmarked_member
+finding report process-wide-state unmarked-static include/fixy/Wide.h:66:12 | plant::Plain::defined_out_of_class
+finding report process-wide-state unmarked-static src/wide.cpp:5:5 | plant::Plain::defined_in_unit
+finding report process-wide-state marker-in-template include/fixy/Wide.h:53:34 | plant::marked_template_variable
+finding report process-wide-state unmarked-static include/fixy/Wide.h:45:23 | plant::Holder::unmarked_member
+finding report process-wide-state unmarked-static include/fixy/Wide.h:31:12 | plant::unmarked_template_variable
+finding report process-wide-state unmarked-static include/fixy/Wide.h:15:20 | plant::movable_pointer
+finding report process-wide-state unmarked-static include/fixy/Wide.h:14:25 | plant::unmarked_per_thread
+finding report process-wide-state unmarked-static include/fixy/Wide.h:13:12 | plant::unmarked_variable
+compile error src/wide.cpp mode=error findings=report
+flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Wide.h
+exit error fail
+error error include/fixy/Wide.h:18 | quarantine: unmarked-static plant::unmarked_function()::instance;
+error error include/fixy/Wide.h:19 | quarantine: unmarked-static plant::unmarked_function()::per_thread;
+error error include/fixy/Wide.h:25 | quarantine: unmarked-static plant::lambda_holder()::in_lambda;
+error error include/fixy/Wide.h:35 | quarantine: unmarked-static plant::unmarked_template_function()::instance;
+error error include/fixy/Wide.h:42 | quarantine: unmarked-static plant::Holder::unmarked_record()::instance;
+error error include/fixy/Wide.h:47 | quarantine: marker-in-template plant::Holder::marked_record()::instance;
+error error include/fixy/Wide.h:61 | quarantine: marker-in-template plant::Plain::marked_member_template()::instance;
+error error src/wide.cpp:8 | quarantine: marker-not-inline plant::not_inline_function()::instance;
+error error include/fixy/Wide.h:76 | quarantine: unmarked-static plant::macro_counter;
+error error include/fixy/Wide.h:73 | quarantine: marker-without-object plant::marked_constant;
+error error include/fixy/Wide.h:72 | quarantine: marker-without-object plant::nothing_held();
+error error include/fixy/Wide.h:69 | quarantine: marker-internal-linkage plant::(anonymous namespace)::hidden_variable;
+error error include/fixy/Wide.h:56 | quarantine: unmarked-static plant::Plain::unmarked_member;
+error error include/fixy/Wide.h:66 | quarantine: unmarked-static plant::Plain::defined_out_of_class;
+error error src/wide.cpp:5 | quarantine: unmarked-static plant::Plain::defined_in_unit;
+error error include/fixy/Wide.h:53 | quarantine: marker-in-template plant::marked_template_variable;
+error error include/fixy/Wide.h:45 | quarantine: unmarked-static plant::Holder::unmarked_member;
+error error include/fixy/Wide.h:31 | quarantine: unmarked-static plant::unmarked_template_variable;
+error error include/fixy/Wide.h:15 | quarantine: unmarked-static plant::movable_pointer;
+error error include/fixy/Wide.h:14 | quarantine: unmarked-static plant::unmarked_per_thread;
+error error include/fixy/Wide.h:13 | quarantine: unmarked-static plant::unmarked_variable;

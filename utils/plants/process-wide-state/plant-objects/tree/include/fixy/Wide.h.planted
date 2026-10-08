@@ -1,0 +1,78 @@
+#pragma once
+
+#if defined(CRUCIBLE_QUARANTINE_ACTIVE)
+#define CRUCIBLE_PROCESS_WIDE [[gnu::visibility("default"), quarantine::process_wide]]
+#else
+#define CRUCIBLE_PROCESS_WIDE [[gnu::visibility("default")]]
+#endif
+
+#define PLANT_DECLARE_COUNTER(name) inline int name = 0;
+
+namespace plant {
+
+inline int unmarked_variable = 0;
+inline thread_local int unmarked_per_thread = 0;
+inline const char* movable_pointer = nullptr;
+
+inline int unmarked_function() {
+    static int instance = 0;
+    thread_local int per_thread = 0;
+    return ++instance + ++per_thread;
+}
+
+inline int lambda_holder() {
+    return [] {
+        static int in_lambda = 0;
+        return ++in_lambda;
+    }();
+}
+
+template <class T>
+inline int unmarked_template_variable = 0;
+
+template <class T>
+int unmarked_template_function() {
+    static int instance = 0;
+    return ++instance;
+}
+
+template <class T>
+struct Holder {
+    static int unmarked_record() {
+        static int instance = 0;
+        return ++instance;
+    }
+    static inline int unmarked_member = 0;
+    CRUCIBLE_PROCESS_WIDE static int marked_record() {
+        static int instance = 0;
+        return ++instance;
+    }
+};
+
+template <class T>
+CRUCIBLE_PROCESS_WIDE inline int marked_template_variable = 0;
+
+struct Plain {
+    static inline int unmarked_member = 0;
+    static int defined_out_of_class;
+    static int defined_in_unit;
+    template <class U>
+    CRUCIBLE_PROCESS_WIDE static int marked_member_template() {
+        static int instance = 0;
+        return ++instance;
+    }
+};
+
+inline int Plain::defined_out_of_class = 0;
+
+namespace {
+CRUCIBLE_PROCESS_WIDE inline int hidden_variable = 0;
+}
+
+CRUCIBLE_PROCESS_WIDE inline int nothing_held() { return 0; }
+CRUCIBLE_PROCESS_WIDE inline const int marked_constant = 0;
+CRUCIBLE_PROCESS_WIDE int not_inline_function();
+
+PLANT_DECLARE_COUNTER(macro_counter)
+
+}  // namespace plant

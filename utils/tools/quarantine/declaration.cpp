@@ -94,6 +94,45 @@
 //     marker, and a file with a deprecation and no marker gets one finding at
 //     its first deprecation.  The walk reads each declaration of a file, so
 //     the pair holds in the file.
+//
+// THE RULE process-wide-state (CLAUDE.md section XV)
+//     An object is a variable with static or thread storage duration that
+//     can change: not constexpr, not const and no reference, and a definition.
+//     The macro CRUCIBLE_PROCESS_WIDE gives the attribute
+//     quarantine::process_wide, which this plugin registers.  The marker is on
+//     the variable, or on the function that holds the object as a static
+//     local.  An object with no marker is the kind unmarked-static.  A marked
+//     object of a template is marker-in-template, one with internal linkage is
+//     marker-internal-linkage, and one whose variable or function is not
+//     inline is marker-not-inline.  A marked declaration that holds no object
+//     is marker-without-object.  The rule reads the files of include/, src/
+//     and vessel/, whose code goes into the libraries (kLibraryDirectories).
+//     A test or a bench program holds one copy of each of its objects.  The
+//     walk reads each variable at namespace scope and each static data
+//     member, also of a template.  The static
+//     locals of a function are in the blocks of its body, and
+//     PLUGIN_FINISH_PARSE_FUNCTION reads them, for a template too.  The entity
+//     is the qualified name of the variable, and FUNCTION()::NAME for a static
+//     local.  The function of a static local of a lambda is the function that
+//     holds the lambda.
+//
+// THE RULE lifetime-twin (CLAUDE.md section XVI)
+//     The macro CRUCIBLE_LIFETIMEBOUND gives the attribute
+//     quarantine::lifetimebound, which this plugin registers on a parameter.
+//     Its handler notes the place of each marked parameter, and a marker on
+//     each other declaration is an error.  A parameter at index I of a
+//     function F with N parameters needs a deleted overload of F, in the
+//     scope of F and in the file of the parameter, that takes N parameters or
+//     ends with a pack, and that takes at index I an rvalue reference to the
+//     type of the parameter, or to a template parameter.  A definition keeps
+//     the attributes of an earlier declaration of its parameters, so only the
+//     noted places count.  A declaration that is no template gives its
+//     parameters at PLUGIN_FINISH_DECL.  The definition of a template gives
+//     the parameters of an earlier declaration at PLUGIN_START_PARSE_FUNCTION,
+//     before GCC merges the two.  A definition gives its own parameters at
+//     PLUGIN_FINISH_PARSE_FUNCTION, and the walk gives the parameters of the
+//     pattern of each template.  The entity is the function_signature of F
+//     and the number of the parameter.
 
 #include "plugin.h"
 
@@ -838,9 +877,9 @@ bool is_own_object(tree argument) {
 tree find_view_of_this(tree* node_pointer, int*, void*) {
     tree node = *node_pointer;
     bool is_call = TREE_CODE(node) == CALL_EXPR || TREE_CODE(node) == AGGR_INIT_EXPR;
-    tree callee = TREE_CODE(node) == CALL_EXPR ? CALL_EXPR_FN(node)
+    tree callee = TREE_CODE(node) == CALL_EXPR      ? CALL_EXPR_FN(node)
                 : TREE_CODE(node) == AGGR_INIT_EXPR ? AGGR_INIT_EXPR_FN(node)
-                                                     : NULL_TREE;
+                                                    : NULL_TREE;
     if (!is_call || callee_name(callee) != "mint_view") {
         return NULL_TREE;
     }
@@ -1098,18 +1137,17 @@ void check_mint(tree function, bool is_pattern) {
     bool is_gated = context != NULL_TREE && is_context_gated(function, parameters, context);
     bool is_projection = is_pattern ? is_borrow_projection(DECL_SAVED_TREE(function))
                                     : state.projection_bodies.count(DECL_UID(function)) != 0;
-    bool is_defined = is_pattern ? DECL_SAVED_TREE(function) != NULL_TREE
-                                 : state.defined_functions.count(DECL_UID(function)) != 0;
+    bool is_defined =
+        is_pattern ? DECL_SAVED_TREE(function) != NULL_TREE : state.defined_functions.count(DECL_UID(function)) != 0;
     tree owner = DECL_CLASS_SCOPE_P(function) ? DECL_CONTEXT(function) : NULL_TREE;
     std::string entity = function_signature(function);
     auto flag = [](bool value) { return value ? "1" : "0"; };
-    std::string facts = std::string(" | name=") + identifier_text(DECL_NAME(function))
-                      + " static=" + flag(owner != NULL_TREE && !is_member) + " shape=" + shape
-                      + " template=" + flag(is_template) + " nodiscard=" + flag(is_nodiscard)
-                      + " constexpr=" + flag(is_constexpr) + " noexcept=" + flag(is_noexcept)
-                      + " constrained=" + flag(is_constrained) + " gated=" + flag(is_gated)
-                      + " projection=" + flag(is_projection) + " defined=" + flag(is_defined)
-                      + " owner=" + (owner != NULL_TREE ? qualified_name(owner) : std::string("-"));
+    std::string facts =
+        std::string(" | name=") + identifier_text(DECL_NAME(function))
+        + " static=" + flag(owner != NULL_TREE && !is_member) + " shape=" + shape + " template=" + flag(is_template)
+        + " nodiscard=" + flag(is_nodiscard) + " constexpr=" + flag(is_constexpr) + " noexcept=" + flag(is_noexcept)
+        + " constrained=" + flag(is_constrained) + " gated=" + flag(is_gated) + " projection=" + flag(is_projection)
+        + " defined=" + flag(is_defined) + " owner=" + (owner != NULL_TREE ? qualified_name(owner) : std::string("-"));
     record_property(Kind::mint_record, place, entity + facts);
     if (!is_nodiscard) {
         record_property(Kind::mint_not_nodiscard, place, entity);
@@ -1228,11 +1266,13 @@ void check_permission_member(tree decl) {
 
 // The names of a getter whose provenance is the object that it reads.
 constexpr const char* kAccessors[] = {
-    "data",   "data_mut",  "begin",  "end",     "cbegin",           "cend",    "front", "back",  "at",
-    "get",    "get_or_init", "get_assuming_set", "peek", "peek_mut", "value", "resource", "ctx", "in",
-    "out",    "input",     "output", "stage",   "machine",          "state",   "state_mut", "current",
-    "carrier", "handle",   "pin",    "c_str",   "sq_ring",          "cq_ring", "sqes",  "observe", "consume",
-    "try_get", "raw_ptr",  "graded", "cap",     "span",             "cspan",
+    "data",      "data_mut", "begin",   "end",      "cbegin",      "cend",
+    "front",     "back",     "at",      "get",      "get_or_init", "get_assuming_set",
+    "peek",      "peek_mut", "value",   "resource", "ctx",         "in",
+    "out",       "input",    "output",  "stage",    "machine",     "state",
+    "state_mut", "current",  "carrier", "handle",   "pin",         "c_str",
+    "sq_ring",   "cq_ring",  "sqes",    "observe",  "consume",     "try_get",
+    "raw_ptr",   "graded",   "cap",     "span",     "cspan",
 };
 
 // The explicit doors of the C boundary and of the hand-off of ownership.
@@ -1359,8 +1399,7 @@ bool is_before(const Place& place, const Place& than) {
 // file.
 using StubFiles = std::unordered_map<const FileEntry*, StubFile>;
 
-void note_stub(StubFiles& stubs, const Place& place, const std::string& entity,
-               bool is_marker) {
+void note_stub(StubFiles& stubs, const Place& place, const std::string& entity, bool is_marker) {
     if (place.file == nullptr) {
         return;
     }
@@ -1416,6 +1455,454 @@ void report_stubs(const StubFiles& stubs) {
     }
 }
 
+// ── The rule process-wide-state ─────────────────────────────────────────
+
+// The deepest nest of blocks that the scan of a body reads.
+constexpr int kBlockDepth = 256;
+
+// True when DECL, or a function or a class that holds it, is an implicit or
+// an explicit instantiation.  A pattern, a member of a class template and a
+// lambda in a template are no instantiation, although their template
+// information makes is_in_instantiation say so.
+bool is_from_instantiation(tree decl) {
+    tree current = decl;
+    for (int depth = 0; current != NULL_TREE && current != global_namespace && depth < kTypeDepth; ++depth) {
+        if (TREE_CODE(current) == NAMESPACE_DECL) {
+            return false;
+        }
+        if (TYPE_P(current)) {
+            tree main_type = TYPE_MAIN_VARIANT(current);
+            if (CLASS_TYPE_P(main_type) && CLASSTYPE_TEMPLATE_INSTANTIATION(main_type)) {
+                return true;
+            }
+            current = CP_TYPE_CONTEXT(main_type);
+            continue;
+        }
+        if (!DECL_P(current)) {
+            return false;
+        }
+        if (VAR_OR_FUNCTION_DECL_P(current) && DECL_LANG_SPECIFIC(current) != nullptr
+            && DECL_TEMPLATE_INSTANTIATION(current)) {
+            return true;
+        }
+        current = CP_DECL_CONTEXT(current);
+    }
+    return false;
+}
+
+bool has_process_wide_marker(tree decl) {
+    return lookup_attribute("quarantine", "process_wide", DECL_ATTRIBUTES(decl)) != NULL_TREE;
+}
+
+// The directories whose code goes into the libraries: the scope of the rule
+// process-wide-state.  A test or a bench program has one copy of each object.
+constexpr const char* kLibraryDirectories[] = {"include/", "src/", "vessel/"};
+
+// The place at LOCATION when the rule process-wide-state reads its file, or
+// an empty place.
+Place library_place(location_t location) {
+    Place place = property_place(location);
+    if (place.file == nullptr) {
+        return place;
+    }
+    for (const char* directory : kLibraryDirectories) {
+        if (place.file->relative.compare(0, std::strlen(directory), directory) == 0) {
+            return place;
+        }
+    }
+    return Place{};
+}
+
+// True when DECL is a variable with static or thread storage duration that
+// can change: not constexpr, not const and no reference.
+bool is_changeable_static(tree decl) {
+    if (!VAR_P(decl) || DECL_ARTIFICIAL(decl) || DECL_DECLARED_CONSTEXPR_P(decl)) {
+        return false;
+    }
+    tree type = TREE_TYPE(decl);
+    if (type == NULL_TREE || type == error_mark_node || TYPE_REF_P(type) || CP_TYPE_CONST_P(type)) {
+        return false;
+    }
+    duration_kind duration = decl_storage_duration(decl);
+    return duration == dk_static || duration == dk_thread;
+}
+
+// True when the variable DECL is a definition: a static data member that is
+// inline or that the unit defines out of its class, and each other variable
+// that is no extern declaration with no initializer.
+bool is_object_definition(tree decl) {
+    if (DECL_VAR_DECLARED_INLINE_P(decl)) {
+        return true;
+    }
+    if (DECL_CLASS_SCOPE_P(decl)) {
+        return !DECL_IN_AGGR_P(decl);
+    }
+    return DECL_INITIAL(decl) != NULL_TREE || !DECL_THIS_EXTERN(decl);
+}
+
+// True when the function FUNCTION is a part of a template: a pattern, a
+// member of a class template, or a lambda in a template.  PROCESSING is the
+// value of processing_template_decl when the parser completed the body.
+bool is_templated_function(tree function, bool is_processing) {
+    if (is_processing) {
+        return true;
+    }
+    if (DECL_LANG_SPECIFIC(function) == nullptr || DECL_TEMPLATE_INFO(function) == NULL_TREE
+        || DECL_TEMPLOID_INSTANTIATION(function)) {
+        return false;
+    }
+    return !DECL_TEMPLATE_SPECIALIZATION(function) || uses_template_parms(DECL_TI_ARGS(function));
+}
+
+// The marked object at PLACE with ENTITY, whose marker is on HOLDER: the
+// variable, or the function that holds a static local.  The marker makes the
+// object one for each process only on an inline holder with external linkage
+// outside a template.
+void check_marker_faults(tree holder, bool is_variable, bool is_templated, const Place& place,
+                         const std::string& entity) {
+    if (is_templated) {
+        record_property(Kind::marker_in_template, place, entity);
+    }
+    if (decl_anon_ns_mem_p(holder) || (DECL_NAMESPACE_SCOPE_P(holder) && !TREE_PUBLIC(holder))) {
+        record_property(Kind::marker_internal_linkage, place, entity);
+    }
+    bool is_inline = is_variable ? DECL_VAR_DECLARED_INLINE_P(holder)
+                                 : DECL_DECLARED_INLINE_P(holder) || DECL_DECLARED_CONSTEXPR_P(holder)
+                                       || DECL_IMMEDIATE_FUNCTION_P(holder);
+    if (!is_inline) {
+        record_property(Kind::marker_not_inline, place, entity);
+    }
+}
+
+// A variable at namespace scope or a static data member (THE RULE
+// process-wide-state).  IS_TEMPLATED is true for a variable of a template.
+void check_process_wide_variable(tree decl, bool is_templated) {
+    bool is_marked = has_process_wide_marker(decl);
+    bool is_object = is_changeable_static(decl) && is_object_definition(decl);
+    if (!is_marked && !is_object) {
+        return;
+    }
+    Place place = library_place(DECL_SOURCE_LOCATION(decl));
+    if (place.file == nullptr) {
+        return;
+    }
+    std::string entity = qualified_name(decl);
+    if (!is_object) {
+        record_property(Kind::marker_without_object, place, entity);
+    } else if (!is_marked) {
+        record_property(Kind::unmarked_static, place, entity);
+    } else {
+        check_marker_faults(decl, true, is_templated, place, entity);
+    }
+}
+
+// Each static local of the blocks from BLOCK on, and of their subblocks.
+// Complexity: O(blocks and declarations of the body).
+void collect_static_locals(tree block, std::vector<tree>& objects, int depth) {
+    for (; block != NULL_TREE && depth < kBlockDepth; block = BLOCK_CHAIN(block)) {
+        for (tree decl = BLOCK_VARS(block); decl != NULL_TREE; decl = DECL_CHAIN(decl)) {
+            if (is_changeable_static(decl) && !DECL_THIS_EXTERN(decl)) {
+                objects.push_back(decl);
+            }
+        }
+        collect_static_locals(BLOCK_SUBBLOCKS(block), objects, depth + 1);
+    }
+}
+
+// The name of the function that holds the static locals of FUNCTION: the
+// function itself, or the function that holds a lambda.
+std::string holder_name(tree function) {
+    tree current = function;
+    for (int depth = 0; current != NULL_TREE && depth < kTypeDepth; ++depth) {
+        if (TREE_CODE(current) != FUNCTION_DECL || !LAMBDA_FUNCTION_P(current)) {
+            break;
+        }
+        tree closure = DECL_CONTEXT(current);
+        current = closure != NULL_TREE && TYPE_P(closure) ? CP_TYPE_CONTEXT(closure) : NULL_TREE;
+    }
+    if (current == NULL_TREE || TREE_CODE(current) != FUNCTION_DECL) {
+        return qualified_name(function) + "()";
+    }
+    return qualified_name(current) + "()";
+}
+
+// The functions that hold a static local in this unit, by DECL_UID.
+std::unordered_set<unsigned> holders_with_object;
+
+// The static locals of the body of FUNCTION, at the end of its parse (THE
+// RULE process-wide-state).
+void check_static_locals(tree function, bool is_processing) {
+    tree body = DECL_INITIAL(function);
+    if (body == NULL_TREE || TREE_CODE(body) != BLOCK) {
+        return;
+    }
+    std::vector<tree> objects;
+    collect_static_locals(body, objects, 0);
+    if (objects.empty()) {
+        return;
+    }
+    holders_with_object.insert(DECL_UID(function));
+    bool is_marked = has_process_wide_marker(function);
+    bool is_templated = is_marked && is_templated_function(function, is_processing);
+    std::string prefix = holder_name(function);
+    for (tree decl : objects) {
+        Place place = library_place(DECL_SOURCE_LOCATION(decl));
+        if (place.file == nullptr) {
+            continue;
+        }
+        std::string entity = prefix + "::" + simple_name(decl);
+        if (!is_marked) {
+            record_property(Kind::unmarked_static, place, entity);
+        } else {
+            check_marker_faults(function, false, is_templated, place, entity);
+        }
+    }
+}
+
+// A marked function that holds no static local in this unit (THE RULE
+// process-wide-state).  The walk asks at PLUGIN_FINISH_UNIT, after the parse
+// of each body.
+void check_marked_function(tree function) {
+    if (holders_with_object.count(DECL_UID(function)) != 0) {
+        return;
+    }
+    record_property(Kind::marker_without_object, library_place(DECL_SOURCE_LOCATION(function)),
+                    qualified_name(function) + "()");
+}
+
+// ── The rule lifetime-twin ──────────────────────────────────────────────
+
+// One parameter that CRUCIBLE_LIFETIMEBOUND marks, with its function.
+struct LifetimeClaim {
+    tree function = NULL_TREE;
+    int index = 0;
+    int arity = 0;
+    tree core_type = NULL_TREE;  // the type of the parameter, with no reference
+    Place place;
+    std::string entity;
+};
+
+// The places of the parameters that the attribute marks, the first and the
+// last of them, and the claim of each place.
+std::unordered_set<location_t> lifetime_bound_parameters;
+location_t first_lifetime_bound = UNKNOWN_LOCATION;
+location_t last_lifetime_bound = UNKNOWN_LOCATION;
+std::unordered_map<location_t, LifetimeClaim> lifetime_claims;
+
+// The number of the parameters of FUNCTION that the code spells: no this
+// and no other artificial parameter.  A pack counts as one.
+int user_arity(tree function) {
+    int count = 0;
+    for (tree type = FUNCTION_FIRST_USER_PARMTYPE(function); type != NULL_TREE && type != void_list_node;
+         type = TREE_CHAIN(type)) {
+        ++count;
+    }
+    return count;
+}
+
+// The function_signature of FUNCTION, with the name of the class for a
+// constructor, as the code spells it.
+std::string lifetime_entity(tree function) {
+    std::string signature = function_signature(function);
+    tree owner = DECL_CONTEXT(function);
+    if (!DECL_CONSTRUCTOR_P(function) || owner == NULL_TREE || !TYPE_P(owner) || TYPE_NAME(owner) == NULL_TREE) {
+        return signature;
+    }
+    std::string name = qualified_name(function);
+    return qualified_name(owner) + "::" + simple_name(TYPE_NAME(owner)) + signature.substr(name.size());
+}
+
+// The claim of each marked parameter of FUNCTION that has no claim (THE RULE
+// lifetime-twin).  The places of the marked parameters bound the test of a
+// place before the hash lookup.  Complexity: O(parameters).
+void note_lifetime_claims(tree function) {
+    if (lifetime_bound_parameters.empty() || function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL
+        || is_from_instantiation(function)) {
+        return;
+    }
+    int index = 0;
+    for (tree parameter = FUNCTION_FIRST_USER_PARM(function); parameter != NULL_TREE;
+         parameter = DECL_CHAIN(parameter), ++index) {
+        location_t location = DECL_SOURCE_LOCATION(parameter);
+        if (location < first_lifetime_bound || location > last_lifetime_bound
+            || lifetime_bound_parameters.count(location) == 0 || lifetime_claims.count(location) != 0) {
+            continue;
+        }
+        LifetimeClaim claim;
+        claim.place = property_place(location);
+        if (claim.place.file != nullptr) {
+            tree type = TREE_TYPE(parameter);
+            claim.function = function;
+            claim.index = index;
+            claim.arity = user_arity(function);
+            claim.core_type = TYPE_REF_P(type) ? TREE_TYPE(type) : type;
+            claim.entity = lifetime_entity(function) + " parameter " + std::to_string(index + 1);
+        }
+        lifetime_claims.emplace(location, claim);
+    }
+}
+
+// The functions of the scope of FUNCTION with its name.  A friend is in the
+// scope of its namespace.
+tree overload_set(tree function) {
+    tree scope = CP_DECL_CONTEXT(function);
+    if (scope == NULL_TREE) {
+        return NULL_TREE;
+    }
+    if (TYPE_P(scope)) {
+        if (!CLASS_TYPE_P(scope)) {
+            return NULL_TREE;
+        }
+        return DECL_CONSTRUCTOR_P(function) ? CLASSTYPE_CONSTRUCTORS(scope)
+                                            : get_class_binding_direct(scope, DECL_NAME(function));
+    }
+    return TREE_CODE(scope) == NAMESPACE_DECL ? get_namespace_binding(scope, DECL_NAME(function)) : NULL_TREE;
+}
+
+// The file that holds the expansion point of LOCATION, or null.
+const FileEntry* expansion_file(location_t location) {
+    if (location == UNKNOWN_LOCATION || location <= BUILTINS_LOCATION) {
+        return nullptr;
+    }
+    location_t point = linemap_resolve_location(line_table, location, LRK_MACRO_EXPANSION_POINT, nullptr);
+    expanded_location where = expand_location(point);
+    return where.file != nullptr ? &classify_file(where.file) : nullptr;
+}
+
+// True when CANDIDATE is a deleted overload in the file of CLAIM that refuses
+// a temporary at the index of the claim.
+bool refuses_temporary(tree candidate, const LifetimeClaim& claim) {
+    tree function = STRIP_TEMPLATE(candidate);
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || DECL_LANG_SPECIFIC(function) == nullptr
+        || !DECL_DELETED_FN(function) || expansion_file(DECL_SOURCE_LOCATION(function)) != claim.place.file) {
+        return false;
+    }
+    std::vector<tree> types;
+    for (tree type = FUNCTION_FIRST_USER_PARMTYPE(function); type != NULL_TREE && type != void_list_node;
+         type = TREE_CHAIN(type)) {
+        types.push_back(TREE_VALUE(type));
+    }
+    int count = static_cast<int>(types.size());
+    bool is_variadic = count > 0 && TREE_CODE(types.back()) == TYPE_PACK_EXPANSION;
+    if (!(count == claim.arity || (is_variadic && count <= claim.arity + 1)) || claim.index >= count) {
+        return false;
+    }
+    tree type = types[static_cast<std::size_t>(claim.index)];
+    if (TREE_CODE(type) != REFERENCE_TYPE || !TYPE_REF_IS_RVALUE(type)) {
+        return false;
+    }
+    tree referred = TREE_TYPE(type);
+    return TREE_CODE(referred) == TEMPLATE_TYPE_PARM
+        || same_type_ignoring_top_level_qualifiers_p(referred, claim.core_type);
+}
+
+// One finding for each claim with no deleted overload that refuses a
+// temporary, in the sequence of the places.  Complexity: O(claims times
+// overloads).
+void report_lifetime_claims() {
+    std::vector<const LifetimeClaim*> claims;
+    for (const auto& entry : lifetime_claims) {
+        if (entry.second.function != NULL_TREE) {
+            claims.push_back(&entry.second);
+        }
+    }
+    std::sort(claims.begin(), claims.end(), [](const LifetimeClaim* left, const LifetimeClaim* right) {
+        if (left->place.file != right->place.file) {
+            return left->place.file->relative < right->place.file->relative;
+        }
+        return left->place.line != right->place.line ? left->place.line < right->place.line
+                                                     : left->place.column < right->place.column;
+    });
+    for (const LifetimeClaim* claim : claims) {
+        bool is_refused = false;
+        for (ovl_iterator candidate(overload_set(claim->function), true); candidate && !is_refused; ++candidate) {
+            is_refused = refuses_temporary(*candidate, *claim);
+        }
+        if (!is_refused) {
+            record_property(Kind::missing_twin, claim->place, claim->entity);
+        }
+    }
+}
+
+// The handler of quarantine::lifetimebound: it notes the place of a parameter,
+// and it refuses each other declaration.
+tree handle_lifetime_bound(tree* node, tree, tree, int, bool* no_add_attrs) {
+    if (TREE_CODE(*node) != PARM_DECL) {
+        error_at(DECL_P(*node) ? DECL_SOURCE_LOCATION(*node) : input_location,
+                 "quarantine: %<CRUCIBLE_LIFETIMEBOUND%> marks a parameter, and this declaration is no parameter; put "
+                 "the marker after the name of the parameter whose argument the result borrows");
+        *no_add_attrs = true;
+        return NULL_TREE;
+    }
+    location_t location = DECL_SOURCE_LOCATION(*node);
+    lifetime_bound_parameters.insert(location);
+    if (first_lifetime_bound == UNKNOWN_LOCATION || location < first_lifetime_bound) {
+        first_lifetime_bound = location;
+    }
+    if (location > last_lifetime_bound) {
+        last_lifetime_bound = location;
+    }
+    return NULL_TREE;
+}
+
+// The handler of quarantine::process_wide: it refuses a declaration that is no
+// variable and no function.
+tree handle_process_wide(tree* node, tree, tree, int, bool* no_add_attrs) {
+    if (!VAR_OR_FUNCTION_DECL_P(*node)) {
+        error_at(DECL_P(*node) ? DECL_SOURCE_LOCATION(*node) : input_location,
+                 "quarantine: %<CRUCIBLE_PROCESS_WIDE%> marks a variable or the function that holds a static local, "
+                 "and this declaration is neither");
+        *no_add_attrs = true;
+    }
+    return NULL_TREE;
+}
+
+const attribute_spec kPropertyAttributes[] = {
+    {"process_wide", 0, 0, true, false, false, false, handle_process_wide, nullptr},
+    {"lifetimebound", 0, 0, true, false, false, false, handle_lifetime_bound, nullptr},
+};
+
+// The namespace is the name of the plugin, and no layer of the tree has the
+// name, so a base header can spell it (CLAUDE.md section XVI, the layer rule).
+const scoped_attribute_specs kPropertyAttributeSpecs = {"quarantine", {kPropertyAttributes}};
+
+void on_register_attributes(void*, void*) { register_scoped_attributes(kPropertyAttributeSpecs); }
+
+// A declaration of a function that is no template (THE RULE lifetime-twin).
+void on_finish_lifetime_declaration(void* gcc_data, void*) {
+    tree decl = static_cast<tree>(gcc_data);
+    if (decl != NULL_TREE && TREE_CODE(decl) == FUNCTION_DECL) {
+        note_lifetime_claims(decl);
+    }
+}
+
+// The definition of a template gives the parameters of each earlier
+// declaration of its name before GCC merges the two (THE RULE lifetime-twin).
+void on_start_function_property(void* gcc_data, void*) {
+    tree function = static_cast<tree>(gcc_data);
+    if (lifetime_bound_parameters.empty() || processing_template_decl == 0 || function == NULL_TREE
+        || TREE_CODE(function) != FUNCTION_DECL || DECL_NAME(function) == NULL_TREE) {
+        return;
+    }
+    for (ovl_iterator candidate(overload_set(function), true); candidate; ++candidate) {
+        tree earlier = STRIP_TEMPLATE(*candidate);
+        if (earlier != NULL_TREE && earlier != function) {
+            note_lifetime_claims(earlier);
+        }
+    }
+}
+
+// The end of the parse of a body: its static locals and its own marked
+// parameters.
+void on_finish_function_property(void* gcc_data, void*) {
+    tree function = static_cast<tree>(gcc_data);
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || is_from_instantiation(function)) {
+        return;
+    }
+    note_lifetime_claims(function);
+    check_static_locals(function, processing_template_decl != 0);
+}
+
 // ── The walk of the family ──────────────────────────────────────────────
 
 struct PropertyWalk {
@@ -1430,7 +1917,9 @@ struct PropertyWalk {
         bool is_mint_name = is_mint(function);
         bool is_door = returns_raw(function);
         bool is_stub = has_stub_deprecation(function);
-        if (!is_mint_name && !is_door && !is_stub) {
+        bool is_marked = has_process_wide_marker(function);
+        bool is_claimed = is_pattern && !lifetime_bound_parameters.empty();
+        if (!is_mint_name && !is_door && !is_stub && !is_marked && !is_claimed) {
             return;
         }
         tree tested = is_pattern ? CP_DECL_CONTEXT(function) : function;
@@ -1446,13 +1935,21 @@ struct PropertyWalk {
         if (is_stub && noted_stubs.insert(DECL_UID(function)).second) {
             note_stub(stubs, property_place(DECL_SOURCE_LOCATION(function)), function_signature(function), false);
         }
+        if (is_marked) {
+            check_marked_function(function);
+        }
+        if (is_claimed) {
+            note_lifetime_claims(function);
+        }
     }
 
-    // A variable at namespace scope or a static data member.
-    void variable(tree decl) {
+    // A variable at namespace scope or a static data member.  IS_TEMPLATED
+    // is true for a variable of a template.
+    void variable(tree decl, bool is_templated) {
         if (DECL_CLASS_SCOPE_P(decl)) {
             check_permission_member(decl);
         }
+        check_process_wide_variable(decl, is_templated);
         if (is_honesty_marker(decl)) {
             note_stub(stubs, property_place(DECL_SOURCE_LOCATION(decl)), qualified_name(decl), true);
         }
@@ -1475,6 +1972,10 @@ struct PropertyWalk {
         }
         if (TREE_CODE(result) == FUNCTION_DECL) {
             function(result, true);
+            return;
+        }
+        if (VAR_P(result)) {
+            variable(result, true);
             return;
         }
         if (TREE_CODE(result) == TYPE_DECL && !DECL_IMPLICIT_TYPEDEF_P(result)) {
@@ -1522,7 +2023,7 @@ struct PropertyWalk {
                     }
                     break;
                 case VAR_DECL:
-                    variable(member);
+                    variable(member, is_pattern);
                     break;
                 case FUNCTION_DECL:
                     function(member, is_pattern);
@@ -1599,7 +2100,7 @@ struct PropertyWalk {
                 break;
             case VAR_DECL:
                 if (!has_lang_template_info(decl)) {
-                    variable(decl);
+                    variable(decl, false);
                 }
                 break;
             case FUNCTION_DECL:
@@ -1615,8 +2116,7 @@ struct PropertyWalk {
     // A namespace that a library file opens, such as std, holds no
     // declaration that a rule of the family reads.
     void namespace_decl(tree ns) {
-        if (!visited.insert(ns).second
-            || (ns != global_namespace && in_library_file_at(DECL_SOURCE_LOCATION(ns)))) {
+        if (!visited.insert(ns).second || (ns != global_namespace && in_library_file_at(DECL_SOURCE_LOCATION(ns)))) {
             return;
         }
         for (tree decl = NAMESPACE_LEVEL(ns)->names; decl != NULL_TREE; decl = TREE_CHAIN(decl)) {
@@ -1650,14 +2150,20 @@ void walk_declarations() {
     PropertyWalk properties;
     properties.namespace_decl(global_namespace);
     report_stubs(properties.stubs);
+    report_lifetime_claims();
 }
 
-// Registers the hooks of the foreign symbols and of the facts of a body.
+// Registers the attributes of the family, the hooks of the foreign symbols
+// and of the facts of a body.
 void register_declarations(const char* plugin_name) {
+    register_callback(plugin_name, PLUGIN_ATTRIBUTES, on_register_attributes, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_DECL, on_finish_variable, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_PARSE_FUNCTION, on_finish_function, nullptr);
     register_callback(plugin_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize_property, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_DECL, on_finish_stub_declaration, nullptr);
+    register_callback(plugin_name, PLUGIN_FINISH_DECL, on_finish_lifetime_declaration, nullptr);
+    register_callback(plugin_name, PLUGIN_START_PARSE_FUNCTION, on_start_function_property, nullptr);
+    register_callback(plugin_name, PLUGIN_FINISH_PARSE_FUNCTION, on_finish_function_property, nullptr);
 }
 
 }  // namespace crucible_plugin

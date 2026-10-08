@@ -1,0 +1,14 @@
+#include <fixy/Wide.h>
+
+namespace plant {
+
+int Plain::defined_in_unit = 0;
+
+CRUCIBLE_PROCESS_WIDE int not_inline_function() {
+    static int instance = 0;
+    return ++instance;
+}
+
+}  // namespace plant
+
+int use_plant() { return plant::unmarked_template_function<int>() + plant::Holder<int>::unmarked_record(); }

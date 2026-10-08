@@ -1,0 +1,11 @@
+#include <fixy/Twins.h>
+
+#include "Elsewhere.h"
+
+namespace quarantined {
+
+struct Arena {};
+
+int plant(Arena& arena CRUCIBLE_LIFETIMEBOUND) noexcept;
+
+}  // namespace quarantined

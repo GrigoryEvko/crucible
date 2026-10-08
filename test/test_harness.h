@@ -47,6 +47,8 @@ inline void flush_and_wait_region_published(Vigil& vigil) {
                                                                           CRUCIBLE_LIFETIMEBOUND) noexcept {
     return mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>();
 }
+TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry&&) =
+    delete("the result points into the entry, and a temporary entry ends before the result");
 
 // Certifies an Entry that a test built, and gives it to dispatch_op.
 //

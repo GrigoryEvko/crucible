@@ -1,0 +1,4 @@
+# The rule table of the control of the rule lifetime-twin: include/fixy/ is
+# base code, and twins.cpp is quarantined.
+layer low 0 include/fixy/
+quarantine twins.cpp

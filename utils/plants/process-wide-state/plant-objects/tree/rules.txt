@@ -1,0 +1,4 @@
+# The rule table of the plant of the rule process-wide-state: include/fixy/ is
+# base code, and src/ is quarantined.  The rule reads include/ and src/.
+layer low 0 include/fixy/
+quarantine src/

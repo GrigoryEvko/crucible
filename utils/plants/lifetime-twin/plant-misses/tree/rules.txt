@@ -1,0 +1,5 @@
+# The rule table of the plant of the rule lifetime-twin: include/fixy/ is base
+# code, and twins.cpp and Elsewhere.h are quarantined.
+layer low 0 include/fixy/
+quarantine twins.cpp
+quarantine Elsewhere.h

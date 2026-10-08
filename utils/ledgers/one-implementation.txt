@@ -46,7 +46,6 @@ utils/assay/guard/legacy/check_host_owners.py | copy | 1 | self_test.write | A c
 utils/assay/guard/legacy/check_host_owners.py | near-copy | 1 | attribute_end | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_host_owners.py | near-copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/guard/legacy/check_lifetime_twin.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | copy | 1 | self_test.captured | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
@@ -61,10 +60,6 @@ utils/assay/guard/legacy/check_no_unchecked_access.py | copy | 1 | planted_cases
 utils/assay/guard/legacy/check_no_unity_pch.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_padded_lists.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_parse_cost.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/guard/legacy/check_process_wide_state.py | copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/guard/legacy/check_process_wide_state.py | copy | 1 | self_test.captured | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/guard/legacy/check_process_wide_state.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/guard/legacy/check_process_wide_state.py | near-copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | copy | 1 | at_namespace_scope | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_prose_paths.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_reconfigure_noop.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count

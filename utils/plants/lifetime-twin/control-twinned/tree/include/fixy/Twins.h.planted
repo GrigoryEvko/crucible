@@ -1,0 +1,64 @@
+#pragma once
+
+#if defined(CRUCIBLE_QUARANTINE_ACTIVE)
+#define CRUCIBLE_LIFETIMEBOUND [[quarantine::lifetimebound]]
+#else
+#define CRUCIBLE_LIFETIMEBOUND
+#endif
+
+namespace control {
+
+struct Carrier {};
+
+struct Guarded {
+    explicit Guarded(Carrier const& carrier CRUCIBLE_LIFETIMEBOUND) noexcept;
+    explicit Guarded(Carrier const&&) = delete("the twin");
+};
+
+template <class T>
+constexpr int forwarded(T& value CRUCIBLE_LIFETIMEBOUND) noexcept;
+template <class T>
+constexpr int forwarded(T&&) = delete("a forwarding twin");
+
+template <class T>
+constexpr int wrapped(Carrier const& first, T& second CRUCIBLE_LIFETIMEBOUND) noexcept;
+template <class T>
+constexpr int wrapped(Carrier const&, T&&) = delete("a twin at the second index");
+
+int packed(Carrier const& carrier CRUCIBLE_LIFETIMEBOUND, int count) noexcept;
+template <class... Rest>
+int packed(Carrier const&&, Rest&&...) = delete;
+
+template <class T>
+int befriended(T& value CRUCIBLE_LIFETIMEBOUND) noexcept;
+template <class T>
+int befriended(T&&) = delete;
+
+struct Holder {
+    template <class U>
+    friend int befriended(U& value CRUCIBLE_LIFETIMEBOUND) noexcept;
+};
+
+struct Ordered {
+    bool operator==(Carrier const& carrier CRUCIBLE_LIFETIMEBOUND) const noexcept;
+    bool operator==(Carrier const&&) const = delete;
+};
+
+template <class T, unsigned N>
+struct Span {
+    constexpr explicit Span(T (&array CRUCIBLE_LIFETIMEBOUND)[N]) noexcept : size{N} { (void)array; }
+    template <class R>
+    explicit Span(R&&) = delete;
+    unsigned size;
+};
+
+template <class T>
+int defined_twice(T& value CRUCIBLE_LIFETIMEBOUND) noexcept;
+template <class T>
+int defined_twice(T&&) = delete;
+template <class T>
+int defined_twice(T& value CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return sizeof(value) > 0 ? 1 : 0;
+}
+
+}  // namespace control

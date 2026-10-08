@@ -1,0 +1,5 @@
+# CRUCIBLE_LIFETIMEBOUND on a declaration that is no parameter is a compile
+# error in each mode, because no overload can enforce such a claim.
+compile report misplaced.cpp
+exit report fail
+error report misplaced.cpp:9 | quarantine: 'CRUCIBLE_LIFETIMEBOUND' marks a parameter, and this declaration is no parameter;

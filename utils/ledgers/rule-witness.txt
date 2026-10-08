@@ -44,7 +44,6 @@ utils/registry.txt | no-plant | admit | header-standalone | The rule has no plan
 utils/registry.txt | no-plant | admit | host-owners | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | instruction-total | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | libstdcxx-symbols | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
-utils/registry.txt | no-plant | admit | lifetime-twin | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | link-count | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | link-memory | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | link-time | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
@@ -60,7 +59,6 @@ utils/registry.txt | no-plant | admit | object-text | The rule has no plants in 
 utils/registry.txt | no-plant | admit | padded-list | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | parse-total | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | preprocessed-fill | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
-utils/registry.txt | no-plant | admit | process-wide-state | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | proof-routes | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | prose-paths | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | reconfigure-noop | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row

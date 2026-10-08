@@ -1,0 +1,42 @@
+#pragma once
+
+#if defined(CRUCIBLE_QUARANTINE_ACTIVE)
+#define CRUCIBLE_PROCESS_WIDE [[gnu::visibility("default"), quarantine::process_wide]]
+#else
+#define CRUCIBLE_PROCESS_WIDE [[gnu::visibility("default")]]
+#endif
+
+namespace control {
+
+CRUCIBLE_PROCESS_WIDE inline constinit int marked_variable = 0;
+CRUCIBLE_PROCESS_WIDE inline constinit thread_local int marked_per_thread = 0;
+inline constexpr int constant = 0;
+inline const int constant_object = 0;
+inline char* const fixed_pointer = nullptr;
+extern int declared_only;
+inline int& reference_to = marked_variable;
+
+CRUCIBLE_PROCESS_WIDE inline int marked_function() {
+    static int instance = 0;
+    static const int fixed = 0;
+    int automatic = fixed;
+    return ++instance + automatic;
+}
+
+struct Plain {
+    CRUCIBLE_PROCESS_WIDE static inline int marked_member = 0;
+    static constexpr int member_constant = 0;
+    static int declared_member;
+    static int declared_elsewhere;
+    CRUCIBLE_PROCESS_WIDE static int local_holder() {
+        static int instance = 0;
+        return ++instance;
+    }
+};
+
+CRUCIBLE_PROCESS_WIDE inline int Plain::declared_member = 0;
+
+template <class T>
+inline constexpr int template_constant = 0;
+
+}  // namespace control

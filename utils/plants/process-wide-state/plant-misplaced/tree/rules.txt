@@ -1,0 +1,3 @@
+# The rule table of the plant of a misplaced marker of the rule
+# process-wide-state: src/ is quarantined.
+quarantine src/

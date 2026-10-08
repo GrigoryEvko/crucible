@@ -1,0 +1,7 @@
+#pragma once
+
+namespace plant {
+
+int twin_in_other_file(Carrier const&&) = delete;
+
+}  // namespace plant

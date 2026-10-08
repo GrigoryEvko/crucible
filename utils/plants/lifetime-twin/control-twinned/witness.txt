@@ -1,0 +1,8 @@
+# Each marked parameter has a deleted twin: of a constructor, a template with
+# a forwarding twin, a parameter at the second index, a twin with a pack, a
+# friend of a class, an operator, a reference to an array, and a template
+# with a declaration and a definition.  The unit compiles in the mode error,
+# with no finding of the rule lifetime-twin.
+compile error twins.cpp mode=error
+flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Twins.h
+exit error pass

@@ -2,24 +2,19 @@
 # duration that are correct with one copy in each shared library.
 # `python3 utils/bin/guard explain process-wide-state` tells the rule.
 #
-# One row is `PATH | - | admit | QUALIFIED NAME | REASON`.  A process-wide
-# object carries CRUCIBLE_PROCESS_WIDE (foundation/Platform.h) and has no
-# row.  The reason of a row tells why a copy in each library that compiles
-# the object is correct: only one library reaches it, each copy holds the
-# same value, or the object is a cache or a scratch that a second copy only
-# fills again.  A reviewer writes each row by hand.
+# One row is `PATH | unmarked-static | admit | QUALIFIED NAME | REASON`.  A
+# process-wide object carries CRUCIBLE_PROCESS_WIDE (foundation/Platform.h)
+# and has no row.  The reason of a row tells why a copy in each library that
+# compiles the object is correct: only one library reaches it, each copy
+# holds the same value, or the object is a cache or a scratch that a second
+# copy only fills again.  A reviewer writes each row by hand.
 format 1
 rule process-wide-state
-include/crucible/cipher/ComputationCache.h | - | admit | crucible::cipher::detail::compiled_body_slot | a template variable, so the marker cannot reach it. A lookup in a second library misses, and that library fills its own slot of the cache
-include/crucible/ledger/probes/CacheTier.h | - | admit | crucible::ledger::probes::cache_tier_detail::g_numa_memo | a cache of one measurement: a second library measures again and stores its own result
-include/crucible/ledger/probes/CacheTier.h | - | admit | crucible::ledger::probes::cache_tier_detail::g_sweep_memo | a cache of one measurement: a second library measures again and stores its own result
-include/crucible/ledger/probes/HugePage.h | - | admit | crucible::ledger::probes::huge_page_detail::g_memo | a cache of one measurement: a second library measures again and stores its own result
-include/crucible/ledger/probes/VectorWidth.h | - | admit | crucible::ledger::probes::vector_width_detail::g_memo | a cache of one measurement: a second library measures again and stores its own result
-include/foundation/ThreadLocalRef.h | - | admit | foundation::ThreadLocalRef::storage_()::storage | a template, so the marker cannot reach it. Its one user, observe/HdrHistogram.h, keeps a shard choice for each thread, and a second library can only pick a second shard for the thread, which changes how the writes spread and nothing else
-src/foundation/DiagRuntime.cpp | - | admit | foundation::diag::(anonymous namespace)::g_default_sink_format | a cache of CRUCIBLE_DIAG_FORMAT: each library reads the same environment and caches the same answer
-src/foundation/DiagRuntime.cpp | - | admit | foundation::diag::(anonymous namespace)::tls_loc_buf | scratch for one formatted location on one thread: nothing reads it after the call that fills it returns
-vessel/torch/crucible_fallback.cpp | - | admit | (anonymous namespace)::schema_cache | a cache for each thread of the schema hash of each operator. Only libcrucible_dispatch.so compiles this file
-vessel/torch/crucible_fallback.cpp | - | admit | (anonymous namespace)::schema_is_foreach | a cache for each thread beside the schema cache. Only libcrucible_dispatch.so compiles this file
-vessel/torch/crucible_fallback.cpp | - | admit | (anonymous namespace)::schema_is_mutable | a cache for each thread beside the schema cache. Only libcrucible_dispatch.so compiles this file
-vessel/torch/record_kernel.h | - | admit | crucible::vessel::RecordKernel::schema_name_registered | only libcrucible_dispatch.so compiles this header, through register.cpp and crucible_fallback.cpp
-vessel/torch/record_kernel.h | - | admit | crucible::vessel::backward_depth | only libcrucible_dispatch.so compiles this header, through register.cpp and crucible_fallback.cpp
+include/crucible/cipher/ComputationCache.h | unmarked-static | admit | crucible::cipher::detail::compiled_body_slot | a template variable, so the marker cannot reach it. A lookup in a second library misses, and that library fills its own slot of the cache
+include/crucible/ledger/probes/CacheTier.h | unmarked-static | admit | crucible::ledger::probes::cache_tier_detail::g_numa_memo | a cache of one measurement: a second library measures again and stores its own result
+include/crucible/ledger/probes/CacheTier.h | unmarked-static | admit | crucible::ledger::probes::cache_tier_detail::g_sweep_memo | a cache of one measurement: a second library measures again and stores its own result
+include/crucible/ledger/probes/HugePage.h | unmarked-static | admit | crucible::ledger::probes::huge_page_detail::g_memo | a cache of one measurement: a second library measures again and stores its own result
+include/crucible/ledger/probes/VectorWidth.h | unmarked-static | admit | crucible::ledger::probes::vector_width_detail::g_memo | a cache of one measurement: a second library measures again and stores its own result
+include/foundation/ThreadLocalRef.h | unmarked-static | admit | foundation::ThreadLocalRef::storage_()::storage | a template, so the marker cannot reach it. Its one user, observe/HdrHistogram.h, keeps a shard choice for each thread, and a second library can only pick a second shard for the thread, which changes how the writes spread and nothing else
+src/foundation/DiagRuntime.cpp | unmarked-static | admit | foundation::diag::(anonymous namespace)::g_default_sink_format | a cache of CRUCIBLE_DIAG_FORMAT: each library reads the same environment and caches the same answer
+src/foundation/DiagRuntime.cpp | unmarked-static | admit | foundation::diag::(anonymous namespace)::tls_loc_buf | scratch for one formatted location on one thread: nothing reads it after the call that fills it returns

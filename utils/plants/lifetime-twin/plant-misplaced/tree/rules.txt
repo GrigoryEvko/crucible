@@ -1,0 +1,3 @@
+# The rule table of the plant of a misplaced marker of the rule lifetime-twin:
+# misplaced.cpp is quarantined.
+quarantine misplaced.cpp

@@ -1,0 +1,3 @@
+#include <fixy/Wide.h>
+
+int use_control() { return control::marked_function() + control::Plain::local_holder(); }

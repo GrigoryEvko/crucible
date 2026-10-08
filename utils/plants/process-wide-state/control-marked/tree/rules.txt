@@ -1,0 +1,4 @@
+# The rule table of the control of the rule process-wide-state: include/fixy/
+# is base code, and wide.cpp is quarantined.
+layer low 0 include/fixy/
+quarantine wide.cpp

@@ -176,6 +176,18 @@
 //                           CRUCIBLE_STUB, at its first marker
 //     stub-without-marker   a file with a deprecation CRUCIBLE_STUB and no
 //                           honesty marker, at its first deprecation
+//     The rule process-wide-state:
+//     unmarked-static       an object with static or thread storage duration
+//                           that can change, with no CRUCIBLE_PROCESS_WIDE
+//     marker-in-template    a marked object of a template
+//     marker-internal-linkage
+//                           a marked object with internal linkage
+//     marker-not-inline     a marked object whose variable or function is not
+//                           inline
+//     marker-without-object a marked declaration that holds no such object
+//     The rule lifetime-twin:
+//     missing-twin          a parameter that CRUCIBLE_LIFETIMEBOUND marks, with
+//                           no deleted overload that refuses a temporary there
 //
 // THE SECTION
 //     A unit that writes an object puts its report into the section
@@ -372,6 +384,8 @@ enum class Rule : std::uint8_t {
     permission_storage,
     escape_doors,
     stub_discipline,
+    process_wide_state,
+    lifetime_twin,
 };
 
 // The kinds of a finding (THE RULES AND THE KINDS above).  opted-out and
@@ -415,6 +429,12 @@ enum class Kind : std::uint8_t {
     hatch,
     marker_without_stub,
     stub_without_marker,
+    unmarked_static,
+    marker_in_template,
+    marker_internal_linkage,
+    marker_not_inline,
+    marker_without_object,
+    missing_twin,
 };
 
 inline const char* rule_name(Rule rule) {
@@ -443,6 +463,10 @@ inline const char* rule_name(Rule rule) {
             return "escape-doors";
         case Rule::stub_discipline:
             return "stub-discipline";
+        case Rule::process_wide_state:
+            return "process-wide-state";
+        case Rule::lifetime_twin:
+            return "lifetime-twin";
     }
     return "unknown";
 }
@@ -525,6 +549,18 @@ inline const char* kind_name(Kind kind) {
             return "marker-without-stub";
         case Kind::stub_without_marker:
             return "stub-without-marker";
+        case Kind::unmarked_static:
+            return "unmarked-static";
+        case Kind::marker_in_template:
+            return "marker-in-template";
+        case Kind::marker_internal_linkage:
+            return "marker-internal-linkage";
+        case Kind::marker_not_inline:
+            return "marker-not-inline";
+        case Kind::marker_without_object:
+            return "marker-without-object";
+        case Kind::missing_twin:
+            return "missing-twin";
     }
     return "unknown";
 }
@@ -567,6 +603,14 @@ inline Rule rule_of(Kind kind) {
         case Kind::marker_without_stub:
         case Kind::stub_without_marker:
             return Rule::stub_discipline;
+        case Kind::unmarked_static:
+        case Kind::marker_in_template:
+        case Kind::marker_internal_linkage:
+        case Kind::marker_not_inline:
+        case Kind::marker_without_object:
+            return Rule::process_wide_state;
+        case Kind::missing_twin:
+            return Rule::lifetime_twin;
         default:
             return Rule::quarantine;
     }
@@ -653,6 +697,12 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"escape-doors", "hatch"},
     {"stub-discipline", "marker-without-stub"},
     {"stub-discipline", "stub-without-marker"},
+    {"process-wide-state", "unmarked-static"},
+    {"process-wide-state", "marker-in-template"},
+    {"process-wide-state", "marker-internal-linkage"},
+    {"process-wide-state", "marker-not-inline"},
+    {"process-wide-state", "marker-without-object"},
+    {"lifetime-twin", "missing-twin"},
 };
 
 // True when the entity is part of the key of a finding: two findings of such

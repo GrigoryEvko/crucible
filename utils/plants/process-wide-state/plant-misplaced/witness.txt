@@ -1,0 +1,5 @@
+# CRUCIBLE_PROCESS_WIDE on a declaration that is no variable and no function,
+# such as a data member, is a compile error in each mode.
+compile report src/misplaced.cpp
+exit report fail
+error report src/misplaced.cpp:10 | quarantine: 'CRUCIBLE_PROCESS_WIDE' marks a variable or the function that holds a static local,

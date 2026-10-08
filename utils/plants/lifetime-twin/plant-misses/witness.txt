@@ -1,0 +1,37 @@
+# A parameter that CRUCIBLE_LIFETIMEBOUND marks, with no deleted overload in
+# its scope and its file that takes an rvalue reference at its index, is a
+# finding of the rule lifetime-twin.  A twin with another arity, the rvalue
+# reference at another index, another type, an lvalue, no delete, another
+# scope or another file is no twin.  The declaration of a template or of a
+# function that a definition with no marker follows keeps its claim.  In the
+# mode error each finding is an error.
+compile report twins.cpp
+flag report -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Twins.h
+exit report pass
+finding report lifetime-twin missing-twin include/fixy/Twins.h:15:39 | plant::Unguarded::Unguarded(const plant::Carrier&) parameter 1
+finding report lifetime-twin missing-twin include/fixy/Twins.h:18:32 | plant::wrong_arity(const plant::Carrier&, int) parameter 1
+finding report lifetime-twin missing-twin include/fixy/Twins.h:21:46 | plant::wrong_position(int, const plant::Carrier&) parameter 2
+finding report lifetime-twin missing-twin include/fixy/Twins.h:24:31 | plant::wrong_type(const plant::Carrier&) parameter 1
+finding report lifetime-twin missing-twin include/fixy/Twins.h:27:32 | plant::lvalue_twin(const plant::Carrier&) parameter 1
+finding report lifetime-twin missing-twin include/fixy/Twins.h:30:31 | plant::alive_twin(const plant::Carrier&) parameter 1
+finding report lifetime-twin missing-twin include/fixy/Twins.h:36:32 | plant::other_scope(const plant::Carrier&) parameter 1
+finding report lifetime-twin missing-twin include/fixy/Twins.h:38:28 | plant::packish(const plant::Carrier&, int) parameter 1
+finding report lifetime-twin missing-twin include/fixy/Twins.h:43:30 | plant::declared_then_defined(T&) parameter 1
+finding report lifetime-twin missing-twin include/fixy/Twins.h:50:34 | plant::defined_later(const plant::Carrier&) parameter 1
+finding report lifetime-twin missing-twin include/fixy/Twins.h:53:39 | plant::twin_in_other_file(const plant::Carrier&) parameter 1
+finding report lifetime-twin missing-twin twins.cpp:9:18 | quarantined::plant(quarantined::Arena&) parameter 1
+compile error twins.cpp mode=error findings=report
+flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Twins.h
+exit error fail
+error error include/fixy/Twins.h:15 | quarantine: missing-twin plant::Unguarded::Unguarded(const plant::Carrier&) parameter 1;
+error error include/fixy/Twins.h:18 | quarantine: missing-twin plant::wrong_arity(const plant::Carrier&, int) parameter 1;
+error error include/fixy/Twins.h:21 | quarantine: missing-twin plant::wrong_position(int, const plant::Carrier&) parameter 2;
+error error include/fixy/Twins.h:24 | quarantine: missing-twin plant::wrong_type(const plant::Carrier&) parameter 1;
+error error include/fixy/Twins.h:27 | quarantine: missing-twin plant::lvalue_twin(const plant::Carrier&) parameter 1;
+error error include/fixy/Twins.h:30 | quarantine: missing-twin plant::alive_twin(const plant::Carrier&) parameter 1;
+error error include/fixy/Twins.h:36 | quarantine: missing-twin plant::other_scope(const plant::Carrier&) parameter 1;
+error error include/fixy/Twins.h:38 | quarantine: missing-twin plant::packish(const plant::Carrier&, int) parameter 1;
+error error include/fixy/Twins.h:43 | quarantine: missing-twin plant::declared_then_defined(T&) parameter 1;
+error error include/fixy/Twins.h:50 | quarantine: missing-twin plant::defined_later(const plant::Carrier&) parameter 1;
+error error include/fixy/Twins.h:53 | quarantine: missing-twin plant::twin_in_other_file(const plant::Carrier&) parameter 1;
+error error twins.cpp:9 | quarantine: missing-twin quarantined::plant(quarantined::Arena&) parameter 1;

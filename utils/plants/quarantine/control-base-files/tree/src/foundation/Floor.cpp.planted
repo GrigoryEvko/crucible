@@ -8,8 +8,8 @@
 
 namespace probe {
 
-std::vector<int> floor_numbers;
-char floor_bytes[8] = {};
+const std::vector<int> floor_numbers{};
+const char floor_bytes[8] = {};
 
 void clear_floor(char* bytes) { std::memset(bytes, 0, 1); }
 

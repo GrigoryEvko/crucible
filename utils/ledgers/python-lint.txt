@@ -85,7 +85,6 @@ utils/assay/guard/legacy/check_host_owners.py | format | 1 | attribute_end | An 
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | I001 | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | ISC004 | 1 | self_test | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_lifetime_twin.py | format | 1 | twins_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | FURB166 | 2 | token_value | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | ISC004 | 2 | self_test | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | format | 1 | token_shape | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
@@ -101,7 +100,6 @@ utils/assay/guard/legacy/check_no_unity_pch.py | SIM114 | 1 | pch_words | An iss
 utils/assay/guard/legacy/check_no_unity_pch.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_padded_lists.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_parse_cost.py | format | 1 | read_ledger | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_process_wide_state.py | format | 1 | words_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | I001 | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_proof_routes.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_prose_paths.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count

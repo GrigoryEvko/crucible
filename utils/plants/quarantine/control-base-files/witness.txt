@@ -1,5 +1,6 @@
 # A source file of the base reports no finding, also in the mode error.  Each
-# compile with a report writes one report file with no line.
+# compile with a report writes one report file with no line.  The objects are
+# const, and the rule process-wide-state reads no object in them.
 
 compile floor src/foundation/Floor.cpp
 exit floor pass

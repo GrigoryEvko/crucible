@@ -111,9 +111,16 @@ static_assert(__GCC_DESTRUCTIVE_SIZE == 64,
 // instantiation takes the smallest visibility of the template and of its
 // arguments, and each type of this tree is hidden.  A templated object that
 // must be one per process goes through a non-template object with a key.
-// utils/assay/guard/legacy/check_process_wide_state.py reads every object with static storage
-// duration, and holds each one to this marker or to its roster.
+// The rule process-wide-state of the quarantine plugin reads every object with
+// static storage duration, and holds each one to this marker or to its ledger.
+// With the plugin, the marker also carries the attribute
+// quarantine::process_wide, which the plugin reads.  The attribute visibility
+// can also export a function, so the plugin does not read it.
+#if defined(CRUCIBLE_QUARANTINE_ACTIVE)
+#define CRUCIBLE_PROCESS_WIDE [[gnu::visibility("default"), quarantine::process_wide]]
+#else
 #define CRUCIBLE_PROCESS_WIDE [[gnu::visibility("default")]]
+#endif
 
 // The pause hint tells the core that the loop it is in is a spin. It changes
 // power draw and the pipeline-flush penalty on loop exit, not the wait itself.
@@ -158,8 +165,11 @@ static_assert(__GCC_DESTRUCTIVE_SIZE == 64,
 #define CRUCIBLE_ASSERT_CAPABILITY(cap)
 #endif
 
-// These four expand to nothing, on every build this project produces,
-// and that is stated here rather than left to be discovered.
+// The last three of these four expand to nothing, on every build this
+// project produces, and that is stated here rather than left to be
+// discovered.  CRUCIBLE_LIFETIMEBOUND expands to the attribute
+// quarantine::lifetimebound when the build loads the quarantine plugin, and
+// to nothing with no plugin.  No code generator reads that attribute.
 //
 // The previous definition guarded a clang attribute behind
 // `#if defined(__clang__)`, which read as "two compilers, one of them
@@ -174,16 +184,20 @@ static_assert(__GCC_DESTRUCTIVE_SIZE == 64,
 // CRUCIBLE_LIFETIMEBOUND is therefore a CLAIM, not a mechanism.  What
 // enforces it is ordinary C++ that GCC does honour: a deleted overload
 // taking an rvalue reference in the annotated position, which refuses a
-// temporary at the call site.  utils/assay/guard/legacy/check_lifetime_twin.py reads the
-// token and requires that overload, so the claim is checked even though
-// no compiler understands it.  Where no overload can refuse the
-// argument, as with a raw pointer whose pointee's lifetime no overload
+// temporary at the call site.  The rule lifetime-twin of the quarantine
+// plugin reads the attribute and requires that overload, so the claim is
+// checked although no code generator understands it.  Where no overload
+// can refuse the argument, as with a raw pointer whose pointee's lifetime no overload
 // set can see, the site states the reason instead and carries no
 // annotation: an annotation that enforces nothing is a decoration.
 //
 // The other three have no consumer in this tree and are kept as names
 // so a clang build, if one is ever made, does not fail to compile.
+#if defined(CRUCIBLE_QUARANTINE_ACTIVE)
+#define CRUCIBLE_LIFETIMEBOUND [[quarantine::lifetimebound]]
+#else
 #define CRUCIBLE_LIFETIMEBOUND
+#endif
 #define CRUCIBLE_OWNER
 #define CRUCIBLE_POINTER
 #define CRUCIBLE_UNSAFE_BUFFER_USAGE

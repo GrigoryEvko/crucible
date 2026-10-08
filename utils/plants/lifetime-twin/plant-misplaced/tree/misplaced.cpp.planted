@@ -1,0 +1,11 @@
+#if defined(CRUCIBLE_QUARANTINE_ACTIVE)
+#define CRUCIBLE_LIFETIMEBOUND [[quarantine::lifetimebound]]
+#else
+#define CRUCIBLE_LIFETIMEBOUND
+#endif
+
+namespace quarantined {
+
+inline int bound_variable CRUCIBLE_LIFETIMEBOUND = 0;
+
+}  // namespace quarantined

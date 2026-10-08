@@ -8,8 +8,8 @@
 
 namespace probe {
 
-std::vector<int> door_numbers;
-char door_bytes[8] = {};
+const std::vector<int> door_numbers{};
+const char door_bytes[8] = {};
 
 void clear_door(char* bytes) { std::memset(bytes, 0, 1); }
 
