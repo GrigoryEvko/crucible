@@ -46,7 +46,11 @@ THE RULE
     (assay.core.ledger) holds one row for each file: `PATH | - | COUNT | - |
     REASON`, with an optional reason.  A file with more sites than its row
     fails: write the brand or a generic parameter.  A file with fewer sites
-    than its row fails as stale: run --refresh in the same commit.  A row
+    than its row fails as stale: run --refresh in the same commit.  --refresh
+    writes the ledger with the writer of the count policy
+    (assay.core.ledger.write_counts), and it refuses a count that rose.
+    --refresh --raise also writes a count that rose, for a change of the
+    guard that reads more sites.  A row
     with a kind or an entity, and a ledger that does not obey its grammar,
     are malformed.  An empty ledger makes every site a hard error, and that
     is the end state.
@@ -67,7 +71,9 @@ WHAT READS THE SITES
 Usage
     guard check --rule brand-drain              compare the tree with the ledger
     guard check --rule brand-drain --list       print every site
-    guard check --rule brand-drain --refresh    write the ledger again from the tree
+    guard check --rule brand-drain --refresh    write the ledger again from the tree, with no count that rose
+    guard check --rule brand-drain --refresh --raise    the same, and also each count that rose
+    guard check --rule brand-drain --templates  print each branded template and the position of its brand
     guard check --rule brand-drain --self-test  put sites in a temporary tree and examine each verdict
 
 Exit 0 clean, 1 on a new site, an unreadable list or a parse failure, 2 on
@@ -421,29 +427,33 @@ def check(root: Path, roots: tuple[str, ...] = ROOTS) -> int:
     return 2 if stale or rot else 0
 
 
-def refresh(root: Path, roots: tuple[str, ...] = ROOTS) -> int:
+def refresh(root: Path, roots: tuple[str, ...] = ROOTS,
+            mode: rule_ledger.WriteMode = rule_ledger.WriteMode.LOWER) -> int:
     """Write the ledger again from the tree, with the reason of each row that stays.
 
-    An unreadable list, a parse failure or a ledger that cannot be read
-    stops the write.  A malformed row goes.  A new ledger gets the head
-    comment COMMENT, and a ledger that exists keeps its own.
+    The writer of the count policy writes the rows (assay.core.ledger.write_counts).  In the mode lower it refuses a
+    count that rose, and in the mode raise it writes that count too.  An unreadable list, a parse failure or a
+    ledger that cannot be read stops the write.  A malformed row goes.  A new ledger gets the head comment COMMENT,
+    and a ledger that exists keeps its own.
     """
     sites, unreadable, failures = scan(root, roots)
     _allowed, rot, ledger = read_ledger(root)
-    if unreadable or failures or ledger is None:
-        for line in rot:
-            print(line, file=sys.stderr)
-        print("check-brand-drain: --refresh does not write the ledger while a list is unreadable, a file "
-              "does not parse or the ledger cannot be read.", file=sys.stderr)
-        return 1
     counts = per_file(sites)
-    base: dict[rule_ledger.Key, rule_ledger.Entry] = {}
-    for path in sorted(counts):
-        key = rule_ledger.Key(path, "", "")
-        kept = ledger.base.get(key)
-        base[key] = rule_ledger.Entry(key, counts[path], kept.reason if kept is not None else "")
+    keyed = {rule_ledger.Key(path, "", ""): count for path, count in counts.items()}
+    written: rule_ledger.Ledger | None = None
+    problem = "a list is unreadable, a file does not parse or the ledger cannot be read"
+    if not unreadable and not failures and ledger is not None:
+        try:
+            written = rule_ledger.write_counts(rule_ledger.rule_of(RULE),
+                                               replace(ledger, configurations=(), deltas={}), keyed, mode=mode)
+        except rule_ledger.LedgerError as refusal:
+            problem = str(refusal)
+    if written is None or ledger is None:
+        for line in [*rot, f"check-brand-drain: --refresh does not write the ledger: {problem}"]:
+            print(line, file=sys.stderr)
+        return 1
     comment = ledger.comment if rule_ledger.ledger_path(RULE, root).is_file() else COMMENT
-    rule_ledger.store(replace(ledger, comment=comment, configurations=(), deltas={}, base=base), root)
+    rule_ledger.store(replace(written, comment=comment), root)
     print(f"check-brand-drain: ledger written with {len(counts)} file(s), {len(sites)} site(s).", file=sys.stderr)
     return 0
 
@@ -655,9 +665,17 @@ def self_test() -> int:
                and "has a second row" in report, True)
         expect("--refresh refuses while the ledger cannot be read", captured(lambda: refresh(root))[0] == 1, True)
         ledger.unlink()
-        expect("--refresh writes a ledger that passes",
-               captured(lambda: refresh(root))[0] == 0 and captured(lambda: check(root))[0] == 0)
+        code, report = captured(lambda: refresh(root))
+        expect("--refresh refuses a count that rose, and writes no ledger",
+               code == 1 and "rose" in report and not ledger.exists(), True)
+        expect("--refresh --raise writes a ledger that passes",
+               captured(lambda: refresh(root, mode=rule_ledger.WriteMode.RAISE))[0] == 0
+               and captured(lambda: check(root))[0] == 0)
         expect("a new ledger carries the head comment", ledger.read_text(encoding="utf-8").startswith(COMMENT))
+        plant("include/fixy/Planted.h | - | 15 | - | a planted reason\n")
+        code, report = captured(lambda: refresh(root))
+        expect("--refresh refuses one site more than the row", code == 1 and "from 15 to 16" in report
+               and "| 15 |" in ledger.read_text(encoding="utf-8"), True)
         plant("include/fixy/Planted.h | - | 18 | - | a planted reason\n")
         expect("--refresh keeps the head comment and the reason of a row",
                captured(lambda: refresh(root))[0] == 0 and ledger.read_text(encoding="utf-8").startswith(
@@ -701,6 +719,8 @@ def main(argv: list[str]) -> int:
             return self_test()
         if argv == ["--refresh"]:
             return refresh(root)
+        if argv == ["--refresh", "--raise"]:
+            return refresh(root, mode=rule_ledger.WriteMode.RAISE)
         if argv == ["--list"]:
             sites, unreadable, failures = scan(root)
             for site in sites:
@@ -712,13 +732,14 @@ def main(argv: list[str]) -> int:
             return 0
         if argv == ["--templates"]:
             branded, failures = branded_templates(root)
-            for name, position in branded.items():
-                print(f"BRANDED    {name}  brand at position {position}")
+            for qualified, position in sorted(branded.position.items()):
+                print(f"BRANDED    {'::'.join(qualified)}  brand at position {position}")
             for line in failures:
                 print(line)
             return 1 if failures else 0
     except tsast.KitMissing as exc:
         print(f"check-brand-drain: {exc}", file=sys.stderr)
         return 3
-    print("usage: guard check --rule brand-drain [--list | --templates | --refresh | --self-test]", file=sys.stderr)
+    print("usage: guard check --rule brand-drain [--list | --templates | --refresh [--raise] | --self-test]",
+          file=sys.stderr)
     return 2

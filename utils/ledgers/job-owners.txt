@@ -32,7 +32,7 @@ utils/assay/guard/legacy/check_admitted_audit.py | print | 1 | self_test.expect 
 utils/assay/guard/legacy/check_admitted_audit.py | row-bar | 1 | read_table | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_brand_drain.py | print | 5 | check | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_brand_drain.py | print | 7 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/legacy/check_brand_drain.py | print | 3 | refresh | A use of today.  The change that calls the owner of the job lowers the count
+utils/assay/guard/legacy/check_brand_drain.py | print | 2 | refresh | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_brand_drain.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_brand_drain.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/legacy/check_build_order.py | argparse | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
