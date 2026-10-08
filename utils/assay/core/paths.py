@@ -1,12 +1,17 @@
 """The root of the repository, the masters and the directory of the data files, found from the location of this file.
 
-This file is utils/assay/core/paths.py, so the root is three directories above
-it.  Every module of the package gets the root from REPO_ROOT here, and no
-other Python file under utils/ calculates the root from its own position.
+This file is utils/assay/core/paths.py, and the root is three directories
+above it.  Each module of the package gets the root from REPO_ROOT here.  The
+rule job-owners holds that no different Python file of utils/ calculates the
+root from its own position.
 
-The rule holds in each copy of the tree: a checkout, a git worktree, and a
-throwaway export that a guard run or a self-test makes.  The result does not
-depend on git or on the working directory of the caller.
+The rule holds in each copy of the tree: a checkout, a git worktree, and the
+export of a guard run or of a self-test.  Git and the working directory of the
+caller do not change the result.
+
+listing() gives the entries of a directory, sorted.  The file system gives
+the entries of a directory in a sequence that changes from one host to the
+next host.  The rule determinism holds that a module sorts each listing.
 """
 
 from pathlib import Path
@@ -20,3 +25,12 @@ SETUP = REPO_ROOT / "utils" / "bin" / "setup"
 # The directory of the data files of the package: the rule table, the ledgers,
 # the allowlists and the rosters.
 DATA = REPO_ROOT / "utils" / "scripts"
+
+
+def listing(directory: Path, pattern: str = "*") -> tuple[Path, ...]:
+    """Return the entries of a directory that a pattern of pathlib matches, sorted by path.
+
+    A pattern with "**" matches in the subdirectories too.  A missing
+    directory gives no entry.  Complexity: O(n log n) for n entries.
+    """
+    return tuple(sorted(directory.glob(pattern)))

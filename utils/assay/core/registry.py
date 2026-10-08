@@ -2,12 +2,13 @@
 
 THE ROWS
     The registry obeys the rows grammar of assay.core.rows.  It has a head
-    comment, a format row and three row kinds:
+    comment, a format row and four row kinds:
 
         format 1
         rule ID engine=ENGINE scope=SCOPE[,SCOPE...] ledger=POLICY [FIELD=VALUE]... doc=REF | REFUSES | ACTION
-        job ENTITY module=MODULE[,MODULE...] | REASON
+        job ENTITY module=OWNER[,OWNER...] | REASON
         path GLOB | WHAT THE FILES ARE
+        term WORD category=CATEGORY | ITS MEANING IN THIS PROJECT
 
     A rule row has these fields:
       engine       plugin, tsast, elf, build or meta: one engine for each rule
@@ -40,9 +41,19 @@ THE ROWS
     module of its own in assay/guard/engines/ENGINE/, which the rule
     rule-implementations holds.
 
-    A job row names a Python entity and the one module that can use it.  A
-    path row gives a glob of tracked paths and what those files are.  The
-    rule layout reads the path rows.
+    A job row names a Python entity and the modules that can use it.  An
+    owner is a dotted name from utils/: a module of the package, such as
+    assay.core.proc, or a master, such as bin.guard.  The rule job-owners
+    reads the job rows.  A path row gives a glob of tracked paths and what
+    those files are.  The rule layout reads the path rows.
+
+    A term row adds a word to the glossary of the project.  The STE
+    dictionary refuses the word, and this project uses it as a technical noun
+    or a technical verb.  CATEGORY is noun-N for the technical-noun category N of
+    rule 1.5 (1 to 22), or verb-N for the technical-verb category N of rule
+    1.12 (1a to 1f, 2a to 2c, 3a to 3f, or 4).  The rule ste-prose refuses no
+    shape of a word of a term row.  The rule registry-shape refuses a term row
+    with a word that the dictionary does not refuse.
 
 LOAD AND EXAMINE
     load() reads the registry and refuses the first problem.  examine() reads
@@ -68,6 +79,16 @@ RULE_FIELDS = frozenset({"engine", "scope", "ledger", "kinds", "warn", "error", 
 REQUIRED_FIELDS = ("engine", "scope", "ledger", "doc")
 THRESHOLD_FIELDS = ("warn", "error", "unit")
 JOB_FIELDS = frozenset({"module"})
+TERM_FIELDS = frozenset({"category"})
+# The categories of a term row: the technical-noun categories of rule 1.5, and the technical-verb categories of
+# rule 1.12.
+TERM_CATEGORIES = frozenset({*(f"noun-{number}" for number in range(1, 23)),
+                             *(f"verb-{group}{letter}" for group, letters in (("1", "abcdef"), ("2", "abc"),
+                                                                             ("3", "abcdef")) for letter in letters),
+                             "verb-4"})
+# The two prefixes of the name of an owner of a job: a module of the package, and a master of utils/bin/.
+PACKAGE_OWNER = "assay."
+MASTER_OWNER = "bin."
 SCOPE_WORDS = frozenset({"base", "quarantined", "tracked", "builddir", "package"})
 UNITS = frozenset({"s", "G", "GB", "MB", "KB", "%", "operations", "elements", "x", "links"})
 # The commands that read the thresholds of a measured rule with no module of its own.
@@ -161,6 +182,16 @@ class PathRow:
 
 
 @dataclass(frozen=True, slots=True)
+class Term:
+    """One term row: a word of the glossary of the project, its STE category and its meaning."""
+
+    word: str
+    category: str
+    meaning: str
+    line: int
+
+
+@dataclass(frozen=True, slots=True)
 class Registry:
     """The rows of the registry."""
 
@@ -168,6 +199,7 @@ class Registry:
     rules: Mapping[str, Rule] = field(default_factory=dict)
     jobs: tuple[Job, ...] = ()
     paths: tuple[PathRow, ...] = ()
+    terms: tuple[Term, ...] = ()
 
     def measured(self) -> dict[str, Rule]:
         """Return each rule with thresholds, by its ID."""
@@ -280,9 +312,41 @@ def parse_job(row: rows_grammar.Row) -> Job:
     if "module" not in values:
         raise row.error(f"the job {row.words[1]} has no field module")
     modules = tuple(values["module"].split(","))
-    if not all(module.startswith("assay.") and is_module_name(module[len("assay."):]) for module in modules):
-        raise row.error(f"a module of the job {row.words[1]} is not a dotted name under assay")
+    if not all(is_owner_name(module) for module in modules):
+        raise row.error(f"an owner of the job {row.words[1]} is not a module of the package, such as assay.core.proc, "
+                        f"or a master, such as bin.guard")
     return Job(row.words[1], modules, row.cells[0], row.line)
+
+
+def is_owner_name(text: str) -> bool:
+    """Return True when a text names an owner of a job: assay.MODULE for a module of the package, or bin.NAME."""
+    if text.startswith(PACKAGE_OWNER):
+        return is_module_name(text[len(PACKAGE_OWNER):])
+    name = text.removeprefix(MASTER_OWNER)
+    return text.startswith(MASTER_OWNER) and name.isidentifier() and name.islower() and "_" not in name
+
+
+def is_term_word(text: str) -> bool:
+    """Return True when a text is a word of the glossary: parts of lowercase letters, with a hyphen between parts."""
+    return bool(text) and all(part.isalpha() and part.islower() for part in text.split("-"))
+
+
+def parse_term(row: rows_grammar.Row) -> Term:
+    """Read one term row.
+
+    Raises:
+        rows_grammar.RowsError: If the row is not a correct term row, or its category is not a category of rule 1.5
+            or rule 1.12
+    """
+    if len(row.words) != 3 or len(row.cells) != 1 or not row.cells[0] or not is_term_word(row.words[1]):
+        raise row.error("a term row is 'term WORD category=CATEGORY | ITS MEANING IN THIS PROJECT', with a lowercase "
+                        "WORD")
+    values = rows_grammar.fields(row, TERM_FIELDS)
+    category = values.get("category", "")
+    if category not in TERM_CATEGORIES:
+        raise row.error(f"the category {category!r} of the term {row.words[1]} is not noun-N of rule 1.5 (1 to 22) or "
+                        f"verb-N of rule 1.12 (1a to 1f, 2a to 2c, 3a to 3f, or 4)")
+    return Term(row.words[1], category, row.cells[0], row.line)
 
 
 def parse_path(row: rows_grammar.Row) -> PathRow:
@@ -314,8 +378,10 @@ def examine(text: str, shown: str = REGISTRY_PATH) -> tuple[Registry, list[rows_
     rules: dict[str, Rule] = {}
     jobs: list[Job] = []
     paths: list[PathRow] = []
+    terms: list[Term] = []
     seen_globs: dict[str, int] = {}
     seen_jobs: dict[str, int] = {}
+    seen_terms: dict[str, int] = {}
     if not all_rows or all_rows[0].words != ("format", FORMAT) or all_rows[0].cells:
         problems.append(rows_grammar.RowsError(shown, all_rows[0].line if all_rows else 0,
                                                f"the first row of the registry is 'format {FORMAT}'"))
@@ -341,11 +407,18 @@ def examine(text: str, shown: str = REGISTRY_PATH) -> tuple[Registry, list[rows_
                                     f"{seen_globs[path_row.glob]}")
                 seen_globs[path_row.glob] = row.line
                 paths.append(path_row)
+            elif kind == "term":
+                term = parse_term(row)
+                if term.word in seen_terms:
+                    raise row.error(f"the term {term.word} has a second row.  The first is at line "
+                                    f"{seen_terms[term.word]}")
+                seen_terms[term.word] = row.line
+                terms.append(term)
             else:
-                raise row.error(f"the row kind {kind!r} is not format, rule, job or path")
+                raise row.error(f"the row kind {kind!r} is not format, rule, job, path or term")
         except rows_grammar.RowsError as problem:
             problems.append(problem)
-    return Registry(shown, rules, tuple(jobs), tuple(paths)), problems
+    return Registry(shown, rules, tuple(jobs), tuple(paths), tuple(terms)), problems
 
 
 def load(path: Path = REGISTRY, shown: str = REGISTRY_PATH) -> Registry:

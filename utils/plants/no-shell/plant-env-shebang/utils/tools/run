@@ -1,0 +1,2 @@
+#!/usr/bin/env -S LC_ALL=C zsh -e
+echo planted

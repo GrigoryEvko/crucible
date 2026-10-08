@@ -1,4 +1,4 @@
-"""The test of the registry (assay.core.registry): the rule rows, the job rows, the path rows and the doc fields.
+"""The test of the registry (assay.core.registry): the rule, job, path and term rows, and the doc fields.
 
 `guard selftest tests.core.test_registry` runs the test.  Each case prints
 one line.  Exit 0 when each case holds, else 1.
@@ -75,6 +75,12 @@ def other_row_cases(expect: Callable[[str, bool], None]) -> None:
            == "utils/registry.txt")
     expect("a job row with a module outside the package is refused",
            bool(problem_of("job subprocess module=os.path | a reason")))
+    registry, problems = examined("job sys.path module=bin.guard,assay.core.paths | a reason")
+    expect("a job row can name a master as an owner",
+           not problems and registry.jobs[0].modules == ("bin.guard", "assay.core.paths"))
+    expect("an owner bin.NAME with a capital letter, an underscore or a point is refused",
+           all(problem_of(f"job sys.path module={owner} | a reason") for owner in ("bin.Guard", "bin.g_x", "bin.a.b",
+                                                                                 "bin.")))
     expect("a path row that goes up is refused", bool(problem_of("path ../x | a reason")))
     _, problems = examined("path a/b | one", "path a/b | two")
     expect("a second path row with the same glob is refused", len(problems) == 1)
@@ -83,6 +89,34 @@ def other_row_cases(expect: Callable[[str, bool], None]) -> None:
     expect("the registry of the tree loads with no problem, and each measured rule has a unit of the schema",
            bool(registry.rules) and all(rule.threshold.unit in rule_registry.UNITS
                                         for rule in registry.measured().values() if rule.threshold is not None))
+
+
+def term_cases(expect: Callable[[str, bool], None]) -> None:
+    """Check the term rows: the word, the category, the meaning and a second row of one word."""
+    registry, problems = examined("term finding category=noun-19 | one record of a rule",
+                                  "term evaluate category=verb-3a | to calculate a value")
+    expect("a term row gives its word, its category, its meaning and its line",
+           not problems and [(term.word, term.category, term.meaning, term.line) for term in registry.terms]
+           == [("finding", "noun-19", "one record of a rule", 3), ("evaluate", "verb-3a", "to calculate a value", 4)])
+    expect("each category of rule 1.5 and of rule 1.12 reads",
+           not any(problem_of(f"term finding category={category} | a meaning")
+                   for category in ("noun-1", "noun-22", "verb-1a", "verb-1f", "verb-2c", "verb-3f", "verb-4")))
+    refused = {
+        "a category that is not a category of the rules": "term finding category=noun-23 | a meaning",
+        "the category verb-2d": "term finding category=verb-2d | a meaning",
+        "no category": "term finding | a meaning",
+        "no meaning": "term finding category=noun-19",
+        "an uppercase word": "term Finding category=noun-19 | a meaning",
+        "a word with a digit": "term find1ng category=noun-19 | a meaning",
+        "an unknown field": "term finding category=noun-19 colour=red | a meaning",
+    }
+    for name, row in refused.items():
+        expect(f"a term row with {name} is refused", bool(problem_of(row)))
+    _, problems = examined("term finding category=noun-19 | one", "term finding category=noun-7 | two")
+    expect("a second term row with the same word is refused, with the line of the first",
+           len(problems) == 1 and "line 3" in str(problems[0]))
+    expect("a hyphenated word is a word of the glossary", rule_registry.is_term_word("drag-and-drop")
+           and not rule_registry.is_term_word("-drag") and not rule_registry.is_term_word(""))
 
 
 def doc_cases(expect: Callable[[str, bool], None]) -> None:
@@ -117,6 +151,7 @@ def main(argv: list[str]) -> int:
 
     rule_cases(expect)
     other_row_cases(expect)
+    term_cases(expect)
     doc_cases(expect)
     if failures:
         print(f"tests.core.test_registry: FAILED, {len(failures)} case(s) did not hold")

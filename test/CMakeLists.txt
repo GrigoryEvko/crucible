@@ -5807,10 +5807,17 @@ endforeach()
 # rose with no measurement in its commit is an error, and a threshold or a
 # ledger above its lowest committed value gives a warning.  The test modules
 # of the rows grammar, the registry, the ledgers, the rule history, the
-# process module and the git module plant their input in throwaway trees.
+# process module, the git module, the paths, the run of the cases, the reader
+# of the compile database, the Python reader, the reader of the reports of
+# mypy and ruff, the package scope and the STE table plant their input in
+# throwaway trees.  The test of the import
+# closure imports the module of each hidden subcommand of the masters in a
+# new interpreter.
 crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR})
 foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test_proc core.test_git
-        guard.test_history readers.test_compdb)
+        core.test_paths core.test_testing readers.test_compdb readers.test_python readers.test_tool_reports
+        guard.test_history guard.test_import_closure guard.engines.meta.test_package
+        guard.engines.meta.test_ste_dictionary)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   add_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})

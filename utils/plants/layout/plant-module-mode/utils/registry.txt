@@ -1,0 +1,4 @@
+# a planted registry: a module with mode 755
+format 1
+path utils/assay/**/*.py | the planted module
+path utils/registry.txt | the planted registry

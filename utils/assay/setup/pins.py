@@ -360,7 +360,7 @@ def check_tools(names: list[str], root: Path | None = None) -> int:
         tool = install.TOOLS[name]
         try:
             pin = install.pin_of(tool, table)
-            directory = install.directory_of(tool, pin, base)
+            directory = install.directory_of(tool, pin, base, table)
             install.verify_installed(tool, directory, pin, table)
         except install.InstallError as error:
             print(f"setup check {name}: {error}", file=sys.stderr)

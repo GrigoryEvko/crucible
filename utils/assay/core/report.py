@@ -176,6 +176,14 @@ def escape_property(text: str) -> str:
     return escape_data(text).replace(":", "%3A").replace(",", "%2C")
 
 
+def write_line(text: str, *, is_error: bool = False) -> None:
+    """Write one line to the standard output, or to the standard error when is_error is True.
+
+    The rule job-owners holds that no different module of the package writes to a standard stream.
+    """
+    print(text, file=sys.stderr if is_error else sys.stdout)
+
+
 def parse_line(text: str) -> Finding | None:
     """Read one line of the format back into a finding.
 

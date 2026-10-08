@@ -146,6 +146,20 @@ class MetaContext:
         return list(rule_module(rule).findings(self))
 
 
+def pinned_program(tool: str) -> Path:
+    """Return what `setup install --print-bin TOOL` prints for a tool of assay.setup.install.
+
+    Raises:
+        NotApplicable: If the tool is not installed at its pin
+    """
+    from assay.setup import install
+
+    try:
+        return install.program(tool)
+    except install.InstallError as problem:
+        raise NotApplicable(str(problem)) from None
+
+
 def module_name(rule_id: str, engine: str = "meta") -> str:
     """Return the dotted name of the module of a rule."""
     return f"assay.guard.engines.{engine}.{rule_id.replace('-', '_')}"

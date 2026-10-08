@@ -129,6 +129,12 @@ jobs:
       - name: Install the pinned ast-grep
         run: python3 utils/bin/setup install ast-grep
 
+      # The rule types runs the pinned mypy, and the rule python-lint runs the
+      # pinned ruff.  pip installs each wheel with the SHA-256 of its pin into
+      # the tools directory of the shared cache root.
+      - name: Install the pinned mypy and ruff
+        run: python3 utils/bin/setup install mypy ruff
+
       # The self-test of the rule no-ffast-math and the plants of the rule
       # test-registration configure a scratch project.
       - name: Install the pinned CMake and ctest
@@ -212,13 +218,15 @@ jobs:
       # The rules of the engine meta read the registry, the ledgers, the plants,
       # the modules of the package and the git history.  The witness runs each
       # rule on its plants of utils/plants/.  The rule structured-reads reads
-      # shell with the pinned ast-grep that a step above installs.  The rule
+      # shell with the pinned ast-grep, and the rules types and python-lint run
+      # the pinned mypy and ruff, that the steps above install.  The rule
       # test-registration reads the tests of a configured build, so its scan
       # runs in the build legs through ctest, and here it does not apply.
       - name: the rules of the engine meta (witness + scan)
         run: |
           for rule in history layout registry-shape rule-implementations rule-witness structured-reads \
-                      test-registration; do
+                      test-registration determinism exit-codes import-closure job-owners module-tests no-shell \
+                      one-implementation python-lint ste-prose typed-data types; do
             python3 utils/bin/guard witness --rule "$rule"
           done
           python3 utils/bin/guard check --engine meta
@@ -433,12 +441,12 @@ jobs:
       # headers include when the configure step builds the contract plugin.
       # `setup install` downloads each pinned tool with Python, checks its
       # SHA256 and unpacks it, so the job needs no download tool.  CMake comes
-      # from the pin, not dnf.
+      # from the pin, not dnf.  pip installs the pinned mypy and ruff.
       - name: Install toolchain + BPF stack + ccache
         run: >
           dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
           gcc-c++ isl gmp-devel ninja-build git ripgrep ccache diffutils
-          clang llvm xxd bpftool libbpf-devel
+          clang llvm xxd bpftool libbpf-devel python3-pip
 
       # The patched GCC that the patched-gcc job built.  CRUCIBLE_CXX names it.
       - name: Restore the patched GCC
@@ -494,6 +502,12 @@ jobs:
       # The rule structured-reads reads shell scripts with the pinned ast-grep.
       - name: Install the pinned ast-grep
         run: python3 utils/bin/setup install ast-grep
+
+      # The rule types runs the pinned mypy, and the rule python-lint runs the
+      # pinned ruff.  pip of the package python3-pip installs each wheel with
+      # the SHA-256 of its pin.
+      - name: Install the pinned mypy and ruff
+        run: python3 utils/bin/setup install mypy ruff
 
       - name: Install the pinned CMake and ctest
         uses: ./.github/actions/pinned-cmake

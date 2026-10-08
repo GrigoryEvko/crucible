@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+"""A planted master: a master has no test module."""
+
+
+def main() -> int:
+    """Return 0."""
+    return 0

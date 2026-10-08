@@ -1,0 +1,4 @@
+# a planted registry: a master with mode 644
+format 1
+path utils/bin/* | the planted master
+path utils/registry.txt | the planted registry

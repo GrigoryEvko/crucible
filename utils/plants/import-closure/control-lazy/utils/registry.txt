@@ -1,0 +1,4 @@
+# A planted registry: the owner of the job argparse.
+format 1
+
+job argparse module=assay.core.cli | the planted owner of argparse

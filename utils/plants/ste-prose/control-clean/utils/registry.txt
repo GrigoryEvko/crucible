@@ -1,0 +1,7 @@
+# A planted registry: one rule and one term.
+format 1
+
+rule one-implementation engine=meta scope=package ledger=count doc=XV | a planted refusal | a planted action
+
+term finding category=noun-19 | one record of a rule
+term raise category=verb-2c | to raise an exception in Python

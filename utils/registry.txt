@@ -4,8 +4,13 @@
 # the rows grammar of assay.core.rows: a word is a field KEY=VALUE, and " | " divides the cells.
 #
 #   rule ID engine=ENGINE scope=SCOPE ledger=POLICY [FIELD=VALUE]... doc=REF | WHAT THE RULE REFUSES | THE ACTION
-#   job ENTITY module=MODULE[,MODULE...] | WHY THE JOB HAS ONE OWNER
+#   job ENTITY module=OWNER[,OWNER...] | WHY THE JOB HAS ONE OWNER
 #   path GLOB | WHAT THE FILES ARE
+#   term WORD category=CATEGORY | ITS MEANING IN THIS PROJECT
+#
+# An owner of a job is a module of the package, such as assay.core.proc, or a master, such as bin.guard.  A term row
+# gives a word that the STE dictionary refuses, and its category: a technical-noun category noun-N of rule 1.5, or a
+# technical-verb category verb-N of rule 1.12.  The rule ste-prose then refuses no shape of the word.
 #
 # A measured rule has warn, error and unit.  A value over the warning threshold gives a warning, which does not
 # fail.  A value over the error threshold gives an error, which fails.  A value equal to a threshold does not
@@ -43,6 +48,7 @@ rule custom-deps engine=build scope=builddir ledger=none legacy=guard.legacy.che
 rule decide-cite-ratio engine=tsast scope=include/,src/ ledger=none legacy=guard.legacy.audit_decide_cite_ratio doc=XII | a procedure of the decide catalog with fewer than two production cites 180 days after it entered Decide.h | cite the procedure, or remove it from the catalog
 rule derived-pins engine=tsast scope=include/,src/,test/,bench/,utils/tools/,vessel/ ledger=admit doc=XIII | a static_assert that pins a constant to its own literal | pin the constant to a value that its source derives
 rule detail-namespace engine=tsast scope=tracked ledger=count legacy=guard.legacy.check_detail_namespace doc=XV | a use of a detail namespace of the base outside the base | use the public name of the base
+rule determinism engine=meta scope=package ledger=count doc=XV | a listing of a directory that is not the first argument of sorted(), and a read of the wall clock in a module that is not assay.core.meter, assay.core.host or assay.loop.history | sort the listing or call assay.core.paths.listing(), and read the wall clock in one of its owners
 rule detsafe-ledger engine=tsast scope=include/ ledger=none legacy=guard.legacy.check_detsafe_ledger doc=II | a header on the hashing path that reaches the hardware ledger | remove the include of the ledger from the hashing path
 rule edit-build-cpu engine=build scope=builddir ledger=none warn=2500 error=3000 unit=s held-by=loop-gauge doc=XV.17 | the user and system CPU time of the build after one code edit of a base header, the median of the runs of loop gauge.  A warning only when the step has an exact instruction count | make the build after an edit smaller
 rule edit-build-instructions engine=build scope=builddir ledger=none warn=11000 error=11800 unit=G held-by=loop-gauge doc=XV.17 | the user instructions of each process of the build after one code edit of a base header, the median of the runs of loop gauge.  Three runs on 2026-10-02 gave 10750 G to 10752 G, so the count does not change with the load of the host | make the build after an edit smaller
@@ -51,6 +57,7 @@ rule edit-test-cpu engine=build scope=builddir ledger=none warn=2500 error=5000 
 rule edit-test-instructions engine=build scope=builddir ledger=none warn=17000 error=18500 unit=G held-by=loop-gauge doc=XV.17 | the user instructions of each process of the full ctest run after that build, the median of the runs of loop gauge.  A test that spins runs more instructions on a busy host: four runs on 2026-10-02 gave 15825 G with 7 % of the host CPU time used by other processes, and 16429 G with 21 % | make the tests after an edit smaller
 rule edit-test-wall engine=build scope=builddir ledger=none warn=15 error=30 unit=s held-by=loop-gauge doc=XV.17 | the wall time of the full ctest run after that build at 192 jobs, the median of the runs of loop gauge, judged only when other processes used at most 10 % of the host CPU time in each run | make the tests after an edit shorter
 rule escape-doors engine=tsast scope=include/ ledger=admit legacy=guard.legacy.check_escape_doors doc=XVI | a public function that hands out a raw reference or pointer and is not an accessor, a mint or a hatch | make the function an accessor, a mint or a hatch, or add a row with a reason
+rule exit-codes engine=meta scope=package ledger=count doc=XV | a call of sys.exit, os._exit, exit or quit, and a raise of SystemExit, with a status that is not a member of assay.core.exit.ExitCode | give the exit a member of ExitCode
 rule federation-admission engine=tsast scope=tracked ledger=none legacy=guard.legacy.check_federation_admission doc=XVI | a definition of FederationAdmission, or of a part of it, outside fixy/Federation.h | define the admission only in fixy/Federation.h
 rule fixture-cpu engine=build scope=builddir ledger=max warn=5 error=15 unit=s held-by=loop-fixture doc=XV.9 | the user and system CPU time of one negative-fixture compile that the result store does not hold.  The kernel splits the CPU time of a process by tick samples, so a short compile can get 0 s of user time.  When the compile has an instruction count, fixture-instructions holds the error level, and this rule gives a warning only | make the fixture include only the header that it attacks
 rule fixture-instructions engine=build scope=builddir ledger=max warn=28 error=45 unit=G held-by=loop-fixture doc=XV.9 | the user instructions of one negative-fixture compile | make the fixture include only the header that it attacks
@@ -69,7 +76,9 @@ rule heavy-include engine=tsast scope=include/ ledger=count warn=1.25 error=1.25
 rule history engine=meta scope=utils/registry.txt,utils/ledgers/,utils/scripts/ ledger=admit doc=XV | a threshold that rose with no measurement in its commit, and a count of the quarantine ledger that rose with no change of the plugin or the rule table.  A threshold above its lowest committed value and a ledger above its lowest committed count give a warning | give the measurement in the commit, or add a row with the measurement as its reason
 rule host-owners engine=tsast scope=include/ ledger=admit legacy=guard.legacy.check_host_owners doc=XVI | a context owner of a host namespace outside its listed file | define the owner in its listed file
 rule hw-axis-rows engine=tsast scope=include/,src/,test/test_hardware_axis_pins.cpp ledger=none doc=XVI | a hardware-axis block with no pin row, or a pin row with no live block | give each block a row of test_hardware_axis_pins.cpp, outside each preprocessor conditional
+rule import-closure engine=meta scope=package ledger=count doc=XV | an import of argparse, concurrent.futures, multiprocessing or logging at module level in a module that is not the owner of the job of that import | import the module in the function that uses it
 rule instruction-total engine=build scope=builddir ledger=baseline warn=2 error=5 unit=% legacy=guard.legacy.check_parse_cost legacy-args=--check,instruction-total doc=XV.16 | the growth of the user instructions of the last real compile of each object of all and each negative fixture, over the baseline row of the build kind.  A fall of more than the warning threshold is an error too, so the baseline does not stay above the sum.  Two clean builds of one tree differ by less than 0.01 % in the sum | remove the growth, or write the baseline again with a reason
+rule job-owners engine=meta scope=package,utils/registry.txt ledger=count doc=XV | a use of a shared job of a job row in a module or a master that is not an owner of the job, a job row with no recognizer, and a recognizer with no job row | call the owner of the job
 rule layer-boundary engine=tsast scope=include/,src/ ledger=none legacy=guard.legacy.check_layer_boundary doc=XXII | a name of a higher layer in a lower layer: foundation names only foundation, and fixy names only foundation and fixy | move the code to its layer
 rule layout engine=meta scope=tracked ledger=admit doc=XV | a file of utils/, or a Python or shell file outside it, that no path row of the registry holds, a path row that holds no file, a file that does not obey the naming rule of its directory, and a file CLAUDE.md or AGENTS.md outside the root of the tree | give the file a path row, or move it to the place that a path row gives.  Move the text of a guide outside the root into the guide at the root
 rule ledger-owners engine=meta scope=utils/ledgers/,utils/registry.txt ledger=none doc=XV | a ledger file of no rule or of a rule with the policy none, a row that does not have the cells of its policy, a PATH cell that names no file of the tree, and a row with no reason where its policy makes one necessary | give the row the cells of the policy of its rule, name a file of the tree, and give the reason
@@ -81,15 +90,18 @@ rule link-time engine=build scope=builddir ledger=max warn=2 error=5 unit=s lega
 rule lock-free-asserts engine=tsast scope=include/crucible/canopy/,include/crucible/cntp/,include/crucible/topology/,include/crucible/warden/ ledger=admit inputs=test/layer/checks/crucible/ doc=X | a cross-thread std::atomic of the canopy, cntp, topology and warden directories with no lock-free assert beside it | add the assert, or use fixy::Atomic
 rule mint-floor engine=tsast scope=include/,test/ ledger=admit legacy=loop.derive.mint_inventory legacy-args=--check-floor doc=XVIII | a mint with fewer than two negative-compile fixtures in the directory of its layer (HS14) | add a fixture that the constraint of the mint refuses, or add a row with a reason
 rule mint-pattern engine=tsast scope=include/ ledger=admit legacy=guard.legacy.check_mint_pattern doc=XXI | a mint that is not nodiscard, constexpr and noexcept with one constraint that gates its context | give the mint the shape of section XXI, or add a row with a reason
+rule module-tests engine=meta scope=package ledger=count doc=XV | a module of the package with a function or a method and no test module in utils/assay/tests/, other than the module of a rule | write the test module, and register it in test/CMakeLists.txt
 rule no-combine-ids-duplicate engine=tsast scope=include/ ledger=none legacy=guard.legacy.check_no_combine_ids_duplicate doc=XVI | a second body of combine_ids | fold through the one body of combine_ids
 rule no-coordination-refs engine=tsast scope=tracked ledger=none legacy=guard.legacy.check_no_coordination_refs doc=XVIII | a task, stage or tracker reference in the prose of the tree | tell what the code does, with no reference to the work that made it
 rule no-ffast-math engine=build scope=builddir ledger=admit legacy=guard.legacy.check_no_ffast_math doc=V | a flag, a preset, an attribute or a pragma that turns on a fast-math option | keep the FP floor of cmake/FpStrict.cmake
 rule no-raw-array-member engine=tsast scope=include/foundation/,include/fixy/ ledger=admit legacy=guard.legacy.check_no_raw_array_member doc=II | a C array data member in a base header | use a fixed array of the base
+rule no-shell engine=meta scope=utils/ ledger=none doc=XV | a shell script in utils/, other than in a plant: a file with the suffix .sh, or with a shebang of a shell | write the job as a module of the package that a master starts
 rule no-throw-no-rtti engine=elf scope=builddir ledger=admit legacy=guard.legacy.check_no_throw_no_rtti doc=XII | a throw, a downcast or a polymorphic type in a static library of the tree that the ledger does not admit, and a row that admits nothing | return the error with std::expected or abort, or add a row with a reason when a library header makes the throw
 rule no-unchecked-access engine=tsast scope=tracked ledger=admit legacy=guard.legacy.check_no_unchecked_access doc=XVI | access_context::unchecked() outside a reviewed reflection walk, an open static data member, or a walked return of a private member | use the reviewed walk, or add a row with a reason
 rule no-unity-pch engine=build scope=builddir ledger=none legacy=guard.legacy.check_no_unity_pch doc=XV.6 | a unity build or a precompiled header | compile each unit alone
 rule noop-build-time engine=build scope=builddir ledger=none warn=0.5 error=0.5 unit=s held-by=loop-history doc=XV | the wall time of cmake --build when no edge but the glob check of CMake runs, from the loop history and loop gauge.  It took 0.2 s on 2026-10-02.  A warning only | make the check of the build graph shorter
 rule object-text engine=build scope=builddir ledger=max warn=512 error=768 unit=KB legacy=guard.legacy.check_compile_cost legacy-args=--check,object-text doc=XV.5 | the machine code of one object: the sum of its allocated, executable sections | divide the unit, or add a ledger row with a reason
+rule one-implementation engine=meta scope=package ledger=count doc=XV | two function bodies of 20 nodes or more with the same canonical tokens, and two such bodies with sets of node 5-grams that have a Jaccard index of 0.8 or more | keep one body, and call it from each caller
 rule padded-list engine=tsast scope=tracked ledger=count warn=63 error=63 unit=elements legacy=guard.legacy.check_padded_lists doc=XV.7 | a fixed list of more elements than this count whose element type has a padding bit | make each padding byte a member
 rule parse-clean engine=tsast scope=tracked ledger=admit doc=XV | a C++ file that the parse kit does not parse | write the file in a form that the grammar of the kit reads, or report the gap of the grammar
 rule parse-total engine=build scope=builddir ledger=baseline warn=2 error=5 unit=% legacy=guard.legacy.check_parse_cost legacy-args=--check,parse-total doc=XV.16 | the growth of the bytes that the compiles of the objects of all and of the negative fixtures read, over the baseline row of the build kind.  A fall of more than the warning threshold is an error too, so the baseline does not stay above the sum | remove the growth, or write the baseline again with a reason
@@ -98,6 +110,7 @@ rule preprocessed-fill engine=build scope=builddir ledger=none legacy=guard.prep
 rule process-wide-state engine=tsast scope=tracked ledger=admit legacy=guard.legacy.check_process_wide_state doc=XV | a mutable object with static storage duration with no CRUCIBLE_PROCESS_WIDE marker and no roster row | mark the object, or give the roster a row with a reason
 rule proof-routes engine=tsast scope=tracked ledger=count legacy=guard.legacy.check_proof_routes doc=XXI | a union, a cast of a void pointer, an allocator, an explicit instantiation or a specialization that builds a proof type with no call to its door | build the proof only through its door
 rule prose-paths engine=tsast scope=tracked ledger=none legacy=guard.legacy.check_prose_paths doc=XIX | a path in the guidance prose at the root of the tree that names no file | name the path of the file, or write a placeholder that does not read as a path
+rule python-lint engine=meta scope=package ledger=count doc=XV | an issue of the pinned ruff with the default rules of its version, the line length 120 and the target py314, and a file of the package that ruff format changes | correct the code, or format the file with the pinned ruff
 rule quarantine engine=plugin scope=quarantined ledger=count legacy=guard.legacy.check_quarantine_ratchet doc=XXII.R11 | a count of quarantine findings of a file, a kind and an entity above its row, a file with a finding and no row, and a count below its row | use a type of the base, or write the ledger again when a count falls
 rule quarantine-plugin engine=plugin scope=quarantined ledger=none legacy=guard.legacy.check_plugin doc=XXII | a fixture of the plugin test whose findings are not the expected findings | make the plugin give each expected finding, and only there
 rule quarantine-regions engine=tsast scope=tracked ledger=count legacy=guard.legacy.check_quarantine_regions doc=XXII.R7 | an opt-out region with no row of its ledger | remove the region, or add its row with --admit and the reason in the commit
@@ -109,6 +122,7 @@ rule rule-implementations engine=meta scope=package,utils/registry.txt ledger=ad
 rule rule-witness engine=meta scope=utils/plants/,utils/registry.txt ledger=admit doc=XV | a rule with no plant or no control in utils/plants/RULE/, and a plants directory of no rule | write a plant that the rule refuses and a control that it accepts
 rule session-oracle engine=build scope=include/fixy/session/ ledger=none legacy=oracle.runner doc=XIII | an answer of a session relation that the golden table of the oracle does not give | correct the relation, or write the golden table again from the oracles
 rule splits-orphan engine=tsast scope=tracked ledger=none legacy=guard.legacy.check_splits_orphan doc=IX | a specialization of a split trait away from the declarations of its tags | specialize the trait beside its tags
+rule ste-prose engine=meta scope=package,utils/registry.txt ledger=count doc=XV | in a docstring or a comment of the package: a word that the STE dictionary refuses and no term row holds, a semicolon, a contraction, the word thus, and a sentence of more than 25 words.  Also the module of a rule, and a function of a reader that lists files, with no Complexity: line | write the sentence again in STE, or give the word a term row when the project uses it as a technical noun or verb
 rule start-lifetime engine=tsast scope=tracked ledger=admit legacy=guard.legacy.check_start_lifetime doc=II | std::start_lifetime_as or std::start_lifetime_as_array outside foundation/Lifetime.h | use the doors of foundation/Lifetime.h
 rule structured-reads engine=meta scope=package,tracked ledger=count doc=XV | a read of C++ as text, a regex call outside a reader, a read of a structured format outside its reader, a git command outside assay.core.git, and a git write that does not isolate its repository | read the input through its reader, run git through assay.core.git, and isolate a throwaway repository with assay.core.git
 rule stub-discipline engine=tsast scope=include/ ledger=none legacy=guard.legacy.check_stub_discipline doc=XVIII | a stub marker with no CRUCIBLE_STUB deprecation in its header, or a deprecation with no marker | put the marker and the deprecation together
@@ -122,14 +136,52 @@ rule total-fixture-cpu engine=build scope=builddir ledger=none warn=3000 error=3
 rule total-link-cpu engine=build scope=builddir ledger=none warn=40 error=40 unit=s held-by=guard-warnings doc=XV | the CPU time of the link records of a build directory, added.  The 351 links of a build of all took 20 s on 2026-10-02.  A warning only | link fewer or smaller executables
 rule total-test-cpu engine=build scope=builddir ledger=none warn=120 error=120 unit=s held-by=guard-warnings doc=XV.16 | the CPU time of each executable test in its last run, added.  A script test has no record.  A warning only | make the tests shorter
 rule trait-guard engine=tsast scope=tracked ledger=count legacy=guard.legacy.check_trait_injection doc=XVI | a specialization of a substrate trait or a fail-closed relation away from its declaration, and a gate that reads a template that a unit can specialize | specialize the trait beside its declaration, or close the gate
+rule typed-data engine=meta scope=package ledger=count doc=XV | a dataclass with no frozen=True or no slots=True, and the type dict[str, str], dict[str, object] or dict[str, Any] in the signature of a public function or in a field | make the record a frozen dataclass with slots and the closed set an enumeration, or add a row with the reason of a class that changes
+rule types engine=meta scope=package ledger=count doc=XV | an error of the pinned mypy with --strict on the package and the masters | give the code the types that mypy asks for
 rule use-after-move engine=tsast scope=tracked ledger=count legacy=guard.legacy.check_use_after_move doc=XVI | a use of a local after std::move on a path, with no assignment that builds it again first | use the value before the move, or build it again
 rule use-after-move-attacks engine=tsast scope=tracked ledger=none legacy=guard.legacy.test_use_after_move_attacks doc=XVI | a use after move that the rule use-after-move learns, while its row stays on the ledger of misses | remove the row of the miss
 rule vessel-acceptance engine=build scope=vessel/ ledger=none legacy=guard.legacy.check_vessel_acceptance doc=XIII | a vessel that does not build or whose Python tests fail | correct the vessel
 rule walk-units engine=tsast scope=test/layer/ ledger=none legacy=guard.legacy.check_walk_units doc=XV.1 | a check file that walks a namespace and that test/layer/walk-checks.txt does not list, and a listed file that walks none | write the list again with --write
 rule witness-roster engine=tsast scope=include/ ledger=admit legacy=guard.legacy.check_witness_roster doc=XXI | a door class with no roster row, and a fixture that its roster row does not produce | add the row, and write the fixtures again with --gen
 
+job argparse module=assay.core.cli | the import of argparse costs 6.3 ms.  One module imports it, at the first call of a parser
+job cache-root module=assay.core.cache | one module finds the cache root, and each cache of the package is under that root
+job cost-record module=assay.core.record | one module reads and writes a cost record, and each record has one format
+job ctest-log module=assay.readers.ctest | one reader reads the files that ctest writes
 job git module=assay.core.git | each git command resolves the repository of the directory that it names, has a time limit, and gives the answer that its caller asks for
+job print module=assay.core.report | one module writes to the standard streams, and each finding has one format
+job repository-root module=assay.core.paths | one module finds the root of the tree from its own place
+job row-bar module=assay.core.rows | one reader divides a row at its bars, and each data file has one grammar
 job subprocess module=assay.core.proc | each process start has a time limit, a known environment and no shell, and the process group of a command stops at its limit
+job sys.path module=bin.guard,bin.loop,bin.setup | a master changes the module path before it imports the package, and no module changes it
+
+term acceptance category=noun-15 | the tests of a gate, as in the rule vessel-acceptance and the acceptance tests of a stage of the plan
+term admit category=verb-2b | a row of a ledger of the policy admit admits a finding: the rule then gives a warning, and no error, for that finding
+term annotation category=noun-19 | a type annotation of Python: the type of a parameter, of a return value or of a field
+term block category=noun-19 | a block of source code: the statements that a with, a try, an if or an except holds
+term bump category=noun-19 | a bump pointer and a bump arena: an allocator that moves one pointer forward for each allocation
+term capability category=noun-19 | a value of a type of the effect system that gives the right to one effect, such as the capability Alloc
+term escape category=verb-2b | to write a backslash before a character of a text: a reader then reads the character, and not a mark of the grammar
+term evaluate category=verb-3a | to calculate the value of an expression, as the compiler does in a constant evaluation
+term evaluation category=noun-19 | a constant evaluation of C++: the calculation of an expression at compile time
+term event category=noun-19 | an event of the kernel or of a counter of the processor, such as a perf event
+term extent category=noun-19 | the number of the items of a view or of an array of C++, as in std::extent and a fixed extent
+term finding category=noun-19 | one record of a rule of the utils system: a place, a level, a kind, an entity and a message
+term hook category=noun-19 | a point of the compiler where a GCC plugin gets control, such as PLUGIN_FINISH_UNIT
+term kind category=noun-19 | the part of a rule that a finding belongs to, such as std-object of the rule quarantine
+term main category=noun-19 | the name of the primary branch of the repository, and the function main of a module
+term match category=verb-2b | to agree with a pattern: a glob matches a path, and a regular expression matches a text
+term option category=noun-19 | an option of a command line, such as --write, or an option of the compiler
+term pack category=noun-19 | a parameter pack of C++: the list of the types or the values of a variadic template
+term program category=noun-19 | a program that a computer starts: an executable file or a script
+term raise category=verb-2c | to raise an exception in Python.  The heading Raises: of a docstring gives the exceptions of a function
+term reason category=noun-19 | the reason cell of a ledger row, and the reason text of an opt-out region
+term reflect category=verb-2c | to give the reflection of a declaration of C++, as the operator ^^ does
+term stage category=noun-19 | a stage of a pipeline of threads, and a stage of the plan of the migration
+term state category=noun-19 | the values that a program or an object holds at one time, as in a state machine
+term swap category=noun-19 | the swap space of a host, and an atomic swap of a pointer
+term transition category=noun-19 | a transition of a state machine from one state to the next state
+term usage category=noun-19 | the usage text of a command: the words of its command line
 
 path test/harness/check_output.py | a test of two C++ probes of the product, as a C++ test executable is.  It is outside the utils system
 path utils/assay/**/*.py | the modules of the package

@@ -1,0 +1,4 @@
+#!/usr/bin/env python3
+"""A planted master: SystemExit takes a number."""
+
+raise SystemExit(1)

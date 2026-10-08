@@ -11,6 +11,7 @@ line.  Exit 0 when each case holds, else 1.
 
 import os
 import shutil
+import stat
 import sys
 import tempfile
 import time
@@ -194,9 +195,13 @@ def check_cases(expect: Expect, work: Path) -> None:
     ast_grep = install.TOOLS["ast-grep"]
     ast_grep_pin = install.pin_of(ast_grep, table, "linux-x86_64")
     expect("the version check of ast-grep accepts the pinned version",
-           not refused(lambda: install.check_ast_grep_version(f"ast-grep {ast_grep_pin.version}", ast_grep_pin.version)))
+           not refused(lambda: install.check_named_version("ast-grep", f"ast-grep {ast_grep_pin.version}",
+                                                           ast_grep_pin.version)))
     expect("the version check of ast-grep rejects another version",
-           refused(lambda: install.check_ast_grep_version("ast-grep 0.1.0", ast_grep_pin.version), 2))
+           refused(lambda: install.check_named_version("ast-grep", "ast-grep 0.1.0", ast_grep_pin.version), 2))
+    expect("the version check rejects the line of a different program",
+           refused(lambda: install.check_named_version("ruff", f"ast-grep {ast_grep_pin.version}",
+                                                       ast_grep_pin.version), 2))
     expect("the fixture check accepts the one real command", not refused(lambda: install.check_fixture_lines("0")))
     for lines, what in (("0,2", "a match in the heredoc body"), ("0,4", "a match in the comment"), ("", "no match")):
         expect(f"the fixture check rejects {what}", refused(lambda: install.check_fixture_lines(lines), 2))
@@ -224,7 +229,7 @@ def check_cases(expect: Expect, work: Path) -> None:
     for name, slug in (("tree-sitter", "linux-x64"), ("ast-grep", "x86_64-unknown-linux-gnu"), ("cmake", "x86_64")):
         tool = install.TOOLS[name]
         pin = install.pin_of(tool, table, "linux-x86_64")
-        directory = install.directory_of(tool, pin, root)
+        directory = install.directory_of(tool, pin, root, table)
         expect(f"the directory of {name} is in the tools directory, and its name holds the version, the platform "
                f"and the digest tag",
                directory.parent == root and directory.name == f"{tool.prefix}{pin.version}-{slug}-{pin.digest[:16]}")
@@ -308,6 +313,78 @@ def install_cases(expect: Expect, work: Path) -> None:
            refused(lambda: install.installed("ast-grep", work / "nothing", table), 3))
 
 
+# ── A tool of via=pip with no network ──────────────────────────────
+
+
+def planted_wheel(directory: Path, version: str) -> Path:
+    """Write the wheel of a stand-in ruff with a program that gives VERSION, and return its path."""
+    name = f"ruff-{version}"
+    files = {
+        f"{name}.dist-info/METADATA": f"Metadata-Version: 2.1\nName: ruff\nVersion: {version}\n",
+        f"{name}.dist-info/WHEEL": "Wheel-Version: 1.0\nGenerator: planted\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+        f"{name}.data/scripts/ruff": f'#!/bin/sh\necho "ruff {version}"\n',
+    }
+    record = "".join(f"{path},,\n" for path in (*files, f"{name}.dist-info/RECORD"))
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{name}-py3-none-any.whl"
+    with zipfile.ZipFile(path, "w") as archive:
+        for member, text in files.items():
+            entry = zipfile.ZipInfo(member)
+            # The type and the mode of the entry, as the wheel of ruff gives them.  pip gives a script its mode bit
+            # only when the entry is a regular file with a mode bit.
+            entry.external_attr = (stat.S_IFREG | (0o755 if "/scripts/" in member else 0o644)) << 16
+            archive.writestr(entry, text)
+        archive.writestr(f"{name}.dist-info/RECORD", record)
+    return path
+
+
+def planted_pip_table(source: Path, digest: str, version: str = "9.9.9") -> install.Pins:
+    """Return a pin table with one ruff of via=pip for this host, with the source and the digest."""
+    return pin_table.parse(f"# a planted pin table\nformat 1\npin ruff via=pip version={version} "
+                           f"platform={pin_table.host_platform()} source=file://{source} sha256={digest} "
+                           f"| a stand-in\n", "planted")
+
+
+def pip_cases(expect: Expect, work: Path) -> None:
+    """Install a planted wheel with pip, and refuse an incorrect digest and a tool of a different version."""
+    table = pin_table.load()
+    mypy_pin = install.pin_of(install.TOOLS["mypy"], table, "linux-x86_64")
+    pins = install.required_pins("mypy", install.MYPY_REQUIRES, mypy_pin, table)
+    text = install.requirements(pins)
+    expect("the requirements file of mypy names each pin with its URL and its SHA-256",
+           [pin.name for pin in pins] == ["mypy", *install.MYPY_REQUIRES]
+           and all(f"{pin.name} @ {pin.source} --hash=sha256:{pin.digest}\n" in text for pin in pins))
+    directory = install.directory_of(install.TOOLS["mypy"], mypy_pin, work, table)
+    expect("the directory of mypy has the digest tag of all its pins, and not of the pin of mypy only",
+           directory.name.startswith(f"mypy-{mypy_pin.version}-x86_64-")
+           and not directory.name.endswith(mypy_pin.digest[:16]))
+    expect("a tool that requires a pin that the table does not hold is refused with the status 4",
+           refused(lambda: install.required_pins("mypy", ("absent-package",), mypy_pin, table), 4))
+    expect("the version check of mypy accepts the compiled pinned version, and rejects a mypy of pure Python",
+           not refused(lambda: install.check_mypy_version("mypy 2.4.0 (compiled: yes)", "2.4.0"))
+           and refused(lambda: install.check_mypy_version("mypy 2.4.0 (compiled: no)", "2.4.0"), 2))
+    if pin_table.host_platform() not in install.TOOLS["ruff"].slugs:
+        expect("the install cases of pip need a host platform of ruff", True)
+        return
+    good = planted_wheel(work / "wheels" / "good", "9.9.9")
+    root = work / "install"
+    installed = install.install("ruff", root, copy_fetch, planted_pip_table(good, install.sha256_of(good)))
+    expect("pip installs a planted wheel with its SHA-256 into the site directory, and the install stamps it",
+           (installed / install.SITE / "bin" / "ruff").is_file()
+           and (installed / install.STAMP).read_text() == f"ruff 9.9.9 {install.sha256_of(good)}\n"
+           and leftovers(root) == [])
+    wrong_root = work / "wrong-digest"
+    expect("pip refuses a wheel whose SHA-256 is not the digest of its pin, with the status 2, and installs nothing",
+           refused(lambda: install.install("ruff", wrong_root, copy_fetch, planted_pip_table(good, "0" * 64)), 2)
+           and sorted(child.name for child in wrong_root.iterdir()) == [])
+    other = planted_wheel(work / "wheels" / "other", "9.9.8")
+    other_root = work / "other-version"
+    expect("an install refuses a ruff that gives a version that is not the pin, with the status 2, and adds nothing",
+           refused(lambda: install.install("ruff", other_root, copy_fetch,
+                                           planted_pip_table(other, install.sha256_of(other), "9.9.9")), 2)
+           and sorted(child.name for child in other_root.iterdir()) == [])
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and print one line for each.
 
@@ -326,7 +403,8 @@ def main(argv: list[str]) -> int:
 
     with tempfile.TemporaryDirectory(prefix="test-install-") as scratch:
         work = Path(scratch)
-        for group, cases in (("directories", directory_cases), ("checks", check_cases), ("installs", install_cases)):
+        for group, cases in (("directories", directory_cases), ("checks", check_cases), ("installs", install_cases),
+                             ("pip", pip_cases)):
             (work / group).mkdir()
             cases(expect, work / group)
     if failures:

@@ -22,8 +22,26 @@ THE TOOLS
     oracle       The toolchain of the crash-stop oracle of the session oracle
                  (the pins temurin-jdk, sbt and mcrl2), which
                  assay.setup.oracle installs into the cache of the oracle.
+    mypy         The type checker of the rule types (the pin mypy and the
+                 pins of its packages: ast-serialize, librt, mypy-extensions,
+                 pathspec and typing-extensions).
+                 --print-bin prints the site directory of the packages.  The
+                 rule starts mypy with `python3 -I -S` and that directory
+                 first in sys.path.
+    ruff         The linter and the formatter of the rule python-lint (the pin
+                 ruff).  --print-bin prints the binary.
     No tool comes from PATH, because a program of PATH is an input that no pin
     holds.
+
+THE PIP TOOLS
+    mypy and ruff are rows of via=pip.  The install writes the file
+    `requirements.txt` of pip with the URL and the SHA-256 of each pin of the
+    tool.  The file is in a temporary directory that the install removes
+    after it.  Then this Python runs pip with `--require-hashes`, `--no-index`
+    and `--only-binary :all:`.  pip installs each wheel into the site
+    directory of the staging directory.  pip refuses a download with a
+    different SHA-256, and a package that the file does not hold.  The tool
+    goes into the tools directory, and not into the Python of the user.
 
 FAIL-CLOSED PINNING
     The download must have the SHA-256 of its pin.  The install does not read
@@ -32,15 +50,18 @@ FAIL-CLOSED PINNING
     After the unpack, the kit must give the pinned lineage in MANIFEST.txt
     and parse a fixture that only the fork parses, ast-grep must give its
     pinned version and read a fixture as the guards need, and cmake and
-    ctest must give their pinned version.  A failure at each step installs
-    nothing.
+    ctest must give their pinned version.  mypy must give its pinned version
+    and the word that its compiled wheel gives, and ruff must give its pinned
+    version.  A failure at each step installs nothing.
 
 THE DIRECTORIES
     Each tool lives in the tools directory of assay.core.cache (tools_root()),
     outside each checkout, so each checkout, each work tree and each export of
     a guard run uses one install.  The name of the directory of a tool holds
     its pinned version, its platform and the first 16 hexadecimal digits of
-    its pinned SHA-256, so two pins never share a directory.  An install
+    its pinned SHA-256, so two pins never share a directory.  A tool with
+    more pins, such as mypy, has the digits of the SHA-256 of the name and the
+    digest of each of its pins.  An install
     unpacks into a staging directory under the tools directory, and it moves
     the verified directory into place with one rename.  A rename never
     replaces a directory that holds a tool, so a process that uses a tool
@@ -67,6 +88,7 @@ is absent.
 `guard selftest tests.setup.test_install` does a test of the module.
 """
 
+import functools
 import hashlib
 import json
 import os
@@ -113,6 +135,19 @@ KIT_FIXTURE = "void g(int);\nvoid f() {\n    g(\n#ifdef A\n        1\n#else\n   
 AST_GREP_FIXTURE = ('git -C "$tmp" commit -q -m x\ncat > note <<EOF\ngit commit -m fixture\nEOF\n'
                     '# git commit -m example\n')
 AST_GREP_PATTERN = "git $$$ARGS"
+# The options of pip for a tool of via=pip (THE PIP TOOLS): no configuration file and no environment of pip, no index,
+# a hash for each package, wheels only, no cache, and no warning about the packages of the Python that runs pip.
+PIP_OPTIONS = ("--isolated", "--no-index", "--require-hashes", "--only-binary", ":all:", "--no-cache-dir",
+               "--disable-pip-version-check", "--no-input", "--no-warn-conflicts")
+# The time limit of one run of pip.
+PIP_TIMEOUT_S = proc.TOOL_S
+# The error of a Python with no pip, in the output of `python3 -m pip`.
+NO_PIP = "No module named pip"
+# The directory of a tool of via=pip that holds its packages.
+SITE = "site"
+# The start of mypy from the site directory that is the first argument: `python3 -I -S -c MYPY_START SITE ARG...`.
+MYPY_START = ("import sys; sys.path.insert(0, sys.argv.pop(1)); sys.argv[0] = 'mypy'; "
+              "from mypy.__main__ import console_entry; console_entry()")
 
 # The rows of a pin table.
 type Pins = tuple[pin_table.Pin, ...]
@@ -248,15 +283,16 @@ def download(url: str, target: Path) -> None:
     raise InstallError(f"the download of {url} fails: {problem}", UNSUPPORTED)
 
 
-def run_program(argv: list[str], environment: dict[str, str] | None = None, with_errors: bool = False) -> tuple[int, str]:
+def run_program(argv: list[str], environment: dict[str, str] | None = None, with_errors: bool = False,
+                timeout_s: float = PROGRAM_TIMEOUT_S) -> tuple[int, str]:
     """Run an installed program, and return its exit status and its output.
 
     With with_errors, the output holds the errors of the program too.  A
-    program that cannot start or that runs past PROGRAM_TIMEOUT_S gives the
+    program that cannot start or that runs past its time limit gives the
     status 127.
     """
     try:
-        completed = proc.run(proc.Command(argv, timeout_s=PROGRAM_TIMEOUT_S, env=environment,
+        completed = proc.run(proc.Command(argv, timeout_s=timeout_s, env=environment,
                                           stderr=proc.Output.MERGE if with_errors else proc.Output.DISCARD))
     except proc.ToolFailed as error:
         return 127, str(error)
@@ -303,7 +339,8 @@ class Tool:
     `verify` checks a directory that holds the unpacked tool, and `unpack`
     moves the download into a directory to publish.  `program` gives what
     --print-bin prints.  A tool with `exports_bin` gives its bin directory to
-    GITHUB_PATH.
+    GITHUB_PATH.  `requires` names the pins of the packages of a tool of
+    via=pip, other than its own pin (THE PIP TOOLS).
     """
 
     name: str
@@ -313,17 +350,18 @@ class Tool:
     verify: Callable[[Path, pin_table.Pin, Pins], None]
     unpack: Callable[[Path, Path, pin_table.Pin], Path]
     stamp: Callable[[pin_table.Pin, str, Pins], str]
-    stamp_matches: Callable[[Path, pin_table.Pin, str], str | None]
+    stamp_matches: Callable[[Path, pin_table.Pin, str, Pins], str | None]
     program: Callable[[Path], Path]
     exports_bin: bool
+    requires: tuple[str, ...] = ()
 
     def slug(self, pin: pin_table.Pin) -> str:
         """Return the word of the platform of a pin in the name of a directory."""
         return self.slugs[pin.platform]
 
-    def directory_name(self, pin: pin_table.Pin) -> str:
-        """Return the name of the directory of the tool of a pin."""
-        return f"{self.prefix}{pin.version}-{self.slug(pin)}-{digest_tag(pin.digest)}"
+    def directory_name(self, pin: pin_table.Pin, digest: str) -> str:
+        """Return the name of the directory of the tool of a pin, with the SHA-256 of tool_digest()."""
+        return f"{self.prefix}{pin.version}-{self.slug(pin)}-{digest_tag(digest)}"
 
 
 def pin_of(tool: Tool, table: tuple[pin_table.Pin, ...], platform: str | None = None) -> pin_table.Pin:
@@ -341,9 +379,44 @@ def pin_of(tool: Tool, table: tuple[pin_table.Pin, ...], platform: str | None = 
     return pin
 
 
-def directory_of(tool: Tool, pin: pin_table.Pin, root: Path) -> Path:
-    """Return the directory of the tool of a pin in the tools directory."""
-    return root / tool.directory_name(pin)
+def required_pins(name: str, requires: tuple[str, ...], pin: pin_table.Pin, table: Pins) -> tuple[pin_table.Pin, ...]:
+    """Return the pin of a tool and the pin of each of its packages, for the platform of the pin.
+
+    Raises:
+        InstallError: If the table has no pin of a package of the tool for the platform
+    """
+    found = [pin]
+    for package in requires:
+        required = pin_table.find(table, package, pin.platform)
+        if required is None:
+            raise InstallError(f"no pin {package}, which {name} requires, serves the platform "
+                               f"{pin.platform or 'of each host'} in {pin_table.PINS_PATH}", UNSUPPORTED)
+        found.append(required)
+    return tuple(found)
+
+
+def tool_digest(tool: Tool, pin: pin_table.Pin, table: Pins) -> str:
+    """Return the SHA-256 that names the directory of a tool (THE DIRECTORIES).
+
+    It is the digest of the pin.  For a tool with more pins, it is the
+    SHA-256 of the name and the digest of each of its pins.
+
+    Raises:
+        InstallError: If the table has no pin of a package of the tool
+    """
+    if not tool.requires:
+        return pin.digest
+    lines = "".join(f"{item.name} {item.digest}\n" for item in required_pins(tool.name, tool.requires, pin, table))
+    return hashlib.sha256(lines.encode("utf-8")).hexdigest()
+
+
+def directory_of(tool: Tool, pin: pin_table.Pin, root: Path, table: Pins) -> Path:
+    """Return the directory of the tool of a pin in the tools directory.
+
+    Raises:
+        InstallError: If the table has no pin of a package of the tool
+    """
+    return root / tool.directory_name(pin, tool_digest(tool, pin, table))
 
 
 # The tree-sitter kit.
@@ -440,7 +513,7 @@ def kit_stamp(pin: pin_table.Pin, slug: str, table: Pins) -> str:
     return "".join(f"{key:<19}{value}\n" for key, value in fields)
 
 
-def kit_stamp_matches(directory: Path, pin: pin_table.Pin, slug: str) -> str | None:
+def kit_stamp_matches(directory: Path, pin: pin_table.Pin, slug: str, table: Pins) -> str | None:
     """Return why the stamp of a kit does not name the pin, or None."""
     fields = stamp_fields(directory / STAMP)
     if fields.get("tag") != pin.version or fields.get("sha256") != pin.digest:
@@ -464,7 +537,7 @@ def verify_ast_grep(directory: Path, pin: pin_table.Pin, table: Pins) -> None:
     status, output = run_program([str(binary), "--version"], with_errors=True)
     if status != 0:
         raise InstallError(f"{binary} --version fails.", NOT_PINNED)
-    check_ast_grep_version(output.rstrip("\n"), pin.version)
+    check_named_version("ast-grep", output.rstrip("\n"), pin.version)
     with tempfile.TemporaryDirectory(prefix="setup-ast-grep-") as scratch:
         fixture = Path(scratch) / "fixture.sh"
         fixture.write_text(AST_GREP_FIXTURE, encoding="utf-8")
@@ -482,14 +555,14 @@ def verify_ast_grep(directory: Path, pin: pin_table.Pin, table: Pins) -> None:
     check_fixture_lines(",".join(str(match["range"]["start"]["line"]) for match in matches))
 
 
-def check_ast_grep_version(line: str, version: str) -> None:
-    """Make sure that the output of `ast-grep --version` names the pinned version.
+def check_named_version(name: str, line: str, version: str) -> None:
+    """Make sure that the output of `NAME --version` of ast-grep or ruff is the name and the pinned version.
 
     Raises:
-        InstallError: If it names another version
+        InstallError: If it names a different program or a different version
     """
-    if line != f"ast-grep {version}":
-        raise InstallError(f"the binary reports {line!r}, the pin says ast-grep {version}.", NOT_PINNED)
+    if line != f"{name} {version}":
+        raise InstallError(f"the binary reports {line!r}, the pin says {name} {version}.", NOT_PINNED)
 
 
 def check_fixture_lines(lines: str) -> None:
@@ -523,7 +596,7 @@ def version_stamp(pin: pin_table.Pin, slug: str, table: Pins) -> str:
     return f"{pin.version} {pin.digest}\n"
 
 
-def version_stamp_matches(directory: Path, pin: pin_table.Pin, slug: str) -> str | None:
+def version_stamp_matches(directory: Path, pin: pin_table.Pin, slug: str, table: Pins) -> str | None:
     """Return why the stamp of ast-grep or cmake does not name the pin, or None."""
     try:
         found = (directory / STAMP).read_text(encoding="utf-8").strip()
@@ -582,6 +655,114 @@ def unpack_wheel(download_path: Path, staging: Path, pin: pin_table.Pin) -> Path
     return out
 
 
+# The tools of via=pip (THE PIP TOOLS).
+
+# The pins of the packages of mypy, other than the pin mypy.
+MYPY_REQUIRES = ("ast-serialize", "librt", "mypy-extensions", "pathspec", "typing-extensions")
+
+
+def requirements(pins: tuple[pin_table.Pin, ...]) -> str:
+    """Return the text of the file `requirements.txt` of pip: the name, the URL and the SHA-256 of each pin."""
+    return "".join(f"{pin.name} @ {pin.source} --hash=sha256:{pin.digest}\n" for pin in pins)
+
+
+def pip_command(arguments: list[str]) -> list[str]:
+    """Return the words that run pip in this Python, in isolated mode, with arguments."""
+    return [sys.executable, "-I", "-m", "pip", *arguments]
+
+
+def pip_install(tool: Tool, pin: pin_table.Pin, table: Pins, staging: Path) -> Path:
+    """Install the pins of a tool of via=pip into staging/out/site with pip, and return staging/out (THE PIP TOOLS).
+
+    Raises:
+        InstallError: With the status UNSUPPORTED when this Python has no pip, and NOT_PINNED when pip refuses a pin
+    """
+    out = staging / "out"
+    with tempfile.TemporaryDirectory(prefix="setup-pip-") as scratch:
+        listing = Path(scratch) / "requirements.txt"
+        listing.write_text(requirements(required_pins(tool.name, tool.requires, pin, table)), encoding="utf-8")
+        status, output = run_program(pip_command(["install", *PIP_OPTIONS, "--target", str(out / SITE), "-r",
+                                                  str(listing)]), with_errors=True, timeout_s=PIP_TIMEOUT_S)
+    if status != 0 and NO_PIP in output:
+        raise InstallError(f"the Python {sys.executable} has no pip, which installs {tool.name}.", UNSUPPORTED)
+    if status != 0:
+        raise InstallError(f"pip refuses the pins of {tool.name}, and nothing was installed:\n{output}", NOT_PINNED)
+    return out
+
+
+def mypy_command(site: Path, arguments: list[str]) -> list[str]:
+    """Return the words that start the mypy of a site directory with arguments, with no site of this Python."""
+    return [sys.executable, "-I", "-S", "-c", MYPY_START, str(site), *arguments]
+
+
+def check_mypy_version(line: str, version: str) -> None:
+    """Make sure that the output of `mypy --version` names the pinned version and a compiled mypy.
+
+    Raises:
+        InstallError: If it names a different version, or a mypy of pure Python
+    """
+    if line != f"mypy {version} (compiled: yes)":
+        raise InstallError(f"mypy reports {line!r}, the pin says mypy {version} (compiled: yes).", NOT_PINNED)
+
+
+def verify_mypy(directory: Path, pin: pin_table.Pin, table: Pins) -> None:
+    """Make sure that the site directory of a directory holds the pinned mypy, which starts.
+
+    Raises:
+        InstallError: If mypy is missing, does not start or gives a different version
+    """
+    site = directory / SITE
+    if not (site / "mypy").is_dir():
+        raise InstallError(f"{site} holds no package mypy.", NOT_PINNED)
+    status, output = run_program(mypy_command(site, ["--version"]), with_errors=True)
+    if status != 0:
+        raise InstallError(f"the mypy of {site} does not start:\n{output}", NOT_PINNED)
+    check_mypy_version(output.strip(), pin.version)
+
+
+def verify_ruff(directory: Path, pin: pin_table.Pin, table: Pins) -> None:
+    """Make sure that the binary of the site directory of a directory gives the pinned version of ruff.
+
+    Raises:
+        InstallError: If the binary is missing, or gives a different version
+    """
+    binary = directory / SITE / "bin" / "ruff"
+    if not is_executable(binary):
+        raise InstallError(f"{binary} is missing or not executable.", NOT_PINNED)
+    status, output = run_program([str(binary), "--version"], with_errors=True)
+    if status != 0:
+        raise InstallError(f"{binary} --version fails:\n{output}", NOT_PINNED)
+    check_named_version("ruff", output.strip(), pin.version)
+
+
+def pip_unpack(download_path: Path, staging: Path, pin: pin_table.Pin) -> Path:
+    """Refuse the call: pip_install() installs a tool of via=pip, and no download comes before it.
+
+    Raises:
+        InstallError: Always
+    """
+    raise InstallError(f"the pin {pin.name} has via=pip, and pip installs it with no unpack.", NOT_PINNED)
+
+
+def pip_stamp(requires: tuple[str, ...], pin: pin_table.Pin, slug: str, table: Pins) -> str:
+    """Return the stamp of a tool of via=pip: the name, the version and the SHA-256 of each of its pins."""
+    return "".join(f"{item.name} {item.version} {item.digest}\n"
+                   for item in required_pins(pin.name, requires, pin, table))
+
+
+def pip_stamp_matches(requires: tuple[str, ...], directory: Path, pin: pin_table.Pin, slug: str,
+                      table: Pins) -> str | None:
+    """Return why the stamp of a tool of via=pip does not name each of its pins, or None."""
+    try:
+        found = (directory / STAMP).read_text(encoding="utf-8")
+    except OSError:
+        found = ""
+    wanted = pip_stamp(requires, pin, slug, table)
+    if found != wanted:
+        return f"the stamp reads {found!r}, the pins say {wanted!r}."
+    return None
+
+
 TOOLS: dict[str, Tool] = {
     "tree-sitter": Tool(
         "tree-sitter", "tree-sitter-kit", "tree-sitter-cpp-fork-",
@@ -597,6 +778,14 @@ TOOLS: dict[str, Tool] = {
     "cmake": Tool(
         "cmake", "cmake", "cmake-", {"linux-x86_64": "x86_64", "linux-aarch64": "aarch64"},
         verify_cmake, unpack_wheel, version_stamp, version_stamp_matches, lambda directory: directory / "bin", True),
+    "mypy": Tool(
+        "mypy", "mypy", "mypy-", {"linux-x86_64": "x86_64", "linux-aarch64": "aarch64"},
+        verify_mypy, pip_unpack, functools.partial(pip_stamp, MYPY_REQUIRES),
+        functools.partial(pip_stamp_matches, MYPY_REQUIRES), lambda directory: directory / SITE, False, MYPY_REQUIRES),
+    "ruff": Tool(
+        "ruff", "ruff", "ruff-", {"linux-x86_64": "x86_64", "linux-aarch64": "aarch64"},
+        verify_ruff, pip_unpack, functools.partial(pip_stamp, ()), functools.partial(pip_stamp_matches, ()),
+        lambda directory: directory / SITE / "bin" / "ruff", False),
 }
 
 
@@ -613,7 +802,7 @@ def verify_installed(tool: Tool, directory: Path, pin: pin_table.Pin, table: Pin
         raise InstallError(f"the {tool.name} of the pin is absent from {directory}.", ABSENT)
     if not (directory / STAMP).is_file():
         raise InstallError(f"{directory} has no {STAMP} stamp.  The install did not complete.", NOT_PINNED)
-    problem = tool.stamp_matches(directory, pin, tool.slug(pin))
+    problem = tool.stamp_matches(directory, pin, tool.slug(pin), table)
     if problem is not None:
         raise InstallError(problem, NOT_PINNED)
     tool.verify(directory, pin, table)
@@ -634,7 +823,7 @@ def installed(name: str, root: Path | None = None, table: Pins | None = None) ->
     tool = TOOLS[name]
     pins = pin_table.load() if table is None else table
     pin = pin_of(tool, pins)
-    directory = directory_of(tool, pin, cache.tools_root() if root is None else root)
+    directory = directory_of(tool, pin, cache.tools_root() if root is None else root, pins)
     try:
         verify_installed(tool, directory, pin, pins)
     except InstallError as error:
@@ -661,6 +850,23 @@ def finish(tool: Tool, directory: Path, root: Path) -> None:
         export_github_path(directory / "bin", tool.name)
 
 
+def fetched(tool: Tool, pin: pin_table.Pin, staging: Path, fetch: Callable[[str, Path], None]) -> Path:
+    """Download a pin into the staging directory, check its SHA-256, and return what `tool.unpack` gives.
+
+    Raises:
+        InstallError: If the download fails, or its SHA-256 is not the digest of the pin
+    """
+    download_path = staging / PurePosixPath(urllib.parse.urlsplit(pin.source).path).name
+    print(f"setup install {tool.name}: download {pin.source}", file=sys.stderr)
+    fetch(pin.source, download_path)
+    got = sha256_of(download_path)
+    if got != pin.digest:
+        raise InstallError(f"SHA256 mismatch for {download_path.name}.\n  got  {got}\n  want {pin.digest}\n"
+                           f"Nothing was installed.", NOT_PINNED)
+    print(f"setup install {tool.name}: SHA256 matches the pin.", file=sys.stderr)
+    return tool.unpack(download_path, staging, pin)
+
+
 def install(name: str, root: Path | None = None, fetch: Callable[[str, Path], None] = download,
             table: Pins | None = None) -> Path:
     """Install one tool when it is absent or off its pin, and return its directory.
@@ -678,7 +884,7 @@ def install(name: str, root: Path | None = None, fetch: Callable[[str, Path], No
     pins = pin_table.load() if table is None else table
     pin = pin_of(tool, pins)
     base = cache.tools_root() if root is None else root
-    directory = directory_of(tool, pin, base)
+    directory = directory_of(tool, pin, base, pins)
     try:
         verify_installed(tool, directory, pin, pins)
     except InstallError:
@@ -692,15 +898,11 @@ def install(name: str, root: Path | None = None, fetch: Callable[[str, Path], No
     # The staging directory is under the tools directory, so the final rename stays on one file system.
     staging = Path(tempfile.mkdtemp(prefix=STAGING_PREFIX, dir=base))
     try:
-        download_path = staging / PurePosixPath(urllib.parse.urlsplit(pin.source).path).name
-        print(f"setup install {name}: download {pin.source}", file=sys.stderr)
-        fetch(pin.source, download_path)
-        got = sha256_of(download_path)
-        if got != pin.digest:
-            raise InstallError(f"SHA256 mismatch for {download_path.name}.\n  got  {got}\n  want {pin.digest}\n"
-                               f"Nothing was installed.", NOT_PINNED)
-        print(f"setup install {name}: SHA256 matches the pin.", file=sys.stderr)
-        unpacked = tool.unpack(download_path, staging, pin)
+        if pin.via == pin_table.Via.PIP:
+            print(f"setup install {name}: pip installs the pins of {name} with their SHA-256", file=sys.stderr)
+            unpacked = pip_install(tool, pin, pins, staging)
+        else:
+            unpacked = fetched(tool, pin, staging, fetch)
         tool.verify(unpacked, pin, pins)
         (unpacked / STAMP).write_text(tool.stamp(pin, tool.slug(pin), pins), encoding="utf-8")
         # A directory at the final path failed the check above, so it is damaged or incomplete.
@@ -763,7 +965,8 @@ def main(argv: list[str]) -> int:
     try:
         if options.print_dir:
             tool = TOOLS[options.print_dir]
-            print(directory_of(tool, pin_of(tool, pin_table.load()), cache.tools_root()))
+            pins = pin_table.load()
+            print(directory_of(tool, pin_of(tool, pins), cache.tools_root(), pins))
             return OK
         if options.print_bin:
             print(program(options.print_bin))

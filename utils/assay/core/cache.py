@@ -120,6 +120,8 @@ LIMITS: dict[str, int] = {
     "padded-list": 16 << 20,
     "hwledger": 16 << 20,
     "tools": 512 << 20,
+    # The cache of mypy for the rule types.  The run of the package wrote 7.3 MB on 2026-10-08.
+    "mypy": 128 << 20,
     # The compiled modules of the package (THE COMPILED MODULES): about 6 MB for each checkout or work tree.
     "pycache": 256 << 20,
 }

@@ -1,0 +1,12 @@
+# A planted registry: the job print has no row.
+format 1
+
+job argparse module=assay.core.cli | the planted owner of argparse
+job cache-root module=assay.core.cache | the planted owner of the cache root
+job cost-record module=assay.core.record | the planted owner of the cost record
+job ctest-log module=assay.readers.ctest | the planted owner of the files of ctest
+job git module=assay.core.git | the planted owner of git
+job repository-root module=assay.core.paths | the planted owner of the root
+job row-bar module=assay.core.rows | the planted owner of the bars of a row
+job subprocess module=assay.core.proc | the planted owner of the process starts
+job sys.path module=bin.guard | the planted owner of the module path
