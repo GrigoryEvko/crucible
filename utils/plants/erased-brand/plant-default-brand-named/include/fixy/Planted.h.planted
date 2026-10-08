@@ -1,0 +1,6 @@
+#pragma once
+// A list that names DefaultBrand at the position of the brand.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class Permission;
+struct Tag {};
+Permission<Tag, DefaultBrand> named_erased;

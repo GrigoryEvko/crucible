@@ -1,0 +1,3 @@
+#pragma once
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class WriteView;

@@ -1,0 +1,8 @@
+#pragma once
+// The file has one site of ReadView.  The ledger holds the count 1 for the
+// same file, but for the entity Permission, so no row admits the site.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class Permission;
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class ReadView;
+struct Tag {};
+ReadView<Tag> view;

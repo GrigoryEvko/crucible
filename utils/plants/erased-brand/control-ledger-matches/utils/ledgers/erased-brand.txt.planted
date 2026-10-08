@@ -1,0 +1,5 @@
+# The ledger of the control: the count of each file and each template.
+format 1
+rule erased-brand
+include/fixy/Planted.h | erased-brand | 2 | Permission | -
+include/fixy/Planted.h | erased-brand | 1 | ReadView | -

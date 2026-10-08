@@ -1,0 +1,8 @@
+// A negative-compile fixture that spells the erased identity on purpose: the
+// row of the ledger gives the reason.
+#include <fixy/Planted.h>
+struct Tag {};
+int main() {
+    SharedRead<int, Tag> erased{};
+    return 0;
+}

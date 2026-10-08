@@ -1,0 +1,6 @@
+#pragma once
+// A data member of a class on the erased identity.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class SharedPermissionPool;
+struct Tag {};
+struct Wide { SharedPermissionPool<Tag> pool; };

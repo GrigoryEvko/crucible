@@ -1,0 +1,8 @@
+#pragma once
+// A using-declaration brings the branded template into the scope.
+namespace foundation::brand { struct DefaultBrand {}; }
+namespace fixy {
+template <class T, class S, class Brand = ::foundation::brand::DefaultBrand> class Carried;
+namespace session { template <class T, class S> class Carried; }
+}
+namespace other { using fixy::Carried; Carried<int, int> via_declaration; }

@@ -1,0 +1,9 @@
+#pragma once
+// No scope of the namespace elsewhere declares Carried, so the lookup finds
+// no template and the spelling counts.
+namespace foundation::brand { struct DefaultBrand {}; }
+namespace fixy {
+template <class T, class S, class Brand = ::foundation::brand::DefaultBrand> class Carried;
+namespace session { template <class T, class S> class Carried; }
+}
+namespace elsewhere { Carried<int, int> unresolved; }

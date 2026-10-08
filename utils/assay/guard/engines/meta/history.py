@@ -122,7 +122,6 @@ EARLIER_FILES = {
                          "utils/scripts/libstdcxx-symbols-ledger.txt", "utils/scripts/no-throw-no-rtti-allowlist.txt"),
     "banned-calls": ("utils/scripts/no-reinterpret-allowlist.txt", "utils/scripts/no-reserve-allowlist.txt",
                      "utils/scripts/no-spawn-process-allowlist.txt"),
-    "brand-drain": ("utils/scripts/brand-drain.txt",),
     "compile-cpu": ("utils/scripts/compile-cpu-ledger.txt",),
     "compile-instructions": ("utils/scripts/compile-instructions-ledger.txt",),
     "compile-memory": ("utils/scripts/compile-memory-ledger.txt",),

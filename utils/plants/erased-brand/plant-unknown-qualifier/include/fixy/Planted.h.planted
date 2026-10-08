@@ -1,0 +1,7 @@
+#pragma once
+// No scope knows the qualifier fp, so the spelling counts for each branded
+// template of its last name.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class ReadView;
+struct Tag {};
+fp::ReadView<Tag> qualified;

@@ -1,0 +1,4 @@
+#pragma once
+#include <crucible/Novel.h>
+struct Tag {};
+Novel<Tag> novel;

@@ -1,0 +1,8 @@
+// A negative-compile fixture compiles in no build, and the parse tree holds
+// its sites.
+#include <foundation/Planted.h>
+struct Tag {};
+int main() {
+    Permission<Tag> erased{};
+    return 0;
+}

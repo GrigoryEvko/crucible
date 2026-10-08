@@ -1,0 +1,7 @@
+#pragma once
+// A spelling inside the argument list of a different template.  GCC folds
+// this static_assert while it parses, and the parse tree keeps the spelling.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class Permission;
+struct Tag {};
+static_assert(std::is_same_v<Permission<Tag>, int>);

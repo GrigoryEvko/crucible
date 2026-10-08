@@ -1,0 +1,7 @@
+#pragma once
+// A header of include/crucible is no file of the sites, but its branded
+// templates count.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class Permission;
+struct Tag {};
+Permission<Tag> outside;

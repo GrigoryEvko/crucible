@@ -71,7 +71,7 @@ REFUSAL_TEXTS = {
 # The root namespaces that a slug drops.
 ROOT_NAMESPACES = ("fixy::", "foundation::")
 # The brand that an expression can name.  A branded type with no brand is the erased identity, which the rule
-# brand-drain counts.  An expression that names one brand at two positions names this brand.  The brand is empty,
+# erased-brand counts.  An expression that names one brand at two positions names this brand.  The brand is empty,
 # and foundation::brand::IsBrand admits it.  Only a fixture with an expression that names it holds the declaration.
 BRAND_DECLARATION = """
 // The brand that the expression names.  It is empty, which is all that

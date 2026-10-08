@@ -17,13 +17,6 @@ utils/assay/core/rows.py | no-redef | 1 | split_row | An error of mypy of today.
 utils/assay/core/ruletable.py | assignment | 1 | RuleTable.class_of | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/core/ruletable.py | call-overload | 1 | parse_admit | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/engines/meta/history.py | arg-type | 1 | ledger_rises | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_brand_drain.py | assignment | 1 | unreadable_body | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_brand_drain.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_brand_drain.py | call-overload | 1 | unreadable_body | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_brand_drain.py | index | 1 | unreadable_body | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_brand_drain.py | no-untyped-def | 1 | self_test.captured | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_brand_drain.py | return-value | 1 | unreadable_body | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_brand_drain.py | type-arg | 2 | referents | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_ctx_init_door.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_ctx_testing_boundary.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_detail_namespace.py | arg-type | 1 | resolved_includes | An error of mypy of today.  The change that gives the code its types lowers the count

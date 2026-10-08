@@ -1,0 +1,9 @@
+#pragma once
+// A full name selects the branded template in a namespace whose own
+// template of that last name has no brand.
+namespace foundation::brand { struct DefaultBrand {}; }
+namespace fixy {
+template <class T, class S, class Brand = ::foundation::brand::DefaultBrand> class Carried;
+namespace session { template <class T, class S> class Carried; }
+}
+namespace fixy::session { fixy::Carried<int, int> qualified_outer; }

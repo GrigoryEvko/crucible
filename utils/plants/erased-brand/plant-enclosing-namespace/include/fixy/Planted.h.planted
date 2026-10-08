@@ -1,0 +1,9 @@
+#pragma once
+// Two templates have the last name Carried, and only fixy::Carried has a
+// brand.  The enclosing namespace fixy declares the branded one.
+namespace foundation::brand { struct DefaultBrand {}; }
+namespace fixy {
+template <class T, class S, class Brand = ::foundation::brand::DefaultBrand> class Carried;
+namespace session { template <class T, class S> class Carried; }
+}
+namespace fixy { Carried<int, int> outer_erased; }

@@ -32,12 +32,17 @@ failure of that work changes no verdict of a rule.
 
 import importlib
 import sys
+from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from assay.core import cache
 from assay.core import registry as rule_registry
 from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
+
+if TYPE_CHECKING:
+    from assay.guard.engines.meta.runner import RuleContext
 
 USAGE = ("usage: guard check --rule ID [ARG]...  |  guard check [--rule ID]... [--engine E]... [--part K/N] "
          "[--build-dir DIR] [--warnings-dir DIR] [--root DIR] [--path PATH]...")
@@ -86,6 +91,32 @@ def selected(registry: rule_registry.Registry, ids: list[str], engines: list[str
         if rule.engine not in RUNNERS:
             return f"the engine {rule.engine.value} of the rule {rule.id} has no runner at this time"
     return chosen
+
+
+def rule_context(rule: rule_registry.Rule, root: Path, build_dir: Path | None,
+                 paths: Sequence[str] = ()) -> RuleContext:
+    """Return the context of the engine of a rule on a tree, for a command that runs the module of one rule.
+
+    A rule of the engine tsast or build gets the context of its engine, with
+    the rule that its scope reads.  A rule of the engine build also gets the
+    paths that the command names (assay.guard.engines.buildsys.runner, THE
+    PATHS).  Each other rule gets the context of the engine meta.
+    """
+    from assay.guard.engines.meta import runner
+
+    if rule.engine == rule_registry.Engine.TSAST:
+        from assay.guard.engines.tsast import runner as tree_runner
+
+        tree_context = tree_runner.TsastContext(root, build_dir)
+        tree_context.rule = rule
+        return tree_context
+    if rule.engine == rule_registry.Engine.BUILD:
+        from assay.guard.engines.buildsys import runner as build_runner
+
+        build_context = build_runner.BuildContext(root, build_dir, paths=paths)
+        build_context.rule = rule
+        return build_context
+    return runner.MetaContext(root, build_dir)
 
 
 def parsed_part(text: str) -> tuple[int, int] | None:

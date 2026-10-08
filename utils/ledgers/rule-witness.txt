@@ -2,7 +2,6 @@
 # and `python3 utils/bin/guard write --rule rule-witness` writes this file.
 format 1
 rule rule-witness
-utils/registry.txt | no-plant | admit | brand-drain | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | build-peak-memory | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | configure-time | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | constexpr-ops | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row

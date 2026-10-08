@@ -1,0 +1,8 @@
+#pragma once
+// A template-id that qualifies the name of a member.
+namespace foundation::brand { struct DefaultBrand {}; }
+namespace fixy {
+template <class T, class S, class Brand = ::foundation::brand::DefaultBrand> class Carried;
+namespace session { template <class T, class S> class Carried; }
+}
+auto scoped = fixy::Carried<int, int>::make();

@@ -1,0 +1,5 @@
+// The check file of a fixy header belongs to the layer of the header, so a
+// site that moves from the header to its check file stays a site.
+#include <fixy/Planted.h>
+Permission<Tag> moved_bare;
+Permission<Tag, Fresh> moved_branded;

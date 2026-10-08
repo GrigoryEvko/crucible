@@ -1,0 +1,3 @@
+// A bench program is outside the files of the sites.
+#include <crucible/Outside.h>
+Permission<Tag> bench_site;

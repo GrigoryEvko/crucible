@@ -1,0 +1,6 @@
+#pragma once
+// The brand of a region is its third parameter, and the list stops before it.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename T, typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class OwnedRegion;
+struct Tag {};
+OwnedRegion<int, Tag> region;

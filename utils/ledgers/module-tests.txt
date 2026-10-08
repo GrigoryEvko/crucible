@@ -13,7 +13,6 @@ utils/assay/guard/engines/meta/runner.py | no-test | 1 | assay.guard.engines.met
 utils/assay/guard/engines/tsast/decide_catalog.py | no-test | 1 | assay.guard.engines.tsast.decide_catalog | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/engines/tsast/runner.py | no-test | 1 | assay.guard.engines.tsast.runner | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/explain.py | no-test | 1 | assay.guard.explain | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/guard/legacy/check_brand_drain.py | no-test | 1 | assay.guard.legacy.check_brand_drain | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_ctx_init_door.py | no-test | 1 | assay.guard.legacy.check_ctx_init_door | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_ctx_testing_boundary.py | no-test | 1 | assay.guard.legacy.check_ctx_testing_boundary | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_detail_namespace.py | no-test | 1 | assay.guard.legacy.check_detail_namespace | A module of today with no test module.  The change that writes the test module removes the row

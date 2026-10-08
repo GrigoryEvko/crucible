@@ -6,7 +6,6 @@ utils/assay/core/cache.py | copy | 1 | self_test.expect | A copy of today.  The 
 utils/assay/core/cache.py | near-copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/core/report.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/core/report.py | near-copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/guard/legacy/check_brand_drain.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_ctx_init_door.py | copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_ctx_init_door.py | copy | 1 | self_test.captured | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_ctx_init_door.py | copy | 1 | self_test.write | A copy of today.  The change that keeps one body and calls it lowers the count
@@ -21,7 +20,6 @@ utils/assay/guard/legacy/check_no_unchecked_access.py | copy | 1 | planted_cases
 utils/assay/guard/preprocessed.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/loop/bench.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/loop/derive/__init__.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/loop/derive/aten_ops.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/loop/derive/mint_inventory.py | copy | 1 | self_test.check | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/loop/derive/mint_model.py | copy | 1 | _self_test.check | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/loop/fuzz.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count

@@ -1,0 +1,4 @@
+#pragma once
+// The file holds no site.  The rule refuses the two positions of the brand.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <class Tag, class Brand = ::foundation::brand::DefaultBrand> struct Novel final {};

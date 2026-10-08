@@ -1,0 +1,5 @@
+#pragma once
+// A macro body has no scope until a file expands it, and its spelling counts.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class Permission;
+#define ERASED_IN_MACRO(x) Permission<x> m

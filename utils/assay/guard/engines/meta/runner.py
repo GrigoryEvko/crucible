@@ -30,6 +30,14 @@ THE FAMILIES
     of a module.  Each other attribute, such as plant_context, comes from the
     family module.
 
+THE REFUSED KINDS
+    A rule module can name the kinds of the findings that no ledger row
+    admits, in its constant REFUSED_KINDS.  Such a finding tells that the
+    rule cannot read an input, such as a file that does not parse.  The rule
+    then cannot count the items of that input.  judged() keeps each error of
+    such a kind, and the ledger does not see it.  `guard write` refuses a
+    finding of such a kind in each mode.
+
 THE WITNESS
     The plants of a rule are in utils/plants/RULE/.  Each directory whose name
     starts with "plant-" is a tree that the rule must refuse: the rule gives a
@@ -80,6 +88,8 @@ GUIDE = "CLAUDE.md"
 # The directory of the modules of the engines, relative to the root, and the table of a family module (THE FAMILIES).
 ENGINES = "utils/assay/guard/engines"
 FAMILY_TABLE = "RULES"
+# The constant of a rule module that names the kinds of the findings that no ledger row admits (THE REFUSED KINDS).
+REFUSED_KINDS = "REFUSED_KINDS"
 
 
 class NotApplicable(Exception):
@@ -331,7 +341,10 @@ def judged(
 
     A ledger that does not obey its schema gives one error, and the findings
     of the rule stay errors.  A rule of the policy max or baseline judges its
-    ledger itself, so its findings stay as they are.
+    ledger itself, so its findings stay as they are.  An error of a refused
+    kind of the rule stays an error, and the ledger does not see it (THE
+    REFUSED KINDS).  A row of such a kind then admits no finding, and the
+    ledger gives its error.
 
     Args:
         rule: The rule
@@ -342,6 +355,9 @@ def judged(
     """
     if rule.policy in (rule_registry.Policy.MAX, rule_registry.Policy.BASELINE):
         return list(raw)
+    refused = refused_kinds(rule)
+    fixed = [item for item in raw if item.level == "error" and item.kind in refused]
+    counted = [item for item in raw if item.level != "error" or item.kind not in refused]
     try:
         ledger = rule_ledger.read(rule, root)
     except (rows_grammar.RowsError, OSError) as problem:
@@ -363,7 +379,15 @@ def judged(
                 name: {key: entry for key, entry in table.items() if kept(key)} for name, table in ledger.deltas.items()
             },
         )
-    return rule_ledger.compare(rule, ledger, raw)
+    return [*rule_ledger.compare(rule, ledger, counted), *fixed]
+
+
+def refused_kinds(rule: rule_registry.Rule) -> frozenset[str]:
+    """Return the kinds of the findings of a rule that no ledger row admits (THE REFUSED KINDS).
+
+    The module of the rule names them in its constant REFUSED_KINDS.  A rule with no such constant has none.
+    """
+    return frozenset(getattr(rule_module(rule), REFUSED_KINDS, frozenset()))
 
 
 def module_judged(rule: rule_registry.Rule, context: RuleContext) -> list[check_report.Finding]:

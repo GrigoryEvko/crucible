@@ -1,0 +1,7 @@
+#pragma once
+// A list on two lines is one node, and an alias counts at the alias.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <class T, class Source, class Brand = ::foundation::brand::DefaultBrand> class Borrowed;
+struct Tag {};
+using LongErased = Borrowed<int,
+                            Tag>;

@@ -1,0 +1,6 @@
+#pragma once
+// A spelling in an expression is a node template_function.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class Permission;
+struct Tag {};
+auto call = fp::Permission<Tag>{mint()};

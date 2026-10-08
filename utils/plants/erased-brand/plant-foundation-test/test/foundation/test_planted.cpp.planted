@@ -1,0 +1,7 @@
+// A test of the foundation layer is a file of the sites.
+#include <foundation/Planted.h>
+struct Tag {};
+int main() {
+    WriteView<Tag>* view = nullptr;
+    return view == nullptr ? 0 : 1;
+}

@@ -1,0 +1,10 @@
+#pragma once
+// The file has two sites of Permission and one site of ReadView, and the
+// ledger holds each count.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class Permission;
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class ReadView;
+struct Tag {};
+Permission<Tag> first;
+Permission<Tag> second;
+ReadView<Tag> view;

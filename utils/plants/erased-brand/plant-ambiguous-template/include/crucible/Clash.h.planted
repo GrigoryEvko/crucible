@@ -1,0 +1,5 @@
+#pragma once
+// A second primary declaration of Novel puts the brand at a different
+// position, so a spelling of Novel has no one reading.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <class A, class B, class Brand = ::foundation::brand::DefaultBrand> class Novel;

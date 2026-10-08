@@ -1,0 +1,28 @@
+#pragma once
+// Each spelling below names a brand, or it is no spelling of a branded
+// template, so the rule gives no finding.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class Permission;
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class ReadView;
+template <class Tag> class Plain;
+template <class Tag, class Extra = int, class Brand = ::foundation::brand::DefaultBrand> class Late;
+template <class Tag, class Brand> class Permission<Tag*, Brand> {};
+struct Holder { template <class U, class Brand> friend class Plain; };
+template <class T> struct Wrap {};
+struct Tag {};
+struct Fresh {};
+Permission<Tag, Fresh> branded;
+ReadView<Tag, Fresh> branded_view;
+// A comment that spells Permission<Tag> holds no site.
+/* A block comment holds none too: Permission<Tag> */
+const char* text = "a string holds no Permission<Tag>";
+using Long = Permission<Tag,
+                        Fresh>;
+template <class B> void generic(Permission<Tag, B>&&);
+#define BRANDED_IN_MACRO(x) Permission<x, Fresh> m
+#define PASTE(a, b) a ## b
+Permission<Tag, /* DefaultBrand */ Fresh> named_in_a_comment;
+Plain<Tag> plain;
+Late<Tag, int, Fresh> late_branded;
+Permission<Tag, Wrap<DefaultBrand>> wrapped_brand;
+Permission<Tag, Wrap</* DefaultBrand */ int>> brand_comment_inside;

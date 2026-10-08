@@ -1,0 +1,4 @@
+#pragma once
+// The kit does not parse this header of include/, so its branded templates
+// are not known.  The file is outside the files of the sites.
+void f() { g(1) { } }

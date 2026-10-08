@@ -1,0 +1,4 @@
+# The ledger of the plant: the right count of the file for another template.
+format 1
+rule erased-brand
+include/fixy/Planted.h | erased-brand | 1 | Permission | -

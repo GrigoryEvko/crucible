@@ -1,0 +1,3 @@
+#pragma once
+// The kit does not parse this file, so its sites are not known.
+void f() { g(1) { } }

@@ -1,0 +1,3 @@
+#pragma once
+namespace foundation::brand { struct DefaultBrand {}; }
+template <class T, class Tag, class Brand = ::foundation::brand::DefaultBrand> class SharedRead;

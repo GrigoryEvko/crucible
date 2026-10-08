@@ -405,18 +405,6 @@ crucible_script_test(NAME assay_loop_derive_test_witness_fixtures
 set_tests_properties(witness_fixtures_check assay_loop_derive_test_witness_fixtures PROPERTIES
   LABELS "ci_guard"
   ENVIRONMENT "ASSAY_TEST_CXX=${CRUCIBLE_REAL_CXX};ASSAY_TEST_BUILD_DIR=${CMAKE_BINARY_DIR}")
-# A spelling of a branded type that names no brand is the erased
-# identity.  utils/assay/guard/legacy/check_brand_drain.py reads those spellings from the
-# parse tree, and utils/ledgers/brand-drain.txt holds one count per file.  A
-# count can only decrease.  Exit 3 when the kit is absent reports a skip.
-crucible_script_test(NAME brand_drain_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule brand-drain
-          --self-test)
-crucible_script_test(NAME brand_drain
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule brand-drain)
-set_tests_properties(brand_drain brand_drain_self_test PROPERTIES
-    LABELS "ci_guard"
-    SKIP_RETURN_CODE 3)
 # utils/assay/guard/preprocessed.py preprocesses each unit of the compile database
 # one time for every guard that reads the preprocessed output, in a store that
 # every build directory and every work tree share.  The self-test proves that
@@ -5105,8 +5093,7 @@ set_tests_properties(selftest_mutation PROPERTIES LABELS "ci_guard" SKIP_RETURN_
 # runs a rule whose module reads the parse trees, when the test does not
 # require the fixture.  These tests read the trees and their registrations
 # give no label ast, so they get the label here.
-set_property(TEST brand_drain mint_inventory_check_floor guard_plugin
-    APPEND PROPERTY LABELS ast)
+set_property(TEST mint_inventory_check_floor guard_plugin APPEND PROPERTY LABELS ast)
 crucible_tsast_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} 8)
 set_property(TEST guard_parse_proof_routes APPEND PROPERTY FIXTURES_REQUIRED preprocessed_store)
 get_property(crucible_directory_tests DIRECTORY PROPERTY TESTS)

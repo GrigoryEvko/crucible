@@ -1,0 +1,4 @@
+# The ledger of the plant: a row of a kind that no row admits.
+format 1
+rule erased-brand
+include/fixy/Broken.h | parse | 1 | - | a planted reason

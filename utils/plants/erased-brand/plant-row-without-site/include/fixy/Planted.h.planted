@@ -1,0 +1,7 @@
+#pragma once
+// Each spelling names its brand, and the ledger still holds a row of the file.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class Permission;
+struct Tag {};
+struct Fresh {};
+Permission<Tag, Fresh> branded;

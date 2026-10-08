@@ -1,0 +1,4 @@
+#pragma once
+// The kit does not parse this file, and a ledger row tries to admit the
+// error.
+void f() { g(1) { } }

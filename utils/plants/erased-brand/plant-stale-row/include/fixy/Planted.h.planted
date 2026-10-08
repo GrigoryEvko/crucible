@@ -1,0 +1,6 @@
+#pragma once
+// The file has one site of Permission, and the ledger admits two.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class Permission;
+struct Tag {};
+Permission<Tag> only;

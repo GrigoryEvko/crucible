@@ -1,0 +1,4 @@
+// The check file of a crucible header is outside the files of the sites, as
+// its header is.
+#include <crucible/Outside.h>
+Permission<Tag> outside_bare;

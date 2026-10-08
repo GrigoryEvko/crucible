@@ -17,8 +17,8 @@
 // rests on.  A spelling that names no brand is the erased identity
 // DefaultBrand.  permission_erase_brand drops the brand of a token where
 // its holder cannot name the brand, and no conversion drops it.
-// utils/assay/guard/legacy/check_brand_drain.py lists every spelling on the erased
-// identity.
+// The rule erased-brand (utils/assay/guard/engines/tsast/erased_brand.py)
+// counts each spelling on the erased identity.
 //
 // Nothing ties a tag to the memory it names, and nothing confines the
 // holder's writes to that memory.  Both are obligations on the code

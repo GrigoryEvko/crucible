@@ -1,0 +1,7 @@
+#pragma once
+// An alias template with a brand is a branded template too.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand> class Permission;
+template <class Tag, class Brand = ::foundation::brand::DefaultBrand> using Handle = Permission<Tag, Brand>;
+struct Tag {};
+Handle<Tag> handle;

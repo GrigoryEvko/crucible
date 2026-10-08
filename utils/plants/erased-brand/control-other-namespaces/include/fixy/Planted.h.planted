@@ -1,0 +1,11 @@
+#pragma once
+// Two templates have the last name Carried, and only fixy::Carried has a
+// brand.  Each spelling below names fixy::session::Carried, which has none.
+namespace foundation::brand { struct DefaultBrand {}; }
+namespace fixy {
+template <class T, class S, class Brand = ::foundation::brand::DefaultBrand> class Carried;
+namespace session { template <class T, class S> class Carried; }
+}
+namespace fixy::session { Carried<int, int> inner_unbranded; }
+namespace fixy::session { ::fixy::session::Carried<int, int> qualified_inner; }
+namespace other { using namespace fixy::session; Carried<int, int> via_directive; }

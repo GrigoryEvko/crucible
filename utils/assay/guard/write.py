@@ -16,6 +16,10 @@ A rule of the policy max or baseline judges its ledger itself, so its module
 writes the ledger: the function written(context, ledger, reason) of the module
 gives the new ledger, and --reason gives the reason of a changed row.
 
+The module of a rule can name kinds in REFUSED_KINDS, and no row admits a
+finding of such a kind (assay.guard.engines.meta.runner, THE REFUSED KINDS).
+The command refuses each such finding in each mode.
+
 --path names the paths that a rule of the engine build reads, such as the
 headers of gate-mutants (assay.guard.engines.buildsys.runner, THE PATHS).
 The command then writes only the rows of those paths, and it keeps each
@@ -125,19 +129,7 @@ def main(argv: list[str]) -> int:
         check_report.write_line("guard write: --add-configuration applies only to a rule of the engine plugin, and "
                                 "--import to a rule of the engine plugin or elf", is_error=True)
         return 2
-    context: runner.RuleContext = runner.MetaContext(root, build_dir)
-    if rule.engine == rule_registry.Engine.TSAST:
-        from assay.guard.engines.tsast import runner as tree_runner
-
-        tree_context = tree_runner.TsastContext(root, build_dir)
-        tree_context.rule = rule
-        context = tree_context
-    elif rule.engine == rule_registry.Engine.BUILD:
-        from assay.guard.engines.buildsys import runner as build_runner
-
-        build_context = build_runner.BuildContext(root, build_dir, paths=options.paths)
-        build_context.rule = rule
-        context = build_context
+    context = check.rule_context(rule, root, build_dir, options.paths)
     try:
         if rule.policy == rule_registry.Policy.NONE:
             refresh = getattr(runner.rule_module(rule), "refresh", None)
@@ -151,12 +143,19 @@ def main(argv: list[str]) -> int:
         if rule.policy in (rule_registry.Policy.MAX, rule_registry.Policy.BASELINE):
             written = runner.rule_module(rule).written(context, ledger, options.reason)
         else:
+            found = context.findings_of(rule)
+            refused = runner.refused_kinds(rule)
+            unread = [item for item in found if item.level == "error" and item.kind in refused]
+            if unread:
+                check_report.emit(unread, rule.id, None)
+                check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {len(unread)} findings "
+                                        f"of a kind that no row admits.  Correct them first", is_error=True)
+                return 1
             named = set(options.paths)
             judged = replace(ledger, base={key: entry for key, entry in ledger.base.items()
                                            if not named or key.path in named})
-            written = rule_ledger.write(rule, judged, context.findings_of(rule),
-                                        mode=options.mode or rule_ledger.WriteMode.LOWER, reason=options.reason,
-                                        moved=git.moves(root))
+            written = rule_ledger.write(rule, judged, found, mode=options.mode or rule_ledger.WriteMode.LOWER,
+                                        reason=options.reason, moved=git.moves(root))
             if named:
                 kept = {key: entry for key, entry in ledger.base.items() if key.path not in named}
                 written = replace(written, base={**kept, **written.base})

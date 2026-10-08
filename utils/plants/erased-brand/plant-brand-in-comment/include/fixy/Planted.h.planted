@@ -1,0 +1,6 @@
+#pragma once
+// Only a comment names the brand, and a comment holds no argument.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class Permission;
+struct Tag {};
+Permission<Tag /* , Fresh */> brand_in_a_comment;

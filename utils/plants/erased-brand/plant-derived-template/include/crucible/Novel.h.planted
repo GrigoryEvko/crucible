@@ -1,0 +1,5 @@
+#pragma once
+// A branded template outside the files of the sites.  The rule finds it in
+// the parse trees of include/, and no list names it.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <class Tag, class Brand = ::foundation::brand::DefaultBrand> struct Novel final {};

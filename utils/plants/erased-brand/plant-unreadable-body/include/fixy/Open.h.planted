@@ -1,0 +1,6 @@
+#pragma once
+// The list in the macro body does not close, so the parse holds no node of
+// Permission and the rule cannot read the arguments.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class Permission;
+#define OPEN(x) Permission<x

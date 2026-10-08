@@ -1,0 +1,4 @@
+# The ledger of the control: a keep row, a count with its reason.
+format 1
+rule erased-brand
+test/fixy/neg/neg_planted.cpp | erased-brand | 1 | SharedRead | the fixture spells the erased identity on purpose

@@ -1,12 +1,18 @@
 """guard explain — print one rule: its row, its section of CLAUDE.md, its action, its policy, its plants and its inputs.
 
 usage: guard explain RULE
+
+A rule module can give the function explained(context), which returns the
+facts that the rule finds in the tree, one line for each fact.  The command
+prints them in the part "derived".  The rule erased-brand gives its branded
+templates there.
 """
 
 import sys
 
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
+from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
 from assay.guard import check
 from assay.guard.listing import holder
@@ -50,6 +56,13 @@ def main(argv: list[str]) -> int:
     print(f"  plants:  {', '.join(path.name for path in plants) if plants else 'none'}")
     if rule.inputs:
         print(f"  inputs:  {', '.join(rule.inputs)}")
+    explained = getattr(runner.rule_module(rule), "explained", None) if rule.has_module else None
+    if explained is not None:
+        try:
+            lines = list(explained(check.rule_context(rule, REPO_ROOT, None)))
+        except runner.NotApplicable as reason:
+            lines = [f"the facts of the tree are not available: {reason}"]
+        check_report.write_line("\n".join(["  derived:", *(f"    {line}" for line in lines)]))
     text = rule_registry.doc_section(GUIDE.read_text(encoding="utf-8"), rule.doc) if GUIDE.is_file() else None
     print(f"  CLAUDE.md {rule.doc}:")
     print("\n".join(f"    {line}" for line in (text or "(no such section)").splitlines()))

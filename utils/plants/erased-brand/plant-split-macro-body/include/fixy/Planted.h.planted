@@ -1,0 +1,7 @@
+#pragma once
+// A block comment and a line splice divide the macro body over two lines,
+// and the body names the erased brand.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class Permission;
+#define SPLIT_ERASED(x) Permission<x, /* a comment divides the body */ \
+    DefaultBrand> split_erased

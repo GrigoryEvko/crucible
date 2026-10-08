@@ -1,0 +1,4 @@
+# The ledger of the plant: one site more than the file holds.
+format 1
+rule erased-brand
+include/fixy/Planted.h | erased-brand | 2 | Permission | -

@@ -1,0 +1,6 @@
+#pragma once
+// The brand is the third parameter, and the list stops two places before it.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <class Tag, class Extra = int, class Brand = ::foundation::brand::DefaultBrand> class Late;
+struct Tag {};
+Late<Tag> late;

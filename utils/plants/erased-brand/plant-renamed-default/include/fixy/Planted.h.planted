@@ -1,0 +1,7 @@
+#pragma once
+// The parameter of the brand has another name, and its default is the
+// erased brand.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <class Tag, class B = ::foundation::brand::DefaultBrand> class Renamed;
+struct Tag {};
+Renamed<Tag> renamed;

@@ -1,0 +1,3 @@
+// A test of the crucible layer is outside the files of the sites.
+#include <crucible/Outside.h>
+Permission<Tag> test_site;
