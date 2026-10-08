@@ -1,4 +1,5 @@
-// The reader of the rule table.  rows.h reads the rows grammar of
+// The reader of the rule table, and of the list of the headers that cannot
+// compile alone (THE SENTINEL of plugin.h).  rows.h reads the rows grammar of
 // utils/assay/core/rows.py, and this file reads the schema of the rule table
 // on those rows, as utils/assay/core/ruletable.py does.  The plant and the
 // control directories of the rule quarantine in utils/plants/quarantine/ give
@@ -433,11 +434,12 @@ constexpr const char* kSealFormat =
     "a seal row is 'seal ROOT PREFIX...', with one ROOT file of the source root and each PREFIX a directory under "
     "include/ whose parts are identifiers";
 
-// The bytes of the file at PATH, or false after an error.
-bool read_bytes(const std::string& path, std::string& text) {
+// The bytes of the file at PATH, or false after an error.  WHAT names the file
+// in the error, such as "the rule table".
+bool read_bytes(const std::string& path, const char* what, std::string& text) {
     FILE* stream = fopen(path.c_str(), "rb");
     if (stream == nullptr) {
-        error("quarantine: cannot read the rule table %s: %m", path.c_str());
+        error("quarantine: cannot read %s %s: %m", what, path.c_str());
         return false;
     }
     char chunk[4096];
@@ -447,10 +449,16 @@ bool read_bytes(const std::string& path, std::string& text) {
     bool is_read = ferror(stream) == 0;
     fclose(stream);
     if (!is_read) {
-        error("quarantine: cannot read the rule table %s", path.c_str());
+        error("quarantine: cannot read %s %s", what, path.c_str());
     }
     return is_read;
 }
+
+// The error of a row of the list of the headers that cannot compile alone that
+// does not obey its format.
+constexpr const char* kNotStandaloneFormat =
+    "a row of the list of the headers that cannot compile alone is 'HEADER | REASON', with one HEADER relative to "
+    "include/ and a reason";
 
 }  // namespace
 
@@ -459,7 +467,7 @@ bool read_bytes(const std::string& path, std::string& text) {
 // Complexity: O(rows * rows of the same kind), for the checks of a second row.
 bool load_rule_table(const std::string& path) {
     std::string text;
-    if (!read_bytes(path, text)) {
+    if (!read_bytes(path, "the rule table", text)) {
         return false;
     }
     crucible_rows::Rows rows = crucible_rows::parse(text);
@@ -822,6 +830,31 @@ bool load_rule_table(const std::string& path) {
         return false;
     }
     state.table = std::move(table);
+    return true;
+}
+
+// Reads the list of the headers that cannot compile alone at PATH into
+// state.not_standalone_headers (THE SENTINEL of plugin.h).  test/layer/
+// CMakeLists.txt checks that each header exists and has one row, so this
+// reader takes the words of each row.  Returns false after an error.
+// Complexity: linear in the bytes of the list.
+bool load_not_standalone(const std::string& path) {
+    std::string text;
+    if (!read_bytes(path, "the list of the headers that cannot compile alone", text)) {
+        return false;
+    }
+    crucible_rows::Rows rows = crucible_rows::parse(text);
+    if (!rows.is_valid()) {
+        error("quarantine: %s:%d: %s", path.c_str(), rows.problem_line, rows.problem.c_str());
+        return false;
+    }
+    for (const crucible_rows::Row& row : rows.rows) {
+        if (row.words.size() != 1 || row.cells.size() != 1 || row.cells[0].empty() || !is_file_path(row.words[0])) {
+            error("quarantine: %s:%d: %s", path.c_str(), row.line, kNotStandaloneFormat);
+            return false;
+        }
+        state.not_standalone_headers.insert("include/" + row.words[0]);
+    }
     return true;
 }
 

@@ -5,7 +5,8 @@
 # only a friend declaration declares are no mint, and they have no record.
 # Each alias of a class with a member mint has a record of the kind mint-alias,
 # also a typedef and an alias of a specialization of a class template.  An
-# alias of a class with no mint has none.
+# alias of a class with no mint has none.  An alias outside include/ has none,
+# because the inventory counts the fixtures of the mints of include/ only.
 compile error shapes.cpp mode=error
 flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Mints.h
 exit error pass

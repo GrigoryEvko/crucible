@@ -272,7 +272,10 @@ foreach(_layer foundation fixy crucible)
     # home reads the gates of each header there.  A crucible header is
     # quarantined, and the family declaration property reads it in each unit.
     # The one-line unit of a header with a check file goes to layer_alone and
-    # does not get the argument, so each header has one sentinel unit.
+    # does not get the argument, so each header has one sentinel unit.  A
+    # header of crucible-not-standalone.txt has none, and the family home
+    # reads its gates in each unit that includes it (THE SCOPE of
+    # utils/tools/quarantine/home.cpp).
     set(_sentinel_options "-fconstexpr-ops-limit=${_header_limit}")
     set(_sentinel_argument "${CRUCIBLE_QUARANTINE_SENTINEL_ARGUMENT}=include/${_header}")
     string(REGEX REPLACE "\\.h$" ".cpp" _check "${_header}")

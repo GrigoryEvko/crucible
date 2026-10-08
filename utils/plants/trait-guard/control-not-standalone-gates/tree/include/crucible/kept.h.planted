@@ -1,0 +1,9 @@
+#pragma once
+
+#include <foundation/gates.h>
+
+namespace crucible::kept {
+
+template <class T> concept ReadsLayer = ::foundation::gates::open_v<T>;
+
+}  // namespace crucible::kept

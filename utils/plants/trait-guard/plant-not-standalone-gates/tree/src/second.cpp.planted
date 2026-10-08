@@ -1,0 +1,3 @@
+#include <crucible/lone.h>
+
+static_assert(!crucible::lone::ReadsLayer<int>);

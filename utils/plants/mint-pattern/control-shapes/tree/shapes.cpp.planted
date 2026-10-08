@@ -5,4 +5,7 @@ namespace quarantined {
 // A mint of a quarantined file with each axis.
 [[nodiscard]] constexpr control::Thing mint_quarantined(control::Thing) noexcept { return {}; }
 
+// An alias outside include/ of a class with a member mint has no record.
+using QuarantinedCarrier = control::Carrier;
+
 }  // namespace quarantined

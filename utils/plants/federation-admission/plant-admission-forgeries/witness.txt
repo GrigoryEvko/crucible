@@ -33,7 +33,6 @@ exit alias fail
 finding alias federation-admission outside-home src/alias.cpp:6:39 | foundation::permissions::FederationAdmission
 finding alias federation-admission outside-home src/alias.cpp:7:23 | foundation::permissions::FederationAdmission
 finding alias federation-admission at-home include/fixy/Federation.h:10:7 | foundation::permissions::FederationAdmission
-finding alias mint-pattern mint-alias src/alias.cpp:5:7 | E \| alias=E owner=foundation::permissions::FederationAdmission
 finding alias proof-routes function-specialization src/alias.cpp:6:39 | function-specialization: foundation::permissions::FederationAdmission::mint_federation_admittance
 error alias src/alias.cpp:6 | quarantine: outside-home foundation::permissions::FederationAdmission;
 error alias src/alias.cpp:6 | quarantine: function-specialization function-specialization: foundation::permissions::FederationAdmission::mint_federation_admittance;
@@ -42,7 +41,6 @@ compile decltype src/decltype.cpp mode=error
 exit decltype fail
 finding decltype federation-admission outside-home src/decltype.cpp:8:53 | foundation::permissions::FederationAdmission
 finding decltype federation-admission at-home include/fixy/Federation.h:10:7 | foundation::permissions::FederationAdmission
-finding decltype mint-pattern mint-alias src/decltype.cpp:7:7 | D \| alias=D owner=foundation::permissions::FederationAdmission
 error decltype src/decltype.cpp:8 | quarantine: outside-home foundation::permissions::FederationAdmission;
 compile nested src/nested.cpp mode=error
 exit nested fail
@@ -65,7 +63,6 @@ compile macro_member src/macro_member.cpp mode=error
 exit macro_member fail
 finding macro_member federation-admission outside-home src/macro_member.cpp:7:1 | foundation::permissions::FederationAdmission
 finding macro_member federation-admission at-home include/fixy/Federation.h:10:7 | foundation::permissions::FederationAdmission
-finding macro_member mint-pattern mint-alias src/macro_member.cpp:5:7 | E \| alias=E owner=foundation::permissions::FederationAdmission
 finding macro_member proof-routes function-specialization src/macro_member.cpp:7:1 | function-specialization: foundation::permissions::FederationAdmission::mint_federation_admittance
 error macro_member src/macro_member.cpp:7 | quarantine: outside-home foundation::permissions::FederationAdmission;
 error macro_member src/macro_member.cpp:7 | quarantine: function-specialization function-specialization: foundation::permissions::FederationAdmission::mint_federation_admittance;

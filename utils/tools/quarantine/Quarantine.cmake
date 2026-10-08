@@ -38,10 +38,11 @@
 #   mode stamp for each source file of a row into ${CMAKE_BINARY_DIR}/quarantine.
 #   It writes a file only when its content changes.
 #   - The stamp argument holds the key of the plugin, the mode, the hash of
-#     facts.txt and the threshold of the rule padded-list.  A change of the
-#     plugin, of its flags, of the compiler or of a fact changes each compile
+#     facts.txt, the threshold of the rule padded-list and the hash of the list
+#     of the headers that cannot compile alone.  A change of the plugin, of its
+#     flags, of the compiler, of a fact or of that list changes each compile
 #     line, and each object compiles again.  A change of a reason or of a
-#     comment changes no compile line.
+#     comment of the rule table changes no compile line.
 #   - The argument padded-list-limit is the error threshold of the row
 #     padded-list of utils/registry.txt (crucible_rule_limit of
 #     cmake/Guards.cmake).  The plugin gives a padded list only above it.  A
@@ -267,10 +268,25 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 include("${CMAKE_CURRENT_LIST_DIR}/../../../cmake/Guards.cmake")
 crucible_rule_limit(padded-list _crucible_quarantine_padded_limit)
 
+# The list of the headers of include/ that cannot compile alone.  No unit is
+# the sentinel of such a header, so the family home reads it in each unit that
+# includes it (THE SENTINEL of plugin.h).  A project that is not the tree has
+# no such list, and its compiles get no argument not-standalone.
+if(NOT DEFINED CRUCIBLE_NOT_STANDALONE_LIST AND EXISTS "${CMAKE_SOURCE_DIR}/test/layer/crucible-not-standalone.txt")
+  set(CRUCIBLE_NOT_STANDALONE_LIST "${CMAKE_SOURCE_DIR}/test/layer/crucible-not-standalone.txt")
+endif()
+set(_crucible_quarantine_not_standalone_hash "")
+if(DEFINED CRUCIBLE_NOT_STANDALONE_LIST)
+  file(SHA256 "${CRUCIBLE_NOT_STANDALONE_LIST}" _crucible_quarantine_not_standalone_hash)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CRUCIBLE_NOT_STANDALONE_LIST}")
+endif()
+
 string(TOLOWER "${CRUCIBLE_QUARANTINE_MODE}" _crucible_quarantine_mode)
 file(SHA256 "${_crucible_quarantine_out}/facts.txt" _crucible_quarantine_facts_hash)
-string(SHA256 _crucible_quarantine_stamp
-  "${_crucible_quarantine_key} ${_crucible_quarantine_mode} ${_crucible_quarantine_facts_hash} padded-list-limit=${_crucible_quarantine_padded_limit}")
+set(_crucible_quarantine_stamp_input "${_crucible_quarantine_key} ${_crucible_quarantine_mode}")
+string(APPEND _crucible_quarantine_stamp_input " ${_crucible_quarantine_facts_hash}"
+  " padded-list-limit=${_crucible_quarantine_padded_limit} ${_crucible_quarantine_not_standalone_hash}")
+string(SHA256 _crucible_quarantine_stamp "${_crucible_quarantine_stamp_input}")
 string(SUBSTRING "${_crucible_quarantine_stamp}" 0 16 _crucible_quarantine_stamp)
 set(_crucible_quarantine_argument "-fplugin-arg-crucible_quarantine")
 # The families declaration property and expression shape read a base header
@@ -292,14 +308,18 @@ set(_crucible_quarantine_flags
   "${_crucible_quarantine_argument}-mode=${_crucible_quarantine_mode}"
   "${_crucible_quarantine_argument}-stamp=${_crucible_quarantine_stamp}"
   "${_crucible_quarantine_argument}-padded-list-limit=${_crucible_quarantine_padded_limit}")
+if(DEFINED CRUCIBLE_NOT_STANDALONE_LIST)
+  list(APPEND _crucible_quarantine_flags "${_crucible_quarantine_argument}-not-standalone=${CRUCIBLE_NOT_STANDALONE_LIST}")
+endif()
 
 crucible_launcher_is_ccache("${CMAKE_CXX_COMPILER_LAUNCHER}" _crucible_quarantine_launcher_is_ccache)
 if(_crucible_quarantine_launcher_is_ccache)
   # ccache hashes the plugin path and the paths of the plugin arguments as
   # text, and each work tree has its own.  The stamp stays in the hash, and
-  # ccache hashes the content of enforce.txt and not its path.
+  # ccache hashes the content of enforce.txt and not its path.  The stamp holds
+  # the hash of the list of the argument not-standalone.
   list(APPEND CMAKE_CXX_COMPILER_LAUNCHER
-    "ignore_options=-fplugin=* ${_crucible_quarantine_argument}-root=* ${_crucible_quarantine_argument}-build=* ${_crucible_quarantine_argument}-rules=* ${_crucible_quarantine_argument}-stamps=*"
+    "ignore_options=-fplugin=* ${_crucible_quarantine_argument}-root=* ${_crucible_quarantine_argument}-build=* ${_crucible_quarantine_argument}-rules=* ${_crucible_quarantine_argument}-stamps=* ${_crucible_quarantine_argument}-not-standalone=*"
     "extra_files_to_hash=${_crucible_quarantine_out}/enforce.txt")
 endif()
 foreach(_crucible_quarantine_flag IN LISTS _crucible_quarantine_flags)

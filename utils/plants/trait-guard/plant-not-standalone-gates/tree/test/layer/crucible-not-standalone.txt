@@ -1,0 +1,2 @@
+# The crucible headers that cannot compile alone, one row each.
+crucible/lone.h | a planted header that has no sentinel unit

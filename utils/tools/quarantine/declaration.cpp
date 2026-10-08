@@ -50,12 +50,14 @@
 //     the name of the class of a member with no namespace, and owner is its
 //     qualified name.  The owner is the last fact, because the name of a class
 //     can hold a space.  Each alias and each typedef of a class with a member
-//     mint, also of a specialization of a class template, gets one record of
-//     the kind mint-alias:
+//     mint, also of a specialization of a class template, in a file of
+//     include/, gets one record of the kind mint-alias:
 //
 //       ALIAS | alias=NAME owner=CLASS
 //
-//     A fixture can name a member mint through such an alias.  The axes:
+//     A fixture can name a member mint through such an alias.  The inventory
+//     of the mints and the rule mint-floor count the fixtures of the mints of
+//     include/ only, so an alias of a different file gets no record.  The axes:
 //       nodiscard     the attribute [[nodiscard]] on a declaration
 //       constexpr     constexpr or consteval, unless the body is a borrow
 //                     projection: one return that calls mint_view with this
@@ -888,6 +890,22 @@ Place base_place(location_t location) {
     return place.file_class == FileClass::base ? place : Place{};
 }
 
+// The place at LOCATION when the family reads its file and one of DIRECTORIES
+// holds the file, or an empty place.
+template <std::size_t Count>
+Place place_under(location_t location, const char* const (&directories)[Count]) {
+    Place place = property_place(location);
+    if (place.file == nullptr) {
+        return place;
+    }
+    for (const char* directory : directories) {
+        if (place.file->relative.compare(0, std::strlen(directory), directory) == 0) {
+            return place;
+        }
+    }
+    return Place{};
+}
+
 // ── The facts of a body ─────────────────────────────────────────────────
 
 // The name of the function that the callee of a call names, in GENERIC or in
@@ -1262,14 +1280,21 @@ tree aliased_mint_class(tree decl, std::unordered_map<tree, bool>& mint_classes)
     return entry->second ? main_type : NULL_TREE;
 }
 
-// The record of the alias or the typedef DECL of a class with a member mint
-// (THE RULE mint-pattern).  A fixture can name the mint through the alias.
+// The directories of the aliases of the rule mint-pattern.  The inventory of
+// the mints and the rule mint-floor count the fixtures of the mints of
+// include/, the scope of the row of mint-pattern in utils/registry.txt, and an
+// alias in a different file names no mint that they count.
+constexpr const char* kMintAliasDirectories[] = {"include/"};
+
+// The record of the alias or the typedef DECL of a class with a member mint,
+// in a file of kMintAliasDirectories (THE RULE mint-pattern).  A fixture can
+// name the mint through the alias.
 void check_mint_alias(tree decl, std::unordered_map<tree, bool>& mint_classes) {
     tree owner = aliased_mint_class(decl, mint_classes);
     if (owner == NULL_TREE) {
         return;
     }
-    Place place = property_place(DECL_SOURCE_LOCATION(decl));
+    Place place = place_under(DECL_SOURCE_LOCATION(decl), kMintAliasDirectories);
     if (place.file == nullptr) {
         return;
     }
@@ -1850,22 +1875,6 @@ bool has_process_wide_marker(tree decl) {
 // The directories whose code goes into the libraries: the scope of the rule
 // process-wide-state.  A test or a bench program has one copy of each object.
 constexpr const char* kLibraryDirectories[] = {"include/", "src/", "vessel/"};
-
-// The place at LOCATION when the family reads its file and one of DIRECTORIES
-// holds the file, or an empty place.
-template <std::size_t Count>
-Place place_under(location_t location, const char* const (&directories)[Count]) {
-    Place place = property_place(location);
-    if (place.file == nullptr) {
-        return place;
-    }
-    for (const char* directory : directories) {
-        if (place.file->relative.compare(0, std::strlen(directory), directory) == 0) {
-            return place;
-        }
-    }
-    return Place{};
-}
 
 // The place at LOCATION when the rule process-wide-state reads its file, or
 // an empty place.

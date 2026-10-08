@@ -1,0 +1,9 @@
+#pragma once
+
+#include <foundation/gates.h>
+
+namespace crucible::lone {
+
+template <class T> concept ReadsLayerConcept = ::foundation::gates::Closed<T>;
+
+}  // namespace crucible::lone

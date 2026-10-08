@@ -6,6 +6,11 @@
 # layer_not_standalone compiles each listed header alone and fails when one
 # compiles, so a row goes in the commit that makes its header compile alone.
 # The list can only become shorter.  A reason has no semicolon.
+#
+# The quarantine plugin reads this list too, through its argument
+# not-standalone (utils/tools/quarantine/Quarantine.cmake).  No unit is the
+# sentinel of a listed header, so the family home reads the gates of the
+# header in each unit that includes it.
 
 # BPF C headers.  clang compiles them for the BPF target, as part of a BPF
 # program.  They are not C++, and vmlinux.h declares a field named operator.

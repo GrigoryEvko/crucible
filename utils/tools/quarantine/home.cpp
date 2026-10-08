@@ -73,10 +73,14 @@
 //
 // THE SCOPE
 //     The hooks and the lists cost little, so each unit reads each site that
-//     it compiles.  Two reads walk trees, and they read a file in one unit
-//     only: the file that the unit compiles, the header that the argument
-//     sentinel names, and a quarantined header outside include/, which no
-//     sentinel names.  The two reads are THE BODY OF combine_ids and THE GATES.
+//     it compiles.  Two reads walk trees, and a unit reads a file with them
+//     only in these cases: the unit compiles the file, the argument sentinel
+//     names the file, or no sentinel names the file.  A quarantined header
+//     outside include/ has no sentinel, and a header of include/ that the
+//     list of the argument not-standalone names has none either, because it
+//     cannot compile alone (THE SENTINEL of plugin.h).  The two reads read such
+//     a header in each unit that includes it.  They are THE BODY OF
+//     combine_ids and THE GATES.
 //
 // THE BODY OF combine_ids
 //     The rule no-combine-ids-duplicate gives second-body for a function named
@@ -98,11 +102,10 @@
 //     template one time.
 //
 // WHAT THE FAMILY DOES NOT READ
-//     Code that no unit of the build compiles, and a header of include/ that
-//     no unit names as its sentinel, such as a header that does not compile
-//     alone.  A gate and a body in a function body, such as a lambda with a
-//     requires-clause, outside THE BODY OF combine_ids.  A use of a name, and
-//     not its declaration.
+//     Code that no unit of the build compiles, such as a BPF C header that
+//     clang compiles.  A gate and a body in a function body, such as a lambda
+//     with a requires-clause, outside THE BODY OF combine_ids.  A use of a
+//     name, and not its declaration.
 
 #include "plugin.h"
 
@@ -276,7 +279,7 @@ bool is_scope_file(const FileEntry* file) {
     if (file == main_file) {
         return true;
     }
-    if (!state.sentinel.empty() && file->relative == state.sentinel) {
+    if ((!state.sentinel.empty() && file->relative == state.sentinel) || file->cannot_compile_alone) {
         return true;
     }
     return file->file_class == FileClass::quarantined && !has_prefix(file->relative, kHeaderTree);
@@ -953,16 +956,28 @@ bool is_gate_file(location_t location) {
 }
 
 // True when a gate file can be a scope file of this unit: the main file or the
-// sentinel is a header of the three layers or its check file.  Most units
-// compile a file outside them, and then read no gate.
+// sentinel is a header of the three layers or its check file, or the unit
+// reads a header of the three layers that cannot compile alone (THE SCOPE).
+// Most units compile a file outside them, and then read no gate.  The first
+// call comes from the walk at PLUGIN_FINISH_UNIT, so state.entries holds each
+// file that the unit read.  Complexity: linear in the files of the unit, one
+// time.
 bool has_gate_scope() {
     static const bool has_scope = [] {
         auto is_gate_path = [](const std::string& path) {
             return has_any_prefix(read_as(path), {kLayerTrees[0], kLayerTrees[1], kCrucibleTree});
         };
         const FileEntry* main_file = main_input_filename != nullptr ? &classify_file(main_input_filename) : nullptr;
-        return (main_file != nullptr && is_gate_path(main_file->relative))
-            || (!state.sentinel.empty() && is_gate_path(state.sentinel));
+        if ((main_file != nullptr && is_gate_path(main_file->relative))
+            || (!state.sentinel.empty() && is_gate_path(state.sentinel))) {
+            return true;
+        }
+        for (const auto& item : state.entries) {
+            if (item.second.cannot_compile_alone && is_gate_path(item.second.relative)) {
+                return true;
+            }
+        }
+        return false;
     }();
     return has_scope;
 }
@@ -1310,26 +1325,6 @@ void walk_home() {
     build_index();
     walked.clear();
     walk_namespace(global_namespace, nullptr, NULL_TREE);
-}
-
-// One line of the family: a line of the report, an error in the mode error,
-// and a note when the unit writes no report.  An at-home line is no finding.
-void report_home(const Finding& finding, std::vector<std::string>& lines, bool has_section) {
-    std::string kind = kind_text(finding);
-    const char* rule = rule_name(rule_of(finding.kind));
-    lines.push_back(std::string(rule) + " " + kind + " " + finding.file->relative + ":" + std::to_string(finding.line)
-                    + ":" + std::to_string(finding.column) + " " + finding.entity);
-    if (is_home_record(finding.kind)) {
-        return;
-    }
-    if (state.is_error_mode) {
-        error_at(finding.spelling,
-                 "quarantine: %s %s; the rule %s refuses this site, and %<python3 utils/bin/guard explain %s%> gives "
-                 "the rule and its action",
-                 kind.c_str(), finding.entity.c_str(), rule, rule);
-    } else if (state.out_dir.empty() && !has_section) {
-        inform(finding.spelling, "quarantine: %s %s", kind.c_str(), finding.entity.c_str());
-    }
 }
 
 void register_home(const char* plugin_name) {

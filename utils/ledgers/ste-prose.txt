@@ -3018,7 +3018,7 @@ utils/assay/tests/loop/test_fixture.py | long-sentence | 1 | StoreTest.check_evi
 utils/assay/tests/loop/test_fixture.py | long-sentence | 1 | StoreTest.check_identity_change | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | long-sentence | 1 | StoreTest.check_memo_sweep | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | long-sentence | 1 | StoreTest.check_plugin_flag_spellings | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/tests/loop/test_fixture.py | long-sentence | 3 | StoreTest.plant_plugin_tree | A text of today.  The change that writes the text again in STE lowers the count
+utils/assay/tests/loop/test_fixture.py | long-sentence | 2 | StoreTest.plant_plugin_tree | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | long-sentence | 1 | StoreTest.plugin_flags | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | <module>: expect | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | <module>: inside | A text of today.  The change that writes the text again in STE lowers the count

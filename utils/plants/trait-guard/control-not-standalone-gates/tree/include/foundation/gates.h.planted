@@ -1,0 +1,8 @@
+#pragma once
+
+namespace foundation::gates {
+
+template <class T> inline constexpr bool open_v = false;
+template <class T> concept Closed = sizeof(T) > 0;
+
+}  // namespace foundation::gates

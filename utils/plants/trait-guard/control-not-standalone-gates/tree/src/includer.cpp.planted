@@ -1,0 +1,5 @@
+#include <crucible/kept.h>
+#include <crucible/lone.h>
+
+static_assert(crucible::lone::ReadsLayerConcept<int>);
+static_assert(!crucible::kept::ReadsLayer<int>);

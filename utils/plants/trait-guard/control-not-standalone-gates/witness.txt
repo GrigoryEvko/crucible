@@ -1,0 +1,6 @@
+# A header that cannot compile alone passes the rule trait-guard in each unit
+# that includes it when its gates read only closed names.  The open gate of a
+# header with a sentinel unit counts only in that unit, so a different unit
+# that includes the header reads none of its gates.
+compile includer src/includer.cpp mode=error not-standalone=test/layer/crucible-not-standalone.txt
+exit includer pass

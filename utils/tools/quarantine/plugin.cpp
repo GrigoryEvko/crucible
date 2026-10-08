@@ -62,6 +62,11 @@
 //                    plugin.h), and the family home reads the gates of a
 //                    header in this unit (home.cpp, THE GATES).  test/layer
 //                    gives the sentinel unit of each header this argument
+//     not-standalone=PATH   the list of the headers of include/ that cannot
+//                    compile alone, test/layer/crucible-not-standalone.txt.
+//                    No unit is the sentinel of such a header, so the family
+//                    home reads it in each unit that includes it (THE
+//                    SENTINEL in plugin.h)
 //     padded-list-limit=N
 //                    the threshold of the rule padded-list, a whole number of
 //                    1 or more (necessary).  A list of more elements than N
@@ -206,8 +211,8 @@ void add_mode_dependencies() {
     std::unordered_set<const FileEntry*> files;
     bool needs_enforce = false;
     for (const Finding& finding : state.findings) {
-        if (is_each_mode_kind(finding.kind) || is_family_kind(finding.kind) || is_home_kind(finding.kind)
-            || finding.file == nullptr || is_opted_out(finding) || !files.insert(finding.file).second) {
+        if (is_each_mode_kind(finding.kind) || is_family_kind(finding.kind) || finding.file == nullptr
+            || is_opted_out(finding) || !files.insert(finding.file).second) {
             continue;
         }
         std::string stamp = state.stamps_dir + "/modes/" + finding.file->relative;
@@ -240,11 +245,12 @@ std::string report_line(const char* rule, const std::string& kind, const FileEnt
          + std::to_string(column) + " " + entity;
 }
 
-// One finding of a family rule (is_family_kind): a line of the report, an
-// error in the mode error, and a note when the unit writes no report.  A
-// record, such as a mint record, is a line and no finding (is_record_kind).
-// No opt-out region covers such a finding, and no enforce mode makes it an
-// error, because the ledger of its rule judges it.
+// One line of a family rule (is_family_kind), of each family that a ledger
+// judges: a line of the report, an error in the mode error, and a note when
+// the unit writes no report.  A record, such as a mint record or an at-home
+// line, is a line and no finding (is_record_kind).  No opt-out region covers
+// such a finding, and no enforce mode makes it an error, because the ledger of
+// its rule judges it.
 void report_family(const Finding& finding, std::vector<std::string>& lines, bool has_section) {
     std::string kind = kind_text(finding);
     const char* rule = rule_name(rule_of(finding.kind));
@@ -414,10 +420,6 @@ void report(bool can_add_dependencies) {
             report_family(finding, lines, has_section);
             continue;
         }
-        if (is_home_kind(finding.kind)) {
-            report_home(finding, lines, has_section);
-            continue;
-        }
         bool is_out = is_opted_out(finding);
         std::string inner_kind = kind_text(finding);
         std::string kind = is_out ? std::string(kOptedOutKind) : inner_kind;
@@ -493,6 +495,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     bool has_build = false;
     std::string rules_argument;
     std::string kinds_argument;
+    std::string not_standalone_argument;
     bool has_padded_limit = false;
     for (int index = 0; index < plugin_info->argc; ++index) {
         std::string key = plugin_info->argv[index].key;
@@ -520,6 +523,8 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
             kinds_argument = value;
         } else if (key == "sentinel") {
             state.sentinel = value;
+        } else if (key == "not-standalone") {
+            not_standalone_argument = value;
         } else if (key == "padded-list-limit") {
             if (!crucible_rows::number(value, UINT64_MAX, state.padded_list_limit)
                 || state.padded_list_limit == 0) {
@@ -531,7 +536,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
             has_padded_limit = true;
         } else {
             error("quarantine: unknown argument %qs; the arguments are root, build, rules, mode, out, stamps, stamp, "
-                  "kinds, sentinel and padded-list-limit",
+                  "kinds, sentinel, not-standalone and padded-list-limit",
                   key.c_str());
             return 1;
         }
@@ -567,6 +572,9 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
         return 1;
     }
     if (!load_rule_table(rules_argument)) {
+        return 1;
+    }
+    if (!not_standalone_argument.empty() && !load_not_standalone(not_standalone_argument)) {
         return 1;
     }
     for (const AdmitRow& admit : state.table.admits) {

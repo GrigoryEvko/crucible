@@ -1,0 +1,19 @@
+# A gate of a header that cannot compile alone is an open read of the rule
+# trait-guard in each unit that includes the header, because no unit is the
+# sentinel of that header.  The list of the argument not-standalone names the
+# header.  With no such list, a unit that is not the sentinel of the header
+# reads none of its gates.
+compile first src/first.cpp mode=error not-standalone=test/layer/crucible-not-standalone.txt
+exit first fail
+finding first trait-guard open-read include/crucible/lone.h:8:43 | crucible::lone::runtime_open_v
+finding first trait-guard open-read include/crucible/lone.h:9:62 | foundation::gates::open_v
+error first include/crucible/lone.h:8 | quarantine: open-read crucible::lone::runtime_open_v;
+error first include/crucible/lone.h:9 | quarantine: open-read foundation::gates::open_v;
+compile second src/second.cpp mode=error not-standalone=test/layer/crucible-not-standalone.txt
+exit second fail
+finding second trait-guard open-read include/crucible/lone.h:8:43 | crucible::lone::runtime_open_v
+finding second trait-guard open-read include/crucible/lone.h:9:62 | foundation::gates::open_v
+error second include/crucible/lone.h:8 | quarantine: open-read crucible::lone::runtime_open_v;
+error second include/crucible/lone.h:9 | quarantine: open-read foundation::gates::open_v;
+compile unlisted src/first.cpp mode=error
+exit unlisted pass

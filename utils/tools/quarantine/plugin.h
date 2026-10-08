@@ -6,7 +6,8 @@
 //     Quarantine.cmake builds crucible_quarantine.so from these sources.  Each
 //     rule family of the plugin has one source:
 //         plugin.cpp       the arguments, the hooks of the unit and the report
-//         rule_table.cpp   the reader of the rule table, on rows.h
+//         rule_table.cpp   the reader of the rule table and of the list of
+//                          the headers that cannot compile alone, on rows.h
 //         regions.cpp      the opt-out regions and their two pragmas
 //         library.cpp      the library entities and the admitted list
 //         owner.cpp        the family owner: each named reference of the code,
@@ -159,8 +160,8 @@
 //     mint                  no finding: one record of each mint, with its facts,
 //                           for the inventory of the mints
 //     mint-alias            no finding: one record of each alias of a class
-//                           with a member mint, for the count of the fixtures
-//                           of the mint
+//                           with a member mint in a file of include/, for the
+//                           count of the fixtures of the mint
 //     mint-not-nodiscard    a mint with no [[nodiscard]]
 //     mint-not-constexpr    a mint that is not constexpr or consteval, and that
 //                           is no borrow projection
@@ -237,8 +238,9 @@
 //     compared              no finding: the unit compared the two sets
 //     The rules of the family home (home.cpp, THE FAMILY) read where a
 //     definition or a specialization stands.  A finding of such a rule is an
-//     error only in the mode error, and no opt-out region covers it.  Each
-//     rule has the kinds:
+//     error only in the mode error, no opt-out region covers it, and the
+//     module of its rule judges it against the ledger of the rule
+//     (is_family_kind).  Each rule has the kinds:
 //     outside-home          a definition or a specialization of an entity
 //                           outside the paths of its home row (the rules
 //                           federation-admission, host-owners,
@@ -280,6 +282,11 @@
 //     too (home.cpp, THE GATES).  The rules of the quarantine do not read a
 //     base file.  A finding of a family rule in a base file counts only in
 //     that unit.  So each base file costs one walk in each build.
+//     The argument not-standalone=PATH names the list of the headers that
+//     cannot compile alone, test/layer/crucible-not-standalone.txt.  Each row
+//     is `HEADER | REASON`, with HEADER relative to include/.  No unit is the
+//     sentinel of such a header, so the family home reads it in each unit
+//     that includes it (home.cpp, THE SCOPE).
 //
 // THE SECTION
 //     A unit that writes an object puts its report into the section
@@ -370,6 +377,9 @@ struct FileEntry {
     // A base file that the argument sentinel names, or the base main file of
     // the unit (THE SENTINEL).
     bool is_sentinel = false;
+    // A header of include/ that the list of the argument not-standalone names.
+    // It cannot compile alone, so no unit is its sentinel (THE SENTINEL).
+    bool cannot_compile_alone = false;
     // The grant row whose grant file this file is, or null, and the grant row
     // whose door file this file is, or null (expression.cpp, THE GRANTS).
     const GrantRow* grant = nullptr;
@@ -976,10 +986,11 @@ inline bool is_each_mode_kind(Kind kind) {
 }
 
 // True when a rule of the families declaration property (declaration.cpp),
-// expression shape (expression.cpp) and owner (owner.cpp) gives the kind.
-// Such a finding is an error only in the mode error, no opt-out region covers
-// it, and no enforce mode changes it.  The module of its rule judges it
-// against the ledger of the rule.
+// expression shape (expression.cpp), owner (owner.cpp) and home (home.cpp)
+// gives the kind.  Such a finding is an error only in the mode error, no
+// opt-out region covers it, and no enforce mode changes it.  The module of its
+// rule judges it against the ledger of the rule.  plugin.cpp reports each
+// such line in one way (report_family).
 inline bool is_family_kind(Kind kind) {
     switch (rule_of(kind)) {
         case Rule::mint_pattern:
@@ -994,6 +1005,11 @@ inline bool is_family_kind(Kind kind) {
         case Rule::padded_list:
         case Rule::refined_pre_subsumption:
         case Rule::syscall_grant_coverage:
+        case Rule::federation_admission:
+        case Rule::host_owners:
+        case Rule::no_combine_ids_duplicate:
+        case Rule::splits_orphan:
+        case Rule::trait_guard:
         case Rule::start_lifetime:
         case Rule::syscall_capability:
             return true;
@@ -1002,31 +1018,24 @@ inline bool is_family_kind(Kind kind) {
     }
 }
 
-// True when a line of the kind is a record: a fact for a reader of the
+// True when a line of a family kind is a record: a fact for a reader of the
 // records, and no finding of its rule.  The record of a mint, the record of an
-// alias of a class with a member mint, and the line of a grant set that the
-// unit compared.
+// alias of a class with a member mint, the line of a grant set that the unit
+// compared, and a site that a home row admits (at-home).
 inline bool is_record_kind(Kind kind) {
-    return kind == Kind::mint_record || kind == Kind::mint_alias || kind == Kind::grant_compared;
-}
-
-// True when a rule of the family home gives the kind.  Such a finding is an
-// error only in the mode error, no opt-out region covers it, and no enforce
-// mode changes it, because the ledger of its rule judges it.
-inline bool is_home_kind(Kind kind) {
-    Rule rule = rule_of(kind);
-    for (Rule home : kHomeRules) {
-        if (rule == home) {
+    switch (kind) {
+        case Kind::mint_record:
+        case Kind::mint_alias:
+        case Kind::grant_compared:
+        case Kind::federation_at_home:
+        case Kind::owner_at_home:
+        case Kind::combine_at_home:
+        case Kind::split_at_home:
+        case Kind::trait_at_home:
             return true;
-        }
+        default:
+            return false;
     }
-    return false;
-}
-
-// True for a line of the family home that is no finding (at-home).
-inline bool is_home_record(Kind kind) {
-    return kind == Kind::federation_at_home || kind == Kind::owner_at_home || kind == Kind::combine_at_home
-        || kind == Kind::split_at_home || kind == Kind::trait_at_home;
 }
 
 // The two kinds of a line of the report that the rule quarantine gives for
@@ -1148,7 +1157,7 @@ inline bool is_name_kind(Kind kind) {
         case Kind::fast_math_override:
             return true;
         default:
-            return is_family_kind(kind) || is_home_kind(kind);
+            return is_family_kind(kind);
     }
 }
 
@@ -1283,6 +1292,10 @@ struct State {
     // or empty, and the real path of the main file of the unit (THE SENTINEL).
     std::string sentinel;
     std::string main_real;
+    // Each header of include/ that the list of the argument not-standalone
+    // names, relative to the root, such as include/crucible/ledger/ProbeSupport.h
+    // (THE SENTINEL).
+    std::unordered_set<std::string> not_standalone_headers;
     bool was_reported = false;
     RuleTable table;
 
@@ -1458,6 +1471,7 @@ inline void classify_by_table(FileEntry& entry) {
     entry.is_sentinel =
         entry.file_class == FileClass::base
         && ((!state.sentinel.empty() && entry.relative == state.sentinel) || entry.real == state.main_real);
+    entry.cannot_compile_alone = state.not_standalone_headers.count(entry.relative) != 0;
 }
 
 // True when RESOLVED is a file of the build directory.  A build directory that
@@ -1768,6 +1782,10 @@ inline bool macro_number(const std::string& name, int depth, long long& number) 
 // rule_table.cpp: reads the rule table at PATH into state.table.  Returns
 // false after an error.
 bool load_rule_table(const std::string& path);
+// rule_table.cpp: reads the list of the headers that cannot compile alone at
+// PATH into state.not_standalone_headers (THE SENTINEL).  Returns false after
+// an error.
+bool load_not_standalone(const std::string& path);
 
 // regions.cpp: the opt-out regions.
 inline constexpr char kBeginMacro[] = "CRUCIBLE_I_KNOW_WHAT_IM_DOING";
@@ -1871,7 +1889,6 @@ void report_contract(const Finding& finding);
 // home.cpp: the family home, where a definition or a specialization stands.
 void register_home(const char* plugin_name);
 void walk_home();
-void report_home(const Finding& finding, std::vector<std::string>& lines, bool has_section);
 
 // plugin.cpp: the report of the unit.
 void report(bool can_add_dependencies);

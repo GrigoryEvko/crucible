@@ -148,6 +148,14 @@ PLANTED_RULES = ("# The rule table of a planted tree of the fixture driver test.
                  "layer planted 0 planted_pragma/ planted_empty/\n"
                  "quarantine neg/\n"
                  "enforce neg/ error\n")
+# The prefix of an argument of the quarantine plugin.
+PLUGIN_ARGUMENT = "-fplugin-arg-crucible_quarantine-"
+# The planted text of each file that a plugin argument names in the source root, by the key of the argument.  The
+# planted list of the headers that cannot compile alone has no row.
+PLANTED_ARGUMENT_FILES = {
+    "rules": PLANTED_RULES,
+    "not-standalone": "# The headers of a planted tree that cannot compile alone.\n",
+}
 
 
 def planted_registry(*rules: tuple[str, float, float, str]) -> str:
@@ -1342,12 +1350,14 @@ class StoreTest:
         source root of that build changed to the root of this tree in each
         plugin argument that names a path under it.  So the plugin takes this
         tree as its source root.  A directory that such an argument names is
-        made in this tree, and the one file that such an argument names gets the
-        planted rule table.  Each row compiles with -Wall -Werror, as each
-        compile of the source tree does, and it finds foundation/Quarantine.h in
-        the include directory of the source tree, outside the root of the
-        plugin.  Returns False, after a recorded failure, when the build gives
-        no plugin, no source root or not one such file.
+        made in this tree.  Each file that such an argument names gets its text
+        of PLANTED_ARGUMENT_FILES.  Each row compiles with -Wall -Werror, as
+        each compile of the source tree does, and it finds
+        foundation/Quarantine.h in the include directory of the source tree,
+        outside the root of the plugin.  Returns False, after a recorded
+        failure, when the build gives no plugin, no source root or no rule
+        table.  It also returns False when an argument names a file with no
+        planted text.
         """
         flags, source_root = self.plugin_flags()
         if not source_root or not any(flag.startswith("-fplugin=") for flag in flags):
@@ -1355,7 +1365,7 @@ class StoreTest:
                                f"{source_root!r}")
             return False
         local_flags: list[str] = []
-        named_files: list[Path] = []
+        named_files: dict[str, Path] = {}
         for flag in flags:
             head, equals, value = flag.partition("=")
             if flag.startswith("-fplugin-arg-") and equals and (value == source_root
@@ -1364,15 +1374,16 @@ class StoreTest:
                 if os.path.isdir(value):
                     local.mkdir(parents=True, exist_ok=True)
                 elif os.path.isfile(value):
-                    named_files.append(local)
+                    named_files[head.removeprefix(PLUGIN_ARGUMENT)] = local
                 flag = f"{head}={local}"
             local_flags.append(flag)
-        if len(named_files) != 1:
-            self.expect(False, f"one plugin argument of the build names a file under its source root, the rule "
-                               f"table: {named_files}")
+        if "rules" not in named_files or not set(named_files) <= set(PLANTED_ARGUMENT_FILES):
+            self.expect(False, f"the plugin arguments of the build name the rule table under its source root, and "
+                               f"no file other than those of {sorted(PLANTED_ARGUMENT_FILES)}: {named_files}")
             return False
-        named_files[0].parent.mkdir(parents=True, exist_ok=True)
-        named_files[0].write_text(PLANTED_RULES)
+        for key, local in named_files.items():
+            local.parent.mkdir(parents=True, exist_ok=True)
+            local.write_text(PLANTED_ARGUMENT_FILES[key])
         for name, text in {**PLUGIN_FIXTURES, **PLANTED_HEADERS}.items():
             (self.root / name).parent.mkdir(parents=True, exist_ok=True)
             (self.root / name).write_text(text)
