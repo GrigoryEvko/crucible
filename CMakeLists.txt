@@ -415,17 +415,6 @@ target_link_libraries(crucible PUBLIC fixy)
 # PTRDIFF_MAX gives no diagnostic.  The arena, HS10 and the saturating
 # size arithmetic hold the allocation discipline of the tree.
 
-# Control-flow integrity is ISA-specific: x86 = CET (-fcf-protection),
-# aarch64 = BTI+PAC (-mbranch-protection). -fcf-protection=full is a hard
-# error on aarch64 ("not supported for this target"), so select per-arch.
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-  set(_CRUCIBLE_CFI_FLAGS -fcf-protection=full)
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
-  set(_CRUCIBLE_CFI_FLAGS -mbranch-protection=standard)
-else()
-  set(_CRUCIBLE_CFI_FLAGS)
-endif()
-
 # canopy/Hlc.h (off-limits to edit here) static_asserts
 # std::atomic<unsigned __int128>::is_always_lock_free on every non-x86
 # target and refuses to build otherwise — a hidden libstdc++ mutex
@@ -1006,9 +995,14 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   set(CMAKE_CXX_FLAGS_DEBUG "-g -O1" CACHE STRING "" FORCE)
 endif()
 
+# The code generation flags of the dialect have one definition, in
+# cmake/CodeFlags.cmake.  The sections below apply its lists, and the
+# constant-time tests of test/ct apply the same lists.
+include(cmake/CodeFlags.cmake)
+
 # ═══════════════════════════════════════════════════════════════
 # SECTION 1: Common flags — GCC 16
-#            52 warning flags + 13 hardening flags = 65
+#            52 warning flags + the code flags of each build
 # ═══════════════════════════════════════════════════════════════
 target_compile_options(crucible_dialect INTERFACE
   # ── 1.1  Baseline (3) ──────────────────────────────────────
@@ -1083,19 +1077,8 @@ target_compile_options(crucible_dialect INTERFACE
   -Wwrite-strings                      #  49  string literal → char*
   -Wpacked                             #  50  packed struct issues
 
-  # ── 1.10  Hardening — all builds (13) ──────────────────────
-  -fno-omit-frame-pointer              #  53  frame ptr for profiling
-  -fstack-protector-strong             #  54  stack canaries
-  -fno-common                          #  55  no tentative definitions
-  $<$<NOT:$<BOOL:${CRUCIBLE_UBSAN_STRICT}>>:-fno-strict-overflow>  #  56  signed overflow is UB→defined, but not under strict UBSan
-  -fstrict-flex-arrays=3               #  57  strict flex array rules
-  -fvisibility=hidden                  #  58  hide symbols by default
-  -fvisibility-inlines-hidden          #  59  hide inline symbols
-  -ffunction-sections                  #  60  one func per section
-  -fdata-sections                      #  61  one var per section
-  -fno-plt                             #  62  direct calls (no PLT)
-  -fno-semantic-interposition          #  63  assume no interposition
-  -fsized-deallocation                 #  64  sized delete support
+  # ── 1.10  Hardening — all builds ───────────────────────────
+  ${CRUCIBLE_CODE_FLAGS}               #  53-64, 194, 195, 198, 203, 229  cmake/CodeFlags.cmake
   -fdiagnostics-show-option            #  65  show -W flag in diagnostic
 )
 
@@ -1258,19 +1241,14 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # default/tsan/analyzer presets fail on the 64-byte select() return.
     -Wno-psabi                          # 193b portable wide-vector facade
 
-    # ── 3.13  GCC hardening flags (11) ───────────────────────
-    # A Debug build does not take 196 and 197.  The two flags defend a
-    # binary against fault injection, and they find no defect in a test.
-    # On a heavy translation unit they cost 20% to 46% of the back end.
-    ${_CRUCIBLE_CFI_FLAGS}              # 194  control-flow integrity (x86 CET / arm BTI+PAC)
-    -fstack-clash-protection            # 195  stack clash guard pages
-    $<$<NOT:$<CONFIG:Debug>>:-fharden-compares>              # 196  redundant compare checks
-    $<$<NOT:$<CONFIG:Debug>>:-fharden-conditional-branches>  # 197  redundant branch checks
-    -fno-delete-null-pointer-checks     # 198  keep null checks
+    # ── 3.13  GCC hardening flags ────────────────────────────
+    # 194, 195, 198 and 203 are in CRUCIBLE_CODE_FLAGS (section 1.10).
+    # A Debug build does not take CRUCIBLE_RELEASE_CODE_FLAGS (196 and
+    # 197).  cmake/CodeFlags.cmake tells why.
+    "$<$<NOT:$<CONFIG:Debug>>:${CRUCIBLE_RELEASE_CODE_FLAGS}>"  # 196, 197  cmake/CodeFlags.cmake
     -fdiagnostics-color=always          # 199  colored output
     -ftemplate-backtrace-limit=0        # 200  full template errors
     -fconstexpr-ops-limit=${CRUCIBLE_CONSTEXPR_OPS_LIMIT}  # 201  the row constexpr-ops of budgets.txt
-    -fstrict-enums                      # 203  assume valid enum values
     -Wvolatile                          # 204  deprecated volatile use
     -Wvla-larger-than=0                 # 205  reject ALL VLAs
 
@@ -1374,7 +1352,7 @@ endif()
 # SECTION 4: FORTIFY_SOURCE + defines — both compilers
 # ═══════════════════════════════════════════════════════════════
 target_compile_definitions(crucible_dialect INTERFACE
-  _FORTIFY_SOURCE=3                     # 228  max glibc buffer checks
+  ${CRUCIBLE_CODE_DEFINITIONS}          # 228  cmake/CodeFlags.cmake
 )
 
 # The CRUCIBLE_PGO block at the head of this file computes these.  Both
@@ -1392,20 +1370,15 @@ if(_CRUCIBLE_PGO_COMPILE_DEFINITIONS)
 endif()
 
 # ═══════════════════════════════════════════════════════════════
-# SECTION 5: Debug-only — auto-init
+# SECTION 5: The zero fill of automatic variables
 #
-# No build takes -fharden-control-flow-redundancy.  It defends a binary
-# against fault injection, it finds no defect in a test, and it cannot
-# instrument a function that calls setjmp.
+# Each build takes -ftrivial-auto-var-init=zero (229, P2795R5) from
+# CRUCIBLE_CODE_FLAGS of cmake/CodeFlags.cmake, so this section has no
+# flag of its own.
 # ═══════════════════════════════════════════════════════════════
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_compile_options(crucible_dialect INTERFACE
-    -ftrivial-auto-var-init=zero        # 229  zero-fill uninit stack (P2795R5)
-  )
-endif()
 
 # ═══════════════════════════════════════════════════════════════
-# SECTION 6: Release-only — cheaper auto-init + contract policy
+# SECTION 6: Release-only — contract policy
 #
 # Release evaluates every P2900 clause and reports a violation through
 # `handle_contract_violation`.  Read the "READ THIS" paragraph below
@@ -1478,8 +1451,6 @@ if(CMAKE_BUILD_TYPE MATCHES "Release")
     set(_crucible_release_contract_semantic observe)
   endif()
   target_compile_options(crucible_dialect INTERFACE
-    -ftrivial-auto-var-init=zero        # 231  zero-fill (cheaper)
-    # 231a  see SECTION 6
     "$<$<NOT:$<BOOL:$<TARGET_PROPERTY:${CRUCIBLE_CONTRACT_IGNORE_PROPERTY}>>>:-fcontract-evaluation-semantic=${_crucible_release_contract_semantic}>"
   )
 endif()

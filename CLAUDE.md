@@ -1024,10 +1024,20 @@ flags is the wrong repair; the opt-out table in §III says why for each.
 into an FMA, also in one statement. No build takes `-fno-math-errno`.
 
 Each build type other than Debug also takes `-fharden-compares` and
-`-fharden-conditional-branches` (`CMakeLists.txt` section 3.13). No build takes
+`-fharden-conditional-branches` (`CRUCIBLE_RELEASE_CODE_FLAGS`). No build takes
 `-fharden-control-flow-redundancy`. These flags defend a binary against fault
 injection, and they find no defect in a test. On a heavy translation unit, they
 cost 20% to 46% of the back end.
+
+`cmake/CodeFlags.cmake` holds the one definition of each flag of the dialect
+that changes the machine code, and `crucible_dialect` applies its lists. The
+constant-time taint tests and the timing harness of `test/ct` take the same
+lists through `crucible_release_code_target()`, so they compile the code of a
+Release build in each build type. The test `ct_taint_flags`
+(`cmake/CodeFlagsCheck.cmake`) reads the flags of each compile from the CMake
+file API. It fails when a target of `test/ct` and the foundation library do not
+have the same code flags, apart from the flags that change with the kind of
+build.
 
 In each preset, `cmake/BuildLauncher.cmake` puts `loop step` (`utils/assay/loop/step.py`)
 in front of each compile command and in front of ccache. It also puts the
@@ -1093,8 +1103,8 @@ Common flags +
 -march=native
 -DNDEBUG
 -g                                    frame information for profiling
--fharden-compares                     section 3.13 of CMakeLists.txt
--fharden-conditional-branches         section 3.13 of CMakeLists.txt
+-fharden-compares                     CRUCIBLE_RELEASE_CODE_FLAGS, cmake/CodeFlags.cmake
+-fharden-conditional-branches         CRUCIBLE_RELEASE_CODE_FLAGS, cmake/CodeFlags.cmake
 -fcontract-evaluation-semantic=observe  the Release default. It does the check
                                       and reports a violation. The handler
                                       aborts, so a violation ends the process.

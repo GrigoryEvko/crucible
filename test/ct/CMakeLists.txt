@@ -15,6 +15,17 @@
 # stop valgrind.  -fno-sanitize=all removes a sanitizer flag that a preset
 # puts in CMAKE_CXX_FLAGS.
 #
+# crucible_release_code_target() of cmake/CodeFlags.cmake gives each test
+# and the timing harness the code flags of a Release unit of the tree, also
+# in a Debug build directory: the hardening flags of each build, the flags
+# that each build other than Debug takes, the zero fill, FORTIFY and the FP
+# floor.  The library takes the same lists.  So a test runs the code that a
+# Release build runs, at the ISA level that valgrind decodes.  The test
+# ct_taint_flags (cmake/CodeFlagsCheck.cmake) reads the flags of each
+# compile from the CMake file API.  It fails when a target of this directory
+# and the foundation library do not have the same code flags, apart from the
+# flags that change with the kind of build.
+#
 # The observe semantic keeps the checks of CRUCIBLE_PRE, as in a Release
 # library, and a check references the violation handler.  Because of this,
 # each binary compiles the handler source of foundation with its own flags,
@@ -69,7 +80,22 @@ target_include_directories(ct_dudect PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_compile_options(ct_dudect PRIVATE
   -O3 -march=native -DNDEBUG -fno-sanitize=all
   -freflection -fcontracts -fcontract-evaluation-semantic=observe)
+crucible_release_code_target(ct_dudect)
 target_link_options(ct_dudect PRIVATE -fno-sanitize=all)
+
+# Registers the check of the code flags of TARGETS and its self-test.  The
+# check reads only the reply of the file API that the configure step
+# writes, so it needs no build of the targets.
+function(ct_code_flags_tests)
+  list(JOIN ARGN "," targets)
+  add_test(NAME ct_taint_flags
+    COMMAND ${CMAKE_COMMAND} -DBUILD_DIR=${CMAKE_BINARY_DIR} -DTARGETS=${targets}
+            -P ${CMAKE_SOURCE_DIR}/cmake/CodeFlagsCheck.cmake)
+  add_test(NAME ct_taint_flags_self_test
+    COMMAND ${CMAKE_COMMAND} -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/code_flags_self_test -DSELF_TEST=ON
+            -P ${CMAKE_SOURCE_DIR}/cmake/CodeFlagsCheck.cmake)
+  set_tests_properties(ct_taint_flags ct_taint_flags_self_test PROPERTIES LABELS "ci_guard;ct")
+endfunction()
 
 if(NOT CRUCIBLE_VALGRIND OR NOT CRUCIBLE_VALGRIND_INCLUDE)
   if(CRUCIBLE_REQUIRE_CT_TAINT)
@@ -82,6 +108,7 @@ if(NOT CRUCIBLE_VALGRIND OR NOT CRUCIBLE_VALGRIND_INCLUDE)
     "registered as disabled")
   add_test(NAME ct_taint_unavailable COMMAND ${CMAKE_COMMAND} -E false)
   set_tests_properties(ct_taint_unavailable PROPERTIES DISABLED TRUE LABELS "ct_taint")
+  ct_code_flags_tests(ct_dudect)
   return()
 endif()
 
@@ -102,6 +129,7 @@ function(ct_taint_test source opt)
   add_executable(${name} ${source}.cpp ${CRUCIBLE_CT_HANDLER_SOURCES})
   target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/include ${CRUCIBLE_VALGRIND_INCLUDE})
   target_compile_options(${name} PRIVATE -${opt} ${CRUCIBLE_CT_TAINT_FLAGS})
+  crucible_release_code_target(${name})
   target_link_options(${name} PRIVATE -fno-sanitize=all)
   set(_valgrind ${CRUCIBLE_VALGRIND} --tool=memcheck -q)
   add_test(NAME ${name}
@@ -116,3 +144,4 @@ endfunction()
 
 ct_taint_test(test_ct_taint_fixy O2)
 ct_taint_test(test_ct_taint_fixy O3)
+ct_code_flags_tests(ct_dudect test_ct_taint_fixy_O2 test_ct_taint_fixy_O3)
