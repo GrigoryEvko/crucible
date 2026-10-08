@@ -5,7 +5,7 @@
 # and the configure must stop.  A ccache link must resolve to the compiler
 # that ccache runs.
 #
-# The compiler of the build must pass every probe.  Seven stub compilers in
+# The compiler of the build must pass every probe.  Eight stub compilers in
 # WORK must each get the result that their behaviour calls for:
 #   - A stub that accepts every file stands for a compiler without the
 #     contract fix.  The probes must refuse it.
@@ -21,6 +21,10 @@
 #   - A stub that refuses the probe of the plugin events stands for a
 #     compiler without the six events of the C++ front end.  The probes must refuse
 #     it.
+#   - A stub that refuses the probe of the plugin events only at the slots of
+#     the direct events stands for a compiler with the previous form of the
+#     patch.  That compiler gives PLUGIN_NAME_USE and PLUGIN_MEMBER_ACCESS
+#     through invoke_plugin_callbacks.  The probes must refuse it.
 #   - A stub that does what the patched compiler does must pass.
 cmake_minimum_required(VERSION 3.25)
 include("${CMAKE_CURRENT_LIST_DIR}/../PatchedGccProbe.cmake")
@@ -34,7 +38,8 @@ set(contract_error
   "contract_cache.cpp:6:22: error: call to consteval function 'held_value(42)' is not a constant expression")
 set(memchr_error "memchr_offset.cpp:19:37: error: static assertion failed")
 set(sarif_error "sarif_context.cpp:16:19: error: no matching function for call to 'use(int)'")
-set(events_error "plugin_events.cpp:16:22: error: 'PLUGIN_EXPLICIT_INSTANTIATION_text' was not declared in this scope")
+set(events_error "plugin_events.cpp:23:22: error: 'PLUGIN_EXPLICIT_INSTANTIATION_text' was not declared in this scope")
+set(slots_error "plugin_events.cpp:43:39: error: 'plugin_name_use_slot' was not declared in this scope")
 # The SARIF log of the probe with the constraint line, and the log that a
 # compiler without the SARIF fix writes.
 set(sarif_with_context
@@ -71,6 +76,8 @@ write_stub(lacks_sarif_fix
   "case \"$probe\" in\n*contract_cache.cpp) echo \"${contract_error}\" >&2; exit 1 ;;\n${unpatched_sarif_case}esac\nexit 0\n")
 write_stub(lacks_plugin_events
   "case \"$probe\" in\n*contract_cache.cpp) echo \"${contract_error}\" >&2; exit 1 ;;\n*plugin_events.cpp) echo \"${events_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
+write_stub(lacks_direct_events
+  "case \"$probe\" in\n*contract_cache.cpp) echo \"${contract_error}\" >&2; exit 1 ;;\n*plugin_events.cpp) echo \"${slots_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
 write_stub(acts_patched
   "case \"$probe\" in\n*contract_cache.cpp) echo \"${contract_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
 
@@ -126,6 +133,7 @@ expect_refusal("${WORK}/lacks_memchr_fix" "a stub without the memchr fix" "${mem
 expect_refusal("${WORK}/lacks_sarif_fix" "a stub without the SARIF fix" "${sarif_reason}")
 expect_refusal("${WORK}/refuses_all" "a stub that refuses every file" "${events_reason}")
 expect_refusal("${WORK}/lacks_plugin_events" "a stub without the plugin events" "${events_reason}")
+expect_refusal("${WORK}/lacks_direct_events" "a stub with the previous form of the plugin events" "${events_reason}")
 
 # A configure of the tree, without the toolchain file, with a compiler that
 # lacks a fix, stops at the check after project().  The wrapper runs the

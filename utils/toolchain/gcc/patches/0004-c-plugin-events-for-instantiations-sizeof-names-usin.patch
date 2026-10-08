@@ -28,12 +28,24 @@ object and the location, also for a splice and at instantiation.
 PLUGIN_REFLECTION gives the entity of a reflect-expression and of a splice,
 with the kind and the location.
 
-The output of the compiler does not change.  Each event puts its data on
-the stack.  The new inline plugin_event_has_callback_p tells if a plugin
-reads an event, and the front end tests it before the two frequent events,
-PLUGIN_NAME_USE and PLUGIN_MEMBER_ACCESS, which a cold helper invokes.
-invoke_plugin_callbacks_full now returns before it starts the timer of the
-plugins when an event has no callback.  do_namespace_alias and
+The output of the compiler does not change.  PLUGIN_NAME_USE and
+PLUGIN_MEMBER_ACCESS occur at each name lookup and at each member access,
+so they are direct events.  Through invoke_plugin_callbacks, an empty
+callback of PLUGIN_NAME_USE costs about 75 instructions for each lookup:
+the event fills a data struct, starts the timer of the plugins and walks
+the list of callbacks.  The front end instead reads the callback of a
+direct event from a slot in plugin.h, and calls it with the facts of the
+event as arguments, with no data struct and no timer.  An empty callback
+then costs about 6 instructions for each lookup.  When one callback reads
+a direct event, the slot holds that callback and its user data.  When more
+than one callback reads it, the slot holds a function of GCC that calls
+each callback in the list of the event.  register_callback and
+unregister_callback keep the slot in agreement with the list, so each
+event keeps one list of callbacks.
+
+The four other events put their data on the stack and go through
+invoke_plugin_callbacks, which now returns before it starts the timer of
+the plugins when an event has no callback.  do_namespace_alias and
 finish_nonmember_using_decl now return the declaration that they make, for
 the event of the parser.
 
@@ -42,25 +54,28 @@ gcc/ChangeLog:
 	* plugin.def (PLUGIN_EXPLICIT_INSTANTIATION)
 	(PLUGIN_SIZEOF_OR_ALIGNOF, PLUGIN_NAME_USE, PLUGIN_USING_FORM)
 	(PLUGIN_MEMBER_ACCESS, PLUGIN_REFLECTION): New events.
-	* plugin.cc (plugin_callbacks): No longer static.
-	(register_callback): Handle the new events.
-	(invoke_plugin_callbacks_full): Likewise.  Return before
-	timevar_push when the event has no callback.
-	* plugin.h (plugin_callbacks): Declare.
-	(plugin_event_has_callback_p): New.
+	* plugin.cc (plugin_name_use_slot, plugin_member_access_slot): New.
+	(direct_callback, name_use_fan_out, member_access_fan_out)
+	(update_direct_slot, update_direct_slots): New.
+	(register_callback): Handle the new events.  Update the slot of a
+	direct event.
+	(unregister_callback): Update the slot of a direct event.
+	(invoke_plugin_callbacks_full): Handle the new events.  Return
+	before timevar_push when the event has no callback.
+	* plugin.h (plugin_name_use_func, plugin_member_access_func)
+	(plugin_direct_slot): New.
+	(plugin_name_use_slot, plugin_member_access_slot): Declare.
 	* doc/plugins.texi (Plugin callbacks): Document the new events and
-	plugin_event_has_callback_p.
+	the direct events.
 
 gcc/cp/ChangeLog:
 
 	* cp-tree.h (struct plugin_explicit_instantiation_data)
-	(struct plugin_sizeof_or_alignof_data, struct plugin_name_use_data)
-	(enum plugin_using_form_kind, struct plugin_using_form_data)
-	(struct plugin_member_access_data, enum plugin_reflection_kind)
+	(struct plugin_sizeof_or_alignof_data, enum plugin_using_form_kind)
+	(struct plugin_using_form_data, enum plugin_reflection_kind)
 	(struct plugin_reflection_data): New.
-	* parser.cc (cp_parser_name_use_event): New.
-	(cp_parser_lookup_name): Call it when a plugin reads
-	PLUGIN_NAME_USE.
+	* parser.cc (cp_parser_lookup_name): Call the callback of
+	PLUGIN_NAME_USE through its slot.
 	(cp_parser_unary_expression): Invoke PLUGIN_SIZEOF_OR_ALIGNOF, and
 	PLUGIN_REFLECTION for a reflect-expression.
 	(cp_parser_explicit_instantiation): Invoke
@@ -71,9 +86,8 @@ gcc/cp/ChangeLog:
 	(finish_using_decl): Return the USING_DECL of a using-declaration
 	outside a class.
 	* typeck.cc: Include plugin.h.
-	(member_access_event): New.
-	(finish_class_member_access_expr): Call it when a plugin reads
-	PLUGIN_MEMBER_ACCESS.
+	(finish_class_member_access_expr): Call the callback of
+	PLUGIN_MEMBER_ACCESS through its slot.
 	* reflect.cc: Include plugin.h.
 	(splice): Invoke PLUGIN_REFLECTION.
 	* name-lookup.cc (do_namespace_alias): Return the alias, or
@@ -85,7 +99,7 @@ gcc/cp/ChangeLog:
 
 gcc/testsuite/ChangeLog:
 
-	* g++.dg/plugin/plugin.exp: Add the six tests that follow.
+	* g++.dg/plugin/plugin.exp: Add the seven tests that follow.
 	* g++.dg/plugin/explicit_instantiation_plugin.cc: New test plugin.
 	* g++.dg/plugin/explicit-instantiation-plugin-test.C: New test.
 	* g++.dg/plugin/sizeof_plugin.cc: New test plugin.
@@ -98,31 +112,49 @@ gcc/testsuite/ChangeLog:
 	* g++.dg/plugin/member-access-plugin-test.C: New test.
 	* g++.dg/plugin/reflection_plugin.cc: New test plugin.
 	* g++.dg/plugin/reflection-plugin-test.C: New test.
+	* g++.dg/plugin/direct_event_plugin.cc: New test plugin.
+	* g++.dg/plugin/direct-event-plugin-test-1.C: New test.
+	* g++.dg/plugin/direct-event-plugin-test-2.C: New test.
+	* g++.dg/plugin/direct-event-plugin-test-3.C: New test.
+	* g++.dg/plugin/direct-event-plugin-test-4.C: New test.
+	* g++.dg/plugin/direct-event-plugin-test-5.C: New test.
 ---
- gcc/cp/cp-tree.h                              | 135 ++++++++++++++++++
- gcc/cp/name-lookup.cc                         |  20 +--
+ gcc/cp/cp-tree.h                              |  93 ++++++++++
+ gcc/cp/name-lookup.cc                         |  20 ++-
  gcc/cp/name-lookup.h                          |   4 +-
- gcc/cp/parser.cc                              |  86 ++++++++++-
+ gcc/cp/parser.cc                              |  84 ++++++++-
  gcc/cp/reflect.cc                             |   3 +
- gcc/cp/typeck.cc                              |  19 +++
- gcc/doc/plugins.texi                          | 115 +++++++++++++++
- gcc/plugin.cc                                 |  27 +++-
- gcc/plugin.def                                |  34 +++++
- gcc/plugin.h                                  |  21 +++
+ gcc/cp/typeck.cc                              |   8 +
+ gcc/doc/plugins.texi                          | 159 ++++++++++++++++++
+ gcc/plugin.cc                                 | 103 ++++++++++++
+ gcc/plugin.def                                |  36 ++++
+ gcc/plugin.h                                  |  45 +++++
+ .../plugin/direct-event-plugin-test-1.C       |  23 +++
+ .../plugin/direct-event-plugin-test-2.C       |  19 +++
+ .../plugin/direct-event-plugin-test-3.C       |  17 ++
+ .../plugin/direct-event-plugin-test-4.C       |  20 +++
+ .../plugin/direct-event-plugin-test-5.C       |  17 ++
+ .../g++.dg/plugin/direct_event_plugin.cc      | 104 ++++++++++++
  .../explicit-instantiation-plugin-test.C      |  30 ++++
- .../plugin/explicit_instantiation_plugin.cc   |  44 ++++++
- .../g++.dg/plugin/member-access-plugin-test.C |  40 ++++++
- .../g++.dg/plugin/member_access_plugin.cc     |  57 ++++++++
- .../g++.dg/plugin/name-use-plugin-test.C      |  51 +++++++
- .../g++.dg/plugin/name_use_plugin.cc          |  67 +++++++++
- gcc/testsuite/g++.dg/plugin/plugin.exp        |   7 +
+ .../plugin/explicit_instantiation_plugin.cc   |  44 +++++
+ .../g++.dg/plugin/member-access-plugin-test.C |  40 +++++
+ .../g++.dg/plugin/member_access_plugin.cc     |  58 +++++++
+ .../g++.dg/plugin/name-use-plugin-test.C      |  51 ++++++
+ .../g++.dg/plugin/name_use_plugin.cc          |  66 ++++++++
+ gcc/testsuite/g++.dg/plugin/plugin.exp        |  13 ++
  .../g++.dg/plugin/reflection-plugin-test.C    |  31 ++++
- .../g++.dg/plugin/reflection_plugin.cc        |  57 ++++++++
- .../g++.dg/plugin/sizeof-plugin-test.C        |  48 +++++++
- gcc/testsuite/g++.dg/plugin/sizeof_plugin.cc  |  43 ++++++
- .../g++.dg/plugin/using-form-plugin-test.C    |  40 ++++++
- .../g++.dg/plugin/using_form_plugin.cc        |  58 ++++++++
- 23 files changed, 1020 insertions(+), 17 deletions(-)
+ .../g++.dg/plugin/reflection_plugin.cc        |  57 +++++++
+ .../g++.dg/plugin/sizeof-plugin-test.C        |  48 ++++++
+ gcc/testsuite/g++.dg/plugin/sizeof_plugin.cc  |  43 +++++
+ .../g++.dg/plugin/using-form-plugin-test.C    |  40 +++++
+ .../g++.dg/plugin/using_form_plugin.cc        |  58 +++++++
+ 29 files changed, 1319 insertions(+), 15 deletions(-)
+ create mode 100644 gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-1.C
+ create mode 100644 gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-2.C
+ create mode 100644 gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-3.C
+ create mode 100644 gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-4.C
+ create mode 100644 gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-5.C
+ create mode 100644 gcc/testsuite/g++.dg/plugin/direct_event_plugin.cc
  create mode 100644 gcc/testsuite/g++.dg/plugin/explicit-instantiation-plugin-test.C
  create mode 100644 gcc/testsuite/g++.dg/plugin/explicit_instantiation_plugin.cc
  create mode 100644 gcc/testsuite/g++.dg/plugin/member-access-plugin-test.C
@@ -137,10 +169,10 @@ gcc/testsuite/ChangeLog:
  create mode 100644 gcc/testsuite/g++.dg/plugin/using_form_plugin.cc
 
 diff --git a/gcc/cp/cp-tree.h b/gcc/cp/cp-tree.h
-index 6f36a12e9cb..e078bdb20b4 100644
+index 6f36a12e9cb..fc3cfc69e49 100644
 --- a/gcc/cp/cp-tree.h
 +++ b/gcc/cp/cp-tree.h
-@@ -8153,6 +8153,141 @@ extern tree attr_chainon (tree, tree);
+@@ -8153,6 +8153,99 @@ extern tree attr_chainon (tree, tree);
  extern tree maybe_add_dummy_lambda_op (tree);
  extern void remove_dummy_lambda_op (tree, tree);
  
@@ -177,26 +209,6 @@ index 6f36a12e9cb..e078bdb20b4 100644
 +  enum tree_code code;
 +};
 +
-+/* The data of the plugin event PLUGIN_NAME_USE.  The parser invokes the
-+   event each time that it resolves a name to a declaration: an
-+   id-expression, a qualified name, a type name, a template name and a
-+   namespace name, also in a constant expression, in a template argument and
-+   in an unevaluated operand.  The name of a member after "." or "->" is
-+   resolved later, so it gives no event, and PLUGIN_MEMBER_ACCESS gives that
-+   member.  The parser can read one name more
-+   than one time when it parses tentatively, so a plugin can see one use more
-+   than one time.  */
-+
-+struct plugin_name_use_data
-+{
-+  /* The declaration that the name resolves to, or the OVERLOAD or BASELINK
-+     of a set of overloaded functions.  */
-+  tree decl;
-+  /* The location of the name.  For a qualified name, it is the location of
-+     its last name, or a range from its first name to its last name.  */
-+  location_t location;
-+};
-+
 +/* The kinds of a form of the plugin event PLUGIN_USING_FORM.  */
 +
 +enum plugin_using_form_kind
@@ -225,28 +237,6 @@ index 6f36a12e9cb..e078bdb20b4 100644
 +  tree target;
 +  /* The location of the name that the form names or declares.  */
 +  location_t location;
-+};
-+
-+/* The data of the plugin event PLUGIN_MEMBER_ACCESS.  The front end invokes
-+   the event each time that it resolves the member of a class member access
-+   expression with "." or "->", also a member that a splice designates.  It
-+   does so at parse time, and again at the instantiation of a template, so a
-+   plugin can see one access more than one time.  An access that the front
-+   end makes itself, as for a range-based for or a structured binding, gives
-+   the event too.  */
-+
-+struct plugin_member_access_data
-+{
-+  /* The member: a FIELD_DECL, a VAR_DECL, the BASELINK of a set of member
-+     functions, or a TEMPLATE_ID_EXPR for a member template.  */
-+  tree member;
-+  /* The class type of the object.  */
-+  tree object_type;
-+  /* The location of the access: input_location when the front end resolves
-+     the member, at parse time the last token of the member name.  */
-+  location_t location;
-+  /* True when a splice designates the member: OBJECT.[:R:].  */
-+  bool splice_p;
 +};
 +
 +/* The kinds of the plugin event PLUGIN_REFLECTION.  */
@@ -379,7 +369,7 @@ index cd0799a80de..165927ee284 100644
  void push_local_extern_decl_alias (tree decl);
  extern tree pushdecl (tree, bool hiding = false);
 diff --git a/gcc/cp/parser.cc b/gcc/cp/parser.cc
-index bf981945aa0..68a12cdfbe7 100644
+index bf981945aa0..e793ef4111d 100644
 --- a/gcc/cp/parser.cc
 +++ b/gcc/cp/parser.cc
 @@ -10293,6 +10293,12 @@ cp_parser_unary_expression (cp_parser *parser, cp_id_kind * pidk,
@@ -534,38 +524,29 @@ index bf981945aa0..68a12cdfbe7 100644
  
    /* Look for the final `;'.  */
    cp_parser_require (parser, CPP_SEMICOLON, RT_SEMICOLON);
-@@ -35227,6 +35285,21 @@ prefer_type_arg (tag_types tag_type)
-     }
- }
+@@ -35552,6 +35610,22 @@ cp_parser_lookup_name (cp_parser *parser, tree name,
+ 	      || TREE_CODE (decl) == UNBOUND_CLASS_TEMPLATE
+ 	      || BASELINK_P (decl));
  
-+/* Invoke the plugin event PLUGIN_NAME_USE for DECL, which a name at
-+   LOCATION resolves to.  cp_parser_lookup_name calls this function only
-+   when a plugin reads the event, and it keeps the event out of its own
-+   code.  */
-+
-+static void ATTRIBUTE_COLD __attribute__ ((__noinline__))
-+cp_parser_name_use_event (tree decl, location_t location)
-+{
-+  if (DECL_P (decl) || TREE_CODE (decl) == OVERLOAD || BASELINK_P (decl))
++  /* The plugin event PLUGIN_NAME_USE.  A dependent name gives no event.
++     The test of the code of DECL comes right after the assertion above,
++     so the compiler can merge the two tests.  The branch of the event
++     repeats the two calls that follow it, so the compiler saves the
++     registers that live across the calls one time for each branch.  */
++  if (UNLIKELY (plugin_name_use_slot.callback != NULL)
++      && (LIKELY (DECL_P (decl))
++	  || TREE_CODE (decl) == OVERLOAD
++	  || BASELINK_P (decl)))
 +    {
-+      plugin_name_use_data data = { decl, location };
-+      invoke_plugin_callbacks (PLUGIN_NAME_USE, &data);
++      plugin_name_use_slot.callback (decl, name_location,
++				     plugin_name_use_slot.user_data);
++      maybe_record_typedef_use (decl);
++      return cp_expr (decl, name_location);
 +    }
-+}
 +
- /* Looks up NAME in the current scope, as given by PARSER->SCOPE.
-    NAME should have one of the representations used for an
-    id-expression.  If NAME is the ERROR_MARK_NODE, the ERROR_MARK_NODE
-@@ -35554,6 +35627,9 @@ cp_parser_lookup_name (cp_parser *parser, tree name,
- 
    maybe_record_typedef_use (decl);
  
-+  if (plugin_event_has_callback_p (PLUGIN_NAME_USE))
-+    cp_parser_name_use_event (decl, name_location);
-+
    return cp_expr (decl, name_location);
- }
- 
 diff --git a/gcc/cp/reflect.cc b/gcc/cp/reflect.cc
 index 34189ffc80d..119c8db165e 100644
 --- a/gcc/cp/reflect.cc
@@ -588,7 +569,7 @@ index 34189ffc80d..119c8db165e 100644
       and a lot of places assume that.  Furthermore, if reflection comes
       from ^^fntmpl, it is wrapped with OVERLOAD already, only when
 diff --git a/gcc/cp/typeck.cc b/gcc/cp/typeck.cc
-index 31972a07e63..dbe4b3a5765 100644
+index 31972a07e63..4a05a58d669 100644
 --- a/gcc/cp/typeck.cc
 +++ b/gcc/cp/typeck.cc
 @@ -40,6 +40,7 @@ along with GCC; see the file COPYING3.  If not see
@@ -599,40 +580,22 @@ index 31972a07e63..dbe4b3a5765 100644
  
  static tree cp_build_addr_expr_strict (tree, tsubst_flags_t);
  static tree cp_build_function_call (tree, tree, tsubst_flags_t);
-@@ -3464,6 +3465,20 @@ complain_about_unrecognized_member (tree access_path, tree name,
-     }
- }
- 
-+/* Invoke the plugin event PLUGIN_MEMBER_ACCESS for MEMBER, which a class
-+   member access designates in an object of type OBJECT_TYPE.  SPLICE_P is
-+   true when a splice designates the member.
-+   finish_class_member_access_expr calls this function only when a plugin
-+   reads the event, and it keeps the event out of its own code.  */
-+
-+static void ATTRIBUTE_COLD __attribute__ ((__noinline__))
-+member_access_event (tree member, tree object_type, bool splice_p)
-+{
-+  plugin_member_access_data data
-+    = { member, object_type, input_location, splice_p };
-+  invoke_plugin_callbacks (PLUGIN_MEMBER_ACCESS, &data);
-+}
-+
- /* This function is called by the parser to process a class member
-    access expression of the form OBJECT.NAME.  NAME is a node used by
-    the parser to represent a name; it is not yet a DECL, except when
-@@ -3784,6 +3799,10 @@ finish_class_member_access_expr (cp_expr object, tree name, bool template_p,
+@@ -3784,6 +3785,13 @@ finish_class_member_access_expr (cp_expr object, tree name, bool template_p,
  	}
      }
  
-+  if (plugin_event_has_callback_p (PLUGIN_MEMBER_ACCESS)
++  /* The plugin event PLUGIN_MEMBER_ACCESS.  */
++  if (UNLIKELY (plugin_member_access_slot.callback != NULL)
 +      && member != error_mark_node)
-+    member_access_event (member, object_type, splice_p);
++    plugin_member_access_slot.callback (member, object_type, input_location,
++					splice_p,
++					plugin_member_access_slot.user_data);
 +
    if (TREE_UNAVAILABLE (member))
      error_unavailable_use (member, NULL_TREE);
    else if (TREE_DEPRECATED (member))
 diff --git a/gcc/doc/plugins.texi b/gcc/doc/plugins.texi
-index ff0b5866f25..27f165963e5 100644
+index ff0b5866f25..7ed8516917f 100644
 --- a/gcc/doc/plugins.texi
 +++ b/gcc/doc/plugins.texi
 @@ -217,6 +217,24 @@ enum plugin_event
@@ -660,7 +623,7 @@ index ff0b5866f25..27f165963e5 100644
  
    PLUGIN_EVENT_FIRST_DYNAMIC    /* Dummy event used for indexing callback
                                     array.  */
-@@ -252,6 +270,103 @@ The @i{PLUGIN_INCLUDE_FILE} event, with a @code{const char*} file path as
+@@ -252,6 +270,147 @@ The @i{PLUGIN_INCLUDE_FILE} event, with a @code{const char*} file path as
  GCC data, is triggered for processing of @code{#include} or
  @code{#line} directives.
  
@@ -692,13 +655,22 @@ index ff0b5866f25..27f165963e5 100644
 +
 +The @i{PLUGIN_NAME_USE} event is triggered by the C++ front end each time
 +that its parser resolves a name to a declaration: an id-expression, a
-+qualified name, a type name, a template name or a namespace name.  The
-+GCC data is a pointer to a @code{struct plugin_name_use_data}, declared
-+in @file{cp/cp-tree.h}.  Its field @code{decl} is the declaration that the
-+name resolves to, or the @code{OVERLOAD} or @code{BASELINK} of a set of
-+overloaded functions.  Its field @code{location} is the location of the
-+name.  For a qualified name, it is the location of the last name, or a
-+range from the first name to the last name.  The event comes before any
++qualified name, a type name, a template name or a namespace name.  It is
++a direct event (see below), and its callback has the type
++@code{plugin_name_use_func}, declared in @file{plugin.h}:
++
++@smallexample
++typedef void (*plugin_name_use_func) (tree decl, location_t location,
++                                      void *user_data);
++@end smallexample
++
++@noindent
++The argument @code{decl} is the declaration that the name resolves to,
++or the @code{OVERLOAD} or @code{BASELINK} of a set of overloaded
++functions.  The argument @code{location} is the location of the name.
++For a qualified name, it is the location of the last name, or a range
++from the first name to the last name.  A dependent name gives no event.
++The event comes before any
 +constant folding, so a plugin sees each
 +name of a constant expression, of a @code{static_assert}, of a template
 +argument and of an unevaluated operand.  The name of a member after
@@ -725,15 +697,25 @@ index ff0b5866f25..27f165963e5 100644
 +
 +The @i{PLUGIN_MEMBER_ACCESS} event is triggered by the C++ front end each
 +time that it resolves the member of a class member access expression with
-+@code{.} or @code{->}, also a member that a splice designates.  The GCC
-+data is a pointer to a @code{struct plugin_member_access_data}, declared
-+in @file{cp/cp-tree.h}.  Its field @code{member} is the member: a
-+@code{FIELD_DECL}, a @code{VAR_DECL}, the @code{BASELINK} of a set of
-+member functions, or a @code{TEMPLATE_ID_EXPR} for a member template.  Its
-+field @code{object_type} is the class type of the object.  Its field
++@code{.} or @code{->}, also a member that a splice designates.  It is a
++direct event (see below), and its callback has the type
++@code{plugin_member_access_func}, declared in @file{plugin.h}:
++
++@smallexample
++typedef void (*plugin_member_access_func) (tree member, tree object_type,
++                                           location_t location,
++                                           bool splice_p, void *user_data);
++@end smallexample
++
++@noindent
++The argument @code{member} is the member: a @code{FIELD_DECL}, a
++@code{VAR_DECL}, the @code{BASELINK} of a set of member functions, or a
++@code{TEMPLATE_ID_EXPR} for a member template.  The argument
++@code{object_type} is the class type of the object.  The argument
 +@code{location} is @code{input_location} when the front end resolves the
-+member; at parse time it is the last token of the member name.  Its field
-+@code{splice_p} is true when a splice designates the member.  The event
++member; at parse time it is the last token of the member name.  The
++argument @code{splice_p} is true when a splice designates the member.  The
++event
 +comes at parse time and again at the instantiation of a template, so a
 +plugin can see one access more than one time.  A member access that the
 +front end makes itself, as for a range-based @code{for} or a structured
@@ -755,33 +737,136 @@ index ff0b5866f25..27f165963e5 100644
 +reflect-expression also gives the @i{PLUGIN_NAME_USE} event, so a plugin
 +can tell a reflection of a name from a plain use of it.
 +
-+The front end tests @code{plugin_event_has_callback_p}, declared in
-+@file{plugin.h}, before it builds the data of the @i{PLUGIN_NAME_USE} and
-+@i{PLUGIN_MEMBER_ACCESS} events, which occur very often.  When no plugin
-+registered a callback for an event, @code{invoke_plugin_callbacks_full}
-+returns before it starts the timer of the plugins.
++The @i{PLUGIN_NAME_USE} and @i{PLUGIN_MEMBER_ACCESS} events are direct
++events.  They occur very often, so the front end calls their callbacks
++itself, with the facts of the event as arguments, and not through
++@code{invoke_plugin_callbacks}.  A plugin registers such a callback with
++@code{register_callback}, as for each other event, and casts it to
++@code{plugin_callback_func}.  Cast it through @code{void (*) (void)} to
++prevent the warning of @option{-Wcast-function-type}:
++
++@smallexample
++static void
++name_use (tree decl, location_t location, void *user_data)
++@{
++  @dots{}
++@}
++
++register_callback (plugin_info->base_name, PLUGIN_NAME_USE,
++                   (plugin_callback_func) (void (*) (void)) name_use,
++                   NULL);
++@end smallexample
++
++@noindent
++Each direct event has a slot, declared in @file{plugin.h}, that holds the
++function that the front end calls and its user data.  When one callback
++reads the event, the slot holds that callback, so the front end calls it
++with no other work.  When more than one callback reads the event, the
++slot holds a function of GCC that calls each callback.  The time of a
++direct callback is part of the time of the front end, and not of the
++timer of the plugins.  When no plugin registered a callback for an event,
++@code{invoke_plugin_callbacks_full} returns before it starts the timer of
++the plugins.
 +
  The @i{PLUGIN_FINISH} event is the last time that plugins can call GCC
  functions, notably emit diagnostics with @code{warning}, @code{error}
  etc.
 diff --git a/gcc/plugin.cc b/gcc/plugin.cc
-index 436be5e0147..521ac8598ad 100644
+index 436be5e0147..deda05bc091 100644
 --- a/gcc/plugin.cc
 +++ b/gcc/plugin.cc
-@@ -109,9 +109,10 @@ struct callback_info
-   struct callback_info *next;
- };
- 
--/* An array of lists of 'callback_info' objects indexed by the event id.  */
-+/* An array of lists of 'callback_info' objects indexed by the event id.
-+   plugin_event_has_callback_p in plugin.h reads it.  */
+@@ -113,6 +113,10 @@ struct callback_info
  static struct callback_info *plugin_callbacks_init[PLUGIN_EVENT_FIRST_DYNAMIC];
--static struct callback_info **plugin_callbacks = plugin_callbacks_init;
-+struct callback_info **plugin_callbacks = plugin_callbacks_init;
+ static struct callback_info **plugin_callbacks = plugin_callbacks_init;
  
++/* The slots of the direct events, see plugin.h.  */
++plugin_direct_slot<plugin_name_use_func> plugin_name_use_slot;
++plugin_direct_slot<plugin_member_access_func> plugin_member_access_slot;
++
  /* For invoke_plugin_callbacks(), see plugin.h.  */
  bool flag_plugin_added = false;
-@@ -499,6 +500,12 @@ register_callback (const char *plugin_name,
+ 
+@@ -439,6 +443,79 @@ get_named_event_id (const char *name, enum insert_option insert)
+   return event_last++;
+ }
+ 
++/* Return the callback of the direct event, of type F, that a plugin
++   registered as FUNC.  */
++
++template<typename F>
++static inline F
++direct_callback (plugin_callback_func func)
++{
++  return (F) (void (*) (void)) func;
++}
++
++/* Call each callback of PLUGIN_NAME_USE.  The slot of the event holds this
++   function when more than one callback reads the event.  */
++
++static void
++name_use_fan_out (tree decl, location_t location, void *)
++{
++  for (callback_info *callback = plugin_callbacks[PLUGIN_NAME_USE]; callback;
++       callback = callback->next)
++    direct_callback<plugin_name_use_func> (callback->func)
++      (decl, location, callback->user_data);
++}
++
++/* Call each callback of PLUGIN_MEMBER_ACCESS.  The slot of the event holds
++   this function when more than one callback reads the event.  */
++
++static void
++member_access_fan_out (tree member, tree object_type, location_t location,
++		       bool splice_p, void *)
++{
++  for (callback_info *callback = plugin_callbacks[PLUGIN_MEMBER_ACCESS];
++       callback; callback = callback->next)
++    direct_callback<plugin_member_access_func> (callback->func)
++      (member, object_type, location, splice_p, callback->user_data);
++}
++
++/* Make SLOT, the slot of the direct event EVENT, agree with the list of
++   the callbacks of EVENT.  FAN_OUT calls each callback in the list.  */
++
++template<typename F>
++static void
++update_direct_slot (plugin_direct_slot<F> &slot, int event, F fan_out)
++{
++  callback_info *list = plugin_callbacks[event];
++  if (list == NULL)
++    {
++      slot.callback = NULL;
++      slot.user_data = NULL;
++    }
++  else if (list->next == NULL)
++    {
++      slot.callback = direct_callback<F> (list->func);
++      slot.user_data = list->user_data;
++    }
++  else
++    {
++      slot.callback = fan_out;
++      slot.user_data = NULL;
++    }
++}
++
++/* Make the slot of EVENT agree with its list, if EVENT is a direct
++   event.  */
++
++static void
++update_direct_slots (int event)
++{
++  if (event == PLUGIN_NAME_USE)
++    update_direct_slot (plugin_name_use_slot, event, name_use_fan_out);
++  else if (event == PLUGIN_MEMBER_ACCESS)
++    update_direct_slot (plugin_member_access_slot, event,
++			member_access_fan_out);
++}
++
+ /* Called from the plugin's initialization code. Register a single callback.
+    This function can be called multiple times.
+ 
+@@ -499,6 +576,12 @@ register_callback (const char *plugin_name,
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
        case PLUGIN_NEW_PASS:
        case PLUGIN_INCLUDE_FILE:
@@ -794,7 +879,23 @@ index 436be5e0147..521ac8598ad 100644
          {
            struct callback_info *new_callback;
            if (!callback)
-@@ -547,6 +554,16 @@ invoke_plugin_callbacks_full (int event, void *gcc_data)
+@@ -513,6 +596,7 @@ register_callback (const char *plugin_name,
+           new_callback->user_data = user_data;
+           new_callback->next = plugin_callbacks[event];
+           plugin_callbacks[event] = new_callback;
++	  update_direct_slots (event);
+         }
+         break;
+     }
+@@ -534,6 +618,7 @@ unregister_callback (const char *plugin_name, int event)
+     if (strcmp (callback->plugin_name, plugin_name) == 0)
+       {
+ 	*cbp = callback->next;
++	update_direct_slots (event);
+ 	return PLUGEVT_SUCCESS;
+       }
+   return PLUGEVT_NO_CALLBACK;
+@@ -547,6 +632,16 @@ invoke_plugin_callbacks_full (int event, void *gcc_data)
  {
    int retval = PLUGEVT_SUCCESS;
  
@@ -811,24 +912,33 @@ index 436be5e0147..521ac8598ad 100644
    timevar_push (TV_PLUGIN_RUN);
  
    switch (event)
-@@ -579,6 +596,12 @@ invoke_plugin_callbacks_full (int event, void *gcc_data)
+@@ -579,6 +674,10 @@ invoke_plugin_callbacks_full (int event, void *gcc_data)
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
        case PLUGIN_NEW_PASS:
        case PLUGIN_INCLUDE_FILE:
 +      case PLUGIN_EXPLICIT_INSTANTIATION:
 +      case PLUGIN_SIZEOF_OR_ALIGNOF:
-+      case PLUGIN_NAME_USE:
 +      case PLUGIN_USING_FORM:
-+      case PLUGIN_MEMBER_ACCESS:
 +      case PLUGIN_REFLECTION:
          {
            /* Iterate over every callback registered with this event and
               call it.  */
+@@ -591,6 +690,10 @@ invoke_plugin_callbacks_full (int event, void *gcc_data)
+         }
+         break;
+ 
++      /* The front end calls the callbacks of a direct event through the
++	 slot of the event.  */
++      case PLUGIN_NAME_USE:
++      case PLUGIN_MEMBER_ACCESS:
+       case PLUGIN_PASS_MANAGER_SETUP:
+       case PLUGIN_REGISTER_GGC_ROOTS:
+         gcc_assert (false);
 diff --git a/gcc/plugin.def b/gcc/plugin.def
-index b2fd27fa6e1..f1bdc645c9b 100644
+index b2fd27fa6e1..c55efe6a6f7 100644
 --- a/gcc/plugin.def
 +++ b/gcc/plugin.def
-@@ -99,6 +99,40 @@ DEFEVENT (PLUGIN_NEW_PASS)
+@@ -99,6 +99,42 @@ DEFEVENT (PLUGIN_NEW_PASS)
     as a const char* pointer.  */
  DEFEVENT (PLUGIN_INCLUDE_FILE)
  
@@ -844,8 +954,9 @@ index b2fd27fa6e1..f1bdc645c9b 100644
 +DEFEVENT (PLUGIN_SIZEOF_OR_ALIGNOF)
 +
 +/* Called by the C++ front end after its parser resolves a name to a
-+   declaration, before any constant folding.  The event data is a pointer
-+   to a struct plugin_name_use_data, declared in cp/cp-tree.h.  */
++   declaration, before any constant folding.  This is a direct event: the
++   front end calls a callback of type plugin_name_use_func, declared in
++   plugin.h, with the declaration and the location of the name.  */
 +DEFEVENT (PLUGIN_NAME_USE)
 +
 +/* Called by the C++ front end after it parses a using-declaration, a
@@ -856,8 +967,9 @@ index b2fd27fa6e1..f1bdc645c9b 100644
 +
 +/* Called by the C++ front end when it resolves the member of a class
 +   member access expression, at parse time and at the instantiation of a
-+   template.  The event data is a pointer to a struct
-+   plugin_member_access_data, declared in cp/cp-tree.h.  */
++   template.  This is a direct event: the front end calls a callback of
++   type plugin_member_access_func, declared in plugin.h, with the member,
++   the type of the object, the location and the splice flag.  */
 +DEFEVENT (PLUGIN_MEMBER_ACCESS)
 +
 +/* Called by the C++ front end after it parses a reflect-expression, and
@@ -870,37 +982,297 @@ index b2fd27fa6e1..f1bdc645c9b 100644
     file plugin.cc the functions register_callback and
     invoke_plugin_callbacks_full accordingly!  */
 diff --git a/gcc/plugin.h b/gcc/plugin.h
-index 00a8de8ec90..185763cf095 100644
+index 00a8de8ec90..28cf20c1476 100644
 --- a/gcc/plugin.h
 +++ b/gcc/plugin.h
-@@ -197,6 +197,27 @@ invoke_plugin_callbacks (int event ATTRIBUTE_UNUSED,
+@@ -197,6 +197,51 @@ invoke_plugin_callbacks (int event ATTRIBUTE_UNUSED,
    return PLUGEVT_NO_CALLBACK;
  }
  
-+/* The lists of callbacks, indexed by the event identifier.  The test
-+   below reads them.  */
-+struct callback_info;
-+extern struct callback_info **plugin_callbacks;
++/* The direct events, PLUGIN_NAME_USE and PLUGIN_MEMBER_ACCESS.  They occur
++   too often for invoke_plugin_callbacks, so the C++ front end calls their
++   callbacks itself, with the facts of the event as arguments and with no
++   timer.  A plugin registers such a callback with register_callback, cast
++   to plugin_callback_func.  */
 +
-+/* Called from inside GCC.  Return true if a plugin registered a callback
-+   for EVENT, which is not a dynamic event.  A front end calls it before it
-+   builds the data of an event that occurs very frequently, so a compile
-+   with no plugin, or with plugins that do not read the event, does almost
-+   no work for it.  */
++/* The type of a callback of PLUGIN_NAME_USE.  DECL is the declaration that
++   a name resolves to, or the OVERLOAD or BASELINK of a set of overloaded
++   functions.  LOCATION is the location of the name.  For a qualified name,
++   it is the location of its last name, or a range from its first name to
++   its last name.  */
 +
-+inline bool
-+plugin_event_has_callback_p (int event ATTRIBUTE_UNUSED)
++typedef void (*plugin_name_use_func) (tree decl, location_t location,
++				      void *user_data);
++
++/* The type of a callback of PLUGIN_MEMBER_ACCESS.  MEMBER is the member
++   that a class member access designates: a FIELD_DECL, a VAR_DECL, the
++   BASELINK of a set of member functions, or a TEMPLATE_ID_EXPR for a
++   member template.  OBJECT_TYPE is the class type of the object.  LOCATION
++   is input_location when the front end resolves the member, at parse time
++   the last token of the member name.  SPLICE_P is true when a splice
++   designates the member: OBJECT.[:R:].  */
++
++typedef void (*plugin_member_access_func) (tree member, tree object_type,
++					   location_t location, bool splice_p,
++					   void *user_data);
++
++/* The slot of a direct event: the function that the front end calls, and
++   the user data that it gives to that function.  When one callback reads
++   the event, the slot holds that callback.  When more than one callback
++   reads the event, the slot holds a function of GCC that calls each
++   callback in the list of the event.  When no callback reads the event,
++   the function is null.  register_callback and unregister_callback keep
++   the slot in agreement with the list.  */
++
++template<typename F>
++struct plugin_direct_slot
 +{
-+#ifdef ENABLE_PLUGIN
-+  return flag_plugin_added && plugin_callbacks[event] != NULL;
-+#else
-+  return false;
-+#endif
-+}
++  F callback;
++  void *user_data;
++};
++
++extern plugin_direct_slot<plugin_name_use_func> plugin_name_use_slot;
++extern plugin_direct_slot<plugin_member_access_func> plugin_member_access_slot;
 +
  /* In attribs.cc.  */
  
  extern void register_attribute (const struct attribute_spec *attr);
+diff --git a/gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-1.C b/gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-1.C
+new file mode 100644
+index 00000000000..f96c42b5a82
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-1.C
+@@ -0,0 +1,23 @@
++// Test the direct events PLUGIN_NAME_USE and PLUGIN_MEMBER_ACCESS with the
++// callbacks of two plugins: GCC calls each callback for each event.
++// { dg-do compile }
++
++namespace tracked_ns
++{
++  struct tracked_type { int tracked_member = 0; };
++  constexpr int tracked_value = 1;
++}
++
++int
++use (tracked_ns::tracked_type object) // { dg-warning "first: use of 'tracked_ns'" }
++// { dg-warning "second: use of 'tracked_ns'" "" { target *-*-* } .-1 }
++// { dg-warning "first: use of 'tracked_type'" "" { target *-*-* } .-2 }
++// { dg-warning "second: use of 'tracked_type'" "" { target *-*-* } .-3 }
++{
++  return object.tracked_member // { dg-warning "first: access to 'tracked_member'" }
++  // { dg-warning "second: access to 'tracked_member'" "" { target *-*-* } .-1 }
++	 + tracked_ns::tracked_value; // { dg-warning "first: use of 'tracked_ns'" }
++  // { dg-warning "second: use of 'tracked_ns'" "" { target *-*-* } .-1 }
++  // { dg-warning "first: use of 'tracked_value'" "" { target *-*-* } .-2 }
++  // { dg-warning "second: use of 'tracked_value'" "" { target *-*-* } .-3 }
++}
+diff --git a/gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-2.C b/gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-2.C
+new file mode 100644
+index 00000000000..8f5d2585b7d
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-2.C
+@@ -0,0 +1,19 @@
++// Test the direct events PLUGIN_NAME_USE and PLUGIN_MEMBER_ACCESS after one
++// of two plugins removes its callbacks: GCC calls the other callback only.
++// { dg-do compile }
++// { dg-options "-fplugin-arg-direct_event_plugin-unregister=first" }
++
++namespace tracked_ns
++{
++  struct tracked_type { int tracked_member = 0; };
++  constexpr int tracked_value = 1;
++}
++
++int
++use (tracked_ns::tracked_type object) // { dg-warning "second: use of 'tracked_ns'" }
++// { dg-warning "second: use of 'tracked_type'" "" { target *-*-* } .-1 }
++{
++  return object.tracked_member // { dg-warning "second: access to 'tracked_member'" }
++	 + tracked_ns::tracked_value; // { dg-warning "second: use of 'tracked_ns'" }
++  // { dg-warning "second: use of 'tracked_value'" "" { target *-*-* } .-1 }
++}
+diff --git a/gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-3.C b/gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-3.C
+new file mode 100644
+index 00000000000..4604ca2baa9
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-3.C
+@@ -0,0 +1,17 @@
++// Test the direct events PLUGIN_NAME_USE and PLUGIN_MEMBER_ACCESS after the
++// two plugins remove their callbacks: GCC calls no callback.
++// { dg-do compile }
++// { dg-options "-fplugin-arg-direct_event_plugin-unregister=all" }
++
++namespace tracked_ns
++{
++  struct tracked_type { int tracked_member = 0; };
++  constexpr int tracked_value = 1;
++}
++
++int
++use (tracked_ns::tracked_type object) // { dg-bogus "use of" }
++{
++  return object.tracked_member // { dg-bogus "access to" }
++	 + tracked_ns::tracked_value; // { dg-bogus "use of" }
++}
+diff --git a/gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-4.C b/gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-4.C
+new file mode 100644
+index 00000000000..b1894c6d71c
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-4.C
+@@ -0,0 +1,20 @@
++// Test the direct events PLUGIN_NAME_USE and PLUGIN_MEMBER_ACCESS after the
++// plugin that registered last removes its callbacks: GCC calls the callback
++// of the other plugin, with its user data.
++// { dg-do compile }
++// { dg-options "-fplugin-arg-direct_event_plugin-unregister=second" }
++
++namespace tracked_ns
++{
++  struct tracked_type { int tracked_member = 0; };
++  constexpr int tracked_value = 1;
++}
++
++int
++use (tracked_ns::tracked_type object) // { dg-warning "first: use of 'tracked_ns'" }
++// { dg-warning "first: use of 'tracked_type'" "" { target *-*-* } .-1 }
++{
++  return object.tracked_member // { dg-warning "first: access to 'tracked_member'" }
++	 + tracked_ns::tracked_value; // { dg-warning "first: use of 'tracked_ns'" }
++  // { dg-warning "first: use of 'tracked_value'" "" { target *-*-* } .-1 }
++}
+diff --git a/gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-5.C b/gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-5.C
+new file mode 100644
+index 00000000000..b2c5a52da20
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/direct-event-plugin-test-5.C
+@@ -0,0 +1,17 @@
++// Test the direct events PLUGIN_NAME_USE and PLUGIN_MEMBER_ACCESS after the
++// only plugin that reads them removes its callbacks: GCC calls no callback.
++// { dg-do compile }
++// { dg-options "-fplugin-arg-direct_event_plugin-only-first -fplugin-arg-direct_event_plugin-unregister=first" }
++
++namespace tracked_ns
++{
++  struct tracked_type { int tracked_member = 0; };
++  constexpr int tracked_value = 1;
++}
++
++int
++use (tracked_ns::tracked_type object) // { dg-bogus "use of" }
++{
++  return object.tracked_member // { dg-bogus "access to" }
++	 + tracked_ns::tracked_value; // { dg-bogus "use of" }
++}
+diff --git a/gcc/testsuite/g++.dg/plugin/direct_event_plugin.cc b/gcc/testsuite/g++.dg/plugin/direct_event_plugin.cc
+new file mode 100644
+index 00000000000..8d76dcd91a5
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/direct_event_plugin.cc
+@@ -0,0 +1,104 @@
++/* A plugin that registers the callbacks of two plugins, "first" and
++   "second", for each direct event, PLUGIN_NAME_USE and PLUGIN_MEMBER_ACCESS.
++   Each callback gives a warning that names its plugin for each name and
++   member that starts with "tracked_".  The argument "only-first" registers
++   the callbacks of "first" only.  The argument "unregister" names a plugin
++   whose callbacks the plugin removes again, or "all".  So a test can see the
++   event through the function of GCC that calls more than one callback,
++   through the slot of one callback, and with no callback.  */
++
++#include "gcc-plugin.h"
++#include <stdlib.h>
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "tree.h"
++#include "intl.h"
++#include "cp/cp-tree.h"
++#include "diagnostic.h"
++
++int plugin_is_GPL_compatible;
++
++static const char first_plugin[] = "first";
++static const char second_plugin[] = "second";
++
++/* Return the name of DECL if it starts with "tracked_", or NULL.  */
++
++static const char *
++tracked_name (tree decl)
++{
++  if (BASELINK_P (decl))
++    decl = BASELINK_FUNCTIONS (decl);
++  if (TREE_CODE (decl) == OVERLOAD)
++    decl = OVL_FIRST (decl);
++  if (!DECL_P (decl) || DECL_NAME (decl) == NULL_TREE)
++    return NULL;
++  const char *name = IDENTIFIER_POINTER (DECL_NAME (decl));
++  return strncmp (name, "tracked_", 8) == 0 ? name : NULL;
++}
++
++static void
++name_use (tree decl, location_t location, void *user_data)
++{
++  if (const char *name = tracked_name (decl))
++    warning_at (location, 0, "%s: use of %qs", (const char *) user_data,
++		name);
++}
++
++static void
++member_access (tree member, tree, location_t location, bool, void *user_data)
++{
++  if (const char *name = tracked_name (member))
++    warning_at (location, 0, "%s: access to %qs", (const char *) user_data,
++		name);
++}
++
++/* Register the callbacks of the plugin PLUGIN for each direct event.  */
++
++static void
++register_plugin (const char *plugin)
++{
++  register_callback (plugin, PLUGIN_NAME_USE,
++		     (plugin_callback_func) (void (*) (void)) name_use,
++		     (void *) plugin);
++  register_callback (plugin, PLUGIN_MEMBER_ACCESS,
++		     (plugin_callback_func) (void (*) (void)) member_access,
++		     (void *) plugin);
++}
++
++/* Remove the callbacks of the plugin PLUGIN for each direct event.  */
++
++static void
++unregister_plugin (const char *plugin)
++{
++  if (unregister_callback (plugin, PLUGIN_NAME_USE) != PLUGEVT_SUCCESS
++      || unregister_callback (plugin, PLUGIN_MEMBER_ACCESS) != PLUGEVT_SUCCESS)
++    error ("cannot remove the callbacks of the plugin %qs", plugin);
++}
++
++int
++plugin_init (struct plugin_name_args *plugin_info,
++	     struct plugin_gcc_version *)
++{
++  bool only_first_p = false;
++  for (int i = 0; i < plugin_info->argc; i++)
++    if (strcmp (plugin_info->argv[i].key, "only-first") == 0)
++      only_first_p = true;
++  register_plugin (first_plugin);
++  if (!only_first_p)
++    register_plugin (second_plugin);
++  for (int i = 0; i < plugin_info->argc; i++)
++    {
++      const plugin_argument &argument = plugin_info->argv[i];
++      if (strcmp (argument.key, "unregister") != 0 || argument.value == NULL)
++	continue;
++      if (strcmp (argument.value, "all") == 0)
++	{
++	  unregister_plugin (second_plugin);
++	  unregister_plugin (first_plugin);
++	}
++      else
++	unregister_plugin (argument.value);
++    }
++  return 0;
++}
 diff --git a/gcc/testsuite/g++.dg/plugin/explicit-instantiation-plugin-test.C b/gcc/testsuite/g++.dg/plugin/explicit-instantiation-plugin-test.C
 new file mode 100644
 index 00000000000..860e1661f77
@@ -1035,10 +1407,10 @@ index 00000000000..828998ae1a7
 +int instantiated = pattern (tracked_holder {});
 diff --git a/gcc/testsuite/g++.dg/plugin/member_access_plugin.cc b/gcc/testsuite/g++.dg/plugin/member_access_plugin.cc
 new file mode 100644
-index 00000000000..37eca48a08a
+index 00000000000..6c3c6ad0990
 --- /dev/null
 +++ b/gcc/testsuite/g++.dg/plugin/member_access_plugin.cc
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,58 @@
 +/* A plugin that gives a warning for each member whose name starts with
 +   "tracked_" that PLUGIN_MEMBER_ACCESS reports, at the place where the
 +   source spells the access or expands the macro that spells it.  */
@@ -1056,10 +1428,9 @@ index 00000000000..37eca48a08a
 +int plugin_is_GPL_compatible;
 +
 +static void
-+plugin_member_access (void *event_data, void *)
++plugin_member_access (tree member, tree object_type, location_t location,
++		      bool splice_p, void *)
 +{
-+  plugin_member_access_data *data = (plugin_member_access_data *) event_data;
-+  tree member = data->member;
 +  const char *kind = "member";
 +  if (BASELINK_P (member))
 +    {
@@ -1080,12 +1451,12 @@ index 00000000000..37eca48a08a
 +  if (!DECL_P (member) || DECL_NAME (member) == NULL_TREE
 +      || strncmp (IDENTIFIER_POINTER (DECL_NAME (member)), "tracked_", 8) != 0)
 +    return;
-+  location_t loc = linemap_resolve_location (line_table, data->location,
++  location_t loc = linemap_resolve_location (line_table, location,
 +					      LRK_MACRO_EXPANSION_POINT,
 +					      NULL);
 +  warning_at (loc, 0, "access to %s %qs of %qT%s", kind,
-+	      IDENTIFIER_POINTER (DECL_NAME (member)), data->object_type,
-+	      data->splice_p ? " through a splice" : "");
++	      IDENTIFIER_POINTER (DECL_NAME (member)), object_type,
++	      splice_p ? " through a splice" : "");
 +}
 +
 +int
@@ -1093,7 +1464,9 @@ index 00000000000..37eca48a08a
 +	     struct plugin_gcc_version *)
 +{
 +  register_callback (plugin_info->base_name, PLUGIN_MEMBER_ACCESS,
-+		     plugin_member_access, NULL);
++		     (plugin_callback_func) (void (*) (void))
++		       plugin_member_access,
++		     NULL);
 +  return 0;
 +}
 diff --git a/gcc/testsuite/g++.dg/plugin/name-use-plugin-test.C b/gcc/testsuite/g++.dg/plugin/name-use-plugin-test.C
@@ -1155,10 +1528,10 @@ index 00000000000..c25319b278c
 +int instantiated = pattern<int> ();
 diff --git a/gcc/testsuite/g++.dg/plugin/name_use_plugin.cc b/gcc/testsuite/g++.dg/plugin/name_use_plugin.cc
 new file mode 100644
-index 00000000000..a9ac3a8396b
+index 00000000000..ab7da9a9eaf
 --- /dev/null
 +++ b/gcc/testsuite/g++.dg/plugin/name_use_plugin.cc
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,66 @@
 +/* A plugin that gives a warning for each use of a declaration whose name
 +   starts with "tracked_" that PLUGIN_NAME_USE reports, at the place where
 +   the source spells the name or expands the macro that spells it.  */
@@ -1176,10 +1549,8 @@ index 00000000000..a9ac3a8396b
 +int plugin_is_GPL_compatible;
 +
 +static void
-+plugin_name_use (void *event_data, void *)
++plugin_name_use (tree decl, location_t location, void *)
 +{
-+  plugin_name_use_data *data = (plugin_name_use_data *) event_data;
-+  tree decl = data->decl;
 +  if (BASELINK_P (decl))
 +    decl = BASELINK_FUNCTIONS (decl);
 +  if (TREE_CODE (decl) == OVERLOAD)
@@ -1211,7 +1582,7 @@ index 00000000000..a9ac3a8396b
 +    default:
 +      break;
 +    }
-+  location_t loc = linemap_resolve_location (line_table, data->location,
++  location_t loc = linemap_resolve_location (line_table, location,
 +					      LRK_MACRO_EXPANSION_POINT,
 +					      NULL);
 +  warning_at (loc, 0, "use of %s %qs", kind,
@@ -1223,14 +1594,15 @@ index 00000000000..a9ac3a8396b
 +	     struct plugin_gcc_version *)
 +{
 +  register_callback (plugin_info->base_name, PLUGIN_NAME_USE,
-+		     plugin_name_use, NULL);
++		     (plugin_callback_func) (void (*) (void)) plugin_name_use,
++		     NULL);
 +  return 0;
 +}
 diff --git a/gcc/testsuite/g++.dg/plugin/plugin.exp b/gcc/testsuite/g++.dg/plugin/plugin.exp
-index ab04ce10834..931e970b0ee 100644
+index ab04ce10834..ecfa94e6c95 100644
 --- a/gcc/testsuite/g++.dg/plugin/plugin.exp
 +++ b/gcc/testsuite/g++.dg/plugin/plugin.exp
-@@ -94,6 +94,13 @@ set plugin_test_list [list \
+@@ -94,6 +94,19 @@ set plugin_test_list [list \
  	  std-module-exports-c++23.C \
  	  std-module-exports-c++26.C } \
      { comment_plugin.cc comments-1.C } \
@@ -1241,6 +1613,12 @@ index ab04ce10834..931e970b0ee 100644
 +    { using_form_plugin.cc using-form-plugin-test.C } \
 +    { member_access_plugin.cc member-access-plugin-test.C } \
 +    { reflection_plugin.cc reflection-plugin-test.C } \
++    { direct_event_plugin.cc \
++	  direct-event-plugin-test-1.C \
++	  direct-event-plugin-test-2.C \
++	  direct-event-plugin-test-3.C \
++	  direct-event-plugin-test-4.C \
++	  direct-event-plugin-test-5.C } \
  ]
  
  foreach file [find $PLUGIN_DEFAULT_REPO *.gcm] {

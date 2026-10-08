@@ -149,8 +149,10 @@ function(crucible_patched_gcc_problem cxx out_var)
   endif()
 
   # The patched compiler gives a plugin six events of the C++ front end, and
-  # the plugin.def of its plugin headers names each one.  The stock compiler
-  # has no such event, and the probe refuses it.
+  # the plugin.def of its plugin headers names each one.  Its plugin.h also
+  # declares the slots of the two direct events.  The stock compiler has no
+  # such event, and a compiler with the previous form of the patch has no slot.
+  # The probe refuses each of them.
   execute_process(
     COMMAND "${cxx}" -print-file-name=plugin
     RESULT_VARIABLE plugin_query_code
@@ -163,7 +165,10 @@ function(crucible_patched_gcc_problem cxx out_var)
     string(APPEND problems " are missing.  That compiler gives a plugin no event for an explicit instantiation, a")
     string(APPEND problems " sizeof, a name use, a using form, a member access or a reflection.  The rule")
     string(APPEND problems " proof-routes of the quarantine plugin then cannot read two of its shapes, and the")
-    string(APPEND problems " plugin does not build.")
+    string(APPEND problems " plugin does not build.  Or the compiler has the previous form of the patch, which gives")
+    string(APPEND problems " the name use and the member access through invoke_plugin_callbacks, at approximately")
+    string(APPEND problems " 80 instructions for each name lookup.  A plugin whose callbacks have the types of")
+    string(APPEND problems " these two direct events then does not build.")
     string(APPEND problems "  The plugin headers are in '${plugin_directory}/include', and the probe")
     string(APPEND problems " cmake/probes/plugin_events.cpp gave the exit status '${exit_code}' and this output:\n")
     string(APPEND problems "${probe_output}")
