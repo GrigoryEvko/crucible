@@ -1,0 +1,21 @@
+# Each shape of a C++ file stream in a quarantined file gives a finding: an
+# object of std::ifstream, of std::ofstream and of std::fstream, a data member
+# of std::basic_filebuf, an object in the body of a generic lambda, and an
+# object of a name that a using directive of std brings into scope.
+
+compile report file_streams.cpp
+exit report pass
+finding report quarantine std-object file_streams.cpp:12:19 | std::basic_ifstream (std::ifstream)
+finding report quarantine std-entity file_streams.cpp:13:25 | std::basic_ifstream::is_open
+finding report quarantine std-object file_streams.cpp:17:19 | std::basic_ofstream (std::ofstream)
+finding report quarantine std-entity file_streams.cpp:18:15 | std::basic_ostream::operator<<
+finding report quarantine std-object file_streams.cpp:22:18 | std::basic_fstream (std::fstream)
+finding report quarantine std-entity file_streams.cpp:23:24 | std::basic_fstream::is_open
+finding report quarantine std-object file_streams.cpp:27:33 | std::basic_filebuf (std::basic_filebuf<wchar_t>)
+finding report quarantine std-object file_streams.cpp:32:23 | std::basic_ifstream (std::ifstream)
+finding report quarantine std-entity file_streams.cpp:33:30 | std::basic_ifstream::is_open
+finding report quarantine std-object file_streams.cpp:43:14 | std::basic_ofstream (std::ofstream)
+finding report quarantine std-entity file_streams.cpp:44:12 | std::basic_ostream::operator<<
+
+compile error file_streams.cpp mode=error out=no errors=report
+exit error fail

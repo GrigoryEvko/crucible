@@ -1,0 +1,49 @@
+// Each shape of a C++ file stream in a quarantined file: an object of
+// std::ifstream, of std::ofstream and of std::fstream, a data member of
+// std::basic_filebuf, an object in the body of a generic lambda, and an object
+// of a name that a using directive of std brings into scope.  The manifest
+// witness.txt of the plant holds each finding.
+
+#include <fstream>
+
+namespace probe {
+
+bool read_first() {
+    std::ifstream input("planted");
+    return input.is_open();
+}
+
+void write_first() {
+    std::ofstream output("planted");
+    output << 1;
+}
+
+bool open_both() {
+    std::fstream both("planted");
+    return both.is_open();
+}
+
+struct Holder {
+    std::basic_filebuf<wchar_t> buffer;
+};
+
+bool open_in_lambda(int value) {
+    auto open_stream = [](auto&& extra) {
+        std::ifstream stream("planted");
+        return stream.is_open() && extra != 0;
+    };
+    return open_stream(value);
+}
+
+namespace opened {
+
+using namespace std;
+
+void write_second() {
+    ofstream out("planted");
+    out << 2;
+}
+
+}  // namespace opened
+
+}  // namespace probe
