@@ -1,0 +1,2 @@
+The substrate lives in `include/planted/Moved.h`, and the live one is
+`include/planted/Live.h`.

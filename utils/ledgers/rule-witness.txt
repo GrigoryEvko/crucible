@@ -2,16 +2,13 @@
 # and `python3 utils/bin/guard write --rule rule-witness` writes this file.
 format 1
 rule rule-witness
-utils/registry.txt | no-plant | admit | admitted-audit | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | brand-drain | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | build-peak-memory | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
-utils/registry.txt | no-plant | admit | clang-format | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | configure-time | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | constexpr-ops | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | contract-header-unit | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | ctx-init-door | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | ctx-testing-boundary | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
-utils/registry.txt | no-plant | admit | decide-cite-ratio | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | detail-namespace | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | edit-build-cpu | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | edit-build-instructions | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
@@ -22,18 +19,15 @@ utils/registry.txt | no-plant | admit | edit-test-wall | The rule has no plants 
 utils/registry.txt | no-plant | admit | fixture-cpu | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | fixture-instructions | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | fixture-own-reason | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
-utils/registry.txt | no-plant | admit | fixy-dim-prose | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | gate-mutants | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | header-alone-crucible | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | header-alone-fixy | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | header-alone-foundation | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | link-count | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | mint-floor | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
-utils/registry.txt | no-plant | admit | no-coordination-refs | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | no-unchecked-access | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | noop-build-time | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | preprocessed-fill | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
-utils/registry.txt | no-plant | admit | prose-paths | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | session-oracle | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | start-lifetime | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | syscall-capability | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row

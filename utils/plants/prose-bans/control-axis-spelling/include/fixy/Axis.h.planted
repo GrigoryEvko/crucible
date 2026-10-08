@@ -1,0 +1,3 @@
+#pragma once
+// DimensionAxis::Staleness = 19 is the spelling of the enumerator.
+#define Dim 22

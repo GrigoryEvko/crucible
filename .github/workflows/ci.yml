@@ -82,16 +82,16 @@ jobs:
     name: discipline guards (toolchain-free)
     runs-on: ubuntu-latest
     steps:
-      # The cite-ratio audit dates each decide:: procedure from the history of
-      # Decide.h, so this job needs the whole history.  The audit refuses a
-      # shallow clone.
+      # The rule decide-cite-ratio dates each procedure of the catalog from the
+      # history of Decide.h, so this job needs the whole history.  The rule does
+      # not apply to a shallow clone.
       - name: Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Install ripgrep, fd and clang-format
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep fd-find clang-format
+      - name: Install ripgrep and fd
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep fd-find
 
       # The masters utils/bin/guard, utils/bin/loop and utils/bin/setup refuse
       # a Python that is older than 3.14, and the runner image ships an older one.
@@ -139,27 +139,6 @@ jobs:
       - name: Install the pinned CMake and ctest
         uses: ./.github/actions/pinned-cmake
 
-      # Non-blocking for now, matching the aarch64 and vessel-dispatch
-      # convention: flip `continue-on-error` off once a run confirms the
-      # runner's clang-format agrees with this tree.
-      #
-      # The repo .clang-format was verified byte-for-byte against 22.1.8 and
-      # 23.1.0, and this runner installs whatever Ubuntu ships — likely an
-      # older major.  clang-format's handling of `template for`, `^^T` and
-      # contract clauses has moved between releases, so a disagreement would
-      # be the formatter's, not the tree's.  The version is echoed so the
-      # first run answers that question instead of guessing at it, and the
-      # guard itself prints a NOTE when the major is one it has not been
-      # verified against.
-      #
-      # fd-find installs the binary as `fdfind`; the guard resolves either.
-      - name: clang-format (self-test + scan)
-        continue-on-error: true
-        run: |
-          clang-format --version
-          python3 utils/bin/guard check --rule clang-format --self-test
-          python3 utils/bin/guard check --rule clang-format
-
       # The rules of the engine tsast read the parse trees of the pinned kit,
       # and one run reads each tree one time.  The rule parse-clean refuses a
       # file that does not parse, because each other rule cannot see into it.
@@ -170,23 +149,21 @@ jobs:
           python3 utils/bin/guard witness --engine tsast
           python3 utils/bin/guard check --engine tsast
 
-      - name: contract decide-cite ratio (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule decide-cite-ratio --self-test
-          python3 utils/bin/guard check --rule decide-cite-ratio
-
       # The rules of the engine meta read the registry, the ledgers, the plants,
-      # the modules of the package and the git history.  The witness runs each
-      # rule on its plants of utils/plants/.  The rule structured-reads reads
-      # shell with the pinned ast-grep, and the rules types and python-lint run
-      # the pinned mypy and ruff, that the steps above install.  The rule
-      # test-registration reads the tests of a configured build, so its scan
-      # runs in the build legs through ctest, and here it does not apply.
+      # the modules of the package, the prose and the git history.  The witness
+      # runs each rule on its plants of utils/plants/.  The rule structured-reads
+      # reads shell with the pinned ast-grep, and the rules types and
+      # python-lint run the pinned mypy and ruff, that the steps above install.
+      # The rule test-registration reads the tests of a configured build, so its
+      # scan runs in the build legs through ctest, and here it does not apply.
+      # The rule clang-format needs clang-format 22 or 23, which this runner does
+      # not install, so it runs in the build legs through ctest.
       - name: the rules of the engine meta (witness + scan)
         run: |
           for rule in history layout registry-shape rule-implementations rule-witness structured-reads \
                       test-registration determinism exit-codes import-closure job-owners module-tests no-shell \
-                      one-implementation python-lint ste-prose typed-data types; do
+                      one-implementation python-lint ste-prose typed-data types prose-bans admitted-audit \
+                      decide-cite-ratio; do
             python3 utils/bin/guard witness --rule "$rule"
           done
           python3 utils/bin/guard check --engine meta
@@ -195,11 +172,6 @@ jobs:
         run: |
           python3 utils/bin/guard check --rule brand-drain --self-test
           python3 utils/bin/guard check --rule brand-drain
-
-      - name: fixy dimension prose (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule fixy-dim-prose --self-test
-          python3 utils/bin/guard check --rule fixy-dim-prose
 
       - name: syscall capability admission (self-test + scan)
         run: |
@@ -226,11 +198,6 @@ jobs:
         run: |
           python3 utils/bin/guard check --rule ctx-init-door --self-test
           python3 utils/bin/guard check --rule ctx-init-door
-
-      - name: no task, stage or tracker references (self-test + scan)
-        run: |
-          python3 utils/bin/guard check --rule no-coordination-refs --self-test
-          python3 utils/bin/guard check --rule no-coordination-refs
 
       - name: session oracle drift (check)
         run: python3 utils/bin/guard check --rule session-oracle check
@@ -329,7 +296,7 @@ jobs:
         run: >
           dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
           gcc-c++ isl gmp-devel ninja-build git ripgrep ccache diffutils
-          clang llvm xxd bpftool libbpf-devel python3-pip
+          clang llvm clang-tools-extra xxd bpftool libbpf-devel python3-pip
 
       # The patched GCC that the patched-gcc job built.  CRUCIBLE_CXX names it.
       - name: Restore the patched GCC
@@ -363,8 +330,9 @@ jobs:
             ccache-${{ matrix.arch }}-${{ matrix.preset }}-main-
             ccache-${{ matrix.arch }}-${{ matrix.preset }}-
 
-      # Full history: the contract_decide_cite_ratio test dates each decide::
-      # procedure from the history of Decide.h, and it refuses a shallow clone.
+      # Full history: the test guard_decide_cite_ratio dates each procedure of
+      # the catalog from the history of Decide.h, and the rule does not apply to
+      # a shallow clone.
       - name: Checkout
         uses: actions/checkout@v5
         with:

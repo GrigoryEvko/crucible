@@ -382,20 +382,6 @@ foreach(ccache_case launcher relocation plain_relocation wrapper)
   set_tests_properties(ccache_${ccache_case}_self_test PROPERTIES LABELS "ci_guard")
 endforeach()
 
-# The cite-ratio policy of the decide:: catalog.  Each procedure needs at
-# least 2 production cites within 180 days of the day its definition
-# entered Decide.h.  The day comes from the parse of every committed
-# version of Decide.h, so a comment that names a procedure dates nothing.
-# A procedure inside the window is informational.  A procedure past it
-# with too few cites fails the test.
-crucible_script_test(NAME contract_decide_cite_ratio_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule decide-cite-ratio
-          --self-test)
-crucible_script_test(NAME contract_decide_cite_ratio
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule decide-cite-ratio)
-set_tests_properties(contract_decide_cite_ratio contract_decide_cite_ratio_self_test PROPERTIES
-  LABELS "ci_guard;ast"
-  SKIP_RETURN_CODE 3)
 # GCC 16 does not keep the P2900 specifier of a template in a header unit or
 # in a precompiled header, and CRUCIBLE_PRE and CRUCIBLE_POST stay.  The test
 # requires the same contract error from an include, a header unit and a
@@ -513,19 +499,6 @@ crucible_script_test(NAME ctx_init_door
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ctx-init-door)
 set_tests_properties(ctx_init_door ctx_init_door_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
-# The fixy doc-blocks name an axis by the enum spelling
-# "DimensionAxis::<Name> = <ordinal>", because the retired FX numbering no
-# longer matches the enum ordinals.  utils/assay/guard/legacy/check_fixy_dim_prose.py reads the
-# comments and string literals of include/fixy from the parse tree and refuses
-# the FX spellings "Dim <N>" and "(dim <N>)".  Code is not prose.  Exit 3 when
-# the kit is absent reports a skip.
-crucible_script_test(NAME fixy_dim_prose_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule fixy-dim-prose --self-test)
-crucible_script_test(NAME fixy_dim_prose
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule fixy-dim-prose)
-set_tests_properties(fixy_dim_prose fixy_dim_prose_self_test PROPERTIES
-    LABELS "ci_guard"
-    SKIP_RETURN_CODE 3)
 # Each direct Linux syscall call in include/, src/ and vessel/ carries a
 # `// SYSCALL-CAP-OK: <reason>` comment in its statement or a row in
 # utils/ledgers/syscall-capability.txt with its effects::* capability
@@ -543,25 +516,6 @@ set_tests_properties(syscall_capability syscall_capability_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 
-# Formatting is not gated, and the absence is deliberate.  A clang_format
-# guard ran here and was removed.
-#
-# clang-format 23 needs glibc 2.44 against this host's 2.43, so it ran in a
-# container that SELinux-relabels the bind mount on every invocation.
-# Concurrent invocations race on that relabel.  A loser cannot read
-# .clang-format, silently falls back to LLVM default style, and reports
-# most of the tree as dirty.  The guard's output could not reveal this:
-# the line that says so, "Error reading /w/.clang-format: Permission
-# denied", does not match the shape it greps for, while every consequent
-# "<path>.h: Permission denied" does and counts as drift.  Three runs over
-# one unchanged tree reported 531, 912 and 2.
-#
-# Serializing the two tests against each other was not enough, because
-# anything else invoking the formatter races them too.  The same mechanism
-# reaches the opposite verdict just as easily: a batch producing no output
-# reads as a clean scan.  A guard that can silently pass is worse than no
-# guard, and style is not worth that.
-
 # The testing door of either tree mints a context with no key, and a context
 # is what every ctx-bound mint checks for.  utils/assay/guard/legacy/check_ctx_testing_boundary.py
 # counts each use of the door in the code that ships, from the parse tree and
@@ -573,25 +527,6 @@ crucible_script_test(NAME ctx_testing_boundary
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ctx-testing-boundary)
 set_tests_properties(ctx_testing_boundary ctx_testing_boundary_self_test
     PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
-
-# A comment, a script or an allowlist states what the code does, not which
-# task, stage or tracker entry produced it.
-# utils/assay/guard/legacy/check_no_coordination_refs.py reads every file that git tracks,
-# except the notes under misc/ and the guard itself: the comments, strings and
-# directive arguments of C++ from the parse tree, the comments and strings of
-# Python from its tokens, the target path of a symbolic link, and every line of
-# any other file.  It has no allowlist.  The self-test plants one reference of
-# each family, a file of clean look-alikes and one reference in each area that
-# the scan once skipped.  It proves that each plant is reported, that no
-# look-alike is, that the two paths out of scope and an untracked file are not
-# read, and that a linked document is reported under its own name only.
-# Exit 3 when the kit is absent reports a skip.
-crucible_script_test(NAME no_coordination_refs_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-coordination-refs --self-test)
-crucible_script_test(NAME no_coordination_refs
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-coordination-refs)
-set_tests_properties(no_coordination_refs no_coordination_refs_self_test
-    PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
 
 # Differential tests of the session relations against the projection
 # oracle of Tirore, Bengtson and Carbone (ITP 2023).  The check emits the
@@ -5174,17 +5109,6 @@ else()
   set_tests_properties(vessel_acceptance PROPERTIES LABELS "ci_guard;vessel" TIMEOUT 3600 RUN_SERIAL TRUE)
 endif()
 
-# prose_paths reads the guidance prose at the root of the tree: each path
-# that a sentence names is a file that exists.  When a file moves, the
-# sentence sends its reader to a file that is not there, and the message
-# names the place that the file most likely moved to.  The rule
-# ledger-owners holds the PATH cell of each ledger row.
-crucible_script_test(NAME prose_paths_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule prose-paths --self-test)
-crucible_script_test(NAME prose_paths
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule prose-paths)
-set_tests_properties(prose_paths prose_paths_self_test PROPERTIES LABELS "ci_guard")
-
 # The self-test of the parse reader, and the self-test of the mint model.
 # Exit 3 (the pinned kit is absent) is a SKIP here.  A developer who has not
 # run `python3 utils/bin/setup install tree-sitter` gets the instruction rather
@@ -5233,8 +5157,8 @@ set_tests_properties(mutation_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RE
 # runs a rule whose module reads the parse trees, when the test does not
 # require the fixture.  These tests read the trees and their registrations
 # give no label ast, so they get the label here.
-set_property(TEST brand_drain start_lifetime fixy_dim_prose syscall_capability no_coordination_refs
-    mint_inventory_check_floor guard_plugin APPEND PROPERTY LABELS ast)
+set_property(TEST brand_drain start_lifetime syscall_capability mint_inventory_check_floor guard_plugin
+    APPEND PROPERTY LABELS ast)
 crucible_tsast_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} 8)
 set_property(TEST guard_parse_proof_routes APPEND PROPERTY FIXTURES_REQUIRED preprocessed_store)
 get_property(crucible_directory_tests DIRECTORY PROPERTY TESTS)
@@ -5266,8 +5190,9 @@ endfunction()
 cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_checks)
 
 # The rules of the engine meta read the registry, the ledgers, the plants, the
-# modules of the package and the git history, and no parse tree, so their
-# tests come after the block above (cmake/Guards.cmake).  guard_history reads
+# modules of the package, the prose and the git history (cmake/Guards.cmake).
+# The rules of TREES also read the parse trees, so their tests require the
+# fixture tsast_trees.  guard_history reads
 # the git history of utils/registry.txt and of each ledger: a threshold that
 # rose with no measurement in its commit is an error, and a threshold or a
 # ledger above its lowest committed value gives a warning.  The test modules
@@ -5278,10 +5203,12 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # of the compile database, the Python reader, the reader of the reports of
 # mypy and ruff, the package scope, the STE table, the counted rules of the
 # engine plugin, the writer of the walk list and the writer of the header
-# costs plant their input in throwaway trees.  The test of the import
-# closure imports the module of each hidden subcommand of the masters in a
-# new interpreter.
-crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR})
+# costs plant their input in throwaway trees.  The tests of the reader of
+# prose and of the rule decide-cite-ratio parse small planted files, and the
+# test of the rule clang-format runs the clang-format of the host on planted
+# files.  The test of the import closure imports the module of each hidden
+# subcommand of the masters in a new interpreter.
+crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} TREES admitted-audit decide-cite-ratio prose-bans)
 # The rules of the engine elf read the objects, the static libraries and the
 # compile database of this build (cmake/Guards.cmake).  The test modules of
 # the runner of the engine and of its two rules build planted libraries and
@@ -5299,9 +5226,10 @@ endforeach()
 foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test_proc core.test_git
         core.test_paths core.test_testing core.test_record core.test_budget guard.engines.buildsys.test_runner
         guard.engines.buildsys.test_planted readers.test_compdb readers.test_python readers.test_tool_reports
-        readers.test_sections guard.test_history guard.test_import_closure guard.engines.meta.test_package
-        guard.engines.meta.test_ste_dictionary guard.engines.plugin.test_counted loop.derive.test_walk_units
-        loop.derive.test_header_costs)
+        readers.test_sections readers.test_prose guard.test_history guard.test_import_closure
+        guard.engines.meta.test_package guard.engines.meta.test_ste_dictionary
+        guard.engines.meta.test_decide_cite_ratio guard.engines.meta.test_clang_format
+        guard.engines.plugin.test_counted loop.derive.test_walk_units loop.derive.test_header_costs)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})

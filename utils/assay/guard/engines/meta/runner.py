@@ -40,9 +40,11 @@ THE WITNESS
     against the ledger of the copy (judged()).  A plant can then hold a ledger
     of the rule.  A copy with no ledger has the empty ledger.  A module can
     give plant_context(plant, scratch) when a plant needs more than a copy,
-    for example a git history or a configured CMake project.  An engine gives
-    the copy of its own context to witness(), and the judge of a rule that it
-    judges in its own way.
+    for example a git history or a configured CMake project.  A rule that
+    runs a tool of the host gives applies(), which raises NotApplicable when
+    the host has no such tool.  The witness then exits with SKIPPED and runs
+    no plant.  An engine gives the copy of its own context to witness(), and
+    the judge of a rule that it judges in its own way.
 
 THE STATUS
     A run exits 0 with no error, 1 with an error, and 77 (SKIPPED, the
@@ -455,7 +457,8 @@ def witness(
             way.  None judges the findings of the rule against the ledger of the copy (judged())
 
     Returns:
-        0 when each plant is refused and each control is accepted, 1 otherwise, 2 when the rule has no plant
+        0 when each plant is refused and each control is accepted, 1 otherwise, 2 when the rule has no plant.
+        SKIPPED when the function applies() of the module raises NotApplicable
     """
     module = rule_module(rule)
     prepare: Callable[[Path, Path], RuleContext] = getattr(module, "plant_context", copy)
@@ -463,6 +466,13 @@ def witness(
     if not plants:
         print(f"{rule.id}: no plant in {PLANTS}/{rule.id}/", file=sys.stderr)
         return 2
+    applies: Callable[[], None] | None = getattr(module, "applies", None)
+    if applies is not None:
+        try:
+            applies()
+        except NotApplicable as reason:
+            check_report.write_line(f"{rule.id}: {reason}.  The witness does not apply on this host")
+            return SKIPPED
     failures: list[str] = []
     for plant in plants:
         with tempfile.TemporaryDirectory(prefix=f"witness-{rule.id}-") as scratch:

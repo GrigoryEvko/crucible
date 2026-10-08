@@ -1,0 +1,7 @@
+#pragma once
+namespace crucible::planted {
+inline void cite(int value) {
+    foundation::decide::planted_good(value);
+    foundation::decide::planted_good(value);
+}
+}  // namespace crucible::planted

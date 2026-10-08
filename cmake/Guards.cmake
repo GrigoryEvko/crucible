@@ -42,23 +42,27 @@ function(crucible_rule_limit rule out_var)
   set(${out_var} "${limit}" PARENT_SCOPE)
 endfunction()
 
-# crucible_meta_rule_tests(<warnings-dir>)
+# crucible_meta_rule_tests(<warnings-dir> [TREES <rule>...])
 #
 # Register two tests for each rule of the engine meta: guard_ID runs the rule on the tree, and
 # guard_ID_witness runs it on each plant and control of utils/plants/ID/.  The rule test-registration
 # reads the tests of this build directory, so each rule gets --build-dir.  A rule that does not apply
-# to the tree, such as history on a shallow clone, exits 77, and ctest shows a skip.  No meta rule
-# reads the parse trees, so the tests do not require the fixture tsast_trees.
+# to the tree, such as history on a shallow clone, exits 77, and ctest shows a skip.  The guard_ID of
+# each rule of TREES reads the parse trees of the tree, so it requires the fixture tsast_trees.  The rule
+# test-registration refuses a rule that reads the trees and is not in TREES.
 function(crucible_meta_rule_tests warnings_dir)
+  cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "TREES")
   crucible_rule_rows("^rule[ \t]+[a-z0-9-]+[ \t]+(.*[ \t])?engine=meta[ \t]" rows)
   list(LENGTH rows row_count)
   if(row_count EQUAL 0)
     message(FATAL_ERROR "utils/registry.txt: the registry holds no rule of the engine meta, and the build registers "
                         "the tests of those rules.  Make sure that each meta rule row has the field engine=meta.")
   endif()
+  set(meta_rules "")
   foreach(row IN LISTS rows)
     string(REGEX MATCH "^rule[ \t]+([a-z0-9-]+)" match "${row}")
     set(rule "${CMAKE_MATCH_1}")
+    list(APPEND meta_rules "${rule}")
     string(REPLACE "-" "_" test_name "guard_${rule}")
     crucible_script_test(NAME ${test_name}
       COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ${rule} --build-dir ${CMAKE_BINARY_DIR}
@@ -66,6 +70,15 @@ function(crucible_meta_rule_tests warnings_dir)
     crucible_script_test(NAME ${test_name}_witness
       COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard witness --rule ${rule})
     set_tests_properties(${test_name} ${test_name}_witness PROPERTIES LABELS "ci_guard;meta" SKIP_RETURN_CODE 77)
+    if(rule IN_LIST arg_TREES)
+      set_tests_properties(${test_name} PROPERTIES FIXTURES_REQUIRED tsast_trees)
+    endif()
+  endforeach()
+  foreach(rule IN LISTS arg_TREES)
+    if(NOT rule IN_LIST meta_rules)
+      message(FATAL_ERROR "crucible_meta_rule_tests: the rule ${rule} of TREES is no rule of the engine meta in "
+                          "utils/registry.txt.  Remove it from TREES, or correct its name.")
+    endif()
   endforeach()
 endfunction()
 

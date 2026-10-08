@@ -1,0 +1,2 @@
+A1 = type("Point", (), {"x": 1})
+value = A1.x  # a plain member access

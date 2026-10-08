@@ -1,0 +1,64 @@
+// The flag matrix of the plants of the rule admitted-audit: one section for each row of the audit table.
+// name: std::move
+static_assert(true);
+// name: <meta>
+// a note
+// varies: _GLIBCXX_DEBUG
+static_assert(true);
+// name: std::initializer_list
+static_assert(true);
+// name: std::strong_ordering
+// name: std::weak_ordering
+// name: std::partial_ordering
+static_assert(true);
+// name: std::is_eq
+// name: std::is_neq
+// name: std::is_lt
+// name: std::is_lteq
+// name: std::is_gt
+// name: std::is_gteq
+static_assert(true);
+// name: std::byte
+static_assert(true);
+// name: std::size_t
+// name: std::ptrdiff_t
+// name: std::int8_t
+// name: std::int16_t
+// name: std::int32_t
+// name: std::int64_t
+// name: std::uint8_t
+// name: std::uint16_t
+// name: std::uint32_t
+// name: std::uint64_t
+// name: std::intptr_t
+// name: std::uintptr_t
+// name: std::intmax_t
+// name: std::uintmax_t
+// name: std::int_least8_t
+// name: std::int_least16_t
+// name: std::int_least32_t
+// name: std::int_least64_t
+// name: std::uint_least8_t
+// name: std::uint_least16_t
+// name: std::uint_least32_t
+// name: std::uint_least64_t
+// name: std::int_fast8_t
+// name: std::int_fast16_t
+// name: std::int_fast32_t
+// name: std::int_fast64_t
+// name: std::uint_fast8_t
+// name: std::uint_fast16_t
+// name: std::uint_fast32_t
+// name: std::uint_fast64_t
+static_assert(true);
+// name: std::nullptr_t
+static_assert(true);
+// name: std::meta::info
+static_assert(true);
+// name: std::source_location
+static_assert(true);
+// name: std::contracts::contract_violation
+static_assert(true);
+// name: std::align_val_t
+// name: std::nothrow_t
+static_assert(true);

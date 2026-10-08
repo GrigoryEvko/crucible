@@ -8,8 +8,8 @@ THE REFRESH
     A commit that moves, renames or deletes a path can leave a generated file
     that names it, and two kinds of drift need a check:
       * A path goes dead.  A sentence of the guide or the PATH cell of a
-        ledger row names a file that is no longer there.  The check of the
-        prose paths and the rule ledger-owners find it.
+        ledger row names a file that is no longer there.  The rules
+        prose-bans and ledger-owners find it.
       * The content goes stale while each path still resolves.  The mint
         inventory can stop counting a mint, and only a new write shows it.
     `loop derive` writes each generated file of REFRESH, and then it runs
@@ -85,7 +85,7 @@ TARGETS = {
 REFRESH = ("mint-inventory", "witness-fixtures", "walk-units", "header-costs")
 # The checks of the refresh, in the order that a moved path breaks them: a label and a command.
 CHECKS = (
-    ("prose paths", (sys.executable, str(GUARD), "check", "--rule", "prose-paths")),
+    ("prose", (sys.executable, str(GUARD), "check", "--rule", "prose-bans")),
     ("ledger paths", (sys.executable, str(GUARD), "check", "--rule", "ledger-owners")),
     ("mint inventory", (sys.executable, str(LOOP), "derive", "mint-inventory", "--check")),
     ("witness fixtures", (sys.executable, str(LOOP), "derive", "witness-fixtures", "--check")),

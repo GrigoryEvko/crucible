@@ -1,0 +1,17 @@
+#pragma once
+#include <cstdint>
+#define PLANTED_FLAG 1
+#if PLANTED_FLAG
+#endif
+// S004 refuses an async launch that carries no completion witness.
+// I002, F101, W001, P010 and V101 are collision rule codes.
+// UTF-8, SHA-256, AVX-512, FNV-1a, x86-64 and C++26 are not tags.
+// template <class B1, class B2> and A1 are template parameters.
+// SOME-MARKER-OK: a marker has no digit after its prefix.
+// Headline #1 and item #2 number the items of a list.
+// &#123; is an entity, and #374151 is a color.
+// TVM Analyzer (PR #1367) has the same narrow scope.
+// An audit-trail entry, FOUND_ENTRY_COUNT and GAPS_TOTAL are not tags.
+struct Point { int x; };
+inline Point A1{};
+inline int member_read = A1.x;

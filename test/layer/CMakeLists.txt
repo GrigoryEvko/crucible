@@ -524,20 +524,9 @@ add_library(layer_admitted_flag_matrix OBJECT ${_matrix_units})
 target_link_libraries(layer_admitted_flag_matrix PRIVATE crucible_dialect)
 target_include_directories(layer_admitted_flag_matrix PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 
-# Each admitted entry and each candidate of the audit has one row in the audit
-# table and one section in the flag matrix, and each row and each section
-# names an audited name.
-crucible_script_test(NAME admitted_audit_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule admitted-audit --self-test)
-crucible_script_test(NAME admitted_audit
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule admitted-audit
-          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-set_tests_properties(admitted_audit admitted_audit_self_test PROPERTIES
-    LABELS "ci_guard;substrate"
-    SKIP_RETURN_CODE 3)
-# The rule admitted-audit reads the parse trees, so its test starts after the
-# tests that fill the tree cache (the end of test/CMakeLists.txt).
-set_tests_properties(admitted_audit PROPERTIES FIXTURES_REQUIRED tsast_trees)
+# The meta rule admitted-audit (test guard_admitted_audit) gives each admitted
+# entry and each candidate of the audit one row in the audit table and one
+# section in the flag matrix.
 
 # The rule header-standalone (test guard_header_standalone) compiles each
 # header of crucible-not-standalone.txt with the command of the crucible

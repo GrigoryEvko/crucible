@@ -1,0 +1,6 @@
+#pragma once
+namespace planted {
+struct Clean {
+    int value = 0;
+};
+} // namespace planted

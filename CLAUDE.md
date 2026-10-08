@@ -3089,7 +3089,7 @@ The `admit` rows of the rule table (the admitted list) give the std names that a
 - REPLACE: a family replaces the name. The row gives the family. The admitted list keeps the name until that change is on main. Each use of the name in a quarantined file is a finding of the kind `replace-pending:NAME`, so the ratchet refuses a new use
 - DROP: the name has no use, or no safe use.
 
-The owner approved each verdict on 2026-10-02. `test/layer/admitted_flag_matrix.cpp` holds a `static_assert` for each property of each name. The build compiles it under each flag set. `utils/assay/guard/legacy/check_admitted_audit.py` makes sure that the list, the table and the matrix agree. Read the verdict of a name in the table. This guide does not copy the table.
+The owner approved each verdict on 2026-10-02. `test/layer/admitted_flag_matrix.cpp` holds a `static_assert` for each property of each name. The build compiles it under each flag set. The rule `admitted-audit` (`utils/assay/guard/engines/meta/admitted_audit.py`, the test `guard_admitted_audit`) makes sure that the list, the table and the matrix agree. Read the verdict of a name in the table. This guide does not copy the table.
 
 ### The plugin modes and the enforce rows
 

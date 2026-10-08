@@ -1,0 +1,3 @@
+# A rule table that does not admit <meta>, and the audit keeps <meta>.
+admit std::move | a cast
+quarantine test/

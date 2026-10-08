@@ -1,0 +1,4 @@
+# The rule table of the plants of the rule admitted-audit: two admit rows.
+admit std::move | a cast
+admit <meta> | reflection
+quarantine test/

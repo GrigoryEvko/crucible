@@ -1,0 +1,4 @@
+#pragma once
+namespace crucible::safety::decide {
+constexpr bool planted_moved(int) noexcept { return true; }
+}  // namespace crucible::safety::decide

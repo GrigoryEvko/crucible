@@ -1,0 +1,2 @@
+#pragma once
+inline constexpr char note[] = "Dim 7 in a string is prose";

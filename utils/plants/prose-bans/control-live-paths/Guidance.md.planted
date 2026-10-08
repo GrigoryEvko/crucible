@@ -1,0 +1,4 @@
+The live header is `include/planted/Live.h`, and the dashboard is
+`bench/serve.html`.  The same header again is include/planted/Live.h.  A task
+moves `include/planted/<Name>.h` later.  The test is test/live.cpp:12, and a
+path before a letter, such as bench/x.hx or test/y.py_, is no path.

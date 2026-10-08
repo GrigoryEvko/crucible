@@ -1,0 +1,4 @@
+# A rule table with an admit row that has no reason.
+admit std::move
+admit <meta> | reflection
+quarantine test/

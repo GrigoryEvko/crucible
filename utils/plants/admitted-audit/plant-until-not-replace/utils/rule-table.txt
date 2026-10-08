@@ -1,0 +1,4 @@
+# A rule table that admits <meta> until a family, and the audit keeps <meta>.
+admit std::move | a cast
+admit <meta> until Report | reflection
+quarantine test/

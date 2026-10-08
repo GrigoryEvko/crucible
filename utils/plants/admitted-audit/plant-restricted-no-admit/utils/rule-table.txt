@@ -1,0 +1,3 @@
+# A rule table that does not admit std::move, and the audit keeps std::move with a restriction.
+admit <meta> | reflection
+quarantine test/

@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation::decide {
+constexpr bool planted_good(int) noexcept { return true; }
+constexpr bool planted_fine(int) noexcept { return true; }
+}  // namespace foundation::decide

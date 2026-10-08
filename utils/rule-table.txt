@@ -39,8 +39,8 @@
 #         until FAMILY  The family of the base that replaces the entry.  The
 #                       row goes when that family lands, and `rg 'until
 #                       FAMILY'` finds the rows of one family.
-#                       utils/assay/guard/legacy/check_admitted_audit.py makes sure that
-#                       each such row has the verdict REPLACE of that family.
+#                       The rule admitted-audit makes sure that each such
+#                       row has the verdict REPLACE of that family.
 #                       Each use that the row admits is a finding of the kind
 #                       replace-pending:ENTRY, so the ratchet refuses a new use
 #         arity N       The entry admits only a function with N parameters

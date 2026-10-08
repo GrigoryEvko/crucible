@@ -117,6 +117,8 @@ LIMITS: dict[str, int] = {
     "session_oracle": 2 << 30,
     "atom-roster": 512 << 20,
     "clang-format": 64 << 20,
+    # The hits of the rule prose-bans, one small entry for each file: 27 MB for the 6496 files of one tree on 2026-10-08.
+    "prose-bans": 64 << 20,
     "hwledger": 16 << 20,
     "tools": 512 << 20,
     # The host program of the rule rows-readers: about 0.9 MB for each version of its two sources.

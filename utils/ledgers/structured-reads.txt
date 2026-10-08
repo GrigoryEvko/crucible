@@ -5,11 +5,7 @@ rule structured-reads
 test/harness/check_output.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/core/report.py | regex-call | 3 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/core/target.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_admitted_audit.py | regex-call | 3 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_admitted_audit.py | regex-call | 1 | form_findings | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_detail_namespace.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_fixy_dim_prose.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_no_coordination_refs.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | node-text-variable | 3 | open_members | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | node-text-variable | 2 | token_key | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count

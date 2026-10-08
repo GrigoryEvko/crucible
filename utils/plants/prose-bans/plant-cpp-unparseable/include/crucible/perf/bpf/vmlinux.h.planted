@@ -1,0 +1,1 @@
+struct planted { int operator; };  /* CR-05 */

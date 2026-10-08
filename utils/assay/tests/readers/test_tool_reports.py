@@ -1,4 +1,4 @@
-"""The test of the reader of the reports of mypy and ruff (assay.readers.tool_reports).
+"""The test of the reader of the reports of mypy, ruff and clang-format (assay.readers.tool_reports).
 
 `guard selftest tests.readers.test_tool_reports` runs the test.  Each case
 writes one line.  Exit 0 when each case holds, else 1.
@@ -91,6 +91,39 @@ def ruff_cases(expect: testing.Expect) -> None:
     )
 
 
+def clang_format_cases(expect: testing.Expect) -> None:
+    """Check the read of a report of clang-format."""
+    drift = (
+        "<?xml version='1.0'?>\n<replacements xml:space='preserve' incomplete_format='false'>\n"
+        "<replacement offset='42' length='3'>&#10;  </replacement>\n"
+        "<replacement offset='60' length='0'> </replacement>\n</replacements>\n"
+    )
+    clean = "<?xml version='1.0'?>\n<replacements xml:space='preserve' incomplete_format='false'>\n</replacements>\n"
+    incomplete = clean.replace("incomplete_format='false'", "incomplete_format='true'")
+    expect(
+        "clang_format_documents() gives one document for each file, in sequence, with each replacement",
+        tool_reports.clang_format_documents(drift + clean)
+        == (
+            tool_reports.FormatDocument(
+                False, (tool_reports.Replacement(42, 3, "\n  "), tool_reports.Replacement(60, 0, " "))
+            ),
+            tool_reports.FormatDocument(False, ()),
+        ),
+    )
+    expect(
+        "an incomplete format is a flag, and an empty report has no document",
+        tool_reports.clang_format_documents(incomplete)[0].is_incomplete
+        and tool_reports.clang_format_documents("") == (),
+    )
+    expect(
+        "text before the declaration, a document that is not XML and a child that is not a replacement give "
+        "ReportError",
+        refuses(lambda: tool_reports.clang_format_documents("warning: text\n" + clean))
+        and refuses(lambda: tool_reports.clang_format_documents("<?xml version='1.0'?>\n<replacements"))
+        and refuses(lambda: tool_reports.clang_format_documents(clean.replace("\n</", "<other/>\n</"))),
+    )
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (mypy_cases, ruff_cases))
+    return testing.run(__name__.removeprefix("assay."), argv, (mypy_cases, ruff_cases, clang_format_cases))

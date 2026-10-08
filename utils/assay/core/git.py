@@ -329,15 +329,20 @@ def moves(root: Path, base: str = "HEAD") -> dict[str, str]:
     return found
 
 
-def commit_all(root: Path, subject: str, body: str = "") -> str:
+def commit_all(root: Path, subject: str, body: str = "", date: str = "") -> str:
     """Commit each file of a throwaway repository with a fixed identity, and return the hash.
+
+    A date that git reads, such as 2025-01-01T12:00:00, becomes the author
+    date and the committer date of the commit.  An empty date gives the time
+    of the commit.
 
     Raises:
         GitError: If git fails
     """
     run(root, "add", "-A", "--", ".")
     message = ["-m", subject] + (["-m", body] if body else [])
-    run(root, "commit", "-q", "--allow-empty", *message, extra=SCRATCH_IDENTITY)
+    stamp = {"GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date} if date else {}
+    run(root, "commit", "-q", "--allow-empty", *message, extra={**SCRATCH_IDENTITY, **stamp})
     return run(root, "rev-parse", "HEAD").decode().strip()
 
 
