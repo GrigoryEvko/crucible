@@ -1,0 +1,9 @@
+#pragma once
+namespace planted {
+class Open {
+    int value_ = 0;
+
+public:
+    constexpr explicit Open(int value) noexcept : value_{value} {}
+};
+}  // namespace planted

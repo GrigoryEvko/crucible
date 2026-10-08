@@ -49,6 +49,8 @@ THE MODES
                 light row, and that no such row is before MARKER.  Also make
                 sure that the rule can read each measure, and that the kind
                 of each row agrees with its measure.  It measures nothing.
+                The rule derived-files (assay.guard.engines.meta.derived_files)
+                reads the same findings (drift()).
 
 Exit 0 when the mode did its work, and 1 when a check finds an error or a
 measure fails.  Exit 2 on a usage error, and 3 when an input is missing.
@@ -74,6 +76,8 @@ if TYPE_CHECKING:
     from assay.loop import gauge_sample
 
 PROGRAM = "loop derive header-costs"
+# The rule of the registry that reads the findings of drift().
+CHECK = "derived-files"
 # The rule table of a tree, relative to its root.
 TABLE = ruletable.TABLE.relative_to(REPO_ROOT)
 # The line of the rule table after which this module writes each line.
@@ -121,14 +125,14 @@ class Costs:
 
     `head` is the text up to the marker line and with it, and `lines` is each line after it.  `costs` gives the
     measure of each header by its spelling with the angle brackets, and `rows` gives the row of each header.
-    `problems` gives each problem of THE ROWS with its position in the table.
+    `problems` gives an error for each problem of THE ROWS, at its line of the table.
     """
 
     head: str
     lines: tuple[str, ...]
     costs: dict[str, Cost]
     rows: dict[str, ruletable.HeaderCost]
-    problems: tuple[str, ...]
+    problems: tuple[check_report.Finding, ...]
 
 
 def kind_name(is_heavy_row: bool) -> str:
@@ -222,19 +226,20 @@ def read_costs(root: Path) -> Costs:
     if len(places) != 1:
         raise CostError(f"{TABLE} holds the marker line {len(places)} times, and it must hold it one time: {MARKER}")
     first_line = places[0] + 2
-    problems: list[str] = []
+    problems: list[check_report.Finding] = []
     for row in rows_grammar.parse(text, str(TABLE)):
         is_cost = row.words[0] in (HEAVY, LIGHT)
         if is_cost and row.line < first_line:
-            problems.append(
-                f"{TABLE}:{row.line}: the {row.words[0]} row is before the marker line, and only "
-                f"`{PROGRAM}` writes such a row, after the marker line"
+            message = (
+                f"the {row.words[0]} row is before the marker line, and only `{PROGRAM}` writes such a row, after "
+                f"the marker line"
             )
+            problems.append(check_report.Finding("error", TABLE.as_posix(), row.line, CHECK, message))
         elif not is_cost and row.line >= first_line:
-            problems.append(
-                f"{TABLE}:{row.line}: the {row.words[0]} row is after the marker line, and only a "
-                f"heavy row and a light row can be there"
+            message = (
+                f"the {row.words[0]} row is after the marker line, and only a heavy row and a light row can be there"
             )
+            problems.append(check_report.Finding("error", TABLE.as_posix(), row.line, CHECK, message))
     costs: dict[str, Cost] = {}
     rows: dict[str, ruletable.HeaderCost] = {}
     for item in table.header_costs:
@@ -242,20 +247,42 @@ def read_costs(root: Path) -> Costs:
         try:
             costs[item.header] = parse_cell(item.header, item.measure)
         except CostError as problem:
-            problems.append(f"{TABLE}:{item.line}: {problem}")
+            problems.append(check_report.Finding("error", TABLE.as_posix(), item.line, CHECK, str(problem)))
     head = "\n".join(lines[: places[0] + 1]) + "\n"
     return Costs(head, tuple(line for line in lines[places[0] + 1 :] if line), costs, rows, tuple(problems))
 
 
-def kind_problems(found: Costs, limit: float) -> list[str]:
-    """Return a problem for each row with a kind that does not agree with its measure and the limit."""
+def kind_problems(found: Costs, limit: float) -> list[check_report.Finding]:
+    """Return an error for each row with a kind that does not agree with its measure and the limit."""
     return [
-        f"{TABLE}: the row of {header} is {kind_name(found.rows[header].is_heavy)}, and its measure {cost.cell()!r} "
-        f"makes it {kind_name(is_heavy(cost, limit))} at the limit of {limit:.3f} s.  Run: python3 utils/bin/loop "
-        f"derive header-costs --write"
+        check_report.Finding(
+            "error",
+            TABLE.as_posix(),
+            found.rows[header].line,
+            CHECK,
+            f"the row of {header} is {kind_name(found.rows[header].is_heavy)}, and its measure {cost.cell()!r} makes "
+            f"it {kind_name(is_heavy(cost, limit))} at the limit of {limit:.3f} s.  Run: python3 utils/bin/loop "
+            f"derive header-costs --write",
+        )
         for header, cost in sorted(found.costs.items())
         if found.rows[header].is_heavy != is_heavy(cost, limit)
     ]
+
+
+def drift(root: Path) -> list[check_report.Finding]:
+    """Return an error for each problem of THE ROWS, or else for each row with a kind that its measure does not give.
+
+    Complexity: linear in the rows of the table.
+
+    Raises:
+        CostError: If the table or the registry does not obey its format, or no measured row gives REFERENCE
+        OSError: If the table or the registry cannot be read
+        rows_grammar.RowsError: If the text of the table is not UTF-8
+    """
+    found = read_costs(root)
+    if found.problems:
+        return list(found.problems)
+    return kind_problems(found, limit_of(found.costs, threshold_of(root)))
 
 
 def checked(root: Path) -> ExitCode:
@@ -265,19 +292,15 @@ def checked(root: Path) -> ExitCode:
         OK, FINDINGS when a row has a problem, or MISSING_INPUT when the table or the registry cannot be read
     """
     try:
-        found = read_costs(root)
-        problems = list(found.problems)
-        if not problems:
-            problems += kind_problems(found, limit_of(found.costs, threshold_of(root)))
+        problems = drift(root)
     except (OSError, CostError, rows_grammar.RowsError) as problem:
         check_report.write_line(f"{PROGRAM}: {problem}", is_error=True)
         return ExitCode.MISSING_INPUT
-    for text in problems:
-        check_report.write_line(f"{PROGRAM}: {text}", is_error=True)
+    for finding in problems:
+        check_report.write_line(finding.text(), is_error=True)
     if problems:
         return ExitCode.FINDINGS
-    heavy = sum(row.is_heavy for row in found.rows.values())
-    check_report.write_line(f"{PROGRAM}: {len(found.rows)} rows agree with their measures, {heavy} of them heavy")
+    check_report.write_line(f"{PROGRAM}: the rows agree with their measures")
     return ExitCode.OK
 
 
@@ -301,8 +324,8 @@ def written(root: Path) -> ExitCode:
         check_report.write_line(f"{PROGRAM}: {problem}", is_error=True)
         return ExitCode.MISSING_INPUT
     if found.problems:
-        for text in found.problems:
-            check_report.write_line(f"{PROGRAM}: {text}", is_error=True)
+        for finding in found.problems:
+            check_report.write_line(finding.text(), is_error=True)
         check_report.write_line(f"{PROGRAM}: the rows are not written while a row has a problem", is_error=True)
         return ExitCode.FINDINGS
     lines: list[str] = []
@@ -415,8 +438,8 @@ def measured(root: Path, build_dir: Path, extra: list[str], jobs: int) -> ExitCo
         check_report.write_line(f"{PROGRAM}: {problem}", is_error=True)
         return ExitCode.MISSING_INPUT
     if found.problems:
-        for text in found.problems:
-            check_report.write_line(f"{PROGRAM}: {text}", is_error=True)
+        for finding in found.problems:
+            check_report.write_line(finding.text(), is_error=True)
         return ExitCode.FINDINGS
     reference_row = gauge_sample.find_row(database, reference_unit)
     if reference_row is None:

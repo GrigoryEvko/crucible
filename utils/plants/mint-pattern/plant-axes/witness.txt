@@ -7,28 +7,28 @@
 compile report mints.cpp
 flag report -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Mints.h
 exit report pass
-finding report mint-pattern mint mints.cpp:6:35 | quarantined::mint_quarantined(plant::Thing) \| name=mint_quarantined static=0 shape=token template=0 nodiscard=1 constexpr=0 noexcept=1 constrained=0 gated=0 projection=0 defined=1 owner=-
+finding report mint-pattern mint mints.cpp:6:35 | quarantined::mint_quarantined(plant::Thing) \| name=mint_quarantined static=0 shape=token template=0 nodiscard=1 constexpr=0 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=- owner=-
 finding report mint-pattern mint-not-constexpr mints.cpp:6:35 | quarantined::mint_quarantined(plant::Thing)
-finding report mint-pattern mint include/fixy/Mints.h:65:25 | plant::Holder::mint_in_template() const \| name=mint_in_template static=0 shape=member template=0 nodiscard=1 constexpr=0 noexcept=1 constrained=0 gated=0 projection=0 defined=1 owner=plant::Holder
+finding report mint-pattern mint include/fixy/Mints.h:65:25 | plant::Holder::mint_in_template() const \| name=mint_in_template static=0 shape=member template=0 nodiscard=1 constexpr=0 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=Holder owner=plant::Holder
 finding report mint-pattern mint-not-constexpr include/fixy/Mints.h:65:25 | plant::Holder::mint_in_template() const
-finding report mint-pattern mint include/fixy/Mints.h:59:29 | plant::Carrier::mint_member_view() const \| name=mint_member_view static=0 shape=member template=0 nodiscard=1 constexpr=0 noexcept=1 constrained=0 gated=0 projection=0 defined=1 owner=plant::Carrier
+finding report mint-pattern mint include/fixy/Mints.h:59:29 | plant::Carrier::mint_member_view() const \| name=mint_member_view static=0 shape=member template=0 nodiscard=1 constexpr=0 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=Carrier owner=plant::Carrier
 finding report mint-pattern mint-not-constexpr include/fixy/Mints.h:59:29 | plant::Carrier::mint_member_view() const
-finding report mint-pattern mint include/fixy/Mints.h:54:33 | plant::mint_view(const T&) \| name=mint_view static=0 shape=token template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 owner=-
-finding report mint-pattern mint include/fixy/Mints.h:45:31 | plant::mint_plain_ctx(const plant::Ctx&) \| name=mint_plain_ctx static=0 shape=ctx template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 owner=-
+finding report mint-pattern mint include/fixy/Mints.h:54:33 | plant::mint_view(const T&) \| name=mint_view static=0 shape=token template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
+finding report mint-pattern mint include/fixy/Mints.h:45:31 | plant::mint_plain_ctx(const plant::Ctx&) \| name=mint_plain_ctx static=0 shape=ctx template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=- owner=-
 finding report mint-pattern mint-unfit-context include/fixy/Mints.h:45:31 | plant::mint_plain_ctx(const plant::Ctx&)
-finding report mint-pattern mint include/fixy/Mints.h:42:31 | plant::mint_scoped_ctx_name(const Ctx&) \| name=mint_scoped_ctx_name static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 owner=-
+finding report mint-pattern mint include/fixy/Mints.h:42:31 | plant::mint_scoped_ctx_name(const Ctx&) \| name=mint_scoped_ctx_name static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
 finding report mint-pattern mint-unfit-context include/fixy/Mints.h:42:31 | plant::mint_scoped_ctx_name(const Ctx&)
-finding report mint-pattern mint include/fixy/Mints.h:34:31 | plant::mint_surface_only(const C&) \| name=mint_surface_only static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 owner=-
+finding report mint-pattern mint include/fixy/Mints.h:34:31 | plant::mint_surface_only(const C&) \| name=mint_surface_only static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
 finding report mint-pattern mint-unfit-context include/fixy/Mints.h:34:31 | plant::mint_surface_only(const C&)
-finding report mint-pattern mint include/fixy/Mints.h:29:31 | plant::mint_shape_only(const C&) \| name=mint_shape_only static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 owner=-
+finding report mint-pattern mint include/fixy/Mints.h:29:31 | plant::mint_shape_only(const C&) \| name=mint_shape_only static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
 finding report mint-pattern mint-unfit-context include/fixy/Mints.h:29:31 | plant::mint_shape_only(const C&)
-finding report mint-pattern mint include/fixy/Mints.h:25:31 | plant::mint_sized(plant::Thing) \| name=mint_sized static=0 shape=token template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 owner=-
+finding report mint-pattern mint include/fixy/Mints.h:25:31 | plant::mint_sized(plant::Thing) \| name=mint_sized static=0 shape=token template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=- owner=-
 finding report mint-pattern mint-unconstrained include/fixy/Mints.h:25:31 | plant::mint_sized(plant::Thing)
-finding report mint-pattern mint include/fixy/Mints.h:21:62 | plant::mint_deprecated_only(plant::Thing) \| name=mint_deprecated_only static=0 shape=token template=0 nodiscard=0 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 owner=-
+finding report mint-pattern mint include/fixy/Mints.h:21:62 | plant::mint_deprecated_only(plant::Thing) \| name=mint_deprecated_only static=0 shape=token template=0 nodiscard=0 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=- owner=-
 finding report mint-pattern mint-not-nodiscard include/fixy/Mints.h:21:62 | plant::mint_deprecated_only(plant::Thing)
-finding report mint-pattern mint include/fixy/Mints.h:18:31 | plant::mint_false(plant::Thing) \| name=mint_false static=0 shape=token template=0 nodiscard=1 constexpr=1 noexcept=0 constrained=0 gated=0 projection=0 defined=1 owner=-
+finding report mint-pattern mint include/fixy/Mints.h:18:31 | plant::mint_false(plant::Thing) \| name=mint_false static=0 shape=token template=0 nodiscard=1 constexpr=1 noexcept=0 constrained=0 gated=0 projection=0 defined=1 class=- owner=-
 finding report mint-pattern mint-not-noexcept include/fixy/Mints.h:18:31 | plant::mint_false(plant::Thing)
-finding report mint-pattern mint include/fixy/Mints.h:15:14 | plant::mint_bare(plant::Thing) \| name=mint_bare static=0 shape=token template=0 nodiscard=0 constexpr=0 noexcept=0 constrained=0 gated=0 projection=0 defined=1 owner=-
+finding report mint-pattern mint include/fixy/Mints.h:15:14 | plant::mint_bare(plant::Thing) \| name=mint_bare static=0 shape=token template=0 nodiscard=0 constexpr=0 noexcept=0 constrained=0 gated=0 projection=0 defined=1 class=- owner=-
 finding report mint-pattern mint-not-nodiscard include/fixy/Mints.h:15:14 | plant::mint_bare(plant::Thing)
 finding report mint-pattern mint-not-constexpr include/fixy/Mints.h:15:14 | plant::mint_bare(plant::Thing)
 finding report mint-pattern mint-not-noexcept include/fixy/Mints.h:15:14 | plant::mint_bare(plant::Thing)
@@ -50,5 +50,5 @@ error error include/fixy/Mints.h:15 | quarantine: mint-not-constexpr plant::mint
 error error include/fixy/Mints.h:15 | quarantine: mint-not-noexcept plant::mint_bare(plant::Thing);
 compile alone mints.cpp
 exit alone pass
-finding alone mint-pattern mint mints.cpp:6:35 | quarantined::mint_quarantined(plant::Thing) \| name=mint_quarantined static=0 shape=token template=0 nodiscard=1 constexpr=0 noexcept=1 constrained=0 gated=0 projection=0 defined=1 owner=-
+finding alone mint-pattern mint mints.cpp:6:35 | quarantined::mint_quarantined(plant::Thing) \| name=mint_quarantined static=0 shape=token template=0 nodiscard=1 constexpr=0 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=- owner=-
 finding alone mint-pattern mint-not-constexpr mints.cpp:6:35 | quarantined::mint_quarantined(plant::Thing)

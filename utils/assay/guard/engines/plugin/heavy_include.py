@@ -57,6 +57,7 @@ Complexity: linear in the finding lines of the build, and O(k log k) for k rows 
 """
 
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 
 from assay.core import ledger as rule_ledger
@@ -86,29 +87,21 @@ def cost_problems(root: Path) -> list[check_report.Finding]:
     A table with no heavy row and no light row is a problem too, because the plugin then gives no finding of the
     rule (assay.loop.derive.header_costs).
     """
+    table = header_costs.TABLE.as_posix()
     try:
         found = header_costs.read_costs(root)
         problems = list(found.problems)
         if not found.costs:
-            problems.append(
-                f"{header_costs.TABLE} holds no heavy row and no light row, and the plugin judges no include"
-            )
+            message = f"{table} holds no heavy row and no light row, and the plugin judges no include"
+            problems.append(check_report.Finding("error", table, 0, RULE, message))
         if not problems:
             problems += header_costs.kind_problems(
                 found, header_costs.limit_of(found.costs, header_costs.threshold_of(root))
             )
     except (OSError, header_costs.CostError, rows_grammar.RowsError) as problem:
-        problems = [str(problem)]
-    return [
-        check_report.Finding(
-            "error",
-            str(header_costs.TABLE),
-            0,
-            RULE,
-            f"{problem}.  Measure the headers with `python3 utils/bin/loop derive header-costs --measure BUILD_DIR`",
-        )
-        for problem in problems
-    ]
+        problems = [check_report.Finding("error", table, 0, RULE, str(problem))]
+    measure = "Measure the headers with `python3 utils/bin/loop derive header-costs --measure BUILD_DIR`"
+    return [replace(problem, check=RULE, message=f"{problem.message}.  {measure}") for problem in problems]
 
 
 def findings(context: runner.PluginContext) -> list[check_report.Finding]:

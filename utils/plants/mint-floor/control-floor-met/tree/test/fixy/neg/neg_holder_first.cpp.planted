@@ -1,0 +1,3 @@
+#include <fixy/Mints.h>
+
+int main(plant::Holder const& holder) { return sizeof(holder.mint_member(0)); }

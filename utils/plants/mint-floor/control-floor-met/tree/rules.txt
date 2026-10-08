@@ -1,0 +1,3 @@
+# The rule table of a control of the rule mint-floor: include/fixy/ and src/
+# are base code.
+layer low 0 include/fixy/ src/

@@ -104,12 +104,14 @@ def read_cases(expect: testing.Expect) -> None:
         plant(root, GOOD_ROWS + "quarantine test/\n")
         expect(
             "a row of a different kind after the marker is a problem",
-            any("quarantine row is after the marker" in problem for problem in writer.read_costs(root).problems),
+            any(
+                "quarantine row is after the marker" in problem.message for problem in writer.read_costs(root).problems
+            ),
         )
         (root / writer.TABLE).write_text("light <x.h> | 0.01 s, 1 lines\n" + TABLE_HEAD + GOOD_ROWS, encoding="utf-8")
         expect(
             "a light row before the marker is a problem",
-            any("before the marker line" in problem for problem in writer.read_costs(root).problems),
+            any("before the marker line" in problem.message for problem in writer.read_costs(root).problems),
         )
         for text, label in (
             (TABLE_HEAD.replace(writer.MARKER, "# no marker") + GOOD_ROWS, "no marker line"),

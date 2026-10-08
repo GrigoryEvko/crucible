@@ -1,0 +1,4 @@
+# The ledger of the plant: a row of a mint that meets the floor.
+format 1
+rule mint-floor
+include/fixy/Mints.h | - | admit | plant::mint_covered(plant::Thing) | the fixtures of the mint are a task of a subsequent change

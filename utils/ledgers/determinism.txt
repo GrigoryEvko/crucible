@@ -35,7 +35,6 @@ utils/assay/guard/preprocessed.py | wall-clock | 2 | _self_test_turns.plant_garb
 utils/assay/guard/preprocessed.py | wall-clock | 1 | evict_store | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/preprocessed.py | wall-clock | 1 | fill | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/loop/affected.py | listing | 1 | shared_libraries | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/loop/derive/mint_model.py | listing | 1 | fixture_files | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/loop/fixture/store.py | listing | 1 | ResultStore.evict | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/loop/fixture/store.py | listing | 1 | ResultStore.sweep_memos | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/loop/fixture/store.py | listing | 1 | _walk | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count

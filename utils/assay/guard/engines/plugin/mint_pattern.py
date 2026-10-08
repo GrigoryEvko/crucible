@@ -12,8 +12,8 @@ THE RULE
                            constraint names that context
     The rule reads those lines in the sections of the objects of the target
     all (assay.guard.engines.plugin.runner, THE SECTIONS).  It keeps the
-    lines in the scope of its row of utils/registry.txt.  A record is no
-    finding.
+    lines in the scope of its row of utils/registry.txt.  A record of the
+    kind mint or mint-alias is no finding.
 
 THE POSITION OF A MINT
     A mint with a declaration in one header and its definition in a
@@ -69,7 +69,7 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
         return [*found, check_report.Finding("error", context.build_shown(), 0, RULE, str(problem))]
     seen: set[tuple[str, str]] = set()
     for item in lines:
-        if item.kind == declarations.MINT_RECORD or (item.kind, item.entity) in seen:
+        if item.kind in declarations.RECORD_KINDS or (item.kind, item.entity) in seen:
             continue
         seen.add((item.kind, item.entity))
         mint = chosen.get(item.entity)

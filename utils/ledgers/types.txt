@@ -66,13 +66,6 @@ utils/assay/loop/derive/__init__.py | no-any-return | 1 | main | An error of myp
 utils/assay/loop/derive/aten_ops.py | import-untyped | 2 | load_schema_model | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/loop/derive/aten_ops.py | import-untyped | 1 | yaml_funcs | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/loop/derive/aten_ops.py | no-any-return | 1 | load_schema_model | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/loop/derive/mint_inventory.py | attr-defined | 1 | <module> | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/loop/derive/mint_inventory.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/loop/derive/mint_inventory.py | attr-defined | 1 | real_rows | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/loop/derive/mint_model.py | arg-type | 2 | alias_heads | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/loop/derive/mint_model.py | assignment | 3 | alias_heads | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/loop/derive/mint_model.py | attr-defined | 2 | fixture_files | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/loop/derive/mint_model.py | index | 2 | alias_heads | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/loop/fixture/store.py | arg-type | 2 | ResultStore.record | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/loop/fixture/store.py | arg-type | 1 | obtain_result | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/loop/fixture/store.py | assignment | 1 | ResultStore.record | An error of mypy of today.  The change that gives the code its types lowers the count

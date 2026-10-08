@@ -27,8 +27,6 @@ utils/assay/loop/affected.py | no-test | 1 | assay.loop.affected | A module of t
 utils/assay/loop/bench.py | no-test | 1 | assay.loop.bench | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/loop/derive/__init__.py | no-test | 1 | assay.loop.derive | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/loop/derive/aten_ops.py | no-test | 1 | assay.loop.derive.aten_ops | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/loop/derive/mint_inventory.py | no-test | 1 | assay.loop.derive.mint_inventory | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/loop/derive/mint_model.py | no-test | 1 | assay.loop.derive.mint_model | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/loop/fixture/store.py | no-test | 1 | assay.loop.fixture.store | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/loop/fuzz.py | no-test | 1 | assay.loop.fuzz | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/loop/gauge.py | no-test | 1 | assay.loop.gauge | A module of today with no test module.  The change that writes the test module removes the row

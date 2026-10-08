@@ -1,0 +1,10 @@
+# Each mint has two fixtures of the substrate layer.  Two classes carry the
+# member name mint_member, and a fixture counts for the class that it names
+# or for an alias of it.  A fixture that names no class counts for neither.
+compile sentinel src/mints.cpp sentinel=include/fixy/Mints.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel mint-pattern mint include/fixy/Mints.h:8:31 | plant::mint_covered(plant::Thing) \| name=mint_covered static=0 shape=token template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=- owner=-
+finding sentinel mint-pattern mint include/fixy/Mints.h:13:35 | plant::Holder::mint_member() const \| name=mint_member static=0 shape=member template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=Holder owner=plant::Holder
+finding sentinel mint-pattern mint include/fixy/Mints.h:16:35 | plant::Keeper::mint_member() const \| name=mint_member static=0 shape=member template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=Keeper owner=plant::Keeper
+finding sentinel mint-pattern mint-alias include/fixy/Mints.h:18:7 | plant::Kept \| alias=Kept owner=plant::Keeper

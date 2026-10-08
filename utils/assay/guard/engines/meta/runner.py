@@ -82,6 +82,9 @@ PLANT_PREFIX = "plant-"
 CONTROL_PREFIX = "control-"
 # The suffix of a file of a plant that no rule of the tree reads.  The copy of the plant removes it (copy_plant()).
 PLANTED_SUFFIX = ".planted"
+# The suffixes of a file of a plant that adds its bytes to a file of the base control (copy_overlay()).
+APPEND_SUFFIX = ".append"
+PREPEND_SUFFIX = ".prepend"
 SKIPPED = 77
 # The guide of the tree.  Only the root of the repository holds a file with this name (the rule layout).
 GUIDE = "CLAUDE.md"
@@ -123,7 +126,7 @@ class MetaContext:
     and the tracked files one time, on the first use.
     """
 
-    __slots__ = ("root", "build_dir", "guide", "_registry", "_problems", "_tracked")
+    __slots__ = ("_problems", "_registry", "_tracked", "build_dir", "guide", "root")
 
     def __init__(self, root: Path, build_dir: Path | None = None, guide: str = GUIDE) -> None:
         """Keep the root, the build directory and the path of the guide."""
@@ -451,6 +454,35 @@ def copy_plant(plant: Path, scratch: Path) -> None:
 def copy_tree(plant: Path, scratch: Path) -> MetaContext:
     """Copy a plant to a throwaway repository (copy_plant()), and give its context."""
     copy_plant(plant, scratch)
+    return MetaContext(scratch)
+
+
+def copy_overlay(plant: Path, scratch: Path, base: str) -> MetaContext:
+    """Copy the tree of the base control of a plant, and then the files of the plant over it, to a throwaway repository.
+
+    BASE names a control in the directory of the plant, and its tree is the
+    first tree of each plant.  A file of the plant then replaces its file in the tree.  A
+    file NAME.append adds its bytes at the end of NAME, and a file
+    NAME.prepend adds them at the start.  Complexity: linear in the bytes of
+    the files of the base and of the plant.
+    """
+    copy_plant(plant.parent / base, scratch)
+    if plant.name == base:
+        return MetaContext(scratch)
+    for source in sorted(plant.rglob("*")):
+        if not source.is_file():
+            continue
+        name = source.relative_to(plant).as_posix()
+        mode = (
+            APPEND_SUFFIX if name.endswith(APPEND_SUFFIX) else PREPEND_SUFFIX if name.endswith(PREPEND_SUFFIX) else ""
+        )
+        name = name.removesuffix(mode).removesuffix(PLANTED_SUFFIX)
+        target = scratch / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        old = target.read_bytes() if mode and target.is_file() else b""
+        added = source.read_bytes()
+        target.write_bytes(old + added if mode == APPEND_SUFFIX else added + old)
+    git.run(scratch, "add", "-A", "--", ".")
     return MetaContext(scratch)
 
 

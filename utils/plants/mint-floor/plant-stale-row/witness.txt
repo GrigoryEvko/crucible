@@ -1,0 +1,6 @@
+# The mint has two fixtures, and a row of the ledger of the tree still admits
+# it.  A row that admits no finding is stale, so the rule gives an error.
+compile sentinel src/mints.cpp sentinel=include/fixy/Mints.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel mint-pattern mint include/fixy/Mints.h:9:31 | plant::mint_covered(plant::Thing) \| name=mint_covered static=0 shape=token template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=- owner=-

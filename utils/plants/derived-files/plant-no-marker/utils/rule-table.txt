@@ -1,0 +1,8 @@
+# A planted rule table of the rule derived-files: it has no marker line, so
+# the heavy and light rows cannot be read.
+
+witness <planted/Open.h> private | planted::Open | planted::Open{42}
+
+heavy <chrono> | 1.12 s, 70628 lines
+light <cstdint> | 0.02 s, 178 lines
+light <meta> | 0.37 s, 34799 lines

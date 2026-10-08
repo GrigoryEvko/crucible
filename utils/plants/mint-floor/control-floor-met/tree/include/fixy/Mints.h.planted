@@ -1,0 +1,20 @@
+#pragma once
+
+namespace plant {
+
+struct Thing {};
+
+// Two fixtures of the substrate layer name this mint.
+[[nodiscard]] constexpr Thing mint_covered(Thing) noexcept { return {}; }
+
+// Two classes carry the member name mint_member.  A fixture counts for the
+// class that it names, also through an alias of the class.
+struct Holder {
+    [[nodiscard]] constexpr Thing mint_member() const noexcept { return {}; }
+};
+struct Keeper {
+    [[nodiscard]] constexpr Thing mint_member() const noexcept { return {}; }
+};
+using Kept = Keeper;
+
+}  // namespace plant

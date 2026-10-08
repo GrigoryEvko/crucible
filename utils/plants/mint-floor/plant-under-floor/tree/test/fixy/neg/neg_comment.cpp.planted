@@ -1,0 +1,4 @@
+// mint_lonely is in this comment, and a comment is no use of the mint.
+#include <fixy/Mints.h>
+
+int main() { return sizeof(plant::Thing(0)); }

@@ -70,13 +70,6 @@ utils/assay/loop/derive/aten_ops.py | print | 1 | main | A use of today.  The ch
 utils/assay/loop/derive/aten_ops.py | print | 3 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/derive/aten_ops.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/derive/aten_ops.py | sys.path | 1 | load_schema_model | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/loop/derive/mint_inventory.py | print | 7 | check_floor | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/loop/derive/mint_inventory.py | print | 8 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/loop/derive/mint_inventory.py | print | 3 | self_test | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/loop/derive/mint_inventory.py | print | 1 | self_test.check | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/loop/derive/mint_model.py | print | 3 | _self_test | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/loop/derive/mint_model.py | print | 1 | _self_test.check | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/loop/derive/mint_model.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/fixture/store.py | print | 1 | _note | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/fixture/store.py | print | 1 | _store_limit_bytes | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/fixture/store.py | print | 6 | evaluate | A use of today.  The change that calls the owner of the job lowers the count

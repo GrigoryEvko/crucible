@@ -1,0 +1,2 @@
+// A fixture of a witness row that the rule table no longer has.
+int main() { return 0; }

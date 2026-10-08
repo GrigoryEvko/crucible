@@ -12,8 +12,11 @@ THE REFRESH
         prose-bans and ledger-owners find it.
       * The content goes stale while each path still resolves.  The mint
         inventory can stop counting a mint, and only a new write shows it.
+        The rule derived-files compares each file that a target writes with
+        the bytes that its target gives.
     `loop derive` writes each generated file of REFRESH, and then it runs
-    each check of CHECKS.  Run it before `git commit`.  It names each file
+    each check of CHECKS.  The mint inventory reads the build directory
+    REPO_ROOT/build.  Run it before `git commit`.  It names each file
     that the writes changed, and those files belong in the same commit.  A
     change of the tree from before the run is not named.  A check that is
     still red after the writes reads a list that a person keeps, so it needs
@@ -25,12 +28,12 @@ THE TARGETS
     target with a write and a check, --write gives the words of its write
     and --check the words of its check, and each other ARG goes unchanged.
 
-    mint-inventory    misc/mint-inventory.md and the HS14 floor (--write, --check, --check-floor)
+    mint-inventory    misc/mint-inventory.md, from the mint records of a build (--write, --check, --stdout,
+                      --build-dir DIR)
     witness-fixtures  the negative fixtures of the witness rows of utils/rule-table.txt (--write, --check)
     walk-units        test/layer/walk-checks.txt (--write, --check, --measure BUILD_DIR, --explain CHECK_FILE)
     header-costs      the heavy and light rows of utils/rule-table.txt (--write, --check, --measure BUILD_DIR
                       [HEADER...])
-    mint-model       print the mint model of include/, one line for each mint
     aten-ops          vessel/torch/aten_op_table.h, from the PyTorch tree of TORCH_DIR
     session-oracle    test/session_oracle/golden.csv and the tests that it gives: the modes regenerate, derive and
                       emit of utils/assay/oracle/runner.py
@@ -77,20 +80,19 @@ TARGETS = {
     "witness-fixtures": Target("assay.loop.derive.witness_fixtures", (), ("--write",), ("--check",)),
     "walk-units": Target("assay.loop.derive.walk_units", (), ("--write",), ("--check",)),
     "header-costs": Target("assay.loop.derive.header_costs", (), ("--write",), ("--check",)),
-    "mint-model": Target("assay.loop.derive.mint_model"),
     "aten-ops": Target("assay.loop.derive.aten_ops"),
     "session-oracle": Target("assay.oracle.runner"),
 }
 # The targets that the refresh writes, in this order.
 REFRESH = ("mint-inventory", "witness-fixtures", "walk-units", "header-costs")
+# The build directory of the mint inventory in the refresh.
+BUILD = REPO_ROOT / "build"
 # The checks of the refresh, in the order that a moved path breaks them: a label and a command.
 CHECKS = (
     ("prose", (sys.executable, str(GUARD), "check", "--rule", "prose-bans")),
     ("ledger paths", (sys.executable, str(GUARD), "check", "--rule", "ledger-owners")),
-    ("mint inventory", (sys.executable, str(LOOP), "derive", "mint-inventory", "--check")),
-    ("witness fixtures", (sys.executable, str(LOOP), "derive", "witness-fixtures", "--check")),
+    ("derived files", (sys.executable, str(GUARD), "check", "--rule", "derived-files", "--build-dir", str(BUILD))),
     ("walk units", (sys.executable, str(GUARD), "check", "--rule", "walk-units")),
-    ("header costs", (sys.executable, str(LOOP), "derive", "header-costs", "--check")),
 )
 LABEL_WIDTH = 34
 
@@ -114,8 +116,12 @@ def tree_state(root: Path) -> set[str]:
     files = [path for path in paths if (root / path).is_file() and not (root / path).is_symlink()]
     lines = {f"- {path}" for path in paths if path not in set(files)}
     if files:
-        hashes = git.run(root, "hash-object", "--stdin-paths",
-                         stdin="".join(f"{path}\n" for path in files).encode("utf-8", "surrogateescape")).split()
+        hashes = git.run(
+            root,
+            "hash-object",
+            "--stdin-paths",
+            stdin="".join(f"{path}\n" for path in files).encode("utf-8", "surrogateescape"),
+        ).split()
         lines |= {f"{digest.decode()} {path}" for digest, path in zip(hashes, files)}
     return lines
 
@@ -177,14 +183,16 @@ def refresh(root: Path, should_write: bool) -> int:
     if should_write:
         rewritten = changed_paths(before, tree_state(root))
         if rewritten:
-            print("\nloop derive: the writes changed these files, and they belong in the same commit:",
-                  file=sys.stderr)
+            print("\nloop derive: the writes changed these files, and they belong in the same commit:", file=sys.stderr)
             for path in rewritten:
                 print(f"  {path}", file=sys.stderr)
     if failures:
         print(f"\nloop derive: {failures} step(s) still red after the writes.", file=sys.stderr)
-        print("A red that stays after a write reads a list that a person keeps, so it needs an edit and not a second "
-              "run.", file=sys.stderr)
+        print(
+            "A red that stays after a write reads a list that a person keeps, so it needs an edit and not a second "
+            "run.",
+            file=sys.stderr,
+        )
         return 1
     print("\nloop derive: clean.", file=sys.stderr)
     return 0
@@ -203,21 +211,27 @@ def self_test() -> int:
         if not holds:
             failures.append(name)
 
-    expect("--write and --check give the words of the target, and each other word stays",
-           TARGETS["witness-fixtures"].translate(["--write"]) == ["--write"]
-           and TARGETS["walk-units"].translate(["--check"]) == ["--check"]
-           and TARGETS["mint-inventory"].translate(["--check-floor"]) == ["--check-floor"]
-           and TARGETS["session-oracle"].translate(["emit"]) == ["emit"])
-    expect("each target of the refresh has a write and a check",
-           all(TARGETS[name].write is not None and TARGETS[name].check is not None for name in REFRESH))
+    expect(
+        "--write and --check give the words of the target, and each other word stays",
+        TARGETS["witness-fixtures"].translate(["--write"]) == ["--write"]
+        and TARGETS["walk-units"].translate(["--check"]) == ["--check"]
+        and TARGETS["mint-inventory"].translate(["--stdout"]) == ["--stdout"]
+        and TARGETS["session-oracle"].translate(["emit"]) == ["emit"],
+    )
+    expect(
+        "each target of the refresh has a write and a check",
+        all(TARGETS[name].write is not None and TARGETS[name].check is not None for name in REFRESH),
+    )
     with git.scratch_repository({"kept.txt": b"one\n", "changed.txt": b"one\n", "deleted.txt": b"one\n"}) as root:
         (root / "before.txt").write_text("an edit before the run\n", encoding="utf-8")
         before = tree_state(root)
         (root / "changed.txt").write_text("two\n", encoding="utf-8")
         (root / "deleted.txt").unlink()
         (root / "made.txt").write_text("new\n", encoding="utf-8")
-        expect("the changed paths are the files that the writes made, changed or deleted, and not an earlier edit",
-               changed_paths(before, tree_state(root)) == ["changed.txt", "deleted.txt", "made.txt"])
+        expect(
+            "the changed paths are the files that the writes made, changed or deleted, and not an earlier edit",
+            changed_paths(before, tree_state(root)) == ["changed.txt", "deleted.txt", "made.txt"],
+        )
 
     if failures:
         print(f"loop derive --self-test: FAILED, {len(failures)} case(s) did not hold")
@@ -243,8 +257,9 @@ def main(argv: list[str]) -> int:
         return self_test()
     target = TARGETS.get(argv[0])
     if target is None:
-        print(f"usage: loop derive [--check | TARGET [ARG]...]  (TARGET is one of: {', '.join(TARGETS)})",
-              file=sys.stderr)
+        print(
+            f"usage: loop derive [--check | TARGET [ARG]...]  (TARGET is one of: {', '.join(TARGETS)})", file=sys.stderr
+        )
         return 2
     __import__(target.module)
     return sys.modules[target.module].main(target.translate(argv[1:]))

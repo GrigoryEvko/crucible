@@ -26,8 +26,10 @@ THE MINTS
     A record of the kind mint holds the facts of one mint (declaration.cpp,
     THE RULE mint-pattern).  mints() gives one mint for each entity: the
     record with the body of the mint, and else the record at the first
-    position.  The rule mint-pattern and the inventory of the mints read the
-    same records.
+    position.  A record of the kind mint-alias names an alias of a class
+    with a member mint.  aliases() gives the names of the aliases of each
+    class.  The rule mint-pattern, the rule mint-floor and the inventory of
+    the mints read the same records.
 
 `guard selftest tests.guard.engines.plugin.test_declarations` does a test of the module.
 """
@@ -44,10 +46,16 @@ from assay.readers import sections as plugin_sections
 
 MINT_RULE = "mint-pattern"
 MINT_RECORD = "mint"
+ALIAS_RECORD = "mint-alias"
+# The kinds of the lines of the rule mint-pattern that are records and no findings.
+RECORD_KINDS = frozenset({MINT_RECORD, ALIAS_RECORD})
 # The separator between the entity of a mint and its facts, in a record.
 FACTS_SEPARATOR = " | "
 # The fact that a record gives last, because the name of a class can hold a space.
 OWNER_FACT = " owner="
+# The facts of a record with a text value, other than the owner.
+TEXT_FACTS = ("name", "shape", "class")
+ALIAS_FACT = "alias="
 # The facts of a record with the value 0 or 1, in the sequence of the record.
 FLAG_FACTS = (
     "static",
@@ -78,8 +86,9 @@ class RecordError(ValueError):
 class Mint:
     """One mint, as its record gives it (declaration.cpp, THE RULE mint-pattern).
 
-    `entity` is the full name of the mint, with its namespaces and the types of its parameters.  `owner` is the class
-    of a member, or "-".  Each flag is a fact of the record.
+    `entity` is the full name of the mint, with its namespaces and the types of its parameters.  `class_name` is the
+    name of the class of a member with no namespace, and `owner` is its full name, each "-" for no member.  Each flag
+    is a fact of the record.
     """
 
     entity: str
@@ -87,6 +96,7 @@ class Mint:
     line: int
     name: str
     shape: str
+    class_name: str
     owner: str
     is_static: bool
     is_template: bool
@@ -205,15 +215,52 @@ def parse_mint(item: plugin_sections.Finding) -> Mint:
             raise RecordError(f"{item.text()!r}: the fact {word!r} is not KEY=VALUE, or its key is there two times")
         values[key] = value
     flags = {key: values.get(key) for key in FLAG_FACTS}
-    if set(values) != {"name", "shape", *FLAG_FACTS} or any(value not in ("0", "1") for value in flags.values()):
+    if set(values) != {*TEXT_FACTS, *FLAG_FACTS} or any(value not in ("0", "1") for value in flags.values()):
         raise RecordError(
-            f"{item.text()!r}: a mint record gives name, shape and the flags {', '.join(FLAG_FACTS)}, each flag 0 or 1"
+            f"{item.text()!r}: a mint record gives {', '.join(TEXT_FACTS)} and the flags {', '.join(FLAG_FACTS)}, each "
+            f"flag 0 or 1"
         )
     if values["shape"] not in SHAPES:
         raise RecordError(f"{item.text()!r}: the shape {values['shape']!r} is not one of {', '.join(sorted(SHAPES))}")
     return Mint(
-        entity, item.file, item.line, values["name"], values["shape"], owner, *(flags[key] == "1" for key in FLAG_FACTS)
+        entity,
+        item.file,
+        item.line,
+        values["name"],
+        values["shape"],
+        values["class"],
+        owner,
+        *(flags[key] == "1" for key in FLAG_FACTS),
     )
+
+
+def parse_alias(item: plugin_sections.Finding) -> tuple[str, str]:
+    """Return the owner and the name of the alias of one record of the kind mint-alias.
+
+    Raises:
+        RecordError: If the entity of the line is not `ALIAS | alias=NAME owner=CLASS`
+    """
+    entity, separator, facts = item.entity.rpartition(FACTS_SEPARATOR)
+    head, marker, owner = facts.partition(OWNER_FACT)
+    name = head.removeprefix(ALIAS_FACT)
+    if not separator or not entity or not marker or not owner or not head.startswith(ALIAS_FACT) or " " in name:
+        raise RecordError(f"{item.text()!r}: an alias record is 'ALIAS | alias=NAME owner=CLASS'")
+    return owner, name
+
+
+def owner_aliases(records: Iterable[plugin_sections.Finding]) -> dict[str, frozenset[str]]:
+    """Return the names of the aliases of each class, by the full name of the class (THE MINTS).
+
+    Complexity: linear in the records.
+
+    Raises:
+        RecordError: If a record does not have the format of an alias record
+    """
+    names: dict[str, set[str]] = {}
+    for item in records:
+        owner, name = parse_alias(item)
+        names.setdefault(owner, set()).add(name)
+    return {owner: frozenset(found) for owner, found in names.items()}
 
 
 def chosen_mints(records: Iterable[plugin_sections.Finding]) -> dict[str, Mint]:
@@ -244,3 +291,15 @@ def mints(context: runner.PluginContext, rule: rule_registry.Rule) -> list[Mint]
     """
     records = [item for item in lines_of(rule, context) if item.kind == MINT_RECORD]
     return sorted(chosen_mints(records).values(), key=lambda mint: (mint.path, mint.line, mint.entity))
+
+
+def aliases(context: runner.PluginContext, rule: rule_registry.Rule) -> dict[str, frozenset[str]]:
+    """Return the names of the aliases of each class with a member mint in the scope of the rule (THE MINTS).
+
+    Raises:
+        NotApplicable: If the rule does not apply to the build
+        BuildError: If the build cannot be read
+        RecordError: If a record does not have the format of an alias record
+        ruletable.TableError: If the rule table does not obey its grammar
+    """
+    return owner_aliases(item for item in lines_of(rule, context) if item.kind == ALIAS_RECORD)

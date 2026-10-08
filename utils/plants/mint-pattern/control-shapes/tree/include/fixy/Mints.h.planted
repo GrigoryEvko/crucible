@@ -73,4 +73,12 @@ struct Befriends {
     friend Thing mint_only_a_friend(Befriends);
 };
 
+// An alias and a typedef of a class with a member mint have a record, also an
+// alias of a specialization of a class template.  An alias of a class with no
+// mint has none.
+using LatticeAlias = Lattice;
+using TemplatedInt = Templated<int>;
+typedef Carrier CarrierTypedef;
+using ThingAlias = Thing;
+
 }  // namespace control

@@ -3,16 +3,22 @@
 # The attribute of a declaration counts for its definition.  A deleted
 # overload, a trailing underscore, a class with the prefix and a function that
 # only a friend declaration declares are no mint, and they have no record.
+# Each alias of a class with a member mint has a record of the kind mint-alias,
+# also a typedef and an alias of a specialization of a class template.  An
+# alias of a class with no mint has none.
 compile error shapes.cpp mode=error
 flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Mints.h
 exit error pass
-finding error mint-pattern mint shapes.cpp:6:40 | quarantined::mint_quarantined(control::Thing) \| name=mint_quarantined static=0 shape=token template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 owner=-
-finding error mint-pattern mint include/fixy/Mints.h:61:42 | control::Lattice::mint_from_image(const C&, int) \| name=mint_from_image static=1 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=1 projection=0 defined=1 owner=control::Lattice
-finding error mint-pattern mint include/fixy/Mints.h:54:35 | control::Templated::mint_pattern_projection() const \| name=mint_pattern_projection static=0 shape=member template=0 nodiscard=1 constexpr=0 noexcept=1 constrained=0 gated=0 projection=1 defined=1 owner=control::Templated
-finding error mint-pattern mint include/fixy/Mints.h:50:33 | control::Carrier::mint_projection() const \| name=mint_projection static=0 shape=member template=0 nodiscard=1 constexpr=0 noexcept=1 constrained=0 gated=0 projection=1 defined=1 owner=control::Carrier
-finding error mint-pattern mint include/fixy/Mints.h:46:33 | control::mint_view(const T&) \| name=mint_view static=0 shape=token template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 owner=-
-finding error mint-pattern mint include/fixy/Mints.h:37:17 | control::mint_declared_first(const C&, int) \| name=mint_declared_first static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=1 projection=0 defined=1 owner=-
-finding error mint-pattern mint include/fixy/Mints.h:29:31 | control::mint_rvalue_ctx(const Ctx&&) \| name=mint_rvalue_ctx static=0 shape=token template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 owner=-
-finding error mint-pattern mint include/fixy/Mints.h:25:31 | control::mint_token(control::Thing) \| name=mint_token static=0 shape=token template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 owner=-
-finding error mint-pattern mint include/fixy/Mints.h:22:31 | control::mint_ctx_in_parameter(const Ctx&) \| name=mint_ctx_in_parameter static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=1 projection=0 defined=1 owner=-
-finding error mint-pattern mint include/fixy/Mints.h:18:31 | control::mint_ctx_in_clause(const C&) \| name=mint_ctx_in_clause static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=1 projection=0 defined=1 owner=-
+finding error mint-pattern mint-alias include/fixy/Mints.h:81:17 | control::CarrierTypedef \| alias=CarrierTypedef owner=control::Carrier
+finding error mint-pattern mint-alias include/fixy/Mints.h:80:7 | control::TemplatedInt \| alias=TemplatedInt owner=control::Templated
+finding error mint-pattern mint-alias include/fixy/Mints.h:79:7 | control::LatticeAlias \| alias=LatticeAlias owner=control::Lattice
+finding error mint-pattern mint shapes.cpp:6:40 | quarantined::mint_quarantined(control::Thing) \| name=mint_quarantined static=0 shape=token template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=- owner=-
+finding error mint-pattern mint include/fixy/Mints.h:61:42 | control::Lattice::mint_from_image(const C&, int) \| name=mint_from_image static=1 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=1 projection=0 defined=1 class=Lattice owner=control::Lattice
+finding error mint-pattern mint include/fixy/Mints.h:54:35 | control::Templated::mint_pattern_projection() const \| name=mint_pattern_projection static=0 shape=member template=0 nodiscard=1 constexpr=0 noexcept=1 constrained=0 gated=0 projection=1 defined=1 class=Templated owner=control::Templated
+finding error mint-pattern mint include/fixy/Mints.h:50:33 | control::Carrier::mint_projection() const \| name=mint_projection static=0 shape=member template=0 nodiscard=1 constexpr=0 noexcept=1 constrained=0 gated=0 projection=1 defined=1 class=Carrier owner=control::Carrier
+finding error mint-pattern mint include/fixy/Mints.h:46:33 | control::mint_view(const T&) \| name=mint_view static=0 shape=token template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
+finding error mint-pattern mint include/fixy/Mints.h:37:17 | control::mint_declared_first(const C&, int) \| name=mint_declared_first static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=1 projection=0 defined=1 class=- owner=-
+finding error mint-pattern mint include/fixy/Mints.h:29:31 | control::mint_rvalue_ctx(const Ctx&&) \| name=mint_rvalue_ctx static=0 shape=token template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
+finding error mint-pattern mint include/fixy/Mints.h:25:31 | control::mint_token(control::Thing) \| name=mint_token static=0 shape=token template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=- owner=-
+finding error mint-pattern mint include/fixy/Mints.h:22:31 | control::mint_ctx_in_parameter(const Ctx&) \| name=mint_ctx_in_parameter static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=1 projection=0 defined=1 class=- owner=-
+finding error mint-pattern mint include/fixy/Mints.h:18:31 | control::mint_ctx_in_clause(const C&) \| name=mint_ctx_in_clause static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=1 projection=0 defined=1 class=- owner=-

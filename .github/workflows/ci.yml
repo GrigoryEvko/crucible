@@ -157,13 +157,17 @@ jobs:
       # The rule test-registration reads the tests of a configured build, so its
       # scan runs in the build legs through ctest, and here it does not apply.
       # The rule clang-format needs clang-format 22 or 23, which this runner does
-      # not install, so it runs in the build legs through ctest.
+      # not install, so it runs in the build legs through ctest.  The rule
+      # derived-files compares the mint inventory only with the mint records of
+      # a build, so here it gives a warning for the inventory, and the build
+      # legs compare it through ctest.  The rule mint-floor reads the same
+      # records, and the test guard_plugin of the build legs runs it.
       - name: the rules of the engine meta (witness + scan)
         run: |
           for rule in history layout registry-shape rule-implementations rule-witness structured-reads \
                       test-registration determinism exit-codes import-closure job-owners module-tests no-shell \
                       one-implementation python-lint ste-prose typed-data types prose-bans admitted-audit \
-                      decide-cite-ratio; do
+                      decide-cite-ratio derived-files; do
             python3 utils/bin/guard witness --rule "$rule"
           done
           python3 utils/bin/guard check --engine meta
@@ -172,12 +176,6 @@ jobs:
         run: |
           python3 utils/bin/guard check --rule brand-drain --self-test
           python3 utils/bin/guard check --rule brand-drain
-
-      - name: mint inventory (self-test + drift check + HS14 floor)
-        run: |
-          python3 utils/bin/guard selftest loop.derive.mint_inventory
-          python3 utils/bin/loop derive mint-inventory --check
-          python3 utils/bin/guard check --rule mint-floor
 
       - name: unchecked access context only in reviewed walks (self-test + scan)
         run: |

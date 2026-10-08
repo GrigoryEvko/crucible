@@ -1,0 +1,10 @@
+#pragma once
+
+namespace plant {
+
+struct Thing {};
+
+// A row of the ledger of the tree admits this mint, which has no fixture.
+[[nodiscard]] constexpr Thing mint_lonely(Thing) noexcept { return {}; }
+
+}  // namespace plant

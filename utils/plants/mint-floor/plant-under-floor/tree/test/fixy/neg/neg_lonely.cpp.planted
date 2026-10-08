@@ -1,0 +1,3 @@
+#include <fixy/Mints.h>
+
+int main() { return sizeof(plant::mint_lonely(0)); }

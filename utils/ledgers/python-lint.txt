@@ -33,7 +33,6 @@ utils/assay/guard/engines/meta/ledger_owners.py | format | 1 | path_finding | An
 utils/assay/guard/engines/meta/registry_shape.py | format | 1 | doc_findings | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/meta/rule_witness.py | F541 | 2 | findings | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/meta/rule_witness.py | format | 1 | findings | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/engines/meta/runner.py | RUF023 | 1 | MetaContext | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/meta/structured_reads.py | SIM102 | 1 | reads_cpp_source | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/meta/structured_reads.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/meta/test_registration.py | I001 | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
@@ -66,13 +65,10 @@ utils/assay/guard/write.py | format | 1 | main | An issue of ruff of today.  The
 utils/assay/loop/affected.py | F541 | 3 | SelfTest.write_tests | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/affected.py | format | 1 | read_trees | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/bench.py | format | 1 | Settings.from_environment | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/loop/derive/__init__.py | format | 1 | tree_state | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/derive/aten_ops.py | PLR0402 | 1 | load_schema_model | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/derive/aten_ops.py | RUF100 | 1 | load_schema_model | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/derive/aten_ops.py | RUF100 | 1 | yaml_funcs | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/derive/aten_ops.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/loop/derive/mint_inventory.py | format | 1 | build_rows | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/loop/derive/mint_model.py | format | 1 | _is_borrow_projection | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/fixture/store.py | RUF023 | 1 | BudgetRow | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/fixture/store.py | RUF023 | 1 | CompileResult | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/fixture/store.py | RUF023 | 1 | CostBudget | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count

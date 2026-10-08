@@ -1,0 +1,6 @@
+# The mint has no fixture, and a row of the ledger of the tree admits it, so
+# the rule gives a warning and no error.
+compile sentinel src/mints.cpp sentinel=include/fixy/Mints.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel mint-pattern mint include/fixy/Mints.h:8:31 | plant::mint_lonely(plant::Thing) \| name=mint_lonely static=0 shape=token template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=- owner=-

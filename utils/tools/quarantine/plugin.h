@@ -158,6 +158,9 @@
 //     The rule mint-pattern:
 //     mint                  no finding: one record of each mint, with its facts,
 //                           for the inventory of the mints
+//     mint-alias            no finding: one record of each alias of a class
+//                           with a member mint, for the count of the fixtures
+//                           of the mint
 //     mint-not-nodiscard    a mint with no [[nodiscard]]
 //     mint-not-constexpr    a mint that is not constexpr or consteval, and that
 //                           is no borrow projection
@@ -591,6 +594,7 @@ enum class Kind : std::uint8_t {
     contract_semantic,
     fast_math_override,
     mint_record,
+    mint_alias,
     mint_not_nodiscard,
     mint_not_constexpr,
     mint_not_noexcept,
@@ -764,6 +768,8 @@ inline const char* kind_name(Kind kind) {
             return "fast-math-override";
         case Kind::mint_record:
             return "mint";
+        case Kind::mint_alias:
+            return "mint-alias";
         case Kind::mint_not_nodiscard:
             return "mint-not-nodiscard";
         case Kind::mint_not_constexpr:
@@ -885,6 +891,7 @@ inline Rule rule_of(Kind kind) {
         case Kind::fast_math_override:
             return Rule::fast_math_override;
         case Kind::mint_record:
+        case Kind::mint_alias:
         case Kind::mint_not_nodiscard:
         case Kind::mint_not_constexpr:
         case Kind::mint_not_noexcept:
@@ -995,9 +1002,12 @@ inline bool is_family_kind(Kind kind) {
 }
 
 // True when a line of the kind is a record: a fact for a reader of the
-// records, and no finding of its rule.  The record of a mint, and the line of
-// a grant set that the unit compared.
-inline bool is_record_kind(Kind kind) { return kind == Kind::mint_record || kind == Kind::grant_compared; }
+// records, and no finding of its rule.  The record of a mint, the record of an
+// alias of a class with a member mint, and the line of a grant set that the
+// unit compared.
+inline bool is_record_kind(Kind kind) {
+    return kind == Kind::mint_record || kind == Kind::mint_alias || kind == Kind::grant_compared;
+}
 
 // True when a rule of the family home gives the kind.  Such a finding is an
 // error only in the mode error, no opt-out region covers it, and no enforce
@@ -1060,6 +1070,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"contract-semantic", "contract-semantic"},
     {"fast-math-override", "fast-math-override"},
     {"mint-pattern", "mint"},
+    {"mint-pattern", "mint-alias"},
     {"mint-pattern", "mint-not-nodiscard"},
     {"mint-pattern", "mint-not-constexpr"},
     {"mint-pattern", "mint-not-noexcept"},
@@ -1438,8 +1449,9 @@ inline void classify_by_table(FileEntry& entry) {
             }
         }
     }
-    entry.is_sentinel = entry.file_class == FileClass::base
-                     && ((!state.sentinel.empty() && entry.relative == state.sentinel) || entry.real == state.main_real);
+    entry.is_sentinel =
+        entry.file_class == FileClass::base
+        && ((!state.sentinel.empty() && entry.relative == state.sentinel) || entry.real == state.main_real);
 }
 
 // True when RESOLVED is a file of the build directory.  A build directory that
@@ -1712,12 +1724,13 @@ inline void record_declared(Kind kind, location_t location, const std::string& e
 // read the number of a system call from its macro SYS_NAME this way.
 // Complexity: O(depth of the chain), at most 8 macros.
 inline bool macro_number(const std::string& name, int depth, long long& number) {
-    if (depth > 8 || !cpp_defined(parse_in, reinterpret_cast<const unsigned char*>(name.c_str()),
-                                  static_cast<int>(name.size()))) {
+    if (depth > 8
+        || !cpp_defined(parse_in, reinterpret_cast<const unsigned char*>(name.c_str()),
+                        static_cast<int>(name.size()))) {
         return false;
     }
-    cpp_hashnode* node = cpp_lookup(parse_in, reinterpret_cast<const unsigned char*>(name.c_str()),
-                                    static_cast<unsigned>(name.size()));
+    cpp_hashnode* node =
+        cpp_lookup(parse_in, reinterpret_cast<const unsigned char*>(name.c_str()), static_cast<unsigned>(name.size()));
     if (node == nullptr || !cpp_user_macro_p(node) || node->value.macro == nullptr) {
         return false;
     }

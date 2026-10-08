@@ -1,0 +1,11 @@
+#pragma once
+
+namespace plant {
+
+struct Thing {};
+
+// Two fixtures name this mint, and a row of the ledger of the tree still
+// admits it.
+[[nodiscard]] constexpr Thing mint_covered(Thing) noexcept { return {}; }
+
+}  // namespace plant

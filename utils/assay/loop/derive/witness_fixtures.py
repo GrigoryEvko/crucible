@@ -36,7 +36,9 @@ THE MODES
 
     Each mode refuses a row with a header that is not a file of include/, and
     two rows with one slug.  --check also refuses a fixture that is different
-    or missing, a fixture of no row and a manifest that is different.
+    or missing, a fixture of no row and a manifest that is different.  The
+    rule derived-files (assay.guard.engines.meta.derived_files) reads the
+    same findings (drift()).
 
 Exit 0 when the mode did its work, and 1 when a check finds an error.  Exit 2
 on a usage error, and 3 when the rule table does not obey its format.
@@ -45,6 +47,7 @@ on a usage error, and 3 when the rule table does not obey its format.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -54,6 +57,8 @@ from assay.core.exit import ExitCode
 from assay.core.paths import REPO_ROOT, listing
 
 PROGRAM = "loop derive witness-fixtures"
+# The rule of the registry that reads the findings of drift().
+CHECK = "derived-files"
 # The rule table, the directory of the fixtures and the include directory of a tree, relative to its root.
 TABLE = ruletable.TABLE.relative_to(REPO_ROOT)
 FIXTURE_DIR = Path("test") / "fixy" / "neg"
@@ -94,7 +99,7 @@ class Derivation:
 
     fixtures: tuple[Fixture, ...]
     manifest: str
-    errors: tuple[str, ...]
+    errors: tuple[check_report.Finding, ...]
 
 
 def key_of(name: str) -> str:
@@ -192,19 +197,20 @@ def derive(root: Path) -> Derivation:
         OSError: When the table cannot be read
     """
     witnesses = ruletable.load(root / TABLE).witnesses
-    errors: list[str] = []
+    errors: list[check_report.Finding] = []
     fixtures: list[Fixture] = []
     lines: dict[str, int] = {}  # the name of each fixture, and the line of its row
     for witness in witnesses:
-        where = f"{TABLE}:{witness.line}"
         if not (root / INCLUDE / witness.header[1:-1]).is_file():
-            errors.append(f"{where}: the header {witness.header} of {witness.name} is not a file of include/")
+            message = f"the header {witness.header} of {witness.name} is not a file of include/"
+            errors.append(check_report.Finding("error", TABLE.as_posix(), witness.line, CHECK, message))
         name = fixture_name(witness)
         if name in lines:
-            errors.append(
-                f"{where}: the class {witness.name} gives the fixture {name}, and the row on line {lines[name]} "
-                f"gives it too.  Give one of the two classes a different name"
+            message = (
+                f"the class {witness.name} gives the fixture {name}, and the row on line {lines[name]} gives it "
+                f"too.  Give one of the two classes a different name"
             )
+            errors.append(check_report.Finding("error", TABLE.as_posix(), witness.line, CHECK, message))
         lines[name] = witness.line
         fixtures.append(Fixture(name, render(witness)))
     return Derivation(tuple(fixtures), manifest_text(witnesses), tuple(errors))
@@ -218,10 +224,10 @@ def store(path: Path, text: str) -> bool:
     return True
 
 
-def report_errors(errors: tuple[str, ...] | list[str]) -> None:
+def report_errors(errors: Sequence[check_report.Finding]) -> None:
     """Write each error and the count line."""
     for error in errors:
-        check_report.write_line(error, is_error=True)
+        check_report.write_line(error.text(), is_error=True)
     check_report.write_line(f"{PROGRAM}: {len(errors)} error(s).", is_error=True)
 
 
@@ -248,32 +254,49 @@ def written(root: Path) -> ExitCode:
     return ExitCode.OK
 
 
-def checked(root: Path) -> ExitCode:
-    """Compare each fixture and the manifest with the rows, and write nothing (THE MODES)."""
+def drift(root: Path) -> list[check_report.Finding]:
+    """Return an error for each row error, each fixture that is missing, different or of no row, and the manifest.
+
+    Complexity: linear in the rows and the fixtures.
+
+    Raises:
+        ruletable.TableError: When the table does not obey its format
+        OSError: When the table cannot be read
+    """
     derivation = derive(root)
     errors = list(derivation.errors)
     directory = root / FIXTURE_DIR
     repair = f"Run `python3 utils/bin/{WRITER}`."
+
+    def error(name: str, text: str) -> None:
+        errors.append(check_report.Finding("error", (FIXTURE_DIR / name).as_posix(), 0, CHECK, f"{text}.  {repair}"))
+
     for fixture in derivation.fixtures:
         path = directory / fixture.name
         if not path.is_file():
-            errors.append(f"{FIXTURE_DIR / fixture.name}: the fixture of a witness row is missing.  {repair}")
+            error(fixture.name, "the fixture of a witness row is missing")
         elif path.read_text(encoding="utf-8") != fixture.text:
-            errors.append(f"{FIXTURE_DIR / fixture.name}: the fixture is different from the text of its row.  {repair}")
+            error(fixture.name, "the fixture is different from the text of its row")
     names = {fixture.name for fixture in derivation.fixtures}
     for stray in listing(directory, f"{FIXTURE_PREFIX}*{FIXTURE_SUFFIX}"):
         if stray.name not in names:
-            errors.append(f"{FIXTURE_DIR / stray.name}: the fixture has no witness row.  {repair}")
+            error(stray.name, "the fixture has no witness row")
     manifest = directory / MANIFEST_NAME
     if not manifest.is_file() or manifest.read_text(encoding="utf-8") != derivation.manifest:
-        errors.append(
-            f"{FIXTURE_DIR / MANIFEST_NAME}: the manifest is missing or different from the rows, and CMake then "
-            f"registers a different set of fixtures.  {repair}"
+        error(
+            MANIFEST_NAME,
+            "the manifest is missing or different from the rows, and CMake then registers a different set of fixtures",
         )
+    return errors
+
+
+def checked(root: Path) -> ExitCode:
+    """Compare each fixture and the manifest with the rows, and write nothing (THE MODES)."""
+    errors = drift(root)
     if errors:
         report_errors(errors)
         return ExitCode.FINDINGS
-    check_report.write_line(f"{PROGRAM}: {len(derivation.fixtures)} fixture(s) agree with their rows.", is_error=True)
+    check_report.write_line(f"{PROGRAM}: the fixtures and the manifest agree with their rows.", is_error=True)
     return ExitCode.OK
 
 

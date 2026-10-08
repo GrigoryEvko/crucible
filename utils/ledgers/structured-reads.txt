@@ -14,7 +14,6 @@ utils/assay/guard/preprocessed.py | regex-call | 1 | dependency_names | A read o
 utils/assay/loop/affected.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/loop/affected.py | regex-call | 1 | name_pattern | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/loop/affected.py | regex-call | 1 | source_paths_in | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/loop/derive/mint_model.py | node-text-variable | 2 | extract | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/loop/fixture/store.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/loop/fixture/store.py | regex-call | 2 | evaluate | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/loop/fixture/store.py | regex-call | 1 | unmatched_errors | A read of today.  The change that moves the read into its reader lowers the count

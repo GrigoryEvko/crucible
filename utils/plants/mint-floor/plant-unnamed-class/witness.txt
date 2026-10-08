@@ -1,0 +1,8 @@
+# Two classes carry the member name mint_member.  One fixture names Holder,
+# and one fixture names no class, so Holder has one fixture and the rule
+# refuses its mint.
+compile sentinel src/mints.cpp sentinel=include/fixy/Mints.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel mint-pattern mint include/fixy/Mints.h:10:35 | plant::Holder::mint_member() const \| name=mint_member static=0 shape=member template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=Holder owner=plant::Holder
+finding sentinel mint-pattern mint include/fixy/Mints.h:13:35 | plant::Keeper::mint_member() const \| name=mint_member static=0 shape=member template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=Keeper owner=plant::Keeper

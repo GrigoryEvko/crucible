@@ -1,0 +1,3 @@
+#include <fixy/Mints.h>
+
+int main() { return sizeof(plant::Keeper{}.mint_member(1)); }

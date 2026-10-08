@@ -1,0 +1,14 @@
+#pragma once
+
+namespace plant {
+
+struct Thing {};
+
+// Two fixtures of the substrate layer name this mint.
+[[nodiscard]] constexpr Thing mint_covered(Thing) noexcept { return {}; }
+
+// One fixture of the substrate layer names this mint.  A fixture of the
+// crucible layer and a comment of a fixture do not count.
+[[nodiscard]] constexpr Thing mint_lonely(Thing) noexcept { return {}; }
+
+}  // namespace plant

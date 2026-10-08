@@ -41,12 +41,21 @@
 //
 //       ENTITY | name=NAME static=0|1 shape=ctx|token|member template=0|1
 //                nodiscard=0|1 constexpr=0|1 noexcept=0|1 constrained=0|1
-//                gated=0|1 projection=0|1 defined=0|1 owner=CLASS|-
+//                gated=0|1 projection=0|1 defined=0|1 class=NAME|-
+//                owner=CLASS|-
 //
 //     defined is 1 when the unit holds the body of the mint.  A declaration in
 //     one header and the definition in a different header give two records,
-//     and the module of the rule keeps the record with the body.  The owner is
-//     the last fact, because the name of a class can hold a space.  The axes:
+//     and the module of the rule keeps the record with the body.  class is
+//     the name of the class of a member with no namespace, and owner is its
+//     qualified name.  The owner is the last fact, because the name of a class
+//     can hold a space.  Each alias and each typedef of a class with a member
+//     mint, also of a specialization of a class template, gets one record of
+//     the kind mint-alias:
+//
+//       ALIAS | alias=NAME owner=CLASS
+//
+//     A fixture can name a member mint through such an alias.  The axes:
 //       nodiscard     the attribute [[nodiscard]] on a declaration
 //       constexpr     constexpr or consteval, unless the body is a borrow
 //                     projection: one return that calls mint_view with this
@@ -1193,14 +1202,16 @@ void check_mint(tree function, bool is_pattern) {
     bool is_defined =
         is_pattern ? DECL_SAVED_TREE(function) != NULL_TREE : state.defined_functions.count(DECL_UID(function)) != 0;
     tree owner = DECL_CLASS_SCOPE_P(function) ? DECL_CONTEXT(function) : NULL_TREE;
+    tree owner_decl = owner != NULL_TREE ? TYPE_NAME(TYPE_MAIN_VARIANT(owner)) : NULL_TREE;
     std::string entity = function_signature(function);
     auto flag = [](bool value) { return value ? "1" : "0"; };
-    std::string facts =
-        std::string(" | name=") + identifier_text(DECL_NAME(function))
-        + " static=" + flag(owner != NULL_TREE && !is_member) + " shape=" + shape + " template=" + flag(is_template)
-        + " nodiscard=" + flag(is_nodiscard) + " constexpr=" + flag(is_constexpr) + " noexcept=" + flag(is_noexcept)
-        + " constrained=" + flag(is_constrained) + " gated=" + flag(is_gated) + " projection=" + flag(is_projection)
-        + " defined=" + flag(is_defined) + " owner=" + (owner != NULL_TREE ? qualified_name(owner) : std::string("-"));
+    std::string facts = std::string(" | name=") + identifier_text(DECL_NAME(function)) + " static="
+                      + flag(owner != NULL_TREE && !is_member) + " shape=" + shape + " template=" + flag(is_template)
+                      + " nodiscard=" + flag(is_nodiscard) + " constexpr=" + flag(is_constexpr) + " noexcept="
+                      + flag(is_noexcept) + " constrained=" + flag(is_constrained) + " gated=" + flag(is_gated)
+                      + " projection=" + flag(is_projection) + " defined=" + flag(is_defined) + " class="
+                      + (owner_decl != NULL_TREE && TREE_CODE(owner_decl) == TYPE_DECL ? simple_name(owner_decl) : "-")
+                      + " owner=" + (owner != NULL_TREE ? qualified_name(owner) : std::string("-"));
     record_property(Kind::mint_record, place, entity + facts);
     if (!is_nodiscard) {
         record_property(Kind::mint_not_nodiscard, place, entity);
@@ -1217,6 +1228,51 @@ void check_mint(tree function, bool is_pattern) {
     if (context != NULL_TREE && !is_gated) {
         record_property(Kind::mint_unfit_context, place, entity);
     }
+}
+
+// The class that the alias or the typedef DECL names, when a member function
+// of the class is a mint, or NULL (THE RULE mint-pattern).  The class of a
+// specialization of a class template is the class of the template, which
+// holds the member declarations.  MINT_CLASSES keeps the answer of each class.
+tree aliased_mint_class(tree decl, std::unordered_map<tree, bool>& mint_classes) {
+    tree type = TREE_TYPE(decl);
+    if (type == NULL_TREE || !CLASS_TYPE_P(type)) {
+        return NULL_TREE;
+    }
+    tree main_type = TYPE_MAIN_VARIANT(type);
+    tree info = CLASSTYPE_TEMPLATE_INFO(main_type);
+    if (info != NULL_TREE && TI_TEMPLATE(info) != NULL_TREE && TREE_CODE(TI_TEMPLATE(info)) == TEMPLATE_DECL) {
+        tree pattern = TREE_TYPE(DECL_TEMPLATE_RESULT(TI_TEMPLATE(info)));
+        if (pattern != NULL_TREE && CLASS_TYPE_P(pattern)) {
+            main_type = TYPE_MAIN_VARIANT(pattern);
+        }
+    }
+    auto [entry, is_new] = mint_classes.try_emplace(main_type, false);
+    if (is_new) {
+        for (tree member = TYPE_FIELDS(main_type); member != NULL_TREE; member = DECL_CHAIN(member)) {
+            tree function = TREE_CODE(member) == TEMPLATE_DECL ? DECL_TEMPLATE_RESULT(member) : member;
+            if (function != NULL_TREE && is_mint(function)) {
+                entry->second = true;
+                break;
+            }
+        }
+    }
+    return entry->second ? main_type : NULL_TREE;
+}
+
+// The record of the alias or the typedef DECL of a class with a member mint
+// (THE RULE mint-pattern).  A fixture can name the mint through the alias.
+void check_mint_alias(tree decl, std::unordered_map<tree, bool>& mint_classes) {
+    tree owner = aliased_mint_class(decl, mint_classes);
+    if (owner == NULL_TREE) {
+        return;
+    }
+    Place place = property_place(DECL_SOURCE_LOCATION(decl));
+    if (place.file == nullptr) {
+        return;
+    }
+    record_property(Kind::mint_alias, place,
+                    qualified_name(decl) + " | alias=" + simple_name(decl) + " owner=" + qualified_name(owner));
 }
 
 // ── The rule no-raw-array-member ────────────────────────────────────────
@@ -2689,6 +2745,9 @@ struct PropertyWalk {
     std::unordered_set<tree> visited;
     StubFiles& stubs = stub_files;
     PaddingFacts padding;
+    // Each class that an alias names, and True when a member function of the
+    // class is a mint (aliased_mint_class).
+    std::unordered_map<tree, bool> mint_classes;
 
     // Each rule of a function first asks a test that reads no place: its name,
     // its types or its attributes.  A pattern has template information, so
@@ -2751,6 +2810,7 @@ struct PropertyWalk {
     void alias(tree decl, bool is_pattern) {
         if (!DECL_ARTIFICIAL(decl) && !DECL_IMPLICIT_TYPEDEF_P(decl)) {
             check_array_declaration(decl, Kind::array_alias);
+            check_mint_alias(decl, mint_classes);
             if (!is_pattern) {
                 check_padded_declaration(decl, Kind::padded_alias, padding);
             }

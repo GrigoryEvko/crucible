@@ -53,7 +53,7 @@ THE PLANTS
     each candidate and a section of each.  The copy of each other plant
     starts with that tree.  A file of the plant then replaces its file in
     the tree.  A file NAME.append adds its lines at the end of NAME,
-    and a file NAME.prepend adds them at the start (plant_context()).
+    and a file NAME.prepend adds them at the start (runner.copy_overlay()).
 
 Complexity: linear in the rows of the two tables and in the comments of the matrix.
 """
@@ -61,17 +61,15 @@ Complexity: linear in the rows of the two tables and in the comments of the matr
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from assay.core import git, ruletable
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
-from assay.guard.engines.meta.runner import PLANTED_SUFFIX, MetaContext, copy_plant
+from assay.core import ruletable
+from assay.guard.engines.meta.runner import MetaContext, copy_overlay
 from assay.readers import tsast
 
 RULE = "admitted-audit"
-# The control that gives the first tree of each plant (THE PLANTS), and the suffixes of a file that adds lines.
+# The control that gives the first tree of each plant (THE PLANTS).
 BASE = "control-clean"
-APPEND_SUFFIX = ".append"
-PREPEND_SUFFIX = ".prepend"
 ADMITTED = "utils/rule-table.txt"
 TABLE = "utils/admitted-audit.txt"
 MATRIX = "test/layer/admitted_flag_matrix.cpp"
@@ -444,21 +442,4 @@ def plant_context(plant: Path, scratch: Path) -> MetaContext:
 
     Complexity: linear in the bytes of the files of the base and of the plant.
     """
-    copy_plant(plant.parent / BASE, scratch)
-    if plant.name == BASE:
-        return MetaContext(scratch)
-    for source in sorted(plant.rglob("*")):
-        if not source.is_file():
-            continue
-        name = source.relative_to(plant).as_posix()
-        mode = (
-            APPEND_SUFFIX if name.endswith(APPEND_SUFFIX) else PREPEND_SUFFIX if name.endswith(PREPEND_SUFFIX) else ""
-        )
-        name = name.removesuffix(mode).removesuffix(PLANTED_SUFFIX)
-        target = scratch / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        old = target.read_bytes() if mode and target.is_file() else b""
-        added = source.read_bytes()
-        target.write_bytes(old + added if mode == APPEND_SUFFIX else added + old)
-    git.run(scratch, "add", "-A", "--", ".")
-    return MetaContext(scratch)
+    return copy_overlay(plant, scratch, BASE)

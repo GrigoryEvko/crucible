@@ -393,16 +393,15 @@ endforeach()
 # include/fixy or include/foundation with a door shape and no row: a mint_
 # friend, a passkey, a static factory, or a named friend or a friend type
 # beside a closed constructor (the test guard_plugin).
-# The fixtures of the witness rows.  witness_fixtures_check fails when a
-# fixture or the manifest is not what `loop derive witness-fixtures --write`
-# writes from the rows.  The test of the writer compiles a planted fixture
-# over a public constructor and over a private one with the compiler of this
-# build, and it makes sure that ctest registers each fixture on disk.
-crucible_script_test(NAME witness_fixtures_check
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/loop derive witness-fixtures --check)
+# The fixtures of the witness rows.  The rule derived-files (the test
+# guard_derived_files) fails when a fixture or the manifest is not what
+# `loop derive witness-fixtures --write` writes from the rows.  The test of
+# the writer compiles a planted fixture over a public constructor and over a
+# private one with the compiler of this build, and it makes sure that ctest
+# registers each fixture on disk.
 crucible_script_test(NAME assay_loop_derive_test_witness_fixtures
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.loop.derive.test_witness_fixtures)
-set_tests_properties(witness_fixtures_check assay_loop_derive_test_witness_fixtures PROPERTIES
+set_tests_properties(assay_loop_derive_test_witness_fixtures PROPERTIES
   LABELS "ci_guard"
   ENVIRONMENT "ASSAY_TEST_CXX=${CRUCIBLE_REAL_CXX};ASSAY_TEST_BUILD_DIR=${CMAKE_BINARY_DIR}")
 # utils/assay/guard/preprocessed.py preprocesses each unit of the compile database
@@ -510,29 +509,13 @@ foreach(part RANGE ${session_oracle_last_part})
     PROCESSORS 8)
 endforeach()
 
-# The mint inventory: its self-test, the drift gate that fails when
-# misc/mint-inventory.md was not regenerated after a mint changed, and the
-# HS14 floor gate, the rule mint-floor.  utils/assay/loop/derive/mint_inventory.py
-# holds the floor value, and the rows of utils/ledgers/mint-floor.txt admit the
-# mints under the floor.  The generator reads the parse tree, so it skips
-# (exit 3) where the pinned tree-sitter kit is absent.  CI installs the kit, so
-# CI enforces.
-crucible_script_test(NAME mint_inventory_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest
-          loop.derive.mint_inventory
-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-crucible_script_test(NAME mint_inventory_check
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/loop derive mint-inventory
-          --check
-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-crucible_script_test(NAME mint_inventory_check_floor
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule mint-floor
-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-set_tests_properties(mint_inventory_self_test
-                     mint_inventory_check
-                     mint_inventory_check_floor PROPERTIES
-    LABELS "ci_guard"
-    SKIP_RETURN_CODE 3)
+# The mint inventory reads the mint records of the quarantine plugin in the
+# objects of this build.  The rule derived-files (the test guard_derived_files)
+# fails when misc/mint-inventory.md is not what `loop derive mint-inventory
+# --write` writes, and the rule mint-floor of the engine plugin (the test
+# guard_plugin) holds the HS14 floor.  The test of the module,
+# assay_loop_derive_test_mint_inventory, plants a census and a fixture
+# directory.
 # The cross-build row_hash determinism witness.  The test runs
 # dump_row_hashes and diffs its output against the committed golden.  A
 # mismatch says either that the fold changed on purpose, and the golden
@@ -5049,22 +5032,13 @@ else()
     "The interpreter of the PyTorch that TORCH_DIR names, for the vessel acceptance gate")
 endif()
 
-# The self-test of the parse reader, and the self-test of the mint model.
-# Exit 3 (the pinned kit is absent) is a SKIP here.  A developer who has not
-# run `python3 utils/bin/setup install tree-sitter` gets the instruction rather
-# than a failure.  CI installs the kit in both the guards job and the build job, so CI
-# always enforces.
+# The self-test of the parse reader.  Exit 3 (the pinned kit is absent) is a
+# SKIP here.  A developer who has not run `python3 utils/bin/setup install
+# tree-sitter` gets the instruction rather than a failure.  CI installs the kit
+# in both the guards job and the build job, so CI always enforces.
 crucible_script_test(NAME tsast_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest readers.tsast)
-# mintmodel derives the §XXI mint surface from the parse tree, for the guard and
-# for the inventory. Its self-test plants one fixture carrying every shape the
-# model must tell apart, and four of its cases are negative controls: a deleted
-# overload, a constructor of a class whose name starts with mint_, a
-# trailing-underscore helper, and a friend re-declaration that must not count
-# as a second site.
-crucible_script_test(NAME mintmodel_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest loop.derive.mint_model)
-set_tests_properties(tsast_self_test mintmodel_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
+set_tests_properties(tsast_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # The rule gate-mutants weakens one gate of a header at a time and asks if a
 # test sees it.  Its test, the group mutation of `guard selftest`, plants a
 # header with gates that a negative fixture, a syntax-only compile and a death
@@ -5093,7 +5067,7 @@ set_tests_properties(selftest_mutation PROPERTIES LABELS "ci_guard" SKIP_RETURN_
 # runs a rule whose module reads the parse trees, when the test does not
 # require the fixture.  These tests read the trees and their registrations
 # give no label ast, so they get the label here.
-set_property(TEST mint_inventory_check_floor guard_plugin APPEND PROPERTY LABELS ast)
+set_property(TEST guard_plugin APPEND PROPERTY LABELS ast)
 crucible_tsast_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} 8)
 set_property(TEST guard_parse_proof_routes APPEND PROPERTY FIXTURES_REQUIRED preprocessed_store)
 get_property(crucible_directory_tests DIRECTORY PROPERTY TESTS)
@@ -5162,7 +5136,7 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # test of the rule clang-format runs the clang-format of the host on planted
 # files.  The test of the import closure imports the module of each hidden
 # subcommand of the masters in a new interpreter.
-crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} TREES admitted-audit decide-cite-ratio prose-bans)
+crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} TREES admitted-audit decide-cite-ratio derived-files prose-bans)
 # The rules of the engine elf read the objects, the static libraries and the
 # compile database of this build (cmake/Guards.cmake).  The test modules of
 # the runner of the engine and of its two rules build planted libraries and
@@ -5183,7 +5157,8 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         readers.test_sections readers.test_prose guard.test_history guard.test_import_closure
         guard.engines.meta.test_package guard.engines.meta.test_ste_dictionary
         guard.engines.meta.test_decide_cite_ratio guard.engines.meta.test_clang_format
-        guard.engines.plugin.test_counted loop.derive.test_walk_units loop.derive.test_header_costs)
+        guard.engines.plugin.test_counted loop.derive.test_walk_units loop.derive.test_header_costs
+        loop.derive.test_mint_inventory)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})

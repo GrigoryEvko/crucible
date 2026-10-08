@@ -1,0 +1,3 @@
+#include <fixy/Mints.h>
+
+int main(auto const& any) { return sizeof(any.mint_member(2)); }

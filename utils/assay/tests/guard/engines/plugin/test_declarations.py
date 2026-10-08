@@ -7,6 +7,7 @@ THE CASES
       * The scope of a rule: a path, the scope word `tracked` and the class words
       * One position for each kind and entity
       * The facts of a mint record, and each record that does not read
+      * The aliases of each class, from the records of the kind mint-alias
       * The record with the body of a mint, before the first position
       * The findings of the rule mint-pattern at the position of the chosen record
       * A row of the ledger that admits a finding.
@@ -39,11 +40,24 @@ FACTS = (
 ENTITY = "fixy::mint_cell(const Ctx&)"
 
 
-def record(file: str, line: int, defined: int, owner: str = "-", facts: str = FACTS) -> plugin_sections.Finding:
-    """Return a planted mint record at a position, with the fact `defined` and the owner."""
+def record(
+    file: str, line: int, defined: int, owner: str = "-", facts: str = FACTS, class_name: str = "-"
+) -> plugin_sections.Finding:
+    """Return a planted mint record at a position, with the fact `defined`, the class and the owner."""
     return plugin_sections.Finding(
-        file, line, 1, RULE, declarations.MINT_RECORD, f"{ENTITY} | {facts} defined={defined} owner={owner}"
+        file,
+        line,
+        1,
+        RULE,
+        declarations.MINT_RECORD,
+        f"{ENTITY} | {facts} defined={defined} class={class_name} owner={owner}",
     )
+
+
+def alias_record(alias: str, owner: str, entity: str | None = None) -> plugin_sections.Finding:
+    """Return a planted record of the kind mint-alias of an alias of a class."""
+    text = entity if entity is not None else f"fixy::{alias} | alias={alias} owner={owner}"
+    return plugin_sections.Finding("include/fixy/A.h", 9, 1, RULE, declarations.ALIAS_RECORD, text)
 
 
 def finding(file: str, line: int, kind: str = "mint-not-constexpr") -> plugin_sections.Finding:
@@ -98,10 +112,10 @@ def place_cases(expect: testing.Expect) -> None:
 
 def record_cases(expect: testing.Expect) -> None:
     """Hold the facts of a mint record, the owner with a space, and each record that does not read."""
-    mint = declarations.parse_mint(record("include/fixy/A.h", 4, 1, "fixy::Cell<int, char>"))
+    mint = declarations.parse_mint(record("include/fixy/A.h", 4, 1, "fixy::Cell<int, char>", class_name="Cell"))
     expect(
-        "a record gives the entity, the name and the shape",
-        (mint.entity, mint.name, mint.shape) == (ENTITY, "mint_cell", "ctx"),
+        "a record gives the entity, the name, the shape and the class",
+        (mint.entity, mint.name, mint.shape, mint.class_name) == (ENTITY, "mint_cell", "ctx", "Cell"),
     )
     expect(
         "a record gives each flag",
@@ -135,6 +149,38 @@ def record_cases(expect: testing.Expect) -> None:
     )
 
 
+def alias_cases(expect: testing.Expect) -> None:
+    """Hold the aliases of each class, from the records of the kind mint-alias, and each record that does not read."""
+    found = declarations.owner_aliases(
+        [
+            alias_record("Epoch", "fixy::Counter"),
+            alias_record("Generation", "fixy::Counter"),
+            alias_record("Epoch", "fixy::Counter"),
+            alias_record("Wide", "fixy::Cell<int, char>"),
+        ]
+    )
+    expect(
+        "each class gets the names of its aliases, also an owner with a space",
+        found == {"fixy::Counter": frozenset({"Epoch", "Generation"}), "fixy::Cell<int, char>": frozenset({"Wide"})},
+    )
+    broken = [
+        alias_record("Epoch", "-", "fixy::Epoch alias=Epoch owner=fixy::Counter"),
+        alias_record("Epoch", "-", "fixy::Epoch | name=Epoch owner=fixy::Counter"),
+        alias_record("Epoch", "-", "fixy::Epoch | alias=Epoch"),
+        alias_record("Epoch", "-", "fixy::Epoch | alias=Two Words owner=fixy::Counter"),
+    ]
+    refused = 0
+    for item in broken:
+        try:
+            declarations.owner_aliases([item])
+        except declarations.RecordError:
+            refused += 1
+    expect(
+        "a record with no facts, no fact alias, no owner or a name with a space does not read",
+        refused == len(broken),
+    )
+
+
 def chosen_cases(expect: testing.Expect) -> None:
     """Hold the record of a mint with the body before the record at the first position."""
     declared = record("include/fixy/Borrowed.h", 121, 0)
@@ -153,6 +199,7 @@ def rule_cases(expect: testing.Expect) -> None:
         lines = [
             record("include/fixy/Borrowed.h", 121, 0),
             record("include/fixy/OwnedRegion.h", 452, 1),
+            alias_record("Epoch", "fixy::Counter"),
             finding("include/fixy/Borrowed.h", 121),
             finding("include/fixy/OwnedRegion.h", 452),
             finding("test/test_a.cpp", 3),
@@ -160,7 +207,7 @@ def rule_cases(expect: testing.Expect) -> None:
         context = context_of(root, lines)
         found = mint_pattern.findings(context)
         expect(
-            "a record is no finding, and a line outside the scope is none",
+            "a mint record and an alias record are no finding, and a line outside the scope is none",
             [(item.path, item.line, item.kind) for item in found]
             == [("include/fixy/OwnedRegion.h", 452, "mint-not-constexpr")],
         )
@@ -188,5 +235,7 @@ def rule_cases(expect: testing.Expect) -> None:
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
     return testing.run(
-        __name__.removeprefix("assay."), argv, (scope_cases, place_cases, record_cases, chosen_cases, rule_cases)
+        __name__.removeprefix("assay."),
+        argv,
+        (scope_cases, place_cases, record_cases, alias_cases, chosen_cases, rule_cases),
     )

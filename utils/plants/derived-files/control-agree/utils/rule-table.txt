@@ -1,0 +1,10 @@
+# A planted rule table of the rule derived-files: one witness row, and the
+# heavy and light rows after the marker line.
+
+witness <planted/Open.h> private | planted::Open | planted::Open{42}
+
+# The heavy and the light rows.  `python3 utils/bin/loop derive header-costs --measure BUILD_DIR` writes each line after this one.
+# Measured on a planted host.
+heavy <chrono> | 1.12 s, 70628 lines
+light <cstdint> | 0.02 s, 178 lines
+light <meta> | 0.37 s, 34799 lines

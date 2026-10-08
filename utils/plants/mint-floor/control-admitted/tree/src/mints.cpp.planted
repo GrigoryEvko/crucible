@@ -1,0 +1,3 @@
+#include <fixy/Mints.h>
+
+plant::Thing make_thing() noexcept { return plant::mint_lonely(plant::Thing{}); }

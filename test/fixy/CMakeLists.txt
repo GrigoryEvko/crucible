@@ -4732,8 +4732,9 @@ fixy_neg_compile_test(neg_os_cipher_durable_head_advancer_extras_engage_atomic_w
 # constructor as the compiler writes it, with parentheses.  A fixture spells
 # its construction with braces, so its source cannot match that pattern.
 # This loop reads the manifest, so the slug and the patterns have one
-# implementation, in the writer.  The test witness_fixtures_check refuses a
-# manifest that the rows do not give, and the test of the writer makes sure
+# implementation, in the writer.  The rule derived-files (the test
+# guard_derived_files) refuses a manifest that the rows do not give, and the
+# test of the writer makes sure
 # that ctest registers each fixture on disk and no other one.
 string(JSON _witness_count ERROR_VARIABLE _witness_error LENGTH "${_witness_json}" fixtures)
 if(_witness_error)

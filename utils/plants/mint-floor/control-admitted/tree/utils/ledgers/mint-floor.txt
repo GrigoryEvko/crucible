@@ -1,0 +1,4 @@
+# The ledger of the control: an admit row with its reason.
+format 1
+rule mint-floor
+include/fixy/Mints.h | - | admit | plant::mint_lonely(plant::Thing) | the fixtures of the mint are a task of a subsequent change
