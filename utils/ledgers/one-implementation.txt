@@ -108,7 +108,6 @@ utils/assay/guard/legacy/check_syscall_capability.py | copy | 1 | self_test.capt
 utils/assay/guard/legacy/check_syscall_capability.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | near-copy | 1 | self_test.captured | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_syscall_grant_coverage.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/guard/legacy/check_test_time.py | copy | 1 | self_test_cases.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_trait_injection.py | copy | 1 | self_test.captured | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_trait_injection.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_witness_roster.py | copy | 1 | is_static | A copy of today.  The change that keeps one body and calls it lowers the count
@@ -127,7 +126,6 @@ utils/assay/loop/gauge_cold.py | copy | 1 | self_test.expect | A copy of today. 
 utils/assay/loop/history.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/loop/pgo.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/loop/stamps.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/loop/teststep.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/oracle/ekici.py | copy | 1 | coq_version | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/oracle/ekici.py | copy | 1 | fetch | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/oracle/execution.py | copy | 1 | explore.trace_of | A copy of today.  The change that keeps one body and calls it lowers the count

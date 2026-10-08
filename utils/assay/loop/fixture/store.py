@@ -6,10 +6,12 @@ CTest runs `loop fixture` for each fixture, and the master loop calls main()
 of this module.  Python compiles the script that it runs on each start, and it
 keeps the compiled form of each module that it imports in the cache root.  The
 master is small, so a run that uses the store does not compile this module
-again.  This module imports the modules of a compile (assay.core.proc,
-shutil, resource) only when it compiles or when a memo misses.  It imports
-utils/assay/core/report.py only when it has a finding to report, when a
-warnings file of the fixture exists, or when the memo of the budget misses.
+again.  This module imports the modules of a compile (assay.core.proc and
+shutil) only when it compiles or when a memo misses.  It imports the test
+launcher (assay.loop.teststep, with assay.core.meter) and resource on each
+run, for the test record.  It imports utils/assay/core/report.py only when it
+has a finding to report, when a warnings file of the fixture exists, or when
+the memo of the budget misses.
 
 The driver reads the compile command of the fixture from compile_commands.json.
 It runs that command, and it puts the object file and the dependency file in a
@@ -314,12 +316,14 @@ CRUCIBLE_NEG_CPU_LEDGER and CRUCIBLE_NEG_INSTRUCTIONS_LEDGER name a different
 registry and different ledgers in the same format, for the tests of the
 driver.
 
-A memo in the store keeps the two measured rules and the two ledgers while the
-registry and the two ledgers have the same stat fields.  A ledger that does not
-exist has the stamp of an absent file, so a new ledger replaces the memo.  The
-driver writes the memo only when no file changed in the settle period.  A run
-with no finding and no warnings file of its fixture then reads no registry and
-imports no report module.
+A memo in the store keeps the two measured rules, the two ledgers and the
+thresholds of the rules of the test launcher (The test record).  The memo
+stays while the two registries and the two ledgers have the same stat fields.
+A ledger that does not exist has the stamp of an absent file, so a new ledger
+replaces the memo.
+The driver writes the memo only when no file changed in the settle period.  A
+run with no finding and no warnings file of its fixture then reads no registry
+and imports no report module.
 
 The record of a run
 -------------------
@@ -330,9 +334,27 @@ the dependency file of GCC, the list of the `-M -MG` pass after a fatal error,
 or the list of the stored result.  The rule parse-total (`guard check --rule
 parse-total`) adds the bytes of these files for each fixture.
 
-utils/assay/tests/loop/test_fixture.py holds the tests of the store, of the
-cost budget, of the record, of the rule of the reason and of the quarantine
-plugin.
+The test record
+---------------
+CMake gives a fixture no test launcher.  The driver judges its own run as the
+launcher judges a test, with the same function
+(assay.loop.teststep.judge_and_record).  A second start of Python for each
+fixture costs more than the judge.  The measure holds three values.  The
+first is the wall time from the start of main().  The second is the CPU time
+of this process and of each process that it waited for.  The third is the
+peak memory of the largest of these processes.
+
+The judge holds the measured rules test-time and test-memory, with the
+thresholds of the registry of the launcher (CRUCIBLE_TEST_REGISTRY) and its
+ledgers (CRUCIBLE_TEST_LEDGERS).  A fixture with the status 0 fails over an
+error threshold that no ledger row admits.  The driver writes the record
+BUILD_DIR/test-records/NAME.test.cost, with the keys of the record of the
+launcher.  In a run of the test launcher, the environment holds
+CRUCIBLE_TEST_LAUNCHED.  The driver then gives the judge and the record to
+the launcher.
+
+utils/assay/tests/loop/test_fixture.py holds the tests of the store, the cost
+budget, the two records, the rule of the reason and the quarantine plugin.
 """
 
 from __future__ import annotations
@@ -959,8 +981,9 @@ _ANSWERS_FORMAT = 1
 _DIGESTS_FORMAT = 2
 _DIGESTS_SUFFIX = ".digests"
 # The format of the memo of the budget rows and the ledgers.  Format 2 keeps the path of each ledger as a finding
-# names it, and the stamp of a ledger that does not exist.
-_BUDGET_FORMAT = 2
+# names it, and the stamp of a ledger that does not exist.  Format 3 also keeps the thresholds of the rules of the
+# test launcher.
+_BUDGET_FORMAT = 3
 
 _driver_digest_value: str | None = None
 
@@ -2453,18 +2476,23 @@ class BudgetRow:
 
 
 class CostBudget:
-    """The measured rules fixture-cpu and fixture-instructions, with their ledgers.
+    """The measured rules fixture-cpu and fixture-instructions, with their ledgers, and the rules of the test launcher.
 
     `problems` gives, for each check whose rule or ledger cannot be read, the
-    reason.  A budget with a problem fails the test.
+    reason.  A budget with a problem fails the test.  `test_rows` gives the
+    two thresholds of each rule of the test launcher, from the registry of
+    the launcher (assay.loop.teststep, THE MEASURED RULES).  The launcher
+    reads their ledgers itself.
     """
 
-    __slots__ = ("rows", "problems")
+    __slots__ = ("rows", "problems", "test_rows")
 
-    def __init__(self, rows: dict[str, BudgetRow], problems: dict[str, str]) -> None:
-        """Hold the rules by check name, and the reason of each check whose rule or ledger cannot be read."""
+    def __init__(self, rows: dict[str, BudgetRow], problems: dict[str, str],
+                 test_rows: dict[str, tuple[float, float]] | None = None) -> None:
+        """Hold the rules by check name, the reason of each check with a problem, and the rules of the test launcher."""
         self.rows = rows
         self.problems = problems
+        self.test_rows = test_rows or {}
 
     def is_over_error(self, fixture_name: str, result: CompileResult) -> bool:
         """Return True when the measure of the rule that holds the error level fails the test, with no ledger row.
@@ -2547,14 +2575,22 @@ def _read_fixture_ledger(path: Path, check: str, has_rule: bool) -> tuple[dict[s
     return rows, ""
 
 
-def _parse_cost_budget(registry: Path, ledger_paths: Mapping[str, Path]) -> CostBudget:
-    """Read the measured rules fixture-cpu and fixture-instructions of the registry `registry`, and the ledgers."""
+def _parse_cost_budget(registry: Path, ledger_paths: Mapping[str, Path], test_registry: Path) -> CostBudget:
+    """Read the measured rules fixture-cpu and fixture-instructions of the registry `registry`, the ledgers, and the
+    rules of the test launcher of the registry `test_registry`."""
+    from assay.loop import teststep as test_launcher
+
     rows: dict[str, BudgetRow] = {}
     problems: dict[str, str] = {}
     try:
+        test_rows = _cost_meter_module().budget_rows(str(test_registry), test_launcher.ROWS)
+    except (OSError, ValueError):
+        test_rows = {}
+    try:
         budgets = _report_module().read_budgets(registry)
     except (OSError, ValueError) as error:
-        return CostBudget({}, {check: f"the budget of {check} cannot be read: {error}" for check in _LEDGERS})
+        return CostBudget({}, {check: f"the budget of {check} cannot be read: {error}" for check in _LEDGERS},
+                          test_rows)
     for check, path in ledger_paths.items():
         row = budgets.get(check)
         if row is None:
@@ -2568,7 +2604,7 @@ def _parse_cost_budget(registry: Path, ledger_paths: Mapping[str, Path]) -> Cost
             problems[check] = problem
             continue
         rows[check] = BudgetRow(check, row.warn, row.error, ledger, _shown(path))
-    return CostBudget(rows, problems)
+    return CostBudget(rows, problems, test_rows)
 
 
 def _file_stamps(paths: list[Path]) -> list[list[int]] | None:
@@ -2586,18 +2622,24 @@ def _file_stamps(paths: list[Path]) -> list[list[int]] | None:
 
 
 def read_cost_budget(memo_dir: Path | None) -> CostBudget:
-    """Read the measured rules fixture-cpu and fixture-instructions of the registry, and their ledgers.
+    """Read the measured rules fixture-cpu and fixture-instructions of the registry, their ledgers, and the
+    thresholds of the rules of the test launcher.
 
     CRUCIBLE_NEG_REGISTRY, CRUCIBLE_NEG_CPU_LEDGER and
     CRUCIBLE_NEG_INSTRUCTIONS_LEDGER name a different registry and ledgers.
-    A memo in `memo_dir` keeps a budget with no problem while the three files
-    have the same stat fields, and a ledger that does not exist has the empty
-    stamp (the module text, The cost of a compile).  The function writes the
-    memo only when no file changed in the settle period and during the read.
+    The test launcher reads its rules from the registry of
+    CRUCIBLE_TEST_REGISTRY, and the driver reads them there too.  A memo in
+    `memo_dir` keeps a budget with no problem while the four files have the
+    same stat fields, and a ledger that does not exist has the empty stamp
+    (the module text, The cost of a compile).  The function writes the memo
+    only when no file changed in the settle period and during the read.
     """
+    from assay.loop import teststep as test_launcher
+
     registry = Path(os.environ.get("CRUCIBLE_NEG_REGISTRY") or _REGISTRY)
     ledger_paths = {check: Path(os.environ.get(variable) or default) for check, (variable, default) in _LEDGERS.items()}
-    files = [registry, *ledger_paths.values()]
+    test_registry = Path(os.environ.get(test_launcher.REGISTRY_ENV) or test_launcher.REGISTRY_FILE)
+    files = [registry, *ledger_paths.values(), test_registry]
     memo = None
     if memo_dir is not None:
         material = json.dumps([str(path) for path in files])
@@ -2607,19 +2649,22 @@ def read_cost_budget(memo_dir: Path | None) -> CostBudget:
             if (recorded["format"] == _BUDGET_FORMAT and set(recorded["rows"]) == set(_LEDGERS)
                     and recorded["stamps"] == _file_stamps(files)):
                 return CostBudget({check: BudgetRow(check, float(warn), float(error), dict(ledger), str(shown))
-                                   for check, (warn, error, ledger, shown) in recorded["rows"].items()}, {})
+                                   for check, (warn, error, ledger, shown) in recorded["rows"].items()}, {},
+                                  {rule: (float(warn), float(error))
+                                   for rule, (warn, error) in recorded["test_rows"].items()})
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             pass
     started_ns = _now_ns()
     before = _file_stamps(files)
-    budget = _parse_cost_budget(registry, ledger_paths)
+    budget = _parse_cost_budget(registry, ledger_paths, test_registry)
     if memo is None or budget.problems or before is None or _file_stamps(files) != before:
         return budget
     if all(not stamp or stamp[4] < started_ns - _SETTLE_NS for stamp in before):
         rows = {check: [row.warn, row.error, row.ledger, row.ledger_shown] for check, row in budget.rows.items()}
+        test_rows = {rule: [warn, error] for rule, (warn, error) in budget.test_rows.items()}
         try:
-            _write_atomic(memo, json.dumps({"format": _BUDGET_FORMAT, "stamps": before, "rows": rows}).encode(
-                "utf-8", "surrogateescape"))
+            _write_atomic(memo, json.dumps({"format": _BUDGET_FORMAT, "stamps": before, "rows": rows,
+                                            "test_rows": test_rows}).encode("utf-8", "surrogateescape"))
         except OSError:
             pass
     return budget
@@ -3010,6 +3055,7 @@ def main(argv: list[str]) -> int:
         )
         return 2
 
+    start = _cost_meter_module().start_self()
     build_dir = Path(arguments[0]).resolve()
     source = Path(arguments[1]).resolve()
     fixture_name = arguments[2]
@@ -3017,21 +3063,30 @@ def main(argv: list[str]) -> int:
     if not _FIXTURE_NAME.fullmatch(fixture_name):
         print(f"the fixture name {fixture_name!r} is not a word of letters, digits, '_' and '-'", file=sys.stderr)
         return 2
+    status, budget = run_fixture(build_dir, source, fixture_name, expected_regexes, warnings_dir)
+    return judge_test(fixture_name, build_dir, source, status, start, budget, warnings_dir)
 
+
+def run_fixture(build_dir: Path, source: Path, fixture_name: str, expected_regexes: list[str],
+                warnings_dir: Path | None) -> tuple[int, CostBudget | None]:
+    """Compile the fixture or take its stored result, and return the status of its test and the cost budget.
+
+    The budget is None when the driver stops before it reads the budget.
+    """
     scratch = build_dir / "neg-compile" / fixture_name
     scratch.mkdir(parents=True, exist_ok=True)
     found = find_compile_command(build_dir, source, scratch / f"{fixture_name}{_COMMAND_SUFFIX}")
     if found is None:
-        print(f"no compile command for {source}", file=sys.stderr)
-        return 2
+        _report_module().write_line(f"no compile command for {source}", is_error=True)
+        return 2, None
     command, directory, roots = found
     output = scratch / f"{fixture_name}.o"
     depfile = scratch / f"{fixture_name}.{os.getpid()}.d"
     try:
         argv = compile_argv(command, output, depfile)
     except PluginFlagError as error:
-        print(f"neg-compile {fixture_name}: {error}", file=sys.stderr)
-        return 2
+        _report_module().write_line(f"neg-compile {fixture_name}: {error}", is_error=True)
+        return 2, None
     store, store_reason = open_store()
     budget = read_cost_budget(store.memo if store is not None else None)
     result, is_stored = obtain_result(fixture_name, argv, directory, source, output, budget, store, store_reason,
@@ -3043,4 +3098,33 @@ def main(argv: list[str]) -> int:
     if unmatched is not None:
         own_reason = report_own_reason(fixture_name, source, unmatched, is_stored, warnings_dir)
     over_budget = report_cost(fixture_name, source, result, is_stored, budget, warnings_dir)
-    return verdict or own_reason or over_budget
+    return verdict or own_reason or over_budget, budget
+
+
+def judge_test(fixture_name: str, build_dir: Path, source: Path, status: int, start: tuple[float, float],
+               budget: CostBudget | None, warnings_dir: Path | None) -> int:
+    """Judge the run of the fixture as a test, and write its record, as the test launcher does (The test record).
+
+    In a run of the test launcher, the launcher judges and records the test, and the function gives the status.
+
+    Args:
+        fixture_name: The name of the fixture, which is the name of its test
+        build_dir: The build directory
+        source: The source of the fixture, which a finding names
+        status: The status of the test before the judge
+        start: The start of the measure at the start of main() (assay.core.meter, start_self())
+        budget: The cost budget, which holds the thresholds of the rules of the launcher, or None
+        warnings_dir: The warnings directory, or None
+
+    Returns:
+        The status of the test, or 1 when the judge rejects a test with the status 0
+    """
+    from assay.loop import teststep as test_launcher
+
+    if os.environ.get(test_launcher.LAUNCHED_ENV):
+        return status
+    run = _cost_meter_module().measure_self(status, start)
+    sys.stdout.flush()
+    return test_launcher.judge_and_record(fixture_name, sys.executable, _shown(source), str(build_dir), run,
+                                          None if warnings_dir is None else str(warnings_dir),
+                                          None if budget is None else budget.test_rows)

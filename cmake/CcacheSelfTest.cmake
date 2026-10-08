@@ -18,7 +18,8 @@
 # The two relocation cases build the object of one source with debug
 # information in build roots inside the source root.  The project loads the
 # GCC plugin of the tree as the root CMakeLists.txt does
-# (utils/tools/quarantine/Quarantine.cmake), with a rule table of its own, and
+# (utils/tools/quarantine/Quarantine.cmake, after cmake/TestLauncher.cmake,
+# which registers the tests of the plugin), with a rule table of its own, and
 # the plugin options name the source root and the build root.
 #   - CASE=relocation builds in two build roots with the ccache that PATH holds,
 #     with a cache of their own in WORK, so the second gets a hit from the
@@ -42,6 +43,7 @@ if(NOT DEFINED CASE)
   set(CASE launcher)
 endif()
 set(module "${CMAKE_CURRENT_LIST_DIR}/Ccache.cmake")
+set(test_launcher "${CMAKE_CURRENT_LIST_DIR}/TestLauncher.cmake")
 set(quarantine "${CMAKE_CURRENT_LIST_DIR}/../utils/tools/quarantine/Quarantine.cmake")
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}/project/include" "${WORK}/bin")
@@ -55,6 +57,7 @@ file(WRITE "${WORK}/project/CMakeLists.txt"
   "crucible_relocatable_objects()\n"
   "if(WITH_TREE_PLUGIN)\n"
   "  set(CRUCIBLE_RULE_TABLE \"\${CMAKE_SOURCE_DIR}/rules.txt\")\n"
+  "  include(\"${test_launcher}\")\n"
   "  include(\"${quarantine}\")\n"
   "endif()\n"
   "file(WRITE \"\${CMAKE_BINARY_DIR}/launcher.txt\" \"\${CMAKE_CXX_COMPILER_LAUNCHER}\")\n"

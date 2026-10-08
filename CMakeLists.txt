@@ -284,6 +284,12 @@ if(NOT CRUCIBLE_PGO STREQUAL "off")
   endif()
 endif()
 
+# The test launcher records the cost of each test and holds its budget, and
+# crucible_script_test() registers a script test behind it.  It also names
+# the warnings directory of the checks.  It comes before the first target and
+# before the first test.
+include(cmake/TestLauncher.cmake)
+
 # The GCC plugin: CRUCIBLE_QUARANTINE_MODE = REPORT | ERROR.  Each build loads the
 # quarantine plugin, which also applies the contract rule.  The file puts its
 # flags on the directory, so it comes before the first target.  It gives
@@ -294,11 +300,6 @@ include(utils/tools/quarantine/Quarantine.cmake)
 # holds the budget of each one.  It comes after each block that sets or
 # clears the compiler launcher, and before the first target.
 include(cmake/BuildLauncher.cmake)
-
-# The test launcher records the cost of each executable test and holds its
-# budget.  It also names the warnings directory of the checks.  It comes
-# before the first target.
-include(cmake/TestLauncher.cmake)
 
 # Ninja starts the compiles of the targets in cmake/compile-first.txt before
 # the other compiles of the tests.  The file defers its work to the end
@@ -1671,6 +1672,6 @@ endif()
 # sees each one.  The self-test proves that the rule rejects each split
 # form.
 crucible_check_contract_ignore_pairs()
-add_test(NAME contract_ignore_pairs_self_test
+crucible_script_test(NAME contract_ignore_pairs_self_test
   COMMAND ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/cmake/ContractSemanticSelfTest.cmake)
 set_tests_properties(contract_ignore_pairs_self_test PROPERTIES LABELS "ci_guard")

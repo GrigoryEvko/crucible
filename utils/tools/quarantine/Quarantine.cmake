@@ -81,7 +81,7 @@ set(CRUCIBLE_QUARANTINE_PLUGIN_FLAGS
   -isystem "${_crucible_quarantine_gcc_plugin_dir}/include"
   "-Wl,-rpath,${_crucible_quarantine_library_dir}")
 
-add_test(NAME quarantine_stamps_self_test
+crucible_script_test(NAME quarantine_stamps_self_test
   COMMAND "${CRUCIBLE_PYTHON3}" "${CRUCIBLE_GUARD}" selftest loop.stamps)
 set_tests_properties(quarantine_stamps_self_test PROPERTIES LABELS "ci_guard")
 
@@ -158,7 +158,7 @@ endif()
 # compiler of the test.  With 16, the test took 1.4 s on the build host, and
 # with no bound it took 1.0 s.
 set(_crucible_quarantine_test_jobs 16)
-add_test(NAME quarantine_plugin
+crucible_script_test(NAME quarantine_plugin
   COMMAND "${CRUCIBLE_PYTHON3}" "${CRUCIBLE_GUARD}" check --rule quarantine-plugin
           --cxx "${CRUCIBLE_REAL_CXX}"
           --plugin "${CRUCIBLE_QUARANTINE_PLUGIN}"

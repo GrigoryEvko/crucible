@@ -32,8 +32,8 @@
 set(_core_shapes_command ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule core-shapes)
 
 if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-  add_test(NAME core_shapes COMMAND python3 ${_core_shapes_command})
-  add_test(NAME core_shapes_self_test COMMAND python3 ${_core_shapes_command} --self-test)
+  crucible_script_test(NAME core_shapes COMMAND python3 ${_core_shapes_command})
+  crucible_script_test(NAME core_shapes_self_test COMMAND python3 ${_core_shapes_command} --self-test)
   set_tests_properties(core_shapes core_shapes_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
   set_tests_properties(core_shapes PROPERTIES FIXTURES_REQUIRED tsast_trees)
   return()
@@ -76,14 +76,14 @@ set(_core_shapes_arguments
   --fixed-flags "${_core_shapes_fixed_text}")
 
 # The check: the flags of the object, then the shape of each pair.
-add_test(NAME core_shapes
+crucible_script_test(NAME core_shapes
   COMMAND python3 ${_core_shapes_command} ${_core_shapes_arguments}
   COMMAND_EXPAND_LISTS)
 
 # The self-test: each finding of the check on planted disassembly, each
 # finding of the flag comparison on planted compile commands, and the object
 # compiled again with a second bounds test planted in View::window.
-add_test(NAME core_shapes_self_test
+crucible_script_test(NAME core_shapes_self_test
   COMMAND python3 ${_core_shapes_command} --self-test ${_core_shapes_arguments}
   COMMAND_EXPAND_LISTS)
 

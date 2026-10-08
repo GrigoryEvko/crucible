@@ -14,10 +14,11 @@ THE INPUT
 THE RULE
     A test is a script test when one argument of its command is a master of
     ROOT/utils/bin/ (guard, loop or setup), or a path under
-    ROOT/utils/scripts/.  The rule refuses:
-      label         a script test with no label ci_guard.  The launcher `loop test-step`, which CMake
-                    puts in front of each executable test, and the driver `loop fixture` of a negative fixture are
-                    not script tests
+    ROOT/utils/scripts/.  The test launcher `loop test-step` and its options
+    come in front of a command, and the rule reads the first master after
+    them.  The rule refuses:
+      label         a script test with no label ci_guard.  The launcher in front of an executable alone, and the
+                    driver `loop fixture` of a negative fixture, are not script tests
       unknown-rule  a test that runs `guard check --rule ID` or `guard witness --rule ID` for an ID that the registry
                     does not hold
       no-test       a rule of the registry that no test with the label ci_guard runs with `guard check --rule ID`.  A
@@ -45,19 +46,22 @@ from assay.readers import ctest as ctest_reader
 RULE = "test-registration"
 LABEL = "ci_guard"
 MASTERS = ("guard", "loop", "setup")
-# The master and the subcommand of the two commands that are not script tests.
-NOT_SCRIPT = (("loop", "test-step"), ("loop", "fixture"))
+# The master and the subcommand of the test launcher, which comes in front of a command.
+LAUNCHER = ("loop", "test-step")
+# The master and the subcommand of the driver of a negative fixture, which is not a script test.
+FIXTURE = ("loop", "fixture")
 TREE_FIXTURE = "tsast_trees"
 TREE_READER = "assay.readers.tsast"
 CMAKE_TIMEOUT_S = 300.0
 
 
-def master_of(test: ctest_reader.CtestTest, root: Path) -> tuple[str, list[str]] | None:
+def master_of(test: ctest_reader.TestEntry, root: Path) -> tuple[str, list[str]] | None:
     """Return the master and the words after it, when the command of a test runs a master of ROOT/utils/bin.
 
     A command that runs a script of ROOT/utils/scripts/ gives the path of the
     script relative to the root, and the words after it: a shell script of
-    that directory is a script test too.
+    that directory is a script test too.  The test launcher is not the master
+    of a command: the search goes on after it.
     """
     bin_dir = (root / "utils" / "bin").resolve()
     scripts_dir = (root / "utils" / "scripts").resolve()
@@ -67,14 +71,16 @@ def master_of(test: ctest_reader.CtestTest, root: Path) -> tuple[str, list[str]]
         if not path.is_absolute():
             continue
         resolved = path.resolve()
-        if resolved.parent == bin_dir and path.name in MASTERS:
-            return path.name, command[index + 1:]
+        words = command[index + 1:]
+        if resolved.parent == bin_dir and path.name in MASTERS and (path.name, words[:1]) != (LAUNCHER[0],
+                                                                                              [LAUNCHER[1]]):
+            return path.name, words
         if resolved.is_relative_to(scripts_dir):
-            return resolved.relative_to(root).as_posix(), command[index + 1:]
+            return resolved.relative_to(root).as_posix(), words
     return None
 
 
-def place_of(test: ctest_reader.CtestTest, root: Path) -> tuple[str, int]:
+def place_of(test: ctest_reader.TestEntry, root: Path) -> tuple[str, int]:
     """Return the CMake file and the line of the add_test of a test, relative to the root when it is in the tree."""
     if not test.file:
         return "CMakeLists.txt", 0
@@ -146,26 +152,12 @@ def implementing_module(rule: rule_registry.Rule) -> str | None:
     return f"assay.guard.engines.{rule.engine.value}.{rule.id.replace('-', '_')}"
 
 
-def ctest_program(build_dir: Path) -> str:
-    """Return the ctest of a build directory.
-
-    Raises:
-        NotApplicable: If the build directory names no usable ctest
-    """
-    from assay.setup import pins
-
-    try:
-        return pins.configured_program(build_dir, "ctest")
-    except pins.PinError as problem:
-        raise NotApplicable(str(problem)) from None
-
-
 def findings(context: MetaContext) -> list[check_report.Finding]:
     """Give each test with a master and no label, each unknown rule, each rule with no test and each missing fixture."""
     if context.build_dir is None:
         raise NotApplicable("the rule reads the tests of a build directory.  Give --build-dir DIR")
     try:
-        tests = ctest_reader.listing(ctest_program(context.build_dir), context.build_dir)
+        tests = ctest_reader.tests(context.build_dir)
     except ctest_reader.CtestError as problem:
         raise NotApplicable(str(problem)) from None
     registry = context.registry
@@ -179,7 +171,7 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
         if run is None:
             continue
         master, words = run
-        if (master, words[0] if words else "") in NOT_SCRIPT:
+        if (master, words[0] if words else "") == FIXTURE:
             continue
         masters += 1
         name = test.name
@@ -188,7 +180,7 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
         if LABEL not in labels:
             found.append(check_report.Finding(
                 "error", path, line, RULE, f"the test {name} runs `{' '.join([master, *words[:3]])}` and has no label "
-                f"{LABEL}, so `ctest -L {LABEL}` does not run it.  Add the label beside its add_test", "label", name))
+                f"{LABEL}, so `ctest -L {LABEL}` does not run it.  Add the label beside its registration", "label", name))
         if master != "guard" or not words or words[0] not in ("check", "witness"):
             continue
         for rule_id in rule_words(words):

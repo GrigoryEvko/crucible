@@ -70,6 +70,7 @@ from assay.core import rows as rows_grammar
 from assay.core.paths import LOOP, REPO_ROOT
 from assay.mutation import gates as gate_finder
 from assay.readers import cmake, compdb, ninja, tsast
+from assay.readers import ctest as ctest_reader
 from assay.setup import pins as cmake_pin
 
 RULE = "gate-mutants"
@@ -305,24 +306,21 @@ def _fixture_word(command: list[str]) -> int | None:
 
 def load_candidates(build: Path, deps: dict[str, list[str]]) -> list[Candidate]:
     """Every negative fixture and every test source of the configured build, as candidates."""
-    tests = json.loads(proc.require(proc.run(proc.Command([_build_program(build, "ctest"), "--show-only=json-v1"],
-                                                          timeout_s=proc.TOOL_S, cwd=build))).out)["tests"]
-    declared = _ctest_commands(build)
     try:
+        tests = ctest_reader.tests(build)
         entries = compdb.entries(build)
-    except compdb.CompdbError as error:
+    except (ctest_reader.CtestError, compdb.CompdbError) as error:
         raise SystemExit(f"mutation: {error}") from None
+    declared = _ctest_commands(build)
     by_file = {str(Path(entry.file).resolve()): entry for entry in entries}
     artifacts = _target_sources(build)
     candidates: list[Candidate] = []
     for test in tests:
-        command = test.get("command") or declared.get(test["name"], [])
+        command = list(test.command) or declared.get(test.name, [])
         env: dict[str, str] = {}
-        for prop in test.get("properties", []):
-            if prop.get("name") == "ENVIRONMENT":
-                for item in prop.get("value", []):
-                    key, _, value = item.partition("=")
-                    env[key] = value
+        for item in test.words_of("ENVIRONMENT"):
+            key, _, value = item.partition("=")
+            env[key] = value
         fixture_at = _fixture_word(command)
         if fixture_at is not None:
             # The fixture subcommand takes `[--warnings-dir DIR] <build-dir> <source> ...`.
@@ -332,7 +330,7 @@ def load_candidates(build: Path, deps: dict[str, list[str]]) -> list[Candidate]:
             source = str(Path(arguments[1]).resolve())
             entry = by_file.get(source)
             compile_argv = _strip_output(_entry_argv(entry)) if entry else []
-            candidates.append(Candidate(test["name"], "neg", command, str(build), env, source,
+            candidates.append(Candidate(test.name, "neg", command, str(build), env, source,
                                         frozenset(deps.get(source, [])), compile_argv))
         elif command and str(Path(command[0]).resolve()) in artifacts:
             test_sources: list[str] = []
@@ -347,10 +345,9 @@ def load_candidates(build: Path, deps: dict[str, list[str]]) -> list[Candidate]:
                                             {}, source, frozenset(deps.get(source, [])), compile_argv))
             executable = Path(command[0]).resolve()
             if test_sources and executable.is_relative_to(build):
-                workdir = next((prop.get("value") for prop in test.get("properties", [])
-                                if prop.get("name") == "WORKING_DIRECTORY"), str(build))
+                workdir = next(iter(test.words_of("WORKING_DIRECTORY")), str(build))
                 reached = frozenset(h for source in test_sources for h in deps.get(source, []))
-                candidates.append(Candidate(f"run:{test['name']}", "run", command, workdir, env, test_sources[0],
+                candidates.append(Candidate(f"run:{test.name}", "run", command, workdir, env, test_sources[0],
                                             reached, target=str(executable.relative_to(build)),
                                             build_dir=str(build)))
     unique: dict[str, Candidate] = {}

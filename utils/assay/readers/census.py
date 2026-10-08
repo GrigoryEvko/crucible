@@ -6,7 +6,7 @@ A UNIT
         `ninja -t inputs all` lists.  An object that only another target
         makes (a one-line unit of layer_alone) does not count, so the census
         of a build does not depend on the targets that it built after all.
-      * A negative fixture: a test of `ctest --show-only=json-v1` whose
+      * A negative fixture: a test of the build (assay.readers.ctest) whose
         command runs `utils/bin/loop fixture` (fixture_words()).  The driver
         writes the record build/neg-compile/NAME/NAME.inputs after each run
         (utils/assay/loop/fixture/store.py, The record of a run).
@@ -29,9 +29,8 @@ THE COST OF A UNIT
     driver runs the compiler directly.
 
 THE TOOLS
-    assay.readers.ninja runs the ninja of the CMake cache of the build.  The
-    ctest of a build is the value CMAKE_CTEST_COMMAND of its CMake cache
-    (assay.readers.cmake).
+    assay.readers.ninja runs the ninja of the CMake cache of the build, and
+    assay.readers.ctest runs its ctest.
 
 FAILURES
     read_census() raises NotApplicable when an input does not exist by the
@@ -51,8 +50,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from assay.core import meter as cost_meter
-from assay.core import proc
-from assay.readers import cmake, compdb, ninja
+from assay.readers import compdb, ctest, ninja
 
 # The command of a negative fixture runs the master loop with the subcommand fixture.
 FIXTURE_MASTER = "utils/bin/loop"
@@ -133,41 +131,6 @@ def names_text(names: Iterable[str]) -> str:
     head = ", ".join(listed[:SHOWN_NAMES])
     rest = len(listed) - SHOWN_NAMES
     return head + (f" and {rest} more" if rest > 0 else "")
-
-
-def ctest_of(build_dir: Path) -> str | None:
-    """Return the ctest of a build, or None when the cache names none.
-
-    The census runs no ctest of PATH, because PATH can hold a ctest of a
-    different version (utils/assay/setup/pins.py).
-
-    Raises:
-        CensusError: If the cache of the build cannot be read
-    """
-    try:
-        return cmake.cache_value(build_dir, "CMAKE_CTEST_COMMAND")
-    except cmake.CmakeError as problem:
-        raise CensusError(f"the CMake cache of the build cannot be read: {problem}") from None
-
-
-def run_tool(command: list[str]) -> str:
-    """Run one tool of the build and return its standard output.
-
-    A byte of the output that is not UTF-8 stays as a surrogate escape, so a
-    path in the output names its file.
-
-    Raises:
-        CensusError: If the tool cannot start, runs past its limit, or fails
-    """
-    try:
-        result = proc.run(proc.Command(command, timeout_s=proc.TOOL_S))
-    except proc.CannotStart as problem:
-        raise CensusError(f"{command[0]} cannot start: {problem.error}") from None
-    except proc.TimedOut:
-        raise CensusError(f"{' '.join(command[:4])} ran past its limit of {proc.TOOL_S:g} s") from None
-    if result.exit != 0:
-        raise CensusError(f"{' '.join(command[:4])} exited {result.exit}: {result.err.strip()[:300]}")
-    return proc.decoded(result.stdout, "surrogateescape")
 
 
 def objects_of_all(build_dir: Path, root: Path) -> list[tuple[Path, str]]:
@@ -256,30 +219,26 @@ def object_cost(path: Path) -> Cost:
     )
 
 
-def fixtures_of(build_dir: Path, ctest: str | None) -> list[tuple[str, str]]:
-    """Return the name and the source of each negative fixture of the build, from the test list of ctest.
+def fixtures_of(build_dir: Path) -> list[tuple[str, str]]:
+    """Return the name and the source of each negative fixture of the build, from the test list (assay.readers.ctest).
 
     Raises:
-        CensusError: If the cache names no ctest, ctest cannot list the tests, or a fixture command does not have
-            the form of the driver
+        CensusError: If ctest cannot list the tests, or a fixture command does not have the form of the driver
     """
-    if ctest is None:
-        raise CensusError(f"the CMake cache of {build_dir} has no entry CMAKE_CTEST_COMMAND.  {cmake.AGAIN}")
-    text = run_tool([ctest, "--test-dir", str(build_dir), "--show-only=json-v1"])
     try:
-        tests = json.loads(text).get("tests", [])
-    except (ValueError, AttributeError) as problem:
-        raise CensusError(f"the test list of ctest cannot be read ({problem})") from None
+        tests = ctest.tests(build_dir)
+    except ctest.CtestError as problem:
+        raise CensusError(f"the test list of ctest cannot be read: {problem}") from None
     fixtures: list[tuple[str, str]] = []
     for test in tests:
-        rest = fixture_words([str(word) for word in test.get("command", [])])
+        rest = fixture_words(list(test.command))
         if rest is None:
             continue
         if rest[:1] == ["--warnings-dir"]:
             rest = rest[2:]
         if len(rest) < 3:
             raise CensusError(
-                f"the command of the test {test.get('name')} runs `loop {FIXTURE_SUBCOMMAND}` with no "
+                f"the command of the test {test.name} runs `loop {FIXTURE_SUBCOMMAND}` with no "
                 f"build directory, source and fixture name"
             )
         fixtures.append((rest[2], rest[1]))
@@ -351,13 +310,12 @@ def read_census(build_dir: Path, root: Path, read_files: bool = True) -> Census:
         CensusError: If an input exists and cannot be read, or only some fixtures have a record
     """
     objects = objects_of_all(build_dir, root)
-    ctest = ctest_of(build_dir)
     units: list[Unit] = [Unit("object", shown(path, build_dir), source, object_cost(path)) for path, source in objects]
     names_of: list[Sequence[str]] = []
     if read_files:
         lists = read_dependencies(build_dir, [unit.item for unit in units])
         names_of = [lists[unit.item] for unit in units]
-    fixtures = fixtures_of(build_dir, ctest)
+    fixtures = fixtures_of(build_dir)
     missing: list[str] = []
     problems: list[str] = []
     for name, source in fixtures:

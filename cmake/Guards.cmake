@@ -60,10 +60,10 @@ function(crucible_meta_rule_tests warnings_dir)
     string(REGEX MATCH "^rule[ \t]+([a-z0-9-]+)" match "${row}")
     set(rule "${CMAKE_MATCH_1}")
     string(REPLACE "-" "_" test_name "guard_${rule}")
-    add_test(NAME ${test_name}
+    crucible_script_test(NAME ${test_name}
       COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ${rule} --build-dir ${CMAKE_BINARY_DIR}
               --warnings-dir ${warnings_dir})
-    add_test(NAME ${test_name}_witness
+    crucible_script_test(NAME ${test_name}_witness
       COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard witness --rule ${rule})
     set_tests_properties(${test_name} ${test_name}_witness PROPERTIES LABELS "ci_guard;meta" SKIP_RETURN_CODE 77)
   endforeach()
@@ -89,20 +89,20 @@ function(crucible_tsast_rule_tests warnings_dir parts)
     string(REPLACE "-" "_" test_name "guard_${rule}")
     if(rule STREQUAL "parse-clean")
       foreach(part RANGE 1 ${parts})
-        add_test(NAME ${test_name}_${part}
+        crucible_script_test(NAME ${test_name}_${part}
           COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ${rule} --part ${part}/${parts}
                   --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${warnings_dir})
         set_tests_properties(${test_name}_${part} PROPERTIES
           LABELS "ci_guard;tsast" FIXTURES_SETUP tsast_trees SKIP_RETURN_CODE 77)
       endforeach()
     else()
-      add_test(NAME ${test_name}
+      crucible_script_test(NAME ${test_name}
         COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ${rule} --build-dir ${CMAKE_BINARY_DIR}
                 --warnings-dir ${warnings_dir})
       set_tests_properties(${test_name} PROPERTIES
         LABELS "ci_guard;tsast" FIXTURES_REQUIRED tsast_trees SKIP_RETURN_CODE 77)
     endif()
-    add_test(NAME ${test_name}_witness
+    crucible_script_test(NAME ${test_name}_witness
       COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard witness --rule ${rule})
     set_tests_properties(${test_name}_witness PROPERTIES
       LABELS "ci_guard;tsast" FIXTURES_REQUIRED tsast_trees SKIP_RETURN_CODE 77)

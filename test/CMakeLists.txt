@@ -161,7 +161,7 @@ foreach(_harness_probe probe_report probe_fatal_twice)
     target_link_options(harness_${_harness_probe} PRIVATE ${CRUCIBLE_SAN_LINK_FLAGS})
   endif()
 endforeach()
-add_test(NAME harness_output
+crucible_script_test(NAME harness_output
   COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/harness/check_output.py
           $<TARGET_FILE:harness_probe_report> $<TARGET_FILE:harness_probe_fatal_twice>)
 
@@ -334,7 +334,7 @@ crucible_test(test_chase_lev_deque)
 # the tree.  utils/ledgers/no-throw-no-rtti.txt admits the throws and the
 # classes that a library header makes.  The self-test needs the project
 # compiler, because the system g++ may be too old for the fixtures.
-add_test(NAME no_throw_no_rtti_self_test
+crucible_script_test(NAME no_throw_no_rtti_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-throw-no-rtti --self-test)
 set_tests_properties(no_throw_no_rtti_self_test PROPERTIES
   ENVIRONMENT "CRUCIBLE_CXX=${CMAKE_CXX_COMPILER}"
@@ -363,7 +363,7 @@ if(NOT "$<TARGET_FILE:crucible>" IN_LIST _no_throw_artifacts
                       "the root directory, so it would read the wrong set of artifacts.  Define the libraries of "
                       "the tree in the root CMakeLists.txt, before add_subdirectory(test).")
 endif()
-add_test(NAME no_throw_no_rtti
+crucible_script_test(NAME no_throw_no_rtti
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-throw-no-rtti ${_no_throw_artifacts})
 set_tests_properties(no_throw_no_rtti PROPERTIES
   LABELS "ci_guard"
@@ -384,10 +384,10 @@ endif()
 # check exits 3 for a kind or a target that the ledger does not hold.
 file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/libstdcxx-symbols-inputs.txt
   CONTENT "compiler ${CRUCIBLE_REAL_CXX}\narchive $<TARGET_FILE:foundation>\narchive $<TARGET_FILE:fixy>\narchive $<TARGET_FILE:crucible>\n")
-add_test(NAME libstdcxx_symbols
+crucible_script_test(NAME libstdcxx_symbols
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule libstdcxx-symbols --build-dir ${CMAKE_BINARY_DIR}
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-add_test(NAME libstdcxx_symbols_self_test
+crucible_script_test(NAME libstdcxx_symbols_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule libstdcxx-symbols --self-test)
 set_tests_properties(libstdcxx_symbols_self_test PROPERTIES ENVIRONMENT "CRUCIBLE_CXX=${CRUCIBLE_REAL_CXX}")
 set_tests_properties(libstdcxx_symbols libstdcxx_symbols_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
@@ -398,7 +398,7 @@ set_tests_properties(libstdcxx_symbols libstdcxx_symbols_self_test PROPERTIES LA
 # result that their behaviour calls for.  It resolves a ccache link to the
 # compiler that ccache runs, and it configures the tree with a compiler that
 # lacks a fix, which must stop.
-add_test(NAME patched_gcc_probe_self_test
+crucible_script_test(NAME patched_gcc_probe_self_test
   COMMAND ${CMAKE_COMMAND} -DCXX=${CRUCIBLE_REAL_CXX}
           -DWORK=${CMAKE_CURRENT_BINARY_DIR}/patched_gcc_probe_self_test
           -DSOURCE=${CMAKE_SOURCE_DIR}
@@ -415,17 +415,17 @@ set_tests_properties(patched_gcc_probe_self_test PROPERTIES LABELS "ci_guard")
 # sure that each master refuses a Python older than the pin python.  The test
 # of the install plants each kind of install against
 # utils/assay/setup/install.py, and it installs a planted tool with no network.
-add_test(NAME cmake_pin
+crucible_script_test(NAME cmake_pin
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/setup check --build-dir ${CMAKE_BINARY_DIR})
-add_test(NAME cmake_pin_self_test
+crucible_script_test(NAME cmake_pin_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest setup.pins
           --cmake ${CMAKE_COMMAND} --ctest ${CMAKE_CTEST_COMMAND} --make-program ${CMAKE_MAKE_PROGRAM})
-add_test(NAME cmake_pin_configure_self_test
+crucible_script_test(NAME cmake_pin_configure_self_test
   COMMAND ${CMAKE_COMMAND} -DWORK=${CMAKE_CURRENT_BINARY_DIR}/cmake_pin_configure_self_test
           -DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM} -P ${CMAKE_SOURCE_DIR}/cmake/CMakePinSelfTest.cmake)
-add_test(NAME assay_core_test_pins
+crucible_script_test(NAME assay_core_test_pins
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.core.test_pins)
-add_test(NAME assay_setup_test_install
+crucible_script_test(NAME assay_setup_test_install
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.setup.test_install)
 set_tests_properties(cmake_pin cmake_pin_self_test cmake_pin_configure_self_test assay_core_test_pins
   assay_setup_test_install PROPERTIES LABELS "ci_guard")
@@ -439,7 +439,7 @@ set_tests_properties(cmake_pin cmake_pin_self_test cmake_pin_configure_self_test
 # and no object can name its build root, with ccache or without it.  Each
 # relocation case takes a copy of the plugin of this build.
 foreach(ccache_case launcher relocation plain_relocation)
-  add_test(NAME ccache_${ccache_case}_self_test
+  crucible_script_test(NAME ccache_${ccache_case}_self_test
     COMMAND ${CMAKE_COMMAND} -DCXX=${CRUCIBLE_REAL_CXX} -DCASE=${ccache_case}
             -DWORK=${CMAKE_CURRENT_BINARY_DIR}/ccache_${ccache_case}_self_test
             -DPLUGIN_DIR=${CMAKE_BINARY_DIR}/quarantine
@@ -451,9 +451,9 @@ endforeach()
 # that enforces it.  CRUCIBLE_LIFETIMEBOUND expands to nothing on the
 # only compiler this tree builds with, so the claim is checked here
 # rather than by an attribute no compiler reads.
-add_test(NAME lifetime_twin_self_test
+crucible_script_test(NAME lifetime_twin_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule lifetime-twin --self-test)
-add_test(NAME lifetime_twin
+crucible_script_test(NAME lifetime_twin
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule lifetime-twin --quiet)
 set_tests_properties(lifetime_twin lifetime_twin_self_test PROPERTIES
   LABELS "ci_guard"
@@ -465,10 +465,10 @@ set_tests_properties(lifetime_twin lifetime_twin_self_test PROPERTIES
 # tree.  It also refuses a gate that reads a template that a translation
 # unit can specialize, and each read of a gate of include/crucible that the
 # ledger admits gives a warning.  Exit 3 when the kit is absent reports a skip.
-add_test(NAME trait_guard_self_test
+crucible_script_test(NAME trait_guard_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule trait-guard
           --self-test)
-add_test(NAME trait_guard
+crucible_script_test(NAME trait_guard
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule trait-guard
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 set_tests_properties(trait_guard trait_guard_self_test PROPERTIES
@@ -481,9 +481,9 @@ set_tests_properties(trait_guard trait_guard_self_test PROPERTIES
 # unbreakable member-function half is the compiled reflection probe
 # test_escape_reflection; this script covers the free-function residue
 # reflection cannot walk.
-add_test(NAME escape_doors_self_test
+crucible_script_test(NAME escape_doors_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule escape-doors --self-test)
-add_test(NAME escape_doors
+crucible_script_test(NAME escape_doors
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule escape-doors)
 set_tests_properties(escape_doors escape_doors_self_test PROPERTIES
   LABELS "ci_guard"
@@ -494,10 +494,10 @@ set_tests_properties(escape_doors escape_doors_self_test PROPERTIES
 # version of Decide.h, so a comment that names a procedure dates nothing.
 # A procedure inside the window is informational.  A procedure past it
 # with too few cites fails the test.
-add_test(NAME contract_decide_cite_ratio_self_test
+crucible_script_test(NAME contract_decide_cite_ratio_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule decide-cite-ratio
           --self-test)
-add_test(NAME contract_decide_cite_ratio
+crucible_script_test(NAME contract_decide_cite_ratio
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule decide-cite-ratio)
 set_tests_properties(contract_decide_cite_ratio contract_decide_cite_ratio_self_test PROPERTIES
   LABELS "ci_guard;ast"
@@ -507,10 +507,10 @@ set_tests_properties(contract_decide_cite_ratio contract_decide_cite_ratio_self_
 # that predicate on that parameter re-tests a proved fact, and the guard
 # refuses it.  The guard reads parameters, aliases and CRUCIBLE_PRE calls
 # from the parse tree.
-add_test(NAME refined_pre_subsumption_self_test
+crucible_script_test(NAME refined_pre_subsumption_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule refined-pre-subsumption
           --self-test)
-add_test(NAME refined_pre_subsumption
+crucible_script_test(NAME refined_pre_subsumption
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule refined-pre-subsumption)
 set_tests_properties(refined_pre_subsumption refined_pre_subsumption_self_test PROPERTIES
   LABELS "ci_guard;ast"
@@ -521,17 +521,17 @@ set_tests_properties(refined_pre_subsumption refined_pre_subsumption_self_test P
 # precompiled header of a template in the macro form, and from a header unit
 # of fixy/Mutation.h.  Its control requires that a header unit loses the
 # specifier form, so it fails when a compiler keeps the specifier.
-add_test(NAME contract_header_unit
+crucible_script_test(NAME contract_header_unit
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule contract-header-unit
           --cxx ${CRUCIBLE_REAL_CXX} --include ${CMAKE_SOURCE_DIR}/include)
 set_tests_properties(contract_header_unit PROPERTIES LABELS "foundation;ci_guard")
 # The §XXI mint pattern.  utils/assay/guard/legacy/check_mint_pattern.py holds each mint to
 # the five axes nodiscard, constexpr, noexcept, requires and ctxfit, read
 # from the parse tree, and it refuses a dead or malformed exemption.
-add_test(NAME mint_pattern_self_test
+crucible_script_test(NAME mint_pattern_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule mint-pattern
           --self-test)
-add_test(NAME mint_pattern
+crucible_script_test(NAME mint_pattern
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule mint-pattern)
 set_tests_properties(mint_pattern mint_pattern_self_test PROPERTIES
   LABELS "ci_guard;ast")
@@ -549,10 +549,10 @@ set_tests_properties(mint_pattern mint_pattern_self_test PROPERTIES SKIP_RETURN_
 # witness with this build's flags and must see it COMPILE, which is the
 # red the guard exists to raise.  Exit 3 when the kit is absent reports a
 # skip.
-add_test(NAME witness_roster_self_test
+crucible_script_test(NAME witness_roster_self_test
   COMMAND ${CMAKE_COMMAND} -E env WITNESS_BUILD_DIR=${CMAKE_BINARY_DIR}
           python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule witness-roster --self-test)
-add_test(NAME witness_roster
+crucible_script_test(NAME witness_roster
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule witness-roster --check)
 set_tests_properties(witness_roster witness_roster_self_test PROPERTIES
   LABELS "ci_guard"
@@ -564,10 +564,10 @@ set_tests_properties(witness_roster witness_roster_self_test PROPERTIES
 # tree, so an initializer, two declarators, a member over two lines, an
 # array and an alias do not hide one.  Exit 3 when the kit is absent
 # reports a skip.
-add_test(NAME permission_storage_self_test
+crucible_script_test(NAME permission_storage_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule permission-storage
           --self-test)
-add_test(NAME permission_storage
+crucible_script_test(NAME permission_storage
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule permission-storage)
 set_tests_properties(permission_storage permission_storage_self_test PROPERTIES
   LABELS "ci_guard"
@@ -578,9 +578,9 @@ set_tests_properties(permission_storage permission_storage_self_test PROPERTIES
 # object that two shared libraries compile has two copies without the marker.
 # utils/assay/guard/legacy/check_process_wide_state.py reads each object from the parse tree.
 # Exit 3 when the kit is absent reports a skip.
-add_test(NAME process_wide_state_self_test
+crucible_script_test(NAME process_wide_state_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule process-wide-state --self-test)
-add_test(NAME process_wide_state
+crucible_script_test(NAME process_wide_state
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule process-wide-state)
 set_tests_properties(process_wide_state process_wide_state_self_test PROPERTIES
   LABELS "ci_guard"
@@ -590,9 +590,9 @@ set_tests_properties(process_wide_state process_wide_state_self_test PROPERTIES
 # parse tree, and fails when that set and the declared
 # hardening_syscall_atoms tuple disagree.  Exit 3 when the kit is absent
 # reports a skip.
-add_test(NAME syscall_grant_coverage_self_test
+crucible_script_test(NAME syscall_grant_coverage_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule syscall-grant-coverage --self-test)
-add_test(NAME syscall_grant_coverage
+crucible_script_test(NAME syscall_grant_coverage
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule syscall-grant-coverage)
 set_tests_properties(syscall_grant_coverage syscall_grant_coverage_self_test PROPERTIES
     LABELS "ci_guard"
@@ -601,10 +601,10 @@ set_tests_properties(syscall_grant_coverage syscall_grant_coverage_self_test PRO
 # identity.  utils/assay/guard/legacy/check_brand_drain.py reads those spellings from the
 # parse tree, and utils/ledgers/brand-drain.txt holds one count per file.  A
 # count can only decrease.  Exit 3 when the kit is absent reports a skip.
-add_test(NAME brand_drain_self_test
+crucible_script_test(NAME brand_drain_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule brand-drain
           --self-test)
-add_test(NAME brand_drain
+crucible_script_test(NAME brand_drain
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule brand-drain)
 set_tests_properties(brand_drain brand_drain_self_test PROPERTIES
     LABELS "ci_guard"
@@ -618,9 +618,9 @@ set_tests_properties(brand_drain brand_drain_self_test PROPERTIES
 # source with an unusual suffix are in scope.  The self-test plants each
 # route and each known bypass.  Exit 3 (the pinned tree-sitter kit is
 # absent) is a skip.
-add_test(NAME start_lifetime_self_test
+crucible_script_test(NAME start_lifetime_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule start-lifetime --self-test)
-add_test(NAME start_lifetime
+crucible_script_test(NAME start_lifetime
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule start-lifetime
           --build-dir ${CMAKE_BINARY_DIR})
 set_tests_properties(start_lifetime start_lifetime_self_test PROPERTIES
@@ -633,9 +633,9 @@ set_tests_properties(start_lifetime start_lifetime_self_test PROPERTIES
 # counted list.  It reads the names of the proof types from the witness
 # roster and from the reflection walk of test_forgeable_proofs, and it
 # reads the compile database, so a route that a macro forms is seen too.
-add_test(NAME proof_routes_self_test
+crucible_script_test(NAME proof_routes_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule proof-routes --self-test)
-add_test(NAME proof_routes
+crucible_script_test(NAME proof_routes
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule proof-routes
           --build-dir ${CMAKE_BINARY_DIR}
           --proof-names-binary $<TARGET_FILE:test_forgeable_proofs>)
@@ -648,7 +648,7 @@ set_tests_properties(proof_routes proof_routes_self_test PROPERTIES
 # a warm run reads the store, that a second work tree reads the units of the
 # first, that a changed header makes its units stale, that two runs at one
 # time share work, and that an eviction keeps the store under its bound.
-add_test(NAME preprocessed_store_self_test
+crucible_script_test(NAME preprocessed_store_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.preprocessed)
 set_tests_properties(preprocessed_store_self_test PROPERTIES
     LABELS "ci_guard")
@@ -656,7 +656,7 @@ set_tests_properties(preprocessed_store_self_test PROPERTIES
 # a sample of its size.  The self-test proves that a sample gives the size,
 # that a cache over its limit gets its turn at the next sample, and that an
 # eviction leaves the cache under its limit.
-add_test(NAME cache_dir_self_test
+crucible_script_test(NAME cache_dir_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest core.cache)
 set_tests_properties(cache_dir_self_test PROPERTIES
     LABELS "ci_guard")
@@ -665,10 +665,10 @@ set_tests_properties(cache_dir_self_test PROPERTIES
 # the cache in LIMITS of utils/assay/core/cache.py.  A cache over its limit gives a warning, and
 # a cache over twice its limit gives an error (the rule cache-size of
 # utils/registry.txt).
-add_test(NAME cache_size
+crucible_script_test(NAME cache_size
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule cache-size
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-add_test(NAME cache_size_self_test
+crucible_script_test(NAME cache_size_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule cache-size --self-test)
 set_tests_properties(cache_size cache_size_self_test PROPERTIES
     LABELS "ci_guard")
@@ -681,9 +681,9 @@ set_tests_properties(cache_size cache_size_self_test PROPERTIES
 # macro expansions of this build too, so a door that ## builds and a member
 # that a macro declares are seen.  Exit 3 (the pinned tree-sitter kit is
 # absent) is a skip.
-add_test(NAME no_unchecked_access_self_test
+crucible_script_test(NAME no_unchecked_access_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-unchecked-access --self-test)
-add_test(NAME no_unchecked_access
+crucible_script_test(NAME no_unchecked_access
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-unchecked-access
           --build-dir ${CMAKE_BINARY_DIR})
 set_tests_properties(no_unchecked_access no_unchecked_access_self_test PROPERTIES
@@ -693,9 +693,9 @@ set_tests_properties(no_unchecked_access no_unchecked_access_self_test PROPERTIE
 # namespace of foundation or fixy outside the two layers.  The reviewed uses
 # in tests are in utils/ledgers/detail-namespace.txt, keyed by file and
 # namespace.  Exit 3 (the pinned tree-sitter kit is absent) is a skip.
-add_test(NAME detail_namespace_self_test
+crucible_script_test(NAME detail_namespace_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule detail-namespace --self-test)
-add_test(NAME detail_namespace
+crucible_script_test(NAME detail_namespace
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule detail-namespace)
 set_tests_properties(detail_namespace detail_namespace_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
@@ -704,9 +704,9 @@ set_tests_properties(detail_namespace detail_namespace_self_test PROPERTIES
 # utils/assay/guard/legacy/check_host_owners.py refuses a definition of one outside the file
 # that utils/scripts/host-owner-roster.txt names.  Exit 3 (the pinned tree-sitter
 # kit is absent) is a skip.
-add_test(NAME host_owners_self_test
+crucible_script_test(NAME host_owners_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule host-owners --self-test)
-add_test(NAME host_owners
+crucible_script_test(NAME host_owners
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule host-owners)
 set_tests_properties(host_owners host_owners_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
@@ -717,9 +717,9 @@ set_tests_properties(host_owners host_owners_self_test PROPERTIES
 # rejects a use of either owner in production code outside the scopes that
 # the rows of its door in utils/ledgers/ctx-init-door.txt admit,
 # and a stale row.  Exit 3 (the pinned tree-sitter kit is absent) is a skip.
-add_test(NAME ctx_init_door_self_test
+crucible_script_test(NAME ctx_init_door_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ctx-init-door --self-test)
-add_test(NAME ctx_init_door
+crucible_script_test(NAME ctx_init_door
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ctx-init-door)
 set_tests_properties(ctx_init_door ctx_init_door_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
@@ -730,9 +730,9 @@ set_tests_properties(ctx_init_door ctx_init_door_self_test PROPERTIES
 # include/fixy.  The reviewed exceptions are the rows of
 # utils/ledgers/no-raw-array-member.txt, and a stale row fails the gate.
 # Exit 3 (the pinned tree-sitter kit is absent) is a skip.
-add_test(NAME raw_array_member_self_test
+crucible_script_test(NAME raw_array_member_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-raw-array-member --self-test)
-add_test(NAME raw_array_member
+crucible_script_test(NAME raw_array_member
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-raw-array-member)
 set_tests_properties(raw_array_member raw_array_member_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
@@ -743,10 +743,10 @@ set_tests_properties(raw_array_member raw_array_member_self_test PROPERTIES
 # optimize attribute, GCC optimize pragma and _Pragma from the parse tree,
 # macro bodies included.  The self-test configures a planted project, so a
 # flag inside a generator expression is judged as the compiler receives it.
-add_test(NAME no_ffast_math_self_test
+crucible_script_test(NAME no_ffast_math_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-ffast-math
           --self-test --cmake ${CMAKE_COMMAND} --cxx ${CMAKE_CXX_COMPILER})
-add_test(NAME no_ffast_math
+crucible_script_test(NAME no_ffast_math
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-ffast-math
           --build-dir ${CMAKE_BINARY_DIR})
 set_tests_properties(no_ffast_math no_ffast_math_self_test PROPERTIES
@@ -757,9 +757,9 @@ set_tests_properties(no_ffast_math no_ffast_math_self_test PROPERTIES
 # comments and string literals of include/fixy from the parse tree and refuses
 # the FX spellings "Dim <N>" and "(dim <N>)".  Code is not prose.  Exit 3 when
 # the kit is absent reports a skip.
-add_test(NAME fixy_dim_prose_self_test
+crucible_script_test(NAME fixy_dim_prose_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule fixy-dim-prose --self-test)
-add_test(NAME fixy_dim_prose
+crucible_script_test(NAME fixy_dim_prose
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule fixy-dim-prose)
 set_tests_properties(fixy_dim_prose fixy_dim_prose_self_test PROPERTIES
     LABELS "ci_guard"
@@ -772,10 +772,10 @@ set_tests_properties(fixy_dim_prose fixy_dim_prose_self_test PROPERTIES
 # also holds the prose of each entry to its sites: the syscall, the
 # constants the file spells, and the function that holds each call.  Exit 3
 # when the kit is absent reports a skip.
-add_test(NAME syscall_capability_self_test
+crucible_script_test(NAME syscall_capability_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule syscall-capability
           --self-test)
-add_test(NAME syscall_capability
+crucible_script_test(NAME syscall_capability
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule syscall-capability)
 set_tests_properties(syscall_capability syscall_capability_self_test PROPERTIES
     LABELS "ci_guard"
@@ -787,9 +787,9 @@ set_tests_properties(syscall_capability syscall_capability_self_test PROPERTIES
 # the hashing-path roots on the parse tree, and it also catches a name of
 # the ledger namespace without the include.  There is no allowlist.  Exit 3
 # when the kit is absent reports a skip.
-add_test(NAME detsafe_ledger_self_test
+crucible_script_test(NAME detsafe_ledger_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule detsafe-ledger --self-test)
-add_test(NAME detsafe_ledger
+crucible_script_test(NAME detsafe_ledger
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule detsafe-ledger)
 set_tests_properties(detsafe_ledger detsafe_ledger_self_test PROPERTIES
     LABELS "ci_guard"
@@ -819,9 +819,9 @@ set_tests_properties(detsafe_ledger detsafe_ledger_self_test PROPERTIES
 # counts each use of the door in the code that ships, from the parse tree and
 # through the aliases of every file of the scan, and each file with a use needs
 # a counted row in utils/ledgers/ctx-testing-boundary.txt.
-add_test(NAME ctx_testing_boundary_self_test
+crucible_script_test(NAME ctx_testing_boundary_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ctx-testing-boundary --self-test)
-add_test(NAME ctx_testing_boundary
+crucible_script_test(NAME ctx_testing_boundary
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ctx-testing-boundary)
 set_tests_properties(ctx_testing_boundary ctx_testing_boundary_self_test
     PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
@@ -838,9 +838,9 @@ set_tests_properties(ctx_testing_boundary ctx_testing_boundary_self_test
 # look-alike is, that the two paths out of scope and an untracked file are not
 # read, and that a linked document is reported under its own name only.
 # Exit 3 when the kit is absent reports a skip.
-add_test(NAME no_coordination_refs_self_test
+crucible_script_test(NAME no_coordination_refs_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-coordination-refs --self-test)
-add_test(NAME no_coordination_refs
+crucible_script_test(NAME no_coordination_refs
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-coordination-refs)
 set_tests_properties(no_coordination_refs no_coordination_refs_self_test
     PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
@@ -864,16 +864,16 @@ set_tests_properties(no_coordination_refs no_coordination_refs_self_test
 # lets CTest run the three parts together at -j24: a warm run then takes
 # 6 s of wall time and not 12 s, and a cold run 9 s and not 24 s.  The store
 # self-test proves each rule of the store on scratch units.
-add_test(NAME session_oracle_check
+crucible_script_test(NAME session_oracle_check
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule session-oracle check)
 set_tests_properties(session_oracle_check PROPERTIES LABELS "ci_guard;session_oracle")
-add_test(NAME session_oracle_store_self_test
+crucible_script_test(NAME session_oracle_store_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest oracle.unit_store --cxx ${CMAKE_CXX_COMPILER})
 set_tests_properties(session_oracle_store_self_test PROPERTIES LABELS "ci_guard;session_oracle")
 set(SESSION_ORACLE_SELF_TEST_PARTS 3)
 math(EXPR session_oracle_last_part "${SESSION_ORACLE_SELF_TEST_PARTS} - 1")
 foreach(part RANGE ${session_oracle_last_part})
-  add_test(NAME session_oracle_self_test_${part}
+  crucible_script_test(NAME session_oracle_self_test_${part}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule session-oracle self-test
             --cxx ${CMAKE_CXX_COMPILER} --part ${part}/${SESSION_ORACLE_SELF_TEST_PARTS})
   set_tests_properties(session_oracle_self_test_${part} PROPERTIES
@@ -891,9 +891,9 @@ endforeach()
 # warning at compile time.  A comment or a string that holds the same text is
 # neither a marker nor a deprecation.  Exit 3 when the kit is absent reports a
 # skip.
-add_test(NAME stub_discipline_self_test
+crucible_script_test(NAME stub_discipline_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule stub-discipline --self-test)
-add_test(NAME stub_discipline
+crucible_script_test(NAME stub_discipline
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule stub-discipline)
 set_tests_properties(stub_discipline stub_discipline_self_test PROPERTIES
     LABELS "ci_guard"
@@ -905,15 +905,15 @@ set_tests_properties(stub_discipline stub_discipline_self_test PROPERTIES
 # mints under the floor.  The generator reads the parse tree, so it skips
 # (exit 3) where the pinned tree-sitter kit is absent.  CI installs the kit, so
 # CI enforces.
-add_test(NAME mint_inventory_self_test
+crucible_script_test(NAME mint_inventory_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest
           loop.derive.mint_inventory
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-add_test(NAME mint_inventory_check
+crucible_script_test(NAME mint_inventory_check
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/loop derive mint-inventory
           --check
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-add_test(NAME mint_inventory_check_floor
+crucible_script_test(NAME mint_inventory_check_floor
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule mint-floor
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 set_tests_properties(mint_inventory_self_test
@@ -925,9 +925,9 @@ set_tests_properties(mint_inventory_self_test
 # the parse tree and fails on a second definition named combine_ids, on a
 # name with combine_ids and an affix, and on a body with the shape of
 # combine_ids under any name.  Exit 3 when the kit is absent reports a skip.
-add_test(NAME no_combine_ids_duplicate_self_test
+crucible_script_test(NAME no_combine_ids_duplicate_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-combine-ids-duplicate --self-test)
-add_test(NAME no_combine_ids_duplicate
+crucible_script_test(NAME no_combine_ids_duplicate
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-combine-ids-duplicate)
 set_tests_properties(no_combine_ids_duplicate
                      no_combine_ids_duplicate_self_test PROPERTIES
@@ -951,7 +951,7 @@ set_tests_properties(no_combine_ids_duplicate
 # which of the two it was. The arch-independent invariants (distinctness
 # and nesting-order sensitivity) run on every arch in their own tests.
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
-  add_test(NAME row_hash_golden_diff
+  crucible_script_test(NAME row_hash_golden_diff
     COMMAND bash -c
       "set -e; \"$<TARGET_FILE:dump_row_hashes>\" > \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\"; diff -u \"${CMAKE_SOURCE_DIR}/utils/tools/row_hash_golden.txt\" \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\""
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -1032,9 +1032,9 @@ crucible_test(test_computation_cache_federation)
 # authority (CLAUDE.md §IX).  The guard reads each specialization from the
 # parse tree.  Exit 2 names an authoring location that no specialization
 # needs.  Exit 3 when the kit is absent reports a skip.
-add_test(NAME splits_orphan_self_test
+crucible_script_test(NAME splits_orphan_self_test
          COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule splits-orphan --self-test)
-add_test(NAME splits_orphan
+crucible_script_test(NAME splits_orphan
          COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule splits-orphan)
 set_tests_properties(splits_orphan splits_orphan_self_test PROPERTIES
     LABELS "forgery;ci_guard"
@@ -1046,9 +1046,9 @@ set_tests_properties(splits_orphan splits_orphan_self_test PROPERTIES
 # get the same friendship.  It reads the parse tree, each macro body, and the
 # macro-expanded text of the compile database, so a macro of another file
 # cannot hide a definition.  Exit 3 when the kit is absent reports a skip.
-add_test(NAME federation_admission_self_test
+crucible_script_test(NAME federation_admission_self_test
          COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule federation-admission --self-test)
-add_test(NAME federation_admission
+crucible_script_test(NAME federation_admission
          COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule federation-admission
                  --build-dir ${CMAKE_BINARY_DIR})
 set_tests_properties(federation_admission federation_admission_self_test PROPERTIES
@@ -1062,7 +1062,7 @@ set_tests_properties(federation_admission federation_admission_self_test PROPERT
 set(CRUCIBLE_STORE_SHARDS 8)
 math(EXPR crucible_last_store_shard "${CRUCIBLE_STORE_SHARDS} - 1")
 foreach(crucible_store_shard RANGE ${crucible_last_store_shard})
-  add_test(NAME preprocessed_store_fill_${crucible_store_shard}
+  crucible_script_test(NAME preprocessed_store_fill_${crucible_store_shard}
            COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule preprocessed-fill
                    ${CMAKE_BINARY_DIR}
                    --shard ${crucible_store_shard} --of ${CRUCIBLE_STORE_SHARDS})
@@ -1300,7 +1300,9 @@ endfunction()
 # dependencies and of the budget, and the use of a result in a second work tree
 # with the same files, with a different header and with a header that names
 # the root of the second tree.  It plants a fixture with an error that no regex
-# matches, with and without a ledger row.  It takes the quarantine plugin and
+# matches, with and without a ledger row.  It also compares the test record of
+# the driver with the record of the test launcher for the same fixture.  It
+# takes the quarantine plugin and
 # its flags from the compile database of this build, and it plants fixtures
 # that the plugin checks: an error of the plugin that no regex matches must
 # fail a fixture that keeps the plugin, and the region macros must work with
@@ -1313,10 +1315,10 @@ endfunction()
 # count of checks, so each part runs one check.  Exit 3 reports a skip when
 # the compiler cannot run, or when the host cannot give the condition of each
 # check of the part, for example an instruction counter.
-set(FIXTURE_STORE_SELF_TEST_PARTS 31)
+set(FIXTURE_STORE_SELF_TEST_PARTS 32)
 math(EXPR fixture_store_last_part "${FIXTURE_STORE_SELF_TEST_PARTS} - 1")
 foreach(part RANGE ${fixture_store_last_part})
-  add_test(NAME fixture_store_self_test_${part}
+  crucible_script_test(NAME fixture_store_self_test_${part}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.loop.test_fixture --cxx ${CRUCIBLE_REAL_CXX}
             --build-dir ${CMAKE_BINARY_DIR} --part ${part}/${FIXTURE_STORE_SELF_TEST_PARTS})
   set_tests_properties(fixture_store_self_test_${part} PROPERTIES
@@ -5298,9 +5300,9 @@ endif()
 #                         listed file after each header that can add to such
 #                         a namespace.  Each row holds a weight, and a row
 #                         with no measured weight gives a warning.
-add_test(NAME layer_boundary_self_test
+crucible_script_test(NAME layer_boundary_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule layer-boundary --self-test)
-add_test(NAME layer_boundary
+crucible_script_test(NAME layer_boundary
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule layer-boundary)
 set_tests_properties(layer_boundary layer_boundary_self_test PROPERTIES
     LABELS "ci_guard;substrate"
@@ -5313,16 +5315,16 @@ set_tests_properties(layer_boundary layer_boundary_self_test PROPERTIES
 # warnings there, and `guard warnings` (utils/assay/guard/warnings.py) prints them.
 # The measured rules of utils/registry.txt give the thresholds of the checks
 # that measure a quantity.  The top of this file sets CRUCIBLE_CHECK_WARNINGS_DIR.
-add_test(NAME check_report_self_test
+crucible_script_test(NAME check_report_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest core.report)
 # `guard warnings` also prints the time totals of the build: the CPU time
 # of the objects of all, of the fixtures and of the executable tests, against
 # the rules total-compile-cpu, total-fixture-cpu and total-test-cpu
 # (utils/assay/guard/legacy/report_check_warnings.py).  A total gives a
 # warning only.  The CI step "Check warnings" runs it after the tests.
-add_test(NAME guard_warnings_self_test
+crucible_script_test(NAME guard_warnings_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.warnings)
-add_test(NAME report_check_warnings_self_test
+crucible_script_test(NAME report_check_warnings_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.legacy.report_check_warnings)
 set_tests_properties(check_report_self_test guard_warnings_self_test report_check_warnings_self_test PROPERTIES
     LABELS "ci_guard")
@@ -5334,9 +5336,9 @@ set_tests_properties(check_report_self_test guard_warnings_self_test report_chec
 # measured times.  Each include that the tree holds today is a row of
 # utils/ledgers/heavy-include.txt and gives a warning.  A new one is
 # an error.
-add_test(NAME heavy_includes_self_test
+crucible_script_test(NAME heavy_includes_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule heavy-include --self-test)
-add_test(NAME heavy_includes
+crucible_script_test(NAME heavy_includes
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule heavy-include
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 set_tests_properties(heavy_includes heavy_includes_self_test PROPERTIES
@@ -5347,9 +5349,9 @@ set_tests_properties(heavy_includes heavy_includes_self_test PROPERTIES
 # header, because the reflection walks of this tree see each header that a
 # translation unit includes.  The check reads the compile database of this
 # build and the CMake files of the tree.
-add_test(NAME no_unity_pch_self_test
+crucible_script_test(NAME no_unity_pch_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-unity-pch --self-test)
-add_test(NAME no_unity_pch
+crucible_script_test(NAME no_unity_pch
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-unity-pch
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 set_tests_properties(no_unity_pch no_unity_pch_self_test PROPERTIES LABELS "ci_guard")
@@ -5359,9 +5361,9 @@ set_tests_properties(no_unity_pch no_unity_pch_self_test PROPERTIES LABELS "ci_g
 # and CRUCIBLE_PRE reads the define.  The configure step sees each scope but
 # not the order of the final compile line, so the check reads the compile
 # database of this build.
-add_test(NAME contract_semantic_self_test
+crucible_script_test(NAME contract_semantic_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule contract-semantic --self-test)
-add_test(NAME contract_semantic
+crucible_script_test(NAME contract_semantic
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule contract-semantic
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 set_tests_properties(contract_semantic contract_semantic_self_test PROPERTIES LABELS "ci_guard")
@@ -5374,10 +5376,10 @@ set_tests_properties(contract_semantic contract_semantic_self_test PROPERTIES LA
 # rule padded-list of utils/registry.txt gives the count.  Each padded
 # list that the tree holds today is a row of utils/ledgers/padded-list.txt
 # and gives a warning.  A new one is an error.
-add_test(NAME padded_lists_self_test
+crucible_script_test(NAME padded_lists_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule padded-list
           --build-dir ${CMAKE_BINARY_DIR} --self-test)
-add_test(NAME padded_lists
+crucible_script_test(NAME padded_lists
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule padded-list
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 set_tests_properties(padded_lists padded_lists_self_test PROPERTIES
@@ -5389,24 +5391,25 @@ set_tests_properties(padded_lists padded_lists_self_test PROPERTIES
 # the check itself is a step of the CI build job, after the build:
 #     python3 utils/bin/guard check --rule reconfigure-noop BUILD_DIR
 # Only the self-test is a test.  It plants each defect in a scratch project.
-add_test(NAME reconfigure_noop_self_test
+crucible_script_test(NAME reconfigure_noop_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule reconfigure-noop --self-test
           --cmake ${CMAKE_COMMAND} --ninja ${CMAKE_MAKE_PROGRAM})
 set_tests_properties(reconfigure_noop_self_test PROPERTIES LABELS "ci_guard")
 
-# The test launcher (cmake/TestLauncher.cmake) runs in front of each test whose
-# command is an executable target, and it holds the rules test-time and
-# test-memory of utils/registry.txt while the test runs.  CMake gives
-# no launcher to a script test.  A test cannot measure the run that it is part
-# of.  ctest runs the rule test-time after the tests of each run, as the
-# command of the CTestCustom.cmake that cmake/TestLauncher.cmake writes.  Only
-# the two self-tests are tests.
-add_test(NAME test_launcher_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 -S ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest loop.teststep)
-add_test(NAME test_time_self_test
+# The test launcher (cmake/TestLauncher.cmake) runs in front of each test
+# except a negative fixture, and it holds the rules test-time and test-memory
+# of utils/registry.txt while the test runs.  The fixture driver holds them for
+# a fixture.  test_time refuses a test that the two do not run, and a ledger
+# row of the two rules that names a test that this build does not register.
+crucible_script_test(NAME test_time
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule test-time --build-dir ${CMAKE_BINARY_DIR}
+          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+crucible_script_test(NAME test_launcher_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 -S ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.loop.test_teststep)
+crucible_script_test(NAME test_time_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule test-time --self-test
           --cmake ${CMAKE_COMMAND} --ctest ${CMAKE_CTEST_COMMAND})
-set_tests_properties(test_launcher_self_test test_time_self_test PROPERTIES LABELS "ci_guard")
+set_tests_properties(test_time test_launcher_self_test test_time_self_test PROPERTIES LABELS "ci_guard")
 
 # cmake/BuildLauncher.cmake puts `loop step` (utils/assay/loop/step.py) in front of
 # each compile and each link.  The launcher writes the cost of the step beside
@@ -5414,7 +5417,7 @@ set_tests_properties(test_launcher_self_test test_time_self_test PROPERTIES LABE
 # admits, and stops a step at three times the time error threshold.
 # build_launcher_test runs the launcher with planted tools, and with the real
 # compiler and the real ccache.
-add_test(NAME build_launcher_test
+crucible_script_test(NAME build_launcher_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.loop.test_step --cxx ${CRUCIBLE_REAL_CXX})
 set_tests_properties(build_launcher_test PROPERTIES LABELS "ci_guard")
 
@@ -5433,36 +5436,36 @@ set_tests_properties(build_launcher_test PROPERTIES LABELS "ci_guard")
 foreach(_compile_cost_rule compile-cpu compile-instructions compile-memory link-time link-memory function-size
         object-text header-alone)
   string(REPLACE "-" "_" _compile_cost_test "${_compile_cost_rule}")
-  add_test(NAME ${_compile_cost_test}
+  crucible_script_test(NAME ${_compile_cost_test}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ${_compile_cost_rule}
             --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
   set_tests_properties(${_compile_cost_test} PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
 endforeach()
-add_test(NAME compile_cost_self_test
+crucible_script_test(NAME compile_cost_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.legacy.check_compile_cost)
 set_tests_properties(compile_cost_self_test PROPERTIES LABELS "ci_guard")
 
 # build_order — no compile of this build waits for a link or an archive
 # through an order-only input (utils/assay/guard/legacy/check_build_order.py).  Each
 # compile behind such an input starts only after the link or the archive.
-add_test(NAME build_order
+crucible_script_test(NAME build_order
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule build-order
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 # compile_first — each target of all with a long compile is on
 # cmake/compile-first.txt, and each object of a listed target has a
 # chain of three edges in build.ninja, so Ninja starts it before the objects
 # of the other tests (cmake/CompileFirst.cmake).
-add_test(NAME compile_first
+crucible_script_test(NAME compile_first
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule compile-first
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 # custom_deps — each object that a custom command compiles, as each BPF object
 # of cmake/CrucibleBpf.cmake, has a depfile in build.ninja, and the ninja
 # dependency log holds a header of each built one.  Without the depfile, an
 # edit of a header does not compile the object again.
-add_test(NAME custom_deps
+crucible_script_test(NAME custom_deps
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule custom-deps
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-add_test(NAME build_order_self_test
+crucible_script_test(NAME build_order_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.legacy.check_build_order)
 set_tests_properties(build_order compile_first custom_deps build_order_self_test PROPERTIES LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
@@ -5477,10 +5480,10 @@ set_tests_properties(build_order compile_first custom_deps build_order_self_test
 # global property CRUCIBLE_NEG_FIXTURE_TESTS, and a call at the end of the top
 # directory makes the check DEPEND on each of them, so that ctest runs the
 # check after the last fixture of the run.
-add_test(NAME parse_total
+crucible_script_test(NAME parse_total
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule parse-total
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-add_test(NAME parse_cost_self_test
+crucible_script_test(NAME parse_cost_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.legacy.check_parse_cost)
 # header_fanout — for each header of include/, the bytes that its sentinel
 # includes alone times the units that read it, against the 30 largest
@@ -5488,14 +5491,14 @@ add_test(NAME parse_cost_self_test
 # largest products, and it gives warnings only: for a header that enters the
 # ten largest, and for a product that changed by more than the rule
 # header-fanout of utils/registry.txt.
-add_test(NAME header_fanout
+crucible_script_test(NAME header_fanout
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-fanout
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 # instruction_total — the user instructions of the last real compile of each
 # object of all and each negative fixture, against the baseline of
 # utils/ledgers/instruction-total.txt, at the levels of the rule
 # instruction-total.  It exits 3 when one compile has no exact instruction count.
-add_test(NAME instruction_total
+crucible_script_test(NAME instruction_total
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule instruction-total
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 set_tests_properties(parse_total parse_cost_self_test header_fanout instruction_total PROPERTIES
@@ -5510,19 +5513,19 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # build_target_self_test — utils/assay/core/target.py gives the build kind
 # and the target tier to the rule quarantine and to the libstdc++ symbols
 # check.  The self-test reads planted target help of x86_64 and aarch64 GCC.
-add_test(NAME build_target_self_test
+crucible_script_test(NAME build_target_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest core.target)
 set_tests_properties(build_target_self_test PROPERTIES LABELS "ci_guard")
 # elf_file_self_test — utils/assay/readers/elf.py is the one reader of ELF
 # headers of the scripts.  The self-test plants files with each kind of section,
 # the extended numbering, a symbol table, and tables outside the file.
-add_test(NAME elf_file_self_test
+crucible_script_test(NAME elf_file_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest readers.elf)
 set_tests_properties(elf_file_self_test PROPERTIES LABELS "ci_guard")
 # quarantine_sections_self_test — utils/assay/readers/sections.py reads the
 # findings of the quarantine plugin from the section .crucible.quarantine of an
 # object.  The self-test plants objects with and without the section.
-add_test(NAME quarantine_sections_self_test
+crucible_script_test(NAME quarantine_sections_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest readers.sections)
 # quarantine_ratchet — utils/assay/guard/legacy/check_quarantine_ratchet.py counts the
 # distinct findings of the sections of the objects of all in each file, kind and
@@ -5532,10 +5535,10 @@ add_test(NAME quarantine_sections_self_test
 # It exits 3 for a build whose compiles do not load the quarantine plugin, for a
 # build of a configuration that the ledger does not have, and for a build that
 # made only some targets.
-add_test(NAME quarantine_ratchet
+crucible_script_test(NAME quarantine_ratchet
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule quarantine --build-dir ${CMAKE_BINARY_DIR}
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-add_test(NAME quarantine_ratchet_self_test
+crucible_script_test(NAME quarantine_ratchet_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule quarantine --self-test)
 set_tests_properties(quarantine_sections_self_test quarantine_ratchet quarantine_ratchet_self_test PROPERTIES
     LABELS "ci_guard" SKIP_RETURN_CODE 3)
@@ -5544,10 +5547,10 @@ set_tests_properties(quarantine_sections_self_test quarantine_ratchet quarantine
 # opt-out region of the tracked C++ files through the parse tree, against
 # utils/ledgers/quarantine-regions.txt.  A region with no row and a row
 # with no region fail.  It exits 3 when the kit of the parse tree is missing.
-add_test(NAME quarantine_regions
+crucible_script_test(NAME quarantine_regions
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule quarantine-regions
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-add_test(NAME quarantine_regions_self_test
+crucible_script_test(NAME quarantine_regions_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule quarantine-regions --self-test)
 set_tests_properties(quarantine_regions quarantine_regions_self_test PROPERTIES
     LABELS "ci_guard" SKIP_RETURN_CODE 3)
@@ -5557,14 +5560,14 @@ set_tests_properties(quarantine_regions quarantine_regions_self_test PROPERTIES
 # the test command of the inner loop (CLAUDE.md §XV).  CI and the checks before
 # a landing run the full suite.  The self-test plants each kind of input in a
 # scratch tree with a CTestTestfile.cmake that it writes.
-add_test(NAME affected_tests_self_test
+crucible_script_test(NAME affected_tests_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest loop.affected
           --ctest ${CMAKE_CTEST_COMMAND})
 # loop_history_self_test — each call of `loop test` appends one line
 # to BUILD_DIR/loop-history/history.jsonl: the build and test times, their CPU
 # time and the host load, the critical path of the build, and the compiles and
 # links that ran.  `python3 utils/bin/loop history BUILD_DIR` prints it.
-add_test(NAME loop_history_self_test
+crucible_script_test(NAME loop_history_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest loop.history)
 set_tests_properties(affected_tests_self_test loop_history_self_test PROPERTIES LABELS "ci_guard")
 # edit_loop_gauge_self_test — `loop gauge` (utils/assay/loop/gauge.py) measures the
@@ -5572,7 +5575,7 @@ set_tests_properties(affected_tests_self_test loop_history_self_test PROPERTIES 
 # clone of the tree, against the rules edit-build-* and edit-test-* of
 # utils/registry.txt.  The measurement takes minutes, so the owner runs
 # it before each stage gate, and only its self-test is a test.
-add_test(NAME edit_loop_gauge_self_test
+crucible_script_test(NAME edit_loop_gauge_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest loop.gauge)
 set_tests_properties(edit_loop_gauge_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
 # The self-tests of `loop gauge --cold`, `loop pgo`, `loop bench`, `loop fuzz`
@@ -5580,7 +5583,7 @@ set_tests_properties(edit_loop_gauge_self_test PROPERTIES LABELS "ci_guard" SKIP
 # one of them builds the tree or runs a bench or a campaign.
 foreach(_loop_module loop.gauge_cold loop.pgo loop.bench loop.fuzz loop.derive)
   string(REPLACE "." "_" _loop_self_test "${_loop_module}_self_test")
-  add_test(NAME ${_loop_self_test}
+  crucible_script_test(NAME ${_loop_self_test}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest ${_loop_module})
   set_tests_properties(${_loop_self_test} PROPERTIES LABELS "ci_guard")
 endforeach()
@@ -5599,7 +5602,7 @@ endforeach()
 # stops with the reason.  CRUCIBLE_VESSEL_PYTHON is the interpreter of the
 # PyTorch that TORCH_DIR names.  The default is the interpreter of the
 # virtual environment that holds TORCH_DIR, when one exists.
-add_test(NAME vessel_acceptance_self_test
+crucible_script_test(NAME vessel_acceptance_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule vessel-acceptance --self-test)
 set_tests_properties(vessel_acceptance_self_test PROPERTIES LABELS "ci_guard")
 option(CRUCIBLE_REQUIRE_VESSEL
@@ -5622,7 +5625,7 @@ if(_vessel_gate_blocker)
   message(STATUS "vessel_acceptance: ${_vessel_gate_blocker}, so the gate is registered as disabled")
   # The ci_guard label puts the disabled entry in the list of tests that did
   # not run when `ctest -L ci_guard` operates, so the pre-merge gate shows it.
-  add_test(NAME vessel_acceptance_unavailable COMMAND ${CMAKE_COMMAND} -E false)
+  crucible_script_test(NAME vessel_acceptance_unavailable COMMAND ${CMAKE_COMMAND} -E false)
   set_tests_properties(vessel_acceptance_unavailable PROPERTIES DISABLED TRUE LABELS "ci_guard;vessel")
 else()
   get_filename_component(_vessel_venv_python "${TORCH_DIR}/../../../bin/python" ABSOLUTE)
@@ -5633,7 +5636,7 @@ else()
   endif()
   set(CRUCIBLE_VESSEL_PYTHON "${_vessel_default_python}" CACHE FILEPATH
     "The interpreter of the PyTorch that TORCH_DIR names, for the vessel acceptance gate")
-  add_test(NAME vessel_acceptance
+  crucible_script_test(NAME vessel_acceptance
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule vessel-acceptance
             --build-dir ${CMAKE_BINARY_DIR} --torch-dir ${TORCH_DIR} --python ${CRUCIBLE_VESSEL_PYTHON})
   # The gate builds the vessel targets in this build directory, so no other
@@ -5647,9 +5650,9 @@ endif()
 # sentence sends its reader to a file that is not there, and the message
 # names the place that the file most likely moved to.  The rule
 # ledger-owners holds the PATH cell of each ledger row.
-add_test(NAME prose_paths_self_test
+crucible_script_test(NAME prose_paths_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule prose-paths --self-test)
-add_test(NAME prose_paths
+crucible_script_test(NAME prose_paths
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule prose-paths)
 set_tests_properties(prose_paths prose_paths_self_test PROPERTIES LABELS "ci_guard")
 
@@ -5658,7 +5661,7 @@ set_tests_properties(prose_paths prose_paths_self_test PROPERTIES LABELS "ci_gua
 # run `python3 utils/bin/setup install tree-sitter` gets the instruction rather
 # than a failure.  CI installs the kit in both the guards job and the build job, so CI
 # always enforces.
-add_test(NAME tsast_self_test
+crucible_script_test(NAME tsast_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest readers.tsast)
 # mintmodel derives the §XXI mint surface from the parse tree, for the guard and
 # for the inventory. Its self-test plants one fixture carrying every shape the
@@ -5666,7 +5669,7 @@ add_test(NAME tsast_self_test
 # overload, a constructor of a class whose name starts with mint_, a
 # trailing-underscore helper, and a friend re-declaration that must not count
 # as a second site.
-add_test(NAME mintmodel_self_test
+crucible_script_test(NAME mintmodel_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest loop.derive.mint_model)
 set_tests_properties(tsast_self_test mintmodel_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # The mutation tool weakens one gate of a header at a time and asks whether a
@@ -5682,7 +5685,7 @@ set(_mutation_ninja "")
 if(CMAKE_GENERATOR MATCHES "Ninja")
   set(_mutation_ninja --ninja ${CMAKE_MAKE_PROGRAM})
 endif()
-add_test(NAME mutation_self_test
+crucible_script_test(NAME mutation_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule gate-mutants selftest
           --compiler ${CMAKE_CXX_COMPILER} --cmake ${CMAKE_COMMAND} ${_mutation_ninja})
 set_tests_properties(mutation_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
@@ -5725,20 +5728,26 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         guard.test_history guard.test_import_closure guard.engines.meta.test_package
         guard.engines.meta.test_ste_dictionary loop.derive.test_walk_units)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
-  add_test(NAME ${_assay_test_name}
+  crucible_script_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})
   set_tests_properties(${_assay_test_name} PROPERTIES LABELS "ci_guard;meta")
 endforeach()
 # The test of the CMake reader configures a scratch project, so it gets the programs of this build.
-add_test(NAME assay_readers_test_cmake
+crucible_script_test(NAME assay_readers_test_cmake
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.readers.test_cmake)
 set_tests_properties(assay_readers_test_cmake PROPERTIES LABELS "ci_guard;meta"
   ENVIRONMENT "ASSAY_TEST_CMAKE=${CMAKE_COMMAND};ASSAY_TEST_CXX=${CMAKE_CXX_COMPILER};ASSAY_TEST_NINJA=${CMAKE_MAKE_PROGRAM}")
 # The test of the Ninja reader builds a scratch graph, so it gets the ninja of this build.
-add_test(NAME assay_readers_test_ninja
+crucible_script_test(NAME assay_readers_test_ninja
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.readers.test_ninja)
 set_tests_properties(assay_readers_test_ninja PROPERTIES LABELS "ci_guard;meta"
   ENVIRONMENT "ASSAY_TEST_NINJA=${CMAKE_MAKE_PROGRAM}")
+# The test of the ctest reader configures and tests a scratch project with the test launcher, so it gets the cmake
+# and the ctest of this build.
+crucible_script_test(NAME assay_readers_test_ctest
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.readers.test_ctest)
+set_tests_properties(assay_readers_test_ctest PROPERTIES LABELS "ci_guard;meta"
+  ENVIRONMENT "ASSAY_TEST_CMAKE=${CMAKE_COMMAND};ASSAY_TEST_CTEST=${CMAKE_CTEST_COMMAND}")
 
 add_subdirectory(foundation)
 add_subdirectory(fixy)

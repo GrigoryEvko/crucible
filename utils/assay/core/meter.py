@@ -112,6 +112,15 @@ THE RECORD
     text, with no JSON parser.  A cost block of an earlier format holds the
     key instructions, the count of the full step, and no reader takes it.
 
+    The record of a step of the build is OUTPUT.cost, in the directory of
+    its output.  The record of a test is test_record_file(): NAME.test.cost
+    in the directory test-records of the build directory.  Its keys are
+    format, step ("test"), result ("passed", "failed" or "rejected"), test
+    (the name of the test), command (the program of the test), exit and
+    cost.  `loop test-step` writes it for an executable test and for a
+    script test, and `loop fixture` writes it for a negative fixture.
+    assay.readers.ctest reads it (costs()).
+
 THE REGISTRY AND THE LEDGERS
     budget_rows() reads the two thresholds of some measured rules of
     utils/registry.txt, through the rows reader of assay.core.rows, which
@@ -146,6 +155,9 @@ import time
 
 RECORD_FORMAT = 1
 RECORD_SUFFIX = ".cost"
+# The directory of the records of the tests in a build directory, and the suffix of one record (THE RECORD).
+TEST_RECORD_DIRECTORY = "test-records"
+TEST_RECORD_SUFFIX = ".test" + RECORD_SUFFIX
 KIND_FILE = "build-kind.txt"
 CARRIED_KEYS = ('"cost": ', '"last_cost": ')
 KB_PER_GB = 1024 * 1024
@@ -403,6 +415,40 @@ def measure(command: list[str], environment: dict[str, str] | None = None, cpu_l
                        applied_limit, instructions)
 
 
+def start_self() -> tuple[float, float]:
+    """Return the start of a measure of this process: the monotonic clock in seconds and the one-minute load average.
+
+    A process that is a test itself, such as the fixture driver, measures its own run with measure_self().
+    """
+    try:
+        load = os.getloadavg()[0]
+    except OSError:
+        load = -1.0
+    return time.perf_counter(), load
+
+
+def measure_self(exit_code: int, start: tuple[float, float]) -> Measurement:
+    """Return the measurement of this process from `start` on, as measure() gives it for a command.
+
+    The CPU time holds this process and each process that it waited for, and
+    the peak memory is that of the largest of them.
+
+    Args:
+        exit_code: The status that the process ends with
+        start: The value of start_self() at the start of the measure
+
+    Returns:
+        The measurement, with no CPU limit and no instruction count
+    """
+    import resource
+
+    own = resource.getrusage(resource.RUSAGE_SELF)
+    children = resource.getrusage(resource.RUSAGE_CHILDREN)
+    started, load = start
+    return Measurement(exit_code, own.ru_utime + children.ru_utime, own.ru_stime + children.ru_stime,
+                       time.perf_counter() - started, max(own.ru_maxrss, children.ru_maxrss), load, time.time(), None)
+
+
 def compiler_meter_environment(environment: dict[str, str], count_path: str) -> dict[str, str] | None:
     """Return the environment of a ccache call that counts its compiler run, or None when the call cannot count it.
 
@@ -564,9 +610,47 @@ def write_record(path: str, fields: list[tuple[str, str]]) -> None:
         fields: Each key and its value as JSON text, in order
     """
     staging = f"{path}.{os.getpid()}.tmp"
-    with open(staging, "w", encoding="ascii") as handle:
+    # The text is ASCII, because quote() escapes each other character.  Python loads the UTF-8 codec at its start,
+    # and the ASCII codec costs one more import on each step and each test.
+    with open(staging, "w", encoding="utf-8") as handle:
         handle.write("{\n" + ",\n".join(f'"{key}": {value}' for key, value in fields) + "\n}\n")
     os.replace(staging, path)
+
+
+def test_record_file(build_dir: str, name: str) -> str:
+    """Return the record of one test in a build directory (THE RECORD).
+
+    Args:
+        build_dir: The build directory
+        name: The name of the test
+
+    Returns:
+        BUILD_DIR/test-records/NAME.test.cost
+    """
+    return os.path.join(build_dir, TEST_RECORD_DIRECTORY, name + TEST_RECORD_SUFFIX)
+
+
+def write_test_record(build_dir: str, name: str, command: str, run: Measurement, result: str) -> None:
+    """Write the record of one test, and make its directory when necessary.
+
+    The function makes the directory only when the write finds no directory.
+    A test of a build directory with records then makes no more system calls.
+
+    Args:
+        build_dir: The build directory
+        name: The name of the test
+        command: The program of the test
+        run: The measurement of the test
+        result: "passed", "failed" or "rejected" (the judge refused a test with the status 0)
+    """
+    path = test_record_file(build_dir, name)
+    fields = [("format", str(RECORD_FORMAT)), ("step", '"test"'), ("result", f'"{result}"'), ("test", quote(name)),
+              ("command", quote(command)), ("exit", str(run.exit_code)), ("cost", cost_block(run))]
+    try:
+        write_record(path, fields)
+    except FileNotFoundError:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        write_record(path, fields)
 
 
 def ccache_hit(stats_path: str, outer_log: str | None) -> bool:

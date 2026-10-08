@@ -12,9 +12,10 @@ THE TIME TOTALS
                           of a ccache hit keeps (utils/assay/readers/census.py)
       total-fixture-cpu   the user and system CPU time of the last real compile
                           of each negative fixture, from its record
-      total-test-cpu      the CPU time of each executable test in the record
-                          EXECUTABLE.test.cost of the test launcher.  A script
-                          test has no launcher, so it has no part in the total
+      total-test-cpu      the CPU time of each executable test, from its record
+                          (assay.readers.ctest): a record with a program in
+                          the build directory.  A script test and a negative
+                          fixture have a record too, and no part in the total
 
     A total over its threshold gives a warning, never an error, because the
     CPU time rises with the load of the shared host.  A unit with no time is
@@ -42,6 +43,7 @@ THE BUILD TOTALS
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -51,8 +53,8 @@ from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
 from assay.loop import history as loop_history
 from assay.readers import census as build_census
+from assay.readers import ctest as ctest_reader
 
-TEST_RECORD_SUFFIX = ".test" + cost_meter.RECORD_SUFFIX
 # Each time total, and the words that tell what it adds.
 TOTALS = (("total-compile-cpu", "object", "the last real compile of each object of all"),
           ("total-fixture-cpu", "fixture", "the last real compile of each negative fixture"),
@@ -61,19 +63,16 @@ NO_RULE = ", no measured rule"
 
 
 def read_test_times(build_dir: Path) -> list[float | None]:
-    """Return the CPU time of the record of each executable test of a build directory, or None for a record with no time.
+    """Return the CPU time of the record of each executable test of a build directory.
 
-    Complexity: linear in the files of the build directory.
+    An executable test has a program in the build directory.  Complexity: linear in the records of the build directory.
+
+    Raises:
+        ctest_reader.CtestError: If a record cannot be read
     """
-    times: list[float | None] = []
-    for path in build_dir.rglob(f"*{TEST_RECORD_SUFFIX}"):
-        try:
-            record = json.loads(path.read_text(encoding="utf-8"))
-            cpu = record["cost"]["cpu_s"]
-            times.append(float(cpu) if isinstance(cpu, (int, float)) and not isinstance(cpu, bool) else None)
-        except (OSError, ValueError, KeyError, TypeError):
-            times.append(None)
-    return times
+    build = build_dir.resolve()
+    return [record.cpu_s for record in ctest_reader.costs(build_dir).values()
+            if os.path.isabs(record.program) and Path(record.program).resolve().is_relative_to(build)]
 
 
 def time_totals(census: build_census.Census, test_times: list[float | None], budgets: dict[str, check_report.Budget],
@@ -114,7 +113,7 @@ def read_build_records(build_dir: Path) -> list[dict[str, object]]:
     """
     records: list[dict[str, object]] = []
     for path in build_dir.rglob(f"*{cost_meter.RECORD_SUFFIX}"):
-        if path.name.endswith(TEST_RECORD_SUFFIX):
+        if path.name.endswith(cost_meter.TEST_RECORD_SUFFIX):
             continue
         try:
             record = json.loads(path.read_text(encoding="utf-8"))
@@ -179,10 +178,12 @@ def report_totals(build_dir: Path) -> list[check_report.Finding]:
     try:
         budgets = check_report.read_budgets()
         census = build_census.read_census(build_dir, REPO_ROOT, read_files=False)
-    except (build_census.NotApplicable, build_census.CensusError, OSError, ValueError) as reason:
+        test_times = read_test_times(build_dir)
+    except (build_census.NotApplicable, build_census.CensusError, ctest_reader.CtestError, OSError,
+            ValueError) as reason:
         print(f"report-check-warnings: no time totals: {reason}")
         return []
-    findings, lines = time_totals(census, read_test_times(build_dir), budgets, build_census.shown(build_dir, REPO_ROOT))
+    findings, lines = time_totals(census, test_times, budgets, build_census.shown(build_dir, REPO_ROOT))
     for line in lines:
         print(line)
     return findings
@@ -246,11 +247,14 @@ def self_test() -> int:
            all(row in check_report.read_budgets() for row in build_rows))
 
     with tempfile.TemporaryDirectory(prefix="report-totals-") as scratch:
-        build = Path(scratch)
-        record = build / "test" / f"test_planted{TEST_RECORD_SUFFIX}"
-        record.parent.mkdir()
-        record.write_text(json.dumps({"format": 1, "step": "test", "cost": {"cpu_s": 2.5}}), encoding="utf-8")
-        expect("a test record gives its CPU time", read_test_times(build) == [2.5])
+        build = Path(scratch).resolve()
+        (build / "test").mkdir()
+        for name, program, cpu in (("test_planted", str(build / "test" / "test_planted"), 2.5),
+                                   ("planted_script", "/usr/bin/python3", 7.0)):
+            run = cost_meter.Measurement(0, cpu, 0.0, cpu, 1024, 1.0, 1.0, None)
+            cost_meter.write_test_record(str(build), name, program, run, "passed")
+        expect("the record of an executable test gives its CPU time, and the record of a script test has no part",
+               read_test_times(build) == [2.5])
         (build / "test" / f"test_planted{cost_meter.RECORD_SUFFIX}").write_text(json.dumps(planted[0]), encoding="utf-8")
         (build / "test" / f"a.cpp.o{cost_meter.RECORD_SUFFIX}").write_text(json.dumps(planted[1]), encoding="utf-8")
         expect("read_build_records reads the records of the links and the compiles, and no record of a test",

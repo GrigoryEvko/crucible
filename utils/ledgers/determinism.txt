@@ -41,7 +41,6 @@ utils/assay/guard/legacy/check_splits_orphan.py | listing | 1 | scope_files | A 
 utils/assay/guard/legacy/check_syscall_capability.py | listing | 1 | scope_files | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/legacy/check_witness_roster.py | listing | 1 | generate | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/legacy/report_check_warnings.py | listing | 1 | read_build_records | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/guard/legacy/report_check_warnings.py | listing | 1 | read_test_times | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/preprocessed.py | listing | 2 | _chunk_names | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/preprocessed.py | listing | 1 | _finalize_retired | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/preprocessed.py | listing | 3 | _remove_garbage | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count

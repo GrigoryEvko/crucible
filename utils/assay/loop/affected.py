@@ -16,9 +16,9 @@ nothing new.  This subcommand builds the tree, and then it runs only these tests
 THE EXECUTABLE TEST
     The program of an executable test is an ELF file of the build tree, after
     the wrappers: the test launcher of the tree (`python3 -S utils/bin/loop
-    test-step --warnings-dir DIR`, which CMake puts in front of each
-    executable target), `cmake -E env` and `valgrind`.  Its fingerprint is a
-    hash of these items:
+    test-step` and its options, which CMake puts in front of each executable
+    target, and crucible_script_test() in front of each script test), `cmake
+    -E env` and `valgrind`.  Its fingerprint is a hash of these items:
     - The ctest record of the test: the command and each property.
     - The bytes of each file of the build tree that the command names.
     - The bytes of each file that an ELF file of the command names as an
@@ -107,7 +107,6 @@ import shutil
 import struct
 import sys
 import tempfile
-import xml.etree.ElementTree as ElementTree
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -119,6 +118,7 @@ from assay.core.paths import LOOP
 from assay.loop import history as loop_history
 from assay.loop import teststep as test_launcher
 from assay.readers import cmake
+from assay.readers import ctest as ctest_reader
 from assay.readers import elf as elf_file
 from assay.setup import pins as cmake_pin
 
@@ -187,21 +187,11 @@ class Trees:
         return in_source and not self.is_in_build(path)
 
 
-@dataclass(frozen=True)
-class TestRecord:
-    """One test from `ctest --show-only=json-v1`."""
-
-    name: str
-    command: tuple[str, ...]
-    properties: dict[str, object]
-    canonical: str
-
-
 @dataclass
 class Decision:
     """What the script does with one test, and why."""
 
-    test: TestRecord
+    test: ctest_reader.TestEntry
     kind: str
     reason: str
     fingerprint: str = ""
@@ -267,28 +257,18 @@ def build_program(build_dir: Path, name: str) -> str:
         raise RunnerError(str(error)) from None
 
 
-def list_tests(build_dir: Path) -> list[TestRecord]:
-    """Return each test of the build directory, from `ctest --show-only=json-v1`."""
+def list_tests(build_dir: Path) -> tuple[ctest_reader.TestEntry, ...]:
+    """Return each test of the build directory (assay.readers.ctest)."""
     try:
-        result = proc.run(proc.Command([build_program(build_dir, "ctest"), "--test-dir", str(build_dir),
-                                        "--show-only=json-v1"], timeout_s=proc.TOOL_S))
-    except proc.ToolFailed as problem:
-        raise RunnerError(f"`ctest --show-only=json-v1` cannot run: {problem}") from None
-    if result.exit != 0:
-        raise RunnerError(f"`ctest --show-only=json-v1` failed with exit code {result.exit}:\n"
-                          f"{result.err.strip()}")
-    try:
-        data = json.loads(result.out)
-    except json.JSONDecodeError as error:
-        raise RunnerError(f"`ctest --show-only=json-v1` did not give JSON: {error}") from error
-    tests: list[TestRecord] = []
-    for entry in data.get("tests", []):
-        properties = {item["name"]: item["value"] for item in entry.get("properties", [])}
-        command = tuple(entry.get("command") or ())
-        canonical = json.dumps({"name": entry["name"], "command": command, "properties": properties},
-                               sort_keys=True)
-        tests.append(TestRecord(name=entry["name"], command=command, properties=properties, canonical=canonical))
-    return tests
+        return ctest_reader.tests(build_dir)
+    except ctest_reader.CtestError as problem:
+        raise RunnerError(str(problem)) from None
+
+
+def canonical(test: ctest_reader.TestEntry) -> str:
+    """Return the record of a test as one JSON text: its name, its command and each property."""
+    return json.dumps({"name": test.name, "command": test.command, "properties": dict(test.properties)},
+                      sort_keys=True)
 
 
 def starts_subcommand(command: tuple[str, ...], index: int, subcommand: str) -> bool:
@@ -306,7 +286,8 @@ def launcher_prefix(command: tuple[str, ...]) -> tuple[int, str]:
     """Return the index after the test launcher prefix and the path of the master, or (0, "") with no launcher.
 
     The prefix is a Python interpreter, its options, the master loop, the
-    subcommand test-step and an optional `--warnings-dir DIR`.
+    subcommand test-step and its options with their values
+    (assay.loop.teststep.OPTIONS).
     """
     if not command or not os.path.basename(command[0]).startswith("python"):
         return 0, ""
@@ -317,7 +298,7 @@ def launcher_prefix(command: tuple[str, ...]) -> tuple[int, str]:
         return 0, ""
     master = command[index]
     index += 2
-    if index < len(command) and command[index] == "--warnings-dir":
+    while index < len(command) and command[index] in test_launcher.OPTIONS:
         index += 2
     return index, master
 
@@ -495,7 +476,7 @@ class Planner:
         self.used_scans[digest] = result.to_json()
         return result
 
-    def classify(self, test: TestRecord) -> Decision:
+    def classify(self, test: ctest_reader.TestEntry) -> Decision:
         """Return the kind of a test and, for an executable test, its fingerprint."""
         trees = self.trees
         if is_fixture(test.command):
@@ -551,7 +532,7 @@ class Planner:
                                              os.path.join(self.trees.build_root, BUILD_KIND_FILE)]
         return self.launcher_files[launcher]
 
-    def always_reason(self, test: TestRecord, start: int) -> str:
+    def always_reason(self, test: ctest_reader.TestEntry, start: int) -> str:
         """Return why an executable test always runs, or an empty string.
 
         `start` is the index after the test launcher prefix.  The launcher is
@@ -566,26 +547,25 @@ class Planner:
             if found:
                 return f"the command names {found[0]} of the source tree"
         for name in ENVIRONMENT_PROPERTIES:
-            values = test.properties.get(name) or []
-            for value in values if isinstance(values, list) else [values]:
-                found = source_paths_in(str(value), self.trees)
+            for value in test.words_of(name):
+                found = source_paths_in(value, self.trees)
                 if found:
                     return f"the property {name} names {found[0]} of the source tree"
-        directory = test.properties.get("WORKING_DIRECTORY")
-        if isinstance(directory, str) and self.trees.is_source_only(real(directory)):
-            return f"the working directory {directory} is in the source tree"
+        for directory in test.words_of("WORKING_DIRECTORY"):
+            if self.trees.is_source_only(real(directory)):
+                return f"the working directory {directory} is in the source tree"
         return ""
 
-    def fingerprint(self, test: TestRecord, inputs: set[str], directories: set[str]) -> str:
+    def fingerprint(self, test: ctest_reader.TestEntry, inputs: set[str], directories: set[str]) -> str:
         """Return the SHA-256 of the record of a test and of the bytes of each of its inputs."""
         files = set(inputs)
         for directory in directories:
             files.update(shared_libraries(directory))
-        payload = json.dumps([test.canonical, sorted((path, self.digests.digest(path)) for path in files),
+        payload = json.dumps([canonical(test), sorted((path, self.digests.digest(path)) for path in files),
                               sorted(directories)])
         return hashlib.sha256(payload.encode("utf-8", "surrogateescape")).hexdigest()
 
-    def decide(self, tests: list[TestRecord], run_all: bool) -> list[Decision]:
+    def decide(self, tests: tuple[ctest_reader.TestEntry, ...], run_all: bool) -> list[Decision]:
         """Return the decision for each test."""
         passed = self.state["passed"]
         assert isinstance(passed, dict)
@@ -608,17 +588,6 @@ class Planner:
 
 
 # ── The run ────────────────────────────────────────────────────────────────
-
-
-def read_junit(path: Path) -> dict[str, str]:
-    """Return the status of each test in a JUnit report of ctest: run, fail, notrun or disabled."""
-    statuses: dict[str, str] = {}
-    root = ElementTree.parse(path).getroot()
-    for case in root.iter("testcase"):
-        name = case.get("name")
-        if name is not None:
-            statuses[name] = case.get("status") or ("fail" if case.find("failure") is not None else "run")
-    return statuses
 
 
 def print_plan(decisions: list[Decision], build_dir: Path) -> None:
@@ -656,8 +625,8 @@ def run_inherited(command: list[str]) -> int:
 
 
 def run_tests(build_dir: Path, names: list[str], state_dir: Path, jobs: int,
-              ctest_arguments: list[str]) -> tuple[int, dict[str, str]]:
-    """Run the named tests with ctest, and return its exit code and the status of each test."""
+              ctest_arguments: list[str]) -> tuple[int, dict[str, ctest_reader.TestStatus]]:
+    """Run the named tests with ctest, and return its exit code and the status of each test of its JUnit report."""
     selection = state_dir / "run.txt"
     report = state_dir / "junit.xml"
     write_list(selection, names)
@@ -668,8 +637,9 @@ def run_tests(build_dir: Path, names: list[str], state_dir: Path, jobs: int,
     if not report.is_file():
         return (status or 2), {}
     try:
-        return status, read_junit(report)
-    except ElementTree.ParseError:
+        return status, ctest_reader.results(report)
+    except ctest_reader.CtestError as problem:
+        check_report.write_line(f"loop test: {problem}")
         return (status or 2), {}
 
 
@@ -679,7 +649,7 @@ def build(build_dir: Path, jobs: int) -> int:
 
 
 def update_state(state: dict[str, object], planner: Planner, decisions: list[Decision],
-                 statuses: dict[str, str], tests: list[TestRecord]) -> None:
+                 statuses: dict[str, ctest_reader.TestStatus], tests: tuple[ctest_reader.TestEntry, ...]) -> None:
     """Record the fingerprint of each executable test that passed with unchanged inputs, and drop the rest."""
     passed = state["passed"]
     assert isinstance(passed, dict)
@@ -695,7 +665,7 @@ def update_state(state: dict[str, object], planner: Planner, decisions: list[Dec
             continue
         after = planner.classify(decision.test)
         is_same = after.kind == KIND_EXECUTABLE and after.fingerprint == decision.fingerprint
-        if statuses.get(decision.test.name) == "run" and is_same:
+        if statuses.get(decision.test.name) == ctest_reader.TestStatus.RUN and is_same:
             passed[decision.test.name] = decision.fingerprint
         else:
             passed.pop(decision.test.name, None)
@@ -768,19 +738,19 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
             return 2
         update_state(state, planner, decisions, statuses, tests)
         save_state(state_path, state)
-        counts = Counter(statuses.get(name, "notrun") for name in selected)
-        recorder.finish_tests(status, {"selected": len(selected), "passed": counts["run"], "failed": counts["fail"],
-                                       "not_run": counts["notrun"] + counts["disabled"], "skipped": len(skipped)})
-        print(f"loop test: {len(selected)} tests selected: {counts['run']} passed, {counts['fail']} failed, "
-              f"{counts['notrun'] + counts['disabled']} did not run.")
+        counts = Counter(statuses.get(name, ctest_reader.TestStatus.NOTRUN) for name in selected)
+        passed, failed = counts[ctest_reader.TestStatus.RUN], counts[ctest_reader.TestStatus.FAIL]
+        not_run = counts[ctest_reader.TestStatus.NOTRUN] + counts[ctest_reader.TestStatus.DISABLED]
+        recorder.finish_tests(status, {"selected": len(selected), "passed": passed, "failed": failed,
+                                       "not_run": not_run, "skipped": len(skipped)})
+        print(f"loop test: {len(selected)} tests selected: {passed} passed, {failed} failed, {not_run} did not run.")
         print(f"loop test: {len(skipped)} tests skipped, because {REASON_SAME} "
               f"({state_dir / 'skipped.txt'}).  The script reports no skipped test as passed.")
-        if status != 0 and counts["fail"] == 0 and counts["notrun"] == 0:
-            print(f"loop test: ctest exited with status {status} after its tests.  A command of "
-                  f"CTestCustom.cmake in the build directory failed, for example the rule test-time: read its "
+        if status != 0 and failed == 0 and counts[ctest_reader.TestStatus.NOTRUN] == 0:
+            print(f"loop test: ctest exited with status {status} after its tests, and no test failed: read its "
                   f"lines above.")
         save_history(recorder, build_dir)
-        return 0 if status == 0 and counts["fail"] == 0 else 1
+        return 0 if status == 0 and failed == 0 else 1
 
 
 # ── Self-test ──────────────────────────────────────────────────────────────
@@ -830,7 +800,8 @@ class SelfTest:
         (self.source_dir / "utils" / "ledgers").mkdir()
         self.launcher = self.source_dir / "utils" / "bin" / LOOP_MASTER
         self.launcher.write_text("import os, sys\narguments = sys.argv[2:]\n"
-                                 "if arguments[:1] == ['--warnings-dir']:\n    arguments = arguments[2:]\n"
+                                 f"while arguments[:1] and arguments[0] in {test_launcher.OPTIONS!r}:\n"
+                                 "    arguments = arguments[2:]\n"
                                  "os.execv(arguments[0], arguments)\n")
         self.registry = self.source_dir / "utils" / "registry.txt"
         self.plant_registry(5, 10)
@@ -868,12 +839,16 @@ class SelfTest:
             f'add_test([=[exe_environment]=] "{bin_dir}/ok_environment")',
             f'set_tests_properties([=[exe_environment]=] PROPERTIES ENVIRONMENT "GOLDEN={self.golden}")',
             f'add_test([=[script_guard]=] "{shutil.which("true")}" "{self.source_dir}/test/check.py")',
-            f'add_test([=[neg_fixture]=] "{shutil.which("true")}" "{self.source_dir}/utils/bin/{LOOP_MASTER}" '
-            f'"{FIXTURE_SUBCOMMAND}")',
+            (f'add_test([=[neg_fixture]=] "{shutil.which("true")}" "{self.source_dir}/utils/bin/{LOOP_MASTER}" '
+             f'"{FIXTURE_SUBCOMMAND}")'),
             f'add_test([=[disabled_test]=] "{bin_dir}/ok")',
             f'set_tests_properties([=[disabled_test]=] PROPERTIES DISABLED TRUE)',
-            f'add_test([=[exe_launched]=] "{sys.executable}" "-S" "{self.launcher}" "{LAUNCHER_SUBCOMMAND}" '
-            f'"--warnings-dir" "{self.build_dir}/check-warnings" "{bin_dir}/ok_launched")',
+            (f'add_test([=[exe_launched]=] "{sys.executable}" "-S" "{self.launcher}" "{LAUNCHER_SUBCOMMAND}" '
+             f'"--warnings-dir" "{self.build_dir}/check-warnings" "--build-dir" "{self.build_dir}" '
+             f'"{bin_dir}/ok_launched")'),
+            (f'add_test([=[script_launched]=] "{sys.executable}" "-S" "{self.launcher}" "{LAUNCHER_SUBCOMMAND}" '
+             f'"--build-dir" "{self.build_dir}" "--name" "script_launched" "{shutil.which("true")}" '
+             f'"{self.source_dir}/test/check.py")'),
         ]
         (self.build_dir / "CTestTestfile.cmake").write_text("\n".join(lines) + "\n")
 
@@ -926,6 +901,9 @@ def self_test(ctest: str) -> int:
     expect("program_index skips the test launcher", program_index(launched) == 6)
     expect("program_index skips the test launcher and then cmake -E env",
            program_index(launched[:6] + ("/x/cmake", "-E", "env", "A=1", "/s/b/t")) == 10)
+    expect("program_index skips each option of the test launcher",
+           program_index(launched[:6] + ("--build-dir", "/s/b", "--name", "a_test", "/usr/bin/python3",
+                                         "/s/check.py")) == 10)
     expect("a Python script is not a test launcher", program_index(("/usr/bin/python3", "/s/check.py")) == 0)
     expect("another subcommand of the master is not a test launcher",
            program_index(("/usr/bin/python3", f"/s/utils/bin/{LOOP_MASTER}", FIXTURE_SUBCOMMAND, "/s/b/t")) == 0)
@@ -1004,7 +982,8 @@ def self_test(ctest: str) -> int:
         status, output = fake.call()
         expect("a changed test record makes the test run", "exe_ok" not in fake.skipped(), output)
 
-        for name in ("exe_source_dir", "exe_fixtures", "exe_environment", "script_guard", "neg_fixture", "exe_bad"):
+        for name in ("exe_source_dir", "exe_fixtures", "exe_environment", "script_guard", "neg_fixture", "exe_bad",
+                     "script_launched"):
             expect(f"{name} runs on each call", name not in fake.skipped(), output)
         expect("a source directory in an ELF file makes the test always run",
                "always: " in output and "which is not a file of the source tree" in output, output)

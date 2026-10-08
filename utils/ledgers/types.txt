@@ -269,8 +269,6 @@ utils/assay/oracle/semantics.py | index | 2 | probe_source | An error of mypy of
 utils/assay/oracle/semantics.py | type-arg | 1 | <module> | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/oracle/sprout.py | misc | 1 | decide | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/oracle/sprout.py | no-any-return | 1 | _download | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/readers/ctest.py | attr-defined | 1 | properties_of | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/readers/ctest.py | unused-ignore | 1 | properties_of | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/readers/tsast.py | arg-type | 1 | _self_test_helpers | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/readers/tsast.py | arg-type | 2 | _self_test_macros | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/readers/tsast.py | arg-type | 1 | macro_bodies | An error of mypy of today.  The change that gives the code its types lowers the count

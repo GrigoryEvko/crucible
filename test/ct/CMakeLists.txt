@@ -59,11 +59,11 @@ find_program(CRUCIBLE_OBJDUMP objdump REQUIRED)
 set(_ct_disassembly_arguments
   --build-dir ${CMAKE_BINARY_DIR}
   --base-objects $<TARGET_OBJECTS:foundation>)
-add_test(NAME check_ct_disassembly
+crucible_script_test(NAME check_ct_disassembly
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ct-disassembly
           ${_ct_disassembly_arguments}
   COMMAND_EXPAND_LISTS)
-add_test(NAME check_ct_disassembly_self_test
+crucible_script_test(NAME check_ct_disassembly_self_test
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ct-disassembly
           ${_ct_disassembly_arguments} --self-test
   COMMAND_EXPAND_LISTS)
@@ -88,10 +88,10 @@ target_link_options(ct_dudect PRIVATE -fno-sanitize=all)
 # writes, so it needs no build of the targets.
 function(ct_code_flags_tests)
   list(JOIN ARGN "," targets)
-  add_test(NAME ct_taint_flags
+  crucible_script_test(NAME ct_taint_flags
     COMMAND ${CMAKE_COMMAND} -DBUILD_DIR=${CMAKE_BINARY_DIR} -DTARGETS=${targets}
             -P ${CMAKE_SOURCE_DIR}/cmake/CodeFlagsCheck.cmake)
-  add_test(NAME ct_taint_flags_self_test
+  crucible_script_test(NAME ct_taint_flags_self_test
     COMMAND ${CMAKE_COMMAND} -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/code_flags_self_test -DSELF_TEST=ON
             -P ${CMAKE_SOURCE_DIR}/cmake/CodeFlagsCheck.cmake)
   set_tests_properties(ct_taint_flags ct_taint_flags_self_test PROPERTIES LABELS "ci_guard;ct")
@@ -106,7 +106,7 @@ if(NOT CRUCIBLE_VALGRIND OR NOT CRUCIBLE_VALGRIND_INCLUDE)
   message(STATUS
     "ct_taint: valgrind or valgrind/memcheck.h is missing, so the constant-time taint tests are "
     "registered as disabled")
-  add_test(NAME ct_taint_unavailable COMMAND ${CMAKE_COMMAND} -E false)
+  crucible_script_test(NAME ct_taint_unavailable COMMAND ${CMAKE_COMMAND} -E false)
   set_tests_properties(ct_taint_unavailable PROPERTIES DISABLED TRUE LABELS "ct_taint")
   ct_code_flags_tests(ct_dudect)
   return()
@@ -132,11 +132,11 @@ function(ct_taint_test source opt)
   crucible_release_code_target(${name})
   target_link_options(${name} PRIVATE -fno-sanitize=all)
   set(_valgrind ${CRUCIBLE_VALGRIND} --tool=memcheck -q)
-  add_test(NAME ${name}
+  crucible_script_test(NAME ${name}
     COMMAND ${_valgrind} --error-exitcode=99 $<TARGET_FILE:${name}>)
-  add_test(NAME ${name}_control_branch
+  crucible_script_test(NAME ${name}_control_branch
     COMMAND ${_valgrind} $<TARGET_FILE:${name}> --control-branch)
-  add_test(NAME ${name}_control_index
+  crucible_script_test(NAME ${name}_control_index
     COMMAND ${_valgrind} $<TARGET_FILE:${name}> --control-index)
   set_tests_properties(${name} ${name}_control_branch ${name}_control_index
     PROPERTIES LABELS "ct_taint" ENVIRONMENT_MODIFICATION "DEBUGINFOD_URLS=unset:")

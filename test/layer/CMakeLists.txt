@@ -515,9 +515,9 @@ target_include_directories(layer_admitted_flag_matrix PRIVATE "${CMAKE_CURRENT_S
 # Each admitted entry and each candidate of the audit has one row in the audit
 # table and one section in the flag matrix, and each row and each section
 # names an audited name.
-add_test(NAME admitted_audit_self_test
+crucible_script_test(NAME admitted_audit_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule admitted-audit --self-test)
-add_test(NAME admitted_audit
+crucible_script_test(NAME admitted_audit
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule admitted-audit
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 set_tests_properties(admitted_audit admitted_audit_self_test PROPERTIES
@@ -531,10 +531,10 @@ set_tests_properties(admitted_audit PROPERTIES FIXTURES_REQUIRED tsast_trees)
 # The test compiles it with the command of the crucible sentinels.  The
 # command comes from the compile database, so the test needs no target of
 # its own, and no unit that fails to preprocess enters the database.
-add_test(NAME layer_not_standalone
+crucible_script_test(NAME layer_not_standalone
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-standalone
           --standalone ${CMAKE_BINARY_DIR})
-add_test(NAME layer_not_standalone_self_test
+crucible_script_test(NAME layer_not_standalone_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-standalone
           --self-test)
 set_tests_properties(layer_not_standalone layer_not_standalone_self_test PROPERTIES LABELS "ci_guard;substrate")
@@ -542,9 +542,9 @@ set_tests_properties(layer_not_standalone layer_not_standalone_self_test PROPERT
 # Each one-line unit has its operation limit, and each row of
 # header-constexpr-ops.txt is still necessary: its header compiles alone at
 # the limit of the row and not at the threshold.  Each row gives a warning.
-add_test(NAME header_constexpr_ops_self_test
+crucible_script_test(NAME header_constexpr_ops_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-constexpr-ops --self-test)
-add_test(NAME header_constexpr_ops
+crucible_script_test(NAME header_constexpr_ops
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule header-constexpr-ops ${CMAKE_BINARY_DIR}
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 set_tests_properties(header_constexpr_ops header_constexpr_ops_self_test PROPERTIES LABELS "ci_guard;substrate")

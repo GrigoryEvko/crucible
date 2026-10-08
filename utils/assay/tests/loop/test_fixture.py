@@ -1,4 +1,4 @@
-"""Test the result store, the cost budget, the rule of the reason and the plugin handling of `loop fixture`.
+"""Test the store, the cost budget, the test record, the rule of the reason and the plugin handling of `loop fixture`.
 
 `guard selftest tests.loop.test_fixture --cxx COMPILER --build-dir DIR [--part K/N]`
 runs the test.  Each check makes a small tree of headers, fixtures and a
@@ -45,9 +45,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 from assay.core import ledger as rule_ledger
+from assay.core import meter as cost_meter
 from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core.paths import LOOP
+from assay.loop import teststep as test_launcher
 from assay.loop.fixture import store
 from assay.readers import cmake, compdb
 
@@ -214,13 +216,18 @@ class StoreTest:
         """Run the driver on one fixture.
 
         The result is the exit code, the standard output, the standard error and
-        the lines about the store.
+        the lines about the store.  The environment of the driver holds the
+        variable of the test launcher, as in a run of the launcher.  The driver
+        then gives the judge of the test and its record to the launcher (The
+        test record of the driver).  An empty value of the variable in
+        `environment` makes the driver judge the fixture itself.
         """
         # A check that needs a CI runner sets GITHUB_ACTIONS itself, so each
         # verdict is the same on a CI runner and on the build host.
         env = {name: value for name, value in os.environ.items()
-               if not name.startswith("CRUCIBLE_NEG_") and name != "GITHUB_ACTIONS"}
+               if not name.startswith(("CRUCIBLE_NEG_", "CRUCIBLE_TEST_")) and name != "GITHUB_ACTIONS"}
         env["CRUCIBLE_CACHE_DIR"] = str(self.caches)
+        env[test_launcher.LAUNCHED_ENV] = "test_fixture"
         env.update(environment)
         options = ["--warnings-dir", str(warnings_dir)] if warnings_dir is not None else []
         done = proc.run(proc.Command(
@@ -768,6 +775,74 @@ class StoreTest:
                     and stopped_source in stopped_paths and header_file in stopped_paths,
                     f"a compile that -Wfatal-errors stops writes the inputs of the -M -MG pass: {stopped_head} "
                     f"{stopped_paths}")
+
+    def check_test_record(self) -> None:
+        """The driver judges a fixture as the test launcher judges a test, and writes the same record.
+
+        A planted registry of the launcher with the error threshold 0 s of
+        test-time makes each judge refuse the test.  The check runs the fixture
+        through the driver, and then through the launcher, which gives the
+        driver the variable of the launcher.  The two records must hold the
+        same keys and the same values, apart from the cost.  The two runs must
+        give the same status, with one error line of the judge.
+        """
+        table = self.root / "test-registry.txt"
+        table.write_text(planted_registry(("test-time", 0, 0, "s"), ("test-memory", 1000, 2000, "GB")))
+        ledgers = self.root / "test-ledgers"
+        ledgers.mkdir()
+        record_path = Path(cost_meter.test_record_file(str(self.build), "neg_size"))
+
+        def record() -> dict[str, object]:
+            """Return the record of the test neg_size, and remove it, or an empty record."""
+            try:
+                found = json.loads(record_path.read_text())
+            except (OSError, ValueError):
+                return {}
+            record_path.unlink()
+            return found if isinstance(found, dict) else {}
+
+        def run_driver(launcher_name: str) -> tuple[int, str]:
+            """Run the driver with the planted registry, and with this value of the variable of the launcher.
+
+            The empty value makes the driver judge the fixture itself.
+            """
+            status, _, said, _ = self.run("neg_size", *SIZE, CRUCIBLE_TEST_REGISTRY=str(table),
+                                          CRUCIBLE_TEST_LEDGERS=str(ledgers), CRUCIBLE_TEST_LAUNCHED=launcher_name)
+            return status, said
+
+        status, said = run_driver("")
+        driver = record()
+        self.expect(status == 1 and said.count("error: [test-time] the test neg_size took") == 1,
+                    f"the driver refuses a fixture over the error threshold of test-time: {status} {said[-400:]}")
+        source = str(self.root / "neg" / "neg_size.cpp")
+        # The launcher gives the driver the variable of the launcher.  The run has no store and no GITHUB_ACTIONS.
+        # Its verdict is then the same on a CI runner.
+        environment = proc.environment({test_launcher.REGISTRY_ENV: str(table), test_launcher.LEDGERS_ENV: str(ledgers),
+                                        "CRUCIBLE_NEG_CACHE": "0"})
+        environment.pop("GITHUB_ACTIONS", None)
+        launched = proc.run(proc.Command(
+            [sys.executable, "-S", str(LOOP), "test-step", "--build-dir", str(self.build), "--name", "neg_size",
+             sys.executable, *DRIVER, str(self.build), source, "neg_size", *SIZE],
+            timeout_s=proc.TOOL_S, env=environment))
+        launcher = record()
+        self.expect(launched.exit == status and launched.err.count("error: [test-time] the test neg_size took") == 1,
+                    f"the launcher refuses the same fixture, and the driver under it does not judge again: "
+                    f"{launched.exit} {launched.err[-400:]}")
+        same_fields = set(driver) == set(launcher) and {key: driver[key] for key in driver if key != "cost"} == {
+            key: launcher[key] for key in launcher if key != "cost"}
+        driver_cost, launcher_cost = driver.get("cost"), launcher.get("cost")
+        same_costs = isinstance(driver_cost, dict) and isinstance(launcher_cost, dict) and set(driver_cost) == set(
+            launcher_cost)
+        self.expect(same_fields and same_costs and driver.get("result") == "rejected" and driver.get("step") == "test",
+                    f"the record of the driver and the record of the launcher hold the same fields and the same "
+                    f"verdict: {driver} {launcher}")
+        table.write_text(planted_registry(("test-time", 1000, 2000, "s"), ("test-memory", 1000, 2000, "GB")))
+        status, said = run_driver("")
+        self.expect(status == 0 and "[test-" not in said and record().get("result") == "passed",
+                    f"a fixture under the thresholds passes with no finding, and its record says passed: {status}")
+        status, _ = run_driver("test_fixture")
+        self.expect(status == 0 and not record_path.exists(),
+                    "under the test launcher, the driver writes no record of the test")
 
     def check_several_results(self) -> None:
         """An entry keeps the result of earlier inputs, so the undo of an edit uses the store."""
@@ -1355,6 +1430,7 @@ CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_cpu_budget,
     StoreTest.check_instruction_budget,
     StoreTest.check_inputs_record,
+    StoreTest.check_test_record,
     StoreTest.check_command_memo,
     StoreTest.check_several_results,
     StoreTest.check_driver_answers,

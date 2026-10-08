@@ -4,5 +4,4 @@ format 1
 rule test-registration
 utils/registry.txt | no-test | admit | clang-format | A step of the CI guards job runs the rule, and no test runs it, because a test run would need a formatter on each host
 utils/registry.txt | no-test | admit | reconfigure-noop | A step of the CI build job runs the rule, because a ctest test cannot configure the tree that runs it
-utils/registry.txt | no-test | admit | test-time | ctest runs the rule after the tests of each run, as the command of the CTestCustom.cmake that cmake/TestLauncher.cmake writes
 utils/registry.txt | no-test | admit | vessel-acceptance | Only a build with TORCH_DIR registers the test of the rule, and each other build registers a disabled test

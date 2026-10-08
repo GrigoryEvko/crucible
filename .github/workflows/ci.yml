@@ -545,8 +545,8 @@ jobs:
           --jobs ${{ matrix.jobs }}
 
       # Skipped for the analyzer preset (build-time -fanalyzer findings are its coverage).
-      # After the tests, ctest runs the rule test-time (`guard check --rule test-time`), which
-      # holds the row test-time for each script test (cmake/TestLauncher.cmake).
+      # The test launcher holds the rules test-time and test-memory for each test
+      # (cmake/TestLauncher.cmake), and the fixture driver holds them for each fixture.
       - name: Test
         if: ${{ matrix.run_tests }}
         run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }}

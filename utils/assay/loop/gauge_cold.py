@@ -11,8 +11,9 @@ THE MEASUREMENT
     include each process that the step waited for: a build includes each
     compiler run, and a test run includes each test.  At the end it prints
     the 20 compile steps that took the most time, from the ninja log of the
-    build, and the 10 tests that took the most time, from the output of the
-    test run.
+    build, and the 10 tests that took the most time, from the record of each
+    test (assay.readers.ctest).  The summary of the test run comes from the
+    JUnit report that ctest writes to DIR/gauge-tests.xml.
 
     The configure and the build run with CCACHE_DISABLE=1 and
     -DCRUCIBLE_USE_CCACHE=OFF, so a compiler that PATH finds through a link
@@ -67,10 +68,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import git, proc
+from assay.core import meter as cost_meter
 from assay.core.paths import REPO_ROOT
 from assay.loop import history as loop_history
 from assay.readers import cmake as cmake_reader
-from assay.readers import ctest as ctest_output
+from assay.readers import ctest as ctest_reader
 from assay.readers import ninja as ninja_files
 from assay.setup import pins as cmake_pin
 
@@ -78,6 +80,7 @@ DEFAULT_JOBS = 96
 DEFAULT_TIMEOUT_S = 900
 DEFAULT_BUILD_NAME = "build-gauge"
 REPORT_NAME = "gauge-report.txt"
+JUNIT_NAME = "gauge-tests.xml"
 SLOWEST_COMPILES = 20
 SLOWEST_TESTS = 10
 OBJECT_SUFFIX = ".o"
@@ -182,31 +185,43 @@ def compile_lines(build_dir: Path) -> list[str]:
     return lines
 
 
-def test_lines(test_text: str) -> list[str]:
-    """Return the lines of the tests of the report: the counts and sums, and the slowest tests.
+def test_lines(build_dir: Path) -> list[str]:
+    """Return the lines of the tests of the report: the counts and sums, and the slowest tests, from the records.
+
+    Complexity: O(n log n) for n records.
 
     Args:
-        test_text: The output of the test run
+        build_dir: The build directory of the test run
 
     Returns:
-        The lines
+        The lines, or one line with the reason that the records cannot be read
     """
-    times = ctest_output.test_times(test_text)
+    try:
+        records = ctest_reader.costs(build_dir)
+    except ctest_reader.CtestError as problem:
+        return [f"loop gauge --cold: the records of the tests cannot be read: {problem}"]
+    times = {name: record.wall_s for name, record in records.items()}
     fixtures = [seconds for name, seconds in times.items() if name.startswith(FIXTURE_PREFIX)]
     lines = [f"tests: {len(times)}, of them {len(fixtures)} negative fixtures; sum of the wall times "
              f"{sum(times.values()):.0f} s, of the fixtures {sum(fixtures):.0f} s",
-             f"the {SLOWEST_TESTS} slowest tests (wall seconds, from the ctest log):"]
-    for name, seconds in sorted(times.items(), key=lambda item: item[1], reverse=True)[:SLOWEST_TESTS]:
+             f"the {SLOWEST_TESTS} slowest tests (wall seconds, from the records of the tests):"]
+    for name, seconds in sorted(times.items(), key=lambda item: (-item[1], item[0]))[:SLOWEST_TESTS]:
         lines.append(f"  {seconds:8.1f}  {name}")
     return lines
 
 
-def summary_line(test_text: str, log: Path) -> str:
-    """Return the line of the test summary of the report."""
-    found = ctest_output.run_summary(test_text)
-    if found == ctest_output.NO_TESTS_LINE:
-        found = "no test matched the regex"
-    return f"           {found or f'ctest printed no summary; read {log}'}"
+def summary_line(report: Path, log: Path) -> str:
+    """Return the line of the test summary of the report, from the JUnit report of the test run."""
+    try:
+        statuses = ctest_reader.results(report)
+    except ctest_reader.CtestError as problem:
+        return f"           ctest wrote no JUnit report ({problem}); read {log}"
+    if not statuses:
+        return "           no test matched the regex"
+    counts = {status: sum(1 for value in statuses.values() if value == status) for status in ctest_reader.TestStatus}
+    return (f"           {len(statuses)} tests: {counts[ctest_reader.TestStatus.RUN]} passed, "
+            f"{counts[ctest_reader.TestStatus.FAIL]} failed, "
+            f"{counts[ctest_reader.TestStatus.NOTRUN] + counts[ctest_reader.TestStatus.DISABLED]} did not run")
 
 
 def prepare(build_dir: Path, root: Path) -> str | None:
@@ -284,33 +299,45 @@ def measure(root: Path, options: argparse.Namespace, step: Callable[..., StepCos
         print(f"loop gauge --cold: the build failed.  Read {build_dir / 'gauge-build.log'}.", file=sys.stderr)
         status = 1
     test_log = build_dir / "gauge-tests.log"
-    if not options.no_tests and status == 0:
+    tested_at_all = not options.no_tests and status == 0
+    if tested_at_all:
         test_command = [build_ctest, "--test-dir", str(build_dir), "-j", jobs, "--timeout", str(options.timeout),
-                        "--no-tests=error"]
+                        "--no-tests=error", "--output-junit", str(build_dir / JUNIT_NAME)]
         if options.test_regex:
             test_command += ["-R", options.test_regex]
         tested = step("tests", test_command, root, proc.environment(), test_log)
         report.say(tested.line())
         if tested.status != 0:
             status = 1
-        report.say(summary_line(test_log.read_text(encoding="utf-8", errors="replace"), test_log))
+        report.say(summary_line(build_dir / JUNIT_NAME, test_log))
     report.say("\n".join(compile_lines(build_dir)))
-    if test_log.is_file():
-        report.say("\n".join(test_lines(test_log.read_text(encoding="utf-8", errors="replace"))))
+    if tested_at_all:
+        report.say("\n".join(test_lines(build_dir)))
     print(f"loop gauge --cold: the report is in {report.path}")
     return status
 
 
 # ── The self-test ──────────────────────────────────────────────────────────
 
-PLANTED_TEST_OUTPUT = """Test project /b
-      Start  1: neg_fixture_a
- 1/3 Test  #1: neg_fixture_a ....................   Passed    2.50 sec
- 2/3 Test  #2: test_arena .......................   Passed    0.25 sec
- 3/3 Test  #3: test_slow ........................***Failed   10.00 sec
-
-67% tests passed, 1 tests failed out of 3
+# A planted JUnit report of a run of three tests, with one failure.
+PLANTED_JUNIT = """<?xml version="1.0" encoding="UTF-8"?>
+<testsuite tests="3" failures="1">
+  <testcase name="neg_fixture_a" status="run"/>
+  <testcase name="test_arena" status="run"/>
+  <testcase name="test_slow" status="fail"><failure message="Failed"/></testcase>
+</testsuite>
 """
+# The wall time and the status of each planted test record.
+PLANTED_TESTS = (("neg_fixture_a", 2.5, 0), ("test_arena", 0.25, 0), ("test_slow", 10.0, 1))
+
+
+def plant_tests(build_dir: Path) -> None:
+    """Write the planted JUnit report and the planted record of each test into a build directory."""
+    (build_dir / JUNIT_NAME).write_text(PLANTED_JUNIT, encoding="utf-8")
+    for name, seconds, exit_code in PLANTED_TESTS:
+        run = cost_meter.Measurement(exit_code, seconds / 2, 0.0, seconds, 4096, 1.0, 1.0, None)
+        cost_meter.write_test_record(str(build_dir), name, "/b/test/" + name, run,
+                                     "passed" if exit_code == 0 else "failed")
 
 
 def self_test() -> int:
@@ -352,13 +379,18 @@ def self_test() -> int:
         expect("the source of an object path has no CMakeFiles part",
                source_of("test/CMakeFiles/test_arena.dir/test_arena.cpp.o") == "test/test_arena.cpp"
                and source_of("libplain.o") == "libplain")
-        lines = test_lines(PLANTED_TEST_OUTPUT)
-        expect("the test lines count the tests and the fixtures, and give the slowest first",
+        planted_build = root / "planted-build"
+        planted_build.mkdir()
+        plant_tests(planted_build)
+        lines = test_lines(planted_build)
+        expect("the test lines count the tests and the fixtures from the records, and give the slowest first",
                lines[0] == "tests: 3, of them 1 negative fixtures; sum of the wall times 13 s, of the fixtures 2 s"
                and lines[2] == "      10.0  test_slow")
-        expect("the summary line comes from the output of the run",
-               summary_line(PLANTED_TEST_OUTPUT, root).strip() == "67% tests passed, 1 tests failed out of 3"
-               and summary_line("No tests were found!!!\n", root).strip() == "no test matched the regex")
+        (planted_build / "empty.xml").write_text("<testsuite tests=\"0\"/>\n", encoding="utf-8")
+        expect("the summary line comes from the JUnit report of the run",
+               summary_line(planted_build / JUNIT_NAME, root).strip() == "3 tests: 2 passed, 1 failed, 0 did not run"
+               and summary_line(planted_build / "empty.xml", root).strip() == "no test matched the regex"
+               and "wrote no JUnit report" in summary_line(planted_build / "missing.xml", root))
 
         calls: list[str] = []
 
@@ -371,7 +403,8 @@ def self_test() -> int:
                     "CMAKE_COMMAND": str(shutil.which("cmake")),
                     "CMAKE_CTEST_COMMAND": str(shutil.which("ctest") or shutil.which("cmake"))})
             if name == "tests":
-                log.write_text(PLANTED_TEST_OUTPUT, encoding="utf-8")
+                log.write_text("the planted output of the test run\n", encoding="utf-8")
+                plant_tests(log.parent)
             return StepCost(name, 1.0, 1.0, 0.0, 4096, 1 if name == "tests" else 0)
 
         options = argparse.Namespace(build_dir=root / "measured", preset="default", jobs=4, target=[],

@@ -1,23 +1,33 @@
 """loop test-step — run one test, record its cost, and hold its budget.
 
-cmake/TestLauncher.cmake sets CMAKE_TEST_LAUNCHER, so CMake puts this
-subcommand in front of each test whose command is an executable target:
+cmake/TestLauncher.cmake puts this subcommand in front of each test of the
+tree, apart from a negative fixture.  CMAKE_TEST_LAUNCHER puts it in front of
+a test of an executable target:
 
-    python3 -S utils/bin/loop test-step --warnings-dir DIR EXECUTABLE ARG...
+    python3 -S utils/bin/loop test-step --warnings-dir DIR --build-dir BUILD EXECUTABLE ARG...
 
-The name of the test is the file name of the executable.  CMake gives a
-launcher no test name, and each executable test of the tree has the name of
-its target.  A test whose command is a script, for example a guard or a
-negative fixture, gets no launcher.  After the tests of each run, ctest runs
-the rule test-time (`guard check --rule test-time`), which reads its wall
-time from the log of the run.
+The function crucible_script_test() puts it in front of each script test,
+with the name of the test:
+
+    python3 -S utils/bin/loop test-step --warnings-dir DIR --build-dir BUILD --name NAME PROGRAM ARG...
+
+CMake gives a launcher no test name, and each executable test of the tree has
+the name of its target.  The name of a test with no --name is the file name
+of its program.  The driver of a negative fixture, `loop fixture`, writes the
+same record with the same judge.  A fixture then pays no second start of
+Python.
 
 WHAT THE SUBCOMMAND DOES
     It runs the command through utils/assay/core/meter.py, with the same
-    standard streams.  It writes the record EXECUTABLE.test.cost (the format
-    is in meter.py, with the step "test"), and it ends as the command ended:
-    with its status, or on its signal.  A failure to measure, to read the
-    registry or to write the record never changes the status.
+    standard streams.  The environment of the command gets
+    CRUCIBLE_TEST_LAUNCHED with the name of the test.  A fixture driver in the
+    command then gives the record and the judge to this subcommand.  It
+    writes the record BUILD/test-records/NAME.test.cost (THE RECORD in
+    meter.py), and it ends as the command ended: with its status, or on its
+    signal.  With no --build-dir, the build directory is the nearest
+    directory above the program with a build-kind.txt.  With no such
+    directory, the subcommand writes no record.  A failure to measure, to
+    read the registry or to write the record does not change the status.
 
 CORE DUMPS
     A death test forks a child that aborts, and the parent waits for the
@@ -47,7 +57,9 @@ THE MEASURED RULES
       * Over the warning threshold of a rule, the subcommand prints a warning
         line in the format of utils/assay/core/report.py and writes it to
         DIR/RULE.NAME.txt, so the tests that run at the same time do not write
-        one file.  Under the warning threshold, it removes that file.
+        one file.  Under the warning threshold, it removes that file.  The
+        line names the program when the program is a file of the build
+        directory, and the record of the test for a script test.
       * Over the error threshold, it prints an error line, and a test that
         passed fails with status 1, unless a row of the ledger
         utils/ledgers/RULE.txt admits the test for the kind of the build:
@@ -69,15 +81,16 @@ THE MEASURED RULES
     error.
     A test that failed keeps its status, so a failure, a skip code and a
     WILL_FAIL test keep the meaning that ctest gives them.  A WILL_FAIL test
-    over its budget therefore does not fail.  No executable test of the tree
-    has WILL_FAIL at this time.
+    over its budget therefore does not fail.  No test of the tree has
+    WILL_FAIL at this time.
 
 The variables CRUCIBLE_TEST_REGISTRY and CRUCIBLE_TEST_LEDGERS name another
 registry and another directory of ledgers, which holds RULE.txt for each
-planted ledger, for the self-test.
+planted ledger, for its test.
 CRUCIBLE_TEST_CORES is the variable of CORE DUMPS above.
 
-    guard selftest loop.teststep
+This module holds no self-test, because each test pays the import of the
+module.  `guard selftest tests.loop.test_teststep` runs its test.
 """
 
 import os
@@ -85,11 +98,27 @@ import sys
 
 from assay.core import meter as cost_meter
 
+# The name Callable is only for the types, and a test does not pay the import of collections.abc.
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 ROWS = ("test-time", "test-memory")
 REGISTRY_ENV = "CRUCIBLE_TEST_REGISTRY"
 LEDGERS_ENV = "CRUCIBLE_TEST_LEDGERS"
 CORES_ENV = "CRUCIBLE_TEST_CORES"
 CORES_KEEP = "keep"
+# The variable that tells a fixture driver in the command that this subcommand records and judges the test.
+LAUNCHED_ENV = "CRUCIBLE_TEST_LAUNCHED"
+# The options before the command, each with one value.
+OPTIONS = ("--warnings-dir", "--build-dir", "--name")
+USAGE = (
+    "usage: loop test-step [--warnings-dir DIR] [--build-dir BUILD] [--name NAME] PROGRAM [ARG]... | "
+    "guard selftest tests.loop.test_teststep"
+)
+# The characters of a test name: the characters of a writer key of utils/assay/core/report.py, which the test of this
+# module holds equal to WRITER_KEY.  A name does not start with '-'.
+NAME_CHARACTERS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
 # The kernel writes no core dump at this soft limit, also when
 # kernel.core_pattern names a handler (fs/coredump.c).
 NO_CORE_LIMIT_BYTES = 1
@@ -98,7 +127,6 @@ NO_CORE_LIMIT_BYTES = 1
 UTILS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # The registry of the measured rules, utils/registry.txt.
 REGISTRY_FILE = os.path.join(UTILS, "registry.txt")
-RECORD_SUFFIX = ".test" + cost_meter.RECORD_SUFFIX
 
 
 def stop_core_dumps() -> None:
@@ -230,268 +258,137 @@ def report(name: str, place: str, findings: list[tuple[str, str, str]], warnings
                                         name)
 
 
-def write(record_path: str, name: str, command: str, run: cost_meter.Measurement, result: str) -> None:
-    """Write the record of one test.
+def is_test_name(name: str) -> bool:
+    """Return True when a text can name a test: a writer key of utils/assay/core/report.py, which is also a file name."""
+    return bool(name) and not name.startswith("-") and set(name) <= NAME_CHARACTERS
+
+
+class Options:
+    """The options of the command line: each one is None when the command line does not give it."""
+
+    __slots__ = ("build_dir", "name", "warnings_dir")
+
+    def __init__(self) -> None:
+        """Start with no option."""
+        self.warnings_dir: str | None = None
+        self.build_dir: str | None = None
+        self.name: str | None = None
+
+
+def read_options(argv: list[str]) -> tuple[Options, list[str]] | None:
+    """Divide the words of the command line into the options and the command.
 
     Args:
-        record_path: The record file
-        name: The name of the test
-        command: The absolute path of the executable
-        run: The measurement of the command
-        result: "passed", "failed" or "rejected" (the launcher failed a test that passed)
-    """
-    cost_meter.write_record(record_path, [
-        ("format", str(cost_meter.RECORD_FORMAT)), ("step", '"test"'), ("result", f'"{result}"'),
-        ("test", cost_meter.quote(name)), ("command", cost_meter.quote(command)), ("exit", str(run.exit_code)),
-        ("cost", cost_meter.cost_block(run))])
-
-
-def main(argv: list[str]) -> int:
-    """Run the test of the command line, and end as it ended, or run the self-test.
-
-    Args:
-        argv: [--warnings-dir DIR] EXECUTABLE [ARG]..., or --self-test
+        argv: [OPTION VALUE]... PROGRAM [ARG]...
 
     Returns:
-        The status of the self-test, or 2 on a usage error.  Else the function ends the process as the test ended
+        The options, and the command.  None when an option has no value, an option comes two times, or no command
+        follows the options
     """
-    if argv == ["--self-test"]:
-        return self_test()
-    arguments = argv
-    warnings_dir = None
-    if arguments[:1] == ["--warnings-dir"] and len(arguments) >= 2:
-        warnings_dir, arguments = arguments[1], arguments[2:]
-    if not arguments:
-        print("usage: loop test-step [--warnings-dir DIR] EXECUTABLE [ARG]... | guard selftest loop.teststep",
-              file=sys.stderr)
-        return 2
-    command = os.path.abspath(arguments[0])
-    name = os.path.basename(command)
+    options = Options()
+    index = 0
+    while index < len(argv) and argv[index] in OPTIONS:
+        field = argv[index].removeprefix("--").replace("-", "_")
+        if index + 1 >= len(argv) or getattr(options, field) is not None:
+            return None
+        setattr(options, field, argv[index + 1])
+        index += 2
+    return (options, argv[index:]) if index < len(argv) else None
+
+
+def read_budget() -> dict[str, tuple[float, float]]:
+    """Read the thresholds of the rules of the launcher from the registry, or give none when it cannot be read."""
     try:
-        budget = cost_meter.budget_rows(os.environ.get(REGISTRY_ENV) or REGISTRY_FILE, ROWS)
+        return cost_meter.budget_rows(os.environ.get(REGISTRY_ENV) or REGISTRY_FILE, ROWS)
     except (OSError, ValueError):
-        budget = {}
-    if not keeps_cores():
-        stop_core_dumps()
+        return {}
+
+
+def safely[T](action: Callable[[], T], fallback: T) -> T:
+    """Return the value of one step of the judge, or the fallback when the step fails.
+
+    A failure to read a ledger, to report a finding or to write the record
+    does not change the status of a test (judge_and_record()).
+    """
     try:
-        run = cost_meter.measure(arguments)
-    except OSError as error:
-        print(f"loop test-step: the test {arguments[0]} cannot start: {error}", file=sys.stderr)
-        sys.exit(127)
+        return action()
+    except BaseException:  # noqa: BLE001
+        return fallback
+
+
+def judge_and_record(name: str, program: str, finding_path: str, build_dir: str | None,
+                     run: cost_meter.Measurement, warnings_dir: str | None,
+                     budget: dict[str, tuple[float, float]] | None = None) -> int:
+    """Judge one test, report each finding, write its record, and return the status that the test ends with.
+
+    `loop test-step` and `loop fixture` call this function.  The two then
+    give the same record and the same verdict.  A failure to read the
+    registry, to report or to write the record does not change the status.
+
+    Args:
+        name: The name of the test
+        program: The program of the test, for the record
+        finding_path: The path that a finding names
+        build_dir: The build directory, or None for no record and no build kind
+        run: The measurement of the test, with its status
+        warnings_dir: The warnings directory, or None
+        budget: The thresholds of the rules, or None to read them from the registry (read_budget())
+
+    Returns:
+        The status of the test, or 1 when the judge rejects a test with the status 0
+    """
     status = run.exit_code
     result = "passed" if status == 0 else "failed"
-    try:
-        build_dir = cost_meter.build_dir_of(command)
-        kind = cost_meter.read_kind(build_dir) if build_dir else None
-        findings = judge(name, run, budget, kind)
-        if status == 0 and any(level == "error" for level, _, _ in findings):
-            status, result = 1, "rejected"
-        report(name, command, findings, warnings_dir)
-    except BaseException:  # noqa: BLE001
-        pass
-    try:
-        write(command + RECORD_SUFFIX, name, command, run, result)
-    except BaseException:  # noqa: BLE001
-        pass
-    stop_core_dumps()
-    cost_meter.end_like(status)
+    thresholds = read_budget() if budget is None else budget
+    kind = cost_meter.read_kind(build_dir) if build_dir else None
+    no_findings: list[tuple[str, str, str]] = []
+    findings = safely(lambda: judge(name, run, thresholds, kind), no_findings)
+    if status == 0 and any(level == "error" for level, _, _ in findings):
+        status, result = 1, "rejected"
+    safely(lambda: report(name, finding_path, findings, warnings_dir), None)
+    if build_dir is not None:
+        safely(lambda: cost_meter.write_test_record(build_dir, name, program, run, result), None)
     return status
 
 
-# ── The self-test ──────────────────────────────────────────────────
+def main(argv: list[str]) -> int:
+    """Run the test of the command line, and end as it ended.
 
-
-def self_test() -> int:
-    """Run the launcher on planted tests in a scratch build directory, and check each verdict.
+    Args:
+        argv: [--warnings-dir DIR] [--build-dir BUILD] [--name NAME] PROGRAM [ARG]...
 
     Returns:
-        0 when every case holds, 2 otherwise
+        2 on a usage error.  Else the function ends the process as the test ended
     """
-    import json
-    import resource
-    import signal
-    import tempfile
-    from pathlib import Path
-
-    from assay.core import proc
-    from assay.core import registry as rule_registry
-
-    failures: list[str] = []
-
-    def expect(label: str, holds: bool) -> None:
-        print(f"  {'ok  ' if holds else 'FAIL'} {label}")
-        if not holds:
-            failures.append(label)
-
-    with tempfile.TemporaryDirectory(prefix="test-step-") as work:
-        root = Path(work)
-        build = root / "build"
-        (build / "test").mkdir(parents=True)
-        (build / cost_meter.KIND_FILE).write_text("x86_64-debug-asan\n")
-        ledgers = root / "ledgers"
-        ledgers.mkdir()
-        table = root / "registry.txt"
-        warnings = build / "check-warnings"
-        program = build / "test" / "test_planted"
-        program.write_text("#!/bin/sh\nexit \"${1:-0}\"\n")
-        program.chmod(0o755)
-        killer = build / "test" / "test_killed"
-        killer.write_text("#!/bin/sh\nkill -TERM $$\n")
-        killer.chmod(0o755)
-
-        def budget(time_rule: tuple[float, float], memory_rule: tuple[float, float]) -> None:
-            table.write_text(rule_registry.planted([
-                rule_registry.measured_rule("test-time", *time_rule, "s", "the wall time"),
-                rule_registry.measured_rule("test-memory", *memory_rule, "GB", "the peak memory")]))
-
-        def ledger(row: str, text: str) -> None:
-            # A ledger with no row has no file (assay.core.ledger).
-            path = Path(cost_meter.ledger_file(row, str(ledgers)))
-            if text:
-                path.write_text(f"# a planted ledger\nformat 1\nrule {row}\n{text}")
-            else:
-                path.unlink(missing_ok=True)
-
-        def environment_of(extra: dict[str, str]) -> dict[str, str]:
-            # A case that needs a CI runner or kept cores sets the variable
-            # itself, so each verdict is the same in each environment.
-            environment = proc.environment({REGISTRY_ENV: str(table), LEDGERS_ENV: str(ledgers)})
-            environment.pop(cost_meter.GITHUB_ACTIONS_ENV, None)
-            environment.pop(CORES_ENV, None)
-            environment.update(extra)
-            return environment
-
-        # The launcher as ctest starts it: the master loop with the subcommand test-step.
-        launcher = [sys.executable, "-S", cost_meter.LOOP_MASTER, "test-step"]
-
-        def launch(target: Path, *args: str, **extra: str) -> tuple[int, str]:
-            done = proc.run(proc.Command([*launcher, "--warnings-dir", str(warnings), str(target), *args],
-                                         timeout_s=proc.TOOL_S, env=environment_of(extra)))
-            return done.exit, done.err
-
-        def launch_for_wait_status(target: Path, **extra: str) -> int:
-            # The wait status itself, because a return code hides the core dump bit.
-            done = proc.run(proc.Command([*launcher, "--warnings-dir", str(warnings), str(target)],
-                                         timeout_s=proc.TOOL_S, env=environment_of(extra),
-                                         stdout=root / "wait-status.log", stderr=proc.Output.MERGE))
-            return done.wait_status
-
-        ledger("test-time", "")
-        ledger("test-memory", "")
-        budget((1000, 2000), (1000, 2000))
-        for code in ("0", "1", "3"):
-            status, said = launch(program, code)
-            expect(f"the status {code} of the test goes through, with no finding", status == int(code)
-                   and "[test-" not in said)
-        record = json.loads((build / "test" / ("test_planted" + RECORD_SUFFIX)).read_text())
-        expect("the record names the test, its step, its result and its cost",
-               record["step"] == "test" and record["test"] == "test_planted" and record["result"] == "failed"
-               and record["exit"] == 3 and record["cost"]["wall_s"] >= 0)
-        status, _ = launch(killer)
-        expect("a test that a signal stops ends on the same signal", status == -15)
-
-        budget((0, 2000), (0, 2000))
-        status, said = launch(program)
-        own = warnings / "test-time.test_planted.txt"
-        expect("a test over the warning thresholds passes, with a warning for each row",
-               status == 0 and said.count(": warning: [test-") == 2 and own.is_file()
-               and (warnings / "test-memory.test_planted.txt").is_file())
-        budget((1000, 2000), (1000, 2000))
-        status, said = launch(program)
-        expect("a test under the thresholds removes its warnings files", status == 0 and not own.exists()
-               and not (warnings / "test-memory.test_planted.txt").exists())
-
-        budget((0, 0), (1000, 2000))
-        status, said = launch(program)
-        expect("a passed test over the time error threshold fails, with an error line",
-               status == 1 and ": error: [test-time] " in said and "no row of" in said)
-        record = json.loads((build / "test" / ("test_planted" + RECORD_SUFFIX)).read_text())
-        expect("the record of the failed test says rejected", record["result"] == "rejected")
-        status, said = launch(program, "3")
-        expect("a test that failed keeps its status over the error threshold",
-               status == 3 and ": error: [test-time] " in said)
-        status, said = launch(program, GITHUB_ACTIONS="true")
-        record = json.loads((build / "test" / ("test_planted" + RECORD_SUFFIX)).read_text())
-        expect("on a CI runner, a passed test over the time error threshold passes, with a warning that says that "
-               "the error was demoted", status == 0 and ": warning: [test-time] " in said and "demoted" in said
-               and ": error: " not in said and record["result"] == "passed")
-        budget((1000, 2000), (0, 0))
-        status, said = launch(program, GITHUB_ACTIONS="true")
-        expect("on a CI runner, a passed test over the memory error threshold still fails",
-               status == 1 and ": error: [test-memory] " in said)
-        budget((0, 0), (1000, 2000))
-        (build / cost_meter.KIND_FILE).write_text("x86_64-debug-tsan\n")
-        status, said = launch(program)
-        expect("a build of a tsan kind warns on a time over the error threshold, and the test passes",
-               status == 0 and ": warning: [test-time] " in said and "budgets no wall time" in said)
-        (build / cost_meter.KIND_FILE).write_text("x86_64-debug-asan\n")
-        budget((1000, 2000), (0, 0))
-        status, said = launch(program)
-        expect("a passed test over the memory error threshold fails", status == 1 and ": error: [test-memory] " in said)
-        ledger("test-memory", "- | x86_64-debug-asan | 0.01 | test_planted | a planted reason\n")
-        status, said = launch(program)
-        expect("a ledger row of the kind admits the test, with a warning",
-               status == 0 and ": warning: [test-memory] " in said and "a planted reason" in said)
-        ledger("test-memory", "- | x86_64-release | 0.01 | test_planted | a planted reason\n")
-        status, said = launch(program)
-        expect("a ledger row of another kind admits nothing", status == 1)
-        ledger("test-memory", "@build/test/test_planted | x86_64-debug-asan | 0.01 | - | a planted reason\n")
-        status, said = launch(program)
-        expect("a ledger row that names a file and not a test admits nothing", status == 1)
-        ledger("test-memory", "- | x86_64-debug-asan | 0.01 | test_planted | a planted reason\n")
-        budget((1000, 2000), (1000, 2000))
-        status, said = launch(program)
-        expect("a ledger row whose test stays under the error threshold fails the test",
-               status == 1 and "Remove its row" in said)
-        status, said = launch(root / "no-such-test")
-        expect("a test that cannot start gives status 127", status == 127 and "cannot start" in said)
-
-        # CORE DUMPS.  This process lowers its own soft core limit to 0, so the
-        # limit that a test sees tells the launcher apart from the
-        # environment.  A core dump that the launcher does not stop reaches
-        # the handler of kernel.core_pattern, which ignores a limit of 0.  At
-        # a hard limit of 0, no process can set 1 byte, and the cases then
-        # check only the limit that the environment gives.
-        _, hard_core = resource.getrlimit(resource.RLIMIT_CORE)
-        resource.setrlimit(resource.RLIMIT_CORE, (0, hard_core))
-        can_stop = hard_core == resource.RLIM_INFINITY or hard_core >= NO_CORE_LIMIT_BYTES
-        stopped = NO_CORE_LIMIT_BYTES if can_stop else 0
-        shebang = f"#!{sys.executable} -S\n"
-        limit_probe = build / "test" / "test_core_limit"
-        limit_probe.write_text(shebang + "import resource, sys\nsoft, hard = resource.getrlimit(resource.RLIMIT_CORE)\n"
-                               "print(f'core-limit {soft} {hard}', file=sys.stderr)\n")
-        child_probe = build / "test" / "test_core_child"
-        child_probe.write_text(shebang + "import os, sys\nchild = os.fork()\nif child == 0:\n    os.abort()\n"
-                               "_, status = os.waitpid(child, 0)\n"
-                               "signal = os.WTERMSIG(status) if os.WIFSIGNALED(status) else 0\n"
-                               "print(f'child-core {int(os.WCOREDUMP(status))} signal {signal}', file=sys.stderr)\n")
-        # This planted test stops its own core dump, so only the launcher can write one.
-        aborter = build / "test" / "test_core_abort"
-        aborter.write_text(shebang + "import os, resource\n_, hard = resource.getrlimit(resource.RLIMIT_CORE)\n"
-                           "if hard == resource.RLIM_INFINITY or hard >= 1:\n"
-                           "    resource.setrlimit(resource.RLIMIT_CORE, (1, hard))\nos.abort()\n")
-        for planted in (limit_probe, child_probe, aborter):
-            planted.chmod(0o755)
-        status, said = launch(limit_probe)
-        expect("a test gets a soft core limit of 1 byte, and the hard core limit of the environment",
-               status == 0 and f"core-limit {stopped} {hard_core}\n" in said and "loop test-step:" not in said)
-        status, said = launch(limit_probe, **{CORES_ENV: CORES_KEEP})
-        expect(f"with {CORES_ENV}={CORES_KEEP}, a test keeps the core limit of the environment",
-               status == 0 and f"core-limit 0 {hard_core}\n" in said and "loop test-step:" not in said)
-        status, said = launch(limit_probe, **{CORES_ENV: "yes"})
-        expect(f"another value of {CORES_ENV} stops the core dumps, with a note",
-               status == 0 and f"core-limit {stopped} {hard_core}\n" in said and f"only {CORES_KEEP!r} keeps" in said)
-        status, said = launch(child_probe)
-        expect("a child of a test that aborts writes no core dump",
-               status == 0 and f" signal {signal.SIGABRT.value}\n" in said
-               and (not can_stop or "child-core 0 " in said))
-        for keep_label, extra in (("", {}), (f", also with {CORES_ENV}={CORES_KEEP}", {CORES_ENV: CORES_KEEP})):
-            wait_status = launch_for_wait_status(aborter, **extra)
-            expect(f"a test that aborts ends the launcher on SIGABRT, and the launcher writes no core dump{keep_label}",
-                   os.WIFSIGNALED(wait_status) and os.WTERMSIG(wait_status) == signal.SIGABRT
-                   and (not can_stop or not os.WCOREDUMP(wait_status)))
-    if failures:
-        print(f"loop test-step --self-test: FAILED, {len(failures)} case(s) did not hold")
+    parsed = read_options(argv)
+    name = "" if parsed is None else parsed[0].name or os.path.basename(parsed[1][0])
+    if parsed is None or not is_test_name(name):
+        problem = "" if parsed is None else f"the test name {name!r} is not a word of letters, digits, '_' and '-'.  "
+        print(f"loop test-step: {problem}{USAGE}", file=sys.stderr)
         return 2
-    print("loop test-step --self-test: every case holds.")
-    return 0
+    options, command = parsed
+    program = os.path.abspath(command[0]) if os.sep in command[0] else command[0]
+    build_dir = options.build_dir
+    if build_dir is None and os.path.isabs(program):
+        build_dir = cost_meter.build_dir_of(program)
+    if build_dir is not None:
+        build_dir = os.path.abspath(build_dir)
+    is_built = build_dir is not None and program.startswith(build_dir + os.sep)
+    place = program if is_built or build_dir is None else cost_meter.test_record_file(build_dir, name)
+    # The launcher reads the registry before the test runs.  The parse then frees its memory before the start of the
+    # test, and the start uses that memory again, with fewer page faults.
+    budget = read_budget()
+    if not keeps_cores():
+        stop_core_dumps()
+    # The launcher puts the variable in its own environment, which the test gets.  A copy of the environment for the
+    # child costs more.
+    os.environ[LAUNCHED_ENV] = name
+    try:
+        run = cost_meter.measure(command)
+    except OSError as error:
+        print(f"loop test-step: the test {command[0]} cannot start: {error}", file=sys.stderr)
+        sys.exit(127)
+    status = judge_and_record(name, program, place, build_dir, run, options.warnings_dir, budget)
+    stop_core_dumps()
+    cost_meter.end_like(status)
+    return status

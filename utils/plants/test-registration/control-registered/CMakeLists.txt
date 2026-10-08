@@ -13,6 +13,10 @@ add_test(NAME planted_script COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/chec
 set_tests_properties(planted_script PROPERTIES LABELS "ci_guard")
 add_test(NAME planted_launched COMMAND python3 -S ${CMAKE_SOURCE_DIR}/utils/bin/loop test-step
          --warnings-dir ${CMAKE_BINARY_DIR}/check-warnings ${CMAKE_BINARY_DIR}/planted_launched)
+add_test(NAME planted_launched_guard COMMAND python3 -S ${CMAKE_SOURCE_DIR}/utils/bin/loop test-step
+         --build-dir ${CMAKE_BINARY_DIR} --name planted_launched_guard
+         python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule stray-rule)
+set_tests_properties(planted_launched_guard PROPERTIES LABELS "ci_guard")
 add_test(NAME planted_fixture COMMAND python3 -S ${CMAKE_SOURCE_DIR}/utils/bin/loop fixture
          ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}/neg_planted.cpp neg_planted "error")
 add_test(NAME planted_not_a_script COMMAND bash ${CMAKE_SOURCE_DIR}/utils/tools/run.sh utils/scripts/check-a.sh)
