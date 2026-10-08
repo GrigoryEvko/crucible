@@ -156,12 +156,13 @@ def measure_cases(expect: testing.Expect) -> None:
         compdb.plant(build, [unit_command(build)])
         probe = cost_meter.open_instruction_counter()
         has_counter = probe is not None and cost_meter.read_instruction_counter(probe) is not None
-        status, text = testing.captured(lambda: writer.measured(build, list_path, 2))
+        status, text = testing.captured(lambda: writer.measured(build, list_path, 2, 3))
         rows = rule.read_list(list_path).rows
         if has_counter:
             expect(
-                "--measure writes a measured weight to each row",
+                "--measure with three runs writes a measured weight to each row",
                 status == ExitCode.OK
+                and "the median of 3 measure(s)" in text
                 and "fixy/Uses.cpp" in rows
                 and rows["fixy/Uses.cpp"].weight != rule.UNMEASURED
                 and rule.is_weight(rows["fixy/Uses.cpp"].weight),
@@ -171,6 +172,23 @@ def measure_cases(expect: testing.Expect) -> None:
                 "--measure on a host with no instruction counter writes nothing",
                 status == ExitCode.FINDINGS and list_path.read_text(encoding="utf-8") == listed,
             )
+
+
+def median_cases(expect: testing.Expect) -> None:
+    """Check the median of the weights of the runs: an outlier run, two runs and a weight below 0."""
+    runs = [{"": 100, "a.cpp": 110}, {"": 90, "a.cpp": 102}, {"": 100, "a.cpp": 150}]
+    expect(
+        "the weight of a row is the median of its weights in the runs, and an outlier run does not move it",
+        writer.median_weights(runs, ["a.cpp"]) == {"a.cpp": 12},
+    )
+    expect(
+        "for two runs, the weight is the lower of the two middle weights",
+        writer.median_weights(runs[:2], ["a.cpp"]) == {"a.cpp": 10},
+    )
+    expect(
+        "a weight below 0 in a run counts as 0",
+        writer.median_weights([{"": 100, "a.cpp": 90}], ["a.cpp"]) == {"a.cpp": 0},
+    )
 
 
 def explain_cases(expect: testing.Expect) -> None:
@@ -201,10 +219,16 @@ def usage_cases(expect: testing.Expect) -> None:
         "main refuses --jobs 0",
         testing.captured(lambda: writer.main(["--measure", "build", "--jobs", "0"]))[0] == ExitCode.USAGE,
     )
+    expect(
+        "main refuses --runs 0",
+        testing.captured(lambda: writer.main(["--measure", "build", "--runs", "0"]))[0] == ExitCode.USAGE,
+    )
 
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
     return testing.run(
-        __name__.removeprefix("assay."), argv, (write_cases, command_cases, measure_cases, explain_cases, usage_cases)
+        __name__.removeprefix("assay."),
+        argv,
+        (write_cases, command_cases, measure_cases, median_cases, explain_cases, usage_cases),
     )

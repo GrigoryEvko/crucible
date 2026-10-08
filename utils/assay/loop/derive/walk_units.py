@@ -2,7 +2,7 @@
 
 usage: loop derive walk-units --write
        loop derive walk-units --check
-       loop derive walk-units --measure BUILD_DIR [--jobs N]
+       loop derive walk-units --measure BUILD_DIR [--jobs N] [--runs N]
        loop derive walk-units --explain CHECK_FILE
 
 The rule walk-units (assay.guard.engines.tsast.walk_units) derives the list
@@ -23,7 +23,10 @@ THE MODES
                 BUILD_DIR.  Then write each weight again: the user
                 instructions that the check file adds to the base unit, in
                 units of 10^9 with one decimal.  --jobs gives the compiles at
-                one time.
+                one time.  --runs gives the number of measures.  Each unit
+                compiles that number of times, and the weight of a row is the
+                median of its weights in the runs.  When two divides the number
+                of runs, the weight is the lower of the two middle weights.
     --explain   print the path of each walk of one check file, from the
                 check to the call of members_of.
 
@@ -39,7 +42,9 @@ Exit 0 when the mode did its work, and 1 when the list cannot be written or
 a measure fails.  Exit 2 on a usage error, and 3 when an input is missing.
 """
 
+import statistics
 import tempfile
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,6 +66,8 @@ INCLUDE_FLAG = "-I"
 OUTPUT_FLAG = "-o"
 # The default number of measure compiles at one time.
 MEASURE_JOBS = 96
+# The default number of measures of each unit.
+MEASURE_RUNS = 1
 GIGA = 1e9
 # The number of the heaviest check files that the report of a measure names.
 SHOWN_HEAVIEST = 5
@@ -192,10 +199,20 @@ def measure_unit(command: UnitCommand, work: Path, checks: list[str]) -> int | N
     return count if completed.exit == 0 else None
 
 
-def measured(build_dir: Path, list_path: Path, jobs: int) -> ExitCode:
+def median_weights(runs: Sequence[Mapping[str, int]], rows: Iterable[str]) -> dict[str, int]:
+    """Return the weight of each row: the median of its weights in the runs (THE MODES, --runs).
+
+    The weight of a row in one run is its count less the count of the base unit "" of the same run, and 0 or more.
+    When two divides the number of runs, the median is the lower of the two middle weights.  Complexity: O(n * r log
+    r) for n rows and r runs.
+    """
+    return {rel: statistics.median_low([max(0, run[rel] - run[""]) for run in runs]) for rel in rows}
+
+
+def measured(build_dir: Path, list_path: Path, jobs: int, runs: int = MEASURE_RUNS) -> ExitCode:
     """Measure the weight of each row of the list, and write the list again with the weights.
 
-    Complexity: one compile for each row and one more for the base, with jobs compiles at one time.
+    Complexity: runs compiles for each row and for the base, with jobs compiles at one time.
 
     Returns:
         ExitCode.OK when the list is written, ExitCode.FINDINGS when the measure cannot run or a compile fails
@@ -219,11 +236,12 @@ def measured(build_dir: Path, list_path: Path, jobs: int) -> ExitCode:
     units: dict[str, list[str]] = {"": [], **{rel: [rel] for rel in sorted(listed.rows)}}
     with tempfile.TemporaryDirectory(prefix="walk-weights-") as work, ThreadPoolExecutor(max_workers=jobs) as pool:
         futures = {
-            rel: pool.submit(measure_unit, command, Path(work) / f"unit{index}", checks)
+            (run, rel): pool.submit(measure_unit, command, Path(work) / f"run{run}" / f"unit{index}", checks)
+            for run in range(runs)
             for index, (rel, checks) in enumerate(units.items())
         }
-        counts = {rel: future.result() for rel, future in futures.items()}
-    failed = sorted(rel or "the base unit" for rel, count in counts.items() if count is None)
+        counts = {key: future.result() for key, future in futures.items()}
+    failed = sorted({rel or "the base unit" for (_run, rel), count in counts.items() if count is None})
     if failed:
         check_report.write_line(
             f"{PROGRAM}: no exact count for {', '.join(failed)}.  A compile failed, or the host "
@@ -231,13 +249,14 @@ def measured(build_dir: Path, list_path: Path, jobs: int) -> ExitCode:
             is_error=True,
         )
         return ExitCode.FINDINGS
-    base = counts[""] or 0
-    weights = {rel: max(0, (counts[rel] or 0) - base) for rel in listed.rows}
+    by_run = [{rel: counts[(run, rel)] or 0 for rel in units} for run in range(runs)]
+    base = statistics.median_low([run[""] for run in by_run])
+    weights = median_weights(by_run, listed.rows)
     store(list_path, [(rel, f"{weights[rel] / GIGA:.1f}", row.namespaces) for rel, row in listed.rows.items()])
     heaviest = sorted(weights.items(), key=lambda item: (-item[1], item[0]))[:SHOWN_HEAVIEST]
     check_report.write_line(
-        f"{PROGRAM}: {rule.LIST} written with {len(weights)} weight(s).  The base unit costs "
-        f"{base / GIGA:.1f} G instructions, and the check files add "
+        f"{PROGRAM}: {rule.LIST} written with {len(weights)} weight(s), each the median of {runs} measure(s).  "
+        f"The base unit costs {base / GIGA:.1f} G instructions, and the check files add "
         f"{sum(weights.values()) / GIGA:.1f} G.  The heaviest: "
         + ", ".join(f"{rel} {count / GIGA:.1f} G" for rel, count in heaviest),
         is_error=True,
@@ -323,20 +342,24 @@ def main(argv: list[str]) -> int:
     )
     modes.add_argument("--explain", metavar="CHECK_FILE", help="print the path of each walk of one check file")
     parser.add_argument("--jobs", type=int, default=MEASURE_JOBS, help="with --measure: the compiles at one time")
+    parser.add_argument(
+        "--runs", type=int, default=MEASURE_RUNS, help="with --measure: the measures of each unit, for the median"
+    )
     try:
         options = parser.parse_args(argv)
     except SystemExit as stop:
         return ExitCode.OK if stop.code == 0 else ExitCode.USAGE
-    if options.jobs < 1:
-        check_report.write_line(f"{PROGRAM}: --jobs takes a number of 1 or more.", is_error=True)
-        return ExitCode.USAGE
+    for flag, number in (("--jobs", options.jobs), ("--runs", options.runs)):
+        if number < 1:
+            check_report.write_line(f"{PROGRAM}: {flag} takes a number of 1 or more.", is_error=True)
+            return ExitCode.USAGE
     try:
         if options.check:
             return checked()
         if options.write:
             return written(REPO_ROOT)
         if options.measure is not None:
-            return measured(options.measure.resolve(), REPO_ROOT / rule.LIST, options.jobs)
+            return measured(options.measure.resolve(), REPO_ROOT / rule.LIST, options.jobs, options.runs)
         return explained(REPO_ROOT, options.explain)
     except tsast.KitMissing as problem:
         check_report.write_line(f"{PROGRAM}: {problem}", is_error=True)

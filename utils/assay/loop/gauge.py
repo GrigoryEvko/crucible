@@ -25,7 +25,11 @@ THE MEASUREMENT
        tree of utils/assay/readers/tsast.py finds the body.  Then the run builds
        the tree and runs each test with ctest.
     4. After the runs, it measures a build with nothing to do and a second
-       configure.
+       configure (closing_steps()).  Then it runs the rule reconfigure-noop
+       with the master guard of the copy.  The rule configures the build
+       again, and a compile in one of the two builds after it fails the step.
+       A ctest test cannot configure the build that runs it.  The gauge then
+       runs this check before each stage gate.
     5. It removes WORK_DIR, unless --keep is given or a step failed.
 
     --reuse DIR measures in the warm copy that an earlier run with --keep
@@ -86,6 +90,7 @@ import statistics
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -116,6 +121,9 @@ GIGA = 1e9
 STEP_ROWS = {"build": ("edit-build-instructions", "edit-build-cpu", "edit-build-wall"),
              "tests": ("edit-test-instructions", "edit-test-cpu", "edit-test-wall")}
 NOT_RUNNABLE = 3
+# The rule that configures the build again and refuses a compile after it, and the master of the copy that runs it.
+RECONFIGURE_RULE = "reconfigure-noop"
+GUARD_MASTER = Path("utils/bin/guard")
 
 
 class GaugeError(Exception):
@@ -406,6 +414,26 @@ def table(results: list[StepResult], medians: dict[str, Median]) -> str:
                                for index, (text, width) in enumerate(zip(row, widths, strict=True))) for row in rows)
 
 
+def reconfigure_check(tree: Path, build: Path) -> list[str]:
+    """Return the command of the rule reconfigure-noop on the build of a copy, with the master guard of the copy."""
+    return [sys.executable, str(tree / GUARD_MASTER), "check", "--rule", RECONFIGURE_RULE, "--build-dir", str(build)]
+
+
+def closing_steps(step: Callable[[str, list[str]], StepResult], build_command: list[str],
+                  configure_command: list[str], check_command: list[str]) -> None:
+    """Run the steps after the edit runs: a build with nothing to do, a second configure and the rule reconfigure-noop.
+
+    Args:
+        step: The runner of one step, which records its result
+        build_command: The build of the copy
+        configure_command: The configure of the copy
+        check_command: The command of the rule reconfigure-noop (reconfigure_check())
+    """
+    step("noop-build", build_command)
+    step("reconfigure", configure_command)
+    step(RECONFIGURE_RULE, check_command)
+
+
 def original_header(tree: Path) -> bytes:
     """Return the edited header as the commit of a copy holds it.
 
@@ -499,8 +527,7 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
             break
         runs["tests"].append(step(f"edit-tests-{run}", test_command))
     if not failed:
-        step("noop-build", build_command)
-        step("reconfigure", configure_command)
+        closing_steps(step, build_command, configure_command, reconfigure_check(tree, build))
     failed = failed or any(result.status != 0 for result in results)
     if not runs["build"] or len(runs["tests"]) != len(runs["build"]):
         print(f"edit-loop-gauge: a step failed before the runs completed.  The logs are in {logs}.")
@@ -592,6 +619,21 @@ def self_test() -> int:
 
     def result(name: str, wall: float, cpu: float, share: float | None, count: float | None) -> StepResult:
         return StepResult(name, 0, wall, cpu, cpu / 10, share, count)
+
+    called: list[tuple[str, list[str]]] = []
+
+    def recorded(name: str, command: list[str]) -> StepResult:
+        called.append((name, command))
+        return result(name, 1, 1, None, None)
+
+    copy_tree, copy_build = Path("/work/tree"), Path("/work/tree/build")
+    closing_steps(recorded, ["build"], ["configure"], reconfigure_check(copy_tree, copy_build))
+    expect("after the runs, the gauge builds with nothing to do, configures again and runs the rule reconfigure-noop "
+           "with the master guard of the copy on its build",
+           [name for name, _ in called] == ["noop-build", "reconfigure", RECONFIGURE_RULE]
+           and called[2][1] == [sys.executable, str(copy_tree / GUARD_MASTER), "check", "--rule", RECONFIGURE_RULE,
+                                "--build-dir", str(copy_build)]
+           and (REPO_ROOT / GUARD_MASTER).is_file())
 
     median = median_of([result("b", 10, 100, 2, 50), result("b", 30, 300, 4, 70), result("b", 20, 200, 12, 60)])
     expect("median_of takes the median of each measure and the largest other share",
