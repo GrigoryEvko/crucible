@@ -1,0 +1,30 @@
+#pragma once
+
+#include <memory>
+#include <vector>
+
+#include <forge/Door.h>
+
+// A shape next to each route that builds no proof type: an allocator of a
+// scalar, a container of pointers to the proof type with the allocator of a
+// default argument, an overload of a function template, an explicit
+// specialization with an integer argument, and a specialization of a class
+// template that no class befriends.
+namespace forge {
+
+inline void scalar_pool() {
+    std::allocator<int> pool;
+    (void)pool;
+}
+
+struct Index {
+    std::vector<Door*> doors;
+};
+
+inline int route(int*) { return 2; }
+
+template <> struct Steal<0> {};
+
+template <> struct Holder<Door*> {};
+
+}  // namespace forge

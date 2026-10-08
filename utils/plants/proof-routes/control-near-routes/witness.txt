@@ -1,0 +1,9 @@
+# Each shape of include/forge/Near.h is next to a route and builds no proof
+# type: an allocator of a scalar, the allocator of a default argument of a
+# container, an overload of a function template, an explicit specialization
+# with an integer argument and a specialization of a template that no class
+# befriends.  The sentinel unit of the header gives no finding.
+
+compile sentinel src/near.cpp sentinel=include/forge/Near.h stage=c
+exit sentinel pass
+judge sentinel
