@@ -135,7 +135,7 @@ from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
 from assay.readers import census as build_census
-from assay.readers import compdb
+from assay.readers import cmake, compdb
 
 GIGA = 1e9
 CHECKS = ("parse-total", "header-fanout", "instruction-total")
@@ -382,6 +382,21 @@ def changes_text(now: dict[str, tuple[int, int]], before: dict[str, tuple[int, i
     return "; ".join(parts) if parts else "no file row changed"
 
 
+def change_text(value: int, baseline: int) -> str:
+    """Return the change of a value against its baseline as words, for the summary line of a check."""
+    if baseline <= 0:
+        return "with no change that a baseline of 0 can measure"
+    return f"{(value - baseline) / baseline * 100.0:+.2f}% against the baseline"
+
+
+def zero_baseline(check: str, ledger_shown: str, line: int, words: str, write: str) -> check_report.Finding:
+    """Return the error of a baseline of 0: no growth can be measured against it, and --write replaces it."""
+    return check_report.Finding(
+        "error", ledger_shown, line, check,
+        f"{words}, and the baseline of the kind is 0, so no change can be measured against it.  Write the baseline "
+        f"from this build in the same commit: {write}")
+
+
 def evaluate(measured: Measure, ledger: Ledger, ledger_shown: str, kind: str, budget: check_report.Budget,
              build_shown: str) -> list[check_report.Finding]:
     """Compare the total of a build with the baseline of its kind.
@@ -391,12 +406,14 @@ def evaluate(measured: Measure, ledger: Ledger, ledger_shown: str, kind: str, bu
     """
     total = ledger.totals[kind]
     baseline = total.bytes
-    growth = (measured.bytes - baseline) / baseline * 100.0
     words = (f"the compiles of the build read {size_text(measured.bytes)} ({measured.bytes} bytes: objects "
              f"{size_text(measured.objects)} in {measured.object_units} units, fixtures {size_text(measured.fixtures)} "
              f"in {measured.fixture_units} units)")
-    floor = int(baseline * FILE_FLOOR)
     write = f"python3 utils/bin/guard check --rule parse-total --build-dir {build_shown} --write"
+    if baseline <= 0:
+        return [zero_baseline("parse-total", ledger_shown, total.line, words, write)]
+    growth = (measured.bytes - baseline) / baseline * 100.0
+    floor = int(baseline * FILE_FLOOR)
     level = check_report.classify(growth, budget)
     if level is not None:
         limit = budget.error if level == "error" else budget.warn
@@ -424,7 +441,7 @@ def write_ledger(rule: rule_registry.Rule, root: Path, ledger: Ledger, kind: str
         True and a summary, or False and the reason that the write refuses
     """
     old = ledger.totals.get(kind)
-    if old is not None and not reason and measured.bytes > old.bytes * (1 + budget.warn / 100.0):
+    if old is not None and old.bytes > 0 and not reason and measured.bytes > old.bytes * (1 + budget.warn / 100.0):
         growth = (measured.bytes - old.bytes) / old.bytes * 100.0
         return False, (f"the total increased by {growth:.2f}% over the baseline of {size_text(old.bytes)}, more than the "
                        f"warning threshold {budget.warn:g}%.  Give the reason of the growth with --reason")
@@ -617,10 +634,12 @@ def evaluate_instructions(census: build_census.Census, objects: int, fixtures: i
         The findings: an error or a warning for a growth, an error for a fall
     """
     count = objects + fixtures
-    change = (count - total.bytes) / total.bytes * 100.0
     words = (f"the compiles of the build ran {count_text(count)} user instructions (objects {count_text(objects)}, "
              f"fixtures {count_text(fixtures)})")
     write = f"python3 utils/bin/guard check --rule instruction-total --build-dir {build_shown} --write"
+    if total.bytes <= 0:
+        return [zero_baseline("instruction-total", ledger_shown, total.line, words, write)]
+    change = (count - total.bytes) / total.bytes * 100.0
     level = check_report.classify(change, budget)
     if level is not None:
         limit = budget.error if level == "error" else budget.warn
@@ -648,7 +667,7 @@ def write_totals(rule: rule_registry.Rule, root: Path, ledger: Ledger, kind: str
         True and a summary, or False and the reason that the write refuses
     """
     old = ledger.totals.get(kind)
-    if old is not None and not reason and objects + fixtures > old.bytes * (1 + budget.warn / 100.0):
+    if old is not None and old.bytes > 0 and not reason and objects + fixtures > old.bytes * (1 + budget.warn / 100.0):
         growth = (objects + fixtures - old.bytes) / old.bytes * 100.0
         return False, (f"the total increased by {growth:.2f}% over the baseline of {count_text(old.bytes)}, more than "
                        f"the warning threshold {budget.warn:g}%.  Give the reason of the growth with --reason")
@@ -723,7 +742,7 @@ def run(check: str, build_dir: Path, root: Path, kind: str, registry_path: Path,
         print(f"instruction-total: {count_text(objects + fixtures)} user instructions in "
               f"{sum(unit.kind == 'object' for unit in census.units)} objects and "
               f"{sum(unit.kind == 'fixture' for unit in census.units)} fixtures, "
-              f"{(objects + fixtures - total.bytes) / total.bytes * 100.0:+.2f}% against the baseline of the kind {kind}")
+              f"{change_text(objects + fixtures, total.bytes)} of the kind {kind}")
         return status
     if isinstance(ledger, FanLedger):
         fans = fanout(census, root)
@@ -744,8 +763,7 @@ def run(check: str, build_dir: Path, root: Path, kind: str, registry_path: Path,
     status = check_report.emit(findings, check, warnings_dir)
     baseline = ledger.totals[kind].bytes
     print(f"parse-total: {measured.bytes} bytes ({size_text(measured.bytes)}) in {measured.object_units} objects and "
-          f"{measured.fixture_units} fixtures, {(measured.bytes - baseline) / baseline * 100.0:+.2f}% against the "
-          f"baseline of the kind {kind}")
+          f"{measured.fixture_units} fixtures, {change_text(measured.bytes, baseline)} of the kind {kind}")
     return status
 
 
@@ -804,9 +822,9 @@ class Scratch:
             tool = root / name
             tool.write_text(f"#!{sys.executable}\n{text}", encoding="utf-8")
             tool.chmod(0o755)
-        (self.build / "CMakeCache.txt").write_text(
-            f"CMAKE_GENERATOR:INTERNAL=Ninja\nCMAKE_MAKE_PROGRAM:FILEPATH={root / 'ninja.py'}\n"
-            f"CMAKE_CTEST_COMMAND:INTERNAL={root / 'ctest.py'}\n", encoding="utf-8")
+        cmake.plant(self.build, cache={"CMAKE_GENERATOR": "Ninja",
+                                       "CMAKE_MAKE_PROGRAM": ("FILEPATH", str(root / "ninja.py")),
+                                       "CMAKE_CTEST_COMMAND": str(root / "ctest.py")})
         self.objects: dict[str, tuple[str, list[str]]] = {}
         self.fixtures: dict[str, list[str]] = {}
         self.write("include/Base.h", 1000)
@@ -969,6 +987,7 @@ def self_test() -> int:
                              f"- | {other} | 1 | objects | -\n- | {other} | 2 | fixtures | -\n"),
                             ("a total row of BYTES/READERS",
                              f"- | {other} | 1/2 | objects | r\n- | {other} | 2 | fixtures | r\n"),
+                            ("a negative total", f"- | {other} | -1 | objects | r\n- | {other} | 2 | fixtures | r\n"),
                             ("a kind with one total row", f"- | {other} | 1 | objects | a reason\n"),
                             ("two reasons of one kind",
                              f"- | {other} | 1 | objects | a\n- | {other} | 2 | fixtures | b\n"),
@@ -981,6 +1000,16 @@ def self_test() -> int:
             status, found, _ = tree.run()
             expect(f"a ledger with {label} is an error at the line of the row",
                    status == 1 and found[0].path == shown and found[0].line == bad_line)
+        tree.ledger.write_text(good_ledger + f"- | {other} | 0 | objects | r\n- | {other} | 0 | fixtures | r\n",
+                               encoding="utf-8")
+        status, found, _ = tree.run(kind=other)
+        expect("a baseline of 0 bytes is an error at its first total row that asks for --write",
+               status == 1 and len(found) == 1 and found[0].line == bad_line and "is 0" in found[0].message
+               and "--write" in found[0].message)
+        status, _, _ = tree.run(kind=other, write=True)
+        status_after, found, _ = tree.run(kind=other)
+        expect("--write replaces a baseline of 0 bytes with no reason, and the build then passes",
+               status == 0 and status_after == 0 and not found)
         tree.ledger.unlink()
         status, found, _ = tree.run()
         expect("a missing ledger is an error", status == 1 and "does not exist" in found[0].message)
@@ -1014,7 +1043,7 @@ def self_test() -> int:
         tree.add_fixture("neg_two", ["neg/neg_two.cpp", "include/Gone.h"])
         status, found, _ = tree.run()
         expect("a file of a record that is gone is an error", status == 1 and "Gone.h" in found[0].message)
-        (tree.build / "CMakeCache.txt").write_text("CMAKE_GENERATOR:INTERNAL=Unix Makefiles\n", encoding="utf-8")
+        cmake.plant(tree.build, cache={"CMAKE_GENERATOR": "Unix Makefiles"})
         status, found, output = tree.run()
         expect("a build of another generator exits 3", status == NOT_APPLICABLE and "only ninja" in output)
 
@@ -1137,6 +1166,15 @@ def self_test() -> int:
         expect("instruction-total: --write lowers the baseline with no reason, and keeps the last reason",
                status == 0 and status_after == 0 and not found
                and "| a planted reason" in counted.instruction_ledger.read_text(encoding="utf-8"))
+        counted.instruction_ledger.write_text(planted_ledger("instruction-total") + f"- | {Scratch.KIND} | 0 | objects "
+                                              f"| r\n- | {Scratch.KIND} | 0 | fixtures | r\n", encoding="utf-8")
+        status, found, _ = count_run()
+        expect("instruction-total: a baseline of 0 instructions is an error that asks for --write",
+               status == 1 and len(found) == 1 and "is 0" in found[0].message and "--write" in found[0].message)
+        status, _, _ = count_run(write=True)
+        status_after, found, _ = count_run()
+        expect("instruction-total: --write replaces a baseline of 0 with no reason, and the build then passes",
+               status == 0 and status_after == 0 and not found)
         counted.add_object("a", ["src/a.cpp", "include/Base.h"], instructions=None)
         status, found, output = count_run()
         expect("instruction-total: a compile with no count exits 3 and names it",

@@ -30,10 +30,13 @@ crucible_ccache_before_project()
 
 project(crucible LANGUAGES CXX)
 
-# utils/assay/guard/legacy/check_no_ffast_math.py reads the link line of each target from the
-# codemodel reply of the CMake file API, because the compile database holds
-# no link flag.  The command is the reason for the CMake 3.27 minimum.
-cmake_file_api(QUERY API_VERSION 1 CODEMODEL 2)
+# The CMake file API writes the code model, the cache, the CMake files and the
+# toolchains of each configure as JSON in .cmake/api/v1/reply.  Each module of
+# utils/assay reads them through assay.readers.cmake, and no module reads
+# CMakeCache.txt.  check_no_ffast_math.py reads the link line of each target
+# from the code model, because the compile database holds no link flag.  The
+# command is the reason for the CMake 3.27 minimum.
+cmake_file_api(QUERY API_VERSION 1 CODEMODEL 2 CACHE 2 CMAKEFILES 1 TOOLCHAINS 1)
 
 # The compiler must have each fix in utils/toolchain/gcc/patches.  A configure
 # without cmake/Toolchain-gcc16.cmake takes the compiler that CMake finds,

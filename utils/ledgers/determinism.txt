@@ -68,7 +68,6 @@ utils/assay/loop/fixture/store.py | wall-clock | 1 | _now_ns | A finding of toda
 utils/assay/loop/gauge.py | wall-clock | 1 | measure | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/loop/gauge_cold.py | listing | 1 | self_test | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/loop/history.py | listing | 1 | configure_time | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/loop/pgo.py | listing | 1 | read_facts | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/loop/pgo.py | wall-clock | 1 | collect | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/loop/stamps.py | listing | 2 | remove_stale | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/loop/stamps.py | listing | 1 | self_test.stamps | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count

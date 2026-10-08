@@ -69,7 +69,7 @@ from pathlib import Path
 from assay.core import git, proc
 from assay.core.paths import REPO_ROOT
 from assay.loop import history as loop_history
-from assay.readers import cmake as cmake_files
+from assay.readers import cmake as cmake_reader
 from assay.readers import ctest as ctest_output
 from assay.readers import ninja as ninja_files
 from assay.setup import pins as cmake_pin
@@ -222,7 +222,7 @@ def prepare(build_dir: Path, root: Path) -> str | None:
     if root.resolve().is_relative_to(build_dir.resolve()):
         return f"the build directory {build_dir} contains the tree.  Give another --build-dir."
     if build_dir.exists():
-        if not cmake_files.is_configured(build_dir):
+        if not cmake_reader.is_configured(build_dir):
             return (f"{build_dir} exists and is not a configured build directory.  Give another --build-dir, or remove "
                     f"it yourself.")
         shutil.rmtree(build_dir)
@@ -345,7 +345,7 @@ def self_test() -> int:
                prepare(stranger, tree) is not None and stranger.is_dir())
         old = root / "old-build"
         old.mkdir()
-        cmake_files.cache_file(old).write_text("", encoding="utf-8")
+        cmake_reader.cache_file(old).write_text("", encoding="utf-8")
         (old / "stale.o").write_text("", encoding="utf-8")
         expect("a configured build directory is removed and made again, empty",
                prepare(old, tree) is None and old.is_dir() and not any(old.iterdir()))
@@ -366,9 +366,10 @@ def self_test() -> int:
                          log: Path) -> StepCost:
             calls.append(name)
             if name == "configure":
-                cmake_files.cache_file(log.parent).write_text(
-                    f"CMAKE_COMMAND:INTERNAL={shutil.which('cmake')}\nCMAKE_CTEST_COMMAND:INTERNAL="
-                    f"{shutil.which('ctest') or shutil.which('cmake')}\n", encoding="utf-8")
+                cmake_reader.cache_file(log.parent).write_text("", encoding="utf-8")
+                cmake_reader.plant(log.parent, cache={
+                    "CMAKE_COMMAND": str(shutil.which("cmake")),
+                    "CMAKE_CTEST_COMMAND": str(shutil.which("ctest") or shutil.which("cmake"))})
             if name == "tests":
                 log.write_text(PLANTED_TEST_OUTPUT, encoding="utf-8")
             return StepCost(name, 1.0, 1.0, 0.0, 4096, 1 if name == "tests" else 0)

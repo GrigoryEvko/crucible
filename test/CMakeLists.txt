@@ -5823,6 +5823,11 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})
   set_tests_properties(${_assay_test_name} PROPERTIES LABELS "ci_guard;meta")
 endforeach()
+# The test of the CMake reader configures a scratch project, so it gets the programs of this build.
+add_test(NAME assay_readers_test_cmake
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.readers.test_cmake)
+set_tests_properties(assay_readers_test_cmake PROPERTIES LABELS "ci_guard;meta"
+  ENVIRONMENT "ASSAY_TEST_CMAKE=${CMAKE_COMMAND};ASSAY_TEST_CXX=${CMAKE_CXX_COMPILER};ASSAY_TEST_NINJA=${CMAKE_MAKE_PROGRAM}")
 
 add_subdirectory(foundation)
 add_subdirectory(fixy)

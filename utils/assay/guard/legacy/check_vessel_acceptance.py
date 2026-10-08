@@ -38,6 +38,7 @@ from pathlib import Path
 
 from assay.core import proc
 from assay.core.paths import REPO_ROOT
+from assay.readers import cmake as cmake_reader
 from assay.readers import compdb
 
 VESSEL_DIR = "vessel/torch"
@@ -67,18 +68,14 @@ def same_path(left: str | Path, right: str | Path) -> bool:
     return Path(left).resolve() == Path(right).resolve()
 
 
-def read_cmake_cache(build_dir: Path) -> dict[str, str]:
-    """Return the NAME -> VALUE map of CMakeCache.txt, or an empty map when it is absent."""
-    cache = build_dir / "CMakeCache.txt"
-    if not cache.is_file():
-        return {}
-    values: dict[str, str] = {}
-    for line in cache.read_text(errors="replace").splitlines():
-        if not line or line.startswith(("#", "//")) or "=" not in line or ":" not in line.split("=", 1)[0]:
-            continue
-        key, value = line.split("=", 1)
-        values[key.split(":", 1)[0]] = value
-    return values
+def read_cmake_cache(build_dir: Path) -> dict[str, str] | str:
+    """Return the NAME -> VALUE map of the CMake cache of a build (assay.readers.cmake), or the reason of no map."""
+    if not cmake_reader.is_configured(build_dir):
+        return f"{build_dir} is not a configured build."
+    try:
+        return {name: entry.value for name, entry in cmake_reader.cache(build_dir).items()}
+    except cmake_reader.CmakeError as problem:
+        return f"the CMake cache of {build_dir} cannot be read: {problem}"
 
 
 def is_cmake_true(value: str) -> bool:
@@ -148,8 +145,8 @@ def check_build(build_dir: Path, torch_dir: str, root: Path) -> list[str]:
         One line for each problem, or an empty list
     """
     cache = read_cmake_cache(build_dir)
-    if not cache:
-        return [f"{build_dir}/CMakeCache.txt does not exist, so {build_dir} is not a configured build."]
+    if isinstance(cache, str):
+        return [cache]
     problems: list[str] = []
     if not torch_dir or not same_path(cache.get("TORCH_DIR", ""), torch_dir):
         problems.append(f"the build compiles against TORCH_DIR={cache.get('TORCH_DIR', '')!r}, and the gate "
@@ -160,11 +157,11 @@ def check_build(build_dir: Path, torch_dir: str, root: Path) -> list[str]:
     if problems:
         return problems
     # The cmake of the build, not a cmake of PATH, which can have another version (utils/assay/setup/pins.py).
-    cmake = cache.get("CMAKE_COMMAND")
-    if not cmake:
-        return [f"{build_dir}/CMakeCache.txt has no entry CMAKE_COMMAND.  Configure the build directory again."]
+    cmake_program = cache.get("CMAKE_COMMAND")
+    if not cmake_program:
+        return [f"the CMake cache of {build_dir} has no entry CMAKE_COMMAND.  {cmake_reader.AGAIN}"]
     try:
-        done = proc.run(proc.Command([cmake, "--build", str(build_dir), "--target", *TARGETS],
+        done = proc.run(proc.Command([cmake_program, "--build", str(build_dir), "--target", *TARGETS],
                                      timeout_s=BUILD_TIMEOUT_SECONDS))
     except (proc.CannotStart, proc.TimedOut) as exc:
         return [f"the build of the targets {' '.join(TARGETS)} does not finish: {exc}"]
@@ -290,8 +287,9 @@ def self_test() -> int:
         def plant(werror: str = "ON", cmake: Path = builds, flag: str = "-Werror",
                   libraries: tuple[str, ...] = LIBRARIES) -> None:
             """Write one planted build."""
-            (build / "CMakeCache.txt").write_text(
-                f"TORCH_DIR:PATH={torch_dir}\nCRUCIBLE_WERROR:BOOL={werror}\nCMAKE_COMMAND:INTERNAL={cmake}\n")
+            cmake_reader.cache_file(build).write_text("")
+            cmake_reader.plant(build, cache={"TORCH_DIR": ("PATH", str(torch_dir)), "CRUCIBLE_WERROR": ("BOOL", werror),
+                                       "CMAKE_COMMAND": str(cmake)})
             entries = [{"directory": str(build), "file": str(source), "command": f"g++ {flag} -c {source}"}
                        for source in vessel_sources(REPO_ROOT)]
             compdb.plant(build, entries)

@@ -48,7 +48,7 @@ from pathlib import Path
 
 from assay.core import proc
 from assay.core.paths import REPO_ROOT
-from assay.readers import cmake as cmake_files
+from assay.readers import cmake as cmake_reader
 from assay.setup import pins as cmake_pin
 
 DEFAULT_RESERVED = "88-95"
@@ -136,7 +136,7 @@ def configure_and_build(root: Path, build_dir: Path, harness: str, afl_bin: Path
         proc.ToolFailed: If the configure or the build cannot start, runs past its limit or fails
         cmake_pin.PinError: If the build directory names no cmake
     """
-    if not cmake_files.is_configured(build_dir):
+    if not cmake_reader.is_configured(build_dir):
         proc.require(proc.run(proc.Command(
             ["cmake", "-S", str(root), "-B", str(build_dir), "-G", "Ninja",
              f"-DCMAKE_TOOLCHAIN_FILE={root / 'cmake' / 'Toolchain-gcc16.cmake'}",

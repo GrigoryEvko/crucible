@@ -30,7 +30,7 @@ THE COST OF A UNIT
 
 THE TOOLS
     The ninja and ctest of a build are the values CMAKE_MAKE_PROGRAM and
-    CMAKE_CTEST_COMMAND of its CMakeCache.txt.
+    CMAKE_CTEST_COMMAND of its CMake cache (assay.readers.cmake).
 
 FAILURES
     read_census() raises NotApplicable when an input does not exist by the
@@ -51,7 +51,7 @@ from pathlib import Path
 
 from assay.core import meter as cost_meter
 from assay.core import proc
-from assay.readers import compdb
+from assay.readers import cmake, compdb
 
 # The command of a negative fixture runs the master loop with the subcommand fixture.
 FIXTURE_MASTER = "utils/bin/loop"
@@ -134,19 +134,6 @@ def names_text(names: Iterable[str]) -> str:
     return head + (f" and {rest} more" if rest > 0 else "")
 
 
-def cache_value(build_dir: Path, name: str) -> str | None:
-    """Return the value of one entry of the CMakeCache.txt of a build, or None."""
-    prefix = f"{name}:"
-    try:
-        with open(build_dir / "CMakeCache.txt", encoding="utf-8", errors="replace") as handle:
-            for line in handle:
-                if line.startswith(prefix) and "=" in line:
-                    return line.split("=", 1)[1].rstrip("\n")
-    except OSError:
-        return None
-    return None
-
-
 def tools_of(build_dir: Path) -> tuple[str, str | None]:
     """Return the ninja and the ctest of a build.  The ctest is None when the cache names none.
 
@@ -155,15 +142,20 @@ def tools_of(build_dir: Path) -> tuple[str, str | None]:
 
     Raises:
         NotApplicable: If the generator of the build is not ninja
-        CensusError: If the build has no CMakeCache.txt
+        CensusError: If the cache of the build cannot be read, or it names no generator
     """
-    generator = cache_value(build_dir, "CMAKE_GENERATOR")
+    try:
+        entries = cmake.cache(build_dir)
+    except cmake.CmakeError as problem:
+        raise CensusError(f"the CMake cache of the build cannot be read: {problem}") from None
+    generator = entries.get("CMAKE_GENERATOR")
     if generator is None:
-        raise CensusError(f"{build_dir}/CMakeCache.txt cannot be read.  Configure the build directory with a preset")
-    if "Ninja" not in generator:
-        raise NotApplicable(f"the generator of the build is {generator}, and only ninja writes a dependency log")
-    ninja = cache_value(build_dir, "CMAKE_MAKE_PROGRAM") or "ninja"
-    return ninja, cache_value(build_dir, "CMAKE_CTEST_COMMAND")
+        raise CensusError(f"the CMake cache of {build_dir} has no entry CMAKE_GENERATOR.  {cmake.AGAIN}")
+    if "Ninja" not in generator.value:
+        raise NotApplicable(f"the generator of the build is {generator.value}, and only ninja writes a dependency log")
+    ninja = entries.get("CMAKE_MAKE_PROGRAM")
+    ctest = entries.get("CMAKE_CTEST_COMMAND")
+    return (ninja.value if ninja is not None and ninja.value else "ninja"), (None if ctest is None else ctest.value)
 
 
 def run_tool(command: list[str]) -> str:
@@ -200,13 +192,17 @@ def objects_of_all(build_dir: Path, ninja: str, root: Path) -> list[tuple[Path, 
         compiles = compdb.entries(build_dir)
     except compdb.CompdbError as problem:
         raise CensusError(f"the compile database cannot be read: {problem}") from None
-    inputs = {os.path.normpath(os.path.join(build_dir, name))
-              for name in run_tool([ninja, "-C", str(build_dir), "-t", "inputs", "all"]).split()}
+    inputs = {
+        os.path.normpath(os.path.join(build_dir, name))
+        for name in run_tool([ninja, "-C", str(build_dir), "-t", "inputs", "all"]).split()
+    }
     objects: dict[str, str] = {}
     for compile_entry in compiles:
         if compile_entry.output is None:
-            raise CensusError(f"the row of {compile_entry.file} in {database} has no output field.  CMake 3.20 or "
-                              f"a subsequent version writes it")
+            raise CensusError(
+                f"the row of {compile_entry.file} in {database} has no output field.  CMake 3.20 or "
+                f"a subsequent version writes it"
+            )
         output = str(compile_entry.output)
         if output in inputs:
             objects[output] = shown(os.path.normpath(compile_entry.file), root)
@@ -214,8 +210,10 @@ def objects_of_all(build_dir: Path, ninja: str, root: Path) -> list[tuple[Path, 
         raise CensusError(f"no row of {database} is an input of the target all")
     missing = [path for path in objects if not os.path.isfile(path)]
     if missing:
-        raise NotApplicable(f"{len(missing)} of the {len(objects)} objects of the target all do not exist, so the "
-                            f"build made only some targets: {names_text(shown(path, build_dir) for path in missing)}")
+        raise NotApplicable(
+            f"{len(missing)} of the {len(objects)} objects of the target all do not exist, so the "
+            f"build made only some targets: {names_text(shown(path, build_dir) for path in missing)}"
+        )
     return [(Path(path), source) for path, source in sorted(objects.items())]
 
 
@@ -261,8 +259,9 @@ def read_dependencies(build_dir: Path, ninja: str, keys: list[str]) -> dict[str,
     lists, states = parse_dependencies(run_tool([ninja, "-C", str(build_dir), "-t", "deps", *keys]))
     bad = [key for key in keys if states.get(key) != "VALID" or not lists.get(key)]
     if bad:
-        raise CensusError(f"the ninja log holds no valid dependency list of {len(bad)} objects: {names_text(bad)}.  "
-                          f"Build them again")
+        raise CensusError(
+            f"the ninja log holds no valid dependency list of {len(bad)} objects: {names_text(bad)}.  Build them again"
+        )
     return lists
 
 
@@ -270,7 +269,7 @@ def object_cost(path: Path) -> Cost:
     """Return the cost of the last real compile of one object, from its record."""
     try:
         record = json.loads(Path(str(path) + RECORD_SUFFIX).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return Cost()
     block = record.get("cost") if isinstance(record, dict) else None
     if not isinstance(block, dict):
@@ -279,8 +278,10 @@ def object_cost(path: Path) -> Cost:
         return Cost()
     cpu = block.get("cpu_s")
     count = block.get(cost_meter.COMPILER_COUNT_KEY)
-    return Cost(float(cpu) if isinstance(cpu, (int, float)) and not isinstance(cpu, bool) else None,
-                count if isinstance(count, int) and not isinstance(count, bool) else None)
+    return Cost(
+        float(cpu) if isinstance(cpu, (int, float)) and not isinstance(cpu, bool) else None,
+        count if isinstance(count, int) and not isinstance(count, bool) else None,
+    )
 
 
 def fixtures_of(build_dir: Path, ctest: str | None) -> list[tuple[str, str]]:
@@ -291,8 +292,7 @@ def fixtures_of(build_dir: Path, ctest: str | None) -> list[tuple[str, str]]:
             the form of the driver
     """
     if ctest is None:
-        raise CensusError(f"{build_dir}/CMakeCache.txt has no entry CMAKE_CTEST_COMMAND.  Configure the build "
-                          f"directory again")
+        raise CensusError(f"the CMake cache of {build_dir} has no entry CMAKE_CTEST_COMMAND.  {cmake.AGAIN}")
     text = run_tool([ctest, "--test-dir", str(build_dir), "--show-only=json-v1"])
     try:
         tests = json.loads(text).get("tests", [])
@@ -306,8 +306,10 @@ def fixtures_of(build_dir: Path, ctest: str | None) -> list[tuple[str, str]]:
         if rest[:1] == ["--warnings-dir"]:
             rest = rest[2:]
         if len(rest) < 3:
-            raise CensusError(f"the command of the test {test.get('name')} runs `loop {FIXTURE_SUBCOMMAND}` with no "
-                              f"build directory, source and fixture name")
+            raise CensusError(
+                f"the command of the test {test.get('name')} runs `loop {FIXTURE_SUBCOMMAND}` with no "
+                f"build directory, source and fixture name"
+            )
         fixtures.append((rest[2], rest[1]))
     return fixtures
 
@@ -325,12 +327,13 @@ def fixture_words(command: list[str]) -> list[str] | None:
     """
     for index, word in enumerate(command[:-1]):
         if (word == FIXTURE_MASTER or word.endswith(f"/{FIXTURE_MASTER}")) and command[index + 1] == FIXTURE_SUBCOMMAND:
-            return command[index + 2:]
+            return command[index + 2 :]
     return None
 
 
-def read_fixture(build_dir: Path, name: str, source: str, root: Path,
-                 read_files: bool) -> tuple[Unit | None, list[str] | None, str]:
+def read_fixture(
+    build_dir: Path, name: str, source: str, root: Path, read_files: bool
+) -> tuple[Unit | None, list[str] | None, str]:
     """Read the record of one fixture.
 
     Returns:
@@ -355,8 +358,10 @@ def read_fixture(build_dir: Path, name: str, source: str, root: Path,
         return None, None, f"the record {path} says that the driver does not know the files of the compile"
     user, system, count = header.get("user_s"), header.get("system_s"), header.get("instructions")
     times = [value for value in (user, system) if isinstance(value, (int, float)) and not isinstance(value, bool)]
-    cost = Cost(sum(times) if len(times) == 2 else None,
-                count if isinstance(count, int) and not isinstance(count, bool) else None)
+    cost = Cost(
+        sum(times) if len(times) == 2 else None,
+        count if isinstance(count, int) and not isinstance(count, bool) else None,
+    )
     names = body.splitlines() if read_files else None
     if read_files and not names:
         return None, None, f"the record {path} names no file"
@@ -375,8 +380,7 @@ def read_census(build_dir: Path, root: Path, read_files: bool = True) -> Census:
     """
     ninja, ctest = tools_of(build_dir)
     objects = objects_of_all(build_dir, ninja, root)
-    units: list[Unit] = [Unit("object", shown(path, build_dir), source, object_cost(path))
-                         for path, source in objects]
+    units: list[Unit] = [Unit("object", shown(path, build_dir), source, object_cost(path)) for path, source in objects]
     names_of: list[list[str]] = []
     if read_files:
         lists = read_dependencies(build_dir, ninja, [unit.item for unit in units])
@@ -393,12 +397,16 @@ def read_census(build_dir: Path, root: Path, read_files: bool = True) -> Census:
         if names is not None:
             names_of.append(names)
     if fixtures and len(missing) == len(fixtures):
-        raise NotApplicable(f"no fixture of the build has a record, because the fixtures did not run in this build "
-                            f"directory.  The record is {FIXTURE_DIR}/NAME/NAME{INPUTS_SUFFIX}, and ctest -R '^neg_' "
-                            f"writes it")
+        raise NotApplicable(
+            f"no fixture of the build has a record, because the fixtures did not run in this build "
+            f"directory.  The record is {FIXTURE_DIR}/NAME/NAME{INPUTS_SUFFIX}, and ctest -R '^neg_' "
+            f"writes it"
+        )
     if missing:
-        raise CensusError(f"{len(missing)} of the {len(fixtures)} fixtures have no record, because they did not run "
-                          f"in this build directory: {names_text(missing)}.  Run every fixture, then the check")
+        raise CensusError(
+            f"{len(missing)} of the {len(fixtures)} fixtures have no record, because they did not run "
+            f"in this build directory: {names_text(missing)}.  Run every fixture, then the check"
+        )
     if problems:
         raise CensusError(f"{len(problems)} fixture records cannot count.  The first: {problems[0]}")
     sizes: dict[str, int] = {}
@@ -415,8 +423,10 @@ def read_census(build_dir: Path, root: Path, read_files: bool = True) -> Census:
                         try:
                             sizes[real] = os.stat(real).st_size
                         except OSError as problem:
-                            raise CensusError(f"the file {real}, which the compile of {unit.item} read, cannot be "
-                                              f"read ({problem}).  Build the tree and run the fixtures again") from None
+                            raise CensusError(
+                                f"the file {real}, which the compile of {unit.item} read, cannot be "
+                                f"read ({problem}).  Build the tree and run the fixtures again"
+                            ) from None
                 files[real] = None
             unit.files = list(files)
     return Census(build_dir, units, sizes)

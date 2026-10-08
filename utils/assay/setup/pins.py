@@ -13,9 +13,10 @@ THE INSTALLED TOOLS
     ast-grep and cmake: the stamp, then the checks of the tool.  No network.
 
 THE PROGRAMS OF A BUILD DIRECTORY
-    CMakeCache.txt of a configured build directory holds CMAKE_COMMAND and
+    The CMake cache of a configured build directory holds CMAKE_COMMAND and
     CMAKE_CTEST_COMMAND: the cmake that configured the directory, and the
-    ctest of the same install.  A module that operates on a build directory
+    ctest of the same install.  The reply cache-v2 of the file API gives them
+    (assay.readers.cmake).  A module that operates on a build directory
     runs these two programs (configured_program), and it does not look in
     PATH.  PATH can hold a ctest of another version, and ctest does not
     reject a build directory that another version configured.  A module that
@@ -64,6 +65,7 @@ from assay.core import proc
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT, SETUP
+from assay.readers import cmake as cmake_reader
 
 CHECK = "cmake-pin"
 ROOT = REPO_ROOT
@@ -159,7 +161,7 @@ def program_version(program: str | Path) -> tuple[str, str] | None:
 
 
 def configured_program(build_dir: Path, name: str) -> str:
-    """Return the cmake or the ctest of a configured build directory, from its CMakeCache.txt.
+    """Return the cmake or the ctest of a configured build directory, from its CMake cache (assay.readers.cmake).
 
     Args:
         build_dir: The build directory
@@ -169,25 +171,21 @@ def configured_program(build_dir: Path, name: str) -> str:
         The path of the program
 
     Raises:
-        PinError: If the directory holds no CMakeCache.txt, the cache has no entry of the program,
+        PinError: If the CMake cache of the directory cannot be read, the cache has no entry of the program,
             or the program does not exist
     """
     entry = CACHE_ENTRIES[name]
-    cache = build_dir / "CMakeCache.txt"
     try:
-        text = cache.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        raise PinError(f"{build_dir} holds no CMakeCache.txt.  Configure it first, for example with "
-                       f"`cmake --preset default`.") from None
-    for line in text.splitlines():
-        key, separator, value = line.partition("=")
-        if separator and key.split(":", 1)[0] == entry:
-            program = value.strip()
-            if not Path(program).is_file():
-                raise PinError(f"{cache} names the {name} {program}, which does not exist.  Configure the build "
-                               f"directory again with the pinned CMake.  {install_hint()}")
-            return program
-    raise PinError(f"{cache} has no entry {entry}.  Configure the build directory again.")
+        found = cmake_reader.cache(build_dir).get(entry)
+    except cmake_reader.CmakeError as problem:
+        raise PinError(f"the CMake cache of {build_dir} cannot be read: {problem}") from None
+    if found is None:
+        raise PinError(f"the CMake cache of {build_dir} has no entry {entry}.  {cmake_reader.AGAIN}")
+    program = found.value.strip()
+    if not Path(program).is_file():
+        raise PinError(f"the CMake cache of {build_dir} names the {name} {program}, which does not exist.  Configure "
+                       f"the build directory again with the pinned CMake.  {install_hint()}")
+    return program
 
 
 @functools.cache
@@ -456,17 +454,16 @@ def self_test(cmake: str | None, ctest: str | None, make_program: str | None) ->
         def build(name: str, cmake_program: Path | None, ctest_program: Path | None) -> Path:
             build_dir = work / "builds" / name
             build_dir.mkdir(parents=True)
-            entries = [f"CMAKE_COMMAND:INTERNAL={cmake_program}"] if cmake_program else []
-            entries += [f"CMAKE_CTEST_COMMAND:INTERNAL={ctest_program}"] if ctest_program else []
-            (build_dir / "CMakeCache.txt").write_text("# a cache\n" + "".join(f"{e}\n" for e in entries),
-                                                      encoding="utf-8")
+            entries = {"CMAKE_COMMAND": str(cmake_program)} if cmake_program else {}
+            entries.update({"CMAKE_CTEST_COMMAND": str(ctest_program)} if ctest_program else {})
+            cmake_reader.plant(build_dir, cache=entries)
             return build_dir
 
         pinned_build = build("pinned", pinned_cmake, pinned_ctest)
         expect("configured_program reads CMAKE_CTEST_COMMAND",
                configured_program(pinned_build, "ctest") == str(pinned_ctest))
         refuses("a build directory with no cache is an error", lambda: configured_program(work / "absent", "cmake"),
-                "holds no CMakeCache.txt")
+                "holds no index of the CMake file API")
         refuses("a cache with no CMAKE_CTEST_COMMAND is an error",
                 lambda: configured_program(build("no_ctest", pinned_cmake, None), "ctest"),
                 "has no entry CMAKE_CTEST_COMMAND")
@@ -562,6 +559,8 @@ def real_run(work: Path, cmake: str, ctest: str, make_program: str, expect: Call
         "cmake_minimum_required(VERSION 3.25)\nproject(cmake_pin_probe NONE)\nenable_testing()\n"
         f'add_test(NAME probe COMMAND "{sys.executable}" "{SETUP}" check --build-dir "{build_dir}")\n',
         encoding="utf-8")
+    # The scratch project has no cmake_file_api call.  Its build directory gets the query of the reply of the cache.
+    cmake_reader.request(build_dir)
     try:
         configured = proc.run(proc.Command([cmake, "-S", str(source), "-B", str(build_dir), "-G", "Ninja",
                                             f"-DCMAKE_MAKE_PROGRAM={make_program}"], timeout_s=proc.TOOL_S))

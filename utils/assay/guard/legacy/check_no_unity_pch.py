@@ -1,37 +1,39 @@
 """no-unity-pch — no target of the tree compiles as a unity build or with a precompiled header.
 
 The reflection walks of this tree see each header that a translation unit
-includes.  A unity build puts several source files into one translation
-unit, and a precompiled header puts the headers of the header file into each
-unit that uses it.  Each one changes what a walk sees, so each one can change
-a result.  CLAUDE.md §XV states the rule.
+includes.  A unity build puts some source files into one translation unit.
+A precompiled header puts the headers of the header file into each unit that
+uses it.  Each one changes what a walk sees, and it can change a result.
+CLAUDE.md §XV states the rule.
 
 WHAT THE CHECK READS
     The effect, from the compile database of a configured build
-    (BUILD_DIR/compile_commands.json):
-      * A row whose source is a unity source of CMake: a file
-        unity_<N>_cxx.cxx or unity_<N>_c.c, or a file in a Unity directory
-        of CMakeFiles.
-      * A row whose command includes a precompiled header: `-include` of a
-        file whose name starts with cmake_pch, `-include-pch`,
+    (assay.readers.compdb):
+      * A row of a unity source of CMake: a file unity_<N>_cxx.cxx or
+        unity_<N>_c.c, or a file in a Unity directory of CMakeFiles.
+      * A row with a precompiled header in its command: `-include` of a file
+        with a name that starts with cmake_pch, `-include-pch`,
         `-Winvalid-pch`, or a word that ends in .gch or .pch.
-    The cause, from each CMake file that git tracks (CMakeLists.txt and
-    *.cmake), read with a CMake lexer that skips line comments, bracket
-    comments and the text inside a quoted or bracket argument:
-      * An invocation of target_precompile_headers.  CMake command names
-        are case-insensitive.
-      * An argument that is one of the property and variable names that
-        turn a unity build or a precompiled header on: UNITY_BUILD and the
-        UNITY_BUILD_* names, CMAKE_UNITY_BUILD and the CMAKE_UNITY_BUILD_*
-        names, PRECOMPILE_HEADERS and PRECOMPILE_HEADERS_REUSE_FROM.  The
-        names that turn them off (SKIP_UNITY_BUILD_INCLUSION,
-        SKIP_PRECOMPILE_HEADERS, DISABLE_PRECOMPILE_HEADERS) are not
-        findings.  A name inside a longer argument, such as
-        ${CMAKE_UNITY_BUILD} or a message text, is not a finding.
+    The cause, from the replies of the CMake file API of the same build
+    (assay.readers.cmake).  The replies give the result of the configure of
+    each CMake file of the tree:
+      * A precompiled header of a compile group of a target, at the line of
+        the call that adds it, such as target_precompile_headers.
+      * A target that compiles a unity source, at the line of the command
+        that makes the target.
+      * A target that uses the precompiled header of a different target: a
+        source cmake_pch.hxx and no header of its own.  The finding is at the
+        line of the command that makes the target.
+      * An entry of the CMake cache with a name that starts with
+        CMAKE_UNITY_BUILD.
     And from CMakePresets.json and CMakeUserPresets.json: a cache variable
-    of a preset whose name starts with CMAKE_UNITY_BUILD.
+    of a preset with a name that starts with CMAKE_UNITY_BUILD.
 
-    The tree has no unity build and no precompiled header, so the check has
+    The check reads the configured build and not the text of a CMake file.
+    A name in a CMake branch that no configure takes gives no finding.  Each
+    CI leg runs the check on the build of its own preset.
+
+    The tree has no unity build and no precompiled header, and the check has
     no ledger.  Each finding is an error.
 
 Usage
@@ -50,186 +52,58 @@ import io
 import json
 import sys
 import tempfile
-from collections.abc import Iterator
-from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from assay.core import report as check_report
-from assay.readers import compdb, tsast
+from assay.core.paths import REPO_ROOT
+from assay.readers import cmake, compdb
 
 CHECK = "no-unity-pch"
-PRESETS = ("CMakePresets.json", "CMakeUserPresets.json")
-PCH_COMMAND = "target_precompile_headers"
-# The names that turn a unity build or a precompiled header on.  A name that
-# turns one off is not in this set.
-ENABLING_NAMES = frozenset({
-    "UNITY_BUILD", "UNITY_BUILD_MODE", "UNITY_BUILD_BATCH_SIZE", "UNITY_BUILD_UNIQUE_ID",
-    "UNITY_BUILD_CODE_BEFORE_INCLUDE", "UNITY_BUILD_CODE_AFTER_INCLUDE", "UNITY_GROUP",
-    "CMAKE_UNITY_BUILD", "CMAKE_UNITY_BUILD_BATCH_SIZE", "CMAKE_UNITY_BUILD_UNIQUE_ID",
-    "PRECOMPILE_HEADERS", "PRECOMPILE_HEADERS_REUSE_FROM",
-})
+UNITY_CACHE_PREFIX = "CMAKE_UNITY_BUILD"
+# The file that CMake writes for a precompiled header starts with this name: cmake_pch.hxx and cmake_pch.hxx.cxx.
+PCH_FILE_PREFIX = "cmake_pch"
 # Each word that pch_words() keeps contains one of these texts.
-PCH_MARKERS = ("cmake_pch", "-include-pch", "-Winvalid-pch", ".gch", ".pch")
+PCH_MARKERS = (PCH_FILE_PREFIX, "-include-pch", "-Winvalid-pch", ".gch", ".pch")
 WHY = ("The reflection walks of this tree see each header that a translation unit includes, so a unity build or a "
        "precompiled header can change a result.")
 
 
-@dataclass(frozen=True)
-class Token:
-    """One token of a CMake file: an identifier that opens a command, or one argument."""
-
-    kind: str
-    text: str
-    line: int
+def shown_path(path: str, root: Path) -> str:
+    """Return a path relative to the root when it is in the tree, else the path as it is."""
+    named = Path(path)
+    return named.relative_to(root).as_posix() if named.is_absolute() and named.is_relative_to(root) else path
 
 
-def cmake_tokens(text: str) -> Iterator[Token]:
-    """Yield the command names and the arguments of one CMake file, in order.
-
-    The lexer follows the CMake language: a line comment runs from `#` to the
-    end of the line, a bracket comment is `#[=*[` up to the matching `]=*]`, a
-    bracket argument is `[=*[` up to the matching `]=*]`, and a quoted
-    argument is `"..."` with backslash escapes.  An unquoted argument ends at
-    white space, at a parenthesis, at `#` or at a quote.  A command name is an
-    identifier that a `(` follows, outside the arguments of a command.
-
-    Complexity: linear in the length of the text.
+def preset_findings(root: Path) -> list[check_report.Finding]:
+    """Return one error for each cache variable of a preset that turns a unity build on, and for each unread file.
 
     Args:
-        text: The content of the file
-
-    Yields:
-        A token of kind "command" for each command name, "quoted", "bracket" or "unquoted" for each
-        argument
-    """
-    index = 0
-    line = 1
-    depth = 0
-    length = len(text)
-
-    def bracket_end(start: int) -> int | None:
-        """Return the index after the bracket that opens at start, or None when start opens none."""
-        cursor = start + 1
-        while cursor < length and text[cursor] == "=":
-            cursor += 1
-        if cursor >= length or text[cursor] != "[":
-            return None
-        closer = "]" + "=" * (cursor - start - 1) + "]"
-        found = text.find(closer, cursor + 1)
-        return length if found < 0 else found + len(closer)
-
-    while index < length:
-        char = text[index]
-        if char == "\n":
-            line += 1
-            index += 1
-        elif char in " \t\r":
-            index += 1
-        elif char == "#":
-            end = bracket_end(index + 1) if index + 1 < length and text[index + 1] == "[" else None
-            if end is None:
-                newline = text.find("\n", index)
-                end = length if newline < 0 else newline
-            line += text.count("\n", index, end)
-            index = end
-        elif char == "(":
-            depth += 1
-            index += 1
-        elif char == ")":
-            depth = max(0, depth - 1)
-            index += 1
-        elif char == "[" and depth > 0 and bracket_end(index) is not None:
-            end = bracket_end(index)
-            assert end is not None
-            yield Token("bracket", text[index:end], line)
-            line += text.count("\n", index, end)
-            index = end
-        elif char == '"':
-            cursor = index + 1
-            value: list[str] = []
-            while cursor < length and text[cursor] != '"':
-                if text[cursor] == "\\" and cursor + 1 < length:
-                    value.append(text[cursor:cursor + 2])
-                    cursor += 2
-                    continue
-                value.append(text[cursor])
-                cursor += 1
-            yield Token("quoted", "".join(value), line)
-            line += text.count("\n", index, cursor)
-            index = min(cursor + 1, length)
-        else:
-            cursor = index
-            while cursor < length and text[cursor] not in " \t\r\n()#\"":
-                cursor += 2 if text[cursor] == "\\" else 1
-            word = text[index:cursor]
-            if depth == 0:
-                after = cursor
-                while after < length and text[after] in " \t":
-                    after += 1
-                is_command = after < length and text[after] == "(" and word.replace("_", "a").isalnum()
-                yield Token("command" if is_command else "unquoted", word, line)
-            else:
-                yield Token("unquoted", word, line)
-            index = max(cursor, index + 1)
-
-
-def cmake_findings(rel: str, text: str) -> list[check_report.Finding]:
-    """Return one error for each command or argument of one CMake file that turns a unity build or a PCH on.
-
-    Args:
-        rel: The file, relative to the repository root
-        text: Its content
+        root: The repository root
 
     Returns:
-        The findings in file order
+        The findings, in the sequence of the files and the presets
     """
     findings: list[check_report.Finding] = []
-    for token in cmake_tokens(text):
-        if token.kind == "command" and token.text.lower() == PCH_COMMAND:
-            findings.append(check_report.Finding(
-                "error", rel, token.line, CHECK,
-                f"the file calls {PCH_COMMAND}, which gives a target a precompiled header.  {WHY}  Remove the call."))
-        elif token.kind in ("unquoted", "quoted") and token.text in ENABLING_NAMES:
-            findings.append(check_report.Finding(
-                "error", rel, token.line, CHECK,
-                f"the file names {token.text}, which turns a unity build or a precompiled header on.  {WHY}  Remove "
-                f"it."))
-    return findings
-
-
-def preset_findings(rel: str, text: str) -> list[check_report.Finding]:
-    """Return one error for each cache variable of a preset that turns a unity build on.
-
-    Args:
-        rel: The presets file, relative to the repository root
-        text: Its content
-
-    Returns:
-        The findings, or one error when the file is not valid JSON
-    """
-    try:
-        document = json.loads(text)
-    except ValueError as exc:
-        return [check_report.Finding("error", rel, 0, CHECK, f"the file is not valid JSON, so the check cannot read "
-                                                             f"its presets: {exc}")]
-    findings: list[check_report.Finding] = []
-    presets = document.get("configurePresets", []) if isinstance(document, dict) else []
-    for preset in presets if isinstance(presets, list) else []:
-        variables = preset.get("cacheVariables", {}) if isinstance(preset, dict) else {}
-        for name in variables if isinstance(variables, dict) else {}:
-            if name.startswith("CMAKE_UNITY_BUILD"):
-                findings.append(check_report.Finding(
-                    "error", rel, 0, CHECK,
-                    f"the preset {preset.get('name', '?')} sets {name}, which turns a unity build on.  {WHY}  "
-                    f"Remove the cache variable."))
+    for found in cmake.presets(root):
+        rel = shown_path(str(found.path), root)
+        if found.problem is not None:
+            findings.append(check_report.Finding("error", rel, 0, CHECK, f"the check cannot read its presets: "
+                                                                         f"{found.problem}"))
+            continue
+        for preset in found.configure:
+            for name in preset.cache_variables:
+                if name.startswith(UNITY_CACHE_PREFIX):
+                    findings.append(check_report.Finding(
+                        "error", rel, 0, CHECK,
+                        f"the preset {preset.name} sets {name}, which turns a unity build on.  {WHY}  Remove the "
+                        f"cache variable."))
     return findings
 
 
 def is_unity_source(source: str) -> bool:
-    """Say whether a source path of the compile database is a unity source that CMake writes."""
+    """Say whether a source path is a unity source that CMake writes."""
     path = PurePosixPath(source)
-    name = path.name
-    stem = name.split(".", 1)[0]
+    stem = path.name.split(".", 1)[0]
     parts = stem.split("_")
     is_unity_name = len(parts) == 3 and parts[0] == "unity" and parts[1].isdigit() and parts[2] in ("c", "cxx")
     return is_unity_name or ("Unity" in path.parts and "CMakeFiles" in path.parts)
@@ -240,9 +114,9 @@ def pch_words(argv: list[str]) -> list[str]:
     found: list[str] = []
     for index, word in enumerate(argv):
         if word == "-include" and index + 1 < len(argv) and PurePosixPath(argv[index + 1]).name.startswith(
-                "cmake_pch"):
+                PCH_FILE_PREFIX):
             found.append(f"-include {argv[index + 1]}")
-        elif word.startswith("-include") and PurePosixPath(word[len("-include"):]).name.startswith("cmake_pch"):
+        elif word.startswith("-include") and PurePosixPath(word[len("-include"):]).name.startswith(PCH_FILE_PREFIX):
             found.append(word)
         elif word in ("-include-pch", "-Winvalid-pch") or word.endswith((".gch", ".pch")):
             found.append(word)
@@ -287,8 +161,7 @@ def database_findings(build_dir: Path, root: Path) -> list[check_report.Finding]
         return [check_report.Finding("error", shown, 0, CHECK, f"the compile database cannot be read: {exc}")]
     findings: list[check_report.Finding] = []
     for source, argv in commands:
-        named = Path(source)
-        where = named.relative_to(root).as_posix() if named.is_absolute() and named.is_relative_to(root) else source
+        where = shown_path(source, root)
         if is_unity_source(source):
             findings.append(check_report.Finding(
                 "error", where, 0, CHECK,
@@ -301,8 +174,68 @@ def database_findings(build_dir: Path, root: Path) -> list[check_report.Finding]
     return findings
 
 
+def position_of(origin: cmake.Origin | None, root: Path, build_shown: str) -> tuple[str, int]:
+    """Return the file and the line of a position in a CMake file, or the build directory when the reply gives none."""
+    if origin is None:
+        return build_shown, 0
+    return shown_path(origin.file, root), origin.line
+
+
+def target_findings(model: cmake.CodeModel, root: Path, build_shown: str) -> list[check_report.Finding]:
+    """Return one error for each precompiled header and each unity source of a target.
+
+    A target that uses the precompiled header of a different target gives an error too.
+
+    Complexity: linear in the number of the targets and their sources.
+    """
+    findings: list[check_report.Finding] = []
+    for target in model.targets:
+        # Each compile group of a target names its headers, and one header can occur in more than one group.
+        unique = {(header.header, header.origin or target.origin): header for header in target.precompile_headers}
+        for header in unique.values():
+            path, line = position_of(header.origin or target.origin, root, build_shown)
+            findings.append(check_report.Finding(
+                "error", path, line, CHECK,
+                f"the target {target.name} gets the precompiled header {header.header}.  {WHY}  Remove the call that "
+                f"adds it."))
+        path, line = position_of(target.origin, root, build_shown)
+        unity = sorted({source.path for source in target.sources if is_unity_source(source.path)})
+        if unity:
+            findings.append(check_report.Finding(
+                "error", path, line, CHECK,
+                f"the target {target.name} compiles the unity source {unity[0]} of a unity build.  {WHY}  Turn the "
+                f"unity build of the target off."))
+        borrowed = sorted({source.path for source in target.sources
+                           if PurePosixPath(source.path).name.startswith(PCH_FILE_PREFIX)})
+        if borrowed and not target.precompile_headers:
+            findings.append(check_report.Finding(
+                "error", path, line, CHECK,
+                f"the target {target.name} uses the precompiled header {borrowed[0]} of a different target.  {WHY}  "
+                f"Remove the precompiled header."))
+    return findings
+
+
+def reply_findings(build_dir: Path, root: Path) -> list[check_report.Finding]:
+    """Return the findings of the code model and the cache of a build, or one error when a reply cannot be read."""
+    build_shown = shown_path(str(build_dir), root)
+    try:
+        model = cmake.codemodel(build_dir)
+        entries = cmake.cache(build_dir)
+    except cmake.CmakeError as exc:
+        return [check_report.Finding("error", build_shown, 0, CHECK, f"the check cannot read what CMake decided: "
+                                                                     f"{exc}")]
+    findings = target_findings(model, root, build_shown)
+    for name in sorted(entries):
+        if name.startswith(UNITY_CACHE_PREFIX):
+            findings.append(check_report.Finding(
+                "error", build_shown, 0, CHECK,
+                f"the CMake cache of the build sets {name}={entries[name].value}, which turns a unity build on.  "
+                f"{WHY}  Remove the cache entry, and configure the build again."))
+    return findings
+
+
 def evaluate(root: Path, build_dir: Path) -> list[check_report.Finding]:
-    """Read the compile database of one build and the CMake files of one tree, and return each finding.
+    """Read the compile database and the replies of one build and the presets of one tree, and return each finding.
 
     Args:
         root: The repository root
@@ -311,25 +244,24 @@ def evaluate(root: Path, build_dir: Path) -> list[check_report.Finding]:
     Returns:
         The findings
     """
-    findings = database_findings(build_dir, root)
-    for rel in tsast.tracked_files(root):
-        name = PurePosixPath(rel).name
-        if name != "CMakeLists.txt" and not name.endswith(".cmake") and name not in PRESETS:
-            continue
-        path = root / rel
-        if not path.is_file():
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            findings.append(check_report.Finding("error", rel, 0, CHECK, f"the file cannot be read: {exc}"))
-            continue
-        findings.extend(preset_findings(rel, text) if name in PRESETS else cmake_findings(rel, text))
-    return findings
+    return database_findings(build_dir, root) + reply_findings(build_dir, root) + preset_findings(root)
+
+
+def _planted_target(name: str, sources: list[dict[str, object]], headers: list[str] | None = None) -> dict[str, object]:
+    """Return a target object of the reply codemodel-v2: made at sub/CMakeLists.txt:4, with headers added at :9."""
+    groups: list[dict[str, object]] = [{"language": "CXX", "sourceIndexes": [0]}]
+    if headers:
+        groups[0]["precompileHeaders"] = [{"header": header, "backtrace": 2} for header in headers]
+    return {"name": name, "type": "STATIC_LIBRARY", "backtrace": 1, "paths": {"source": "sub", "build": "sub"},
+            "backtraceGraph": {"commands": ["add_library", "target_precompile_headers"],
+                               "files": ["sub/CMakeLists.txt"],
+                               "nodes": [{"file": 0}, {"command": 0, "file": 0, "line": 4, "parent": 0},
+                                         {"command": 1, "file": 0, "line": 9, "parent": 0}]},
+            "sources": sources, "compileGroups": groups}
 
 
 def self_test() -> int:
-    """Plant each kind of unity build and precompiled header in a scratch tree, and check each verdict.
+    """Plant each kind of unity build and precompiled header in a scratch tree and build, and check each verdict.
 
     Returns:
         0 when every case holds, 2 otherwise
@@ -341,16 +273,6 @@ def self_test() -> int:
         if not holds:
             failures.append(name)
 
-    clean_cmake = (
-        "# target_precompile_headers(a PRIVATE x.h) in a comment\n"
-        "#[[ set(CMAKE_UNITY_BUILD ON) in a bracket comment ]]\n"
-        'message(STATUS "UNITY_BUILD is off here")\n'
-        'message(STATUS [=[PRECOMPILE_HEADERS in a bracket argument]=])\n'
-        "set_source_files_properties(a.cpp PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON SKIP_PRECOMPILE_HEADERS ON)\n"
-        "set_target_properties(t PROPERTIES DISABLE_PRECOMPILE_HEADERS ON)\n"
-        "if(DEFINED CMAKE_UNITY_BUILD_X)\n  message(${CMAKE_UNITY_BUILD})\nendif()\n"
-        "add_library(precompile_headers_demo STATIC a.cpp)\n"
-    )
     clean_presets = {"version": 6, "configurePresets": [{"name": "default", "cacheVariables": {"CMAKE_BUILD_TYPE":
                                                                                                "Debug"}}]}
     clean_rows = [{"directory": "/b", "file": "/r/src/a.cpp", "arguments": ["g++", "-c", "/r/src/a.cpp"]},
@@ -359,32 +281,46 @@ def self_test() -> int:
         root = Path(work) / "tree"
         build = Path(work) / "build"
         build.mkdir()
-        (root / "cmake").mkdir(parents=True)
-        (root / "CMakeLists.txt").write_text(clean_cmake, encoding="utf-8")
-        (root / "cmake/Extra.cmake").write_text("set(SOMETHING ON)\n", encoding="utf-8")
+        root.mkdir()
         (root / "CMakePresets.json").write_text(json.dumps(clean_presets), encoding="utf-8")
         database = compdb.plant(build, clean_rows)
+        clean_target = _planted_target("plain", [{"path": "sub/a.cpp", "compileGroupIndex": 0}])
+        cache: dict[str, str | tuple[str, str]] = {"CMAKE_BUILD_TYPE": ("STRING", "Debug"),
+                                                   "CMAKE_SKIP_UNITY_BUILD_INCLUSION_X": ("BOOL", "ON")}
+
+        def plant(targets: list[dict[str, object]], entries: dict[str, str | tuple[str, str]]) -> None:
+            """Write the replies of the scratch build."""
+            cmake.plant(build, cache=entries, targets=targets, source=str(root), build=str(build))
 
         def run() -> list[check_report.Finding]:
             """Evaluate the scratch tree."""
             return evaluate(root, build)
 
-        expect("a clean tree gives no finding: comments, texts, the names that turn a feature off and a forced "
-               "include that is no precompiled header", run() == [])
+        plant([clean_target], cache)
+        expect("a clean build gives no finding: a plain target, a cache entry that only contains a unity name, and a "
+               "forced include that is no precompiled header", run() == [])
 
-        for text, label, line in (
-                ("target_precompile_headers(t PRIVATE <vector>)\n", "a call of target_precompile_headers", 1),
-                ("Target_Precompile_Headers(t PRIVATE <vector>)\n", "a call with another letter case", 1),
-                ("set(CMAKE_UNITY_BUILD ON)\n", "set(CMAKE_UNITY_BUILD ON)", 1),
-                ("\nset_target_properties(t PROPERTIES\n  UNITY_BUILD ON)\n", "the target property UNITY_BUILD", 3),
-                ('set_property(TARGET t PROPERTY "PRECOMPILE_HEADERS_REUSE_FROM" u)\n',
-                 "a quoted PRECOMPILE_HEADERS_REUSE_FROM", 1),
-                ("set(CMAKE_UNITY_BUILD_BATCH_SIZE 8) # a comment\n", "a batch size of a unity build", 1)):
-            (root / "cmake/Extra.cmake").write_text(text, encoding="utf-8")
+        cases: list[tuple[list[dict[str, object]], str, int]] = [
+            ([_planted_target("header", [{"path": "sub/c.cpp", "compileGroupIndex": 0},
+                                         {"path": f"{build}/CMakeFiles/header.dir/cmake_pch.hxx",
+                                          "isGenerated": True}], ["<vector>"])],
+             "a precompiled header of a target, at the line of its call", 9),
+            ([_planted_target("reuse", [{"path": "sub/d.cpp", "compileGroupIndex": 0},
+                                        {"path": f"{build}/CMakeFiles/header.dir/cmake_pch.hxx"}])],
+             "a target that uses the precompiled header of a different target", 4),
+            ([_planted_target("unity", [{"path": f"{build}/CMakeFiles/unity.dir/Unity/unity_0_cxx.cxx",
+                                         "compileGroupIndex": 0}, {"path": "sub/a.cpp"}, {"path": "sub/b.cpp"}])],
+             "a target that compiles a unity source", 4)]
+        for targets, label, line in cases:
+            plant(targets, cache)
             found = run()
             expect(f"an error: {label}", len(found) == 1 and found[0].level == "error"
-                   and found[0].path == "cmake/Extra.cmake" and found[0].line == line)
-        (root / "cmake/Extra.cmake").write_text("set(SOMETHING ON)\n", encoding="utf-8")
+                   and found[0].path == "sub/CMakeLists.txt" and found[0].line == line)
+        plant([clean_target], {**cache, "CMAKE_UNITY_BUILD": ("BOOL", "ON")})
+        found = run()
+        expect("an error: a cache entry CMAKE_UNITY_BUILD",
+               len(found) == 1 and "CMAKE_UNITY_BUILD=ON" in found[0].message)
+        plant([clean_target], cache)
 
         presets = json.loads(json.dumps(clean_presets))
         presets["configurePresets"][0]["cacheVariables"]["CMAKE_UNITY_BUILD"] = "ON"
@@ -392,10 +328,12 @@ def self_test() -> int:
         found = run()
         expect("an error: a preset that sets CMAKE_UNITY_BUILD",
                len(found) == 1 and found[0].path == "CMakePresets.json")
-        (root / "CMakePresets.json").write_text("{ not json", encoding="utf-8")
-        found = run()
-        expect("an error: a presets file that is not JSON", len(found) == 1 and "not valid JSON" in found[0].message)
         (root / "CMakePresets.json").write_text(json.dumps(clean_presets), encoding="utf-8")
+        (root / "CMakeUserPresets.json").write_text("{ not json", encoding="utf-8")
+        found = run()
+        expect("an error: a presets file that is not JSON",
+               len(found) == 1 and found[0].path == "CMakeUserPresets.json" and "not valid JSON" in found[0].message)
+        (root / "CMakeUserPresets.json").unlink()
 
         for row, label in (
                 ({"directory": "/b", "file": "/b/CMakeFiles/t.dir/Unity/unity_0_cxx.cxx",
@@ -416,8 +354,14 @@ def self_test() -> int:
         found = run()
         expect("an error: a missing compile database", len(found) == 1 and "does not exist" in found[0].message)
         compdb.plant(build, clean_rows)
+        index = next(path for path in sorted((cmake.api_directory(build) / "reply").iterdir())
+                     if cmake.is_index(path.name))
+        index.unlink()
+        found = run()
+        expect("an error: a build with no reply of the file API",
+               len(found) == 1 and "cannot read what CMake decided" in found[0].message)
 
-        (root / "cmake/Extra.cmake").write_text("set(CMAKE_UNITY_BUILD ON)\n", encoding="utf-8")
+        plant([_planted_target("header", [{"path": "sub/c.cpp", "compileGroupIndex": 0}], ["<vector>"])], cache)
         warnings_dir = Path(work) / "warnings"
         with contextlib.redirect_stdout(io.StringIO()) as printed:
             status = check_report.emit(run(), CHECK, warnings_dir)
@@ -442,15 +386,15 @@ def main(argv: list[str]) -> int:
     """
     parser = argparse.ArgumentParser(prog="guard check --rule no-unity-pch", description=__doc__.split("\n", 1)[0])
     check_report.add_arguments(parser)
-    parser.add_argument("--build-dir", type=Path, help="the configured build directory whose compile database the "
-                                                       "check reads")
+    parser.add_argument("--build-dir", type=Path, help="the configured build directory whose compile database and "
+                                                       "file API replies the check reads")
     parser.add_argument("--self-test", action="store_true", help="plant each case in a scratch tree")
     arguments = parser.parse_args(argv)
     if arguments.self_test:
         return self_test()
     if arguments.build_dir is None:
         parser.error("give --build-dir BUILD_DIR, or --self-test")
-    findings = evaluate(tsast.REPO_ROOT, arguments.build_dir.resolve())
+    findings = evaluate(REPO_ROOT, arguments.build_dir.resolve())
     code = check_report.emit(findings, CHECK, arguments.warnings_dir)
     print(f"check-no-unity-pch: {len(findings)} finding(s).", file=sys.stderr)
     return code

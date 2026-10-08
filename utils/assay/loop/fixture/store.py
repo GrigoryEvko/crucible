@@ -219,7 +219,8 @@ Why a result from a different root is the result of the compile
 ---------------------------------------------------------------
 8. Two build directories of one commit, in two work trees, share each result.
    The source root and the build root of a build directory come from its
-   CMakeCache.txt (CMAKE_HOME_DIRECTORY and CMAKE_CACHEFILE_DIR).  The key
+   CMake cache (CMAKE_HOME_DIRECTORY and CMAKE_CACHEFILE_DIR).  The memo of
+   the compile command keeps them.  The key
    holds a mark in place of each text of a root: in the command, in each path
    and in the environment.  A result holds the marks in each path, in each
    hash of the names under a root, and in the output.  A lookup changes each
@@ -423,9 +424,6 @@ _FIXTURE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]*")
 # for its root only.
 _BUILD_MARK = "\x00build root\x00"
 _SOURCE_MARK = "\x00source root\x00"
-# The lines of CMakeCache.txt that name the source root and the build root.
-_CACHE_SOURCE = re.compile(r"^CMAKE_HOME_DIRECTORY:INTERNAL=(.*)$", re.MULTILINE)
-_CACHE_BUILD = re.compile(r"^CMAKE_CACHEFILE_DIR:INTERNAL=(.*)$", re.MULTILINE)
 
 
 def _is_markable(root: str | None) -> bool:
@@ -490,19 +488,28 @@ class Roots:
         return [root for root, _ in self.pairs]
 
 
-def build_roots(build_dir: Path) -> Roots:
-    """Return the roots of the build in `build_dir`, from the lines of its CMakeCache.txt.
+def root_texts(build_dir: Path) -> tuple[str | None, str | None]:
+    """Return the source root and the build root of the build in `build_dir`, from its CMake cache.
 
-    With no CMakeCache.txt, or no such line, a root takes no part, and the
-    store keys its text as it is.
+    The entries are CMAKE_HOME_DIRECTORY and CMAKE_CACHEFILE_DIR of the reply
+    cache-v2 (assay.readers.cmake).  With no reply, or no such entry, a root is
+    None, and the store keys its text as it is.  The memo of the compile
+    command keeps the roots, and only a miss of the memo imports the reader.
     """
+    from assay.readers import cmake
+
     try:
-        text = (build_dir / "CMakeCache.txt").read_text(encoding="utf-8", errors="surrogateescape")
-    except OSError:
-        return Roots(None, None)
-    source = _CACHE_SOURCE.search(text)
-    build = _CACHE_BUILD.search(text)
-    return Roots(source.group(1) if source else None, build.group(1) if build else None)
+        entries = cmake.cache(build_dir)
+    except cmake.CmakeError:
+        return None, None
+    source = entries.get("CMAKE_HOME_DIRECTORY")
+    build = entries.get("CMAKE_CACHEFILE_DIR")
+    return None if source is None else source.value, None if build is None else build.value
+
+
+def build_roots(build_dir: Path) -> Roots:
+    """Return the roots of the build in `build_dir` (root_texts)."""
+    return Roots(*root_texts(build_dir))
 
 
 def strip_source_echo(text: str) -> str:
@@ -796,23 +803,28 @@ def compile_argv(command: list[str], output: Path, depfile: Path) -> list[str]:
     return argv
 
 
-def find_compile_command(build_dir: Path, source: Path, memo: Path) -> tuple[list[str], Path] | None:
-    """Return the command and the working directory of `source` in the compile database.
+def find_compile_command(build_dir: Path, source: Path, memo: Path) -> tuple[list[str], Path, Roots] | None:
+    """Return the command and the working directory of `source` in the compile database, and the roots of the build.
 
     `memo` keeps the answer with the stat fields of the database, and the
     function uses it while the fields are the same (the module text).  The
-    search compares the file names as text first, and it resolves each name
-    only when no name is equal.  The cost is O(n) in the rows of the database,
-    and O(1) with a correct memo.
+    memo also keeps the roots (root_texts).  A configure that changes a root
+    writes different paths into the database, and the same database then has
+    the same roots.  The search compares the file names as text first, and it resolves
+    each name only when no name is equal.  The cost is O(n) in the rows of the
+    database, and O(1) with a correct memo.
     """
     database = compdb.database_file(build_dir)
     fields = _stat_fields(os.stat(database))
     text = str(source)
     try:
         recorded = json.loads(memo.read_text())
+        roots = recorded["roots"]
         if (recorded["database"] == fields and recorded["source"] == text
-                and all(isinstance(arg, str) for arg in recorded["command"]) and recorded["command"]):
-            return list(recorded["command"]), Path(recorded["directory"])
+                and all(isinstance(arg, str) for arg in recorded["command"]) and recorded["command"]
+                and isinstance(roots, list) and len(roots) == 2
+                and all(root is None or isinstance(root, str) for root in roots)):
+            return list(recorded["command"]), Path(recorded["directory"]), Roots(roots[0], roots[1])
     except (OSError, ValueError, KeyError, TypeError):
         pass
     compiles = compdb.entries(build_dir)
@@ -823,14 +835,16 @@ def find_compile_command(build_dir: Path, source: Path, memo: Path) -> tuple[lis
         return None
     command = list(match.argv())
     directory = Path(match.directory)
+    source_root, build_root = root_texts(build_dir)
     after = os.stat(database)
     if _stat_fields(after) == fields and after.st_ctime_ns < _now_ns() - _SETTLE_NS:
         try:
             _write_atomic(memo, json.dumps({"database": fields, "source": text, "command": command,
-                                            "directory": str(directory)}).encode("ascii"))
+                                            "directory": str(directory),
+                                            "roots": [source_root, build_root]}).encode("ascii"))
         except OSError:
             pass
-    return command, directory
+    return command, directory, Roots(source_root, build_root)
 
 
 def compile_environment(base: Mapping[str, str]) -> dict[str, str]:
@@ -3010,7 +3024,7 @@ def main(argv: list[str]) -> int:
     if found is None:
         print(f"no compile command for {source}", file=sys.stderr)
         return 2
-    command, directory = found
+    command, directory, roots = found
     output = scratch / f"{fixture_name}.o"
     depfile = scratch / f"{fixture_name}.{os.getpid()}.d"
     try:
@@ -3021,7 +3035,7 @@ def main(argv: list[str]) -> int:
     store, store_reason = open_store()
     budget = read_cost_budget(store.memo if store is not None else None)
     result, is_stored = obtain_result(fixture_name, argv, directory, source, output, budget, store, store_reason,
-                                      build_roots(build_dir))
+                                      roots)
     write_inputs_record(scratch, fixture_name, result, is_stored)
     verdict, unmatched = evaluate(fixture_name, source, expected_regexes, result)
     sys.stdout.flush()

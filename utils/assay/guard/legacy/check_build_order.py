@@ -99,7 +99,7 @@ WHAT THE CHECKS READ
       an executable, a static library, a shared library or a module.  The
       target of an object is the directory CMakeFiles/<target>.dir of its path.
     * For custom-deps: the dependency log (`ninja -t deps`), through the
-      ninja of the value CMAKE_MAKE_PROGRAM of the CMakeCache.txt of the
+      ninja of the value CMAKE_MAKE_PROGRAM of the CMake cache of the
       build (utils/assay/readers/census.py reads the output).
     * For compile-first: BUILD_DIR/compile-first-targets.txt, each target of
       `all` that compiles a source, which cmake/CompileFirst.cmake writes at
@@ -144,7 +144,7 @@ from assay.core import meter as cost_meter
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
 from assay.readers import census as build_census
-from assay.readers import compdb
+from assay.readers import cmake, compdb
 from assay.readers.ninja import COMPILE_RULE, CUSTOM_RULE, LINK_RULE, Graph, read_graph
 
 CHECKS = ("build-order", "compile-first", "custom-deps")
@@ -1063,7 +1063,10 @@ def run_custom_deps(build: Path, graph: Graph, ninja_shown: str, warnings_dir: P
     lists: dict[str, list[str]] = {}
     states: dict[str, str] = {}
     if built:
-        ninja = build_census.cache_value(build, "CMAKE_MAKE_PROGRAM") or "ninja"
+        try:
+            ninja = cmake.cache_value(build, "CMAKE_MAKE_PROGRAM") or "ninja"
+        except cmake.CmakeError:
+            ninja = "ninja"
         try:
             lists, states = build_census.parse_dependencies(
                 build_census.run_tool([ninja, "-C", str(build), "-t", "deps", *built]))

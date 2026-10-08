@@ -62,6 +62,7 @@ from pathlib import Path
 from assay.core import proc
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
+from assay.readers import cmake as cmake_reader
 from assay.readers.ninja import LOG_NAME, read_log, ran_outputs
 from assay.setup import pins as cmake_pin
 
@@ -120,26 +121,8 @@ def display(path: Path, root: Path) -> str:
         return str(path)
 
 
-def read_cache(build: Path) -> dict[str, str]:
-    """Read the entries of CMakeCache.txt.
-
-    Args:
-        build: The build directory
-
-    Returns:
-        The value of each entry, by its name
-    """
-    entries: dict[str, str] = {}
-    for raw in (build / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace").splitlines():
-        if not raw or raw.startswith(("#", "//")) or "=" not in raw:
-            continue
-        key, value = raw.split("=", 1)
-        entries[key.split(":", 1)[0]] = value
-    return entries
-
-
 def open_build(build: Path) -> tuple[BuildDir | None, str]:
-    """Read the build directory and the tools that its cache names.
+    """Read the build directory and the tools that its cache names (assay.readers.cmake).
 
     Args:
         build: The build directory
@@ -147,9 +130,12 @@ def open_build(build: Path) -> tuple[BuildDir | None, str]:
     Returns:
         The build directory, or None and the reason that the check cannot measure it
     """
-    if not (build / "CMakeCache.txt").is_file():
-        return None, f"{build} has no CMakeCache.txt.  Configure it before the check"
-    cache = read_cache(build)
+    if not cmake_reader.is_configured(build):
+        return None, f"{build} is not a configured build directory.  Configure it before the check"
+    try:
+        cache = {name: entry.value for name, entry in cmake_reader.cache(build).items()}
+    except cmake_reader.CmakeError as problem:
+        return None, f"the CMake cache of {build} cannot be read: {problem}"
     generator = cache.get("CMAKE_GENERATOR", "")
     if generator != "Ninja":
         return None, f"{build} uses the generator '{generator}'.  The check reads the logs of Ninja"
@@ -389,6 +375,8 @@ def plant_project(work: Path, plant: str, cmake: str, ninja: str) -> tuple[Path,
     (source / "src" / "input.txt").write_text("input\n", encoding="utf-8")
     (source / "CMakeLists.txt").write_text(PROJECT + PLANTS[plant], encoding="utf-8")
     build = work / "build"
+    # The scratch project has no cmake_file_api call.  Its build directory gets the query of the reply of the cache.
+    cmake_reader.request(build)
     code, output = run([cmake, "-G", "Ninja", f"-DCMAKE_MAKE_PROGRAM={ninja}", "-S", str(source), "-B", str(build)],
                        proc.TOOL_S)
     return build, "" if code == 0 else output
@@ -466,9 +454,10 @@ def self_test(cmake: str, ninja: str) -> int:
         root = Path(work)
         found, _ = evaluate(root / "missing", 2, root)
         expect("an error: a build directory that does not exist",
-               len(found) == 1 and "has no CMakeCache.txt" in found[0].message)
+               len(found) == 1 and "is not a configured build directory" in found[0].message)
         (root / "make").mkdir()
-        (root / "make" / "CMakeCache.txt").write_text("CMAKE_GENERATOR:INTERNAL=Unix Makefiles\n", encoding="utf-8")
+        cmake_reader.cache_file(root / "make").write_text("", encoding="utf-8")
+        cmake_reader.plant(root / "make", cache={"CMAKE_GENERATOR": "Unix Makefiles"})
         found, _ = evaluate(root / "make", 2, root)
         expect("an error: a build directory of another generator",
                len(found) == 1 and "uses the generator 'Unix Makefiles'" in found[0].message)

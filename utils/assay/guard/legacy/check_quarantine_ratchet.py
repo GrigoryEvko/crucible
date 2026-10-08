@@ -191,7 +191,7 @@ from assay.core import ruletable as layer_rules
 from assay.core import target as build_target
 from assay.core.paths import REPO_ROOT
 from assay.readers import census as build_census
-from assay.readers import compdb
+from assay.readers import cmake, compdb
 from assay.readers import sections as quarantine_sections
 
 CHECK = "quarantine"
@@ -267,14 +267,15 @@ def joined(*fields: str) -> str:
 
 
 def cache_entries(build_dir: Path) -> dict[str, tuple[str, str]]:
-    """Return the type and the value of each entry of the CMakeCache.txt of a build."""
-    entries: dict[str, tuple[str, str]] = {}
-    with contextlib.suppress(OSError):
-        for line in (build_dir / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace").splitlines():
-            match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_.+-]*):([A-Z]+)=(.*)", line)
-            if match:
-                entries[match[1]] = (match[2], match[3])
-    return entries
+    """Return the type and the value of each entry of the CMake cache of a build (assay.readers.cmake).
+
+    Raises:
+        ConfigurationError: If the cache cannot be read, because the configuration of the build is then unknown
+    """
+    try:
+        return {name: (entry.type_name, entry.value) for name, entry in cmake.cache(build_dir).items()}
+    except cmake.CmakeError as problem:
+        raise ConfigurationError(f"the CMake cache of {build_dir} cannot be read: {problem}") from None
 
 
 def normalized(kind: str, value: str) -> str:
@@ -298,7 +299,8 @@ def build_configuration(build_dir: Path, commands: Iterable[str]) -> tuple[str, 
     with its own -march=native gives the configuration the tier of the host.
 
     Raises:
-        ConfigurationError: If the build has no build-kind.txt, or the compiler does not print its target
+        ConfigurationError: If the build has no build-kind.txt, its CMake cache cannot be read, or the compiler does
+            not print its target
     """
     kind = build_target.kind_of(build_dir)
     if kind is None:
@@ -840,13 +842,15 @@ class Scratch:
                        "quarantine: upward_include include/fixy/session/Handle.h:3:0 include/crucible/X.h"])
         self.add("c", ["quarantine: std_entity test/test_arena.cpp:2:1 std::swap"])
 
-    def configure(self, kind: str, build_type: str, flags: str = "", extra: str = "") -> None:
-        """Write the build kind and the CMakeCache.txt of one configuration of the scratch build."""
+    def configure(self, kind: str, build_type: str, flags: str = "",
+                  extra: dict[str, tuple[str, str]] | None = None) -> None:
+        """Write the build kind and the reply of the CMake cache of one configuration of the scratch build."""
         (self.build / "build-kind.txt").write_text(f"{kind}\n", encoding="utf-8")
-        (self.build / "CMakeCache.txt").write_text(
-            f"CMAKE_GENERATOR:INTERNAL=Ninja\nCMAKE_MAKE_PROGRAM:FILEPATH={self.ninja}\n"
-            f"CMAKE_CXX_COMPILER:FILEPATH={self.compiler}\nCMAKE_BUILD_TYPE:STRING={build_type}\n"
-            f"CMAKE_CXX_FLAGS:STRING={flags}\n{extra}", encoding="utf-8")
+        cmake.plant(self.build, cache={"CMAKE_GENERATOR": "Ninja",
+                                       "CMAKE_MAKE_PROGRAM": ("FILEPATH", str(self.ninja)),
+                                       "CMAKE_CXX_COMPILER": ("FILEPATH", str(self.compiler)),
+                                       "CMAKE_BUILD_TYPE": ("STRING", build_type),
+                                       "CMAKE_CXX_FLAGS": ("STRING", flags), **(extra or {})})
 
     def git(self, *arguments: str) -> None:
         """Run one git command in the scratch repository, with the identity of the self-test."""
@@ -1237,7 +1241,7 @@ def self_test() -> int:
 
         # A bench target adds -march=native to its own compiles, so its arms depend on the host.
         bench_name = f"{BASE_NAME}-bench"
-        scratch.configure(BASE_NAME, "Debug", extra="CRUCIBLE_BENCH:BOOL=ON\n")
+        scratch.configure(BASE_NAME, "Debug", extra={"CRUCIBLE_BENCH": ("BOOL", "ON")})
         scratch.flags["h"] = "-O3 -march=native"
         scratch.add("h", ["quarantine: compiler_builtin include/crucible/Vigil.h:40:7 __builtin_ia32_vpcmpb512"])
         status, _, _ = scratch.run(write=True, add_configuration=True)

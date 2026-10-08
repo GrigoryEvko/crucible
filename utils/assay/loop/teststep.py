@@ -327,7 +327,6 @@ def self_test() -> int:
         root = Path(work)
         build = root / "build"
         (build / "test").mkdir(parents=True)
-        (build / "CMakeCache.txt").write_text("# a planted cache\n")
         (build / cost_meter.KIND_FILE).write_text("x86_64-debug-asan\n")
         ledgers = root / "ledgers"
         ledgers.mkdir()

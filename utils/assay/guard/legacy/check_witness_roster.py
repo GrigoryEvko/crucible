@@ -100,7 +100,7 @@ from pathlib import Path
 
 from assay.core import proc
 from assay.core.paths import DATA
-from assay.readers import compdb, tsast
+from assay.readers import cmake, compdb, tsast
 from assay.setup import pins as cmake_pin
 
 REPO = tsast.REPO_ROOT
@@ -552,15 +552,13 @@ def build_source(build_dir: Path) -> Path | None:
         build_dir: A configured CMake build tree
 
     Returns:
-        The resolved CMAKE_HOME_DIRECTORY of its CMakeCache.txt, or None
+        The resolved CMAKE_HOME_DIRECTORY of its CMake cache (assay.readers.cmake), or None
     """
-    cache = build_dir / "CMakeCache.txt"
-    if not cache.is_file():
+    try:
+        source = cmake.cache_value(build_dir, "CMAKE_HOME_DIRECTORY")
+    except cmake.CmakeError:
         return None
-    for line in cache.read_text(encoding="utf-8", errors="replace").splitlines():
-        if line.startswith("CMAKE_HOME_DIRECTORY:"):
-            return Path(line.split("=", 1)[1]).resolve()
-    return None
+    return None if source is None else Path(source).resolve()
 
 
 def newest_build_dir(root: Path = REPO) -> Path | None:
@@ -642,8 +640,7 @@ def self_test() -> int:
             registration.write_text("", encoding="utf-8")
             os.utime(registration, (stamp, stamp))
             if source is not None:
-                (trees / name / "CMakeCache.txt").write_text(f"CMAKE_HOME_DIRECTORY:INTERNAL={source}\n",
-                                                             encoding="utf-8")
+                cmake.plant(trees / name, cache={"CMAKE_HOME_DIRECTORY": str(source)})
         expect("a newer build tree of another source copy, or one with no cache, is not picked",
                newest_build_dir(trees) == trees / "build-this")
     entries = parse_roster(ROSTER, INCLUDE)

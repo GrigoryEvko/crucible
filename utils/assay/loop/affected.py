@@ -76,7 +76,7 @@ run the full suite.
 
 THE PROGRAMS
     The script builds with the cmake and runs the tests with the ctest that
-    CMakeCache.txt of BUILD_DIR names (utils/assay/setup/pins.py).  It runs
+    the CMake cache of BUILD_DIR names (utils/assay/setup/pins.py).  It runs
     no cmake and no ctest of PATH, because PATH can hold a ctest of another
     version.
 
@@ -118,6 +118,7 @@ from assay.core import report as check_report
 from assay.core.paths import LOOP
 from assay.loop import history as loop_history
 from assay.loop import teststep as test_launcher
+from assay.readers import cmake
 from assay.readers import elf as elf_file
 from assay.setup import pins as cmake_pin
 
@@ -240,25 +241,26 @@ def real(path: str) -> str:
 def read_trees(build_dir: Path) -> Trees:
     """Return the trees of a configured build directory.
 
-    The source tree comes from CMAKE_HOME_DIRECTORY in CMakeCache.txt.
+    The source tree comes from CMAKE_HOME_DIRECTORY of the CMake cache (assay.readers.cmake).
     """
-    cache = build_dir / "CMakeCache.txt"
-    if not cache.is_file():
-        raise RunnerError(f"{build_dir} holds no CMakeCache.txt.  Configure it first, for example "
+    if not cmake.is_configured(build_dir):
+        raise RunnerError(f"{build_dir} is not a configured build directory.  Configure it first, for example "
                           f"`cmake --preset default`, and give its path.")
-    for line in cache.read_text(errors="replace").splitlines():
-        if line.startswith("CMAKE_HOME_DIRECTORY:"):
-            source = line.split("=", 1)[1].strip()
-            if not Path(source).is_dir():
-                raise RunnerError(f"CMakeCache.txt of {build_dir} names the source tree {source}, "
-                                  f"which does not exist.  Configure the build directory again.")
-            return Trees(source_root=real(source), build_root=real(str(build_dir)))
-    raise RunnerError(f"CMakeCache.txt of {build_dir} holds no CMAKE_HOME_DIRECTORY.  Configure the build "
-                      f"directory again.")
+    try:
+        found = cmake.cache(build_dir).get("CMAKE_HOME_DIRECTORY")
+    except cmake.CmakeError as problem:
+        raise RunnerError(f"the CMake cache of {build_dir} cannot be read: {problem}") from None
+    if found is None:
+        raise RunnerError(f"the CMake cache of {build_dir} holds no CMAKE_HOME_DIRECTORY.  {cmake.AGAIN}")
+    source = found.value.strip()
+    if not Path(source).is_dir():
+        raise RunnerError(f"the CMake cache of {build_dir} names the source tree {source}, which does not exist.  "
+                          f"{cmake.AGAIN}")
+    return Trees(source_root=real(source), build_root=real(str(build_dir)))
 
 
 def build_program(build_dir: Path, name: str) -> str:
-    """Return the cmake or the ctest that CMakeCache.txt of the build directory names, or stop."""
+    """Return the cmake or the ctest that the CMake cache of the build directory names, or stop."""
     try:
         return cmake_pin.configured_program(build_dir, name)
     except cmake_pin.PinError as error:
@@ -807,8 +809,8 @@ class SelfTest:
         (self.build_dir / "lib").mkdir()
         (self.source_dir / "data").mkdir()
         (self.source_dir / "test").mkdir()
-        self.cache = f"CMAKE_HOME_DIRECTORY:INTERNAL={self.source_dir}\nCMAKE_CTEST_COMMAND:INTERNAL={ctest}\n"
-        (self.build_dir / "CMakeCache.txt").write_text(self.cache)
+        cmake.cache_file(self.build_dir).write_text("")
+        cmake.plant(self.build_dir, cache={"CMAKE_HOME_DIRECTORY": str(self.source_dir), "CMAKE_CTEST_COMMAND": ctest})
         self.golden = self.source_dir / "data" / "golden.csv"
         self.golden.write_text("1,2\n")
         self.library = self.build_dir / "lib" / "libnamed.so"
@@ -1027,7 +1029,7 @@ def self_test(ctest: str) -> int:
         expect("--plan appends no line to the loop history",
                len(loop_history.read_lines(fake.build_dir)) == lines_before, output)
 
-        (fake.build_dir / "CMakeCache.txt").write_text(f"CMAKE_HOME_DIRECTORY:INTERNAL={fake.source_dir}\n")
+        cmake.plant(fake.build_dir, cache={"CMAKE_HOME_DIRECTORY": str(fake.source_dir)})
         status, output = fake.call()
         expect("a cache that names no ctest gives exit code 2 and the reason",
                status == 2 and "has no entry CMAKE_CTEST_COMMAND" in output, output)

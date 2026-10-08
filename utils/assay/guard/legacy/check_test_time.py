@@ -90,7 +90,7 @@ Usage
     guard check --rule test-time --build-dir BUILD_DIR [--log FILE] --write
     guard check --rule test-time --self-test [--cmake CMAKE] [--ctest CTEST]
 
-    Without --ctest, the check runs the ctest that CMakeCache.txt of the build
+    Without --ctest, the check runs the ctest that the CMake cache of the build
     directory names, and the self-test runs the cmake and the ctest of PATH
     only when they give the pinned version (utils/assay/setup/pins.py).
 

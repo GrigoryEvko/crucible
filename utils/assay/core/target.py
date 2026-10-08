@@ -52,7 +52,7 @@ from pathlib import Path
 
 from assay.core import meter as cost_meter
 from assay.core import proc
-from assay.readers import census as build_census
+from assay.readers import cmake
 
 NOT_APPLICABLE = 3
 TARGET_OPTIONS = ("-march=", "-mcpu=")
@@ -71,10 +71,24 @@ def kind_of(build_dir: Path) -> str | None:
 
 
 def target_flags(build_dir: Path) -> list[str]:
-    """Return the last -march= and the last -mcpu= of CMAKE_CXX_FLAGS and the flags of the build type."""
-    build_type = (build_census.cache_value(build_dir, "CMAKE_BUILD_TYPE") or "").upper()
-    words = shlex.split(" ".join(build_census.cache_value(build_dir, name) or ""
-                                 for name in ("CMAKE_CXX_FLAGS", f"CMAKE_CXX_FLAGS_{build_type}")))
+    """Return the last -march= and the last -mcpu= of CMAKE_CXX_FLAGS and the flags of the build type.
+
+    Raises:
+        TierError: If the CMake cache of the build cannot be read, because the target of the build is then unknown
+    """
+    try:
+        entries = cmake.cache(build_dir)
+    except cmake.CmakeError as problem:
+        raise TierError(f"the CMake cache of {build_dir} cannot be read, so the target of the build is unknown: "
+                        f"{problem}") from None
+
+    def value(name: str) -> str:
+        """Return the value of one cache entry, or an empty text when the cache has no such entry."""
+        entry = entries.get(name)
+        return "" if entry is None else entry.value
+
+    build_type = value("CMAKE_BUILD_TYPE").upper()
+    words = shlex.split(" ".join(value(name) for name in ("CMAKE_CXX_FLAGS", f"CMAKE_CXX_FLAGS_{build_type}")))
     flags: list[str] = []
     for option in TARGET_OPTIONS:
         flags += [word for word in words if word.startswith(option)][-1:]
@@ -118,7 +132,7 @@ def build_tier(build_dir: Path, compiler: str, commands: Iterable[str] = ()) -> 
     Complexity: linear in the size of the commands, and one compiler run for each distinct tier.
 
     Raises:
-        TierError: If the compiler does not print its target
+        TierError: If the CMake cache of the build cannot be read, or the compiler does not print its target
     """
     base = target_tier(compiler, target_flags(build_dir))
     natives = sorted({word for command in commands for word in command.split() if word in NATIVE_FLAGS})
@@ -211,15 +225,19 @@ def self_test() -> int:
                             f"print({X86_HELP!r}.replace('x86-64', 'znver5' if '-march=native' in sys.argv "
                             f"else 'x86-64'))\n", encoding="utf-8")
         compiler.chmod(0o755)
-        (scratch / "CMakeCache.txt").write_text("CMAKE_BUILD_TYPE:STRING=Debug\nCMAKE_CXX_FLAGS:STRING=\n",
-                                                encoding="utf-8")
+        try:
+            build_tier(scratch, str(compiler))
+            expect("a build whose CMake cache cannot be read is a TierError", False)
+        except TierError as problem:
+            expect("a build whose CMake cache cannot be read is a TierError", "cannot be read" in str(problem))
+        cmake.plant(scratch, cache={"CMAKE_BUILD_TYPE": ("STRING", "Debug"), "CMAKE_CXX_FLAGS": ("STRING", "")})
         plain_tier = build_tier(scratch, str(compiler), ["g++ -O1 -c a.cpp"])
         bench_tier = build_tier(scratch, str(compiler), ["g++ -O1 -c a.cpp", "g++ -O3 -march=native -c bench.cpp"])
         expect("a compile with its own native flag adds the native tier to the tier",
                plain_tier.startswith("x86-64-") and "+" not in plain_tier
                and bench_tier.startswith(f"{plain_tier}+znver5-"), (plain_tier, bench_tier))
-        (scratch / "CMakeCache.txt").write_text(
-            "CMAKE_BUILD_TYPE:STRING=Release\nCMAKE_CXX_FLAGS:STRING=-march=native\n", encoding="utf-8")
+        cmake.plant(scratch, cache={"CMAKE_BUILD_TYPE": ("STRING", "Release"),
+                                    "CMAKE_CXX_FLAGS": ("STRING", "-march=native")})
         release_tier = build_tier(scratch, str(compiler), ["g++ -O3 -march=native -c bench.cpp"])
         expect("a native flag of the build flags adds no second tier", release_tier.startswith("znver5-")
                and "+" not in release_tier, release_tier)

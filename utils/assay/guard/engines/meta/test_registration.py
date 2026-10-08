@@ -227,6 +227,7 @@ def plant_context(plant: Path, scratch: Path) -> MetaContext:
     Raises:
         NotApplicable: If the pinned cmake is absent, or the project does not configure
     """
+    from assay.readers import cmake as cmake_reader
     from assay.setup import pins
 
     context = copy_tree(plant, scratch)
@@ -235,6 +236,9 @@ def plant_context(plant: Path, scratch: Path) -> MetaContext:
         cmake = pins.pinned_program("cmake")
     except pins.PinError as problem:
         raise NotApplicable(str(problem)) from None
+    # The planted project has no cmake_file_api call.  Its build directory gets the query of the reply of the
+    # cache, which gives the ctest of the build.
+    cmake_reader.request(build)
     completed = proc.run(proc.Command([cmake, "-S", str(scratch), "-B", str(build)], timeout_s=CMAKE_TIMEOUT_S))
     if completed.exit != 0:
         raise NotApplicable(f"the planted project does not configure: {completed.err.strip()}")

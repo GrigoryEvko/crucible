@@ -11,7 +11,7 @@ The rule gate-mutants (`guard check --rule gate-mutants MODE ...`) has four mode
     selftest --compiler CXX [--cmake CMAKE]   one planted survivor and two kills
     gates  H [H ...]                print the gates of each header
 
-The run uses the cmake and the ctest that CMakeCache.txt of B names, not a
+The run uses the cmake and the ctest that the CMake cache of B names, not a
 cmake or a ctest of PATH (utils/assay/setup/pins.py).
 
 Candidates for a header, in this order:
@@ -69,7 +69,7 @@ from assay.core import proc
 from assay.core import rows as rows_grammar
 from assay.core.paths import LOOP, REPO_ROOT
 from assay.mutation import gates as gate_finder
-from assay.readers import compdb, tsast
+from assay.readers import cmake, compdb, tsast
 from assay.setup import pins as cmake_pin
 
 RULE = "gate-mutants"
@@ -241,7 +241,7 @@ include("${CRUCIBLE_TESTS_FILE}")
 
 
 def _build_program(build: Path, name: str) -> str:
-    """The cmake or the ctest that CMakeCache.txt of a configured build names (utils/assay/setup/pins.py).
+    """The cmake or the ctest that the CMake cache of a configured build names (utils/assay/setup/pins.py).
 
     A cmake or a ctest of PATH can have another version than the one that
     configured the build, so the runner does not look in PATH."""
@@ -275,35 +275,23 @@ def _ctest_commands(build: Path) -> dict[str, list[str]]:
     return commands
 
 
-FILE_API_CLIENT = "client-crucible-mutation"
-
-
 def _target_sources(build: Path) -> dict[str, list[str]]:
     """Each artifact of the build, as an absolute path, with the absolute paths of its sources.
 
-    The CMake file API gives the target model.  The query is written once,
-    and a configure of the build answers it.
-    Complexity: one configure when the reply is missing, then linear in the
-    size of the target model."""
-    api = build / ".cmake" / "api" / "v1"
-    query = api / "query" / FILE_API_CLIENT / "codemodel-v2"
-    if not query.exists():
-        query.parent.mkdir(parents=True, exist_ok=True)
-        query.write_text("")
-        proc.require(proc.run(proc.Command([_build_program(build, "cmake"), str(build)], timeout_s=proc.TOOL_S)))
-    indexes = sorted((api / "reply").glob("index-*.json"))
-    if not indexes:
-        raise SystemExit(f"mutation: the CMake file API left no reply under {api / 'reply'}")
-    index = json.loads(indexes[-1].read_text())
-    model_file = index["reply"][FILE_API_CLIENT]["codemodel-v2"]["jsonFile"]
-    model = json.loads((api / "reply" / model_file).read_text())
-    source_dir, build_dir = Path(model["paths"]["source"]), Path(model["paths"]["build"])
+    The code model of the CMake file API gives the targets (assay.readers.cmake).
+    A build of the tree has the reply, because the root CMakeLists.txt gives
+    its query.  A scratch project writes the query with cmake.request() before
+    its configure.
+    Complexity: linear in the size of the target model."""
+    try:
+        model = cmake.codemodel(build)
+    except cmake.CmakeError as error:
+        raise SystemExit(f"mutation: {error}") from None
     sources: dict[str, list[str]] = {}
-    for target in model["configurations"][0]["targets"]:
-        detail = json.loads((api / "reply" / target["jsonFile"]).read_text())
-        files = [str((source_dir / source["path"]).resolve()) for source in detail.get("sources", [])]
-        for artifact in detail.get("artifacts", []):
-            sources[str((build_dir / artifact["path"]).resolve())] = files
+    for target in model.targets:
+        files = [str(Path(source.path).resolve()) for source in target.sources]
+        for artifact in target.artifacts:
+            sources[str(Path(artifact).resolve())] = files
     return sources
 
 
@@ -781,10 +769,12 @@ def _selftest_build_model(work: Path, args: argparse.Namespace) -> list[str]:
     (source / "planted_test.cpp").write_text("int main() { return 0; }\n")
     generator = ["-G", "Ninja", f"-DCMAKE_MAKE_PROGRAM={NINJA}"] if shutil.which(NINJA) else []
     try:
-        cmake = args.cmake or cmake_pin.pinned_program("cmake")
+        cmake_program = args.cmake or cmake_pin.pinned_program("cmake")
     except cmake_pin.PinError as error:
         return [str(error)]
-    configured = proc.run(proc.Command([cmake, "-S", str(source), "-B", str(build), *generator,
+    # The planted project has no cmake_file_api call.  Its build directory gets the query of the replies.
+    cmake.request(build)
+    configured = proc.run(proc.Command([cmake_program, "-S", str(source), "-B", str(build), *generator,
                                         f"-DCMAKE_CXX_COMPILER={args.compiler}"], timeout_s=proc.TOOL_S))
     if configured.exit != 0:
         return [f"the planted project does not configure:\n{configured.err[-2000:]}"]

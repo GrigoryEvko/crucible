@@ -96,6 +96,7 @@ from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
 from assay.loop import gauge_cold, gauge_sample
 from assay.loop import history as loop_history
+from assay.readers import cmake as cmake_reader
 from assay.readers import ninja as ninja_files
 from assay.readers import tsast
 from assay.setup import pins as cmake_pin
@@ -693,9 +694,9 @@ def main(argv: list[str]) -> int:
             print("loop gauge: give --work-dir or --reuse, not the two.", file=sys.stderr)
             return 2
         work = options.reuse.resolve()
-        if not (work / "tree" / "build" / "CMakeCache.txt").is_file() or not (work / "logs").is_dir():
+        if not cmake_reader.is_configured(work / "tree" / "build") or not (work / "logs").is_dir():
             print(f"loop gauge: {work} is not the work directory of an earlier run with --keep: it has no "
-                  f"tree/build/CMakeCache.txt or no logs directory.", file=sys.stderr)
+                  f"configured build tree/build or no logs directory.", file=sys.stderr)
             return 2
     else:
         work = (options.work_dir or REPO_ROOT / ".worktrees" / f"edit-loop-gauge-{os.getpid()}").resolve()

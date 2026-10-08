@@ -51,7 +51,7 @@ from pathlib import Path
 
 from assay.core import proc
 from assay.core.paths import REPO_ROOT
-from assay.readers import cmake as cmake_files
+from assay.readers import cmake as cmake_reader
 from assay.setup import pins as cmake_pin
 
 DEFAULT_BUILD = "build-bench"
@@ -204,7 +204,7 @@ def run(root: Path, request: Request, settings: Settings) -> int:
         BenchError: If a step cannot go on
     """
     build_dir = root / settings.build
-    if not cmake_files.is_configured(build_dir):
+    if not cmake_reader.is_configured(build_dir):
         raise BenchError(f"{build_dir} not configured — run: cmake --preset {settings.preset}")
     try:
         build_cmake = cmake_pin.configured_program(build_dir, "cmake")

@@ -148,6 +148,7 @@ import io
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 from collections.abc import Iterable
@@ -159,7 +160,7 @@ from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
-from assay.readers import compdb
+from assay.readers import cmake, compdb
 from assay.readers import elf as elf_file
 
 CHECKS =("compile-cpu", "compile-instructions", "compile-memory", "link-time", "link-memory", "function-size",
@@ -316,29 +317,18 @@ def read_links(context: Context) -> tuple[list[Output], list[check_report.Findin
     Returns:
         The linked outputs, and an error for each input that cannot be read
     """
-    reply = context.build_dir / ".cmake" / "api" / "v1" / "reply"
-    shown = shown_path(reply, context.root)
-    indexes = sorted(reply.glob("index-*.json"))
-    if not indexes:
-        return [], [error_at(context.check, shown, "the build has no reply of the CMake file API.  The root "
-                                                   "CMakeLists.txt asks for the codemodel.  Configure the build again")]
+    shown = shown_path(cmake.api_directory(context.build_dir), context.root)
     try:
-        index = json.loads(indexes[-1].read_text(encoding="utf-8"))
-        codemodel_file = next(item["jsonFile"] for item in index.get("objects", [])
-                              if item.get("kind") == "codemodel" and item.get("version", {}).get("major") == 2)
-        codemodel = json.loads((reply / codemodel_file).read_text(encoding="utf-8"))
-        targets = [json.loads((reply / target["jsonFile"]).read_text(encoding="utf-8"))
-                   for configuration in codemodel.get("configurations", [])
-                   for target in configuration.get("targets", [])]
-    except (StopIteration, OSError, KeyError, ValueError) as problem:
-        return [], [error_at(context.check, shown, f"the codemodel reply cannot be read ({problem!r})")]
+        model = cmake.codemodel(context.build_dir)
+    except cmake.CmakeError as problem:
+        return [], [error_at(context.check, shown, f"the codemodel reply cannot be read: {problem}")]
     outputs: list[Output] = []
     seen: set[Path] = set()
-    for target in targets:
-        if target.get("type") not in LINKED_TYPES:
+    for target in model.targets:
+        if target.type_name not in LINKED_TYPES:
             continue
-        for artifact in target.get("artifacts", []):
-            path = Path(os.path.normpath(context.build_dir / artifact["path"]))
+        for artifact in target.artifacts:
+            path = Path(artifact)
             if path not in seen and path.is_file():
                 seen.add(path)
                 outputs.append(Output(path, None))
@@ -993,20 +983,8 @@ class Scratch:
 
     def write_reply(self) -> None:
         """Write a codemodel reply of the CMake file API with the planted targets."""
-        reply = self.build / ".cmake" / "api" / "v1" / "reply"
-        reply.mkdir(parents=True, exist_ok=True)
-        targets = []
-        for number, target in enumerate(self.targets):
-            (reply / f"target-{number}.json").write_text(json.dumps(target), encoding="utf-8")
-            targets.append({"name": target["name"], "jsonFile": f"target-{number}.json"})
         library = {"name": "library", "type": "STATIC_LIBRARY", "artifacts": [{"path": "liblibrary.a"}]}
-        (reply / "target-library.json").write_text(json.dumps(library), encoding="utf-8")
-        targets.append({"name": "library", "jsonFile": "target-library.json"})
-        (reply / "codemodel-v2-x.json").write_text(json.dumps({"configurations": [{"targets": targets}]}),
-                                                   encoding="utf-8")
-        (reply / "index-1.json").write_text(json.dumps({"objects": [
-            {"kind": "codemodel", "version": {"major": 2, "minor": 0}, "jsonFile": "codemodel-v2-x.json"}]}),
-            encoding="utf-8")
+        cmake.plant(self.build, targets=[*self.targets, library], source=str(self.root))
 
     def context(self, check: str, kind: str = KIND) -> Context:
         """Return a run over the scratch build, with the planted ninja that prints the planted dependency log."""
@@ -1242,10 +1220,7 @@ def self_test_cases() -> int:
         status, found, _ = bare_links.run("link-memory")
         expect("link-memory: no link record at all gives one error",
                status == 1 and len(found) == 1 and "not wired" in found[0].message)
-        reply = empty.build / ".cmake"
-        for path in sorted(reply.rglob("*"), reverse=True):
-            path.unlink() if path.is_file() else path.rmdir()
-        reply.rmdir()
+        shutil.rmtree(cmake.api_directory(empty.build))
         status, found, _ = empty.run("link-time")
         expect("link-time: a build with no file API reply is an error",
                status == 1 and "file API" in found[0].message)

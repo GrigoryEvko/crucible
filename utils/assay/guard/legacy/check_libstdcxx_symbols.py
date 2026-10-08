@@ -162,6 +162,7 @@ from assay.core import rows as rows_grammar
 from assay.core import target as build_target
 from assay.core.paths import REPO_ROOT
 from assay.readers import census as build_census
+from assay.readers import cmake
 from assay.readers import elf as elf_file
 
 CHECK = "libstdcxx-symbols"
@@ -693,7 +694,7 @@ os.execv({real!r}, [{real!r}, *sys.argv[1:]])
 
 
 class Scratch:
-    """A scratch build with planted archives, an inputs file, a build kind, a CMakeCache.txt and a ledger."""
+    """A scratch build with planted archives, an inputs file, a build kind, a reply of the CMake cache and a ledger."""
 
     def __init__(self, root: Path, compiler: str) -> None:
         """Compile the units, and make a build with the archives libbase.a and libglibc.a.
@@ -708,8 +709,7 @@ class Scratch:
         self.ledger = root / f"{CHECK}.txt"
         self.ledger.write_text(SELF_TEST_HEAD, encoding="utf-8")
         (self.build / cost_meter.KIND_FILE).write_text(f"{SELF_TEST_KIND}\n", encoding="utf-8")
-        (self.build / "CMakeCache.txt").write_text("CMAKE_BUILD_TYPE:STRING=Debug\nCMAKE_CXX_FLAGS:STRING=\n",
-                                                   encoding="utf-8")
+        cmake.plant(self.build, cache={"CMAKE_BUILD_TYPE": ("STRING", "Debug"), "CMAKE_CXX_FLAGS": ("STRING", "")})
         with ThreadPoolExecutor(max_workers=len(SELF_TEST_UNITS)) as pool:
             list(pool.map(self.compile, SELF_TEST_UNITS))
         self.libraries: dict[str, list[str]] = {}

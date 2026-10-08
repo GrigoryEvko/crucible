@@ -769,7 +769,11 @@ def write_kind_rows(rule_id: str, form: str, path: str, rows: dict[tuple[str, st
 
 
 def build_dir_of(path: str) -> str | None:
-    """Return the build directory that holds a path: the nearest directory above it with a CMakeCache.txt.
+    """Return the build directory that holds a path: the nearest directory above it with a build-kind.txt.
+
+    cmake/BuildLauncher.cmake writes build-kind.txt into the top directory of
+    each build of the tree, and the callers read the kind of that build.  This
+    module owns the file, and the search imports no reader.
 
     Args:
         path: An absolute path inside a build directory
@@ -779,7 +783,7 @@ def build_dir_of(path: str) -> str | None:
     """
     directory = os.path.dirname(path)
     while True:
-        if os.path.isfile(os.path.join(directory, "CMakeCache.txt")):
+        if os.path.isfile(os.path.join(directory, KIND_FILE)):
             return directory
         parent = os.path.dirname(directory)
         if parent == directory:

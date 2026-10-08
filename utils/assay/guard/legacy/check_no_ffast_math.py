@@ -13,7 +13,14 @@ the numerical invariants that replay depends on:
     -Ofast                         -O3 plus -ffast-math
 
 The floor is the INTERFACE library crucible_fp_strict (cmake/FpStrict.cmake).
-This guard catches what could punch through it.
+This guard catches what could punch through it.  It also bans the four flags
+that cancel a flag of the floor, because GCC uses the last of two contrary
+flags:
+
+    -ffp-contract=on               cancels -ffp-contract=off
+    -fno-trapping-math             cancels -ftrapping-math
+    -fno-signaling-nans            cancels -fsignaling-nans
+    -fno-rounding-math             cancels -frounding-math
 
 THE ENGINES
     Build flags   The compile database of a configured build
@@ -53,8 +60,11 @@ EXEMPTIONS
     A row `PATH | - | admit | KEY | REASON` of utils/ledgers/no-ffast-math.txt
     (policy admit) also exempts it.  KEY is the text of the row of the
     override without its comments, so an edit above the site does not move
-    it.  A row that matches no live site is stale.  A banned build flag has
-    no exemption.
+    it.  A row with a banned flag in KEY admits that flag on the compile of
+    the source file PATH in the compile database.  Such a row is for a test
+    that compiles with the flag by design.  A banned flag of a preset or a
+    link line has no exemption.  A row that matches no live site is stale.
+    A row of a flag can be stale only in a run with a build directory.
 
 USAGE
     guard check --rule no-ffast-math [--build-dir BUILD_DIR]
@@ -67,6 +77,8 @@ error or a failed self-test, 3 when the kit is not installed.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import shlex
 import sys
@@ -78,6 +90,7 @@ from pathlib import Path
 from assay.core import ledger as rule_ledger
 from assay.core import proc
 from assay.core import rows as rows_grammar
+from assay.readers import cmake as cmake_reader
 from assay.readers import compdb, tsast
 from assay.setup import pins as cmake_pin
 
@@ -89,16 +102,21 @@ LEDGER = rule_ledger.shown_path(RULE)
 MARKER = "NO-FFAST-MATH-OK"
 PRESETS = "CMakePresets.json"
 
-# Each banned compiler flag, spelled as the driver receives it.
+# Each banned compiler flag, spelled as the driver receives it: the fast-math
+# family, and the four flags that cancel a flag of the floor of
+# cmake/FpStrict.cmake (-ffp-contract=off, -ftrapping-math, -fsignaling-nans
+# and -frounding-math).  GCC uses the last of two contrary flags.
 BANNED_FLAGS = frozenset({
     "-ffast-math", "-funsafe-math-optimizations", "-fassociative-math", "-freciprocal-math",
     "-fno-signed-zeros", "-ffinite-math-only", "-ffp-contract=fast", "-Ofast",
+    "-ffp-contract=on", "-fno-trapping-math", "-fno-signaling-nans", "-fno-rounding-math",
 })
 # The same options as the optimize attribute and pragma spell them.  GCC
 # accepts an option with or without its leading `-f` or `-`.
 BANNED_OPTIONS = frozenset({
     "fast-math", "unsafe-math-optimizations", "associative-math", "reciprocal-math",
     "no-signed-zeros", "finite-math-only", "fp-contract=fast", "Ofast",
+    "fp-contract=on", "no-trapping-math", "no-signaling-nans", "no-rounding-math",
 })
 
 
@@ -125,22 +143,28 @@ def is_exempt(path: Path, root: Path) -> bool:
     return any(part in EXEMPT_COMPONENTS or part.startswith("build") for part in rel.parts[:-1])
 
 
-def build_violations(build_dir: Path, root: Path) -> tuple[list[Violation], list[str]]:
+def build_violations(build_dir: Path, root: Path,
+                     admitted: frozenset[str] = frozenset()) -> tuple[list[Violation], list[str], set[str]]:
     """Read the compile database of BUILD_DIR and return each banned flag, grouped by flag.
+
+    A ledger row `FILE | - | admit | FLAG | REASON` admits one flag on the
+    compile of one file.  Its key is FILE:FLAG, as in `admitted`.
 
     Complexity: linear in the size of the database.
 
     Returns:
-        The violations, and one line for each error that stops the read
+        The violations, one line for each error that stops the read, and each key of `admitted` that a compile
+        of the database matches
     """
     database = compdb.database_file(build_dir)
     try:
         entries = compdb.entries(build_dir)
     except compdb.CompdbError as error:
-        return [], [f"{database}: cannot read the compile database: {error}"]
+        return [], [f"{database}: cannot read the compile database: {error}"], set()
     if not entries:
-        return [], [f"{database}: the compile database holds no entry, so no flag was read"]
+        return [], [f"{database}: the compile database holds no entry, so no flag was read"], set()
     by_flag: dict[str, list[str]] = {}
+    matched: set[str] = set()
     under_root = 0
     for entry in entries:
         source = Path(entry.file)
@@ -149,48 +173,32 @@ def build_violations(build_dir: Path, root: Path) -> tuple[list[Violation], list
         under_root += 1
         if is_exempt(source, root):
             continue
+        rel = str(source.resolve().relative_to(root.resolve()))
         for flag in entry.argv():
-            if flag in BANNED_FLAGS:
-                by_flag.setdefault(flag, []).append(str(source.resolve().relative_to(root.resolve())))
+            if flag not in BANNED_FLAGS:
+                continue
+            if f"{rel}:{flag}" in admitted:
+                matched.add(f"{rel}:{flag}")
+                continue
+            by_flag.setdefault(flag, []).append(rel)
     if under_root == 0:
         return [], [f"{database}: no entry compiles a file under {root}, so the database belongs to another "
-                    f"source tree and no flag of this tree was read"]
+                    f"source tree and no flag of this tree was read"], set()
     violations = []
     for flag, files in sorted(by_flag.items()):
         shown = ", ".join(sorted(set(files))[:5])
         more = len(set(files)) - 5
         suffix = f" and {more} more" if more > 0 else ""
         violations.append(Violation(f"{database}", f"{flag} on {len(set(files))} file(s): {shown}{suffix}"))
-    return violations, []
+    return violations, [], matched
 
 
-def codemodel_targets(build_dir: Path) -> tuple[Path, list[Path]] | str:
-    """Return the source directory and the target files of the codemodel reply of the CMake file API.
-
-    CMake writes a new index file at each configure, and the name of the
-    index holds its time, so the last name in sort order is the current one.
-
-    Returns:
-        The source directory that the codemodel names and the path of each
-        target file, or one line that says why the reply cannot be read
-    """
-    reply = build_dir / ".cmake" / "api" / "v1" / "reply"
-    indexes = sorted(reply.glob("index-*.json"))
-    if not indexes:
-        return (f"{reply}: the build has no reply of the CMake file API, so no link flag was read. The root "
-                f"CMakeLists.txt asks for the codemodel with cmake_file_api. Configure the build again")
+def words_of(text: str) -> list[str]:
+    """Return the words of a flag text by the rules of a shell, or at white space for an open quotation mark."""
     try:
-        index = json.loads(indexes[-1].read_text(encoding="utf-8"))
-        codemodel_file = next(item["jsonFile"] for item in index.get("objects", [])
-                              if item.get("kind") == "codemodel" and item.get("version", {}).get("major") == 2)
-        codemodel = json.loads((reply / codemodel_file).read_text(encoding="utf-8"))
-    except StopIteration:
-        return f"{indexes[-1]}: the reply holds no codemodel of version 2, so no link flag was read"
-    except (OSError, KeyError, json.JSONDecodeError) as error:
-        return f"{indexes[-1]}: cannot read the codemodel reply: {error}"
-    targets = [reply / target["jsonFile"] for configuration in codemodel.get("configurations", [])
-               for target in configuration.get("targets", [])]
-    return Path(codemodel.get("paths", {}).get("source", "")), targets
+        return shlex.split(text)
+    except ValueError:
+        return text.split()
 
 
 def link_violations(build_dir: Path, root: Path) -> tuple[list[Violation], list[str]]:
@@ -207,63 +215,48 @@ def link_violations(build_dir: Path, root: Path) -> tuple[list[Violation], list[
     Returns:
         The violations, and one line for each error that stops the read
     """
-    found = codemodel_targets(build_dir)
-    if isinstance(found, str):
-        return [], [found]
-    source, targets = found
+    try:
+        model = cmake_reader.codemodel(build_dir)
+    except cmake_reader.CmakeError as error:
+        return [], [f"the codemodel reply of the CMake file API cannot be read, so no link flag was read: {error}"]
+    source = Path(model.source)
     if not source.is_dir() or source.resolve() != root.resolve():
         return [], [f"{build_dir}: the file API reply belongs to the source tree {source}, not to {root}, so no "
                     f"link flag of this tree was read"]
     by_flag: dict[str, set[str]] = {}
-    for target_file in targets:
-        try:
-            target = json.loads(target_file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
-            return [], [f"{target_file}: cannot read the target reply: {error}"]
-        directory = root / target.get("paths", {}).get("source", ".") / "CMakeLists.txt"
+    for target in model.targets:
+        directory = Path(target.source_dir) / "CMakeLists.txt"
         if is_under(directory, root) and is_exempt(directory, root):
             continue
-        for fragment in target.get("link", {}).get("commandFragments", []):
-            try:
-                tokens = shlex.split(fragment.get("fragment", ""))
-            except ValueError:
-                tokens = fragment.get("fragment", "").split()
-            for flag in tokens:
+        for fragment, _ in target.link_fragments:
+            for flag in words_of(fragment):
                 if flag in BANNED_FLAGS:
-                    by_flag.setdefault(flag, set()).add(target.get("name", target_file.name))
-    where = f"{build_dir / '.cmake' / 'api' / 'v1'}"
+                    by_flag.setdefault(flag, set()).add(target.name)
+    where = f"{cmake_reader.api_directory(build_dir)}"
     return [Violation(where, f"{flag} on the link line of {len(names)} target(s): {', '.join(sorted(names))}")
             for flag, names in sorted(by_flag.items())], []
 
 
 def preset_violations(root: Path) -> tuple[list[Violation], list[str]]:
-    """Read CMakePresets.json with json and return each banned flag in a cache variable or the environment."""
-    presets = root / PRESETS
-    if not presets.is_file():
+    """Read CMakePresets.json (assay.readers.cmake) and return each banned flag in a cache variable or the environment.
+
+    The check reads the presets file of the tree, and not a CMakeUserPresets.json of one host.
+    """
+    found = next((item for item in cmake_reader.presets(root) if item.path.name == PRESETS), None)
+    if found is None:
         return [], []
-    try:
-        document = json.loads(presets.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as error:
-        return [], [f"{presets}: the presets file is not JSON: {error}"]
+    if found.problem is not None:
+        return [], [f"{found.path}: the presets file cannot be read: {found.problem}"]
     violations = []
-    for preset in document.get("configurePresets", []):
-        name = preset.get("name", "<unnamed>")
-        values: list[tuple[str, str]] = []
-        for variable, value in preset.get("cacheVariables", {}).items():
-            text = value.get("value", "") if isinstance(value, dict) else value
-            if isinstance(text, str):
-                values.append((f"cacheVariables.{variable}", text))
-        for variable, value in preset.get("environment", {}).items():
-            if isinstance(value, str):
-                values.append((f"environment.{variable}", value))
+    for preset in found.configure:
+        values = [(f"cacheVariables.{variable}", text) for variable, text in preset.cache_variables.items()
+                  if text is not None]
+        values += [(f"environment.{variable}", text) for variable, text in preset.environment.items()
+                   if text is not None]
         for label, text in values:
-            try:
-                tokens = shlex.split(text)
-            except ValueError:
-                tokens = text.split()
-            for token in tokens:
+            for token in words_of(text):
                 if token in BANNED_FLAGS:
-                    violations.append(Violation(f"{PRESETS}", f"preset '{name}' {label} holds {token}"))
+                    violations.append(Violation(f"{PRESETS}", f"preset '{preset.name}' {label} holds {token}"))
     return violations, []
 
 
@@ -434,6 +427,11 @@ def load_ledger(root: Path) -> tuple[list[str], list[str]]:
     return keys, failures
 
 
+def is_flag_row(row: str) -> bool:
+    """Tell if a `path:key` key of the ledger admits a build flag and not an override."""
+    return row.partition(":")[2] in BANNED_FLAGS
+
+
 def check(root: Path, build_dir: Path | None) -> int:
     """Run every scan and print the report.
 
@@ -442,25 +440,30 @@ def check(root: Path, build_dir: Path | None) -> int:
     """
     violations: list[Violation] = []
     failures: list[str] = []
-    scans = [preset_violations(root), source_violations(root)]
-    if build_dir is not None:
-        scans += [build_violations(build_dir, root), link_violations(build_dir, root)]
-    for found, lost in scans:
-        violations += found
-        failures += lost
     rows, ledger_failures = load_ledger(root)
     failures += ledger_failures
     admitted = set(rows)
-    live = {violation.key for violation in violations if violation.key is not None}
+    live: set[str] = set()
+    scans = [preset_violations(root), source_violations(root)]
+    if build_dir is not None:
+        build_found, build_lost, matched = build_violations(build_dir, root, frozenset(admitted))
+        live |= matched
+        scans += [(build_found, build_lost), link_violations(build_dir, root)]
+    for found, lost in scans:
+        violations += found
+        failures += lost
+    live |= {violation.key for violation in violations if violation.key is not None}
     reported = [violation for violation in violations if violation.key not in admitted]
     for failure in failures:
         print(f"NO-FFAST-MATH read failure: {failure}", file=sys.stderr)
     for violation in reported:
         suffix = f"  Ledger key: {violation.key}" if violation.key else ""
         print(f"NO-FFAST-MATH violation: {violation.where}: {violation.what}.{suffix}", file=sys.stderr)
-    stale = [row for row in rows if row not in live]
+    # A row of a build flag can match only when the check reads the compile database.
+    stale = [row for row in rows if row not in live and (build_dir is not None or not is_flag_row(row))]
     for row in stale:
-        print(f"NO-FFAST-MATH stale: {row} matches no override.  Remove its row from {LEDGER}.", file=sys.stderr)
+        print(f"NO-FFAST-MATH stale: {row} matches no override and no flag of a compile.  Remove its row from "
+              f"{LEDGER}.", file=sys.stderr)
     if reported or failures:
         print("check-no-ffast-math: the fast-math family is banned (CLAUDE.md §V).  The floor is "
               "crucible_fp_strict (cmake/FpStrict.cmake): remove the flag, or remove the override or mark its "
@@ -493,12 +496,15 @@ inline const char* text = "__attribute__((optimize(\\"fast-math\\")))";
 [[gnu::optimize("fast-math")]] inline double marked(double a) { return a; }  // NO-FFAST-MATH-OK: fixture
 [[gnu::optimize("fast-math")]] inline double admitted(double a) { return a; }
 [[gnu::optimize("fast-math")]] inline double bare_marker(double a) { return a; }  // NO-FFAST-MATH-OK:
+[[gnu::optimize("no-trapping-math")]] inline double floor_override(double a) { return a; }
+#pragma GCC optimize("fp-contract=off,trapping-math")
 """
 
 # (row of the planted source, the scan must report it)
 PLANTED_ROWS = (
     (2, True), (3, True), (4, True), (5, True), (6, True), (7, True), (8, True), (9, True),
-    (10, False), (11, False), (12, False), (13, False), (14, False), (15, False), (16, True),
+    (10, False), (11, False), (12, False), (13, False), (14, False), (15, False), (16, True), (17, True),
+    (18, False),
 )
 
 PLANTED_CMAKE = """\
@@ -519,6 +525,12 @@ add_executable(planted_app src/main.cpp)
 target_link_options(planted_app PRIVATE $<$<CONFIG:Debug>:-funsafe-math-optimizations>)
 add_library(planted_shared SHARED src/b.cpp)
 target_link_libraries(planted_shared PRIVATE -ffp-contract=fast)
+add_library(planted_floor src/floor.cpp)
+target_compile_options(planted_floor PRIVATE -ffp-contract=on -fno-trapping-math -fno-signaling-nans -fno-rounding-math)
+add_library(planted_admitted src/admitted.cpp)
+target_compile_options(planted_admitted PRIVATE -ffp-contract=on)
+add_library(planted_kept src/kept.cpp)
+target_compile_options(planted_kept PRIVATE -ffp-contract=off -ftrapping-math -fsignaling-nans -frounding-math)
 add_subdirectory(test)
 add_subdirectory(third_party)
 """
@@ -604,6 +616,9 @@ def self_test(cmake: str, cxx: str) -> int:
             (root / directory).mkdir(exist_ok=True)
         for rel, text in (("src/a.cpp", "int planted_a() { return 0; }\n"),
                           ("src/b.cpp", "int planted_b() { return 0; }\n"),
+                          ("src/floor.cpp", "int planted_floor() { return 0; }\n"),
+                          ("src/admitted.cpp", "int planted_admitted() { return 0; }\n"),
+                          ("src/kept.cpp", "int planted_kept() { return 0; }\n"),
                           ("src/main.cpp", "int main() { return 0; }\n"),
                           ("test/t.cpp", "int planted_t() { return 0; }\n"),
                           ("test/main.cpp", "int main() { return 0; }\n"),
@@ -617,7 +632,7 @@ def self_test(cmake: str, cxx: str) -> int:
                                            timeout_s=proc.TOOL_S))
         expect("the planted build configures", configured.exit == 0)
         if configured.exit == 0:
-            build_found, build_lost = build_violations(build, root)
+            build_found, build_lost, _ = build_violations(build, root)
             shown = " ".join(violation.what for violation in build_found)
             expect("the compile database reads", not build_lost)
             expect("a flag inside a generator expression is reported", "-ffast-math on 1 file(s): src/a.cpp" in shown)
@@ -625,6 +640,18 @@ def self_test(cmake: str, cxx: str) -> int:
             expect("a flag in a CMake bracket comment is not reported", "-fassociative-math" not in shown)
             expect("a flag on a file under test/ is reported", "-freciprocal-math on 1 file(s): test/t.cpp" in shown)
             expect("a flag on a file of a vendored tree is out of scope", "third_party/" not in shown)
+            for flag in ("-fno-trapping-math", "-fno-signaling-nans", "-fno-rounding-math"):
+                expect(f"{flag}, which cancels a flag of the floor, is reported",
+                       f"{flag} on 1 file(s): src/floor.cpp" in shown)
+            expect("-ffp-contract=on, which cancels a flag of the floor, is reported",
+                   "-ffp-contract=on on 2 file(s): src/admitted.cpp, src/floor.cpp" in shown)
+            expect("the flags of the floor itself are not reported",
+                   "src/kept.cpp" not in shown and "-ffp-contract=off" not in shown and "-ftrapping-math" not in shown)
+            key = "src/admitted.cpp:-ffp-contract=on"
+            admitted_found, _, matched = build_violations(build, root, frozenset({key, "src/none.cpp:-Ofast"}))
+            admitted_shown = " ".join(violation.what for violation in admitted_found)
+            expect("a ledger key FILE:FLAG admits that flag on that file, and only there",
+                   "-ffp-contract=on on 1 file(s): src/floor.cpp" in admitted_shown and matched == {key})
 
             link_found, link_lost = link_violations(build, root)
             linked = " ".join(violation.what for violation in link_found)
@@ -640,17 +667,31 @@ def self_test(cmake: str, cxx: str) -> int:
             expect("a link option of a target in a vendored tree is out of scope", "planted_vendor_app" not in linked)
             expect("a compile option is not a link option", "-Ofast" not in linked)
 
-            reply = build / ".cmake" / "api" / "v1" / "reply"
+            reply = cmake_reader.api_directory(build) / "reply"
             moved = Path(work) / "reply-moved"
             reply.rename(moved)
             _, missing = link_violations(build, root)
-            expect("a build with no file API reply fails", any("no reply of the CMake file API" in line
+            expect("a build with no file API reply fails", any("holds no index of the CMake file API" in line
                                                                for line in missing))
             moved.rename(reply)
             _, foreign = link_violations(build, root / "src")
             expect("a reply of another source tree fails", any("belongs to the source tree" in line
                                                                for line in foreign))
             expect("the full check with the build reports the violations", check(root, build) == 1)
+            kept_ledger = ledger.read_text(encoding="utf-8")
+            ledger.write_text(f"{kept_ledger}src/admitted.cpp | - | admit | -ffp-contract=on | a planted test\n"
+                              f"src/none.cpp | - | admit | -fno-rounding-math | a planted stale row\n",
+                              encoding="utf-8")
+            with contextlib.redirect_stderr(io.StringIO()) as said:
+                check(root, build)
+            expect("a flag row admits its compile, and a flag row that matches no compile is stale",
+                   "src/admitted.cpp" not in said.getvalue()
+                   and "stale: src/none.cpp:-fno-rounding-math" in said.getvalue())
+            with contextlib.redirect_stderr(io.StringIO()) as said:
+                check(root, None)
+            expect("a run with no build directory does not call a flag row stale",
+                   "stale: src/none.cpp" not in said.getvalue())
+            ledger.write_text(kept_ledger, encoding="utf-8")
         else:
             print(configured.stderr)
 

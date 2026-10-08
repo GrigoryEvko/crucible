@@ -2,9 +2,9 @@
 
 THE COLLECTION
     1. The command configures the preset pgo-generate in ROOT/build-pgo-generate.
-       It writes the query files of the CMake file API first, so CMake writes
-       its cache and its code model as JSON, and step 2 reads what CMake
-       decided and not the text of a list file.  CMake chooses the profile
+       The root CMakeLists.txt gives the CMake file API the query of the cache
+       and the code model, and CMake writes them as JSON.  Step 2 reads the
+       result of the configure and not the text of a list file.  CMake chooses the profile
        directory from the name that the compiler gives this processor, so
        the same command collects a znver5 profile on the EPYC host and a
        sapphirerapids profile on the Xeon host.
@@ -52,7 +52,6 @@ or a failed self-test.
 from __future__ import annotations
 
 import fnmatch
-import json
 import os
 import socket
 import sys
@@ -64,14 +63,13 @@ from pathlib import Path
 from assay.core import proc
 from assay.core.paths import REPO_ROOT
 from assay.loop import history as loop_history
+from assay.readers import cmake as cmake_reader
 from assay.setup import pins as cmake_pin
 
 PRESET = "pgo-generate"
 BUILD_DIR_NAME = "build-pgo-generate"
 DEFAULT_JOBS = 96
 DEFAULT_BENCH_TIMEOUT_S = 900
-# The objects of the CMake file API that the collection asks for.
-QUERY_KINDS = ("cache-v2", "codemodel-v2")
 BENCH_FOLDER = "crucible_bench"
 COUNTER_SUFFIX = ".gcda"
 RECORD_NAME = "COLLECTION"
@@ -105,22 +103,11 @@ class Outcomes:
 # ── The file API ───────────────────────────────────────────────────────────
 
 
-def request_replies(build_dir: Path) -> None:
-    """Write the query files that ask CMake to write its cache and its code model as JSON at the next configure.
-
-    Args:
-        build_dir: The build directory
-    """
-    query = build_dir / ".cmake" / "api" / "v1" / "query"
-    query.mkdir(parents=True, exist_ok=True)
-    for kind in QUERY_KINDS:
-        (query / kind).write_bytes(b"")
-
-
 def read_facts(build_dir: Path) -> Facts:
     """Read the profile directory, the tier and the benches from the newest reply of the CMake file API.
 
-    The index whose name is the largest is the newest one.  Complexity: linear in the size of the reply.
+    The root CMakeLists.txt gives the query of the cache and the code model, and assay.readers.cmake reads them.
+    Complexity: linear in the size of the reply.
 
     Args:
         build_dir: The configured build directory
@@ -131,22 +118,17 @@ def read_facts(build_dir: Path) -> Facts:
     Raises:
         PgoError: If the reply cannot be read, or the cache has no profile directory or no tier
     """
-    reply = build_dir / ".cmake" / "api" / "v1" / "reply"
     try:
-        index = json.loads(max(reply.glob("index-*.json")).read_text(encoding="utf-8"))
-        objects = {entry["kind"]: entry for entry in index["objects"]}
-        cache = json.loads((reply / objects["cache"]["jsonFile"]).read_text(encoding="utf-8"))
-        values = {entry["name"]: entry["value"] for entry in cache["entries"]}
-        model = json.loads((reply / objects["codemodel"]["jsonFile"]).read_text(encoding="utf-8"))
-        benches = []
-        for target in model["configurations"][0]["targets"]:
-            detail = json.loads((reply / target["jsonFile"]).read_text(encoding="utf-8"))
-            if detail.get("type") == "EXECUTABLE" and detail.get("folder", {}).get("name") == BENCH_FOLDER:
-                benches.append(detail["name"])
-    except (OSError, ValueError, KeyError, IndexError, TypeError) as problem:
+        values = {name: entry.value for name, entry in cmake_reader.cache(build_dir).items()}
+        benches = [
+            target.name
+            for target in cmake_reader.codemodel(build_dir).targets
+            if target.type_name == "EXECUTABLE" and target.folder == BENCH_FOLDER
+        ]
+    except cmake_reader.CmakeError as problem:
         raise PgoError(f"the CMake file API reply in {build_dir} could not be read: {problem}") from None
-    profile_dir = str(values.get("CRUCIBLE_PGO_PROFILE_DIR", ""))
-    tier = str(values.get("CRUCIBLE_PGO_TIER", ""))
+    profile_dir = values.get("CRUCIBLE_PGO_PROFILE_DIR", "")
+    tier = values.get("CRUCIBLE_PGO_TIER", "")
     if not profile_dir or not tier:
         raise PgoError(f"the CMake cache of {build_dir} has no CRUCIBLE_PGO_PROFILE_DIR or CRUCIBLE_PGO_TIER.")
     return Facts(Path(profile_dir), tier, tuple(sorted(benches)))
@@ -183,8 +165,9 @@ def run_bench(command: list[str], log: Path, timeout_s: float) -> int | None:
         The exit status, or None when the bench ran too long
     """
     try:
-        return proc.run(proc.Command(command, timeout_s=timeout_s, stdout=log, stderr=proc.Output.MERGE,
-                                     grace_s=TERMINATE_GRACE_S)).exit
+        return proc.run(
+            proc.Command(command, timeout_s=timeout_s, stdout=log, stderr=proc.Output.MERGE, grace_s=TERMINATE_GRACE_S)
+        ).exit
     except proc.TimedOut:
         return None
 
@@ -225,8 +208,16 @@ def counter_files(profile_dir: Path) -> list[Path]:
     return sorted(profile_dir.rglob(f"*{COUNTER_SUFFIX}"))
 
 
-def collection_text(commit: str, tree: str, collected: str, host: str, tier: str, outcomes: Outcomes,
-                    skipped: tuple[str, ...], counters: int) -> str:
+def collection_text(
+    commit: str,
+    tree: str,
+    collected: str,
+    host: str,
+    tier: str,
+    outcomes: Outcomes,
+    skipped: tuple[str, ...],
+    counters: int,
+) -> str:
     """Return the text of the record COLLECTION, one field on each line.
 
     Args:
@@ -242,11 +233,21 @@ def collection_text(commit: str, tree: str, collected: str, host: str, tier: str
     Returns:
         The text
     """
-    return "".join(f"{name}={value}\n" for name, value in (
-        ("commit", commit), ("tree", tree), ("collected", collected), ("host", host), ("tier", tier),
-        ("benches_ok", " ".join(outcomes.ok)), ("benches_failed", " ".join(outcomes.failed)),
-        ("benches_timed_out", " ".join(outcomes.timed_out)), ("benches_skipped", " ".join(skipped)),
-        ("gcda_files", counters)))
+    return "".join(
+        f"{name}={value}\n"
+        for name, value in (
+            ("commit", commit),
+            ("tree", tree),
+            ("collected", collected),
+            ("host", host),
+            ("tier", tier),
+            ("benches_ok", " ".join(outcomes.ok)),
+            ("benches_failed", " ".join(outcomes.failed)),
+            ("benches_timed_out", " ".join(outcomes.timed_out)),
+            ("benches_skipped", " ".join(skipped)),
+            ("gcda_files", counters),
+        )
+    )
 
 
 # ── The command ────────────────────────────────────────────────────────────
@@ -279,28 +280,41 @@ def collect(root: Path) -> int:
     timeout_s = positive_number("CRUCIBLE_PGO_BENCH_TIMEOUT", DEFAULT_BENCH_TIMEOUT_S)
     patterns = skip_patterns(os.environ.get("CRUCIBLE_PGO_SKIP", ""))
     build_dir = root / BUILD_DIR_NAME
-    request_replies(build_dir)
     configure = ["cmake", "--preset", PRESET]
     if os.environ.get("CRUCIBLE_PGO_DIR"):
         configure.append(f"-DCRUCIBLE_PGO_DIR={os.environ['CRUCIBLE_PGO_DIR']}")
-    if proc.run(proc.Command(configure, timeout_s=proc.BUILD_S, cwd=root, stdout=proc.Output.INHERIT,
-                             stderr=proc.Output.INHERIT)).exit != 0:
+    if (
+        proc.run(
+            proc.Command(
+                configure, timeout_s=proc.BUILD_S, cwd=root, stdout=proc.Output.INHERIT, stderr=proc.Output.INHERIT
+            )
+        ).exit
+        != 0
+    ):
         print(f"loop pgo: the configure of the preset {PRESET} failed.", file=sys.stderr)
         return 1
     facts = read_facts(build_dir)
     benches, skipped = select(facts.benches, patterns)
     print(f"loop pgo: tier {facts.tier}, profile directory {facts.profile_dir}")
-    print(f"loop pgo: {len(facts.benches)} benches registered in bench/CMakeLists.txt, {len(benches)} to run, "
-          f"{len(skipped)} skipped")
+    print(
+        f"loop pgo: {len(facts.benches)} benches registered in bench/CMakeLists.txt, {len(benches)} to run, "
+        f"{len(skipped)} skipped"
+    )
     for name in benches:
         print(f"  {name}")
     if not benches:
         print("loop pgo: nothing to run.", file=sys.stderr)
         return 1
     build_cmake = cmake_pin.configured_program(build_dir, "cmake")
-    built = proc.run(proc.Command([build_cmake, "--build", str(build_dir), "-j", str(jobs), "--target", *benches],
-                                  timeout_s=proc.BUILD_S, cwd=root, stdout=proc.Output.INHERIT,
-                                  stderr=proc.Output.INHERIT))
+    built = proc.run(
+        proc.Command(
+            [build_cmake, "--build", str(build_dir), "-j", str(jobs), "--target", *benches],
+            timeout_s=proc.BUILD_S,
+            cwd=root,
+            stdout=proc.Output.INHERIT,
+            stderr=proc.Output.INHERIT,
+        )
+    )
     if built.exit != 0:
         print("loop pgo: the build of the instrumented benches failed.", file=sys.stderr)
         return 1
@@ -313,12 +327,21 @@ def collect(root: Path) -> int:
     state = loop_history.git_state(root)
     if state["commit"] is None:
         raise PgoError(f"git cannot read the commit and the state of {root}, so the record cannot name them.")
-    record = collection_text(str(state["commit"]), str(state["tree"]),
-                             time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), socket.gethostname(), facts.tier,
-                             outcomes, skipped, counters)
+    record = collection_text(
+        str(state["commit"]),
+        str(state["tree"]),
+        time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        socket.gethostname(),
+        facts.tier,
+        outcomes,
+        skipped,
+        counters,
+    )
     (facts.profile_dir / RECORD_NAME).write_text(record, encoding="utf-8")
-    print(f"loop pgo: {counters} counter files in {facts.profile_dir} ({len(outcomes.ok)} ok, {len(outcomes.failed)} "
-          f"failed, {len(outcomes.timed_out)} stopped)")
+    print(
+        f"loop pgo: {counters} counter files in {facts.profile_dir} ({len(outcomes.ok)} ok, {len(outcomes.failed)} "
+        f"failed, {len(outcomes.timed_out)} stopped)"
+    )
     if counters == 0:
         print(f"loop pgo: no counters were written.  The logs are in {logs}.", file=sys.stderr)
         return 1
@@ -337,23 +360,13 @@ def write_reply(build_dir: Path, values: dict[str, str], targets: dict[str, tupl
         values: The entries of the cache
         targets: The type and the folder of each target, by its name
     """
-    reply = build_dir / ".cmake" / "api" / "v1" / "reply"
-    reply.mkdir(parents=True)
-    (reply / "cache-v2-1.json").write_text(json.dumps(
-        {"entries": [{"name": name, "value": value} for name, value in values.items()]}), encoding="utf-8")
-    listed = []
-    for number, (name, (kind, folder)) in enumerate(sorted(targets.items())):
+    planted: list[dict[str, object]] = []
+    for name, (kind, folder) in sorted(targets.items()):
         detail: dict[str, object] = {"name": name, "type": kind}
         if folder:
             detail["folder"] = {"name": folder}
-        (reply / f"target-{number}.json").write_text(json.dumps(detail), encoding="utf-8")
-        listed.append({"name": name, "jsonFile": f"target-{number}.json"})
-    (reply / "codemodel-v2-1.json").write_text(json.dumps({"configurations": [{"targets": listed}]}),
-                                               encoding="utf-8")
-    objects = [{"kind": "cache", "jsonFile": "cache-v2-1.json"}, {"kind": "codemodel", "jsonFile": "codemodel-v2-1.json"}]
-    # An older index with no cache: the newest index is the one that counts.
-    (reply / "index-2026-01-01T00-00-00-0000.json").write_text(json.dumps({"objects": []}), encoding="utf-8")
-    (reply / "index-2026-10-08T00-00-00-0000.json").write_text(json.dumps({"objects": objects}), encoding="utf-8")
+        planted.append(detail)
+    cmake_reader.plant(build_dir, cache=values, targets=planted)
 
 
 def self_test() -> int:
@@ -372,16 +385,21 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory(prefix="loop-pgo-") as work:
         root = Path(work)
         build = root / "build"
-        request_replies(build)
-        expect("the query asks for the cache and the code model",
-               sorted(path.name for path in (build / ".cmake" / "api" / "v1" / "query").iterdir())
-               == sorted(QUERY_KINDS))
-        write_reply(build, {"CRUCIBLE_PGO_PROFILE_DIR": str(root / "profile"), "CRUCIBLE_PGO_TIER": "znver5"},
-                    {"bench_b": ("EXECUTABLE", BENCH_FOLDER), "bench_a": ("EXECUTABLE", BENCH_FOLDER),
-                     "test_c": ("EXECUTABLE", ""), "bench_lib": ("STATIC_LIBRARY", BENCH_FOLDER)})
+        write_reply(
+            build,
+            {"CRUCIBLE_PGO_PROFILE_DIR": str(root / "profile"), "CRUCIBLE_PGO_TIER": "znver5"},
+            {
+                "bench_b": ("EXECUTABLE", BENCH_FOLDER),
+                "bench_a": ("EXECUTABLE", BENCH_FOLDER),
+                "test_c": ("EXECUTABLE", ""),
+                "bench_lib": ("STATIC_LIBRARY", BENCH_FOLDER),
+            },
+        )
         facts = read_facts(build)
-        expect("the reply gives the profile directory, the tier and only the bench executables, in sorted order",
-               facts == Facts(root / "profile", "znver5", ("bench_a", "bench_b")))
+        expect(
+            "the reply gives the profile directory, the tier and only the bench executables, in sorted order",
+            facts == Facts(root / "profile", "znver5", ("bench_a", "bench_b")),
+        )
         empty = root / "empty"
         write_reply(empty, {"CRUCIBLE_PGO_TIER": "znver5"}, {})
         try:
@@ -396,8 +414,10 @@ def self_test() -> int:
             expect("a build with no reply stops the collection", True)
 
         run, skipped = select(("bench_arena", "bench_philox", "bench_ring"), skip_patterns(" bench_p*, ,bench_ring"))
-        expect("a pattern of CRUCIBLE_PGO_SKIP skips each bench that it matches",
-               run == ("bench_arena",) and skipped == ("bench_philox", "bench_ring"))
+        expect(
+            "a pattern of CRUCIBLE_PGO_SKIP skips each bench that it matches",
+            run == ("bench_arena",) and skipped == ("bench_philox", "bench_ring"),
+        )
         expect("no pattern skips no bench", select(("bench_a",), skip_patterns("")) == (("bench_a",), ()))
 
         binaries = root / "bin"
@@ -408,23 +428,40 @@ def self_test() -> int:
             script.chmod(0o755)
         started = time.monotonic()
         outcomes = run_benches(binaries, ("passes", "fails", "hangs"), root / "logs", 0.5)
-        expect("each bench gets its outcome, and a bench that runs too long gets SIGTERM",
-               outcomes == Outcomes(("passes",), ("fails",), ("hangs",)) and time.monotonic() - started < 20)
-        expect("each bench writes its log", sorted(path.name for path in (root / "logs").iterdir())
-               == ["fails.log", "hangs.log", "passes.log"])
+        expect(
+            "each bench gets its outcome, and a bench that runs too long gets SIGTERM",
+            outcomes == Outcomes(("passes",), ("fails",), ("hangs",)) and time.monotonic() - started < 20,
+        )
+        expect(
+            "each bench writes its log",
+            sorted(path.name for path in (root / "logs").iterdir()) == ["fails.log", "hangs.log", "passes.log"],
+        )
 
-        record = collection_text("abc", "clean", "2026-10-08T00:00:00Z", "host", "znver5", outcomes,
-                                 ("bench_x",), 7)
-        expect("the record gives one field on each line, and CMake reads commit, tree and collected",
-               record.splitlines() == ["commit=abc", "tree=clean", "collected=2026-10-08T00:00:00Z", "host=host",
-                                       "tier=znver5", "benches_ok=passes", "benches_failed=fails",
-                                       "benches_timed_out=hangs", "benches_skipped=bench_x", "gcda_files=7"])
+        record = collection_text("abc", "clean", "2026-10-08T00:00:00Z", "host", "znver5", outcomes, ("bench_x",), 7)
+        expect(
+            "the record gives one field on each line, and CMake reads commit, tree and collected",
+            record.splitlines()
+            == [
+                "commit=abc",
+                "tree=clean",
+                "collected=2026-10-08T00:00:00Z",
+                "host=host",
+                "tier=znver5",
+                "benches_ok=passes",
+                "benches_failed=fails",
+                "benches_timed_out=hangs",
+                "benches_skipped=bench_x",
+                "gcda_files=7",
+            ],
+        )
         profile = root / "profile" / "nested"
         profile.mkdir(parents=True)
         (profile / "one.gcda").write_bytes(b"")
         (profile / "two.gcno").write_bytes(b"")
-        expect("the counter files are the .gcda files under the profile directory",
-               counter_files(root / "profile") == [profile / "one.gcda"])
+        expect(
+            "the counter files are the .gcda files under the profile directory",
+            counter_files(root / "profile") == [profile / "one.gcda"],
+        )
 
     if failures:
         print(f"loop pgo --self-test: FAILED, {len(failures)} case(s) did not hold")
@@ -445,8 +482,11 @@ def main(argv: list[str]) -> int:
     if argv == ["--self-test"]:
         return self_test()
     if argv:
-        print("usage: loop pgo  (the environment variables of THE ENVIRONMENT in utils/assay/loop/pgo.py set the "
-              "options)", file=sys.stderr)
+        print(
+            "usage: loop pgo  (the environment variables of THE ENVIRONMENT in utils/assay/loop/pgo.py set the "
+            "options)",
+            file=sys.stderr,
+        )
         return 2
     try:
         return collect(REPO_ROOT)

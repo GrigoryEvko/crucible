@@ -49,7 +49,7 @@ from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core.paths import LOOP
 from assay.loop.fixture import store
-from assay.readers import compdb
+from assay.readers import cmake, compdb
 
 # The driver of a fixture as CTest starts it: the master loop with the subcommand fixture.
 DRIVER = (str(LOOP), "fixture")
@@ -162,14 +162,14 @@ class StoreTest:
     """The checks of the result store, each one in a temporary tree of its own."""
 
     def __init__(self, root: Path, cxx: str, tree_build: Path) -> None:
-        """Make the tree of headers, fixtures, compile database and CMakeCache.txt in `root`.
+        """Make the tree of headers, fixtures, compile database and CMake cache in `root`.
 
         The tree uses the real path of `root`, because the driver names each
         search directory by its real path.  The store is in the build
         directory: a new directory in `root` changes the time that the store
-        reads for each path in `root` that does not exist.  CMakeCache.txt
-        names `root` as the source root and the build directory as the build
-        root, as CMake does.  `tree_build` is the build directory of the
+        reads for each path in `root` that does not exist.  The planted reply
+        of the CMake cache names `root` as the source root and the build
+        directory as the build root, as CMake does.  `tree_build` is the build directory of the
         source tree, whose compile database gives the plugin flags.
         """
         root.mkdir(parents=True, exist_ok=True)
@@ -186,8 +186,8 @@ class StoreTest:
             (self.root / name).write_text(text)
         (self.root / "shadow").mkdir()
         self.build.mkdir()
-        (self.build / "CMakeCache.txt").write_text(f"CMAKE_HOME_DIRECTORY:INTERNAL={self.root}\n"
-                                                   f"CMAKE_CACHEFILE_DIR:INTERNAL={self.build}\n")
+        cmake.cache_file(self.build).write_text("")
+        cmake.plant(self.build, cache={"CMAKE_HOME_DIRECTORY": str(self.root), "CMAKE_CACHEFILE_DIR": str(self.build)})
         rows = []
         for name in FILES:
             if not name.startswith("neg/"):
@@ -1122,8 +1122,11 @@ class StoreTest:
         """
         command = self.tree_command()
         kept = set(store._strip_plugin_flags(command, False))
-        found = store._CACHE_SOURCE.search((self.tree_build / "CMakeCache.txt").read_text())
-        return [arg for arg in command if arg not in kept], found.group(1) if found else ""
+        try:
+            source_root = cmake.cache_value(self.tree_build, "CMAKE_HOME_DIRECTORY") or ""
+        except cmake.CmakeError:
+            source_root = ""
+        return [arg for arg in command if arg not in kept], source_root
 
     def tree_command(self) -> list[str]:
         """Return the first C++ compile command of the compile database of the build of the source tree."""
@@ -1526,7 +1529,7 @@ def check_kernel_time(failures: list[str]) -> None:
 
 
 def check_roots(failures: list[str]) -> None:
-    """Check the marks of the roots, the roots of a CMakeCache.txt and the refusal of an output with a NUL character."""
+    """Check the marks of the roots, the roots of a CMake cache and the refusal of an output with a NUL character."""
     with tempfile.TemporaryDirectory(prefix="neg-roots-") as scratch:
         base = Path(scratch).resolve()
         source, build = f"{base}/src", f"{base}/src/build"
@@ -1540,12 +1543,12 @@ def check_roots(failures: list[str]) -> None:
             failures.append("a root of fewer than two components takes no part in the marks")
         if not roots.holds_root(f"// {source}/x.h\n".encode()) or roots.holds_root(f"// {base}/srd\n".encode()):
             failures.append("a byte search finds the text of a root, and only that text")
-        (base / "CMakeCache.txt").write_text(f"OTHER:STRING=x\nCMAKE_HOME_DIRECTORY:INTERNAL={source}\n"
-                                             f"CMAKE_CACHEFILE_DIR:INTERNAL={build}\n")
+        cmake.plant(base, cache={"OTHER": ("STRING", "x"), "CMAKE_HOME_DIRECTORY": source,
+                                 "CMAKE_CACHEFILE_DIR": build})
         if store.build_roots(base).identity() != [build, source]:
-            failures.append(f"the roots of a CMakeCache.txt are {store.build_roots(base).identity()}")
+            failures.append(f"the roots of a CMake cache are {store.build_roots(base).identity()}")
         if store.build_roots(base / "src").identity():
-            failures.append("a build directory with no CMakeCache.txt has no root")
+            failures.append("a build directory with no reply of the CMake cache has no root")
         dependency = base / "dependency.h"
         dependency.write_text("int value;\n")
         (base / "store" / "memo").mkdir(parents=True)
@@ -1616,9 +1619,9 @@ def main(argv: list[str]) -> int:
                   f"Set FIXTURE_STORE_SELF_TEST_PARTS in test/CMakeLists.txt to {len(CHECKS)}, so that each part "
                   f"runs one check.", file=sys.stderr)
             return 2
-    if not compdb.database_file(tree_build).is_file() or not (tree_build / "CMakeCache.txt").is_file():
-        print(f"tests.loop.test_fixture --build-dir {tree_build}: the directory holds no compile_commands.json "
-              f"and CMakeCache.txt of a build of the tree", file=sys.stderr)
+    if not compdb.database_file(tree_build).is_file() or not cmake.is_configured(tree_build):
+        print(f"tests.loop.test_fixture --build-dir {tree_build}: the directory is not a configured build of the "
+              f"tree with a compile database", file=sys.stderr)
         return 2
     if shutil.which(cxx) is None:
         print("tests.loop.test_fixture --cxx COMPILER: the compiler cannot run", file=sys.stderr)

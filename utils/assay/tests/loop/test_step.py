@@ -2,7 +2,7 @@
 
 `guard selftest tests.loop.test_step [--cxx COMPILER]` runs the test.  Each
 case runs the launcher as CMake runs it, in a temporary directory that
-holds a CMakeCache.txt and a build-kind.txt, as a build directory does.  The
+holds a build-kind.txt, as the top directory of a build does.  The
 command is a planted compiler (a Python script that writes an object), a
 planted ccache (a Python script that writes a stats log as ccache 4 does) or
 a planted linker.  A planted registry and a directory of ledgers of the test
@@ -149,7 +149,6 @@ class Bench:
     def __init__(self, root: Path) -> None:
         """Make the tree."""
         self.root = root
-        (root / "CMakeCache.txt").write_text("", encoding="utf-8")
         (root / "build-kind.txt").write_text(f"{KIND}\n", encoding="utf-8")
         self.tool = [sys.executable, str(root / "tool.py")]
         # The launcher takes a command for a ccache call when its program is named ccache.
