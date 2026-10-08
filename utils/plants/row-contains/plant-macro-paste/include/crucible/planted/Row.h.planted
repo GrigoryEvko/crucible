@@ -1,0 +1,2 @@
+#pragma once
+#define PASTE_OWNS(C, E) row_contains(^^row_type_of_t<C##_ctx>, E)

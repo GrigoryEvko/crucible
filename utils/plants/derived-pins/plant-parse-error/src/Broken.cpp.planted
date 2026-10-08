@@ -1,0 +1,2 @@
+void broken() { call(1) { } }
+static_assert(true);

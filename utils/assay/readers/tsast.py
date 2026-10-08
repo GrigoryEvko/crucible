@@ -91,12 +91,13 @@ THE TREE CACHE
     nodes, under a load average of about 200: the CLI and the reader of its
     output take 13.1 s, and a load of the same trees takes 0.9 s.
 
-THE SHARDED FILL
-    `guard check --rule tree-fill --shard K --of N` parses each C++ file of
-    shard K that the cache does not hold, with its macro bodies.  ctest runs the N shards as
-    setup tests of the guard tests.  The fill parses each file one time, and
-    each guard that starts after it finds the trees in the cache.  Without
-    the fill, each guard that starts cold parses each file again.
+THE PARTS OF THE FILL
+    `guard check --rule parse-clean --part K/N` gives fill_trees() the C++
+    files of part K, and fill_trees() parses each one that the cache does not
+    hold, with its macro bodies.  ctest runs the N parts as setup tests of the
+    guard tests.  The fill parses each file one time, and each guard that
+    starts after it finds the trees in the cache.  Without the fill, each
+    guard that starts cold parses each file again.
 
 NAMES, SCOPES AND DECLARATIONS
     The helpers after cpp_files() read the tree for the questions that the
@@ -1143,34 +1144,28 @@ def _store_misses(directory: Path, misses: Sequence[tuple[Path, str, int]], work
         list(pool.map(_parse_batch, batches, [str(directory)] * len(batches)))
 
 
-def fill_trees(shard: int, count: int, root: Path = REPO_ROOT) -> tuple[int, int]:
-    """Parse and store each C++ file of one shard of a tree that the tree cache does not hold.
+def fill_trees(root: Path, paths: Sequence[str], workers: int = _MAX_WORKERS) -> int:
+    """Parse and store each file of a root that the tree cache does not hold, with the trees of its macro bodies.
 
-    The files are the files under the root with a suffix in CPP_SUFFIXES,
-    from tracked_files().  The shards take the files in turn in the order of
-    their size, so each shard parses about the same number of bytes.  Each
-    file that misses also gets the trees of its macro bodies.  Each shard
-    starts at most _MAX_WORKERS / count workers.
+    The rule parse-clean gives the files of its part (THE PARTS OF THE FILL).
+    Each file that misses also gets the trees of its macro bodies.
 
-    Complexity: one hash of each file of the shard, plus one parse of each
-    file and of each macro body that the cache does not hold.
+    Complexity: one hash of each file, plus one parse of each file and of
+    each macro body that the cache does not hold.
 
     Args:
-        shard: The index of the shard, from 0
-        count: The number of shards
-        root: The root of the tree
+        root: The root of the files
+        paths: The files, relative to the root
+        workers: The largest number of worker processes
 
     Returns:
-        (files that the shard parsed, files of the shard)
+        The number of files that the call parsed
     """
     directory = cache_dir.cache_root(TREE_CACHE)
-    if directory is None:
-        return 0, 0
+    if directory is None or not paths:
+        return 0
     kit_dir()
-    paths = [root / name for name in tracked_files(root) if name.endswith(CPP_SUFFIXES)]
-    paths = [path for path in paths if path.is_file()]
-    mine = sorted(paths, key=lambda path: (-path.stat().st_size, path.as_posix()))[shard::count]
-    items = [(path, path.read_bytes()) for path in mine]
+    items = [(Path(path), (root / path).read_bytes()) for path in paths]
     identity = _tree_identity()
     keys = [hashlib.sha256(identity + data).hexdigest() for _path, data in items]
     misses = [index for index, key in enumerate(keys) if not _entry_of(directory, key).is_file()]
@@ -1180,27 +1175,67 @@ def fill_trees(shard: int, count: int, root: Path = REPO_ROOT) -> tuple[int, int
             copy = Path(scratch) / f"{index}.cpp"
             copy.write_bytes(items[index][1])
             copies.append((copy, keys[index], len(items[index][1])))
-        _store_misses(directory, copies, max(1, _MAX_WORKERS // count))
+        _store_misses(directory, copies, max(1, workers))
     defining = [tree for tree in _cached_trees(directory, [items[index] for index in misses])
                 if tree.diagnostic is None and any(True for _ in tree.find("preproc_def", "preproc_function_def"))]
     macro_bodies(defining)
-    return len(misses), len(items)
+    return len(misses)
 
 
-def _fill_main(argv: list[str]) -> int:
-    """Run one shard of the tree fill from the command line, and report what it parsed."""
-    import argparse
-    parser = argparse.ArgumentParser(prog="guard check --rule tree-fill", description="Fill the tree cache for one shard.")
-    parser.add_argument("--shard", type=int, required=True, help="the index of the shard, from 0")
-    parser.add_argument("--of", type=int, required=True, help="the number of shards")
-    args = parser.parse_args(argv)
-    if not 0 <= args.shard < args.of:
-        print(f"tsast --fill: the shard {args.shard} is not in 0..{args.of - 1}.  Give --shard K --of N with "
-              f"0 <= K < N.", file=sys.stderr)
-        return 2
-    parsed, total = fill_trees(args.shard, args.of)
-    print(f"tsast --fill: shard {args.shard} of {args.of} parsed {parsed} of its {total} file(s).")
-    return 0
+def parse_files(root: Path, paths: Sequence[str]) -> Iterator[Tree]:
+    """Parse files of a root and yield one Tree for each of them, with the path that the caller gives.
+
+    The root is the repository or a copy of a tree, such as the copy of a
+    plant.  Each Tree keeps the bytes of its file, so a slice reads no file
+    again.  The tree cache gives each tree that it holds, and the CLI parses
+    the rest.  No strict policy applies: the tree of a file that does not
+    parse keeps its diagnostic.
+
+    Complexity: one read and one hash of each file, one load of each hit,
+    and one parse of each miss.
+
+    Args:
+        root: The root of the files
+        paths: The files, relative to the root
+
+    Yields:
+        One Tree for each path, in input order
+
+    Raises:
+        KitMissing: If the pinned kit is not installed
+        OSError: If a file cannot be read
+    """
+    if not paths:
+        return
+    kit_dir()
+    items = [(Path(path), (root / path).read_bytes()) for path in paths]
+    directory = cache_dir.cache_root(TREE_CACHE)
+    if directory is not None:
+        yield from _cached_trees(directory, items)
+        return
+    with tempfile.TemporaryDirectory(prefix="tsast-") as scratch:
+        copies: list[Path] = []
+        for index, (_path, data) in enumerate(items):
+            copies.append(Path(scratch) / f"{index}.cpp")
+            copies[-1].write_bytes(data)
+        for (path, data), tree in zip(items, _parse_cli(copies, False), strict=True):
+            yield _relabel(tree, path, data)
+
+
+_BAD_POSITION = re.compile(r"\((?:ERROR|MISSING)[^\[]*\[(\d+), (\d+)\]")
+
+
+def first_error(tree: Tree) -> tuple[int, str] | None:
+    """Return the one-based line and the text of the first bad node of the diagnostic of a tree, or None.
+
+    The text is the node as the CLI prints it, such as `(ERROR [0, 16] - [0, 23])`, with no timing, so a
+    report of it is the same in each run.
+    """
+    if tree.diagnostic is None:
+        return None
+    tail = tree.diagnostic.rsplit("\t", 1)[-1].strip()
+    found = _BAD_POSITION.search(tail)
+    return (int(found[1]) + 1 if found is not None else 1), tail
 
 
 def _relabel(tree: Tree, path: Path, data: bytes) -> Tree:
@@ -1360,8 +1395,13 @@ def spelled(node: Node) -> str:
     Returns:
         The canonical spelling
     """
+    return spelled_tokens(node.tokens())
+
+
+def spelled_tokens(texts: Iterable[str]) -> str:
+    """Join tokens as spelled() joins them: with no space, except one space between two word tokens."""
     parts: list[str] = []
-    for text in node.tokens():
+    for text in texts:
         if parts and _is_word_char(parts[-1][-1]) and _is_word_char(text[0]):
             parts.append(" ")
         parts.append(text)
@@ -2260,6 +2300,65 @@ def enclosing_function(node: Node) -> tuple[str, ...] | None:
                 classes.append(text)
         holder = holder.ancestor_of_type(*_CLASS_SPECIFIERS)
     return tuple(reversed(classes)) + parts[1]
+
+
+# The spelling of an anonymous namespace in a signature, as GCC prints it.
+ANONYMOUS_NAMESPACE = "(anonymous namespace)"
+
+
+def _declared_leaf(declarator: Node | None) -> Node | None:
+    """Return the name node of a declarator, through the declarators that wrap it, or None."""
+    current = declarator
+    while current is not None:
+        if current.type in _NAME_LEAVES or current.type in _SPELLED_NAMES:
+            return current
+        if current.type in _DECLARATORS:
+            current = current.child_by_field("declarator")
+        elif current.type in ("parenthesized_declarator", "variadic_declarator"):
+            inner = non_comment_children(current)
+            current = inner[-1] if inner else None
+        else:
+            return None
+    return None
+
+
+def parameter_type(parameter: Node) -> str:
+    """Return the type of one parameter: its canonical spelling (spelled()) with no name and no default value.
+
+    `const T& value = T{}` gives `const T&`, and `std::size_t` gives `std::size_t`.
+
+    Args:
+        parameter: A parameter_declaration, an optional_parameter_declaration or a variadic_parameter_declaration
+    """
+    name = _declared_leaf(parameter.child_by_field("declarator"))
+    texts = parameter.tokens(lambda child: is_comment(child) or child == name or child.field == "default_value")
+    if parameter.child_by_field("default_value") is not None and texts and texts[-1] == "=":
+        texts = texts[:-1]
+    return spelled_tokens(texts)
+
+
+def function_signature(node: Node) -> str | None:
+    """Return the qualified name and the parameter types of the function whose definition holds a node.
+
+    The name holds the namespaces, the enclosing classes and the parts of the
+    declarator name, joined with `::`, such as
+    `crucible::topology::Pingmesh::validate_pair(std::size_t,std::size_t)`.  An
+    anonymous namespace is ANONYMOUS_NAMESPACE.  A lambda is not a function
+    definition, so a node in a lambda gives the function that holds the lambda.
+
+    Args:
+        node: Any node
+
+    Returns:
+        The signature, or None when no function definition holds the node or its name cannot be read
+    """
+    owner = node.ancestor_of_type("function_definition")
+    parts = enclosing_function(node)
+    if owner is None or parts is None:
+        return None
+    namespaces = tuple(ANONYMOUS_NAMESPACE if part == "" else part for part in namespace_path(owner))
+    types = ",".join(parameter_type(parameter) for _name, parameter in parameters(owner))
+    return f"{'::'.join(namespaces + parts)}({types})"
 
 
 # ── Declarations and templates ───────────────────────────────────────────────
@@ -4086,17 +4185,20 @@ def _self_test_cache(check: Callable[..., None], work: Path) -> None:
             for name, text in sources.items():
                 (planted / name).write_text(text, encoding="utf-8")
             (planted / "notes.txt").write_text("int not_cpp;\n", encoding="utf-8")
-            first_shards = [fill_trees(shard, 2, planted) for shard in range(2)]
-            second_shards = [fill_trees(shard, 2, planted) for shard in range(2)]
+            names = sorted(sources)
+            first_parts = [fill_trees(planted, names[part::2], 2) for part in range(2)]
+            second_parts = [fill_trees(planted, names[part::2], 2) for part in range(2)]
             calls.clear()
             filled = list(parse(sorted(planted / name for name in sources)))
             bodies = macro_bodies(filled)
-            check("two fill shards parse each C++ file one time between them, a second fill parses none, and a "
+            labelled = list(parse_files(planted, ["b.cpp", "a.h"]))
+            check("two fill parts parse each C++ file one time between them, a second fill parses none, and a "
                   "guard after the fill runs no CLI for a file or a macro body",
-                  sum(parsed for parsed, _total in first_shards) == len(sources)
-                  and sum(total for _parsed, total in first_shards) == len(sources)
-                  and all(parsed == 0 for parsed, _total in second_shards)
+                  sum(first_parts) == len(sources) and second_parts == [0, 0]
                   and not calls and [body.name for body in bodies] == ["FILL_TWICE"] and bodies[0].is_parsed)
+            check("parse_files gives each tree the path of the call, relative to its root, and the bytes of its file",
+                  [tree.path for tree in labelled] == [Path("b.cpp"), Path("a.h")]
+                  and labelled[0].source == sources["b.cpp"].encode() and not calls)
         with cache_dir.scratch_root() as root:
             os.environ[cache_dir.ROOT_VARIABLE] = "off"
             list(parse_texts(texts[:2]))
@@ -4410,10 +4512,10 @@ def _self_test_lookup(check: Callable[..., None], parse_text: Callable[[str, str
 
 
 def main(argv: list[str]) -> int:
-    """Run the self-test, one shard of the fill (`guard check --rule tree-fill`), or print the module text.
+    """Run the self-test, or print the module text.
 
     Args:
-        argv: --self-test, --fill --shard K --of N, or nothing
+        argv: --self-test, or nothing
 
     Returns:
         The exit status of the mode.  Exit 3 when the kit is absent, so ctest reports a SKIP with the install
@@ -4422,8 +4524,6 @@ def main(argv: list[str]) -> int:
     try:
         if argv[:1] == ["--self-test"]:
             return _self_test()
-        if argv[:1] == ["--fill"]:
-            return _fill_main(argv[1:])
         print(__doc__)
         print(f"kit: {kit_dir()}")
     except KitMissing as exc:

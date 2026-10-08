@@ -1,0 +1,11 @@
+#pragma once
+namespace crucible::planted {
+// A test of a concrete row, a named lift, a comment and a string literal.
+static_assert(effects::row_contains(^^required_row, X));
+template <class Ctx> requires CtxOwnsCapability<Ctx, X> void h();
+// requires effects::row_contains(^^effects::row_type_of_t<Ctx>, X)
+inline const char* text = "row_contains(^^row_type_of_t<Ctx>, X)";
+}  // namespace crucible::planted
+// A macro over a concrete row, and a macro that pastes tokens over a concrete row.
+#define HAS(R, E) effects::row_contains(^^R, E)
+#define PASTE_ROW(R, E) row_contains(^^R##_row, E)

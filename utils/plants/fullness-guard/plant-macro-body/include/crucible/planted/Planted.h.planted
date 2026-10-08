@@ -1,0 +1,2 @@
+#pragma once
+#define FULL_IN_MACRO(s) ((s).count == Capacity)

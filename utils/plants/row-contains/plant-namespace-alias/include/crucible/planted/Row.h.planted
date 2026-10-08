@@ -1,0 +1,5 @@
+#pragma once
+namespace crucible::planted {
+namespace eff = ::foundation::effects;
+template <class Ctx> requires (eff::row_contains(^^eff::row_type_of_t<Ctx>, X)) void b();
+}  // namespace crucible::planted

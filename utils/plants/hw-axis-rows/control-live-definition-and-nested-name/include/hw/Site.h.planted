@@ -1,0 +1,11 @@
+#pragma once
+// A live definition keeps a block live, and a nested namespace specifier names a block.
+namespace demo {
+namespace site_hw {
+using Tier = ::fixy::atom::hw::scalar;
+}  // namespace site_hw
+}  // namespace demo
+#if 0
+namespace demo::site_hw {}
+#endif
+namespace demo::nested_hw {}

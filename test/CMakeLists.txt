@@ -629,21 +629,6 @@ add_test(NAME banned_calls
 set_tests_properties(banned_calls banned_calls_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# The hardware-axis gate has two halves.  test_hardware_axis_pins.cpp holds
-# one row for each block, and the compiler walks the block by reflection:
-# the row fails when an axis of the row has no atom alias, or an atom alias
-# has an axis that the row does not list.  utils/assay/guard/legacy/check_fixy_hw_discipline.py
-# reads the rows from the parse tree and requires a row for every `*_hw`
-# namespace under include/ and src/, with its block outside every
-# preprocessor conditional.  Exit 3 when the kit is absent reports a skip.
-add_test(NAME fixy_hw_discipline_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule fixy-hw-discipline
-          --self-test)
-add_test(NAME fixy_hw_discipline
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule fixy-hw-discipline)
-set_tests_properties(fixy_hw_discipline fixy_hw_discipline_self_test PROPERTIES
-    LABELS "ci_guard;ast"
-    SKIP_RETURN_CODE 3)
 # The hardening grant set.  utils/assay/guard/legacy/check_syscall_grant_coverage.py
 # derives the system calls that the hardening apply path issues from the
 # parse tree, and fails when that set and the declared
@@ -861,21 +846,6 @@ add_test(NAME syscall_capability
 set_tests_properties(syscall_capability syscall_capability_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# The fullness discipline.  `if (count == Capacity) return false;` reads as
-# a bounds check, but it refuses only the exact bound: a count already past
-# Capacity compares unequal, and the next push writes out of bounds.
-# utils/assay/guard/legacy/check_fullness_guard.py reads each `==` between a counter and a
-# capacity bound from the parse tree.  A counter whose name ends in `_` is
-# protected by a class invariant, by the house convention.  The content-keyed
-# rows of utils/ledgers/fullness-guard.txt are all not-found sentinels.
-# Exit 3 when the kit is absent reports a skip.
-add_test(NAME fullness_guard_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule fullness-guard --self-test)
-add_test(NAME fullness_guard
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule fullness-guard)
-set_tests_properties(fullness_guard fullness_guard_self_test PROPERTIES
-    LABELS "ci_guard"
-    SKIP_RETURN_CODE 3)
 # DetSafe on the hashing path.  A ledger verdict is a property of one
 # machine, so no header of content_hash, merkle_hash, the memory plan or
 # the BITEXACT recipe choice may reach the ledger.
@@ -977,17 +947,6 @@ foreach(part RANGE ${session_oracle_last_part})
     PROCESSORS 8)
 endforeach()
 
-# The row-membership discipline.  utils/assay/guard/legacy/check_row_contains_discipline.py
-# reads each call of row_contains whose first argument is the row of a context
-# from the parse tree, with any qualifier, and requires the named lift
-# (CtxOwnsCapability, CtxOwnsAnyOf or CtxOwnsAllOf) instead.  Exit 3 when
-# the kit is absent reports a skip.
-add_test(NAME row_contains_discipline_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule row-contains-discipline --self-test)
-add_test(NAME row_contains_discipline
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule row-contains-discipline)
-set_tests_properties(row_contains_discipline row_contains_discipline_self_test
-    PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
 # The stub discipline.  utils/assay/guard/legacy/check_stub_discipline.py reads the parse tree
 # of every header under include/ and pairs each honesty marker (a constexpr
 # bool *_implemented, *_attached or *_ready that is false, at namespace scope
@@ -1003,21 +962,6 @@ add_test(NAME stub_discipline_self_test
 add_test(NAME stub_discipline
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule stub-discipline)
 set_tests_properties(stub_discipline stub_discipline_self_test PROPERTIES
-    LABELS "ci_guard"
-    SKIP_RETURN_CODE 3)
-# The lock-free discipline of the cross-thread atomics (CLAUDE.md §IX).
-# utils/assay/guard/legacy/check_lock_free_asserts.py reads each std::atomic, atomic_ref and
-# standard atomic alias of canopy, cntp, topology and warden from the parse
-# tree, and fails when neither the file nor its check file under
-# test/layer/checks has a static_assert(std::atomic<T>::is_always_lock_free)
-# for its type.  Without
-# the assert, libatomic can put a mutex behind the atomic on another target
-# with no warning.  Exit 3 when the kit is absent reports a skip.
-add_test(NAME lock_free_asserts_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule lock-free-asserts --self-test)
-add_test(NAME lock_free_asserts
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule lock-free-asserts)
-set_tests_properties(lock_free_asserts lock_free_asserts_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 # The mint inventory: its self-test, the drift gate that fails when
@@ -5397,13 +5341,13 @@ endif()
 
 # ── The substrate and its two guards ──────────────────────────────
 #
-# include/foundation/ and include/fixy/ are the canonical substrate.  Two
-# guards hold it to its rules:
+# include/foundation/ and include/fixy/ are the canonical substrate.  These
+# guards hold it to its rules, and cmake/Guards.cmake registers the tests of
+# the tsast rules, such as guard_derived_pins: a cardinality static_assert
+# must have a derived operand, because a literal pinned to itself cannot fail.
 #
 #   layer_boundary — foundation < fixy < crucible; a file names only its
 #                    own layer and the layers below it.  No allowlist.
-#   derived_pins   — a cardinality static_assert must have a derived
-#                    operand; a literal pinned to itself cannot fire.
 #   header_checks  — a header holds no self-test namespace, no
 #                    namespace-scope static_assert, no static_assert in a
 #                    function that is not a template, and no reflection
@@ -5425,13 +5369,6 @@ add_test(NAME layer_boundary_self_test
 add_test(NAME layer_boundary
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule layer-boundary)
 set_tests_properties(layer_boundary layer_boundary_self_test PROPERTIES
-    LABELS "ci_guard;substrate"
-    SKIP_RETURN_CODE 3)
-add_test(NAME derived_pins_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule derived-pins --self-test)
-add_test(NAME derived_pins
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule derived-pins)
-set_tests_properties(derived_pins derived_pins_self_test PROPERTIES
     LABELS "ci_guard;substrate"
     SKIP_RETURN_CODE 3)
 add_test(NAME header_checks_self_test
@@ -5810,21 +5747,11 @@ add_test(NAME prose_paths
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule prose-paths)
 set_tests_properties(prose_paths prose_paths_self_test PROPERTIES LABELS "ci_guard")
 
-# parse_clean owns the one question every AST gate depends on: does the file
-# parse at all.  The AST gates read a tree-sitter parse from the pinned kit
-# rather than scan text, so a file that does not parse is a silent hole in all
-# of them at once.  The gate fails in three directions — an unadmitted parse
-# error, a roster entry whose file parses clean now, and a roster entry naming
-# a path that no longer exists — so the roster in utils/assay/readers/tsast.py cannot rot.
-#
+# The self-test of the parse reader, and the self-test of the mint model.
 # Exit 3 (the pinned kit is absent) is a SKIP here.  A developer who has not
 # run `python3 utils/bin/setup install tree-sitter` gets the instruction rather
 # than a failure.  CI installs the kit in both the guards job and the build job, so CI
 # always enforces.
-add_test(NAME parse_clean_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule parse-clean --self-test)
-add_test(NAME parse_clean
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule parse-clean)
 add_test(NAME tsast_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest readers.tsast)
 # mintmodel derives the §XXI mint surface from the parse tree, for the guard and
@@ -5835,9 +5762,7 @@ add_test(NAME tsast_self_test
 # as a second site.
 add_test(NAME mintmodel_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest loop.derive.mint_model)
-set_tests_properties(parse_clean parse_clean_self_test tsast_self_test mintmodel_self_test PROPERTIES
-    LABELS "ci_guard;ast")
-set_tests_properties(parse_clean tsast_self_test mintmodel_self_test PROPERTIES SKIP_RETURN_CODE 3)
+set_tests_properties(tsast_self_test mintmodel_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # The mutation tool weakens one gate of a header at a time and asks whether a
 # test notices.  Its self-test plants a header with five gates.  Negative
 # fixtures witness three of them, a test that ninja builds and runs witnesses
@@ -5856,23 +5781,16 @@ add_test(NAME mutation_self_test
           --compiler ${CMAKE_CXX_COMPILER} --cmake ${CMAKE_COMMAND} ${_mutation_ninja})
 set_tests_properties(mutation_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 
-# Each guard test of this directory starts on a full tree cache.  Eight setup
-# tests parse the C++ files of the tree, each one the files of its shard, with
-# their macro bodies (THE SHARDED FILL in utils/assay/readers/tsast.py).  Without
-# them, each guard that starts cold parses each file again.  ctest adds the
-# setup tests to a run that selects one guard test.  This block reads the
-# tests of the directory, so it stays after the last guard test.
-set(CRUCIBLE_TREE_SHARDS 8)
-math(EXPR crucible_last_tree_shard "${CRUCIBLE_TREE_SHARDS} - 1")
-foreach(crucible_tree_shard RANGE ${crucible_last_tree_shard})
-  add_test(NAME tsast_tree_fill_${crucible_tree_shard}
-           COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule tree-fill
-                   --shard ${crucible_tree_shard} --of ${CRUCIBLE_TREE_SHARDS})
-  set_tests_properties(tsast_tree_fill_${crucible_tree_shard} PROPERTIES
-      LABELS "ci_guard"
-      FIXTURES_SETUP tsast_trees
-      SKIP_RETURN_CODE 3)
-endforeach()
+# Each guard test of this directory starts on a full tree cache.  The rule
+# parse-clean runs in eight parts, and each part parses the C++ files of the
+# part with their macro bodies (THE PARTS OF THE FILL in
+# utils/assay/readers/tsast.py).  These parts are the setup tests of the
+# fixture tsast_trees, and each test of a tsast rule requires the fixture
+# (cmake/Guards.cmake).  Without them, each guard that starts cold parses each
+# file again.  ctest adds the setup tests to a run that selects one guard
+# test.  This block reads the tests of the directory, so it stays after the
+# last guard test.
+crucible_tsast_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} 8)
 get_property(crucible_directory_tests DIRECTORY PROPERTY TESTS)
 foreach(crucible_guard_test IN LISTS crucible_directory_tests)
   get_test_property(${crucible_guard_test} LABELS crucible_guard_labels)

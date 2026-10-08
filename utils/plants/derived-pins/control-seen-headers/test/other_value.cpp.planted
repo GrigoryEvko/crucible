@@ -1,0 +1,2 @@
+#include <fixy/Seen.h>
+static_assert(fixy::seen_space::seen == 13);

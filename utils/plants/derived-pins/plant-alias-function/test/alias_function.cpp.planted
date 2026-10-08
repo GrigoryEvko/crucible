@@ -1,0 +1,5 @@
+#include <fixy/Seen.h>
+inline void user() {
+    namespace fn_alias = fixy::seen_space;
+    static_assert(fn_alias::seen == 12);
+}

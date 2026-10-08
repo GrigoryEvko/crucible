@@ -1,0 +1,1 @@
+bool w(int count) { return count == Capacity; }

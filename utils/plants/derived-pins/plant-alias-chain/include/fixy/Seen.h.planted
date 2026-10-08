@@ -1,0 +1,4 @@
+#pragma once
+namespace fixy::seen_space {
+inline constexpr int seen = 12;
+}  // namespace fixy::seen_space

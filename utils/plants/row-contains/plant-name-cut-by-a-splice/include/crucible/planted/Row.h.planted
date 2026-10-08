@@ -1,0 +1,5 @@
+#pragma once
+namespace crucible::planted {
+template <class Ctx> requires (row_cont\
+ains(^^row_type_of_t<Ctx>, X)) void spliced();
+}  // namespace crucible::planted

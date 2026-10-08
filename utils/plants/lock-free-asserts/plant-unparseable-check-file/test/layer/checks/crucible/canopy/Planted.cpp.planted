@@ -1,0 +1,2 @@
+void f() { g(1) { } }
+static_assert(std::atomic<int>::is_always_lock_free);

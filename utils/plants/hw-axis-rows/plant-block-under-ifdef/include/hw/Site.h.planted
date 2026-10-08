@@ -1,0 +1,8 @@
+#pragma once
+#ifdef __AVX2__
+namespace demo {
+namespace site_hw {
+using Tier = ::fixy::atom::hw::scalar;
+}  // namespace site_hw
+}  // namespace demo
+#endif

@@ -1,0 +1,3 @@
+#pragma once
+#include <atomic>
+#define SPLIT_MACRO(T) std::atomic /* a comment */ <T> split_field_

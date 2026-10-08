@@ -1,0 +1,8 @@
+# The ledger of the rule parse-clean: the C++ files of the tree that are not C++ for the parse kit.
+# `python3 utils/bin/guard explain parse-clean` tells the rule, and `python3 utils/bin/guard write --rule parse-clean`
+# writes this file.  Each row has a twin in tsast.UNPARSEABLE of utils/assay/readers/tsast.py, which keeps the file
+# out of the scope of each other rule.  A row that admits no finding fails the rule: its file parses clean now, or the
+# tree does not hold it.
+format 1
+rule parse-clean
+include/crucible/perf/bpf/vmlinux.h | unparseable | admit | - | generated BPF C, not C++.  It declares a field named `operator`

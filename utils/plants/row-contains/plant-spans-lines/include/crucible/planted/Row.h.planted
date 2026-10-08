@@ -1,0 +1,7 @@
+#pragma once
+namespace crucible::planted {
+template <class Ctx>
+    requires (effects::row_contains(
+        ^^effects::row_type_of_t<Ctx>, X))
+void e();
+}  // namespace crucible::planted

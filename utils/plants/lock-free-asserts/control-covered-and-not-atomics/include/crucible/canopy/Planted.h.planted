@@ -1,0 +1,25 @@
+#pragma once
+#include <atomic>
+namespace crucible::planted {
+struct Foo {
+    // A type with its assert, and the atomics that are lock-free by definition.
+    std::atomic<std::uint64_t> covered_{0};
+    std::atomic_flag flag_;
+    std::atomic_signed_lock_free lock_free_{0};
+    // A type that a conjunction covers, and a standard alias that the spelling of its atomic covers.
+    std::atomic<std::uint32_t> both_{0};
+    std::atomic_int64_t covered_alias_{0};
+    // An atomic of a different namespace, a comment and a string literal.
+    other::atomic<float> foreign_{};
+    // std::atomic<double> in_comment_;
+    const char* text = "std::atomic<double>";
+    // A comment in a template argument of a covered type, and a type that the spelling of its alias covers.
+    std::atomic<Twin</*k*/int, int>> commented_arg_{};
+    std::atomic<unsigned int> spelled_{0};
+};
+static_assert(std::atomic<std::uint64_t>::is_always_lock_free, "covered");
+static_assert(::std::atomic<std::uint32_t>::is_always_lock_free && sizeof(int) == 4);
+static_assert(std::atomic_int64_t::is_always_lock_free);
+static_assert(std::atomic<Twin<int, int>>::is_always_lock_free);
+static_assert(std::atomic_uint::is_always_lock_free);
+}  // namespace crucible::planted

@@ -17,11 +17,11 @@
 //
 // A type alias that is not an atom, such as the lattice alias of the
 // deque block, is not an axis claim, so the check skips it.
-// utils/assay/guard/legacy/check_fixy_hw_discipline.py reads the rows from the parse tree
-// of test/test_hardware_axis_pins.cpp and holds every `*_hw` namespace under
-// include/ and src/ to them.  That script also refuses a block inside a
-// preprocessor conditional, which the compiler sees only for the arm that
-// one build selects.
+// The rule hw-axis-rows (utils/assay/guard/engines/tsast/hw_axis_rows.py)
+// reads the rows from the parse tree of test/test_hardware_axis_pins.cpp and
+// holds every `*_hw` namespace under include/ and src/ to them.  That rule
+// also refuses a block inside a preprocessor conditional, which the compiler
+// sees only for the arm that one build selects.
 //
 // This header names only the fixy and foundation layers, so a negative
 // fixture under test/fixy/neg/ can instantiate a row on a planted block.

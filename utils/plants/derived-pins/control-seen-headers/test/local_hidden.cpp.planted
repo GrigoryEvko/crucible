@@ -1,0 +1,5 @@
+#include <fixy/Seen.h>
+namespace fixy::seen_space {
+// The function below starts on the row of hidden() in Seen.h.
+inline void user() { static_assert(local_only == 4); }
+}  // namespace fixy::seen_space

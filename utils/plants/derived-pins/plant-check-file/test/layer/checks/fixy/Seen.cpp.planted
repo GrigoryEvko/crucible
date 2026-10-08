@@ -1,0 +1,4 @@
+// The check file sees its header with no #include.
+namespace fixy::seen_space {
+static_assert(seen == 12);
+}  // namespace fixy::seen_space

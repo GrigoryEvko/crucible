@@ -1,0 +1,3 @@
+#include <fixy/Seen.h>
+namespace elsewhere = fixy::other_space;
+static_assert(elsewhere::seen == 12);

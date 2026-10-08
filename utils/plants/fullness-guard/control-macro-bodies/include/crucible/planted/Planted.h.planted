@@ -1,0 +1,6 @@
+#pragma once
+#define PRIVATE_IN_MACRO(s) (s.count_ == Capacity)
+#define OWN_SIZE_IN_MACRO(v) (v.size() == v.max_size())
+#define TEXT_IN_MACRO "count == Capacity"
+#define ASSERT_IN_MACRO(s) static_assert((s).count == Capacity)
+#define PASTE_PRIVATE(s) (s.count##_ == Capacity)

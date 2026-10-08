@@ -1,0 +1,19 @@
+#pragma once
+struct S {
+    // A counter that ends with _, the correct >=, and a sentinel with !=.
+    bool o() { return count_ == Capacity; }
+    bool p() { return count >= Capacity; }
+    bool q() { return count != Capacity; }
+    // A container that reads its own invariant, a bound of a different name, and a call of a free function.
+    bool r() { return v.size() == v.max_size(); }
+    bool s() { return count == limit; }
+    bool t() { return count == Capacity(); }
+    // if (count == Capacity) { return false; }
+    const char* u = "count == Capacity";
+    // A size() call on the left, and a size() of an object with no name.
+    bool w() { return v.size() == count; }
+    bool x() { return n == std::string_view{buf}.size(); }
+    // The constant contexts.
+    static_assert(count == Capacity);
+    consteval bool y() { return count == Capacity; }
+};

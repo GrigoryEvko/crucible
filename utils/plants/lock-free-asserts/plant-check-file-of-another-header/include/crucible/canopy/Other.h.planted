@@ -1,0 +1,2 @@
+#pragma once
+std::atomic<int> other_{0};

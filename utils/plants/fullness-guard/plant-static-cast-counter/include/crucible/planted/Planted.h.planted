@@ -1,0 +1,4 @@
+#pragma once
+struct S {
+    bool g() { return static_cast<int>(count) == MAX_SLOTS; }
+};

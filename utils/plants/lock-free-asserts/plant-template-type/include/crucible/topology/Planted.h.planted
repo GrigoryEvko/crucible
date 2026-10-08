@@ -1,0 +1,7 @@
+#pragma once
+#include <atomic>
+namespace crucible::planted {
+struct Foo {
+    std::atomic<Pair<int, int>> nested_{};
+};
+}  // namespace crucible::planted

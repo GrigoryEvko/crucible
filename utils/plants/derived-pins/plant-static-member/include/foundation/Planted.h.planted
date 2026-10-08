@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation::planted {
+struct Holder { static constexpr int member = 6; };
+static_assert(Holder::member == 6);
+}  // namespace foundation::planted

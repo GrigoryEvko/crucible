@@ -1,0 +1,5 @@
+#pragma once
+static_assert(far == 11);
+// The declaration is below the pin, at a distance.
+
+inline constexpr int far = 11;

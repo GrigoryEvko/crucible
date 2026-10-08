@@ -1,0 +1,4 @@
+#pragma once
+struct S {
+    bool z() { return lhs == Capacity && rhs == Capacity; }
+};

@@ -1,0 +1,4 @@
+#pragma once
+namespace crucible::planted {
+template <class Ctx> requires (row_contains(^^row_type_of_t<Ctx>, X)) void c();
+}  // namespace crucible::planted

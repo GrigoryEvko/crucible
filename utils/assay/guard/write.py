@@ -9,6 +9,9 @@ mode lowers each count and removes each row that admits nothing, and it
 refuses a new finding.  --raise also writes a count above its row: use it only
 when the rule changed what it reports, and give the reason in the commit.
 --admit also writes a row for each new finding, with the reason of --reason.
+A rule of the policy max or baseline judges its ledger itself, so its module
+writes the ledger: the function written(context, ledger, reason) of the module
+gives the new ledger, and --reason gives the reason of a changed row.
 
 A rule with a legacy module: the command calls the module with the words of
 its mode, then --write, then each ARG, as `guard check --rule ID --write`
@@ -19,6 +22,7 @@ import sys
 from pathlib import Path
 
 from assay.core import ledger as rule_ledger
+from assay.core import registry as rule_registry
 from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
 from assay.guard import check
@@ -56,12 +60,22 @@ def main(argv: list[str]) -> int:
         return 2
     rule = chosen[0]
     root = options.root.resolve()
-    context = runner.MetaContext(root, options.build_dir.resolve() if options.build_dir is not None else None)
+    build_dir = options.build_dir.resolve() if options.build_dir is not None else None
+    context: runner.RuleContext = runner.MetaContext(root, build_dir)
+    if rule.engine == rule_registry.Engine.TSAST:
+        from assay.guard.engines.tsast import runner as tree_runner
+
+        tree_context = tree_runner.TsastContext(root, build_dir)
+        tree_context.rule = rule
+        context = tree_context
     try:
-        findings = runner.rule_module(rule).findings(context)
         ledger = rule_ledger.read(rule, root)
-        written = rule_ledger.write(rule, ledger, findings, mode=options.mode or rule_ledger.WriteMode.LOWER,
-                                    reason=options.reason, moved=git.moves(root))
+        if rule.policy in (rule_registry.Policy.MAX, rule_registry.Policy.BASELINE):
+            written = runner.rule_module(rule).written(context, ledger, options.reason)
+        else:
+            written = rule_ledger.write(rule, ledger, context.findings_of(rule),
+                                        mode=options.mode or rule_ledger.WriteMode.LOWER, reason=options.reason,
+                                        moved=git.moves(root))
     except runner.NotApplicable as reason:
         print(f"guard write: the rule {rule.id} does not apply: {reason}", file=sys.stderr)
         return 2

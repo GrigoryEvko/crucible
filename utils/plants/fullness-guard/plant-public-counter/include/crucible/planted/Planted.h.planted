@@ -1,0 +1,4 @@
+#pragma once
+struct S {
+    bool a() { if (count == Capacity) { return false; } return true; }
+};

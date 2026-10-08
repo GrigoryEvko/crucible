@@ -1,0 +1,3 @@
+#include <fixy/Seen.h>
+namespace gs = ::fixy::seen_space;
+static_assert(gs::seen == 12);

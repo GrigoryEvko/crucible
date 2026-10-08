@@ -1,0 +1,2 @@
+#pragma once
+struct Bar { std::atomic<int> head_{0}; std::atomic<long> tail_{0}; };

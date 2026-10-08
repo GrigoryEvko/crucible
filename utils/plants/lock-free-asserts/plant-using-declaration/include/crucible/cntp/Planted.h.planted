@@ -1,0 +1,8 @@
+#pragma once
+#include <atomic>
+namespace crucible::planted {
+using std::atomic;
+struct Foo {
+    atomic<long> bare_{0};
+};
+}  // namespace crucible::planted

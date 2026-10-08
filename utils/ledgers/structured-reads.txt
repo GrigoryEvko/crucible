@@ -15,17 +15,14 @@ utils/assay/guard/legacy/check_compile_cost.py | regex-call | 2 | <module> | A r
 utils/assay/guard/legacy/check_core_shapes.py | regex-call | 6 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_ct_disassembly.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_ct_disassembly.py | regex-call | 4 | disassemble | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_derived_pins.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_detail_namespace.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_fixy_dim_prose.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_fullness_guard.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_header_checks.py | regex-call | 1 | mentions | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_header_constexpr_ops.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_header_constexpr_ops.py | regex-call | 1 | c_identifier | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_host_owners.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | format-read | 1 | CMakeCache.txt | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | regex-call | 5 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_lock_free_asserts.py | node-text-variable | 1 | has_marker_reason | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_mint_pattern.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | node-text-variable | 3 | token_shape | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_no_coordination_refs.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
@@ -39,8 +36,6 @@ utils/assay/guard/legacy/check_quarantine_ratchet.py | regex-call | 1 | <module>
 utils/assay/guard/legacy/check_quarantine_ratchet.py | regex-call | 1 | cache_entries | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_reconfigure_noop.py | format-read | 3 | CMakeCache.txt | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_reconfigure_noop.py | format-read | 1 | build.ninja | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_row_contains_discipline.py | node-text-variable | 1 | token_checks | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_row_contains_discipline.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_splits_orphan.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | node-text-variable | 2 | token_key | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count

@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation::planted {
+inline constexpr int plain = 28;
+static_assert(plain /* n */ == 28);
+}  // namespace foundation::planted

@@ -1,4 +1,5 @@
-# cmake/Guards.cmake — read a limit of the build from the registry, and register the tests of the meta rules.
+# cmake/Guards.cmake — read a limit of the build from the registry, and register the tests of the meta rules and of
+# the tsast rules.
 #
 # utils/registry.txt is the registry of the rules of the utils system.  A measured rule row is
 #
@@ -65,5 +66,45 @@ function(crucible_meta_rule_tests warnings_dir)
     add_test(NAME ${test_name}_witness
       COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard witness --rule ${rule})
     set_tests_properties(${test_name} ${test_name}_witness PROPERTIES LABELS "ci_guard;meta" SKIP_RETURN_CODE 77)
+  endforeach()
+endfunction()
+
+# crucible_tsast_rule_tests(<warnings-dir> <parts>)
+#
+# Register the tests of each rule of the engine tsast that has a module of its own: a row with no field
+# legacy.  guard_ID runs the rule on the tree, and guard_ID_witness runs it on each plant and control of
+# utils/plants/ID/.  The rule parse-clean fills the tree cache, so it runs in <parts> parts,
+# guard_parse_clean_K for K from 1, and these tests are the setup of the fixture tsast_trees.  Each
+# other test of a rule requires the fixture, so it starts on a full tree cache.  Exit 77 is a skip: the
+# rule does not apply, for example because the pinned kit is not installed
+# (`python3 utils/bin/setup install tree-sitter`).
+function(crucible_tsast_rule_tests warnings_dir parts)
+  crucible_rule_rows("^rule[ \t]+[a-z0-9-]+[ \t]+(.*[ \t])?engine=tsast[ \t]" rows)
+  foreach(row IN LISTS rows)
+    if(row MATCHES "[ \t]legacy=")
+      continue()
+    endif()
+    string(REGEX MATCH "^rule[ \t]+([a-z0-9-]+)" match "${row}")
+    set(rule "${CMAKE_MATCH_1}")
+    string(REPLACE "-" "_" test_name "guard_${rule}")
+    if(rule STREQUAL "parse-clean")
+      foreach(part RANGE 1 ${parts})
+        add_test(NAME ${test_name}_${part}
+          COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ${rule} --part ${part}/${parts}
+                  --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${warnings_dir})
+        set_tests_properties(${test_name}_${part} PROPERTIES
+          LABELS "ci_guard;tsast" FIXTURES_SETUP tsast_trees SKIP_RETURN_CODE 77)
+      endforeach()
+    else()
+      add_test(NAME ${test_name}
+        COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ${rule} --build-dir ${CMAKE_BINARY_DIR}
+                --warnings-dir ${warnings_dir})
+      set_tests_properties(${test_name} PROPERTIES
+        LABELS "ci_guard;tsast" FIXTURES_REQUIRED tsast_trees SKIP_RETURN_CODE 77)
+    endif()
+    add_test(NAME ${test_name}_witness
+      COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard witness --rule ${rule})
+    set_tests_properties(${test_name}_witness PROPERTIES
+      LABELS "ci_guard;tsast" FIXTURES_REQUIRED tsast_trees SKIP_RETURN_CODE 77)
   endforeach()
 endfunction()

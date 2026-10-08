@@ -1,0 +1,2 @@
+#pragma once
+#define SUBSCRIPT_IN_MACRO(s) ((s).counts[i] == Capacity)

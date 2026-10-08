@@ -1,0 +1,4 @@
+#include "fixy/hw_axis_pins.h"
+static_assert(hw_axis_pins::pinned<^^::demo::site_hw, ::fixy::Axis::SimdIsa,
+                                   ::fixy::Axis::HwInstruction>);
+int main() { return 0; }

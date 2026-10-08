@@ -1,0 +1,3 @@
+#pragma once
+#define SPLIT_OWNS(C, E) row_contains( /* ctx */ \
+    ^^row_type_of_t<C>, E)

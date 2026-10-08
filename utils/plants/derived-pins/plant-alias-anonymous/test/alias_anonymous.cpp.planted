@@ -1,0 +1,5 @@
+#include <fixy/Seen.h>
+namespace {
+namespace an = fixy::seen_space;
+static_assert(an::seen == 12);
+}  // namespace

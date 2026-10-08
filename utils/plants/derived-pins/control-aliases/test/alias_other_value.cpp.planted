@@ -1,0 +1,3 @@
+#include <fixy/Seen.h>
+namespace sp = fixy::seen_space;
+static_assert(sp::seen == 13);

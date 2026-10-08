@@ -1,0 +1,2 @@
+#pragma once
+#define REVERSED_IN_MACRO(s) (Traits::MaxItems == (s)->n)

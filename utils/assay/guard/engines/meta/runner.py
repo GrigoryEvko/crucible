@@ -9,6 +9,12 @@ THE CONTEXT
     underscores in place of the hyphens.  Its errors are its violations, and
     assay.core.ledger judges them against the ledger of the rule.
 
+    The run and the witness of this module also serve the other engines.  A
+    context of each engine (RuleContext) gives its root, its build directory
+    and findings_of(rule), the findings of one rule on its tree.  A rule of
+    the policy max or baseline judges its ledger itself, so the run gives its
+    findings unchanged.
+
 THE WITNESS
     The plants of a rule are in utils/plants/RULE/.  Each directory whose name
     starts with "plant-" is a tree that the rule must refuse: the rule gives a
@@ -17,7 +23,8 @@ THE WITNESS
     there.  The witness copies each one to a throwaway repository, puts each
     file in its index, and runs the rule there with no ledger.  A module can
     give plant_context(plant, scratch) when a plant needs more than a copy,
-    for example a git history or a configured CMake project.
+    for example a git history or a configured CMake project.  An engine gives
+    the copy of its own context to witness().
 
 THE STATUS
     A run exits 0 with no error, 1 with an error, and 77 (SKIPPED, the
@@ -30,8 +37,10 @@ import shutil
 import sys
 import tempfile
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
+from typing import Protocol
 
 from assay.core import git
 from assay.core import ledger as rule_ledger
@@ -43,6 +52,8 @@ from assay.core.paths import REPO_ROOT
 PLANTS = "utils/plants"
 PLANT_PREFIX = "plant-"
 CONTROL_PREFIX = "control-"
+# The suffix of a file of a plant that no rule of the tree reads.  The copy of the plant removes it (copy_plant()).
+PLANTED_SUFFIX = ".planted"
 SKIPPED = 77
 # The guide of the tree.  Only the root of the repository holds a file with this name (the rule layout).
 GUIDE = "CLAUDE.md"
@@ -50,6 +61,25 @@ GUIDE = "CLAUDE.md"
 
 class NotApplicable(Exception):
     """The rule does not apply to the tree.  The message tells why."""
+
+
+class RuleContext(Protocol):
+    """The context of a rule of each engine: the root of its tree, the build directory, and the run of one rule."""
+
+    @property
+    def root(self) -> Path:
+        """The root of the tree."""
+
+    @property
+    def build_dir(self) -> Path | None:
+        """The build directory, when the call gives one."""
+
+    def findings_of(self, rule: rule_registry.Rule) -> list[check_report.Finding]:
+        """Return the findings of one rule on the tree, before the ledger judges them.
+
+        Raises:
+            NotApplicable: If the rule does not apply to the tree
+        """
 
 
 class MetaContext:
@@ -107,6 +137,14 @@ class MetaContext:
                 raise NotApplicable(f"the tree {self.root} is not a git work tree: {problem}") from None
         return self._tracked
 
+    def findings_of(self, rule: rule_registry.Rule) -> list[check_report.Finding]:
+        """Return the findings of the function findings(context) of the module of a rule.
+
+        Raises:
+            NotApplicable: If the rule does not apply to the tree
+        """
+        return list(rule_module(rule).findings(self))
+
 
 def module_name(rule_id: str, engine: str = "meta") -> str:
     """Return the dotted name of the module of a rule."""
@@ -122,43 +160,77 @@ def rule_module(rule: rule_registry.Rule) -> ModuleType:
     return importlib.import_module(module_name(rule.id, rule.engine.value))
 
 
-def judged(rule: rule_registry.Rule, context: MetaContext,
-           raw: Sequence[check_report.Finding]) -> list[check_report.Finding]:
-    """Judge the findings of a rule against its ledger in the tree of the context.
+def judged(rule: rule_registry.Rule, root: Path, raw: Sequence[check_report.Finding],
+           kept: Callable[[rule_ledger.Key], bool] | None = None) -> list[check_report.Finding]:
+    """Judge the findings of a rule against its ledger in a tree.
 
-    A ledger that does not obey its schema gives one error, and the findings of the rule stay errors.
+    A ledger that does not obey its schema gives one error, and the findings
+    of the rule stay errors.  A rule of the policy max or baseline judges its
+    ledger itself, so its findings stay as they are.
+
+    Args:
+        rule: The rule
+        root: The root of the tree of the ledger
+        raw: The findings of the rule
+        kept: The rows of the ledger that the run judges, when the run reads only a part of the tree.  None
+            keeps each row
     """
+    if rule.policy in (rule_registry.Policy.MAX, rule_registry.Policy.BASELINE):
+        return list(raw)
     try:
-        ledger = rule_ledger.read(rule, context.root)
+        ledger = rule_ledger.read(rule, root)
     except (rows_grammar.RowsError, OSError) as problem:
         return [*raw, check_report.Finding("error", rule_ledger.shown_path(rule.id), getattr(problem, "line", 0),
                                            rule.id, f"the ledger cannot be read: {problem}")]
+    if kept is not None:
+        ledger = replace(ledger, base={key: entry for key, entry in ledger.base.items() if kept(key)},
+                         deltas={name: {key: entry for key, entry in table.items() if kept(key)}
+                                 for name, table in ledger.deltas.items()})
     return rule_ledger.compare(rule, ledger, raw)
 
 
-def run(rule: rule_registry.Rule, context: MetaContext, warnings_dir: Path | None) -> int:
+def run(rule: rule_registry.Rule, context: RuleContext, warnings_dir: Path | None,
+        kept: Callable[[rule_ledger.Key], bool] | None = None) -> int:
     """Run one rule on the tree of the context, judge its findings against its ledger and print them.
+
+    Args:
+        rule: The rule
+        context: The context of the engine of the rule
+        warnings_dir: The directory of the warnings of a build, or None
+        kept: The rows of the ledger that the run judges (judged()), or None for each row
 
     Returns:
         0 with no error, 1 with an error, SKIPPED when the rule does not apply
     """
     try:
-        raw = rule_module(rule).findings(context)
+        raw = context.findings_of(rule)
     except NotApplicable as reason:
         print(f"{rule.id}: {reason}.  The rule does not apply")
         return SKIPPED
-    findings = judged(rule, context, raw)
+    findings = judged(rule, context.root, raw, kept)
     status = check_report.emit(findings, rule.id, warnings_dir)
     errors = sum(item.level == "error" for item in findings)
     print(f"{rule.id}: {errors} error(s), {len(findings) - errors} warning(s)")
     return status
 
 
-def copy_tree(plant: Path, scratch: Path) -> MetaContext:
-    """Copy a plant to a throwaway repository, put each file in its index, and give its context."""
+def copy_plant(plant: Path, scratch: Path) -> None:
+    """Copy a plant to a throwaway repository, give each file NAME.planted its name NAME, and put each file in the index.
+
+    A file of a plant with the suffix .planted is data of the plant, which no
+    rule of the tree reads: a guide CLAUDE.md, or the C++ of a plant of a
+    tsast rule.  Complexity: linear in the files of the plant.
+    """
     shutil.copytree(plant, scratch, dirs_exist_ok=True)
+    for planted in sorted(scratch.rglob(f"*{PLANTED_SUFFIX}")):
+        planted.rename(planted.with_name(planted.name.removesuffix(PLANTED_SUFFIX)))
     git.init(scratch)
     git.run(scratch, "add", "-A", "--", ".")
+
+
+def copy_tree(plant: Path, scratch: Path) -> MetaContext:
+    """Copy a plant to a throwaway repository (copy_plant()), and give its context."""
+    copy_plant(plant, scratch)
     return MetaContext(scratch)
 
 
@@ -171,14 +243,21 @@ def plants_of(rule_id: str, root: Path = REPO_ROOT) -> list[Path]:
                   and path.name.startswith((PLANT_PREFIX, CONTROL_PREFIX)))
 
 
-def witness(rule: rule_registry.Rule, root: Path = REPO_ROOT) -> int:
+def witness(rule: rule_registry.Rule, root: Path = REPO_ROOT,
+            copy: Callable[[Path, Path], RuleContext] = copy_tree) -> int:
     """Run a rule on each of its plants and controls (THE WITNESS), and print each verdict.
+
+    Args:
+        rule: The rule
+        root: The root of the tree of the plants
+        copy: The copy of a plant and the context of the engine, when the module of the rule gives no
+            plant_context
 
     Returns:
         0 when each plant is refused and each control is accepted, 1 otherwise, 2 when the rule has no plant
     """
     module = rule_module(rule)
-    prepare: Callable[[Path, Path], MetaContext] = getattr(module, "plant_context", copy_tree)
+    prepare: Callable[[Path, Path], RuleContext] = getattr(module, "plant_context", copy)
     plants = plants_of(rule.id, root)
     if not plants:
         print(f"{rule.id}: no plant in {PLANTS}/{rule.id}/", file=sys.stderr)
@@ -188,7 +267,7 @@ def witness(rule: rule_registry.Rule, root: Path = REPO_ROOT) -> int:
         with tempfile.TemporaryDirectory(prefix=f"witness-{rule.id}-") as scratch:
             try:
                 context = prepare(plant, Path(scratch) / "tree")
-                errors = [item for item in module.findings(context) if item.level == "error"]
+                errors = [item for item in context.findings_of(rule) if item.level == "error"]
             except NotApplicable as reason:
                 failures.append(f"{plant.name}: the rule does not apply to it: {reason}")
                 continue

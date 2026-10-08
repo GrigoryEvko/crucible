@@ -1,0 +1,2 @@
+#pragma once
+#define PASTE_IN_MACRO(s) (s.count##_x == Capacity)

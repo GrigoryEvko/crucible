@@ -1,0 +1,28 @@
+#pragma once
+namespace foundation::planted {
+// A ceiling that equals the constant, and a call with the same argument.
+inline constexpr auto cast = static_cast<std::size_t>(12);
+static_assert(cast <= 12);
+static_assert(make(12) == cast);
+// A derived operand, and a floor against a different literal.
+inline constexpr int derived = 3;
+static_assert(derived == std::tuple_size_v<Roster>);
+inline constexpr int floor_value = 30;
+static_assert(floor_value >= 20);
+// A name that is not constexpr.
+inline int runtime = 9;
+static_assert(runtime == 9);
+// A comparison outside a static_assert, and a comment.
+inline constexpr int plain = 28;
+inline bool check() { return plain == 28; }
+// static_assert(plain == 28);
+// A name that a different class declares with a literal.
+struct Pair { static constexpr int arity = 2; };
+template <class... Ts> struct Pack { static constexpr int arity = sizeof...(Ts); static_assert(arity == 2); };
+// A name that a template parameter binds.
+inline constexpr int width = 4;
+template <int width> struct Wide { static_assert(width == 4); };
+// A name of a different function body.
+inline void local() { constexpr int inner = 8; (void)inner; }
+inline void other() { static_assert(inner == 8); }
+}  // namespace foundation::planted

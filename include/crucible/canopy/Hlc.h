@@ -106,8 +106,9 @@ private:
     // imposes a total order and touches no floating point, so determinism
     // holds.
     struct LockFreeCell {
-        mutable std::atomic<uint128_t> value_{
-            0};  // LOCK-FREE-OK: selected only where the atomic is lock-free.  SpinlockCell covers every other target, so a static_assert here would fire wrongly
+        // Cell selects this cell only where the atomic is lock-free, and SpinlockCell covers each other target.
+        // So the atomic has no lock-free assert, and a row of the ledger of the rule lock-free-asserts admits it.
+        mutable std::atomic<uint128_t> value_{0};
         [[nodiscard]] uint128_t load() const noexcept { return value_.load(std::memory_order_acquire); }
         [[nodiscard]] bool compare_exchange(uint128_t& expected, uint128_t desired) noexcept {
             return value_.compare_exchange_weak(expected, desired, std::memory_order_acq_rel,
@@ -141,10 +142,8 @@ private:
             return matched;
         }
     };
-    using Cell = std::conditional_t<
-        std::atomic<uint128_t>::
-            is_always_lock_free,  // LOCK-FREE-OK: a dispatch predicate that picks the cell type, not an atomic field
-        LockFreeCell, SpinlockCell>;
+    // The atomic of the predicate selects the cell type, and it is not an atomic field.
+    using Cell = std::conditional_t<std::atomic<uint128_t>::is_always_lock_free, LockFreeCell, SpinlockCell>;
     mutable Cell cell_{};
 #endif
 };

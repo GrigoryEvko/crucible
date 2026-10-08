@@ -1,0 +1,2 @@
+#pragma once
+#define CAST_IN_MACRO(s) (static_cast<int>(s.count) == MAX_SLOTS)

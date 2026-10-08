@@ -1,0 +1,4 @@
+#pragma once
+namespace foundation::planted {
+inline void local() { constexpr int inner = 8; static_assert(inner == 8); }
+}  // namespace foundation::planted

@@ -1,0 +1,3 @@
+#include "fixy/hw_axis_pins.h"
+int unrelated;
+int main() { return 0; }

@@ -1,0 +1,4 @@
+#pragma once
+namespace foundation::planted {
+struct Pair { static constexpr int arity = 2; static_assert(arity == 2); };
+}  // namespace foundation::planted

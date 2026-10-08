@@ -2,15 +2,18 @@
 
 usage:
     guard check --rule ID [ARG]...                        a rule with a legacy module
-    guard check [--rule ID]... [--engine E]... [--build-dir DIR] [--warnings-dir DIR] [--root DIR]
+    guard check [--rule ID]... [--engine E]... [--part K/N] [--build-dir DIR] [--warnings-dir DIR] [--root DIR]
 
 utils/registry.txt (assay.core.registry) gives each rule.  A rule with a
 legacy module runs alone: the command calls the function main of the module
 with the words of its mode (legacy-args) and then each ARG, unchanged, and it
 exits with the value that main returns.  A rule with a module of its own runs
 through the runner of its engine, which judges its findings against its ledger
-(assay.core.ledger).  A measured rule with a holder has no run of its own: the
-holder reads its thresholds.
+(assay.core.ledger).  The engines meta and tsast have a runner.  The tsast
+rules of one call share the trees that they read
+(assay.guard.engines.tsast.runner, THE SHARED TREES), and --part K/N gives
+them part K of N of their files (THE PARTS).  A measured rule with a holder
+has no run of its own: the holder reads its thresholds.
 
 Each run also holds the cache of the compiled modules of the package under its
 limit, when its turn is due (assay.core.cache, THE COMPILED MODULES).  A
@@ -26,8 +29,10 @@ from assay.core import registry as rule_registry
 from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
 
-USAGE = ("usage: guard check --rule ID [ARG]...  |  guard check [--rule ID]... [--engine E]... [--build-dir DIR] "
-         "[--warnings-dir DIR] [--root DIR]")
+USAGE = ("usage: guard check --rule ID [ARG]...  |  guard check [--rule ID]... [--engine E]... [--part K/N] "
+         "[--build-dir DIR] [--warnings-dir DIR] [--root DIR]")
+# The engines with a runner at this time.
+RUNNERS = (rule_registry.Engine.META, rule_registry.Engine.TSAST)
 
 
 def load_registry() -> rule_registry.Registry | None:
@@ -65,9 +70,18 @@ def selected(registry: rule_registry.Registry, ids: list[str], engines: list[str
             return f"the rule {rule.id} has the legacy module assay.{rule.legacy.module}, and it runs alone: guard check --rule {rule.id} [ARG]..."
         if rule.held_by is not None:
             return f"the rule {rule.id} has no run of its own: {rule.held_by} reads its thresholds"
-        if rule.engine != rule_registry.Engine.META:
+        if rule.engine not in RUNNERS:
             return f"the engine {rule.engine.value} of the rule {rule.id} has no runner at this time"
     return chosen
+
+
+def parsed_part(text: str) -> tuple[int, int] | None:
+    """Return (K, N) of a part K/N with 1 <= K <= N, or None when the text is not such a part."""
+    first, slash, second = text.partition("/")
+    if not slash or not first.isascii() or not first.isdigit() or not second.isascii() or not second.isdigit():
+        return None
+    index, count = int(first), int(second)
+    return (index, count) if 1 <= index <= count else None
 
 
 def main(argv: list[str]) -> int:
@@ -97,17 +111,31 @@ def main(argv: list[str]) -> int:
     parser = cli.parser("guard check", "give the findings of the rules, and judge them against their ledgers")
     parser.add_argument("--rule", dest="rules", action="append", default=[], metavar="ID")
     parser.add_argument("--engine", dest="engines", action="append", default=[], metavar="E")
+    parser.add_argument("--part", default=None, metavar="K/N")
     parser.add_argument("--build-dir", type=Path, default=None)
     parser.add_argument("--warnings-dir", type=Path, default=None)
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
     options = parser.parse_args(argv)
     chosen = selected(registry, options.rules, options.engines)
+    part = parsed_part(options.part) if options.part is not None else None
+    if not isinstance(chosen, str) and options.part is not None and part is None:
+        chosen = f"the part {options.part} is not K/N with 1 <= K <= N"
+    if not isinstance(chosen, str) and part is not None \
+            and any(rule.engine != rule_registry.Engine.TSAST for rule in chosen):
+        chosen = "only a rule of the engine tsast reads a part of its files"
     if isinstance(chosen, str):
         print(f"guard check: {chosen}\n{USAGE}", file=sys.stderr)
         return 2
-    context = runner.MetaContext(options.root.resolve(),
-                                 options.build_dir.resolve() if options.build_dir is not None else None)
-    statuses = [runner.run(rule, context, options.warnings_dir) for rule in chosen]
+    root = options.root.resolve()
+    build_dir = options.build_dir.resolve() if options.build_dir is not None else None
+    context = runner.MetaContext(root, build_dir)
+    statuses = [runner.run(rule, context, options.warnings_dir) for rule in chosen
+                if rule.engine == rule_registry.Engine.META]
+    tree_rules = [rule for rule in chosen if rule.engine == rule_registry.Engine.TSAST]
+    if tree_rules:
+        from assay.guard.engines.tsast import runner as tree_runner
+
+        statuses += tree_runner.run(tree_rules, root, build_dir, options.warnings_dir, part)
     if any(status == 1 for status in statuses):
         return 1
     return runner.SKIPPED if all(status == runner.SKIPPED for status in statuses) else 0

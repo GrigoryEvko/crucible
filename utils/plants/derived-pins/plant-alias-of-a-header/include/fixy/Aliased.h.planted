@@ -1,0 +1,5 @@
+#pragma once
+namespace fixy::aliased_space {
+inline constexpr int deep = 21;
+}  // namespace fixy::aliased_space
+namespace fixy { namespace ahead = ::fixy::aliased_space; }

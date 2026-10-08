@@ -1,0 +1,4 @@
+#include <fixy/Seen.h>
+namespace loop_a = loop_b;
+namespace loop_b = loop_a;
+static_assert(loop_a::seen == 12);

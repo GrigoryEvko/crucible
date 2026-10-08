@@ -11,6 +11,7 @@ minimum of one plant and one control.
 
 import sys
 
+from assay.core import registry as rule_registry
 from assay.core.paths import REPO_ROOT
 from assay.guard import check
 
@@ -35,5 +36,10 @@ def main(argv: list[str]) -> int:
     if isinstance(chosen, str):
         print(f"guard witness: {chosen}", file=sys.stderr)
         return 2
-    statuses = [runner.witness(rule, REPO_ROOT) for rule in chosen]
+    statuses = [runner.witness(rule, REPO_ROOT) for rule in chosen if rule.engine == rule_registry.Engine.META]
+    tree_rules = [rule for rule in chosen if rule.engine == rule_registry.Engine.TSAST]
+    if tree_rules:
+        from assay.guard.engines.tsast import runner as tree_runner
+
+        statuses += [tree_runner.witness(rule, REPO_ROOT) for rule in tree_rules]
     return max(statuses)

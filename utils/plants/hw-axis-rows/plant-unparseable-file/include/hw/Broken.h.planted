@@ -1,0 +1,1 @@
+namespace broken_hw { void f() { g(1) { } } }

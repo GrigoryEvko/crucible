@@ -1,0 +1,7 @@
+#pragma once
+#include <atomic>
+namespace crucible::planted {
+struct Foo {
+    std::atomic_ref<unsigned> reference_;
+};
+}  // namespace crucible::planted

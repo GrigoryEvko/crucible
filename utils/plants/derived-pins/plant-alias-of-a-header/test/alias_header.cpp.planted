@@ -1,0 +1,4 @@
+#include <fixy/Aliased.h>
+namespace fixy {
+static_assert(ahead::deep == 21);
+}  // namespace fixy

@@ -1,0 +1,4 @@
+#pragma once
+namespace other {
+namespace site_hw {}
+}  // namespace other

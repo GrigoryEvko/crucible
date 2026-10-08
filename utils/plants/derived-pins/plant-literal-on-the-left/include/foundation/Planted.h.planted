@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation::planted {
+inline constexpr std::size_t reversed = 7;
+static_assert(7 == reversed);
+}  // namespace foundation::planted

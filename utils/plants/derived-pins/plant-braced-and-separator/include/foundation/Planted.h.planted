@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation::planted {
+inline constexpr int braced{1'000};
+static_assert(braced == 1000);
+}  // namespace foundation::planted

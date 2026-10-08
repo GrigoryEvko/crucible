@@ -94,7 +94,7 @@ def verdict(root: Path) -> tuple[int, list[check_report.Finding]]:
     except NotApplicable:
         return SKIPPED, []
     rule = rule_registry.load().rules[history.RULE]
-    found = judged(rule, context, raw)
+    found = judged(rule, context.root, raw)
     return (1 if any(item.level == "error" for item in found) else 0), found
 
 

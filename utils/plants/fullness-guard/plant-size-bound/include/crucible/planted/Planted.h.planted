@@ -1,0 +1,4 @@
+#pragma once
+struct S {
+    bool d() { return size == slots.size(); }
+};

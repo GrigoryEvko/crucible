@@ -1,0 +1,5 @@
+#pragma once
+namespace fixy::seen_space {
+inline constexpr int seen = 12;
+inline void hidden() { constexpr int local_only = 4; (void)local_only; }
+}  // namespace fixy::seen_space

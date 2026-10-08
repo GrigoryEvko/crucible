@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation::planted {
+inline constexpr auto cast = static_cast<std::size_t>(12);
+static_assert(cast == std::size_t{12});
+}  // namespace foundation::planted

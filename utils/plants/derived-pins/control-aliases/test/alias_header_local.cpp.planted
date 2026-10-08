@@ -1,0 +1,6 @@
+#include <fixy/Aliased.h>
+// The function below starts on the row of with_alias() in Aliased.h.
+
+
+
+inline void user() { static_assert(hidden_alias::deep == 21); }

@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation::planted {
+inline constexpr unsigned long long suffixed = 0x10ULL;
+static_assert(suffixed == 16u);
+}  // namespace foundation::planted

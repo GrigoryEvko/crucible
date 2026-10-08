@@ -1,0 +1,2 @@
+#include "Local.h"
+static_assert(seen == 3);

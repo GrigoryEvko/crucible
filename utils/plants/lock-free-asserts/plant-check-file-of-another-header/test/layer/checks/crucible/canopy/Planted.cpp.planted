@@ -1,0 +1,2 @@
+#include <crucible/canopy/Planted.h>
+static_assert(std::atomic<int>::is_always_lock_free);

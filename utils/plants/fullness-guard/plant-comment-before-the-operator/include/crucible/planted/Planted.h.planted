@@ -1,0 +1,4 @@
+#pragma once
+struct S {
+    bool aa(T& s) { return s.count /* n */ == Capacity; }
+};

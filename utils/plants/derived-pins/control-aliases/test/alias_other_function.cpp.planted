@@ -1,0 +1,3 @@
+#include <fixy/Seen.h>
+inline void owner() { namespace hidden = fixy::seen_space; }
+inline void other() { static_assert(hidden::seen == 12); }

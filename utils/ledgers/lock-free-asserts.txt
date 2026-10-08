@@ -1,0 +1,7 @@
+# The ledger of the rule lock-free-asserts: the atomics of the cross-thread directories with no lock-free assert.
+# `python3 utils/bin/guard explain lock-free-asserts` tells the rule, and
+# `python3 utils/bin/guard write --rule lock-free-asserts` writes this file.
+format 1
+rule lock-free-asserts
+include/crucible/canopy/Hlc.h | no-lock-free-assert | admit | crucible::canopy::detail::AtomicPackedHlcState::Cell: uint128_t | a dispatch predicate that picks the cell type, not an atomic field
+include/crucible/canopy/Hlc.h | no-lock-free-assert | admit | crucible::canopy::detail::AtomicPackedHlcState::LockFreeCell::value_: uint128_t | selected only where the atomic is lock-free.  SpinlockCell covers every other target, so a static_assert here would fire wrongly

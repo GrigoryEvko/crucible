@@ -1,0 +1,2 @@
+constexpr int in_source = 3;
+static_assert(in_source == 3);

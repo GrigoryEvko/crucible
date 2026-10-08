@@ -1,0 +1,5 @@
+#pragma once
+namespace foundation::/* nested */ inner {
+inline constexpr int spaced = 5;
+}  // namespace foundation::inner
+static_assert(foundation::inner::spaced == 5);

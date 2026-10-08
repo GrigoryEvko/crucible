@@ -1,0 +1,7 @@
+#pragma once
+#include <atomic>
+namespace crucible::planted {
+struct Foo {
+    std :: atomic < short > spaced_{0};
+};
+}  // namespace crucible::planted

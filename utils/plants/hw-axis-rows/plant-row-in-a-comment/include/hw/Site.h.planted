@@ -1,0 +1,7 @@
+#pragma once
+namespace demo {
+namespace site_hw {
+using Tier = ::fixy::atom::hw::scalar;
+}  // namespace site_hw
+}  // namespace demo
+namespace demo::other_hw {}
