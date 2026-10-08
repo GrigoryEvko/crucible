@@ -5,9 +5,9 @@ THE READERS
     this module.  The rule structured-reads refuses each other read: a run of
     nm, readelf or c++filt, and the ELF magic, in a different module.  These
     modules use it:
-      * The rules libstdcxx-symbols and no-throw-no-rtti read the symbols and
-        the relocations of the members of the static libraries, and the
-        dynamic symbols of libstdc++.so.
+      * The rule artifact-symbols reads the symbols and the relocations of
+        the members of the static libraries, and the dynamic symbols of
+        libstdc++.so.
       * The rules function-size and object-text read the code sections and the
         function symbols of each object.
       * assay.readers.sections reads the section .crucible.quarantine of an
@@ -63,6 +63,20 @@ THE DEMANGLER
     Each name then has the text that nm --demangle and objdump -C give.  No
     other module of the package starts nm, readelf or c++filt, and
     assay.readers.objdump is the one module that starts objdump.
+
+THE MANGLED SCOPE
+    outer_scope() reads the first scope of a name that the Itanium C++ ABI
+    mangles, with no demangler.  After _Z, the name can have one of these
+    special prefixes (SPECIAL_PREFIXES):
+      * A vtable, a typeinfo, the name of a typeinfo, or a VTT
+      * A wrapper of thread-local storage
+      * A guard variable or a reference temporary.
+    Then `N` and its qualifiers can come.  The scope is std for
+    `St` and for the abbreviations of STD_ABBREVIATIONS.  Else it is the
+    identifier of the first source name, after its length.  A name with no
+    such scope gives an empty text, for example an operator or a thunk.
+    global_operator() gives the operator of a name of the global operator
+    new or delete (GLOBAL_OPERATORS), else an empty text.
 
 THE RECORDS
     The records are classes with __slots__, as the records of
@@ -134,6 +148,15 @@ SYMBOL_INDEXES = (b"/", b"/SYM64/")
 LONG_NAMES = b"//"
 # The option of c++filt that gives the text of nm --demangle and objdump -C (THE DEMANGLER).
 DEMANGLER = ("c++filt", "--no-verbose")
+# The parts of a mangled name that THE MANGLED SCOPE reads.  GTt comes before the prefixes of two letters.
+MANGLED_MARK = "_Z"
+NESTED_MARK = "N"
+SPECIAL_PREFIXES = ("GTt", "TV", "TI", "TS", "TT", "TH", "TW", "GV", "GR")
+NESTED_QUALIFIERS = "rVK"
+REFERENCE_QUALIFIERS = frozenset({"R", "O"})
+STD_ABBREVIATIONS = frozenset({"St", "Sa", "Sb", "Ss", "Si", "So", "Sd"})
+STD_SCOPE = "std"
+GLOBAL_OPERATORS = frozenset({"nw", "na", "dl", "da"})
 # e_shoff, then e_phoff, e_phentsize, e_phnum, e_shentsize, e_shnum and e_shstrndx.
 SECTION_TABLE_AT = 0x28
 PROGRAM_TABLE_AT = 0x20
@@ -772,6 +795,33 @@ def demangle(names: Sequence[str]) -> tuple[str, ...]:
     if len(lines) != len(names):
         raise ElfError(f"c++filt gives {len(lines)} lines for {len(names)} names")
     return tuple(lines)
+
+
+def global_operator(symbol: str) -> str:
+    """Return the operator of a name of the global operator new or delete, else an empty text (THE MANGLED SCOPE)."""
+    return symbol[2:4] if symbol.startswith(MANGLED_MARK) and symbol[2:4] in GLOBAL_OPERATORS else ""
+
+
+def outer_scope(symbol: str) -> str:
+    """Return the first scope of a name that the Itanium C++ ABI mangles, or an empty text (THE MANGLED SCOPE).
+
+    Complexity: linear in the length of the first scope.
+    """
+    if not symbol.startswith(MANGLED_MARK):
+        return ""
+    rest = symbol[len(MANGLED_MARK) :]
+    prefix = next((item for item in SPECIAL_PREFIXES if rest.startswith(item)), "")
+    rest = rest[len(prefix) :]
+    if rest.startswith(NESTED_MARK):
+        rest = rest[len(NESTED_MARK) :].lstrip(NESTED_QUALIFIERS)
+        if rest[:1] in REFERENCE_QUALIFIERS:
+            rest = rest[1:]
+    if rest[:2] in STD_ABBREVIATIONS:
+        return STD_SCOPE
+    digits = len(rest) - len(rest.lstrip("0123456789"))
+    if digits == 0:
+        return ""
+    return rest[digits : digits + int(rest[:digits])]
 
 
 # ── The writer ─────────────────────────────────────────────────────

@@ -1,0 +1,6 @@
+# A planted ledger: a symbol row of a symbol that the planted build does not use.
+format 1
+rule artifact-symbols
+configuration planted kind planted
+configuration planted tier planted
+@build/libcrucible.a | ratchet | 1 | _ZSt9terminatev | -

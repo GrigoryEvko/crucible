@@ -1,0 +1,4 @@
+# A planted ledger: the throw of the archive libfoundation.a only.
+format 1
+rule artifact-symbols
+@build/libfoundation.a | throw | admit | throwing_entry | a planted row of one archive

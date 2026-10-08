@@ -1,0 +1,4 @@
+extern "C" [[gnu::weak]] void* __dynamic_cast(const void*, const void*, const void*, long);
+void* weak_downcast_entry(const void* pointer) noexcept {
+    return __dynamic_cast ? __dynamic_cast(pointer, nullptr, nullptr, 0) : nullptr;
+}

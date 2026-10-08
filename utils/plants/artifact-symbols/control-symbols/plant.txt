@@ -1,0 +1,4 @@
+# The ledger holds each libstdc++ symbol of the planted configuration: the guard functions and the personality
+# routine of the allowlist for a function-local static, and a std::thread call.  A call of glibc gives no row.
+library foundation base.cpp threads.cpp
+library crucible base.cpp guard.cpp glibc.cpp

@@ -58,7 +58,7 @@ extern "C" {
 // behavior.  If a callee of a thunk throws, the noexcept specification
 // calls std::terminate before the exception goes across the boundary.
 // The build has no -fno-exceptions.  Nothing in the tree throws, and
-// the rule no-throw-no-rtti does that check on the crucible and foundation
+// the rule artifact-symbols does that check on the crucible and foundation
 // artifacts, but not on this library.  The macro is empty
 // under a C compiler, because `noexcept` is C++-only syntax.
 #ifdef __cplusplus

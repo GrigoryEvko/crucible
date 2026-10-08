@@ -118,6 +118,8 @@ QUARANTINE_MACHINERY = ("utils/tools/quarantine/", RULE_TABLE, "utils/scripts/la
 # The earlier files of each rule whose ledger moved to the rows of assay.core.ledger.  A state before the move holds
 # the earlier files, and its row count is the sum of their row counts.
 EARLIER_FILES = {
+    "artifact-symbols": ("utils/ledgers/libstdcxx-symbols.txt", "utils/ledgers/no-throw-no-rtti.txt",
+                         "utils/scripts/libstdcxx-symbols-ledger.txt", "utils/scripts/no-throw-no-rtti-allowlist.txt"),
     "banned-calls": ("utils/scripts/no-reinterpret-allowlist.txt", "utils/scripts/no-reserve-allowlist.txt",
                      "utils/scripts/no-spawn-process-allowlist.txt"),
     "brand-drain": ("utils/scripts/brand-drain.txt",),
@@ -139,7 +141,6 @@ EARLIER_FILES = {
     "header-checks": ("utils/scripts/header-checks-ledger.txt",),
     "heavy-include": ("utils/scripts/heavy-includes-ledger.txt",),
     "history": ("utils/scripts/budget-history-ledger.txt",),
-    "libstdcxx-symbols": ("utils/scripts/libstdcxx-symbols-ledger.txt",),
     "link-memory": ("utils/scripts/link-memory-ledger.txt",),
     "link-time": ("utils/scripts/link-time-ledger.txt",),
     "mint-floor": ("utils/scripts/mint-hs14-floor-allowlist.txt",),

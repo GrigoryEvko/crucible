@@ -1,0 +1,13 @@
+int admitted_throwing_entry(int input) {
+    if (input < 0) {
+        throw input;
+    }
+    return input;
+}
+[[gnu::used]] static int dead_throwing_entry(int input) {
+    if (input < 0) {
+        throw input;
+    }
+    return input;
+}
+int also_clean(int input) noexcept { return input; }

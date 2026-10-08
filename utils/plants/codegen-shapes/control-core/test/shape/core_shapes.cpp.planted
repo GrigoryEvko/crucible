@@ -1,0 +1,33 @@
+namespace foundation::core::detail {
+[[noreturn, gnu::cold, gnu::noinline]] void report_fatal_(const char* reason);
+}
+
+namespace {
+
+[[gnu::used, gnu::noinline]] int load(const int* pointer) { return *pointer; }
+[[gnu::used, gnu::noinline]] int load_raw(const int* pointer) { return *pointer; }
+
+[[gnu::used, gnu::noinline]] int checked(const int* pointer) {
+    if (pointer == nullptr) [[unlikely]] {
+        foundation::core::detail::report_fatal_("a planted check");
+    }
+    return *pointer;
+}
+[[gnu::used, gnu::noinline]] int checked_raw(const int* pointer) { return *pointer; }
+
+[[gnu::used, gnu::noinline]] int count(const int* values, long length) {
+    int total = 0;
+    for (long index = 0; index < length; ++index) {
+        total += values[index];
+    }
+    return total;
+}
+[[gnu::used, gnu::noinline]] int count_raw(const int* values, long length) {
+    int total = 0;
+    for (const int* cursor = values; cursor != values + length; ++cursor) {
+        total += *cursor;
+    }
+    return total;
+}
+
+}  // namespace

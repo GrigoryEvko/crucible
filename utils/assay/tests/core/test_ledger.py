@@ -8,6 +8,7 @@ import sys
 import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 
 from assay.core import git
@@ -199,6 +200,60 @@ def write_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
                    rule_ledger.LedgerError))
 
 
+def no_configuration_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
+    """Check the rows with the value admit of a count ledger, the clamp of a write of the base, and keep_others."""
+    count = table["count-rule"]
+    text = ("format 1\nrule count-rule\nconfiguration base machine x86_64\nconfiguration arm machine aarch64\n"
+            "a.py | kind | 1 | - | -\nb.py | kind | admit | name | a planted reason\n@arm | a.py | kind | -1 | - | -\n")
+    ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
+    admit_key = rule_ledger.Key("b.py", "kind", "name")
+    expect("a count ledger reads a row with the value admit, which has no count",
+           list(ledger.admits()) == [admit_key] and admit_key not in ledger.expected()
+           and admit_key not in ledger.expected("arm") and rule_ledger.render(ledger) == text)
+    for name, planted in {"a row with the value admit and no reason": text.replace("a planted reason", "-"),
+                          "a difference row of a row with the value admit":
+                              text + "@arm | b.py | kind | +1 | name | -\n"}.items():
+        expect(f"a count ledger with {name} is refused",
+               refuses(partial(rule_ledger.parse, planted, "ledger.txt", "count-rule", rule_registry.Policy.COUNT),
+                       rows_grammar.RowsError))
+    found = [finding("a.py"), finding("b.py", entity="name"), finding("b.py", entity="name")]
+    judged = rule_ledger.compare(count, ledger, found, "base")
+    expect("a row with the value admit admits each finding of its key in the base", not errors(judged))
+    judged = rule_ledger.compare(count, ledger, [finding("b.py", entity="name")], "arm")
+    expect("a row with the value admit admits each finding of its key in another configuration", not errors(judged))
+    judged = rule_ledger.compare(count, ledger, [finding("a.py")], "base")
+    expect("a row with the value admit that admits no finding of the build is an error",
+           [item.message.split(" (")[0] for item in errors(judged)] == ["the row of b.py"])
+    written = rule_ledger.write(count, ledger, [finding("a.py")], "base")
+    expect("a write removes a row with the value admit that admits no finding of the build",
+           written.admits() == {} and written.expected() == {rule_ledger.Key("a.py", "kind", ""): 1})
+    written = rule_ledger.write(count, ledger, found, "base")
+    expect("a write keeps a row with the value admit that admits a finding, with its value and its reason",
+           written.admits()[admit_key].reason == "a planted reason" and written.base[admit_key].value == "admit")
+    written = rule_ledger.write(count, ledger, [finding("b.py", entity="name")], "arm")
+    expect("a write of another configuration keeps a row with the value admit that admits a finding",
+           admit_key in written.admits() and written.expected("arm") == {})
+    lowered = rule_ledger.write(count, ledger, [finding("b.py", entity="name")], "base")
+    expect("a write of the base gives no count below 0 to another configuration",
+           lowered.expected("arm") == {} and lowered.deltas["arm"] == {}
+           and rule_ledger.parse(rule_ledger.render(lowered), "again.txt", "count-rule",
+                                 rule_registry.Policy.COUNT).expected("arm") == {})
+    two = rule_ledger.parse(text.replace("@arm | a.py | kind | -1 | - | -\n", "@arm | c.py | kind | +1 | - | -\n"),
+                            "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
+    kept = rule_ledger.write(count, two, [finding("d.py"), finding("b.py", entity="name")], "base",
+                             mode=rule_ledger.WriteMode.RAISE, keep_others=True)
+    expect("a write of the base with keep_others keeps the count of each key of the other configuration",
+           kept.expected("arm") == two.expected("arm") and kept.expected() == {rule_ledger.Key("d.py", "kind", ""): 1})
+    moved_deltas = rule_ledger.write(count, two, [finding("d.py"), finding("b.py", entity="name")], "base",
+                                     mode=rule_ledger.WriteMode.RAISE)
+    expect("a write of the base with no keep_others keeps the difference rows of the other configuration",
+           moved_deltas.deltas["arm"] == two.deltas["arm"])
+    lines = rule_ledger.rows_of_configuration(ledger, "arm", [("machine", "aarch64")],
+                                              [finding("b.py", entity="name")])
+    expect("the rows of a configuration hold no row of a key with the value admit",
+           not any("b.py" in line for line in lines) and any("a.py | kind | -1" in line for line in lines))
+
+
 def history_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     """Check history(): the row count at each commit, also of an earlier path."""
     with tempfile.TemporaryDirectory(prefix="test-ledger-history-") as scratch:
@@ -239,6 +294,7 @@ def main(argv: list[str]) -> int:
     reader_cases(expect, table)
     policy_cases(expect, table)
     write_cases(expect, table)
+    no_configuration_cases(expect, table)
     history_cases(expect, table)
     if failures:
         print(f"tests.core.test_ledger: FAILED, {len(failures)} case(s) did not hold")

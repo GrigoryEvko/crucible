@@ -1,0 +1,4 @@
+# The shapes that the rule accepts with no row: an error path that returns, a catch with no throw, a reference to
+# a vtable that another object defines, and a throw of a failed allocation.
+library foundation base.cpp catches.cpp
+library crucible base.cpp references.cpp allocation.cpp

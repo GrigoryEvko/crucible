@@ -26,7 +26,8 @@ THE WITNESS
     of the rule.  A copy with no ledger has the empty ledger.  A module can
     give plant_context(plant, scratch) when a plant needs more than a copy,
     for example a git history or a configured CMake project.  An engine gives
-    the copy of its own context to witness().
+    the copy of its own context to witness(), and the judge of a rule that it
+    judges in its own way.
 
 THE STATUS
     A run exits 0 with no error, 1 with an error, and 77 (SKIPPED, the
@@ -205,6 +206,18 @@ def judged(rule: rule_registry.Rule, root: Path, raw: Sequence[check_report.Find
     return rule_ledger.compare(rule, ledger, raw)
 
 
+def module_judged(rule: rule_registry.Rule, context: RuleContext) -> list[check_report.Finding]:
+    """Return the findings of a rule judged against its ledger in the tree of a context.
+
+    A module that judges its rule in its own way gives a function judge(rule,
+    context).  Each other rule is judged against its ledger (judged()).
+    """
+    own_judge = getattr(rule_module(rule), "judge", None)
+    if own_judge is not None:
+        return list(own_judge(rule, context))
+    return judged(rule, context.root, context.findings_of(rule))
+
+
 def run(rule: rule_registry.Rule, context: RuleContext, warnings_dir: Path | None,
         kept: Callable[[rule_ledger.Key], bool] | None = None) -> int:
     """Run one rule on the tree of the context, judge its findings against its ledger and print them.
@@ -260,7 +273,8 @@ def plants_of(rule_id: str, root: Path = REPO_ROOT) -> list[Path]:
 
 
 def witness(rule: rule_registry.Rule, root: Path = REPO_ROOT,
-            copy: Callable[[Path, Path], RuleContext] = copy_tree) -> int:
+            copy: Callable[[Path, Path], RuleContext] = copy_tree,
+            judge: Callable[[rule_registry.Rule, RuleContext], list[check_report.Finding]] | None = None) -> int:
     """Run a rule on each of its plants and controls (THE WITNESS), and print each verdict.
 
     Args:
@@ -268,6 +282,8 @@ def witness(rule: rule_registry.Rule, root: Path = REPO_ROOT,
         root: The root of the tree of the plants
         copy: The copy of a plant and the context of the engine, when the module of the rule gives no
             plant_context
+        judge: The judged findings of the rule on the context of a plant, when the engine judges a rule in its own
+            way.  None judges the findings of the rule against the ledger of the copy (judged())
 
     Returns:
         0 when each plant is refused and each control is accepted, 1 otherwise, 2 when the rule has no plant
@@ -283,8 +299,9 @@ def witness(rule: rule_registry.Rule, root: Path = REPO_ROOT,
         with tempfile.TemporaryDirectory(prefix=f"witness-{rule.id}-") as scratch:
             try:
                 context = prepare(plant, Path(scratch) / "tree")
-                errors = [item for item in judged(rule, context.root, context.findings_of(rule))
-                          if item.level == "error"]
+                found = judge(rule, context) if judge is not None else judged(rule, context.root,
+                                                                              context.findings_of(rule))
+                errors = [item for item in found if item.level == "error"]
             except NotApplicable as reason:
                 failures.append(f"{plant.name}: the rule does not apply to it: {reason}")
                 continue

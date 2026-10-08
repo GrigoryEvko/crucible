@@ -1,0 +1,4 @@
+# A std::string in the library crucible gives libstdc++ symbols that the ledger of the planted configuration does
+# not hold.
+library foundation base.cpp
+library crucible base.cpp text.cpp

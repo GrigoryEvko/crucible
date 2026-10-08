@@ -1,0 +1,6 @@
+struct Base { virtual ~Base() = default; virtual int tag() const { return 0; } };
+struct Derived final : Base { int tag() const override { return 1; } };
+int downcast_entry(Base* base) noexcept {
+    auto* derived = dynamic_cast<Derived*>(base);
+    return derived ? derived->tag() : -1;
+}

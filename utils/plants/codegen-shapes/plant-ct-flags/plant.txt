@@ -1,0 +1,4 @@
+# The foundation unit takes a per-build flag that no variant of a kind of build has.
+part constant-time
+unit ct_dudect test/ct/dudect.cpp | -std=c++26 -freflection -fcontracts -fno-plt -O3 -march=native -DNDEBUG -fno-sanitize=all -fcontract-evaluation-semantic=observe -fharden-compares -fharden-conditional-branches
+unit foundation src/foundation/unit.cpp | -std=c++26 -freflection -fcontracts -fno-plt -O3 -DNDEBUG -fcontract-evaluation-semantic=observe -fharden-compares -fharden-conditional-branches -fharden-control-flow-redundancy

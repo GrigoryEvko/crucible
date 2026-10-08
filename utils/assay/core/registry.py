@@ -482,3 +482,15 @@ def measured_rule(rule_id: str, warn: float, error: float, unit: str, measures: 
 def planted(rows: Iterable[str], comment: str = "# a planted registry\n") -> str:
     """Return the text of a registry with a head comment, the format row and the rows."""
     return comment + f"format {FORMAT}\n" + "".join(f"{row}\n" for row in rows)
+
+
+def planted_rules(rows: Iterable[str]) -> dict[str, Rule]:
+    """Return each rule of a planted registry of the rows (planted()), by its identifier.
+
+    Raises:
+        ValueError: If a row of the planted registry does not read
+    """
+    registry, problems = examine(planted(rows))
+    if problems:
+        raise ValueError(f"the planted registry does not read: {problems[0]}")
+    return dict(registry.rules)

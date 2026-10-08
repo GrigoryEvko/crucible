@@ -1,0 +1,6 @@
+extern "C" int crucible_plant_extern(int);
+struct Plain { int value = 0; };
+int plain_entry(int value) noexcept {
+    Plain plain{crucible_plant_extern(value)};
+    return plain.value + 1;
+}

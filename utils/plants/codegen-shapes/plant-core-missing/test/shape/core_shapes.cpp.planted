@@ -1,0 +1,5 @@
+namespace {
+
+[[gnu::used, gnu::noinline]] int load(const int* pointer) { return *pointer; }
+
+}  // namespace

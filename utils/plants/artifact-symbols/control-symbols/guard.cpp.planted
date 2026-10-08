@@ -1,0 +1,5 @@
+extern "C" int crucible_plant_seed();
+int guard_entry() {
+    static const int seeded = crucible_plant_seed();
+    return seeded;
+}

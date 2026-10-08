@@ -221,6 +221,14 @@ def write_cases(expect: testing.Expect) -> None:
             "--import puts the rows of a log into the ledger",
             status == 0 and written.expected("other").get(rule_ledger.Key("a.h", KIND, "<chrono>")) == 3,
         )
+        before = path.read_text(encoding="utf-8")
+        refused, text = testing.captured(
+            lambda: counted.import_rows(rule_ledger.rule_of(RULE), root, log, lambda _ledger: "a planted problem")
+        )
+        expect(
+            "--import with a refusal of the rule writes no ledger and gives the problem",
+            refused == 1 and "a planted problem" in text and path.read_text(encoding="utf-8") == before,
+        )
         log.write_text("ledger-row: not a row\n", encoding="utf-8")
         status, _text = testing.captured(lambda: counted.import_rows(rule_ledger.rule_of(RULE), root, log))
         expect("--import refuses a log with rows that do not read", status == 1)

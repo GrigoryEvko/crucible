@@ -205,8 +205,16 @@ def print_rows(
     )
 
 
-def import_rows(rule: rule_registry.Rule, root: Path, source: Path) -> int:
+def import_rows(
+    rule: rule_registry.Rule,
+    root: Path,
+    source: Path,
+    refusal: Callable[[rule_ledger.Ledger], str] | None = None,
+) -> int:
     """Put the rows of one configuration that print_rows wrote into the ledger.  They replace its earlier rows.
+
+    `refusal` gives the first problem of the ledger with the rows of the log, or an empty text.  A rule with a shape
+    of its own for its rows gives it, and the import then writes no ledger that the run of the rule refuses.
 
     Returns:
         0 when the ledger is written, 1 when the rows or the ledger do not have the format
@@ -217,6 +225,10 @@ def import_rows(rule: rule_registry.Rule, root: Path, source: Path) -> int:
         )
     except (OSError, rows_grammar.RowsError, rule_ledger.LedgerError) as problem:
         check_report.write_line(f"{rule.id}: the ledger is not written: {problem}", is_error=True)
+        return 1
+    problem_text = refusal(ledger) if refusal is not None else ""
+    if problem_text:
+        check_report.write_line(f"{rule.id}: the ledger is not written: {problem_text}", is_error=True)
         return 1
     rule_ledger.store(ledger, root)
     name = ledger.configurations[-1].name
@@ -244,28 +256,23 @@ def add_refusal(ledger: rule_ledger.Ledger, held: str | None, name: str) -> str:
 
 
 def drop_gone_files(ledger: rule_ledger.Ledger, root: Path, counts: Mapping[Key, int]) -> rule_ledger.Ledger:
-    """Remove the difference rows of each source file that the tree does not hold, and keep each count at 0 or above.
+    """Remove the difference rows of each source file that the tree does not hold.
 
-    A file of the build directory (ruletable.BUILD_PREFIX) is in no source tree.  A write of the base cannot know if
-    a build of a different configuration writes the file.  The rows of the file stay, and the run of that
-    configuration compares them as it compares each other row.  When a build of the configuration does not write
-    the file, its run fails on the row until its own write removes the row.  Complexity: linear in the difference
-    rows.
+    The write of the base before this step keeps each count of each other configuration at 0 or above
+    (assay.core.ledger, THE WRITE).  A file of the build directory (ruletable.BUILD_PREFIX) is in no source tree.  A
+    write of the base cannot know if a build of a different configuration writes the file.  The rows of the file
+    stay, and the run of that configuration compares them as it compares each other row.  When a build of the
+    configuration does not write the file, its run fails on the row until its own write removes the row.
+    Complexity: linear in the difference rows.
     """
-    deltas: dict[str, dict[Key, rule_ledger.Entry]] = {}
-    for name, table in ledger.deltas.items():
-        kept: dict[Key, rule_ledger.Entry] = {}
-        for key, entry in table.items():
-            base = int(ledger.base[key].value) if key in ledger.base else 0
-            delta = int(entry.value)
-            is_source_gone = not key.path.startswith(ruletable.BUILD_PREFIX) and not (root / key.path).exists()
-            if key not in counts and is_source_gone:
-                continue
-            if base + delta < 0:
-                delta = -base
-            if delta != 0:
-                kept[key] = dataclasses.replace(entry, value=delta)
-        deltas[name] = kept
+    deltas = {
+        name: {
+            key: entry
+            for key, entry in table.items()
+            if key in counts or key.path.startswith(ruletable.BUILD_PREFIX) or (root / key.path).exists()
+        }
+        for name, table in ledger.deltas.items()
+    }
     return dataclasses.replace(ledger, deltas=deltas)
 
 

@@ -1,0 +1,6 @@
+int throwing_entry(int input) {
+    if (input < 0) {
+        throw input;
+    }
+    return input;
+}

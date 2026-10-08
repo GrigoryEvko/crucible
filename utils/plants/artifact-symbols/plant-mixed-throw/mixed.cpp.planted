@@ -1,0 +1,10 @@
+#include <new>
+int mixed_entry(int input) {
+    if (input < 0) {
+        throw std::bad_alloc();
+    }
+    if (input > 9) {
+        throw input;
+    }
+    return input;
+}

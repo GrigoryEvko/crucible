@@ -1,0 +1,8 @@
+# A probe unit whose family functions compile to the instructions that their expectations give, and whose flags
+# are the flags of the foundation unit.
+part core
+unit core_shape_probes test/shape/core_shapes.cpp | -std=c++26 -fcontracts -fno-plt -O3 -march=x86-64-v3 -mtune=generic -DNDEBUG -fPIC -fno-strict-overflow -fcontract-evaluation-semantic=observe
+unit foundation src/foundation/unit.cpp | -std=c++26 -fcontracts -fno-plt -O1 -fno-strict-overflow -D_GLIBCXX_ASSERTIONS=1
+probe load relation=same bound=2 | a load is the load of a raw pointer
+probe checked relation=cost bound=4 extra=2 cold=yes | a checked load adds a test and a branch to a cold call of the fatal exit
+probe count relation=loop bound=80 extra=8 | a sum over an array is the loop of a raw pointer loop

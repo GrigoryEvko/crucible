@@ -522,18 +522,20 @@ jobs:
         run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }}
 
       # Two ledgers depend on the build kind and the target tier
-      # (utils/assay/core/target.py): the rule quarantine, whose findings
-      # of each file, kind and entity can only decrease, and the libstdc++ symbols of
-      # the libraries.  A build that a ledger does not hold gives exit 77 for the
-      # rule quarantine and exit 3 for the libstdc++ symbols, with
-      # one line that names its tier and the tiers of the ledger, for example
-      # the x86_64 release leg on a runner of another native tier.  Then the
-      # check prints the rows of the build, and it prints them after a failure
-      # too.  Only CI builds aarch64, so `--import LOG` of each check puts the
-      # rows of an aarch64 leg into its ledger.  ctest shows no output of a
-      # skipped test, so this step runs the two checks again, also after a
-      # failed test step.  The step "Check warnings" annotates the warnings of
-      # the two tests, so this step prints its findings as plain lines.
+      # (utils/assay/core/target.py).  The rule quarantine counts its findings
+      # of each file, kind and entity.  The rule artifact-symbols holds the
+      # libstdc++ symbols of the libraries.  For a build that a ledger does not
+      # hold, each rule prints one line with its tier and the tiers of the
+      # ledger, for example on a runner of a different native tier.  The rule
+      # quarantine then exits 77.  The rule artifact-symbols then judges only
+      # the throws and the classes of the libraries.  Each rule then prints the
+      # rows of the build, and it prints them after a failure too.  Only CI
+      # builds aarch64.  `guard write --rule RULE --import LOG` puts the rows
+      # of an aarch64 leg into the ledger of each rule.  ctest shows no output
+      # of a test that passes or that it skips.  This step runs the two rules
+      # again, also after a failed test step.  The step "Check warnings"
+      # annotates the warnings of the two tests, and this step prints its
+      # findings as plain lines.
       - name: Ledgers of the build kind
         if: ${{ !cancelled() && (matrix.preset == 'default' || matrix.preset == 'release') }}
         env:
@@ -541,10 +543,10 @@ jobs:
           LEDGER_BUILD: ${{ matrix.preset == 'default' && 'build' || format('build-{0}', matrix.preset) }}
         run: |
           failed=0
-          for rule in quarantine libstdcxx-symbols; do
+          for rule in quarantine artifact-symbols; do
             status=0
             python3 utils/bin/guard check --rule "$rule" --build-dir "$LEDGER_BUILD" || status=$?
-            if [ "$status" -ne 0 ] && [ "$status" -ne 3 ] && [ "$status" -ne 77 ]; then failed=1; fi
+            if [ "$status" -ne 0 ] && [ "$status" -ne 77 ]; then failed=1; fi
           done
           exit "$failed"
 

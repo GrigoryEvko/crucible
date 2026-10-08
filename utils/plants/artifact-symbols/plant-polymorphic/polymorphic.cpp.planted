@@ -1,0 +1,3 @@
+struct Shape { virtual ~Shape() = default; virtual int tag() const { return 2; } };
+int shape_entry() noexcept { Shape shape; Shape* held = &shape; return held->tag(); }
+Shape* shape_make() { static Shape one; return &one; }

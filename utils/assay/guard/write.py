@@ -3,7 +3,7 @@
 usage: guard write --rule ID [--raise | --admit] [--reason TEXT] [--root DIR] [--build-dir DIR]
        guard write --rule ID --build-dir DIR [--raise | --admit] [--reason TEXT] [--add-configuration]
                                            a rule of the engine plugin
-       guard write --rule ID --import LOG  a rule of the engine plugin with configurations
+       guard write --rule ID --import LOG  a rule of the engine plugin or elf with configurations
        guard write --rule ID [ARG]...      a rule with a legacy module
 
 A rule with a module of its own: the command runs the rule and writes its
@@ -24,6 +24,12 @@ configuration of the build with its name.  --import LOG puts the rows of a
 configuration that a CI leg wrote into the ledger.  The two options apply only
 to such a rule.  The command exits 77 when the rule does not apply to the
 build.
+
+A rule of the engine elf writes through the function write(rule, request) of
+its module (assay.guard.engines.elf.runner), which reads the build of
+--build-dir.  The module of the rule artifact-symbols writes the
+configuration of the build with its rows.  --import LOG puts the rows of a
+configuration that a CI leg printed into the ledger.
 
 A rule with a legacy module: the command calls the module with the words of
 its mode, then --write, then each ARG, as `guard check --rule ID --write`
@@ -86,9 +92,19 @@ def main(argv: list[str]) -> int:
         return plugin_runner.write(rule, plugin_runner.WriteRequest(
             root, build_dir, options.mode or rule_ledger.WriteMode.LOWER, options.reason, options.add_configuration,
             options.import_log.resolve() if options.import_log is not None else None))
+    if rule.engine == rule_registry.Engine.ELF and not options.add_configuration:
+        from assay.guard.engines.elf import runner as elf_runner
+
+        if build_dir is None and options.import_log is None:
+            check_report.write_line(f"guard write: the rule {rule.id} reads the objects of a build: give --build-dir "
+                                    f"DIR", is_error=True)
+            return 2
+        return elf_runner.write(rule, elf_runner.WriteRequest(
+            root, build_dir, options.mode or rule_ledger.WriteMode.LOWER, options.reason,
+            options.import_log.resolve() if options.import_log is not None else None))
     if options.add_configuration or options.import_log is not None:
-        check_report.write_line("guard write: --add-configuration and --import apply only to a rule of the engine "
-                                "plugin", is_error=True)
+        check_report.write_line("guard write: --add-configuration applies only to a rule of the engine plugin, and "
+                                "--import to a rule of the engine plugin or elf", is_error=True)
         return 2
     context: runner.RuleContext = runner.MetaContext(root, build_dir)
     if rule.engine == rule_registry.Engine.TSAST:

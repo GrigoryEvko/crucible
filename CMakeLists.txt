@@ -778,9 +778,9 @@ endif()
 # them.  The pipeline starts its threads through std::jthread, and the
 # constructor opens the store through std::string and std::filesystem.
 # Those instantiations define the virtual table of std::thread::_State_impl.
-# The rule no-throw-no-rtti (`guard check --rule no-throw-no-rtti`) reads
+# The rule artifact-symbols (`guard check --rule artifact-symbols`) reads
 # this library too.  It admits the throw of a failed allocation, and
-# utils/ledgers/no-throw-no-rtti.txt admits the virtual table with its
+# utils/ledgers/artifact-symbols.txt admits the virtual table with its
 # reason.
 #
 # The bodies compile with the definitions that crucible gives its
@@ -808,7 +808,7 @@ target_link_libraries(crucible PUBLIC crucible_vigil)
 #
 # The store is a library of its own, as the Vigil runtime above is.  Its
 # streams, std::filesystem and its resident cache hold the throws of a failed
-# allocation, which the rule no-throw-no-rtti reads in each static library
+# allocation, which the rule artifact-symbols reads in each static library
 # and admits.  The Vigil runtime opens the store, so it links
 # this library.
 add_library(crucible_cipher STATIC src/Cipher.cpp)
@@ -825,7 +825,7 @@ target_link_libraries(crucible PUBLIC crucible_cipher)
 # include/crucible/vis/.  A translation unit that includes a vis header then
 # compiles no layout and no renderer.  The bodies build std::string,
 # std::vector and std::unordered_map values, so they hold the throws of a
-# failed allocation, which the rule no-throw-no-rtti admits.
+# failed allocation, which the rule artifact-symbols admits.
 add_library(crucible_vis STATIC
   src/vis/BlockDetector.cpp
   src/vis/NetworkSimplex.cpp

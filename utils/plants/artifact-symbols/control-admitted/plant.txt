@@ -1,0 +1,4 @@
+# A throw and a polymorphic class that rows admit, and a throw in a local function that nothing calls, which no
+# link keeps.
+library foundation base.cpp polymorphic.cpp
+library crucible base.cpp admitted.cpp

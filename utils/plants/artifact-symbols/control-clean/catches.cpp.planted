@@ -1,0 +1,8 @@
+extern int may_fail(int);
+int catching_entry(int input) noexcept {
+    try {
+        return may_fail(input);
+    } catch (...) {
+        return -1;
+    }
+}

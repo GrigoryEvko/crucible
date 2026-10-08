@@ -1,0 +1,6 @@
+#include <cstddef>
+#include <string>
+std::size_t text_entry(int count) {
+    std::string text(static_cast<std::size_t>(count), 'x');
+    return text.size();
+}

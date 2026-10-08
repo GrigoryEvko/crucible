@@ -91,15 +91,7 @@ IDENTITY = {
 type Row = tuple[str, str, str]
 
 
-def planted_rules() -> dict[str, rule_registry.Rule]:
-    """Return the two rules of the engine plugin of a planted registry."""
-    registry, problems = rule_registry.examine(rule_registry.planted(REGISTRY_ROWS))
-    if problems:
-        raise ValueError(f"the planted registry does not read: {problems[0]}")
-    return dict(registry.rules)
-
-
-RULES = planted_rules()
+RULES = rule_registry.planted_rules(REGISTRY_ROWS)
 
 
 class Scratch:

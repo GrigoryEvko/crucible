@@ -519,10 +519,7 @@ def judged(rule: rule_registry.Rule, context: PluginContext) -> list[check_repor
         NotApplicable: If the rule does not apply to the build
         BuildError: If the build cannot be read
     """
-    own_judge = getattr(meta_runner.rule_module(rule), "judge", None)
-    if own_judge is not None:
-        return list(own_judge(rule, context))
-    return meta_runner.judged(rule, context.root, context.findings_of(rule))
+    return meta_runner.module_judged(rule, context)
 
 
 def write(rule: rule_registry.Rule, request: WriteRequest) -> int:

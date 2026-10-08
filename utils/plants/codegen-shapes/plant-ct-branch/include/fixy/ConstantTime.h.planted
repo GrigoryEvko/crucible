@@ -1,0 +1,95 @@
+#pragma once
+
+// A planted copy of the primitives of fixy::ct, with no header of the base.  mask_from_bit tests its operand and
+// traps, so each primitive that calls it branches on a secret.
+
+#include <concepts>
+#include <cstddef>
+#include <cstdint>
+#include <span>
+#include <type_traits>
+#include <utility>
+
+namespace fixy::ct {
+
+template <std::unsigned_integral T>
+[[nodiscard]] constexpr T mask_from_bit(T bit01) noexcept {
+    if (bit01 > T{1}) {
+        __builtin_trap();
+    }
+    return static_cast<T>(T{0} - (bit01 & T{1}));
+}
+
+template <std::unsigned_integral T>
+[[nodiscard]] constexpr T select(T bit01, T a, T b) noexcept {
+    const T m = mask_from_bit(bit01);
+    return (a & m) | (b & ~m);
+}
+
+template <std::unsigned_integral T>
+[[nodiscard]] constexpr T is_zero(T x) noexcept {
+    constexpr int bits = static_cast<int>(sizeof(T) * 8);
+    const T neg_x = static_cast<T>(T{0} - x);
+    return static_cast<T>((neg_x | x) >> (bits - 1) ^ T{1});
+}
+
+namespace detail {
+template <std::unsigned_integral T>
+[[nodiscard]] constexpr bool is_zero_without_compare(T difference) noexcept {
+    return static_cast<bool>(is_zero(difference));
+}
+
+template <class E>
+concept ByteElement = std::same_as<std::remove_const_t<E>, std::byte>;
+
+template <std::size_t Word, ByteElement A, ByteElement B, std::size_t N>
+    requires((Word + 1) * sizeof(std::uint64_t) <= N)
+[[nodiscard, gnu::always_inline]] inline std::uint64_t word_difference(std::span<A, N> a, std::span<B, N> b) noexcept {
+    std::uint64_t left = 0;
+    std::uint64_t right = 0;
+    __builtin_memcpy(&left, a.data() + Word * sizeof(std::uint64_t), sizeof(std::uint64_t));
+    __builtin_memcpy(&right, b.data() + Word * sizeof(std::uint64_t), sizeof(std::uint64_t));
+    return left ^ right;
+}
+}  // namespace detail
+
+[[nodiscard]] constexpr bool eq(std::span<const std::byte> a, std::span<const std::byte> b) noexcept {
+    std::byte acc{0};
+    for (std::size_t i = 0; i < a.size() && i < b.size(); ++i) {
+        acc |= a[i] ^ b[i];
+    }
+    return detail::is_zero_without_compare(static_cast<std::uint8_t>(acc));
+}
+
+template <detail::ByteElement A, detail::ByteElement B, std::size_t N>
+    requires(N != std::dynamic_extent)
+[[nodiscard]] constexpr bool eq(std::span<A, N> a, std::span<B, N> b) noexcept {
+    constexpr std::size_t word_bytes = sizeof(std::uint64_t);
+    constexpr std::size_t words = N / word_bytes;
+    std::uint64_t acc = 0;
+    [&]<std::size_t... W>(std::index_sequence<W...>) {
+        ((acc |= detail::word_difference<W>(a, b)), ...);
+    }(std::make_index_sequence<words>{});
+    [&]<std::size_t... I>(std::index_sequence<I...>) {
+        ((acc |= static_cast<std::uint64_t>(a[words * word_bytes + I] ^ b[words * word_bytes + I])), ...);
+    }(std::make_index_sequence<N % word_bytes>{});
+    return detail::is_zero_without_compare(acc);
+}
+
+template <std::unsigned_integral T>
+[[nodiscard]] constexpr T less(T a, T b) noexcept {
+    constexpr int bits = static_cast<int>(sizeof(T) * 8);
+    T const diff = static_cast<T>(a - b);
+    T const lt = static_cast<T>((static_cast<T>(~a) & b) | (static_cast<T>(static_cast<T>(~a) | b) & diff));
+    return static_cast<T>(lt >> (bits - 1)) & T{1};
+}
+
+template <std::unsigned_integral T>
+constexpr void cswap(T cond01, T& a, T& b) noexcept {
+    const T m = mask_from_bit(cond01);
+    const T d = (a ^ b) & m;
+    a ^= d;
+    b ^= d;
+}
+
+}  // namespace fixy::ct

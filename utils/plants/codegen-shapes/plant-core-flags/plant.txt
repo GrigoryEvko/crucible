@@ -1,0 +1,5 @@
+# Each foundation unit compiles with -fno-jump-tables, and the probe unit does not.
+part core
+unit core_shape_probes test/shape/core_shapes.cpp | -std=c++26 -fcontracts -fno-plt -O3 -march=x86-64-v3 -mtune=generic -DNDEBUG -fPIC -fno-strict-overflow -fcontract-evaluation-semantic=observe
+unit foundation src/foundation/unit.cpp | -std=c++26 -fcontracts -fno-plt -fno-jump-tables -O1 -fno-strict-overflow -D_GLIBCXX_ASSERTIONS=1
+probe load relation=same bound=2 | a load is the load of a raw pointer

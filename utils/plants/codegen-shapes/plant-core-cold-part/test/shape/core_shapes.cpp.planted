@@ -1,0 +1,15 @@
+namespace foundation::core::detail {
+[[noreturn, gnu::cold, gnu::noinline]] void report_fatal_(const char* reason);
+}
+
+namespace {
+
+[[gnu::used, gnu::noinline]] int checked(const int* pointer) {
+    if (pointer == nullptr) [[unlikely]] {
+        foundation::core::detail::report_fatal_("a planted check");
+    }
+    return *pointer;
+}
+[[gnu::used, gnu::noinline]] int checked_raw(const int* pointer) { return *pointer; }
+
+}  // namespace

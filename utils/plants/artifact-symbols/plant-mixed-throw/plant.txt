@@ -1,0 +1,4 @@
+# A function that throws std::bad_alloc and an int.  The throw of the failed allocation passes, and the int throw
+# stays a finding.
+library foundation base.cpp
+library crucible base.cpp mixed.cpp

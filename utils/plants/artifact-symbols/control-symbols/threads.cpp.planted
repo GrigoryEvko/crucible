@@ -1,0 +1,2 @@
+#include <thread>
+unsigned thread_entry() noexcept { return std::thread::hardware_concurrency(); }

@@ -1,0 +1,5 @@
+#include <cstdlib>
+#include <cstring>
+extern "C" void crucible_plant_at_exit();
+void copy_entry(char* to, const char* from, unsigned long size) { std::memcpy(to, from, size); }
+int exit_entry() { return std::atexit(crucible_plant_at_exit); }

@@ -347,7 +347,7 @@ template <std::uint32_t UmemBytes, std::uint32_t FrameSize, std::uint32_t FillRi
 // The one runtime step below this factory is the UMEM allocation, and that
 // step calls std::abort() when the allocator returns no memory.  No step in
 // the chain throws, so the factory declares that instead of resting on the
-// whole-artifact check that the rule no-throw-no-rtti does.
+// whole-artifact check that the rule artifact-symbols does.
 [[nodiscard]] AfXdpSocket<UmemBytes, FrameSize, FillRing, CompletionRing, RxRing, TxRing>
 mint_af_xdp_socket(Ctx const& ctx, DeclaredAfXdpConfig config) noexcept {
     return AfXdpSocket<UmemBytes, FrameSize, FillRing, CompletionRing, RxRing, TxRing>::mint(ctx, std::move(config));

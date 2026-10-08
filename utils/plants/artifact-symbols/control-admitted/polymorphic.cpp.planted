@@ -1,0 +1,3 @@
+struct Admitted { virtual ~Admitted() = default; virtual int tag() const { return 2; } };
+int admitted_class_entry() noexcept { Admitted admitted; Admitted* held = &admitted; return held->tag(); }
+Admitted* admitted_make() { static Admitted one; return &one; }

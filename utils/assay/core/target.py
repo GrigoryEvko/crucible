@@ -1,8 +1,8 @@
 """target — the build kind and the target tier of a build, and the rows of a build that a ledger does not hold.
 
-The rules quarantine and libstdcxx-symbols hold ledgers whose rows
-depend on the build.  This module gives the two checks the same facts, and the
-same behavior for a build that the ledger does not hold.
+The rules quarantine and artifact-symbols hold ledgers with rows that
+depend on the build.  This module gives the two rules the same facts, and the
+same line for a build that the ledger does not hold.
 
 THE BUILD KIND
     The one line of BUILD_DIR/build-kind.txt, which cmake/BuildLauncher.cmake
@@ -29,13 +29,12 @@ THE TARGET TIER
     arms can be different.
 
 A BUILD THAT THE LEDGER DOES NOT HOLD
-    A check prints one line with not_held(): the kind or the configuration,
-    the tier of the build, and what the ledger holds.  It exits
-    NOT_APPLICABLE, the skip code of its test.  Then it prints the rows that
-    the ledger would hold for the build, each with the prefix of the check.
-    Only CI builds an aarch64 kind, so the log of its leg holds the rows, and
-    --import LOG of the check puts them into the ledger.  rows_in_log() reads
-    the rows back from log lines with any other prefix in front.
+    A rule prints one line with not_held(): the kind or the configuration,
+    the tier of the build, and what the ledger holds.  Then it prints the
+    rows of the build for the ledger, each with a prefix.  Only CI builds an
+    aarch64 kind.  The log of its leg then holds the rows, and --import LOG
+    of `guard write` puts them into the ledger.  rows_in_log() reads the rows
+    back from log lines with any other prefix in front.
 
 `guard selftest core.target` does a test of the module.
 """
@@ -54,7 +53,6 @@ from assay.core import meter as cost_meter
 from assay.core import proc
 from assay.readers import cmake
 
-NOT_APPLICABLE = 3
 TARGET_OPTIONS = ("-march=", "-mcpu=")
 NATIVE_FLAGS = frozenset({"-march=native", "-mcpu=native"})
 TIER_LINE = re.compile(r"\s*-m(arch|cpu|tune)=\s*(\S*)\s*")

@@ -1,0 +1,4 @@
+# A planted ledger: a throw row that matches no function.
+format 1
+rule artifact-symbols
+@build/libcrucible.a | throw | admit | no_such_function | a planted row that matches nothing

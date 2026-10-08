@@ -1,0 +1,3 @@
+# A polymorphic class with no downcast: a defined typeinfo and a defined vtable that no row admits.
+library foundation base.cpp
+library crucible base.cpp polymorphic.cpp

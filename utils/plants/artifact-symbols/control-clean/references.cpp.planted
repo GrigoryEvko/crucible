@@ -1,0 +1,3 @@
+#include <new>
+struct Elsewhere { Elsewhere() = default; virtual int tag() const; };
+Elsewhere* placed_entry(void* memory) noexcept { return new (memory) Elsewhere; }

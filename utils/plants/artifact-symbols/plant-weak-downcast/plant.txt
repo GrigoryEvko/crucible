@@ -1,0 +1,3 @@
+# A weak reference to the downcast of the C++ runtime: a weak undefined symbol, and no strong one.
+library foundation base.cpp
+library crucible base.cpp weak_downcast.cpp

@@ -1,0 +1,5 @@
+# A planted ledger: a row for the throw and a row for the class.
+format 1
+rule artifact-symbols
+@build/libcrucible.a | throw | admit | admitted_throwing_entry | a planted throw
+@build/libfoundation.a | vtable | admit | Admitted | a planted class

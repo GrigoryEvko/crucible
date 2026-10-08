@@ -9,7 +9,7 @@
 # The tests build with release optimization, because the optimizer is
 # what turns arithmetic into a branch.  They build for x86-64-v3, the
 # widest ISA that valgrind decodes: valgrind 3.27 stops on AVX-512 with an
-# illegal opcode.  The disassembly guard covers the -march=native code
+# illegal opcode.  The rule codegen-shapes covers the -march=native code
 # instead.  The tests link no library from the tree: the code under test is
 # header-only, and a sanitizer flag inherited from a library target would
 # stop valgrind.  -fno-sanitize=all removes a sanitizer flag that a preset
@@ -45,31 +45,12 @@ if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   return()
 endif()
 
-# The disassembly guard compiles each constant-time primitive with the flags
-# of each kind of build: the Debug, Release and verify flags, at their levels,
-# for three ISA levels.  It takes the flags that each build takes from the
-# compile commands of the foundation objects in the compile database.  It
-# refuses a conditional branch, a call, a division or a data-dependent load in
-# the body of a primitive.  Its self-test plants a branch, a table lookup, a
-# call, a division, a compare that only the Release flags turn into a branch,
-# and a census escape.  The guard reads the parse tree of each production file
-# that states the constant-time grade, so it waits for the tree cache.
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
-find_program(CRUCIBLE_OBJDUMP objdump REQUIRED)
-set(_ct_disassembly_arguments
-  --build-dir ${CMAKE_BINARY_DIR}
-  --base-objects $<TARGET_OBJECTS:foundation>)
-crucible_script_test(NAME check_ct_disassembly
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ct-disassembly
-          ${_ct_disassembly_arguments}
-  COMMAND_EXPAND_LISTS)
-crucible_script_test(NAME check_ct_disassembly_self_test
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ct-disassembly
-          ${_ct_disassembly_arguments} --self-test
-  COMMAND_EXPAND_LISTS)
-set_tests_properties(check_ct_disassembly check_ct_disassembly_self_test
-  PROPERTIES LABELS "ci_guard;ct" WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-set_tests_properties(check_ct_disassembly PROPERTIES FIXTURES_REQUIRED tsast_trees)
+# The rule codegen-shapes (utils/assay/guard/engines/elf/codegen_shapes.py)
+# compiles each constant-time primitive with the flags of each kind of build:
+# the Debug, Release and verify flags, at their levels, for three ISA levels.
+# It refuses a conditional branch, a call, a division or a data-dependent load
+# in the body of a primitive.  The compile of ct_dudect gives the rule the
+# flags of a Release build in each build type.
 
 # The dudect timing harness is evidence, not a test: a timing result
 # depends on the host and its load.  Build it on request with

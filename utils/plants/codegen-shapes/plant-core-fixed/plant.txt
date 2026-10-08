@@ -1,0 +1,6 @@
+# The probe unit compiles for -march=native and with no -fPIC, so it has fixed flags other than those of the
+# expectations.
+part core
+unit core_shape_probes test/shape/core_shapes.cpp | -std=c++26 -fcontracts -fno-plt -O3 -march=native -mtune=generic -DNDEBUG -fno-strict-overflow -fcontract-evaluation-semantic=observe
+unit foundation src/foundation/unit.cpp | -std=c++26 -fcontracts -fno-plt -O1 -fno-strict-overflow -D_GLIBCXX_ASSERTIONS=1
+probe load relation=same bound=2 | a load is the load of a raw pointer

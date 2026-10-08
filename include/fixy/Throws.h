@@ -3,7 +3,7 @@
 // A noexcept declaration is a promise that the callable can still break.
 // A throw that gets to a noexcept boundary calls std::terminate.  The
 // process stops there, and a structured join does not unwind.  Nothing in
-// this tree throws, and the rule no-throw-no-rtti holds that on the built
+// this tree throws, and the rule artifact-symbols holds that on the built
 // artifact.  The control-flow atom fixy::atom::ctrl::throws is
 // the type-level record that a callable transits a throw, so a consumer
 // can reject it by searching the type tree rather than trusting the

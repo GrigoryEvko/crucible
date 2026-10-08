@@ -69,6 +69,34 @@ function(crucible_meta_rule_tests warnings_dir)
   endforeach()
 endfunction()
 
+# crucible_elf_rule_tests(<warnings-dir>)
+#
+# Register the tests of each rule of the engine elf that has a module of its own: a row with no field
+# legacy.  guard_ID runs the rule on the objects and the compile database of this build directory, and
+# guard_ID_witness builds each plant and control of utils/plants/ID/ with the compiler of this build
+# (assay.guard.engines.elf.runner, THE PLANTS).  A rule of the engine can read the parse trees, as the
+# census of the rule codegen-shapes does, so each guard_ID requires the fixture tsast_trees.  Exit 77 is a
+# skip: the rule does not apply, for example on a host of another architecture.
+function(crucible_elf_rule_tests warnings_dir)
+  crucible_rule_rows("^rule[ \t]+[a-z0-9-]+[ \t]+(.*[ \t])?engine=elf[ \t]" rows)
+  foreach(row IN LISTS rows)
+    if(row MATCHES "[ \t]legacy=")
+      continue()
+    endif()
+    string(REGEX MATCH "^rule[ \t]+([a-z0-9-]+)" match "${row}")
+    set(rule "${CMAKE_MATCH_1}")
+    string(REPLACE "-" "_" test_name "guard_${rule}")
+    crucible_script_test(NAME ${test_name}
+      COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ${rule} --build-dir ${CMAKE_BINARY_DIR}
+              --warnings-dir ${warnings_dir})
+    crucible_script_test(NAME ${test_name}_witness
+      COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard witness --rule ${rule})
+    set_tests_properties(${test_name} ${test_name}_witness PROPERTIES LABELS "ci_guard;elf" SKIP_RETURN_CODE 77)
+    set_tests_properties(${test_name} PROPERTIES FIXTURES_REQUIRED tsast_trees)
+    set_tests_properties(${test_name}_witness PROPERTIES ENVIRONMENT "ASSAY_TEST_CXX=${CRUCIBLE_REAL_CXX}")
+  endforeach()
+endfunction()
+
 # crucible_tsast_rule_tests(<warnings-dir> <parts>)
 #
 # Register the tests of each rule of the engine tsast that has a module of its own: a row with no field

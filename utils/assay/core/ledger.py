@@ -54,6 +54,14 @@ THE CONFIGURATIONS
     import_rows() puts the rows of a configuration that only a CI leg builds
     into the ledger, from the lines that rows_of_configuration() gives.
 
+THE PART OF NO CONFIGURATION
+    A base row of a count ledger can have the value admit.  Such a row
+    belongs to no configuration, and no difference row names its key.  It
+    admits the findings of its key in each configuration, as a row of the
+    policy admit does, and its REASON is necessary.  A row that admits no
+    finding of the build is an error.  A write removes such a row, keeps
+    each other row with the value admit, and adds no such row.
+
 THE WRITE
     write() gives the ledger of a set of findings in one mode:
       lower   the default.  It refuses a count above its row, and a finding
@@ -66,6 +74,12 @@ THE WRITE
               with no row, each with the reason of the call.
     A file that git reports as moved (assay.core.git.moves) keeps the rows of
     its old path.
+
+    A write of the base keeps the difference rows of each other
+    configuration.  Each count of such a configuration then follows the
+    change of its base count, and no count goes below 0.  With keep_others,
+    each count of each other configuration stays the same, and the write
+    calculates its difference rows again.
 
 `guard write --rule ID` writes the ledger of a rule.  `guard selftest
 tests.core.test_ledger` does a test of the module.
@@ -161,14 +175,21 @@ class Ledger:
     def expected(self, name: str | None = None) -> dict[Key, int]:
         """Return the count of each key of one configuration, with no zero count, for the policy count.
 
-        Complexity: linear in the rows of the base and of the configuration.
+        A row with the value admit has no count (THE PART OF NO CONFIGURATION).  Complexity: linear in the rows of
+        the base and of the configuration.
         """
-        counts = {key: int(entry.value) for key, entry in self.base.items()}
+        counts = base_counts(self.base)
         if name is None or name == self.base_name:
             return counts
         for key, entry in self.deltas.get(name, {}).items():
             counts[key] = counts.get(key, 0) + int(entry.value)
         return {key: count for key, count in counts.items() if count != 0}
+
+    def admits(self) -> dict[Key, Entry]:
+        """Return each base row with the value admit of a count ledger (THE PART OF NO CONFIGURATION)."""
+        if self.policy != Policy.COUNT:
+            return {}
+        return {key: entry for key, entry in self.base.items() if entry.value == ADMIT_VALUE}
 
     def line_of(self, key: Key, name: str | None = None) -> int:
         """Return the line of the row of a key: the difference row, else the base row, else the first row of its path.
@@ -199,13 +220,34 @@ def empty(rule: Rule) -> Ledger:
     return Ledger(rule.id, rule.policy, NEW_COMMENT.format(rule=rule.id))
 
 
+def base_counts(base: Mapping[Key, Entry]) -> dict[Key, int]:
+    """Return the count of each base row of a count ledger, with no row of the value admit."""
+    return {key: int(entry.value) for key, entry in base.items() if entry.value != ADMIT_VALUE}
+
+
+def difference_table(counts: Mapping[Key, int], base: Mapping[Key, int], old: Mapping[Key, Entry],
+                     reason: str = "") -> dict[Key, Entry]:
+    """Return the difference rows of a configuration with a count for each key, against the base counts.
+
+    A row keeps the reason of the row of its key in `old`, and a new row gets
+    `reason`.  A key with the base count has no row.  Complexity: linear in
+    the keys.
+    """
+    return {key: Entry(key, counts.get(key, 0) - base.get(key, 0), old[key].reason if key in old else reason)
+            for key in set(counts) | set(base) if counts.get(key, 0) != base.get(key, 0)}
+
+
 def parse_value(policy: Policy, text: str, row: rows_grammar.Row) -> int | float | str:
     """Read the VALUE cell of a base row for a policy.
+
+    A row of the policy count can also have the value admit (THE PART OF NO CONFIGURATION).
 
     Raises:
         rows_grammar.RowsError: If the value does not have the form of the policy
     """
     if policy == Policy.COUNT:
+        if text == ADMIT_VALUE:
+            return ADMIT_VALUE
         count = rows_grammar.number(text, COUNT_MAXIMUM, row, "count")
         if count == 0:
             raise row.error("a count row has a count above 0.  Remove a row with no finding")
@@ -292,11 +334,20 @@ def parse(text: str, shown: str, rule_id: str, policy: Policy) -> Ledger:
         if key in base:
             raise row.error(f"the key {key} has a second row.  The first is at line {base[key].line}")
         reason = row.cells[3]
-        if policy in (Policy.ADMIT, Policy.MAX) and not reason:
-            raise row.error(f"a row of the policy {policy} gives a reason")
-        base[key] = Entry(key, parse_value(policy, row.cells[1], row), reason, row.line)
+        value = parse_value(policy, row.cells[1], row)
+        if (policy in (Policy.ADMIT, Policy.MAX) or value == ADMIT_VALUE) and not reason:
+            words = f" with the value {ADMIT_VALUE}" if policy == Policy.COUNT else ""
+            raise row.error(f"a row of the policy {policy}{words} gives a reason")
+        base[key] = Entry(key, value, reason, row.line)
     ordered = tuple(Configuration(item.name, tuple(facts[item.name].items())) for item in configurations)
     ledger = Ledger(rule_id, policy, comment, ordered, base, deltas)
+    admits = ledger.admits()
+    for table in deltas.values():
+        for key, entry in table.items():
+            if key in admits:
+                raise rows_grammar.RowsError(shown, entry.line, f"the difference row of {key} names the key of a row "
+                                                                f"with the value {ADMIT_VALUE}, which belongs to no "
+                                                                f"configuration")
     for item in ordered[1:]:
         if any(count < 0 for count in ledger.expected(item.name).values()):
             raise rows_grammar.RowsError(shown, 0, f"a difference of the configuration {item.name} makes a count "
@@ -429,24 +480,36 @@ def described(key: Key) -> str:
     return " ".join(parts) if parts else "the finding"
 
 
-def admitted_text(rule: Rule, path: str, total: int, shown: str) -> str:
-    """Return the message of the warning of one path with admitted findings, with the action of the policy."""
-    if rule.policy == Policy.COUNT:
-        return (f"{path} keeps {total} findings that the ledger counts: {shown}.  Remove a finding, and lower its "
-                f"count in the same change with `python3 utils/bin/guard write --rule {rule.id}`")
-    return (f"{path} has {total} findings that rows of the ledger admit: {shown}.  Each row gives its reason, and a "
-            f"row goes in the change that removes its finding.  `python3 utils/bin/guard explain {rule.id}` gives the "
-            f"rule")
+def admitted_text(rule: Rule, path: str, total: int, shown: str, by_admit: int = 0) -> str:
+    """Return the message of the warning of one path with admitted findings, with the action of the policy.
+
+    `by_admit` is the number of the findings that a row with the value admit admits (THE PART OF NO CONFIGURATION).
+    """
+    admit = (f"{path} has {total} findings that rows of the ledger admit: {shown}.  Each row gives its reason, and a "
+             f"row goes in the change that removes its finding.  `python3 utils/bin/guard explain {rule.id}` gives the "
+             f"rule")
+    if rule.policy != Policy.COUNT or by_admit == total:
+        return admit
+    counted = (f"{path} keeps {total} findings that the ledger counts: {shown}.  Remove a finding, and lower its count "
+               f"in the same change with `python3 utils/bin/guard write --rule {rule.id}`")
+    if by_admit:
+        counted += (f".  Rows with the value admit admit {by_admit} of them, each with its reason, and such a row goes "
+                    f"in the change that removes its finding")
+    return counted
 
 
-def admitted_warnings(rule: Rule, admitted: Mapping[str, Counter[str]], lines: Mapping[str, int]) -> list[check_report.Finding]:
-    """Return one warning for each path with admitted findings: the number of findings of each kind."""
+def admitted_warnings(rule: Rule, admitted: Mapping[str, Counter[str]], lines: Mapping[str, int],
+                      by_admit: Mapping[str, int] | None = None) -> list[check_report.Finding]:
+    """Return one warning for each path with admitted findings: the number of findings of each kind.
+
+    `by_admit` gives the number of the findings of each path that a row with the value admit admits.
+    """
     findings: list[check_report.Finding] = []
     for path, kinds in sorted(admitted.items()):
         shown = ", ".join(f"{kind or 'no kind'} {count}" for kind, count in sorted(kinds.items()))
         findings.append(check_report.Finding(
             "warning", shown_path(rule.id), lines.get(path, 0), rule.id,
-            admitted_text(rule, path, sum(kinds.values()), shown), "admitted", path))
+            admitted_text(rule, path, sum(kinds.values()), shown, (by_admit or {}).get(path, 0)), "admitted", path))
     return findings
 
 
@@ -473,13 +536,18 @@ def compare(rule: Rule, ledger: Ledger, findings: Sequence[check_report.Finding]
         by_key.setdefault(key_of(finding), []).append(finding)
     admitted: dict[str, Counter[str]] = {}
     lines: dict[str, int] = {}
+    by_admit: Counter[str] = Counter()
     if rule.policy == Policy.COUNT:
         expected = ledger.expected(configuration)
-        held = {key.path for key in expected}
-        for key in sorted(set(by_key) | set(expected)):
+        admits = ledger.admits()
+        held = {key.path for key in expected} | {key.path for key in admits}
+        for key in sorted(set(by_key) | set(expected) | set(admits)):
             measured, allowed = len(by_key.get(key, [])), expected.get(key, 0)
             line = ledger.line_of(key, configuration)
-            if measured > allowed:
+            if key in admits:
+                result += admit_verdict(rule, key, admits[key], measured, admitted, lines)
+                by_admit[key.path] += measured
+            elif measured > allowed:
                 said = ("and the ledger holds no row of the file.  A new file has no finding" if key.path not in held
                         else f"and the ledger admits {allowed}.  A change can only lower a count")
                 result += [replace(finding, message=f"{finding.message}.  The file has {measured} findings of "
@@ -495,19 +563,27 @@ def compare(rule: Rule, ledger: Ledger, findings: Sequence[check_report.Finding]
                 lines.setdefault(key.path, line)
     else:
         for key, items in sorted(by_key.items()):
-            entry = ledger.base.get(key)
-            if entry is None:
+            if key not in ledger.base:
                 result += items
-                continue
-            admitted.setdefault(key.path, Counter())[key.kind] += len(items)
-            lines.setdefault(key.path, entry.line)
         for key, entry in sorted(ledger.base.items()):
-            if key not in by_key:
-                result.append(check_report.Finding(
-                    "error", shown, entry.line, rule.id,
-                    f"the row of {key.path} ({described(key)}) admits no finding.  Remove it with {command}",
-                    key.kind, key.entity))
-    return result + admitted_warnings(rule, admitted, lines)
+            result += admit_verdict(rule, key, entry, len(by_key.get(key, [])), admitted, lines)
+    return result + admitted_warnings(rule, admitted, lines, by_admit)
+
+
+def admit_verdict(rule: Rule, key: Key, entry: Entry, measured: int, admitted: dict[str, Counter[str]],
+                  lines: dict[str, int]) -> list[check_report.Finding]:
+    """Judge the findings of the key of one row with the value admit, and return the error of a row with none.
+
+    A row that admits findings adds them to `admitted` and its line to `lines`, for the warning of its path.
+    """
+    if measured == 0:
+        return [check_report.Finding(
+            "error", shown_path(rule.id), entry.line, rule.id,
+            f"the row of {key.path} ({described(key)}) admits no finding.  Remove it with "
+            f"`python3 utils/bin/guard write --rule {rule.id}`", key.kind, key.entity)]
+    admitted.setdefault(key.path, Counter())[key.kind] += measured
+    lines.setdefault(key.path, entry.line)
+    return []
 
 
 def moved_counts(expected: Mapping[Key, int], moved: Mapping[str, str]) -> dict[Key, int]:
@@ -538,7 +614,7 @@ def moved_entries(table: Mapping[Key, Entry], moved: Mapping[str, str]) -> dict[
 
 def write(rule: Rule, ledger: Ledger, findings: Sequence[check_report.Finding], configuration: str | None = None,
           mode: WriteMode = WriteMode.LOWER, reason: str | None = None,
-          moved: Mapping[str, str] | None = None) -> Ledger:
+          moved: Mapping[str, str] | None = None, keep_others: bool = False) -> Ledger:
     """Return the ledger that admits the error findings of a rule (THE WRITE).
 
     Args:
@@ -549,6 +625,7 @@ def write(rule: Rule, ledger: Ledger, findings: Sequence[check_report.Finding], 
         mode: The mode of the write
         reason: The reason of each new row and each raised count, necessary in the mode admit
         moved: The old path of each file that git reports as moved
+        keep_others: When a write of the base keeps the count of each key of each other configuration
 
     Raises:
         LedgerError: If the mode refuses a finding, the policy has no write here, or a necessary reason is missing
@@ -556,16 +633,16 @@ def write(rule: Rule, ledger: Ledger, findings: Sequence[check_report.Finding], 
     Complexity: O(f log f + r) for f findings and r rows.
     """
     counts = Counter(key_of(finding) for finding in findings if finding.level == "error")
-    return write_counts(rule, ledger, counts, configuration, mode, reason, moved)
+    return write_counts(rule, ledger, counts, configuration, mode, reason, moved, keep_others)
 
 
 def write_counts(rule: Rule, ledger: Ledger, counts: Mapping[Key, int], configuration: str | None = None,
                  mode: WriteMode = WriteMode.LOWER, reason: str | None = None,
-                 moved: Mapping[str, str] | None = None) -> Ledger:
+                 moved: Mapping[str, str] | None = None, keep_others: bool = False) -> Ledger:
     """Return the ledger that admits the count of each key, as write() does for the error findings of a rule.
 
-    A legacy module that counts its findings itself, such as the ratchet of
-    the quarantine, writes its ledger with this function.
+    A module that counts its findings itself, such as the rule quarantine,
+    writes its ledger with this function.
 
     Raises:
         LedgerError: If the mode refuses a count, the policy has no write here, or a necessary reason is missing
@@ -589,6 +666,11 @@ def write_counts(rule: Rule, ledger: Ledger, counts: Mapping[Key, int], configur
         kept.update({key: Entry(key, ADMIT_VALUE, reason or "") for key in new_keys})
         return replace(ledger, base=kept)
     is_base = configuration is None or configuration == ledger.base_name or not ledger.configurations
+    # The rows with the value admit belong to no configuration (THE PART OF NO CONFIGURATION).  A write keeps each one
+    # that admits a finding, and their keys have no count.
+    admits = {key: entry for key, entry in base.items() if entry.value == ADMIT_VALUE}
+    kept_admits = {key: entry for key, entry in admits.items() if counts.get(key, 0) > 0}
+    counts = {key: count for key, count in counts.items() if key not in admits}
     expected = moved_counts(ledger.expected(configuration), moved)
     rises = sorted(key for key, count in counts.items() if count > expected.get(key, 0))
     if rises and mode == WriteMode.LOWER:
@@ -599,16 +681,43 @@ def write_counts(rule: Rule, ledger: Ledger, counts: Mapping[Key, int], configur
     if is_base:
         new_base = {key: Entry(key, count, base[key].reason if key in base else (reason or "")) for key, count in
                     counts.items()}
-        return replace(ledger, base=new_base, deltas=deltas)
+        return replace(ledger, base={**new_base, **kept_admits},
+                       deltas=other_deltas(ledger, deltas, counts, moved, keep_others))
     # The difference rows are relative to the stored base rows, which keep the old path of a moved file until a write
     # of the base moves them.
-    base_counts = {key: int(entry.value) for key, entry in ledger.base.items()}
-    table = {key: Entry(key, counts.get(key, 0) - base_counts.get(key, 0),
-                        deltas.get(configuration, {}).get(key, Entry(key, 0, reason or "")).reason)
-             for key in set(counts) | set(base_counts) if counts.get(key, 0) != base_counts.get(key, 0)}
+    stored = base_counts(ledger.base)
     new_deltas = dict(deltas)
-    new_deltas[configuration] = table
-    return replace(ledger, deltas=new_deltas)
+    new_deltas[configuration] = difference_table(counts, stored, deltas.get(configuration, {}), reason or "")
+    return replace(ledger, base={**base_counts_rows(ledger.base), **kept_admits}, deltas=new_deltas)
+
+
+def base_counts_rows(base: Mapping[Key, Entry]) -> dict[Key, Entry]:
+    """Return each base row of a count ledger with no row of the value admit."""
+    return {key: entry for key, entry in base.items() if entry.value != ADMIT_VALUE}
+
+
+def other_deltas(ledger: Ledger, deltas: Mapping[str, Mapping[Key, Entry]], counts: Mapping[Key, int],
+                 moved: Mapping[str, str], keep_others: bool) -> dict[str, dict[Key, Entry]]:
+    """Return the difference rows of each other configuration after a write of the base counts `counts` (THE WRITE).
+
+    With keep_others, each other configuration keeps its count of each key.
+    Without keep_others, each other configuration keeps its difference rows.
+    When a row gives a count below 0, the key gets the count 0 in that
+    configuration.  Complexity: linear in the rows.
+    """
+    result: dict[str, dict[Key, Entry]] = {}
+    for item in ledger.configurations[1:]:
+        old = deltas.get(item.name, {})
+        if keep_others:
+            result[item.name] = difference_table(moved_counts(ledger.expected(item.name), moved), counts, old)
+            continue
+        table: dict[Key, Entry] = {}
+        for key, entry in old.items():
+            delta = max(int(entry.value), -counts.get(key, 0))
+            if delta != 0:
+                table[key] = replace(entry, value=delta)
+        result[item.name] = table
+    return result
 
 
 def rows_of_configuration(ledger: Ledger, name: str, facts: Sequence[tuple[str, str]],
@@ -630,11 +739,13 @@ def rows_of_counts(ledger: Ledger, name: str, facts: Sequence[tuple[str, str]], 
     """
     if ledger.policy != Policy.COUNT or name == ledger.base_name:
         raise LedgerError("only a configuration other than the base of a count ledger has rows to import")
-    base_counts = {key: int(entry.value) for key, entry in ledger.base.items()}
+    admits = ledger.admits()
+    table = difference_table({key: count for key, count in counts.items() if key not in admits},
+                             base_counts(ledger.base), {})
     lines = [rows_grammar.render(["configuration", name, key, value]) for key, value in facts]
-    lines += [rows_grammar.render([f"{DELTA_MARK}{name}"], [key.path, key.kind, f"{counts.get(key, 0) - base_counts.get(key, 0):+d}",
+    lines += [rows_grammar.render([f"{DELTA_MARK}{name}"], [key.path, key.kind, f"{int(table[key].value):+d}",
                                                             key.entity, ""])
-              for key in sorted(set(counts) | set(base_counts)) if counts.get(key, 0) != base_counts.get(key, 0)]
+              for key in sorted(table)]
     return [f"{ROW_MARK}{line}" for line in lines]
 
 

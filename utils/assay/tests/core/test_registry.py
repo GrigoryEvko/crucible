@@ -64,6 +64,14 @@ def rule_cases(expect: Callable[[str, bool], None]) -> None:
            len(problems) == 1 and "line 3" in str(problems[0]))
     _, problems = rule_registry.examine("rule alpha-rule engine=meta\n", "planted.txt")
     expect("a registry with no format row is refused", any("format 1" in str(problem) for problem in problems))
+    expect("planted_rules() gives each rule of the planted rows by its identifier",
+           list(rule_registry.planted_rules([GOOD_RULE])) == ["alpha-rule"])
+    try:
+        rule_registry.planted_rules([GOOD_RULE.replace("engine=meta", "engine=regex")])
+        is_refused = False
+    except ValueError:
+        is_refused = True
+    expect("planted_rules() refuses a planted row that does not read", is_refused)
 
 
 def other_row_cases(expect: Callable[[str, bool], None]) -> None:

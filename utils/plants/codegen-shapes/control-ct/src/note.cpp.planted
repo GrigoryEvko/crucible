@@ -1,0 +1,2 @@
+// role::CtCrypto and atom::constant_time, named in a comment only.
+inline constexpr char spelled[] = "role::CtCrypto and atom::constant_time";

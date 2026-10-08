@@ -343,6 +343,41 @@ def demangle_cases(expect: testing.Expect) -> None:
     expect("demangle of no name starts no tool", elf.demangle(()) == ())
 
 
+# Each name, with its first scope and the operator of a global operator new or delete (THE MANGLED SCOPE).
+SCOPES = (
+    ("_Znwm", "", "nw"),
+    ("_ZdlPvm", "", "dl"),
+    ("_ZnwmSt11align_val_t", "", "nw"),
+    ("_ZdaPv", "", "da"),
+    ("__cxa_throw", "", ""),
+    ("_ZTVN10__cxxabiv120__si_class_type_infoE", "__cxxabiv1", ""),
+    ("_ZSt9terminatev", "std", ""),
+    ("_ZNKSt5ctypeIcE13_M_widen_initEv", "std", ""),
+    ("_ZTISt9bad_alloc", "std", ""),
+    ("_ZTTSt14basic_ifstreamIcSt11char_traitsIcEE", "std", ""),
+    ("_ZNSaIcEC1Ev", "std", ""),
+    ("_ZNSt3_V215system_categoryEv", "std", ""),
+    ("_ZTSSt9bad_alloc", "std", ""),
+    ("_ZNVKRSt3fooEv", "std", ""),
+    ("_ZGVZN3app4mainEvE4seed", "", ""),
+    ("_ZThn8_N3app5ShapeD1Ev", "", ""),
+    ("_ZN9__gnu_cxx27__verbose_terminate_handlerEv", "__gnu_cxx", ""),
+    ("__once_proxy", "", ""),
+    ("_ZN8crucible6detail5entryEv", "crucible", ""),
+    ("_ZN4stdx1fEv", "stdx", ""),
+    ("_ZN3std1fEv", "std", ""),
+    ("_ZTW8the_seed", "the_seed", ""),
+    ("_ZN", "", ""),
+)
+
+
+def scope_cases(expect: testing.Expect) -> None:
+    """Check outer_scope() and global_operator() on each name of SCOPES."""
+    for symbol, scope, operator in SCOPES:
+        expect(f"the first scope of {symbol} is {scope or 'empty'}", elf.outer_scope(symbol) == scope)
+        expect(f"the global operator of {symbol} is {operator or 'none'}", elf.global_operator(symbol) == operator)
+
+
 def compile_cases(expect: testing.Expect) -> None:
     """Compile UNIT, put it in an archive with ar, and read its symbols and relocations."""
     cxx = testing.patched_compiler()
@@ -389,6 +424,7 @@ def main(argv: list[str]) -> int:
         archive_cases,
         file_cases,
         demangle_cases,
+        scope_cases,
         compile_cases,
     )
     return testing.run(__name__.removeprefix("assay."), argv, groups)

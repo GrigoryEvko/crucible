@@ -324,73 +324,6 @@ crucible_test(test_kernel_cache_levels)
 crucible_test(test_trace_ring_hot_path)
 crucible_test(test_cipher_commit_lifetime)
 crucible_test(test_chase_lev_deque)
-# The two properties -fno-exceptions and -fno-rtti stood for, held on the
-# artifact of THIS build rather than asserted by flags neither preset has
-# ever carried.  The gate reads each static library of the tree: each
-# STATIC_LIBRARY target of the BUILDSYSTEM_TARGETS property of the root
-# directory and of each directory that the root adds before this one, other
-# than test/.  A new library joins the gate with no edit here.  A directory
-# that the root adds after this one (bench/, examples/) holds no library of
-# the tree.  utils/ledgers/no-throw-no-rtti.txt admits the throws and the
-# classes that a library header makes.  The self-test needs the project
-# compiler, because the system g++ may be too old for the fixtures.
-crucible_script_test(NAME no_throw_no_rtti_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-throw-no-rtti --self-test)
-set_tests_properties(no_throw_no_rtti_self_test PROPERTIES
-  ENVIRONMENT "CRUCIBLE_CXX=${CMAKE_CXX_COMPILER}"
-  LABELS "ci_guard"
-  SKIP_RETURN_CODE 3)
-set(_no_throw_artifacts "")
-set(_no_throw_directories "${CMAKE_SOURCE_DIR}")
-while(_no_throw_directories)
-  list(POP_FRONT _no_throw_directories _no_throw_directory)
-  if(_no_throw_directory STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    continue()
-  endif()
-  get_property(_no_throw_targets DIRECTORY "${_no_throw_directory}" PROPERTY BUILDSYSTEM_TARGETS)
-  foreach(_no_throw_target IN LISTS _no_throw_targets)
-    get_target_property(_no_throw_type ${_no_throw_target} TYPE)
-    if(_no_throw_type STREQUAL "STATIC_LIBRARY")
-      list(APPEND _no_throw_artifacts "$<TARGET_FILE:${_no_throw_target}>")
-    endif()
-  endforeach()
-  get_property(_no_throw_subdirectories DIRECTORY "${_no_throw_directory}" PROPERTY SUBDIRECTORIES)
-  list(APPEND _no_throw_directories ${_no_throw_subdirectories})
-endwhile()
-if(NOT "$<TARGET_FILE:crucible>" IN_LIST _no_throw_artifacts
-   OR NOT "$<TARGET_FILE:foundation>" IN_LIST _no_throw_artifacts)
-  message(FATAL_ERROR "test/CMakeLists.txt: the no-throw gate found no static library crucible or foundation in "
-                      "the root directory, so it would read the wrong set of artifacts.  Define the libraries of "
-                      "the tree in the root CMakeLists.txt, before add_subdirectory(test).")
-endif()
-crucible_script_test(NAME no_throw_no_rtti
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule no-throw-no-rtti ${_no_throw_artifacts})
-set_tests_properties(no_throw_no_rtti PROPERTIES
-  LABELS "ci_guard"
-  SKIP_RETURN_CODE 3)
-# The gate reads the output of the compiler.  The strict UBSan checks test
-# the dynamic type of each polymorphic object, so an artifact of that preset
-# defines the typeinfo of library classes such as std::_Sp_counted_base.
-# The release, default, tsan and verify presets run the gate.
-if(CRUCIBLE_UBSAN_STRICT)
-  set_tests_properties(no_throw_no_rtti PROPERTIES DISABLED TRUE)
-endif()
-# libstdcxx_symbols — utils/assay/guard/legacy/check_libstdcxx_symbols.py holds the
-# libstdc++ symbols of the libraries foundation, fixy and crucible against
-# utils/ledgers/libstdcxx-symbols.txt, for each build kind that the
-# ledger holds (rule R5 of the quarantine plan).  A new symbol fails, and a
-# symbol that goes fails until --write.  The inputs file names the archives
-# and the compiler, so a --write by hand reads the inputs of the test.  The
-# check exits 3 for a kind or a target that the ledger does not hold.
-file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/libstdcxx-symbols-inputs.txt
-  CONTENT "compiler ${CRUCIBLE_REAL_CXX}\narchive $<TARGET_FILE:foundation>\narchive $<TARGET_FILE:fixy>\narchive $<TARGET_FILE:crucible>\n")
-crucible_script_test(NAME libstdcxx_symbols
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule libstdcxx-symbols --build-dir ${CMAKE_BINARY_DIR}
-          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-crucible_script_test(NAME libstdcxx_symbols_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule libstdcxx-symbols --self-test)
-set_tests_properties(libstdcxx_symbols_self_test PROPERTIES ENVIRONMENT "CRUCIBLE_CXX=${CRUCIBLE_REAL_CXX}")
-set_tests_properties(libstdcxx_symbols libstdcxx_symbols_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
 
 # Every configure refuses a compiler that does not have each fix in
 # utils/toolchain/gcc/patches.  This test runs the probes on the compiler of the
@@ -5287,8 +5220,8 @@ endfunction()
 cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_checks)
 
 # build_target_self_test — utils/assay/core/target.py gives the build kind
-# and the target tier to the rule quarantine and to the libstdc++ symbols
-# check.  The self-test reads planted target help of x86_64 and aarch64 GCC.
+# and the target tier to the rules quarantine and artifact-symbols.  The
+# self-test reads planted target help of x86_64 and aarch64 GCC.
 crucible_script_test(NAME build_target_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest core.target)
 set_tests_properties(build_target_self_test PROPERTIES LABELS "ci_guard")
@@ -5497,6 +5430,20 @@ endforeach()
 # closure imports the module of each hidden subcommand of the masters in a
 # new interpreter.
 crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR})
+# The rules of the engine elf read the objects, the static libraries and the
+# compile database of this build (cmake/Guards.cmake).  The test modules of
+# the runner of the engine and of its two rules build planted libraries and
+# probe units with the compiler of this build.  The test of codegen-shapes
+# also compiles the probe unit of this build with a planted header.
+crucible_elf_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR})
+foreach(_assay_test guard.engines.elf.test_runner guard.engines.elf.test_artifact_symbols
+        guard.engines.elf.test_codegen_shapes)
+  string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
+  crucible_script_test(NAME ${_assay_test_name}
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})
+  set_tests_properties(${_assay_test_name} PROPERTIES LABELS "ci_guard;elf"
+    ENVIRONMENT "ASSAY_TEST_CXX=${CRUCIBLE_REAL_CXX};ASSAY_TEST_BUILD_DIR=${CMAKE_BINARY_DIR}")
+endforeach()
 foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test_proc core.test_git
         core.test_paths core.test_testing readers.test_compdb readers.test_python readers.test_tool_reports
         readers.test_sections guard.test_history guard.test_import_closure guard.engines.meta.test_package

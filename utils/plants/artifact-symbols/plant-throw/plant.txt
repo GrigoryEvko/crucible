@@ -1,0 +1,3 @@
+# A throw of an int in a live function of the library crucible.  No row admits it.
+library foundation base.cpp
+library crucible base.cpp throws.cpp

@@ -9,7 +9,7 @@
 // trap a raw C array sets.
 //
 // There is no throwing accessor, because nothing in this tree throws.
-// The rule no-throw-no-rtti holds that property on each artifact. Bounds come instead from three tiers: a subscript the
+// The rule artifact-symbols holds that property on each artifact. Bounds come instead from three tiers: a subscript the
 // caller vouches for, a proof-token index that was checked once when it
 // was built, and an index fixed at compile time that cannot be out of
 // range at all.

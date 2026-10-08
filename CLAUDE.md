@@ -683,7 +683,7 @@ struct TensorSlot {
 
 **Cost of violation:** silent parameter swap, implicit conversion bug, type confusion.
 
-**Compiler enforcement:** `-Werror=conversion -Werror=sign-conversion -Werror=arith-conversion -Werror=enum-conversion -Werror=old-style-cast`, plus the rule `no-throw-no-rtti` (`utils/assay/guard/legacy/check_no_throw_no_rtti.py`), which holds the no-RTTI property on the artifact.
+**Compiler enforcement:** `-Werror=conversion -Werror=sign-conversion -Werror=arith-conversion -Werror=enum-conversion -Werror=old-style-cast`, plus the rule `artifact-symbols` (`utils/assay/guard/engines/elf/artifact_symbols.py`), which holds the no-RTTI property on the artifact.
 
 **Discipline:**
 - Every semantic value is a strong type. No raw `uint32_t` for anything with meaning.
@@ -732,7 +732,7 @@ void process(const TraceEntry* entry) {
 
 **Cost of violation:** use-after-free, double-free, memory corruption, RCE.
 
-**Compiler enforcement:** `-fsanitize=address` in debug, `-Werror=use-after-free=3 -Werror=free-nonheap-object -Werror=dangling-pointer=2 -Werror=mismatched-new-delete -Wanalyzer-use-after-free -Wanalyzer-double-free`. Nothing in the tree throws, so there is no "destructor during stack unwind" class to eliminate — the rule `no-throw-no-rtti` holds that on the artifact rather than a flag holding it on our TUs.
+**Compiler enforcement:** `-fsanitize=address` in debug, `-Werror=use-after-free=3 -Werror=free-nonheap-object -Werror=dangling-pointer=2 -Werror=mismatched-new-delete -Wanalyzer-use-after-free -Wanalyzer-double-free`. Nothing in the tree throws, so there is no "destructor during stack unwind" class to eliminate — the rule `artifact-symbols` holds that on the artifact rather than a flag holding it on our TUs.
 
 **Discipline:**
 - All graph/DAG memory lives in an Arena (bump pointer, ~2 ns alloc, no fragmentation, no UAF). Arena bulk-frees at epoch boundary.
@@ -879,8 +879,8 @@ At the end of the migration, the families of §XXII replace each row of these ta
 
 | Feature | Ban via | Reason |
 |---|---|---|
-| Exceptions | **not a flag** — the rule `no-throw-no-rtti` | `-fno-exceptions` is NOT in this build and never was. It would not compile `src/fixy/concurrent/Topology.cpp`, whose eight catch sites turn a failed sysfs read into a conservative topology rather than a crash. Nothing in the tree throws: error paths are `std::expected` or a cold `[[noreturn]]` helper that calls `std::abort()` (§XII). The guard reads each static library of the tree, and it refuses a reference to `__cxa_throw` or `__cxa_rethrow`, also one that a library header makes. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, and `utils/ledgers/no-throw-no-rtti.txt` admits the function of each other such throw, with its reason |
-| RTTI | **not a flag** — the rule `no-throw-no-rtti` | `-fno-rtti` is NOT in this build either, and on this tree it is a no-op: zero `dynamic_cast`, zero `typeid`, zero `std::type_info`, and every `virtual` lives in a planning document. Dispatch is a `kind` enum plus `static_cast`. The guard checks that the artifact references no `__dynamic_cast` and defines no typeinfo or vtable, other than those of a class that `utils/ledgers/no-throw-no-rtti.txt` admits: the `std::thread::_State_impl` classes that `std::jthread` uses |
+| Exceptions | **not a flag** — the rule `artifact-symbols` | `-fno-exceptions` is NOT in this build and never was. It would not compile `src/fixy/concurrent/Topology.cpp`, whose eight catch sites turn a failed sysfs read into a conservative topology rather than a crash. Nothing in the tree throws: error paths are `std::expected` or a cold `[[noreturn]]` helper that calls `std::abort()` (§XII). The guard reads each static library of the tree, and it refuses a reference to `__cxa_throw` or `__cxa_rethrow`, also one that a library header makes. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, and a row `throw` of `utils/ledgers/artifact-symbols.txt` admits the function of each other such throw, with its reason |
+| RTTI | **not a flag** — the rule `artifact-symbols` | `-fno-rtti` is NOT in this build either, and on this tree it is a no-op: zero `dynamic_cast`, zero `typeid`, zero `std::type_info`, and every `virtual` lives in a planning document. Dispatch is a `kind` enum plus `static_cast`. The guard checks that the artifact references no `__dynamic_cast` and defines no typeinfo or vtable, other than those of a class that a row `vtable` of `utils/ledgers/artifact-symbols.txt` admits: the `std::thread::_State_impl` classes that `std::jthread` uses |
 | Coroutines on hot path | discipline | Heap allocation, unpredictable latency |
 | `volatile` for concurrency | P1152R4 deprecated | `volatile` does not order; use `std::atomic` |
 | `[=]` capturing `this` | P0806R2 deprecated; `-Werror=deprecated-this-capture` | Lifetime footgun |
@@ -916,7 +916,7 @@ At the end of the migration, the families of §XXII replace these tables. The op
 | `std::bit_cast` (C++20) | A copy of the bits of a value into a different type. The result is undefined behavior when the bit pattern is no value of the destination type. For a `bool` from the byte 2, a constant evaluation gives `false`. At run time, `-O0` gives a value that is true in a condition and not equal to `true`, and `-O3` gives `true`. New code does not use `std::bit_cast` to make a `bool` or a value of an enumeration. In a quarantined file, the restriction `plain-result` of its admit row refuses a destination type that holds one (§XXII). A value from outside the program, such as the bytes of a file or of the wire, becomes a value of an enumeration only after a comparison with its enumerators. The Scalar family replaces `std::bit_cast` (§XXII). The admitted list keeps it until that change is on main |
 | `std::saturating_add` / `saturating_sub` / `saturating_mul` (C++26) | Saturation arithmetic at size-math sites. libstdc++ 16 declares these names in `<numeric>` and has no `std::add_sat`. Call sites use `foundation::sat::add_sat` / `sub_sat` / `mul_sat` (`include/foundation/Saturate.h`), which return the exact result and call the library only on overflow |
 | `std::breakpoint()` (C++26) | Hardware breakpoint for debug asserts. **libstdc++ 16 status:** the `<debugging>` header declares the symbol, and the library ships no definition — use the `foundation::detail::breakpoint*` stand-ins in `include/foundation/Platform.h` |
-| `std::unreachable()` (C++23) | Do not use it in new code. `-D_GLIBCXX_ASSERTIONS` (Debug, TSan and UBSan-strict) makes it a trap. Release, verify and PGO keep `__builtin_unreachable()`, and a call of it is undefined behavior. A switch that misses a case then traps in Debug and is undefined in Release. When a value outside the enumerators is possible, the `default` arm calls `fixy::unreachable()` (`foundation::core::unreachable()` in the base, `include/foundation/core/Report.h`). That call ends the process in each build. Only three test files name `std::unreachable()`. `test/shape/core_shapes.cpp` calls it in an `ORACLE` opt-out region, as the raw form that the check of the core shapes compares with `fixy::unreachable()`. The plant `utils/plants/quarantine/plant-pending/` of the plugin calls it, and the witness of the plugin shows that the call is a finding. The flag matrix names it only in unevaluated operands. The Report family replaces it, and the admitted list does not admit it (§XXII) |
+| `std::unreachable()` (C++23) | Do not use it in new code. `-D_GLIBCXX_ASSERTIONS` (Debug, TSan and UBSan-strict) makes it a trap. Release, verify and PGO keep `__builtin_unreachable()`, and a call of it is undefined behavior. A switch that misses a case then traps in Debug and is undefined in Release. When a value outside the enumerators is possible, the `default` arm calls `fixy::unreachable()` (`foundation::core::unreachable()` in the base, `include/foundation/core/Report.h`). That call ends the process in each build. Only three test files name `std::unreachable()`. `test/shape/core_shapes.cpp` calls it in an `ORACLE` opt-out region, as the raw form that the rule `codegen-shapes` compares with `fixy::unreachable()`. The plant `utils/plants/quarantine/plant-pending/` of the plugin calls it, and the witness of the plugin shows that the call is a finding. The flag matrix names it only in unevaluated operands. The Report family replaces it, and the admitted list does not admit it (§XXII) |
 | `std::countr_zero` / `popcount` (C++20) | Bit manipulation primitives |
 | `std::span` (C++20) | Pointer+count replacement |
 | `std::jthread` (C++20) | Auto-joining thread, no destructor-terminate |
@@ -988,7 +988,7 @@ These C++26 library features are spec'd and the project will adopt them, but lib
 here as common flags and neither has ever been on a compile line. The properties
 they stood for do hold — measured 2026-09-20: zero `__cxa_throw` references and
 zero typeinfo or vtable definitions in `libcrucible.a` in every preset — and
-the rule `no-throw-no-rtti` is what holds them, on the artifact, where a
+the rule `artifact-symbols` is what holds them, on the artifact, where a
 throw arriving through an instantiated library header is also visible. Adding the
 flags is the wrong repair; the opt-out table in §III says why for each.
 
@@ -1037,7 +1037,10 @@ Release build in each build type. The test `ct_taint_flags`
 (`cmake/CodeFlagsCheck.cmake`) reads the flags of each compile from the CMake
 file API. It fails when a target of `test/ct` and the foundation library do not
 have the same code flags, apart from the flags that change with the kind of
-build.
+build. The probe unit of `test/shape` takes the code lists through
+`crucible_code_target()`, with the fixed flags of the rule `codegen-shapes`.
+That rule reads the flags of the probe unit, of the foundation library and of
+`test/ct/dudect.cpp` from the compile database (§XXII R12).
 
 In each preset, `cmake/BuildLauncher.cmake` puts `loop step` (`utils/assay/loop/step.py`)
 in front of each compile command and in front of ccache. It also puts the
@@ -1974,7 +1977,7 @@ CRUCIBLE_HOT void scan(
 
 ## XII. Error Handling and Debug Assertions
 
-Nothing throws. Not because a flag forbids it — `-fno-exceptions` is not in this build — but because every error path is one of the three tiers below. The ci_guard test `no_throw_no_rtti` (`guard check --rule no-throw-no-rtti`, `utils/assay/guard/legacy/check_no_throw_no_rtti.py`) reads each static library that the root `CMakeLists.txt` defines (`test/CMakeLists.txt` finds them in the build system, so a new library joins with no edit). It fails when a library references `__cxa_throw` or `__cxa_rethrow` in a function that a link can keep. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, the failure of an allocation inside libstdc++, which ends the process as an exhausted memory does. `utils/ledgers/no-throw-no-rtti.txt` admits each other throw that a library header makes, with its reason. The test reads no shared library, no test executable and not the vessel. Three tiers of error response:
+Nothing throws. Not because a flag forbids it — `-fno-exceptions` is not in this build — but because every error path is one of the three tiers below. The ci_guard test `guard_artifact_symbols` (`guard check --rule artifact-symbols`, `utils/assay/guard/engines/elf/artifact_symbols.py`) reads each static library that the root `CMakeLists.txt` defines. It finds them in the code model of the CMake file API, so a new library joins with no edit. It fails when a library references `__cxa_throw` or `__cxa_rethrow` in a function that a link can keep. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, the failure of an allocation inside libstdc++, which ends the process as an exhausted memory does. A row `throw` of `utils/ledgers/artifact-symbols.txt` admits each other throw that a library header makes, with its reason. The test reads no shared library, no test executable and not the vessel. Three tiers of error response:
 
 | Class | Mechanism | Runtime cost | Example |
 |---|---|---|---|
@@ -2462,7 +2465,7 @@ A measured rule of `utils/registry.txt` holds the two thresholds of each budget 
 | `cache-size` | The size of one cache under the root of `utils/assay/core/cache.py`, from a sample of its files, as a multiple of its row of `LIMITS` | 1 | 2 | The test `cache_size` | Test run |
 | Raised threshold, grown ledger | A threshold of a measured rule above its lowest committed value, a ledger above its lowest committed row count, and a raised count of `utils/ledgers/quarantine.txt`, from the git history | Each one, with the commits that raised it | A rise whose commits give no measurement of the rule, and a raise of a quarantine count whose commit changes neither the plugin nor the rule table, unless `utils/ledgers/history.txt` admits it | The test `guard_history` | Test run |
 | Quarantine findings | The distinct findings of the quarantine plugin in each file, kind and entity, from the sections of the objects of `all` (§XXII "The ratchet") | Each directory with a row of `utils/ledgers/quarantine.txt` | A count above or below its ledger row, and a finding in a file that the ledger does not hold | The test `guard_plugin` | Test run, CI build job |
-| libstdc++ symbols | The libstdc++ symbols that the objects of `libfoundation.a`, `libfixy.a` and `libcrucible.a` reference, for each build kind of `utils/ledgers/libstdcxx-symbols.txt` (§XXII "The doors (R4, R5)") | Each library of the ledger | A symbol with no row, or a row whose symbol goes | The test `libstdcxx_symbols` | Test run |
+| libstdc++ symbols | The libstdc++ symbols that the objects of `libfoundation.a`, `libfixy.a` and `libcrucible.a` reference, for each build kind of `utils/ledgers/artifact-symbols.txt` (§XXII "The doors (R4, R5)") | Each library of the ledger | A symbol with no row, or a row whose symbol goes | The test `guard_artifact_symbols` | Test run |
 | `fixture-cpu` | The user and system CPU time of one cold fixture compile | 5 s | 15 s. A warning only when the compile has an instruction count | The fixture driver | Test run |
 | `fixture-instructions` | The user instructions of one cold fixture compile | 28 G | 45 G | The fixture driver | Test run |
 | `parse-total` | The bytes that the compiles of the objects of `all` and of the fixtures read, against the baseline | A growth over 2 % | A growth over 5 %, or a fall over 2 % | The test `parse_total` | Test run, after the fixtures |
@@ -3076,7 +3079,7 @@ Slice 4.1 of the plan removes each of these. A base record replaces each struct,
 
 Under R5, no object of `libcrucible.a` uses a libstdc++ symbol outside a short allowlist. The same rule applies to each binary other than the vessel library. The plan adds a link guard for R5 at the S4 gate.
 
-Until that gate, the test `libstdcxx_symbols` (`utils/assay/guard/legacy/check_libstdcxx_symbols.py`) holds R5 as a ratchet. `utils/ledgers/libstdcxx-symbols.txt` holds the libstdc++ symbols that the objects of `libfoundation.a`, `libfixy.a` and `libcrucible.a` reference. It holds them for each build kind and target tier that a configuration of the ledger names (`utils/assay/core/target.py`), at this time the Debug build and the Release build on x86_64. The first configuration is the base, and the rows of the other configuration give its difference from the base. A build of a kind or a tier that the ledger does not hold skips the test with one line, and it prints its rows for `--import LOG`, as the quarantine ratchet does. A new symbol fails the test. A row whose symbol goes also fails the test, until the same commit writes the ledger again with `--write`. A symbol of the allowlist of plan §13.4 has the mark `allow`, and each other symbol has the mark `ratchet`.
+Until that gate, the rule `artifact-symbols` (`utils/assay/guard/engines/elf/artifact_symbols.py`, the test `guard_artifact_symbols`) holds R5 as a ratchet. `utils/ledgers/artifact-symbols.txt` holds the libstdc++ symbols that the objects of `libfoundation.a`, `libfixy.a` and `libcrucible.a` reference. It holds them for each build kind and target tier that a configuration of the ledger names (`utils/assay/core/target.py`), at this time the Debug build and the Release build on x86_64. The first configuration is the base, and the rows of the other configuration give its difference from the base. A build of a kind or a tier that the ledger does not hold judges only the throws and the classes. It prints one line, and its rows for `guard write --rule artifact-symbols --import LOG`, as the quarantine ratchet does. A new symbol fails the test. A row whose symbol goes also fails the test, until the same commit writes the ledger again with `guard write --rule artifact-symbols`. A symbol of the allowlist of plan §13.4 has the mark `allow`, and each other symbol has the mark `ratchet`. The rows `throw` and `vtable` of the ledger belong to no configuration, and each build judges them.
 
 ### The admitted list and its audit
 
@@ -3120,7 +3123,7 @@ A change of a file or an arm that only a later configuration compiles runs `guar
 
 ### Hot path and compile time (R12 to R17)
 
-A family operation on the hot path compiles to the same instructions as the code that it replaces (R12). The proof of a safe access comes from a type, such as an index type, a fixed extent or a memory order in the operation name. It does not come from a branch at each access. Rules 1 to 5 of §XV "Compile time" are R13 to R17.
+A family operation on the hot path compiles to the same instructions as the code that it replaces (R12). The rule `codegen-shapes` (`utils/assay/guard/engines/elf/codegen_shapes.py`, the test `guard_codegen_shapes`) holds R12 for each probe of `test/shape/core_shapes.cpp`. It also refuses a branch, a call, a division and an indexed load in the compiled primitives of `fixy::ct`. The proof of a safe access comes from a type, such as an index type, a fixed extent or a memory order in the operation name. It does not come from a branch at each access. Rules 1 to 5 of §XV "Compile time" are R13 to R17.
 
 ---
 

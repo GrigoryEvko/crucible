@@ -1,0 +1,13 @@
+#include <new>
+int allocation_entry(int input) {
+    if (input < 0) {
+        throw std::bad_alloc();
+    }
+    return input;
+}
+int array_entry(int input) {
+    if (input < 0) {
+        throw std::bad_array_new_length();
+    }
+    return input;
+}

@@ -17,7 +17,9 @@ quarantine plugin (assay.guard.engines.plugin.witness).  It reads four options:
 That witness does not use the runner of the engine, and the command selects
 its rules itself.  It selects each rule of the engine plugin that the call
 names.  With --engine plugin, it also selects each rule of the engine with a
-module or with plants.
+module or with plants.  The witness of the engine elf builds each plant with
+the patched compiler that ASSAY_TEST_CXX names
+(assay.guard.engines.elf.runner, THE PLANTS).
 
 The status is 1 when a witness fails, 2 on a usage error, 77 when each witness
 cannot run, and else 0.
@@ -117,6 +119,11 @@ def main(argv: list[str]) -> int:
         from assay.guard.engines.tsast import runner as tree_runner
 
         statuses += [tree_runner.witness(rule, REPO_ROOT) for rule in tree_rules]
+    elf_rules = [rule for rule in chosen if rule.engine == rule_registry.Engine.ELF]
+    if elf_rules:
+        from assay.guard.engines.elf import runner as elf_runner
+
+        statuses += [elf_runner.witness(rule, REPO_ROOT) for rule in elf_rules]
     if compiled:
         from assay.guard.engines.plugin import witness as plugin_witness
 

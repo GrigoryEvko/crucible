@@ -1,0 +1,4 @@
+# mask_from_bit tests its operand and traps, so the compiled select and cswap carry a conditional branch.
+part constant-time
+unit ct_dudect test/ct/dudect.cpp | -std=c++26 -freflection -fcontracts -fno-plt -O3 -march=native -DNDEBUG -fno-sanitize=all -fcontract-evaluation-semantic=observe -fharden-compares -fharden-conditional-branches
+unit foundation src/foundation/unit.cpp | -std=c++26 -freflection -fcontracts -fno-plt -O1 -D_GLIBCXX_ASSERTIONS=1 -D_GLIBCXX_SANITIZE_VECTOR=1

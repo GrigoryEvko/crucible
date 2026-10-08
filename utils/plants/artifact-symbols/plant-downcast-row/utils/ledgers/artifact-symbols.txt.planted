@@ -1,0 +1,4 @@
+# A planted ledger: a row of the kind downcast, which no row of the rule can be.
+format 1
+rule artifact-symbols
+@build/libcrucible.a | downcast | admit | __dynamic_cast | a planted row of a refused kind
