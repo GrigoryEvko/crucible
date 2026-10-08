@@ -18,13 +18,21 @@ THE TIME LIMIT
     The command runs in a process group of its own.  At the limit, the
     module sends SIGTERM to the group, waits grace_s for the end of the
     command, and then sends SIGKILL to the group.  So no process of the
-    group runs on after the limit.  An interrupt of this process, such as
-    KeyboardInterrupt, sends SIGKILL to the group, and then the interrupt
-    goes on.  QUICK_S, TOOL_S and BUILD_S are the limits of three classes of
-    work: a query that a tool answers at once, one run of a tool, and a
-    build or a test run of the tree.  The module reaps the command only
-    after its last signal, so the process group keeps its identity while the
-    module can send a signal to it.
+    group runs on after the limit.  QUICK_S, TOOL_S and BUILD_S are the
+    limits of three classes of work: a query that a tool answers at once,
+    one run of a tool, and a build or a test run of the tree.  The module
+    reaps the command only after its last signal, so the process group keeps
+    its identity while the module can send a signal to it.
+
+AN INTERRUPT
+    The terminal sends SIGINT only to its foreground process group, and the
+    command runs in a group of its own.  So a KeyboardInterrupt in the wait
+    sends SIGINT to the group of the command, and the wait goes on.  The
+    command can then stop in its own way: ctest stops its tests and prints
+    its summary, and ninja prints that the build stopped.  When the command
+    ends, the wait raises the KeyboardInterrupt again.  The time limit still
+    applies.  A second KeyboardInterrupt, or another exception in the wait,
+    sends SIGKILL to the group, and then the exception goes on.
 
 THE ENVIRONMENT
     A child gets the environment of this process with no change, or the full
@@ -341,7 +349,7 @@ class Running:
 
     __slots__ = ("command", "pid", "_popen", "_started", "_deadline", "_pidfd", "_selector", "_has_exited",
                  "_reads", "_chunks", "_stdout_fd", "_stderr_fd", "_input", "_input_offset", "_lines", "_next_line",
-                 "_tail", "_phase", "_phase_at", "_completed", "_timed_out")
+                 "_tail", "_phase", "_phase_at", "_completed", "_timed_out", "_was_interrupted")
 
     def __init__(self, command: Command, popen: "subprocess.Popen[bytes]") -> None:
         """Watch a command that subprocess started: its pidfd, its pipes and its limit.
@@ -361,6 +369,7 @@ class Running:
         self._phase_at = 0.0
         self._completed: Completed | None = None
         self._timed_out = False
+        self._was_interrupted = False
         self._reads: set[int] = set()
         self._chunks: dict[int, list[bytes]] = {}
         self._stdout_fd = popen.stdout.fileno() if popen.stdout is not None else -1
@@ -416,7 +425,7 @@ class Running:
         if self._next_line < len(self._lines):
             self._next_line += 1
             return self._lines[self._next_line - 1]
-        if self._timed_out:
+        if self._timed_out or self._was_interrupted:
             self.wait()
         raise StopIteration
 
@@ -424,10 +433,13 @@ class Running:
         """Wait for the end of the command and of its outputs, and return its result.
 
         Raises:
+            KeyboardInterrupt: If an interrupt came in the wait (AN INTERRUPT).  The command ended first
             TimedOut: If the command runs past its limit
         """
         while self._completed is None:
             self._advance()
+        if self._was_interrupted:
+            raise KeyboardInterrupt
         if self._timed_out:
             raise TimedOut(f"the command `{self.command.shown()}` ran past its limit of {self.command.timeout_s:g} s, "
                            f"so its process group got SIGTERM and then SIGKILL", self.command, self._completed)
@@ -442,9 +454,22 @@ class Running:
         return self._completed
 
     def _advance(self) -> None:
-        """Do one step of the loop.  An interrupt or an error sends SIGKILL to the group, and then it goes on."""
+        """Do one step of the loop.
+
+        The first KeyboardInterrupt sends SIGINT to the group, and the loop
+        goes on (AN INTERRUPT).  A second one, an interrupt after the limit,
+        or another exception sends SIGKILL to the group, and then it goes on.
+        """
         try:
             self._step()
+        except KeyboardInterrupt:
+            if self._completed is not None:
+                raise
+            if self._was_interrupted or self._phase != RUNNING:
+                self._kill_now()
+                raise
+            self._was_interrupted = True
+            self._signal_interrupt()
         except BaseException:
             if self._completed is None:
                 self._kill_now()
@@ -547,6 +572,15 @@ class Running:
         self._phase_at = time.monotonic()
         try:
             os.killpg(self.pid, signal.SIGTERM if phase == TERMINATED else signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    def _signal_interrupt(self) -> None:
+        """Send SIGINT to the process group of the command, as a terminal does to its foreground group."""
+        import signal
+
+        try:
+            os.killpg(self.pid, signal.SIGINT)
         except ProcessLookupError:
             pass
 

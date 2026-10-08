@@ -145,6 +145,84 @@ def limit_cases(expect: Callable[[str, bool], None]) -> None:
     expect("stop() ends the group with SIGTERM and gives the result", stopped.exit == -signal.SIGTERM)
 
 
+def interrupted(action: Callable[[], object], first_s: float, interval_s: float = 0.0) -> bool:
+    """Run an action while a timer raises KeyboardInterrupt, as Ctrl-C does, and return whether it reached the caller.
+
+    The timer fires first after first_s, and then each interval_s when interval_s is more than 0.
+    """
+    def interrupt(_number: int, _frame: object) -> None:
+        raise KeyboardInterrupt
+
+    previous = signal.signal(signal.SIGALRM, interrupt)
+    signal.setitimer(signal.ITIMER_REAL, first_s, interval_s)
+    try:
+        action()
+    except KeyboardInterrupt:
+        return True
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+    return False
+
+
+def wait_for_file(path: Path, wait_s: float = 10.0) -> bool:
+    """Whether a file exists within a time."""
+    deadline = time.monotonic() + wait_s
+    while time.monotonic() < deadline:
+        if path.exists():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def interrupt_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
+    """Check AN INTERRUPT: SIGINT to the group, the end of the command, and SIGKILL at a second interrupt."""
+    summary = scratch / "summary.txt"
+    ready = scratch / "ready"
+    polite = python("import signal, sys, time\n"
+                    "def stop(_n, _f):\n"
+                    "    open(sys.argv[1], 'w').write('summary\\n')\n"
+                    "    print('summary', flush=True)\n"
+                    "    sys.exit(7)\n"
+                    "signal.signal(signal.SIGINT, stop)\n"
+                    "open(sys.argv[2], 'w').close()\n"
+                    "print('ready', flush=True)\n"
+                    "time.sleep(60)")
+    running = proc.start(proc.Command([*polite, str(summary), str(ready)], timeout_s=SAFE_S))
+    started = time.monotonic()
+    is_ready = wait_for_file(ready)
+    reached = interrupted(running.wait, 0.1)
+    expect("an interrupt of the wait sends SIGINT to the group, waits for the end of the command, and then goes on",
+           is_ready and reached and summary.is_file() and summary.read_text() == "summary\n" and is_gone(running.pid)
+           and time.monotonic() - started < 10)
+    summary.unlink(missing_ok=True)
+    ready.unlink(missing_ok=True)
+    streamed = proc.start(proc.Command([*polite, str(summary), str(ready)], timeout_s=SAFE_S,
+                                       stdout=proc.Output.STREAM))
+    first = next(streamed)
+    rest: list[str] = []
+    reached = interrupted(lambda: rest.extend(streamed), 0.1)
+    expect("an interrupt of a stream gives the lines that the command writes after SIGINT, and then goes on",
+           first == "ready\n" and rest == ["summary\n"] and reached and is_gone(streamed.pid))
+    deaf = proc.start(proc.Command(python("import signal, time\nsignal.signal(signal.SIGINT, signal.SIG_IGN)\n"
+                                          "print('ready', flush=True)\ntime.sleep(60)"),
+                                   timeout_s=SAFE_S, stdout=proc.Output.STREAM))
+    next(deaf)
+    started = time.monotonic()
+    reached = interrupted(deaf.wait, 0.1, 0.3)
+    expect("a second interrupt sends SIGKILL to a group that ignores SIGINT, and then goes on",
+           reached and is_gone(deaf.pid) and time.monotonic() - started < 10)
+    started = time.monotonic()
+    late = proc.start(proc.Command(python("import signal, time\nsignal.signal(signal.SIGINT, signal.SIG_IGN)\n"
+                                          "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+                                          "print('ready', flush=True)\ntime.sleep(60)"),
+                                   timeout_s=1.0, grace_s=0.3, stdout=proc.Output.STREAM))
+    next(late)
+    reached = interrupted(late.wait, 0.1)
+    expect("after one interrupt, the limit still stops a command that ignores SIGINT and SIGTERM",
+           reached and is_gone(late.pid) and time.monotonic() - started < 10)
+
+
 def stream_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
     """Check the input, the large outputs, the files, the merge and a stream of lines."""
     data = bytes(range(256)) * 8192
@@ -267,6 +345,7 @@ def main(argv: list[str]) -> int:
     limit_cases(expect)
     with tempfile.TemporaryDirectory(prefix="assay-proc-") as scratch:
         stream_cases(expect, Path(scratch))
+        interrupt_cases(expect, Path(scratch))
     environment_cases(expect)
     pidfd_failure_cases(expect)
     import_cases(expect)
