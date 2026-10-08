@@ -62,6 +62,12 @@
 //                    plugin.h), and the family home reads the gates of a
 //                    header in this unit (home.cpp, THE GATES).  test/layer
 //                    gives the sentinel unit of each header this argument
+//     padded-list-limit=N
+//                    the threshold of the rule padded-list, a whole number of
+//                    1 or more (necessary).  A list of more elements than N
+//                    gives a line (declaration.cpp, THE RULE padded-list).
+//                    Quarantine.cmake gives the error threshold of the row
+//                    padded-list of utils/registry.txt
 //
 // THE DEPENDENCIES
 //     utils/assay/loop/stamps.py writes DIR/modes/PATH for each source file of
@@ -86,6 +92,8 @@
 //     object (-fsyntax-only, -E) has no section.
 
 #include "plugin.h"
+
+#include "rows.h"
 
 int plugin_is_GPL_compatible;
 
@@ -485,6 +493,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     bool has_build = false;
     std::string rules_argument;
     std::string kinds_argument;
+    bool has_padded_limit = false;
     for (int index = 0; index < plugin_info->argc; ++index) {
         std::string key = plugin_info->argv[index].key;
         std::string value = plugin_info->argv[index].value != nullptr ? plugin_info->argv[index].value : "";
@@ -511,15 +520,31 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
             kinds_argument = value;
         } else if (key == "sentinel") {
             state.sentinel = value;
+        } else if (key == "padded-list-limit") {
+            if (!crucible_rows::number(value, UINT64_MAX, state.padded_list_limit)
+                || state.padded_list_limit == 0) {
+                error("quarantine: padded-list-limit is %qs, and the threshold of the rule padded-list must be a "
+                      "whole number of 1 or more",
+                      value.c_str());
+                return 1;
+            }
+            has_padded_limit = true;
         } else {
             error("quarantine: unknown argument %qs; the arguments are root, build, rules, mode, out, stamps, stamp, "
-                  "kinds and sentinel",
+                  "kinds, sentinel and padded-list-limit",
                   key.c_str());
             return 1;
         }
     }
     if (!kinds_argument.empty()) {
         return write_kinds(kinds_argument) ? 0 : 1;
+    }
+    if (!has_padded_limit) {
+        error("quarantine: no argument gives the threshold of the rule padded-list, and "
+              "utils/tools/quarantine/Quarantine.cmake gives it with %<-fplugin-arg-%s-padded-list-limit=N%> from the "
+              "row padded-list of utils/registry.txt",
+              state.plugin_name.c_str());
+        return 1;
     }
     if (has_build && !set_build(build_argument)) {
         return 1;

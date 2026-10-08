@@ -37,10 +37,16 @@
 #   facts of the rule table (facts.txt), its enforce rows (enforce.txt) and a
 #   mode stamp for each source file of a row into ${CMAKE_BINARY_DIR}/quarantine.
 #   It writes a file only when its content changes.
-#   - The stamp argument holds the key of the plugin, the mode and the hash of
-#     facts.txt.  A change of the plugin, of its flags, of the compiler or of a
-#     fact changes each compile line, and each object compiles again.  A
-#     change of a reason or of a comment changes no compile line.
+#   - The stamp argument holds the key of the plugin, the mode, the hash of
+#     facts.txt and the threshold of the rule padded-list.  A change of the
+#     plugin, of its flags, of the compiler or of a fact changes each compile
+#     line, and each object compiles again.  A change of a reason or of a
+#     comment changes no compile line.
+#   - The argument padded-list-limit is the error threshold of the row
+#     padded-list of utils/registry.txt (crucible_rule_limit of
+#     cmake/Guards.cmake).  The plugin gives a padded list only above it.  A
+#     change of that threshold changes each compile line, and a change of each
+#     other text of the registry changes none.
 #   - The plugin names the mode stamp of each file with a finding in the
 #     dependency file of the unit.  A change of the enforce mode of a file
 #     compiles again only the units with a finding in that file.
@@ -257,10 +263,14 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${_crucible_quarantine_utils}/assay/core/ruletable.py" "${_crucible_quarantine_utils}/assay/core/rows.py"
   "${_crucible_quarantine_utils}/assay/core/paths.py")
 
+# The threshold of the rule padded-list (THE INPUTS OF A COMPILE).
+include("${CMAKE_CURRENT_LIST_DIR}/../../../cmake/Guards.cmake")
+crucible_rule_limit(padded-list _crucible_quarantine_padded_limit)
+
 string(TOLOWER "${CRUCIBLE_QUARANTINE_MODE}" _crucible_quarantine_mode)
 file(SHA256 "${_crucible_quarantine_out}/facts.txt" _crucible_quarantine_facts_hash)
 string(SHA256 _crucible_quarantine_stamp
-  "${_crucible_quarantine_key} ${_crucible_quarantine_mode} ${_crucible_quarantine_facts_hash}")
+  "${_crucible_quarantine_key} ${_crucible_quarantine_mode} ${_crucible_quarantine_facts_hash} padded-list-limit=${_crucible_quarantine_padded_limit}")
 string(SUBSTRING "${_crucible_quarantine_stamp}" 0 16 _crucible_quarantine_stamp)
 set(_crucible_quarantine_argument "-fplugin-arg-crucible_quarantine")
 # The families declaration property and expression shape read a base header
@@ -280,7 +290,8 @@ set(_crucible_quarantine_flags
   "${_crucible_quarantine_argument}-rules=${CRUCIBLE_RULE_TABLE}"
   "${_crucible_quarantine_argument}-stamps=${_crucible_quarantine_out}"
   "${_crucible_quarantine_argument}-mode=${_crucible_quarantine_mode}"
-  "${_crucible_quarantine_argument}-stamp=${_crucible_quarantine_stamp}")
+  "${_crucible_quarantine_argument}-stamp=${_crucible_quarantine_stamp}"
+  "${_crucible_quarantine_argument}-padded-list-limit=${_crucible_quarantine_padded_limit}")
 
 crucible_launcher_is_ccache("${CMAKE_CXX_COMPILER_LAUNCHER}" _crucible_quarantine_launcher_is_ccache)
 if(_crucible_quarantine_launcher_is_ccache)

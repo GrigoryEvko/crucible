@@ -16,21 +16,27 @@ THE RULE
     plugin reads the type of each alias, variable and data member.  It also
     reads the return type and each parameter that a function takes by value.
     It reads no template, and it reads the files of include/ and src/
-    (utils/tools/quarantine/declaration.cpp, THE RULE padded-list).  For
-    each element type that has a padding bit, it gives one line for the
-    longest list of two or more elements in a declaration:
+    (utils/tools/quarantine/declaration.cpp, THE RULE padded-list).  The
+    plugin argument padded-list-limit is the error threshold of the row of
+    this rule in utils/registry.txt (utils/tools/quarantine/Quarantine.cmake).
+    The plugin reads each element type that has a padding bit.  It gives one
+    line for the longest list in a declaration, when the list has more
+    elements than that threshold:
       padded-alias      the list is in the type of an alias
       padded-member     the list is in the type of a variable or a data member
       padded-return     the list is in the return type of a function
       padded-parameter  the list is in the type of a parameter
-    The entity of a line is `DECLARATION: ELEMENT | count=N holes=H`, with
-    the element count and the padding bits of one element.  The rule keeps
-    each list of more elements than the error threshold of its row of
-    utils/registry.txt, in the scope of that row.  The entity of its finding
-    is `DECLARATION: ELEMENT`, and a change of the count changes no key.  A
-    list has one finding, at its first position (assay.guard.engines.plugin.
-    declarations, THE POSITION OF AN ENTITY).  A line that the rule cannot
-    read is an error.  Each problem of the census of the runner is an error
+    A list of fewer or the same number of elements gives no line, and in the
+    mode error no error.  The entity of a line is `DECLARATION: ELEMENT |
+    count=N holes=H`, with the element count and the padding bits of one
+    element.  The rule keeps each line in the scope of its row.  The entity
+    of its finding is `DECLARATION: ELEMENT`, and a change of the count
+    changes no key.  A list has one finding, at its first position
+    (assay.guard.engines.plugin.declarations, THE POSITION OF AN ENTITY).  A
+    line that the rule cannot read is an error.  A line of a list at or below
+    the threshold is an error of the kind threshold.  Such a line comes from a
+    build with a different threshold, and no ledger row admits it
+    (REFUSED_KINDS).  Each problem of the census of the runner is an error
     too.
 
 THE LEDGER
@@ -61,6 +67,10 @@ RULE = "padded-list"
 ELEMENT_SEPARATOR = ": "
 FACTS_SEPARATOR = " | "
 FACTS = ("count", "holes")
+# The kind of a line of a list at or below the threshold.  No ledger row admits it (assay.guard.engines.meta.runner,
+# THE REFUSED KINDS), because the object comes from a build with a different threshold.
+THRESHOLD_KIND = "threshold"
+REFUSED_KINDS = frozenset({THRESHOLD_KIND})
 
 
 class LineError(ValueError):
@@ -116,9 +126,23 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
         except LineError as problem:
             found.append(check_report.Finding("error", item.file, item.line, RULE, str(problem)))
             continue
-        if padded.count > limit:
-            kept.append(replace(item, entity=padded.entity))
-            lists[(item.kind, padded.entity)] = padded
+        if padded.count <= limit:
+            found.append(
+                check_report.Finding(
+                    "error",
+                    item.file,
+                    item.line,
+                    RULE,
+                    f"the plugin gave a line of a list of {padded.count} elements, and the threshold of the rule is "
+                    f"{limit:g}.  The object comes from a build with a different threshold.  Configure and build the "
+                    f"tree again",
+                    THRESHOLD_KIND,
+                    padded.entity,
+                )
+            )
+            continue
+        kept.append(replace(item, entity=padded.entity))
+        lists[(item.kind, padded.entity)] = padded
     for item in sorted(declarations.first_places(kept).values()):
         padded = lists[(item.kind, item.entity)]
         found.append(

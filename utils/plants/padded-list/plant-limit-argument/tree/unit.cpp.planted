@@ -1,0 +1,1 @@
+int unit_value() noexcept { return 1; }

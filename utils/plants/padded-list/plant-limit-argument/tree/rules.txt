@@ -1,0 +1,3 @@
+# The rule table of the plant of the threshold argument of the rule
+# padded-list: unit.cpp is quarantined.
+quarantine unit.cpp

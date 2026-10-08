@@ -214,7 +214,8 @@
 //                           witness row of the rule table
 //     The rule padded-list:
 //     padded-alias          an alias with a type that holds a fixed list of
-//                           two or more elements, and the element type has a
+//                           more elements than the argument
+//                           padded-list-limit, and the element type has a
 //                           padding bit.  The entity ends with the count and
 //                           the padding bits of the list
 //     padded-member         the same, for a variable or a data member
@@ -1289,6 +1290,11 @@ struct State {
     std::string stamps_dir;
     std::string stamp;
     bool is_error_mode = false;
+    // The threshold of the rule padded-list (the argument padded-list-limit of
+    // plugin.cpp): a list of more elements than it gives a line, and a list of
+    // fewer or the same number gives none (declaration.cpp, THE RULE
+    // padded-list).
+    std::uint64_t padded_list_limit = 0;
 
     // One entry for each real path.  The empty path holds the entry of each
     // scratch buffer.  A node of an unordered map keeps its address, so the

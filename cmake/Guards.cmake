@@ -7,7 +7,11 @@
 #
 # utils/assay/core/registry.py is the reader of the registry for the Python modules.  A limit that GCC
 # enforces, such as -fconstexpr-ops-limit, has no warning form, so its row has two equal thresholds,
-# and the build reads the error threshold here.
+# and the build reads the error threshold here.  The quarantine plugin gets the error threshold of the
+# rule padded-list in the same way (utils/tools/quarantine/Quarantine.cmake), and that file includes
+# this file before the root CMakeLists.txt does.
+
+include_guard(GLOBAL)
 
 set(CRUCIBLE_REGISTRY "${CMAKE_CURRENT_LIST_DIR}/../utils/registry.txt")
 cmake_path(NORMAL_PATH CRUCIBLE_REGISTRY)

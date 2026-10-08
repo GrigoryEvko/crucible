@@ -1,0 +1,8 @@
+# A line of a list at or below the threshold of utils/registry.txt comes from
+# a build with a different threshold.  The compile gives the threshold 1, so
+# the plugin gives the line of a list of 10 elements, and the module of the
+# rule refuses the line with the kind threshold.  The plant holds no ledger.
+compile sentinel src/lists.cpp sentinel=include/fixy/Lists.h stage=c padded-list-limit=1
+exit sentinel pass
+judge sentinel
+finding sentinel padded-list padded-alias include/fixy/Lists.h:13:7 | plant::TenList: plant::Padded \| count=10 holes=56

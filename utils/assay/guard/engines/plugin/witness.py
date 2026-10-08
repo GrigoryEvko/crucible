@@ -41,6 +41,9 @@ THE KEYS OF A COMPILE
       root=PATH     the plugin argument root.  The default is ".", the tree
       rules=PATH    the plugin argument rules.  The default is rules.txt
       mode=WORD     the plugin argument mode.  The default is report
+      padded-list-limit=N   the plugin argument padded-list-limit.  The
+                    default is the error threshold of the row padded-list
+                    of utils/registry.txt, as for each compile of the tree
       build=PATH, stamps=PATH, stamp=TEXT    the plugin arguments, with no default
     The value "-" gives no argument.
       out=no        no argument out.  By default the witness gives out=DIR, a
@@ -140,6 +143,7 @@ THE STATUS
 
 from __future__ import annotations
 
+import functools
 import os
 import shutil
 import signal
@@ -168,9 +172,12 @@ NO_VALUE = "-"
 # The line of a location FILE:* of a diagnostic row, which holds each line of FILE.
 ANY_LINE = "*"
 # The plugin arguments of a compile row, and the default of each one that has a default.
-PLUGIN_KEYS = ("root", "rules", "mode", "build", "stamps", "stamp", "sentinel")
+PLUGIN_KEYS = ("root", "rules", "mode", "build", "stamps", "stamp", "sentinel", "padded-list-limit")
 PATH_KEYS = frozenset({"root", "rules", "build", "stamps"})
 DEFAULTS = {"root": ".", "rules": "rules.txt", "mode": "report"}
+# The plugin argument of the threshold of the rule padded-list, and the row of utils/registry.txt that gives its default.
+PADDED_LIMIT_KEY = "padded-list-limit"
+PADDED_LIMIT_RULE = "padded-list"
 COMPILE_KEYS = frozenset({*PLUGIN_KEYS, "out", "stage", "plugin", "timeout", "findings", "errors", "notes"})
 STAGES = ("S", "c", "syntax", "E")
 EXITS = ("pass", "fail")
@@ -332,6 +339,28 @@ def shape(row: rows_grammar.Row, words: int, cells: int, at_least: bool = False)
         raise row.error(f"a row {row.words[0]} has {'at least ' if at_least else ''}{words} words and {cells} cells")
 
 
+@functools.cache
+def padded_limit() -> str:
+    """Return the error threshold of the row padded-list of utils/registry.txt, the default of PADDED_LIMIT_KEY.
+
+    Raises:
+        ValueError: If the registry gives the rule no thresholds
+    """
+    from assay.core import registry as rule_registry
+
+    threshold = rule_registry.load().rules[PADDED_LIMIT_RULE].threshold
+    if threshold is None:
+        raise ValueError(f"the row {PADDED_LIMIT_RULE} of utils/registry.txt has no error threshold")
+    return f"{threshold.error:g}"
+
+
+def with_limit(arguments: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
+    """Return the plugin arguments of a compile of a procedure, with the default of PADDED_LIMIT_KEY when they have none."""
+    if any(key == PADDED_LIMIT_KEY for key, _ in arguments):
+        return arguments
+    return (*arguments, (PADDED_LIMIT_KEY, padded_limit()))
+
+
 def compile_of(row: rows_grammar.Row) -> Compile:
     """Read one compile row (THE KEYS OF A COMPILE).
 
@@ -340,7 +369,11 @@ def compile_of(row: rows_grammar.Row) -> Compile:
     """
     shape(row, 3, 0, at_least=True)
     values = rows_grammar.fields(row, COMPILE_KEYS, start=3)
-    arguments = {**DEFAULTS, **{key: value for key, value in values.items() if key in PLUGIN_KEYS}}
+    arguments = {
+        **DEFAULTS,
+        PADDED_LIMIT_KEY: padded_limit(),
+        **{key: value for key, value in values.items() if key in PLUGIN_KEYS},
+    }
     stage = values.get("stage", "S")
     if stage not in STAGES:
         raise row.error(f"the stage {stage!r} is not one of {', '.join(STAGES)}")
@@ -949,7 +982,7 @@ def table_failures(compiler: Compiler, work: Path, unit: str, case: TableCase) -
         f"table-{case.path.replace('/', '-')}",
         unit,
         0,
-        (("root", "."), ("rules", case.path), ("mode", "report")),
+        with_limit((("root", "."), ("rules", case.path), ("mode", "report"))),
         has_out=False,
     )
     outcome = compiler.compile(item, work)
@@ -1053,7 +1086,7 @@ def cache_chain(
             output,
             CACHE_UNIT,
             0,
-            (("root", "."), ("rules", table), ("mode", "report"), ("stamp", stamp)),
+            with_limit((("root", "."), ("rules", table), ("mode", "report"), ("stamp", stamp))),
             stage="c",
             has_out=False,
         )
@@ -1076,7 +1109,7 @@ def plain_section(plant: Plant, name: str, table: str, stamp: str) -> plugin_sec
         name,
         CACHE_UNIT,
         0,
-        (("root", "."), ("rules", table), ("mode", "report"), ("stamp", stamp)),
+        with_limit((("root", "."), ("rules", table), ("mode", "report"), ("stamp", stamp))),
         stage="c",
         has_out=False,
     )
@@ -1174,12 +1207,14 @@ def enforce_chain(plant: Plant, name: str, is_keyed: bool) -> list[tuple[int, Ou
             f"{name}-{index}",
             "app/unit.cpp",
             0,
-            (
-                ("root", "."),
-                ("rules", "rules.txt"),
-                ("stamps", "stamps"),
-                ("mode", "report"),
-                ("stamp", "e4f0e4f0e4f0e4f0"),
+            with_limit(
+                (
+                    ("root", "."),
+                    ("rules", "rules.txt"),
+                    ("stamps", "stamps"),
+                    ("mode", "report"),
+                    ("stamp", "e4f0e4f0e4f0e4f0"),
+                )
             ),
             stage="c",
             has_out=False,
@@ -1235,7 +1270,7 @@ def dependency_text(plant: Plant, unit: str, stage: str) -> tuple[Outcome, str]:
         f"dependency-{Path(unit).stem}-{stage}",
         unit,
         0,
-        (("root", "."), ("rules", "rules.txt"), ("stamps", "stamps"), ("mode", "report")),
+        with_limit((("root", "."), ("rules", "rules.txt"), ("stamps", "stamps"), ("mode", "report"))),
         stage=stage,
         has_out=False,
         flags=("-MD", "-MF", str(depfile)),

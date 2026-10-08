@@ -16,6 +16,7 @@ import io
 import tempfile
 from pathlib import Path
 
+from assay.core import registry as rule_registry
 from assay.core import rows as rows_grammar
 from assay.core import ruletable, testing
 from assay.core.exit import ExitCode
@@ -64,11 +65,22 @@ def manifest_cases(expect: testing.Expect) -> None:
     manifest = witness.parse_manifest(MANIFEST, "witness.txt")
     report, error, planted = manifest.compiles["report"], manifest.compiles["error"], manifest.compiles["object"]
     expect(
-        "a compile has the default root, rules and mode, a report and the stage S",
-        report.arguments == (("root", "."), ("rules", "rules.txt"), ("mode", "report"))
+        "a compile has the default root, rules, mode and threshold of padded-list, a report and the stage S",
+        report.arguments
+        == (("root", "."), ("rules", "rules.txt"), ("mode", "report"), ("padded-list-limit", witness.padded_limit()))
         and report.stage == "S"
         and report.has_report
         and not report.has_object,
+    )
+    threshold = rule_registry.load().rules["padded-list"].threshold
+    expect(
+        "the default threshold of padded-list is the error threshold of its row of the registry",
+        threshold is not None and witness.padded_limit() == f"{threshold.error:g}",
+    )
+    expect(
+        "a compile of a procedure gets the default threshold, and keeps a threshold that it names",
+        witness.with_limit((("root", "."),)) == (("root", "."), ("padded-list-limit", witness.padded_limit()))
+        and witness.with_limit((("padded-list-limit", "5"),)) == (("padded-list-limit", "5"),),
     )
     expect(
         "the flag rows of a compile keep their words in sequence",

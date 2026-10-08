@@ -1,0 +1,5 @@
+# The ledger of the plant: a keep row that tries to admit the line of a build
+# with another threshold.  No row admits the kind threshold.
+format 1
+rule padded-list
+include/fixy/Lists.h | threshold | 1 | plant::TenList: plant::Padded | a planted reason

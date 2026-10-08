@@ -1,14 +1,16 @@
 # The rule padded-list keeps the answer of each type.  A tree whose levels
 # hold the level below them two times then compiles in less than 60 seconds,
-# and the longest list of each element type gives one line.  The members of
-# the union Wide have more value ranges than the rule keeps, so the union
-# holds the value bits of its largest member, and the line counts more
-# padding bits than the union has.  No line has more elements than the
-# threshold, so the module keeps no line.  The union in base code is also a
-# line of the rule proof-routes.
-compile sentinel src/tree.cpp sentinel=include/fixy/Tree.h stage=c timeout=60
+# and the longest list of each element type gives one line.  The first
+# compile gives the threshold 1, so the plugin gives the line of each list of
+# two or more elements.  The members of the union Wide have more value ranges
+# than the rule keeps, so the union holds the value bits of its largest
+# member, and the line counts more padding bits than the union has.  The
+# second compile gives the threshold of utils/registry.txt.  No list has more
+# elements than that threshold, so the plugin gives no line of the rule, and
+# the module finds no padded list.  The union in base code is also a line of
+# the rule proof-routes.
+compile sentinel src/tree.cpp sentinel=include/fixy/Tree.h stage=c timeout=60 padded-list-limit=1
 exit sentinel pass
-judge sentinel
 finding sentinel padded-list padded-member include/fixy/Tree.h:23:27 | plant::Tree::leaves: plant::Padded \| count=2 holes=56
 finding sentinel padded-list padded-alias include/fixy/Tree.h:28:7 | plant::DeepTree: plant::Padded \| count=2 holes=56
 finding sentinel padded-list padded-member include/fixy/Tree.h:38:25 | plant::Block::first: plant::Raw \| count=60 holes=56
@@ -16,3 +18,7 @@ finding sentinel padded-list padded-member include/fixy/Tree.h:39:25 | plant::Bl
 finding sentinel padded-list padded-member include/fixy/Tree.h:47:27 | plant::Wide::blocks: plant::Block \| count=40 holes=6720
 finding sentinel padded-list padded-alias include/fixy/Tree.h:51:7 | plant::WideList: plant::Wide \| count=4 holes=268800
 finding sentinel proof-routes union include/fixy/Tree.h:46:7 | union: Wide
+compile registry src/tree.cpp sentinel=include/fixy/Tree.h stage=c timeout=60
+exit registry pass
+judge registry
+finding registry proof-routes union include/fixy/Tree.h:46:7 | union: Wide

@@ -1,9 +1,10 @@
-# Each fixed list of two or more elements whose element type has a padding
-# bit gives a line of the rule padded-list, and the module of the rule keeps
-# each list of more elements than the threshold of its row of
-# utils/registry.txt.  The header is base code, so it counts only in its
-# sentinel unit, and the base main file counts in its own unit.  The lines
-# below cover each shape that the rule refuses:
+# Each fixed list of more elements than the threshold of the row of
+# utils/registry.txt, 63, with an element type that has a padding bit, gives
+# a line of the rule padded-list.  The outer list of Nested has 8 elements
+# of std::array<Padded, 16>, and it gives no line.  The list of Padded in
+# Nested has 128 elements, and it gives a line.  The header is base code, so
+# it counts only in its sentinel unit, and the base main file counts in its
+# own unit.  The lines below cover each shape that the rule refuses:
 #   - an alias of std::inplace_vector, of std::array, of an array of arrays
 #     (the count is the product of the counts), of a class template that
 #     holds a list and of a C array.  The unit completes each specialization
@@ -13,9 +14,9 @@
 #   - a variable of an unnamed namespace of a source file, of a named
 #     namespace inside it, and of an extern "C" block.
 # The rules no-raw-array-member and process-wide-state give lines here too.
-# In the mode error, each line other than a record is an error, also a line
-# of a list under the threshold.  The quarantined unit test/other.cpp
-# includes the header, and it is not the sentinel unit, so it gives no line.
+# In the mode error, each line other than a record is an error.  The
+# quarantined unit test/other.cpp includes the header, and it is not the
+# sentinel unit, so it gives no line.
 compile sentinel src/lists.cpp sentinel=include/fixy/Lists.h stage=c
 exit sentinel pass
 judge sentinel
@@ -23,7 +24,6 @@ finding sentinel padded-list padded-alias include/fixy/Lists.h:28:7 | plant::Pad
 finding sentinel padded-list padded-alias include/fixy/Lists.h:29:7 | plant::BitList: plant::Bits \| count=128 holes=29
 finding sentinel padded-list padded-alias include/fixy/Lists.h:30:7 | plant::WideList: plant::Wide \| count=64 holes=48
 finding sentinel padded-list padded-alias include/fixy/Lists.h:31:7 | plant::Nested: plant::Padded \| count=128 holes=56
-finding sentinel padded-list padded-alias include/fixy/Lists.h:31:7 | plant::Nested: std::array<plant::Padded, 16> \| count=8 holes=896
 finding sentinel padded-list padded-alias include/fixy/Lists.h:32:7 | plant::Wrapped: plant::Padded \| count=100 holes=56
 finding sentinel padded-list padded-alias include/fixy/Lists.h:33:7 | plant::Raw: plant::Padded \| count=65 holes=56
 finding sentinel no-raw-array-member array-alias include/fixy/Lists.h:33:7 | plant::Raw

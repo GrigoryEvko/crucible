@@ -23,6 +23,7 @@ struct Floats {
 };
 
 using ShortList = std::array<Padded, 63>;
+using TenList = std::array<Padded, 10>;
 using PackedList = std::array<Packed, 256>;
 using FloatList = std::array<Floats, 256>;
 using Scalars = std::array<char, 4096>;

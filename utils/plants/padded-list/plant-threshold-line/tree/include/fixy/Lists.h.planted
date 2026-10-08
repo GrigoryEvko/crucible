@@ -1,0 +1,15 @@
+#pragma once
+
+#include <array>
+#include <cstdint>
+
+namespace plant {
+
+struct Padded {
+    std::uint64_t wide = 0;
+    std::uint8_t narrow = 0;
+};
+
+using TenList = std::array<Padded, 10>;
+
+}  // namespace plant

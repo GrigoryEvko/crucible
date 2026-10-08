@@ -24,7 +24,7 @@ struct Tree<0> {
 };
 
 // The tree holds 2^40 lists of two elements.  The longest list of plant::Padded
-// has two elements, and the module keeps no line of it.
+// has two elements, and at the threshold of the registry it gives no line.
 using DeepTree = Tree<40>;
 
 struct Raw {

@@ -1,0 +1,23 @@
+# The plugin needs the threshold of the rule padded-list, a whole number of 1
+# or more.  Each compile of the tree gets the error threshold of the row of
+# utils/registry.txt.  A compile with no threshold, with 0 and with a word
+# fails when the plugin loads.  A unit with the threshold of the registry
+# compiles.
+
+compile correct unit.cpp
+exit correct pass
+
+compile no-limit unit.cpp padded-list-limit=- out=no
+exit no-limit fail
+error no-limit - | quarantine: no argument gives the threshold of the rule padded-list, and utils/tools/quarantine/Quarantine.cmake gives it with '-fplugin-arg-crucible_quarantine-padded-list-limit=N' from the row padded-list of utils/registry.txt
+error no-limit - | failed to initialize plugin {plugin}
+
+compile zero-limit unit.cpp padded-list-limit=0 out=no
+exit zero-limit fail
+error zero-limit - | quarantine: padded-list-limit is '0', and the threshold of the rule padded-list must be a whole number of 1 or more
+error zero-limit - | failed to initialize plugin {plugin}
+
+compile word-limit unit.cpp padded-list-limit=many out=no
+exit word-limit fail
+error word-limit - | quarantine: padded-list-limit is 'many', and the threshold of the rule padded-list must be a whole number of 1 or more
+error word-limit - | failed to initialize plugin {plugin}

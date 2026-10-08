@@ -186,23 +186,25 @@
 //     rule then fails closed.  The rule reads the type of each alias,
 //     variable and data member, and the return type and each parameter that a
 //     function takes by value, in code that no template holds.  It reads the
-//     files of include/ and src/ (kPaddedListDirectories).  For each element
-//     type that has a padding bit, the longest list of two or more elements
-//     in the declared type is a line of the kind padded-alias, padded-member,
-//     padded-return or padded-parameter.  The module of the rule keeps one
-//     finding for each declaration and element type, and the longest list
-//     then decides it.  The entity is DECLARATION: ELEMENT, and then
-//     " | count=N holes=H": the element count and the padding bits of one
-//     element.  DECLARATION is the
-//     qualified name of an alias, a variable or a member, the
-//     function_signature of a function, and for a parameter the
-//     function_signature and " parameter I", the index from 1.  The module of
-//     the rule keeps the lists of more elements than the threshold of its row
-//     of utils/registry.txt.  The rule reads a list only in a type that the
-//     unit completes.  An alias of a specialization that the unit only names,
-//     and a function that the unit only declares, give no line, because GCC
-//     does not instantiate the class.  A unit with no object of the list
-//     writes no store for it (decision 5 of misc/01_10_2026_quarantine.md).
+//     files of include/ and src/ (kPaddedListDirectories).  The argument
+//     padded-list-limit gives the threshold: the error threshold of the row
+//     padded-list of utils/registry.txt.  For each element type that has a
+//     padding bit, the longest list in the declared type is a line of the
+//     kind padded-alias, padded-member, padded-return or padded-parameter,
+//     when it has more elements than the threshold.  A list of fewer or the
+//     same number of elements gives no line, and in the mode error no error.
+//     The module of the rule keeps one finding for each declaration and
+//     element type, and the longest list then decides it.  The entity is
+//     DECLARATION: ELEMENT, and then " | count=N holes=H": the element count
+//     and the padding bits of one element.  DECLARATION is the qualified name
+//     of an alias, a variable or a member, the function_signature of a
+//     function, and for a parameter the function_signature and
+//     " parameter I", the index from 1.  The rule reads a list only in a type
+//     that the unit completes.  An alias of a specialization that the unit
+//     only names, and a function that the unit only declares, give no line,
+//     because GCC does not instantiate the class.  A unit with no object of
+//     the list writes no store for it (decision 5 of
+//     misc/01_10_2026_quarantine.md).
 //     A quarantined file gives its line in each unit that completes the
 //     type.  A base file gives its line only in its sentinel unit (THE
 //     SCOPE).
@@ -2263,9 +2265,10 @@ void on_finish_function_property(void* gcc_data, void*) {
 
 // The headers and the sources of the rule padded-list.
 constexpr const char* kPaddedListDirectories[] = {"include/", "src/"};
-// The smallest element count of a list that gives a line.  The module of the
-// rule applies the threshold of its row of utils/registry.txt.
-constexpr std::uint64_t kSmallestList = 2;
+
+// True when a list of COUNT elements gives a line: more elements than the
+// threshold of the argument padded-list-limit (THE RULE padded-list).
+bool is_long_list(std::uint64_t count) { return count > state.padded_list_limit; }
 
 // The size of TYPE in bits, or 0 when the size is no constant.
 std::uint64_t size_in_bits(tree type) {
@@ -2642,17 +2645,17 @@ bool can_hold_list(tree type) {
     return TREE_CODE(main_type) == ARRAY_TYPE || RECORD_OR_UNION_TYPE_P(main_type);
 }
 
-// True when LISTS holds a list of kSmallestList or more elements.
+// True when LISTS holds a list that gives a line (is_long_list).
 bool has_line(const std::vector<PaddedList>& lists) {
-    return std::any_of(lists.begin(), lists.end(), [](const PaddedList& list) { return list.count >= kSmallestList; });
+    return std::any_of(lists.begin(), lists.end(), [](const PaddedList& list) { return is_long_list(list.count); });
 }
 
-// One line at PLACE for each list of kSmallestList or more elements of LISTS
-// (THE RULE padded-list).  DECLARATION names the declaration in the entity.
+// One line at PLACE for each list of LISTS that gives a line (is_long_list,
+// THE RULE padded-list).  DECLARATION names the declaration in the entity.
 void record_padded_lists(Kind kind, const Place& place, const std::vector<PaddedList>& lists,
                          const std::string& declaration, PaddingFacts& facts) {
     for (const PaddedList& list : lists) {
-        if (list.count < kSmallestList) {
+        if (!is_long_list(list.count)) {
             continue;
         }
         std::uint64_t holes = size_in_bits(list.element) - value_bits(list.element, facts, 0);
