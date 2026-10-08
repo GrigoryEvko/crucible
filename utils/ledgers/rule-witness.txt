@@ -34,7 +34,6 @@ utils/registry.txt | no-plant | admit | no-unchecked-access | The rule has no pl
 utils/registry.txt | no-plant | admit | noop-build-time | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | padded-list | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | preprocessed-fill | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
-utils/registry.txt | no-plant | admit | proof-routes | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | prose-paths | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | session-oracle | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | start-lifetime | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row

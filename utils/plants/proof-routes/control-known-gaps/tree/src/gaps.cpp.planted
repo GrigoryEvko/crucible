@@ -1,0 +1,17 @@
+#include <forge/Door.h>
+
+// The two shapes that the compiler keeps no tree of.  An explicit
+// instantiation of a class has the location of its template at the end of
+// the unit, and an explicit instantiation of a function is on no list of the
+// plugin interface.  In a function that is not a template, GCC folds the
+// sizeof of an allocation to a constant before the plugin reads the body.  The
+// rule parse-proof-routes refuses each shape on the parse tree.
+namespace forge {
+
+template struct Box<Door>;
+
+template int count<Door>(Door*);
+
+void* raw_storage() { return ::operator new(sizeof(Door)); }
+
+}  // namespace forge

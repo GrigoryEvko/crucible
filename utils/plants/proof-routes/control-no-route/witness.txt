@@ -1,0 +1,17 @@
+# No cast of src/clean.cpp makes a pointer to a proof type from storage, and
+# the specialization of Opener is in the header that defines Opener, so the
+# rule gives no finding.  The quarantine rule gives its findings for the raw
+# pointers.
+
+compile clean src/clean.cpp stage=c
+exit clean pass
+judge clean
+finding clean quarantine raw-pointer-object src/clean.cpp:12:18 | int*
+finding clean quarantine raw-pointer-object src/clean.cpp:14:36 | void*
+
+compile sentinel src/clean.cpp sentinel=include/forge/Door.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel quarantine raw-pointer-object src/clean.cpp:12:18 | int*
+finding sentinel quarantine raw-pointer-object src/clean.cpp:14:36 | void*
+finding sentinel escape-doors bare-door include/forge/Door.h:24:7 | forge::make(int)

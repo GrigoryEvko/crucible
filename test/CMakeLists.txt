@@ -455,22 +455,6 @@ crucible_script_test(NAME start_lifetime
 set_tests_properties(start_lifetime start_lifetime_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# A union, a cast of a void pointer, an allocator, an explicit
-# instantiation and a specialization of a door each build a proof type
-# with no call to its door, and the language refuses none of them.
-# utils/assay/guard/legacy/check_proof_routes.py refuses each one outside a reviewed and
-# counted list.  It reads the names of the proof types from the witness
-# roster and from the reflection walk of test_forgeable_proofs, and it
-# reads the compile database, so a route that a macro forms is seen too.
-crucible_script_test(NAME proof_routes_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule proof-routes --self-test)
-crucible_script_test(NAME proof_routes
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule proof-routes
-          --build-dir ${CMAKE_BINARY_DIR}
-          --proof-names-binary $<TARGET_FILE:test_forgeable_proofs>)
-set_tests_properties(proof_routes proof_routes_self_test PROPERTIES
-    LABELS "ci_guard"
-    SKIP_RETURN_CODE 3)
 # utils/assay/guard/preprocessed.py preprocesses each unit of the compile database
 # one time for every guard that reads the preprocessed output, in a store that
 # every build directory and every work tree share.  The self-test proves that
@@ -763,7 +747,9 @@ crucible_test(test_computation_cache_federation)
 # The three guards that read the preprocessed store start on a full store.
 # Eight setup tests fill it, each one the entries whose index is its shard
 # modulo eight, so no one test preprocesses the whole database.  ctest adds
-# the setup tests to a run that selects one of the three guards.
+# the setup tests to a run that selects one of the three guards.  The third
+# guard, guard_parse_proof_routes, gets the fixture after the registration of
+# the tsast rule tests at the end of this file.
 set(CRUCIBLE_STORE_SHARDS 8)
 math(EXPR crucible_last_store_shard "${CRUCIBLE_STORE_SHARDS} - 1")
 foreach(crucible_store_shard RANGE ${crucible_last_store_shard})
@@ -775,7 +761,7 @@ foreach(crucible_store_shard RANGE ${crucible_last_store_shard})
       LABELS "ci_guard"
       FIXTURES_SETUP preprocessed_store)
 endforeach()
-set_tests_properties(start_lifetime proof_routes no_unchecked_access PROPERTIES
+set_tests_properties(start_lifetime no_unchecked_access PROPERTIES
     FIXTURES_REQUIRED preprocessed_store)
 
 crucible_test(test_vessel_api_typed)
@@ -5265,9 +5251,10 @@ set_tests_properties(mutation_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RE
 # runs a rule whose module reads the parse trees, when the test does not
 # require the fixture.  These tests read the trees and their registrations
 # give no label ast, so they get the label here.
-set_property(TEST brand_drain start_lifetime proof_routes fixy_dim_prose syscall_capability no_coordination_refs
+set_property(TEST brand_drain start_lifetime fixy_dim_prose syscall_capability no_coordination_refs
     mint_inventory_check_floor padded_lists guard_plugin APPEND PROPERTY LABELS ast)
 crucible_tsast_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} 8)
+set_property(TEST guard_parse_proof_routes APPEND PROPERTY FIXTURES_REQUIRED preprocessed_store)
 get_property(crucible_directory_tests DIRECTORY PROPERTY TESTS)
 foreach(crucible_guard_test IN LISTS crucible_directory_tests)
   get_test_property(${crucible_guard_test} LABELS crucible_guard_labels)

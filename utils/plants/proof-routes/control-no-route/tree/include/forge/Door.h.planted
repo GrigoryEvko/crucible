@@ -1,0 +1,26 @@
+#pragma once
+
+// A proof type: a witness row of the rule table names it.  The template
+// Opener is a friend of it.  This header defines Opener, and a specialization
+// in this header is no finding.
+namespace forge {
+
+class Door {
+    int secret = 0;
+    Door() = default;
+    template <class U> friend class Opener;
+};
+
+template <class T> class Opener {
+public:
+    int read() const { return 1; }
+};
+
+template <> class Opener<int> {
+public:
+    int read() const { return 2; }
+};
+
+Door* make(int);
+
+}  // namespace forge

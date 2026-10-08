@@ -1,0 +1,11 @@
+// A negative-compile fixture must not compile, and it builds nothing, so the
+// rule does not read it.
+namespace forge {
+
+template <class T> struct Box {
+    T value{};
+};
+
+template struct Box<int>;
+
+}  // namespace forge

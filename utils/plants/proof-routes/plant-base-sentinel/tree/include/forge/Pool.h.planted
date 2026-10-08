@@ -1,0 +1,37 @@
+#pragma once
+
+#include <memory>
+
+#include <forge/Door.h>
+
+// The shapes of a base header: a union, an allocator of the proof type in a
+// local, an alias, a member, a signature and a base class, and a cast to a
+// pointer to the proof type.  A cast to a template parameter names no proof
+// type.
+namespace forge {
+
+union Cell {
+    unsigned char byte;
+    int value;
+};
+
+inline void hold() {
+    std::allocator<Door> pool;
+    (void)pool;
+}
+
+using DoorPool = std::allocator<Door>;
+
+struct Keeper {
+    std::allocator<Door> member;
+};
+
+inline void take(std::allocator<Door>&) {}
+
+struct Derived : std::allocator<Door> {};
+
+inline Door* cast_back(void* raw) { return static_cast<Door*>(raw); }
+
+template <class T> T* rebind(void* raw) { return static_cast<T*>(raw); }
+
+}  // namespace forge

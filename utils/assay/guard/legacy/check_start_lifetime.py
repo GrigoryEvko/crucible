@@ -104,8 +104,8 @@ What this guard does not see, stated rather than implied
     and it must fail to compile anyway.
   - A proof pointer from a void pointer, from std::malloc, from an
     allocator, or from the inactive member of a union.  These routes do not
-    name std::start_lifetime_as, and the rule proof-routes (`guard check
-    --rule proof-routes`) reads them.  The forgeability ledger in test/fixy/test_forgeable_proofs.cpp
+    name std::start_lifetime_as, and the rules proof-routes and
+    parse-proof-routes read them.  The forgeability ledger in test/fixy/test_forgeable_proofs.cpp
     pins them.
 
 Exit codes

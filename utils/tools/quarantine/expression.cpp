@@ -1,4 +1,4 @@
-// The family expression shape: the walk of a body, and the rules
+// The family expression shape: the walk of a body, and the rules proof-routes,
 // refined-pre-subsumption and syscall-grant-coverage.  The walk
 // reads each expression of a function body, of an initializer, of a default
 // argument and of an unevaluated operand.  It gives the shapes of an
@@ -35,6 +35,72 @@
 // calls them for an object that the plugin reports where the code declares
 // it.  The controls of the plugin witness in utils/plants/quarantine/ pin each
 // such gap.
+//
+// THE PROOF ROUTES (the rule proof-routes)
+//     A proof type attests to a fact that it cannot see, and only its door
+//     builds it.  A class is a proof type when a witness row of the rule table
+//     names it, by its qualified name with no template arguments.  A class of
+//     namespace foundation or fixy is a proof type too when it has the proof
+//     shape of test/fixy/test_forgeable_proofs.cpp: it is no union and no
+//     aggregate, it declares a constructor, and each public constructor that
+//     is not deleted, not a copy and not a move takes a proof type.  The
+//     implicit default constructor counts.  A public constructor template
+//     takes a proof type when a parameter of its pattern names one.  A
+//     specialization that is not complete has the shape of its pattern.  A
+//     type holds a proof type when it is one, or through a pointer, a
+//     reference, an array or a template argument.
+//     A route builds a proof with no call to its door.  Each route is a kind:
+//       union           each union definition (PLUGIN_FINISH_TYPE), also an
+//                       anonymous one and the pattern of a union template
+//       pointer-cast    a static_cast, a reinterpret_cast or a bit_cast to a
+//                       pointer or a reference whose target holds a proof
+//                       type.  Outside a template, the cast is a conversion at
+//                       a place where the source spells static_cast or
+//                       reinterpret_cast.  A cast of nullptr and a cast to a
+//                       function pointer give no pointer to storage.  The front
+//                       end removes a cast with no side effect whose value the
+//                       code discards, and a cast to the type of its operand.
+//                       Neither gives a pointer that the code keeps
+//       allocator       a type that holds std::allocator, allocator_traits or
+//                       polymorphic_allocator of a type that holds a proof
+//                       type, through a written template argument: in a
+//                       declaration, a base, an alias of a namespace or of a
+//                       class (check_route_alias), a signature, a type that an
+//                       expression names, a temporary that the source spells,
+//                       and a call of a member of such a class.
+//                       The allocator of a default argument, as in
+//                       std::vector<P>, makes no object that can allocate
+//       function-specialization
+//                       an explicit specialization of a function template.
+//                       It is a friend of each class that befriends the
+//                       template, so a specialization of a door builds the
+//                       proof with no call of the door
+//       member-pointer-specialization
+//                       an explicit specialization whose template arguments
+//                       hold a pointer to a member.  The access check does not
+//                       apply to the arguments of an explicit specialization,
+//                       so a pointer to a private member escapes through one
+//       friend-template-specialization
+//                       an explicit or a partial specialization of a class
+//                       template that a class of include/ befriends with a
+//                       template friend, outside the file that defines the
+//                       template with a body.  The specialization is a friend
+//                       of that class
+//     The entity of a finding is ROUTE: KEY.  KEY is the name of the union, the
+//     qualified name of the proof type, or the qualified name of the
+//     specialized template.  The place of a route is the expansion point of
+//     its location, so a route that a macro forms counts in the file that
+//     expands the macro.
+//     Two routes are not kinds of this rule, because GCC keeps no tree of
+//     them that the plugin can read.  The parse-tree rule parse-proof-routes
+//     holds them:
+//       * An explicit instantiation, which turns off the access check for the
+//         names in it.  At PLUGIN_FINISH_UNIT, an explicit instantiation of a
+//         class has the place of its template, and an explicit instantiation
+//         of a function is on no list that a plugin can read
+//       * An allocation with the size of a proof type.  Outside a template,
+//         GCC folds each sizeof in the arguments of a call to a constant
+//         before PLUGIN_PRE_GENERICIZE
 //
 // THE REFINED PARAMETERS (the rule refined-pre-subsumption)
 //     A parameter of a specialization of fixy::Refinement, the class of
@@ -109,9 +175,47 @@ struct Names {
     // 1 when the unit has a sentinel base file (THE SENTINEL of plugin.h), 0
     // when it has none, and -1 before the first test.
     int has_sentinel = -1;
+    // THE PROOF ROUTES.
+    tree bit_cast = NULL_TREE;
+    tree allocator = NULL_TREE;
+    tree allocator_traits = NULL_TREE;
+    tree polymorphic_allocator = NULL_TREE;
+    tree foundation = NULL_TREE;
+    tree fixy = NULL_TREE;
+    tree static_cast_keyword = NULL_TREE;
+    tree reinterpret_cast_keyword = NULL_TREE;
+    // The qualified name of the class of each witness row, and the last name
+    // of each one, which a test asks before it makes a qualified name.
+    std::unordered_set<std::string> witnessed;
+    std::unordered_set<tree> witnessed_last_names;
 };
 
 Names names;
+
+// The answers of the type walks of THE PROOF ROUTES, keyed by tree.  Each
+// collection clears them, because a collection can free a tree and reuse its
+// address.
+struct Caches {
+    std::unordered_map<tree, bool> proof_class;
+    std::unordered_map<tree, tree> held_proof;
+    std::unordered_map<tree, tree> allocator_proof;
+};
+
+Caches caches;
+
+// The facts of THE PROOF ROUTES that the end of the unit reads: each class
+// template that a class of include/ befriends with a template friend, and
+// each class template with a parameter that is no type, whose explicit
+// specializations can hold a pointer to a member.  A template decl of a
+// namespace or a class stays to the end of the unit.
+struct RouteTemplates {
+    std::vector<tree> befriended;
+    std::unordered_set<tree> befriended_seen;
+    std::vector<tree> value_parameters;
+    std::unordered_set<tree> value_parameters_seen;
+};
+
+RouteTemplates route_templates;
 
 // ── The findings of the family ──────────────────────────────────────────
 
@@ -121,6 +225,39 @@ void record_in_unit(Kind kind, location_t location, const std::string& entity) {
     Place place = place_of(location, Scope::quarantine);
     if (counts_in_unit(place)) {
         add_finding(kind, nullptr, place, entity);
+    }
+}
+
+// The place of a route (THE PROOF ROUTES): the expansion point of LOCATION, in
+// a base or a quarantined file, or a place with no file.
+Place route_place(location_t location) {
+    Place place;
+    if (location == UNKNOWN_LOCATION || location <= BUILTINS_LOCATION) {
+        return place;
+    }
+    location_t point = linemap_resolve_location(line_table, location, LRK_MACRO_EXPANSION_POINT, nullptr);
+    expanded_location where = expand_location(point);
+    if (where.file == nullptr) {
+        return place;
+    }
+    const FileEntry& entry = classify_file(where.file);
+    if (!owns_place(entry.file_class, Scope::quarantine)) {
+        return place;
+    }
+    place.file_class = entry.file_class;
+    place.file = &entry;
+    place.line = where.line;
+    place.column = where.column;
+    place.spelling = point;
+    return place;
+}
+
+// A finding of THE PROOF ROUTES, with the entity ROUTE: KEY.  It counts as a
+// finding of a rule with a base scope does (counts_in_unit).
+void record_route(Kind kind, location_t location, const std::string& key) {
+    Place place = route_place(location);
+    if (counts_in_unit(place)) {
+        add_finding(kind, nullptr, place, std::string(kind_name(kind)) + ": " + key);
     }
 }
 
@@ -179,6 +316,513 @@ tree argument_at(tree call, int index) {
 // header named NAME.
 bool is_library_function(tree function, tree name) {
     return DECL_NAME(function) == name && library_of(function) == Library::c_library;
+}
+
+// ── The proof types (THE PROOF ROUTES) ──────────────────────────────────
+
+// A passkey chain is at most a key, a token that takes the key, and a carrier
+// that takes the token, as max_gate_depth of test_forgeable_proofs.cpp.  The
+// bound stops a cycle of types whose constructors take each other.
+constexpr int kGateDepth = 4;
+
+bool is_proof_class(tree type, int depth);
+
+// The class whose constructors decide the shape of TYPE: the class itself
+// when it is complete, else the pattern of its template.
+tree shape_source(tree type) {
+    if (COMPLETE_TYPE_P(type) || CLASSTYPE_TEMPLATE_INFO(type) == NULL_TREE) {
+        return type;
+    }
+    tree template_decl = CLASSTYPE_TI_TEMPLATE(type);
+    if (template_decl == NULL_TREE || TREE_CODE(template_decl) != TEMPLATE_DECL) {
+        return type;
+    }
+    tree general = most_general_template(template_decl);
+    tree result = general != NULL_TREE ? DECL_TEMPLATE_RESULT(general) : NULL_TREE;
+    return result != NULL_TREE && TREE_CODE(result) == TYPE_DECL ? TREE_TYPE(result) : type;
+}
+
+// True when a public constructor CONSTRUCTOR takes a proof type, so that only
+// a holder of that proof can call it.
+bool is_gated_constructor(tree constructor, int depth) {
+    for (tree parameter = FUNCTION_FIRST_USER_PARMTYPE(constructor);
+         parameter != NULL_TREE && parameter != void_list_node; parameter = TREE_CHAIN(parameter)) {
+        tree type = non_reference(TREE_VALUE(parameter));
+        if (type != NULL_TREE && CLASS_TYPE_P(type) && is_proof_class(type, depth + 1)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The proof shape of THE PROOF ROUTES, with no test of the namespace.
+// Complexity: O(constructors * parameters) for each class.
+bool has_proof_shape(tree type, int depth) {
+    tree source = shape_source(type);
+    if (TREE_CODE(source) != RECORD_TYPE || (COMPLETE_TYPE_P(source) && CP_AGGREGATE_TYPE_P(source))) {
+        return false;
+    }
+    // A class has a copy constructor and a move constructor, which the
+    // compiler can declare only on a use.  The implicit default constructor
+    // is public, so the test must know whether it is deleted: declare it, as
+    // a reflection query of members_of does.
+    bool declares_constructor =
+        COMPLETE_TYPE_P(source) && (CLASSTYPE_LAZY_COPY_CTOR(source) || CLASSTYPE_LAZY_MOVE_CTOR(source));
+    if (source == type && COMPLETE_TYPE_P(source) && CLASSTYPE_LAZY_DEFAULT_CTOR(source)) {
+        lazily_declare_fn(sfk_constructor, source);
+    }
+    // A constructor template is gated when a parameter of its pattern names
+    // a proof type, as the erasure constructor of a Permission takes a key.
+    for (ovl_iterator candidate(CLASSTYPE_CONSTRUCTORS(source)); candidate; ++candidate) {
+        tree constructor = *candidate;
+        tree function = TREE_CODE(constructor) == TEMPLATE_DECL ? DECL_TEMPLATE_RESULT(constructor) : constructor;
+        if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
+            continue;
+        }
+        declares_constructor = true;
+        bool is_closed = (DECL_LANG_SPECIFIC(function) != nullptr && DECL_DELETED_FN(function))
+                      || DECL_COPY_CONSTRUCTOR_P(function) || DECL_MOVE_CONSTRUCTOR_P(function)
+                      || TREE_PRIVATE(function) || TREE_PROTECTED(function);
+        if (!is_closed && !is_gated_constructor(function, depth)) {
+            return false;
+        }
+    }
+    return declares_constructor;
+}
+
+// True when a witness row of the rule table names the class TYPE.  The last
+// name answers most classes before a qualified name is made.
+bool is_witnessed(tree main_type) {
+    tree decl = TYPE_MAIN_DECL(main_type);
+    tree name = decl != NULL_TREE ? DECL_NAME(decl) : NULL_TREE;
+    return name != NULL_TREE && names.witnessed_last_names.count(name) != 0
+        && names.witnessed.count(qualified_name(decl)) != 0;
+}
+
+// True when TYPE is a proof type (THE PROOF ROUTES).  The cache keeps the
+// answer of each class at the depth 0.
+bool is_proof_class(tree type, int depth) {
+    if (type == NULL_TREE || depth > kGateDepth) {
+        return false;
+    }
+    tree main_type = TYPE_MAIN_VARIANT(type);
+    if (TREE_CODE(main_type) != RECORD_TYPE || !CLASS_TYPE_P(main_type) || LAMBDA_TYPE_P(main_type)
+        || TYPE_MAIN_DECL(main_type) == NULL_TREE) {
+        return false;
+    }
+    if (depth == 0) {
+        auto cached = caches.proof_class.find(main_type);
+        if (cached != caches.proof_class.end()) {
+            return cached->second;
+        }
+    }
+    bool is_proof = is_witnessed(main_type);
+    if (!is_proof) {
+        tree top = top_namespace(TYPE_MAIN_DECL(main_type));
+        bool is_base = top != global_namespace && (DECL_NAME(top) == names.foundation || DECL_NAME(top) == names.fixy);
+        is_proof = is_base && has_proof_shape(main_type, depth);
+    }
+    if (depth == 0) {
+        caches.proof_class.emplace(main_type, is_proof);
+    }
+    return is_proof;
+}
+
+tree held_proof_of(tree type, int depth);
+
+// The proof type that a template argument holds, or null.
+tree held_proof_of_argument(tree argument, int depth) {
+    if (argument == NULL_TREE || argument == error_mark_node || depth >= kTypeDepth) {
+        return NULL_TREE;
+    }
+    if (ARGUMENT_PACK_P(argument)) {
+        tree arguments = ARGUMENT_PACK_ARGS(argument);
+        for (int index = 0; index < TREE_VEC_LENGTH(arguments); ++index) {
+            if (tree found = held_proof_of_argument(TREE_VEC_ELT(arguments, index), depth + 1)) {
+                return found;
+            }
+        }
+        return NULL_TREE;
+    }
+    return TYPE_P(argument) ? held_proof_of(argument, depth + 1) : NULL_TREE;
+}
+
+// The proof type that TYPE holds: the type itself, or through a pointer, a
+// reference, an array or a template argument.  Returns null when it holds
+// none.  The cache keeps the answer of each class.  Complexity: O(distinct
+// types in the type tree).
+tree held_proof_of(tree type, int depth) {
+    for (; type != NULL_TREE && depth < kTypeDepth; ++depth) {
+        if (TREE_CODE(type) != POINTER_TYPE && TREE_CODE(type) != REFERENCE_TYPE && TREE_CODE(type) != ARRAY_TYPE) {
+            break;
+        }
+        type = TREE_TYPE(type);
+    }
+    if (type == NULL_TREE || depth >= kTypeDepth || TREE_CODE(type) != RECORD_TYPE || !CLASS_TYPE_P(type)) {
+        return NULL_TREE;
+    }
+    tree main_type = TYPE_MAIN_VARIANT(type);
+    auto cached = caches.held_proof.find(main_type);
+    if (cached != caches.held_proof.end()) {
+        return cached->second;
+    }
+    tree found = is_proof_class(main_type, 0) ? main_type : NULL_TREE;
+    if (found == NULL_TREE && CLASSTYPE_TEMPLATE_INFO(main_type) != NULL_TREE) {
+        tree arguments = INNERMOST_TEMPLATE_ARGS(CLASSTYPE_TI_ARGS(main_type));
+        for (int index = 0; arguments != NULL_TREE && index < TREE_VEC_LENGTH(arguments) && found == NULL_TREE;
+             ++index) {
+            found = held_proof_of_argument(TREE_VEC_ELT(arguments, index), depth);
+        }
+    }
+    caches.held_proof.emplace(main_type, found);
+    return found;
+}
+
+// The proof type that the target of a cast to TYPE holds, when TYPE is a
+// pointer or a reference whose target is no function, or null.
+tree cast_target_proof(tree type) {
+    if (type == NULL_TREE || (!TYPE_PTR_P(type) && !TYPE_REF_P(type))) {
+        return NULL_TREE;
+    }
+    tree target = TREE_TYPE(type);
+    return target != NULL_TREE && !FUNC_OR_METHOD_TYPE_P(target) ? held_proof_of(target, 0) : NULL_TREE;
+}
+
+// True when the class template of CLASS_TYPE is an allocator of THE PROOF
+// ROUTES.
+bool is_allocator_class(tree class_type) {
+    if (!CLASS_TYPE_P(class_type) || CLASSTYPE_TEMPLATE_INFO(class_type) == NULL_TREE) {
+        return false;
+    }
+    tree template_decl = CLASSTYPE_TI_TEMPLATE(class_type);
+    tree name = template_decl != NULL_TREE ? DECL_NAME(template_decl) : NULL_TREE;
+    return name != NULL_TREE
+        && (name == names.allocator || name == names.allocator_traits || name == names.polymorphic_allocator);
+}
+
+// The proof type of an allocator that TYPE holds: an allocator class whose
+// template arguments hold a proof type, through a pointer, a reference, an
+// array or a written template argument.  Returns null when it holds none.
+// GCC keeps one specialization for the two spellings std::vector<P> and
+// std::vector<P, std::allocator<P>>, and the count of its written arguments
+// is the count of the first spelling of the unit.  The cache keeps the answer
+// of each class.  Complexity: O(distinct types in the type tree).
+tree allocator_proof_of(tree type, int depth) {
+    for (; type != NULL_TREE && depth < kTypeDepth; ++depth) {
+        if (TREE_CODE(type) != POINTER_TYPE && TREE_CODE(type) != REFERENCE_TYPE && TREE_CODE(type) != ARRAY_TYPE) {
+            break;
+        }
+        type = TREE_TYPE(type);
+    }
+    if (type == NULL_TREE || depth >= kTypeDepth || TREE_CODE(type) != RECORD_TYPE || !CLASS_TYPE_P(type)
+        || CLASSTYPE_TEMPLATE_INFO(type) == NULL_TREE) {
+        return NULL_TREE;
+    }
+    tree main_type = TYPE_MAIN_VARIANT(type);
+    auto cached = caches.allocator_proof.find(main_type);
+    if (cached != caches.allocator_proof.end()) {
+        return cached->second;
+    }
+    tree found = NULL_TREE;
+    bool is_allocator = is_allocator_class(main_type);
+    tree arguments = INNERMOST_TEMPLATE_ARGS(CLASSTYPE_TI_ARGS(main_type));
+    // An argument that a default of the template gives is no name of the
+    // source: std::vector<P> holds std::allocator<P> through its default.
+    // GCC records the count of the other arguments when a default fills one.
+    int written = arguments != NULL_TREE ? TREE_VEC_LENGTH(arguments) : 0;
+    if (!is_allocator && arguments != NULL_TREE && NON_DEFAULT_TEMPLATE_ARGS_COUNT(arguments) != NULL_TREE
+        && TREE_CODE(NON_DEFAULT_TEMPLATE_ARGS_COUNT(arguments)) == INTEGER_CST) {
+        written = static_cast<int>(int_cst_value(NON_DEFAULT_TEMPLATE_ARGS_COUNT(arguments)));
+    }
+    for (int index = 0; index < written && found == NULL_TREE; ++index) {
+        tree argument = TREE_VEC_ELT(arguments, index);
+        if (argument != NULL_TREE && TYPE_P(argument)) {
+            found = is_allocator ? held_proof_of(argument, depth + 1) : allocator_proof_of(argument, depth + 1);
+        }
+    }
+    caches.allocator_proof.emplace(main_type, found);
+    return found;
+}
+
+// The allocator route of a type that the code names at LOCATION.  A type that
+// is no class template instance costs two tests.
+void check_allocator_type(tree type, location_t location) {
+    if (type == NULL_TREE || !TYPE_P(type)) {
+        return;
+    }
+    if (tree proof = allocator_proof_of(type, 0)) {
+        record_route(Kind::route_allocator, location, qualified_name(TYPE_MAIN_DECL(proof)));
+    }
+}
+
+// The allocator routes of a function type: its return type and each
+// parameter.
+void check_allocator_signature(tree function_type, location_t location) {
+    if (function_type == NULL_TREE || !FUNC_OR_METHOD_TYPE_P(function_type)) {
+        return;
+    }
+    check_allocator_type(TREE_TYPE(function_type), location);
+    for (tree parameter = TYPE_ARG_TYPES(function_type); parameter != NULL_TREE && parameter != void_list_node;
+         parameter = TREE_CHAIN(parameter)) {
+        check_allocator_type(TREE_VALUE(parameter), location);
+    }
+}
+
+// True when EXPRESSION is a null pointer constant, through its location
+// wrappers and conversions.
+bool is_null_pointer(tree expression) {
+    for (int depth = 0; expression != NULL_TREE && depth < kTypeDepth; ++depth) {
+        expression = tree_strip_any_location_wrapper(expression);
+        if (TREE_CODE(expression) != NOP_EXPR && TREE_CODE(expression) != CONVERT_EXPR) {
+            break;
+        }
+        expression = TREE_OPERAND(expression, 0);
+    }
+    return expression != NULL_TREE
+        && (expression == nullptr_node || NULLPTR_TYPE_P(TREE_TYPE(expression))
+            || (TREE_CODE(expression) == INTEGER_CST && integer_zerop(expression)));
+}
+
+// True when the source spells static_cast or reinterpret_cast at the start of
+// the range of LOCATION.
+bool spells_cast_at(location_t location) {
+    std::string spelled = identifier_spelled_at(location);
+    return spelled == IDENTIFIER_POINTER(names.static_cast_keyword)
+        || spelled == IDENTIFIER_POINTER(names.reinterpret_cast_keyword);
+}
+
+// A cast of a body to a pointer or a reference whose target holds a proof
+// type.  Outside a template, CONVERSION is the outer node of the cast: a
+// conversion, or the null test and the offset of a cast to a derived class.
+// The front end gives that node the location of the cast, so it counts only
+// where the source spells the cast at the start of its location.
+void check_cast(tree conversion, location_t location, bool is_pattern) {
+    tree proof = cast_target_proof(TREE_TYPE(conversion));
+    if (proof == NULL_TREE) {
+        return;
+    }
+    bool is_nop = TREE_CODE(conversion) == NOP_EXPR || TREE_CODE(conversion) == CONVERT_EXPR;
+    if ((is_nop || is_pattern) && is_null_pointer(TREE_OPERAND(conversion, 0))) {
+        return;
+    }
+    if (!is_pattern && !spells_cast_at(location)) {
+        return;
+    }
+    record_route(Kind::route_pointer_cast, location, qualified_name(TYPE_MAIN_DECL(proof)));
+}
+
+// ── The specializations (THE PROOF ROUTES) ──────────────────────────────
+
+// True when a template argument holds a pointer to a member: a constant of a
+// pointer to a member, the address of a member of a class, or a class
+// template instance whose arguments hold one.  Complexity: O(nodes of the
+// argument).
+bool holds_member_pointer(tree argument, int depth) {
+    if (argument == NULL_TREE || argument == error_mark_node || depth >= kTypeDepth) {
+        return false;
+    }
+    if (ARGUMENT_PACK_P(argument)) {
+        tree packed = ARGUMENT_PACK_ARGS(argument);
+        for (int index = 0; index < TREE_VEC_LENGTH(packed); ++index) {
+            if (holds_member_pointer(TREE_VEC_ELT(packed, index), depth + 1)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if (TYPE_P(argument)) {
+        tree main_type = TYPE_MAIN_VARIANT(argument);
+        if (!CLASS_TYPE_P(main_type) || CLASSTYPE_TEMPLATE_INFO(main_type) == NULL_TREE) {
+            return false;
+        }
+        tree arguments = INNERMOST_TEMPLATE_ARGS(CLASSTYPE_TI_ARGS(main_type));
+        for (int index = 0; arguments != NULL_TREE && index < TREE_VEC_LENGTH(arguments); ++index) {
+            if (holds_member_pointer(TREE_VEC_ELT(arguments, index), depth + 1)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    tree value = tree_strip_any_location_wrapper(argument);
+    switch (TREE_CODE(value)) {
+        case PTRMEM_CST:
+        case OFFSET_REF:
+            return true;
+        case NOP_EXPR:
+        case CONVERT_EXPR:
+        case VIEW_CONVERT_EXPR:
+            return holds_member_pointer(TREE_OPERAND(value, 0), depth + 1);
+        case ADDR_EXPR: {
+            tree operand = TREE_OPERAND(value, 0);
+            return operand != NULL_TREE
+                && (TREE_CODE(operand) == SCOPE_REF || TREE_CODE(operand) == OFFSET_REF
+                    || TREE_CODE(operand) == BASELINK || (DECL_P(operand) && DECL_CLASS_SCOPE_P(operand)));
+        }
+        default:
+            return false;
+    }
+}
+
+// True when the innermost arguments of the template arguments ARGUMENTS hold
+// a pointer to a member.
+bool holds_member_pointer_in(tree arguments) {
+    tree inner = arguments != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(arguments) : NULL_TREE;
+    if (inner == NULL_TREE || TREE_CODE(inner) != TREE_VEC) {
+        return false;
+    }
+    for (int index = 0; index < TREE_VEC_LENGTH(inner); ++index) {
+        if (holds_member_pointer(TREE_VEC_ELT(inner, index), 0)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The qualified name of the most general template of TEMPLATE_DECL.
+std::string template_key(tree template_decl) {
+    tree general = most_general_template(template_decl);
+    return qualified_name(general != NULL_TREE ? general : template_decl);
+}
+
+// An explicit specialization of a function template or a variable template:
+// the route function-specialization for a function, and the route
+// member-pointer-specialization when its template arguments hold a pointer to
+// a member.  An explicit specialization of a member of an instance of a class
+// template, such as `template <> void X<int>::f()`, is no specialization of a
+// function template.
+void check_decl_specialization(tree decl) {
+    if (!VAR_OR_FUNCTION_DECL_P(decl) || DECL_LANG_SPECIFIC(decl) == nullptr || !DECL_TEMPLATE_SPECIALIZATION(decl)
+        || DECL_TEMPLATE_INFO(decl) == NULL_TREE) {
+        return;
+    }
+    tree template_decl = DECL_TI_TEMPLATE(decl);
+    if (template_decl == NULL_TREE || TREE_CODE(template_decl) != TEMPLATE_DECL || !PRIMARY_TEMPLATE_P(template_decl)) {
+        return;
+    }
+    location_t location = DECL_SOURCE_LOCATION(decl);
+    std::string key = template_key(template_decl);
+    if (TREE_CODE(decl) == FUNCTION_DECL) {
+        record_route(Kind::route_function_specialization, location, key);
+    }
+    if (holds_member_pointer_in(DECL_TI_ARGS(decl))) {
+        record_route(Kind::route_member_pointer_specialization, location, key);
+    }
+}
+
+// The template decl of a class template instance or specialization TYPE, or
+// null.
+tree class_template_of(tree type) {
+    if (!CLASS_TYPE_P(type) || CLASSTYPE_TEMPLATE_INFO(type) == NULL_TREE) {
+        return NULL_TREE;
+    }
+    tree template_decl = CLASSTYPE_TI_TEMPLATE(type);
+    return template_decl != NULL_TREE && TREE_CODE(template_decl) == TEMPLATE_DECL ? template_decl : NULL_TREE;
+}
+
+// An explicit specialization of a class template whose template arguments
+// hold a pointer to a member.
+void check_class_specialization(tree type) {
+    if (!CLASSTYPE_TEMPLATE_SPECIALIZATION(type) || uses_template_parms(type)
+        || !holds_member_pointer_in(CLASSTYPE_TI_ARGS(type))) {
+        return;
+    }
+    if (tree template_decl = class_template_of(type)) {
+        record_route(Kind::route_member_pointer_specialization, DECL_SOURCE_LOCATION(TYPE_MAIN_DECL(type)),
+                     template_key(template_decl));
+    }
+}
+
+// True when a parameter of the innermost template parameter list of
+// TEMPLATE_DECL is no type, so that an argument can be a pointer to a member.
+bool has_value_parameter(tree template_decl) {
+    tree levels = DECL_TEMPLATE_PARMS(template_decl);
+    tree inner = levels != NULL_TREE ? INNERMOST_TEMPLATE_PARMS(levels) : NULL_TREE;
+    for (int index = 0; inner != NULL_TREE && index < TREE_VEC_LENGTH(inner); ++index) {
+        tree parameter = TREE_VALUE(TREE_VEC_ELT(inner, index));
+        if (parameter != NULL_TREE && TREE_CODE(parameter) == PARM_DECL) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The template friends of a class of include/: each class template that the
+// class befriends, for the end of the unit.  The pattern of a class template
+// with a parameter that is no type, for the end of the unit too.  A class with
+// no friend and no template costs two tests.
+void note_route_templates(tree type, location_t location) {
+    if (CLASSTYPE_FRIEND_CLASSES(type) != NULL_TREE) {
+        Place place = route_place(location);
+        if (place.file != nullptr && has_prefix(place.file->relative, "include/")) {
+            for (tree entry = CLASSTYPE_FRIEND_CLASSES(type); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
+                tree befriended = TREE_VALUE(entry);
+                if (befriended != NULL_TREE && TREE_CODE(befriended) == TEMPLATE_DECL
+                    && route_templates.befriended_seen.insert(befriended).second) {
+                    route_templates.befriended.push_back(befriended);
+                }
+            }
+        }
+    }
+    tree template_decl = class_template_of(type);
+    if (template_decl != NULL_TREE && PRIMARY_TEMPLATE_P(template_decl)
+        && TREE_TYPE(DECL_TEMPLATE_RESULT(template_decl)) == type && has_value_parameter(template_decl)
+        && route_templates.value_parameters_seen.insert(template_decl).second) {
+        route_templates.value_parameters.push_back(template_decl);
+    }
+}
+
+// The location that defines a class template: its pattern.
+location_t pattern_location(tree template_decl) {
+    tree result = DECL_TEMPLATE_RESULT(template_decl);
+    return result != NULL_TREE && TREE_CODE(result) == TYPE_DECL && CLASS_TYPE_P(TREE_TYPE(result))
+             ? DECL_SOURCE_LOCATION(TYPE_MAIN_DECL(TREE_TYPE(result)))
+             : DECL_SOURCE_LOCATION(template_decl);
+}
+
+// Each explicit and each partial specialization of a befriended class
+// template outside the file that defines the template with a body: the route
+// friend-template-specialization.  A template with no definition in the unit
+// has no defining file here, so each of its specializations counts.
+void read_friend_specializations(tree befriended) {
+    tree general = most_general_template(befriended);
+    if (general == NULL_TREE) {
+        general = befriended;
+    }
+    tree result = DECL_TEMPLATE_RESULT(general);
+    if (result == NULL_TREE || TREE_CODE(result) != TYPE_DECL || !CLASS_TYPE_P(TREE_TYPE(result))) {
+        return;
+    }
+    const FileEntry* home = COMPLETE_TYPE_P(TREE_TYPE(result)) ? route_place(pattern_location(general)).file : nullptr;
+    std::string key = qualified_name(general);
+    auto read_site = [&](location_t location) {
+        if (route_place(location).file != home || home == nullptr) {
+            record_route(Kind::route_friend_template_specialization, location, key);
+        }
+    };
+    for (tree entry = DECL_TEMPLATE_SPECIALIZATIONS(general); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
+        tree partial = TREE_VALUE(entry);
+        if (partial != NULL_TREE && TREE_CODE(partial) == TEMPLATE_DECL) {
+            read_site(pattern_location(partial));
+        }
+    }
+    for (tree entry = DECL_TEMPLATE_INSTANTIATIONS(general); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
+        tree specialization = TREE_VALUE(entry);
+        if (specialization != NULL_TREE && CLASS_TYPE_P(specialization)
+            && CLASSTYPE_TEMPLATE_SPECIALIZATION(specialization) && !uses_template_parms(specialization)) {
+            read_site(DECL_SOURCE_LOCATION(TYPE_MAIN_DECL(specialization)));
+        }
+    }
+}
+
+// Each explicit specialization of a class template with a parameter that is
+// no type, also one that the unit only declares (check_class_specialization).
+void read_value_specializations(tree template_decl) {
+    for (tree entry = DECL_TEMPLATE_INSTANTIATIONS(template_decl); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
+        tree specialization = TREE_VALUE(entry);
+        if (specialization != NULL_TREE && CLASS_TYPE_P(specialization)) {
+            check_class_specialization(specialization);
+        }
+    }
 }
 
 // ── The refined parameters (THE REFINED PARAMETERS) ─────────────────────
@@ -495,6 +1139,42 @@ void collect_macro_facts(tree node, location_t location) {
     }
 }
 
+// ── The routes of a call (THE PROOF ROUTES) ─────────────────────────────
+
+// A bit_cast, and a call of a member of an allocator of a proof type.
+void check_call_routes(tree call, location_t location) {
+    tree callee = callee_of(call);
+    bool is_bit_cast = false;
+    tree allocator = NULL_TREE;
+    for_each_function(callee, [&](tree function) {
+        is_bit_cast = is_bit_cast || DECL_NAME(function) == names.bit_cast;
+        // A constructor builds the allocator of a default argument too, as in
+        // std::vector<P>(count, value), and the source spells none.  A spelled
+        // object of the class is a declaration or a temporary.
+        tree context = DECL_CONTEXT(function);
+        bool is_member_call = !DECL_CONSTRUCTOR_P(function) && !DECL_DESTRUCTOR_P(function);
+        if (allocator == NULL_TREE && is_member_call && context != NULL_TREE && TYPE_P(context)) {
+            allocator = allocator_proof_of(context, 0);
+        }
+    });
+    if (allocator != NULL_TREE) {
+        record_route(Kind::route_allocator, location, qualified_name(TYPE_MAIN_DECL(allocator)));
+    }
+    if (is_bit_cast) {
+        tree target = TREE_TYPE(call);
+        if (TREE_CODE(callee) == TEMPLATE_ID_EXPR || (TREE_CODE(callee) == ADDR_EXPR && target == NULL_TREE)) {
+            tree arguments = TREE_CODE(callee) == TEMPLATE_ID_EXPR ? TREE_OPERAND(callee, 1) : NULL_TREE;
+            target = arguments != NULL_TREE && TREE_CODE(arguments) == TREE_VEC && TREE_VEC_LENGTH(arguments) > 0
+                       ? TREE_VEC_ELT(arguments, 0)
+                       : target;
+        }
+        tree proof = target != NULL_TREE && TYPE_P(target) ? cast_target_proof(target) : NULL_TREE;
+        if (proof != NULL_TREE) {
+            record_route(Kind::route_pointer_cast, location, qualified_name(TYPE_MAIN_DECL(proof)));
+        }
+    }
+}
+
 // ── The walk of a body ──────────────────────────────────────────────────
 
 void walk_expression(tree* expression, BodyWalk& walk);
@@ -516,7 +1196,8 @@ void check_new_expression(tree expression, location_t location) {
 // a template is.  An implicit list initialization has the flag
 // TARGET_EXPR_LIST_INIT_P, and a call that returns a class calls no
 // constructor, so neither is a finding.  A TARGET_EXPR with no location of
-// its own is no finding either.
+// its own is no finding either.  The allocator route of the class counts at
+// the same place (THE PROOF ROUTES).
 void check_temporary(tree target) {
     if (TARGET_EXPR_LIST_INIT_P(target) || TARGET_EXPR_INITIAL(target) == NULL_TREE || !EXPR_HAS_LOCATION(target)) {
         return;
@@ -525,6 +1206,9 @@ void check_temporary(tree target) {
     tree callee = cp_get_callee_fndecl_nofold(TARGET_EXPR_INITIAL(target));
     if (callee == NULL_TREE || TREE_CODE(callee) != FUNCTION_DECL || !DECL_CONSTRUCTOR_P(callee)) {
         return;
+    }
+    if (allocator_proof_of(TREE_TYPE(target), 0) != NULL_TREE && spells_class_at(location, TREE_TYPE(target))) {
+        check_allocator_type(TREE_TYPE(target), location);
     }
     const FileEntry* language = nullptr;
     LibraryClasses classes = library_classes_at(TREE_TYPE(target), location, Use::other, language);
@@ -568,6 +1252,7 @@ void check_local_decl(tree decl, BodyWalk& walk) {
         if (!is_binding && !is_proxy && !is_artificial) {
             check_object(decl, Role::variable);
             check_foreign_declaration(decl);
+            check_allocator_type(TREE_TYPE(decl), DECL_SOURCE_LOCATION(decl));
         }
         check_closure(TREE_TYPE(decl));
         // A template keeps the initializer of a local in DECL_INITIAL, and
@@ -586,6 +1271,7 @@ void check_local_decl(tree decl, BodyWalk& walk) {
     }
     if (TREE_CODE(decl) == TYPE_DECL && !DECL_ARTIFICIAL(decl)) {
         check_alias(decl);
+        check_allocator_type(DECL_ORIGINAL_TYPE(decl), DECL_SOURCE_LOCATION(decl));
         return;
     }
     if (TREE_CODE(decl) == TYPE_DECL && DECL_IMPLICIT_TYPEDEF_P(decl) && CLASS_TYPE_P(TREE_TYPE(decl))) {
@@ -673,6 +1359,13 @@ bool walk_call_without_immediate_defaults(tree call, BodyWalk& walk) {
     return true;
 }
 
+// A type that the code names in an expression: the uses of the family owner,
+// and the allocator route (THE PROOF ROUTES).
+void check_named_type(tree type, location_t location) {
+    check_type_use(type, location);
+    check_allocator_type(type, location);
+}
+
 // Each declaration among the operands of NODE.  A list and a braced
 // initializer hold operands too.
 void check_named_operands(tree node, location_t location) {
@@ -685,18 +1378,18 @@ void check_named_operands(tree node, location_t location) {
         case CONST_CAST_EXPR:
         case DYNAMIC_CAST_EXPR:
         case BIT_CAST_EXPR:
-            check_type_use(TREE_TYPE(node), location);
+            check_named_type(TREE_TYPE(node), location);
             break;
         case CONSTRUCTOR:
             if (COMPOUND_LITERAL_P(node)) {
-                check_type_use(TREE_TYPE(node), location);
+                check_named_type(TREE_TYPE(node), location);
             }
             break;
         case TEMPLATE_ID_EXPR:
             if (tree arguments = TREE_OPERAND(node, 1); arguments != NULL_TREE && TREE_CODE(arguments) == TREE_VEC) {
                 for (int index = 0; index < TREE_VEC_LENGTH(arguments); ++index) {
                     if (tree argument = TREE_VEC_ELT(arguments, index); argument != NULL_TREE && TYPE_P(argument)) {
-                        check_type_use(argument, location);
+                        check_named_type(argument, location);
                     }
                 }
             }
@@ -737,11 +1430,39 @@ void check_named_operands(tree node, location_t location) {
     }
 }
 
-// The expression shape of the rule of THE REFINED PARAMETERS at one node.
+// The expression shapes of the rules of THE PROOF ROUTES and THE REFINED
+// PARAMETERS at one node.
 void check_expression_rules(tree node, BodyWalk& walk) {
-    bool is_call = TREE_CODE(node) == CALL_EXPR || TREE_CODE(node) == AGGR_INIT_EXPR;
-    if (is_call && !walk.refined.empty()) {
-        check_retest(node, EXPR_HAS_LOCATION(node) ? EXPR_LOCATION(node) : walk.last, walk);
+    switch (TREE_CODE(node)) {
+        case NOP_EXPR:
+        case CONVERT_EXPR:
+        case VIEW_CONVERT_EXPR:
+        case COND_EXPR:
+        case POINTER_PLUS_EXPR:
+            if (!walk.is_pattern && EXPR_HAS_LOCATION(node)) {
+                check_cast(node, EXPR_LOCATION(node), false);
+            }
+            break;
+        case STATIC_CAST_EXPR:
+        case REINTERPRET_CAST_EXPR:
+            check_cast(node, walk.last, true);
+            break;
+        case BIT_CAST_EXPR:
+            if (tree proof = cast_target_proof(TREE_TYPE(node))) {
+                record_route(Kind::route_pointer_cast, walk.last, qualified_name(TYPE_MAIN_DECL(proof)));
+            }
+            break;
+        case CALL_EXPR:
+        case AGGR_INIT_EXPR: {
+            location_t location = EXPR_HAS_LOCATION(node) ? EXPR_LOCATION(node) : walk.last;
+            check_call_routes(node, location);
+            if (!walk.refined.empty()) {
+                check_retest(node, location, walk);
+            }
+            break;
+        }
+        default:
+            break;
     }
 }
 
@@ -766,7 +1487,7 @@ tree visit_body_node(tree* node_pointer, int* walk_subtrees, void* data) {
         // of its operand.
         case SIZEOF_EXPR:
             if (SIZEOF_EXPR_TYPE_P(node)) {
-                check_type_use(TREE_TYPE(TREE_OPERAND(node, 0)), walk.last);
+                check_named_type(TREE_TYPE(TREE_OPERAND(node, 0)), walk.last);
                 *walk_subtrees = 0;
                 return NULL_TREE;
             }
@@ -862,7 +1583,7 @@ tree visit_body_node(tree* node_pointer, int* walk_subtrees, void* data) {
             break;
     }
     if (TYPE_P(node)) {
-        check_type_use(node, walk.last);
+        check_named_type(node, walk.last);
         *walk_subtrees = 0;
     }
     return NULL_TREE;
@@ -908,12 +1629,21 @@ bool has_sentinel_file() {
 
 tree visit_family_node(tree* node_pointer, int* walk_subtrees, void* data);
 
-// A local declaration of a body that only the family reads.  A template keeps
-// the initializer of a local in DECL_INITIAL, and cp_walk_tree does not reach
-// it outside template processing.  A member function of a local class of a
-// template is a pattern that no PLUGIN_PRE_GENERICIZE gives.
+// A local declaration of a body that only the family reads: the allocator
+// route of its type (THE PROOF ROUTES).  A template keeps the initializer of a
+// local in DECL_INITIAL, and cp_walk_tree does not reach it outside template
+// processing.  A member function of a local class of a template is a pattern
+// that no PLUGIN_PRE_GENERICIZE gives.
 void walk_family_local(tree decl, BodyWalk& walk) {
-    if (decl == NULL_TREE || !walk.is_pattern) {
+    if (decl == NULL_TREE) {
+        return;
+    }
+    if (VAR_P(decl)) {
+        check_allocator_type(TREE_TYPE(decl), DECL_SOURCE_LOCATION(decl));
+    } else if (TREE_CODE(decl) == TYPE_DECL && !DECL_ARTIFICIAL(decl)) {
+        check_allocator_type(DECL_ORIGINAL_TYPE(decl), DECL_SOURCE_LOCATION(decl));
+    }
+    if (!walk.is_pattern) {
         return;
     }
     if (VAR_P(decl) && DECL_INITIAL(decl) != NULL_TREE) {
@@ -962,25 +1692,24 @@ tree visit_family_node(tree* node_pointer, int* walk_subtrees, void* data) {
     }
     check_expression_rules(node, walk);
     if (TYPE_P(node)) {
+        check_allocator_type(node, walk.last);
         *walk_subtrees = 0;
     }
     return NULL_TREE;
 }
 
 // The body of a function of a sentinel base file, which no walk of the
-// quarantine reads.  A body with no refined parameter holds no finding of
-// the family, other than in a local class of a pattern.  A lambda has a body
-// of its own.  Complexity: O(nodes of the body).
+// quarantine reads.  Each body can hold a route (THE PROOF ROUTES), and a body
+// with a refined parameter can hold a test of its predicate.  A lambda has a
+// body of its own.  Complexity: O(nodes of the body).
 void walk_family_body(tree function, location_t location, bool is_pattern) {
-    if (names.cited.empty() || (DECL_ARTIFICIAL(function) && !LAMBDA_FUNCTION_P(function))
+    if ((DECL_ARTIFICIAL(function) && !LAMBDA_FUNCTION_P(function))
         || (DECL_LANG_SPECIFIC(function) != nullptr && DECL_DEFAULTED_FN(function))
         || DECL_SAVED_TREE(function) == NULL_TREE) {
         return;
     }
+    check_allocator_signature(TREE_TYPE(function), location);
     std::vector<RefinedParameter> refined = refined_parameters_of(function);
-    if (refined.empty() && !is_pattern) {
-        return;
-    }
     hash_set<tree> visited;
     BodyWalk walk;
     walk.last = location;
@@ -1274,7 +2003,93 @@ void finish_grant(const GrantRow& row, GrantUnit& unit) {
                 std::to_string(issued.size()) + " issued, " + std::to_string(granted.size()) + " granted");
 }
 
+// ── The declarations and the types of the family (THE PROOF ROUTES) ─────
+
+// PLUGIN_FINISH_TYPE gives each class that the source defines, also a local
+// one, an anonymous one, the pattern of a template and an explicit or partial
+// specialization, and no implicit instantiation.  Each union definition is a
+// route.  The bases and the member aliases of a class can hold an allocator.
+// A class of include/ can befriend a class template, and a class template can
+// have a parameter that is no type.
+void on_finish_route_type(void* gcc_data, void*) {
+    tree type = static_cast<tree>(gcc_data);
+    if (type == NULL_TREE || type == error_mark_node || !CLASS_TYPE_P(type)) {
+        return;
+    }
+    tree decl = TYPE_MAIN_DECL(type);
+    location_t location = decl != NULL_TREE ? DECL_SOURCE_LOCATION(decl) : input_location;
+    if (TREE_CODE(type) == UNION_TYPE) {
+        tree name = decl != NULL_TREE ? DECL_NAME(decl) : NULL_TREE;
+        bool is_named = name != NULL_TREE && TREE_CODE(name) == IDENTIFIER_NODE && !IDENTIFIER_ANON_P(name);
+        record_route(Kind::route_union, location, is_named ? IDENTIFIER_POINTER(name) : "<anonymous>");
+        return;
+    }
+    if (tree binfo = TYPE_BINFO(type)) {
+        for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
+            check_allocator_type(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), location);
+        }
+    }
+    for (tree member = TYPE_FIELDS(type); member != NULL_TREE; member = DECL_CHAIN(member)) {
+        if (TREE_CODE(member) == TYPE_DECL && !DECL_ARTIFICIAL(member) && DECL_ORIGINAL_TYPE(member) != NULL_TREE) {
+            check_allocator_type(DECL_ORIGINAL_TYPE(member), DECL_SOURCE_LOCATION(member));
+        }
+    }
+    note_route_templates(type, location);
+    check_class_specialization(type);
+}
+
+// PLUGIN_FINISH_DECL gives each declaration that cp_finish_decl finishes: a
+// variable, a data member and a declaration of a function.  cp_finish_decl
+// returns before the hook for an alias declaration, and check_route_alias
+// reads an alias from the walk of the declarations.  The allocator route of
+// its type, and an explicit specialization of a function template or a
+// variable template.  A type that holds no class template instance costs two
+// tests.
+void on_finish_route_decl(void* gcc_data, void*) {
+    tree decl = static_cast<tree>(gcc_data);
+    if (decl == NULL_TREE || decl == error_mark_node || !DECL_P(decl) || DECL_ARTIFICIAL(decl)) {
+        return;
+    }
+    switch (TREE_CODE(decl)) {
+        case VAR_DECL:
+        case FIELD_DECL:
+            check_allocator_type(TREE_TYPE(decl), DECL_SOURCE_LOCATION(decl));
+            break;
+        case FUNCTION_DECL:
+            check_allocator_signature(TREE_TYPE(decl), DECL_SOURCE_LOCATION(decl));
+            break;
+        default:
+            break;
+    }
+    check_decl_specialization(decl);
+}
+
+// PLUGIN_FINISH_PARSE_FUNCTION gives each function definition: an explicit
+// specialization of a function template.
+void on_finish_route_function(void* gcc_data, void*) {
+    tree function = static_cast<tree>(gcc_data);
+    if (function != NULL_TREE && TREE_CODE(function) == FUNCTION_DECL) {
+        check_decl_specialization(function);
+    }
+}
+
+void on_route_collection(void*, void*) {
+    caches.proof_class.clear();
+    caches.held_proof.clear();
+    caches.allocator_proof.clear();
+}
+
 }  // namespace
+
+// An alias of a namespace or of a class that the walk of the declarations
+// reads (check_alias in declaration.cpp): the allocator route of the type
+// that it names.  The census keeps one finding for the member alias that
+// PLUGIN_FINISH_TYPE also reads.
+void check_route_alias(tree decl) {
+    if (decl != NULL_TREE && TREE_CODE(decl) == TYPE_DECL && !DECL_ARTIFICIAL(decl)) {
+        check_allocator_type(DECL_ORIGINAL_TYPE(decl), DECL_SOURCE_LOCATION(decl));
+    }
+}
 
 // One walk of a body or an initializer, with its own set of visited nodes.
 void walk_root(tree* root, location_t location, bool is_pattern) {
@@ -1311,6 +2126,7 @@ void walk_body(tree function, bool is_pattern) {
     if (DECL_ARTIFICIAL(function) && !LAMBDA_FUNCTION_P(function)) {
         return;
     }
+    check_allocator_signature(TREE_TYPE(function), location);
     check_signature(function, is_pattern);
     if (is_pattern) {
         walk_constraints(function);
@@ -1333,7 +2149,7 @@ void walk_body(tree function, bool is_pattern) {
 // declaration property gives each function of each namespace, and a unit
 // with no sentinel base file pays one test.
 void walk_family_pattern(tree function) {
-    if (names.cited.empty() || !has_sentinel_file()) {
+    if (!has_sentinel_file()) {
         return;
     }
     const char* file = DECL_SOURCE_FILE(function);
@@ -1343,7 +2159,8 @@ void walk_family_pattern(tree function) {
 }
 
 // The comparison of each grant row whose grant file the unit read (THE
-// GRANTS).
+// GRANTS), and the specializations of the templates that THE PROOF ROUTES
+// noted.  Complexity: O(specializations of the noted templates).
 void finish_expression_rules() {
     for (const GrantRow& row : state.table.grants) {
         auto unit = grant_units.find(&row);
@@ -1351,9 +2168,15 @@ void finish_expression_rules() {
             finish_grant(row, unit->second);
         }
     }
+    for (tree befriended : route_templates.befriended) {
+        read_friend_specializations(befriended);
+    }
+    for (tree template_decl : route_templates.value_parameters) {
+        read_value_specializations(template_decl);
+    }
 }
 
-// Registers the walk of each function body.
+// Registers the walk of each function body and the hooks of THE PROOF ROUTES.
 void register_expressions(const char* plugin_name) {
     names.refinement = get_identifier("Refinement");
     names.decide = get_identifier("decide");
@@ -1363,7 +2186,25 @@ void register_expressions(const char* plugin_name) {
             names.cited.insert(get_identifier(procedure.c_str()));
         }
     }
+    names.bit_cast = get_identifier("bit_cast");
+    names.allocator = get_identifier("allocator");
+    names.allocator_traits = get_identifier("allocator_traits");
+    names.polymorphic_allocator = get_identifier("polymorphic_allocator");
+    names.foundation = get_identifier("foundation");
+    names.fixy = get_identifier("fixy");
+    names.static_cast_keyword = get_identifier("static_cast");
+    names.reinterpret_cast_keyword = get_identifier("reinterpret_cast");
+    for (const WitnessRow& witness : state.table.witnesses) {
+        names.witnessed.insert(witness.name);
+        std::size_t last = witness.name.rfind("::");
+        names.witnessed_last_names.insert(
+            get_identifier(last == std::string::npos ? witness.name.c_str() : witness.name.c_str() + last + 2));
+    }
     register_callback(plugin_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize, nullptr);
+    register_callback(plugin_name, PLUGIN_FINISH_TYPE, on_finish_route_type, nullptr);
+    register_callback(plugin_name, PLUGIN_FINISH_DECL, on_finish_route_decl, nullptr);
+    register_callback(plugin_name, PLUGIN_FINISH_PARSE_FUNCTION, on_finish_route_function, nullptr);
+    register_callback(plugin_name, PLUGIN_GGC_START, on_route_collection, nullptr);
 }
 
 }  // namespace crucible_plugin

@@ -1,0 +1,3 @@
+format 1
+rule parse-proof-routes
+src/instantiate.cpp | explicit-instantiation | 1 | explicit-instantiation: struct Ring<4> | The plant of an instantiation over an integer argument.

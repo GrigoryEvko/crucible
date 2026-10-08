@@ -1,0 +1,20 @@
+# A shape in a base header counts only in the sentinel unit of that header.
+# The sentinel unit gives each shape of include/forge/Pool.h, and the
+# quarantined unit with no argument reads the same header and gives none.
+
+compile sentinel src/uses.cpp sentinel=include/forge/Pool.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel proof-routes union include/forge/Pool.h:13:7 | union: Cell
+finding sentinel proof-routes allocator include/forge/Pool.h:19:26 | allocator: forge::Door
+finding sentinel proof-routes allocator include/forge/Pool.h:23:7 | allocator: forge::Door
+finding sentinel proof-routes allocator include/forge/Pool.h:26:26 | allocator: forge::Door
+finding sentinel proof-routes allocator include/forge/Pool.h:29:13 | allocator: forge::Door
+finding sentinel proof-routes allocator include/forge/Pool.h:31:8 | allocator: forge::Door
+finding sentinel proof-routes pointer-cast include/forge/Pool.h:33:44 | pointer-cast: forge::Door
+finding sentinel escape-doors bare-door include/forge/Pool.h:33:14 | forge::cast_back(void*)
+finding sentinel escape-doors bare-door include/forge/Pool.h:35:23 | forge::rebind(void*)
+
+compile plain src/uses.cpp stage=c
+exit plain pass
+judge plain

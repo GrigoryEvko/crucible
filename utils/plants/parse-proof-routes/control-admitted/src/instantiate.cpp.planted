@@ -1,0 +1,11 @@
+// An explicit instantiation over an integer argument, which the ledger of the
+// tree admits with its reason.
+namespace forge {
+
+template <int N> struct Ring {
+    int slots[N]{};
+};
+
+template struct Ring<4>;
+
+}  // namespace forge

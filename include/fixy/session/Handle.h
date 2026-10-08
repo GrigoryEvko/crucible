@@ -661,8 +661,8 @@ concept carries_brand = brand_of(^^LoopCtx) == std::meta::dealias(^^Brand);
 //
 // The language leaves one route that this shape does not close: an
 // explicit specialization of a member template of the door is a member
-// of the door.  utils/assay/guard/legacy/check_proof_routes.py refuses an explicit
-// specialization of a function in the source (function-specialization).
+// of the door.  The rule proof-routes of the quarantine plugin refuses an
+// explicit specialization of a function template (function-specialization).
 
 namespace detail {
 

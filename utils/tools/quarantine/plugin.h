@@ -192,6 +192,19 @@
 //     The rule lifetime-twin:
 //     missing-twin          a parameter that CRUCIBLE_LIFETIMEBOUND marks, with
 //                           no deleted overload that refuses a temporary there
+//     The rule proof-routes (expression.cpp, THE PROOF ROUTES):
+//     union                 a union definition
+//     pointer-cast          a cast to a pointer or a reference to a proof type
+//     allocator             an allocator of the library of a proof type
+//     function-specialization
+//                           an explicit specialization of a function template
+//     member-pointer-specialization
+//                           an explicit specialization whose template arguments
+//                           hold a pointer to a member
+//     friend-template-specialization
+//                           a specialization of a class template that a class
+//                           of include/ befriends, outside the file that
+//                           defines the template
 //     The rule witness-roster:
 //     unrostered-witness    a class of a base file with a door shape and no
 //                           witness row of the rule table
@@ -438,8 +451,9 @@ struct GrantRow {
 
 // One witness row: a class that attests to a fact that it cannot see.  The
 // rule witness-roster reads the name of the class (declaration.cpp, THE RULE
-// witness-roster).  The writer of the negative fixtures reads the header, the
-// refusal and the expression of a forger
+// witness-roster), and the rule proof-routes reads it as a proof type
+// (expression.cpp, THE PROOF ROUTES).  The writer of the negative fixtures
+// reads the header, the refusal and the expression of a forger
 // (utils/assay/loop/derive/witness_fixtures.py).
 struct WitnessRow {
     std::string header;  // the name inside the angle brackets
@@ -466,6 +480,7 @@ enum class Rule : std::uint8_t {
     process_wide_state,
     lifetime_twin,
     witness_roster,
+    proof_routes,
     refined_pre_subsumption,
     syscall_grant_coverage,
     federation_admission,
@@ -552,6 +567,12 @@ enum class Kind : std::uint8_t {
     marker_without_object,
     missing_twin,
     unrostered_witness,
+    route_union,
+    route_pointer_cast,
+    route_allocator,
+    route_function_specialization,
+    route_member_pointer_specialization,
+    route_friend_template_specialization,
     refined_retest,
     grant_not_granted,
     grant_not_issued,
@@ -606,6 +627,8 @@ inline const char* rule_name(Rule rule) {
             return "lifetime-twin";
         case Rule::witness_roster:
             return "witness-roster";
+        case Rule::proof_routes:
+            return "proof-routes";
         case Rule::refined_pre_subsumption:
             return "refined-pre-subsumption";
         case Rule::syscall_grant_coverage:
@@ -720,6 +743,18 @@ inline const char* kind_name(Kind kind) {
             return "missing-twin";
         case Kind::unrostered_witness:
             return "unrostered-witness";
+        case Kind::route_union:
+            return "union";
+        case Kind::route_pointer_cast:
+            return "pointer-cast";
+        case Kind::route_allocator:
+            return "allocator";
+        case Kind::route_function_specialization:
+            return "function-specialization";
+        case Kind::route_member_pointer_specialization:
+            return "member-pointer-specialization";
+        case Kind::route_friend_template_specialization:
+            return "friend-template-specialization";
         case Kind::refined_retest:
             return "retest";
         case Kind::grant_not_granted:
@@ -803,6 +838,13 @@ inline Rule rule_of(Kind kind) {
             return Rule::lifetime_twin;
         case Kind::unrostered_witness:
             return Rule::witness_roster;
+        case Kind::route_union:
+        case Kind::route_pointer_cast:
+        case Kind::route_allocator:
+        case Kind::route_function_specialization:
+        case Kind::route_member_pointer_specialization:
+        case Kind::route_friend_template_specialization:
+            return Rule::proof_routes;
         case Kind::refined_retest:
             return Rule::refined_pre_subsumption;
         case Kind::grant_not_granted:
@@ -853,6 +895,7 @@ inline bool is_family_kind(Kind kind) {
         case Rule::escape_doors:
         case Rule::stub_discipline:
         case Rule::witness_roster:
+        case Rule::proof_routes:
         case Rule::refined_pre_subsumption:
         case Rule::syscall_grant_coverage:
             return true;
@@ -947,6 +990,12 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"process-wide-state", "marker-without-object"},
     {"lifetime-twin", "missing-twin"},
     {"witness-roster", "unrostered-witness"},
+    {"proof-routes", "union"},
+    {"proof-routes", "pointer-cast"},
+    {"proof-routes", "allocator"},
+    {"proof-routes", "function-specialization"},
+    {"proof-routes", "member-pointer-specialization"},
+    {"proof-routes", "friend-template-specialization"},
     {"refined-pre-subsumption", "retest"},
     {"syscall-grant-coverage", "not-granted"},
     {"syscall-grant-coverage", "not-issued"},
@@ -1633,9 +1682,10 @@ void register_declarations(const char* plugin_name);
 std::string function_signature(tree function);
 
 // expression.cpp: the family expression shape, the walk of a body, and the
-// rules refined-pre-subsumption and syscall-grant-coverage.
+// rules proof-routes, refined-pre-subsumption and syscall-grant-coverage.
 void walk_root(tree* root, location_t location, bool is_pattern);
 void walk_body(tree function, bool is_pattern);
+void check_route_alias(tree decl);
 void register_expressions(const char* plugin_name);
 void finish_expression_rules();
 void walk_family_pattern(tree function);

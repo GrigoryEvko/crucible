@@ -45,12 +45,6 @@ struct PointerResult {
     static expected<PointerResult*, int> make() noexcept;
 };
 
-// A union is no door.
-union Bits {
-    friend Bits mint_bits();
-    int raw;
-};
-
 // A door that a witness row names.
 class Rostered {
     friend Rostered mint_rostered();

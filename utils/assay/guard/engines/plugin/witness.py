@@ -80,9 +80,10 @@ THE JUDGEMENT
 THE DERIVED DIAGNOSTICS
     In the mode error, each finding that no region opts out is an error at
     its location.  The key errors=OTHER says that the errors of the compile
-    are the finding rows of the compile OTHER.  A finding of each rule other
-    than contract-specifier gives an error.  Its message holds "quarantine:
-    KIND ENTITY" with a semicolon after the entity.  A finding of the rule
+    are the finding rows of the compile OTHER.  In the mode report, only a
+    finding of the rules of EACH_MODE_RULES gives an error.  The message of
+    the error of a finding of a rule other than contract-specifier holds
+    "quarantine: KIND ENTITY" with a semicolon after the entity.  A finding of the rule
     contract-specifier gives the error of the contract rule.  A finding at
     the line 0, a fact of all the unit, gives an error with no location.
     The key notes=OTHER says that each finding row of OTHER gives a note
@@ -604,11 +605,14 @@ def diagnostic_difference(
     return missing, [given[index] for index in free]
 
 
-def derived_errors(findings: Iterable[plugin_sections.Finding]) -> list[tuple[str, str]]:
-    """Return the error of each finding that no region opts out (THE DERIVED DIAGNOSTICS)."""
+def derived_errors(findings: Iterable[plugin_sections.Finding], is_error_mode: bool) -> list[tuple[str, str]]:
+    """Return the error of each finding that no region opts out and that the mode makes an error.
+
+    In the mode report, only a finding of the rules of EACH_MODE_RULES gives an error (THE DERIVED DIAGNOSTICS).
+    """
     errors: list[tuple[str, str]] = []
     for finding in findings:
-        if finding.kind in (OPTED_OUT, REGION):
+        if finding.kind in (OPTED_OUT, REGION) or not (is_error_mode or finding.rule in EACH_MODE_RULES):
             continue
         place = f"{finding.file}:{finding.line}" if finding.line > 0 else NO_VALUE
         if finding.rule == CONTRACT_RULE:
@@ -916,7 +920,7 @@ def judge(item: Compile, expected: Expected, outcome: Outcome, manifest: Manifes
         failures += [f"{name}: a finding line with no row: {finding.text()}" for finding in extra]
     rows = list(expected.errors)
     if item.errors_of:
-        rows += derived_errors(manifest.expected[item.errors_of].findings)
+        rows += derived_errors(manifest.expected[item.errors_of].findings, item.argument("mode") == "error")
     note_rows = list(expected.notes)
     if item.notes_of:
         note_rows += derived_notes(manifest.expected[item.notes_of].findings)

@@ -24,7 +24,6 @@ utils/assay/guard/legacy/check_fixy_dim_prose.py | no-test | 1 | assay.guard.leg
 utils/assay/guard/legacy/check_no_coordination_refs.py | no-test | 1 | assay.guard.legacy.check_no_coordination_refs | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_no_unchecked_access.py | no-test | 1 | assay.guard.legacy.check_no_unchecked_access | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_padded_lists.py | no-test | 1 | assay.guard.legacy.check_padded_lists | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/guard/legacy/check_proof_routes.py | no-test | 1 | assay.guard.legacy.check_proof_routes | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_prose_paths.py | no-test | 1 | assay.guard.legacy.check_prose_paths | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_start_lifetime.py | no-test | 1 | assay.guard.legacy.check_start_lifetime | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_syscall_capability.py | no-test | 1 | assay.guard.legacy.check_syscall_capability | A module of today with no test module.  The change that writes the test module removes the row

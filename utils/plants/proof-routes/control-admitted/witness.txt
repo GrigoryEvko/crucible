@@ -1,0 +1,9 @@
+# The plugin gives a finding for the union and for the cast, and the ledger
+# of the tree admits each one, so the rule gives no error.
+
+compile admitted src/admitted.cpp stage=c
+exit admitted pass
+judge admitted
+finding admitted proof-routes union src/admitted.cpp:7:7 | union: Scalars
+finding admitted proof-routes pointer-cast src/admitted.cpp:12:36 | pointer-cast: forge::Door
+finding admitted quarantine raw-pointer-object src/admitted.cpp:12:22 | void*

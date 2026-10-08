@@ -1,0 +1,16 @@
+#pragma once
+
+// Macros that make a shape where a unit expands them.  No unit expands the
+// last macro, and its body gives no finding (decision 5 of the quarantine
+// plan).
+#define FORGE_UNION(NAME) \
+    union NAME {          \
+        unsigned char byte; \
+        int value;        \
+    }
+#define FORGE_CAST(RAW) static_cast<::forge::Door*>(RAW)
+#define FORGE_JOIN(LEFT, RIGHT) LEFT##RIGHT
+#define FORGE_NEVER_EXPANDED(NAME) \
+    union NAME {                   \
+        int value;                 \
+    }

@@ -544,6 +544,7 @@ void check_object(tree decl, Role role) {
 }
 
 void check_alias(tree decl) {
+    check_route_alias(decl);
     tree aliased = DECL_ORIGINAL_TYPE(decl);
     location_t location = DECL_SOURCE_LOCATION(decl);
     const FileEntry* language = language_file_of(location);

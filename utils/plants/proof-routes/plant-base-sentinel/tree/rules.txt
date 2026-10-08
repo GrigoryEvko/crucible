@@ -1,0 +1,4 @@
+layer floor 0 include/
+allow floor <memory>
+quarantine src/
+witness <forge/Door.h> private | forge::Door | forge::Door{}

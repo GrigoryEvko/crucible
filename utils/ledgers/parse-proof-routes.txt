@@ -1,0 +1,14 @@
+# The ledger of the rule parse-proof-routes: the reviewed explicit instantiations, and the reviewed
+# allocations with sizeof of a proof type.
+# A row PATH | KIND | N | ENTITY | REASON admits N sites of the kind KIND with the entity ENTITY in the
+# file PATH.  KIND is explicit-instantiation or raw-allocation, and ENTITY is KIND: KEY with the key that
+# the rule prints.  REASON tells why the site builds no proof type, and each row gives one.  A row
+# above the count of sites in the tree is stale, and the rule refuses it, so the ledger only becomes
+# shorter.
+# A reviewer writes each row.  `python3 utils/bin/guard explain parse-proof-routes` tells the rule.
+format 1
+rule parse-proof-routes
+src/observe/HdrHistogram.cpp | explicit-instantiation | 1 | explicit-instantiation: class ConcurrentHdrHistogram<3,3600000000000ull,4> | Explicit instantiations over integer arguments.  They name no proof type and no member pointer, so the access check they turn off reaches no private name.
+src/observe/HdrHistogram.cpp | explicit-instantiation | 1 | explicit-instantiation: class HdrHistogram<3,3600000000000ull> | Explicit instantiations over integer arguments.  They name no proof type and no member pointer, so the access check they turn off reaches no private name.
+src/topology/Pingmesh.cpp | explicit-instantiation | 1 | explicit-instantiation: class Pingmesh<2> | Explicit instantiations over integer arguments.  They name no proof type and no member pointer, so the access check they turn off reaches no private name.
+src/topology/Pingmesh.cpp | explicit-instantiation | 1 | explicit-instantiation: class Pingmesh<4> | Explicit instantiations over integer arguments.  They name no proof type and no member pointer, so the access check they turn off reaches no private name.

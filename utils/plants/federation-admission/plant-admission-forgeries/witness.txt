@@ -5,7 +5,8 @@
 # class name, an alias and a decltype, a member class, a comment and a line
 # splice in the name, each such shape in a macro that the unit expands, and a
 # macro of a different file that pastes the name.  The definition in the home
-# is a record and no finding.
+# is a record and no finding.  The rule proof-routes refuses each explicit
+# specialization of the member mint_federation_admittance too.
 compile explicit src/explicit.cpp mode=error
 exit explicit fail
 finding explicit federation-admission outside-home src/explicit.cpp:5:44 | foundation::permissions::FederationAdmission
@@ -24,13 +25,17 @@ compile member src/member.cpp mode=error
 exit member fail
 finding member federation-admission outside-home src/member.cpp:6:1 | foundation::permissions::FederationAdmission
 finding member federation-admission at-home include/fixy/Federation.h:10:7 | foundation::permissions::FederationAdmission
+finding member proof-routes function-specialization src/member.cpp:6:1 | function-specialization: foundation::permissions::FederationAdmission::mint_federation_admittance
 error member src/member.cpp:6 | quarantine: outside-home foundation::permissions::FederationAdmission;
+error member src/member.cpp:6 | quarantine: function-specialization function-specialization: foundation::permissions::FederationAdmission::mint_federation_admittance;
 compile alias src/alias.cpp mode=error
 exit alias fail
 finding alias federation-admission outside-home src/alias.cpp:6:39 | foundation::permissions::FederationAdmission
 finding alias federation-admission outside-home src/alias.cpp:7:23 | foundation::permissions::FederationAdmission
 finding alias federation-admission at-home include/fixy/Federation.h:10:7 | foundation::permissions::FederationAdmission
+finding alias proof-routes function-specialization src/alias.cpp:6:39 | function-specialization: foundation::permissions::FederationAdmission::mint_federation_admittance
 error alias src/alias.cpp:6 | quarantine: outside-home foundation::permissions::FederationAdmission;
+error alias src/alias.cpp:6 | quarantine: function-specialization function-specialization: foundation::permissions::FederationAdmission::mint_federation_admittance;
 error alias src/alias.cpp:7 | quarantine: outside-home foundation::permissions::FederationAdmission;
 compile decltype src/decltype.cpp mode=error
 exit decltype fail
@@ -58,7 +63,9 @@ compile macro_member src/macro_member.cpp mode=error
 exit macro_member fail
 finding macro_member federation-admission outside-home src/macro_member.cpp:7:1 | foundation::permissions::FederationAdmission
 finding macro_member federation-admission at-home include/fixy/Federation.h:10:7 | foundation::permissions::FederationAdmission
+finding macro_member proof-routes function-specialization src/macro_member.cpp:7:1 | function-specialization: foundation::permissions::FederationAdmission::mint_federation_admittance
 error macro_member src/macro_member.cpp:7 | quarantine: outside-home foundation::permissions::FederationAdmission;
+error macro_member src/macro_member.cpp:7 | quarantine: function-specialization function-specialization: foundation::permissions::FederationAdmission::mint_federation_admittance;
 compile macro_splice src/macro_splice.cpp mode=error
 exit macro_splice fail
 finding macro_splice federation-admission outside-home src/macro_splice.cpp:7:1 | foundation::permissions::FederationAdmission

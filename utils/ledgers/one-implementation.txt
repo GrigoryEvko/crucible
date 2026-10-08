@@ -6,7 +6,6 @@ utils/assay/core/cache.py | copy | 1 | self_test.expect | A copy of today.  The 
 utils/assay/core/cache.py | near-copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/core/report.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/core/report.py | near-copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/guard/engines/tsast/header_checks.py | copy | 1 | is_at_namespace_scope | A copy of a body of the legacy module check_proof_routes.py.  The port of that rule calls one body and removes this row
 utils/assay/guard/legacy/check_admitted_audit.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_brand_drain.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_clang_format.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
@@ -28,7 +27,6 @@ utils/assay/guard/legacy/check_no_coordination_refs.py | near-copy | 1 | main | 
 utils/assay/guard/legacy/check_no_unchecked_access.py | copy | 1 | expansion_rows | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | copy | 1 | planted_cases.write | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_padded_lists.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/guard/legacy/check_proof_routes.py | copy | 1 | at_namespace_scope | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_prose_paths.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_start_lifetime.py | copy | 1 | expansion_rows | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_syscall_capability.py | copy | 1 | self_test.captured | A copy of today.  The change that keeps one body and calls it lowers the count

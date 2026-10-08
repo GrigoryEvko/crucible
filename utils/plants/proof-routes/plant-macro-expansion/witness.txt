@@ -1,0 +1,11 @@
+# A union and a cast that a macro of a base header makes, and a union that the
+# operator ## makes, count at the place where the quarantined unit expands the
+# macro.  The body of a macro that no unit expands gives no finding.
+
+compile macros src/macros.cpp stage=c
+exit macros pass
+judge macros
+finding macros proof-routes union src/macros.cpp:8:1 | union: Packed
+finding macros proof-routes pointer-cast src/macros.cpp:10:35 | pointer-cast: forge::Door
+finding macros proof-routes union src/macros.cpp:12:21 | union: Pasted
+finding macros quarantine raw-pointer-object src/macros.cpp:10:21 | void*

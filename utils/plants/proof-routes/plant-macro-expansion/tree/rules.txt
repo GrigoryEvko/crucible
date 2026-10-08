@@ -1,0 +1,3 @@
+layer floor 0 include/
+quarantine src/
+witness <forge/Door.h> private | forge::Door | forge::Door{}

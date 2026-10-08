@@ -1,0 +1,21 @@
+#include <forge/Door.h>
+
+// Each shape of this unit can build a forge::Door with no call to its door.
+namespace forge {
+
+union Loose {
+    unsigned char byte;
+    int value;
+};
+
+Door* cast_from(void* raw) { return static_cast<Door*>(raw); }
+
+const Door& view_of(void* raw) { return *reinterpret_cast<const Door*>(raw); }
+
+template <> int route<Door>(Door*) { return 1; }
+
+template <> struct Steal<&Door::secret> {};
+
+template <> class Opener<char> {};
+
+}  // namespace forge

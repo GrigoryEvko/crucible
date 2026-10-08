@@ -196,12 +196,17 @@ def comparison_cases(expect: testing.Expect) -> None:
     region = finding(5, "region", "PROBE: a reason")
     opted = finding(6, "opted-out", "raw-pointer-object int*")
     expect(
-        "derived_errors() gives an error for each finding outside a region, of the rule of the finding",
-        witness.derived_errors([finding(3), contract, region, opted])
+        "derived_errors() gives an error for each finding outside a region in the mode error, of the rule of the finding",
+        witness.derived_errors([finding(3), contract, region, opted], True)
         == [
             ("unit.cpp:3", "quarantine: std-object std::vector;"),
             ("unit.cpp:8", "the 'pre' contract specifier is not permitted in this tree"),
         ],
+    )
+    expect(
+        "derived_errors() gives an error only for a finding of a rule of each mode in the mode report",
+        witness.derived_errors([finding(3), contract, region, opted], False)
+        == [("unit.cpp:8", "the 'pre' contract specifier is not permitted in this tree")],
     )
     expect(
         "derived_notes() gives a note for each finding of the rule quarantine, also an opted-out one",

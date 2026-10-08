@@ -2,7 +2,8 @@
 # -fsyntax-only, also in base code, and nothing else is an error.  A specifier
 # in a header outside the root is no error, and the opt-out region turns the
 # specifier on line 73 into opted-out.  The error names CRUCIBLE_PRE,
-# CRUCIBLE_POST and the reasons.
+# CRUCIBLE_POST and the reasons.  The explicit specialization on line 55 is
+# also a finding of the rule proof-routes, and an error in the mode error.
 
 compile report contracts.cpp errors=report
 flag report -fcontracts -I ../outside
@@ -28,6 +29,7 @@ finding report contract-specifier contract-specifier contracts.cpp:48:26 | pre
 finding report contract-specifier contract-specifier contracts.cpp:50:31 | pre
 finding report contract-specifier contract-specifier contracts.cpp:55:36 | pre
 finding report contract-specifier contract-specifier contracts.cpp:57:30 | pre
+finding report proof-routes function-specialization contracts.cpp:55:5 | function-specialization: probe::template_pre
 finding report quarantine region contracts.cpp:72:1 | PROBE: the test needs the specifier
 finding report quarantine opted-out contracts.cpp:73:22 | contract-specifier pre
 

@@ -1,0 +1,11 @@
+#pragma once
+
+namespace control {
+
+// A union is no door.
+union Bits {
+    friend Bits mint_bits();
+    int raw;
+};
+
+}  // namespace control

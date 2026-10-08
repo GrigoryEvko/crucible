@@ -1,0 +1,21 @@
+// No shape of this file can build a proof type.  The allocation names a
+// scalar, the template parameter and the lambda parameter named Bg hide the
+// proof type of that name, and a comment or a literal holds no shape.
+#include <cstdlib>
+#include <new>
+
+namespace forge {
+
+void* scalar() { return std::malloc(sizeof(int)); }
+
+template <class Bg> void* hidden() { return ::operator new(sizeof(Bg)); }
+
+inline auto lambda = []<class Bg>() { return ::operator new(sizeof(Bg)); };
+
+// template struct Commented<int>;
+inline const char* text = "template struct InText<int>;";
+
+template <class T> using Rebound = typename T::
+    template rebind<int>;
+
+}  // namespace forge

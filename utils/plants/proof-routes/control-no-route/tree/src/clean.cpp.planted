@@ -1,0 +1,16 @@
+#include <forge/Door.h>
+
+// No shape of this unit builds a forge::Door: a cast of nullptr, a cast that
+// selects an overload, a cast to a pointer to a different type, and a cast to
+// a template parameter.
+namespace forge {
+
+int read_null() { return static_cast<Door*>(nullptr) == nullptr ? 0 : 1; }
+
+int select_overload() { return static_cast<Door* (*)(int)>(&make) == nullptr ? 0 : 1; }
+
+long* widen(int* plain) { return static_cast<long*>(static_cast<void*>(plain)); }
+
+template <class T> T* rebind(void* raw) { return static_cast<T*>(raw); }
+
+}  // namespace forge

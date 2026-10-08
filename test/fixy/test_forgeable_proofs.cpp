@@ -561,10 +561,10 @@ union ProofOrByte {
 // walks every union in the two namespaces, also a union nested in a class,
 // and refuses one whose members hold a proof type at any depth: through an
 // array, a base class or a member of an aggregate.  Reflection cannot see a
-// union template or a union local to a function, so
-// utils/assay/guard/legacy/check_proof_routes.py refuses each union definition in the tree,
-// user code included, outside a reviewed list.  This file is on that list,
-// because its unions are the probes.
+// union template or a union local to a function, so the rule proof-routes
+// of the quarantine plugin refuses each union definition that a build
+// compiles, user code included, outside a reviewed list.  This file is on
+// that list, because its unions are the probes.
 
 // A class nests deeper than this, and the walk reads it as holding a proof.
 inline constexpr int max_hold_depth = 16;
@@ -731,25 +731,28 @@ static_assert(is_proof_shape(^^fe::ExecCtx<>) && !is_forgeable(^^fe::ExecCtx<>),
 //                                    typed pointer with no object, and
 //                                    the language refuses none of them
 //
-// utils/assay/guard/legacy/check_proof_routes.py refuses the two routes in the tree.  It
-// refuses each union definition outside a reviewed list, and each cast to
-// a pointer or a reference, each allocator and each raw allocation whose
-// type names a proof type.  This file is on its list as the probe.  Two
-// shapes pass that guard, and they stay open with this argument:
+// The rule proof-routes of the quarantine plugin refuses the two routes in
+// the tree.  It refuses each union definition outside a reviewed list, and
+// each cast to a pointer or a reference and each allocator whose type names
+// a proof type.  The parse-tree rule parse-proof-routes refuses each raw
+// allocation with the size of a proof type.  This file is on the list as
+// the probe.  Two shapes pass these rules, and they stay open with this
+// argument:
 //
 //   a cast whose target is a         static_cast<T*>(buffer) in an arena
-//   template parameter               or a container names T.  The guard
+//   template parameter               or a container names T.  The rules
 //                                    cannot know which argument reaches T,
 //                                    and every allocator of the standard
 //                                    library is such a site
 //   a pointer value copied with      the copy names no proof type at the
 //   std::memcpy                      call, so no text shows the route
 //
-// The same guard refuses three routes that turn off the access check: an
-// explicit instantiation, an explicit specialization of a function
-// template, and an explicit specialization whose template argument is a
-// pointer to a member.  It also refuses a specialization of a class
-// template that a proof type befriends, outside the file that defines it.
+// The two rules refuse three routes that turn off the access check: an
+// explicit instantiation (parse-proof-routes), an explicit specialization
+// of a function template, and an explicit specialization whose template
+// argument is a pointer to a member.  The plugin also refuses a
+// specialization of a class template that a proof type befriends, outside
+// the file that defines it.
 
 // True when the checked lifetime start refuses each of the four routes
 // that left the ledger for the proof type.
@@ -865,8 +868,8 @@ static_assert(!std::is_default_constructible_v<DerivedFromContextBase>
                                      + qualified_name(declaration));
 }
 
-// The names of the proof types, for utils/assay/guard/legacy/check_proof_routes.py: each
-// class of the two namespaces that has the shape of a proof, and the
+// The names of the proof types, for the parse-tree rule parse-proof-routes:
+// each class of the two namespaces that has the shape of a proof, and the
 // template of each witness.  main() prints them under --proof-names.
 // Complexity: linear in the number of declarations under the namespace.
 consteval void collect_proof_names(std::meta::info ns, std::vector<const char*>& out) {

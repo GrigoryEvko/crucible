@@ -1,0 +1,3 @@
+// A header of a BPF program is C for the BPF target, and the rule does not
+// read it.
+template struct Box<int>;

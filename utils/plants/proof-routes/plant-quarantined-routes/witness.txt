@@ -1,0 +1,19 @@
+# Each shape of src/routes.cpp can build the proof type forge::Door with no
+# call to its door: a union, a static_cast and a reinterpret_cast to a pointer
+# to Door, an explicit specialization of a function template, an explicit
+# specialization with a pointer to a private member of Door, and a
+# specialization of a template that Door befriends.  No ledger row admits
+# one, so the rule gives an error for each finding.
+
+compile routes src/routes.cpp stage=c
+exit routes pass
+judge routes
+finding routes proof-routes union src/routes.cpp:6:7 | union: Loose
+finding routes proof-routes pointer-cast src/routes.cpp:11:37 | pointer-cast: forge::Door
+finding routes proof-routes pointer-cast src/routes.cpp:13:42 | pointer-cast: forge::Door
+finding routes proof-routes function-specialization src/routes.cpp:15:17 | function-specialization: forge::route
+finding routes proof-routes member-pointer-specialization src/routes.cpp:17:20 | member-pointer-specialization: forge::Steal
+finding routes proof-routes friend-template-specialization src/routes.cpp:19:19 | friend-template-specialization: forge::Opener
+finding routes quarantine raw-pointer-object src/routes.cpp:11:23 | void*
+finding routes quarantine raw-pointer-object src/routes.cpp:13:27 | void*
+finding routes quarantine raw-pointer-object src/routes.cpp:15:29 | forge::Door*

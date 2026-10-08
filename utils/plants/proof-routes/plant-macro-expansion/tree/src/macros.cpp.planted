@@ -1,0 +1,16 @@
+#include <forge/Door.h>
+#include <forge/Macros.h>
+
+// Each shape comes from a macro of a base header, and its finding is at the
+// place where this unit expands the macro.
+namespace forge {
+
+FORGE_UNION(Packed);
+
+Door* through(void* raw) { return FORGE_CAST(raw); }
+
+FORGE_JOIN(uni, on) Pasted {
+    int value;
+};
+
+}  // namespace forge

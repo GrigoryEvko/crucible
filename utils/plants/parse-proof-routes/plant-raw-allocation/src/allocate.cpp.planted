@@ -1,0 +1,15 @@
+// Raw storage with the size of foundation::effects::Bg, which a witness row of
+// the rule table names.  A cast of the storage makes a proof with no call to
+// its door.
+#include <cstdlib>
+#include <new>
+
+namespace forge {
+
+using Context = ::foundation::effects::Bg;
+
+void* first() { return ::operator new(sizeof(::foundation::effects::Bg)); }
+
+void* second() { return std::malloc(sizeof(Context)); }
+
+}  // namespace forge

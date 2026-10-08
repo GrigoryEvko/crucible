@@ -1,0 +1,4 @@
+format 1
+rule proof-routes
+src/admitted.cpp | pointer-cast | 1 | pointer-cast: forge::Door | The plant of a reviewed cast.
+src/admitted.cpp | union | 1 | union: Scalars | The plant of a union of scalars.
