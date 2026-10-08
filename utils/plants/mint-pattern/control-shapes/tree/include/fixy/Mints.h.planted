@@ -1,0 +1,76 @@
+#pragma once
+
+namespace control {
+
+template <typename>
+concept IsExecCtx = true;
+template <typename>
+concept CtxFitsControl = true;
+template <typename, typename>
+concept FitsCtx = true;
+template <typename>
+concept Surface = true;
+struct Thing {};
+
+// The clause names the context.
+template <Surface S, IsExecCtx C>
+    requires FitsCtx<S, C>
+[[nodiscard]] constexpr Thing mint_ctx_in_clause(C const&) noexcept { return {}; }
+
+// A concept of fit on the context parameter gates it with no clause.
+template <CtxFitsControl Ctx>
+[[nodiscard]] constexpr Thing mint_ctx_in_parameter(Ctx const&) noexcept { return {}; }
+
+// A token mint that is no template has no constraint to give.
+[[nodiscard]] constexpr Thing mint_token(Thing) noexcept { return {}; }
+
+// An rvalue reference to a context is no context shape.
+template <IsExecCtx Ctx>
+[[nodiscard]] constexpr Thing mint_rvalue_ctx(Ctx const&&) noexcept { return {}; }
+
+// The attribute of a declaration counts for the definition.
+template <IsExecCtx C>
+    requires CtxFitsControl<C>
+[[nodiscard]] constexpr Thing mint_declared_first(C const&, int) noexcept;
+template <IsExecCtx C>
+    requires CtxFitsControl<C>
+constexpr Thing mint_declared_first(C const&, int) noexcept { return {}; }
+
+// A borrow projection gives a view of its own object, and needs no constexpr.
+template <class T>
+struct View {
+    T const* carrier;
+};
+template <class T>
+    requires Surface<T>
+[[nodiscard]] constexpr View<T> mint_view(T const& carrier) noexcept {
+    return View<T>{&carrier};
+}
+struct Carrier {
+    [[nodiscard]] View<Carrier> mint_projection() const noexcept { return mint_view(*this); }
+};
+template <class T>
+struct Templated {
+    [[nodiscard]] View<Templated> mint_pattern_projection() const noexcept { return mint_view(*this); }
+};
+
+// A static member template takes its shape from its parameters.
+struct Lattice {
+    template <IsExecCtx C>
+        requires CtxFitsControl<C>
+    [[nodiscard]] static constexpr Thing mint_from_image(C const&, int) noexcept { return {}; }
+};
+
+// No mint: a deleted overload, a trailing underscore, a class with the prefix
+// and a function that only a friend declaration declares.
+[[nodiscard]] constexpr Thing mint_removed(int) noexcept = delete("a planted deleted overload");
+inline Thing mint_internal_(Thing) { return {}; }
+class mint_not_a_factory {
+public:
+    constexpr mint_not_a_factory() noexcept = default;
+};
+struct Befriends {
+    friend Thing mint_only_a_friend(Befriends);
+};
+
+}  // namespace control

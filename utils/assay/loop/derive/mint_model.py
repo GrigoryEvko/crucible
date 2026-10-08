@@ -1,12 +1,9 @@
-"""Derive the §XXI mint model from the AST, for the guard and the inventory.
+"""Derive the §XXI mint model from the AST, for the inventory of the mints.
 
-CLAUDE.md §XXI names every cross-tier composition factory `mint_<noun>`, and two
-consumers ask the same question of that set: the rule mint-pattern (`guard check
---rule mint-pattern`) asks whether each one carries `[[nodiscard]]`,
-`constexpr`, `noexcept` and a `requires` clause, and `loop derive
-mint-inventory` renders the same flags plus the authorization shape into
-`misc/mint-inventory.md`.  Both read this one model, so the guard and the
-inventory cannot disagree about which sites are mints.
+CLAUDE.md §XXI names every cross-tier composition factory `mint_<noun>`.  `loop
+derive mint-inventory` renders the flags and the authorization shape of each
+mint of this model into `misc/mint-inventory.md`.  The rule mint-pattern reads
+the mint records of the quarantine plugin, and not this model.
 
 `loop derive mint-model` prints one line for each mint of the model, and `guard
 selftest loop.derive.mint_model` does a test of the module.
@@ -52,10 +49,6 @@ from assay.readers import tsast
 CARVE_OUT_CX = "§XXI carve-out: cx=alloc"
 CARVE_OUT_RQ = "§XXI carve-out: rq=pre"
 
-# A third exemption mechanism, read by the guard rather than the inventory: an
-# inline marker on the signature line itself.
-INLINE_OK = "MINT-PATTERN-OK"
-
 # `IsExecCtx` states that a template parameter IS a context.  That is the
 # parameter's SHAPE, not its FIT, so it never counts as a context gate — a mint
 # constrained only by it accepts every context in the tree.  `_shape` already
@@ -72,7 +65,6 @@ class Mint:
         path: The declaration site's path, relative to the repo root
         line: The one-based line of the identifier that names the factory
         owner: The enclosing class for a member mint, otherwise None
-        inline_ok: Whether a `MINT-PATTERN-OK` marker sits on the signature line
         borrow_projection: Whether the body's only return delegates to `mint_view`
         nodiscard: Whether the site carries `[[nodiscard]]`
         constexpr: Whether the site carries `constexpr` or `consteval`
@@ -97,7 +89,6 @@ class Mint:
     line: int
     owner: str | None
     namespace: str
-    inline_ok: bool
     borrow_projection: bool
     nodiscard: bool
     constexpr: bool
@@ -884,32 +875,6 @@ def line_comment_rows(tree: tsast.Tree) -> dict[int, str]:
     return rows
 
 
-def marker_rows(tree: tsast.Tree, needle: str) -> set[int]:
-    """Return the zero-based rows at which a comment node holds a marker text.
-
-    The row is the row of the marker text itself, so a marker on the third row
-    of a block comment counts at that row.  A string literal holds no marker,
-    because only comment nodes are read.
-
-    Complexity: linear in the total length of the comment nodes.
-
-    Args:
-        tree: The parsed file
-        needle: The marker text, for example `MINT-PATTERN-OK`
-
-    Returns:
-        The rows of each occurrence
-    """
-    rows: set[int] = set()
-    for comment in tree.find("comment"):
-        text = tsast.prose_text(comment)
-        at = text.find(needle)
-        while at >= 0:
-            rows.add(comment.start[0] + text.count("\n", 0, at))
-            at = text.find(needle, at + len(needle))
-    return rows
-
-
 def carve_out_block(comment_rows: dict[int, str], first: int, line: int) -> list[int]:
     """Return the comment lines that belong to one mint declaration.
 
@@ -960,7 +925,6 @@ def extract(tree: tsast.Tree) -> list[Mint]:
     """
     mints: list[Mint] = []
     comment_rows = line_comment_rows(tree)
-    inline_rows = marker_rows(tree, INLINE_OK)
     for node in tree.find("identifier", "field_identifier"):
         if node.field != "declarator":
             continue
@@ -996,7 +960,6 @@ def extract(tree: tsast.Tree) -> list[Mint]:
                 line=node.line,
                 owner=owner,
                 namespace=_namespace_of(node),
-                inline_ok=node.start[0] in inline_rows,
                 borrow_projection=_is_borrow_projection(site),
                 nodiscard=_has_attribute(site, "nodiscard"),
                 constexpr=_has_qualifier(site, "constexpr", "consteval"),
@@ -1107,7 +1070,6 @@ def merge_declarations(mints: list[Mint]) -> list[Mint]:
                 nodiscard=definition.nodiscard or any(d.nodiscard for d in declarations),
                 carve_out_cx=definition.carve_out_cx or any(d.carve_out_cx for d in declarations),
                 carve_out_rq=definition.carve_out_rq or any(d.carve_out_rq for d in declarations),
-                inline_ok=definition.inline_ok or any(d.inline_ok for d in declarations),
             ))
     return merged
 
@@ -1259,12 +1221,6 @@ inline constexpr char note[] = R"(
 template <typename T>
 [[nodiscard]] constexpr Thing mint_raw_string_trap(T) noexcept { return {}; }
 
-// A marker text inside a string literal on the signature line is no marker.
-[[nodiscard]] inline const char* mint_string_marker() noexcept { return "MINT-PATTERN-OK: in a string"; }
-
-// A marker in a trailing comment on the signature line is a marker.
-[[nodiscard]] inline Thing mint_trailing_marker(Thing) noexcept { return {}; }  // MINT-PATTERN-OK: runtime
-
 // An attribute whose argument mentions nodiscard is not nodiscard.
 [[deprecated("use the nodiscard overload")]] constexpr Thing mint_deprecated_only(Thing) noexcept { return {}; }
 
@@ -1321,8 +1277,8 @@ namespace probe_outer /* a comment */ ::inline probe_v2 {
                 "mint_member", "mint_mutable_ctx", "mint_named_this", "mint_one_line",
                 "mint_param_constrained", "mint_plain_ctx", "mint_pointer", "mint_raw_string_trap",
                 "mint_reference", "mint_rvalue_ctx", "mint_scoped_ctx_name", "mint_shape_only",
-                "mint_sized", "mint_split_sig", "mint_string_marker", "mint_surface_only",
-                "mint_templated_member", "mint_token", "mint_trailing_marker",
+                "mint_sized", "mint_split_sig", "mint_surface_only",
+                "mint_templated_member", "mint_token",
             ],
         )
         arg_concept = by_name.get("mint_arg_concept")
@@ -1363,17 +1319,6 @@ namespace probe_outer /* a comment */ ::inline probe_v2 {
             "a raw string line that starts with // carries no carve-out",
             trap is not None and not trap.carve_out_rq and not trap.carve_lines,
             True,
-        )
-        in_string = by_name.get("mint_string_marker")
-        check(
-            "a marker text inside a string literal is no inline marker",
-            in_string is not None and not in_string.inline_ok,
-            True,
-        )
-        trailing = by_name.get("mint_trailing_marker")
-        check(
-            "a marker in a trailing comment on the signature line is an inline marker",
-            trailing is not None and trailing.inline_ok,
         )
         deprecated = by_name.get("mint_deprecated_only")
         check(

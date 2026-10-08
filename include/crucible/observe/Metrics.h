@@ -45,7 +45,7 @@ using RuntimeMetricsReader = typename RuntimeMetricsChannel<ReaderBrand, WriterB
 
 template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
 [[nodiscard]] RuntimeMetricsWriter<ReaderBrand, WriterBrand>
-mint_metrics_writer(  // MINT-PATTERN-OK: the writer claim of the session is an atomic exchange
+mint_metrics_writer(
     RuntimeMetricsChannel<ReaderBrand, WriterBrand>& channel,
     ::foundation::permissions::Permission<RuntimeMetricsWriterTag, WriterBrand>&& permission) noexcept {
     return ::fixy::concurrent::swmr_session::mint_swmr_writer<RuntimeMetricsChannel<ReaderBrand, WriterBrand>>(

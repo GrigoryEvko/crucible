@@ -55,6 +55,10 @@
 //     kinds=PATH     write the kinds of each rule (kRuleKinds in plugin.h) to
 //                    PATH, one row `kind RULE KIND`, and do no other work.  The
 //                    rule plugin-kinds compares the file with the registry
+//     sentinel=PATH  the base header, relative to the source root, whose
+//                    declarations the family declaration property reads in
+//                    this unit (declaration.cpp, THE FAMILY).  test/layer gives
+//                    the sentinel unit of each base header this argument
 //
 // THE DEPENDENCIES
 //     utils/assay/loop/stamps.py writes DIR/modes/PATH for each source file of
@@ -63,8 +67,9 @@
 //     finding that a mode can make an error to the dependency file of the
 //     unit.  A file with no mode stamp adds DIR/enforce.txt.  A change of the
 //     mode of a file then compiles again only the units with such a finding in
-//     that file.  An opted-out finding and a finding of the contract rule add
-//     nothing, because no mode changes them.
+//     that file.  An opted-out finding, a finding of the contract rule and a
+//     finding of the family declaration property add nothing, because no mode
+//     changes them.
 //
 // THE SECTION
 //     A unit that writes an object puts the report into the section
@@ -191,8 +196,8 @@ void add_mode_dependencies() {
     std::unordered_set<const FileEntry*> files;
     bool needs_enforce = false;
     for (const Finding& finding : state.findings) {
-        if (finding.kind == Kind::contract_specifier || finding.file == nullptr || is_opted_out(finding)
-            || !files.insert(finding.file).second) {
+        if (finding.kind == Kind::contract_specifier || is_property_kind(finding.kind) || finding.file == nullptr
+            || is_opted_out(finding) || !files.insert(finding.file).second) {
             continue;
         }
         std::string stamp = state.stamps_dir + "/modes/" + finding.file->relative;
@@ -223,6 +228,28 @@ std::string report_line(const char* rule, const std::string& kind, const FileEnt
                         const std::string& entity) {
     return std::string(rule) + " " + kind + " " + file.relative + ":" + std::to_string(line) + ":"
          + std::to_string(column) + " " + entity;
+}
+
+// One finding of the family declaration property: a line of the report, an
+// error in the mode error, and a note when the unit writes no report.  A
+// record, such as a mint record, is a line and no finding.  No opt-out region
+// covers such a finding, and no enforce mode makes it an error, because the
+// ledger of its rule judges it.
+void report_property(const Finding& finding, std::vector<std::string>& lines, bool has_section) {
+    std::string kind = kind_text(finding);
+    const char* rule = rule_name(rule_of(finding.kind));
+    lines.push_back(report_line(rule, kind, *finding.file, finding.line, finding.column, finding.entity));
+    if (finding.kind == Kind::mint_record) {
+        return;
+    }
+    if (state.is_error_mode) {
+        error_at(finding.spelling,
+                 "quarantine: %s %s; the rule %s refuses this declaration, and %<python3 utils/bin/guard explain %s%> "
+                 "gives the rule and its action",
+                 kind.c_str(), finding.entity.c_str(), rule, rule);
+    } else if (state.out_dir.empty() && !has_section) {
+        inform(finding.spelling, "quarantine: %s %s", kind.c_str(), finding.entity.c_str());
+    }
 }
 
 // Records the source root.  Returns false, after an error, when the path does
@@ -329,6 +356,10 @@ void report(bool can_add_dependencies) {
     }
     std::vector<std::string> lines;
     for (const Finding& finding : state.findings) {
+        if (is_property_kind(finding.kind)) {
+            report_property(finding, lines, has_section);
+            continue;
+        }
         bool is_out = is_opted_out(finding);
         std::string inner_kind = kind_text(finding);
         std::string kind = is_out ? std::string(kOptedOutKind) : inner_kind;
@@ -420,9 +451,11 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
             state.stamp = value;
         } else if (key == "kinds") {
             kinds_argument = value;
+        } else if (key == "sentinel") {
+            state.sentinel = value;
         } else {
-            error("quarantine: unknown argument %qs; the arguments are root, build, rules, mode, out, stamps, stamp "
-                  "and kinds",
+            error("quarantine: unknown argument %qs; the arguments are root, build, rules, mode, out, stamps, stamp, "
+                  "kinds and sentinel",
                   key.c_str());
             return 1;
         }
@@ -434,6 +467,16 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
         return 1;
     }
     if (!set_root(root_argument)) {
+        return 1;
+    }
+    struct stat sentinel_status;
+    if (!state.sentinel.empty()
+        && (state.sentinel.front() == '/'
+            || ::stat((state.root + "/" + state.sentinel).c_str(), &sentinel_status) != 0
+            || !S_ISREG(sentinel_status.st_mode))) {
+        error("quarantine: the argument %<sentinel=%s%> names no file under the source root; give the path of a "
+              "base header relative to the root",
+              state.sentinel.c_str());
         return 1;
     }
     if (rules_argument.empty()) {

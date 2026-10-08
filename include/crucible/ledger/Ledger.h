@@ -151,7 +151,7 @@ private:
 // scanner is told so.
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsLedgerStore<Ctx>
-[[nodiscard]] inline LedgerView mint_ledger_view(  // MINT-PATTERN-OK: allocating
+[[nodiscard]] inline LedgerView mint_ledger_view(
     Ctx const& ctx, HostFingerprint fingerprint) noexcept {
     const std::uint64_t now = wall_clock_unix_seconds();
     if (now == 0u) {
@@ -171,7 +171,7 @@ template <::foundation::effects::IsExecCtx Ctx>
 // then a file.
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsLedgerStore<Ctx>
-[[nodiscard]] inline LedgerView mint_ledger_view(  // MINT-PATTERN-OK: allocating
+[[nodiscard]] inline LedgerView mint_ledger_view(
     Ctx const& ctx) noexcept {
     return mint_ledger_view(ctx, probe_host_fingerprint(ctx));
 }

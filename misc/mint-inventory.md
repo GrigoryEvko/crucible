@@ -102,7 +102,7 @@ apply to the row.
 | `mint_incast_config` | `include/crucible/cntp/IncastControl.h` | Y | Y | Y | · | token | · | HS14: 1 ⚠ |
 | `mint_incast_controller` | `include/crucible/cntp/IncastControlRuntime.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
 | `mint_mtls_config` | `include/crucible/cntp/MtlsTransport.h` | Y | Y | Y | Y | token | · | HS14: 2 |
-| `mint_overlay_multicast` | `include/crucible/cntp/OverlayMulticast.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
+| `mint_overlay_multicast` | `include/crucible/cntp/OverlayMulticast.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_path_swap_plan` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | · | token | · | HS14: 5 |
 | `mint_path_swapper` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
 | `mint_reed_solomon` | `include/crucible/cntp/Fec.h` | Y | Y | Y | Y | token | · | HS14: 2 |
@@ -146,7 +146,7 @@ apply to the row.
 | `mint_keeper_metrics_reader` | `include/crucible/observe/Metrics.h` | Y | - | Y | Y | token | · | HS14: 1 ⚠ |
 | `mint_metrics_writer` | `include/crucible/observe/Metrics.h` | Y | - | Y | Y | token | · | HS14: 1 ⚠ |
 | `mint_sdc_detector` | `include/crucible/observe/SdcDetect.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_synthetic_probes` | `include/crucible/observe/SyntheticProbe.h` | Y | - | Y | Y | ctx | Y | HS14: 1 ⚠ |
+| `mint_synthetic_probes` | `include/crucible/observe/SyntheticProbe.h` | Y | Y | Y | Y | ctx | Y | HS14: 1 ⚠ |
 
 ## include/crucible/perf/
 
@@ -171,7 +171,7 @@ apply to the row.
 | `mint_discovery_snapshot` | `include/crucible/topology/Discovery.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
 | `mint_nic_telemetry_history` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | Y | ctx | Y | HS14: 7 |
 | `mint_nic_telemetry_snapshot` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | · | token | · | HS14: 2 |
-| `mint_pingmesh` | `include/crucible/topology/Pingmesh.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
+| `mint_pingmesh` | `include/crucible/topology/Pingmesh.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_ptp_handle` | `include/crucible/topology/Ptp.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_topology_graph` | `include/crucible/topology/TopologyGraph.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_topology_health` | `include/crucible/topology/Health.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |

@@ -16,7 +16,6 @@ utils/assay/guard/legacy/check_fixy_dim_prose.py | regex-call | 1 | <module> | A
 utils/assay/guard/legacy/check_header_constexpr_ops.py | regex-call | 1 | c_identifier | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_host_owners.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | regex-call | 5 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | node-text-variable | 3 | token_shape | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_no_coordination_refs.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | node-text-variable | 3 | open_members | A read of today.  The change that moves the read into its reader lowers the count

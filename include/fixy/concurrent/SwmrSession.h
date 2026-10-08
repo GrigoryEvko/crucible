@@ -244,7 +244,7 @@ private:
 };
 
 template <SwmrSessionSurface Swmr>
-[[nodiscard]] auto mint_swmr_writer(  // MINT-PATTERN-OK: the writer claim is an atomic exchange
+[[nodiscard]] auto mint_swmr_writer(
     Swmr& session,
     ::foundation::permissions::Permission<typename Swmr::writer_tag, typename Swmr::writer_brand>&& perm) noexcept {
     return session.writer(std::move(perm));

@@ -1,0 +1,8 @@
+#include <fixy/Mints.h>
+
+namespace quarantined {
+
+// A mint of a quarantined file, with no constexpr.
+[[nodiscard]] inline plant::Thing mint_quarantined(plant::Thing) noexcept { return {}; }
+
+}  // namespace quarantined

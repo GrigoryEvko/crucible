@@ -60,7 +60,6 @@ utils/registry.txt | legacy | admit | lifetime-twin | The rule has no module of 
 utils/registry.txt | legacy | admit | link-memory | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | link-time | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | mint-floor | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
-utils/registry.txt | legacy | admit | mint-pattern | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | no-combine-ids-duplicate | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | no-coordination-refs | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row
 utils/registry.txt | legacy | admit | no-ffast-math | The rule has no module of its own in utils/assay/guard/engines/ at this time.  The change that gives the rule its module removes this row

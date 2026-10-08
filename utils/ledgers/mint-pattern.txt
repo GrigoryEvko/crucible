@@ -1,70 +1,73 @@
-# The ledger of the rule mint-pattern: the reviewed exemptions from the five
-# axes of section XXI.  `python3 utils/bin/guard explain mint-pattern` tells
-# the rule.  A reviewer writes each row by hand.
+# The ledger of the rule mint-pattern: the reviewed admissions of a mint that
+# does not meet an axis of section XXI of CLAUDE.md.  `python3 utils/bin/guard
+# explain mint-pattern` tells the rule.  A reviewer writes each row.
 #
-# One row is `PATH | AXIS-ok | admit | MINT | REASON`.  The axis is one of
-# nodiscard, noexcept, constexpr, requires and ctxfit.  A row names the mint,
-# never a line, so an edit above the mint does not move it.  PATH is the file
-# of the mint.  One row covers each overload of that name in that file,
-# because an overload set is one factory with one reason.
+# One row is `PATH | KIND | admit | ENTITY | REASON`.  The kind is the axis
+# that the mint does not meet, such as mint-not-constexpr.  The entity is the
+# qualified name of the mint with the types of its parameters.  PATH is the
+# file of the record of the mint with its body.  A row names no line, and a
+# change that only moves the mint keeps the row.
 #
-# The rule refuses a row that exempts nothing, and a row that it cannot read:
-#   * A row whose mint meets the axis, or that names no live mint, is stale
-#   * A row whose sites each carry their own marker for the axis is
-#     redundant, because the marker exempts each site
-#   * A row with no axis, an unknown axis, a line in place of a name, or a
-#     name that is no mint is malformed.
-# So this file only shrinks while the tree stays the same.
-#
-# An in-source marker is the other way to exempt: a `§XXI carve-out:
-# cx=alloc` or `rq=pre` comment directly above the declaration, or a
-# `MINT-PATTERN-OK: <reason>` comment on the line that names the mint.  A
-# marker exempts constexpr (cx=alloc, MINT-PATTERN-OK) or requires (rq=pre),
-# and no other axis.  One exemption lives in one place.
-#
-# Each row is a structural exemption: a mint that allocates, calls the
-# kernel, makes a resource or reads runtime state.  Section XXI lets such a
-# mint drop constexpr.  When a mint gets the shape of section XXI, or the
-# rule learns a new shape, remove the row.  Before a new row, ask if the row
-# describes a limit of the rule.  Such a row is no exemption.  On 2026-09-21
-# the rule learned to read a template parameter that a concept constrains,
-# and 50 rows went in one change.
-#
-# The kinds:
-#   constexpr-ok  a mint that allocates, calls the kernel, makes a resource
-#                 or reads runtime state.  Some rows name a mint that builds
-#                 a fixed aggregate in place and allocates nothing.  The
-#                 reason of such a row does not apply to its mint, and a
-#                 reviewer examines each such row.
-#   requires-ok   a template mint with no type-level constraint.  The rule
-#                 reads a `requires` clause and a constrained template
-#                 parameter as one constraint.
-#   ctxfit-ok     a mint that takes a context that no constraint gates, so
-#                 the mint takes each context.  `IsExecCtx Ctx` does not gate
-#                 the context.  A token mint has no such row.  A new row of
-#                 this kind is a defect, not an exemption.
-#   noexcept-ok   section XXI admits no noexcept exemption.  A row of this
-#                 kind is a defect, not an exemption.
-#   nodiscard-ok  a mint whose return value a caller can discard.  A
-#                 constructor with a passkey is not such a mint: the rule
-#                 skips each `= default` declaration.
+# The reason says why the mint keeps its shape.  Section XXI drops constexpr
+# from a mint that allocates, and from a mint that reads runtime state, such
+# as an atomic, a thread identity or a system call.  -Winvalid-constexpr
+# refuses constexpr on a function that can never be constant evaluated.  A row
+# that admits no finding fails the rule, and the file only shrinks while the
+# tree stays the same.
 format 1
 rule mint-pattern
-include/crucible/CKernel.h | constexpr-ok | admit | mint_mutable_view | The mutable view mint of the registration table reads the atomic seal word of the table.  No constant evaluation can read an atomic, and -Winvalid-constexpr refuses a constexpr function that always calls a function that is not constexpr
-include/crucible/SchemaTable.h | constexpr-ok | admit | mint_mutable_view | The mutable view mint of the registration table reads the atomic seal word of the table.  No constant evaluation can read an atomic, and -Winvalid-constexpr refuses a constexpr function that always calls a function that is not constexpr
-include/crucible/Vigil.h | constexpr-ok | admit | mint_producer_context | The producer-context mint reads the thread id and the atomic claim word.  The body reads runtime state, and -Winvalid-constexpr refuses constexpr
-include/crucible/cntp/AfXdp.h | constexpr-ok | admit | mint_af_xdp_socket | A transport mint of cntp.  The mint allocates, calls the kernel, makes a resource or reads runtime state at run time, so it cannot be constexpr (section XXI)
-include/crucible/cntp/OverlayMulticast.h | constexpr-ok | admit | mint_overlay_multicast | A defect and not an exemption, as the earlier allowlist marked it.  The mint has no constexpr and no reason for that.  Give the mint constexpr, or write its true reason here
-include/crucible/observe/Metrics.h | constexpr-ok | admit | mint_canopy_metrics_reader | An allocating mint of observe.  The mint allocates, calls the kernel, makes a resource or reads runtime state at run time, so it cannot be constexpr (section XXI)
-include/crucible/observe/Metrics.h | constexpr-ok | admit | mint_keeper_metrics_reader | An allocating mint of observe.  The mint allocates, calls the kernel, makes a resource or reads runtime state at run time, so it cannot be constexpr (section XXI)
-include/crucible/observe/SyntheticProbe.h | constexpr-ok | admit | mint_synthetic_probes | An allocating mint of observe.  The mint allocates, calls the kernel, makes a resource or reads runtime state at run time, so it cannot be constexpr (section XXI)
-include/crucible/topology/Pingmesh.h | constexpr-ok | admit | mint_pingmesh | An allocating mint of topology.  The mint allocates, calls the kernel, makes a resource or reads runtime state at run time, so it cannot be constexpr (section XXI)
-include/crucible/topology/Ptp.h | constexpr-ok | admit | mint_ptp_handle | An allocating mint of topology.  The mint allocates, calls the kernel, makes a resource or reads runtime state at run time, so it cannot be constexpr (section XXI)
-include/crucible/warden/Hardening.h | constexpr-ok | admit | mint_hardening | An allocating mint of warden.  The mint allocates, calls the kernel, makes a resource or reads runtime state at run time, so it cannot be constexpr (section XXI)
-include/fixy/concurrent/SwmrSession.h | constexpr-ok | admit | mint_swmr_reader | The reader mint takes a share from an atomic reference count, so it reads runtime state and cannot be constexpr
-include/fixy/os/Spawn.h | constexpr-ok | admit | mint_parallel_for | The mint starts one jthread for each shard but the single-shard case, so a constexpr would claim a compile-time cost for a call that schedules threads
-include/fixy/os/Spawn.h | constexpr-ok | admit | mint_spawn | The mint reads the probed cache sizes and starts one jthread for each child for a set past L2, so a constexpr would claim a compile-time cost for a call that schedules threads
-include/fixy/session/CrashTransport.h | constexpr-ok | admit | mint_crash_reporter | The reporter mint claims its cell with an atomic exchange, and a second mint for one cell ends the process.  It reads and writes runtime state, so it cannot be constexpr.  The class names the mint as the friend of its only constructor, so the rule sees the signature two times, and one row covers the two sites
-include/fixy/session/CrashTransport.h | constexpr-ok | admit | mint_crash_session | The mint reads at run time the writer that it takes, so it cannot be constexpr
-include/fixy/session/CrashTransport.h | constexpr-ok | admit | mint_crash_writer | The writer mint claims its cell with an atomic exchange, so it cannot be constexpr
-include/foundation/permissions/PermissionFork.h | constexpr-ok | admit | mint_permission_fork | The fork arm that spawns starts threads, so it is not constexpr.  The inline arm is constexpr
+include/crucible/CKernel.h | mint-not-constexpr | admit | crucible::CKernelTable::mint_mutable_view(const crucible::VigilFgCtx&) const | The mutable view mint of the registration table reads the atomic seal word of the table.  No constant evaluation can read an atomic, and -Winvalid-constexpr refuses a constexpr function that always calls a function that is not constexpr
+include/crucible/SchemaTable.h | mint-not-constexpr | admit | crucible::SchemaTable::mint_mutable_view(const crucible::VigilFgCtx&) const | The mutable view mint of the registration table reads the atomic seal word of the table.  No constant evaluation can read an atomic, and -Winvalid-constexpr refuses a constexpr function that always calls a function that is not constexpr
+include/crucible/Vigil.h | mint-not-constexpr | admit | crucible::Vigil::mint_producer_context() | The producer-context mint reads the thread id and the atomic claim word.  The body reads runtime state, and -Winvalid-constexpr refuses constexpr
+include/crucible/cntp/AfXdp.h | mint-not-constexpr | admit | crucible::cntp::mint_af_xdp_socket(const Ctx&, crucible::cntp::DeclaredAfXdpConfig) | The mint allocates the UMEM buffer of UmemBytes bytes on the heap at run time (umem_type::allocate).  Section XXI drops constexpr from a mint that allocates
+include/crucible/ledger/Ledger.h | mint-not-constexpr | admit | crucible::ledger::mint_ledger_view(const Ctx&) | The mint allocates on the heap at run time, and section XXI drops constexpr from a mint that allocates
+include/crucible/ledger/Ledger.h | mint-not-constexpr | admit | crucible::ledger::mint_ledger_view(const Ctx&, crucible::ledger::HostFingerprint) | The mint allocates on the heap at run time, and section XXI drops constexpr from a mint that allocates
+include/crucible/ledger/RefreshDaemon.h | mint-not-constexpr | admit | crucible::ledger::mint_refresh_daemon(const Ctx&, crucible::ledger::RefreshDaemonConfig) | The mint allocates on the heap at run time, and section XXI drops constexpr from a mint that allocates
+include/crucible/observe/Metrics.h | mint-not-constexpr | admit | crucible::observe::mint_canopy_metrics_reader(crucible::observe::RuntimeMetricsChannel<ReaderBrand, WriterBrand>&) | The mint calls mint_swmr_reader, which takes a share from the atomic reference count of the channel.  No constant evaluation can read an atomic
+include/crucible/observe/Metrics.h | mint-not-constexpr | admit | crucible::observe::mint_keeper_metrics_reader(crucible::observe::RuntimeMetricsChannel<ReaderBrand, WriterBrand>&) | The mint calls mint_swmr_reader, which takes a share from the atomic reference count of the channel.  No constant evaluation can read an atomic
+include/crucible/observe/Metrics.h | mint-not-constexpr | admit | crucible::observe::mint_metrics_writer(crucible::observe::RuntimeMetricsChannel<ReaderBrand, WriterBrand>&, foundation::permissions::Permission<crucible::observe::RuntimeMetricsWriterTag, WriterBrand>&&) | The writer claim of the session is an atomic exchange, and no constant evaluation can do an atomic exchange
+include/crucible/perf/LockContention.h | mint-not-constexpr | admit | crucible::perf::mint_lock_contention(const Ctx&, const fixy::InitLoadCtx&) | The load path maps the timeline ring and allocates State on the heap.  Section XXI drops constexpr from a mint that allocates
+include/crucible/perf/PmuSample.h | mint-not-constexpr | admit | crucible::perf::mint_pmu_sample(const Ctx&, const fixy::InitLoadCtx&) | The load path opens the perf event descriptors of each CPU, maps the sample ring and allocates State on the heap.  Section XXI drops constexpr from a mint that allocates
+include/crucible/perf/SchedSwitch.h | mint-not-constexpr | admit | crucible::perf::mint_sched_switch(const Ctx&, const fixy::InitLoadCtx&) | The load path maps the timeline ring and allocates State on the heap.  Section XXI drops constexpr from a mint that allocates
+include/crucible/perf/SchedTpBtf.h | mint-not-constexpr | admit | crucible::perf::mint_sched_tp_btf(const Ctx&, const fixy::InitLoadCtx&) | The load path maps the timeline ring and allocates State on the heap.  Section XXI drops constexpr from a mint that allocates
+include/crucible/perf/SenseHub.h | mint-not-constexpr | admit | crucible::perf::mint_sense_hub(const Ctx&, const fixy::InitLoadCtx&) | The load path maps the counter array of the kernel and allocates State on the heap.  Section XXI drops constexpr from a mint that allocates
+include/crucible/perf/SenseHubV2.h | mint-not-constexpr | admit | crucible::perf::mint_sense_hub_v2(const Ctx&, const fixy::InitLoadCtx&) | The load path maps the counter and gauge arrays and allocates State on the heap.  Section XXI drops constexpr from a mint that allocates
+include/crucible/perf/SyscallLatency.h | mint-not-constexpr | admit | crucible::perf::mint_syscall_latency(const Ctx&, const fixy::InitLoadCtx&) | The load path maps the timeline ring and allocates State on the heap.  Section XXI drops constexpr from a mint that allocates
+include/crucible/perf/SyscallTpBtf.h | mint-not-constexpr | admit | crucible::perf::mint_syscall_tp_btf(const Ctx&, const fixy::InitLoadCtx&) | The load path maps the timeline ring and allocates State on the heap.  Section XXI drops constexpr from a mint that allocates
+include/crucible/topology/Ptp.h | mint-not-constexpr | admit | crucible::topology::mint_ptp_handle(const Ctx&, crucible::cog::CogIdentity, crucible::topology::PtpClockFd, crucible::topology::PtpStatus) | The handle constructor publishes the initial status through the atomic stores of a seqlock epoch (store_status), and no constant evaluation can do an atomic operation
+include/crucible/warden/Hardening.h | mint-not-constexpr | admit | crucible::warden::mint_hardening(const Ctx&, const crucible::warden::Policy&) | The mint applies the hardening policy at run time: it pins the thread through the affinity door, and it calls prctl and mlock.  Each is a call of the kernel, and section XXI drops constexpr from such a mint
+include/fixy/OwnedFile.h | mint-not-constexpr | admit | fixy::mint_owned_file(const Ctx&, const char*, const char*) | Opening a stream is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/OwnedFile.h | mint-not-constexpr | admit | fixy::mint_temporary_file(const Ctx&) | Opening a stream is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/OwnedMmap.h | mint-not-constexpr | admit | fixy::OwnedMmap::mint_region(const Ctx&, const foundation::permissions::Permission<Tag, Brand>&, int, std::size_t, off_t) | Mapping memory is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/OwnedRegion.h | mint-not-constexpr | admit | fixy::mint_owned_region(foundation::effects::Alloc, Allocator&, std::size_t, foundation::permissions::Permission<Tag, Brand>&&) | The mint allocates on the heap at run time, and section XXI drops constexpr from a mint that allocates
+include/fixy/OwnedRegion.h | mint-not-constexpr | admit | fixy::mint_split(fixy::OwnedRegion<T, Tag, Brand>&&) | The split divides the region at run time, at the address of its buffer
+include/fixy/concurrent/SwmrSession.h | mint-not-constexpr | admit | fixy::concurrent::swmr_session::mint_swmr_reader(Swmr&) | The reader mint takes a share from an atomic reference count, and no constant evaluation can do an atomic operation
+include/fixy/concurrent/SwmrSession.h | mint-not-constexpr | admit | fixy::concurrent::swmr_session::mint_swmr_writer(Swmr&, foundation::permissions::Permission<typename S::writer_tag, typename S::writer_brand>&&) | The writer claim is an atomic exchange, and no constant evaluation can do an atomic exchange
+include/fixy/handle/LazyEstablishedChannel.h | mint-not-constexpr | admit | fixy::handle::LazyEstablishedChannel::mint_established_session(const Ctx&, std::source_location) | The mint reads the atomic slot and the claim flag of the channel, and no constant evaluation can read an atomic
+include/fixy/os/CipherDurable.h | mint-not-constexpr | admit | fixy::cipher::durable::mint_cold_writer(const Ctx&, fixy::cipher::durable::Path<fixy::tags::source::Sanitized>, mode_t) | Opening a file is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/os/CipherDurable.h | mint-not-constexpr | admit | fixy::cipher::durable::mint_head_advancer(const Ctx&, fixy::cipher::durable::Path<fixy::tags::source::Sanitized>, mode_t) | Opening a file is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/os/CipherDurable.h | mint-not-constexpr | admit | fixy::cipher::durable::mint_warm_writer(const Ctx&, fixy::cipher::durable::Path<fixy::tags::source::Sanitized>, mode_t) | Opening a file is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/os/Fs.h | mint-not-constexpr | admit | fixy::fs::mint_durable_append_file(const Ctx&, fixy::Path<fixy::tags::source::Sanitized>, mode_t) | Opening a file is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/os/Fs.h | mint-not-constexpr | admit | fixy::fs::mint_durable_truncate_file(const Ctx&, fixy::Path<fixy::tags::source::Sanitized>, mode_t) | Opening a file is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/os/Fs.h | mint-not-constexpr | admit | fixy::fs::mint_file(const Ctx&, fixy::Path<fixy::tags::source::Sanitized>, mode_t) | Opening a file is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/os/Io.h | mint-not-constexpr | admit | fixy::io::mint_io_uring_ring(const Ctx&) | Setting up an io_uring ring is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/os/Mmap.h | mint-not-constexpr | admit | fixy::mmap::mint_mmap(const Ctx&, const foundation::permissions::Permission<Tag, Brand>&, int, std::size_t, off_t) | Mapping memory is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/os/Mmap.h | mint-not-constexpr | admit | fixy::mmap::mint_mmap_anon(const Ctx&, const foundation::permissions::Permission<Tag, Brand>&, std::size_t) | Mapping memory is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/os/NumaPlacement.h | mint-not-constexpr | admit | fixy::numa::mint_numa_placement(const Ctx&, fixy::Linear<fixy::OwnedMmap<Tag, Prot, fixy::mmap::share::Anonymous, Brand> >&&, foundation::algebra::lattices::NumaNodeId) | Binding memory to a NUMA node is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/os/Sched.h | mint-not-constexpr | admit | fixy::sched::mint_affinity(const Ctx&) | The mint calls sched_setaffinity, a call of the kernel at run time, and gives the proof only after the call returns 0.  Section XXI drops constexpr from such a mint
+include/fixy/os/Sched.h | mint-not-constexpr | admit | fixy::sched::mint_priority(const Ctx&) | setpriority is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/os/Sched.h | mint-not-constexpr | admit | fixy::sched::mint_scheduler_policy(const Ctx&, int) | Setting a scheduler policy is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/os/Socket.h | mint-not-constexpr | admit | fixy::net::mint_socket(const Ctx&) | Opening a socket is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/os/Spawn.h | mint-not-constexpr | admit | fixy::spawn::mint_parallel_for(const Ctx&, fixy::concurrent::WorkBudget, fixy::OwnedRegion<T, Tag, Brand>&&, Body) | The mint starts one jthread for each shard but the single-shard case, and a constexpr would claim a compile-time cost for a call that schedules threads
+include/fixy/os/Spawn.h | mint-not-constexpr | admit | fixy::spawn::mint_spawn(const Ctx&, fixy::concurrent::WorkBudget, foundation::permissions::Permission<Tag, Brand>&&, Callables&& ...) | The mint reads the probed cache sizes and starts one jthread for each child for a set past L2, and a constexpr would claim a compile-time cost for a call that schedules threads
+include/fixy/os/ThreadName.h | mint-not-constexpr | admit | fixy::mint_thread_name(const Ctx&) | Naming a thread is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/os/Time.h | mint-not-constexpr | admit | fixy::time::mint_ptp_clock_reader(const Ctx&, fixy::time::PtpDeviceIndex) | Opening /dev/ptpN is a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/os/Time.h | mint-not-constexpr | admit | fixy::time::mint_tsc_reader(const Ctx&, PinT&&) | The mint reads the pin event of the calling thread, which is runtime state
+include/fixy/session/AsyncChannel.h | mint-not-constexpr | admit | fixy::session::mint_forked_async_channel(const Ctx&, foundation::permissions::Permission<Parent, Brand>&&, ResourceSelf, ResourcePeer, SelfBody, PeerBody, std::source_location) | The mint starts a thread for each side, a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/fixy/session/CrashTransport.h | mint-not-constexpr | admit | fixy::session::mint_crash_reporter(fixy::session::PeerCrashCell&) | The reporter mint claims its cell with an atomic exchange, and a second mint for one cell ends the process.  It reads and writes runtime state, and no constant evaluation can do that
+include/fixy/session/CrashTransport.h | mint-not-constexpr | admit | fixy::session::mint_crash_session(const Ctx&, Resource, const fixy::session::PeerCrashCell&, fixy::session::CrashWriter, std::source_location) | The mint reads at run time the writer that it takes, and no constant evaluation can read that state
+include/fixy/session/CrashTransport.h | mint-not-constexpr | admit | fixy::session::mint_crash_writer(fixy::session::PeerCrashCell&) | The writer mint claims its cell with an atomic exchange, and no constant evaluation can do an atomic exchange
+include/fixy/session/Handle.h | mint-not-constexpr | admit | fixy::session::mint_forked_channel(const Ctx&, foundation::permissions::Permission<Parent, Brand>&&, ResourceSelf, ResourcePeer, SelfBody, PeerBody, std::source_location) | The mint starts a thread for each side, a call of the kernel at run time, and section XXI drops constexpr from such a mint
+include/foundation/core/Ref.h | mint-not-constexpr | admit | foundation::core::mint_box(Marker, Args&& ...) | The mint allocates on the heap at run time, and section XXI drops constexpr from a mint that allocates
+include/foundation/effects/Ctx.h | mint-not-constexpr | admit | foundation::effects::host::ProducerClaim::mint_producer_context() | The mint reads the id of the calling thread, and no constant evaluation can read it
+include/foundation/permissions/PermissionFork.h | mint-not-constexpr | admit | foundation::permissions::mint_permission_fork(const Ctx&, foundation::permissions::Permission<Parent, Brand>&&, Callables&& ...) | The fork arm that spawns starts threads, and is not constexpr.  The inline arm is constexpr

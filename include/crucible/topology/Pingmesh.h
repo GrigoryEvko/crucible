@@ -142,8 +142,8 @@ class Pingmesh;
 template <::foundation::effects::IsExecCtx Ctx, std::size_t MaxPeers, std::uint8_t Significant = 2,
           std::uint64_t MaxLatencyNs = 60000000000ull>
     requires CtxFitsPingmeshMint<Ctx>
-[[nodiscard]] Pingmesh<MaxPeers, Significant, MaxLatencyNs> mint_pingmesh(Ctx const&,
-                                                                          PingmeshConfig config = {}) noexcept;
+[[nodiscard]] constexpr Pingmesh<MaxPeers, Significant, MaxLatencyNs> mint_pingmesh(Ctx const&,
+                                                                                    PingmeshConfig config = {}) noexcept;
 
 template <std::size_t MaxPeers, std::uint8_t Significant, std::uint64_t MaxLatencyNs>
 class Pingmesh : public ::foundation::Pinned<Pingmesh<MaxPeers, Significant, MaxLatencyNs>> {
@@ -196,9 +196,9 @@ private:
 
     template <::foundation::effects::IsExecCtx Ctx, std::size_t Peers, std::uint8_t Sig, std::uint64_t MaxNs>
         requires CtxFitsPingmeshMint<Ctx>
-    friend Pingmesh<Peers, Sig, MaxNs> mint_pingmesh(Ctx const&, PingmeshConfig config) noexcept;
+    friend constexpr Pingmesh<Peers, Sig, MaxNs> mint_pingmesh(Ctx const&, PingmeshConfig config) noexcept;
 
-    explicit Pingmesh(PingmeshConfig config) noexcept : config_{config} {}
+    constexpr explicit Pingmesh(PingmeshConfig config) noexcept : config_{config} {}
 
     // The two steps of start_probing.  They write the peer table and the
     // pair mask that record_measurement reads, so only start_probing, under
@@ -386,7 +386,8 @@ public:
 template <::foundation::effects::IsExecCtx Ctx, std::size_t MaxPeers, std::uint8_t Significant,
           std::uint64_t MaxLatencyNs>
     requires CtxFitsPingmeshMint<Ctx>
-[[nodiscard]] Pingmesh<MaxPeers, Significant, MaxLatencyNs> mint_pingmesh(Ctx const&, PingmeshConfig config) noexcept {
+[[nodiscard]] constexpr Pingmesh<MaxPeers, Significant, MaxLatencyNs> mint_pingmesh(Ctx const&,
+                                                                                    PingmeshConfig config) noexcept {
     return Pingmesh<MaxPeers, Significant, MaxLatencyNs>{config};
 }
 

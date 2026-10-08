@@ -1,0 +1,4 @@
+# The rule table of the control of the rule mint-pattern: include/fixy/ is
+# base code, and shapes.cpp is quarantined.
+layer low 0 include/fixy/
+quarantine shapes.cpp

@@ -214,7 +214,7 @@ template <std::size_t N, typename... Never, typename T, typename Tag, typename B
           typename SplitName = CRUCIBLE_FRESH_BRAND>
     requires(N > 0 && std::is_object_v<T>)
 [[nodiscard]] split_parts_t<T, Tag, Brand, SplitName, N>
-mint_split(OwnedRegion<T, Tag, Brand>&& region) noexcept;  // MINT-PATTERN-OK: the split partitions at run time
+mint_split(OwnedRegion<T, Tag, Brand>&& region) noexcept;
 
 }  // namespace fixy
 
@@ -265,7 +265,7 @@ mint_owned_region(T* base, std::size_t count, ::foundation::permissions::Permiss
 
 template <typename T, typename Allocator, typename Tag, typename Brand>
     requires ArrayArena<Allocator, T>
-[[nodiscard]] OwnedRegion<T, Tag, Brand> mint_owned_region(  // MINT-PATTERN-OK: allocating
+[[nodiscard]] OwnedRegion<T, Tag, Brand> mint_owned_region(
     ::foundation::effects::Alloc alloc_token, Allocator& arena, std::size_t count,
     ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept;
 
@@ -436,7 +436,7 @@ mint_owned_region(T* base, std::size_t count, ::foundation::permissions::Permiss
 
 template <typename T, typename Allocator, typename Tag, typename Brand>
     requires ArrayArena<Allocator, T>
-[[nodiscard]] OwnedRegion<T, Tag, Brand> mint_owned_region(  // MINT-PATTERN-OK: allocating
+[[nodiscard]] OwnedRegion<T, Tag, Brand> mint_owned_region(
     ::foundation::effects::Alloc alloc_token, Allocator& arena, std::size_t count,
     ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept {
     T* base = (count == 0) ? nullptr : arena.template alloc_array<T>(alloc_token, count);
@@ -462,7 +462,7 @@ constexpr Borrowed<T, Tag, Brand> mint_borrowed(OwnedRegion<T, Tag, Brand>&&) =
 template <std::size_t N, typename... Never, typename T, typename Tag, typename Brand, typename SplitName>
     requires(N > 0 && std::is_object_v<T>)
 [[nodiscard]] split_parts_t<T, Tag, Brand, SplitName, N>
-mint_split(OwnedRegion<T, Tag, Brand>&& region) noexcept {  // MINT-PATTERN-OK: the split partitions at run time
+mint_split(OwnedRegion<T, Tag, Brand>&& region) noexcept {
     static_assert(sizeof...(Never) == 0,
                   "mint_split<N>(region) takes one template argument. The name of the split follows it and is "
                   "minted here, because a caller who could spell it could write a receipt for a split it did "

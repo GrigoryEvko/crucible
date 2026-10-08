@@ -79,7 +79,6 @@ utils/assay/guard/legacy/check_layer_boundary.py | attr-defined | 1 | main | An 
 utils/assay/guard/legacy/check_layer_boundary.py | comparison-overlap | 2 | self_test | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | arg-type | 1 | self_test | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_lifetime_twin.py | attr-defined | 1 | <module> | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | no-untyped-def | 1 | self_test.captured | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | attr-defined | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | attr-defined | 1 | scan | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | unused-ignore | 1 | scan | An error of mypy of today.  The change that gives the code its types lowers the count

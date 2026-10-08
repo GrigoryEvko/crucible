@@ -527,17 +527,6 @@ crucible_script_test(NAME contract_header_unit
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule contract-header-unit
           --cxx ${CRUCIBLE_REAL_CXX} --include ${CMAKE_SOURCE_DIR}/include)
 set_tests_properties(contract_header_unit PROPERTIES LABELS "foundation;ci_guard")
-# The §XXI mint pattern.  utils/assay/guard/legacy/check_mint_pattern.py holds each mint to
-# the five axes nodiscard, constexpr, noexcept, requires and ctxfit, read
-# from the parse tree, and it refuses a dead or malformed exemption.
-crucible_script_test(NAME mint_pattern_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule mint-pattern
-          --self-test)
-crucible_script_test(NAME mint_pattern
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule mint-pattern)
-set_tests_properties(mint_pattern mint_pattern_self_test PROPERTIES
-  LABELS "ci_guard;ast")
-set_tests_properties(mint_pattern mint_pattern_self_test PROPERTIES SKIP_RETURN_CODE 3)
 # The witness roster.  Every type that attests to a fact it cannot see
 # — a pin, a mapping, a descriptor, a permission, a context — is named
 # in utils/scripts/witness-roster.txt with the expression a forger would
@@ -5535,8 +5524,8 @@ crucible_script_test(NAME quarantine_sections_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest readers.sections)
 # guard_plugin — the runner of the engine plugin
 # (utils/assay/guard/engines/plugin/runner.py) reads the section of each object
-# of all one time, and judges the rules quarantine and contract-specifier.  The
-# rule quarantine counts the distinct findings in each file, kind and entity,
+# of all one time, and judges each rule of the engine plugin of
+# utils/registry.txt.  The rule quarantine counts the distinct findings in each file, kind and entity,
 # and each opt-out region as the kind region, against
 # utils/ledgers/quarantine.txt.  A count above or below its row fails, and so
 # does a finding in a file that the ledger does not hold.  A finding inside an
@@ -5552,8 +5541,14 @@ crucible_script_test(NAME plugin_runner_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.plugin.test_runner)
 crucible_script_test(NAME plugin_witness_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.plugin.test_witness)
+# plugin_declarations_self_test — the family declaration property of the
+# engine plugin (utils/assay/guard/engines/plugin/declarations.py): the scope of
+# a rule, one position for each entity, and the mint records that the rule
+# mint-pattern reads.
+crucible_script_test(NAME plugin_declarations_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.plugin.test_declarations)
 set_tests_properties(quarantine_sections_self_test guard_plugin plugin_runner_self_test plugin_witness_self_test
-    PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 77)
+    plugin_declarations_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 77)
 
 # affected_tests_self_test — `loop test` (utils/assay/loop/affected.py) builds a tree
 # and runs only the tests whose inputs changed since their last pass.  It is

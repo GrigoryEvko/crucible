@@ -264,15 +264,27 @@ foreach(_layer foundation fixy crucible)
       set(_header_limit "${_ops_limit_of_${_header}}")
     endif()
     # A source property comes last on the compile line, so this limit wins
-    # over the limit of the whole build.
-    set_source_files_properties("${_sentinel}" PROPERTIES COMPILE_OPTIONS "-fconstexpr-ops-limit=${_header_limit}")
+    # over the limit of the whole build.  The quarantine plugin reads the
+    # declarations of a foundation or fixy header only in the sentinel of the
+    # header, which names the header with the sentinel argument.  A crucible
+    # header is quarantined, and the plugin reads it in each unit.
+    set(_sentinel_options "-fconstexpr-ops-limit=${_header_limit}")
+    set(_sentinel_argument "")
+    if(NOT _layer STREQUAL "crucible")
+      set(_sentinel_argument "${CRUCIBLE_QUARANTINE_SENTINEL_ARGUMENT}=include/${_header}")
+    endif()
     string(REGEX REPLACE "\\.h$" ".cpp" _check "${_header}")
     if(EXISTS "${_layer_checks}/${_check}")
       list(APPEND _sentinels "${_layer_checks}/${_check}")
       list(APPEND _alone_units "${_sentinel}")
+      if(_sentinel_argument)
+        set_source_files_properties("${_layer_checks}/${_check}" PROPERTIES COMPILE_OPTIONS "${_sentinel_argument}")
+      endif()
     else()
       list(APPEND _sentinels "${_sentinel}")
+      list(APPEND _sentinel_options ${_sentinel_argument})
     endif()
+    set_source_files_properties("${_sentinel}" PROPERTIES COMPILE_OPTIONS "${_sentinel_options}")
   endforeach()
   if(NOT _sentinels)
     message(FATAL_ERROR "test/layer: include/${_layer} has no header, so the layer sentinel would compile nothing")

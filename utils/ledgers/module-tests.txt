@@ -37,7 +37,6 @@ utils/assay/guard/legacy/check_host_owners.py | no-test | 1 | assay.guard.legacy
 utils/assay/guard/legacy/check_layer_boundary.py | no-test | 1 | assay.guard.legacy.check_layer_boundary | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | no-test | 1 | assay.guard.legacy.check_libstdcxx_symbols | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_lifetime_twin.py | no-test | 1 | assay.guard.legacy.check_lifetime_twin | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/guard/legacy/check_mint_pattern.py | no-test | 1 | assay.guard.legacy.check_mint_pattern | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | no-test | 1 | assay.guard.legacy.check_no_combine_ids_duplicate | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_no_coordination_refs.py | no-test | 1 | assay.guard.legacy.check_no_coordination_refs | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_no_ffast_math.py | no-test | 1 | assay.guard.legacy.check_no_ffast_math | A module of today with no test module.  The change that writes the test module removes the row

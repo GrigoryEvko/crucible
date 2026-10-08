@@ -118,6 +118,20 @@
 //     The rule contract-specifier:
 //     contract-specifier    a `pre` or a `post` contract specifier (in each file
 //                           under the root and in each mode)
+//     The rules of the family declaration property (declaration.cpp, THE
+//     FAMILY) read each quarantined file, and the base file that the unit
+//     compiles or that the argument sentinel names.  A finding of such a rule
+//     is an error only in the mode error, and no opt-out region covers it.
+//     The rule mint-pattern:
+//     mint                  no finding: one record of each mint, with its facts,
+//                           for the inventory of the mints
+//     mint-not-nodiscard    a mint with no [[nodiscard]]
+//     mint-not-constexpr    a mint that is not constexpr or consteval, and that
+//                           is no borrow projection
+//     mint-not-noexcept     a mint with no noexcept
+//     mint-unconstrained    a mint template with no constraint
+//     mint-unfit-context    a mint that takes a context first, and no constraint
+//                           of which names that context
 //
 // THE SECTION
 //     A unit that writes an object puts its report into the section
@@ -284,6 +298,7 @@ struct RuleTable {
 enum class Rule : std::uint8_t {
     quarantine,
     contract_specifier,
+    mint_pattern,
 };
 
 // The kinds of a finding (THE RULES AND THE KINDS above).  opted-out and
@@ -306,6 +321,12 @@ enum class Kind : std::uint8_t {
     upward_include,
     replace_pending,
     contract_specifier,
+    mint_record,
+    mint_not_nodiscard,
+    mint_not_constexpr,
+    mint_not_noexcept,
+    mint_unconstrained,
+    mint_unfit_context,
 };
 
 inline const char* rule_name(Rule rule) {
@@ -314,6 +335,8 @@ inline const char* rule_name(Rule rule) {
             return "quarantine";
         case Rule::contract_specifier:
             return "contract-specifier";
+        case Rule::mint_pattern:
+            return "mint-pattern";
     }
     return "unknown";
 }
@@ -354,15 +377,43 @@ inline const char* kind_name(Kind kind) {
             return "replace-pending";
         case Kind::contract_specifier:
             return "contract-specifier";
+        case Kind::mint_record:
+            return "mint";
+        case Kind::mint_not_nodiscard:
+            return "mint-not-nodiscard";
+        case Kind::mint_not_constexpr:
+            return "mint-not-constexpr";
+        case Kind::mint_not_noexcept:
+            return "mint-not-noexcept";
+        case Kind::mint_unconstrained:
+            return "mint-unconstrained";
+        case Kind::mint_unfit_context:
+            return "mint-unfit-context";
     }
     return "unknown";
 }
 
-// The rule of each kind: the contract rule has one kind, and the quarantine
-// rule has each other kind.
+// The rule of each kind (THE RULES AND THE KINDS).
 inline Rule rule_of(Kind kind) {
-    return kind == Kind::contract_specifier ? Rule::contract_specifier : Rule::quarantine;
+    switch (kind) {
+        case Kind::contract_specifier:
+            return Rule::contract_specifier;
+        case Kind::mint_record:
+        case Kind::mint_not_nodiscard:
+        case Kind::mint_not_constexpr:
+        case Kind::mint_not_noexcept:
+        case Kind::mint_unconstrained:
+        case Kind::mint_unfit_context:
+            return Rule::mint_pattern;
+        default:
+            return Rule::quarantine;
+    }
 }
+
+// True when a rule of the family declaration property gives the kind.  Such
+// a finding is an error only in the mode error, no opt-out region covers it,
+// and no enforce mode changes it.
+inline bool is_property_kind(Kind kind) { return rule_of(kind) == Rule::mint_pattern; }
 
 // The two kinds of a line of the report that the rule quarantine gives for
 // each rule: a finding inside an opt-out region, and the region itself.
@@ -398,6 +449,12 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"quarantine", "opted-out"},
     {"quarantine", "region"},
     {"contract-specifier", "contract-specifier"},
+    {"mint-pattern", "mint"},
+    {"mint-pattern", "mint-not-nodiscard"},
+    {"mint-pattern", "mint-not-constexpr"},
+    {"mint-pattern", "mint-not-noexcept"},
+    {"mint-pattern", "mint-unconstrained"},
+    {"mint-pattern", "mint-unfit-context"},
 };
 
 // True when the entity is part of the key of a finding: two findings of such
@@ -406,7 +463,7 @@ inline constexpr RuleKind kRuleKinds[] = {
 inline bool is_name_kind(Kind kind) {
     return kind == Kind::std_entity || kind == Kind::c_library_call || kind == Kind::foreign_symbol
         || kind == Kind::compiler_builtin || kind == Kind::layer_header || kind == Kind::door_header
-        || kind == Kind::upward_include || kind == Kind::replace_pending;
+        || kind == Kind::upward_include || kind == Kind::replace_pending || is_property_kind(kind);
 }
 
 inline bool is_include_kind(Kind kind) {
@@ -558,6 +615,14 @@ struct State {
 
     // The expansions of assert.
     MacroCallback previous_used = nullptr;
+
+    // The family declaration property (declaration.cpp, THE FAMILY): the path
+    // that the argument sentinel names, relative to the source root, or empty.
+    // DECL_UID keys the facts of a body that PLUGIN_PRE_GENERICIZE reads,
+    // because a garbage collection can free a tree before the walk.
+    std::string sentinel;
+    std::unordered_set<unsigned> defined_functions;  // each mint that the unit defines
+    std::unordered_set<unsigned> projection_bodies;  // each mint whose body is a borrow projection
 
     // Caches keyed by tree.  A garbage collection can free a tree and reuse
     // its address, so each collection clears them.  Nothing depends on them
@@ -951,6 +1016,7 @@ bool is_in_instantiation(tree decl);
 void check_instantiation(tree function);
 void walk_declarations();
 void register_declarations(const char* plugin_name);
+std::string function_signature(tree function);
 
 // expression.cpp: the family expression shape, the walk of a body.
 void walk_root(tree* root, location_t location, bool is_pattern);

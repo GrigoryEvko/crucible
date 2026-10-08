@@ -221,7 +221,7 @@ private:
     }
 
 public:
-    explicit SyntheticProbeRunner(ProbeConfig config = {}) noexcept : config_{config} {}
+    constexpr explicit SyntheticProbeRunner(ProbeConfig config = {}) noexcept : config_{config} {}
 
     [[nodiscard]] ProbeConfig config() const noexcept { return config_; }
 
@@ -331,7 +331,8 @@ public:
 
 template <::foundation::effects::IsExecCtx Ctx, std::size_t MaxPeers>
     requires CtxFitsSyntheticProbeMint<Ctx>
-[[nodiscard]] SyntheticProbeRunner<MaxPeers> mint_synthetic_probes(Ctx const&, ProbeConfig config = {}) noexcept {
+[[nodiscard]] constexpr SyntheticProbeRunner<MaxPeers> mint_synthetic_probes(Ctx const&,
+                                                                             ProbeConfig config = {}) noexcept {
     return SyntheticProbeRunner<MaxPeers>{config};
 }
 

@@ -92,8 +92,6 @@ utils/assay/guard/legacy/check_libstdcxx_symbols.py | I001 | 1 | <module> | An i
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | ISC004 | 1 | self_test | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_lifetime_twin.py | format | 1 | twins_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | C408 | 1 | self_test.make | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | format | 1 | read_ledger | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | FURB166 | 2 | token_value | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | ISC004 | 2 | self_test | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | format | 1 | token_shape | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count

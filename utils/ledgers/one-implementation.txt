@@ -63,8 +63,6 @@ utils/assay/guard/legacy/check_layer_boundary.py | near-copy | 1 | main | A copy
 utils/assay/guard/legacy/check_layer_boundary.py | near-copy | 1 | self_test.captured | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_libstdcxx_symbols.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_lifetime_twin.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | copy | 1 | self_test.captured | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | copy | 1 | self_test.check | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | copy | 1 | self_test.captured | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count

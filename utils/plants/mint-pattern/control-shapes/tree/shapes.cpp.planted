@@ -1,0 +1,8 @@
+#include <fixy/Mints.h>
+
+namespace quarantined {
+
+// A mint of a quarantined file with each axis.
+[[nodiscard]] constexpr control::Thing mint_quarantined(control::Thing) noexcept { return {}; }
+
+}  // namespace quarantined

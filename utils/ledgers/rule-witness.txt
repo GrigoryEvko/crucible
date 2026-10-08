@@ -54,7 +54,6 @@ utils/registry.txt | no-plant | admit | link-count | The rule has no plants in u
 utils/registry.txt | no-plant | admit | link-memory | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | link-time | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | mint-floor | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
-utils/registry.txt | no-plant | admit | mint-pattern | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | no-combine-ids-duplicate | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | no-coordination-refs | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row
 utils/registry.txt | no-plant | admit | no-ffast-math | The rule has no plants in utils/plants/ at this time.  The change that gives the rule its plants removes this row

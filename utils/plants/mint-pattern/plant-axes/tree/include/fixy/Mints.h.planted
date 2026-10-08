@@ -1,0 +1,68 @@
+#pragma once
+
+namespace plant {
+
+template <typename>
+concept IsExecCtx = true;
+template <typename>
+concept CtxFitsPlant = true;
+template <typename>
+concept Surface = true;
+struct Ctx {};
+struct Thing {};
+
+// No attribute, no constexpr and no noexcept.
+inline Thing mint_bare(Thing) { return {}; }
+
+// noexcept(false) is no noexcept.
+[[nodiscard]] constexpr Thing mint_false(Thing) noexcept(false) { return {}; }
+
+// An attribute whose argument names nodiscard is not nodiscard.
+[[deprecated("use the nodiscard overload")]] constexpr Thing mint_deprecated_only(Thing) noexcept { return {}; }
+
+// A template with a parameter that is no type, and no constraint.
+template <unsigned long Count>
+[[nodiscard]] constexpr Thing mint_sized(Thing) noexcept { return {}; }
+
+// IsExecCtx gives the shape of the parameter, and it gates no context.
+template <IsExecCtx C>
+[[nodiscard]] constexpr Thing mint_shape_only(C const&) noexcept { return {}; }
+
+// The clause names the surface and not the context.
+template <Surface S, IsExecCtx C>
+    requires Surface<S>
+[[nodiscard]] constexpr Thing mint_surface_only(C const&) noexcept { return {}; }
+
+// The clause names the Ctx of a different namespace.
+namespace other {
+struct Ctx {};
+}  // namespace other
+template <Surface S, IsExecCtx Ctx>
+    requires CtxFitsPlant<other::Ctx>
+[[nodiscard]] constexpr Thing mint_scoped_ctx_name(Ctx const&) noexcept { return {}; }
+
+// A context of a function that is no template has no constraint.
+[[nodiscard]] constexpr Thing mint_plain_ctx(Ctx const&) noexcept { return {}; }
+
+// A member of the object is not the object, and the body is no borrow projection.
+template <class T>
+struct View {
+    T const* carrier;
+};
+template <class T>
+    requires Surface<T>
+[[nodiscard]] constexpr View<T> mint_view(T const& carrier) noexcept {
+    return View<T>{&carrier};
+}
+struct Carrier {
+    int value = 0;
+    [[nodiscard]] View<int> mint_member_view() const noexcept { return mint_view(value); }
+};
+
+// The pattern of a member of a class template.
+template <class T>
+struct Holder {
+    [[nodiscard]] Thing mint_in_template() const noexcept { return {}; }
+};
+
+}  // namespace plant

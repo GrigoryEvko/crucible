@@ -1523,62 +1523,6 @@ utils/assay/guard/legacy/check_lifetime_twin.py | refused-word | 1 | shown_of: o
 utils/assay/guard/legacy/check_lifetime_twin.py | refused-word | 1 | template_parameters: bind | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_lifetime_twin.py | refused-word | 1 | twins_of: every | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_lifetime_twin.py | refused-word | 1 | twins_of: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | long-sentence | 3 | <module> | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | <module>: already | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | <module>: another | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 2 | <module>: any | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 2 | <module>: ask | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | <module>: both | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | <module>: care | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 3 | <module>: carry | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 6 | <module>: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 8 | <module>: exempt | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | <module>: later | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | <module>: leave | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 3 | <module>: never | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | <module>: repeat | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 2 | <module>: require | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | <module>: separate | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 4 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | <module>: verify | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 3 | <module>: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 3 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 2 | <module>: would | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | Finding: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 4 | evaluate: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | evaluate: order | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | exempted: exempt | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | exempted: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | find_markers: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | find_markers: exempt | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | find_markers: inside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | find_markers: order | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | find_markers: place | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | find_markers: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | marker_axes: exempt | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | marker_kinds: order | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | read_ledger: never | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | read_ledger: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | run: any | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | run: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 2 | self_test.check: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | self_test.has: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | self_test.make: except | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | self_test.mentions: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | self_test: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | self_test: exempt | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | self_test: exercise | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | self_test: otherwise | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | self_test: presence | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | self_test: require | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | self_test: whole | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | self_test: wrong | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | shortfalls: any | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | shortfalls: ask | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | shortfalls: carry | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | shortfalls: order | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | refused-word | 1 | shortfalls: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/legacy/check_mint_pattern.py | semicolon | 1 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | long-sentence | 5 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | long-sentence | 1 | body_shape | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | long-sentence | 1 | result_key | A text of today.  The change that writes the text again in STE lowers the count
@@ -3165,8 +3109,7 @@ utils/assay/loop/derive/mint_model.py | long-sentence | 2 | fixture_names | A te
 utils/assay/loop/derive/mint_model.py | long-sentence | 1 | surface_files | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | <module>: absent | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | <module>: already | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/derive/mint_model.py | refused-word | 1 | <module>: ask | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/derive/mint_model.py | refused-word | 2 | <module>: both | A text of today.  The change that writes the text again in STE lowers the count
+utils/assay/loop/derive/mint_model.py | refused-word | 1 | <module>: both | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | <module>: cross | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | <module>: define | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | <module>: demand | A text of today.  The change that writes the text again in STE lowers the count
@@ -3179,7 +3122,7 @@ utils/assay/loop/derive/mint_model.py | refused-word | 1 | <module>: may | A tex
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | <module>: never | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | <module>: place | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | <module>: reach | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/derive/mint_model.py | refused-word | 6 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
+utils/assay/loop/derive/mint_model.py | refused-word | 5 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | <module>: under | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | Mint.identity: differ | A text of today.  The change that writes the text again in STE lowers the count
@@ -3189,7 +3132,7 @@ utils/assay/loop/derive/mint_model.py | refused-word | 3 | Mint: carry | A text 
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | Mint: define | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | Mint: otherwise | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | Mint: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/derive/mint_model.py | refused-word | 12 | Mint: whether | A text of today.  The change that writes the text again in STE lowers the count
+utils/assay/loop/derive/mint_model.py | refused-word | 11 | Mint: whether | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | _clauses: every | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | _clauses: reach | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | _constraint_candidates: among | A text of today.  The change that writes the text again in STE lowers the count
@@ -3355,7 +3298,6 @@ utils/assay/loop/derive/mint_model.py | refused-word | 1 | is_substrate_path: li
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | is_substrate_path: under | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | is_substrate_path: whether | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | line_comment_rows: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/derive/mint_model.py | refused-word | 1 | marker_rows: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | merge_declarations: define | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | merge_declarations: either | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/mint_model.py | refused-word | 1 | merge_declarations: every | A text of today.  The change that writes the text again in STE lowers the count

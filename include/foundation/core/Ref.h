@@ -56,7 +56,7 @@ class Box;
 
 template <class T, class Marker, class... Args>
     requires CanMintBox<T, Marker, Args...>
-[[nodiscard]] Box<T> mint_box(Marker allocation, Args&&... args) noexcept;  // MINT-PATTERN-OK: allocating
+[[nodiscard]] Box<T> mint_box(Marker allocation, Args&&... args) noexcept;
 
 template <BoxPayload T>
 class [[nodiscard]] Box {
@@ -142,7 +142,7 @@ public:
 // gate at the call.
 template <class T, class Marker, class... Args>
     requires CanMintBox<T, Marker, Args...>
-[[nodiscard]] Box<T> mint_box(Marker /*allocation*/, Args&&... args) noexcept {  // MINT-PATTERN-OK: allocating
+[[nodiscard]] Box<T> mint_box(Marker /*allocation*/, Args&&... args) noexcept {
     void* const storage = ::operator new(sizeof(T), std::align_val_t{alignof(T)}, std::nothrow);
     if (storage == nullptr) [[unlikely]] {
         // The tree does not run where an exhausted memory can recover.

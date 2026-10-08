@@ -4,6 +4,61 @@
 // gets its finding where the code declares it.  One walk of every namespace
 // reads the declarations at PLUGIN_FINISH_UNIT, and the types that an
 // instantiation deduces get their finding at PLUGIN_PRE_GENERICIZE.
+//
+// THE FAMILY
+//     The rules of the family read one property of a declaration, and each
+//     rule is one predicate of this file.  Their kinds are in plugin.h (THE
+//     RULES AND THE KINDS), and the module utils/assay/guard/engines/plugin/
+//     RULE.py of each rule judges its findings against utils/ledgers/RULE.txt.
+//
+// THE SCOPE
+//     A rule of the family reads a declaration of a quarantined file in each
+//     unit that includes the file.  It reads a declaration of a base file only
+//     in one unit: the unit that compiles the file, or the unit whose argument
+//     sentinel names the file.  test/layer gives each header of the base one
+//     such unit, so each base header costs one walk in each build.  The place
+//     of a finding is the expansion point of the declaration
+//     (property_place), so a declaration that a macro writes counts in the
+//     file that expands the macro.  The module of a rule keeps the findings in
+//     the scope of its row of utils/registry.txt.
+//
+// THE WALK
+//     PropertyWalk reads each namespace that no library file opens, at
+//     PLUGIN_FINISH_UNIT: each class, the pattern of each template and each
+//     explicit specialization.  At that point the body of a function that is
+//     not a template is gone, so PLUGIN_PRE_GENERICIZE keeps the facts of each
+//     body that a rule reads, by DECL_UID.  A template pattern keeps its body.
+//
+// THE RULE mint-pattern (CLAUDE.md section XXI)
+//     A mint is a function whose name starts with mint_ and does not end with
+//     an underscore, which is not deleted.  A function that only a friend
+//     declaration declares is no mint: its definition is the mint.  Each mint
+//     gets one record line of the kind mint, and one finding for each axis
+//     that it does not meet.  The entity of a record is the entity of the mint
+//     and then its facts:
+//
+//       ENTITY | name=NAME static=0|1 shape=ctx|token|member template=0|1
+//                nodiscard=0|1 constexpr=0|1 noexcept=0|1 constrained=0|1
+//                gated=0|1 projection=0|1 defined=0|1 owner=CLASS|-
+//
+//     defined is 1 when the unit holds the body of the mint.  A declaration in
+//     one header and the definition in a different header give two records,
+//     and the module of the rule keeps the record with the body.  The owner is
+//     the last fact, because the name of a class can hold a space.  The axes:
+//       nodiscard     the attribute [[nodiscard]] on a declaration
+//       constexpr     constexpr or consteval, unless the body is a borrow
+//                     projection: one return that calls mint_view with this
+//       noexcept      a noexcept specification that is not noexcept(false)
+//       constraint    a mint that is a template has a constraint: a concept
+//                     on a template parameter, or a requires-clause
+//       context fit   a mint that takes a context first, `Ctx const&`, has a
+//                     constraint that names that context.  The concept
+//                     IsExecCtx on the parameter is its shape, and no gate
+//     The shape of a mint is member for a member function that is not static,
+//     ctx when its first parameter is a reference to a const context (a type
+//     named Ctx, or a template parameter that IsExecCtx constrains), and token
+//     otherwise.  The entity of each line is the qualified name of the mint
+//     with the types of its parameters (function_signature).
 
 #include "plugin.h"
 
@@ -601,17 +656,624 @@ void check_instantiation(tree function) {
     }
 }
 
+// The qualified name of FUNCTION with the types of its parameters and its
+// qualifiers, such as fixy::Holder::mint_view(const Carrier&) const.  The
+// types are the spellings of GCC, so each unit gives one text for one
+// function.  Complexity: O(parameters).
+std::string function_signature(tree function) {
+    std::string text = qualified_name(function) + '(';
+    bool is_first = true;
+    tree types = FUNCTION_FIRST_USER_PARMTYPE(function);
+    for (; types != NULL_TREE && types != void_list_node; types = TREE_CHAIN(types)) {
+        if (!is_first) {
+            text += ", ";
+        }
+        text += type_text(TREE_VALUE(types));
+        is_first = false;
+    }
+    if (types == NULL_TREE && !is_first) {
+        text += ", ...";
+    }
+    text += ')';
+    tree type = TREE_TYPE(function);
+    if (TREE_CODE(type) == METHOD_TYPE) {
+        int qualifiers = type_memfn_quals(type);
+        if ((qualifiers & TYPE_QUAL_CONST) != 0) {
+            text += " const";
+        }
+        if ((qualifiers & TYPE_QUAL_VOLATILE) != 0) {
+            text += " volatile";
+        }
+    }
+    if (FUNCTION_REF_QUALIFIED(type)) {
+        text += FUNCTION_RVALUE_QUALIFIED(type) ? " &&" : " &";
+    }
+    return text;
+}
+
+namespace {
+
+// ── The family: the scope and the place ─────────────────────────────────
+
+// True when the family reads FILE in this unit (THE SCOPE).
+bool is_property_file(const FileEntry* file) {
+    if (file == nullptr) {
+        return false;
+    }
+    if (file->file_class == FileClass::quarantined) {
+        return true;
+    }
+    if (file->file_class != FileClass::base) {
+        return false;
+    }
+    if (!state.sentinel.empty() && file->relative == state.sentinel) {
+        return true;
+    }
+    return main_input_filename != nullptr && &classify_file(main_input_filename) == file;
+}
+
+// The place of the declaration at LOCATION (THE SCOPE), or an empty place
+// when the family does not read its file in this unit.
+Place property_place(location_t location) {
+    Place place;
+    if (location == UNKNOWN_LOCATION || location <= BUILTINS_LOCATION) {
+        return place;
+    }
+    location_t point = linemap_resolve_location(line_table, location, LRK_MACRO_EXPANSION_POINT, nullptr);
+    expanded_location where = expand_location(point);
+    if (where.file == nullptr) {
+        return place;
+    }
+    const FileEntry& entry = classify_file(where.file);
+    if (!is_property_file(&entry)) {
+        return place;
+    }
+    place.file_class = entry.file_class;
+    place.file = &entry;
+    place.line = where.line;
+    place.column = where.column;
+    place.spelling = location;
+    return place;
+}
+
+// A finding of a rule of the family at PLACE, when the family reads its file.
+void record_property(Kind kind, const Place& place, const std::string& entity) {
+    if (place.file != nullptr) {
+        add_finding(kind, nullptr, place, entity);
+    }
+}
+
+// ── The facts of a body ─────────────────────────────────────────────────
+
+// The name of the function that the callee of a call names, in GENERIC or in
+// a template pattern, or an empty text.
+std::string callee_name(tree callee) {
+    for (int depth = 0; callee != NULL_TREE && depth < kTypeDepth; ++depth) {
+        switch (TREE_CODE(callee)) {
+            case ADDR_EXPR:
+            case TEMPLATE_ID_EXPR:
+            case COMPONENT_REF:
+                callee = TREE_OPERAND(callee, TREE_CODE(callee) == COMPONENT_REF ? 1 : 0);
+                continue;
+            case BASELINK:
+                callee = BASELINK_FUNCTIONS(callee);
+                continue;
+            case OVERLOAD:
+                callee = OVL_FIRST(callee);
+                continue;
+            case IDENTIFIER_NODE:
+                return identifier_text(callee);
+            default:
+                return DECL_P(callee) ? identifier_text(DECL_NAME(callee)) : std::string{};
+        }
+    }
+    return {};
+}
+
+// True when ARGUMENT is the object of the function itself: this or *this, under
+// conversions and address operations.  A member of the object, such as
+// this->value, is no such argument.
+bool is_own_object(tree argument) {
+    for (int depth = 0; argument != NULL_TREE && depth < kTypeDepth; ++depth) {
+        switch (TREE_CODE(argument)) {
+            case NOP_EXPR:
+            case CONVERT_EXPR:
+            case VIEW_CONVERT_EXPR:
+            case NON_LVALUE_EXPR:
+            case ADDR_EXPR:
+            case INDIRECT_REF:
+                argument = TREE_OPERAND(argument, 0);
+                continue;
+            case PARM_DECL:
+                return is_this_parameter(argument);
+            default:
+                return false;
+        }
+    }
+    return false;
+}
+
+tree find_view_of_this(tree* node_pointer, int*, void*) {
+    tree node = *node_pointer;
+    bool is_call = TREE_CODE(node) == CALL_EXPR || TREE_CODE(node) == AGGR_INIT_EXPR;
+    tree callee = TREE_CODE(node) == CALL_EXPR ? CALL_EXPR_FN(node)
+                : TREE_CODE(node) == AGGR_INIT_EXPR ? AGGR_INIT_EXPR_FN(node)
+                                                     : NULL_TREE;
+    if (!is_call || callee_name(callee) != "mint_view") {
+        return NULL_TREE;
+    }
+    // The arguments of a CALL_EXPR and of an AGGR_INIT_EXPR start at operand
+    // 3, after the count, the callee and the chain or the slot.
+    for (int index = 3; index < TREE_OPERAND_LENGTH(node); ++index) {
+        if (is_own_object(TREE_OPERAND(node, index))) {
+            return node;
+        }
+    }
+    return NULL_TREE;
+}
+
+struct ReturnScan {
+    int returns = 0;
+    bool calls_view_of_this = false;
+};
+
+tree scan_return(tree* node_pointer, int*, void* data) {
+    tree node = *node_pointer;
+    if (TREE_CODE(node) != RETURN_EXPR) {
+        return NULL_TREE;
+    }
+    auto& scan = *static_cast<ReturnScan*>(data);
+    ++scan.returns;
+    tree value = TREE_OPERAND(node, 0);
+    if (value != NULL_TREE && cp_walk_tree_without_duplicates(&value, find_view_of_this, nullptr) != NULL_TREE) {
+        scan.calls_view_of_this = true;
+    }
+    return NULL_TREE;
+}
+
+// True when BODY is a borrow projection: one return, and that return calls
+// mint_view with the object of the function as an argument.  Such a mint hands
+// out a view of its own object and can never be constant evaluated.
+// Complexity: O(nodes of the body).
+bool is_borrow_projection(tree body) {
+    if (body == NULL_TREE) {
+        return false;
+    }
+    ReturnScan scan;
+    cp_walk_tree_without_duplicates(&body, scan_return, &scan);
+    return scan.returns == 1 && scan.calls_view_of_this;
+}
+
+// ── The rule mint-pattern ───────────────────────────────────────────────
+
+constexpr const char* kExecCtxConcept = "IsExecCtx";
+
+// True when FUNCTION is a mint: a function named mint_ and more, with no
+// trailing underscore, that is not deleted.  A function that only a friend
+// declaration declares is no mint, because the definition elsewhere is the
+// mint.
+bool is_mint(tree function) {
+    if (TREE_CODE(function) != FUNCTION_DECL || DECL_ARTIFICIAL(function) || DECL_CONSTRUCTOR_P(function)) {
+        return false;
+    }
+    if (DECL_LANG_SPECIFIC(function) != nullptr && (DECL_DELETED_FN(function) || DECL_UNIQUE_FRIEND_P(function))) {
+        return false;
+    }
+    tree name = DECL_NAME(function);
+    if (name == NULL_TREE || TREE_CODE(name) != IDENTIFIER_NODE) {
+        return false;
+    }
+    // The walk asks each function of the unit, so the test reads the bytes of
+    // the identifier and makes no string.
+    const char* text = IDENTIFIER_POINTER(name);
+    std::size_t length = IDENTIFIER_LENGTH(name);
+    return length > 5 && std::memcmp(text, "mint_", 5) == 0 && text[length - 1] != '_';
+}
+
+// The template parameter lists of the function template whose pattern is
+// FUNCTION, or NULL when FUNCTION has no template head of its own.
+tree own_template_parameters(tree function) {
+    if (DECL_LANG_SPECIFIC(function) == nullptr || DECL_TEMPLATE_INFO(function) == NULL_TREE) {
+        return NULL_TREE;
+    }
+    tree template_decl = DECL_TI_TEMPLATE(function);
+    if (TREE_CODE(template_decl) != TEMPLATE_DECL || !PRIMARY_TEMPLATE_P(template_decl)
+        || DECL_TEMPLATE_RESULT(template_decl) != function) {
+        return NULL_TREE;
+    }
+    return DECL_TEMPLATE_PARMS(template_decl);
+}
+
+// True when the type of FUNCTION has a noexcept specification that is not
+// noexcept(false).  A pattern can keep a dependent noexcept(expression), and
+// that is a noexcept specification too.
+bool has_noexcept(tree function) {
+    tree spec = TYPE_RAISES_EXCEPTIONS(TREE_TYPE(function));
+    if (spec == NULL_TREE || spec == noexcept_false_spec) {
+        return false;
+    }
+    if (spec == noexcept_true_spec || spec == empty_except_spec || DEFERRED_NOEXCEPT_SPEC_P(spec)) {
+        return true;
+    }
+    tree purpose = TREE_PURPOSE(spec);
+    return purpose != NULL_TREE && purpose != boolean_false_node;
+}
+
+// The name of the concept of the constraint CONSTRAINT, such as IsExecCtx for
+// the check IsExecCtx<Ctx>, or an empty text.
+std::string concept_name(tree constraint) {
+    if (constraint == NULL_TREE || TREE_CODE(constraint) != TEMPLATE_ID_EXPR) {
+        return {};
+    }
+    tree target = TREE_OPERAND(constraint, 0);
+    if (target != NULL_TREE && TREE_CODE(target) == OVERLOAD) {
+        target = OVL_FIRST(target);
+    }
+    return target != NULL_TREE && DECL_P(target) ? identifier_text(DECL_NAME(target)) : std::string{};
+}
+
+// The entry of the innermost list PARAMETERS whose type is the template type
+// parameter TYPE, or NULL.
+tree parameter_entry(tree parameters, tree type) {
+    if (parameters == NULL_TREE || type == NULL_TREE || TREE_CODE(type) != TEMPLATE_TYPE_PARM) {
+        return NULL_TREE;
+    }
+    tree innermost = INNERMOST_TEMPLATE_PARMS(parameters);
+    for (int index = 0; innermost != NULL_TREE && index < TREE_VEC_LENGTH(innermost); ++index) {
+        tree entry = TREE_VEC_ELT(innermost, index);
+        tree parameter = entry != NULL_TREE && entry != error_mark_node ? TREE_VALUE(entry) : NULL_TREE;
+        if (parameter != NULL_TREE && TREE_CODE(parameter) == TYPE_DECL && TREE_TYPE(parameter) != NULL_TREE
+            && TREE_CODE(TREE_TYPE(parameter)) == TEMPLATE_TYPE_PARM
+            && TEMPLATE_TYPE_IDX(TREE_TYPE(parameter)) == TEMPLATE_TYPE_IDX(type)
+            && TEMPLATE_TYPE_LEVEL(TREE_TYPE(parameter)) == TEMPLATE_TYPE_LEVEL(type)) {
+            return entry;
+        }
+    }
+    return NULL_TREE;
+}
+
+bool is_named(tree type, const char* name) {
+    for (tree candidate : {type, TYPE_MAIN_VARIANT(type)}) {
+        tree type_decl = TYPE_NAME(candidate);
+        if (type_decl != NULL_TREE && TREE_CODE(type_decl) == TYPE_DECL
+            && identifier_text(DECL_NAME(type_decl)) == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The context type of a mint whose first parameter is a reference to a const
+// context, or NULL (THE RULE mint-pattern).  The type of the function gives the
+// parameter, because a unit that compiles to code can free the parameters of
+// a body before PLUGIN_FINISH_UNIT.
+tree context_type(tree function, tree parameters) {
+    tree first = FUNCTION_FIRST_USER_PARMTYPE(function);
+    tree type = first != NULL_TREE && first != void_list_node ? TREE_VALUE(first) : NULL_TREE;
+    if (type == NULL_TREE || TREE_CODE(type) != REFERENCE_TYPE || TYPE_REF_IS_RVALUE(type)
+        || !CP_TYPE_CONST_P(TREE_TYPE(type))) {
+        return NULL_TREE;
+    }
+    tree context = TYPE_MAIN_VARIANT(TREE_TYPE(type));
+    tree entry = parameter_entry(parameters, context);
+    bool is_shaped = entry != NULL_TREE && concept_name(TEMPLATE_PARM_CONSTRAINTS(entry)) == kExecCtxConcept;
+    return is_shaped || is_named(TREE_TYPE(type), "Ctx") ? context : NULL_TREE;
+}
+
+tree find_type(tree* node_pointer, int*, void* data) {
+    tree node = *node_pointer;
+    tree wanted = static_cast<tree>(data);
+    if (!TYPE_P(node)) {
+        return NULL_TREE;
+    }
+    tree main_type = TYPE_MAIN_VARIANT(node);
+    if (main_type == wanted) {
+        return node;
+    }
+    bool is_same_parameter = TREE_CODE(main_type) == TEMPLATE_TYPE_PARM && TREE_CODE(wanted) == TEMPLATE_TYPE_PARM
+                          && TEMPLATE_TYPE_IDX(main_type) == TEMPLATE_TYPE_IDX(wanted)
+                          && TEMPLATE_TYPE_LEVEL(main_type) == TEMPLATE_TYPE_LEVEL(wanted);
+    return is_same_parameter ? node : NULL_TREE;
+}
+
+bool mentions_type(tree expression, tree type) {
+    return expression != NULL_TREE && cp_walk_tree_without_duplicates(&expression, find_type, type) != NULL_TREE;
+}
+
+// Each conjunct of CONSTRAINT that is no shorthand constraint of a template
+// parameter.  GCC joins the shorthand constraints and the requires-clause of a
+// template head with an && of no location, and each shorthand constraint
+// stays the tree of its parameter.
+void clause_conjuncts(tree constraint, const std::unordered_set<tree>& shorthands, std::vector<tree>& clauses) {
+    if (constraint == NULL_TREE || shorthands.count(constraint) != 0) {
+        return;
+    }
+    if (TREE_CODE(constraint) == TRUTH_ANDIF_EXPR && EXPR_LOCATION(constraint) == UNKNOWN_LOCATION) {
+        clause_conjuncts(TREE_OPERAND(constraint, 0), shorthands, clauses);
+        clause_conjuncts(TREE_OPERAND(constraint, 1), shorthands, clauses);
+        return;
+    }
+    clauses.push_back(constraint);
+}
+
+// True when a constraint of the mint FUNCTION gates its CONTEXT: a concept
+// other than IsExecCtx on the context parameter, or a requires-clause that
+// names the context.
+bool is_context_gated(tree function, tree parameters, tree context) {
+    tree entry = parameter_entry(parameters, context);
+    if (entry != NULL_TREE) {
+        std::string constraint_concept = concept_name(TEMPLATE_PARM_CONSTRAINTS(entry));
+        if (!constraint_concept.empty() && constraint_concept != kExecCtxConcept) {
+            return true;
+        }
+    }
+    std::vector<tree> clauses;
+    if (parameters != NULL_TREE) {
+        std::unordered_set<tree> shorthands;
+        tree innermost = INNERMOST_TEMPLATE_PARMS(parameters);
+        for (int index = 0; innermost != NULL_TREE && index < TREE_VEC_LENGTH(innermost); ++index) {
+            tree item = TREE_VEC_ELT(innermost, index);
+            if (item != NULL_TREE && item != error_mark_node && TEMPLATE_PARM_CONSTRAINTS(item) != NULL_TREE) {
+                shorthands.insert(TEMPLATE_PARM_CONSTRAINTS(item));
+            }
+        }
+        clause_conjuncts(TEMPLATE_PARMS_CONSTRAINTS(parameters), shorthands, clauses);
+    }
+    tree info = get_constraints(function);
+    if (info != NULL_TREE && TREE_CODE(info) == CONSTRAINT_INFO) {
+        clauses.push_back(CI_DECLARATOR_REQS(info));
+    }
+    for (tree clause : clauses) {
+        if (mentions_type(clause, context)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The record and the findings of the mint FUNCTION (THE RULE mint-pattern).
+// IS_PATTERN is true for the pattern of a template, whose body the unit
+// keeps.
+void check_mint(tree function, bool is_pattern) {
+    if (!is_mint(function)) {
+        return;
+    }
+    Place place = property_place(DECL_SOURCE_LOCATION(function));
+    if (place.file == nullptr) {
+        return;
+    }
+    tree parameters = own_template_parameters(function);
+    bool is_template = parameters != NULL_TREE;
+    bool is_member = DECL_OBJECT_MEMBER_FUNCTION_P(function);
+    tree context = is_member ? NULL_TREE : context_type(function, parameters);
+    const char* shape = is_member ? "member" : context != NULL_TREE ? "ctx" : "token";
+    bool is_nodiscard = lookup_attribute("nodiscard", DECL_ATTRIBUTES(function)) != NULL_TREE;
+    bool is_constexpr = DECL_DECLARED_CONSTEXPR_P(function) || DECL_IMMEDIATE_FUNCTION_P(function);
+    bool is_noexcept = has_noexcept(function);
+    tree info = get_constraints(function);
+    bool is_constrained = info != NULL_TREE && TREE_CODE(info) == CONSTRAINT_INFO
+                       && (CI_TEMPLATE_REQS(info) != NULL_TREE || CI_DECLARATOR_REQS(info) != NULL_TREE);
+    bool is_gated = context != NULL_TREE && is_context_gated(function, parameters, context);
+    bool is_projection = is_pattern ? is_borrow_projection(DECL_SAVED_TREE(function))
+                                    : state.projection_bodies.count(DECL_UID(function)) != 0;
+    bool is_defined = is_pattern ? DECL_SAVED_TREE(function) != NULL_TREE
+                                 : state.defined_functions.count(DECL_UID(function)) != 0;
+    tree owner = DECL_CLASS_SCOPE_P(function) ? DECL_CONTEXT(function) : NULL_TREE;
+    std::string entity = function_signature(function);
+    auto flag = [](bool value) { return value ? "1" : "0"; };
+    std::string facts = std::string(" | name=") + identifier_text(DECL_NAME(function))
+                      + " static=" + flag(owner != NULL_TREE && !is_member) + " shape=" + shape
+                      + " template=" + flag(is_template) + " nodiscard=" + flag(is_nodiscard)
+                      + " constexpr=" + flag(is_constexpr) + " noexcept=" + flag(is_noexcept)
+                      + " constrained=" + flag(is_constrained) + " gated=" + flag(is_gated)
+                      + " projection=" + flag(is_projection) + " defined=" + flag(is_defined)
+                      + " owner=" + (owner != NULL_TREE ? qualified_name(owner) : std::string("-"));
+    record_property(Kind::mint_record, place, entity + facts);
+    if (!is_nodiscard) {
+        record_property(Kind::mint_not_nodiscard, place, entity);
+    }
+    if (!is_constexpr && !is_projection) {
+        record_property(Kind::mint_not_constexpr, place, entity);
+    }
+    if (!is_noexcept) {
+        record_property(Kind::mint_not_noexcept, place, entity);
+    }
+    if (is_template && !is_constrained) {
+        record_property(Kind::mint_unconstrained, place, entity);
+    }
+    if (context != NULL_TREE && !is_gated) {
+        record_property(Kind::mint_unfit_context, place, entity);
+    }
+}
+
+// ── The walk of the family ──────────────────────────────────────────────
+
+struct PropertyWalk {
+    std::unordered_set<tree> visited;
+
+    // A pattern has template information, so the test of an instantiation
+    // reads the scope of a pattern and not the pattern itself.
+    void function(tree function, bool is_pattern) {
+        if (!is_mint(function)) {
+            return;
+        }
+        tree tested = is_pattern ? CP_DECL_CONTEXT(function) : function;
+        if (!visited.insert(function).second || is_in_instantiation(tested)) {
+            return;
+        }
+        check_mint(function, is_pattern);
+    }
+
+    void template_decl(tree template_decl) {
+        if (!visited.insert(template_decl).second) {
+            return;
+        }
+        tree result = DECL_TEMPLATE_RESULT(template_decl);
+        if (result == NULL_TREE) {
+            return;
+        }
+        if (TREE_CODE(result) == FUNCTION_DECL) {
+            function(result, true);
+            return;
+        }
+        if (TREE_CODE(result) != TYPE_DECL || !DECL_IMPLICIT_TYPEDEF_P(result) || !CLASS_TYPE_P(TREE_TYPE(result))) {
+            return;
+        }
+        class_type(TREE_TYPE(result), true);
+        for (tree entry = DECL_TEMPLATE_SPECIALIZATIONS(template_decl); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
+            tree partial = TREE_VALUE(entry);
+            if (partial != NULL_TREE && TREE_CODE(partial) == TEMPLATE_DECL) {
+                this->template_decl(partial);
+            }
+        }
+        for (tree entry = DECL_TEMPLATE_INSTANTIATIONS(template_decl); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
+            tree specialization = TREE_VALUE(entry);
+            if (specialization != NULL_TREE && CLASS_TYPE_P(specialization)
+                && CLASSTYPE_TEMPLATE_SPECIALIZATION(specialization) && !uses_template_parms(specialization)) {
+                class_type(specialization, false);
+            }
+        }
+    }
+
+    void class_type(tree type, bool is_pattern) {
+        tree main_type = TYPE_MAIN_VARIANT(type);
+        if (!CLASS_TYPE_P(main_type) || LAMBDA_TYPE_P(main_type) || !visited.insert(main_type).second) {
+            return;
+        }
+        // The walk reads the members of a class only when the family reads the
+        // file of the class (THE SCOPE).
+        tree decl = TYPE_MAIN_DECL(main_type);
+        if (decl == NULL_TREE || property_place(DECL_SOURCE_LOCATION(decl)).file == nullptr) {
+            return;
+        }
+        for (tree member = TYPE_FIELDS(main_type); member != NULL_TREE; member = DECL_CHAIN(member)) {
+            switch (TREE_CODE(member)) {
+                case FIELD_DECL:
+                    if (DECL_NAME(member) == NULL_TREE && ANON_AGGR_TYPE_P(TREE_TYPE(member))) {
+                        class_type(TREE_TYPE(member), is_pattern);
+                    }
+                    break;
+                case FUNCTION_DECL:
+                    function(member, is_pattern);
+                    break;
+                case TYPE_DECL:
+                    if (!DECL_SELF_REFERENCE_P(member) && DECL_IMPLICIT_TYPEDEF_P(member)
+                        && CLASS_TYPE_P(TREE_TYPE(member))) {
+                        class_type(TREE_TYPE(member), is_pattern);
+                    }
+                    break;
+                case TEMPLATE_DECL:
+                    template_decl(member);
+                    break;
+                default:
+                    break;
+            }
+        }
+        // A friend that a class template defines is no member of a namespace.
+        if (is_pattern) {
+            for (tree entry = CLASSTYPE_DECL_LIST(main_type); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
+                tree befriended = TREE_PURPOSE(entry) == NULL_TREE ? TREE_VALUE(entry) : NULL_TREE;
+                if (befriended != NULL_TREE && TREE_CODE(befriended) == TEMPLATE_DECL) {
+                    template_decl(befriended);
+                } else if (befriended != NULL_TREE && TREE_CODE(befriended) == FUNCTION_DECL) {
+                    function(befriended, true);
+                }
+            }
+        }
+    }
+
+    void member(tree decl) {
+        switch (TREE_CODE(decl)) {
+            case NAMESPACE_DECL:
+                if (DECL_NAMESPACE_ALIAS(decl) == NULL_TREE) {
+                    namespace_decl(decl);
+                }
+                return;
+            case TREE_LIST:
+                if (TREE_VALUE(decl) != NULL_TREE && TREE_CODE(TREE_VALUE(decl)) != TREE_LIST) {
+                    member(TREE_VALUE(decl));
+                }
+                return;
+            case OVERLOAD:
+                for (ovl_iterator candidate(decl, true); candidate; ++candidate) {
+                    if (TREE_CODE(*candidate) != OVERLOAD) {
+                        member(*candidate);
+                    }
+                }
+                return;
+            default:
+                break;
+        }
+        // A class asks for the place of its file one time (class_type), and a
+        // function asks only when its name is the name of a mint (check_mint).
+        // The walk then reads no place for each declaration of a file that the
+        // family does not read.
+        if (!DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl)) {
+            return;
+        }
+        switch (TREE_CODE(decl)) {
+            case TEMPLATE_DECL:
+                template_decl(decl);
+                break;
+            case TYPE_DECL:
+                if (DECL_IMPLICIT_TYPEDEF_P(decl) && CLASS_TYPE_P(TREE_TYPE(decl))) {
+                    class_type(TREE_TYPE(decl), false);
+                }
+                break;
+            case FUNCTION_DECL:
+                if (is_mint(decl) && (!has_lang_template_info(decl) || DECL_TEMPLATE_SPECIALIZATION(decl))) {
+                    function(decl, false);
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    // A namespace that a library file opens, such as std, holds no
+    // declaration that a rule of the family reads.
+    void namespace_decl(tree ns) {
+        if (!visited.insert(ns).second
+            || (ns != global_namespace && in_library_file_at(DECL_SOURCE_LOCATION(ns)))) {
+            return;
+        }
+        for (tree decl = NAMESPACE_LEVEL(ns)->names; decl != NULL_TREE; decl = TREE_CHAIN(decl)) {
+            member(decl);
+        }
+    }
+};
+
+// The facts of the body of each function that is not a template, at
+// PLUGIN_PRE_GENERICIZE (THE WALK).
+void on_pre_genericize_property(void* gcc_data, void*) {
+    tree function = static_cast<tree>(gcc_data);
+    if (function == NULL_TREE || !is_mint(function) || is_in_instantiation(function)
+        || property_place(DECL_SOURCE_LOCATION(function)).file == nullptr) {
+        return;
+    }
+    state.defined_functions.insert(DECL_UID(function));
+    if (is_borrow_projection(DECL_SAVED_TREE(function))) {
+        state.projection_bodies.insert(DECL_UID(function));
+    }
+}
+
+}  // namespace
+
 // One walk of every namespace that a system header does not own, for the
-// contract rule and for the quarantine rule.
+// contract rule and for the quarantine rule, and one walk for the family
+// declaration property (THE WALK).
 void walk_declarations() {
     walk_contract_namespace(global_namespace);
     walk_namespace(global_namespace);
+    PropertyWalk properties;
+    properties.namespace_decl(global_namespace);
 }
 
-// Registers the hooks of the foreign symbols.
+// Registers the hooks of the foreign symbols and of the facts of a body.
 void register_declarations(const char* plugin_name) {
     register_callback(plugin_name, PLUGIN_FINISH_DECL, on_finish_variable, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_PARSE_FUNCTION, on_finish_function, nullptr);
+    register_callback(plugin_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize_property, nullptr);
 }
 
 }  // namespace crucible_plugin

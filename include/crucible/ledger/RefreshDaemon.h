@@ -417,7 +417,7 @@ private:
 // is told so.
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsRefreshDaemon<Ctx>
-[[nodiscard]] inline std::unique_ptr<RefreshDaemon> mint_refresh_daemon(  // MINT-PATTERN-OK: allocating
+[[nodiscard]] inline std::unique_ptr<RefreshDaemon> mint_refresh_daemon(
     Ctx const& ctx, RefreshDaemonConfig config) noexcept {
     // Fires in Release. A schedule whose backoff does not back off, or
     // whose idle period is zero, produces a thread that measures without

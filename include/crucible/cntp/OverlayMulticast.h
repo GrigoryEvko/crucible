@@ -157,7 +157,7 @@ class OverlayMulticastPlan;
 
 template <std::size_t MaxPeers, std::size_t MaxStripes, std::size_t MaxFanout, class Ctx>
     requires OverlayMulticastShape<MaxPeers, MaxStripes, MaxFanout> && CtxFitsOverlayMulticastMint<Ctx>
-[[nodiscard]] OverlayMulticastPlan<MaxPeers, MaxStripes, MaxFanout>
+[[nodiscard]] constexpr OverlayMulticastPlan<MaxPeers, MaxStripes, MaxFanout>
 mint_overlay_multicast(Ctx const& ctx, DeclaredOverlayPeer local_peer,
                        std::span<const DeclaredOverlayPeer> initial_peers = {},
                        OverlayMulticastConfig config = {}) noexcept;
@@ -171,7 +171,7 @@ public:
     using route_type = OverlayStripeRoute<MaxFanout>;
     using message_plan_type = OverlayMessagePlan<MaxStripes>;
 
-    [[nodiscard]] std::expected<void, OverlayMulticastError> add_peer(DeclaredOverlayPeer peer) noexcept {
+    [[nodiscard]] constexpr std::expected<void, OverlayMulticastError> add_peer(DeclaredOverlayPeer peer) noexcept {
         OverlayPeerRef raw = peer.value();
         if (raw.uuid.is_zero()) {
             return std::unexpected(OverlayMulticastError::InvalidPeer);
@@ -231,11 +231,11 @@ public:
 private:
     template <std::size_t P, std::size_t S, std::size_t F, class Ctx>
         requires OverlayMulticastShape<P, S, F> && CtxFitsOverlayMulticastMint<Ctx>
-    friend OverlayMulticastPlan<P, S, F> mint_overlay_multicast(Ctx const&, DeclaredOverlayPeer,
-                                                                std::span<const DeclaredOverlayPeer>,
-                                                                OverlayMulticastConfig) noexcept;
+    friend constexpr OverlayMulticastPlan<P, S, F> mint_overlay_multicast(Ctx const&, DeclaredOverlayPeer,
+                                                                          std::span<const DeclaredOverlayPeer>,
+                                                                          OverlayMulticastConfig) noexcept;
 
-    explicit OverlayMulticastPlan(DeclaredOverlayPeer local_peer, std::span<const DeclaredOverlayPeer> initial_peers,
+    constexpr explicit OverlayMulticastPlan(DeclaredOverlayPeer local_peer, std::span<const DeclaredOverlayPeer> initial_peers,
                                   OverlayMulticastConfig config) noexcept
         : config_{config} {
         CRUCIBLE_FATAL_INVARIANT(config_.stripe_count.value() <= MaxStripes && config_.fanout.value() <= MaxFanout
@@ -275,7 +275,7 @@ private:
         return peers_[lhs].uuid.lo < peers_[rhs].uuid.lo;
     }
 
-    [[nodiscard]] std::expected<void, OverlayMulticastError> rebuild_routes() noexcept {
+    [[nodiscard]] constexpr std::expected<void, OverlayMulticastError> rebuild_routes() noexcept {
         if (peer_count_ == 0) {
             return {};
         }
@@ -320,7 +320,7 @@ private:
 
 template <std::size_t MaxPeers, std::size_t MaxStripes, std::size_t MaxFanout, class Ctx>
     requires OverlayMulticastShape<MaxPeers, MaxStripes, MaxFanout> && CtxFitsOverlayMulticastMint<Ctx>
-[[nodiscard]] OverlayMulticastPlan<MaxPeers, MaxStripes, MaxFanout>
+[[nodiscard]] constexpr OverlayMulticastPlan<MaxPeers, MaxStripes, MaxFanout>
 mint_overlay_multicast(Ctx const&, DeclaredOverlayPeer local_peer, std::span<const DeclaredOverlayPeer> initial_peers,
                        OverlayMulticastConfig config) noexcept {
     return OverlayMulticastPlan<MaxPeers, MaxStripes, MaxFanout>{local_peer, initial_peers, config};
