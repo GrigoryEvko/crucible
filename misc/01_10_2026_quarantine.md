@@ -657,7 +657,9 @@ Section 18 is the design reference. Section 18.22 gives the parity protocol, the
 | `banned-calls`, kind `process-start` | `tsast` | The spawn ban of `check-banned-calls.py` on the base files and on `vessel/`. No configuration of the ledger compiles `vessel/torch` (decision 5). Its one row names the ATen operator `clone` in a macro table of `vessel/torch/`, and it becomes an admit row with that reason | The base part goes in the last slice of Stage 4 (section 13.4). Then the include allowance and the libc rows of R5 refuse each route to a process start. The vessel part goes in the Stage 5 unit vessel, if a configuration of the ledger then compiles `vessel/torch`. When the two parts go, the rule goes |
 | `syscall-capability` | `plugin`, owner | Each of the 39 claims of today as an admit row, and owner rows for the door of the affinity calls. The rule stays after the migration, because it holds each raw system call outside a door | Units 2a and 2b move the calls of the 5 base rows into doors, and remove their rows. Unit 2b adds the deny list of R4 as rule-table rows and the kind `denied-syscall`. A Stage 5 unit that moves a call of one of the 34 quarantined rows into an Os door removes its row |
 
-The stream ban of `check-banned-calls.py` has no subsequent step. It reads only the quarantined directories of `fixy-only-paths.txt`, and P6 shows that the rule `quarantine` refuses a file stream there. So unit 1B.8g deletes it.
+The kind `file-stream` of the rule `banned-calls` stays, and no subsequent stage deletes it. It reads the runtime directories that `RUNTIME_DIRECTORIES` of `banned_calls.py` names, and each of these directories is quarantined. The plant `plant-file-streams` of the rule `quarantine` shows that the plugin refuses each object of a file stream in a compiled quarantined file. The plugin also refuses an object in the body of a generic lambda. But the rule `quarantine` gives no finding for an `#include <fstream>` that no source code of the unit uses. The kind refuses that include in each file of these directories, also in a source file of `src/` (plant `plant-stream-include`).
+
+In a header of `include/`, the rule `heavy-include` also refuses the include, because `<fstream>` is a heavy header. A macro body that no unit expands is source code that no counted configuration compiles. Decision 5 of section 18.23 accepts that a plugin rule does not see such source code. The kind also reads such a body (plant `plant-stream-unparsed-macro`).
 
 ### 8.7 The S1 gate
 
@@ -1520,7 +1522,7 @@ The other data files of `utils/scripts/` and `utils/` go to these places, in the
 | `header-costs.txt` | `heavy` rows of the rule table, which `loop derive header-costs` writes | 1B.8f |
 | `layer-rules.txt`, `quarantine-admitted-audit.txt` | `utils/rule-table.txt` and `utils/admitted-audit.txt` | 1B.7 |
 | `compile-first.txt` | `cmake/compile-first.txt`, beside `cmake/CompileFirst.cmake`, which reads it at configure time | 1B.3 |
-| `fixy-only-paths.txt` | Deleted with the ban of file streams | 1B.8g |
+| `fixy-only-paths.txt` | Deleted. Its directories are the constant `RUNTIME_DIRECTORIES` of the rule `banned-calls`, and the kind `file-stream` stays (section 8.6a) | 1B.8g |
 | `contracts-baseline.json` | `utils/ledgers/contract-cites.txt`, with the policy `baseline` | 1B.3 |
 | `utils/toolchain/cmake/requirements.txt`, `utils/toolchain/gcc/BASE` | Rows of `utils/pins.txt` | 1B.5 |
 | `utils/tools/mutation/invalid-exemptions.txt` | `utils/ledgers/gate-mutants.txt`, with the policy `admit` | 1B.3 |
@@ -1967,7 +1969,7 @@ The column "Target" names a rule, and its module follows from the rule: `assay/g
 | `check-admitted-audit.py` | The admit rows, the audit table and the flag matrix agree | Text, and comments through `tsast` | audit table (68) | None | meta `admitted-audit` | Keep | 0.5 |
 | `check-allowlist-keys.sh` | Each allowlist key and each Markdown path names a file | Text | the 19 allowlists | None | meta `ledger-owners` and `prose-bans` | Merge | 1.2 |
 | `check-atom-roster-joined.sh` | The collision roster includes each atom roster | Compiler run of a sentinel | none | None. The walk unit of `Collision.cpp` holds the same rule in each build | none | Delete, with two fixtures | 6.9 |
-| `check-banned-calls.py` | No `reinterpret_cast`, vector `reserve`, file stream or process start | `tsast`, line-text keys | 4 lists (0, 3, 0, 1), fixy-only-paths (8) | Full for reserve, stream and spawn in compiled quarantined files (P1, P6, P7). None for the cast (P13), for a base file or for `vessel/torch` | tsast `banned-spellings`, and tsast `banned-calls` for the base files and `vessel/` (section 8.6a) | Keep, as two rules. Delete the stream ban and the parts of the two other bans in quarantined files | 2.5 |
+| `check-banned-calls.py` | No `reinterpret_cast`, vector `reserve`, file stream or process start | `tsast`, line-text keys | 4 lists (0, 3, 0, 1), fixy-only-paths (8) | Full for reserve, stream and spawn in compiled quarantined files (P1, P6, P7). None for the cast (P13), for a base file or for `vessel/torch` | tsast `banned-spellings`, and tsast `banned-calls` for the base files and `vessel/` (section 8.6a) | Keep, as two rules. Delete the parts of the reserve ban and the spawn ban in quarantined files. The stream ban stays as the kind `file-stream` (section 8.6a) | 2.5 |
 | `check-brand-drain.py` | Erased brand spellings only decrease | `tsast` | brand-drain (101) | None. GCC folds the `static_assert` or the `sizeof` of most sites, and no build compiles the fixtures (section 18.11) | tsast `erased-brand` | Keep | 2.0 |
 | `check-budget-history.py` | Thresholds and ledgers do not rise without a measurement | git | budget-history (1) | None | meta `history` | Keep | 2.4 |
 | `check-build-order.py` | No order-only wait, compile-first, custom dependencies | `build.ninja`, Ninja deps, records | compile-first (88) | None | build `build-order` and `custom-deps`, and build `compile-first` | Keep | 2.8 |
@@ -2053,7 +2055,7 @@ The 65 check scripts get these actions:
 - 0 move to the parse tree.
 
 `check-brand-drain.py` was a move into the plugin, and it became a keep on the parse tree on 2026-10-08 (section 18.11). Of the 27 kept scripts, most become one rule module of their engine. `check-banned-calls.py` becomes two rules, and `check-lock-free-asserts.py` becomes a rule that a unit of Stage 5 deletes (section 8.6a). These parts of scripts go in Stage 1B:
-- The stream ban of `check-banned-calls.py`, and the parts of its reserve and spawn bans that read quarantined files
+- The parts of the reserve ban and the spawn ban of `check-banned-calls.py` that read quarantined files. Its stream ban stays as the kind `file-stream` (section 8.6a)
 - The include half of `check-layer-boundary.py`.
 
 ### 18.20 Inventory of the other files
@@ -2167,7 +2169,7 @@ The 56 data files of `utils/scripts/`. A target `ledgers/NAME.txt` is the file `
 | `layer-rules.txt`, `quarantine-admitted-audit.txt` | The plugin, `layer_rules.py`, `check-admitted-audit.py` | 92, 68 | Keyword rows, `\|` | `utils/rule-table.txt`, `utils/admitted-audit.txt` |
 | `header-costs.txt` | `check-heavy-includes.py` | 165 | `<header> \| seconds \| lines` | `heavy` rows of the rule table |
 | `compile-first.txt` | `check-build-order.py`, `cmake/CompileFirst.cmake` | 88 | One name for each line | `cmake/compile-first.txt` |
-| `fixy-only-paths.txt` | `check-banned-calls.py` | 8 | One directory for each line | Deleted with the stream ban |
+| `fixy-only-paths.txt` | `check-banned-calls.py` | 8 | One directory for each line | Deleted. The constant `RUNTIME_DIRECTORIES` of the rule `banned-calls` holds the 8 directories |
 
 ### 18.21 Defects that the inventory found
 
@@ -2214,7 +2216,7 @@ A unit that moves code with no change of behavior (1B.1, 1B.5, and the reader un
 
 | Legacy guard or part | Replaced by | Parity evidence |
 |---|---|---|
-| The stream ban of `check-banned-calls.py`, and the parts of its reserve and spawn bans that read quarantined files | The rule `quarantine` (R6) | P1, P6 and P7 are red. The stream ban reads only the quarantined directories of `fixy-only-paths.txt`. Of the 3 reserve rows, one names `ExprPool::reserve` and is a false find. The quarantine ledger holds the other two as rows `std::vector::reserve` of `bench/bench_mpsc_contention.cpp`. The parts that read base files and `vessel/` stay in the rule `banned-calls` |
+| The parts of the reserve ban and the spawn ban of `check-banned-calls.py` that read quarantined files | The rule `quarantine` (R6) | P1 and P7 are red. P6 is red too, but the stream ban stays as the kind `file-stream`, because the rule `quarantine` gives no finding for an `#include <fstream>` (section 8.6a). Of the 3 reserve rows, one names `ExprPool::reserve` and is a false find. The quarantine ledger holds the other two as rows `std::vector::reserve` of `bench/bench_mpsc_contention.cpp`. The parts that read base files and `vessel/` stay in the rule `banned-calls` |
 | In a subsequent stage: the kind `vector-reserve` of the rule `banned-calls` | The include rules | No base file calls `reserve`. The 48 base files that include `<vector>` are 48 `layer_header` rows of the quarantine ledger. When Stage 4 removes the last of them, the include rules refuse the header in each base file |
 | In a subsequent stage: the rule `lock-free-asserts` | The rule `quarantine` and `foundation::core::Atomic` | P9 is red. The quarantine ledger holds the 27 objects of today in 6 rows. `Atomic<T>` refuses a type that is not lock-free. Stage 5 deletes the rule when the 27 objects move to `fixy::Atomic` |
 | `check-atom-roster-joined.sh` | The walk unit of `test/layer/checks/fixy/Collision.cpp` | `walk-checks.txt` row 69 lists the file, and its lines 24 and 25 hold the two checks of the script. Two negative fixtures are the new witness |
