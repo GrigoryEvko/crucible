@@ -1608,10 +1608,10 @@ Three plugin rules are in the tree today, and they stay: the quarantine rule (R6
 | `contract-cites` | `call_expression` of the `CRUCIBLE_PRE` family, `contract_assert_statement`, `qualified_identifier` with the scope `decide` | A count of the source, with arms that no build compiles and templates that no unit instantiates |
 | `parse-clean` | Each node, and the `ERROR` and `MISSING` nodes | The fill of the tree cache (section 18.16) |
 
-`check-parse-clean.py` becomes the rule `parse-clean`. Its check is the fill of the tree cache (`tsast.py --fill` today), because the fill parses each file. The rules that ban a pattern in prose (`check-no-coordination-refs.py` and `check-fixy-dim-prose.py`) go to the engine `meta`, because they also read files that are not C++.
+The rule `parse-clean` (`tsast/parse_clean.py`) replaces `check-parse-clean.py`. Its check is the fill of the tree cache, because the fill parses each file. The rule `prose-bans` of the engine `meta` replaces the two scripts that banned a pattern in prose, `check-no-coordination-refs.py` and `check-fixy-dim-prose.py`. It is in `meta` because it also reads files that are not C++.
 
 Two grammar changes for the fork help the rules that stay:
-1. A node for the paste operator `##` in a macro body, so that a body with a paste parses. Seven scripts have a token fallback for such a body today. The fallbacks of `check-fullness-guard.py`, `check-row-contains-discipline.py` and `check-no-unchecked-access.py` stay with their rules on the parse tree, and the change helps them, `contract-form` and `layer-residual`.
+1. A node for the paste operator `##` in a macro body, so that a body with a paste parses. Seven scripts had a token fallback for such a body. The rules `fullness-guard` and `row-contains` keep the token fallback of their scripts, and `check-no-unchecked-access.py` keeps its fallback until its rules move. The change helps them, `contract-form` and `layer-residual`.
 2. For `use-after-move`: a named node for each lambda capture with a field for `&`, and a field `operator` on `reference_declarator` (`grammar.js:707`, `710`, `1267-1274`).
 
 ### 18.12 The artifact rules and the build rules
@@ -1620,10 +1620,11 @@ Two grammar changes for the fork help the rules that stay:
 |---|---|---|---|
 | `artifact-symbols` | `elf` | `check-libstdcxx-symbols.py`, `check-no-throw-no-rtti.sh` | `assay.readers.elf`, which gets the members of an archive, `.symtab` with the binding, `.dynsym` with the version, and the `.rela` sections. One batch call of `c++filt`. The throw and vtable rows get a part of the ledger that no configuration owns |
 | `codegen-shapes` | `elf` | `check-core-shapes.py`, `check-ct-disassembly.py` | `assay.readers.objdump`. The constant-time probes get the Release flags from the compile database, as the core probes do |
-| `cost-budgets` | `build` | `check-compile-cost.py`, `check-parse-cost.py`, the record half of `--check compile-first`, the totals of `report-check-warnings.py` | One runner on `assay.readers.census`. Each budget is one registry row |
-| `build-graph` | `build` | `check-build-order.py`, the dependency step of `check-reconfigure-noop.py` | `build.ninja` and the dependency log of Ninja, through `assay.readers.ninja` |
-| `build-config` | `build` | `check-no-unity-pch.py`, the link and preset half of `check-no-ffast-math.py` | The compile database, the replies of the CMake file API and `CMakePresets.json` |
-| `header-constexpr` | `build` | `check-header-constexpr-ops.py`, the `--standalone` mode of `check-header-checks.py` | Two syntax-only compiles of each listed header, with SARIF diagnostics |
+| `compile-cpu`, `compile-instructions`, `compile-memory`, `compile-first`, `link-time`, `link-memory`, `function-size`, `object-text` and `header-alone` | `build` | `check-compile-cost.py`, the record half of `--check compile-first`, the totals of `report-check-warnings.py` | The family module `buildsys/cost_budgets.py`, on `assay.readers.census`. Each budget is one registry row. `guard warnings` reads the totals of the module |
+| `parse-total`, `header-fanout` and `instruction-total` | `build` | `check-parse-cost.py` | The family module `buildsys/cost_totals.py`, on `assay.readers.census` |
+| `build-order` and `custom-deps` | `build` | `check-build-order.py`, the dependency step of `check-reconfigure-noop.py` | The family module `buildsys/build_graph.py`. `build.ninja` and the dependency log of Ninja, through `assay.readers.ninja` |
+| `no-unity-pch` and `no-ffast-math` | `build` | `check-no-unity-pch.py`, the link and preset half of `check-no-ffast-math.py` | The family module `buildsys/build_config.py`. The compile database, the replies of the CMake file API and `CMakePresets.json` |
+| `header-constexpr-ops` and `header-standalone` | `build` | `check-header-constexpr-ops.py`, the `--standalone` mode of `check-header-checks.py` | The family module `buildsys/header_constexpr.py`. Two syntax-only compiles of each listed header, with SARIF diagnostics |
 | `test-time` | `build` | `check-test-time.py` | The records of `loop test-step`. The test meter uses the same judge, `assay.core.budget` |
 | `reconfigure-noop` | `build` | `check-reconfigure-noop.py` | Its self-test is a local test. The full check configures a build again, so `loop gauge` runs it before each stage gate |
 | `vessel-acceptance` | `build` | `check-vessel-acceptance.py` | As today. With no `TORCH_DIR`, the test stops with the code `SKIPPED` |
@@ -1734,7 +1735,6 @@ assay.core.registry
     class PathRow: glob: str; text: str
     class Registry: rules: Mapping[RuleId, Rule]; jobs: tuple[Job, ...]; paths: tuple[PathRow, ...]
     def load(path: Path = REGISTRY) -> Registry
-    def derived_inputs(rule: Rule) -> tuple[Path, ...]   # section 18.16
 
 assay.core.ledger
     class Key: path: str; kind: str; entity: str
@@ -1872,7 +1872,7 @@ In the scratch runner, use-after-move gave 4 findings less, because it got tree 
 
 A read from the warm tree cache costs little, and the cost is in the rules. A shard costs the sum of its rules, but a test of today costs one rule. So each rule gets its own test, and the engine `tsast` has no shards.
 
-**The inner loop.** `assay.core.registry.derived_inputs` gives the inputs of each rule. They are the modules of the import closure of the rule module, which Python `ast` gives. They also include the ledger, the plants and the scope of the rule. The field `inputs` of the registry adds only the files that the import graph does not show, such as a data file of a rule. The inputs of a test group are the import closure of its test modules. Today `run-affected-tests.py` runs each script test on each call, because it cannot know the inputs of a script.
+**The inner loop.** `assay.loop.inputs` gives the inputs of each rule and of each test group. They are the modules of the import closure of the rule module, which Python `ast` gives. They also include the ledger, the plants, the registry row, the rule table and the scope of the rule. The field `inputs` of the registry adds only the files that the import graph does not show, such as a data file of a rule. The inputs of a test group are the import closure of its test modules. Today `run-affected-tests.py` runs each script test on each call, because it cannot know the inputs of a script.
 
 After unit 1B.10, `loop test` reads these inputs. It runs the test `guard_RULE` or `selftest_GROUP` only when an input changed after the last pass of that test. It records a fingerprint of the inputs, as `run-affected-tests.py` does today for an executable test. Then:
 - A change of one rule module, one ledger or one plant runs one test.
@@ -1959,7 +1959,7 @@ P12 and P13 show that the plugin does not read the base scope or the cast today.
 
 The column "Test s" gives the sum of the wall times of the tests of the script, with its self-tests, in one call of `ctest -L ci_guard -j 96`. The actions are delete, move into the plugin, merge with another script or mechanism, and keep on its engine. A script gets the action delete when the plugin or the build holds its rule today. No script moves to the parse tree, because each script that reads C++ reads it through `tsast.py` today. The text reads of sections 18.1 and 18.4 go when their scripts move or merge.
 
-The column "Target" names a rule, and its module follows from the rule: `assay/guard/engines/ENGINE/RULE.py`, with underscores, or the family module that the registry names (section 18.9). The engine `build` has the directory `buildsys`. A target "plugin, FAMILY" has no Python module: its code is the source of the family in `utils/tools/quarantine/` (section 18.10), and its ledger is `utils/ledgers/RULE.txt`. In unit 1B.1, each script first moves to `assay/guard/legacy/` with underscores in its name (section 18.9).
+The column "Target" names a rule, and its module follows from the rule: `assay/guard/engines/ENGINE/RULE.py`, with underscores, or the family module that the registry names (section 18.9). The engine `build` has the directory `buildsys`. For a target "plugin `RULE`, FAMILY", the source of the family in `utils/tools/quarantine/` holds the check (section 18.10). The module `assay/guard/engines/plugin/RULE.py` judges the records that the plugin writes, and the ledger is `utils/ledgers/RULE.txt`. In unit 1B.1, each script first moves to `assay/guard/legacy/` with underscores in its name (section 18.9).
 
 | Script | The rule | Input today | Ledger (rows) | Plugin overlap | Target | Action | Test s |
 |---|---|---|---|---|---|---|---|
@@ -1969,65 +1969,65 @@ The column "Target" names a rule, and its module follows from the rule: `assay/g
 | `check-banned-calls.py` | No `reinterpret_cast`, vector `reserve`, file stream or process start | `tsast`, line-text keys | 4 lists (0, 3, 0, 1), fixy-only-paths (8) | Full for reserve, stream and spawn in compiled quarantined files (P1, P6, P7). None for the cast (P13), for a base file or for `vessel/torch` | tsast `banned-spellings`, and tsast `banned-calls` for the base files and `vessel/` (section 8.6a) | Keep, as two rules. Delete the stream ban and the parts of the two other bans in quarantined files | 2.5 |
 | `check-brand-drain.py` | Erased brand spellings only decrease | `tsast` | brand-drain (101) | None. GCC folds the `static_assert` or the `sizeof` of most sites, and no build compiles the fixtures (section 18.11) | tsast `erased-brand` | Keep | 2.0 |
 | `check-budget-history.py` | Thresholds and ledgers do not rise without a measurement | git | budget-history (1) | None | meta `history` | Keep | 2.4 |
-| `check-build-order.py` | No order-only wait, compile-first, custom dependencies | `build.ninja`, Ninja deps, records | compile-first (88) | None | build `build-graph` | Keep | 2.8 |
+| `check-build-order.py` | No order-only wait, compile-first, custom dependencies | `build.ninja`, Ninja deps, records | compile-first (88) | None | build `build-order` and `custom-deps`, and build `compile-first` | Keep | 2.8 |
 | `check-cache-size.py` | The size of each cache is not more than its limit | File sizes | none | None | build `cache-size`, a function of `assay.core.cache` | Merge | 1.0 |
 | `check-ci-guard-labels.py` | Each guard test has the label `ci_guard` | ctest JSON | none | None | meta `test-registration` | Keep | 1.9 |
 | `check-clang-format.sh` | Each C++ file is clang-format clean | clang-format | none | None | meta `clang-format`, with the XML replacements of clang-format, in ctest | Keep | Not in ctest |
-| `check-compile-cost.py` | The compile, link and object budgets | Records, ELF sizes, Ninja deps, file API | 8 cost ledgers (0) | None | build `cost-budgets` | Keep | 5.9 |
+| `check-compile-cost.py` | The compile, link and object budgets | Records, ELF sizes, Ninja deps, file API | 8 cost ledgers (0) | None | build `compile-cpu`, `compile-instructions`, `compile-memory`, `link-time`, `link-memory`, `function-size`, `object-text` and `header-alone` | Keep | 5.9 |
 | `check-contract-form.py` | No `pre` or `post` specifier. No `assume` of a fact that a PRE holds | `tsast` | contract-form (6) | Full for the specifier in compiled files (P8) | tsast `contract-form` | Keep, for the remaining part | 1.8 |
-| `check-contract-semantic.py` | The last semantic flag agrees with the ignore define | Compile database | none | None | plugin, unit fact | Move | 0.2 |
+| `check-contract-semantic.py` | The last semantic flag agrees with the ignore define | Compile database | none | None | plugin `contract-semantic`, unit fact | Move | 0.2 |
 | `check-core-shapes.py` | Each family operation compiles to the raw instructions | Compiler run, `objdump` | none (21 probes in code) | None | elf `codegen-shapes` | Keep | 3.0 |
 | `check-ct-disassembly.py` | Each constant-time wrapper has no branch, call or division | Compiler run, `objdump`, byte prefilter | none | None | elf `codegen-shapes` | Merge | 4.6 |
 | `check-ctx-init-door.py` | Each use of the init and background owners is at a listed scope | `tsast`, byte prefilter | 2 and 5 | None | plugin, owner | Move | 0.8 |
 | `check-ctx-testing-boundary.py` | Each use of the testing door is in a listed file | `tsast`, a token scan of its own | 2 | None | plugin, owner | Merge | 1.5 |
 | `check-derived-pins.py` | No `static_assert` pins a constant to its own literal | `tsast` | derived-pins (0) | None | tsast `derived-pins` | Keep | 2.5 |
 | `check-detail-namespace.py` | No use of a `detail` namespace of the base outside the base | `tsast`, git, result cache | 59 | None | plugin, owner | Merge | 3.0 |
-| `check-detsafe-ledger.py` | The hashing path includes no ledger code | `tsast` | none (17 roots in code) | None | plugin, include closure `seal` | Move | 0.9 |
-| `check-escape-doors.py` | A public function that returns a reference is an accessor, a mint or a hatch | `tsast`, string methods | escape-doors (3) | None | plugin, declaration property | Move | 0.5 |
-| `check-federation-admission.py` | Only `fixy/Federation.h` defines `FederationAdmission` | `tsast`, preprocessed store, byte prefilter | none | None | plugin, home | Move | 3.1 |
+| `check-detsafe-ledger.py` | The hashing path includes no ledger code | `tsast` | none (17 roots in code) | None | plugin `detsafe-ledger`, include closure `seal` | Move | 0.9 |
+| `check-escape-doors.py` | A public function that returns a reference is an accessor, a mint or a hatch | `tsast`, string methods | escape-doors (3) | None | plugin `escape-doors`, declaration property | Move | 0.5 |
+| `check-federation-admission.py` | Only `fixy/Federation.h` defines `FederationAdmission` | `tsast`, preprocessed store, byte prefilter | none | None | plugin `federation-admission`, home | Move | 3.1 |
 | `check-fixy-dim-prose.py` | No retired axis number in the prose of fixy | `tsast` prose and a regex | none | None | meta `prose-bans` | Merge | 0.5 |
 | `check-fixy-hw-discipline.py` | Each `_hw` block has a live definition and a pin row | `tsast` | 2 rows in a test file | None | tsast `hw-axis-rows` | Keep | 0.7 |
 | `check-fullness-guard.py` | No `==` between a counter and a capacity | `tsast`, line-text keys | 3 | None. No kind reads an operator, and the operands in a pattern are names (P14, C4 and C9) | tsast `fullness-guard` | Keep | 1.2 |
 | `check-git-isolation.py` | A script that writes with git isolates the repository | Python `ast`, ast-grep | none | None | meta `structured-reads` | Merge | 1.8 |
 | `check-guard-engines.py` | Each script names its engine and reads no C++ as text | Python `ast`, ast-grep | guard-engines (114) | None | meta `structured-reads`, the registry | Keep, with more shapes | 1.6 |
-| `check-header-checks.py` | A header does no compile-time work in each includer | `tsast`, a compiler for `--standalone` | header-checks (64) | None. The plugin can find only the eager instantiation | tsast `header-checks`. `--standalone` goes to build | Keep | 3.9 |
-| `check-header-constexpr-ops.py` | Each one-line unit meets its operation limit | Compile database, compiler | 0, and not-standalone (14) | None | build `header-constexpr` | Keep | 1.0 |
-| `check-heavy-includes.py` | A header includes no heavy standard header | `tsast` | heavy-includes (49), header-costs (165) | Full for base headers (P10) | plugin, include closure `heavy` | Move | 0.8 |
-| `check-host-owners.py` | Each class of a `host` namespace is in its listed file | `tsast`, token scan | host-owner roster (4) | None | plugin, home | Merge | 2.6 |
-| `check-layer-boundary.py` | foundation names only foundation, and fixy names only foundation and fixy | `tsast` | the layer rows of the rule table | Full for an include in a compiled arm (P11). The ledger holds 19 `upward_include` rows that the script does not find, because its three layers are coarser | plugin `upward-name`, and tsast `layer-residual` | Move | 1.0 |
+| `check-header-checks.py` | A header does no compile-time work in each includer | `tsast`, a compiler for `--standalone` | header-checks (64) | None. The plugin can find only the eager instantiation | tsast `header-checks`. `--standalone` goes to build `header-standalone` | Keep | 3.9 |
+| `check-header-constexpr-ops.py` | Each one-line unit meets its operation limit | Compile database, compiler | 0, and not-standalone (14) | None | build `header-constexpr-ops` | Keep | 1.0 |
+| `check-heavy-includes.py` | A header includes no heavy standard header | `tsast` | heavy-includes (49), header-costs (165) | Full for base headers (P10) | plugin `heavy-include`, include closure `heavy` | Move | 0.8 |
+| `check-host-owners.py` | Each class of a `host` namespace is in its listed file | `tsast`, token scan | host-owner roster (4) | None | plugin `host-owners`, home | Merge | 2.6 |
+| `check-layer-boundary.py` | foundation names only foundation, and fixy names only foundation and fixy | `tsast` | the layer rows of the rule table | Full for an include in a compiled arm (P11). The ledger holds 19 `upward_include` rows that the script does not find, because its three layers are coarser | plugin `layer-boundary`, and tsast `layer-residual` | Move | 1.0 |
 | `check-libstdcxx-symbols.py` | No new libstdc++ symbol in three libraries | `nm`, `c++filt` | libstdcxx-symbols (135) | Partial: the source names in quarantined files | elf `artifact-symbols` | Keep | 2.3 |
-| `check-lifetime-twin.py` | Each lifetime-bound parameter has a deleted rvalue twin | `tsast` | none | None | plugin, declaration property | Move | 0.4 |
+| `check-lifetime-twin.py` | Each lifetime-bound parameter has a deleted rvalue twin | `tsast` | none | None | plugin `lifetime-twin`, declaration property | Move | 0.4 |
 | `check-lock-free-asserts.py` | Each `std::atomic` of four directories has a lock-free assert | `tsast`, a substring search of comments | 2 markers | Full for a new `std::atomic` (P9). The quarantine ledger holds the 27 objects of today in 6 rows | tsast `lock-free-asserts` | Keep. A unit of Stage 5 deletes the rule (section 8.6a) | 0.6 |
-| `check-mint-pattern.py` | Each mint is `[[nodiscard]] constexpr noexcept` with a constraint | `tsast` through `mintmodel.py` | mint-pattern (18), 50 markers | None | plugin, declaration property, with a mint record for the inventory | Move | 1.0 |
-| `check-no-combine-ids-duplicate.py` | `combine_ids` has one body | `tsast`, result cache | 1 in code | None | plugin, home | Merge | 1.1 |
+| `check-mint-pattern.py` | Each mint is `[[nodiscard]] constexpr noexcept` with a constraint | `tsast` through `mintmodel.py` | mint-pattern (18), 50 markers | None | plugin `mint-pattern`, declaration property, with a mint record for the inventory | Move | 1.0 |
+| `check-no-combine-ids-duplicate.py` | `combine_ids` has one body | `tsast`, result cache | 1 in code | None | plugin `no-combine-ids-duplicate`, home | Merge | 1.1 |
 | `check-no-coordination-refs.py` | No task or stage reference in prose | `tsast` prose, Python tokens, text | none | None | meta `prose-bans` | Keep | 1.3 |
-| `check-no-ffast-math.py` | No fast-math option in a flag, a preset, an attribute or a pragma | Compile database, file API, presets, `tsast` | 0 (the file is missing) | None | plugin, unit fact, and build `build-config` | Move | 6.1 |
-| `check-no-raw-array-member.py` | No C array data member in a base header | `tsast` | 3 | Quarantined files only (P5). None for a base header (P12) | plugin, declaration property with a base scope | Move | 0.6 |
+| `check-no-ffast-math.py` | No fast-math option in a flag, a preset, an attribute or a pragma | Compile database, file API, presets, `tsast` | 0 (the file is missing) | None | plugin `fast-math-override`, unit fact, and build `no-ffast-math` | Move | 6.1 |
+| `check-no-raw-array-member.py` | No C array data member in a base header | `tsast` | 3 | Quarantined files only (P5). None for a base header (P12) | plugin `no-raw-array-member`, declaration property with a base scope | Move | 0.6 |
 | `check-no-throw-no-rtti.sh` | No throw, downcast, typeinfo or vtable in a library | `nm`, `readelf`, `objdump` | 3 | None | elf `artifact-symbols` | Merge | 4.5 |
 | `check-no-unchecked-access.py` | `access_context::unchecked` only in listed files, no open static member, no walked return | `tsast`, preprocessed store | 33 | None | plugin, owner (the qualified form of rule 1, rules 2 and 5) and declaration property (rule 6), and tsast `member-splice` (rule 1 through an object, rules 3, 4 and 7) | Move | 3.8 |
-| `check-no-unity-pch.py` | No unity build and no precompiled header | Compile database, a CMake lexer | none | None | build `build-config` | Keep | 0.6 |
-| `check-padded-lists.py` | No padding bit in the element of a large fixed list | `tsast`, probe compiles | 2 | None | plugin, declaration property | Move | 7.6 |
-| `check-parse-clean.py` | Each C++ file parses with the kit | `tsast` | UNPARSEABLE (1) | None | the tree fill | Merge | 1.5 |
-| `check-parse-cost.py` | The totals of bytes and instructions stay near the baseline | The census | parse-total (293), header-fanout (30), instruction-total (1) | None | build `cost-budgets` | Merge | 5.6 |
-| `check-permission-storage.py` | A `Permission` member has `[[no_unique_address]]` and is not static | `tsast` | 0 markers | None | plugin, declaration property | Move | 0.8 |
-| `check-process-wide-state.py` | Each mutable static object has a marker or a roster row | `tsast` | 13 | None | plugin, declaration property | Move | 0.8 |
-| `check-proof-routes.py` | No route builds a proof type without its door | `tsast`, preprocessed store | 21 | Partial: allocators and `malloc` in quarantined files | plugin, expression shape. For the three specialization shapes, new plugin code is necessary (P14, C13) | Move, after the plants of its eight shapes are red | 3.8 |
-| `check-quarantine-ratchet.py` | The findings of the plugin only decrease | ELF sections, census, git | quarantine (8,984) | It is the runner of the plugin | plugin runner | Keep | 4.9 |
-| `check-quarantine-regions.py` | Each opt-out region has a ledger row | `tsast`, byte prefilter | 8 | Partial: the plugin writes a `region` line for each compiled region | plugin runner, kind `region` | Merge | 0.6 |
+| `check-no-unity-pch.py` | No unity build and no precompiled header | Compile database, a CMake lexer | none | None | build `no-unity-pch` | Keep | 0.6 |
+| `check-padded-lists.py` | No padding bit in the element of a large fixed list | `tsast`, probe compiles | 2 | None | plugin `padded-list`, declaration property | Move | 7.6 |
+| `check-parse-clean.py` | Each C++ file parses with the kit | `tsast` | UNPARSEABLE (1) | None | tsast `parse-clean`, the tree fill | Merge | 1.5 |
+| `check-parse-cost.py` | The totals of bytes and instructions stay near the baseline | The census | parse-total (293), header-fanout (30), instruction-total (1) | None | build `parse-total`, `header-fanout` and `instruction-total` | Merge | 5.6 |
+| `check-permission-storage.py` | A `Permission` member has `[[no_unique_address]]` and is not static | `tsast` | 0 markers | None | plugin `permission-storage`, declaration property | Move | 0.8 |
+| `check-process-wide-state.py` | Each mutable static object has a marker or a roster row | `tsast` | 13 | None | plugin `process-wide-state`, declaration property | Move | 0.8 |
+| `check-proof-routes.py` | No route builds a proof type without its door | `tsast`, preprocessed store | 21 | Partial: allocators and `malloc` in quarantined files | plugin `proof-routes`, expression shape. For the three specialization shapes, new plugin code is necessary (P14, C13) | Move, after the plants of its eight shapes are red | 3.8 |
+| `check-quarantine-ratchet.py` | The findings of the plugin only decrease | ELF sections, census, git | quarantine (8,984) | It is the runner of the plugin | plugin `quarantine`, in the runner of the plugin | Keep | 4.9 |
+| `check-quarantine-regions.py` | Each opt-out region has a ledger row | `tsast`, byte prefilter | 8 | Partial: the plugin writes a `region` line for each compiled region | plugin `quarantine`, kind `region` | Merge | 0.6 |
 | `check-reconfigure-noop.py` | A second configure compiles no unit | cmake, the Ninja log | none | None | build `reconfigure-noop` | Keep | 2.1 |
-| `check-refined-pre-subsumption.py` | No PRE tests again the predicate of a `Refined` parameter | `tsast` | 0 markers | None | plugin, expression shape | Move | 0.9 |
+| `check-refined-pre-subsumption.py` | No PRE tests again the predicate of a `Refined` parameter | `tsast` | 0 markers | None | plugin `refined-pre-subsumption`, expression shape | Move | 0.9 |
 | `check-row-contains-discipline.py` | A row test on a context row uses the lift | `tsast`, a regex on raw bytes | 0 markers | None. The plugin reads no reflection operand | tsast `row-contains` | Keep | 0.4 |
-| `check-splits-orphan.py` | Code specializes a split trait only beside its tags | `tsast`, a regex on raw bytes | 2 in code | None | plugin, home | Merge | 0.9 |
-| `check-start-lifetime.py` | `std::start_lifetime_as` only in `Lifetime.h` | `tsast`, preprocessed store | 16, all fixtures | Full in compiled quarantined files (P3) | plugin, owner, for the base | Move | 4.0 |
-| `check-stub-discipline.py` | A stub marker and its deprecation come together | `tsast` | none | None | plugin, declaration property | Move | 0.8 |
-| `check-syscall-capability.py` | Each raw system call has a claim, and the affinity calls stay in their door | `tsast`, line-text keys | 39 | Full for the 34 quarantined rows (P4, and section 18.22) | plugin, owner, with each of the 39 claims as an admit row (section 8.6a) | Move | 3.3 |
-| `check-syscall-grant-coverage.py` | The hardening grant set equals its system calls | `tsast`, string methods | none | Partial | plugin, expression shape | Move | 0.4 |
+| `check-splits-orphan.py` | Code specializes a split trait only beside its tags | `tsast`, a regex on raw bytes | 2 in code | None | plugin `splits-orphan`, home | Merge | 0.9 |
+| `check-start-lifetime.py` | `std::start_lifetime_as` only in `Lifetime.h` | `tsast`, preprocessed store | 16, all fixtures | Full in compiled quarantined files (P3) | plugin `start-lifetime`, owner, for the base | Move | 4.0 |
+| `check-stub-discipline.py` | A stub marker and its deprecation come together | `tsast` | none | None | plugin `stub-discipline`, declaration property | Move | 0.8 |
+| `check-syscall-capability.py` | Each raw system call has a claim, and the affinity calls stay in their door | `tsast`, line-text keys | 39 | Full for the 34 quarantined rows (P4, and section 18.22) | plugin `syscall-capability`, owner, with each of the 39 claims as an admit row (section 8.6a) | Move | 3.3 |
+| `check-syscall-grant-coverage.py` | The hardening grant set equals its system calls | `tsast`, string methods | none | Partial | plugin `syscall-grant-coverage`, expression shape | Move | 0.4 |
 | `check-test-time.py` | Each script test meets `test-time` | The ctest log | test-time (0) | None | build `test-time` | Keep | 1.8 |
-| `check-trait-injection.py` | A trait specialization or an open gate read is only where a row admits it | `tsast` | open-gate-reads (142) | None | plugin, home | Move | 5.8 |
+| `check-trait-injection.py` | A trait specialization or an open gate read is only where a row admits it | `tsast` | open-gate-reads (142) | None | plugin `trait-guard`, home | Move | 5.8 |
 | `check-use-after-move.py` | No use of a local after a move, on each path | `tsast` | 64 | None, because the admitted list holds `std::move` | tsast `use-after-move` (decision 13) | Keep | 1.2 |
 | `check-vessel-acceptance.py` | The vessel builds, and its Python tests pass | cmake, ELF, Python | none | None | build `vessel-acceptance` | Keep | 0.1 |
 | `check-walk-units.py` | `walk-checks.txt` lists each check file that walks a namespace | `tsast` | walk-checks (105) | None | tsast `walk-units` | Keep | 4.0 |
-| `check-witness-roster.py` | Each door class has a roster row and a fixture | `tsast` | witness-roster (120) | None | plugin, declaration property. The fixture generator becomes `loop derive witness-fixtures` | Move | 1.8 |
+| `check-witness-roster.py` | Each door class has a roster row and a fixture | `tsast` | witness-roster (120) | None | plugin `witness-roster`, declaration property. The fixture generator becomes `loop derive witness-fixtures` | Move | 1.8 |
 
 The other guard scripts:
 
@@ -2040,9 +2040,9 @@ The other guard scripts:
 | `session-oracle.sh --check` | The golden table of the oracle is current | The oracle, opam | `golden.csv` | build `session-oracle` (`assay/oracle/runner.py`), and the group `oracle` of `guard selftest` | Keep | 21.4 with the self-tests |
 | `utils/tools/quarantine/test/check_plugin.py` | The plugin gives each expected finding | Compiler runs | test tables | `guard witness --engine plugin` (`assay/guard/engines/plugin/witness.py`) | Merge | 8.6 |
 | `test/guard_attacks/test_use_after_move_attacks.py` | The misses of the use-after-move check | `tsast` | 5 rows in the test | The witness of `use-after-move`, with `utils/plants/use-after-move/` | Merge | 0.2 |
-| `test/neg_compile_store.py` (budgets) | The fixture budgets and the rule of the reason | Fixture records | 3 ledgers (0) | build `cost-budgets`, through `assay.core.budget` | Keep | in the fixtures |
-| `build-launcher.py`, `test-launcher.py` (budgets) | The budgets of each step | `wait4`, a hardware counter | 4 ledgers (0) | build `cost-budgets`, one judge in `assay.core.budget` | Keep, in `loop step` and `loop test-step` | 2.9 and 1.1 |
-| `report-check-warnings.py` | Seven totals, and the print of the warnings | Records, census | none | build `cost-budgets` and `guard warnings` | Merge | 0.1 |
+| `test/neg_compile_store.py` (budgets) | The fixture budgets and the rule of the reason | Fixture records | 3 ledgers (0) | `loop fixture` (`assay/loop/fixture/store.py`), with the build rules `fixture-cpu`, `fixture-instructions` and `fixture-own-reason` | Keep | in the fixtures |
+| `build-launcher.py`, `test-launcher.py` (budgets) | The budgets of each step | `wait4`, a hardware counter | 4 ledgers (0) | The judge of each step in `loop step` and `loop test-step`. The rules of `buildsys/cost_budgets.py` and `test-time` judge the records through `assay.core.budget` | Keep, in `loop step` and `loop test-step` | 2.9 and 1.1 |
+| `report-check-warnings.py` | Seven totals, and the print of the warnings | Records, census | none | `guard warnings`, with the totals of `buildsys/cost_budgets.py` | Merge | 0.1 |
 
 The 65 check scripts get these actions:
 - 1 delete: `check-atom-roster-joined.sh`
@@ -2085,7 +2085,7 @@ Each file of `utils/scripts/` has a user: a registered test, a CI step, a CMake 
 | `quarantine_stamps.py` | Generator | `Quarantine.cmake` | A copy of `write_if_changed` | `loop stamps`, in `assay/loop/stamps.py` |
 | `refresh-derived.sh` | Runner | The checklist of the plan | A git probe of its own | `loop derive`, in `assay/loop/derive/__init__.py`, and the meta rule `derived-files` |
 | `repo_root.py`, `repo_root.sh` | Modules | 28 importers, 6 shell users | Seven files calculate the root again | `assay/core/paths.py`. Unit 1B.5 deletes `repo_root.sh` with the shell scripts |
-| `report-check-warnings.py` | Report | The CI step "Check warnings" | The print loop copies `check_report.emit` | `guard warnings` (`assay/guard/warnings.py`) and the build rule `cost-budgets` |
+| `report-check-warnings.py` | Report | The CI step "Check warnings" | The print loop copies `check_report.emit` | `guard warnings` (`assay/guard/warnings.py`), with the totals of `buildsys/cost_budgets.py` |
 | `run-affected-tests.py` | Runner | CLAUDE.md §XV rule 14 | Copies of the ctest list reader, the `CMakeCache.txt` reader and the launcher prefix test | `loop test`, in `assay/loop/affected.py` |
 | `session-oracle.sh` | Runner | 4 tests, CI | None | The build rule `session-oracle`, `loop derive session-oracle` and the group `oracle` of `guard selftest` |
 | `test-launcher.py` | Launcher | `cmake/TestLauncher.cmake` | Its judge and its ledger lookup copy `build-launcher.py` | `loop test-step`, in `assay/loop/teststep.py` |

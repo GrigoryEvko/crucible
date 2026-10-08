@@ -2,9 +2,10 @@
 #
 #   crucible/<path>.h | reason
 #
-# test/layer/CMakeLists.txt gives each listed header no sentinel.  The test
-# layer_not_standalone compiles each listed header alone and fails when one
-# compiles, so a row goes in the commit that makes its header compile alone.
+# test/layer/CMakeLists.txt gives each listed header no sentinel.  The rule
+# header-standalone (the test guard_header_standalone) compiles each listed
+# header alone, and it fails when one compiles.  So a row goes in the commit
+# that makes its header compile alone.
 # The list can only become shorter.  A reason has no semicolon.
 #
 # The quarantine plugin reads this list too, through its argument
