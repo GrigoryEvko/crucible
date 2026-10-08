@@ -100,7 +100,7 @@ utils/assay/guard/legacy/check_no_ffast_math.py | ISC004 | 1 | build_violations 
 utils/assay/guard/legacy/check_no_ffast_math.py | ISC004 | 1 | link_violations | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_ffast_math.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_raw_array_member.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/legacy/check_no_throw_no_rtti.py | ISC004 | 2 | scan_artifact | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
+utils/assay/guard/legacy/check_no_throw_no_rtti.py | ISC004 | 1 | scan_artifact | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_throw_no_rtti.py | format | 1 | rows_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | B023 | 3 | expanded.line_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | SIM114 | 1 | node_doors | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
@@ -230,7 +230,6 @@ utils/assay/oracle/sr.py | format | 1 | _build_sr | An issue of ruff of today.  
 utils/assay/oracle/unit_store.py | ISC004 | 2 | _self_test_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/oracle/unit_store.py | format | 1 | UnitStore.__init__ | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/readers/compdb.py | format | 1 | CompileEntry.__init__ | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/readers/elf.py | format | 1 | name_at | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/readers/shell.py | format | 1 | read | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/readers/tsast.py | FURB166 | 2 | number_value | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/readers/tsast.py | FURB167 | 2 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count

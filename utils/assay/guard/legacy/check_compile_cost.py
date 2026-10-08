@@ -156,7 +156,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import meter as cost_meter
-from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
@@ -459,13 +458,18 @@ def read_object_code(path: Path) -> ObjectCode:
     Raises:
         elf_file.ElfError: If the file is empty or is not an ELF64 little-endian object, or a table is outside it
     """
-    with elf_file.ElfFile.mapped(path) as elf:
-        largest, largest_name = elf.largest_function()
-        return ObjectCode(sum(section.size for section in elf.sections if section.is_code), largest, largest_name)
+    with elf_file.mapped(path) as member:
+        functions = [symbol for symbol in member.symbols() if symbol.is_function]
+        # max() keeps the first of the symbols with the largest `st_size`, in the sequence of the table.
+        largest = max(functions, key=lambda symbol: symbol.size, default=None)
+        code_bytes = sum(section.size for section in member.sections() if section.is_code)
+    if largest is None or largest.size == 0:
+        return ObjectCode(code_bytes, 0, "")
+    return ObjectCode(code_bytes, largest.size, largest.name)
 
 
 def demangled(names: Iterable[str]) -> dict[str, str]:
-    """Demangle function names with c++filt, when it is on PATH.
+    """Demangle function names with the ELF reader, when c++filt can run.
 
     Args:
         names: The mangled names
@@ -474,16 +478,10 @@ def demangled(names: Iterable[str]) -> dict[str, str]:
         The readable name of each mangled name, or the mangled name itself
     """
     unique = sorted(set(names))
-    if not unique:
-        return {}
     try:
-        result = proc.require(proc.run(proc.Command(["c++filt"], timeout_s=proc.QUICK_S,
-                                                    stdin=("\n".join(unique) + "\n").encode())))
-        readable = result.out.splitlines()
-    except proc.ToolFailed:
-        readable = unique
-    if len(readable) != len(unique):
-        readable = unique
+        readable = elf_file.demangle(unique)
+    except elf_file.ElfError:
+        readable = tuple(unique)
     return dict(zip(unique, readable, strict=True))
 
 
@@ -853,13 +851,14 @@ def plant_object(path: Path, functions: list[tuple[str, int]], loose_text: int =
         functions: The name and the size of each function
         loose_text: The size of one more executable section with no symbol
     """
-    symbols, strings = elf_file.function_symbols(functions)
+    symbols, strings = elf_file.symbol_table(elf_file.PlantedSymbol(name, size=size, kind=elf_file.STT_FUNC, section=1)
+                                             for name, size in functions)
     code = elf_file.SHF_ALLOC | elf_file.SHF_EXECINSTR
-    sections = [elf_file.Planted(b".symtab", symbols, elf_file.SHT_SYMTAB, link=2, entry_size=elf_file.SYMBOL_SIZE),
-                elf_file.Planted(b".strtab", strings, elf_file.SHT_STRTAB)]
-    sections += [elf_file.Planted(b".text", flags=code, size=size) for _, size in functions]
+    sections = [elf_file.Planted(".symtab", symbols, elf_file.SHT_SYMTAB, link=2, entry_size=elf_file.SYMBOL_SIZE),
+                elf_file.Planted(".strtab", strings, elf_file.SHT_STRTAB)]
+    sections += [elf_file.Planted(".text", flags=code, size=size) for _, size in functions]
     if loose_text:
-        sections.append(elf_file.Planted(b".text", flags=code, size=loose_text))
+        sections.append(elf_file.Planted(".text", flags=code, size=loose_text))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(elf_file.make_file(sections))
 
@@ -943,7 +942,7 @@ class Scratch:
         self.write_reply()
         if exists:
             output.parent.mkdir(parents=True, exist_ok=True)
-            output.write_bytes(b"\x7fELF program")
+            output.write_bytes(elf_file.MAGIC + b" program")
             if result is not None:
                 self.record("link", output, None, result, cpu_s, peak_gb)
         return output

@@ -338,15 +338,15 @@ def source_paths_in(text: str, trees: Trees) -> list[str]:
     return found
 
 
-def data_sections(elf: elf_file.ElfFile) -> list[tuple[int, int]]:
+def data_sections(member: elf_file.Member) -> list[tuple[int, int]]:
     """Return the byte span of each allocated section that holds no code.  O(number of sections).
 
     Raises:
         elf_file.ElfError: If the file has no section header table, or a data section is outside the file
     """
-    if not elf.sections:
-        raise elf_file.ElfError(f"{elf.where}: the file has no section header table")
-    return [elf.span(section) for section in elf.sections if section.is_data]
+    if not member.sections():
+        raise elf_file.ElfError(f"{member.where}: the file has no section header table")
+    return [member.span(section) for section in member.sections() if section.is_data]
 
 
 def name_pattern(trees: Trees) -> re.Pattern[bytes]:
@@ -360,11 +360,11 @@ def name_pattern(trees: Trees) -> re.Pattern[bytes]:
 def scan_elf(path: str, trees: Trees) -> Scan:
     """Return the input names of one ELF file.  O(size of its data sections)."""
     try:
-        with elf_file.ElfFile.mapped(path) as elf:
-            spans = data_sections(elf)
+        with elf_file.mapped(path) as member:
+            spans = data_sections(member)
             pattern = name_pattern(trees)
             names = {match.group(0).decode("utf-8", "surrogateescape")
-                     for start, end in spans for match in pattern.finditer(elf.buffer, start, end)}
+                     for start, end in spans for match in pattern.finditer(member.buffer, start, end)}
     except elf_file.ElfError as error:
         return Scan(always_reason=f"{path} is not an ELF64 file with a section header table: {error}")
     except OSError as error:
@@ -761,10 +761,10 @@ def synthetic_elf(allocated: bytes, other: bytes = b"", executable: bytes = b"")
 
     The file is not a program.  The scan reads only its section headers.
     """
-    return elf_file.make_file([elf_file.Planted(b".data", allocated, flags=elf_file.SHF_ALLOC),
-                               elf_file.Planted(b".text", executable,
+    return elf_file.make_file([elf_file.Planted(".data", allocated, flags=elf_file.SHF_ALLOC),
+                               elf_file.Planted(".text", executable,
                                                 flags=elf_file.SHF_ALLOC | elf_file.SHF_EXECINSTR),
-                               elf_file.Planted(b".comment", other)])
+                               elf_file.Planted(".comment", other)])
 
 
 class SelfTest:
@@ -879,20 +879,20 @@ def self_test(ctest: str) -> int:
     trees = Trees(source_root="/s", build_root="/s/b")
     def is_refused(data: bytes) -> bool:
         try:
-            data_sections(elf_file.ElfFile(data, "planted"))
+            data_sections(elf_file.Member(data, "planted"))
         except elf_file.ElfError:
             return True
         return False
 
-    spans = data_sections(elf_file.ElfFile(synthetic_elf(allocated=b"A", other=b"B", executable=b"C"), "planted"))
+    spans = data_sections(elf_file.Member(synthetic_elf(allocated=b"A", other=b"B", executable=b"C"), "planted"))
     expect("data_sections finds one allocated data section",
            spans == [(elf_file.HEADER_SIZE, elf_file.HEADER_SIZE + 1)])
     expect("data_sections refuses a file that is not ELF", is_refused(b"#!/bin/sh\n" + b"\0" * 80))
     damaged = bytearray(synthetic_elf(allocated=b"A"))
-    struct.pack_into("<Q", damaged, 0x28, len(damaged) + 100)
+    struct.pack_into("<Q", damaged, elf_file.SECTION_TABLE_AT, len(damaged) + 100)
     expect("data_sections refuses a section table outside the file", is_refused(bytes(damaged)))
     no_table = bytearray(synthetic_elf(allocated=b"A"))
-    struct.pack_into("<Q", no_table, 0x28, 0)
+    struct.pack_into("<Q", no_table, elf_file.SECTION_TABLE_AT, 0)
     expect("data_sections refuses a file with no section header table", is_refused(bytes(no_table)))
     expect("program_index skips cmake -E env", program_index(("/x/cmake", "-E", "env", "A=1", "/b/t")) == 4)
     expect("program_index skips valgrind options", program_index(("/v/valgrind", "-q", "/b/t", "x")) == 2)

@@ -734,12 +734,10 @@ def read_report(reports: Sequence[Path]) -> tuple[tuple[plugin_sections.Finding,
 def read_object(output: Path) -> tuple[plugin_sections.Section | None, str]:
     """Return the section of an object, and the problem when the object holds none or cannot be read."""
     try:
-        data = plugin_sections.read_section(output)
-        if data is None:
-            return None, "the object holds no section"
-        return plugin_sections.parse_section(data, str(output)), ""
+        section = plugin_sections.read(output)
     except (OSError, plugin_sections.SectionError) as problem:
         return None, str(problem)
+    return (None, "the object holds no section") if section is None else (section, "")
 
 
 class Compiler:

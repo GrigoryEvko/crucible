@@ -5511,17 +5511,6 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 crucible_script_test(NAME build_target_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest core.target)
 set_tests_properties(build_target_self_test PROPERTIES LABELS "ci_guard")
-# elf_file_self_test — utils/assay/readers/elf.py is the one reader of ELF
-# headers of the scripts.  The self-test plants files with each kind of section,
-# the extended numbering, a symbol table, and tables outside the file.
-crucible_script_test(NAME elf_file_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest readers.elf)
-set_tests_properties(elf_file_self_test PROPERTIES LABELS "ci_guard")
-# quarantine_sections_self_test — utils/assay/readers/sections.py reads the
-# findings of the quarantine plugin from the section .crucible.quarantine of an
-# object.  The self-test plants objects with and without the section.
-crucible_script_test(NAME quarantine_sections_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest readers.sections)
 # guard_plugin — the runner of the engine plugin
 # (utils/assay/guard/engines/plugin/runner.py) reads the section of each object
 # of all one time, and judges each rule of the engine plugin of
@@ -5547,7 +5536,7 @@ crucible_script_test(NAME plugin_witness_self_test
 # mint-pattern reads.
 crucible_script_test(NAME plugin_declarations_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.plugin.test_declarations)
-set_tests_properties(quarantine_sections_self_test guard_plugin plugin_runner_self_test plugin_witness_self_test
+set_tests_properties(guard_plugin plugin_runner_self_test plugin_witness_self_test
     plugin_declarations_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 77)
 
 # affected_tests_self_test — `loop test` (utils/assay/loop/affected.py) builds a tree
@@ -5720,7 +5709,7 @@ endforeach()
 crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR})
 foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test_proc core.test_git
         core.test_paths core.test_testing readers.test_compdb readers.test_python readers.test_tool_reports
-        guard.test_history guard.test_import_closure guard.engines.meta.test_package
+        readers.test_sections guard.test_history guard.test_import_closure guard.engines.meta.test_package
         guard.engines.meta.test_ste_dictionary loop.derive.test_walk_units)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}
@@ -5744,8 +5733,10 @@ crucible_script_test(NAME assay_readers_test_ctest
 set_tests_properties(assay_readers_test_ctest PROPERTIES LABELS "ci_guard;meta"
   ENVIRONMENT "ASSAY_TEST_CMAKE=${CMAKE_COMMAND};ASSAY_TEST_CTEST=${CMAKE_CTEST_COMMAND}")
 # The tests of the SARIF reader and of the reader of the include trace compare
-# each reader with the text output of the compiler of this build.
-foreach(_assay_test readers.test_sarif readers.test_include_trace)
+# each reader with the text output of the compiler of this build.  The tests of
+# the ELF reader and of the reader of a disassembly read the objects that the
+# compiler of this build gives.
+foreach(_assay_test readers.test_sarif readers.test_include_trace readers.test_elf readers.test_objdump)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})

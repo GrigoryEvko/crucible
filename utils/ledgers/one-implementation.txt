@@ -6,7 +6,6 @@ utils/assay/core/cache.py | copy | 1 | self_test.expect | A copy of today.  The 
 utils/assay/core/cache.py | near-copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/core/report.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/core/report.py | near-copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/core/target.py | copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/core/target.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/guard/engines/tsast/header_checks.py | copy | 1 | is_at_namespace_scope | A copy of a body of the legacy module check_proof_routes.py.  The port of that rule calls one body and removes this row
 utils/assay/guard/legacy/check_admitted_audit.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
@@ -146,9 +145,6 @@ utils/assay/oracle/runner.py | near-copy | 1 | _wire | A copy of today.  The cha
 utils/assay/oracle/runner.py | near-copy | 1 | evaluate_keyed_subtype | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/oracle/runner.py | near-copy | 1 | evaluate_subtype | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/oracle/unit_store.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/readers/elf.py | copy | 1 | main | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/readers/elf.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/readers/sections.py | copy | 1 | self_test.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/tests/core/test_git.py | copy | 1 | main.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/tests/core/test_ledger.py | copy | 1 | main.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/tests/core/test_pins.py | copy | 1 | main.expect | A copy of today.  The change that keeps one body and calls it lowers the count

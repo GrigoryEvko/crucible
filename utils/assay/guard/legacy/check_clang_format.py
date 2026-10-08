@@ -86,6 +86,7 @@ from pathlib import Path
 
 from assay.core import proc
 from assay.core.paths import REPO_ROOT
+from assay.readers import elf
 
 RULE = "clang-format"
 VERIFIED_MAJORS = (" 22.", " 23.")
@@ -96,7 +97,6 @@ MAX_DEFAULT_JOBS = 32
 CACHE_FORMAT = "check-clang-format cache 1"
 CACHE_MAX_AGE_S = 30 * 86400
 VIOLATION = ": error: code should be clang-formatted"
-ELF_MAGIC = b"\x7fELF"
 # The lines of the output of a failed batch that the report shows.
 FAILED_OUTPUT_LINES = 20
 FIX_COMMAND = "python3 utils/bin/guard check --rule clang-format --fix"
@@ -179,13 +179,7 @@ def choose_finder(environment: dict[str, str]) -> str:
 
 def is_elf(path: str | None) -> bool:
     """Whether a file is an executable of ELF, which can run in parallel, and not a script."""
-    if path is None:
-        return False
-    try:
-        with open(path, "rb") as handle:
-            return handle.read(4) == ELF_MAGIC
-    except OSError:
-        return False
+    return path is not None and elf.is_elf(path)
 
 
 def default_cache_dir(environment: dict[str, str]) -> Path | None:

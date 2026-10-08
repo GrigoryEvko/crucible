@@ -11,7 +11,6 @@ compile, with no caret display.
 """
 
 import json
-import os
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -278,15 +277,6 @@ def stored_cases(expect: testing.Expect) -> None:
     expect("texts() gives three texts for each record", len(sarif.texts(log)) == 3 * len(sarif.records(log)))
 
 
-def compiler() -> str:
-    """Return the patched compiler of the compile cases: ASSAY_TEST_CXX, or g++-16p in CRUCIBLE_GCC16_PREFIX."""
-    named = os.environ.get("ASSAY_TEST_CXX", "")
-    if named:
-        return named
-    prefix = os.environ.get("CRUCIBLE_GCC16_PREFIX", "")
-    return str(Path(prefix) / "usr" / "bin" / "g++-16p") if prefix else ""
-
-
 def compile_with_log(cxx: str, work: Path, name: str, text: str) -> tuple[list[str], sarif.Log]:
     """Compile one source with the SARIF log and no caret display, and return the text lines and the log."""
     source = work / name
@@ -310,7 +300,7 @@ def compile_with_log(cxx: str, work: Path, name: str, text: str) -> tuple[list[s
 
 def compile_cases(expect: testing.Expect) -> None:
     """Compare render() with the text output of the patched compiler for the same compile."""
-    cxx = compiler()
+    cxx = testing.patched_compiler()
     expect("ASSAY_TEST_CXX or CRUCIBLE_GCC16_PREFIX names the patched compiler", bool(cxx) and Path(cxx).is_file())
     if not cxx or not Path(cxx).is_file():
         return

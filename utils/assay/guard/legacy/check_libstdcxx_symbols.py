@@ -18,8 +18,9 @@ THE LIBRARIES
 
 A LIBSTDC++ SYMBOL
     A symbol is a libstdc++ symbol of a library when two facts are true:
-      * An object of the archive has an undefined reference to the symbol
-        (the nm type U, w or v).
+      * An object of the archive has an undefined reference to the symbol.
+        Such a reference is a strong or a weak undefined symbol of its symbol
+        table (assay.readers.elf, THE SYMBOLS).
       * The libstdc++ of the compiler defines the symbol in its dynamic
         symbol table.  "COMPILER -print-file-name=libstdc++.so" names that
         shared library, and each link of the tree uses it.
@@ -93,9 +94,9 @@ THE VERDICT
         a library that the inputs do not name is an error too.
       * Each library with no error gives one warning with its counts.  The
         libstdc++ uses that stay are then in the output of each run.
-    An archive that nm cannot read, an archive with no undefined reference,
-    and a libstdc++ that nm cannot read are errors.  In each case the check
-    read nothing.
+    An archive or a libstdc++ that the ELF reader cannot read is an error.
+    An archive with no undefined reference is an error too.  In each case
+    the check read nothing.
 
 WRITE THE LEDGER
     --write writes the rows of the kind of the build, and it keeps the set of
@@ -186,10 +187,6 @@ ALLOC_NAME = re.compile(r"_Z(?:nw|na|dl|da)")
 ABI_NAME = re.compile(rf"_Z{_SPECIAL}{_NESTED}10__cxxabiv1")
 STD_NAME = re.compile(rf"_Z{_SPECIAL}{_NESTED}S[tabsiod]")
 GNU_NAME = re.compile(rf"_Z{_SPECIAL}{_NESTED}9__gnu_cxx")
-# The nm types of an undefined reference: a strong one, a weak one and a weak object.
-UNDEFINED_TYPES = frozenset({"U", "w", "v"})
-# One line of `nm -A --undefined-only` for a member of an archive.
-NM_LINE = re.compile(r"(?P<archive>[^:]+):(?P<member>[^:]+):\s+(?P<type>[A-Za-z])\s+(?P<symbol>\S+)")
 RAISE_REASONS = ("a new toolchain", "code that moved from a base header into a base source file",
                  "a new build kind or target")
 
@@ -395,14 +392,14 @@ def read_inputs(path: Path) -> Inputs:
     return Inputs(compiler, tuple(archives))
 
 
-def tool_output(command: list[str], data: str | None = None) -> str:
+def tool_output(command: list[str]) -> str:
     """Run a tool and return its standard output.
 
     Raises:
         InputError: If the tool cannot start, runs past its limit, or exits with a status that is not 0
     """
     try:
-        done = proc.run(proc.Command(command, timeout_s=proc.TOOL_S, stdin=b"" if data is None else data.encode()))
+        done = proc.run(proc.Command(command, timeout_s=proc.TOOL_S))
     except proc.CannotStart as problem:
         raise InputError(f"{command[0]} cannot start: {problem.error.strerror}") from None
     except proc.TimedOut:
@@ -416,8 +413,8 @@ def libstdcxx_exports(compiler: str) -> frozenset[str]:
     """Return the names that the libstdc++ of the compiler defines in its dynamic symbol table.
 
     Raises:
-        InputError: If the compiler names no libstdc++.so, the file is not an ELF shared library, or nm reads
-            no defined name
+        InputError: If the compiler names no libstdc++.so, the file is not an ELF shared library, or the ELF reader
+            reads no defined dynamic name
     """
     named = tool_output([compiler, "-print-file-name=libstdc++.so"]).strip()
     path = Path(named)
@@ -427,49 +424,54 @@ def libstdcxx_exports(compiler: str) -> frozenset[str]:
     if not elf_file.is_elf(resolved):
         raise InputError(f"{resolved} is not an ELF shared library.  The check reads only an ELF libstdc++, and "
                          f"not a linker script")
-    names = frozenset(fields[2].split("@", 1)[0]
-                      for fields in map(str.split, tool_output(["nm", "-D", "--defined-only", str(resolved)])
-                                        .splitlines())
-                      if len(fields) >= 3)
+    try:
+        with elf_file.mapped(resolved) as library:
+            names = frozenset(symbol.name for symbol in library.dynamic_symbols() if symbol.is_defined)
+    except (OSError, elf_file.ElfError) as problem:
+        raise InputError(f"the dynamic symbols of {resolved} cannot be read: {problem}") from None
     if not names:
-        raise InputError(f"nm reads no defined name from {resolved}, and the check has no libstdc++ to compare with")
+        raise InputError(f"the ELF reader reads no defined dynamic name from {resolved}, and the check has no "
+                         f"libstdc++ to compare with")
     return names
 
 
 def read_census(inputs: Inputs, held: Iterable[str] = ()) -> Census:
     """Read the undefined references of each archive, and keep the ones that libstdc++ defines.
 
-    One nm call reads each archive, one nm call reads libstdc++, and one
-    c++filt call demangles the symbols and the symbols of `held`, the rows
-    of the ledger, so that a message can name a symbol that goes.
+    assay.readers.elf reads each archive and libstdc++.  One call of its
+    demangle() gives the names of the symbols and of the symbols of `held`,
+    the rows of the ledger, so that a message can name a symbol that goes.
     Complexity: linear in the number of undefined references and of
     libstdc++ exports.
 
     Raises:
-        InputError: If a tool fails, an archive gives no undefined reference, or libstdc++ cannot be read
+        InputError: If an archive or libstdc++ cannot be read, an archive gives no undefined reference, or
+            c++filt does not give the names
     """
     exports = libstdcxx_exports(inputs.compiler)
-    listing = tool_output(["nm", "-A", "--undefined-only", "--no-demangle", *map(str, inputs.archives)])
-    library_of = {str(archive): archive.name for archive in inputs.archives}
     references: dict[str, dict[str, set[str]]] = {archive.name: {} for archive in inputs.archives}
     census = Census()
-    for line in listing.splitlines():
-        match = NM_LINE.fullmatch(line)
-        if match is None or match["type"] not in UNDEFINED_TYPES or match["archive"] not in library_of:
-            continue
-        census.references += 1
-        references[library_of[match["archive"]]].setdefault(match["symbol"], set()).add(match["member"])
+    for archive in inputs.archives:
+        try:
+            members = elf_file.members(archive)
+        except (OSError, elf_file.ElfError) as problem:
+            raise InputError(f"the archive {archive} cannot be read: {problem}") from None
+        for member in members:
+            for symbol in member.symbols():
+                if symbol.is_undefined:
+                    census.references += 1
+                    references[archive.name].setdefault(symbol.name, set()).add(member.name)
     empty = sorted(name for name, symbols in references.items() if not symbols)
     if empty:
-        raise InputError(f"nm reads no undefined reference from {', '.join(empty)}, and the check read nothing.  An "
-                         f"archive that calls nothing is not an archive that uses no libstdc++ symbol")
+        raise InputError(f"the ELF reader reads no undefined reference from {', '.join(empty)}, and the check read "
+                         f"nothing.  An archive that calls nothing is not an archive that uses no libstdc++ symbol")
     census.uses = {library: {symbol: members for symbol, members in symbols.items() if symbol in exports}
                    for library, symbols in references.items()}
     symbols = sorted({symbol for uses in census.uses.values() for symbol in uses} | set(held))
-    names = tool_output(["c++filt"], "".join(f"{symbol}\n" for symbol in symbols)).splitlines() if symbols else []
-    if len(names) != len(symbols):
-        raise InputError("c++filt does not give one name for each symbol")
-    census.demangled = dict(zip(symbols, names))
+    try:
+        census.demangled = dict(zip(symbols, elf_file.demangle(symbols), strict=True))
+    except elf_file.ElfError as problem:
+        raise InputError(str(problem)) from None
     return census
 
 

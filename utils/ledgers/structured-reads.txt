@@ -8,14 +8,11 @@ utils/assay/core/target.py | regex-call | 1 | <module> | A read of today.  The c
 utils/assay/guard/legacy/check_admitted_audit.py | regex-call | 3 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_admitted_audit.py | regex-call | 1 | form_findings | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_compile_cost.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_core_shapes.py | regex-call | 6 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_ct_disassembly.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_ct_disassembly.py | regex-call | 4 | disassemble | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_detail_namespace.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_fixy_dim_prose.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_header_constexpr_ops.py | regex-call | 1 | c_identifier | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_host_owners.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_libstdcxx_symbols.py | regex-call | 5 | <module> | A read of today.  The change that moves the read into its reader lowers the count
+utils/assay/guard/legacy/check_libstdcxx_symbols.py | regex-call | 4 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_no_combine_ids_duplicate.py | node-text-variable | 3 | token_shape | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_no_coordination_refs.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_no_unchecked_access.py | node-text-variable | 3 | open_members | A read of today.  The change that moves the read into its reader lowers the count
@@ -61,3 +58,4 @@ utils/assay/oracle/rocq.py | regex-call | 2 | <module> | A read of today.  The c
 utils/assay/oracle/sprout.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/oracle/unit_store.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/tests/loop/test_fixture.py | regex-call | 1 | StoreTest.entry_path | A read of today.  The change that moves the read into its reader lowers the count
+vessel/torch/crucible_native.py | format-read | 1 | the ELF magic | The vessel reads the dynamic symbols of its native library to find the sanitizer runtime.  The vessel is product code outside the package, so it cannot import the ELF reader

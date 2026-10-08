@@ -15,7 +15,7 @@ With `--part K/N`, the test runs only the checks whose position modulo N is K.
 CTest runs each part as one test, so the parts run at the same time.  N must be
 at least the number of checks, so each part runs one check.  Part 0 also
 checks the parse of a dependency file, of a search list and of a list of the
-loader, the ELF interpreter, the search roots, the compile environment, the
+loader, the search roots, the compile environment, the
 CPU budget of a compile with no user time, and the errors that no regex
 reaches.
 
@@ -51,7 +51,7 @@ from assay.core import registry as rule_registry
 from assay.core.paths import LOOP
 from assay.loop import teststep as test_launcher
 from assay.loop.fixture import store
-from assay.readers import cmake, compdb, sarif
+from assay.readers import cmake, compdb, elf, sarif
 
 # The driver of a fixture as CTest starts it: the master loop with the subcommand fixture.
 DRIVER = (str(LOOP), "fixture")
@@ -459,7 +459,7 @@ class StoreTest:
     def check_loader(self) -> None:
         """A shared object of cc1plus in a directory of LD_LIBRARY_PATH changes the key of the compile."""
         cc1plus = proc.run(proc.Command([self.cxx, "-print-prog-name=cc1plus"], timeout_s=proc.QUICK_S)).out.strip()
-        interpreter = store.elf_interpreter(cc1plus) if os.path.isfile(cc1plus) else None
+        interpreter = elf.interpreter(cc1plus) if os.path.isfile(cc1plus) else None
         if interpreter is None:
             self.skip(f"cc1plus ({cc1plus}) has no program interpreter")
             return
@@ -1599,11 +1599,6 @@ def check_parsers(failures: list[str]) -> None:
         failures.append(f"the loader list parse gives {loader}")
     if store.parse_loader_list("\tlibq.so.1 => not found\n", "", Path("/work")) is not None:
         failures.append("a loader list with an object that the loader does not find is refused")
-    interpreter = store.elf_interpreter(os.path.realpath(sys.executable))
-    if interpreter is None or not os.path.isfile(interpreter):
-        failures.append(f"the interpreter of {sys.executable} is {interpreter}")
-    if store.elf_interpreter(str(LOOP)) is not None:
-        failures.append("a file that is not ELF has no interpreter")
     roots, probes = store.search_roots(["/s/sub"], ["/n/x.cpp", "/s/sub/../b/B.h"], ["/abs/m.h", "../m.h", "m.h"])
     expected_probes = [path for reach in ("/s/sub/../b/B.h", "/n/../b/B.h", "/s/sub/../b/../b/B.h", "/s/sub/../m.h",
                                           "/n/../m.h", "/s/sub/../b/../m.h", "/abs/m.h")

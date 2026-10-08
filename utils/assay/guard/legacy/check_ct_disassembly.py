@@ -53,10 +53,15 @@ resolves.  A case is a wrapper that the guard compiles and checks with the
 primitives.  The map is empty, because no production function states the
 grade.
 
+THE DISASSEMBLY
+    assay.readers.objdump disassembles each object.  It gives the prefixes of
+    each instruction apart from its mnemonic.  It also gives the text and the
+    register words of each memory operand, and the symbol of each relocation.
+
 Exit 0: every wrapper is clean.  Exit 1: a finding, printed per wrapper.
-Exit 2: the guard could not run (no objdump, no compile database, no row of
-a foundation object, no pinned tree-sitter kit, a compile error), which is a
-failure, never a pass.
+Exit 2: the guard could not run (no objdump or c++filt, no compile database,
+no row of a foundation object, no pinned tree-sitter kit, a compile error),
+which is a failure, never a pass.
 """
 
 from __future__ import annotations
@@ -64,17 +69,16 @@ from __future__ import annotations
 import argparse
 import os
 import pathlib
-import re
 import shlex
 import shutil
 import sys
 import tempfile
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 
 from assay.core import proc
 from assay.core.paths import REPO_ROOT
-from assay.readers import compdb, tsast
+from assay.readers import compdb, objdump, tsast
 
 WIDTHS = (("u8", "std::uint8_t"), ("u16", "std::uint16_t"), ("u32", "std::uint32_t"), ("u64", "std::uint64_t"))
 CT_NAMESPACE = "::fixy::ct"
@@ -160,8 +164,8 @@ CTCRYPTO_ROOTS = ("include", "src", "vessel")
 NAME_LEAVES = ("identifier", "type_identifier", "namespace_identifier", "field_identifier")
 # The nodes that a name leaf is part of, up to the name that holds it whole.
 NAME_OWNERS = frozenset({"template_type", "template_function", "template_method"})
-
-PREFIXES = {"rep", "repz", "repe", "repnz", "repne", "lock", "notrack", "bnd", "data16", "cs", "ds"}
+# The registers of a memory operand that give no address from a secret.
+PUBLIC_REGISTERS = frozenset({"rsp", "rip", "ptr"})
 
 
 class CannotRun(RuntimeError):
@@ -345,63 +349,28 @@ def compile_object(compiler: str, flags: list[str], source: pathlib.Path, obj: p
         raise CannotRun(f"the compile failed for {target}:\n{shlex.join(cmd)}\n{result.err}")
 
 
-class Insn:
-    """One disassembled instruction, with the symbol its relocation names, if any."""
+def disassemble(obj: pathlib.Path) -> dict[str, tuple[objdump.Instruction, ...]]:
+    """Return {function: instructions} for every function in `obj`, by the symbol that objdump prints.
 
-    def __init__(self, mnemonic: str, operands: str) -> None:
-        self.mnemonic = mnemonic
-        self.operands = operands
-        self.relocation: str | None = None
-
-    def text(self) -> str:
-        """Return the instruction as objdump prints it, plus its relocation."""
-        base = f"{self.mnemonic} {self.operands}".strip()
-        return f"{base} (reloc {self.relocation})" if self.relocation else base
-
-
-def disassemble(obj: pathlib.Path) -> dict[str, list[Insn]]:
-    """Return {function: [instruction]} for every function in `obj`, relocations attached.
+    assay.readers.objdump reads the disassembly, with the prefixes of each
+    instruction apart from its mnemonic and the relocations attached.
 
     Raises:
-        CannotRun: If objdump fails
+        CannotRun: If objdump or c++filt fails
     """
-    result = proc.run(proc.Command(["objdump", "-dr", "--no-show-raw-insn", "-M", "intel", str(obj)],
-                                   timeout_s=proc.TOOL_S))
-    if result.exit != 0:
-        raise CannotRun(f"objdump failed:\n{result.err}")
-    functions: dict[str, list[Insn]] = {}
-    current: str | None = None
-    head = re.compile(r"^[0-9a-f]+ <([^>]+)>:$")
-    reloc = re.compile(r"^\s+[0-9a-f]+:\s+R_\w+\s+(\S+)")
-    insn = re.compile(r"^\s+[0-9a-f]+:\s+(.*)$")
-    for line in result.out.splitlines():
-        match = head.match(line)
-        if match:
-            current = match.group(1)
-            functions[current] = []
-            continue
-        if current is None:
-            continue
-        match = reloc.match(line)
-        if match:
-            if functions[current]:
-                functions[current][-1].relocation = re.split(r"[-+]", match.group(1))[0]
-            continue
-        match = insn.match(line)
-        if match:
-            tokens = match.group(1).split()
-            while tokens and tokens[0] in PREFIXES:
-                tokens = tokens[1:]
-            if tokens:
-                functions[current].append(Insn(tokens[0], " ".join(tokens[1:])))
-    return functions
+    try:
+        return {function.symbol: function.instructions for function in objdump.functions(obj)}
+    except objdump.ObjdumpError as problem:
+        raise CannotRun(str(problem)) from None
 
 
-ADDRESS = re.compile(r"\[([^\]]*)\]")
-REGISTER = re.compile(r"\b(r[a-z0-9]+|e[a-z]{2}|[a-z]{2}l|[a-z]{2})\b")
+def instruction_text(ins: objdump.Instruction) -> str:
+    """Return the mnemonic and the operands of an instruction, plus the symbol of its relocation."""
+    base = f"{ins.mnemonic} {ins.operands}".strip()
+    return f"{base} (reloc {ins.relocation.symbol})" if ins.relocation is not None else base
 
 
-def findings_of(name: str, body: list[Insn], takes_pointers: bool) -> list[str]:
+def findings_of(name: str, body: Sequence[objdump.Instruction], takes_pointers: bool) -> list[str]:
     """Return every refused instruction of one function, as text.
 
     A function that takes no pointer has no public address to read, so
@@ -412,22 +381,22 @@ def findings_of(name: str, body: list[Insn], takes_pointers: bool) -> list[str]:
     out: list[str] = []
     for ins in body:
         m = ins.mnemonic
-        text = ins.text()
+        text = instruction_text(ins)
         if m == "nop" or m.startswith("nop"):
             continue
         if (m.startswith("j") and m != "jmp") or m.startswith("loop"):
             out.append(f"conditional branch: {text}")
         elif m == "call":
             out.append(f"call: {text}")
-        elif m == "jmp" and ins.relocation is not None and ins.relocation != name:
+        elif m == "jmp" and ins.relocation is not None and ins.relocation.symbol != name:
             out.append(f"jump out of the function: {text}")
         elif m in ("div", "idiv"):
             out.append(f"operand-dependent latency: {text}")
         # lea computes an address and reads no memory, so it is arithmetic.
         if m == "lea":
             continue
-        for address in ADDRESS.findall(ins.operands):
-            registers = {r for r in REGISTER.findall(address) if r not in ("rsp", "rip", "ptr")}
+        for address in ins.memory_operands:
+            registers = set(objdump.register_words(address)) - PUBLIC_REGISTERS
             if "*" in address:
                 out.append(f"indexed load or store: {text}")
             elif registers and not takes_pointers:
@@ -747,9 +716,6 @@ def main(argv: list[str]) -> int:
                         help="the objects of the foundation library, whose compile commands give the flags")
     parser.add_argument("--self-test", action="store_true", help="check the checker on planted code")
     args = parser.parse_args(argv)
-    if shutil.which("objdump") is None:
-        sys.stderr.write("check-ct-disassembly: objdump is missing\n")
-        return 2
     try:
         plan, problems = read_plan(pathlib.Path(os.path.abspath(args.build_dir)),
                                    [pathlib.Path(os.path.abspath(obj)) for obj in args.base_objects])

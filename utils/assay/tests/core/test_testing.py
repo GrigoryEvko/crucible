@@ -58,6 +58,20 @@ def run_cases(expect: testing.Expect) -> None:
     expect("a run with no group returns OK", status == ExitCode.OK and out == "tests.planted: each case holds.\n")
 
 
+def compiler_cases(expect: testing.Expect) -> None:
+    """Check the patched compiler of each environment."""
+    expect("ASSAY_TEST_CXX names the compiler", testing.patched_compiler({"ASSAY_TEST_CXX": "/opt/cxx"}) == "/opt/cxx")
+    expect(
+        "ASSAY_TEST_CXX comes before the prefix",
+        testing.patched_compiler({"ASSAY_TEST_CXX": "/opt/cxx", "CRUCIBLE_GCC16_PREFIX": "/gcc"}) == "/opt/cxx",
+    )
+    expect(
+        "the prefix gives g++-16p in usr/bin",
+        testing.patched_compiler({"CRUCIBLE_GCC16_PREFIX": "/gcc"}) == "/gcc/usr/bin/g++-16p",
+    )
+    expect("no variable gives an empty text", testing.patched_compiler({}) == "")
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (run_cases,))
+    return testing.run(__name__.removeprefix("assay."), argv, (run_cases, compiler_cases))

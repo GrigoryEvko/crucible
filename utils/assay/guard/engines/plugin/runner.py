@@ -227,8 +227,7 @@ def read_object(path: Path, stamp: str, build_dir: Path) -> ObjectSection:
     """Read the section of one object.  A read that does not succeed gives its problem."""
     shown = build_census.shown(path, build_dir)
     try:
-        data = quarantine_sections.read_section(path)
-        section = None if data is None else quarantine_sections.parse_section(data, str(path))
+        section = quarantine_sections.read(path)
     except (OSError, quarantine_sections.SectionError) as problem:
         return ObjectSection(shown, stamp, None, str(problem))
     return ObjectSection(shown, stamp, section)

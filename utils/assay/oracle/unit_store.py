@@ -105,6 +105,7 @@ from pathlib import Path
 from assay.core import cache as cache_dir
 from assay.core import proc
 from assay.loop.fixture import store as compile_store
+from assay.readers import elf
 
 # The name of the store in utils/assay/core/cache.py.
 STORE_NAME = "session_oracle"
@@ -416,7 +417,7 @@ class UnitStore:
             for program, path in paths.items():
                 identity.append([program, path, compile_store.file_digest(path, self.store.memo)])
             for program, host in hosts.items():
-                interpreter = compile_store.elf_interpreter(host)
+                interpreter = elf.interpreter(host)
                 if interpreter is None:
                     identity.append([program, "static"])
                     continue
@@ -426,7 +427,7 @@ class UnitStore:
                     return None
                 identity.append([program, interpreter,
                                  [[name, compile_store.file_digest(name, self.store.memo)] for name in objects]])
-        except OSError:
+        except (OSError, elf.ElfError):
             return None
         return identity
 
@@ -643,7 +644,10 @@ class UnitStore:
         key holds the cache of the loader (_loader_identity), so a list that
         names a different cache gives None.
         """
-        interpreter = compile_store.elf_interpreter(str(program))
+        try:
+            interpreter = elf.interpreter(program)
+        except elf.ElfError:
+            return None
         if interpreter is None:
             return _Inputs()
         environment = {name: value for name, value in os.environ.items() if name != "LD_DEBUG_OUTPUT"}

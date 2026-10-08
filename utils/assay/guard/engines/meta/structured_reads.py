@@ -38,10 +38,13 @@ THE KINDS
                         is not a git command
     regex-call          a call of a function of the module re outside a reader.  A call whose subject is the result
                         of prose_text() reads prose, and the rule admits it
-    format-read         a string constant that names a structured file outside its reader: CMakeCache.txt,
-                        compile_commands.json, build.ninja, .ninja_log or the ctest list --show-only=json-v1.  The
-                        table FORMATS of this module names each file, and the rule does not read this module for
-                        the kind
+    format-read         a read of a structured format in a module that is not its reader.  A string constant that
+                        names a structured file: CMakeCache.txt, compile_commands.json, build.ninja, .ninja_log, the
+                        ctest list --show-only=json-v1 or the section .crucible.quarantine.  A string constant that
+                        names a tool that writes a structured format as text: nm, readelf, c++filt or objdump.  A
+                        bytes constant that starts with the magic of an ELF file or of an ar archive.  A shell
+                        command that runs such a tool.  The tables FORMATS, TOOLS and MAGICS of this module name
+                        each one, and the rule does not read this module for the kind
     The ledger of the rule holds the count of each file, kind and entity of
     today: the entity of a Python finding is the function that holds it, and
     each change that moves a read into its reader lowers a count.
@@ -84,10 +87,16 @@ TEXT_ATTRIBUTES = frozenset({"text", "source", "joined"})
 TEXT_CALLS = frozenset({"slice", "spelled"})
 ADMITTED_READS = frozenset({"prose_text", "lexeme", "excerpt"})
 PROSE_READ = "prose_text"
-# Each structured file whose name a module outside its reader must not spell, and its reader.
+# Each tool that writes a structured format as text, and the reader of that format.  A run of the tool in a
+# different module reads the format as text.
+TOOLS = {"nm": "assay.readers.elf", "readelf": "assay.readers.elf", "c++filt": "assay.readers.elf",
+         "objdump": "assay.readers.objdump"}
+# Each structured file or tool, and its reader.  Only its reader spells its name.
 FORMATS = {"CMakeCache.txt": "assay.readers.cmake", "compile_commands.json": "assay.readers.compdb",
            "build.ninja": "assay.readers.ninja", ".ninja_log": "assay.readers.ninja",
-           "--show-only=json-v1": "assay.readers.ctest"}
+           "--show-only=json-v1": "assay.readers.ctest", ".crucible.quarantine": "assay.readers.sections", **TOOLS}
+# The magic at the start of each binary format, the entity of a finding, and its reader.
+MAGICS = {b"\x7fELF": ("the ELF magic", "assay.readers.elf"), b"!<arch>\n": ("the ar magic", "assay.readers.elf")}
 MUTATING = frozenset({"init", "commit", "update-ref", "reset", "checkout", "fetch", "apply"})
 # The git commands that a second word of an argv can name (the kind git-command).
 GIT_VERBS = frozenset({
@@ -289,6 +298,11 @@ def shell_findings(path: str, script: shell_reader.ShellScript) -> Iterator[chec
                                    "that a regex can read code.  Read the code from tsast nodes", "lexer", LEXER)
     for command in script.commands:
         tool = tool_name(command.name)
+        if tool in TOOLS:
+            yield check_report.Finding(
+                "error", path, command.line, RULE, f"{command.name} writes a structured format as text, and a shell "
+                f"script reads it outside its reader {TOOLS[tool]}.  Read the file through its reader", "format-read",
+                tool)
         hits = reads_cpp_source(tool, command.arguments)
         if not hits and tool == "find" and any(tool_name(word) in TOOL_FAMILY for word in command.arguments):
             starts: list[str] = []
@@ -485,13 +499,22 @@ class PythonReads(ast.NodeVisitor):
     visit_Tuple = visit_sequence
 
     def visit_Constant(self, node: ast.Constant) -> None:
-        """Refuse a constant that names a structured file outside its reader."""
-        if (not self.is_reader and self.path != SELF and isinstance(node.value, str)
-                and id(node) not in self.docstrings):
+        """Refuse a constant that names a structured file or a tool, or that holds a magic.
+
+        The reader of the format and this module can hold such a constant.
+        """
+        if self.is_reader or self.path == SELF or id(node) in self.docstrings:
+            return
+        if isinstance(node.value, str):
             for name, reader in FORMATS.items():
                 if node.value == name or node.value.endswith(f"/{name}"):
                     self.add(node, "format-read", f"the constant names {name} outside its reader {reader}.  Read "
                              f"the file through its reader", name)
+        elif isinstance(node.value, bytes):
+            for magic, (entity, reader) in MAGICS.items():
+                if node.value.startswith(magic):
+                    self.add(node, "format-read", f"the constant holds {entity} outside its reader {reader}.  Read "
+                             f"the file through its reader", entity)
 
 
 def git_aliases(tree: ast.Module) -> set[str]:

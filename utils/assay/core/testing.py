@@ -13,16 +13,37 @@ THE STATUS
     argument writes the usage to the standard error and returns
     ExitCode.USAGE.
 
+THE COMPILER
+    A test module with compile cases gets the patched compiler from
+    patched_compiler().  The variable ASSAY_TEST_CXX names the compiler, and
+    the registration of the test in CMake gives it.  With no such variable,
+    the compiler is g++-16p in usr/bin of the prefix that
+    CRUCIBLE_GCC16_PREFIX names.  When the two variables are empty, the
+    text is empty.
+
 `guard selftest tests.core.test_testing` does a test of the module.
 """
 
-from collections.abc import Callable, Sequence
+import os
+from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
 
 type Expect = Callable[[str, bool], None]
 type Group = Callable[[Expect], None]
+TEST_COMPILER = "ASSAY_TEST_CXX"
+COMPILER_PREFIX = "CRUCIBLE_GCC16_PREFIX"
+
+
+def patched_compiler(environment: Mapping[str, str] = os.environ) -> str:
+    """Return the patched compiler of the compile cases (THE COMPILER), or an empty text when no variable names it."""
+    named = environment.get(TEST_COMPILER, "")
+    if named:
+        return named
+    prefix = environment.get(COMPILER_PREFIX, "")
+    return str(Path(prefix) / "usr" / "bin" / "g++-16p") if prefix else ""
 
 
 def run(module: str, argv: Sequence[str], groups: Sequence[Group]) -> ExitCode:

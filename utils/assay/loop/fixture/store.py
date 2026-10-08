@@ -1244,6 +1244,10 @@ def compile_key(argv: list[str], directory: Path, protected: set[str], memo_dir:
     if not driver:
         return None, f"the compiler driver {argv[0]} is not in PATH"
     driver = os.path.join(directory, driver)
+    # A fixture imports the store at its start, and tests.guard.test_import_closure holds the imports of that
+    # step.  This import is in the function, and it does not change that list.
+    from assay.readers import elf
+
     try:
         cc1plus, assembler, specs = driver_answers(driver, directory, env, memo_dir)
         programs = [driver]
@@ -1258,7 +1262,7 @@ def compile_key(argv: list[str], directory: Path, protected: set[str], memo_dir:
         plugins = [os.path.join(directory, arg.split("=", 1)[1]) for arg in argv if arg.startswith(_PLUGIN_LOAD)]
         for path in [*programs, *plugins]:
             # cc1plus loads a plugin, so its loader maps the objects of the plugin.
-            interpreter = elf_interpreter(path) or (elf_interpreter(programs[1]) if path in plugins else None)
+            interpreter = elf.interpreter(path) or (elf.interpreter(programs[1]) if path in plugins else None)
             if interpreter is None:
                 identity.append([path, "static"])
                 continue
@@ -1272,7 +1276,7 @@ def compile_key(argv: list[str], directory: Path, protected: set[str], memo_dir:
                 full = os.path.join(directory, name)
                 if os.path.isfile(full) and os.path.realpath(full) not in protected:
                     files.append([index, name, file_digest(full, memo_dir)])
-    except OSError as error:
+    except (OSError, elf.ElfError) as error:
         return None, f"an input of the key cannot be read: {error}"
     environment = sorted(
         [name, value]
@@ -1342,42 +1346,6 @@ def parse_dependency_file(text: str) -> list[str] | None:
 
 
 # ── The compiler identity: the loader ──────────────────────────────
-
-
-def elf_interpreter(path: str) -> str | None:
-    """Return the program interpreter (PT_INTERP) of the ELF file `path`, or None.
-
-    A static program has no interpreter, and a file that is not ELF has none.
-    The function reads the file header and the program headers only.
-    """
-    import struct
-
-    with open(path, "rb") as stream:
-        head = stream.read(64)
-        if len(head) < 64 or head[:4] != b"\x7fELF" or head[4] not in (1, 2):
-            return None
-        is_64 = head[4] == 2
-        order = "<" if head[5] == 1 else ">"
-        if is_64:
-            (table_offset,) = struct.unpack_from(order + "Q", head, 32)
-            entry_size, entry_count = struct.unpack_from(order + "HH", head, 54)
-        else:
-            (table_offset,) = struct.unpack_from(order + "I", head, 28)
-            entry_size, entry_count = struct.unpack_from(order + "HH", head, 42)
-        stream.seek(table_offset)
-        table = stream.read(entry_size * entry_count)
-        for index in range(entry_count):
-            entry = table[index * entry_size : (index + 1) * entry_size]
-            # p_type 3 is PT_INTERP.  p_offset and p_filesz are at 8 and 32 in
-            # a 64-bit header, and at 4 and 16 in a 32-bit header.
-            if len(entry) < (56 if is_64 else 32) or struct.unpack_from(order + "I", entry, 0)[0] != 3:
-                continue
-            word = order + ("Q" if is_64 else "I")
-            (offset,) = struct.unpack_from(word, entry, 8 if is_64 else 4)
-            (size,) = struct.unpack_from(word, entry, 32 if is_64 else 16)
-            stream.seek(offset)
-            return os.fsdecode(stream.read(size).rstrip(b"\0"))
-    return None
 
 
 def parse_loader_list(stdout: str, stderr: str, directory: Path) -> tuple[list[str], list[str], list[str]] | None:

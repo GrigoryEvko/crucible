@@ -36,7 +36,7 @@ from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.core import ruletable, testing
 from assay.guard.engines.plugin import quarantine, runner
-from assay.readers import cmake, compdb
+from assay.readers import cmake, compdb, elf
 from assay.readers import sections as quarantine_sections
 
 RULE = quarantine.RULE
@@ -195,10 +195,10 @@ class Scratch:
         rows = []
         for name, (lines, stamp, has_section) in self.objects.items():
             text = "".join(f"{line}\n" for line in [f"{quarantine_sections.HEAD_PREFIX}2 stamp={stamp}", *lines])
-            sections = [(b".text", b"\x90")] + (
-                [(quarantine_sections.SECTION_NAME, text.encode())] if has_section else []
+            sections = [elf.Planted(".text", b"\x90")] + (
+                [elf.Planted(quarantine_sections.SECTION_NAME, text.encode())] if has_section else []
             )
-            (self.build / f"{name}.o").write_bytes(quarantine_sections.planted_object(sections))
+            (self.build / f"{name}.o").write_bytes(elf.make_file(sections))
             rows.append(
                 {
                     "directory": str(self.build),

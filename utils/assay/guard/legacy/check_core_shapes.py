@@ -29,7 +29,8 @@ THE FLAGS
     PER_PRESET names it.
 
 THE SHAPE
-    The check disassembles the probe object with objdump.  A function has a
+    The check disassembles the probe object with assay.readers.objdump, which
+    gives the names that objdump -C prints.  A function has a
     hot part, and it can have a cold part, `NAME [clone .cold]` in a section
     .text.unlikely.  A count of instructions leaves out the alignment nops.
     For each probe, the check requires:
@@ -64,7 +65,7 @@ THE SELF-TEST
     probe must pass.  The unit with no plant must pass.
 
 Exit 0: each probe holds.  Exit 1: a finding.  Exit 2: the check could not
-run (no objdump, no compile database, no row of the probe object, a compile
+run (no objdump or c++filt, no compile database, no row of the probe object, a compile
 that fails, no function of a probe, no plant site), which is a failure.  Exit 3: the machine is not x86_64, and the
 check has no expectations for it, so ctest reports a skip.
 """
@@ -74,11 +75,9 @@ from __future__ import annotations
 import argparse
 import os
 import platform
-import re
-import shutil
 import sys
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -86,7 +85,7 @@ from typing import Literal
 from assay.core import proc
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
-from assay.readers import compdb, tsast
+from assay.readers import compdb, objdump, tsast
 
 CHECK = "core-shapes"
 PROBE_SOURCE = "test/shape/core_shapes.cpp"
@@ -101,10 +100,8 @@ FATAL_PREFIX = "foundation::core::detail::report_"
 RAW_SUFFIX = "_raw"
 COLD_SUFFIX = " [clone .cold]"
 ANONYMOUS = "(anonymous namespace)::"
-# The prefixes that objdump prints before a mnemonic.  A segment prefix and
-# data16 come only with a multi-byte nop in the code of this unit.
-PREFIXES = frozenset({"lock", "rep", "repz", "repe", "repnz", "repne", "notrack", "bnd", "data16", "cs", "ds", "es",
-                      "ss", "fs", "gs"})
+# The marks of a local constant, before the number that a compare of two instructions does not read.
+LOCAL_MARKS = (".LC", ".")
 # The prefixes that a compare of two instructions keeps.
 KEPT_PREFIXES = frozenset({"lock", "rep", "repz", "repe", "repnz", "repne"})
 
@@ -201,12 +198,11 @@ PROBES: tuple[Probe, ...] = (
 
 # ── The disassembly ─────────────────────────────────────────────────────────
 
-SECTION_LINE = re.compile(r"^Disassembly of section (\S+):$")
-HEAD_LINE = re.compile(r"^[0-9a-f]+ <(.+)>:$")
-RELOCATION_LINE = re.compile(r"^\s+[0-9a-f]+: (R_[A-Z0-9_]+)\s+(.+)$")
-INSTRUCTION_LINE = re.compile(r"^\s*([0-9a-f]+):\s+(.*)$")
-ADDEND = re.compile(r"[-+]0x[0-9a-f]+$")
-LOCAL_NUMBER = re.compile(r"(\.LC|\.)\d+$")
+
+def without_local_number(symbol: str) -> str:
+    """Return a symbol with no number at its end after ".LC" or ".", such as ".LC" for ".LC12"."""
+    stripped = symbol.rstrip("0123456789")
+    return stripped if stripped != symbol and stripped.endswith(LOCAL_MARKS) else symbol
 
 
 def strip_arguments(symbol: str) -> str:
@@ -232,16 +228,15 @@ def strip_arguments(symbol: str) -> str:
     return symbol
 
 
-def relocation_target(text: str) -> str:
-    """Return the symbol that a relocation names, without its addend and its parameter list.
+def relocation_target(symbol: str) -> str:
+    """Return the symbol that a relocation names, without its parameter list.
 
     Args:
-        text: The text after the relocation type, such as `memmove-0x4`
+        symbol: The name of the symbol of the relocation, with no addend, such as `memmove`
 
     Returns:
         The symbol, such as `memmove` or `foundation::core::detail::report_fatal_`
     """
-    symbol = ADDEND.sub("", text.strip())
     if symbol.endswith(COLD_SUFFIX):
         return strip_arguments(symbol[: -len(COLD_SUFFIX)]) + COLD_SUFFIX
     return strip_arguments(symbol)
@@ -305,7 +300,7 @@ class Instruction:
             if symbol == cold_section or symbol.endswith(COLD_SUFFIX):
                 symbol = "<cold>"
             elif symbol.startswith("."):
-                symbol = LOCAL_NUMBER.sub(r"\1", symbol)
+                symbol = without_local_number(symbol)
             symbol = f" -> {symbol}"
         kept = [prefix for prefix in self.prefixes if prefix in KEPT_PREFIXES]
         return " ".join([*kept, self.mnemonic, self.operands]).strip() + symbol
@@ -416,69 +411,42 @@ def function_name(symbol: str) -> tuple[str, bool]:
     return name, is_cold
 
 
-def parse_disassembly(text: str) -> dict[str, Code]:
-    """Read the output of `objdump -drC --no-show-raw-insn -M intel`.
+def codes_of(functions: Sequence[objdump.Function]) -> dict[str, Code]:
+    """Return the code of each function of a disassembly, with its hot part and its cold part.
 
-    O(n) in the lines of the output.
+    O(n) in the instructions of the disassembly.
 
     Args:
-        text: The output
+        functions: The functions that assay.readers.objdump gives
 
     Returns:
         The code of each function, by its name without the unnamed namespace and without its parameters
     """
-    functions: dict[str, Code] = {}
-    section = ""
-    part: Part | None = None
-    for line in text.splitlines():
-        match = SECTION_LINE.match(line)
-        if match:
-            section = match.group(1)
-            part = None
-            continue
-        match = HEAD_LINE.match(line)
-        if match:
-            name, is_cold = function_name(match.group(1))
-            code = functions.setdefault(name, Code(name))
-            part = Part(section, match.group(1))
-            if is_cold:
-                code.cold = part
-            else:
-                code.hot = part
-            continue
-        if part is None:
-            continue
-        match = RELOCATION_LINE.match(line)
-        if match:
-            if part.instructions:
-                part.instructions[-1].relocation = relocation_target(match.group(2))
-                part.instructions[-1].lines.append(line)
-            continue
-        match = INSTRUCTION_LINE.match(line)
-        if not match:
-            continue
-        words = match.group(2).split("#", 1)[0].split()
-        prefixes: list[str] = []
-        while words and words[0] in PREFIXES:
-            prefixes.append(words.pop(0))
-        if not words:
-            words = [prefixes.pop()] if prefixes else ["?"]
-        operands = " ".join(words[1:]).split(" <", 1)[0]
-        part.instructions.append(Instruction(int(match.group(1), 16), tuple(prefixes), words[0], operands, [line]))
-    return functions
+    codes: dict[str, Code] = {}
+    for function in functions:
+        name, is_cold = function_name(function.name)
+        code = codes.setdefault(name, Code(name))
+        part = Part(function.section, function.name, [
+            Instruction(item.offset, item.prefixes, item.mnemonic, item.operands, list(item.lines),
+                        None if item.relocation is None else relocation_target(item.relocation.name))
+            for item in function.instructions])
+        if is_cold:
+            code.cold = part
+        else:
+            code.hot = part
+    return codes
 
 
 def disassemble(obj: Path) -> dict[str, Code]:
     """Disassemble one object.
 
     Raises:
-        CannotRun: If objdump fails
+        CannotRun: If objdump or c++filt fails
     """
-    result = proc.run(proc.Command(["objdump", "-drC", "--no-show-raw-insn", "-M", "intel", str(obj)],
-                                   timeout_s=proc.TOOL_S))
-    if result.exit != 0:
-        raise CannotRun(f"objdump failed on {obj}: {result.err.strip()}")
-    return parse_disassembly(result.out)
+    try:
+        return codes_of(objdump.functions(obj))
+    except objdump.ObjdumpError as problem:
+        raise CannotRun(str(problem)) from None
 
 
 # ── The judgment of one probe ───────────────────────────────────────────────
@@ -834,7 +802,7 @@ def self_test_shapes() -> int:
     failures = 0
     for title, probe, family_body, raw_body, cold, expected in cases:
         text = synthetic("probe", family_body, cold) + synthetic("probe_raw", raw_body)
-        findings, shown = shape_findings(parse_disassembly(text), (probe,))
+        findings, shown = shape_findings(codes_of(objdump.parse(text, title)), (probe,))
         messages = [found.message for found in findings]
         is_right = all(any(part in message for message in messages) for part in expected)
         if not expected:
@@ -969,14 +937,11 @@ def main(argv: list[str]) -> int:
         return 3
     if args.build_dir is None or args.probe_object is None or not args.base_objects:
         parser.error("give --build-dir, --probe-object and --base-objects")
-    if shutil.which("objdump") is None:
-        print(f"{CHECK}: objdump is missing", file=sys.stderr)
-        return 2
     inputs = Inputs(Path(os.path.abspath(args.build_dir)), Path(os.path.abspath(args.probe_object)),
                     tuple(Path(os.path.abspath(obj)) for obj in args.base_objects), tuple(args.fixed_flags.split()))
     try:
         return run_self_test(inputs) if args.self_test else run_check(inputs)
-    except CannotRun as error:
+    except (CannotRun, objdump.ObjdumpError) as error:
         print(f"{CHECK}: the check cannot run: {error}", file=sys.stderr)
         return 2
     except tsast.KitMissing as error:

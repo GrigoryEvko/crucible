@@ -31,9 +31,15 @@ A CATCH IS NOT A VIOLATION
     __cxa_end_catch behind.  The module does not read those two symbols.
     Only a throw is a violation.
 
+THE READ
+    assay.readers.elf reads each member of the artifact: its symbols and its
+    relocations.  An undefined reference is a strong or a weak undefined
+    symbol (assay.readers.elf, THE SYMBOLS).  A weak reference to a throw or
+    to a downcast then counts too.
+
 WHERE A THROW STANDS
-    The module reads the relocations of the artifact (objdump -r), and each
-    one names the section that holds it.  The tree compiles with
+    The module reads the relocations of the artifact, and each one names the
+    section that holds it.  The tree compiles with
     -ffunction-sections, so that section names the function that throws.  A
     local function that no code or data section of its own object
     references is dead: no other object can name a local symbol, and
@@ -75,7 +81,7 @@ Usage
     guard check --rule no-throw-no-rtti --self-test     plant a throw and a downcast, and check each verdict
 
 Exit 0 when each artifact holds the two properties, 1 on a violation, a stale row or a malformed row, 2 on a usage
-error, an artifact that the tools cannot read or a failed self-test, 3 when no named artifact exists.
+error, an artifact that the ELF reader cannot read or a failed self-test, 3 when no named artifact exists.
 """
 
 from __future__ import annotations
@@ -92,6 +98,7 @@ from assay.core import ledger as rule_ledger
 from assay.core import proc
 from assay.core import rows as rows_grammar
 from assay.core.registry import Policy
+from assay.readers import elf
 
 RULE = "no-throw-no-rtti"
 THROW_SYMBOLS = ("__cxa_throw", "__cxa_rethrow")
@@ -99,13 +106,12 @@ DOWNCAST_SYMBOLS = ("__dynamic_cast", "__cxa_bad_cast")
 # The typeinfo of std::bad_alloc and of std::bad_array_new_length (AN ALLOCATION THAT FAILS).
 ALLOCATION_FAILURES = ("_ZTISt9bad_alloc", "_ZTISt20bad_array_new_length")
 FUNCTION_PREFIXES = (".text.unlikely.", ".text.hot.", ".text.startup.", ".text.exit.", ".text.")
+# The prefixes of the sections that hold no function: the debug information and the unwind tables.  The module does
+# not read their relocations.
+UNREAD_SECTIONS = (".debug", ".eh_frame")
 ROW_KINDS = ("throw", "vtable")
 BUILD_PREFIX = "@build/"
 NOT_RUNNABLE = 3
-
-
-class ReadError(Exception):
-    """A tool cannot read an artifact, so the module cannot decide."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,105 +186,57 @@ def read_ledger(file: Path | None = None) -> tuple[rule_ledger.Ledger, str]:
 # ── The artifact ───────────────────────────────────────────────────────────
 
 
-def listing(*command: str) -> list[str]:
-    """Return the lines of the output of a tool that reads an artifact.
+def member_references(member: elf.Member, wanted: Sequence[str]) -> list[tuple[bool, str, str, str]]:
+    """Return each reference of one member to a wanted symbol, as WHERE A THROW STANDS tells.
+
+    Each item has four parts: True when the function is live, the symbol, the
+    typeinfo that a throw throws or "-", and the function or the section that
+    holds the reference.  Complexity: linear in the relocations and the
+    symbols of the member.
 
     Raises:
-        ReadError: If the tool fails or prints nothing
+        elf.ElfError: If a table of the member is not fully in the file
     """
-    done = proc.run(proc.Command(command, timeout_s=proc.TOOL_S))
-    if done.exit != 0 or not done.out.strip():
-        raise ReadError(f"{command[0]} cannot read {command[-1]}: {done.err.strip()}")
-    return done.out.splitlines()
-
-
-def member_of_file_line(line: str, current: str) -> str:
-    """Return the member of an archive that a `File: ARCHIVE(MEMBER)` line of readelf names, or the current one."""
-    if not line.startswith("File: "):
-        return current
-    named = line[len("File: "):]
-    return named[named.rfind("(") + 1:-1] if named.endswith(")") else named
-
-
-def member_of_format_line(line: str) -> str | None:
-    """Return the member that a `MEMBER:   file format ...` line of objdump names, or None for another line."""
-    place = line.find("file format ")
-    if place < 0:
-        return None
-    head = line[:place]
-    name = head.rstrip()
-    if len(name) == len(head) or not name.endswith(":"):
-        return None
-    member = name[:-1]
-    return member if member and not any(character.isspace() for character in member) else None
-
-
-def target_of(value: str) -> str:
-    """Return the symbol of a relocation value, with no +0x or -0x offset."""
-    for mark in ("+0x", "-0x"):
-        if mark in value:
-            return value.rsplit(mark, 1)[0]
-    return value
-
-
-def references(artifact: str, wanted: Sequence[str]) -> list[Reference]:
-    """Return each reference of an artifact to a wanted symbol, as WHERE A THROW STANDS tells.
-
-    objdump prints each section name in full, and readelf cuts a section name
-    at 256 characters, while a mangled name of a template is often longer.
-    Complexity: linear in the relocations and the symbols of the artifact.
-
-    Raises:
-        ReadError: If a tool cannot read the artifact, or c++filt does not demangle each name
-    """
-    local_functions: dict[str, set[str]] = {}
-    member = artifact
-    for line in listing("readelf", "-sW", artifact):
-        member = member_of_file_line(line, member)
-        fields = line.split()
-        if len(fields) >= 8 and fields[3] == "FUNC" and fields[4] == "LOCAL":
-            local_functions.setdefault(member, set()).add(fields[7])
-    referenced: dict[str, set[str]] = {}
-    hits: list[tuple[str, str, str, str]] = []
-    member, section, typeinfo = artifact, "", "-"
-    for line in listing("objdump", "-r", artifact):
-        named = member_of_format_line(line)
-        if named is not None:
-            member = named
-            continue
-        if line.startswith("RELOCATION RECORDS FOR ["):
-            section, typeinfo = line[len("RELOCATION RECORDS FOR ["):].rsplit("]", 1)[0], "-"
-            continue
-        fields = line.split()
-        if len(fields) != 3 or not fields[1].startswith("R_") or section.startswith((".debug", ".eh_frame")):
-            continue
-        target = target_of(fields[2])
-        referenced.setdefault(member, set()).add(target)
+    local_functions = {symbol.name for symbol in member.symbols()
+                       if symbol.is_function and symbol.is_local and symbol.name}
+    referenced: set[str] = set()
+    hits: list[tuple[str, str, str]] = []
+    section_index, typeinfo = -1, "-"
+    for relocation in member.relocations(UNREAD_SECTIONS):
+        if relocation.section_index != section_index:
+            section_index, typeinfo = relocation.section_index, "-"
+        target = relocation.symbol
+        referenced.add(target)
         if target.startswith("_ZTI"):
             typeinfo = target
         if target in wanted:
-            hits.append((target, member, section, typeinfo if target == "__cxa_throw" else "-"))
-    found: list[tuple[bool, str, str, str, str]] = []
-    for symbol, hit_member, hit_section, thrown in hits:
+            hits.append((target, relocation.section, typeinfo if target == "__cxa_throw" else "-"))
+    found: list[tuple[bool, str, str, str]] = []
+    for symbol, hit_section, thrown in hits:
         function = next((hit_section[len(prefix):] for prefix in FUNCTION_PREFIXES if hit_section.startswith(prefix)),
                         "")
-        named_here = referenced.get(hit_member, set())
-        is_dead = (function in local_functions.get(hit_member, set()) and function not in named_here
-                   and hit_section not in named_here)
-        found.append((not is_dead, symbol, hit_member, thrown, function or f"(section {hit_section})"))
-    if not found:
-        return []
-    demangled = proc.run(proc.Command(["c++filt"], timeout_s=proc.QUICK_S,
-                                      stdin="\n".join(entry[4] for entry in found).encode())).out.splitlines()
-    if len(demangled) != len(found):
-        raise ReadError(f"c++filt did not demangle each function name of {artifact}")
-    return [Reference(entry[0], entry[1], entry[2], entry[3], name) for entry, name in zip(found, demangled)]
+        is_dead = function in local_functions and function not in referenced and hit_section not in referenced
+        found.append((not is_dead, symbol, thrown, function or f"(section {hit_section})"))
+    return found
 
 
-def undefined_symbol(lines: Sequence[str], symbol: str) -> bool:
-    """Whether an `nm --undefined-only` listing has an undefined reference to a symbol, with or without one '_'."""
-    return any(len(fields) >= 2 and fields[-2] == "U" and fields[-1] in (symbol, f"_{symbol}")
-               for fields in (line.split() for line in lines))
+def references(members: Sequence[elf.Member], wanted: Sequence[str]) -> list[Reference]:
+    """Return each reference of the members of an artifact to a wanted symbol, with the name of its function.
+
+    One run of c++filt gives the names.  Complexity: linear in the
+    relocations and the symbols of the artifact.
+
+    Raises:
+        elf.ElfError: If a table of a member cannot be read, or c++filt does not give the names
+    """
+    found = [(member.name, *item) for member in members for item in member_references(member, wanted)]
+    names = elf.demangle([entry[4] for entry in found])
+    return [Reference(entry[1], entry[2], entry[0], entry[3], name) for entry, name in zip(found, names, strict=True)]
+
+
+def has_undefined(undefined: set[str], symbol: str) -> bool:
+    """Return True when the undefined names of an artifact hold a symbol, with or without one '_'."""
+    return symbol in undefined or f"_{symbol}" in undefined
 
 
 def scan_artifact(artifact: str, run: Run) -> tuple[int, list[str]]:
@@ -291,23 +249,21 @@ def scan_artifact(artifact: str, run: Run) -> tuple[int, list[str]]:
         return 2, [f"check-no-throw-no-rtti: {artifact} does not exist"]
     name = Path(artifact).name
     run.scanned.add(name)
-    # An empty read is not a pass: a failed nm, or an archive with no symbols,
-    # gives nothing to match, the shape of a guard that cannot fail.
-    undefined_read = proc.run(proc.Command(["nm", "--undefined-only", "--no-demangle", artifact],
-                                           timeout_s=proc.TOOL_S))
-    if undefined_read.exit != 0:
-        return 2, [f"check-no-throw-no-rtti: nm cannot read the undefined symbols of {artifact} (exit "
-                   f"{undefined_read.exit}), so nothing was checked: {undefined_read.err.strip()}"]
-    undefined_text = undefined_read.out.rstrip("\n")
-    if not undefined_text:
-        return 2, [f"check-no-throw-no-rtti: nm read no undefined symbols from {artifact}, so nothing was checked. "
-                   f"An artifact that calls nothing is not an artifact that throws nothing."]
-    undefined = undefined_text.split("\n")
-    run.symbols_read += len(undefined)
+    # An empty read is not a pass: a read that fails, or an archive with no
+    # symbols, gives nothing to match, the shape of a guard that cannot fail.
     try:
-        throws = references(artifact, THROW_SYMBOLS)
-    except ReadError:
-        return 2, [f"check-no-throw-no-rtti: the relocations of {artifact} cannot be read, so nothing was checked."]
+        members = elf.members(artifact)
+        named = sum(1 for member in members for symbol in member.symbols() if symbol.name)
+        undefined = {symbol.name for member in members for symbol in member.symbols() if symbol.is_undefined}
+        throws = references(members, THROW_SYMBOLS)
+        defined = [(member.name, symbol.name) for member in members for symbol in member.symbols() if symbol.is_defined]
+        defined_names = elf.demangle([symbol for _, symbol in defined])
+    except (OSError, elf.ElfError) as problem:
+        return 2, [f"check-no-throw-no-rtti: the ELF reader cannot read {artifact}, so nothing was checked: {problem}"]
+    if not named:
+        return 2, [f"check-no-throw-no-rtti: the ELF reader read no symbol from {artifact}, so nothing was checked.  "
+                   f"An artifact with no symbol gives nothing to match, and it is not an artifact that throws nothing."]
+    run.symbols_read += named
     status = 0
     messages: list[str] = []
     attributed = {reference.symbol for reference in throws}
@@ -325,26 +281,22 @@ def scan_artifact(artifact: str, run: Run) -> tuple[int, list[str]]:
                         f"cannot remove takes a row, with its reason, in {run.ledger_shown}.")
         status = 1
     for symbol in THROW_SYMBOLS:
-        if undefined_symbol(undefined, symbol) and symbol not in attributed:
+        if has_undefined(undefined, symbol) and symbol not in attributed:
             messages.append(f"VIOLATION: {artifact} references {symbol}, and no relocation names the function that "
                             f"holds it.")
             status = 1
     for symbol in DOWNCAST_SYMBOLS:
-        if undefined_symbol(undefined, symbol):
+        if has_undefined(undefined, symbol):
             messages.append(f"VIOLATION: {artifact} references {symbol}.\n  A runtime downcast reached the artifact.  "
                             f"This tree has no virtual and no dynamic_cast: dispatch is a kind enum plus static_cast.")
             status = 1
     # A defined typeinfo or vtable: a polymorphic type was compiled in.  A
     # reference to the typeinfo or the vtable of a library class is not a
-    # definition, and the object that defines it holds the violation.
-    defined_read = proc.run(proc.Command(["nm", "--defined-only", "--demangle", artifact], timeout_s=proc.TOOL_S))
-    if defined_read.exit != 0:
-        messages.append(f"check-no-throw-no-rtti: nm cannot read the defined symbols of {artifact} (exit "
-                        f"{defined_read.exit}), so no typeinfo or vtable was checked: {defined_read.err.strip()}")
-        return 2, messages
-    defined = defined_read.out.splitlines()
-    unadmitted = [line for line in defined if (" typeinfo for " in line or " vtable for " in line)
-                  and run.admitting_row(name, "vtable", line.partition(" for ")[2]) is None]
+    # definition, and the object that defines it holds the violation.  A
+    # space before the name keeps the test of the line of nm --demangle.
+    unadmitted = [f"{member}: {text}" for (member, _), text in zip(defined, defined_names, strict=True)
+                  if (" typeinfo for " in f" {text}" or " vtable for " in f" {text}")
+                  and run.admitting_row(name, "vtable", text.partition(" for ")[2]) is None]
     if unadmitted:
         messages.append(f"VIOLATION: {artifact} defines typeinfo or a vtable:\n" + "\n".join(unadmitted)
                         + "\n  A polymorphic type was compiled in.  The code guide says dispatch is a kind enum plus "
@@ -427,6 +379,10 @@ FIXTURES = {
     # A function that throws std::bad_alloc and an int: the int throw stays a violation.
     "mixed": "#include <new>\nint mixed_entry(int input) {\n    if (input < 0) { throw std::bad_alloc(); }\n"
              "    if (input > 9) { throw input; }\n    return input;\n}\n",
+    # A weak reference to the downcast of the C++ runtime: a weak undefined symbol, and not a strong one.
+    "weak_downcast": 'extern "C" [[gnu::weak]] void* __dynamic_cast(const void*, const void*, const void*, long);\n'
+                     "void* weak_downcast_entry(const void* pointer) noexcept {\n"
+                     "    return __dynamic_cast ? __dynamic_cast(pointer, nullptr, nullptr, 0) : nullptr;\n}\n",
 }
 PLANTED_ROWS = ("@build/libadmitted.a | throw | admit | admitted_throwing_entry | a planted throw\n"
                 "@build/libpolymorphic.a | vtable | admit | Admitted | a planted class\n")
@@ -439,30 +395,17 @@ def planted_ledger(work: Path, rows: str) -> tuple[rule_ledger.Ledger, str]:
     return read_ledger(file)
 
 
-def _self_test_failed_defined_read(work: Path, expect: Callable[[str, bool], None]) -> None:
-    """Check that a failed nm read of the defined symbols gives 2, and does not pass the class check.
+def _self_test_damaged_table(work: Path, expect: Callable[[str, bool], None]) -> None:
+    """Check that an artifact with a symbol table that the ELF reader cannot read gives 2.
 
-    A planted nm on PATH fails for --defined-only and runs the real nm for each other read.  The archive of the
-    fixture `polymorphic` defines a vtable, and a run with no row reports it, so a pass hides the failure.
+    The symbol table of the planted member links to a section that its section header table does not hold.
     """
-    real_nm = shutil.which("nm")
-    if real_nm is None:
-        expect("nm is on PATH for the case of a failed read", False)
-        return
-    stub_dir = work / "failing-nm"
-    stub_dir.mkdir()
-    stub = stub_dir / "nm"
-    stub.write_text(f'#!/bin/sh\nif [ "$1" = --defined-only ]; then echo "nm: planted failure" >&2; exit 1; fi\n'
-                    f'exec "{real_nm}" "$@"\n', encoding="utf-8")
-    stub.chmod(0o755)
-    saved_path = os.environ.get("PATH", "")
-    os.environ["PATH"] = f"{stub_dir}{os.pathsep}{saved_path}"
-    try:
-        status, messages = scan_artifact(str(work / "libpolymorphic.a"), Run((), "planted"))
-    finally:
-        os.environ["PATH"] = saved_path
-    expect("a failed nm read of the defined symbols gives 2 and names the failure",
-           status == 2 and any("cannot read the defined symbols" in message for message in messages))
+    broken = elf.make_file([elf.Planted(".symtab", bytes(elf.SYMBOL_SIZE), elf.SHT_SYMTAB, link=99,
+                                        entry_size=elf.SYMBOL_SIZE)])
+    (work / "libbroken.a").write_bytes(elf.make_archive([("broken.o", broken)]))
+    status, messages = scan_artifact(str(work / "libbroken.a"), Run((), "planted"))
+    expect("an artifact whose symbol table cannot be read gives 2 and names the failure",
+           status == 2 and any("cannot read" in message for message in messages))
 
 
 def self_test() -> int:
@@ -523,11 +466,13 @@ def self_test() -> int:
         status, text = scanned("mixed")
         expect("an int throw beside a throw of std::bad_alloc is reported",
                status == 1 and "__cxa_throw in mixed.o, in mixed_entry(int)." in text)
+        status, text = scanned("weak_downcast")
+        expect("a weak reference to the downcast is reported", status == 1 and "__dynamic_cast" in text)
 
         (work / "libjunk.a").write_text("not an archive\n", encoding="utf-8")
-        expect("an artifact that nm cannot read gives 2, also beside an artifact with a violation",
+        expect("an artifact that the ELF reader cannot read gives 2, also beside an artifact with a violation",
                check([str(work / "libthrows.a"), str(work / "libjunk.a")], ledger, shown) == 2)
-        _self_test_failed_defined_read(work, expect)
+        _self_test_damaged_table(work, expect)
 
         ledger, shown = planted_ledger(work, PLANTED_ROWS + "@build/libclean.a | throw | admit | no_such_function | "
                                                             "a row that matches nothing\n")
