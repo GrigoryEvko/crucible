@@ -1,0 +1,10 @@
+#pragma once
+int pre = 1;
+struct Names { int post = 0; };
+inline int asserted(int value) {
+    contract_assert(value > 0);
+    CRUCIBLE_PRE(value > 0);
+    return value;
+}
+// int in_a_comment(int value) pre(value > 0);
+inline const char* text = "int in_a_text(int value) pre(value > 0);";

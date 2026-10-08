@@ -1,0 +1,7 @@
+#pragma once
+inline int* make(int* body) {
+    int* node = body;
+    [[assume(node != nullptr)]];
+    CRUCIBLE_POST(node, node != nullptr);
+    return node;
+}

@@ -1,0 +1,16 @@
+#pragma once
+
+#include <vector>
+
+namespace crucible::planted {
+
+inline int grow(int count) {
+    auto grow_values = [](auto&& extra) {
+        std::vector<int> values;
+        values.reserve(4);
+        return extra;
+    };
+    return grow_values(count);
+}
+
+}  // namespace crucible::planted

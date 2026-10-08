@@ -1,0 +1,4 @@
+#pragma once
+template <class T> struct Box {
+    struct Inner { int nested(int value) pre(value > 0); };
+};

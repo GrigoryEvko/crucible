@@ -1,0 +1,4 @@
+#pragma once
+
+int fork(void);
+int run(void) { return fork(); }

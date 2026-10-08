@@ -1,0 +1,9 @@
+#include <crucible/Planted.h>
+
+namespace crucible::planted {
+
+void Items::grow() {
+    items_.reserve(4);
+}
+
+}  // namespace crucible::planted

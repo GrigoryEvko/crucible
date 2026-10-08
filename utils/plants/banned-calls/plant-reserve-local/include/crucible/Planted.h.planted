@@ -1,0 +1,13 @@
+#pragma once
+
+#include <vector>
+
+namespace crucible::planted {
+
+inline int grow() {
+    std::vector<int> values;
+    values.reserve(4);
+    return 0;
+}
+
+}  // namespace crucible::planted

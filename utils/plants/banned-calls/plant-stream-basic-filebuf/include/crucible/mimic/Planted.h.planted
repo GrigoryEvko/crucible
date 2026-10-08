@@ -1,0 +1,9 @@
+#pragma once
+
+namespace crucible::mimic::planted {
+
+struct Holder {
+    std::basic_filebuf<wchar_t> buffer;
+};
+
+}  // namespace crucible::mimic::planted

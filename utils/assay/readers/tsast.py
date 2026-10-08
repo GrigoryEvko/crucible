@@ -1684,8 +1684,8 @@ def namespace_aliases(tree: Tree) -> list[NamespaceAlias]:
     return found
 
 
-def _encloses(outer: Node, inner: Node) -> bool:
-    """Say whether a node's span contains another node of the same tree."""
+def encloses(outer: Node, inner: Node) -> bool:
+    """Return True when the span of a node holds a node of the same tree."""
     return outer.tree is inner.tree and outer.start <= inner.start and inner.end <= outer.end
 
 
@@ -1723,9 +1723,9 @@ def resolve_namespace(
             if alias.name != current[0]:
                 continue
             if at is not None:
-                if not _encloses(alias.scope, at) or alias.node.end > at.start:
+                if not encloses(alias.scope, at) or alias.node.end > at.start:
                     continue
-                if best is not None and not _encloses(best.scope, alias.scope):
+                if best is not None and not encloses(best.scope, alias.scope):
                     continue
             best = alias
         if best is None:
@@ -2910,7 +2910,7 @@ def lookup_site_of_parts(
     levels = scope_levels(node) if levels is None else levels
     in_force: list[tuple[tuple[str, ...], bool, tuple[str, ...]]] = []
     for using in usings:
-        if not _encloses(using.scope, node) or using.node.end > node.start or using.kind == "enum":
+        if not encloses(using.scope, node) or using.node.end > node.start or using.kind == "enum":
             continue
         target = resolve_namespace(using.target, using.node, aliases, is_global=using.is_global)
         if using.is_directive:

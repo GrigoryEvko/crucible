@@ -1,0 +1,9 @@
+#pragma once
+
+namespace crucible::planted {
+
+inline char const* view(long const* value) {
+    return reinterpret_cast<char const*>(value);
+}
+
+}  // namespace crucible::planted

@@ -1,0 +1,6 @@
+namespace crucible::planted {
+
+// CRUCIBLE_PRE(::foundation::decide::positive(value)); contract_assert(value > 0);
+char const* checked_text = "CRUCIBLE_POST(value, value > 0)";
+
+}  // namespace crucible::planted

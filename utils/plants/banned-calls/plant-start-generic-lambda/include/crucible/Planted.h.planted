@@ -1,0 +1,12 @@
+#pragma once
+
+#include <unistd.h>
+
+namespace crucible::planted {
+
+inline int start(int value) {
+    auto start_child = [](auto&& extra) { return ::fork() + extra; };
+    return start_child(value);
+}
+
+}  // namespace crucible::planted

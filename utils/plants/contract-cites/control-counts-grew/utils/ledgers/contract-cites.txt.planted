@@ -1,0 +1,14 @@
+# planted: each count of the tree is above its baseline
+format 1
+rule contract-cites
+- | - | 0 | contract_assert | -
+- | - | 0 | crucible_post | -
+- | - | 0 | crucible_post_fast | -
+- | - | 0 | crucible_post_msg | -
+- | - | 0 | crucible_pre | -
+- | - | 0 | crucible_pre_fast | -
+- | - | 0 | crucible_pre_msg | -
+- | - | 0 | decide_total | -
+- | - | 0 | total_contract_cites | -
+- | - | 0 | total_post_cites | -
+- | - | 0 | total_pre_cites | -

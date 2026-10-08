@@ -1,0 +1,30 @@
+#pragma once
+inline int other(int x, int y) {
+    CRUCIBLE_PRE(x > 0);
+    [[assume(y < 4)]];
+    return x + y;
+}
+inline int member(const Box* p) {
+    CRUCIBLE_PRE(p != nullptr);
+    [[assume(p->size > 0)]];
+    return p->size;
+}
+inline int nested(int n) {
+    CRUCIBLE_PRE(n > 0);
+    auto inner = [](int n) { [[assume(n > 0)]]; return n; };
+    return inner(n);
+}
+inline int constant(int n) {
+    CRUCIBLE_PRE(CAPACITY > 0 && n > 0);
+    [[assume(CAPACITY > 0)]];
+    return n;
+}
+inline int alone(unsigned slot) {
+    [[assume(slot < CAPACITY)]];
+    return static_cast<int>(slot);
+}
+inline int vendor(int n) {
+    CRUCIBLE_PRE(n > 0);
+    [[msvc::assume(n > 0)]];
+    return n;
+}

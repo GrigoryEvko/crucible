@@ -4,13 +4,11 @@ format 1
 rule import-closure
 utils/assay/core/report.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/audit_decide_cite_ratio.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/guard/legacy/audit_pre_callsite_count.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_admitted_audit.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_build_order.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_cache_size.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_clang_format.py | module-import | 1 | concurrent.futures | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_compile_cost.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
-utils/assay/guard/legacy/check_contract_form.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_contract_semantic.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_core_shapes.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row
 utils/assay/guard/legacy/check_ct_disassembly.py | module-import | 1 | argparse | An import of today.  The change that moves the import into the function that uses it removes the row

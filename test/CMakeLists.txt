@@ -488,21 +488,6 @@ add_test(NAME escape_doors
 set_tests_properties(escape_doors escape_doors_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
-# The contract cites of include/ and src/, counted from the parse tree.
-# --check compares the live counts with the committed baseline.  A counter
-# that rises passes, and a counter that falls fails the test.  After a
-# deliberate removal, write the baseline again with
-# `python3 utils/bin/guard check --rule contract-cites --baseline` and give
-# the reason in the commit.  The baseline is utils/ledgers/contract-cites.txt.
-add_test(NAME contract_cite_regression_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule contract-cites
-          --self-test)
-add_test(NAME contract_cite_regression
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule contract-cites
-          --check)
-set_tests_properties(contract_cite_regression contract_cite_regression_self_test PROPERTIES
-  LABELS "ci_guard;ast"
-  SKIP_RETURN_CODE 3)
 # The cite-ratio policy of the decide:: catalog.  Each procedure needs at
 # least 2 production cites within 180 days of the day its definition
 # entered Decide.h.  The day comes from the parse of every committed
@@ -528,19 +513,6 @@ add_test(NAME refined_pre_subsumption_self_test
 add_test(NAME refined_pre_subsumption
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule refined-pre-subsumption)
 set_tests_properties(refined_pre_subsumption refined_pre_subsumption_self_test PROPERTIES
-  LABELS "ci_guard;ast"
-  SKIP_RETURN_CODE 3)
-# The contract rule: no file has a P2900 pre or post specifier.  The
-# quarantine plugin rejects one in each compile.  This guard reads the parse
-# tree of each tracked C++ file, so it also reads each preprocessor arm and
-# each file that no build compiles.  utils/ledgers/contract-form.txt admits
-# the files whose subject is the specifier.
-add_test(NAME contract_form_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule contract-form --self-test)
-add_test(NAME contract_form
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule contract-form
-          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
-set_tests_properties(contract_form contract_form_self_test PROPERTIES
   LABELS "ci_guard;ast"
   SKIP_RETURN_CODE 3)
 # GCC 16 does not keep the P2900 specifier of a template in a header unit or
@@ -613,22 +585,6 @@ add_test(NAME process_wide_state
 set_tests_properties(process_wide_state process_wide_state_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
-# The reinterpret_cast ban (CLAUDE.md §III), the std::vector::reserve ban
-# (CLAUDE.md §IV), the file-stream ban of the fixy-only band-3 directories
-# and the process-spawn ban of production code (CLAUDE.md §IX), read from
-# the parse tree of the pinned kit.  The content-keyed rows of
-# utils/ledgers/banned-calls.txt admit the sites of each ban, with the kind of
-# the ban in each row.  The self-test plants each shape
-# that a line regex misses or misreads.  Exit 3 when the kit is absent
-# reports a skip.
-add_test(NAME banned_calls_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule banned-calls
-          --self-test)
-add_test(NAME banned_calls
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule banned-calls)
-set_tests_properties(banned_calls banned_calls_self_test PROPERTIES
-    LABELS "ci_guard"
-    SKIP_RETURN_CODE 3)
 # The hardening grant set.  utils/assay/guard/legacy/check_syscall_grant_coverage.py
 # derives the system calls that the hardening apply path issues from the
 # parse tree, and fails when that set and the declared

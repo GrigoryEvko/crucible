@@ -1,0 +1,9 @@
+namespace crucible::planted {
+
+long const* view(char const* bytes) {
+    return reinterpret_cast
+        <long const*>
+        (bytes);
+}
+
+}  // namespace crucible::planted

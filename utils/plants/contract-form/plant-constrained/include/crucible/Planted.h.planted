@@ -1,0 +1,2 @@
+#pragma once
+template <class T> requires (sizeof(T) > 0) int constrained(T value) pre(value > 0);

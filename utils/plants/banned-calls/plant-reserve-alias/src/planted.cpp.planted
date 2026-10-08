@@ -1,0 +1,13 @@
+#include <vector>
+
+namespace crucible::planted {
+
+using Values = std::vector<int>;
+typedef Values ValueList;
+
+void grow() {
+    ValueList values;
+    values.reserve(4);
+}
+
+}  // namespace crucible::planted

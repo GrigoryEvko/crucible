@@ -1,0 +1,7 @@
+#include <fstream>
+
+namespace crucible::canopy::planted {
+
+int anchor() { return 0; }
+
+}  // namespace crucible::canopy::planted

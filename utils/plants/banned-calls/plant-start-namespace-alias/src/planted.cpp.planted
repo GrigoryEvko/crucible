@@ -1,0 +1,9 @@
+#include <cstdlib>
+
+namespace stdlib = std;
+
+namespace crucible::planted {
+
+int run() { return stdlib::system("true"); }
+
+}  // namespace crucible::planted

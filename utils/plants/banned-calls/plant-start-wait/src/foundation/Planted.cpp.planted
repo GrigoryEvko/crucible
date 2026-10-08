@@ -1,0 +1,10 @@
+#include <sys/wait.h>
+
+namespace foundation::planted {
+
+bool reap(int child) {
+    int status = 0;
+    return ::waitpid(child, &status, 0) == child;
+}
+
+}  // namespace foundation::planted

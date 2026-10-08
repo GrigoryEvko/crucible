@@ -48,7 +48,7 @@ from collections.abc import Iterator
 from pathlib import PurePosixPath
 
 from assay.core import report as check_report
-from assay.guard.engines.tsast.runner import TsastContext
+from assay.guard.engines.tsast.runner import TsastContext, has_directory
 from assay.readers import tsast
 
 RULE = "row-contains"
@@ -151,8 +151,7 @@ def token_checks(tokens: list[tsast.Token]) -> Iterator[tuple[int, str]]:
 
 def is_excluded(path: str) -> bool:
     """Return whether a file holds the definitions of the lifts, or is in a directory out of the scope."""
-    return path.startswith(EXCLUDED_PREFIXES) or any(
-        part in EXCLUDED_DIRECTORIES for part in PurePosixPath(path).parts[:-1])
+    return path.startswith(EXCLUDED_PREFIXES) or has_directory(path, EXCLUDED_DIRECTORIES)
 
 
 def findings(context: TsastContext) -> list[check_report.Finding]:

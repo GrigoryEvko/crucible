@@ -1,0 +1,6 @@
+#pragma once
+inline int message(const Recipe& recipe) {
+    CRUCIBLE_PRE_MSG(!recipe.hash.is_sentinel(), "a recipe hash is never the sentinel");
+    [[assume(recipe.hash.raw() != ~0ull)]];
+    return 0;
+}

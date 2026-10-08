@@ -1,0 +1,8 @@
+#pragma once
+
+namespace fixy::planted {
+
+inline long storage = 0;
+inline unsigned long address = reinterpret_cast<unsigned long>(&storage);
+
+}  // namespace fixy::planted

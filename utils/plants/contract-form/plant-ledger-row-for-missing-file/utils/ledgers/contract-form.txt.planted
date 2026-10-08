@@ -1,0 +1,4 @@
+# planted
+format 1
+rule contract-form
+test/neg/Gone.cpp | specifier | admit | - | a row for a file that does not exist

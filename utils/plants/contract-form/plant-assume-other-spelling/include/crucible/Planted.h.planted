@@ -1,0 +1,6 @@
+#pragma once
+inline int* alloc_nonzero(unsigned n) {
+    CRUCIBLE_PRE(::foundation::decide::positive(n));
+    [[assume(n > 0)]];
+    return nullptr;
+}

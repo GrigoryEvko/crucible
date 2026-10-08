@@ -1,0 +1,12 @@
+#pragma once
+
+namespace crucible::observe::planted {
+
+using namespace std;
+
+inline void write() {
+    ofstream out("planted");
+    out << 1;
+}
+
+}  // namespace crucible::observe::planted

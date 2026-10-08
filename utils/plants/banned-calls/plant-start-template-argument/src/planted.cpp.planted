@@ -1,0 +1,10 @@
+#include <unistd.h>
+
+namespace crucible::planted {
+
+template <auto Start>
+int call() { return Start(); }
+
+int run() { return call<fork>(); }
+
+}  // namespace crucible::planted

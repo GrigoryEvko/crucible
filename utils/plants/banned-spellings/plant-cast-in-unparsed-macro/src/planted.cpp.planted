@@ -1,0 +1,1 @@
+#define CRUCIBLE_PLANTED_VIEW(type, pointer) reinterpret_cast<type##_word*>(pointer)

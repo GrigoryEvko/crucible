@@ -1,0 +1,2 @@
+#pragma once
+inline int defined(int value) post(result : result > 0) { return value; }

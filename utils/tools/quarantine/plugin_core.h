@@ -62,8 +62,9 @@
 //     The rule cannot see a specifier in a preprocessor arm that the unit does
 //     not compile, or on a member function of a local class in a template when
 //     the class declares the function and does not define it.
-//     utils/assay/guard/legacy/check_contract_form.py reads the parse tree of each
-//     tracked file, and it finds these specifiers too.
+//     The rule contract-form (utils/assay/guard/engines/tsast/contract_form.py)
+//     reads the parse tree of each tracked file, and it finds these specifiers
+//     too.
 //
 // THE OPT-OUT REGION
 //     CRUCIBLE_I_KNOW_WHAT_IM_DOING("CLASS: reason") of foundation/Quarantine.h

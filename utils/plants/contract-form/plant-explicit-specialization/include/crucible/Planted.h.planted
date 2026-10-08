@@ -1,0 +1,3 @@
+#pragma once
+template <class T> int template_declared(T value);
+template <> int template_declared<long>(long value) pre(value > 0);

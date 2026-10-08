@@ -1,0 +1,7 @@
+namespace foundation::planted {
+
+unsigned char const* bytes_of(double const* value) {
+    return reinterpret_cast<unsigned char const*>(value);
+}
+
+}  // namespace foundation::planted

@@ -1,0 +1,3 @@
+int checked(int value) pre(value > 0);
+
+int checked(int value) { return value; }

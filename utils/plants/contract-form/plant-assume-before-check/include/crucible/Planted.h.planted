@@ -1,0 +1,6 @@
+#pragma once
+inline int lookup(Hash hash) {
+    [[assume(hash.raw() != 0)]];
+    CRUCIBLE_PRE(::foundation::decide::is_non_zero(hash));
+    return 0;
+}

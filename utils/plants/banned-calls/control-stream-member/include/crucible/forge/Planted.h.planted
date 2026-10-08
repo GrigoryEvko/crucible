@@ -1,0 +1,11 @@
+#pragma once
+
+namespace crucible::forge::planted {
+
+struct Files {
+    int ifstream = 0;
+};
+
+inline int read(Files const& files) { return files.ifstream; }
+
+}  // namespace crucible::forge::planted

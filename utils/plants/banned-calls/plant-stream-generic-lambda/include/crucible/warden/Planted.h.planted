@@ -1,0 +1,13 @@
+#pragma once
+
+namespace crucible::warden::planted {
+
+inline bool open(int value) {
+    auto open_stream = [](auto&& extra) {
+        std::ifstream stream("planted");
+        return stream.is_open() && extra != 0;
+    };
+    return open_stream(value);
+}
+
+}  // namespace crucible::warden::planted

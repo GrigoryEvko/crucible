@@ -1,0 +1,10 @@
+#pragma once
+
+namespace crucible::cntp::planted {
+
+inline bool is_open() {
+    std::ifstream stream("planted");
+    return stream.is_open();
+}
+
+}  // namespace crucible::cntp::planted

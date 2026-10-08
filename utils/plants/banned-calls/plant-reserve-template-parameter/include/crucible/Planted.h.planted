@@ -1,0 +1,10 @@
+#pragma once
+
+namespace crucible::planted {
+
+template <typename Values>
+void grow(Values& values) {
+    values.reserve(4);
+}
+
+}  // namespace crucible::planted

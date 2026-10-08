@@ -72,6 +72,11 @@ SCOPE_BASE = "base"
 SCOPE_WORDS = (SCOPE_TRACKED, SCOPE_BASE)
 
 
+def has_directory(path: str, names: frozenset[str]) -> bool:
+    """Return True when the name of a directory of the path of a file is one of the names."""
+    return any(part in names for part in PurePosixPath(path).parts[:-1])
+
+
 class TsastContext:
     """The tree that the tsast rules of one call read: its root, its build directory, its C++ files and their trees.
 

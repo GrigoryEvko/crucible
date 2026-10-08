@@ -1,0 +1,6 @@
+int admitted(int value) pre(value > 0);
+int checked(int n) {
+    CRUCIBLE_PRE(n > 0);
+    [[assume(n > 0)]];
+    return n;
+}

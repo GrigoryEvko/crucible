@@ -12,8 +12,8 @@ THE CONTEXT
     The run and the witness of this module also serve the other engines.  A
     context of each engine (RuleContext) gives its root, its build directory
     and findings_of(rule), the findings of one rule on its tree.  A rule of
-    the policy max or baseline judges its ledger itself, so the run gives its
-    findings unchanged.
+    the policy max or baseline judges its ledger itself.  The run then gives
+    its findings unchanged.
 
 THE WITNESS
     The plants of a rule are in utils/plants/RULE/.  Each directory whose name
@@ -21,7 +21,9 @@ THE WITNESS
     minimum of one error there.  Each directory whose name starts with
     "control-" is a tree that the rule must accept: the rule gives no error
     there.  The witness copies each one to a throwaway repository, puts each
-    file in its index, and runs the rule there with no ledger.  A module can
+    file in its index, and runs the rule there.  It judges the findings
+    against the ledger of the copy (judged()).  A plant can then hold a ledger
+    of the rule.  A copy with no ledger has the empty ledger.  A module can
     give plant_context(plant, scratch) when a plant needs more than a copy,
     for example a git history or a configured CMake project.  An engine gives
     the copy of its own context to witness().
@@ -281,7 +283,8 @@ def witness(rule: rule_registry.Rule, root: Path = REPO_ROOT,
         with tempfile.TemporaryDirectory(prefix=f"witness-{rule.id}-") as scratch:
             try:
                 context = prepare(plant, Path(scratch) / "tree")
-                errors = [item for item in context.findings_of(rule) if item.level == "error"]
+                errors = [item for item in judged(rule, context.root, context.findings_of(rule))
+                          if item.level == "error"]
             except NotApplicable as reason:
                 failures.append(f"{plant.name}: the rule does not apply to it: {reason}")
                 continue

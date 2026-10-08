@@ -1,0 +1,6 @@
+#pragma once
+inline int gnu(int n) {
+    CRUCIBLE_PRE_FAST(n < 8);
+    [[gnu::assume(n < 8)]];
+    return n;
+}

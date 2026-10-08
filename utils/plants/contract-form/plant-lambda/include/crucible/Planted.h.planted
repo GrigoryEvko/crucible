@@ -1,0 +1,2 @@
+#pragma once
+inline auto lambda = [](int value) pre(value > 0) { return value; };

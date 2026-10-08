@@ -1,0 +1,10 @@
+#include <unistd.h>
+
+namespace crucible::planted {
+
+bool has_start() {
+    auto start = &::execv;
+    return start != nullptr;
+}
+
+}  // namespace crucible::planted

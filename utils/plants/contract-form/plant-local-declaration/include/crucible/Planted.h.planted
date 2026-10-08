@@ -1,0 +1,4 @@
+#pragma once
+inline void local_declarations() {
+    int local(int value) pre(value > 0);
+}

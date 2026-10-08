@@ -1,0 +1,4 @@
+#pragma once
+inline void local_class() {
+    struct Local { int member(int value) pre(value > 0); };
+}

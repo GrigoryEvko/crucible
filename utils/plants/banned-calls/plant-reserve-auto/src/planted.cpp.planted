@@ -1,0 +1,12 @@
+#include <vector>
+
+namespace crucible::planted {
+
+std::vector<int> make();
+
+void grow() {
+    auto values = make();
+    values.reserve(4);
+}
+
+}  // namespace crucible::planted

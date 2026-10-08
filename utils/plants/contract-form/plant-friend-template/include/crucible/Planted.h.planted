@@ -1,0 +1,4 @@
+#pragma once
+template <class T> struct Box {
+    template <class U> friend int befriended(Box, U value) pre(value > 0);
+};

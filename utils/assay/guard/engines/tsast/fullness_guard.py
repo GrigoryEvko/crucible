@@ -66,7 +66,7 @@ from collections.abc import Iterator
 from pathlib import PurePosixPath
 
 from assay.core import report as check_report
-from assay.guard.engines.tsast.runner import TsastContext
+from assay.guard.engines.tsast.runner import TsastContext, has_directory
 from assay.readers import tsast
 
 RULE = "fullness-guard"
@@ -308,11 +308,6 @@ def token_sites(tokens: list[tsast.Token]) -> Iterator[tuple[int, str]]:
             yield tokens[index + 1].row, f"{joined(first, index - 1)} == {joined(index + 1, last)}"
 
 
-def is_excluded(path: str) -> bool:
-    """Return whether a file is in a directory of vendored code."""
-    return any(part in EXCLUDED_DIRECTORIES for part in PurePosixPath(path).parts[:-1])
-
-
 def test_of(node: tsast.Node) -> str:
     """Return `COUNTER == BOUND` of a fullness test, with the operands in the order of the source."""
     return " == ".join(tsast.spelled(operand) for operand in (node.child_by_field("left"), node.child_by_field("right"))
@@ -328,7 +323,9 @@ def finding(path: str, line: int, holder: str, test: str) -> check_report.Findin
 def findings(context: TsastContext) -> list[check_report.Finding]:
     """Give an error for each `==` fullness test of the scope (THE RULE)."""
     found: list[check_report.Finding] = []
-    trees = list(context.trees([path for path in context.scope_files() if not is_excluded(path)]))
+    trees = list(
+        context.trees([path for path in context.scope_files() if not has_directory(path, EXCLUDED_DIRECTORIES)])
+    )
     for tree in trees:
         path = tree.path.as_posix()
         found += [finding(path, node.line, holder_of(node), test_of(node)) for node in fullness_nodes(tree.root)]

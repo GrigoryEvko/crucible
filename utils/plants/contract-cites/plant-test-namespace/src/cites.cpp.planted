@@ -1,0 +1,10 @@
+namespace crucible::planted::self_test {
+
+int checked(int value) {
+    CRUCIBLE_PRE(::foundation::decide::positive(value));
+    contract_assert(value > 0);
+    CRUCIBLE_POST(value, value > 0);
+    return value;
+}
+
+}  // namespace crucible::planted::self_test

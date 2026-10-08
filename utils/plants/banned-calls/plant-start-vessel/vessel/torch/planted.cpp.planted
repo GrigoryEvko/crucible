@@ -1,0 +1,7 @@
+#include <cstdio>
+
+namespace crucible::vessel::planted {
+
+bool start() { return ::popen("true", "r") != nullptr; }
+
+}  // namespace crucible::vessel::planted

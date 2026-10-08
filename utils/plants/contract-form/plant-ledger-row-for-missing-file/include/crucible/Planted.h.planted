@@ -1,0 +1,5 @@
+#pragma once
+inline int checked(int value) {
+    CRUCIBLE_PRE(value > 0);
+    return value;
+}

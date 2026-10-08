@@ -1,0 +1,15 @@
+#pragma once
+
+#include <vector>
+
+namespace fixy::planted {
+
+class Items {
+public:
+    void grow() { this->items_.reserve(8); }
+
+private:
+    std::vector<int> items_;
+};
+
+}  // namespace fixy::planted

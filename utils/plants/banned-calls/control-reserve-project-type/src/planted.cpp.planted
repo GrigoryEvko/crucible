@@ -1,0 +1,12 @@
+namespace crucible::planted {
+
+struct Pool {
+    void reserve(int count);
+};
+
+void grow() {
+    Pool pool;
+    pool.reserve(4);
+}
+
+}  // namespace crucible::planted

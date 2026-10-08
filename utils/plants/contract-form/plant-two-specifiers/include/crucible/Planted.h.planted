@@ -1,0 +1,2 @@
+#pragma once
+int two(int value) pre(value > 0) post(result : result > 0);

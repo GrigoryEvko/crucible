@@ -1,0 +1,7 @@
+#include <unistd.h>
+
+namespace crucible::planted {
+
+int start() { return ::fork(); }
+
+}  // namespace crucible::planted

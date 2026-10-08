@@ -1,0 +1,9 @@
+#pragma once
+
+#include <cstdlib>
+
+namespace crucible::planted {
+
+inline int run() { return std::system("true"); }
+
+}  // namespace crucible::planted

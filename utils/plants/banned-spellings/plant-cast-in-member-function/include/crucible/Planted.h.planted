@@ -1,0 +1,13 @@
+#pragma once
+
+namespace crucible::planted {
+
+class Buffer {
+public:
+    unsigned char* bytes() { return reinterpret_cast<unsigned char*>(&words_[0]); }
+
+private:
+    unsigned long words_[4]{};
+};
+
+}  // namespace crucible::planted

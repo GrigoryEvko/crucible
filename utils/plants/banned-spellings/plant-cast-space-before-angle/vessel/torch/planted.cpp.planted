@@ -1,0 +1,7 @@
+namespace crucible::vessel::planted {
+
+int* view(long* value) {
+    return reinterpret_cast <int*>(value);
+}
+
+}  // namespace crucible::vessel::planted

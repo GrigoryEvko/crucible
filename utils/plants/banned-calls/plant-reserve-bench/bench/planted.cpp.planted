@@ -1,0 +1,10 @@
+#include <vector>
+
+namespace crucible::planted {
+
+void setup() {
+    std::vector<int> reports;
+    reports.reserve(12);
+}
+
+}  // namespace crucible::planted

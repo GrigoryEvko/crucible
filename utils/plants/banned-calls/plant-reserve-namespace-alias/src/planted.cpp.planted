@@ -1,0 +1,12 @@
+#include <vector>
+
+namespace stdlib = std;
+
+namespace crucible::planted {
+
+void grow() {
+    stdlib::vector<int> values;
+    values.reserve(4);
+}
+
+}  // namespace crucible::planted

@@ -14,15 +14,12 @@ utils/assay/guard/engines/tsast/decide_catalog.py | no-test | 1 | assay.guard.en
 utils/assay/guard/engines/tsast/runner.py | no-test | 1 | assay.guard.engines.tsast.runner | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/explain.py | no-test | 1 | assay.guard.explain | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/audit_decide_cite_ratio.py | no-test | 1 | assay.guard.legacy.audit_decide_cite_ratio | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/guard/legacy/audit_pre_callsite_count.py | no-test | 1 | assay.guard.legacy.audit_pre_callsite_count | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_admitted_audit.py | no-test | 1 | assay.guard.legacy.check_admitted_audit | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/guard/legacy/check_banned_calls.py | no-test | 1 | assay.guard.legacy.check_banned_calls | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_brand_drain.py | no-test | 1 | assay.guard.legacy.check_brand_drain | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_build_order.py | no-test | 1 | assay.guard.legacy.check_build_order | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_cache_size.py | no-test | 1 | assay.guard.legacy.check_cache_size | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_clang_format.py | no-test | 1 | assay.guard.legacy.check_clang_format | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_compile_cost.py | no-test | 1 | assay.guard.legacy.check_compile_cost | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/guard/legacy/check_contract_form.py | no-test | 1 | assay.guard.legacy.check_contract_form | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_contract_semantic.py | no-test | 1 | assay.guard.legacy.check_contract_semantic | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_core_shapes.py | no-test | 1 | assay.guard.legacy.check_core_shapes | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/guard/legacy/check_ct_disassembly.py | no-test | 1 | assay.guard.legacy.check_ct_disassembly | A module of today with no test module.  The change that writes the test module removes the row

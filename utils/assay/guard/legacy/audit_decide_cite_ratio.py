@@ -5,8 +5,8 @@ citing site lands first, and the named predicate lands second.  So each
 procedure needs at least MIN_CITES production cites within GRACE_DAYS of the
 day its definition entered Decide.h.
 
-The catalog and the cite count of each procedure come from the sibling audit,
-the rule contract-cites (`guard check --rule contract-cites`), which
+The catalog and the cite count of each procedure come from the module of the
+rule contract-cites (utils/assay/guard/engines/tsast/contract_cites.py), which
 reads both from the parse tree.  The day of each definition comes from the
 history of Decide.h, under each path the file has had.  The audit parses
 every committed version with the pinned tree-sitter kit and takes the first
@@ -48,8 +48,8 @@ from pathlib import Path
 from assay.core import git
 from assay.core import proc
 from assay.core.paths import GUARD, REPO_ROOT
-from assay.guard.engines.tsast import decide_catalog
-from assay.guard.legacy import audit_pre_callsite_count
+from assay.guard.engines.meta.runner import NotApplicable
+from assay.guard.engines.tsast import contract_cites, decide_catalog
 from assay.readers import tsast
 
 MIN_CITES = 2
@@ -62,10 +62,9 @@ class Unjudgeable(Exception):
 
 def cite_counts(root: Path) -> dict[str, int]:
     """The catalog of the tree at root, with the production cite count of each procedure."""
-    sibling = audit_pre_callsite_count
     try:
-        return sibling.scan(root).procedures
-    except (sibling.AuditError, tsast.ParseError) as error:
+        return contract_cites.scan(root).procedures
+    except (contract_cites.AuditError, tsast.ParseError, NotApplicable) as error:
         raise Unjudgeable(f"the cite count of {root} failed: {error}") from error
 
 

@@ -1,0 +1,6 @@
+#pragma once
+inline int* alloc(int n) {
+    CRUCIBLE_PRE(n > 0);
+    [[assume(n > 0)]];
+    return nullptr;
+}

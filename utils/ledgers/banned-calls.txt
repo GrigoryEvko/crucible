@@ -1,18 +1,15 @@
 # The ledger of the rule banned-calls: the sites of a banned call that wait for their migration.
-# A row PATH | KIND | admit | TEXT | REASON admits the site of the ban KIND in the file PATH whose line,
-# trimmed, is TEXT.  KIND is reinterpret (a reinterpret_cast), reserve (a reserve call on a std
-# container), file-stream (a C++ file stream in a fixy-only directory) or spawn (a raw process spawn).
-# The key is the content of the line and not its number, so an edit above the site does not move it.
-# A row that matches no live site fails the rule, so the ledger shrinks with each migration.  In new
-# code, a marker comment on the line, such as `// NO-RESERVE-OK: <reason>`, exempts that one line.
-# `python3 utils/bin/guard explain banned-calls` tells the rule.  No command writes this file: write
-# each row by hand, with its reason.
+# A row PATH | KIND | admit | HOLDER: SITE | REASON admits each site of that shape of the kind KIND in that holder of
+# the file PATH.  KIND is vector-reserve (a reserve call on a std container), file-stream (a C++ file stream in a
+# runtime directory) or process-start (a raw process start).  The key has no line, so an edit above the site does not
+# move it.  A row that admits no site fails the rule, so the ledger shrinks with each migration.  `python3
+# utils/bin/guard explain banned-calls` tells the rule, and `python3 utils/bin/guard write --rule banned-calls`
+# writes this file.
 #
-# The rule reads bench/ for the reserve ban.  The two reserve rows are std::vector calls in the setup
-# of one bench, outside the measured region.  The quarantine plugin also reports each call, and the
-# quarantine ledger holds it.
+# The two reserve rows are std::vector calls in the setup of one bench, outside the measured region.  The quarantine
+# plugin also reports each call, and the quarantine ledger holds it.
 format 1
 rule banned-calls
-bench/bench_mpsc_contention.cpp | reserve | admit | producers.reserve(producer_count); | A std::vector call of reserve in the setup of one bench, outside the measured region.  The row goes in the change that moves the call to std::inplace_vector<T, N> or to vector<T>(N) with a fill by index
-bench/bench_mpsc_contention.cpp | reserve | admit | reports.reserve(12); | A std::vector call of reserve in the setup of one bench, outside the measured region.  The row goes in the change that moves the call to std::inplace_vector<T, N> or to vector<T>(N) with a fill by index
-vessel/torch/aten_op_table.h | spawn | admit | X(1139, clone) \\ | `clone` is the name of the operation aten::clone in the X-macro argument list that utils/assay/loop/derive/aten_ops.py generates.  The one X macro, in vessel/torch/register.cpp, expands it to the type ::at::_ops::clone and never to a call
+bench/bench_mpsc_contention.cpp | vector-reserve | admit | (anonymous namespace)::run_cycle(std::size_t): producers.reserve | A std::vector call of reserve in the setup of one bench, outside the measured region.  The row goes in the change that moves the call to std::inplace_vector<T, N> or to vector<T>(N) with a fill by index
+bench/bench_mpsc_contention.cpp | vector-reserve | admit | main(int,char**): reports.reserve | A std::vector call of reserve in the setup of one bench, outside the measured region.  The row goes in the change that moves the call to std::inplace_vector<T, N> or to vector<T>(N) with a fill by index
+vessel/torch/aten_op_table.h | process-start | admit | #define CRUCIBLE_ATEN_OP_LIST_8: clone | `clone` is the name of the operation aten::clone in the X-macro argument list that utils/assay/loop/derive/aten_ops.py generates.  The one X macro, in vessel/torch/register.cpp, expands it to the type ::at::_ops::clone and never to a call

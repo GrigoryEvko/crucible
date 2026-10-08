@@ -1,0 +1,2 @@
+#pragma once
+template <class T> void template_local() { struct Local { int member(int value) pre(value > 0); }; }

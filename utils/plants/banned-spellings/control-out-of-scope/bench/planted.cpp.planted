@@ -1,0 +1,7 @@
+namespace crucible::planted {
+
+char const* bench_view(long const* value) {
+    return reinterpret_cast<char const*>(value);
+}
+
+}  // namespace crucible::planted

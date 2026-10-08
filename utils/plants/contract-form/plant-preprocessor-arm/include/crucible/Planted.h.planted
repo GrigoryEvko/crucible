@@ -1,0 +1,6 @@
+#pragma once
+#if defined(__aarch64__)
+int aarch64_only(int value);
+#else
+int other_arm(int value) post(result : result > 0);
+#endif

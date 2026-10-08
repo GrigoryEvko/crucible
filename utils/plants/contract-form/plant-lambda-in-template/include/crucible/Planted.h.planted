@@ -1,0 +1,2 @@
+#pragma once
+template <class T> int with_lambda(T value) { return [](int other) pre(other > 0) { return other; }(value); }

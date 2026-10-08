@@ -1,0 +1,14 @@
+# planted: the CRUCIBLE_PRE_FAST went, so crucible_pre_fast fell from 1 to 0
+format 1
+rule contract-cites
+- | - | 1 | contract_assert | -
+- | - | 1 | crucible_post | -
+- | - | 0 | crucible_post_fast | -
+- | - | 0 | crucible_post_msg | -
+- | - | 1 | crucible_pre | -
+- | - | 1 | crucible_pre_fast | -
+- | - | 0 | crucible_pre_msg | -
+- | - | 1 | decide_total | -
+- | - | 3 | total_contract_cites | -
+- | - | 1 | total_post_cites | -
+- | - | 1 | total_pre_cites | -

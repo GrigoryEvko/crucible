@@ -1,0 +1,4 @@
+#pragma once
+template <class T> struct Box {
+    template <class U> int member_template(U value) pre(value > 0);
+};

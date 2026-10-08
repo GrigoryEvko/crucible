@@ -1,0 +1,12 @@
+#define CRUCIBLE_PLANTED_CHECK(value) CRUCIBLE_PRE(::foundation::decide::positive(value))
+
+namespace crucible::planted {
+
+int checked(int value) {
+    CRUCIBLE_PLANTED_CHECK(value);
+    contract_assert(value > 0);
+    CRUCIBLE_POST(value, value > 0);
+    return value;
+}
+
+}  // namespace crucible::planted

@@ -1,0 +1,3 @@
+#pragma once
+
+#define CRUCIBLE_PLANTED_VIEW(pointer) reinterpret_cast<char const*>(pointer)

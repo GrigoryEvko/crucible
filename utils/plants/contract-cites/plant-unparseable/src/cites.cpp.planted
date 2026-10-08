@@ -1,0 +1,8 @@
+namespace crucible::planted {
+
+int checked(int value) {
+    CRUCIBLE_PRE(::foundation::decide::positive(value));
+    return value;
+}
+
+}  // namespace crucible::planted

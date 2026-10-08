@@ -1,0 +1,12 @@
+#pragma once
+
+namespace crucible::planted {
+
+inline int checked(int value) {
+    CRUCIBLE_PRE(::foundation::decide::positive(value));
+    contract_assert(value > 0);
+    CRUCIBLE_POST(value, value > 0);
+    return value;
+}
+
+}  // namespace crucible::planted

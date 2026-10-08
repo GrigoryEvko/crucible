@@ -1,0 +1,4 @@
+#pragma once
+#if 0
+int never_compiled(int value) pre(value > 0);
+#endif

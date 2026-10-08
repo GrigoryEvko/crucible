@@ -1,0 +1,4 @@
+# planted
+format 1
+rule contract-form
+test/neg/Admitted.cpp | specifier | admit | - | the subject of the fixture is the specifier

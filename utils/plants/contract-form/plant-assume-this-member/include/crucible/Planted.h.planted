@@ -1,0 +1,9 @@
+#pragma once
+struct Arena {
+    int size() {
+        CRUCIBLE_PRE(this->size_ > 0);
+        [[assume(size_ > 0)]];
+        return size_;
+    }
+    int size_ = 1;
+};

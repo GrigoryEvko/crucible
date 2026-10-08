@@ -1,0 +1,7 @@
+#pragma once
+
+namespace foundation::decide {
+
+constexpr bool positive(int value) noexcept { return value > 0; }
+
+}  // namespace foundation::decide

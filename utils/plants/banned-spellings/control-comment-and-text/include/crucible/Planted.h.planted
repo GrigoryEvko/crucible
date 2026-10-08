@@ -1,0 +1,15 @@
+#pragma once
+
+#include <bit>
+
+namespace crucible::planted {
+
+// A comment that names reinterpret_cast<char*>(p) is no cast.
+inline char const* text = "reinterpret_cast<char*>(p)";
+inline char const* raw = R"(reinterpret_cast<long*>(q))";
+
+inline unsigned long bits_of(double value) {
+    return std::bit_cast<unsigned long>(value);
+}
+
+}  // namespace crucible::planted

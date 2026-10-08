@@ -1,0 +1,2 @@
+#pragma once
+void broken() { call(1) { } }

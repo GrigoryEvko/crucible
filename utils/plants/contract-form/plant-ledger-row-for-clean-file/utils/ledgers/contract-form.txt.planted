@@ -1,0 +1,4 @@
+# planted
+format 1
+rule contract-form
+include/crucible/Planted.h | specifier | admit | - | a row for a file that holds no specifier

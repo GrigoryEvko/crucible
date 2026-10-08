@@ -1,15 +1,14 @@
 # The ledger of the rule contract-cites: the baseline of the contract cites that include/ and src/ use.
-# `python3 utils/bin/guard explain contract-cites` tells the rule.
-# utils/assay/guard/legacy/audit_pre_callsite_count.py reads this file, and its --baseline writes it.
+# `python3 utils/bin/guard explain contract-cites` tells the rule, and its module
+# utils/assay/guard/engines/tsast/contract_cites.py reads this file.
 #
 # A counter row:    - | - | COUNT | COUNTER | -
-#   The count of one counter of `guard check --rule contract-cites --json` at the last --baseline.
-#   --check fails when a guarded counter falls below its row.
+#   The count of one counter at the last write.  The rule fails when a counter falls below its row.
 # A procedure row:  - | decide_per_procedure | COUNT | PROCEDURE | -
-#   The cites of one decide:: procedure, for a reader.  --check does not read it.
+#   The cites of one decide:: procedure, for a reader.  The rule does not judge it.
 #
 # When a fall of a counter is correct, write the baseline again and give the reason in the commit:
-#   python3 utils/bin/guard check --rule contract-cites --baseline
+#   python3 utils/bin/guard write --rule contract-cites
 format 1
 rule contract-cites
 - | - | 22 | contract_assert | -

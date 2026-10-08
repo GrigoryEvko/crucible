@@ -1,0 +1,15 @@
+#pragma once
+
+#include <vector>
+
+namespace crucible::planted {
+
+class Items {
+public:
+    void grow();
+
+private:
+    std::vector<int> items_;
+};
+
+}  // namespace crucible::planted

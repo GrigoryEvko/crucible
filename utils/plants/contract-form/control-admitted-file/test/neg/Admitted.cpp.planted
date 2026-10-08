@@ -1,0 +1,2 @@
+int admitted(int value) pre(value > 0);
+int twice(int value) pre(value > 0) post(result : result > 0);

@@ -1,0 +1,4 @@
+#pragma once
+template <class T> struct Box {
+    friend int hidden(Box, int value) pre(value > 0) { return value; }
+};

@@ -1,0 +1,17 @@
+namespace crucible::planted {
+
+struct Process {
+    int fork = 0;
+};
+
+namespace other {
+int fork();
+}
+
+enum class Step { fork, system };
+
+int run(Process const& process) {
+    return process.fork + other::fork() + static_cast<int>(Step::system);
+}
+
+}  // namespace crucible::planted

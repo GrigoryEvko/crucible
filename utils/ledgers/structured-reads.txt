@@ -7,7 +7,6 @@ utils/assay/core/report.py | regex-call | 3 | <module> | A read of today.  The c
 utils/assay/core/target.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_admitted_audit.py | regex-call | 3 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_admitted_audit.py | regex-call | 1 | form_findings | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/guard/legacy/check_banned_calls.py | regex-call | 1 | _marked | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_build_order.py | format-read | 8 | build.ninja | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_compile_cost.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
 utils/assay/guard/legacy/check_core_shapes.py | regex-call | 6 | <module> | A read of today.  The change that moves the read into its reader lowers the count
