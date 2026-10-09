@@ -14,22 +14,27 @@ THE LAYERS
       1. imports         each name that the artifact gets from a different
                          file.  For a static library, each import of the rule
                          artifact-symbols, with its owner, its family and its
-                         mark.  For a linked file, each library of
+                         mark.  Then the line of the source of the first
+                         record of the library code that names the import
+                         (assay.readers.sections, THE SYMBOLS OF THE LIBRARY
+                         CODE).  For a linked file, each library of
                          DT_NEEDED, and each undefined dynamic symbol as
                          SYMBOL@VERSION with the file of its version
       2. library code    the exclusive bytes of each class of the rule
                          library-bytes, and the largest library bodies
       3. compiler calls  each import that GCC adds to the code itself
-                         (COMPILER_MADE), and each import of a function of
-                         the support library of GCC.  A linked file also
-                         gives each member of the support library that its
-                         link takes
+                         (COMPILER_MADE of artifact_symbols), and each
+                         import of a function of the support library of
+                         GCC.  A linked file also gives each member of the
+                         support library that its link takes
       4. link facts      each fact of the rule artifact-links of a linked
                          file.  A static library has no link, and the layer
                          gives its members and its COMDAT groups
       5. source facts    the count of each rule and kind of the findings of the
                          quarantine plugin in the objects of the artifact.
-                         Then the entities with the most findings
+                         Then the count of each kind of the records of the
+                         library code, and the entities with the most
+                         findings
     --limit N gives the maximum lines of each long list.  The default is
     LIMIT.
 
@@ -53,9 +58,6 @@ from assay.readers import dwarf, elf, linkmap, sections
 
 LIMIT = 20
 INDENT = "     "
-# The imports that GCC adds to the code itself.  They are the calls of COMPILER_CALLS and the guard of a static local.
-# They are also the registration of a destructor, the personality of the unwinder and the handle of the shared object.
-COMPILER_MADE = artifact_symbols.COMPILER_CALLS | artifact_symbols.ALLOWLIST | artifact_symbols.CRT_ALLOWLIST
 DYNAMIC = "dynamic"
 # The problems that end the read of one layer, and the other layers stay (THE LAYERS).
 LAYER_PROBLEMS = (
@@ -86,7 +88,10 @@ class Artifact:
 
 @dataclass(frozen=True, slots=True)
 class Name:
-    """One import of the artifact: its name, its entity, the file that gives it, its family, its mark and its users."""
+    """One import of the artifact: its name, its entity, the file that gives it, its family, its mark and its users.
+
+    `place` is FILE:LINE of the first record of the library code that names the import, or empty.
+    """
 
     symbol: str
     entity: str
@@ -94,6 +99,7 @@ class Name:
     family: str
     mark: str
     users: str
+    place: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +154,14 @@ def library_imports(context: runner.ElfContext, artifact: Artifact) -> Imports:
     if archive not in artifacts:
         artifacts = {**artifacts, archive: artifact_symbols.read_artifact(artifact.path)}
     providers = artifact_symbols.providers_of(context.compiler(), context.link_libraries())
+    places: dict[str, str] = {}
+    try:
+        for member in elf.members(artifact.path):
+            section = sections.of_member(member)
+            for symbol, record in (section.symbols() if section is not None else {}).items():
+                places.setdefault(symbol, f"{record.file}:{record.line}")
+    except (OSError, elf.ElfError, sections.SectionError) as problem:
+        raise runner.BuildError(f"the records of {artifact.path} cannot be read: {problem}") from None
     names = [
         Name(
             item.symbol,
@@ -156,6 +170,7 @@ def library_imports(context: runner.ElfContext, artifact: Artifact) -> Imports:
             item.provider.family if item.provider is not None else "-",
             item.mark or "-",
             build_census.names_text(item.members),
+            places.get(item.symbol, ""),
         )
         for item in artifact_symbols.imports_of(artifacts, {archive: artifact.name}, providers)
     ]
@@ -215,7 +230,9 @@ def import_layer(imports: Imports, limit: int) -> list[str]:
     if imports.needed:
         lines.append(f"{INDENT}needed: {', '.join(imports.needed)}")
     rows = [
-        f"{item.entity}  {item.owner}  {item.family}  {item.mark}" + (f"  ({item.users})" if item.users else "")
+        f"{item.entity}  {item.owner}  {item.family}  {item.mark}"
+        + (f"  ({item.users})" if item.users else "")
+        + (f"  at {item.place}" if item.place else "")
         for item in sorted(imports.names, key=lambda item: (item.family, item.entity))
     ]
     return lines + limited(rows, limit)
@@ -249,7 +266,11 @@ def call_layer(context: runner.ElfContext, artifact: Artifact, imports: Imports 
     if imports is None:
         return ["3. compiler calls: cannot be read, because the imports cannot be read"]
     calls = sorted(
-        {item.symbol for item in imports.names if item.symbol in COMPILER_MADE or item.symbol in imports.support}
+        {
+            item.symbol
+            for item in imports.names
+            if item.symbol in artifact_symbols.COMPILER_MADE or item.symbol in imports.support
+        }
     )
     lines = [f"3. compiler calls: {', '.join(calls) or 'none'}"]
     if not artifact.is_library and context.build_dir is not None:
@@ -306,11 +327,14 @@ def source_layer(context: runner.ElfContext, artifact: Artifact, limit: int) -> 
         found = [sections.read(path) for path in sorted(context.objects_of(artifact.name))]
     items = [finding for section in found if section is not None for finding in section.findings]
     regions = sum(1 for item in items if item.kind == sections.REGION)
-    real = [item for item in items if item.kind not in sections.NOT_FINDINGS]
+    records = Counter(item.kind for item in items if item.rule == sections.LIBRARY_RULE)
+    real = [item for item in items if item.kind not in sections.NOT_FINDINGS and item.rule != sections.LIBRARY_RULE]
     kinds = Counter(f"{item.rule} {item.kind}" for item in real)
     entities = Counter(f"{item.rule} {item.kind} {item.entity or '-'}" for item in real)
     lines = [f"5. source facts: {len(real)} findings of the plugin in {len(found)} objects, {regions} opt-out regions"]
     lines += limited([f"{count}  {name}" for name, count in kinds.most_common()], limit)
+    shown = ", ".join(f"{kind} {count}" for kind, count in sorted(records.items())) or "none"
+    lines.append(f"{INDENT}records of the library code: {shown}")
     lines.append(f"{INDENT}the entities with the most findings:")
     return lines + limited([f"{count}  {name}" for name, count in entities.most_common()], limit)
 

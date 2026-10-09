@@ -20,6 +20,14 @@ THE OBJECT
     the package names the section, and the rule structured-reads refuses each
     other read of it.
 
+THE SYMBOLS OF THE LIBRARY CODE
+    The rule library-code has four kinds of records (the head comment of
+    body.cpp, THE RECORDS).  The entity of a record call, reference or symbol
+    starts with the assembler name of a symbol that an instruction of the
+    unit names.  Section.symbols() gives these names with the first record of
+    each.  The rule artifact-symbols explains the imports of a member of an
+    archive with them, and `guard bom` gives each import a line of the source.
+
 THE REPORT OF A PARSE BUILD
     A build of a configuration that only parses has no object (`loop syntax`,
     CRUCIBLE_SYNTAX_ONLY).  Its driver gives each unit the report directory
@@ -58,6 +66,10 @@ SYNTAX_DIRECTORY = Path("quarantine") / "syntax"
 STAMP_FILE = "stamp"
 # The suffix of a report file of the plugin argument out=.
 REPORT_SUFFIX = ".quarantine"
+# The rule of the records of the library code, and the kinds of its records that name a symbol first (THE SYMBOLS OF
+# THE LIBRARY CODE).
+LIBRARY_RULE = "library-code"
+SYMBOL_RECORDS = frozenset({"call", "reference", "symbol"})
 
 
 class SectionError(ValueError):
@@ -86,6 +98,17 @@ class Section:
 
     stamp: str
     findings: tuple[Finding, ...]
+
+    def symbols(self) -> dict[str, Finding]:
+        """Return the first record call, reference or symbol of the rule library-code of each symbol that one names.
+
+        THE SYMBOLS OF THE LIBRARY CODE gives the records.  Complexity: linear in the findings.
+        """
+        found: dict[str, Finding] = {}
+        for item in self.findings:
+            if item.rule == LIBRARY_RULE and item.kind in SYMBOL_RECORDS and item.entity.strip():
+                found.setdefault(item.entity.split(maxsplit=1)[0], item)
+        return found
 
 
 def parse_line(text: str, where: str) -> Finding:

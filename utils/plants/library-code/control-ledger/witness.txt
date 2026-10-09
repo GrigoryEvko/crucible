@@ -1,0 +1,25 @@
+# The ledger counts each record of the base header, so the module of the rule
+# accepts the build.  The records of the quarantined file and the record
+# symbol are no count.  A compile with no argument library-code=on has no
+# record of the rule.
+compile uses src/uses.cpp rules=utils/rule-table.txt library-code=on
+flag uses -O2
+exit uses pass
+judge uses
+configuration x86_64-debug-asan
+finding uses quarantine raw-pointer-object src/uses.cpp:16:19 | to
+finding uses quarantine raw-pointer-object src/uses.cpp:16:35 | from
+finding uses quarantine c-library-call src/uses.cpp:18:34 | rand
+finding uses library-code call include/fixy/Tally.h:11:47 | getenv getenv
+finding uses library-code inlined include/fixy/Tally.h:14:64 | std::exchange
+finding uses library-code reference include/fixy/Tally.h:17:45 | stderr stderr
+finding uses library-code call include/fixy/Tally.h:17:45 | fflush fflush
+finding uses library-code symbol include/fixy/Tally.h:21:90 | memcpy
+finding uses library-code call src/uses.cpp:18:34 | rand rand
+
+compile plain src/uses.cpp rules=utils/rule-table.txt
+flag plain -O2
+exit plain pass
+finding plain quarantine raw-pointer-object src/uses.cpp:16:19 | to
+finding plain quarantine raw-pointer-object src/uses.cpp:16:35 | from
+finding plain quarantine c-library-call src/uses.cpp:18:34 | rand

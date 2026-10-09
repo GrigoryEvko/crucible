@@ -1,0 +1,5 @@
+# The member random.cpp of the library foundation holds the section of the quarantine plugin, and the member
+# base.cpp holds none.  The rule cannot explain the imports of base.cpp, and the archive is an error.
+library planted_tree externs.cpp
+library foundation base.cpp random.cpp
+library crucible random.cpp

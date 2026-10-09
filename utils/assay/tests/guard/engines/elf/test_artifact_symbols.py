@@ -7,6 +7,8 @@ THE CASES
         name
       * The shapes of the ledger
       * The throws, the downcasts and the classes of planted archives
+      * The hidden imports of planted objects.  Each unit plants the section
+        of the quarantine plugin with an asm statement (HIDDEN_FIXTURES)
       * The run and the write of the rule on a planted build directory.
     The compile cases use the compiler that ASSAY_TEST_CXX names.  The
     registration of the test in test/CMakeLists.txt gives the compiler of the
@@ -38,7 +40,7 @@ from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.core import target as build_target
 from assay.guard.engines.elf import artifact_symbols, runner
-from assay.readers import cmake, elf
+from assay.readers import cmake, elf, sections
 from assay.tests.guard.engines.elf.test_runner import quiet
 
 RULE = artifact_symbols.RULE
@@ -51,6 +53,48 @@ OTHER = "planted-other"
 THIRD = "planted-third"
 ROWS_K = "configuration k kind k\nconfiguration k tier t\n"
 ROWS_KM = f"{ROWS_K}configuration m kind m\nconfiguration m tier t\n"
+# The head of an asm statement that plants the section of the quarantine plugin, and its end.  Each record of a unit
+# is one more .ascii line between them.
+SECTION_HEAD = (
+    'asm(".pushsection .crucible.quarantine,\\"e\\",%progbits\\n"\n'
+    '    ".ascii \\"# crucible-guard 2 stamp=planted\\\\n\\"\\n"\n'
+)
+SECTION_END = '    ".popsection\\n");\n'
+# The units of the cases of the hidden imports, each with the symbols of the records of its section.
+HIDDEN_FIXTURES = {
+    # A call with a record of its symbol.
+    "recorded": (("getenv",), '#include <cstdlib>\nconst char* home_entry() { return std::getenv("HOME"); }\n'),
+    # A call with no record.
+    "unrecorded": ((), '#include <cstdlib>\nconst char* home_entry() { return std::getenv("HOME"); }\n'),
+    # A call in a local function that no section names.
+    "dead": (
+        (),
+        (
+            '#include <cstdlib>\n[[gnu::used]] static const char* dead_entry() { return std::getenv("HOME"); }\n'
+            "int live_entry(int value) { return value + 1; }\n"
+        ),
+    ),
+    # A call in a function that a record names, and the record connects to the call.
+    "reached": (
+        ("_Z12helper_entryv",),
+        (
+            '#include <cstdlib>\n[[gnu::noinline]] const char* helper_entry() { return std::getenv("HOME"); }\n'
+            "const char* outer_entry() { return helper_entry(); }\n"
+        ),
+    ),
+    # A typeinfo that only the type table of a catch names, and the calls of the catch with their records.
+    "caught": (
+        ("__cxa_begin_catch", "__cxa_end_catch"),
+        (
+            "#include <exception>\nextern int may_fail(int);\nint caught_entry(int value) noexcept {\n    try {\n"
+            "        return may_fail(value);\n    } catch (const std::exception&) {\n        return -1;\n    }\n}\n"
+        ),
+    ),
+    # A named variable with an initializer that names a library function: a data table of the tree.
+    "table": ((), "#include <cstdlib>\nvoid* home_table[] = {reinterpret_cast<void*>(&std::getenv)};\n"),
+    # A section with no named symbol that names a library function: data that the compiler makes.
+    "anonymous": ((), 'asm(".pushsection .data.rel.ro.planted,\\"a\\"\\n.quad getenv\\n.popsection\\n");\n'),
+}
 # The units of the archives of the cases of the artifact.  Each unit gives one archive libUNIT.a.
 FIXTURES = {
     # An error path that returns and does not throw.
@@ -498,6 +542,52 @@ def artifact_cases(expect: testing.Expect) -> None:
             "a row of one archive does not admit a throw in a different archive",
             errors_of(rule_ledger.compare(rule, stale, other)) != [] and other[0].entity == "throwing_entry(int)",
         )
+
+
+def hidden_cases(expect: testing.Expect) -> None:
+    """Plant the records of the library code in objects, and hold the names that each object hides (THE HIDDEN IMPORTS).
+
+    The undefined name getenv is hidden only when a live section of a function or a named variable names it.  No
+    record of the object then connects to it.
+    """
+    compiler = runner.plant_compiler()
+    expect("ASSAY_TEST_CXX or CRUCIBLE_GCC16_PREFIX names the patched compiler", compiler is not None)
+    if compiler is None:
+        return
+    hidden: dict[str, set[str]] = {}
+    with TemporaryDirectory(prefix="artifact-symbols-hidden-") as scratch_text:
+        scratch = Path(scratch_text)
+        for unit, (symbols, source) in HIDDEN_FIXTURES.items():
+            records = "".join(
+                f'    ".ascii \\"library-code symbol {unit}.cpp:1:1 {name}\\\\n\\"\\n"\n' for name in symbols
+            )
+            (scratch / f"{unit}.cpp").write_text(f"{SECTION_HEAD}{records}{SECTION_END}{source}", encoding="utf-8")
+            compiled(compiler, scratch / f"{unit}.cpp", scratch / f"{unit}.o")
+            (member,) = elf.members(scratch / f"{unit}.o")
+            section = sections.of_member(member)
+            expect(f"the unit {unit} holds the planted section", section is not None)
+            if section is not None:
+                relocations = member.relocations(artifact_symbols.UNREAD_SECTIONS)
+                hidden[unit] = artifact_symbols.hidden_names(member, relocations, section.symbols())
+    is_hidden = {unit: "getenv" in names for unit, names in hidden.items() if unit != "caught"}
+    expect(
+        "a record explains a call, a dead function and data that the compiler makes hide nothing, and a call with no "
+        "record and a data table of the tree hide getenv",
+        is_hidden
+        == {
+            "recorded": False,
+            "unrecorded": True,
+            "dead": False,
+            "reached": False,
+            "table": True,
+            "anonymous": False,
+        },
+    )
+    caught = hidden.get("caught", {"(no unit)"})
+    expect(
+        "the type table of a catch connects to its typeinfo, and the records connect to the calls of the catch",
+        not caught & {"_ZTISt9exception", "__cxa_begin_catch", "__cxa_end_catch"},
+    )
 
 
 # ── The planted build directory ────────────────────────────────────
@@ -970,5 +1060,7 @@ def build_cases(expect: testing.Expect) -> None:
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
     return testing.run(
-        __name__.removeprefix("assay."), argv, (class_cases, provider_cases, ledger_cases, artifact_cases, build_cases)
+        __name__.removeprefix("assay."),
+        argv,
+        (class_cases, provider_cases, ledger_cases, artifact_cases, hidden_cases, build_cases),
     )

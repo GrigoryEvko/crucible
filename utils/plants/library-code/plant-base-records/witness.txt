@@ -1,0 +1,19 @@
+# A base header that calls a library function, inlines a library function
+# and names a library variable gives a record of each kind, at the place in
+# the header.  A call of a builtin gives a record symbol.  The ledger of the
+# plant holds no row, so the module of the rule refuses each count of the
+# base file.  The records of the quarantined file are no count.
+compile uses src/uses.cpp rules=utils/rule-table.txt library-code=on
+flag uses -O2
+exit uses pass
+judge uses
+configuration x86_64-debug-asan
+finding uses quarantine raw-pointer-object src/uses.cpp:16:19 | to
+finding uses quarantine raw-pointer-object src/uses.cpp:16:35 | from
+finding uses quarantine c-library-call src/uses.cpp:18:34 | rand
+finding uses library-code call include/fixy/Tally.h:11:47 | getenv getenv
+finding uses library-code inlined include/fixy/Tally.h:14:64 | std::exchange
+finding uses library-code reference include/fixy/Tally.h:17:45 | stderr stderr
+finding uses library-code call include/fixy/Tally.h:17:45 | fflush fflush
+finding uses library-code symbol include/fixy/Tally.h:21:90 | memcpy
+finding uses library-code call src/uses.cpp:18:34 | rand rand

@@ -26,6 +26,9 @@
 //                          unit and the optimize options of each function
 //         home.cpp         the family home: where a definition or a
 //                          specialization of an entity stands
+//         body.cpp         the family library code: the code of a library in
+//                          each function that the unit compiles, from an RTL
+//                          pass
 //         contract.cpp     the contract rule
 //
 // THE RULE TABLE
@@ -321,6 +324,19 @@
 //                           member of a class of include/
 //     walked-return         a function that uses unchecked and returns a member
 //                           of a class that a walk found
+//     The rule library-code (body.cpp, THE RECORDS) reads the instructions of
+//     each function that the unit compiles.  Each of its lines is a record and
+//     no finding (is_record_kind), and the module of the rule counts the
+//     records of the base files against its ledger.
+//     inlined               a body of a library function that the code of the
+//                           tree inlines, at the call site
+//     call                  a call of a library function by the code of the
+//                           tree, with the symbol and the name
+//     reference             a library variable or the address of a library
+//                           function that the code of the tree names
+//     symbol                each other symbol that the code of the tree can
+//                           import: inside an inlined library body, or one
+//                           that the compiler adds
 //
 // THE SENTINEL
 //     The argument sentinel=PATH names a header of include/, relative to the
@@ -628,6 +644,7 @@ enum class Rule : std::uint8_t {
     ctx_testing_boundary,
     detail_namespace,
     no_unchecked_access,
+    library_code,
 };
 
 // One home row or home-args row of the family home (home.cpp, THE ROWS).  The
@@ -783,6 +800,11 @@ enum class Kind : std::uint8_t {
     member_splice,
     open_static_member,
     walked_return,
+    // The family library code (body.cpp).
+    library_inlined,
+    library_call,
+    library_reference,
+    library_symbol,
 };
 
 inline const char* rule_name(Rule rule) {
@@ -849,6 +871,8 @@ inline const char* rule_name(Rule rule) {
             return "detail-namespace";
         case Rule::no_unchecked_access:
             return "no-unchecked-access";
+        case Rule::library_code:
+            return "library-code";
     }
     return "unknown";
 }
@@ -1056,6 +1080,14 @@ inline const char* kind_name(Kind kind) {
             return "open-static-member";
         case Kind::walked_return:
             return "walked-return";
+        case Kind::library_inlined:
+            return "inlined";
+        case Kind::library_call:
+            return "call";
+        case Kind::library_reference:
+            return "reference";
+        case Kind::library_symbol:
+            return "symbol";
     }
     return "unknown";
 }
@@ -1171,6 +1203,11 @@ inline Rule rule_of(Kind kind) {
         case Kind::open_static_member:
         case Kind::walked_return:
             return Rule::no_unchecked_access;
+        case Kind::library_inlined:
+        case Kind::library_call:
+        case Kind::library_reference:
+        case Kind::library_symbol:
+            return Rule::library_code;
         default:
             return Rule::quarantine;
     }
@@ -1214,6 +1251,7 @@ inline bool is_family_kind(Kind kind) {
         case Rule::ctx_testing_boundary:
         case Rule::detail_namespace:
         case Rule::no_unchecked_access:
+        case Rule::library_code:
             return true;
         default:
             return false;
@@ -1223,7 +1261,8 @@ inline bool is_family_kind(Kind kind) {
 // True when a line of a family kind is a record: a fact for a reader of the
 // records, and no finding of its rule.  The record of a mint, the record of an
 // alias of a class with a member mint, the line of a grant set that the unit
-// compared, and a site that a home row admits (at-home).
+// compared, a site that a home row admits (at-home), and each line of the rule
+// library-code.
 inline bool is_record_kind(Kind kind) {
     switch (kind) {
         case Kind::mint_record:
@@ -1234,6 +1273,10 @@ inline bool is_record_kind(Kind kind) {
         case Kind::combine_at_home:
         case Kind::split_at_home:
         case Kind::trait_at_home:
+        case Kind::library_inlined:
+        case Kind::library_call:
+        case Kind::library_reference:
+        case Kind::library_symbol:
             return true;
         default:
             return false;
@@ -1353,6 +1396,10 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"no-unchecked-access", "member-splice"},
     {"no-unchecked-access", "open-static-member"},
     {"no-unchecked-access", "walked-return"},
+    {"library-code", "inlined"},
+    {"library-code", "call"},
+    {"library-code", "reference"},
+    {"library-code", "symbol"},
 };
 
 // True when the entity is part of the key of a finding: two findings of such
@@ -2226,6 +2273,10 @@ void report_contract(const Finding& finding);
 // home.cpp: the family home, where a definition or a specialization stands.
 void register_home(const char* plugin_name);
 void walk_home();
+
+// body.cpp: the family library code, the pass that reads the instructions of
+// each function.
+void register_library_code(const char* plugin_name);
 
 // plugin.cpp: the report of the unit.
 void report(bool can_add_dependencies);

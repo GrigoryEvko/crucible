@@ -40,7 +40,8 @@
 //                            end of the unit, also after a compile error.  An
 //                            object compile and a parse then read the same
 //                            trees.
-//     PLUGIN_FINISH_UNIT     the report.
+//     PLUGIN_FINISH_UNIT     the report, after the pass of the family library
+//                            code read the last function (body.cpp).
 //     PLUGIN_FINISH          the report, if the unit did not reach
 //                            PLUGIN_FINISH_UNIT.
 //     PLUGIN_GGC_START       each garbage collection clears the caches that a
@@ -87,6 +88,12 @@
 //                    gives a line (declaration.cpp, THE RULE padded-list).
 //                    Quarantine.cmake gives the error threshold of the row
 //                    padded-list of utils/registry.txt
+//     library-code=on
+//                    run the pass of the family library code, which records
+//                    the library code of each function (body.cpp).
+//                    Quarantine.cmake gives it to each compile of the tree.
+//                    A compile with no such argument, such as a compile of a
+//                    plant of a different rule, has no record of the family
 //
 // THE DEPENDENCIES
 //     utils/assay/loop/stamps.py writes DIR/modes/PATH for each source file of
@@ -537,6 +544,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     std::string kinds_argument;
     std::string not_standalone_argument;
     bool has_padded_limit = false;
+    bool records_library_code = false;
     for (int index = 0; index < plugin_info->argc; ++index) {
         std::string key = plugin_info->argv[index].key;
         std::string value = plugin_info->argv[index].value != nullptr ? plugin_info->argv[index].value : "";
@@ -574,9 +582,17 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
                 return 1;
             }
             has_padded_limit = true;
+        } else if (key == "library-code") {
+            if (value != "on") {
+                error("quarantine: library-code is %qs; give library-code=on to record the library code of each "
+                      "function, or no such argument",
+                      value.c_str());
+                return 1;
+            }
+            records_library_code = true;
         } else {
             error("quarantine: unknown argument %qs; the arguments are root, build, rules, mode, out, stamps, stamp, "
-                  "kinds, sentinel, not-standalone and padded-list-limit",
+                  "kinds, sentinel, not-standalone, padded-list-limit and library-code",
                   key.c_str());
             return 1;
         }
@@ -628,6 +644,9 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     register_declarations(plugin_info->base_name);
     register_home(plugin_info->base_name);
     register_owner(plugin_info->base_name);
+    if (records_library_code) {
+        register_library_code(plugin_info->base_name);
+    }
     front_end_parse_file = lang_hooks.parse_file;
     lang_hooks.parse_file = parse_and_walk;
     register_callback(plugin_info->base_name, PLUGIN_FINISH_UNIT, on_finish_unit, nullptr);

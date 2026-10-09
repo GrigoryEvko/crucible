@@ -136,6 +136,40 @@ THE ALLOWLISTS
         plan section 13.4 admits.
     At the S4 gate, libfixy.a holds no `libc-ratchet` row.
 
+THE HIDDEN IMPORTS
+    The quarantine plugin writes the records of the rule library-code into
+    the section of each object (utils/tools/quarantine/body.cpp, THE
+    RECORDS).  A record call, reference or symbol names a symbol that the
+    code of the tree can import.  It also gives the line of its source
+    (assay.readers.sections, THE SYMBOLS OF THE LIBRARY CODE).  The rule
+    explains each import of a member of an archive with these records.  The
+    records of a member connect it to these names:
+      * each symbol of a record of the member
+      * each name of a relocation of the type table of an exception
+        (EXCEPTION_TABLES): the typeinfo of a catch clause
+      * each name of a relocation of a connected section.  A connected name
+        that the member holds with a section connects that section.  An
+        example is a library function that the unit compiles out of line,
+        or a vtable.
+    A live section of a member can name an import with a mark.  The import
+    has the kind hidden-import when no record of the member connects to it,
+    and no row admits it.  A local function that no different section names
+    is dead, as WHERE A THROW STANDS tells.  A section with no named symbol
+    holds data that the compiler makes, such as a string constant.  The type
+    data of a check of UBSan is such data too, and it holds a typeinfo.  The
+    references of the two do not count.  The unwind tables and the debug
+    sections are no live section.
+    The compiler adds some calls and names itself (COMPILER_MADE), such as
+    the personality of the unwinder in .eh_frame.  These names and the
+    functions of the support library of GCC take no record.  The rule cannot
+    give a hidden import a line of the source.  A reference of a data table
+    of the tree has no record.  Then the code must name the symbol, or the
+    table must go.
+    The hidden imports apply to an archive with a section in a member.  A
+    member with no section in such an archive is an error.  An archive with
+    no section, such as the archive of a plant that compiles with no plugin,
+    gets no judgement of its hidden imports.
+
 THE CLASS OF A SYMBOL
     The messages give the class of a symbol: the first class of this list
     that its mangled name gives (assay.readers.elf, THE MANGLED SCOPE).
@@ -183,7 +217,8 @@ THE LEDGER
 
 THE VERDICT
     assay.core.ledger judges the findings.  A finding with no row is an
-    error, and a row of an import that goes is an error too.  A row throw or
+    error, and a row of an import that goes is an error too.  A hidden
+    import and an import with no provider are errors that no row admits.  A row throw or
     vtable that admits nothing of the build is an error.  The exception is a
     row throw that names a function or an object of its archive
     (quiet_rows).  The inlining of one configuration can remove a throw that
@@ -232,8 +267,8 @@ Complexity: linear in the symbols and the relocations of the libraries and of th
 """
 
 from collections import Counter
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from assay.core import configuration as build_config
@@ -244,6 +279,7 @@ from assay.core import report as check_report
 from assay.guard.engines.elf import configured, runner
 from assay.readers import census as build_census
 from assay.readers import elf
+from assay.readers import sections as plugin_sections
 
 RULE = "artifact-symbols"
 LIBRARY_PREFIX = "@build/"
@@ -273,6 +309,10 @@ MARKS = (ALLOW, RATCHET, LIBC_ALLOW, LIBC_RATCHET, STATIC_RATCHET, CRT_ALLOW, CR
 RATCHET_MARKS = (RATCHET, LIBC_RATCHET, STATIC_RATCHET, CRT_RATCHET, HOST_RATCHET)
 # The kind of an import that no provider gives (THE PROVIDERS).  No row admits it.
 UNKNOWN_PROVIDER = "unknown-provider"
+# The kind of an import that no record of the library code explains (THE HIDDEN IMPORTS).  No row admits it.
+HIDDEN_IMPORT = "hidden-import"
+# The sections of the type tables of the exceptions.  Their relocations name the typeinfo of each catch clause.
+EXCEPTION_TABLES = (".gcc_except_table",)
 VERSION_MARK = "@"
 THROW = "throw"
 HIDDEN_THROW = "hidden-throw"
@@ -375,6 +415,9 @@ LIBC_ALLOWLISTS = {
     "crucible": COMPILER_CALLS | {ATEXIT},
 }
 TREE_ALLOWLIST = LIBC_ALLOWLISTS["crucible"]
+# The names that the compiler references itself, also from the unwind tables, with no record of the plugin (THE
+# HIDDEN IMPORTS).
+COMPILER_MADE = COMPILER_CALLS | ALLOWLIST | CRT_ALLOWLIST
 CLASSES = ("alloc", "abi", "std", "gnu", "c", "other")
 ABI_PREFIXES = ("__cxa_", "__gxx_")
 ABI_SCOPE = "__cxxabiv1"
@@ -426,7 +469,9 @@ class Artifact:
 
     `undefined` gives the members that reference each undefined name.  `defined` holds the member and the name of
     each symbol that the archive holds with a section.  `exported` holds each such name that is not local, which a
-    reference of a different object can use.
+    reference of a different object can use.  `hidden` gives the members that reference each undefined name with no
+    record that connects to it.  `sectioned` counts the members with a section of the plugin, and `sectionless`
+    names each member with none (THE HIDDEN IMPORTS).
     """
 
     name: str
@@ -435,6 +480,9 @@ class Artifact:
     references: tuple[Reference, ...]
     defined: tuple[tuple[str, str], ...]
     exported: frozenset[str] = frozenset()
+    hidden: Mapping[str, frozenset[str]] = field(default_factory=dict)
+    sectioned: int = 0
+    sectionless: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -552,12 +600,12 @@ def is_throw(symbol: str) -> bool:
     return symbol in THROW_SYMBOLS or is_throw_helper(symbol)
 
 
-def member_references(member: elf.Member) -> list[tuple[bool, str, str, str]]:
+def member_references(member: elf.Member, relocations: Sequence[elf.Relocation]) -> list[tuple[bool, str, str, str]]:
     """Return each reference of one member to a throw or a throw helper, as WHERE A THROW STANDS tells.
 
-    Each item is True when the function is live, the symbol, the typeinfo that
-    a throw throws or "-", and the function or the section that holds the
-    reference.  Complexity: linear in the relocations and the symbols.
+    `relocations` are the relocations of the member that are not in UNREAD_SECTIONS.  Each item is True when the
+    function is live, the symbol, the typeinfo that a throw throws or "-", and the function or the section that
+    holds the reference.  Complexity: linear in the relocations and the symbols.
 
     Raises:
         elf.ElfError: If a table of the member is not fully in the file
@@ -568,7 +616,7 @@ def member_references(member: elf.Member) -> list[tuple[bool, str, str, str]]:
     referenced: set[str] = set()
     hits: list[tuple[str, str, str]] = []
     section_index, typeinfo = -1, "-"
-    for relocation in member.relocations(UNREAD_SECTIONS):
+    for relocation in relocations:
         if relocation.section_index != section_index:
             section_index, typeinfo = relocation.section_index, "-"
         target = relocation.symbol
@@ -587,11 +635,56 @@ def member_references(member: elf.Member) -> list[tuple[bool, str, str, str]]:
     return found
 
 
-def read_artifact(path: Path) -> Artifact:
-    """Read the symbols and the throws of one static library.  The names stay mangled.
+def hidden_names(member: elf.Member, relocations: Sequence[elf.Relocation], seeds: Iterable[str]) -> set[str]:
+    """Return each undefined name of one member that a live section names and that no record connects to.
+
+    THE HIDDEN IMPORTS gives the names that `seeds`, the symbols of the records of the member, connect to.
+    `relocations` are the relocations of the member that are not in UNREAD_SECTIONS.  A relocation names a symbol of
+    a section by the name of the section.  A local function that no relocation of a different section names is dead,
+    as WHERE A THROW STANDS tells.  A section with no named symbol holds data that the compiler makes.  The
+    references of the two do not count.  Complexity: linear in the relocations and the symbols of the member.
 
     Raises:
-        runner.BuildError: If the ELF reader cannot read the archive, or reads no symbol from it
+        elf.ElfError: If a table of the member is not fully in the file
+    """
+    sections = member.sections()
+    symbols = member.symbols()
+    places = {section.name: section.index for section in sections}
+    places.update((symbol.name, symbol.section) for symbol in symbols if symbol.is_defined)
+    owned = {symbol.section for symbol in symbols if symbol.is_defined}
+    targets: dict[int, set[str]] = {}
+    named: set[int] = set()
+    for relocation in relocations:
+        targets.setdefault(relocation.section_index, set()).add(relocation.symbol)
+        place = places.get(relocation.symbol)
+        if place is not None and place != relocation.section_index:
+            named.add(place)
+    dead = {symbol.section for symbol in symbols if symbol.is_function and symbol.is_local} - named
+    reached = set(seeds)
+    for section in sections:
+        if section.name.startswith(EXCEPTION_TABLES):
+            reached |= targets.get(section.index, set())
+    pending = list(reached)
+    visited: set[int] = set()
+    while pending:
+        index = places.get(pending.pop())
+        if index is None or index in visited:
+            continue
+        visited.add(index)
+        for target in targets.get(index, ()):
+            if target not in reached:
+                reached.add(target)
+                pending.append(target)
+    live = {name for index, names in targets.items() if index in owned - dead for name in names}
+    return {symbol.name for symbol in symbols if symbol.is_undefined and symbol.name in live - reached}
+
+
+def read_artifact(path: Path) -> Artifact:
+    """Read the symbols, the throws and the hidden imports of one static library.  The names stay mangled.
+
+    Raises:
+        runner.BuildError: If the ELF reader cannot read the archive or the section of a member, or reads no symbol
+            from the archive
     """
     try:
         members = elf.members(path)
@@ -600,7 +693,10 @@ def read_artifact(path: Path) -> Artifact:
         defined: list[tuple[str, str]] = []
         references: list[Reference] = []
         exported: set[str] = set()
+        hidden: dict[str, set[str]] = {}
+        sectionless: list[str] = []
         for member in members:
+            relocations = member.relocations(UNREAD_SECTIONS)
             for symbol in member.symbols():
                 named += bool(symbol.name)
                 if symbol.is_undefined:
@@ -611,9 +707,15 @@ def read_artifact(path: Path) -> Artifact:
                         exported.add(symbol.name)
             references += [
                 Reference(live, symbol, member.name, thrown, function)
-                for live, symbol, thrown, function in member_references(member)
+                for live, symbol, thrown, function in member_references(member, relocations)
             ]
-    except (OSError, elf.ElfError) as problem:
+            section = plugin_sections.of_member(member)
+            if section is None:
+                sectionless.append(member.name)
+                continue
+            for name in hidden_names(member, relocations, section.symbols()):
+                hidden.setdefault(name, set()).add(member.name)
+    except (OSError, elf.ElfError, plugin_sections.SectionError) as problem:
         raise runner.BuildError(
             f"the ELF reader cannot read {path}, and the rule read nothing there: {problem}"
         ) from None
@@ -629,6 +731,9 @@ def read_artifact(path: Path) -> Artifact:
         tuple(references),
         tuple(defined),
         frozenset(exported),
+        {name: frozenset(items) for name, items in hidden.items()},
+        len(members) - len(sectionless),
+        tuple(sectionless),
     )
 
 
@@ -1029,21 +1134,17 @@ def imports_of(artifacts: Mapping[str, Artifact], targets: Mapping[str, str], pr
 
 
 def import_findings(
-    artifacts: Mapping[str, Artifact],
-    targets: Mapping[str, str],
-    providers: Providers,
-    names: Mapping[str, str],
-    build_shown: str,
+    imports: Sequence[Import], targets: Mapping[str, str], names: Mapping[str, str], build_shown: str
 ) -> tuple[list[check_report.Finding], list[check_report.Finding]]:
     """Return the findings of the imports of each library, and the findings of the imports with no provider.
 
-    `targets` gives the target name of each archive.  An import of a sanitizer runtime gives no finding (THE MARKS).
-    Complexity: linear in the undefined names of the archives.
+    `imports` are the imports of imports_of(), and `targets` gives the target name of each archive.  An import of a
+    sanitizer runtime gives no finding (THE MARKS).  Complexity: linear in the imports.
     """
     write = f"Write the ledger again: `python3 utils/bin/guard write --rule {RULE} --build-dir {build_shown}`"
     found: list[check_report.Finding] = []
     unknown: list[check_report.Finding] = []
-    for item in imports_of(artifacts, targets, providers):
+    for item in imports:
         path = f"{LIBRARY_PREFIX}{item.archive}"
         used = build_census.names_text(item.members)
         if item.provider is None:
@@ -1063,6 +1164,50 @@ def import_findings(
             said = f"{said}.  {write}"
         found.append(finding(path, item.mark, item.entity, said))
     return found, unknown
+
+
+def hidden_findings(
+    artifacts: Mapping[str, Artifact], imports: Sequence[Import], support: frozenset[str], names: Mapping[str, str]
+) -> list[check_report.Finding]:
+    """Return an error for each hidden import and for each member with no section in an archive with sections.
+
+    THE HIDDEN IMPORTS gives the rule.  An import with no mark, of a sanitizer runtime or with no provider, gives no
+    such finding.  Complexity: linear in the imports and the members.
+    """
+    found: list[check_report.Finding] = []
+    for archive in sorted(artifacts):
+        artifact = artifacts[archive]
+        if artifact.sectioned and artifact.sectionless:
+            found.append(
+                check_report.Finding(
+                    "error",
+                    f"{LIBRARY_PREFIX}{archive}",
+                    0,
+                    RULE,
+                    f"{archive} has {artifact.sectioned} members with the section of the quarantine plugin, and no "
+                    f"such section in {build_census.names_text(artifact.sectionless)}.  The rule cannot explain the "
+                    f"imports of such a member: compile it again with the plugin",
+                )
+            )
+    for item in imports:
+        artifact = artifacts[item.archive]
+        if not item.mark or not artifact.sectioned or item.symbol in COMPILER_MADE or item.symbol in support:
+            continue
+        members = artifact.hidden.get(item.symbol, frozenset()) & item.members
+        if members:
+            found.append(
+                finding(
+                    f"{LIBRARY_PREFIX}{item.archive}",
+                    HIDDEN_IMPORT,
+                    item.entity,
+                    f"{item.archive} imports {names.get(item.symbol, item.symbol)} ({item.entity}) in "
+                    f"{build_census.names_text(members)}, and no record of the library code of the member connects "
+                    f"to it.  The rule cannot give the import a line of the source.  A data table of the tree that "
+                    f"names the symbol has no record: name the symbol in code, or remove the table.  `objdump -dr` of "
+                    f"the member shows the reference",
+                )
+            )
+    return found
 
 
 def symbol_classes(symbols: Sequence[check_report.Finding]) -> str:
@@ -1113,7 +1258,9 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> configured.
     admit_rows = [key for key, _ in sorted(admits.items(), key=lambda item: item[1].line)]
     counted: Counter[str] = Counter()
     classes = class_findings(artifacts, names, admit_rows, counted, base_archives)
-    imports, unknown = import_findings(artifacts, targets, providers, names, context.build_shown())
+    listed = imports_of(artifacts, targets, providers)
+    imports, unknown = import_findings(listed, targets, names, context.build_shown())
+    hidden = hidden_findings(artifacts, listed, providers.support, names)
     helpers = helper_findings(artifacts, base_archives, names)
     symbols = [*imports, *helpers]
     quiet = quiet_rows(admits, artifacts, names, {rule_ledger.key_of(item) for item in classes})
@@ -1123,10 +1270,10 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> configured.
         f"{RULE}: {len(artifacts)} libraries ({sum(item.symbols for item in artifacts.values())} symbols, "
         f"{counted['allocation']} throws of the allocator, {len(helpers)} references to throw helpers outside the "
         f"base), {len(imports)} imports of {configuration.name} on {context.tier()}: {symbol_classes(imports)}, "
-        f"judged against {judged.words}"
+        f"{len(hidden)} hidden imports, judged against {judged.words}"
     )
     return configured.Inspection(
-        (*row_problems(ledger), *unknown, *verdict),
+        (*row_problems(ledger), *unknown, *hidden, *verdict),
         ledger,
         configuration,
         judged,

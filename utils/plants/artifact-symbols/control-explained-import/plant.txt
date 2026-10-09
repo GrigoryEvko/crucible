@@ -1,0 +1,6 @@
+# Each unit of the root libraries holds the section of the quarantine plugin.  A record of random.cpp names
+# getrandom, so the import is not hidden.  The call of memcpy that a builtin gives has no record, and the compiler
+# makes such a call itself.
+library planted_tree externs.cpp
+library foundation base.cpp random.cpp
+library crucible base.cpp

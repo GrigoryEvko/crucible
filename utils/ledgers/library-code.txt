@@ -1,0 +1,1561 @@
+# The ledger of the rule library-code: the library code of each base file in each configuration of a build.
+# `python3 utils/bin/guard explain library-code` tells the rule.
+#
+# The records come from an RTL pass of the quarantine plugin (utils/tools/quarantine/body.cpp).  A row counts the
+# places of a base file with a record of its kind and its name:
+#   PATH | inlined | COUNT | NAME | -       a body of a library function that the code inlines
+#   PATH | call | COUNT | NAME | -          a call of a library function
+#   PATH | reference | COUNT | NAME | -     a library variable or the address of a library function
+# The first configuration is the base, and a row with the prefix @NAME gives the difference of the configuration
+# NAME (assay.guard.engines.plugin.counted).  A count can only fall: `python3 utils/bin/guard write --rule
+# library-code --build-dir DIR` writes the rows of the configuration of a build.
+format 1
+rule library-code
+configuration x86_64-debug-asan kind x86_64-debug-asan
+configuration x86_64-debug-asan tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-asan CMAKE_BUILD_TYPE Debug
+configuration x86_64-debug-asan CMAKE_CXX_FLAGS unset
+configuration x86_64-debug-asan CRUCIBLE_SANITIZE on
+configuration x86_64-debug-asan CRUCIBLE_TSAN off
+configuration x86_64-debug-asan CRUCIBLE_UBSAN_STRICT off
+configuration x86_64-debug-asan CRUCIBLE_ANALYZER off
+configuration x86_64-debug-asan CRUCIBLE_VERIFY off
+configuration x86_64-debug-asan CRUCIBLE_PGO off
+configuration x86_64-debug-asan CRUCIBLE_BENCH off
+configuration x86_64-debug-asan CRUCIBLE_FUZZ off
+configuration x86_64-debug-asan CRUCIBLE_EXAMPLES on
+configuration x86_64-debug-asan CRUCIBLE_HAVE_BPF on
+configuration x86_64-debug-asan CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-debug-asan CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-debug-asan TORCH_DIR unset
+configuration x86_64-debug-asan CRUCIBLE_SYNTAX_ONLY off
+configuration x86_64-release kind x86_64-release
+configuration x86_64-release tier znver5-f612fd24
+configuration x86_64-release CMAKE_BUILD_TYPE Release
+configuration x86_64-release CMAKE_CXX_FLAGS -O1_-march=native_-DNDEBUG_-g
+configuration x86_64-release CRUCIBLE_SANITIZE on
+configuration x86_64-release CRUCIBLE_TSAN off
+configuration x86_64-release CRUCIBLE_UBSAN_STRICT off
+configuration x86_64-release CRUCIBLE_ANALYZER off
+configuration x86_64-release CRUCIBLE_VERIFY off
+configuration x86_64-release CRUCIBLE_PGO off
+configuration x86_64-release CRUCIBLE_BENCH off
+configuration x86_64-release CRUCIBLE_FUZZ off
+configuration x86_64-release CRUCIBLE_EXAMPLES on
+configuration x86_64-release CRUCIBLE_HAVE_BPF on
+configuration x86_64-release CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-release CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-release TORCH_DIR unset
+configuration x86_64-release CRUCIBLE_SYNTAX_ONLY off
+configuration x86_64-debug-tsan kind x86_64-debug-tsan
+configuration x86_64-debug-tsan tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-tsan CMAKE_BUILD_TYPE Debug
+configuration x86_64-debug-tsan CMAKE_CXX_FLAGS unset
+configuration x86_64-debug-tsan CRUCIBLE_SANITIZE off
+configuration x86_64-debug-tsan CRUCIBLE_TSAN on
+configuration x86_64-debug-tsan CRUCIBLE_UBSAN_STRICT off
+configuration x86_64-debug-tsan CRUCIBLE_ANALYZER off
+configuration x86_64-debug-tsan CRUCIBLE_VERIFY off
+configuration x86_64-debug-tsan CRUCIBLE_PGO off
+configuration x86_64-debug-tsan CRUCIBLE_BENCH off
+configuration x86_64-debug-tsan CRUCIBLE_FUZZ off
+configuration x86_64-debug-tsan CRUCIBLE_EXAMPLES on
+configuration x86_64-debug-tsan CRUCIBLE_HAVE_BPF on
+configuration x86_64-debug-tsan CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-debug-tsan CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-debug-tsan TORCH_DIR unset
+configuration x86_64-debug-tsan CRUCIBLE_SYNTAX_ONLY off
+configuration x86_64-debug-ubsan-strict kind x86_64-debug-ubsan-strict
+configuration x86_64-debug-ubsan-strict tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-ubsan-strict CMAKE_BUILD_TYPE Debug
+configuration x86_64-debug-ubsan-strict CMAKE_CXX_FLAGS unset
+configuration x86_64-debug-ubsan-strict CRUCIBLE_SANITIZE off
+configuration x86_64-debug-ubsan-strict CRUCIBLE_TSAN off
+configuration x86_64-debug-ubsan-strict CRUCIBLE_UBSAN_STRICT on
+configuration x86_64-debug-ubsan-strict CRUCIBLE_ANALYZER off
+configuration x86_64-debug-ubsan-strict CRUCIBLE_VERIFY off
+configuration x86_64-debug-ubsan-strict CRUCIBLE_PGO off
+configuration x86_64-debug-ubsan-strict CRUCIBLE_BENCH off
+configuration x86_64-debug-ubsan-strict CRUCIBLE_FUZZ off
+configuration x86_64-debug-ubsan-strict CRUCIBLE_EXAMPLES on
+configuration x86_64-debug-ubsan-strict CRUCIBLE_HAVE_BPF on
+configuration x86_64-debug-ubsan-strict CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-debug-ubsan-strict CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-debug-ubsan-strict TORCH_DIR unset
+configuration x86_64-debug-ubsan-strict CRUCIBLE_SYNTAX_ONLY off
+include/fixy/Bands.h | inlined | 1 | std::unique_ptr::unique_ptr | -
+include/fixy/Bits.h | inlined | 1 | std::popcount | -
+include/fixy/Borrowed.h | call | 1 | std::span::back | -
+include/fixy/Borrowed.h | call | 1 | std::span::operator[] | -
+include/fixy/Borrowed.h | call | 3 | std::span::span | -
+include/fixy/Borrowed.h | inlined | 2 | std::ranges::__access::_Data::operator() | -
+include/fixy/Borrowed.h | inlined | 1 | std::ranges::__access::_Size::operator() | -
+include/fixy/Borrowed.h | inlined | 4 | std::span::data | -
+include/fixy/Borrowed.h | inlined | 1 | std::span::empty | -
+include/fixy/Borrowed.h | inlined | 1 | std::span::front | -
+include/fixy/Borrowed.h | inlined | 1 | std::span::operator[] | -
+include/fixy/Borrowed.h | inlined | 4 | std::span::size | -
+include/fixy/Borrowed.h | inlined | 3 | std::span::span | -
+include/fixy/Borrowed.h | inlined | 1 | std::span::subspan | -
+include/fixy/Budgeted.h | call | 1 | std::basic_string::basic_string | -
+include/fixy/Budgeted.h | inlined | 2 | std::basic_string::~basic_string | -
+include/fixy/Budgeted.h | inlined | 1 | std::construct_at | -
+include/fixy/Budgeted.h | inlined | 1 | std::destroy_at | -
+include/fixy/Budgeted.h | inlined | 1 | std::expected::operator* | -
+include/fixy/Budgeted.h | inlined | 1 | std::vector::vector | -
+include/fixy/Budgeted.h | inlined | 1 | std::vector::~vector | -
+include/fixy/Checked.h | call | 4 | abort | -
+include/fixy/Checked.h | inlined | 7 | std::optional::optional | -
+include/fixy/ConstantTime.h | inlined | 2 | std::operator^ | -
+include/fixy/ConstantTime.h | inlined | 1 | std::operator\|= | -
+include/fixy/ConstantTime.h | inlined | 2 | std::span::data | -
+include/fixy/ConstantTime.h | inlined | 2 | std::span::operator[] | -
+include/fixy/ConstantTime.h | inlined | 3 | std::span::size | -
+include/fixy/EpochVersioned.h | call | 1 | std::basic_string::basic_string | -
+include/fixy/EpochVersioned.h | call | 3 | std::expected::expected | -
+include/fixy/EpochVersioned.h | inlined | 2 | std::basic_string::~basic_string | -
+include/fixy/EpochVersioned.h | inlined | 1 | std::construct_at | -
+include/fixy/EpochVersioned.h | inlined | 1 | std::destroy_at | -
+include/fixy/EpochVersioned.h | inlined | 7 | std::expected::expected | -
+include/fixy/EpochVersioned.h | inlined | 1 | std::vector::vector | -
+include/fixy/EpochVersioned.h | inlined | 1 | std::vector::~vector | -
+include/fixy/Federation.h | call | 1 | std::expected::error | -
+include/fixy/Federation.h | call | 1 | std::unexpected::unexpected | -
+include/fixy/Federation.h | inlined | 3 | std::array::operator[] | -
+include/fixy/Federation.h | inlined | 1 | std::expected::error | -
+include/fixy/Federation.h | inlined | 1 | std::expected::has_value | -
+include/fixy/Federation.h | inlined | 3 | std::pair::pair | -
+include/fixy/Federation.h | inlined | 2 | std::span::span | -
+include/fixy/Federation.h | inlined | 1 | std::unexpected::unexpected | -
+include/fixy/FixedArray.h | inlined | 1 | std::array::data | -
+include/fixy/FixedArray.h | inlined | 9 | std::array::operator[] | -
+include/fixy/FixedArray.h | inlined | 1 | std::is_neq | -
+include/fixy/FixedArray.h | inlined | 1 | std::span::span | -
+include/fixy/FixedArray.h | inlined | 1 | std::strong_ordering::operator (conversion) | -
+include/fixy/FixedArray.h | inlined | 1 | std::swap | -
+include/fixy/Mutation.h | call | 1 | std::vector::back | -
+include/fixy/Mutation.h | call | 2 | std::vector::emplace_back | -
+include/fixy/Mutation.h | call | 1 | std::vector::empty | -
+include/fixy/Mutation.h | call | 1 | std::vector::operator[] | -
+include/fixy/Mutation.h | call | 1 | std::vector::size | -
+include/fixy/Mutation.h | inlined | 1 | std::__atomic_base::compare_exchange_strong | -
+include/fixy/Mutation.h | inlined | 2 | std::__atomic_base::compare_exchange_weak | -
+include/fixy/Mutation.h | inlined | 2 | std::__atomic_base::fetch_max | -
+include/fixy/Mutation.h | inlined | 1 | std::__atomic_base::fetch_min | -
+include/fixy/Mutation.h | inlined | 7 | std::__atomic_base::load | -
+include/fixy/Mutation.h | inlined | 2 | std::__atomic_base::store | -
+include/fixy/Mutation.h | inlined | 1 | std::atomic_thread_fence | -
+include/fixy/Mutation.h | inlined | 1 | std::greater::operator() | -
+include/fixy/Mutation.h | inlined | 5 | std::less::operator() | -
+include/fixy/Mutation.h | inlined | 2 | std::optional::emplace | -
+include/fixy/Mutation.h | inlined | 6 | std::optional::has_value | -
+include/fixy/Mutation.h | inlined | 1 | std::optional::operator* | -
+include/fixy/Mutation.h | inlined | 1 | std::optional::optional | -
+include/fixy/Mutation.h | inlined | 1 | std::optional::~optional | -
+include/fixy/Mutation.h | inlined | 1 | std::vector::back | -
+include/fixy/Mutation.h | inlined | 1 | std::vector::begin | -
+include/fixy/Mutation.h | inlined | 1 | std::vector::emplace_back | -
+include/fixy/Mutation.h | inlined | 1 | std::vector::empty | -
+include/fixy/Mutation.h | inlined | 1 | std::vector::end | -
+include/fixy/Mutation.h | inlined | 1 | std::vector::front | -
+include/fixy/Mutation.h | inlined | 1 | std::vector::operator[] | -
+include/fixy/Mutation.h | inlined | 1 | std::vector::size | -
+include/fixy/OwnedRegion.h | inlined | 4 | std::array::operator[] | -
+include/fixy/OwnedRegion.h | inlined | 8 | std::exchange | -
+include/fixy/OwnedRegion.h | inlined | 1 | std::get | -
+include/fixy/OwnedRegion.h | inlined | 2 | std::span::span | -
+include/fixy/OwnedRegion.h | inlined | 1 | std::tuple::tuple | -
+include/fixy/Qtt.h | inlined | 1 | std::unique_ptr::unique_ptr | -
+include/fixy/Refined.h | inlined | 1 | std::cmp_less_equal | -
+include/fixy/Refined.h | inlined | 2 | std::expected::expected | -
+include/fixy/Refined.h | inlined | 1 | std::span::empty | -
+include/fixy/Refined.h | inlined | 1 | std::unexpected::unexpected | -
+include/fixy/SelfContained.h | inlined | 2 | __gnu_cxx::__normal_iterator::operator* | -
+include/fixy/SelfContained.h | inlined | 2 | __gnu_cxx::__normal_iterator::operator++ | -
+include/fixy/SelfContained.h | inlined | 3 | __gnu_cxx::operator== | -
+include/fixy/SelfContained.h | inlined | 2 | std::bit_cast | -
+include/fixy/SelfContained.h | inlined | 2 | std::ranges::__access::_Begin::operator() | -
+include/fixy/SelfContained.h | inlined | 2 | std::ranges::__access::_End::operator() | -
+include/fixy/SharedRegion.h | inlined | 2 | std::exchange | -
+include/fixy/SharedRegion.h | inlined | 1 | std::optional::has_value | -
+include/fixy/SharedRegion.h | inlined | 1 | std::optional::operator* | -
+include/fixy/SharedRegion.h | inlined | 1 | std::optional::optional | -
+include/fixy/SharedRegion.h | inlined | 1 | std::span::operator[] | -
+include/fixy/SharedRegion.h | inlined | 1 | std::span::size | -
+include/fixy/SharedRegion.h | inlined | 1 | std::span::span | -
+include/fixy/SipHash.h | inlined | 1 | std::array::operator[] | -
+include/fixy/SipHash.h | inlined | 2 | std::pair::pair | -
+include/fixy/SipHash.h | inlined | 6 | std::rotl | -
+include/fixy/SipHash.h | inlined | 1 | std::span::first | -
+include/fixy/SipHash.h | inlined | 1 | std::span::last | -
+include/fixy/SipHash.h | inlined | 1 | std::span::operator[] | -
+include/fixy/SipHash.h | inlined | 2 | std::span::size | -
+include/fixy/SipHash.h | inlined | 5 | std::span::span | -
+include/fixy/SipHash.h | inlined | 2 | std::span::subspan | -
+include/fixy/Tagged.h | call | 2 | std::basic_string::basic_string | -
+include/fixy/Tagged.h | call | 2 | std::filesystem::path::path | -
+include/fixy/Tagged.h | inlined | 2 | std::basic_string::basic_string | -
+include/fixy/Tagged.h | inlined | 2 | std::basic_string::~basic_string | -
+include/fixy/Tagged.h | inlined | 2 | std::filesystem::path::path | -
+include/fixy/Tagged.h | inlined | 3 | std::filesystem::path::~path | -
+include/fixy/concurrent/AtomicSnapshot.h | inlined | 4 | memcpy | -
+include/fixy/concurrent/AtomicSnapshot.h | inlined | 3 | std::atomic_thread_fence | -
+include/fixy/concurrent/AtomicSnapshot.h | inlined | 1 | std::optional::optional | -
+include/fixy/concurrent/AtomicSnapshot.h | inlined | 2 | std::span::front | -
+include/fixy/concurrent/ChaseLevDeque.h | inlined | 6 | std::__atomic_base::load | -
+include/fixy/concurrent/ChaseLevDeque.h | inlined | 6 | std::__atomic_base::store | -
+include/fixy/concurrent/ChaseLevDeque.h | inlined | 3 | std::array::operator[] | -
+include/fixy/concurrent/ChaseLevDeque.h | inlined | 1 | std::atomic::load | -
+include/fixy/concurrent/ChaseLevDeque.h | inlined | 1 | std::atomic::store | -
+include/fixy/concurrent/ChaseLevDeque.h | inlined | 1 | std::atomic_thread_fence | -
+include/fixy/concurrent/ChaseLevDeque.h | inlined | 3 | std::optional::optional | -
+include/fixy/concurrent/MpscRing.h | inlined | 3 | std::__atomic_base::fetch_and | -
+include/fixy/concurrent/MpscRing.h | inlined | 3 | std::__atomic_base::fetch_or | -
+include/fixy/concurrent/MpscRing.h | inlined | 3 | std::__atomic_base::load | -
+include/fixy/concurrent/MpscRing.h | inlined | 2 | std::array::end | -
+include/fixy/concurrent/MpscRing.h | inlined | 11 | std::array::operator[] | -
+include/fixy/concurrent/MpscRing.h | inlined | 1 | std::countr_zero | -
+include/fixy/concurrent/MpscRing.h | inlined | 1 | std::optional::optional | -
+include/fixy/concurrent/MpscRing.h | inlined | 2 | std::span::operator[] | -
+include/fixy/concurrent/MpscRing.h | inlined | 1 | std::span::size | -
+include/fixy/concurrent/PermissionedMpscChannel.h | call | 1 | std::optional::operator* | -
+include/fixy/concurrent/PermissionedMpscChannel.h | inlined | 2 | std::optional::operator (conversion) | -
+include/fixy/concurrent/PermissionedMpscChannel.h | inlined | 2 | std::optional::operator* | -
+include/fixy/concurrent/PermissionedMpscChannel.h | inlined | 1 | std::optional::optional | -
+include/fixy/concurrent/PermissionedMpscChannel.h | inlined | 1 | std::optional::~optional | -
+include/fixy/concurrent/Pipeline.h | call | 1 | sched_getaffinity | -
+include/fixy/concurrent/Pipeline.h | call | 1 | std::binary_search | -
+include/fixy/concurrent/Pipeline.h | call | 1 | std::vector::operator= | -
+include/fixy/concurrent/Pipeline.h | call | 1 | std::vector::push_back | -
+include/fixy/concurrent/Pipeline.h | inlined | 2 | __gnu_cxx::__normal_iterator::operator* | -
+include/fixy/concurrent/Pipeline.h | inlined | 2 | __gnu_cxx::__normal_iterator::operator++ | -
+include/fixy/concurrent/Pipeline.h | inlined | 2 | __gnu_cxx::operator== | -
+include/fixy/concurrent/Pipeline.h | inlined | 1 | std::__atomic_base::fetch_add | -
+include/fixy/concurrent/Pipeline.h | inlined | 1 | std::array::fill | -
+include/fixy/concurrent/Pipeline.h | inlined | 1 | std::array::operator[] | -
+include/fixy/concurrent/Pipeline.h | inlined | 1 | std::binary_search | -
+include/fixy/concurrent/Pipeline.h | inlined | 1 | std::get | -
+include/fixy/concurrent/Pipeline.h | inlined | 1 | std::span::begin | -
+include/fixy/concurrent/Pipeline.h | inlined | 1 | std::span::end | -
+include/fixy/concurrent/Pipeline.h | inlined | 2 | std::tuple::tuple | -
+include/fixy/concurrent/Pipeline.h | inlined | 1 | std::tuple::~tuple | -
+include/fixy/concurrent/Pipeline.h | inlined | 2 | std::vector::begin | -
+include/fixy/concurrent/Pipeline.h | inlined | 2 | std::vector::empty | -
+include/fixy/concurrent/Pipeline.h | inlined | 2 | std::vector::end | -
+include/fixy/concurrent/Pipeline.h | inlined | 2 | std::vector::operator= | -
+include/fixy/concurrent/Pipeline.h | inlined | 1 | std::vector::operator[] | -
+include/fixy/concurrent/Pipeline.h | inlined | 2 | std::vector::push_back | -
+include/fixy/concurrent/Pipeline.h | inlined | 3 | std::vector::size | -
+include/fixy/concurrent/Pipeline.h | inlined | 2 | std::vector::~vector | -
+include/fixy/concurrent/Spawn.h | inlined | 3 | std::array::operator[] | -
+include/fixy/concurrent/Spawn.h | inlined | 2 | std::get | -
+include/fixy/concurrent/SpscRing.h | inlined | 4 | memcpy | -
+include/fixy/concurrent/SpscRing.h | inlined | 2 | std::array::operator[] | -
+include/fixy/concurrent/SpscRing.h | inlined | 1 | std::optional::optional | -
+include/fixy/concurrent/SpscRing.h | inlined | 3 | std::span::data | -
+include/fixy/concurrent/SpscRing.h | inlined | 1 | std::span::empty | -
+include/fixy/concurrent/SpscRing.h | inlined | 2 | std::span::size | -
+include/fixy/concurrent/Stage.h | inlined | 2 | std::tuple::tuple | -
+include/fixy/concurrent/Stage.h | inlined | 1 | std::tuple::~tuple | -
+include/fixy/concurrent/StageEndpointBridge.h | inlined | 3 | std::tuple::tuple | -
+include/fixy/concurrent/StageEndpointBridge.h | inlined | 2 | std::tuple::~tuple | -
+include/fixy/concurrent/SwmrSession.h | inlined | 2 | std::optional::operator (conversion) | -
+include/fixy/concurrent/SwmrSession.h | inlined | 2 | std::optional::operator* | -
+include/fixy/concurrent/SwmrSession.h | inlined | 1 | std::optional::optional | -
+include/fixy/concurrent/SwmrSession.h | inlined | 1 | std::optional::~optional | -
+include/fixy/fp/Polynomial.h | inlined | 2 | std::array::operator[] | -
+include/fixy/fp/Polynomial.h | inlined | 2 | std::bit_cast | -
+include/fixy/fp/Polynomial.h | inlined | 1 | std::copysign | -
+include/fixy/fp/Polynomial.h | inlined | 1 | std::fabs | -
+include/fixy/fp/Polynomial.h | inlined | 4 | std::fma | -
+include/fixy/fp/Polynomial.h | inlined | 1 | std::isnormal | -
+include/fixy/fp/Polynomial.h | inlined | 1 | std::pair::pair | -
+include/fixy/fp/Polynomial.h | inlined | 1 | std::sqrt | -
+include/fixy/handle/LazyEstablishedChannel.h | inlined | 1 | std::atomic::exchange | -
+include/fixy/handle/LazyEstablishedChannel.h | inlined | 1 | std::expected::expected | -
+include/fixy/handle/Once.h | inlined | 1 | std::__atomic_base::compare_exchange_strong | -
+include/fixy/handle/Once.h | inlined | 2 | std::__atomic_base::load | -
+include/fixy/handle/Once.h | inlined | 1 | std::__atomic_base::store | -
+include/fixy/handle/OneShotFlag.h | inlined | 1 | std::atomic::exchange | -
+include/fixy/handle/OneShotFlag.h | inlined | 3 | std::atomic::load | -
+include/fixy/handle/OneShotFlag.h | inlined | 2 | std::atomic::store | -
+include/fixy/handle/PublishCommit.h | inlined | 1 | std::__atomic_base::fetch_add | -
+include/fixy/handle/PublishCommit.h | inlined | 1 | std::__atomic_base::load | -
+include/fixy/handle/PublishOnce.h | call | 1 | abort | -
+include/fixy/handle/PublishOnce.h | inlined | 1 | fprintf | -
+include/fixy/handle/PublishOnce.h | inlined | 1 | std::atomic::compare_exchange_strong | -
+include/fixy/handle/PublishOnce.h | inlined | 1 | std::atomic::exchange | -
+include/fixy/handle/PublishOnce.h | inlined | 4 | std::atomic::load | -
+include/fixy/handle/PublishOnce.h | inlined | 1 | std::atomic::store | -
+include/fixy/handle/PublishOnce.h | reference | 1 | stderr | -
+include/fixy/os/CipherDurable.h | inlined | 3 | std::expected::error | -
+include/fixy/os/CipherDurable.h | inlined | 6 | std::expected::expected | -
+include/fixy/os/CipherDurable.h | inlined | 3 | std::expected::operator (conversion) | -
+include/fixy/os/CipherDurable.h | inlined | 3 | std::expected::operator* | -
+include/fixy/os/CipherDurable.h | inlined | 3 | std::expected::~expected | -
+include/fixy/os/CipherDurable.h | inlined | 3 | std::unexpected::unexpected | -
+include/fixy/os/CpuPinned.h | call | 1 | __errno_location | -
+include/fixy/os/CpuPinned.h | call | 1 | sched_setaffinity | -
+include/fixy/os/CpuPinned.h | inlined | 1 | std::__atomic_base::fetch_add | -
+include/fixy/os/CpuPinned.h | inlined | 1 | std::array::operator[] | -
+include/fixy/os/CpuPinned.h | inlined | 1 | std::exchange | -
+include/fixy/os/CpuPinned.h | inlined | 2 | std::expected::expected | -
+include/fixy/os/CpuPinned.h | inlined | 1 | std::unexpected::unexpected | -
+include/fixy/os/Fd.h | call | 1 | close | -
+include/fixy/os/Fd.h | inlined | 2 | std::exchange | -
+include/fixy/os/Fs.h | call | 7 | __errno_location | -
+include/fixy/os/Fs.h | call | 1 | fdatasync | -
+include/fixy/os/Fs.h | call | 1 | fstat | -
+include/fixy/os/Fs.h | call | 1 | fsync | -
+include/fixy/os/Fs.h | call | 1 | rename | -
+include/fixy/os/Fs.h | call | 1 | renameat2 | -
+include/fixy/os/Fs.h | call | 11 | std::system_category | -
+include/fixy/os/Fs.h | call | 1 | write | -
+include/fixy/os/Fs.h | inlined | 2 | open | -
+include/fixy/os/Fs.h | inlined | 1 | read | -
+include/fixy/os/Fs.h | inlined | 11 | std::error_code::error_code | -
+include/fixy/os/Fs.h | inlined | 2 | std::expected::error | -
+include/fixy/os/Fs.h | inlined | 19 | std::expected::expected | -
+include/fixy/os/Fs.h | inlined | 2 | std::expected::operator (conversion) | -
+include/fixy/os/Fs.h | inlined | 2 | std::expected::operator* | -
+include/fixy/os/Fs.h | inlined | 2 | std::expected::~expected | -
+include/fixy/os/Fs.h | inlined | 4 | std::filesystem::path::c_str | -
+include/fixy/os/Fs.h | inlined | 2 | std::span::data | -
+include/fixy/os/Fs.h | inlined | 2 | std::span::size | -
+include/fixy/os/Fs.h | inlined | 13 | std::unexpected::unexpected | -
+include/fixy/os/Futex.h | inlined | 1 | std::error_code::value | -
+include/fixy/os/Futex.h | inlined | 1 | std::expected::has_value | -
+include/fixy/os/Io.h | call | 5 | __errno_location | -
+include/fixy/os/Io.h | call | 4 | close | -
+include/fixy/os/Io.h | call | 1 | copy_file_range | -
+include/fixy/os/Io.h | call | 3 | mmap | -
+include/fixy/os/Io.h | call | 6 | munmap | -
+include/fixy/os/Io.h | call | 1 | sendfile | -
+include/fixy/os/Io.h | call | 6 | std::system_category | -
+include/fixy/os/Io.h | call | 1 | syscall | -
+include/fixy/os/Io.h | inlined | 6 | std::error_code::error_code | -
+include/fixy/os/Io.h | inlined | 9 | std::exchange | -
+include/fixy/os/Io.h | inlined | 8 | std::expected::expected | -
+include/fixy/os/Io.h | inlined | 6 | std::unexpected::unexpected | -
+include/fixy/os/Mmap.h | call | 2 | __errno_location | -
+include/fixy/os/Mmap.h | call | 2 | madvise | -
+include/fixy/os/Mmap.h | call | 3 | std::error_code::error_code | -
+include/fixy/os/Mmap.h | call | 4 | std::expected::expected | -
+include/fixy/os/Mmap.h | call | 4 | std::system_category | -
+include/fixy/os/Mmap.h | call | 3 | std::unexpected::unexpected | -
+include/fixy/os/Mmap.h | inlined | 1 | std::error_code::error_code | -
+include/fixy/os/Mmap.h | inlined | 2 | std::expected::error | -
+include/fixy/os/Mmap.h | inlined | 5 | std::expected::expected | -
+include/fixy/os/Mmap.h | inlined | 2 | std::expected::operator (conversion) | -
+include/fixy/os/Mmap.h | inlined | 2 | std::expected::operator* | -
+include/fixy/os/Mmap.h | inlined | 2 | std::expected::~expected | -
+include/fixy/os/Mmap.h | inlined | 3 | std::unexpected::unexpected | -
+include/fixy/os/NumaCounters.h | inlined | 1 | std::as_writable_bytes | -
+include/fixy/os/NumaCounters.h | inlined | 2 | std::error_code::value | -
+include/fixy/os/NumaCounters.h | inlined | 3 | std::expected::operator (conversion) | -
+include/fixy/os/NumaCounters.h | inlined | 1 | std::expected::operator* | -
+include/fixy/os/NumaCounters.h | inlined | 1 | std::expected::operator-> | -
+include/fixy/os/NumaCounters.h | inlined | 1 | std::expected::~expected | -
+include/fixy/os/NumaCounters.h | inlined | 1 | std::filesystem::path::~path | -
+include/fixy/os/NumaCounters.h | inlined | 1 | std::span::span | -
+include/fixy/os/NumaPlacement.h | call | 1 | __errno_location | -
+include/fixy/os/NumaPlacement.h | call | 1 | std::system_category | -
+include/fixy/os/NumaPlacement.h | call | 1 | syscall | -
+include/fixy/os/NumaPlacement.h | inlined | 1 | std::error_code::error_code | -
+include/fixy/os/NumaPlacement.h | inlined | 1 | std::exchange | -
+include/fixy/os/NumaPlacement.h | inlined | 3 | std::expected::expected | -
+include/fixy/os/NumaPlacement.h | inlined | 1 | std::make_error_code | -
+include/fixy/os/NumaPlacement.h | inlined | 2 | std::unexpected::unexpected | -
+include/fixy/os/OwnedFile.h | call | 3 | __errno_location | -
+include/fixy/os/OwnedFile.h | call | 3 | fclose | -
+include/fixy/os/OwnedFile.h | call | 1 | fopen | -
+include/fixy/os/OwnedFile.h | call | 1 | tmpfile | -
+include/fixy/os/OwnedFile.h | inlined | 4 | std::exchange | -
+include/fixy/os/OwnedFile.h | inlined | 4 | std::expected::expected | -
+include/fixy/os/OwnedFile.h | inlined | 2 | std::unexpected::unexpected | -
+include/fixy/os/OwnedMmap.h | call | 1 | __errno_location | -
+include/fixy/os/OwnedMmap.h | call | 1 | mmap | -
+include/fixy/os/OwnedMmap.h | call | 1 | munmap | -
+include/fixy/os/OwnedMmap.h | call | 1 | std::error_code::error_code | -
+include/fixy/os/OwnedMmap.h | call | 1 | std::system_category | -
+include/fixy/os/OwnedMmap.h | call | 1 | std::unexpected::unexpected | -
+include/fixy/os/OwnedMmap.h | inlined | 1 | std::error_code::error_code | -
+include/fixy/os/OwnedMmap.h | inlined | 6 | std::exchange | -
+include/fixy/os/OwnedMmap.h | inlined | 2 | std::expected::expected | -
+include/fixy/os/OwnedMmap.h | inlined | 1 | std::pair::pair | -
+include/fixy/os/OwnedMmap.h | inlined | 1 | std::span::data | -
+include/fixy/os/OwnedMmap.h | inlined | 1 | std::unexpected::unexpected | -
+include/fixy/os/Path.h | call | 1 | std::basic_string::size | -
+include/fixy/os/Path.h | call | 1 | std::filesystem::path::iterator::operator* | -
+include/fixy/os/Path.h | call | 3 | std::filesystem::path::iterator::operator++ | -
+include/fixy/os/Path.h | call | 2 | std::filesystem::path::lexically_normal | -
+include/fixy/os/Path.h | inlined | 1 | std::basic_string::empty | -
+include/fixy/os/Path.h | inlined | 1 | std::basic_string::find | -
+include/fixy/os/Path.h | inlined | 1 | std::basic_string::size | -
+include/fixy/os/Path.h | inlined | 1 | std::basic_string::~basic_string | -
+include/fixy/os/Path.h | inlined | 3 | std::expected::error | -
+include/fixy/os/Path.h | inlined | 5 | std::expected::expected | -
+include/fixy/os/Path.h | inlined | 3 | std::expected::operator (conversion) | -
+include/fixy/os/Path.h | inlined | 2 | std::filesystem::operator!= | -
+include/fixy/os/Path.h | inlined | 3 | std::filesystem::operator== | -
+include/fixy/os/Path.h | inlined | 3 | std::filesystem::path::begin | -
+include/fixy/os/Path.h | inlined | 3 | std::filesystem::path::end | -
+include/fixy/os/Path.h | inlined | 2 | std::filesystem::path::is_absolute | -
+include/fixy/os/Path.h | inlined | 3 | std::filesystem::path::iterator::operator* | -
+include/fixy/os/Path.h | inlined | 1 | std::filesystem::path::iterator::operator++ | -
+include/fixy/os/Path.h | inlined | 1 | std::filesystem::path::path | -
+include/fixy/os/Path.h | inlined | 1 | std::filesystem::path::string | -
+include/fixy/os/Path.h | inlined | 2 | std::filesystem::path::~path | -
+include/fixy/os/Path.h | inlined | 3 | std::unexpected::unexpected | -
+include/fixy/os/Sched.h | call | 3 | __errno_location | -
+include/fixy/os/Sched.h | call | 1 | sched_getaffinity | -
+include/fixy/os/Sched.h | call | 1 | sched_setscheduler | -
+include/fixy/os/Sched.h | call | 1 | setpriority | -
+include/fixy/os/Sched.h | inlined | 2 | std::exchange | -
+include/fixy/os/Sched.h | inlined | 3 | std::expected::error | -
+include/fixy/os/Sched.h | inlined | 10 | std::expected::expected | -
+include/fixy/os/Sched.h | inlined | 3 | std::expected::operator (conversion) | -
+include/fixy/os/Sched.h | inlined | 1 | std::expected::operator* | -
+include/fixy/os/Sched.h | inlined | 6 | std::unexpected::unexpected | -
+include/fixy/os/Socket.h | call | 1 | __errno_location | -
+include/fixy/os/Socket.h | call | 1 | socket | -
+include/fixy/os/Socket.h | call | 1 | std::system_category | -
+include/fixy/os/Socket.h | inlined | 1 | std::error_code::error_code | -
+include/fixy/os/Socket.h | inlined | 1 | std::expected::error | -
+include/fixy/os/Socket.h | inlined | 4 | std::expected::expected | -
+include/fixy/os/Socket.h | inlined | 1 | std::expected::operator (conversion) | -
+include/fixy/os/Socket.h | inlined | 1 | std::expected::operator* | -
+include/fixy/os/Socket.h | inlined | 1 | std::expected::~expected | -
+include/fixy/os/Socket.h | inlined | 2 | std::unexpected::unexpected | -
+include/fixy/os/SpinLock.h | inlined | 1 | std::atomic_flag::clear | -
+include/fixy/os/SpinLock.h | inlined | 1 | std::atomic_flag::test | -
+include/fixy/os/SpinLock.h | inlined | 2 | std::atomic_flag::test_and_set | -
+include/fixy/os/Time.h | call | 4 | __errno_location | -
+include/fixy/os/Time.h | call | 2 | clock_gettime | -
+include/fixy/os/Time.h | call | 1 | clock_nanosleep | -
+include/fixy/os/Time.h | call | 1 | ioctl | -
+include/fixy/os/Time.h | call | 5 | std::system_category | -
+include/fixy/os/Time.h | inlined | 1 | open | -
+include/fixy/os/Time.h | inlined | 4 | std::array::operator[] | -
+include/fixy/os/Time.h | inlined | 5 | std::error_code::error_code | -
+include/fixy/os/Time.h | inlined | 1 | std::expected::error | -
+include/fixy/os/Time.h | inlined | 16 | std::expected::expected | -
+include/fixy/os/Time.h | inlined | 1 | std::expected::operator (conversion) | -
+include/fixy/os/Time.h | inlined | 1 | std::expected::operator* | -
+include/fixy/os/Time.h | inlined | 2 | std::expected::transform | -
+include/fixy/os/Time.h | inlined | 1 | std::expected::~expected | -
+include/fixy/os/Time.h | inlined | 4 | std::make_error_code | -
+include/fixy/os/Time.h | inlined | 10 | std::unexpected::unexpected | -
+include/fixy/os/Topology.h | call | 2 | std::basic_string::operator (conversion) | -
+include/fixy/os/Topology.h | call | 1 | std::vector::~vector | -
+include/fixy/os/Topology.h | inlined | 3 | __gnu_cxx::__normal_iterator::operator* | -
+include/fixy/os/Topology.h | inlined | 2 | __gnu_cxx::__normal_iterator::operator++ | -
+include/fixy/os/Topology.h | inlined | 1 | __gnu_cxx::operator- | -
+include/fixy/os/Topology.h | inlined | 3 | __gnu_cxx::operator== | -
+include/fixy/os/Topology.h | inlined | 2 | std::basic_string::operator (conversion) | -
+include/fixy/os/Topology.h | inlined | 1 | std::basic_string::~basic_string | -
+include/fixy/os/Topology.h | inlined | 1 | std::lower_bound | -
+include/fixy/os/Topology.h | inlined | 1 | std::max | -
+include/fixy/os/Topology.h | inlined | 3 | std::optional::has_value | -
+include/fixy/os/Topology.h | inlined | 3 | std::optional::operator* | -
+include/fixy/os/Topology.h | inlined | 2 | std::optional::optional | -
+include/fixy/os/Topology.h | inlined | 3 | std::span::span | -
+include/fixy/os/Topology.h | inlined | 4 | std::vector::begin | -
+include/fixy/os/Topology.h | inlined | 3 | std::vector::data | -
+include/fixy/os/Topology.h | inlined | 4 | std::vector::end | -
+include/fixy/os/Topology.h | inlined | 6 | std::vector::operator[] | -
+include/fixy/os/Topology.h | inlined | 6 | std::vector::size | -
+include/fixy/os/Topology.h | inlined | 1 | std::vector::~vector | -
+include/fixy/session/Checkpoint.h | call | 2 | abort | -
+include/fixy/session/Checkpoint.h | inlined | 2 | std::invoke | -
+include/fixy/session/Checkpoint.h | inlined | 1 | std::optional::emplace | -
+include/fixy/session/Checkpoint.h | inlined | 1 | std::optional::operator* | -
+include/fixy/session/Checkpoint.h | inlined | 1 | std::optional::~optional | -
+include/fixy/session/Checkpoint.h | inlined | 1 | std::pair::pair | -
+include/fixy/session/Checkpoint.h | inlined | 1 | std::pair::~pair | -
+include/fixy/session/CrashTransport.h | call | 7 | abort | -
+include/fixy/session/CrashTransport.h | call | 1 | std::optional::operator* | -
+include/fixy/session/CrashTransport.h | inlined | 7 | fprintf | -
+include/fixy/session/CrashTransport.h | inlined | 1 | std::__atomic_base::compare_exchange_strong | -
+include/fixy/session/CrashTransport.h | inlined | 1 | std::__atomic_base::fetch_add | -
+include/fixy/session/CrashTransport.h | inlined | 1 | std::__atomic_base::fetch_or | -
+include/fixy/session/CrashTransport.h | inlined | 2 | std::__atomic_base::load | -
+include/fixy/session/CrashTransport.h | inlined | 2 | std::atomic::exchange | -
+include/fixy/session/CrashTransport.h | inlined | 3 | std::exchange | -
+include/fixy/session/CrashTransport.h | inlined | 11 | std::invoke | -
+include/fixy/session/CrashTransport.h | inlined | 4 | std::optional::emplace | -
+include/fixy/session/CrashTransport.h | inlined | 1 | std::optional::has_value | -
+include/fixy/session/CrashTransport.h | inlined | 8 | std::optional::operator (conversion) | -
+include/fixy/session/CrashTransport.h | inlined | 3 | std::optional::operator-> | -
+include/fixy/session/CrashTransport.h | inlined | 7 | std::optional::optional | -
+include/fixy/session/CrashTransport.h | inlined | 1 | std::optional::value_or | -
+include/fixy/session/CrashTransport.h | inlined | 2 | std::optional::~optional | -
+include/fixy/session/CrashTransport.h | inlined | 2 | std::pair::pair | -
+include/fixy/session/CrashTransport.h | inlined | 2 | std::pair::~pair | -
+include/fixy/session/CrashTransport.h | reference | 7 | stderr | -
+include/fixy/session/Delegate.h | call | 1 | abort | -
+include/fixy/session/Delegate.h | inlined | 1 | std::pair::pair | -
+include/fixy/session/Delegate.h | reference | 1 | stderr | -
+include/fixy/session/EventLog.h | call | 1 | abort | -
+include/fixy/session/EventLog.h | call | 1 | std::vector::vector | -
+include/fixy/session/EventLog.h | call | 1 | std::vector::~vector | -
+include/fixy/session/EventLog.h | inlined | 1 | fprintf | -
+include/fixy/session/EventLog.h | inlined | 2 | std::array::operator[] | -
+include/fixy/session/EventLog.h | inlined | 2 | std::bit_cast | -
+include/fixy/session/EventLog.h | inlined | 1 | std::expected::error | -
+include/fixy/session/EventLog.h | inlined | 4 | std::expected::expected | -
+include/fixy/session/EventLog.h | inlined | 1 | std::expected::operator (conversion) | -
+include/fixy/session/EventLog.h | inlined | 1 | std::span::operator[] | -
+include/fixy/session/EventLog.h | inlined | 2 | std::span::size | -
+include/fixy/session/EventLog.h | inlined | 1 | std::span::subspan | -
+include/fixy/session/EventLog.h | inlined | 2 | std::unexpected::unexpected | -
+include/fixy/session/EventLog.h | inlined | 1 | std::vector::operator[] | -
+include/fixy/session/EventLog.h | inlined | 1 | std::vector::size | -
+include/fixy/session/EventLog.h | inlined | 1 | std::vector::vector | -
+include/fixy/session/EventLog.h | inlined | 1 | std::vector::~vector | -
+include/fixy/session/EventLog.h | reference | 1 | stderr | -
+include/fixy/session/Handle.h | call | 5 | abort | -
+include/fixy/session/Handle.h | call | 2 | std::invoke | -
+include/fixy/session/Handle.h | call | 2 | std::optional::operator* | -
+include/fixy/session/Handle.h | call | 2 | std::source_location::file_name | -
+include/fixy/session/Handle.h | call | 2 | std::source_location::line | -
+include/fixy/session/Handle.h | inlined | 8 | fprintf | -
+include/fixy/session/Handle.h | inlined | 3 | std::array::operator[] | -
+include/fixy/session/Handle.h | inlined | 5 | std::basic_string_view::data | -
+include/fixy/session/Handle.h | inlined | 1 | std::basic_string_view::empty | -
+include/fixy/session/Handle.h | inlined | 5 | std::basic_string_view::size | -
+include/fixy/session/Handle.h | inlined | 15 | std::invoke | -
+include/fixy/session/Handle.h | inlined | 1 | std::optional::emplace | -
+include/fixy/session/Handle.h | inlined | 4 | std::optional::operator (conversion) | -
+include/fixy/session/Handle.h | inlined | 1 | std::optional::operator* | -
+include/fixy/session/Handle.h | inlined | 1 | std::optional::operator= | -
+include/fixy/session/Handle.h | inlined | 4 | std::optional::~optional | -
+include/fixy/session/Handle.h | inlined | 1 | std::pair::operator= | -
+include/fixy/session/Handle.h | inlined | 4 | std::pair::pair | -
+include/fixy/session/Handle.h | inlined | 1 | std::source_location::column | -
+include/fixy/session/Handle.h | inlined | 1 | std::source_location::function_name | -
+include/fixy/session/Handle.h | reference | 8 | stderr | -
+include/fixy/session/Payload.h | call | 2 | abort | -
+include/fixy/session/Payload.h | inlined | 1 | std::exchange | -
+include/fixy/session/Payload.h | inlined | 7 | std::pair::pair | -
+include/fixy/session/Payload.h | reference | 2 | stderr | -
+include/fixy/session/Recording.h | call | 2 | std::optional::operator* | -
+include/fixy/session/Recording.h | inlined | 2 | std::array::operator[] | -
+include/fixy/session/Recording.h | inlined | 1 | std::invoke | -
+include/fixy/session/Recording.h | inlined | 4 | std::optional::operator (conversion) | -
+include/fixy/session/Recording.h | inlined | 2 | std::optional::operator* | -
+include/fixy/session/Recording.h | inlined | 4 | std::optional::optional | -
+include/fixy/session/Recording.h | inlined | 2 | std::pair::pair | -
+include/fixy/session/Recording.h | inlined | 2 | std::pair::~pair | -
+include/fixy/session/VigilModeCell.h | inlined | 1 | std::atomic::compare_exchange_strong | -
+include/fixy/session/VigilModeCell.h | inlined | 1 | std::atomic::load | -
+include/fixy/session/VigilModeCell.h | inlined | 2 | std::atomic::store | -
+include/fixy/session/Watch.h | call | 3 | abort | -
+include/fixy/session/Watch.h | call | 1 | at_quick_exit | -
+include/fixy/session/Watch.h | call | 1 | atexit | -
+include/fixy/session/Watch.h | call | 1 | clock_gettime | -
+include/fixy/session/Watch.h | call | 1 | pthread_atfork | -
+include/fixy/session/Watch.h | call | 1 | raise | -
+include/fixy/session/Watch.h | call | 3 | sigaction | -
+include/fixy/session/Watch.h | call | 1 | sigemptyset | -
+include/fixy/session/Watch.h | call | 1 | std::array::operator[] | -
+include/fixy/session/Watch.h | call | 1 | write | -
+include/fixy/session/Watch.h | inlined | 9 | fprintf | -
+include/fixy/session/Watch.h | inlined | 2 | std::__atomic_base::compare_exchange_strong | -
+include/fixy/session/Watch.h | inlined | 2 | std::__atomic_base::compare_exchange_weak | -
+include/fixy/session/Watch.h | inlined | 2 | std::__atomic_base::exchange | -
+include/fixy/session/Watch.h | inlined | 3 | std::__atomic_base::fetch_add | -
+include/fixy/session/Watch.h | inlined | 41 | std::__atomic_base::load | -
+include/fixy/session/Watch.h | inlined | 21 | std::__atomic_base::store | -
+include/fixy/session/Watch.h | inlined | 10 | std::array::operator[] | -
+include/fixy/session/Watch.h | inlined | 4 | std::atomic::load | -
+include/fixy/session/Watch.h | inlined | 2 | std::atomic::store | -
+include/fixy/session/Watch.h | inlined | 3 | std::basic_string_view::basic_string_view | -
+include/fixy/session/Watch.h | inlined | 2 | std::basic_string_view::data | -
+include/fixy/session/Watch.h | inlined | 2 | std::basic_string_view::size | -
+include/fixy/session/Watch.h | inlined | 1 | std::operator== | -
+include/fixy/session/Watch.h | inlined | 2 | std::source_location::file_name | -
+include/fixy/session/Watch.h | inlined | 2 | std::source_location::line | -
+include/fixy/session/Watch.h | reference | 9 | stderr | -
+include/foundation/AlignedBuffer.h | call | 2 | abort | -
+include/foundation/AlignedBuffer.h | call | 1 | aligned_alloc | -
+include/foundation/AlignedBuffer.h | call | 1 | free | -
+include/foundation/AlignedBuffer.h | inlined | 3 | fprintf | -
+include/foundation/AlignedBuffer.h | inlined | 1 | std::span::data | -
+include/foundation/AlignedBuffer.h | inlined | 1 | std::span::span | -
+include/foundation/AlignedBuffer.h | reference | 3 | stderr | -
+include/foundation/ChannelBinding.h | inlined | 1 | std::atomic::exchange | -
+include/foundation/ChannelBinding.h | inlined | 1 | std::atomic::store | -
+include/foundation/ChannelBinding.h | inlined | 2 | std::exchange | -
+include/foundation/Lifetime.h | inlined | 1 | std::span::span | -
+include/foundation/Platform.h | inlined | 1 | std::is_gt | -
+include/foundation/Platform.h | inlined | 1 | std::is_lt | -
+include/foundation/Platform.h | inlined | 1 | std::span::empty | -
+include/foundation/Platform.h | inlined | 1 | std::strong_ordering::operator (conversion) | -
+include/foundation/Saturate.h | inlined | 1 | std::saturating_add | -
+include/foundation/Saturate.h | inlined | 1 | std::saturating_mul | -
+include/foundation/Saturate.h | inlined | 1 | std::saturating_sub | -
+include/foundation/Simd.h | inlined | 3 | memcpy | -
+include/foundation/Simd.h | inlined | 1 | std::bit_cast | -
+include/foundation/SwissTableBuffer.h | call | 1 | free | -
+include/foundation/SwissTableBuffer.h | inlined | 1 | std::has_single_bit | -
+include/foundation/SwissTableBuffer.h | inlined | 1 | std::span::data | -
+include/foundation/SwissTableBuffer.h | inlined | 2 | std::span::span | -
+include/foundation/algebra/Graded.h | call | 3 | std::basic_string::basic_string | -
+include/foundation/algebra/Graded.h | call | 1 | std::basic_string::operator= | -
+include/foundation/algebra/Graded.h | call | 4 | std::filesystem::path::path | -
+include/foundation/algebra/Graded.h | call | 1 | std::swap | -
+include/foundation/algebra/Graded.h | call | 1 | std::unique_ptr::~unique_ptr | -
+include/foundation/algebra/Graded.h | call | 1 | std::vector::~vector | -
+include/foundation/algebra/Graded.h | inlined | 3 | std::basic_string::basic_string | -
+include/foundation/algebra/Graded.h | inlined | 1 | std::basic_string::~basic_string | -
+include/foundation/algebra/Graded.h | inlined | 4 | std::filesystem::path::path | -
+include/foundation/algebra/Graded.h | inlined | 1 | std::filesystem::path::~path | -
+include/foundation/algebra/Graded.h | inlined | 2 | std::swap | -
+include/foundation/algebra/Graded.h | inlined | 3 | std::unique_ptr::unique_ptr | -
+include/foundation/algebra/Graded.h | inlined | 1 | std::unique_ptr::~unique_ptr | -
+include/foundation/algebra/Graded.h | inlined | 3 | std::vector::vector | -
+include/foundation/algebra/Graded.h | inlined | 1 | std::vector::~vector | -
+include/foundation/algebra/lattices/AffinityLattice.h | inlined | 11 | std::array::operator[] | -
+include/foundation/algebra/lattices/AffinityLattice.h | inlined | 1 | std::operator== | -
+include/foundation/algebra/lattices/FractionalLattice.h | inlined | 1 | std::gcd | -
+include/foundation/algebra/lattices/HappensBefore.h | inlined | 15 | std::array::operator[] | -
+include/foundation/algebra/lattices/HappensBefore.h | inlined | 1 | std::expected::expected | -
+include/foundation/algebra/lattices/HappensBefore.h | inlined | 1 | std::operator== | -
+include/foundation/algebra/lattices/MonotoneLattice.h | inlined | 3 | std::greater::operator() | -
+include/foundation/algebra/lattices/MonotoneLattice.h | inlined | 3 | std::less::operator() | -
+include/foundation/algebra/lattices/StrongCounterLattice.h | inlined | 2 | std::array::operator[] | -
+include/foundation/algebra/lattices/StrongCounterLattice.h | inlined | 1 | std::expected::expected | -
+include/foundation/contracts/Decide.h | inlined | 1 | __gnu_cxx::__normal_iterator::operator* | -
+include/foundation/contracts/Decide.h | inlined | 1 | __gnu_cxx::__normal_iterator::operator++ | -
+include/foundation/contracts/Decide.h | inlined | 1 | __gnu_cxx::operator== | -
+include/foundation/contracts/Decide.h | inlined | 1 | std::span::begin | -
+include/foundation/contracts/Decide.h | inlined | 1 | std::span::end | -
+include/foundation/contracts/Decide.h | inlined | 10 | std::span::operator[] | -
+include/foundation/core/Ref.h | call | 1 | operator delete | -
+include/foundation/core/Ref.h | call | 1 | operator new | -
+include/foundation/core/Ref.h | reference | 2 | std::nothrow | -
+include/foundation/diag/Catalog.h | inlined | 1 | std::array::operator[] | -
+include/foundation/diag/JsonEmitter.h | call | 1 | flockfile | -
+include/foundation/diag/JsonEmitter.h | call | 1 | funlockfile | -
+include/foundation/diag/JsonEmitter.h | call | 1 | fwrite | -
+include/foundation/diag/JsonEmitter.h | inlined | 1 | fprintf | -
+include/foundation/diag/JsonEmitter.h | inlined | 1 | std::array::operator[] | -
+include/foundation/diag/JsonEmitter.h | inlined | 3 | std::basic_string_view::basic_string_view | -
+include/foundation/diag/JsonEmitter.h | inlined | 3 | std::basic_string_view::begin | -
+include/foundation/diag/JsonEmitter.h | inlined | 3 | std::basic_string_view::data | -
+include/foundation/diag/JsonEmitter.h | inlined | 8 | std::basic_string_view::empty | -
+include/foundation/diag/JsonEmitter.h | inlined | 3 | std::basic_string_view::end | -
+include/foundation/diag/JsonEmitter.h | inlined | 3 | std::basic_string_view::rfind | -
+include/foundation/diag/JsonEmitter.h | inlined | 6 | std::basic_string_view::size | -
+include/foundation/diag/JsonEmitter.h | inlined | 1 | std::from_chars | -
+include/foundation/diag/JsonEmitter.h | inlined | 1 | std::to_chars | -
+include/foundation/effects/Computation.h | inlined | 2 | std::unique_ptr::unique_ptr | -
+include/foundation/effects/Computation.h | inlined | 2 | std::unique_ptr::~unique_ptr | -
+include/foundation/effects/Ctx.h | inlined | 1 | std::__atomic_base::compare_exchange_strong | -
+include/foundation/effects/Ctx.h | inlined | 7 | std::__atomic_base::load | -
+include/foundation/effects/Ctx.h | inlined | 4 | std::__atomic_base::store | -
+include/foundation/effects/Ctx.h | inlined | 1 | std::atomic_flag::clear | -
+include/foundation/effects/Ctx.h | inlined | 1 | std::atomic_flag::test_and_set | -
+include/foundation/effects/Ctx.h | inlined | 1 | std::bit_cast | -
+include/foundation/permissions/Permission.h | call | 1 | abort | -
+include/foundation/permissions/Permission.h | call | 1 | std::optional::operator* | -
+include/foundation/permissions/Permission.h | inlined | 1 | std::__atomic_base::compare_exchange_strong | -
+include/foundation/permissions/Permission.h | inlined | 1 | std::__atomic_base::compare_exchange_weak | -
+include/foundation/permissions/Permission.h | inlined | 1 | std::__atomic_base::fetch_sub | -
+include/foundation/permissions/Permission.h | inlined | 4 | std::__atomic_base::load | -
+include/foundation/permissions/Permission.h | inlined | 1 | std::__atomic_base::store | -
+include/foundation/permissions/Permission.h | inlined | 1 | std::atomic::atomic | -
+include/foundation/permissions/Permission.h | inlined | 1 | std::exchange | -
+include/foundation/permissions/Permission.h | inlined | 1 | std::forward_as_tuple | -
+include/foundation/permissions/Permission.h | inlined | 1 | std::optional::has_value | -
+include/foundation/permissions/Permission.h | inlined | 2 | std::optional::operator (conversion) | -
+include/foundation/permissions/Permission.h | inlined | 1 | std::optional::operator* | -
+include/foundation/permissions/Permission.h | inlined | 1 | std::optional::operator-> | -
+include/foundation/permissions/Permission.h | inlined | 1 | std::optional::operator= | -
+include/foundation/permissions/Permission.h | inlined | 3 | std::optional::optional | -
+include/foundation/permissions/Permission.h | inlined | 1 | std::optional::reset | -
+include/foundation/permissions/Permission.h | inlined | 1 | std::optional::~optional | -
+include/foundation/permissions/Permission.h | reference | 1 | stderr | -
+include/foundation/permissions/PermissionFork.h | inlined | 3 | std::get | -
+include/foundation/permissions/PermissionFork.h | inlined | 1 | std::tuple::tuple | -
+include/foundation/permissions/ReadView.h | inlined | 1 | std::pair::pair | -
+include/foundation/reflect/EnumName.h | inlined | 2 | std::basic_string_view::empty | -
+include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA12_KcLS_100ELS_112ELS_117ELS_45ELS_111ELS_102ELS_102ELS_108ELS_111ELS_97ELS_100EEE | -
+include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA14_KcLS_115ELS_111ELS_99ELS_107ELS_101ELS_116ELS_45ELS_111ELS_114ELS_97ELS_99ELS_108ELS_101EEE | -
+include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA15_KcLS_105ELS_110ELS_116ELS_101ELS_108ELS_45ELS_105ELS_112ELS_117ELS_45ELS_114ELS_100ELS_109ELS_97EEE | -
+include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA16_KcLS_114ELS_111ELS_99ELS_109ELS_45ELS_97ELS_119ELS_97ELS_114ELS_101ELS_45ELS_114ELS_100ELS_109ELS_97EEE | -
+include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA16_KcLS_115ELS_119ELS_105ELS_116ELS_99ELS_104ELS_45ELS_112ELS_105ELS_112ELS_101ELS_108ELS_105ELS_110ELS_101EEE | -
+include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA16_KcLS_99ELS_117ELS_100ELS_97ELS_45ELS_97ELS_119ELS_97ELS_114ELS_101ELS_45ELS_114ELS_100ELS_109ELS_97EEE | -
+include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA3_KcLS_110ELS_118EEE | -
+include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA3_KcLS_97ELS_109EEE | -
+include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA4_KcLS_99ELS_112ELS_117EEE | -
+include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA6_KcLS_105ELS_110ELS_116ELS_101ELS_108EEE | -
+include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA9_KcLS_109ELS_101ELS_108ELS_108ELS_97ELS_110ELS_111ELS_120EEE | -
+include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA9_KcLS_98ELS_114ELS_111ELS_97ELS_100ELS_99ELS_111ELS_109EEE | -
+include/foundation/reflect/Enumerate.h | inlined | 1 | std::basic_string_view::begin | -
+include/foundation/reflect/Enumerate.h | inlined | 1 | std::basic_string_view::end | -
+src/fixy/os/NumaCounters.cpp | inlined | 1 | std::filesystem::path::path | -
+src/fixy/os/NumaPlacement.cpp | call | 1 | __errno_location | -
+src/fixy/os/NumaPlacement.cpp | call | 1 | syscall | -
+src/fixy/os/NumaPlacement.cpp | call | 1 | sysconf | -
+src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_attr_destroy | -
+src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_attr_init | -
+src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_attr_setaffinity_np | -
+src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_attr_setguardsize | -
+src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_attr_setstacksize | -
+src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_create | -
+src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_join | -
+src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_self | -
+src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_setname_np | -
+src/fixy/os/Topology.cpp | call | 3 | std::vector::push_back | -
+src/fixy/os/Topology.cpp | inlined | 1 | __gnu_cxx::__normal_iterator::operator* | -
+src/fixy/os/Topology.cpp | inlined | 3 | __gnu_cxx::__normal_iterator::operator++ | -
+src/fixy/os/Topology.cpp | inlined | 1 | __gnu_cxx::operator- | -
+src/fixy/os/Topology.cpp | inlined | 4 | __gnu_cxx::operator== | -
+src/fixy/os/Topology.cpp | inlined | 1 | fprintf | -
+src/fixy/os/Topology.cpp | inlined | 5 | std::basic_string::basic_string | -
+src/fixy/os/Topology.cpp | inlined | 2 | std::basic_string::c_str | -
+src/fixy/os/Topology.cpp | inlined | 6 | std::basic_string::empty | -
+src/fixy/os/Topology.cpp | inlined | 4 | std::basic_string::operator= | -
+src/fixy/os/Topology.cpp | inlined | 3 | std::basic_string::~basic_string | -
+src/fixy/os/Topology.cpp | inlined | 1 | std::basic_string_view::back | -
+src/fixy/os/Topology.cpp | inlined | 4 | std::basic_string_view::basic_string_view | -
+src/fixy/os/Topology.cpp | inlined | 1 | std::basic_string_view::begin | -
+src/fixy/os/Topology.cpp | inlined | 2 | std::basic_string_view::data | -
+src/fixy/os/Topology.cpp | inlined | 3 | std::basic_string_view::empty | -
+src/fixy/os/Topology.cpp | inlined | 1 | std::basic_string_view::end | -
+src/fixy/os/Topology.cpp | inlined | 4 | std::basic_string_view::find | -
+src/fixy/os/Topology.cpp | inlined | 5 | std::basic_string_view::operator[] | -
+src/fixy/os/Topology.cpp | inlined | 1 | std::basic_string_view::remove_prefix | -
+src/fixy/os/Topology.cpp | inlined | 1 | std::basic_string_view::remove_suffix | -
+src/fixy/os/Topology.cpp | inlined | 1 | std::basic_string_view::rfind | -
+src/fixy/os/Topology.cpp | inlined | 5 | std::basic_string_view::size | -
+src/fixy/os/Topology.cpp | inlined | 4 | std::basic_string_view::starts_with | -
+src/fixy/os/Topology.cpp | inlined | 1 | std::find | -
+src/fixy/os/Topology.cpp | inlined | 4 | std::operator== | -
+src/fixy/os/Topology.cpp | inlined | 2 | std::pair::pair | -
+src/fixy/os/Topology.cpp | inlined | 1 | std::pair::~pair | -
+src/fixy/os/Topology.cpp | inlined | 4 | std::sort | -
+src/fixy/os/Topology.cpp | inlined | 1 | std::unique | -
+src/fixy/os/Topology.cpp | inlined | 1 | std::vector::assign | -
+src/fixy/os/Topology.cpp | inlined | 10 | std::vector::begin | -
+src/fixy/os/Topology.cpp | inlined | 5 | std::vector::empty | -
+src/fixy/os/Topology.cpp | inlined | 10 | std::vector::end | -
+src/fixy/os/Topology.cpp | inlined | 9 | std::vector::operator= | -
+src/fixy/os/Topology.cpp | inlined | 6 | std::vector::operator[] | -
+src/fixy/os/Topology.cpp | inlined | 7 | std::vector::push_back | -
+src/fixy/os/Topology.cpp | inlined | 10 | std::vector::size | -
+src/fixy/os/Topology.cpp | inlined | 8 | std::vector::vector | -
+src/fixy/os/Topology.cpp | inlined | 13 | std::vector::~vector | -
+src/foundation/ContractHandler.cpp | call | 5 | abort | -
+src/foundation/ContractHandler.cpp | inlined | 3 | std::array::operator[] | -
+src/foundation/ContractHandler.cpp | inlined | 4 | std::basic_string_view::basic_string_view | -
+src/foundation/ContractHandler.cpp | inlined | 1 | std::basic_string_view::begin | -
+src/foundation/ContractHandler.cpp | inlined | 1 | std::basic_string_view::end | -
+src/foundation/ContractHandler.cpp | inlined | 1 | std::contracts::contract_violation::comment | -
+src/foundation/ContractHandler.cpp | inlined | 1 | std::contracts::contract_violation::location | -
+src/foundation/ContractHandler.cpp | inlined | 1 | std::source_location::file_name | -
+src/foundation/ContractHandler.cpp | inlined | 1 | std::source_location::function_name | -
+src/foundation/ContractHandler.cpp | inlined | 1 | std::source_location::line | -
+src/foundation/DiagRuntime.cpp | call | 2 | abort | -
+src/foundation/DiagRuntime.cpp | call | 1 | getenv | -
+src/foundation/DiagRuntime.cpp | call | 1 | strcmp | -
+src/foundation/DiagRuntime.cpp | inlined | 1 | std::__atomic_base::compare_exchange_strong | -
+src/foundation/DiagRuntime.cpp | inlined | 1 | std::__atomic_base::load | -
+src/foundation/DiagRuntime.cpp | inlined | 1 | std::atomic::exchange | -
+src/foundation/DiagRuntime.cpp | inlined | 2 | std::atomic::load | -
+src/foundation/DiagRuntime.cpp | inlined | 1 | std::basic_string_view::basic_string_view | -
+src/foundation/DiagRuntime.cpp | inlined | 1 | std::source_location::column | -
+src/foundation/DiagRuntime.cpp | inlined | 1 | std::source_location::file_name | -
+src/foundation/DiagRuntime.cpp | inlined | 1 | std::source_location::function_name | -
+src/foundation/DiagRuntime.cpp | inlined | 1 | std::source_location::line | -
+src/foundation/DiagRuntime.cpp | reference | 3 | stderr | -
+src/foundation/Permission.cpp | call | 1 | abort | -
+src/foundation/Permission.cpp | inlined | 1 | fprintf | -
+src/foundation/Permission.cpp | reference | 1 | stderr | -
+@x86_64-debug-tsan | include/fixy/Borrowed.h | call | -1 | std::span::back | -
+@x86_64-debug-tsan | include/fixy/Borrowed.h | call | -3 | std::span::span | -
+@x86_64-debug-tsan | include/fixy/Borrowed.h | inlined | -2 | std::ranges::__access::_Data::operator() | -
+@x86_64-debug-tsan | include/fixy/Borrowed.h | inlined | -1 | std::ranges::__access::_Size::operator() | -
+@x86_64-debug-tsan | include/fixy/Borrowed.h | inlined | -4 | std::span::data | -
+@x86_64-debug-tsan | include/fixy/Borrowed.h | inlined | -1 | std::span::empty | -
+@x86_64-debug-tsan | include/fixy/Borrowed.h | inlined | -1 | std::span::front | -
+@x86_64-debug-tsan | include/fixy/Borrowed.h | inlined | -1 | std::span::operator[] | -
+@x86_64-debug-tsan | include/fixy/Borrowed.h | inlined | -4 | std::span::size | -
+@x86_64-debug-tsan | include/fixy/Borrowed.h | inlined | -1 | std::span::span | -
+@x86_64-debug-tsan | include/fixy/Budgeted.h | call | -1 | std::basic_string::basic_string | -
+@x86_64-debug-tsan | include/fixy/Budgeted.h | inlined | +1 | std::basic_string::basic_string | -
+@x86_64-debug-tsan | include/fixy/Budgeted.h | inlined | -1 | std::destroy_at | -
+@x86_64-debug-tsan | include/fixy/Budgeted.h | inlined | -1 | std::vector::vector | -
+@x86_64-debug-tsan | include/fixy/Budgeted.h | inlined | -1 | std::vector::~vector | -
+@x86_64-debug-tsan | include/fixy/Checked.h | inlined | -7 | std::optional::optional | -
+@x86_64-debug-tsan | include/fixy/ConstantTime.h | inlined | -2 | std::span::data | -
+@x86_64-debug-tsan | include/fixy/ConstantTime.h | inlined | -3 | std::span::size | -
+@x86_64-debug-tsan | include/fixy/EpochVersioned.h | call | -1 | std::basic_string::basic_string | -
+@x86_64-debug-tsan | include/fixy/EpochVersioned.h | call | -3 | std::expected::expected | -
+@x86_64-debug-tsan | include/fixy/EpochVersioned.h | inlined | +1 | std::basic_string::basic_string | -
+@x86_64-debug-tsan | include/fixy/EpochVersioned.h | inlined | -1 | std::destroy_at | -
+@x86_64-debug-tsan | include/fixy/EpochVersioned.h | inlined | -1 | std::vector::vector | -
+@x86_64-debug-tsan | include/fixy/EpochVersioned.h | inlined | -1 | std::vector::~vector | -
+@x86_64-debug-tsan | include/fixy/Federation.h | call | -1 | std::expected::error | -
+@x86_64-debug-tsan | include/fixy/Federation.h | call | -1 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/Federation.h | inlined | -3 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/Federation.h | inlined | -1 | std::expected::error | -
+@x86_64-debug-tsan | include/fixy/Federation.h | inlined | -1 | std::expected::has_value | -
+@x86_64-debug-tsan | include/fixy/Federation.h | inlined | -2 | std::pair::pair | -
+@x86_64-debug-tsan | include/fixy/Federation.h | inlined | -2 | std::span::span | -
+@x86_64-debug-tsan | include/fixy/Federation.h | inlined | -1 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/FixedArray.h | inlined | -6 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/FixedArray.h | inlined | -1 | std::is_neq | -
+@x86_64-debug-tsan | include/fixy/FixedArray.h | inlined | -1 | std::span::span | -
+@x86_64-debug-tsan | include/fixy/FixedArray.h | inlined | -1 | std::strong_ordering::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/Mutation.h | call | -1 | std::vector::back | -
+@x86_64-debug-tsan | include/fixy/Mutation.h | call | -2 | std::vector::emplace_back | -
+@x86_64-debug-tsan | include/fixy/Mutation.h | call | -1 | std::vector::empty | -
+@x86_64-debug-tsan | include/fixy/Mutation.h | call | -1 | std::vector::size | -
+@x86_64-debug-tsan | include/fixy/Mutation.h | inlined | -2 | std::less::operator() | -
+@x86_64-debug-tsan | include/fixy/Mutation.h | inlined | +1 | std::optional::has_value | -
+@x86_64-debug-tsan | include/fixy/Mutation.h | inlined | +1 | std::vector::emplace_back | -
+@x86_64-debug-tsan | include/fixy/Mutation.h | inlined | -1 | std::vector::front | -
+@x86_64-debug-tsan | include/fixy/OwnedRegion.h | inlined | -4 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/OwnedRegion.h | inlined | -2 | std::exchange | -
+@x86_64-debug-tsan | include/fixy/OwnedRegion.h | inlined | -1 | std::get | -
+@x86_64-debug-tsan | include/fixy/OwnedRegion.h | inlined | -2 | std::span::span | -
+@x86_64-debug-tsan | include/fixy/Qtt.h | inlined | -1 | std::unique_ptr::unique_ptr | -
+@x86_64-debug-tsan | include/fixy/Refined.h | inlined | -1 | std::expected::expected | -
+@x86_64-debug-tsan | include/fixy/Refined.h | inlined | -1 | std::span::empty | -
+@x86_64-debug-tsan | include/fixy/Refined.h | inlined | -1 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/SelfContained.h | inlined | -2 | __gnu_cxx::__normal_iterator::operator* | -
+@x86_64-debug-tsan | include/fixy/SelfContained.h | inlined | -3 | __gnu_cxx::operator== | -
+@x86_64-debug-tsan | include/fixy/SharedRegion.h | inlined | -2 | std::exchange | -
+@x86_64-debug-tsan | include/fixy/SharedRegion.h | inlined | -1 | std::optional::has_value | -
+@x86_64-debug-tsan | include/fixy/SharedRegion.h | inlined | -1 | std::optional::operator* | -
+@x86_64-debug-tsan | include/fixy/SharedRegion.h | inlined | -1 | std::optional::optional | -
+@x86_64-debug-tsan | include/fixy/SharedRegion.h | inlined | -1 | std::span::size | -
+@x86_64-debug-tsan | include/fixy/SharedRegion.h | inlined | -1 | std::span::span | -
+@x86_64-debug-tsan | include/fixy/SipHash.h | inlined | -1 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/SipHash.h | inlined | -1 | std::pair::pair | -
+@x86_64-debug-tsan | include/fixy/SipHash.h | inlined | -1 | std::span::first | -
+@x86_64-debug-tsan | include/fixy/SipHash.h | inlined | -1 | std::span::last | -
+@x86_64-debug-tsan | include/fixy/SipHash.h | inlined | -1 | std::span::operator[] | -
+@x86_64-debug-tsan | include/fixy/SipHash.h | inlined | -1 | std::span::size | -
+@x86_64-debug-tsan | include/fixy/SipHash.h | inlined | -5 | std::span::span | -
+@x86_64-debug-tsan | include/fixy/Tagged.h | call | -2 | std::basic_string::basic_string | -
+@x86_64-debug-tsan | include/fixy/Tagged.h | call | -2 | std::filesystem::path::path | -
+@x86_64-debug-tsan | include/fixy/concurrent/AtomicSnapshot.h | inlined | +1 | std::array::data | -
+@x86_64-debug-tsan | include/fixy/concurrent/AtomicSnapshot.h | inlined | -2 | std::span::front | -
+@x86_64-debug-tsan | include/fixy/concurrent/ChaseLevDeque.h | inlined | -1 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/concurrent/ChaseLevDeque.h | inlined | -3 | std::optional::optional | -
+@x86_64-debug-tsan | include/fixy/concurrent/MpscRing.h | inlined | -2 | std::array::end | -
+@x86_64-debug-tsan | include/fixy/concurrent/MpscRing.h | inlined | -11 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/concurrent/PermissionedMpscChannel.h | inlined | -2 | std::optional::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/concurrent/PermissionedMpscChannel.h | inlined | -2 | std::optional::operator* | -
+@x86_64-debug-tsan | include/fixy/concurrent/PermissionedMpscChannel.h | inlined | -1 | std::optional::~optional | -
+@x86_64-debug-tsan | include/fixy/concurrent/Pipeline.h | call | -1 | std::binary_search | -
+@x86_64-debug-tsan | include/fixy/concurrent/Pipeline.h | call | -1 | std::vector::push_back | -
+@x86_64-debug-tsan | include/fixy/concurrent/Pipeline.h | inlined | -2 | __gnu_cxx::__normal_iterator::operator* | -
+@x86_64-debug-tsan | include/fixy/concurrent/Pipeline.h | inlined | -2 | __gnu_cxx::__normal_iterator::operator++ | -
+@x86_64-debug-tsan | include/fixy/concurrent/Pipeline.h | inlined | -2 | __gnu_cxx::operator== | -
+@x86_64-debug-tsan | include/fixy/concurrent/Pipeline.h | inlined | -1 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/concurrent/Pipeline.h | inlined | -1 | std::span::begin | -
+@x86_64-debug-tsan | include/fixy/concurrent/Pipeline.h | inlined | -1 | std::span::end | -
+@x86_64-debug-tsan | include/fixy/concurrent/Pipeline.h | inlined | -1 | std::vector::empty | -
+@x86_64-debug-tsan | include/fixy/concurrent/Spawn.h | inlined | -3 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/concurrent/Spawn.h | inlined | -2 | std::get | -
+@x86_64-debug-tsan | include/fixy/concurrent/SpscRing.h | inlined | +1 | std::array::data | -
+@x86_64-debug-tsan | include/fixy/concurrent/SpscRing.h | inlined | -2 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/concurrent/SpscRing.h | inlined | -1 | std::optional::optional | -
+@x86_64-debug-tsan | include/fixy/concurrent/SpscRing.h | inlined | -3 | std::span::data | -
+@x86_64-debug-tsan | include/fixy/concurrent/SpscRing.h | inlined | -1 | std::span::empty | -
+@x86_64-debug-tsan | include/fixy/concurrent/SpscRing.h | inlined | -2 | std::span::size | -
+@x86_64-debug-tsan | include/fixy/concurrent/Stage.h | inlined | -2 | std::tuple::tuple | -
+@x86_64-debug-tsan | include/fixy/concurrent/StageEndpointBridge.h | inlined | -3 | std::tuple::tuple | -
+@x86_64-debug-tsan | include/fixy/concurrent/StageEndpointBridge.h | inlined | -2 | std::tuple::~tuple | -
+@x86_64-debug-tsan | include/fixy/concurrent/SwmrSession.h | inlined | -2 | std::optional::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/concurrent/SwmrSession.h | inlined | -2 | std::optional::operator* | -
+@x86_64-debug-tsan | include/fixy/concurrent/SwmrSession.h | inlined | -1 | std::optional::~optional | -
+@x86_64-debug-tsan | include/fixy/fp/Polynomial.h | inlined | -2 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/fp/Polynomial.h | inlined | -1 | std::pair::pair | -
+@x86_64-debug-tsan | include/fixy/handle/Once.h | inlined | +1 | std::launder | -
+@x86_64-debug-tsan | include/fixy/handle/PublishCommit.h | inlined | +1 | std::__atomic_base::load | -
+@x86_64-debug-tsan | include/fixy/handle/PublishOnce.h | inlined | +1 | std::atomic::load | -
+@x86_64-debug-tsan | include/fixy/os/CipherDurable.h | inlined | -3 | std::expected::error | -
+@x86_64-debug-tsan | include/fixy/os/CipherDurable.h | inlined | -1 | std::expected::expected | -
+@x86_64-debug-tsan | include/fixy/os/CipherDurable.h | inlined | -3 | std::expected::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/os/CipherDurable.h | inlined | -3 | std::expected::operator* | -
+@x86_64-debug-tsan | include/fixy/os/CipherDurable.h | inlined | -3 | std::expected::~expected | -
+@x86_64-debug-tsan | include/fixy/os/CipherDurable.h | inlined | -1 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/os/CpuPinned.h | inlined | -1 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/os/CpuPinned.h | inlined | -2 | std::expected::expected | -
+@x86_64-debug-tsan | include/fixy/os/Fs.h | call | -3 | std::system_category | -
+@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -11 | std::error_code::error_code | -
+@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -2 | std::expected::error | -
+@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -8 | std::expected::expected | -
+@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -2 | std::expected::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -2 | std::expected::operator* | -
+@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -2 | std::expected::~expected | -
+@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -2 | std::span::data | -
+@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -2 | std::span::size | -
+@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -11 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/os/Futex.h | inlined | -1 | std::error_code::value | -
+@x86_64-debug-tsan | include/fixy/os/Futex.h | inlined | -1 | std::expected::has_value | -
+@x86_64-debug-tsan | include/fixy/os/Io.h | inlined | -6 | std::error_code::error_code | -
+@x86_64-debug-tsan | include/fixy/os/Io.h | inlined | -4 | std::exchange | -
+@x86_64-debug-tsan | include/fixy/os/Io.h | inlined | -6 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/os/Mmap.h | call | -3 | std::error_code::error_code | -
+@x86_64-debug-tsan | include/fixy/os/Mmap.h | call | -4 | std::expected::expected | -
+@x86_64-debug-tsan | include/fixy/os/Mmap.h | call | -3 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | -1 | std::error_code::error_code | -
+@x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | -2 | std::expected::error | -
+@x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | +3 | std::expected::expected | -
+@x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | -2 | std::expected::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | -2 | std::expected::operator* | -
+@x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | -1 | std::expected::~expected | -
+@x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | -3 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/os/NumaCounters.h | inlined | -1 | std::as_writable_bytes | -
+@x86_64-debug-tsan | include/fixy/os/NumaCounters.h | inlined | -2 | std::error_code::value | -
+@x86_64-debug-tsan | include/fixy/os/NumaCounters.h | inlined | -2 | std::expected::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/os/NumaCounters.h | inlined | -1 | std::expected::operator* | -
+@x86_64-debug-tsan | include/fixy/os/NumaCounters.h | inlined | -1 | std::expected::operator-> | -
+@x86_64-debug-tsan | include/fixy/os/NumaCounters.h | inlined | -1 | std::span::span | -
+@x86_64-debug-tsan | include/fixy/os/NumaPlacement.h | inlined | -1 | std::error_code::error_code | -
+@x86_64-debug-tsan | include/fixy/os/NumaPlacement.h | inlined | -2 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/os/OwnedFile.h | inlined | -2 | std::exchange | -
+@x86_64-debug-tsan | include/fixy/os/OwnedMmap.h | call | -1 | std::error_code::error_code | -
+@x86_64-debug-tsan | include/fixy/os/OwnedMmap.h | call | -1 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/os/OwnedMmap.h | inlined | -1 | std::error_code::error_code | -
+@x86_64-debug-tsan | include/fixy/os/OwnedMmap.h | inlined | -4 | std::exchange | -
+@x86_64-debug-tsan | include/fixy/os/OwnedMmap.h | inlined | -1 | std::pair::pair | -
+@x86_64-debug-tsan | include/fixy/os/OwnedMmap.h | inlined | -1 | std::span::data | -
+@x86_64-debug-tsan | include/fixy/os/OwnedMmap.h | inlined | -1 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/os/Path.h | call | -1 | std::basic_string::size | -
+@x86_64-debug-tsan | include/fixy/os/Path.h | call | -1 | std::filesystem::path::iterator::operator* | -
+@x86_64-debug-tsan | include/fixy/os/Path.h | call | -3 | std::filesystem::path::iterator::operator++ | -
+@x86_64-debug-tsan | include/fixy/os/Path.h | inlined | -1 | std::basic_string::empty | -
+@x86_64-debug-tsan | include/fixy/os/Path.h | inlined | -1 | std::basic_string::size | -
+@x86_64-debug-tsan | include/fixy/os/Path.h | inlined | -3 | std::expected::error | -
+@x86_64-debug-tsan | include/fixy/os/Path.h | inlined | -3 | std::expected::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/os/Path.h | inlined | +2 | std::filesystem::path::iterator::operator++ | -
+@x86_64-debug-tsan | include/fixy/os/Path.h | inlined | -3 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/os/Sched.h | inlined | -3 | std::expected::error | -
+@x86_64-debug-tsan | include/fixy/os/Sched.h | inlined | -4 | std::expected::expected | -
+@x86_64-debug-tsan | include/fixy/os/Sched.h | inlined | -3 | std::expected::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/os/Sched.h | inlined | -1 | std::expected::operator* | -
+@x86_64-debug-tsan | include/fixy/os/Sched.h | inlined | -3 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/os/Socket.h | inlined | -1 | std::error_code::error_code | -
+@x86_64-debug-tsan | include/fixy/os/Socket.h | inlined | -1 | std::expected::error | -
+@x86_64-debug-tsan | include/fixy/os/Socket.h | inlined | -4 | std::expected::expected | -
+@x86_64-debug-tsan | include/fixy/os/Socket.h | inlined | -1 | std::expected::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/os/Socket.h | inlined | -1 | std::expected::operator* | -
+@x86_64-debug-tsan | include/fixy/os/Socket.h | inlined | -1 | std::expected::~expected | -
+@x86_64-debug-tsan | include/fixy/os/Socket.h | inlined | -1 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -2 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -5 | std::error_code::error_code | -
+@x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -1 | std::expected::error | -
+@x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -2 | std::expected::expected | -
+@x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -1 | std::expected::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -1 | std::expected::operator* | -
+@x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -1 | std::expected::~expected | -
+@x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -1 | std::make_error_code | -
+@x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -9 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/os/Topology.h | call | -2 | std::basic_string::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/os/Topology.h | call | -1 | std::vector::~vector | -
+@x86_64-debug-tsan | include/fixy/os/Topology.h | inlined | -3 | __gnu_cxx::__normal_iterator::operator* | -
+@x86_64-debug-tsan | include/fixy/os/Topology.h | inlined | -1 | __gnu_cxx::__normal_iterator::operator++ | -
+@x86_64-debug-tsan | include/fixy/os/Topology.h | inlined | -3 | __gnu_cxx::operator== | -
+@x86_64-debug-tsan | include/fixy/os/Topology.h | inlined | -3 | std::optional::has_value | -
+@x86_64-debug-tsan | include/fixy/os/Topology.h | inlined | -3 | std::optional::operator* | -
+@x86_64-debug-tsan | include/fixy/os/Topology.h | inlined | -1 | std::optional::optional | -
+@x86_64-debug-tsan | include/fixy/os/Topology.h | inlined | -3 | std::span::span | -
+@x86_64-debug-tsan | include/fixy/os/Topology.h | inlined | -1 | std::vector::begin | -
+@x86_64-debug-tsan | include/fixy/os/Topology.h | inlined | -1 | std::vector::end | -
+@x86_64-debug-tsan | include/fixy/os/Topology.h | inlined | -1 | std::vector::operator[] | -
+@x86_64-debug-tsan | include/fixy/session/Checkpoint.h | call | +1 | std::invoke | -
+@x86_64-debug-tsan | include/fixy/session/Checkpoint.h | inlined | -1 | std::optional::~optional | -
+@x86_64-debug-tsan | include/fixy/session/CrashTransport.h | call | +1 | std::invoke | -
+@x86_64-debug-tsan | include/fixy/session/CrashTransport.h | call | -1 | std::optional::operator* | -
+@x86_64-debug-tsan | include/fixy/session/CrashTransport.h | inlined | -2 | std::exchange | -
+@x86_64-debug-tsan | include/fixy/session/CrashTransport.h | inlined | -1 | std::invoke | -
+@x86_64-debug-tsan | include/fixy/session/CrashTransport.h | inlined | -1 | std::optional::emplace | -
+@x86_64-debug-tsan | include/fixy/session/CrashTransport.h | inlined | -1 | std::optional::has_value | -
+@x86_64-debug-tsan | include/fixy/session/CrashTransport.h | inlined | -7 | std::optional::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/session/CrashTransport.h | inlined | -3 | std::optional::operator-> | -
+@x86_64-debug-tsan | include/fixy/session/CrashTransport.h | inlined | -2 | std::optional::optional | -
+@x86_64-debug-tsan | include/fixy/session/CrashTransport.h | inlined | -1 | std::pair::~pair | -
+@x86_64-debug-tsan | include/fixy/session/EventLog.h | call | -1 | std::vector::vector | -
+@x86_64-debug-tsan | include/fixy/session/EventLog.h | call | -1 | std::vector::~vector | -
+@x86_64-debug-tsan | include/fixy/session/EventLog.h | inlined | -2 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/session/EventLog.h | inlined | -1 | std::expected::error | -
+@x86_64-debug-tsan | include/fixy/session/EventLog.h | inlined | -1 | std::expected::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/session/EventLog.h | inlined | -1 | std::span::operator[] | -
+@x86_64-debug-tsan | include/fixy/session/EventLog.h | inlined | -2 | std::span::size | -
+@x86_64-debug-tsan | include/fixy/session/EventLog.h | inlined | -2 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/session/Handle.h | call | -2 | std::invoke | -
+@x86_64-debug-tsan | include/fixy/session/Handle.h | call | -2 | std::source_location::file_name | -
+@x86_64-debug-tsan | include/fixy/session/Handle.h | call | -2 | std::source_location::line | -
+@x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | -3 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | -5 | std::basic_string_view::data | -
+@x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | -1 | std::basic_string_view::empty | -
+@x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | -5 | std::basic_string_view::size | -
+@x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | -2 | std::optional::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | -1 | std::optional::~optional | -
+@x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | -1 | std::pair::pair | -
+@x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | +2 | std::source_location::file_name | -
+@x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | +2 | std::source_location::line | -
+@x86_64-debug-tsan | include/fixy/session/Payload.h | inlined | -7 | std::pair::pair | -
+@x86_64-debug-tsan | include/fixy/session/Recording.h | inlined | -2 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/session/Recording.h | inlined | -3 | std::optional::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/session/Recording.h | inlined | -2 | std::optional::operator* | -
+@x86_64-debug-tsan | include/fixy/session/Recording.h | inlined | -2 | std::optional::optional | -
+@x86_64-debug-tsan | include/fixy/session/Recording.h | inlined | -1 | std::pair::~pair | -
+@x86_64-debug-tsan | include/fixy/session/Watch.h | call | -1 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/session/Watch.h | inlined | -4 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/session/Watch.h | inlined | -2 | std::basic_string_view::basic_string_view | -
+@x86_64-debug-tsan | include/fixy/session/Watch.h | inlined | -2 | std::basic_string_view::data | -
+@x86_64-debug-tsan | include/fixy/session/Watch.h | inlined | -2 | std::basic_string_view::size | -
+@x86_64-debug-tsan | include/foundation/AlignedBuffer.h | inlined | -1 | std::span::data | -
+@x86_64-debug-tsan | include/foundation/AlignedBuffer.h | inlined | -1 | std::span::span | -
+@x86_64-debug-tsan | include/foundation/ChannelBinding.h | inlined | -1 | std::exchange | -
+@x86_64-debug-tsan | include/foundation/Lifetime.h | inlined | -1 | std::span::span | -
+@x86_64-debug-tsan | include/foundation/Platform.h | inlined | -1 | std::is_gt | -
+@x86_64-debug-tsan | include/foundation/Platform.h | inlined | -1 | std::is_lt | -
+@x86_64-debug-tsan | include/foundation/Platform.h | inlined | -1 | std::span::empty | -
+@x86_64-debug-tsan | include/foundation/Platform.h | inlined | -1 | std::strong_ordering::operator (conversion) | -
+@x86_64-debug-tsan | include/foundation/Simd.h | inlined | -1 | memcpy | -
+@x86_64-debug-tsan | include/foundation/Simd.h | inlined | -1 | std::bit_cast | -
+@x86_64-debug-tsan | include/foundation/SwissTableBuffer.h | inlined | -1 | std::span::data | -
+@x86_64-debug-tsan | include/foundation/SwissTableBuffer.h | inlined | -2 | std::span::span | -
+@x86_64-debug-tsan | include/foundation/algebra/Graded.h | call | -3 | std::basic_string::basic_string | -
+@x86_64-debug-tsan | include/foundation/algebra/Graded.h | call | -1 | std::basic_string::operator= | -
+@x86_64-debug-tsan | include/foundation/algebra/Graded.h | call | -2 | std::filesystem::path::path | -
+@x86_64-debug-tsan | include/foundation/algebra/Graded.h | call | -1 | std::swap | -
+@x86_64-debug-tsan | include/foundation/algebra/Graded.h | inlined | +1 | std::basic_string::basic_string | -
+@x86_64-debug-tsan | include/foundation/algebra/Graded.h | inlined | +1 | std::basic_string::operator= | -
+@x86_64-debug-tsan | include/foundation/algebra/Graded.h | inlined | -2 | std::swap | -
+@x86_64-debug-tsan | include/foundation/algebra/Graded.h | inlined | -1 | std::unique_ptr::~unique_ptr | -
+@x86_64-debug-tsan | include/foundation/algebra/lattices/AffinityLattice.h | inlined | -10 | std::array::operator[] | -
+@x86_64-debug-tsan | include/foundation/algebra/lattices/HappensBefore.h | inlined | -15 | std::array::operator[] | -
+@x86_64-debug-tsan | include/foundation/algebra/lattices/MonotoneLattice.h | inlined | -3 | std::greater::operator() | -
+@x86_64-debug-tsan | include/foundation/algebra/lattices/MonotoneLattice.h | inlined | -2 | std::less::operator() | -
+@x86_64-debug-tsan | include/foundation/algebra/lattices/StrongCounterLattice.h | inlined | -1 | std::expected::expected | -
+@x86_64-debug-tsan | include/foundation/contracts/Decide.h | inlined | -1 | __gnu_cxx::__normal_iterator::operator* | -
+@x86_64-debug-tsan | include/foundation/contracts/Decide.h | inlined | -1 | __gnu_cxx::__normal_iterator::operator++ | -
+@x86_64-debug-tsan | include/foundation/contracts/Decide.h | inlined | -1 | __gnu_cxx::operator== | -
+@x86_64-debug-tsan | include/foundation/contracts/Decide.h | inlined | -1 | std::span::begin | -
+@x86_64-debug-tsan | include/foundation/contracts/Decide.h | inlined | -9 | std::span::operator[] | -
+@x86_64-debug-tsan | include/foundation/core/Ref.h | reference | -1 | std::nothrow | -
+@x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::basic_string_view | -
+@x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::begin | -
+@x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::data | -
+@x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -4 | std::basic_string_view::empty | -
+@x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -6 | std::basic_string_view::size | -
+@x86_64-debug-tsan | include/foundation/effects/Computation.h | inlined | -1 | std::unique_ptr::unique_ptr | -
+@x86_64-debug-tsan | include/foundation/effects/Computation.h | inlined | -2 | std::unique_ptr::~unique_ptr | -
+@x86_64-debug-tsan | include/foundation/permissions/Permission.h | inlined | -1 | std::forward_as_tuple | -
+@x86_64-debug-tsan | include/foundation/permissions/Permission.h | inlined | -2 | std::optional::operator (conversion) | -
+@x86_64-debug-tsan | include/foundation/permissions/Permission.h | inlined | -1 | std::optional::operator-> | -
+@x86_64-debug-tsan | include/foundation/permissions/Permission.h | inlined | -1 | std::optional::optional | -
+@x86_64-debug-tsan | include/foundation/permissions/PermissionFork.h | inlined | -3 | std::get | -
+@x86_64-debug-tsan | include/foundation/permissions/PermissionFork.h | inlined | -1 | std::tuple::tuple | -
+@x86_64-debug-tsan | include/foundation/permissions/ReadView.h | inlined | -1 | std::pair::pair | -
+@x86_64-debug-tsan | include/foundation/reflect/EnumName.h | inlined | -1 | std::basic_string_view::empty | -
+@x86_64-debug-tsan | include/foundation/reflect/Enumerate.h | inlined | -1 | std::basic_string_view::begin | -
+@x86_64-debug-tsan | src/fixy/os/NumaCounters.cpp | call | +1 | std::filesystem::path::path | -
+@x86_64-debug-tsan | src/fixy/os/NumaCounters.cpp | inlined | -1 | std::filesystem::path::path | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | call | +2 | std::pair::pair | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | call | -3 | std::vector::push_back | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -1 | __gnu_cxx::__normal_iterator::operator* | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -3 | __gnu_cxx::__normal_iterator::operator++ | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -4 | __gnu_cxx::operator== | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -1 | std::basic_string::empty | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -2 | std::basic_string_view::basic_string_view | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -1 | std::basic_string_view::begin | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -2 | std::basic_string_view::data | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -2 | std::basic_string_view::empty | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -1 | std::basic_string_view::operator[] | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -5 | std::basic_string_view::size | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -2 | std::pair::pair | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -4 | std::vector::begin | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -1 | std::vector::empty | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -3 | std::vector::end | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -1 | std::vector::operator[] | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | +3 | std::vector::push_back | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -4 | std::vector::size | -
+@x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -1 | std::vector::~vector | -
+@x86_64-debug-tsan | src/foundation/ContractHandler.cpp | inlined | -1 | std::basic_string_view::begin | -
+@x86_64-debug-tsan | src/foundation/DiagRuntime.cpp | inlined | -1 | std::basic_string_view::basic_string_view | -
+@x86_64-debug-tsan | src/foundation/DiagRuntime.cpp | reference | -1 | stderr | -
+@x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | call | +1 | __errno_location | -
+@x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | call | +1 | write | -
+@x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | inlined | +1 | read | -
+@x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | call | +1 | std::span::front | -
+@x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | inlined | -2 | std::ranges::__access::_Data::operator() | -
+@x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | inlined | -1 | std::ranges::__access::_Size::operator() | -
+@x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | inlined | -3 | std::span::data | -
+@x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | inlined | -3 | std::span::size | -
+@x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | inlined | -2 | std::span::span | -
+@x86_64-debug-ubsan-strict | include/fixy/Budgeted.h | inlined | -1 | std::vector::~vector | -
+@x86_64-debug-ubsan-strict | include/fixy/ConstantTime.h | inlined | -2 | std::span::data | -
+@x86_64-debug-ubsan-strict | include/fixy/ConstantTime.h | inlined | -3 | std::span::size | -
+@x86_64-debug-ubsan-strict | include/fixy/EpochVersioned.h | inlined | -1 | std::vector::~vector | -
+@x86_64-debug-ubsan-strict | include/fixy/Federation.h | inlined | -1 | std::expected::error | -
+@x86_64-debug-ubsan-strict | include/fixy/FixedArray.h | call | +1 | std::array::operator[] | -
+@x86_64-debug-ubsan-strict | include/fixy/FixedArray.h | inlined | -1 | std::array::data | -
+@x86_64-debug-ubsan-strict | include/fixy/FixedArray.h | inlined | -1 | std::is_neq | -
+@x86_64-debug-ubsan-strict | include/fixy/FixedArray.h | inlined | -1 | std::span::span | -
+@x86_64-debug-ubsan-strict | include/fixy/Mutation.h | call | -1 | std::vector::emplace_back | -
+@x86_64-debug-ubsan-strict | include/fixy/Mutation.h | inlined | -4 | std::less::operator() | -
+@x86_64-debug-ubsan-strict | include/fixy/Mutation.h | inlined | +1 | std::vector::emplace_back | -
+@x86_64-debug-ubsan-strict | include/fixy/Refined.h | inlined | -1 | std::span::empty | -
+@x86_64-debug-ubsan-strict | include/fixy/SelfContained.h | inlined | +1 | __gnu_cxx::operator== | -
+@x86_64-debug-ubsan-strict | include/fixy/SelfContained.h | inlined | -2 | std::bit_cast | -
+@x86_64-debug-ubsan-strict | include/fixy/SharedRegion.h | inlined | -1 | std::optional::operator* | -
+@x86_64-debug-ubsan-strict | include/fixy/SharedRegion.h | inlined | -1 | std::span::size | -
+@x86_64-debug-ubsan-strict | include/fixy/Tagged.h | inlined | -2 | std::basic_string::basic_string | -
+@x86_64-debug-ubsan-strict | include/fixy/concurrent/PermissionedMpscChannel.h | inlined | -2 | std::optional::operator* | -
+@x86_64-debug-ubsan-strict | include/fixy/concurrent/Pipeline.h | call | -1 | std::vector::push_back | -
+@x86_64-debug-ubsan-strict | include/fixy/concurrent/Pipeline.h | inlined | -1 | std::vector::operator= | -
+@x86_64-debug-ubsan-strict | include/fixy/concurrent/StageEndpointBridge.h | inlined | -1 | std::tuple::tuple | -
+@x86_64-debug-ubsan-strict | include/fixy/concurrent/StageEndpointBridge.h | inlined | -2 | std::tuple::~tuple | -
+@x86_64-debug-ubsan-strict | include/fixy/concurrent/SwmrSession.h | inlined | -2 | std::optional::operator* | -
+@x86_64-debug-ubsan-strict | include/fixy/handle/OneShotFlag.h | inlined | -1 | std::atomic::load | -
+@x86_64-debug-ubsan-strict | include/fixy/handle/PublishOnce.h | inlined | -2 | std::atomic::load | -
+@x86_64-debug-ubsan-strict | include/fixy/os/CipherDurable.h | inlined | -3 | std::expected::error | -
+@x86_64-debug-ubsan-strict | include/fixy/os/CipherDurable.h | inlined | -3 | std::expected::operator* | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Fs.h | inlined | -2 | std::expected::error | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Fs.h | inlined | -2 | std::expected::operator* | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Fs.h | inlined | -1 | std::filesystem::path::c_str | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Futex.h | inlined | -1 | std::error_code::value | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Mmap.h | call | +1 | std::unexpected::unexpected | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Mmap.h | inlined | -2 | std::expected::error | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Mmap.h | inlined | -2 | std::expected::operator* | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Mmap.h | inlined | -1 | std::unexpected::unexpected | -
+@x86_64-debug-ubsan-strict | include/fixy/os/NumaCounters.h | inlined | -2 | std::error_code::value | -
+@x86_64-debug-ubsan-strict | include/fixy/os/NumaCounters.h | inlined | -1 | std::expected::operator* | -
+@x86_64-debug-ubsan-strict | include/fixy/os/NumaCounters.h | inlined | -1 | std::expected::operator-> | -
+@x86_64-debug-ubsan-strict | include/fixy/os/OwnedFile.h | inlined | -1 | std::exchange | -
+@x86_64-debug-ubsan-strict | include/fixy/os/OwnedMmap.h | inlined | -1 | std::span::data | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Path.h | inlined | -3 | std::expected::error | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Sched.h | inlined | -3 | std::expected::error | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Sched.h | inlined | -1 | std::expected::operator* | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Socket.h | inlined | -1 | std::expected::error | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Socket.h | inlined | -1 | std::expected::operator* | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Time.h | inlined | -1 | std::expected::error | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Time.h | inlined | -1 | std::expected::operator* | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Topology.h | call | -1 | std::vector::~vector | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Topology.h | inlined | -1 | __gnu_cxx::operator== | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Topology.h | inlined | -3 | std::optional::operator* | -
+@x86_64-debug-ubsan-strict | include/fixy/session/Checkpoint.h | call | +1 | std::optional::operator* | -
+@x86_64-debug-ubsan-strict | include/fixy/session/Checkpoint.h | inlined | +1 | std::get | -
+@x86_64-debug-ubsan-strict | include/fixy/session/CrashTransport.h | inlined | -1 | std::exchange | -
+@x86_64-debug-ubsan-strict | include/fixy/session/CrashTransport.h | inlined | +2 | std::get | -
+@x86_64-debug-ubsan-strict | include/fixy/session/CrashTransport.h | inlined | -1 | std::optional::operator-> | -
+@x86_64-debug-ubsan-strict | include/fixy/session/EventLog.h | inlined | -1 | std::expected::error | -
+@x86_64-debug-ubsan-strict | include/fixy/session/EventLog.h | inlined | -1 | std::span::size | -
+@x86_64-debug-ubsan-strict | include/fixy/session/EventLog.h | inlined | -1 | std::vector::vector | -
+@x86_64-debug-ubsan-strict | include/fixy/session/Handle.h | inlined | -4 | std::basic_string_view::size | -
+@x86_64-debug-ubsan-strict | include/fixy/session/Recording.h | inlined | -2 | std::optional::operator (conversion) | -
+@x86_64-debug-ubsan-strict | include/fixy/session/Recording.h | inlined | -2 | std::optional::operator* | -
+@x86_64-debug-ubsan-strict | include/fixy/session/Watch.h | inlined | -1 | std::basic_string_view::size | -
+@x86_64-debug-ubsan-strict | include/foundation/AlignedBuffer.h | inlined | -1 | std::span::data | -
+@x86_64-debug-ubsan-strict | include/foundation/ChannelBinding.h | inlined | -1 | std::exchange | -
+@x86_64-debug-ubsan-strict | include/foundation/Platform.h | inlined | -1 | std::is_gt | -
+@x86_64-debug-ubsan-strict | include/foundation/Platform.h | inlined | -1 | std::is_lt | -
+@x86_64-debug-ubsan-strict | include/foundation/SwissTableBuffer.h | inlined | -1 | std::span::data | -
+@x86_64-debug-ubsan-strict | include/foundation/algebra/Graded.h | inlined | -2 | std::basic_string::basic_string | -
+@x86_64-debug-ubsan-strict | include/foundation/algebra/Graded.h | inlined | -1 | std::filesystem::path::path | -
+@x86_64-debug-ubsan-strict | include/foundation/algebra/lattices/MonotoneLattice.h | inlined | -2 | std::greater::operator() | -
+@x86_64-debug-ubsan-strict | include/foundation/algebra/lattices/MonotoneLattice.h | inlined | -2 | std::less::operator() | -
+@x86_64-debug-ubsan-strict | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::basic_string_view::begin | -
+@x86_64-debug-ubsan-strict | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::data | -
+@x86_64-debug-ubsan-strict | include/foundation/diag/JsonEmitter.h | inlined | -6 | std::basic_string_view::empty | -
+@x86_64-debug-ubsan-strict | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::size | -
+@x86_64-debug-ubsan-strict | include/foundation/effects/Computation.h | inlined | -2 | std::unique_ptr::~unique_ptr | -
+@x86_64-debug-ubsan-strict | include/foundation/effects/Ctx.h | inlined | -2 | std::__atomic_base::load | -
+@x86_64-debug-ubsan-strict | include/foundation/permissions/Permission.h | inlined | -1 | std::optional::operator (conversion) | -
+@x86_64-debug-ubsan-strict | include/foundation/permissions/Permission.h | inlined | -1 | std::optional::operator-> | -
+@x86_64-debug-ubsan-strict | include/foundation/permissions/PermissionFork.h | inlined | -3 | std::get | -
+@x86_64-debug-ubsan-strict | include/foundation/reflect/EnumName.h | inlined | -2 | std::basic_string_view::empty | -
+@x86_64-debug-ubsan-strict | include/foundation/reflect/Enumerate.h | inlined | -1 | std::basic_string_view::begin | -
+@x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | call | +2 | std::basic_string::basic_string | -
+@x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | call | +4 | std::basic_string::operator= | -
+@x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | call | -3 | std::vector::push_back | -
+@x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | call | +3 | std::vector::vector | -
+@x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | inlined | +2 | __gnu_cxx::__normal_iterator::operator* | -
+@x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | inlined | -1 | __gnu_cxx::operator== | -
+@x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | inlined | -2 | std::basic_string::basic_string | -
+@x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | inlined | -4 | std::basic_string::empty | -
+@x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | inlined | -4 | std::basic_string::operator= | -
+@x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | inlined | -2 | std::basic_string_view::data | -
+@x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | inlined | -2 | std::basic_string_view::empty | -
+@x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | inlined | +4 | std::basic_string_view::operator[] | -
+@x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | inlined | -2 | std::basic_string_view::size | -
+@x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | inlined | +3 | std::vector::push_back | -
+@x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | inlined | -4 | std::vector::size | -
+@x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | inlined | -3 | std::vector::vector | -
+@x86_64-debug-ubsan-strict | src/foundation/ContractHandler.cpp | call | +2 | std::basic_string_view::basic_string_view | -
+@x86_64-debug-ubsan-strict | src/foundation/ContractHandler.cpp | inlined | -1 | std::contracts::contract_violation::comment | -
+@x86_64-debug-ubsan-strict | src/foundation/DiagRuntime.cpp | reference | -1 | stderr | -
+@x86_64-release | include/fixy/Bands.h | inlined | -1 | std::unique_ptr::unique_ptr | -
+@x86_64-release | include/fixy/Borrowed.h | call | -1 | std::span::back | -
+@x86_64-release | include/fixy/Borrowed.h | call | -1 | std::span::operator[] | -
+@x86_64-release | include/fixy/Borrowed.h | call | -3 | std::span::span | -
+@x86_64-release | include/fixy/Borrowed.h | inlined | -2 | std::ranges::__access::_Data::operator() | -
+@x86_64-release | include/fixy/Borrowed.h | inlined | -1 | std::ranges::__access::_Size::operator() | -
+@x86_64-release | include/fixy/Borrowed.h | inlined | -4 | std::span::data | -
+@x86_64-release | include/fixy/Borrowed.h | inlined | -1 | std::span::empty | -
+@x86_64-release | include/fixy/Borrowed.h | inlined | -1 | std::span::front | -
+@x86_64-release | include/fixy/Borrowed.h | inlined | -1 | std::span::operator[] | -
+@x86_64-release | include/fixy/Borrowed.h | inlined | -4 | std::span::size | -
+@x86_64-release | include/fixy/Borrowed.h | inlined | -2 | std::span::span | -
+@x86_64-release | include/fixy/Budgeted.h | call | -1 | std::basic_string::basic_string | -
+@x86_64-release | include/fixy/Budgeted.h | inlined | +1 | std::basic_string::basic_string | -
+@x86_64-release | include/fixy/Budgeted.h | inlined | -1 | std::destroy_at | -
+@x86_64-release | include/fixy/Budgeted.h | inlined | -1 | std::expected::operator* | -
+@x86_64-release | include/fixy/Budgeted.h | inlined | -1 | std::vector::vector | -
+@x86_64-release | include/fixy/Budgeted.h | inlined | -1 | std::vector::~vector | -
+@x86_64-release | include/fixy/Checked.h | call | -3 | abort | -
+@x86_64-release | include/fixy/Checked.h | inlined | -7 | std::optional::optional | -
+@x86_64-release | include/fixy/ConstantTime.h | inlined | -2 | std::span::data | -
+@x86_64-release | include/fixy/ConstantTime.h | inlined | -2 | std::span::operator[] | -
+@x86_64-release | include/fixy/ConstantTime.h | inlined | -3 | std::span::size | -
+@x86_64-release | include/fixy/EpochVersioned.h | call | -1 | std::basic_string::basic_string | -
+@x86_64-release | include/fixy/EpochVersioned.h | call | -3 | std::expected::expected | -
+@x86_64-release | include/fixy/EpochVersioned.h | inlined | +1 | std::basic_string::basic_string | -
+@x86_64-release | include/fixy/EpochVersioned.h | inlined | -1 | std::destroy_at | -
+@x86_64-release | include/fixy/EpochVersioned.h | inlined | -1 | std::vector::vector | -
+@x86_64-release | include/fixy/EpochVersioned.h | inlined | -1 | std::vector::~vector | -
+@x86_64-release | include/fixy/Federation.h | call | -1 | std::expected::error | -
+@x86_64-release | include/fixy/Federation.h | call | -1 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/Federation.h | inlined | -3 | std::array::operator[] | -
+@x86_64-release | include/fixy/Federation.h | inlined | -1 | std::expected::error | -
+@x86_64-release | include/fixy/Federation.h | inlined | -2 | std::pair::pair | -
+@x86_64-release | include/fixy/Federation.h | inlined | -2 | std::span::span | -
+@x86_64-release | include/fixy/Federation.h | inlined | -1 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/FixedArray.h | inlined | -1 | std::array::data | -
+@x86_64-release | include/fixy/FixedArray.h | inlined | -7 | std::array::operator[] | -
+@x86_64-release | include/fixy/FixedArray.h | inlined | -1 | std::is_neq | -
+@x86_64-release | include/fixy/FixedArray.h | inlined | -1 | std::span::span | -
+@x86_64-release | include/fixy/FixedArray.h | inlined | -1 | std::strong_ordering::operator (conversion) | -
+@x86_64-release | include/fixy/Mutation.h | call | -1 | std::vector::back | -
+@x86_64-release | include/fixy/Mutation.h | call | -2 | std::vector::emplace_back | -
+@x86_64-release | include/fixy/Mutation.h | call | -1 | std::vector::empty | -
+@x86_64-release | include/fixy/Mutation.h | call | -1 | std::vector::operator[] | -
+@x86_64-release | include/fixy/Mutation.h | call | -1 | std::vector::size | -
+@x86_64-release | include/fixy/Mutation.h | inlined | -1 | std::greater::operator() | -
+@x86_64-release | include/fixy/Mutation.h | inlined | -3 | std::less::operator() | -
+@x86_64-release | include/fixy/Mutation.h | inlined | -1 | std::optional::operator* | -
+@x86_64-release | include/fixy/Mutation.h | inlined | -1 | std::vector::back | -
+@x86_64-release | include/fixy/Mutation.h | inlined | +1 | std::vector::emplace_back | -
+@x86_64-release | include/fixy/Mutation.h | inlined | -1 | std::vector::front | -
+@x86_64-release | include/fixy/OwnedRegion.h | inlined | -4 | std::array::operator[] | -
+@x86_64-release | include/fixy/OwnedRegion.h | inlined | -2 | std::exchange | -
+@x86_64-release | include/fixy/OwnedRegion.h | inlined | -1 | std::get | -
+@x86_64-release | include/fixy/OwnedRegion.h | inlined | -2 | std::span::span | -
+@x86_64-release | include/fixy/Qtt.h | inlined | -1 | std::unique_ptr::unique_ptr | -
+@x86_64-release | include/fixy/Refined.h | inlined | -1 | std::expected::expected | -
+@x86_64-release | include/fixy/Refined.h | inlined | -1 | std::span::empty | -
+@x86_64-release | include/fixy/Refined.h | inlined | -1 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/SelfContained.h | inlined | -2 | __gnu_cxx::__normal_iterator::operator* | -
+@x86_64-release | include/fixy/SelfContained.h | inlined | -3 | __gnu_cxx::operator== | -
+@x86_64-release | include/fixy/SharedRegion.h | inlined | -2 | std::exchange | -
+@x86_64-release | include/fixy/SharedRegion.h | inlined | -1 | std::optional::has_value | -
+@x86_64-release | include/fixy/SharedRegion.h | inlined | -1 | std::optional::operator* | -
+@x86_64-release | include/fixy/SharedRegion.h | inlined | -1 | std::optional::optional | -
+@x86_64-release | include/fixy/SharedRegion.h | inlined | -1 | std::span::operator[] | -
+@x86_64-release | include/fixy/SharedRegion.h | inlined | -1 | std::span::size | -
+@x86_64-release | include/fixy/SharedRegion.h | inlined | -1 | std::span::span | -
+@x86_64-release | include/fixy/SipHash.h | inlined | -1 | std::array::operator[] | -
+@x86_64-release | include/fixy/SipHash.h | inlined | -1 | std::span::first | -
+@x86_64-release | include/fixy/SipHash.h | inlined | -1 | std::span::last | -
+@x86_64-release | include/fixy/SipHash.h | inlined | -1 | std::span::operator[] | -
+@x86_64-release | include/fixy/SipHash.h | inlined | -2 | std::span::size | -
+@x86_64-release | include/fixy/SipHash.h | inlined | -5 | std::span::span | -
+@x86_64-release | include/fixy/SipHash.h | inlined | -1 | std::span::subspan | -
+@x86_64-release | include/fixy/Tagged.h | call | -2 | std::basic_string::basic_string | -
+@x86_64-release | include/fixy/Tagged.h | call | -2 | std::filesystem::path::path | -
+@x86_64-release | include/fixy/Tagged.h | call | +3 | std::filesystem::path::~path | -
+@x86_64-release | include/fixy/concurrent/AtomicSnapshot.h | inlined | -2 | std::span::front | -
+@x86_64-release | include/fixy/concurrent/ChaseLevDeque.h | inlined | -1 | std::__atomic_base::store | -
+@x86_64-release | include/fixy/concurrent/ChaseLevDeque.h | inlined | -3 | std::array::operator[] | -
+@x86_64-release | include/fixy/concurrent/ChaseLevDeque.h | inlined | -3 | std::optional::optional | -
+@x86_64-release | include/fixy/concurrent/MpscRing.h | inlined | +1 | std::array::begin | -
+@x86_64-release | include/fixy/concurrent/MpscRing.h | inlined | -2 | std::array::end | -
+@x86_64-release | include/fixy/concurrent/MpscRing.h | inlined | -11 | std::array::operator[] | -
+@x86_64-release | include/fixy/concurrent/MpscRing.h | inlined | -1 | std::countr_zero | -
+@x86_64-release | include/fixy/concurrent/MpscRing.h | inlined | -1 | std::optional::optional | -
+@x86_64-release | include/fixy/concurrent/MpscRing.h | inlined | -1 | std::span::size | -
+@x86_64-release | include/fixy/concurrent/PermissionedMpscChannel.h | call | -1 | std::optional::operator* | -
+@x86_64-release | include/fixy/concurrent/PermissionedMpscChannel.h | inlined | -2 | std::optional::operator (conversion) | -
+@x86_64-release | include/fixy/concurrent/PermissionedMpscChannel.h | inlined | -2 | std::optional::operator* | -
+@x86_64-release | include/fixy/concurrent/PermissionedMpscChannel.h | inlined | -1 | std::optional::~optional | -
+@x86_64-release | include/fixy/concurrent/Pipeline.h | call | +1 | pthread_self | -
+@x86_64-release | include/fixy/concurrent/Pipeline.h | call | -1 | std::binary_search | -
+@x86_64-release | include/fixy/concurrent/Pipeline.h | call | -1 | std::vector::operator= | -
+@x86_64-release | include/fixy/concurrent/Pipeline.h | call | +1 | std::vector::operator=.isra | -
+@x86_64-release | include/fixy/concurrent/Pipeline.h | call | -1 | std::vector::push_back | -
+@x86_64-release | include/fixy/concurrent/Pipeline.h | inlined | -2 | __gnu_cxx::__normal_iterator::operator* | -
+@x86_64-release | include/fixy/concurrent/Pipeline.h | inlined | -2 | __gnu_cxx::__normal_iterator::operator++ | -
+@x86_64-release | include/fixy/concurrent/Pipeline.h | inlined | -2 | __gnu_cxx::operator== | -
+@x86_64-release | include/fixy/concurrent/Pipeline.h | inlined | -1 | std::array::operator[] | -
+@x86_64-release | include/fixy/concurrent/Pipeline.h | inlined | -1 | std::span::begin | -
+@x86_64-release | include/fixy/concurrent/Pipeline.h | inlined | -1 | std::span::end | -
+@x86_64-release | include/fixy/concurrent/Pipeline.h | inlined | -1 | std::vector::begin | -
+@x86_64-release | include/fixy/concurrent/Pipeline.h | inlined | -1 | std::vector::end | -
+@x86_64-release | include/fixy/concurrent/Pipeline.h | inlined | -1 | std::vector::operator[] | -
+@x86_64-release | include/fixy/concurrent/Spawn.h | inlined | -2 | std::array::operator[] | -
+@x86_64-release | include/fixy/concurrent/Spawn.h | inlined | -2 | std::get | -
+@x86_64-release | include/fixy/concurrent/SpscRing.h | inlined | +1 | std::array::data | -
+@x86_64-release | include/fixy/concurrent/SpscRing.h | inlined | -2 | std::array::operator[] | -
+@x86_64-release | include/fixy/concurrent/SpscRing.h | inlined | -1 | std::optional::optional | -
+@x86_64-release | include/fixy/concurrent/SpscRing.h | inlined | -3 | std::span::data | -
+@x86_64-release | include/fixy/concurrent/SpscRing.h | inlined | -1 | std::span::empty | -
+@x86_64-release | include/fixy/concurrent/SpscRing.h | inlined | -2 | std::span::size | -
+@x86_64-release | include/fixy/concurrent/Stage.h | inlined | -1 | std::tuple::tuple | -
+@x86_64-release | include/fixy/concurrent/StageEndpointBridge.h | inlined | -3 | std::tuple::tuple | -
+@x86_64-release | include/fixy/concurrent/StageEndpointBridge.h | inlined | -1 | std::tuple::~tuple | -
+@x86_64-release | include/fixy/concurrent/SwmrSession.h | inlined | -2 | std::optional::operator (conversion) | -
+@x86_64-release | include/fixy/concurrent/SwmrSession.h | inlined | -2 | std::optional::operator* | -
+@x86_64-release | include/fixy/concurrent/SwmrSession.h | inlined | -1 | std::optional::~optional | -
+@x86_64-release | include/fixy/fp/Polynomial.h | inlined | -2 | std::array::operator[] | -
+@x86_64-release | include/fixy/fp/Polynomial.h | inlined | -1 | std::pair::pair | -
+@x86_64-release | include/fixy/handle/PublishCommit.h | inlined | +1 | std::__atomic_base::load | -
+@x86_64-release | include/fixy/handle/PublishOnce.h | inlined | +1 | std::atomic::load | -
+@x86_64-release | include/fixy/handle/PublishOnce.h | reference | -1 | stderr | -
+@x86_64-release | include/fixy/os/CipherDurable.h | inlined | -3 | std::expected::error | -
+@x86_64-release | include/fixy/os/CipherDurable.h | inlined | -6 | std::expected::expected | -
+@x86_64-release | include/fixy/os/CipherDurable.h | inlined | -3 | std::expected::operator (conversion) | -
+@x86_64-release | include/fixy/os/CipherDurable.h | inlined | -3 | std::expected::operator* | -
+@x86_64-release | include/fixy/os/CipherDurable.h | inlined | -3 | std::expected::~expected | -
+@x86_64-release | include/fixy/os/CipherDurable.h | inlined | -3 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/CpuPinned.h | inlined | -1 | std::array::operator[] | -
+@x86_64-release | include/fixy/os/CpuPinned.h | inlined | -2 | std::expected::expected | -
+@x86_64-release | include/fixy/os/CpuPinned.h | inlined | -1 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/Fd.h | inlined | -1 | std::exchange | -
+@x86_64-release | include/fixy/os/Fs.h | call | -2 | std::system_category | -
+@x86_64-release | include/fixy/os/Fs.h | inlined | -11 | std::error_code::error_code | -
+@x86_64-release | include/fixy/os/Fs.h | inlined | -2 | std::expected::error | -
+@x86_64-release | include/fixy/os/Fs.h | inlined | -5 | std::expected::expected | -
+@x86_64-release | include/fixy/os/Fs.h | inlined | -2 | std::expected::operator (conversion) | -
+@x86_64-release | include/fixy/os/Fs.h | inlined | -2 | std::expected::operator* | -
+@x86_64-release | include/fixy/os/Fs.h | inlined | -2 | std::expected::~expected | -
+@x86_64-release | include/fixy/os/Fs.h | inlined | -4 | std::filesystem::path::c_str | -
+@x86_64-release | include/fixy/os/Fs.h | inlined | -2 | std::span::data | -
+@x86_64-release | include/fixy/os/Fs.h | inlined | -2 | std::span::size | -
+@x86_64-release | include/fixy/os/Fs.h | inlined | -11 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/Futex.h | inlined | -1 | std::error_code::value | -
+@x86_64-release | include/fixy/os/Futex.h | inlined | -1 | std::expected::has_value | -
+@x86_64-release | include/fixy/os/Io.h | call | -1 | __errno_location | -
+@x86_64-release | include/fixy/os/Io.h | call | -1 | close | -
+@x86_64-release | include/fixy/os/Io.h | call | -1 | munmap | -
+@x86_64-release | include/fixy/os/Io.h | call | -1 | std::system_category | -
+@x86_64-release | include/fixy/os/Io.h | inlined | -6 | std::error_code::error_code | -
+@x86_64-release | include/fixy/os/Io.h | inlined | -7 | std::exchange | -
+@x86_64-release | include/fixy/os/Io.h | inlined | -1 | std::expected::expected | -
+@x86_64-release | include/fixy/os/Io.h | inlined | -6 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/Mmap.h | call | -3 | std::error_code::error_code | -
+@x86_64-release | include/fixy/os/Mmap.h | call | -4 | std::expected::expected | -
+@x86_64-release | include/fixy/os/Mmap.h | call | -1 | std::system_category | -
+@x86_64-release | include/fixy/os/Mmap.h | call | -3 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/Mmap.h | inlined | -1 | std::error_code::error_code | -
+@x86_64-release | include/fixy/os/Mmap.h | inlined | -2 | std::expected::error | -
+@x86_64-release | include/fixy/os/Mmap.h | inlined | -1 | std::expected::expected | -
+@x86_64-release | include/fixy/os/Mmap.h | inlined | -2 | std::expected::operator (conversion) | -
+@x86_64-release | include/fixy/os/Mmap.h | inlined | -2 | std::expected::operator* | -
+@x86_64-release | include/fixy/os/Mmap.h | inlined | -2 | std::expected::~expected | -
+@x86_64-release | include/fixy/os/Mmap.h | inlined | -3 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/NumaCounters.h | call | +1 | std::filesystem::path::~path | -
+@x86_64-release | include/fixy/os/NumaCounters.h | inlined | -1 | std::as_writable_bytes | -
+@x86_64-release | include/fixy/os/NumaCounters.h | inlined | -2 | std::error_code::value | -
+@x86_64-release | include/fixy/os/NumaCounters.h | inlined | -2 | std::expected::operator (conversion) | -
+@x86_64-release | include/fixy/os/NumaCounters.h | inlined | -1 | std::expected::operator* | -
+@x86_64-release | include/fixy/os/NumaCounters.h | inlined | -1 | std::expected::operator-> | -
+@x86_64-release | include/fixy/os/NumaCounters.h | inlined | -1 | std::span::span | -
+@x86_64-release | include/fixy/os/NumaPlacement.h | inlined | -1 | std::error_code::error_code | -
+@x86_64-release | include/fixy/os/NumaPlacement.h | inlined | -2 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/OwnedFile.h | inlined | -2 | std::exchange | -
+@x86_64-release | include/fixy/os/OwnedFile.h | inlined | -2 | std::expected::expected | -
+@x86_64-release | include/fixy/os/OwnedMmap.h | call | -1 | std::error_code::error_code | -
+@x86_64-release | include/fixy/os/OwnedMmap.h | call | -1 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/OwnedMmap.h | inlined | -1 | std::error_code::error_code | -
+@x86_64-release | include/fixy/os/OwnedMmap.h | inlined | -4 | std::exchange | -
+@x86_64-release | include/fixy/os/OwnedMmap.h | inlined | -1 | std::pair::pair | -
+@x86_64-release | include/fixy/os/OwnedMmap.h | inlined | -1 | std::span::data | -
+@x86_64-release | include/fixy/os/OwnedMmap.h | inlined | -1 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/Path.h | call | -1 | std::basic_string::size | -
+@x86_64-release | include/fixy/os/Path.h | call | -1 | std::filesystem::path::iterator::operator* | -
+@x86_64-release | include/fixy/os/Path.h | call | -3 | std::filesystem::path::iterator::operator++ | -
+@x86_64-release | include/fixy/os/Path.h | inlined | -1 | std::basic_string::empty | -
+@x86_64-release | include/fixy/os/Path.h | inlined | -1 | std::basic_string::size | -
+@x86_64-release | include/fixy/os/Path.h | inlined | -3 | std::expected::error | -
+@x86_64-release | include/fixy/os/Path.h | inlined | -3 | std::expected::operator (conversion) | -
+@x86_64-release | include/fixy/os/Path.h | inlined | +2 | std::filesystem::path::iterator::operator++ | -
+@x86_64-release | include/fixy/os/Path.h | inlined | -3 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/Sched.h | inlined | -1 | std::exchange | -
+@x86_64-release | include/fixy/os/Sched.h | inlined | -3 | std::expected::error | -
+@x86_64-release | include/fixy/os/Sched.h | inlined | -4 | std::expected::expected | -
+@x86_64-release | include/fixy/os/Sched.h | inlined | -2 | std::expected::operator (conversion) | -
+@x86_64-release | include/fixy/os/Sched.h | inlined | -1 | std::expected::operator* | -
+@x86_64-release | include/fixy/os/Sched.h | inlined | -4 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/Socket.h | inlined | -1 | std::error_code::error_code | -
+@x86_64-release | include/fixy/os/Socket.h | inlined | -1 | std::expected::error | -
+@x86_64-release | include/fixy/os/Socket.h | inlined | -4 | std::expected::expected | -
+@x86_64-release | include/fixy/os/Socket.h | inlined | -1 | std::expected::operator (conversion) | -
+@x86_64-release | include/fixy/os/Socket.h | inlined | -1 | std::expected::operator* | -
+@x86_64-release | include/fixy/os/Socket.h | inlined | -1 | std::expected::~expected | -
+@x86_64-release | include/fixy/os/Socket.h | inlined | -1 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/Time.h | call | -1 | std::system_category | -
+@x86_64-release | include/fixy/os/Time.h | inlined | -4 | std::array::operator[] | -
+@x86_64-release | include/fixy/os/Time.h | inlined | -5 | std::error_code::error_code | -
+@x86_64-release | include/fixy/os/Time.h | inlined | -1 | std::expected::error | -
+@x86_64-release | include/fixy/os/Time.h | inlined | -2 | std::expected::expected | -
+@x86_64-release | include/fixy/os/Time.h | inlined | -1 | std::expected::operator (conversion) | -
+@x86_64-release | include/fixy/os/Time.h | inlined | -1 | std::expected::operator* | -
+@x86_64-release | include/fixy/os/Time.h | inlined | -1 | std::expected::~expected | -
+@x86_64-release | include/fixy/os/Time.h | inlined | -9 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/Topology.h | call | -2 | std::basic_string::operator (conversion) | -
+@x86_64-release | include/fixy/os/Topology.h | call | -1 | std::vector::~vector | -
+@x86_64-release | include/fixy/os/Topology.h | inlined | -3 | __gnu_cxx::__normal_iterator::operator* | -
+@x86_64-release | include/fixy/os/Topology.h | inlined | -1 | __gnu_cxx::__normal_iterator::operator++ | -
+@x86_64-release | include/fixy/os/Topology.h | inlined | -3 | __gnu_cxx::operator== | -
+@x86_64-release | include/fixy/os/Topology.h | inlined | -3 | std::optional::operator* | -
+@x86_64-release | include/fixy/os/Topology.h | inlined | -1 | std::optional::optional | -
+@x86_64-release | include/fixy/os/Topology.h | inlined | -3 | std::span::span | -
+@x86_64-release | include/fixy/os/Topology.h | inlined | -1 | std::vector::begin | -
+@x86_64-release | include/fixy/os/Topology.h | inlined | -1 | std::vector::end | -
+@x86_64-release | include/fixy/os/Topology.h | inlined | -2 | std::vector::operator[] | -
+@x86_64-release | include/fixy/session/Checkpoint.h | inlined | -1 | std::optional::operator* | -
+@x86_64-release | include/fixy/session/Checkpoint.h | inlined | -1 | std::optional::~optional | -
+@x86_64-release | include/fixy/session/CrashTransport.h | call | -1 | std::optional::operator* | -
+@x86_64-release | include/fixy/session/CrashTransport.h | inlined | -2 | std::exchange | -
+@x86_64-release | include/fixy/session/CrashTransport.h | inlined | -1 | std::invoke | -
+@x86_64-release | include/fixy/session/CrashTransport.h | inlined | -1 | std::optional::emplace | -
+@x86_64-release | include/fixy/session/CrashTransport.h | inlined | -1 | std::optional::has_value | -
+@x86_64-release | include/fixy/session/CrashTransport.h | inlined | -5 | std::optional::operator (conversion) | -
+@x86_64-release | include/fixy/session/CrashTransport.h | inlined | -3 | std::optional::operator-> | -
+@x86_64-release | include/fixy/session/CrashTransport.h | inlined | -2 | std::optional::optional | -
+@x86_64-release | include/fixy/session/CrashTransport.h | inlined | -1 | std::pair::~pair | -
+@x86_64-release | include/fixy/session/CrashTransport.h | reference | -7 | stderr | -
+@x86_64-release | include/fixy/session/EventLog.h | call | -1 | std::vector::vector | -
+@x86_64-release | include/fixy/session/EventLog.h | call | -1 | std::vector::~vector | -
+@x86_64-release | include/fixy/session/EventLog.h | inlined | -2 | std::array::operator[] | -
+@x86_64-release | include/fixy/session/EventLog.h | inlined | -1 | std::expected::error | -
+@x86_64-release | include/fixy/session/EventLog.h | inlined | -1 | std::expected::operator (conversion) | -
+@x86_64-release | include/fixy/session/EventLog.h | inlined | -1 | std::span::operator[] | -
+@x86_64-release | include/fixy/session/EventLog.h | inlined | -2 | std::span::size | -
+@x86_64-release | include/fixy/session/EventLog.h | inlined | -2 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/session/EventLog.h | inlined | -1 | std::vector::operator[] | -
+@x86_64-release | include/fixy/session/EventLog.h | reference | -1 | stderr | -
+@x86_64-release | include/fixy/session/Handle.h | call | -1 | abort | -
+@x86_64-release | include/fixy/session/Handle.h | call | -2 | std::invoke | -
+@x86_64-release | include/fixy/session/Handle.h | call | -2 | std::optional::operator* | -
+@x86_64-release | include/fixy/session/Handle.h | call | -2 | std::source_location::file_name | -
+@x86_64-release | include/fixy/session/Handle.h | call | -2 | std::source_location::line | -
+@x86_64-release | include/fixy/session/Handle.h | inlined | -3 | std::array::operator[] | -
+@x86_64-release | include/fixy/session/Handle.h | inlined | -5 | std::basic_string_view::data | -
+@x86_64-release | include/fixy/session/Handle.h | inlined | -1 | std::basic_string_view::empty | -
+@x86_64-release | include/fixy/session/Handle.h | inlined | -5 | std::basic_string_view::size | -
+@x86_64-release | include/fixy/session/Handle.h | inlined | -2 | std::optional::operator (conversion) | -
+@x86_64-release | include/fixy/session/Handle.h | inlined | -1 | std::optional::operator* | -
+@x86_64-release | include/fixy/session/Handle.h | inlined | -1 | std::optional::~optional | -
+@x86_64-release | include/fixy/session/Handle.h | inlined | -1 | std::pair::pair | -
+@x86_64-release | include/fixy/session/Handle.h | inlined | +2 | std::source_location::file_name | -
+@x86_64-release | include/fixy/session/Handle.h | inlined | +2 | std::source_location::line | -
+@x86_64-release | include/fixy/session/Handle.h | reference | -7 | stderr | -
+@x86_64-release | include/fixy/session/Payload.h | inlined | -7 | std::pair::pair | -
+@x86_64-release | include/fixy/session/Recording.h | call | -2 | std::optional::operator* | -
+@x86_64-release | include/fixy/session/Recording.h | inlined | -2 | std::array::operator[] | -
+@x86_64-release | include/fixy/session/Recording.h | inlined | -3 | std::optional::operator (conversion) | -
+@x86_64-release | include/fixy/session/Recording.h | inlined | -2 | std::optional::operator* | -
+@x86_64-release | include/fixy/session/Recording.h | inlined | -2 | std::optional::optional | -
+@x86_64-release | include/fixy/session/Recording.h | inlined | -1 | std::pair::~pair | -
+@x86_64-release | include/fixy/session/Watch.h | call | -1 | std::array::operator[] | -
+@x86_64-release | include/fixy/session/Watch.h | inlined | -10 | std::array::operator[] | -
+@x86_64-release | include/fixy/session/Watch.h | inlined | -2 | std::basic_string_view::basic_string_view | -
+@x86_64-release | include/fixy/session/Watch.h | inlined | -2 | std::basic_string_view::data | -
+@x86_64-release | include/fixy/session/Watch.h | inlined | -2 | std::basic_string_view::size | -
+@x86_64-release | include/fixy/session/Watch.h | reference | -9 | stderr | -
+@x86_64-release | include/foundation/AlignedBuffer.h | inlined | -1 | std::span::data | -
+@x86_64-release | include/foundation/AlignedBuffer.h | inlined | -1 | std::span::span | -
+@x86_64-release | include/foundation/AlignedBuffer.h | reference | -3 | stderr | -
+@x86_64-release | include/foundation/ChannelBinding.h | inlined | -1 | std::exchange | -
+@x86_64-release | include/foundation/Lifetime.h | inlined | -1 | std::span::span | -
+@x86_64-release | include/foundation/Platform.h | inlined | -1 | std::is_gt | -
+@x86_64-release | include/foundation/Platform.h | inlined | -1 | std::is_lt | -
+@x86_64-release | include/foundation/Platform.h | inlined | -1 | std::span::empty | -
+@x86_64-release | include/foundation/Platform.h | inlined | -1 | std::strong_ordering::operator (conversion) | -
+@x86_64-release | include/foundation/Simd.h | inlined | -1 | memcpy | -
+@x86_64-release | include/foundation/Simd.h | inlined | -1 | std::bit_cast | -
+@x86_64-release | include/foundation/SwissTableBuffer.h | inlined | -1 | std::span::data | -
+@x86_64-release | include/foundation/SwissTableBuffer.h | inlined | -2 | std::span::span | -
+@x86_64-release | include/foundation/algebra/Graded.h | call | -3 | std::basic_string::basic_string | -
+@x86_64-release | include/foundation/algebra/Graded.h | call | -1 | std::basic_string::operator= | -
+@x86_64-release | include/foundation/algebra/Graded.h | call | -2 | std::filesystem::path::path | -
+@x86_64-release | include/foundation/algebra/Graded.h | call | +1 | std::filesystem::path::~path | -
+@x86_64-release | include/foundation/algebra/Graded.h | call | -1 | std::swap | -
+@x86_64-release | include/foundation/algebra/Graded.h | call | -1 | std::unique_ptr::~unique_ptr | -
+@x86_64-release | include/foundation/algebra/Graded.h | inlined | +1 | std::basic_string::basic_string | -
+@x86_64-release | include/foundation/algebra/Graded.h | inlined | +1 | std::basic_string::operator= | -
+@x86_64-release | include/foundation/algebra/Graded.h | inlined | -1 | std::filesystem::path::path | -
+@x86_64-release | include/foundation/algebra/Graded.h | inlined | -2 | std::swap | -
+@x86_64-release | include/foundation/algebra/Graded.h | inlined | -3 | std::unique_ptr::unique_ptr | -
+@x86_64-release | include/foundation/algebra/Graded.h | inlined | -1 | std::unique_ptr::~unique_ptr | -
+@x86_64-release | include/foundation/algebra/Graded.h | inlined | -1 | std::vector::vector | -
+@x86_64-release | include/foundation/algebra/lattices/AffinityLattice.h | inlined | -11 | std::array::operator[] | -
+@x86_64-release | include/foundation/algebra/lattices/HappensBefore.h | inlined | -15 | std::array::operator[] | -
+@x86_64-release | include/foundation/algebra/lattices/MonotoneLattice.h | inlined | -3 | std::greater::operator() | -
+@x86_64-release | include/foundation/algebra/lattices/MonotoneLattice.h | inlined | -2 | std::less::operator() | -
+@x86_64-release | include/foundation/algebra/lattices/StrongCounterLattice.h | inlined | -2 | std::array::operator[] | -
+@x86_64-release | include/foundation/algebra/lattices/StrongCounterLattice.h | inlined | -1 | std::expected::expected | -
+@x86_64-release | include/foundation/contracts/Decide.h | inlined | -1 | __gnu_cxx::__normal_iterator::operator* | -
+@x86_64-release | include/foundation/contracts/Decide.h | inlined | -1 | __gnu_cxx::__normal_iterator::operator++ | -
+@x86_64-release | include/foundation/contracts/Decide.h | inlined | -1 | __gnu_cxx::operator== | -
+@x86_64-release | include/foundation/contracts/Decide.h | inlined | -1 | std::span::begin | -
+@x86_64-release | include/foundation/contracts/Decide.h | inlined | -10 | std::span::operator[] | -
+@x86_64-release | include/foundation/core/Ref.h | reference | -1 | std::nothrow | -
+@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::array::operator[] | -
+@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::basic_string_view | -
+@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::begin | -
+@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::data | -
+@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::empty | -
+@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::basic_string_view::end | -
+@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -6 | std::basic_string_view::size | -
+@x86_64-release | include/foundation/effects/Computation.h | inlined | -2 | std::unique_ptr::unique_ptr | -
+@x86_64-release | include/foundation/effects/Computation.h | inlined | -2 | std::unique_ptr::~unique_ptr | -
+@x86_64-release | include/foundation/permissions/Permission.h | call | -1 | std::optional::operator* | -
+@x86_64-release | include/foundation/permissions/Permission.h | inlined | -1 | std::forward_as_tuple | -
+@x86_64-release | include/foundation/permissions/Permission.h | inlined | -2 | std::optional::operator (conversion) | -
+@x86_64-release | include/foundation/permissions/Permission.h | inlined | -1 | std::optional::operator* | -
+@x86_64-release | include/foundation/permissions/Permission.h | inlined | -1 | std::optional::operator-> | -
+@x86_64-release | include/foundation/permissions/Permission.h | inlined | -1 | std::optional::optional | -
+@x86_64-release | include/foundation/permissions/PermissionFork.h | inlined | -3 | std::get | -
+@x86_64-release | include/foundation/permissions/PermissionFork.h | inlined | -1 | std::tuple::tuple | -
+@x86_64-release | include/foundation/permissions/ReadView.h | inlined | -1 | std::pair::pair | -
+@x86_64-release | include/foundation/reflect/EnumName.h | inlined | -1 | std::basic_string_view::empty | -
+@x86_64-release | include/foundation/reflect/Enumerate.h | inlined | -1 | std::basic_string_view::begin | -
+@x86_64-release | src/fixy/os/Topology.cpp | call | -3 | std::vector::push_back | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | -1 | __gnu_cxx::__normal_iterator::operator* | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | -3 | __gnu_cxx::__normal_iterator::operator++ | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | -4 | __gnu_cxx::operator== | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | -1 | std::basic_string::empty | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | -3 | std::basic_string_view::basic_string_view | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | -1 | std::basic_string_view::begin | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | -2 | std::basic_string_view::data | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | -3 | std::basic_string_view::empty | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | -3 | std::basic_string_view::operator[] | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | -1 | std::basic_string_view::remove_suffix | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | -5 | std::basic_string_view::size | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | -4 | std::vector::begin | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | -3 | std::vector::empty | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | -4 | std::vector::end | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | -5 | std::vector::operator[] | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | +3 | std::vector::push_back | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | -4 | std::vector::size | -
+@x86_64-release | src/fixy/os/Topology.cpp | inlined | -3 | std::vector::~vector | -
+@x86_64-release | src/foundation/ContractHandler.cpp | inlined | -2 | std::array::operator[] | -
+@x86_64-release | src/foundation/ContractHandler.cpp | inlined | -1 | std::basic_string_view::begin | -
+@x86_64-release | src/foundation/ContractHandler.cpp | inlined | -1 | std::contracts::contract_violation::comment | -
+@x86_64-release | src/foundation/DiagRuntime.cpp | inlined | -1 | std::basic_string_view::basic_string_view | -
+@x86_64-release | src/foundation/DiagRuntime.cpp | reference | -1 | stderr | -
+@x86_64-release | src/foundation/Permission.cpp | reference | -1 | stderr | -

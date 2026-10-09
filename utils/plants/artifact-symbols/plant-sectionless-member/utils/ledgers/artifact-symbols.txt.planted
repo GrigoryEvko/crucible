@@ -1,0 +1,9 @@
+# A planted ledger: each C runtime import of the planted configuration.
+format 1
+rule artifact-symbols
+configuration planted kind planted
+configuration planted tier planted
+@build/libcrucible.a | libc-allow | 1 | memcpy@GLIBC_2.14 | -
+@build/libcrucible.a | libc-ratchet | 1 | getrandom@GLIBC_2.25 | -
+@build/libfoundation.a | libc-allow | 1 | memcpy@GLIBC_2.14 | -
+@build/libfoundation.a | libc-ratchet | 1 | getrandom@GLIBC_2.25 | -

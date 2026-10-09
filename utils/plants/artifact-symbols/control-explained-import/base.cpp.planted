@@ -1,0 +1,7 @@
+// The section of the quarantine plugin with no record: the one call of the unit names a function of the tree.
+asm(".pushsection .crucible.quarantine,\"e\",%progbits\n"
+    ".ascii \"# crucible-guard 2 stamp=planted\\n\"\n"
+    ".popsection\n");
+
+extern "C" int crucible_plant_extern(int);
+int plain_entry(int value) { return crucible_plant_extern(value) + 1; }

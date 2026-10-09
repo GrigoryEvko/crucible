@@ -1,0 +1,8 @@
+// The section of the quarantine plugin holds no record of getrandom.
+asm(".pushsection .crucible.quarantine,\"e\",%progbits\n"
+    ".ascii \"# crucible-guard 2 stamp=planted\\n\"\n"
+    ".popsection\n");
+
+#include <sys/random.h>
+
+long random_entry(void* buffer, unsigned long size) { return getrandom(buffer, size, 0); }

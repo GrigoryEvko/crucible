@@ -1,0 +1,6 @@
+# A planted ledger: the one C runtime import of the planted configuration.
+format 1
+rule artifact-symbols
+configuration planted kind planted
+configuration planted tier planted
+@build/libfoundation.a | libc-ratchet | 1 | getrandom@GLIBC_2.25 | -

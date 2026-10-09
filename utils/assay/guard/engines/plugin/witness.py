@@ -48,10 +48,12 @@ THE KEYS OF A COMPILE
       padded-list-limit=N   the plugin argument padded-list-limit.  The
                     default is the error threshold of the row padded-list
                     of utils/registry.txt, as for each compile of the tree
-      build=PATH, stamps=PATH, stamp=TEXT, sentinel=PATH, not-standalone=PATH
+      build=PATH, stamps=PATH, stamp=TEXT, sentinel=PATH, not-standalone=PATH,
+      library-code=on
                     the plugin arguments, with no default.  A sentinel is
                     relative to the root, and each other PATH is a path of
-                    the manifest
+                    the manifest.  Only a compile with library-code=on has
+                    the records of the rule library-code
     The value "-" gives no argument.
       out=no        no argument out.  By default the witness gives out=DIR, a
                     directory of its own, and reads the report file there
@@ -205,7 +207,18 @@ NO_VALUE = "-"
 # The line of a location FILE:* of a diagnostic row, which holds each line of FILE.
 ANY_LINE = "*"
 # The plugin arguments of a compile row, and the default of each one that has a default.
-PLUGIN_KEYS = ("root", "rules", "mode", "build", "stamps", "stamp", "sentinel", "padded-list-limit", "not-standalone")
+PLUGIN_KEYS = (
+    "root",
+    "rules",
+    "mode",
+    "build",
+    "stamps",
+    "stamp",
+    "sentinel",
+    "padded-list-limit",
+    "not-standalone",
+    "library-code",
+)
 PATH_KEYS = frozenset({"root", "rules", "build", "stamps", "not-standalone"})
 DEFAULTS = {"root": ".", "rules": "rules.txt", "mode": "report"}
 # The plugin argument of the threshold of the rule padded-list, and the row of utils/registry.txt that gives its default.

@@ -94,7 +94,7 @@ option(CRUCIBLE_SYNTAX_ONLY "The units of this build directory are only parsed, 
 # that each unit includes.  rows_reader.cpp is the host program of the rule
 # rows-readers, and no part of the plugin.
 set(_crucible_quarantine_units plugin rule_table regions contract include unit library owner declaration expression
-    home)
+    home body)
 set(_crucible_quarantine_headers plugin.h rows.h)
 set(CRUCIBLE_QUARANTINE_SOURCES "")
 foreach(_crucible_quarantine_unit IN LISTS _crucible_quarantine_units)
@@ -327,7 +327,8 @@ set(_crucible_quarantine_flags
   "${_crucible_quarantine_argument}-stamps=${_crucible_quarantine_out}"
   "${_crucible_quarantine_argument}-mode=${_crucible_quarantine_mode}"
   "${_crucible_quarantine_argument}-stamp=${_crucible_quarantine_stamp}"
-  "${_crucible_quarantine_argument}-padded-list-limit=${_crucible_quarantine_padded_limit}")
+  "${_crucible_quarantine_argument}-padded-list-limit=${_crucible_quarantine_padded_limit}"
+  "${_crucible_quarantine_argument}-library-code=on")
 if(DEFINED CRUCIBLE_NOT_STANDALONE_LIST)
   list(APPEND _crucible_quarantine_flags "${_crucible_quarantine_argument}-not-standalone=${CRUCIBLE_NOT_STANDALONE_LIST}")
 endif()

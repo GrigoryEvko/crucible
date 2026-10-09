@@ -1,0 +1,23 @@
+#pragma once
+
+#include <cstdio>
+#include <cstdlib>
+#include <utility>
+
+// A base header with each kind of library code that the rule counts.
+namespace fixy {
+
+// A call of a library function.
+inline const char* home() { return std::getenv("HOME"); }
+
+// A body of a library function that the code inlines.
+inline int swap_in(int& slot, int value) { return std::exchange(slot, value); }
+
+// A library variable, as the argument of a call of a library function.
+inline int flush_sink() { return std::fflush(stderr); }
+
+// A call that the compiler makes for a builtin: a record symbol, which the
+// rule does not count.
+inline void copy_bytes(char* to, const char* from, unsigned long size) { __builtin_memcpy(to, from, size); }
+
+}  // namespace fixy

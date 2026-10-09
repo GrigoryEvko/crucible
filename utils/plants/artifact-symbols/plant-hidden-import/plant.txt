@@ -1,0 +1,5 @@
+# Each unit of the root libraries holds the section of the quarantine plugin.  The section of random.cpp holds no
+# record of getrandom, which its code calls.  The import is hidden, and no row admits it.
+library planted_tree externs.cpp
+library foundation base.cpp random.cpp
+library crucible base.cpp

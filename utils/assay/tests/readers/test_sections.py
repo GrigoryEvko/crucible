@@ -95,6 +95,21 @@ def parse_cases(expect: testing.Expect) -> None:
         "parse_section refuses bytes that are not UTF-8",
         refuses(lambda: sections.parse_section(b"# crucible-guard 2 stamp=x\n\xff\n", "a.o")),
     )
+    records = sections.parse_section(
+        b"# crucible-guard 2 stamp=x\n"
+        b"library-code call a.h:3:5 _Znwm operator new\n"
+        b"library-code reference a.h:4:1 stderr stderr\n"
+        b"library-code symbol a.h:5:2 memcpy\n"
+        b"library-code symbol a.h:9:2 _Znwm\n"
+        b"library-code inlined a.h:6:3 std::exchange\n"
+        b"quarantine std-entity a.h:7:1 memset\n",
+        "a.o",
+    )
+    expect(
+        "symbols gives the first record call, reference or symbol of each symbol, and no record inlined or finding",
+        {name: (item.line, item.kind) for name, item in records.symbols().items()}
+        == {"_Znwm": (3, "call"), "stderr": (4, "reference"), "memcpy": (5, "symbol")},
+    )
 
 
 def object_cases(expect: testing.Expect) -> None:

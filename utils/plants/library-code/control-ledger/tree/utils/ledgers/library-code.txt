@@ -1,0 +1,9 @@
+# The ledger of the control.  The base configuration counts each record of the
+# base header, and no record of the quarantined file.
+format 1
+rule library-code
+configuration x86_64-debug-asan kind x86_64-debug-asan
+include/fixy/Tally.h | call | 1 | fflush | -
+include/fixy/Tally.h | call | 1 | getenv | -
+include/fixy/Tally.h | inlined | 1 | std::exchange | -
+include/fixy/Tally.h | reference | 1 | stderr | -

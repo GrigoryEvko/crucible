@@ -1,0 +1,20 @@
+// A quarantined unit that uses the base header.  Its own call of a library
+// function is a record, and the rule does not count it, because the file is
+// not a base file.
+#include <fixy/Tally.h>
+
+#include <cstdlib>
+
+namespace planted {
+
+bool has_home() { return fixy::home() != nullptr; }
+
+int swapped(int& slot) { return fixy::swap_in(slot, 7); }
+
+int flushed() { return fixy::flush_sink(); }
+
+void copied(char* to, const char* from, unsigned long size) { fixy::copy_bytes(to, from, size); }
+
+int own_call() { return std::rand(); }
+
+}  // namespace planted
