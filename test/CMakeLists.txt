@@ -422,19 +422,21 @@ set_tests_properties(cache_dir_self_test PROPERTIES
 # runs only when a person regenerates golden.csv.
 #
 # The group has SESSION_ORACLE_SELF_TEST_PARTS disjoint parts, and each part
-# is one test.  Part K builds each unit whose position in the list of units,
-# modulo the count of parts, is K, and the last part also runs the tests of
-# the group that have no parts.  The test of the store gives its two waits for
-# the settle period to parts 0 and 1, and its other cases to the last part.
-# The parts then hold each unit one time, and
-# no part takes much more than one compile of its largest unit.  The store of
-# utils/assay/oracle/unit_store.py keeps the result of each unit, so a part
-# builds only the units whose inputs changed.  A part that takes each result
-# from the store uses one core for about 3 s.  A part with no stored result
-# runs about 25 compiles for about 6 s.  PROCESSORS 8 lets CTest run the three
-# parts together at -j24: a warm run then takes 6 s of wall time and not
-# 12 s, and a cold run 9 s and not 24 s.
-set(SESSION_ORACLE_SELF_TEST_PARTS 3)
+# is one test.  THE PARTS of utils/assay/tests/oracle/__init__.py gives the
+# work of each part.  Part 0 checks the emitter, part 1 runs the cases of the
+# store, and part 2 the cases of the spelled roots.  Each other part builds
+# its share of the units of the emitted tests, one unit in each part in turn.
+# The seven wire programs are the largest units: six clean programs and one
+# planted program.  Each of the seven unit parts then gets one.  The store of
+# utils/assay/oracle/unit_store.py keeps the result of each unit, and a part
+# builds only the units with inputs that changed.  On 2026-10-09, with three
+# parts, the parts took up to 5.6 s with each result from the store, and up
+# to 9.1 s with no stored result.  With ten parts, they took up to 3.3 s and
+# 5.0 s.  With no stored result, a part with a wire program takes about 0.6 s
+# to start, 3.3 s for the longest compile of the program, and 0.5 s for the
+# link and the run.
+# PROCESSORS 8 lets CTest run the parts together.
+set(SESSION_ORACLE_SELF_TEST_PARTS 10)
 math(EXPR session_oracle_last_part "${SESSION_ORACLE_SELF_TEST_PARTS} - 1")
 foreach(part RANGE ${session_oracle_last_part})
   crucible_script_test(NAME selftest_oracle_${part}

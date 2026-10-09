@@ -14,8 +14,6 @@ rule test-time
 - | x86_64-debug-asan | 8.448 | guard_reconfigure_noop_witness | The witness configures and builds each planted project, and one CMake configure takes 0.4 s on the build host.  The measure of 2026-10-09 in the build x86_64-debug-asan is 8.45 s
 - | x86_64-debug-asan | 7.918 | guard_test_registration_witness | The witness configures each planted project with CMake, and one configure takes 0.4 s on the build host.  The measure of 2026-10-09 in the build x86_64-debug-asan is 7.92 s
 - | x86_64-debug-asan | 5.834 | selftest_mutation | The self-test of the mutation runner compiles planted mutants with the patched compiler.  The measure of 2026-10-09 in the build x86_64-debug-asan is 5.83 s
-- | x86_64-debug-asan | 8.825 | selftest_oracle_0 | The part runs its share of the cases of the session oracle.  The measure of 2026-10-09 in the build x86_64-debug-asan is 8.82 s
-- | x86_64-debug-asan | 7.491 | selftest_oracle_1 | The part runs its share of the cases of the session oracle.  The measure of 2026-10-09 in the build x86_64-debug-asan is 7.49 s
 - | x86_64-debug-tsan | 5.812 | assay_core_test_proc | The test of assay.core.proc starts processes and runs some of them to their time limits.  The measure of 2026-10-09 in the build x86_64-debug-tsan is 5.81 s
 - | x86_64-debug-tsan | 5.725 | assay_guard_engines_elf_test_artifact_symbols | The test compiles and archives planted objects with the patched compiler.  The measure of 2026-10-09 in the build x86_64-debug-tsan is 5.72 s
 - | x86_64-debug-tsan | 5.18 | assay_loop_derive_test_header_costs | The test runs planted compilers on planted headers, and it counts their instructions with the hardware counter.  The measure of 2026-10-09 in the build x86_64-debug-tsan is 5.18 s
@@ -27,7 +25,6 @@ rule test-time
 - | x86_64-debug-tsan | 7.042 | guard_reconfigure_noop_witness | The witness configures and builds each planted project, and one CMake configure takes 0.4 s on the build host.  The measure of 2026-10-09 in the build x86_64-debug-tsan is 7.04 s
 - | x86_64-debug-tsan | 6.511 | guard_test_registration_witness | The witness configures each planted project with CMake, and one configure takes 0.4 s on the build host.  The measure of 2026-10-09 in the build x86_64-debug-tsan is 6.51 s
 - | x86_64-debug-tsan | 5.39 | selftest_mutation | The self-test of the mutation runner compiles planted mutants with the patched compiler.  The measure of 2026-10-09 in the build x86_64-debug-tsan is 5.39 s
-- | x86_64-debug-tsan | 5.575 | selftest_oracle_0 | The part runs its share of the cases of the session oracle.  The measure of 2026-10-09 in the build x86_64-debug-tsan is 5.58 s
 - | x86_64-debug-tsan | 5.5 | test_background_thread_run_in_row | ThreadSanitizer serializes the threads of the test and checks each memory access.  The measure of 2026-10-09 in the build x86_64-debug-tsan is 5.5 s
 - | x86_64-debug-tsan | 8.304 | test_vigil_dispatch | ThreadSanitizer serializes the threads of the test and checks each memory access.  The measure of 2026-10-09 in the build x86_64-debug-tsan is 8.3 s
 - | x86_64-debug-ubsan-strict | 5.792 | assay_core_test_proc | The test of assay.core.proc starts processes and runs some of them to their time limits.  The measure of 2026-10-09 in the build x86_64-debug-ubsan-strict is 5.79 s
@@ -39,7 +36,6 @@ rule test-time
 - | x86_64-debug-ubsan-strict | 7.711 | guard_plugin_witness | The witness compiles each plant and each control of the quarantine plugin with the patched compiler.  The measure of 2026-10-09 in the build x86_64-debug-ubsan-strict is 7.71 s
 - | x86_64-debug-ubsan-strict | 6.337 | guard_reconfigure_noop_witness | The witness configures and builds each planted project, and one CMake configure takes 0.4 s on the build host.  The measure of 2026-10-09 in the build x86_64-debug-ubsan-strict is 6.34 s
 - | x86_64-debug-ubsan-strict | 5.981 | guard_test_registration_witness | The witness configures each planted project with CMake, and one configure takes 0.4 s on the build host.  The measure of 2026-10-09 in the build x86_64-debug-ubsan-strict is 5.98 s
-- | x86_64-debug-ubsan-strict | 5.139 | selftest_oracle_0 | The part runs its share of the cases of the session oracle.  The measure of 2026-10-09 in the build x86_64-debug-ubsan-strict is 5.14 s
 - | x86_64-release | 5.837 | assay_core_test_proc | The test of assay.core.proc starts processes and runs some of them to their time limits.  The measure of 2026-10-09 in the build x86_64-release is 5.84 s
 - | x86_64-release | 5.176 | assay_guard_engines_elf_test_artifact_symbols | The test compiles and archives planted objects with the patched compiler.  The measure of 2026-10-09 in the build x86_64-release is 5.18 s
 - | x86_64-release | 5.04 | assay_guard_test_bom | The test reads the five layers of a static library and of a linked file of the build, with the DWARF of their objects.  The measure of 2026-10-09 in the build x86_64-release is 5.04 s
@@ -49,4 +45,3 @@ rule test-time
 - | x86_64-release | 7.885 | guard_plugin_witness | The witness compiles each plant and each control of the quarantine plugin with the patched compiler.  The measure of 2026-10-09 in the build x86_64-release is 7.89 s
 - | x86_64-release | 6.377 | guard_reconfigure_noop_witness | The witness configures and builds each planted project, and one CMake configure takes 0.4 s on the build host.  The measure of 2026-10-09 in the build x86_64-release is 6.38 s
 - | x86_64-release | 6.068 | guard_test_registration_witness | The witness configures each planted project with CMake, and one configure takes 0.4 s on the build host.  The measure of 2026-10-09 in the build x86_64-release is 6.07 s
-- | x86_64-release | 5.24 | selftest_oracle_0 | The part runs its share of the cases of the session oracle.  The measure of 2026-10-09 in the build x86_64-release is 5.24 s

@@ -5,24 +5,24 @@ THE UNITS
     against the include tree of the working tree, with the patched compiler
     of assay.core.testing.  A static test gives one unit for each shard,
     because each shard compiles alone.  A runtime test gives one unit for
-    each program, because a program links and runs all its shards.  Each
+    each program, because a program links and runs all its shards.
+    PROGRAM_SHARD_BUDGET gives the length of the shards of a program.  Each
     clean unit must exit 0.  A copy of the rows holds one incorrect agree row
     in each emitted test (_plant()).  Each planted unit holds the rows of the
     case of its planted row, and it must fail and name the planted case.
 
 THE PARTS
-    With `--part K/N`, the test does only the units with a position modulo N
-    of K.  Part 0 also checks the type grammar of the emitter and the check
-    of the drift of assay.oracle.runner, which are Python work.  Only
-    golden.csv gives the sequence of the units, and the parts are then
-    disjoint.  The group oracle of `guard selftest` gives this module its
-    part.  The test of the store has parts of its own, and the module of the
-    group with no parts runs in the last part.
+    With `--part K/N`, the test does only the units that unit_part() of
+    assay.tests.oracle gives to part K.  The part of CHECK_PART checks the
+    type grammar of the emitter and the drift of assay.oracle.runner, which
+    are Python work.  It builds no unit when N is more than FIRST_UNIT_PART.  Only golden.csv gives the sequence of the units, and the
+    parts are then disjoint.  The group oracle of `guard selftest` gives this
+    module its part (THE PARTS of assay.tests.oracle).
 
 THE STORE
     The store of assay.oracle.unit_store keeps the result of each unit.  A
-    unit with inputs that did not change then builds nothing.  Part 0 removes
-    the expired sources of the store.
+    unit with inputs that did not change then builds nothing.  The part of
+    CHECK_PART removes the expired sources of the store.
 
 `guard selftest tests.oracle.test_runner [--part K/N]` runs the test alone.
 """
@@ -49,6 +49,7 @@ from assay.oracle.emit import (
     shard_file,
 )
 from assay.oracle.unit_store import UnitResult, UnitStore
+from assay.tests import oracle as oracle_parts
 
 # The group oracle gives this module the part of the call (THE PARTS).
 PARTED = True
@@ -64,6 +65,14 @@ JOBS = 64
 # cases, links its shards and runs its rows.  Each program is one unit, and
 # the programs of one test can go to different parts.
 PROGRAM_ROWS = 120
+# The length of one shard of a program, in characters of emitted case
+# text.  The shards of a program compile at the same time, and its longest
+# compile sets the wall time of its part.  On 2026-10-09, a wire shard with
+# no rows compiled in 1.3 s.  A shard of the length of the build compiled
+# in 2.5 to 4 s.  Half that length made the compiles of each program 0.6 s
+# to 0.7 s shorter.  A third of that length made them almost no shorter: a
+# keyed pair stays in one shard, and the heaviest pairs set the time.
+PROGRAM_SHARD_BUDGET = SHARD_BUDGET["fixy_wire"] // 2
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -198,10 +207,11 @@ def _units_of(
                 yield f"clean {stem} shard {index}", stem, [shard], None
             continue
         for index, program in enumerate(runtime_programs(by_case, families)):
-            yield f"clean {stem} program {index}", stem, emit_family(program, stem), None
+            yield f"clean {stem} program {index}", stem, emit_family(program, stem, PROGRAM_SHARD_BUDGET), None
     for stem, label in labels.items():
         case = label.split(" case ", 1)[1].split()[0].rstrip(":")
-        yield f"planted {stem}", stem, emit_family([row for row in planted if row.case == case], stem), label
+        budget = PROGRAM_SHARD_BUDGET if stem in RUNTIME_TESTS else None
+        yield f"planted {stem}", stem, emit_family([row for row in planted if row.case == case], stem, budget), label
 
 
 def run_part(cxx: str, include: Path, jobs: int, part: tuple[int, int], rows: list[Row]) -> Outcome:
@@ -213,7 +223,8 @@ def run_part(cxx: str, include: Path, jobs: int, part: tuple[int, int], rows: li
     from concurrent.futures import Future, ThreadPoolExecutor
 
     index_of_part, count = part
-    grammar = tuple(emit_self_check()) if index_of_part == 0 else ()
+    is_check_part = index_of_part == oracle_parts.role_part(oracle_parts.CHECK_PART, count)
+    grammar = tuple(emit_self_check()) if is_check_part else ()
     drift: tuple[str, ...] = ()
     planted, labels = _plant(rows)
     emitted: dict[str, list[str]] = {}
@@ -234,7 +245,7 @@ def run_part(cxx: str, include: Path, jobs: int, part: tuple[int, int], rows: li
         # not hold goes to the pool.  A lookup is Python work, and many of
         # them in many threads cost more CPU time than one after the other.
         for position, (name, stem, shards, label) in enumerate(_units_of(rows, planted, labels, emitted)):
-            if position % count != index_of_part:
+            if oracle_parts.unit_part(position, count) != index_of_part:
                 continue
             files = [(shard_file(stem, index), text) for index, text in enumerate(shards)]
             unit = (
@@ -243,7 +254,7 @@ def run_part(cxx: str, include: Path, jobs: int, part: tuple[int, int], rows: li
             stored = store.stored(unit)
             units.append((name, label, stored if stored is not None else pool.submit(store.build, unit)))
         # The check of the drift is Python work, and it runs while the compiles run.
-        if index_of_part == 0:
+        if is_check_part:
             for stem in RUNTIME_TESTS:
                 emitted[stem] = emit_family(rows, stem)
             drift = tuple(_drift_failures(emit_files({stem: emitted[stem] for stem in SHARD_BUDGET}), root / "drift"))
@@ -288,9 +299,11 @@ def emitted_test_cases(expect: testing.Expect, part: tuple[int, int]) -> None:
         return
     for failure in (*outcome.grammar, *outcome.drift, *outcome.clean, *outcome.planted):
         check_report.write_line(f"session_oracle units part {index_of_part}/{count}: {failure}", is_error=True)
-    if index_of_part == 0:
+    if index_of_part == oracle_parts.role_part(oracle_parts.CHECK_PART, count):
         expect("the emitter accepts its type grammar", not outcome.grammar)
         expect("the drift comparison sees a one-line change and a stale shard", not outcome.drift)
+    if outcome.units == 0:
+        return
     clean = outcome.units - outcome.planted_units
     expect(
         f"each of the {clean} clean units of part {index_of_part}/{count} passes "
@@ -310,4 +323,7 @@ def main(argv: list[str]) -> int:
     if part is None:
         check_report.write_line(f"usage: guard selftest {module} [--part K/N], with 0 <= K < N", is_error=True)
         return ExitCode.USAGE
-    return testing.run(module, [], (lambda expect: emitted_test_cases(expect, part),))
+    index, count = part
+    has_work = index == oracle_parts.role_part(oracle_parts.CHECK_PART, count) or oracle_parts.holds_units(index, count)
+    groups: list[testing.Group] = [lambda expect: emitted_test_cases(expect, part)] if has_work else []
+    return testing.run(module, [], groups)

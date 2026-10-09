@@ -23,12 +23,12 @@ THE SPELLED ROOTS
     the other modules of its group.
 
 THE PARTS
-    With `--part K/N`, part 0 runs the cases of the store, and part 1 modulo
-    N runs the cases of the spelled roots.  Part N - 1 runs the cases of
-    sweep_sources().  Each of the first two groups waits one time for the
-    settle period of the store.  The two waits then go to two parts of the
-    group oracle.  No part then holds the two waits and a part of the units of
-    test_runner.
+    With `--part K/N`, the part of STORE_PART runs the cases of the store.
+    The part of ROOTS_PART runs the cases of the spelled roots (THE PARTS of
+    assay.tests.oracle).  Part N - 1 runs the cases of sweep_sources().
+    Each of the first two groups waits one time for the settle period of the
+    store.  The two waits then go to two parts of the group oracle, and with
+    more than FIRST_UNIT_PART parts, no unit of test_runner goes to them.
 
 `guard selftest tests.oracle.test_unit_store [--part K/N]` runs the test alone.
 """
@@ -48,6 +48,7 @@ from assay.core.exit import ExitCode
 from assay.guard import selftest
 from assay.loop.fixture import store as compile_store
 from assay.oracle.unit_store import UnitStore
+from assay.tests import oracle as oracle_parts
 
 # The group oracle gives this module the part of the call (THE PARTS).
 PARTED = True
@@ -378,9 +379,9 @@ def main(argv: list[str]) -> int:
         return ExitCode.USAGE
     index, count = part
     groups: list[testing.Group] = []
-    if index == 0:
+    if index == oracle_parts.role_part(oracle_parts.STORE_PART, count):
         groups.append(store_group)
-    if index == 1 % count:
+    if index == oracle_parts.role_part(oracle_parts.ROOTS_PART, count):
         groups.append(spelled_root_group)
     if index == count - 1:
         groups.append(sweep_cases)

@@ -276,7 +276,8 @@ def read_golden(path: Path) -> tuple[list[str], list[Row]]:
     """Read and validate the golden file.  Return metadata and rows.
 
     Every row must name a known family and status, a divergence must
-    carry a note, and the global type must parse.  O(rows).
+    carry a note, and the global type must parse.  Many rows share one
+    global type, and each different type parses one time.  O(rows).
     """
     meta: list[str] = []
     body: list[str] = []
@@ -287,6 +288,7 @@ def read_golden(path: Path) -> tuple[list[str], list[Row]]:
     if header is None or tuple(header) != COLUMNS:
         raise GoldenError(f"{path}: the header must be {','.join(COLUMNS)}")
     rows: list[Row] = []
+    parsed: set[str] = set()
     for lineno, fields in enumerate(reader, start=len(meta) + 2):
         if len(fields) != len(COLUMNS):
             raise GoldenError(f"{path}:{lineno}: {len(fields)} fields, expected {len(COLUMNS)}")
@@ -300,11 +302,14 @@ def read_golden(path: Path) -> tuple[list[str], list[Row]]:
             raise GoldenError(f"{path}:{lineno}: a {row.status} must carry a class and a note")
         if row.status == "agree" and row.ours.startswith("reject:") and row.oracle != "none":
             raise GoldenError(f"{path}:{lineno}: a rejection agrees only with oracle 'none'")
-        if labelled.is_labelled_text(row.global_text):
+        if row.global_text in parsed:
+            pass
+        elif labelled.is_labelled_text(row.global_text):
             if labelled.show(labelled.read(row.global_text)) != row.global_text:
                 raise GoldenError(f"{path}:{lineno}: the labelled global type is not in canonical form")
         else:
             show_global(read_global(row.global_text))
+        parsed.add(row.global_text)
         rows.append(row)
     return meta, rows
 
