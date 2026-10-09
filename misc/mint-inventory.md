@@ -257,7 +257,7 @@ does not apply to the row.
 | `OwnedMmap::mint_region` | `include/fixy/os/OwnedMmap.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
 | `mint_affinity` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
 | `mint_bounded_sleep` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_clock_reader` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_clock_reader` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
 | `mint_cold_writer` | `include/fixy/os/CipherDurable.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
 | `mint_durable_append_file` | `include/fixy/os/Fs.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
 | `mint_durable_truncate_file` | `include/fixy/os/Fs.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |

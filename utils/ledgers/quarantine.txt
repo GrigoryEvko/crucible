@@ -3554,6 +3554,13 @@ test/fixy/test_mutation.cpp | std-object | 5 | std::greater | -
 test/fixy/test_mutation.cpp | std-object | 2 | std::inplace_vector | -
 test/fixy/test_mutation.cpp | std-object | 2 | std::latch | -
 test/fixy/test_mutation.cpp | std-object | 2 | std::vector | -
+test/fixy/test_os_futex.cpp | opted-out | 1 | PROBE: a signal reaches a thread that waits in the futex door \| c-library-call pthread_kill | -
+test/fixy/test_os_futex.cpp | opted-out | 1 | PROBE: a signal reaches a thread that waits in the futex door \| c-library-call pthread_self | -
+test/fixy/test_os_futex.cpp | opted-out | 1 | PROBE: a signal reaches a thread that waits in the futex door \| c-library-call sigaction | -
+test/fixy/test_os_futex.cpp | opted-out | 1 | PROBE: a signal reaches a thread that waits in the futex door \| c-library-call sigemptyset | -
+test/fixy/test_os_futex.cpp | opted-out | 1 | PROBE: a signal reaches a thread that waits in the futex door \| c-library-object sigaction | -
+test/fixy/test_os_futex.cpp | opted-out | 1 | PROBE: a signal reaches a thread that waits in the futex door \| door-header <pthread.h> has the door src/fixy/os/ThreadTasks.cpp | -
+test/fixy/test_os_futex.cpp | region | 1 | PROBE: a signal reaches a thread that waits in the futex door | -
 test/fixy/test_os_io.cpp | c-array-object | 3 | - | -
 test/fixy/test_os_io.cpp | c-library-call | 4 | __errno_location | -
 test/fixy/test_os_io.cpp | c-library-call | 1 | abort | -

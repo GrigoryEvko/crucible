@@ -1,0 +1,8 @@
+# A row of the configuration x86_64-debug-tsan admits the call of an arm, and
+# a build of that configuration does not compile the arm.  The rule judges
+# the row in that build, so the row that admits no finding is an error.
+
+compile raw src/raw.cpp stage=c
+exit raw pass
+judge raw
+configuration x86_64-debug-tsan

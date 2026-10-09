@@ -132,7 +132,14 @@ def manifest_cases(expect: testing.Expect) -> None:
     judged = witness.parse_manifest("compile a unit.cpp\nexit a pass\njudge a\n", "witness.txt")
     expect(
         "a judge row names a compile whose lines the module judges, and it states a plant with no error row",
-        judged.judged == ("a",) and judged.is_refused and not judged.has_errors,
+        judged.judged == ("a",) and judged.is_refused and not judged.has_errors and judged.configuration == "",
+    )
+    configured = witness.parse_manifest(
+        "compile a unit.cpp\nexit a pass\njudge a\nconfiguration x86_64-debug-tsan\n", "witness.txt"
+    )
+    expect(
+        "a configuration row names the configuration of the build of the judged compiles",
+        configured.configuration == "x86_64-debug-tsan" and configured.judged == ("a",),
     )
     expect(
         "each malformed manifest is refused at its line",
@@ -156,8 +163,11 @@ def manifest_cases(expect: testing.Expect) -> None:
             refuses("procedure no-such-procedure\n"),
             refuses("compile a unit.cpp\nexit a pass\njudge b\n"),
             refuses("compile a unit.cpp\nexit a pass\njudge a\njudge a\n"),
+            refuses("compile a unit.cpp\nexit a pass\nconfiguration x86_64-release\n"),
+            refuses("compile a unit.cpp\nexit a pass\njudge a\nconfiguration one\nconfiguration two\n"),
+            refuses("compile a unit.cpp\nexit a pass\njudge a\nconfiguration\n"),
         ]
-        == [1, 1, 2, 2, 1, 1, 3, 1, 1, 1, 3, 1, 3, 2, 0, 2, 1, 3, 4],
+        == [1, 1, 2, 2, 1, 1, 3, 1, 1, 1, 3, 1, 3, 2, 0, 2, 1, 3, 4, 3, 5, 4],
     )
     expect(
         "a place FILE:* and the place - are diagnostic places",

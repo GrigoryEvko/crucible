@@ -1,0 +1,7 @@
+# The ledger of the plant.  The base configuration counts no call of close,
+# and the configuration x86_64-debug-tsan counts the one call of the arm.
+format 1
+rule syscall-capability
+configuration x86_64-debug-asan kind x86_64-debug-asan
+configuration x86_64-debug-tsan kind x86_64-debug-tsan
+@x86_64-debug-tsan | src/raw.cpp | raw-syscall | +1 | planted::release(int): close | effects::IO of the plant

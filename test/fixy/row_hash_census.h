@@ -72,6 +72,7 @@
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/CpuPinned.h>
 #include <fixy/os/Fs.h>
+#include <fixy/os/Futex.h>
 #include <fixy/os/Io.h>
 #include <fixy/os/Mmap.h>
 #include <fixy/os/NumaPlacement.h>
@@ -483,6 +484,8 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::spawn, "the holder of the parallel-for fan-out: static members only, and no object of it exists"},
     {^^::fixy::thread, "the options and the name of a thread that the thread door starts: settings of the door, which "
                        "carry no claim to fold"},
+    {^^::fixy::futex, "the word, the deadline and the ends of a wait of the futex door: words of the kernel interface "
+                      "that carry no claim to fold"},
     {^^::fixy::sanitize::path_traversal, kGradeVocabulary},
     {^^::fixy::session::check, "abandonment policies, a property of the build and not of the claim"},
     {^^::fixy::session::detach_reason, kGradeVocabulary},

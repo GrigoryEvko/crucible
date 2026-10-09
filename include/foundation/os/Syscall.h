@@ -28,13 +28,20 @@
 //   rule syscall-capability refuses a raw call of one (denied-syscall).
 //
 // THE SANITIZERS
-//   ThreadSanitizer delivers a signal only inside a call that it intercepts.
-//   A raw read or a raw write can block on a pipe, and then no handler of a
-//   signal runs.  So in a build with ThreadSanitizer, the primitive gives each
-//   call that can block (can_block) to the function of the C library in
-//   src/foundation/os/Intercepted.cpp.  Each other build and each other call
-//   takes the raw path.  This is the one exception of rule R18 of
-//   misc/01_10_2026_quarantine.md.
+//   ThreadSanitizer delivers a signal only inside a call that it intercepts,
+//   or inside a call that it knows to block.  A raw call that can block
+//   (can_block) is out of its sight, and no handler of a signal then runs
+//   while the call waits.  So in a build with ThreadSanitizer, the primitive
+//   tells the sanitizer of each such call, in one of two forms:
+//     - read and write go to the function of the C library in
+//       src/foundation/os/Intercepted.cpp, which the sanitizer intercepts
+//     - futex stays raw, between the two system call hooks of the sanitizer
+//       for futex.  The C library has no function for futex.  The hooks
+//       mark the thread as in a blocking call, so a handler runs at once.
+//       The route also tells the sanitizer that a wake publishes the writes
+//       of the thread, and that a wait that ended with no error sees them.
+//   Each other build and each other call takes the raw path.  This is rule
+//   R18 of misc/01_10_2026_quarantine.md.
 //
 // This header is in the floor layer F0_os of the rule table, below the
 // families of foundation/core, so the Report family and each door can use it.
@@ -58,14 +65,15 @@ enum class Syscall : std::uint8_t {
     uname,
     getdents64,
     sched_getaffinity,
+    futex,
 };
 
-// True when the call can wait with no bound for another process, for example
-// a read of an empty pipe or a write to a full one.  In a build with
-// ThreadSanitizer, the primitive gives such a call to the C library (THE
-// SANITIZERS).
+// True when the call can wait with no bound for another thread or process,
+// for example a read of an empty pipe, a write to a full one, or a futex
+// wait.  In a build with ThreadSanitizer, the primitive tells the sanitizer
+// of such a call (THE SANITIZERS).
 [[nodiscard]] constexpr bool can_block(Syscall call) noexcept {
-    return call == Syscall::read || call == Syscall::write;
+    return call == Syscall::read || call == Syscall::write || call == Syscall::futex;
 }
 
 // One argument word of a system call: an integer, or the address of memory

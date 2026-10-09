@@ -4867,6 +4867,21 @@ fixy_neg_compile_test(neg_thread_name_holds_a_zero_byte
   "call to non-.constexpr. function .static void fixy::thread::ThreadName::name_holds_a_zero_byte_\\(\\)."
   "neg_thread_name_holds_a_zero_byte\\.cpp:13:[0-9]+:")
 
+# test_os_futex waits and wakes through the futex door of fixy/os/Futex.h,
+# with and with no deadline, and sends a signal to a thread that waits.  The
+# door takes a context that owns Block for a wait and for a wake, and a
+# deadline comes only from a reader of CLOCK_MONOTONIC.
+fixy_test(test_os_futex)
+fixy_neg_compile_test(neg_futex_wait_from_the_foreground
+  "no matching function for call to .wait"
+  "required for the satisfaction of .CtxMayUseFutex<Ctx>.")
+fixy_neg_compile_test(neg_futex_wake_from_the_foreground
+  "no matching function for call to .wake_all"
+  "required for the satisfaction of .CtxMayUseFutex<Ctx>.")
+fixy_neg_compile_test(neg_futex_deadline_of_another_clock
+  "no matching function for call to .fixy::futex::Deadline::after"
+  "required for the satisfaction of .MonotonicClockReader<Clock>.")
+
 # The fork that starts one thread per child.  A child pack that is not a
 # declared partition of the parent, and a context whose row has no Bg
 # effect, are refused at the door.  The satisfaction notes name the fit of

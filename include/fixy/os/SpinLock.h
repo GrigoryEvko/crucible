@@ -55,6 +55,7 @@
 //     BlockingGuard their guards.  A strategy that no bare lock implements
 //     is refused when the gate is named.
 
+#include <fixy/os/Futex.h>
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/lattices/HotPathLattice.h>
@@ -148,7 +149,10 @@ private:
 // state word is the three-state mutex from Drepper's "Futexes Are
 // Tricky": free, held with no waiter, and held with a waiter that the
 // release must wake.  An uncontended acquisition and release cost one
-// compare-exchange and one exchange, and no system call.
+// compare-exchange and one exchange, and no system call.  The sleep and
+// the wake go through the futex door of fixy/os/Futex.h.  Its gate is the
+// gate of the blocking guard below, which asks for a context that owns
+// Block.
 class alignas(64) UnwitnessedBlockingLock {
 public:
     static constexpr WaitStrategy wait_strategy = WaitStrategy::AcquireWait;
@@ -165,22 +169,18 @@ public:
         delete("a lock is an identity; moving one would leave a waiter asleep on the old address");
 
     void lock() noexcept {
-        std::uint32_t observed = kFree;
-        if (state_.compare_exchange_strong(observed, kHeld, std::memory_order_acquire, std::memory_order_acquire))
-            [[likely]] {
-            return;
-        }
-        lock_contended_(observed);
+        state_.cas_acq_rel(kFree, kHeld)
+            .match([](::foundation::core::Unit) noexcept {},
+                   [this](::foundation::core::CasRefusal<std::uint32_t> refusal) noexcept {
+                       lock_contended_(refusal.observed);
+                   });
     }
 
-    [[nodiscard]] bool try_lock() noexcept {
-        std::uint32_t expected = kFree;
-        return state_.compare_exchange_strong(expected, kHeld, std::memory_order_acquire, std::memory_order_acquire);
-    }
+    [[nodiscard]] bool try_lock() noexcept { return state_.cas_acq_rel(kFree, kHeld).is_ok(); }
 
     void unlock() noexcept {
-        if (state_.exchange(kFree, std::memory_order_release) == kContended) {
-            state_.notify_one();
+        if (state_.exchange_acq_rel(kFree) == kContended) {
+            wake_one_waiter_();
         }
     }
 
@@ -193,17 +193,26 @@ private:
     // the holder's release knows to wake a waiter.  The loop ends when an
     // exchange finds the word free: the thread then holds the lock, and
     // the word stays contended, because another waiter may still sleep.
+    // Each end of a sleep reads the word again with the exchange, so the
+    // way that the sleep ended does not matter.  The word is a cell of this
+    // lock, so the kernel can refuse a sleep only for a broken process.
     [[gnu::cold, gnu::noinline]] void lock_contended_(std::uint32_t observed) noexcept {
         if (observed != kContended) {
-            observed = state_.exchange(kContended, std::memory_order_acquire);
+            observed = state_.exchange_acq_rel(kContended);
         }
         while (observed != kFree) {
-            state_.wait(kContended, std::memory_order_acquire);
-            observed = state_.exchange(kContended, std::memory_order_acquire);
+            static_cast<void>(::fixy::futex::detail::wait_on(state_, kContended, ::foundation::core::none)
+                                  .expect("the kernel refused the futex wait of a blocking lock on its own word"));
+            observed = state_.exchange_acq_rel(kContended);
         }
     }
 
-    std::atomic<std::uint32_t> state_{kFree};
+    [[gnu::cold, gnu::noinline]] void wake_one_waiter_() noexcept {
+        static_cast<void>(::fixy::futex::detail::wake_waiters(state_, 1).expect(
+            "the kernel refused the futex wake of a blocking lock on its own word"));
+    }
+
+    ::fixy::futex::FutexWord state_{kFree};
 };
 
 namespace detail {

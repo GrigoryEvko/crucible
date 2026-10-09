@@ -373,8 +373,8 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # the kernel, the sink write of the Report family, the file door and the
 # directory door.  foundation starts no thread.  `fixy` is a static library
 # for the same reason: it holds the cold bodies of fixy headers, the probe of
-# the machine topology and the door that starts and joins each thread of the
-# base.
+# the machine topology, the door that starts and joins each thread of the base
+# and the futex door.
 add_library(foundation STATIC
   src/foundation/ContractHandler.cpp
   src/foundation/DiagRuntime.cpp
@@ -400,6 +400,7 @@ set_target_properties(foundation PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(crucible PUBLIC foundation)
 
 add_library(fixy STATIC
+  src/fixy/os/Futex.cpp
   src/fixy/os/NumaCounters.cpp
   src/fixy/os/NumaPlacement.cpp
   src/fixy/os/ThreadTasks.cpp

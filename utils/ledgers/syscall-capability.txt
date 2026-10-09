@@ -4,12 +4,22 @@
 #       parameters, "macro NAME" or namespace-scope, and SHAPE is the name of a function of the C
 #       library, or syscall(SYS_NAME).  CLAIM is the effects::* capability claim of the calls, and a
 #       row with no claim is an error
+#   configuration NAME kind KIND
+#       The build kind KIND has the configuration NAME.  The first configuration is the base, and
+#       the rows with no @NAME are its counts
+#   @NAME | PATH | raw-syscall | DELTA | HOLDER: SHAPE | CLAIM
+#       The count of the configuration NAME is the base count plus DELTA.  The rule judges a build
+#       against the rows of the configuration with its name, and a build of each other name against
+#       the base rows.  So a row of an arm that only one build kind compiles is judged in that build
+#       kind only
 # No row admits a finding of the kind outside-door.  Each count only falls.
 # `python3 utils/bin/guard explain syscall-capability` tells the rule, and
 # `python3 utils/bin/guard write --rule syscall-capability --build-dir DIR` writes this file in the
 # commit that lowers a count.
 format 1
 rule syscall-capability
+configuration x86_64-debug-asan kind x86_64-debug-asan
+configuration x86_64-debug-tsan kind x86_64-debug-tsan
 include/crucible/canopy/Hlc.h | raw-syscall | 1 | crucible::canopy::Hlc::read_realtime_ns_(): clock_gettime | effects::Init.  Only mint_hlc builds a clock, and it takes the init context.  The read gives the physical part of a hybrid logical time
 include/crucible/ledger/LedgerStore.h | raw-syscall | 1 | crucible::ledger::store_detail::temp_filename(crucible::ledger::HostFingerprint): getpid | effects::IO.  The process id names the temporary file of one ledger write, so two writers never share a file.  The ledger write that calls it holds IO
 include/crucible/ledger/ProbeSupport.h | raw-syscall | 1 | crucible::ledger::ProbeRegion::create(const crucible::ledger::LedgerIoCtx&, std::size_t, crucible::ledger::PagePolicy): madvise | effects::IO and effects::Block of the context of the probe.  The advice is a hint, and a kernel with no huge page support refuses it with no damage to the region
@@ -85,6 +95,8 @@ src/cntp/Pacing.cpp | raw-syscall | 1 | crucible::cntp::detail::query_active_qdi
 src/cntp/Pacing.cpp | raw-syscall | 1 | crucible::cntp::detail::query_active_qdisc_over(const fixy::fs::OwnedFd&, crucible::cntp::NicInterfaceName): send | effects::IO.  The netlink send asks for a dump of RTM_GETQDISC
 src/cntp/Pacing.cpp | raw-syscall | 1 | crucible::cntp::detail::query_active_qdisc_over(const fixy::fs::OwnedFd&, crucible::cntp::NicInterfaceName): setsockopt | effects::IO.  SO_RCVTIMEO gives the netlink receive a bound
 src/cntp/Pacing.cpp | raw-syscall | 1 | crucible::cntp::detail::set_socket_pacing_rate_keyed(const crucible::cntp::detail::SocketOptionKey&, crucible::cntp::SocketFd, crucible::cntp::PositivePacingRate): setsockopt | effects::IO and effects::Block.  The key comes only from the CtxFitsSocketOption gate of set_socket_pacing_rate.  The call sets SO_MAX_PACING_RATE
+src/fixy/os/Futex.cpp | raw-syscall | 1 | fixy::futex::detail::wait_on(const fixy::futex::FutexWord&, uint32_t, foundation::core::Option<fixy::futex::Deadline>): raw_syscall(futex) | effects::Block of the gate fixy::futex::CtxMayUseFutex, and of the gate of the blocking guard of fixy/os/SpinLock.h.  The door sleeps on a word of the process while the word holds the value that the caller read, until a wake, a signal or the deadline
+src/fixy/os/Futex.cpp | raw-syscall | 1 | fixy::futex::detail::wake_waiters(const fixy::futex::FutexWord&, uint32_t): raw_syscall(futex) | effects::Block of the gate fixy::futex::CtxMayUseFutex, and of the gate of the blocking guard of fixy/os/SpinLock.h.  The door wakes the waiters of a word of the process, and it changes no memory
 src/fixy/os/NumaPlacement.cpp | raw-syscall | 1 | fixy::detail::census_page_nodes_(const void*, std::size_t, fixy::numa::PageNodeCensus&): syscall(SYS_move_pages) | effects::IO and effects::Block of the gate CtxFitsNumaQuery of census_page_nodes.  The query moves no page
 src/fixy/os/Topology.cpp | raw-syscall | 1 | fixy::concurrent::topology_detail::(anonymous namespace)::probe_process_cpu_count_(): raw_syscall(sched_getaffinity) | effects::Init.  The probe reads the affinity mask of the process one time, and it changes nothing
 src/foundation/os/Directory.cpp | raw-syscall | 1 | foundation::os::detail::(anonymous namespace)::walk_and_close(int, foundation::os::detail::EntryVisit): raw_syscall(close) | effects::IO.  The directory door closes the descriptor that its open opened, and no descriptor leaves the door
@@ -109,3 +121,5 @@ src/topology/CongestionTelemetry.cpp | raw-syscall | 2 | crucible::topology::det
 src/topology/Ptp.cpp | raw-syscall | 1 | crucible::topology::configure_hardware_timestamping(crucible::cntp::SocketFd, crucible::cntp::NicInterfaceName): ioctl | effects::IO.  SIOCSHWTSTAMP, with an interface name of at most IFNAMSIZ bytes
 src/topology/Ptp.cpp | raw-syscall | 1 | crucible::topology::enable_socket_timestamping(crucible::cntp::SocketFd): setsockopt | effects::IO.  The call sets SO_TIMESTAMPING
 src/topology/Ptp.cpp | raw-syscall | 1 | crucible::topology::recv_with_hw_timestamp(crucible::cntp::SocketFd, std::span<std::byte, 18446744073709551615>): recvmsg | effects::IO.  MSG_DONTWAIT, and the control data gives SCM_TIMESTAMPING
+@x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | raw-syscall | +1 | foundation::os::detail::issue_intercepted(foundation::os::Syscall, uint64_t, uint64_t, uint64_t): read | effects::IO of the door that issues the raw read.  In a build with ThreadSanitizer, the primitive gives a read that can block to read(2) of the C library, which the sanitizer intercepts, so a handler of a signal runs during the read
+@x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | raw-syscall | +1 | foundation::os::detail::issue_intercepted(foundation::os::Syscall, uint64_t, uint64_t, uint64_t): write | effects::IO of the door that issues the raw write.  In a build with ThreadSanitizer, the primitive gives a write that can block to write(2) of the C library, which the sanitizer intercepts, so a handler of a signal runs during the write

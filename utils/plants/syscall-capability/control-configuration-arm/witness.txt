@@ -1,0 +1,11 @@
+# A build of the configuration x86_64-debug-tsan compiles the arm, and the
+# row of that configuration admits its call of close.  The build has no
+# error.
+
+compile raw src/raw.cpp stage=c
+flag raw -DPLANTED_ARM
+exit raw pass
+judge raw
+configuration x86_64-debug-tsan
+finding raw quarantine c-library-call src/raw.cpp:9:19 | close
+finding raw syscall-capability raw-syscall src/raw.cpp:9:19 | planted::release(int): close

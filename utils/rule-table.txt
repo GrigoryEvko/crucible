@@ -207,7 +207,7 @@
 
 layer F0_floor 0 include/foundation/Platform.h include/foundation/Pinned.h include/foundation/Quarantine.h
 layer F0_core 1 include/foundation/reflect/ include/foundation/contracts/ include/foundation/Brand.h include/foundation/Lifetime.h include/foundation/ByteSeal.h include/foundation/diag/FailClosed.h include/foundation/NoObject.h
-layer F0_os 2 include/foundation/os/Syscall.h include/foundation/os/KernelFloor.h include/foundation/os/OpenFlags.h src/foundation/os/Syscall.cpp src/foundation/os/Intercepted.h src/foundation/os/Intercepted.cpp
+layer F0_os 2 include/foundation/os/Syscall.h include/foundation/os/KernelFloor.h include/foundation/os/OpenFlags.h include/foundation/os/FutexWords.h src/foundation/os/Syscall.cpp src/foundation/os/Intercepted.h src/foundation/os/Intercepted.cpp
 layer F0_primitives 3 include/foundation/core/ include/foundation/Simd.h include/foundation/Saturate.h include/foundation/AlignedBuffer.h include/foundation/SwissTableBuffer.h include/foundation/ThreadLocalRef.h include/foundation/ChannelBinding.h
 layer F0_doors 4 include/foundation/os/ src/foundation/os/
 layer F1_algebra 5 include/foundation/ src/foundation/
@@ -232,6 +232,8 @@ door <asm-generic/errno-base.h> src/foundation/os/Syscall.cpp
 door <linux/utsname.h> src/foundation/os/Syscall.cpp
 door <asm/errno.h> src/foundation/os/Errno.cpp
 door <linux/fcntl.h> src/foundation/os/Syscall.cpp
+door <linux/futex.h> src/foundation/os/Syscall.cpp
+door <linux/time_types.h> src/foundation/os/Syscall.cpp
 door <linux/auxvec.h> src/fixy/os/Topology.cpp
 door <linux/io_uring.h> include/fixy/os/Io.h
 door <sys/sendfile.h> include/fixy/os/Io.h

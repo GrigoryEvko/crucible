@@ -3,12 +3,15 @@
 //
 // This file is the one place of the base with the system call instruction,
 // and the one includer of <asm/unistd.h>, <asm-generic/errno-base.h>,
-// <linux/fcntl.h> and <linux/utsname.h>.  It includes no header of the C
-// library, because some declarations of the two kinds of header conflict.
-// In a build with ThreadSanitizer, the primitive gives a call that can block
-// to src/foundation/os/Intercepted.cpp, which is the one door of the floor
-// that calls the C library.
+// <linux/fcntl.h>, <linux/futex.h>, <linux/time_types.h> and
+// <linux/utsname.h>.  It includes no header of the C library, because some
+// declarations of the two kinds of header conflict.  In a build with
+// ThreadSanitizer, the primitive gives a read or a write that can block to
+// src/foundation/os/Intercepted.cpp, which is the one door of the floor that
+// calls the C library.  It issues a futex call raw, between the hooks of that
+// file.
 
+#include <foundation/os/FutexWords.h>
 #include <foundation/os/KernelFloor.h>
 #include <foundation/os/OpenFlags.h>
 #include <foundation/os/Syscall.h>
@@ -16,6 +19,8 @@
 #include <asm-generic/errno-base.h>
 #include <asm/unistd.h>
 #include <linux/fcntl.h>
+#include <linux/futex.h>
+#include <linux/time_types.h>
 #include <linux/utsname.h>
 
 #include <cstddef>
@@ -34,6 +39,21 @@ static_assert(kAtCurrentDirectory == AT_FDCWD, "kAtCurrentDirectory is not AT_FD
 static_assert(kOpenReadOnly == O_RDONLY, "kOpenReadOnly is not O_RDONLY of <linux/fcntl.h>");
 static_assert(kOpenCloseOnExec == O_CLOEXEC, "kOpenCloseOnExec is not O_CLOEXEC of <linux/fcntl.h>");
 static_assert(kOpenDirectory == O_DIRECTORY, "kOpenDirectory is not O_DIRECTORY of <linux/fcntl.h>");
+
+// The argument words of foundation/os/FutexWords.h are the words of the
+// kernel headers.
+static_assert(kFutexWaitBitsetPrivate == FUTEX_WAIT_BITSET_PRIVATE,
+              "kFutexWaitBitsetPrivate is not FUTEX_WAIT_BITSET_PRIVATE of <linux/futex.h>");
+static_assert(kFutexWakePrivate == FUTEX_WAKE_PRIVATE,
+              "kFutexWakePrivate is not FUTEX_WAKE_PRIVATE of <linux/futex.h>");
+static_assert(kFutexBitsetMatchAny == FUTEX_BITSET_MATCH_ANY,
+              "kFutexBitsetMatchAny is not FUTEX_BITSET_MATCH_ANY of <linux/futex.h>");
+static_assert(sizeof(KernelTimespec) == sizeof(::__kernel_timespec),
+              "KernelTimespec does not have the size of struct __kernel_timespec of <linux/time_types.h>");
+static_assert(offsetof(KernelTimespec, seconds) == offsetof(::__kernel_timespec, tv_sec),
+              "KernelTimespec::seconds is not at the place of tv_sec of struct __kernel_timespec");
+static_assert(offsetof(KernelTimespec, nanoseconds) == offsetof(::__kernel_timespec, tv_nsec),
+              "KernelTimespec::nanoseconds is not at the place of tv_nsec of struct __kernel_timespec");
 
 namespace {
 
@@ -58,6 +78,8 @@ constexpr long kNoCall = -1;
             return __NR_getdents64;
         case Syscall::sched_getaffinity:
             return __NR_sched_getaffinity;
+        case Syscall::futex:
+            return __NR_futex;
         default:
             return kNoCall;
     }
@@ -123,6 +145,32 @@ static_assert(each_call_has_a_number(),
 #error "the raw system call primitive supports x86_64 and aarch64 only.  Add the instruction of the new architecture."
 #endif
 
+#if defined(__SANITIZE_THREAD__)
+// The futex route of a build with ThreadSanitizer (THE SANITIZERS of
+// foundation/os/Syscall.h).  The command of the operation word, without the
+// two flags, tells what the call does for the sanitizer.
+[[nodiscard]] detail::FutexRole futex_role(std::uint64_t operation) noexcept {
+    auto const command = static_cast<std::uint32_t>(operation) & static_cast<std::uint32_t>(FUTEX_CMD_MASK);
+    if (command == FUTEX_WAKE || command == FUTEX_WAKE_BITSET) {
+        return detail::FutexRole::wake;
+    }
+    if (command == FUTEX_WAIT || command == FUTEX_WAIT_BITSET) {
+        return detail::FutexRole::wait;
+    }
+    return detail::FutexRole::other;
+}
+
+// The one raw futex call, between the two halves of the route of
+// src/foundation/os/Intercepted.cpp.
+long issue_watched_futex(detail::FutexCall const& call) noexcept {
+    detail::enter_futex(call);
+    long const result = issue(__NR_futex, call.address, call.operation, call.value, call.timeout, call.second_address,
+                              call.third_value);
+    detail::leave_futex(call, result);
+    return result;
+}
+#endif
+
 // THE KERNEL FLOOR.  The first release of each architecture: x86_64 has each
 // call of the 2.6.0 table at 2.6.0, and aarch64 came in 3.7.0 with each call
 // of the generic table.
@@ -132,14 +180,19 @@ constexpr KernelVersion kFirstRelease{2, 6, 0};
 constexpr KernelVersion kFirstRelease{3, 7, 0};
 #endif
 
-// The release in which a call came to the architecture of the build: the
-// later of the first release of the architecture and the release that added
-// the call.  openat came in 2.6.16.
+// The release in which a call came to the architecture of the build, with the
+// operations that the doors give it: the later of the first release of the
+// architecture and the release that added the call.  openat came in 2.6.16.
+// futex came in 2.6.0, and the futex door uses FUTEX_WAIT_BITSET, which came
+// in 2.6.25.
 [[nodiscard]] constexpr KernelVersion introduced_in(Syscall call) noexcept {
     KernelVersion added = kFirstRelease;
     switch (call) {
         case Syscall::openat:
             added = KernelVersion{2, 6, 16};
+            break;
+        case Syscall::futex:
+            added = KernelVersion{2, 6, 25};
             break;
         case Syscall::read:
         case Syscall::write:
@@ -266,6 +319,10 @@ void write_to_standard_error(char const* bytes, std::size_t count) noexcept {
 
 long raw_syscall(Syscall call, Word first, Word second, Word third, Word fourth, Word fifth, Word sixth) noexcept {
 #if defined(__SANITIZE_THREAD__)
+    if (call == Syscall::futex) {
+        return issue_watched_futex(detail::FutexCall{futex_role(second.bits()), first.bits(), second.bits(),
+                                                     third.bits(), fourth.bits(), fifth.bits(), sixth.bits()});
+    }
     if (can_block(call)) {
         return detail::issue_intercepted(call, first.bits(), second.bits(), third.bits());
     }
