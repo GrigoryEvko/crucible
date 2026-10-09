@@ -1,0 +1,4 @@
+# A commit removes a row of a ledger, and a grow row names it.  The commit did not grow the ledger, so the row is an
+# error of the kind row.
+commit 1 | Admit two slow tests | The two tests take 21 s and 22 s.
+commit 2 | Make one slow test fast | One row goes.

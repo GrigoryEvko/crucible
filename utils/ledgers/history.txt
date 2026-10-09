@@ -1,6 +1,7 @@
-# The ledger of the rule history: the rises of the past that no measurement in a commit admits, and
-# the commits that changed the key or the format of a ledger or made the scope of a rule larger.
-# A row PATH | KIND | admit | ENTITY | REASON admits one error of the rule.  The row
+# The ledger of the rule history: the rises of the past that no measurement in a commit admits, the
+# commits that changed the key or the format of a ledger or made the scope of a rule larger, the
+# growth of a ledger that is wanted, and the thresholds that a measurement keeps above their lowest
+# values.  A row PATH | KIND | admit | ENTITY | REASON admits one error of the rule.  The row
 # utils/registry.txt | warn|error | admit | COMMIT RULE | REASON admits the rise of a threshold, and
 # the row utils/ledgers/quarantine.txt | raise | admit | COMMIT | REASON admits a raise of the
 # quarantine ledger.  The row utils/ledgers/quarantine.txt | region-reason | admit | COMMIT | REASON
@@ -9,8 +10,11 @@
 # utils/ledgers/RULE.txt | rebase | admit | COMMIT | REASON starts the lowest count of a ledger again
 # at a commit that changed its key or its format.  At a commit that made the scope of the rule larger,
 # the row does not count as growth the rows that the commit added in files that it did not change.
-# REASON tells the change.  COMMIT is the hash in 9 characters.  A row that admits no finding is an
-# error.  `python3 utils/bin/guard explain history` tells the rule.
+# REASON tells the change.  The row utils/ledgers/RULE.txt | grow | admit | COMMIT | REASON admits
+# the growth that one commit made in a ledger, and nothing more.  REASON tells why the growth is
+# wanted.  The row utils/registry.txt | keep | admit | RULE warn|error | REASON keeps a threshold
+# above its lowest value, and REASON gives the measurement.  COMMIT is the hash in 9 characters.  A
+# row that admits no finding is an error.  `python3 utils/bin/guard explain history` tells the rule.
 format 1
 rule history
 utils/ledgers/artifact-symbols.txt | rebase | admit | 7a593b460 | The ledger of the libstdc++ symbols began at this commit, and its rows joined the throw and vtable rows. Before this commit, the ledger held only those rows

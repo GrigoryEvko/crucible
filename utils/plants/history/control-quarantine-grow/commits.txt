@@ -1,0 +1,4 @@
+# A commit changes the rule table and a test, and raises a count of the test that it changed.  A grow row admits the
+# raise, so the rule gives no error and no warning of a standing raise.
+commit 1 | Count each entity | The first counts.
+commit 2 | Give a header its door, and probe the door in a test | The probe of the door is wanted.

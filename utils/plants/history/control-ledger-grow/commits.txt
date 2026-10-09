@@ -1,0 +1,4 @@
+# A commit adds the rows of two probes to a ledger, and a grow row admits that growth.  The row admits one error of
+# the kind grow, so the rule gives no error.
+commit 1 | Admit one slow test | The test takes 21 s.
+commit 2 | Add two probes | Each probe takes 22 s.

@@ -1,0 +1,4 @@
+# a planted ledger
+format 1
+rule history
+utils/registry.txt | keep | admit | slow-row warn | the warn threshold of slow-row did not rise

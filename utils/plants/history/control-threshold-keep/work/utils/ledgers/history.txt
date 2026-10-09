@@ -1,0 +1,4 @@
+# a planted ledger
+format 1
+rule history
+utils/registry.txt | keep | admit | slow-row error | the slowest job of slow-row took 26 s

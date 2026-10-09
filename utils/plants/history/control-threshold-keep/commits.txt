@@ -1,0 +1,4 @@
+# A commit raises the error threshold of slow-row from 20 s to 30 s with a measurement, and a keep row keeps it.  The
+# row admits the error of the kind keep, so the rule gives no error and no warning above-lowest.
+commit 1 | Add the planted registry | The first thresholds.
+commit 2 | Raise the slow row | The slowest job of slow-row took 26 s.

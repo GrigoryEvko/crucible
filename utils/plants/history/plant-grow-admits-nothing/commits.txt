@@ -1,0 +1,5 @@
+# A commit adds the rows of two probes, and a later commit removes them.  The ledger is at its lowest count, so the
+# grow row of the first commit changes no result.  It admits nothing, and the rule refuses it.
+commit 1 | Admit one slow test | The test takes 21 s.
+commit 2 | Add two probes | Each probe takes 22 s.
+commit 3 | Make the two probes fast | Two rows go.

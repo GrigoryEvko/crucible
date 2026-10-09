@@ -1,0 +1,4 @@
+# a planted ledger
+format 1
+rule history
+utils/ledgers/slow-row.txt | grow | admit | {commit 2} | the two probes were wanted, and a later commit removed them

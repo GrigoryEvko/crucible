@@ -1,0 +1,4 @@
+# a planted ledger
+format 1
+rule history
+utils/ledgers/slow-row.txt | grow | admit | {commit 2} | the commit removed a row, and the row names it as a growth

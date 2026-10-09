@@ -1,0 +1,4 @@
+# A commit lowers a count of the quarantine ledger, and a grow row names it.  The commit raised no count, so the row
+# is an error of the kind row.
+commit 1 | Count each entity | The first counts.
+commit 2 | Lower a count | One finding goes.

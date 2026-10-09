@@ -42,9 +42,14 @@ def registry_text(slow: tuple[int, int] = (10, 20), size: tuple[int, int] = (2, 
     return rule_registry.planted(sorted(rows))
 
 
+def ledger_text(rule_id: str, rows: list[str]) -> str:
+    """Return a planted ledger of a rule with the rows."""
+    return LEDGER_HEAD.format(rule=rule_id) + "".join(f"{row}\n" for row in rows)
+
+
 def admission_text(rows: list[str]) -> str:
     """Return the ledger of the rule history with the rows."""
-    return LEDGER_HEAD.format(rule="history") + "".join(f"{row}\n" for row in rows)
+    return ledger_text("history", rows)
 
 
 class Scratch:
@@ -283,6 +288,21 @@ def rebase_row(path: str, sha: str) -> str:
     return f"{path} | {history.REBASE_KIND} | admit | {sha[:9]} | the planted keys changed"
 
 
+def slow_ledger(*tests: str) -> str:
+    """Return the slow ledger with one row for each test."""
+    return ledger_text("slow-row", [f"{test} | time | 21 | - | r" for test in tests])
+
+
+def grow_row(path: str, sha: str) -> str:
+    """Return a `grow` row of the ledger of the rule history for a ledger and a commit."""
+    return f"{path} | {history.GROW_KIND} | admit | {sha[:9]} | the planted growth is wanted"
+
+
+def keep_row(rule_id: str, column: str) -> str:
+    """Return a keep row of the ledger of the rule history for a threshold."""
+    return f"{rule_registry.REGISTRY_PATH} | {history.KEEP_KIND} | admit | {rule_id} {column} | the planted measurement"
+
+
 def grew(found: list[check_report.Finding]) -> list[check_report.Finding]:
     """Return the warnings of the slow ledger above its lowest count."""
     return [item for item in found if item.path == SLOW_LEDGER and item.kind == "ledger-grew"]
@@ -373,11 +393,7 @@ def scope_cases(expect: Expect, scratch: Path) -> None:
     tree = Scratch(scratch / "scope")
     head = LEDGER_HEAD.format(rule="slow-row")
     rule_module = "utils/assay/guard/engines/buildsys/slow_row.py"
-
-    def slow(*tests: str) -> str:
-        """Return the slow ledger with one row for each test."""
-        return head + "".join(f"{test} | time | 21 | - | r\n" for test in tests)
-
+    slow = slow_ledger
     tree.write(SLOW_LEDGER, slow("test/a"))
     tree.commit("Admit one slow test", "The test takes 21 s.")
     tree.write("test/b", "a new slow test\n")
@@ -435,6 +451,110 @@ def scope_cases(expect: Expect, scratch: Path) -> None:
            "in files that it did not change, and the count of a file that it changed still warns",
            status == 0 and [item.message.split(" ")[0] for item in standing_of(found)] == ["test/p.cpp"]
            and any(item.path == ADMISSIONS and f"{QUARANTINE_LEDGER} has 1 findings" in item.message for item in found))
+
+
+def grow_cases(expect: Expect, scratch: Path) -> None:
+    """Admit the growth of one commit of a ledger with a `grow` row, and refuse each `grow` row that admits nothing
+    (THE GROWTH)."""
+    tree = Scratch(scratch / "grow")
+    head = LEDGER_HEAD.format(rule="slow-row")
+    slow = slow_ledger
+    tree.write(SLOW_LEDGER, slow("test/a"))
+    first = tree.commit("Admit one slow test", "The test takes 21 s.")
+    tree.write("test/b", "a new probe\n")
+    tree.write(SLOW_LEDGER, slow("test/a", "test/b", "test/c"))
+    probes = tree.commit("Add two probes", "Each probe takes 22 s.")
+    status, found = tree.run()
+    expect("with no grow row, the growth of a commit gives the warning that names it",
+           status == 0 and len(grew(found)) == 1 and probes[:9] in grew(found)[0].message)
+    tree.write(ADMISSIONS, admission_text([grow_row(SLOW_LEDGER, probes)]))
+    status, found = tree.run()
+    expect("a grow row admits the growth of its commit, and an earlier growth still gives the warning",
+           status == 0 and len(grew(found)) == 1 and first[:9] in grew(found)[0].message
+           and probes[:9] not in grew(found)[0].message.partition("Rows added:")[2]
+           and f"after the admitted growth at {probes[:9]}" in grew(found)[0].message
+           and any(item.path == ADMISSIONS and f"{SLOW_LEDGER} has 1 findings" in item.message for item in found))
+    tree.write(ADMISSIONS, admission_text([grow_row(SLOW_LEDGER, first), grow_row(SLOW_LEDGER, probes)]))
+    status, found = tree.run()
+    expect("two grow rows admit the growth of their two commits, and the ledger gives no warning",
+           status == 0 and not grew(found)
+           and any(item.path == ADMISSIONS and f"{SLOW_LEDGER} has 2 findings" in item.message for item in found))
+    tree.write(SLOW_LEDGER, slow("test/a", "test/b", "test/c", "test/d"))
+    later = tree.commit("Add a third probe", "The probe takes 23 s.")
+    status, found = tree.run()
+    expect("a later growth of the same ledger warns again, and names only the later commit",
+           status == 0 and len(grew(found)) == 1
+           and later[:9] in grew(found)[0].message.partition("Rows added:")[2]
+           and probes[:9] not in grew(found)[0].message.partition("Rows added:")[2])
+    tree.write(SLOW_LEDGER, slow("test/a", "test/b", "test/c"))
+    fell = tree.commit("Make the third probe fast", "One row goes.")
+    rows = [grow_row(SLOW_LEDGER, first), grow_row(SLOW_LEDGER, probes), grow_row(SLOW_LEDGER, fell)]
+    tree.write(ADMISSIONS, admission_text(rows))
+    status, found = tree.run()
+    expect("a grow row at a commit that did not grow the ledger is an error of the kind row",
+           status == 1 and any(item.kind == history.ROW_KIND and fell[:9] in item.message
+                               and "did not grow" in item.message for item in found))
+    for ledger in (ADMISSIONS, BASE_LEDGER):
+        tree.write(ADMISSIONS, admission_text([grow_row(SLOW_LEDGER, first), grow_row(SLOW_LEDGER, probes),
+                                               grow_row(ledger, probes)]))
+        status, found = tree.run()
+        expect(f"a grow row of {ledger} is an error of the kind row",
+               status == 1 and any(item.kind == history.ROW_KIND and "does not compare the row count" in item.message
+                                   for item in found))
+    rule_module = "utils/assay/guard/engines/buildsys/slow_row.py"
+    tree.write(rule_module, "# the planted rule reads each test\n")
+    tree.write("test/f", "a new probe\n")
+    tree.write(SLOW_LEDGER, slow("test/a", "test/b", "test/c", "test/d", "test/e", "test/f"))
+    wider = tree.commit("Time each test, and add a probe", "The rule reads two more tests, and one probe is new.")
+    rows = [grow_row(SLOW_LEDGER, first), grow_row(SLOW_LEDGER, probes), grow_row(SLOW_LEDGER, wider)]
+    tree.write(ADMISSIONS, admission_text(rows))
+    status, found = tree.run()
+    expect("at a larger scope, a grow row holds only the rows that a rebase row cannot hold, so the rows of the scope "
+           "still warn",
+           status == 0 and len(grew(found)) == 1 and wider[:9] in grew(found)[0].message)
+    tree.write(ADMISSIONS, admission_text([*rows, rebase_row(SLOW_LEDGER, wider)]))
+    status, found = tree.run()
+    expect("a rebase row and a grow row of one commit admit the two parts of its growth, each with its own error",
+           status == 0 and not grew(found)
+           and any(item.path == ADMISSIONS and f"{SLOW_LEDGER} has 4 findings" in item.message
+                   and "grow 3" in item.message and "rebase 1" in item.message for item in found))
+    tree.write(SLOW_LEDGER, head)
+    tree.commit("Make each slow test fast", "Each row goes.")
+    status, found = tree.run()
+    expect("a grow row of a ledger at its lowest count admits nothing, and the rule refuses it",
+           status == 1 and any(item.path == ADMISSIONS and "admits no finding" in item.message for item in found))
+
+
+def keep_cases(expect: Expect, scratch: Path) -> None:
+    """Keep a threshold above its lowest value with a keep row, and refuse each keep row that admits nothing (THE KEPT
+    THRESHOLDS)."""
+    tree = Scratch(scratch / "keep")
+    tree.write(rule_registry.REGISTRY_PATH, registry_text(size=(2, 6)))
+    tree.commit("Raise the size row", "The largest link of size-row took 5.2 GB of memory.")
+    status, found = tree.run()
+    expect("with no keep row, a measured rise gives the warning above-lowest",
+           status == 0 and any(item.kind == "above-lowest" and item.entity == "size-row" for item in found))
+    tree.write(ADMISSIONS, admission_text([keep_row("size-row", "error")]))
+    status, found = tree.run()
+    expect("a keep row turns the warning into an admitted finding of the ledger of the rule",
+           status == 0 and not any(item.kind == "above-lowest" for item in found)
+           and any(item.path == ADMISSIONS and "keep 1" in item.message for item in found))
+    tree.write(ADMISSIONS, admission_text([keep_row("size-row", "error"), keep_row("size-row", "warn")]))
+    status, found = tree.run()
+    expect("a keep row of a field at its lowest value admits nothing, and the rule refuses it",
+           status == 1 and any(item.path == ADMISSIONS and "admits no finding" in item.message
+                               and "size-row warn" in item.message for item in found))
+    malformed = f"{rule_registry.REGISTRY_PATH} | {history.KEEP_KIND} | admit | size-row both | a planted measurement"
+    tree.write(ADMISSIONS, admission_text([malformed]))
+    status, found = tree.run()
+    expect("a keep row with no field warn or error is an error",
+           status == 1 and any(item.path == ADMISSIONS and "a row is" in item.message for item in found))
+    tree.write(ADMISSIONS, admission_text([keep_row("size-row", "error")]))
+    tree.write(rule_registry.REGISTRY_PATH, registry_text())
+    tree.commit("Lower the size row", "The row goes back to its first value.")
+    status, found = tree.run()
+    expect("a keep row of a threshold back at its lowest value admits nothing, and the rule refuses it",
+           status == 1 and any(item.path == ADMISSIONS and "admits no finding" in item.message for item in found))
 
 
 def quarantine_text(base: dict[str, int], deltas: dict[str, dict[str, int]] | None = None) -> str:
@@ -621,9 +741,8 @@ def quarantine_cases(expect: Expect, scratch: Path) -> None:
     covered.write(QUARANTINE_LEDGER, entity_text(span, 4, {("test/a.cpp", "PROBE: a region | std_object std::map"): 3}))
     admitted = covered.commit("Admit a region that covers more", "The region PROBE: a region needs one more object.")
     status, found = covered.run()
-    expect("a region that covers more, with its reason in the message, is no error, and its row gives a warning",
-           status == 0 and not errors_of(found) and any(admitted[:9] in item.message and history.OPTED_OUT
-                                                        in item.message for item in standing_of(found)))
+    expect("a region that covers more, with its reason in the message, is no error and gives no warning",
+           status == 0 and not errors_of(found) and not any(admitted[:9] in item.message for item in found))
     kind_quarantine_cases(expect, scratch)
     reason_quarantine_cases(expect, scratch)
     move_quarantine_cases(expect, scratch)
@@ -658,10 +777,24 @@ def reason_quarantine_cases(expect: Expect, scratch: Path) -> None:
     plugin.commit("Count each region", "The first counts.")
     plugin.write("utils/tools/quarantine/plugin.cpp", "// a new kind in a region\n")
     plugin.write(QUARANTINE_LEDGER, counted.replace("| opted-out | 1 |", "| opted-out | 2 |"))
-    plugin.commit("Report a new kind in the plugin", "The plugin finds one more object in the region.")
+    ruled = plugin.commit("Report a new kind in the plugin", "The plugin finds one more object in the region.")
     status, found = plugin.run()
-    expect("a region count that a change of the plugin raises needs no reason in the message",
-           status == 0 and not errors_of(found))
+    expect("a region count that a change of the plugin raises needs no reason in the message, and with no reason it "
+           "gives a warning",
+           status == 0 and not errors_of(found) and any(ruled[:9] in item.message for item in standing_of(found)))
+    plugin.write(ADMISSIONS, admission_text([grow_row(QUARANTINE_LEDGER, ruled)]))
+    status, found = plugin.run()
+    expect("a grow row of the quarantine ledger admits each count that its commit raised",
+           status == 0 and not standing_of(found)
+           and any(item.path == ADMISSIONS and f"{QUARANTINE_LEDGER} has 1 findings" in item.message for item in found))
+    plugin.write(QUARANTINE_LEDGER, counted.replace("| opted-out | 1 |", "| opted-out | 2 |")
+                 .replace("| std-object | 2 |", "| std-object | 1 |"))
+    lowered = plugin.commit("Lower a count", "One finding goes.")
+    plugin.write(ADMISSIONS, admission_text([grow_row(QUARANTINE_LEDGER, ruled), grow_row(QUARANTINE_LEDGER, lowered)]))
+    status, found = plugin.run()
+    expect("a grow row of the quarantine ledger at a commit that raised no count is an error of the kind row",
+           status == 1 and any(item.kind == history.ROW_KIND and lowered[:9] in item.message
+                               and "did not grow" in item.message for item in found))
 
 
 def kind_quarantine_cases(expect: Expect, scratch: Path) -> None:
@@ -686,9 +819,8 @@ def kind_quarantine_cases(expect: Expect, scratch: Path) -> None:
     named.write(QUARANTINE_LEDGER, two_regions)
     added = named.commit("Admit a second region", "A probe needs a second region:\nPROBE:   a\nregion.")
     status, found = named.run()
-    expect("a new region with its reason in the message, also over a line break, is no error, and gives a warning",
-           status == 0 and not errors_of(found)
-           and any(added[:9] in item.message and history.REGION in item.message for item in standing_of(found)))
+    expect("a new region with its reason in the message, also over a line break, is no error and gives no warning",
+           status == 0 and not errors_of(found) and not any(added[:9] in item.message for item in found))
     named.write(history.RULE_TABLE, "quarantine test/\n")
     named.write(QUARANTINE_LEDGER, two_regions.replace("| std-object | 2 |", "| std-object | 3 |"))
     tabled = named.commit("Admit one name less in the rule table", "The table refuses one more name.")
@@ -812,6 +944,8 @@ def main(argv: list[str]) -> int:
         move_cases(expect, scratch)
         rebase_cases(expect, scratch)
         scope_cases(expect, scratch)
+        grow_cases(expect, scratch)
+        keep_cases(expect, scratch)
         quarantine_cases(expect, scratch)
         applicability_cases(expect, tree, scratch)
     if failures:

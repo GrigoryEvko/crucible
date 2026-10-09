@@ -32,18 +32,24 @@ WHAT THE RULE READS
       admits an admitted count with no reason (THE ADMITTED COUNTS).  A row
       `utils/ledgers/RULE.txt | rebase | admit | COMMIT | REASON` names a
       commit that changed the key or the format of a ledger, or a commit that
-      made the scope of the rule larger (THE REBASE).  COMMIT is the hash in 9
-      characters.
+      made the scope of the rule larger (THE REBASE).  A row
+      `utils/ledgers/RULE.txt | grow | admit | COMMIT | REASON` admits the
+      growth of a ledger in one commit (THE GROWTH).  A row
+      `utils/registry.txt | keep | admit | RULE COLUMN | REASON` keeps a
+      threshold above its lowest value (THE KEPT THRESHOLDS).  COMMIT is the
+      hash in 9 characters.
 
 THE FINDINGS
     * A threshold (the warn or the error field of a measured rule) above its
-      lowest committed value gives a warning on each run.  The warning names
+      lowest committed value gives a warning on each run.  A `keep` row can
+      admit it (THE KEPT THRESHOLDS).  The warning names
       each commit that raised it after the newest commit at the lowest value.
       A value with another unit starts a new history of the rule.  The unit
       of a version is its first word, so "G instructions" of the old table and
       "G" of the registry are one unit.
     * A ledger whose row count is above its lowest committed count gives a
-      warning on each run (assay.core.ledger.count_rows).  A ledger of a rule
+      warning on each run (assay.core.ledger.count_rows).  A `grow` row can
+      admit the growth of one commit (THE GROWTH).  A ledger of a rule
       with the policy baseline holds the sums that --write writes again, and
       the rule does not count its rows.  The rule does not count the rows of
       its own ledger.  Each row admits an event of the history, and an event
@@ -57,7 +63,10 @@ THE FINDINGS
       the kind opted-out or region is no error of the kind raise.  Only
       `guard write --rule quarantine --admit` writes it (THE ADMITTED COUNTS).
       Each raised count that stays above its count before the commit gives a
-      warning on each run.
+      warning on each run.  A count of the kind opted-out or region gives no
+      such warning when its commit gave the reason of its region (THE
+      ADMITTED COUNTS).  A `grow` row can admit the other counts that one
+      commit raised (THE GROWTH).
       read_quarantine_version() reads each version: the rows of
       assay.core.ledger, and the formats 1 to 4 of the earlier file
       utils/scripts/quarantine-ledger.txt.  The rows hold the counts of format
@@ -84,7 +93,37 @@ THE ADMITTED COUNTS
     can be different.  A commit that changes the plugin or the rule table
     gives no such error, because the plugin can then find more in a region.
     A row `utils/ledgers/quarantine.txt | region-reason | admit | COMMIT |
-    REASON` admits the error of one commit.
+    REASON` admits the error of one commit.  When the commit gave the reason
+    of its region, its count of the kind opted-out or region gives no
+    warning.  The reason is then in the row of the region in the quarantine
+    ledger, and in the message of the commit.
+
+THE GROWTH
+    A `grow` row names one commit and one ledger.  The growth of the ledger in
+    that commit is necessary.  Examples are a new door claim, a probe of the
+    state after a move, and a design row that must stay.  REASON tells why.
+    The row admits the growth of that one commit only, as a rebase row counts
+    it.  A growth of a different commit gives its warning again.  The row
+    holds each row of its commit that a rebase row at a larger scope of the
+    commit cannot hold.  The two rows then hold different rows of the ledger:
+    * Each other ledger: the lowest count before the commit increases by the
+      rows that the commit added, less the rows of a larger scope.
+    * The quarantine ledger: each count that the commit raised gives no
+      warning.  At a larger scope, these are only the counts of files that
+      the commit changed.
+    A `grow` row is an error, of the kind row, in two cases.  Its commit
+    added no such row to the ledger, or the row names a ledger that takes no
+    rebase row.  A `grow` row admits one error of the kind `grow`.  The rule
+    gives that error only when the row changes the result, as for a rebase
+    row.  The rule refuses a `grow` row that changes no result, because the
+    row admits nothing.
+
+THE KEPT THRESHOLDS
+    A `keep` row names a measured rule and one field of it.  REASON gives the
+    measurement that keeps the threshold above its lowest committed value.
+    The warning of that threshold then becomes an error of the kind `keep`,
+    which the row admits.  When the threshold falls to its lowest value, the
+    row admits nothing, and the rule refuses it.
 
 THE REBASE
     A rebase row names a commit at which the rows of a ledger do not compare
@@ -244,6 +283,8 @@ OWN_LEDGER = rule_ledger.shown_path(RULE)
 RAISE_KIND = "raise"
 REASON_KIND = "region-reason"
 REBASE_KIND = "rebase"
+GROW_KIND = "grow"
+KEEP_KIND = "keep"
 ROW_KIND = "row"
 # A commit that changes a path of the code of the guards can change the keys of a ledger (THE REBASE).
 GUARD_CODE = "utils/"
@@ -284,35 +325,46 @@ class Rise:
 
 
 class Change(enum.StrEnum):
-    """The cause of a rebase (THE REBASE)."""
+    """The cause of a rebase (THE REBASE), or a growth that a `grow` row admits (THE GROWTH)."""
 
     KEY = "key"
     SCOPE = "scope"
+    GROW = "grow"
 
 
 @dataclass(frozen=True, slots=True)
 class Cause:
-    """How a commit changed what a ledger holds (THE REBASE).
+    """How a commit changed what a ledger holds (THE REBASE and THE GROWTH).
 
-    `rows` is the number of rows that a larger scope does not count as growth,
-    for each ledger other than the quarantine ledger.  `changed` holds each
-    path that the commit changed.
+    `rows` is the number of rows that a larger scope or a `grow` row does not
+    count as growth, for each ledger other than the quarantine ledger.  For a
+    `grow` row, it is each row that the commit added, less the rows of a
+    larger scope.  `changed` holds each path that the commit changed.
+    `is_scope` tells, for a `grow` row, that the commit also made the scope of
+    the rule larger.  The row of the quarantine ledger then holds only the
+    counts of files that the commit changed.
     """
 
     change: Change
     text: str
     rows: int = 0
     changed: frozenset[str] = frozenset()
+    is_scope: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class Rebase:
-    """A rebase row that names a rebase commit (THE REBASE): its commit, the index of the commit in the history, and
-    the cause."""
+    """A rebase row that names a rebase commit (THE REBASE), or a `grow` row (THE GROWTH): its commit, the index of
+    the commit in the history, and the cause."""
 
     commit: git.Commit
     index: int
     cause: Cause
+
+    @property
+    def kind(self) -> str:
+        """The kind of the error that the row admits: `grow` for a `grow` row, else rebase."""
+        return GROW_KIND if self.cause.change is Change.GROW else REBASE_KIND
 
 
 @dataclass(frozen=True, slots=True)
@@ -555,8 +607,13 @@ def rises_after_lowest(states: list[float | None], rises: list[tuple[int, Rise]]
     return lowest, named
 
 
-def threshold_findings(history: History, registry: rule_registry.Registry) -> list[check_report.Finding]:
-    """Compare each threshold with its history, and each rise with the body of its commit."""
+def threshold_findings(history: History, registry: rule_registry.Registry,
+                       kept: frozenset[tuple[str, str]] = frozenset()) -> list[check_report.Finding]:
+    """Compare each threshold with its history, and each rise with the body of its commit.
+
+    `kept` holds the rule and the field of each `keep` row (THE KEPT THRESHOLDS).  A threshold above its lowest value
+    with a `keep` row gives no warning.  It gives an error of the kind `keep`, which the row admits.
+    """
     findings: list[check_report.Finding] = []
     commits = history.states.commits
     current = table_rows(history, "working") or {}
@@ -607,11 +664,18 @@ def threshold_findings(history: History, registry: rule_registry.Registry) -> li
             if above is not None:
                 lowest, named = above
                 raised = "; ".join(rise.described() for rise in named) if named else "by no single commit"
-                findings.append(check_report.Finding(
-                    "warning", REGISTRY, line, RULE,
-                    f"the {column} threshold of {rule_id} is {number_text(row.value(column))} {display}, above its "
-                    f"lowest committed value {number_text(lowest)}.  Raised: {raised}.  Lower it again when a "
-                    f"measurement permits", "above-lowest", rule_id))
+                said = (f"the {column} threshold of {rule_id} is {number_text(row.value(column))} {display}, above its "
+                        f"lowest committed value {number_text(lowest)}.  Raised: {raised}")
+                if (rule_id, column) in kept:
+                    findings.append(check_report.Finding(
+                        "error", REGISTRY, line, RULE,
+                        f"{said}.  A keep row of {OWN_LEDGER} gives the measurement that keeps it", KEEP_KIND,
+                        f"{rule_id} {column}"))
+                else:
+                    findings.append(check_report.Finding(
+                        "warning", REGISTRY, line, RULE,
+                        f"{said}.  Lower it again when a measurement permits, or add a keep row to {OWN_LEDGER} that "
+                        f"gives the measurement", "above-lowest", rule_id))
     return findings
 
 
@@ -642,20 +706,21 @@ def counts_rows(path: str, registry: rule_registry.Registry) -> bool:
 
 def rebased(states: Sequence[float | None], rises: Sequence[tuple[int, Rise]],
             rows: Sequence[Rebase]) -> Rebased:
-    """Return the states of a ledger and its `Rise` records after some of its rebase rows (THE REBASE).
+    """Return the states of a ledger and its `Rise` records after some of its rebase rows and `grow` rows.
 
     The newest change of the key or the format keeps the states and the
-    records at that commit and after it.  A larger scope after it increases
-    each older state by the rows that it does not count as growth.  Its own
-    record decreases by the same rows.  Complexity: O(s * r) for s states and
-    r rows.
+    records at that commit and after it (THE REBASE).  A larger scope or a
+    `grow` row after it increases each older state by the rows that it does
+    not count as growth.  Its own record decreases by the same rows (THE
+    GROWTH).
+    Complexity: O(s * r) for s states and r rows.
     """
     end = min((row.index + 1 for row in rows if row.cause.change is Change.KEY), default=len(states))
     shifted = list(states[:end])
     named = [item for item in rises if item[0] < end]
     applied = tuple(sorted((row for row in rows if row.index < end), key=lambda row: row.index))
     for row in applied:
-        if row.cause.change is not Change.SCOPE:
+        if row.cause.change is Change.KEY:
             continue
         for index in range(row.index + 1, end):
             state = shifted[index]
@@ -679,10 +744,15 @@ def changes_result(value: float | None, without: Rebased, full: Rebased) -> bool
 
 
 def rebase_text(row: Rebase, path: str) -> str:
-    """Return the sentences that tell the cause of a rebase row and its effect on the history of the ledger."""
+    """Return the sentences that tell the cause of a rebase row or a `grow` row and its effect on the ledger."""
     if row.cause.change is Change.KEY:
         return (f"The commit changed the key or the format of the ledger: {row.cause.text}.  The lowest count starts "
                 f"again at that commit")
+    if row.cause.change is Change.GROW:
+        if path == QUARANTINE_LEDGER:
+            return f"A grow row admits the growth of the commit: {row.cause.text}.  Each such count gives no warning"
+        return (f"A grow row admits the growth of the commit: {row.cause.text}.  These {row.cause.rows} rows do not "
+                f"count as growth")
     scope = f"The commit made the scope of the rule larger: {row.cause.text}"
     if path == QUARANTINE_LEDGER:
         return f"{scope}.  Each count that it raised in a file that it did not change gives no warning"
@@ -690,11 +760,22 @@ def rebase_text(row: Rebase, path: str) -> str:
             f"change, and at most the rows that it added in total")
 
 
+def since_text(applied: Sequence[Rebase]) -> str:
+    """Return the words that name the rebase rows and the `grow` rows that apply to a ledger, or '' for none."""
+    parts: list[str] = []
+    for kind, label in ((REBASE_KIND, "rebase"), (GROW_KIND, "admitted growth")):
+        shorts = [row.commit.short for row in applied if row.kind == kind]
+        if shorts:
+            parts.append(f"the {label}{'s' if kind == REBASE_KIND and len(shorts) > 1 else ''} at {', '.join(shorts)}")
+    return f" after {' and '.join(parts)}" if parts else ""
+
+
 def ledger_findings(history: History, registry: rule_registry.Registry,
                     rebases: Mapping[str, Sequence[Rebase]]) -> list[check_report.Finding]:
-    """Compare the row count of each ledger with its lowest committed count, after the rebase rows of the ledger.
+    """Compare the row count of each ledger with its lowest committed count, after the rebase rows and the `grow` rows.
 
-    Each rebase row that changes the result gives an error of the kind rebase, which the row admits.
+    Each rebase row or `grow` row that changes the result gives an error of the kind rebase or `grow`, which the row
+    admits.
 
     Complexity: O(c * l * r^2) for c commits, l ledgers and r rebase rows of one ledger.  The reads are linear in the
     bytes of the versions of the ledgers.
@@ -729,14 +810,14 @@ def ledger_findings(history: History, registry: rule_registry.Registry,
             findings.append(check_report.Finding(
                 "error", path, 0, RULE,
                 f"the ledger holds {current} rows, more than its lowest committed count "
-                f"{number_text(without.lowest or 0)} without the rebase at {row.commit.short} ({row.commit.subject}).  "
-                f"{rebase_text(row, path)}.  A row of {OWN_LEDGER} gives the reason", REBASE_KIND, row.commit.short))
+                f"{number_text(without.lowest or 0)} without the {row.kind} row at {row.commit.short} "
+                f"({row.commit.subject}).  {rebase_text(row, path)}.  A row of {OWN_LEDGER} gives the reason",
+                row.kind, row.commit.short))
         above = rises_after_lowest(list(full.states), list(full.rises), value, working_rise)
         if above is not None:
             lowest, named = above
             raised = "; ".join(rise.described() for rise in named) if named else "by no single commit"
-            shorts = ", ".join(row.commit.short for row in full.applied)
-            since = (f" after the rebase{'s' if len(full.applied) > 1 else ''} at {shorts}" if full.applied else "")
+            since = since_text(full.applied)
             findings.append(check_report.Finding(
                 "warning", path, 0, RULE,
                 f"the ledger holds {current} rows, more than its lowest committed count {number_text(lowest)}{since}.  "
@@ -816,6 +897,55 @@ def change_cause(history: History, commit: git.Commit, path: str, changed: froze
                                f"did not change, such as {rule_ledger.key_path(outside[0])}", rows, changed)
 
 
+def quarantine_rises(history: History, commit: git.Commit) -> list[LedgerRise]:
+    """Return each count of the quarantine ledger that a commit raised, as quarantine_findings() reads the commit.
+
+    A version that does not read, or two versions that do not compare row by row, give no raised count.  Complexity:
+    linear in the rows of the two versions.
+    """
+    try:
+        before = read_quarantine_version(history.text("before", commit.sha, QUARANTINE_PATHS) or "",
+                                         f"{commit.short}^:{QUARANTINE_LEDGER}")
+        after = read_quarantine_version(history.text("at", commit.sha, QUARANTINE_PATHS) or "",
+                                        f"{commit.short}:{QUARANTINE_LEDGER}")
+    except VersionError:
+        return []
+    if not before.configurations or not after.configurations or not comparable(before, after):
+        return []
+    moves = history.changes.get(commit.sha, (frozenset(), {}))[1]
+    return [rise for rise in ledger_rises(before, after, moves, {}) if rise.file != TOTAL]
+
+
+def grow_cause(history: History, commit: git.Commit, path: str, changed: frozenset[str]) -> Cause | None:
+    """Return the growth of a ledger that a `grow` row at a commit admits, or None when it admits none (THE GROWTH).
+
+    The growth holds each row of the commit that a rebase row at a larger
+    scope of the commit cannot hold.  A rebase row at a change of the key or
+    the format of the ledger starts its lowest count again at the commit, and
+    a `grow` row of that commit then admits nothing.
+    Complexity: linear in the bytes of the versions of the ledger at the commit and at its parent.
+    """
+    cause = change_cause(history, commit, path, changed)
+    is_scope = cause is not None and cause.change is Change.SCOPE
+    if path == QUARANTINE_LEDGER:
+        rises = [rise for rise in quarantine_rises(history, commit) if not is_scope or rise.file in changed]
+        if not rises:
+            return None
+        where = " in files that it changed" if is_scope else ""
+        return Cause(Change.GROW, f"it raised {len(rises)} counts{where}, such as {rises[0].described()}", 0, changed,
+                     is_scope)
+    new = ledger_rows(history, "at", commit.sha, path)
+    old = ledger_rows(history, "before", commit.sha, path)
+    if new is None or old is None:
+        return None
+    scope_rows = cause.rows if cause is not None and is_scope else 0
+    rows = new - old - scope_rows
+    if rows <= 0:
+        return None
+    where = f", besides the {scope_rows} rows of a larger scope" if scope_rows else ""
+    return Cause(Change.GROW, f"it added {rows} rows{where}", rows, changed, is_scope)
+
+
 def takes_rebase(path: str, registry: rule_registry.Registry) -> bool:
     """Return True when a ledger takes a rebase row: the quarantine ledger, and each ledger of counts_rows()."""
     return path == QUARANTINE_LEDGER or counts_rows(path, registry)
@@ -823,16 +953,16 @@ def takes_rebase(path: str, registry: rule_registry.Registry) -> bool:
 
 def rebase_findings(history: History, ledger: rule_ledger.Ledger | None, registry: rule_registry.Registry,
                     root: Path) -> tuple[dict[str, list[Rebase]], list[check_report.Finding]]:
-    """Read the rebase rows of the ledger of this rule (THE REBASE).
+    """Read the rebase rows (THE REBASE) and the `grow` rows (THE GROWTH) of the ledger of this rule.
 
-    Returns the rebase rows of each ledger that name a rebase commit, newest
-    first.  It also returns an error of the kind row for each row that names
-    no such commit.
+    Returns the rows of each ledger that name a rebase commit or a growth,
+    newest first.  It also returns an error of the kind row for each row that
+    names no such commit.
 
     Raises:
         NotApplicable: If git fails
 
-    Complexity: one `git diff-tree` for each rebase row, and linear in the versions of the ledger.
+    Complexity: one `git diff-tree` for each row, and linear in the versions of the ledger.
     """
     applied: dict[str, list[Rebase]] = {}
     errors: list[check_report.Finding] = []
@@ -840,7 +970,7 @@ def rebase_findings(history: History, ledger: rule_ledger.Ledger | None, registr
         return applied, errors
     index_of = {commit.short: index for index, commit in enumerate(history.states.commits)}
     for key, entry in sorted(ledger.base.items()):
-        if key.kind != REBASE_KIND:
+        if key.kind not in (REBASE_KIND, GROW_KIND):
             continue
         paths = (key.path, *EARLIER_PATHS.get(key.path, ()))
         index = index_of.get(key.entity)
@@ -850,7 +980,7 @@ def rebase_findings(history: History, ledger: rule_ledger.Ledger | None, registr
             problem = f"the tree holds no ledger {key.path}"
         elif not takes_rebase(key.path, registry):
             problem = (f"the rule does not compare the row count of {key.path} with its history.  The ledger of this "
-                       f"rule and a ledger of the policy baseline have no rebase")
+                       f"rule and a ledger of the policy baseline have no rebase and no admitted growth")
         elif commit is None or not any(item in commit.paths for item in paths):
             problem = f"the commit {key.entity} did not change {key.path} or an earlier file of it"
         else:
@@ -858,15 +988,22 @@ def rebase_findings(history: History, ledger: rule_ledger.Ledger | None, registr
                 changed = git.changed_paths(root, commit.sha)
             except git.GitError as failure:
                 raise NotApplicable(str(failure)) from None
-            cause = change_cause(history, commit, key.path, changed)
-            problem = (f"the commit {commit.short} ({commit.subject}) did not change the key or the format of "
-                       f"{key.path}, and it did not make the scope of the rule larger")
+            if key.kind == GROW_KIND:
+                cause = grow_cause(history, commit, key.path, changed)
+                problem = (f"the commit {commit.short} ({commit.subject}) did not grow {key.path} with rows that a "
+                           f"rebase row at a larger scope cannot hold")
+            else:
+                cause = change_cause(history, commit, key.path, changed)
+                problem = (f"the commit {commit.short} ({commit.subject}) did not change the key or the format of "
+                           f"{key.path}, and it did not make the scope of the rule larger")
         if index is None or commit is None or cause is None:
+            told = ("A grow row names a commit that added rows to a ledger or raised a count of the quarantine ledger"
+                    if key.kind == GROW_KIND else
+                    "A rebase row names a commit that changed the key or the format of a ledger, or a commit that "
+                    "changed the code of the guards and added rows of files that it did not change")
             errors.append(check_report.Finding(
                 "error", OWN_LEDGER, entry.line, RULE,
-                f"{problem}.  A rebase row names a commit that changed the key or the format of a ledger, or a commit "
-                f"that changed the code of the guards and added rows of files that it did not change.  Remove the "
-                f"row, or name such a commit", ROW_KIND, str(entry.line)))
+                f"{problem}.  {told}.  Remove the row, or name such a commit", ROW_KIND, str(entry.line)))
             continue
         applied.setdefault(key.path, []).append(Rebase(commit, index, cause))
     for rows in applied.values():
@@ -1261,12 +1398,16 @@ def quarantine_findings(history: History, rebases: Sequence[Rebase] = ()) -> lis
       or the rule table that did not write its rows.  A raise of a stale
       configuration is no error.
     * A raised count that stays above its value before the commit gives a
-      warning on each run, which names the commit.
+      warning on each run, which names the commit.  When the commit gave the
+      reason of its region, a raised count of the kind opted-out or region
+      gives no warning (THE ADMITTED COUNTS).
     * A rebase row of the quarantine ledger names a commit that made the scope
       of the rule larger (THE REBASE).  Each count that the commit raised in a
       file that it did not change then gives no warning.  The row admits one
       error of the kind rebase when such a count stays above its value before
       the commit.
+    * A `grow` row of the quarantine ledger admits the other counts that one
+      commit raised (THE GROWTH), with one error of the kind `grow`.
     * A raise in the working tree gives a warning only.
 
     Complexity: O(c * r) for c commits of the ledger, the plugin and the rule table, and r counts.
@@ -1352,29 +1493,34 @@ def quarantine_findings(history: History, rebases: Sequence[Rebase] = ()) -> lis
         return findings
     counts = absolute_counts(current)
     file_counts = absolute_counts(current, has_entity=False)
-    by_commit = {row.commit.sha: row for row in rebases}
-    not_growth: dict[str, int] = {}
+    by_kind = {kind: {row.commit.sha: row for row in rebases if row.kind == kind} for kind in (REBASE_KIND, GROW_KIND)}
+    not_growth: dict[tuple[str, str], int] = {}
     for commit, rise in standing:
         value = (counts if rise.entity else file_counts).get((rise.configuration, *rise.key), 0)
-        if value <= rise.old:
+        if value <= rise.old or (rise.kind in ADMITTED_KINDS and gives_reason(commit, region_reason(rise))):
             continue
-        row = by_commit.get(commit.sha)
-        if row is not None and rise.file not in row.cause.changed:
-            not_growth[commit.sha] = not_growth.get(commit.sha, 0) + 1
+        rebase, grow = by_kind[REBASE_KIND].get(commit.sha), by_kind[GROW_KIND].get(commit.sha)
+        holder = (rebase if rebase is not None and rise.file not in rebase.cause.changed
+                  else grow if grow is not None and (not grow.cause.is_scope or rise.file in grow.cause.changed)
+                  else None)
+        if holder is not None:
+            not_growth[(commit.sha, holder.kind)] = not_growth.get((commit.sha, holder.kind), 0) + 1
             continue
         what = f"{rise.kind} {rise.entity}" if rise.entity else rise.kind
         findings.append(check_report.Finding(
             "warning", QUARANTINE_LEDGER, rise_line(current, rise), RULE,
             f"{rise.file} {what} in the configuration {rise.configuration} has {value} findings, above "
             f"{rise.old} before the commit {commit.short} ({commit.subject}) raised it to {rise.new}.  Lower it "
-            f"again", "standing-raise", f"{commit.short} {rise.file}"))
-    for sha, count in sorted(not_growth.items()):
-        row = by_commit[sha]
+            f"again, or add a grow row to {OWN_LEDGER} that gives the reason", "standing-raise",
+            f"{commit.short} {rise.file}"))
+    for (sha, kind), count in sorted(not_growth.items()):
+        row = by_kind[kind][sha]
+        where = "in files that it did not change" if kind == REBASE_KIND else "that a grow row holds"
         findings.append(check_report.Finding(
             "error", QUARANTINE_LEDGER, 0, RULE,
-            f"the commit {row.commit.short} ({row.commit.subject}) raised {count} counts of {QUARANTINE_LEDGER} in "
-            f"files that it did not change, and each one stays above its value before the commit.  "
-            f"{rebase_text(row, QUARANTINE_LEDGER)}.  A row of {OWN_LEDGER} gives the reason", REBASE_KIND,
+            f"the commit {row.commit.short} ({row.commit.subject}) raised {count} counts of {QUARANTINE_LEDGER} "
+            f"{where}, and each one stays above its value before the commit.  "
+            f"{rebase_text(row, QUARANTINE_LEDGER)}.  A row of {OWN_LEDGER} gives the reason", kind,
             row.commit.short))
     head = parse(history.text("head", "", path), f"HEAD:{QUARANTINE_LEDGER}")
     if head is not None and comparable(head, current):
@@ -1412,16 +1558,25 @@ def admission_findings(ledger: rule_ledger.Ledger | None) -> list[check_report.F
         is_threshold = key.path == REGISTRY and key.kind in COLUMNS and len(words) == 2 and is_commit
         is_raise = (key.path == QUARANTINE_LEDGER and key.kind in (RAISE_KIND, REASON_KIND) and len(words) == 1
                     and is_commit)
-        is_rebase = (key.kind == REBASE_KIND and key.path.startswith(f"{LEDGER_DIRECTORY}/")
+        is_rebase = (key.kind in (REBASE_KIND, GROW_KIND) and key.path.startswith(f"{LEDGER_DIRECTORY}/")
                      and key.path.endswith(".txt") and len(words) == 1 and is_commit)
-        if not (is_threshold or is_raise or is_rebase):
+        is_kept = key.path == REGISTRY and key.kind == KEEP_KIND and len(words) == 2 and words[1] in COLUMNS
+        if not (is_threshold or is_raise or is_rebase or is_kept):
             found.append(check_report.Finding(
                 "error", OWN_LEDGER, entry.line, RULE,
-                f"a row is '{REGISTRY} | warn|error | admit | COMMIT RULE | REASON', '{QUARANTINE_LEDGER} | "
-                f"{RAISE_KIND}|{REASON_KIND} | admit | COMMIT | REASON' or '{LEDGER_DIRECTORY}/RULE.txt | "
-                f"{REBASE_KIND} | admit | COMMIT | REASON', with a commit of 9 hexadecimal characters", ROW_KIND,
-                str(entry.line)))
+                f"a row is '{REGISTRY} | warn|error | admit | COMMIT RULE | REASON', '{REGISTRY} | {KEEP_KIND} | "
+                f"admit | RULE warn|error | REASON', '{QUARANTINE_LEDGER} | {RAISE_KIND}|{REASON_KIND} | admit | "
+                f"COMMIT | REASON' or '{LEDGER_DIRECTORY}/RULE.txt | {REBASE_KIND}|{GROW_KIND} | admit | COMMIT | "
+                f"REASON', with a commit of 9 hexadecimal characters", ROW_KIND, str(entry.line)))
     return found
+
+
+def kept_thresholds(ledger: rule_ledger.Ledger | None) -> frozenset[tuple[str, str]]:
+    """Return the rule and the field of each keep row of the ledger of this rule (THE KEPT THRESHOLDS)."""
+    if ledger is None:
+        return frozenset()
+    return frozenset((words[0], words[1]) for key in ledger.base if key.path == REGISTRY and key.kind == KEEP_KIND
+                     for words in [key.entity.split(" ")] if len(words) == 2 and words[1] in COLUMNS)
 
 
 def findings(context: MetaContext) -> list[check_report.Finding]:
@@ -1430,7 +1585,8 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
     registry = context.registry
     ledger = own_ledger(context)
     rebases, refused = rebase_findings(history, ledger, registry, context.root)
-    return (threshold_findings(history, registry) + quarantine_findings(history, rebases.get(QUARANTINE_LEDGER, ()))
+    return (threshold_findings(history, registry, kept_thresholds(ledger))
+            + quarantine_findings(history, rebases.get(QUARANTINE_LEDGER, ()))
             + ledger_findings(history, registry, rebases) + admission_findings(ledger) + refused)
 
 
