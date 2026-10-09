@@ -591,6 +591,35 @@ def kind_quarantine_cases(expect: Expect, scratch: Path) -> None:
            and history.current_key("a.cpp", "opted_out", "ORACLE: a probe | c_library_call memcpy")
            == ("a.cpp", "opted-out", "ORACLE: a probe | c-library-call memcpy")
            and history.current_key("a.cpp", "std-entity", "std::move") == ("a.cpp", "std-entity", "std::move"))
+    expect("an include entity of an earlier version reads as the header or the target with no layer",
+           history.current_key("a.h", "layer_header", "<vector> in the layer X1_wrappers")
+           == ("a.h", "layer-header", "<vector>")
+           and history.current_key("a.h", "upward-include", "include/crucible/X.h (no layer) from the layer X3_os")
+           == ("a.h", "upward-include", "include/crucible/X.h")
+           and history.current_key("a.h", "opted_out", "C-HEADER: a struct | layer_header <span> in the layer X1")
+           == ("a.h", "opted-out", "C-HEADER: a struct | layer-header <span>")
+           and history.current_key("a.h", "door-header", "<pthread.h> has the door a.cpp")
+           == ("a.h", "door-header", "<pthread.h> has the door a.cpp"))
+    included = Scratch(scratch / "quarantine-include-keys")
+    long_keys = ("# a planted ledger\nformat 1\nrule quarantine\nconfiguration default machine x86_64\n"
+                 "include/fixy/A.h | layer-header | 1 | <vector> in the layer X1_wrappers | -\n"
+                 "include/fixy/A.h | upward-include | 1 | include/crucible/X.h (no layer) from the layer X1_wrappers"
+                 " | -\n")
+    included.write(QUARANTINE_LEDGER, long_keys)
+    included.commit("Count the includes with their layers", "The first counts.")
+    included.write(QUARANTINE_LEDGER, long_keys.replace(" in the layer X1_wrappers", "")
+                   .replace(" (no layer) from the layer X1_wrappers", ""))
+    included.commit("Key each include with no layer", "The guard code changes the key.")
+    status, found = included.run()
+    expect("a change of the include keys with the same counts raises no count and gives no warning",
+           status == 0 and not errors_of(found) and not standing_of(found))
+    included.write(QUARANTINE_LEDGER, long_keys.replace(" in the layer X1_wrappers", "")
+                   .replace(" (no layer) from the layer X1_wrappers", "").replace("| layer-header | 1 |",
+                                                                                   "| layer-header | 2 |"))
+    raised = included.commit("Raise an include count by hand", "A second include comes.")
+    status, found = included.run()
+    expect("a raise of an include count after the change of the key stays an error",
+           status == 1 and any(raised[:9] in item.message for item in errors_of(found)))
 
 
 def move_quarantine_cases(expect: Expect, scratch: Path) -> None:

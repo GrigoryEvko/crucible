@@ -1676,541 +1676,541 @@ include/crucible/warden/Registry.h | std-entity | 1 | std::inplace_vector::push_
 include/crucible/warden/Registry.h | std-object | 1 | std::array | -
 include/crucible/warden/Registry.h | std-object | 4 | std::atomic | -
 include/crucible/warden/Registry.h | std-object | 3 | std::inplace_vector | -
-include/fixy/Atom.h | layer-header | 1 | <array> in the layer X2_binding | -
-include/fixy/Atom.h | layer-header | 1 | <string_view> in the layer X2_binding | -
-include/fixy/Atom.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/Atom.h | layer-header | 1 | <vector> in the layer X2_binding | -
-include/fixy/Axis.h | layer-header | 1 | <string> in the layer X2_binding | -
-include/fixy/Axis.h | layer-header | 1 | <string_view> in the layer X2_binding | -
-include/fixy/Axis.h | layer-header | 1 | <vector> in the layer X2_binding | -
-include/fixy/Bands.h | layer-header | 1 | <array> in the layer X1_wrappers | -
-include/fixy/Bands.h | layer-header | 1 | <vector> in the layer X1_wrappers | -
-include/fixy/Bits.h | layer-header | 1 | <bit> in the layer X1_wrappers | -
-include/fixy/Bits.h | layer-header | 1 | <cstdlib> in the layer X1_wrappers | -
-include/fixy/Bits.h | layer-header | 1 | <string_view> in the layer X1_wrappers | -
-include/fixy/Borrowed.h | layer-header | 1 | <cstdlib> in the layer X1_wrappers | -
-include/fixy/Borrowed.h | layer-header | 1 | <ranges> in the layer X1_wrappers | -
-include/fixy/Borrowed.h | layer-header | 1 | <span> in the layer X1_wrappers | -
-include/fixy/Borrowed.h | layer-header | 1 | <string> in the layer X1_wrappers | -
-include/fixy/Borrowed.h | layer-header | 1 | <string_view> in the layer X1_wrappers | -
-include/fixy/Budgeted.h | layer-header | 1 | <limits> in the layer X1_wrappers | -
-include/fixy/Budgeted.h | layer-header | 1 | <memory> in the layer X1_wrappers | -
-include/fixy/Budgeted.h | layer-header | 1 | <string_view> in the layer X1_wrappers | -
-include/fixy/CanonicalOrder.h | layer-header | 1 | <tuple> in the layer X1_wrappers | -
-include/fixy/Checked.h | layer-header | 1 | <cstdlib> in the layer X1_wrappers | -
-include/fixy/Checked.h | layer-header | 1 | <limits> in the layer X1_wrappers | -
-include/fixy/Checked.h | layer-header | 1 | <optional> in the layer X1_wrappers | -
-include/fixy/Collision.h | layer-header | 1 | <array> in the layer X2_binding | -
-include/fixy/Collision.h | layer-header | 1 | <expected> in the layer X2_binding | -
-include/fixy/Collision.h | layer-header | 1 | <optional> in the layer X2_binding | -
-include/fixy/Collision.h | layer-header | 1 | <string> in the layer X2_binding | -
-include/fixy/Collision.h | layer-header | 1 | <string_view> in the layer X2_binding | -
-include/fixy/Collision.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/Collision.h | layer-header | 1 | <vector> in the layer X2_binding | -
-include/fixy/ConstantTime.h | layer-header | 1 | <cstdlib> in the layer X1_wrappers | -
-include/fixy/ConstantTime.h | layer-header | 1 | <span> in the layer X1_wrappers | -
-include/fixy/Corpus.h | layer-header | 1 | <string> in the layer X2_binding | -
-include/fixy/Corpus.h | layer-header | 1 | <string_view> in the layer X2_binding | -
-include/fixy/Corpus.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/Corpus.h | layer-header | 1 | <vector> in the layer X2_binding | -
-include/fixy/Cyclic.h | layer-header | 1 | <string_view> in the layer X1_wrappers | -
-include/fixy/CyclicBuffer.h | layer-header | 1 | <string_view> in the layer X1_wrappers | -
-include/fixy/EpochVersioned.h | layer-header | 1 | <expected> in the layer X1_wrappers | -
-include/fixy/EpochVersioned.h | layer-header | 1 | <memory> in the layer X1_wrappers | -
-include/fixy/EpochVersioned.h | layer-header | 1 | <string_view> in the layer X1_wrappers | -
-include/fixy/Federation.h | layer-header | 1 | <array> in the layer X2_binding | -
-include/fixy/Federation.h | layer-header | 1 | <expected> in the layer X2_binding | -
-include/fixy/Federation.h | layer-header | 1 | <span> in the layer X2_binding | -
-include/fixy/Federation.h | layer-header | 1 | <string_view> in the layer X2_binding | -
-include/fixy/FixedArray.h | layer-header | 1 | <array> in the layer X1_wrappers | -
-include/fixy/FixedArray.h | layer-header | 1 | <bit> in the layer X1_wrappers | -
-include/fixy/FixedArray.h | layer-header | 1 | <cstdlib> in the layer X1_wrappers | -
-include/fixy/FixedArray.h | layer-header | 1 | <span> in the layer X1_wrappers | -
-include/fixy/FixedArray.h | layer-header | 1 | <string_view> in the layer X1_wrappers | -
-include/fixy/Fn.h | layer-header | 1 | <vector> in the layer X2_binding | -
-include/fixy/GradedFacade.h | layer-header | 1 | <string_view> in the layer X1_wrappers | -
-include/fixy/Insights.h | layer-header | 1 | <string> in the layer X2_binding | -
-include/fixy/Insights.h | layer-header | 1 | <string_view> in the layer X2_binding | -
-include/fixy/Machine.h | layer-header | 1 | <cstdlib> in the layer X1_wrappers | -
-include/fixy/Mutation.h | layer-header | 1 | <atomic> in the layer X1_wrappers | -
-include/fixy/Mutation.h | layer-header | 1 | <cstdlib> in the layer X1_wrappers | -
-include/fixy/Mutation.h | layer-header | 1 | <functional> in the layer X1_wrappers | -
-include/fixy/Mutation.h | layer-header | 1 | <limits> in the layer X1_wrappers | -
-include/fixy/Mutation.h | layer-header | 1 | <optional> in the layer X1_wrappers | -
-include/fixy/Mutation.h | layer-header | 1 | <string_view> in the layer X1_wrappers | -
-include/fixy/Mutation.h | layer-header | 1 | <vector> in the layer X1_wrappers | -
-include/fixy/OwnedFile.h | layer-header | 1 | <cerrno> in the layer X1_wrappers | -
-include/fixy/OwnedFile.h | layer-header | 1 | <cstdio> in the layer X1_wrappers | -
-include/fixy/OwnedFile.h | layer-header | 1 | <expected> in the layer X1_wrappers | -
-include/fixy/OwnedFile.h | upward-include | 1 | include/fixy/atoms/Os.h (the layer X2_binding) from the layer X1_wrappers | -
-include/fixy/OwnedMmap.h | layer-header | 1 | <cerrno> in the layer X1_wrappers | -
-include/fixy/OwnedMmap.h | layer-header | 1 | <cstdlib> in the layer X1_wrappers | -
-include/fixy/OwnedMmap.h | layer-header | 1 | <expected> in the layer X1_wrappers | -
-include/fixy/OwnedMmap.h | layer-header | 1 | <sys/mman.h> in the layer X1_wrappers | -
-include/fixy/OwnedMmap.h | layer-header | 1 | <system_error> in the layer X1_wrappers | -
-include/fixy/OwnedMmap.h | upward-include | 1 | include/fixy/atoms/Os.h (the layer X2_binding) from the layer X1_wrappers | -
-include/fixy/OwnedMmap.h | upward-include | 1 | include/fixy/os/AtomPack.h (the layer X3_os) from the layer X1_wrappers | -
-include/fixy/OwnedRegion.h | layer-header | 1 | <array> in the layer X1_wrappers | -
-include/fixy/OwnedRegion.h | layer-header | 1 | <cstdlib> in the layer X1_wrappers | -
-include/fixy/OwnedRegion.h | layer-header | 1 | <span> in the layer X1_wrappers | -
-include/fixy/OwnedRegion.h | layer-header | 1 | <tuple> in the layer X1_wrappers | -
-include/fixy/Path.h | layer-header | 1 | <cstdlib> in the layer X1_wrappers | -
-include/fixy/Path.h | layer-header | 1 | <expected> in the layer X1_wrappers | -
-include/fixy/Path.h | layer-header | 1 | <filesystem> in the layer X1_wrappers | -
-include/fixy/Path.h | layer-header | 1 | <string> in the layer X1_wrappers | -
-include/fixy/Qtt.h | layer-header | 1 | <cstdlib> in the layer X1_wrappers | -
-include/fixy/Qtt.h | layer-header | 1 | <string_view> in the layer X1_wrappers | -
-include/fixy/Refined.h | layer-header | 1 | <array> in the layer X1_wrappers | -
-include/fixy/Refined.h | layer-header | 1 | <bit> in the layer X1_wrappers | -
-include/fixy/Refined.h | layer-header | 1 | <cstdlib> in the layer X1_wrappers | -
-include/fixy/Refined.h | layer-header | 1 | <expected> in the layer X1_wrappers | -
-include/fixy/Refined.h | layer-header | 1 | <limits> in the layer X1_wrappers | -
-include/fixy/Refined.h | layer-header | 1 | <span> in the layer X1_wrappers | -
-include/fixy/Refined.h | layer-header | 1 | <string_view> in the layer X1_wrappers | -
-include/fixy/Refined.h | layer-header | 1 | <vector> in the layer X1_wrappers | -
-include/fixy/Reject.h | layer-header | 1 | <string> in the layer X2_binding | -
-include/fixy/Reject.h | layer-header | 1 | <string_view> in the layer X2_binding | -
-include/fixy/Reject.h | layer-header | 1 | <vector> in the layer X2_binding | -
-include/fixy/Role.h | layer-header | 1 | <vector> in the layer X2_binding | -
-include/fixy/Saturated.h | layer-header | 1 | <cstdlib> in the layer X1_wrappers | -
-include/fixy/Saturated.h | layer-header | 1 | <limits> in the layer X1_wrappers | -
-include/fixy/Saturated.h | layer-header | 1 | <numeric> in the layer X1_wrappers | -
-include/fixy/Saturated.h | layer-header | 1 | <string_view> in the layer X1_wrappers | -
-include/fixy/ScopedView.h | layer-header | 1 | <vector> in the layer X1_wrappers | -
-include/fixy/Secret.h | layer-header | 1 | <array> in the layer X1_wrappers | -
-include/fixy/Secret.h | layer-header | 1 | <cstdlib> in the layer X1_wrappers | -
-include/fixy/Secret.h | layer-header | 1 | <string_view> in the layer X1_wrappers | -
-include/fixy/SelfContained.h | layer-header | 1 | <bit> in the layer X1_wrappers | -
-include/fixy/SelfContained.h | layer-header | 1 | <optional> in the layer X1_wrappers | -
-include/fixy/SelfContained.h | layer-header | 1 | <ranges> in the layer X1_wrappers | -
-include/fixy/SelfContained.h | layer-header | 1 | <variant> in the layer X1_wrappers | -
-include/fixy/SelfContained.h | layer-header | 1 | <vector> in the layer X1_wrappers | -
-include/fixy/SharedRegion.h | layer-header | 1 | <optional> in the layer X1_wrappers | -
-include/fixy/SharedRegion.h | layer-header | 1 | <span> in the layer X1_wrappers | -
-include/fixy/SipHash.h | layer-header | 1 | <array> in the layer X1_wrappers | -
-include/fixy/SipHash.h | layer-header | 1 | <bit> in the layer X1_wrappers | -
-include/fixy/SipHash.h | layer-header | 1 | <span> in the layer X1_wrappers | -
-include/fixy/Stale.h | layer-header | 1 | <cstdlib> in the layer X1_wrappers | -
-include/fixy/Stale.h | layer-header | 1 | <string_view> in the layer X1_wrappers | -
-include/fixy/Tagged.h | layer-header | 1 | <cstdlib> in the layer X1_wrappers | -
-include/fixy/Tagged.h | layer-header | 1 | <string_view> in the layer X1_wrappers | -
-include/fixy/Throws.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/Witnessed.h | upward-include | 1 | include/fixy/session/Handle.h (the layer X5_session) from the layer X1_wrappers | -
-include/fixy/atoms/Barrier.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/atoms/Ctrl.h | layer-header | 1 | <array> in the layer X2_binding | -
-include/fixy/atoms/Ctrl.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/atoms/Dispatch.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/atoms/Fp.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/atoms/Global.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/atoms/Hw.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/atoms/Observe.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/atoms/Os.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/atoms/Os.h | layer-header | 1 | <vector> in the layer X2_binding | -
-include/fixy/atoms/Regime.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/atoms/Scope.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/atoms/Session.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/atoms/Simd.h | layer-header | 1 | <array> in the layer X2_binding | -
-include/fixy/atoms/Simd.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/atoms/Stack.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/atoms/Stdio.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/atoms/Sync.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/atoms/Syscall.h | layer-header | 1 | <array> in the layer X2_binding | -
-include/fixy/atoms/Syscall.h | layer-header | 1 | <tuple> in the layer X2_binding | -
-include/fixy/concurrent/AtomicSnapshot.h | layer-header | 1 | <array> in the layer X4_concurrent | -
-include/fixy/concurrent/AtomicSnapshot.h | layer-header | 1 | <atomic> in the layer X4_concurrent | -
-include/fixy/concurrent/AtomicSnapshot.h | layer-header | 1 | <cstring> in the layer X4_concurrent | -
-include/fixy/concurrent/AtomicSnapshot.h | layer-header | 1 | <optional> in the layer X4_concurrent | -
-include/fixy/concurrent/ChaseLevDeque.h | layer-header | 1 | <array> in the layer X4_concurrent | -
-include/fixy/concurrent/ChaseLevDeque.h | layer-header | 1 | <atomic> in the layer X4_concurrent | -
-include/fixy/concurrent/ChaseLevDeque.h | layer-header | 1 | <bit> in the layer X4_concurrent | -
-include/fixy/concurrent/ChaseLevDeque.h | layer-header | 1 | <optional> in the layer X4_concurrent | -
-include/fixy/concurrent/Endpoint.h | layer-header | 1 | <optional> in the layer X4_concurrent | -
-include/fixy/concurrent/Endpoint.h | upward-include | 1 | include/fixy/session/Handle.h (the layer X5_session) from the layer X4_concurrent | -
-include/fixy/concurrent/EndpointMint.h | upward-include | 1 | include/fixy/session/EventLog.h (the layer X5_session) from the layer X4_concurrent | -
-include/fixy/concurrent/EndpointMint.h | upward-include | 1 | include/fixy/session/Recording.h (the layer X5_session) from the layer X4_concurrent | -
-include/fixy/concurrent/HandleTraits.h | layer-header | 1 | <optional> in the layer X4_concurrent | -
-include/fixy/concurrent/MpscRing.h | layer-header | 1 | <array> in the layer X4_concurrent | -
-include/fixy/concurrent/MpscRing.h | layer-header | 1 | <atomic> in the layer X4_concurrent | -
-include/fixy/concurrent/MpscRing.h | layer-header | 1 | <bit> in the layer X4_concurrent | -
-include/fixy/concurrent/MpscRing.h | layer-header | 1 | <optional> in the layer X4_concurrent | -
-include/fixy/concurrent/MpscRing.h | layer-header | 1 | <span> in the layer X4_concurrent | -
-include/fixy/concurrent/ParallelismRule.h | layer-header | 1 | <limits> in the layer X4_concurrent | -
-include/fixy/concurrent/PayloadRow.h | layer-header | 1 | <span> in the layer X4_concurrent | -
-include/fixy/concurrent/PayloadRow.h | layer-header | 1 | <string> in the layer X4_concurrent | -
-include/fixy/concurrent/PayloadRow.h | layer-header | 1 | <string_view> in the layer X4_concurrent | -
-include/fixy/concurrent/PayloadRow.h | layer-header | 1 | <vector> in the layer X4_concurrent | -
-include/fixy/concurrent/PermissionedMpscChannel.h | layer-header | 1 | <optional> in the layer X4_concurrent | -
-include/fixy/concurrent/PermissionedSpscChannel.h | layer-header | 1 | <optional> in the layer X4_concurrent | -
-include/fixy/concurrent/Pipeline.h | layer-header | 1 | <algorithm> in the layer X4_concurrent | -
-include/fixy/concurrent/Pipeline.h | layer-header | 1 | <array> in the layer X4_concurrent | -
-include/fixy/concurrent/Pipeline.h | layer-header | 1 | <atomic> in the layer X4_concurrent | -
-include/fixy/concurrent/Pipeline.h | layer-header | 1 | <pthread.h> in the layer X4_concurrent | -
-include/fixy/concurrent/Pipeline.h | layer-header | 1 | <sched.h> in the layer X4_concurrent | -
-include/fixy/concurrent/Pipeline.h | layer-header | 1 | <tuple> in the layer X4_concurrent | -
-include/fixy/concurrent/Pipeline.h | layer-header | 1 | <vector> in the layer X4_concurrent | -
-include/fixy/concurrent/SpscRing.h | layer-header | 1 | <array> in the layer X4_concurrent | -
-include/fixy/concurrent/SpscRing.h | layer-header | 1 | <bit> in the layer X4_concurrent | -
-include/fixy/concurrent/SpscRing.h | layer-header | 1 | <cstring> in the layer X4_concurrent | -
-include/fixy/concurrent/SpscRing.h | layer-header | 1 | <optional> in the layer X4_concurrent | -
-include/fixy/concurrent/SpscRing.h | layer-header | 1 | <span> in the layer X4_concurrent | -
-include/fixy/concurrent/Stage.h | layer-header | 1 | <optional> in the layer X4_concurrent | -
-include/fixy/concurrent/Stage.h | layer-header | 1 | <tuple> in the layer X4_concurrent | -
-include/fixy/concurrent/StageEndpointBridge.h | layer-header | 1 | <tuple> in the layer X4_concurrent | -
-include/fixy/concurrent/StageShape.h | layer-header | 1 | <optional> in the layer X4_concurrent | -
-include/fixy/concurrent/SubstrateSessionBridge.h | upward-include | 1 | include/fixy/session/Entry.h (the layer X5_session) from the layer X4_concurrent | -
-include/fixy/concurrent/SubstrateSessionBridge.h | upward-include | 1 | include/fixy/session/Handle.h (the layer X5_session) from the layer X4_concurrent | -
-include/fixy/concurrent/SwmrSession.h | layer-header | 1 | <optional> in the layer X4_concurrent | -
-include/fixy/concurrent/SwmrSession.h | upward-include | 1 | include/fixy/session/Entry.h (the layer X5_session) from the layer X4_concurrent | -
-include/fixy/concurrent/SwmrSession.h | upward-include | 1 | include/fixy/session/Handle.h (the layer X5_session) from the layer X4_concurrent | -
-include/fixy/concurrent/Topology.h | layer-header | 1 | <algorithm> in the layer X4_concurrent | -
-include/fixy/concurrent/Topology.h | layer-header | 1 | <cstdio> in the layer X4_concurrent | -
-include/fixy/concurrent/Topology.h | layer-header | 1 | <optional> in the layer X4_concurrent | -
-include/fixy/concurrent/Topology.h | layer-header | 1 | <span> in the layer X4_concurrent | -
-include/fixy/concurrent/Topology.h | layer-header | 1 | <string> in the layer X4_concurrent | -
-include/fixy/concurrent/Topology.h | layer-header | 1 | <string_view> in the layer X4_concurrent | -
-include/fixy/concurrent/Topology.h | layer-header | 1 | <vector> in the layer X4_concurrent | -
-include/fixy/concurrent/WorkingSet.h | layer-header | 1 | <limits> in the layer X4_concurrent | -
-include/fixy/fp/Canonicalize.h | layer-header | 1 | <bit> in the layer X1_wrappers | -
-include/fixy/fp/Canonicalize.h | layer-header | 1 | <cmath> in the layer X1_wrappers | -
-include/fixy/fp/Canonicalize.h | layer-header | 1 | <limits> in the layer X1_wrappers | -
-include/fixy/fp/Polynomial.h | layer-header | 1 | <array> in the layer X1_wrappers | -
-include/fixy/fp/Polynomial.h | layer-header | 1 | <bit> in the layer X1_wrappers | -
-include/fixy/fp/Polynomial.h | layer-header | 1 | <cmath> in the layer X1_wrappers | -
-include/fixy/fp/Polynomial.h | layer-header | 1 | <limits> in the layer X1_wrappers | -
-include/fixy/handle/LazyEstablishedChannel.h | layer-header | 1 | <atomic> in the layer X4_concurrent | -
-include/fixy/handle/LazyEstablishedChannel.h | layer-header | 1 | <expected> in the layer X4_concurrent | -
-include/fixy/handle/LazyEstablishedChannel.h | layer-header | 1 | <source_location> in the layer X4_concurrent | -
-include/fixy/handle/LazyEstablishedChannel.h | layer-header | 1 | <string_view> in the layer X4_concurrent | -
-include/fixy/handle/LazyEstablishedChannel.h | upward-include | 1 | include/fixy/session/Entry.h (the layer X5_session) from the layer X4_concurrent | -
-include/fixy/handle/LazyEstablishedChannel.h | upward-include | 1 | include/fixy/session/Handle.h (the layer X5_session) from the layer X4_concurrent | -
-include/fixy/handle/LazyEstablishedChannel.h | upward-include | 1 | include/fixy/session/Protocol.h (the layer X5_session) from the layer X4_concurrent | -
-include/fixy/handle/LazyEstablishedChannel.h | upward-include | 1 | include/fixy/session/Stepping.h (the layer X5_session) from the layer X4_concurrent | -
-include/fixy/handle/Once.h | layer-header | 1 | <array> in the layer X4_concurrent | -
-include/fixy/handle/Once.h | layer-header | 1 | <atomic> in the layer X4_concurrent | -
-include/fixy/handle/OneShotFlag.h | layer-header | 1 | <atomic> in the layer X4_concurrent | -
-include/fixy/handle/PublishCommit.h | layer-header | 1 | <atomic> in the layer X4_concurrent | -
-include/fixy/handle/PublishOnce.h | layer-header | 1 | <atomic> in the layer X4_concurrent | -
-include/fixy/handle/PublishOnce.h | layer-header | 1 | <cstdio> in the layer X4_concurrent | -
-include/fixy/handle/PublishOnce.h | layer-header | 1 | <cstdlib> in the layer X4_concurrent | -
-include/fixy/os/AtomPack.h | layer-header | 1 | <vector> in the layer X3_os | -
-include/fixy/os/CipherDurable.h | layer-header | 1 | <expected> in the layer X3_os | -
-include/fixy/os/CipherDurable.h | layer-header | 1 | <sys/stat.h> in the layer X3_os | -
-include/fixy/os/CipherDurable.h | layer-header | 1 | <system_error> in the layer X3_os | -
-include/fixy/os/ClockSource.h | layer-header | 1 | <string_view> in the layer X3_os | -
-include/fixy/os/CpuPinned.h | layer-header | 1 | <atomic> in the layer X3_os | -
-include/fixy/os/CpuPinned.h | layer-header | 1 | <cerrno> in the layer X3_os | -
-include/fixy/os/CpuPinned.h | layer-header | 1 | <expected> in the layer X3_os | -
-include/fixy/os/CpuPinned.h | layer-header | 1 | <sched.h> in the layer X3_os | -
-include/fixy/os/Fd.h | layer-header | 1 | <unistd.h> in the layer X3_os | -
-include/fixy/os/Fs.h | layer-header | 1 | <cerrno> in the layer X3_os | -
-include/fixy/os/Fs.h | layer-header | 1 | <cstdio> in the layer X3_os | -
-include/fixy/os/Fs.h | layer-header | 1 | <expected> in the layer X3_os | -
-include/fixy/os/Fs.h | layer-header | 1 | <fcntl.h> in the layer X3_os | -
-include/fixy/os/Fs.h | layer-header | 1 | <span> in the layer X3_os | -
-include/fixy/os/Fs.h | layer-header | 1 | <sys/stat.h> in the layer X3_os | -
-include/fixy/os/Fs.h | layer-header | 1 | <system_error> in the layer X3_os | -
-include/fixy/os/Fs.h | layer-header | 1 | <unistd.h> in the layer X3_os | -
-include/fixy/os/Io.h | layer-header | 1 | <cerrno> in the layer X3_os | -
-include/fixy/os/Io.h | layer-header | 1 | <expected> in the layer X3_os | -
-include/fixy/os/Io.h | layer-header | 1 | <sys/mman.h> in the layer X3_os | -
-include/fixy/os/Io.h | layer-header | 1 | <sys/syscall.h> in the layer X3_os | -
-include/fixy/os/Io.h | layer-header | 1 | <system_error> in the layer X3_os | -
-include/fixy/os/Io.h | layer-header | 1 | <unistd.h> in the layer X3_os | -
-include/fixy/os/Mmap.h | layer-header | 1 | <cerrno> in the layer X3_os | -
-include/fixy/os/Mmap.h | layer-header | 1 | <expected> in the layer X3_os | -
-include/fixy/os/Mmap.h | layer-header | 1 | <sys/mman.h> in the layer X3_os | -
-include/fixy/os/Mmap.h | layer-header | 1 | <system_error> in the layer X3_os | -
-include/fixy/os/Mmap.h | layer-header | 1 | <unistd.h> in the layer X3_os | -
-include/fixy/os/NumaPlacement.h | layer-header | 1 | <cerrno> in the layer X3_os | -
-include/fixy/os/NumaPlacement.h | layer-header | 1 | <climits> in the layer X3_os | -
-include/fixy/os/NumaPlacement.h | layer-header | 1 | <expected> in the layer X3_os | -
-include/fixy/os/NumaPlacement.h | layer-header | 1 | <sys/syscall.h> in the layer X3_os | -
-include/fixy/os/NumaPlacement.h | layer-header | 1 | <system_error> in the layer X3_os | -
-include/fixy/os/NumaPlacement.h | layer-header | 1 | <unistd.h> in the layer X3_os | -
-include/fixy/os/Sched.h | layer-header | 1 | <cerrno> in the layer X3_os | -
-include/fixy/os/Sched.h | layer-header | 1 | <expected> in the layer X3_os | -
-include/fixy/os/Sched.h | layer-header | 1 | <sched.h> in the layer X3_os | -
-include/fixy/os/Sched.h | layer-header | 1 | <sys/syscall.h> in the layer X3_os | -
-include/fixy/os/Sched.h | layer-header | 1 | <unistd.h> in the layer X3_os | -
-include/fixy/os/Socket.h | layer-header | 1 | <cerrno> in the layer X3_os | -
-include/fixy/os/Socket.h | layer-header | 1 | <expected> in the layer X3_os | -
-include/fixy/os/Socket.h | layer-header | 1 | <system_error> in the layer X3_os | -
-include/fixy/os/Spawn.h | layer-header | 1 | <array> in the layer X3_os | -
-include/fixy/os/Spawn.h | layer-header | 1 | <span> in the layer X3_os | -
-include/fixy/os/Spawn.h | layer-header | 1 | <tuple> in the layer X3_os | -
-include/fixy/os/Spawn.h | layer-header | 1 | <vector> in the layer X3_os | -
-include/fixy/os/Spawn.h | upward-include | 1 | include/fixy/concurrent/ParallelismRule.h (the layer X4_concurrent) from the layer X3_os | -
-include/fixy/os/SpinLock.h | layer-header | 1 | <atomic> in the layer X3_os | -
-include/fixy/os/SpinLock.h | layer-header | 1 | <mutex> in the layer X3_os | -
-include/fixy/os/ThreadName.h | layer-header | 1 | <array> in the layer X3_os | -
-include/fixy/os/ThreadName.h | layer-header | 1 | <pthread.h> in the layer X3_os | -
-include/fixy/os/ThreadName.h | layer-header | 1 | <string_view> in the layer X3_os | -
-include/fixy/os/ThreadTasks.h | layer-header | 1 | <span> in the layer X3_os | -
-include/fixy/os/Time.h | layer-header | 1 | <array> in the layer X3_os | -
-include/fixy/os/Time.h | layer-header | 1 | <cerrno> in the layer X3_os | -
-include/fixy/os/Time.h | layer-header | 1 | <ctime> in the layer X3_os | -
-include/fixy/os/Time.h | layer-header | 1 | <expected> in the layer X3_os | -
-include/fixy/os/Time.h | layer-header | 1 | <fcntl.h> in the layer X3_os | -
-include/fixy/os/Time.h | layer-header | 1 | <limits> in the layer X3_os | -
-include/fixy/os/Time.h | layer-header | 1 | <system_error> in the layer X3_os | -
-include/fixy/session/AsyncChannel.h | layer-header | 1 | <source_location> in the layer X5_session | -
-include/fixy/session/Checkpoint.h | layer-header | 1 | <cstdlib> in the layer X5_session | -
-include/fixy/session/Checkpoint.h | layer-header | 1 | <functional> in the layer X5_session | -
-include/fixy/session/Checkpoint.h | layer-header | 1 | <optional> in the layer X5_session | -
-include/fixy/session/Checkpoint.h | layer-header | 1 | <source_location> in the layer X5_session | -
-include/fixy/session/Checkpoint.h | layer-header | 1 | <tuple> in the layer X5_session | -
-include/fixy/session/Checkpoint.h | layer-header | 1 | <vector> in the layer X5_session | -
-include/fixy/session/Classified.h | layer-header | 1 | <span> in the layer X5_session | -
-include/fixy/session/Crash.h | layer-header | 1 | <span> in the layer X5_session | -
-include/fixy/session/Crash.h | layer-header | 1 | <tuple> in the layer X5_session | -
-include/fixy/session/Crash.h | layer-header | 1 | <vector> in the layer X5_session | -
-include/fixy/session/CrashTransport.h | layer-header | 1 | <atomic> in the layer X5_session | -
-include/fixy/session/CrashTransport.h | layer-header | 1 | <cstdio> in the layer X5_session | -
-include/fixy/session/CrashTransport.h | layer-header | 1 | <cstdlib> in the layer X5_session | -
-include/fixy/session/CrashTransport.h | layer-header | 1 | <functional> in the layer X5_session | -
-include/fixy/session/CrashTransport.h | layer-header | 1 | <optional> in the layer X5_session | -
-include/fixy/session/CrashTransport.h | layer-header | 1 | <source_location> in the layer X5_session | -
-include/fixy/session/CrashTransport.h | layer-header | 1 | <tuple> in the layer X5_session | -
-include/fixy/session/Delegate.h | layer-header | 1 | <cstdio> in the layer X5_session | -
-include/fixy/session/Delegate.h | layer-header | 1 | <cstdlib> in the layer X5_session | -
-include/fixy/session/Delegate.h | layer-header | 1 | <source_location> in the layer X5_session | -
-include/fixy/session/Entry.h | layer-header | 1 | <functional> in the layer X5_session | -
-include/fixy/session/Entry.h | layer-header | 1 | <source_location> in the layer X5_session | -
-include/fixy/session/EventLog.h | layer-header | 1 | <array> in the layer X5_session | -
-include/fixy/session/EventLog.h | layer-header | 1 | <bit> in the layer X5_session | -
-include/fixy/session/EventLog.h | layer-header | 1 | <cstdio> in the layer X5_session | -
-include/fixy/session/EventLog.h | layer-header | 1 | <cstdlib> in the layer X5_session | -
-include/fixy/session/EventLog.h | layer-header | 1 | <expected> in the layer X5_session | -
-include/fixy/session/EventLog.h | layer-header | 1 | <limits> in the layer X5_session | -
-include/fixy/session/EventLog.h | layer-header | 1 | <span> in the layer X5_session | -
-include/fixy/session/EventLog.h | layer-header | 1 | <string_view> in the layer X5_session | -
-include/fixy/session/EventLog.h | layer-header | 1 | <vector> in the layer X5_session | -
-include/fixy/session/Global.h | layer-header | 1 | <vector> in the layer X5_session | -
-include/fixy/session/Handle.h | layer-header | 1 | <array> in the layer X5_session | -
-include/fixy/session/Handle.h | layer-header | 1 | <cstdio> in the layer X5_session | -
-include/fixy/session/Handle.h | layer-header | 1 | <cstdlib> in the layer X5_session | -
-include/fixy/session/Handle.h | layer-header | 1 | <functional> in the layer X5_session | -
-include/fixy/session/Handle.h | layer-header | 1 | <optional> in the layer X5_session | -
-include/fixy/session/Handle.h | layer-header | 1 | <source_location> in the layer X5_session | -
-include/fixy/session/Handle.h | layer-header | 1 | <span> in the layer X5_session | -
-include/fixy/session/Handle.h | layer-header | 1 | <string> in the layer X5_session | -
-include/fixy/session/Handle.h | layer-header | 1 | <string_view> in the layer X5_session | -
-include/fixy/session/Handle.h | layer-header | 1 | <tuple> in the layer X5_session | -
-include/fixy/session/Handle.h | layer-header | 1 | <vector> in the layer X5_session | -
-include/fixy/session/MachineBridge.h | layer-header | 1 | <atomic> in the layer X5_session | -
-include/fixy/session/MachineBridge.h | layer-header | 1 | <string_view> in the layer X5_session | -
-include/fixy/session/Network.h | layer-header | 1 | <string> in the layer X5_session | -
-include/fixy/session/Network.h | layer-header | 1 | <string_view> in the layer X5_session | -
-include/fixy/session/Network.h | layer-header | 1 | <vector> in the layer X5_session | -
-include/fixy/session/Payload.h | layer-header | 1 | <any> in the layer X5_session | -
-include/fixy/session/Payload.h | layer-header | 1 | <cstdio> in the layer X5_session | -
-include/fixy/session/Payload.h | layer-header | 1 | <cstdlib> in the layer X5_session | -
-include/fixy/session/Payload.h | layer-header | 1 | <functional> in the layer X5_session | -
-include/fixy/session/Payload.h | layer-header | 1 | <optional> in the layer X5_session | -
-include/fixy/session/Payload.h | layer-header | 1 | <span> in the layer X5_session | -
-include/fixy/session/Payload.h | layer-header | 1 | <string> in the layer X5_session | -
-include/fixy/session/Payload.h | layer-header | 1 | <string_view> in the layer X5_session | -
-include/fixy/session/Payload.h | layer-header | 1 | <tuple> in the layer X5_session | -
-include/fixy/session/Payload.h | layer-header | 1 | <vector> in the layer X5_session | -
-include/fixy/session/Protocol.h | layer-header | 1 | <string> in the layer X5_session | -
-include/fixy/session/Protocol.h | layer-header | 1 | <string_view> in the layer X5_session | -
-include/fixy/session/Protocol.h | layer-header | 1 | <tuple> in the layer X5_session | -
-include/fixy/session/Protocol.h | layer-header | 1 | <vector> in the layer X5_session | -
-include/fixy/session/Recording.h | layer-header | 1 | <functional> in the layer X5_session | -
-include/fixy/session/Recording.h | layer-header | 1 | <optional> in the layer X5_session | -
-include/fixy/session/Recording.h | layer-header | 1 | <source_location> in the layer X5_session | -
-include/fixy/session/Recording.h | layer-header | 1 | <tuple> in the layer X5_session | -
-include/fixy/session/Stepping.h | layer-header | 1 | <source_location> in the layer X5_session | -
-include/fixy/session/Stepping.h | layer-header | 1 | <string_view> in the layer X5_session | -
-include/fixy/session/Subtype.h | layer-header | 1 | <string> in the layer X5_session | -
-include/fixy/session/Subtype.h | layer-header | 1 | <string_view> in the layer X5_session | -
-include/fixy/session/Subtype.h | layer-header | 1 | <vector> in the layer X5_session | -
-include/fixy/session/VigilModeCell.h | layer-header | 1 | <atomic> in the layer X5_session | -
-include/fixy/session/Watch.h | layer-header | 1 | <array> in the layer X5_session | -
-include/fixy/session/Watch.h | layer-header | 1 | <atomic> in the layer X5_session | -
-include/fixy/session/Watch.h | layer-header | 1 | <csignal> in the layer X5_session | -
-include/fixy/session/Watch.h | layer-header | 1 | <cstdio> in the layer X5_session | -
-include/fixy/session/Watch.h | layer-header | 1 | <cstdlib> in the layer X5_session | -
-include/fixy/session/Watch.h | layer-header | 1 | <pthread.h> in the layer X5_session | -
-include/fixy/session/Watch.h | layer-header | 1 | <signal.h> in the layer X5_session | -
-include/fixy/session/Watch.h | layer-header | 1 | <source_location> in the layer X5_session | -
-include/fixy/session/Watch.h | layer-header | 1 | <string_view> in the layer X5_session | -
-include/fixy/session/Watch.h | layer-header | 1 | <time.h> in the layer X5_session | -
-include/fixy/session/Watch.h | layer-header | 1 | <unistd.h> in the layer X5_session | -
-include/foundation/AlignedBuffer.h | layer-header | 1 | <bit> in the layer F0_primitives | -
-include/foundation/AlignedBuffer.h | layer-header | 1 | <cstdio> in the layer F0_primitives | -
-include/foundation/AlignedBuffer.h | layer-header | 1 | <cstdlib> in the layer F0_primitives | -
-include/foundation/AlignedBuffer.h | layer-header | 1 | <span> in the layer F0_primitives | -
-include/foundation/AlignedBuffer.h | layer-header | 1 | <string_view> in the layer F0_primitives | -
-include/foundation/AlignedBuffer.h | upward-include | 1 | include/foundation/diag/Catalog.h (the layer F1_algebra) from the layer F0_primitives | -
-include/foundation/ChannelBinding.h | layer-header | 1 | <atomic> in the layer F0_primitives | -
-include/foundation/ChannelBinding.h | layer-header | 1 | <string_view> in the layer F0_primitives | -
-include/foundation/ChannelBinding.h | upward-include | 1 | include/foundation/diag/Runtime.h (the layer F1_algebra) from the layer F0_primitives | -
-include/foundation/Lifetime.h | layer-header | 1 | <bit> in the layer F0_core | -
-include/foundation/Lifetime.h | layer-header | 1 | <span> in the layer F0_core | -
+include/fixy/Atom.h | layer-header | 1 | <array> | -
+include/fixy/Atom.h | layer-header | 1 | <string_view> | -
+include/fixy/Atom.h | layer-header | 1 | <tuple> | -
+include/fixy/Atom.h | layer-header | 1 | <vector> | -
+include/fixy/Axis.h | layer-header | 1 | <string> | -
+include/fixy/Axis.h | layer-header | 1 | <string_view> | -
+include/fixy/Axis.h | layer-header | 1 | <vector> | -
+include/fixy/Bands.h | layer-header | 1 | <array> | -
+include/fixy/Bands.h | layer-header | 1 | <vector> | -
+include/fixy/Bits.h | layer-header | 1 | <bit> | -
+include/fixy/Bits.h | layer-header | 1 | <cstdlib> | -
+include/fixy/Bits.h | layer-header | 1 | <string_view> | -
+include/fixy/Borrowed.h | layer-header | 1 | <cstdlib> | -
+include/fixy/Borrowed.h | layer-header | 1 | <ranges> | -
+include/fixy/Borrowed.h | layer-header | 1 | <span> | -
+include/fixy/Borrowed.h | layer-header | 1 | <string> | -
+include/fixy/Borrowed.h | layer-header | 1 | <string_view> | -
+include/fixy/Budgeted.h | layer-header | 1 | <limits> | -
+include/fixy/Budgeted.h | layer-header | 1 | <memory> | -
+include/fixy/Budgeted.h | layer-header | 1 | <string_view> | -
+include/fixy/CanonicalOrder.h | layer-header | 1 | <tuple> | -
+include/fixy/Checked.h | layer-header | 1 | <cstdlib> | -
+include/fixy/Checked.h | layer-header | 1 | <limits> | -
+include/fixy/Checked.h | layer-header | 1 | <optional> | -
+include/fixy/Collision.h | layer-header | 1 | <array> | -
+include/fixy/Collision.h | layer-header | 1 | <expected> | -
+include/fixy/Collision.h | layer-header | 1 | <optional> | -
+include/fixy/Collision.h | layer-header | 1 | <string> | -
+include/fixy/Collision.h | layer-header | 1 | <string_view> | -
+include/fixy/Collision.h | layer-header | 1 | <tuple> | -
+include/fixy/Collision.h | layer-header | 1 | <vector> | -
+include/fixy/ConstantTime.h | layer-header | 1 | <cstdlib> | -
+include/fixy/ConstantTime.h | layer-header | 1 | <span> | -
+include/fixy/Corpus.h | layer-header | 1 | <string> | -
+include/fixy/Corpus.h | layer-header | 1 | <string_view> | -
+include/fixy/Corpus.h | layer-header | 1 | <tuple> | -
+include/fixy/Corpus.h | layer-header | 1 | <vector> | -
+include/fixy/Cyclic.h | layer-header | 1 | <string_view> | -
+include/fixy/CyclicBuffer.h | layer-header | 1 | <string_view> | -
+include/fixy/EpochVersioned.h | layer-header | 1 | <expected> | -
+include/fixy/EpochVersioned.h | layer-header | 1 | <memory> | -
+include/fixy/EpochVersioned.h | layer-header | 1 | <string_view> | -
+include/fixy/Federation.h | layer-header | 1 | <array> | -
+include/fixy/Federation.h | layer-header | 1 | <expected> | -
+include/fixy/Federation.h | layer-header | 1 | <span> | -
+include/fixy/Federation.h | layer-header | 1 | <string_view> | -
+include/fixy/FixedArray.h | layer-header | 1 | <array> | -
+include/fixy/FixedArray.h | layer-header | 1 | <bit> | -
+include/fixy/FixedArray.h | layer-header | 1 | <cstdlib> | -
+include/fixy/FixedArray.h | layer-header | 1 | <span> | -
+include/fixy/FixedArray.h | layer-header | 1 | <string_view> | -
+include/fixy/Fn.h | layer-header | 1 | <vector> | -
+include/fixy/GradedFacade.h | layer-header | 1 | <string_view> | -
+include/fixy/Insights.h | layer-header | 1 | <string> | -
+include/fixy/Insights.h | layer-header | 1 | <string_view> | -
+include/fixy/Machine.h | layer-header | 1 | <cstdlib> | -
+include/fixy/Mutation.h | layer-header | 1 | <atomic> | -
+include/fixy/Mutation.h | layer-header | 1 | <cstdlib> | -
+include/fixy/Mutation.h | layer-header | 1 | <functional> | -
+include/fixy/Mutation.h | layer-header | 1 | <limits> | -
+include/fixy/Mutation.h | layer-header | 1 | <optional> | -
+include/fixy/Mutation.h | layer-header | 1 | <string_view> | -
+include/fixy/Mutation.h | layer-header | 1 | <vector> | -
+include/fixy/OwnedFile.h | layer-header | 1 | <cerrno> | -
+include/fixy/OwnedFile.h | layer-header | 1 | <cstdio> | -
+include/fixy/OwnedFile.h | layer-header | 1 | <expected> | -
+include/fixy/OwnedFile.h | upward-include | 1 | include/fixy/atoms/Os.h | -
+include/fixy/OwnedMmap.h | layer-header | 1 | <cerrno> | -
+include/fixy/OwnedMmap.h | layer-header | 1 | <cstdlib> | -
+include/fixy/OwnedMmap.h | layer-header | 1 | <expected> | -
+include/fixy/OwnedMmap.h | layer-header | 1 | <sys/mman.h> | -
+include/fixy/OwnedMmap.h | layer-header | 1 | <system_error> | -
+include/fixy/OwnedMmap.h | upward-include | 1 | include/fixy/atoms/Os.h | -
+include/fixy/OwnedMmap.h | upward-include | 1 | include/fixy/os/AtomPack.h | -
+include/fixy/OwnedRegion.h | layer-header | 1 | <array> | -
+include/fixy/OwnedRegion.h | layer-header | 1 | <cstdlib> | -
+include/fixy/OwnedRegion.h | layer-header | 1 | <span> | -
+include/fixy/OwnedRegion.h | layer-header | 1 | <tuple> | -
+include/fixy/Path.h | layer-header | 1 | <cstdlib> | -
+include/fixy/Path.h | layer-header | 1 | <expected> | -
+include/fixy/Path.h | layer-header | 1 | <filesystem> | -
+include/fixy/Path.h | layer-header | 1 | <string> | -
+include/fixy/Qtt.h | layer-header | 1 | <cstdlib> | -
+include/fixy/Qtt.h | layer-header | 1 | <string_view> | -
+include/fixy/Refined.h | layer-header | 1 | <array> | -
+include/fixy/Refined.h | layer-header | 1 | <bit> | -
+include/fixy/Refined.h | layer-header | 1 | <cstdlib> | -
+include/fixy/Refined.h | layer-header | 1 | <expected> | -
+include/fixy/Refined.h | layer-header | 1 | <limits> | -
+include/fixy/Refined.h | layer-header | 1 | <span> | -
+include/fixy/Refined.h | layer-header | 1 | <string_view> | -
+include/fixy/Refined.h | layer-header | 1 | <vector> | -
+include/fixy/Reject.h | layer-header | 1 | <string> | -
+include/fixy/Reject.h | layer-header | 1 | <string_view> | -
+include/fixy/Reject.h | layer-header | 1 | <vector> | -
+include/fixy/Role.h | layer-header | 1 | <vector> | -
+include/fixy/Saturated.h | layer-header | 1 | <cstdlib> | -
+include/fixy/Saturated.h | layer-header | 1 | <limits> | -
+include/fixy/Saturated.h | layer-header | 1 | <numeric> | -
+include/fixy/Saturated.h | layer-header | 1 | <string_view> | -
+include/fixy/ScopedView.h | layer-header | 1 | <vector> | -
+include/fixy/Secret.h | layer-header | 1 | <array> | -
+include/fixy/Secret.h | layer-header | 1 | <cstdlib> | -
+include/fixy/Secret.h | layer-header | 1 | <string_view> | -
+include/fixy/SelfContained.h | layer-header | 1 | <bit> | -
+include/fixy/SelfContained.h | layer-header | 1 | <optional> | -
+include/fixy/SelfContained.h | layer-header | 1 | <ranges> | -
+include/fixy/SelfContained.h | layer-header | 1 | <variant> | -
+include/fixy/SelfContained.h | layer-header | 1 | <vector> | -
+include/fixy/SharedRegion.h | layer-header | 1 | <optional> | -
+include/fixy/SharedRegion.h | layer-header | 1 | <span> | -
+include/fixy/SipHash.h | layer-header | 1 | <array> | -
+include/fixy/SipHash.h | layer-header | 1 | <bit> | -
+include/fixy/SipHash.h | layer-header | 1 | <span> | -
+include/fixy/Stale.h | layer-header | 1 | <cstdlib> | -
+include/fixy/Stale.h | layer-header | 1 | <string_view> | -
+include/fixy/Tagged.h | layer-header | 1 | <cstdlib> | -
+include/fixy/Tagged.h | layer-header | 1 | <string_view> | -
+include/fixy/Throws.h | layer-header | 1 | <tuple> | -
+include/fixy/Witnessed.h | upward-include | 1 | include/fixy/session/Handle.h | -
+include/fixy/atoms/Barrier.h | layer-header | 1 | <tuple> | -
+include/fixy/atoms/Ctrl.h | layer-header | 1 | <array> | -
+include/fixy/atoms/Ctrl.h | layer-header | 1 | <tuple> | -
+include/fixy/atoms/Dispatch.h | layer-header | 1 | <tuple> | -
+include/fixy/atoms/Fp.h | layer-header | 1 | <tuple> | -
+include/fixy/atoms/Global.h | layer-header | 1 | <tuple> | -
+include/fixy/atoms/Hw.h | layer-header | 1 | <tuple> | -
+include/fixy/atoms/Observe.h | layer-header | 1 | <tuple> | -
+include/fixy/atoms/Os.h | layer-header | 1 | <tuple> | -
+include/fixy/atoms/Os.h | layer-header | 1 | <vector> | -
+include/fixy/atoms/Regime.h | layer-header | 1 | <tuple> | -
+include/fixy/atoms/Scope.h | layer-header | 1 | <tuple> | -
+include/fixy/atoms/Session.h | layer-header | 1 | <tuple> | -
+include/fixy/atoms/Simd.h | layer-header | 1 | <array> | -
+include/fixy/atoms/Simd.h | layer-header | 1 | <tuple> | -
+include/fixy/atoms/Stack.h | layer-header | 1 | <tuple> | -
+include/fixy/atoms/Stdio.h | layer-header | 1 | <tuple> | -
+include/fixy/atoms/Sync.h | layer-header | 1 | <tuple> | -
+include/fixy/atoms/Syscall.h | layer-header | 1 | <array> | -
+include/fixy/atoms/Syscall.h | layer-header | 1 | <tuple> | -
+include/fixy/concurrent/AtomicSnapshot.h | layer-header | 1 | <array> | -
+include/fixy/concurrent/AtomicSnapshot.h | layer-header | 1 | <atomic> | -
+include/fixy/concurrent/AtomicSnapshot.h | layer-header | 1 | <cstring> | -
+include/fixy/concurrent/AtomicSnapshot.h | layer-header | 1 | <optional> | -
+include/fixy/concurrent/ChaseLevDeque.h | layer-header | 1 | <array> | -
+include/fixy/concurrent/ChaseLevDeque.h | layer-header | 1 | <atomic> | -
+include/fixy/concurrent/ChaseLevDeque.h | layer-header | 1 | <bit> | -
+include/fixy/concurrent/ChaseLevDeque.h | layer-header | 1 | <optional> | -
+include/fixy/concurrent/Endpoint.h | layer-header | 1 | <optional> | -
+include/fixy/concurrent/Endpoint.h | upward-include | 1 | include/fixy/session/Handle.h | -
+include/fixy/concurrent/EndpointMint.h | upward-include | 1 | include/fixy/session/EventLog.h | -
+include/fixy/concurrent/EndpointMint.h | upward-include | 1 | include/fixy/session/Recording.h | -
+include/fixy/concurrent/HandleTraits.h | layer-header | 1 | <optional> | -
+include/fixy/concurrent/MpscRing.h | layer-header | 1 | <array> | -
+include/fixy/concurrent/MpscRing.h | layer-header | 1 | <atomic> | -
+include/fixy/concurrent/MpscRing.h | layer-header | 1 | <bit> | -
+include/fixy/concurrent/MpscRing.h | layer-header | 1 | <optional> | -
+include/fixy/concurrent/MpscRing.h | layer-header | 1 | <span> | -
+include/fixy/concurrent/ParallelismRule.h | layer-header | 1 | <limits> | -
+include/fixy/concurrent/PayloadRow.h | layer-header | 1 | <span> | -
+include/fixy/concurrent/PayloadRow.h | layer-header | 1 | <string> | -
+include/fixy/concurrent/PayloadRow.h | layer-header | 1 | <string_view> | -
+include/fixy/concurrent/PayloadRow.h | layer-header | 1 | <vector> | -
+include/fixy/concurrent/PermissionedMpscChannel.h | layer-header | 1 | <optional> | -
+include/fixy/concurrent/PermissionedSpscChannel.h | layer-header | 1 | <optional> | -
+include/fixy/concurrent/Pipeline.h | layer-header | 1 | <algorithm> | -
+include/fixy/concurrent/Pipeline.h | layer-header | 1 | <array> | -
+include/fixy/concurrent/Pipeline.h | layer-header | 1 | <atomic> | -
+include/fixy/concurrent/Pipeline.h | layer-header | 1 | <pthread.h> | -
+include/fixy/concurrent/Pipeline.h | layer-header | 1 | <sched.h> | -
+include/fixy/concurrent/Pipeline.h | layer-header | 1 | <tuple> | -
+include/fixy/concurrent/Pipeline.h | layer-header | 1 | <vector> | -
+include/fixy/concurrent/SpscRing.h | layer-header | 1 | <array> | -
+include/fixy/concurrent/SpscRing.h | layer-header | 1 | <bit> | -
+include/fixy/concurrent/SpscRing.h | layer-header | 1 | <cstring> | -
+include/fixy/concurrent/SpscRing.h | layer-header | 1 | <optional> | -
+include/fixy/concurrent/SpscRing.h | layer-header | 1 | <span> | -
+include/fixy/concurrent/Stage.h | layer-header | 1 | <optional> | -
+include/fixy/concurrent/Stage.h | layer-header | 1 | <tuple> | -
+include/fixy/concurrent/StageEndpointBridge.h | layer-header | 1 | <tuple> | -
+include/fixy/concurrent/StageShape.h | layer-header | 1 | <optional> | -
+include/fixy/concurrent/SubstrateSessionBridge.h | upward-include | 1 | include/fixy/session/Entry.h | -
+include/fixy/concurrent/SubstrateSessionBridge.h | upward-include | 1 | include/fixy/session/Handle.h | -
+include/fixy/concurrent/SwmrSession.h | layer-header | 1 | <optional> | -
+include/fixy/concurrent/SwmrSession.h | upward-include | 1 | include/fixy/session/Entry.h | -
+include/fixy/concurrent/SwmrSession.h | upward-include | 1 | include/fixy/session/Handle.h | -
+include/fixy/concurrent/Topology.h | layer-header | 1 | <algorithm> | -
+include/fixy/concurrent/Topology.h | layer-header | 1 | <cstdio> | -
+include/fixy/concurrent/Topology.h | layer-header | 1 | <optional> | -
+include/fixy/concurrent/Topology.h | layer-header | 1 | <span> | -
+include/fixy/concurrent/Topology.h | layer-header | 1 | <string> | -
+include/fixy/concurrent/Topology.h | layer-header | 1 | <string_view> | -
+include/fixy/concurrent/Topology.h | layer-header | 1 | <vector> | -
+include/fixy/concurrent/WorkingSet.h | layer-header | 1 | <limits> | -
+include/fixy/fp/Canonicalize.h | layer-header | 1 | <bit> | -
+include/fixy/fp/Canonicalize.h | layer-header | 1 | <cmath> | -
+include/fixy/fp/Canonicalize.h | layer-header | 1 | <limits> | -
+include/fixy/fp/Polynomial.h | layer-header | 1 | <array> | -
+include/fixy/fp/Polynomial.h | layer-header | 1 | <bit> | -
+include/fixy/fp/Polynomial.h | layer-header | 1 | <cmath> | -
+include/fixy/fp/Polynomial.h | layer-header | 1 | <limits> | -
+include/fixy/handle/LazyEstablishedChannel.h | layer-header | 1 | <atomic> | -
+include/fixy/handle/LazyEstablishedChannel.h | layer-header | 1 | <expected> | -
+include/fixy/handle/LazyEstablishedChannel.h | layer-header | 1 | <source_location> | -
+include/fixy/handle/LazyEstablishedChannel.h | layer-header | 1 | <string_view> | -
+include/fixy/handle/LazyEstablishedChannel.h | upward-include | 1 | include/fixy/session/Entry.h | -
+include/fixy/handle/LazyEstablishedChannel.h | upward-include | 1 | include/fixy/session/Handle.h | -
+include/fixy/handle/LazyEstablishedChannel.h | upward-include | 1 | include/fixy/session/Protocol.h | -
+include/fixy/handle/LazyEstablishedChannel.h | upward-include | 1 | include/fixy/session/Stepping.h | -
+include/fixy/handle/Once.h | layer-header | 1 | <array> | -
+include/fixy/handle/Once.h | layer-header | 1 | <atomic> | -
+include/fixy/handle/OneShotFlag.h | layer-header | 1 | <atomic> | -
+include/fixy/handle/PublishCommit.h | layer-header | 1 | <atomic> | -
+include/fixy/handle/PublishOnce.h | layer-header | 1 | <atomic> | -
+include/fixy/handle/PublishOnce.h | layer-header | 1 | <cstdio> | -
+include/fixy/handle/PublishOnce.h | layer-header | 1 | <cstdlib> | -
+include/fixy/os/AtomPack.h | layer-header | 1 | <vector> | -
+include/fixy/os/CipherDurable.h | layer-header | 1 | <expected> | -
+include/fixy/os/CipherDurable.h | layer-header | 1 | <sys/stat.h> | -
+include/fixy/os/CipherDurable.h | layer-header | 1 | <system_error> | -
+include/fixy/os/ClockSource.h | layer-header | 1 | <string_view> | -
+include/fixy/os/CpuPinned.h | layer-header | 1 | <atomic> | -
+include/fixy/os/CpuPinned.h | layer-header | 1 | <cerrno> | -
+include/fixy/os/CpuPinned.h | layer-header | 1 | <expected> | -
+include/fixy/os/CpuPinned.h | layer-header | 1 | <sched.h> | -
+include/fixy/os/Fd.h | layer-header | 1 | <unistd.h> | -
+include/fixy/os/Fs.h | layer-header | 1 | <cerrno> | -
+include/fixy/os/Fs.h | layer-header | 1 | <cstdio> | -
+include/fixy/os/Fs.h | layer-header | 1 | <expected> | -
+include/fixy/os/Fs.h | layer-header | 1 | <fcntl.h> | -
+include/fixy/os/Fs.h | layer-header | 1 | <span> | -
+include/fixy/os/Fs.h | layer-header | 1 | <sys/stat.h> | -
+include/fixy/os/Fs.h | layer-header | 1 | <system_error> | -
+include/fixy/os/Fs.h | layer-header | 1 | <unistd.h> | -
+include/fixy/os/Io.h | layer-header | 1 | <cerrno> | -
+include/fixy/os/Io.h | layer-header | 1 | <expected> | -
+include/fixy/os/Io.h | layer-header | 1 | <sys/mman.h> | -
+include/fixy/os/Io.h | layer-header | 1 | <sys/syscall.h> | -
+include/fixy/os/Io.h | layer-header | 1 | <system_error> | -
+include/fixy/os/Io.h | layer-header | 1 | <unistd.h> | -
+include/fixy/os/Mmap.h | layer-header | 1 | <cerrno> | -
+include/fixy/os/Mmap.h | layer-header | 1 | <expected> | -
+include/fixy/os/Mmap.h | layer-header | 1 | <sys/mman.h> | -
+include/fixy/os/Mmap.h | layer-header | 1 | <system_error> | -
+include/fixy/os/Mmap.h | layer-header | 1 | <unistd.h> | -
+include/fixy/os/NumaPlacement.h | layer-header | 1 | <cerrno> | -
+include/fixy/os/NumaPlacement.h | layer-header | 1 | <climits> | -
+include/fixy/os/NumaPlacement.h | layer-header | 1 | <expected> | -
+include/fixy/os/NumaPlacement.h | layer-header | 1 | <sys/syscall.h> | -
+include/fixy/os/NumaPlacement.h | layer-header | 1 | <system_error> | -
+include/fixy/os/NumaPlacement.h | layer-header | 1 | <unistd.h> | -
+include/fixy/os/Sched.h | layer-header | 1 | <cerrno> | -
+include/fixy/os/Sched.h | layer-header | 1 | <expected> | -
+include/fixy/os/Sched.h | layer-header | 1 | <sched.h> | -
+include/fixy/os/Sched.h | layer-header | 1 | <sys/syscall.h> | -
+include/fixy/os/Sched.h | layer-header | 1 | <unistd.h> | -
+include/fixy/os/Socket.h | layer-header | 1 | <cerrno> | -
+include/fixy/os/Socket.h | layer-header | 1 | <expected> | -
+include/fixy/os/Socket.h | layer-header | 1 | <system_error> | -
+include/fixy/os/Spawn.h | layer-header | 1 | <array> | -
+include/fixy/os/Spawn.h | layer-header | 1 | <span> | -
+include/fixy/os/Spawn.h | layer-header | 1 | <tuple> | -
+include/fixy/os/Spawn.h | layer-header | 1 | <vector> | -
+include/fixy/os/Spawn.h | upward-include | 1 | include/fixy/concurrent/ParallelismRule.h | -
+include/fixy/os/SpinLock.h | layer-header | 1 | <atomic> | -
+include/fixy/os/SpinLock.h | layer-header | 1 | <mutex> | -
+include/fixy/os/ThreadName.h | layer-header | 1 | <array> | -
+include/fixy/os/ThreadName.h | layer-header | 1 | <pthread.h> | -
+include/fixy/os/ThreadName.h | layer-header | 1 | <string_view> | -
+include/fixy/os/ThreadTasks.h | layer-header | 1 | <span> | -
+include/fixy/os/Time.h | layer-header | 1 | <array> | -
+include/fixy/os/Time.h | layer-header | 1 | <cerrno> | -
+include/fixy/os/Time.h | layer-header | 1 | <ctime> | -
+include/fixy/os/Time.h | layer-header | 1 | <expected> | -
+include/fixy/os/Time.h | layer-header | 1 | <fcntl.h> | -
+include/fixy/os/Time.h | layer-header | 1 | <limits> | -
+include/fixy/os/Time.h | layer-header | 1 | <system_error> | -
+include/fixy/session/AsyncChannel.h | layer-header | 1 | <source_location> | -
+include/fixy/session/Checkpoint.h | layer-header | 1 | <cstdlib> | -
+include/fixy/session/Checkpoint.h | layer-header | 1 | <functional> | -
+include/fixy/session/Checkpoint.h | layer-header | 1 | <optional> | -
+include/fixy/session/Checkpoint.h | layer-header | 1 | <source_location> | -
+include/fixy/session/Checkpoint.h | layer-header | 1 | <tuple> | -
+include/fixy/session/Checkpoint.h | layer-header | 1 | <vector> | -
+include/fixy/session/Classified.h | layer-header | 1 | <span> | -
+include/fixy/session/Crash.h | layer-header | 1 | <span> | -
+include/fixy/session/Crash.h | layer-header | 1 | <tuple> | -
+include/fixy/session/Crash.h | layer-header | 1 | <vector> | -
+include/fixy/session/CrashTransport.h | layer-header | 1 | <atomic> | -
+include/fixy/session/CrashTransport.h | layer-header | 1 | <cstdio> | -
+include/fixy/session/CrashTransport.h | layer-header | 1 | <cstdlib> | -
+include/fixy/session/CrashTransport.h | layer-header | 1 | <functional> | -
+include/fixy/session/CrashTransport.h | layer-header | 1 | <optional> | -
+include/fixy/session/CrashTransport.h | layer-header | 1 | <source_location> | -
+include/fixy/session/CrashTransport.h | layer-header | 1 | <tuple> | -
+include/fixy/session/Delegate.h | layer-header | 1 | <cstdio> | -
+include/fixy/session/Delegate.h | layer-header | 1 | <cstdlib> | -
+include/fixy/session/Delegate.h | layer-header | 1 | <source_location> | -
+include/fixy/session/Entry.h | layer-header | 1 | <functional> | -
+include/fixy/session/Entry.h | layer-header | 1 | <source_location> | -
+include/fixy/session/EventLog.h | layer-header | 1 | <array> | -
+include/fixy/session/EventLog.h | layer-header | 1 | <bit> | -
+include/fixy/session/EventLog.h | layer-header | 1 | <cstdio> | -
+include/fixy/session/EventLog.h | layer-header | 1 | <cstdlib> | -
+include/fixy/session/EventLog.h | layer-header | 1 | <expected> | -
+include/fixy/session/EventLog.h | layer-header | 1 | <limits> | -
+include/fixy/session/EventLog.h | layer-header | 1 | <span> | -
+include/fixy/session/EventLog.h | layer-header | 1 | <string_view> | -
+include/fixy/session/EventLog.h | layer-header | 1 | <vector> | -
+include/fixy/session/Global.h | layer-header | 1 | <vector> | -
+include/fixy/session/Handle.h | layer-header | 1 | <array> | -
+include/fixy/session/Handle.h | layer-header | 1 | <cstdio> | -
+include/fixy/session/Handle.h | layer-header | 1 | <cstdlib> | -
+include/fixy/session/Handle.h | layer-header | 1 | <functional> | -
+include/fixy/session/Handle.h | layer-header | 1 | <optional> | -
+include/fixy/session/Handle.h | layer-header | 1 | <source_location> | -
+include/fixy/session/Handle.h | layer-header | 1 | <span> | -
+include/fixy/session/Handle.h | layer-header | 1 | <string> | -
+include/fixy/session/Handle.h | layer-header | 1 | <string_view> | -
+include/fixy/session/Handle.h | layer-header | 1 | <tuple> | -
+include/fixy/session/Handle.h | layer-header | 1 | <vector> | -
+include/fixy/session/MachineBridge.h | layer-header | 1 | <atomic> | -
+include/fixy/session/MachineBridge.h | layer-header | 1 | <string_view> | -
+include/fixy/session/Network.h | layer-header | 1 | <string> | -
+include/fixy/session/Network.h | layer-header | 1 | <string_view> | -
+include/fixy/session/Network.h | layer-header | 1 | <vector> | -
+include/fixy/session/Payload.h | layer-header | 1 | <any> | -
+include/fixy/session/Payload.h | layer-header | 1 | <cstdio> | -
+include/fixy/session/Payload.h | layer-header | 1 | <cstdlib> | -
+include/fixy/session/Payload.h | layer-header | 1 | <functional> | -
+include/fixy/session/Payload.h | layer-header | 1 | <optional> | -
+include/fixy/session/Payload.h | layer-header | 1 | <span> | -
+include/fixy/session/Payload.h | layer-header | 1 | <string> | -
+include/fixy/session/Payload.h | layer-header | 1 | <string_view> | -
+include/fixy/session/Payload.h | layer-header | 1 | <tuple> | -
+include/fixy/session/Payload.h | layer-header | 1 | <vector> | -
+include/fixy/session/Protocol.h | layer-header | 1 | <string> | -
+include/fixy/session/Protocol.h | layer-header | 1 | <string_view> | -
+include/fixy/session/Protocol.h | layer-header | 1 | <tuple> | -
+include/fixy/session/Protocol.h | layer-header | 1 | <vector> | -
+include/fixy/session/Recording.h | layer-header | 1 | <functional> | -
+include/fixy/session/Recording.h | layer-header | 1 | <optional> | -
+include/fixy/session/Recording.h | layer-header | 1 | <source_location> | -
+include/fixy/session/Recording.h | layer-header | 1 | <tuple> | -
+include/fixy/session/Stepping.h | layer-header | 1 | <source_location> | -
+include/fixy/session/Stepping.h | layer-header | 1 | <string_view> | -
+include/fixy/session/Subtype.h | layer-header | 1 | <string> | -
+include/fixy/session/Subtype.h | layer-header | 1 | <string_view> | -
+include/fixy/session/Subtype.h | layer-header | 1 | <vector> | -
+include/fixy/session/VigilModeCell.h | layer-header | 1 | <atomic> | -
+include/fixy/session/Watch.h | layer-header | 1 | <array> | -
+include/fixy/session/Watch.h | layer-header | 1 | <atomic> | -
+include/fixy/session/Watch.h | layer-header | 1 | <csignal> | -
+include/fixy/session/Watch.h | layer-header | 1 | <cstdio> | -
+include/fixy/session/Watch.h | layer-header | 1 | <cstdlib> | -
+include/fixy/session/Watch.h | layer-header | 1 | <pthread.h> | -
+include/fixy/session/Watch.h | layer-header | 1 | <signal.h> | -
+include/fixy/session/Watch.h | layer-header | 1 | <source_location> | -
+include/fixy/session/Watch.h | layer-header | 1 | <string_view> | -
+include/fixy/session/Watch.h | layer-header | 1 | <time.h> | -
+include/fixy/session/Watch.h | layer-header | 1 | <unistd.h> | -
+include/foundation/AlignedBuffer.h | layer-header | 1 | <bit> | -
+include/foundation/AlignedBuffer.h | layer-header | 1 | <cstdio> | -
+include/foundation/AlignedBuffer.h | layer-header | 1 | <cstdlib> | -
+include/foundation/AlignedBuffer.h | layer-header | 1 | <span> | -
+include/foundation/AlignedBuffer.h | layer-header | 1 | <string_view> | -
+include/foundation/AlignedBuffer.h | upward-include | 1 | include/foundation/diag/Catalog.h | -
+include/foundation/ChannelBinding.h | layer-header | 1 | <atomic> | -
+include/foundation/ChannelBinding.h | layer-header | 1 | <string_view> | -
+include/foundation/ChannelBinding.h | upward-include | 1 | include/foundation/diag/Runtime.h | -
+include/foundation/Lifetime.h | layer-header | 1 | <bit> | -
+include/foundation/Lifetime.h | layer-header | 1 | <span> | -
 include/foundation/Platform.h | door-header | 1 | <contracts> has the door src/foundation/ContractHandler.cpp | -
-include/foundation/Platform.h | layer-header | 1 | <bit> in the layer F0_floor | -
-include/foundation/Platform.h | layer-header | 1 | <cstdio> in the layer F0_floor | -
-include/foundation/Platform.h | layer-header | 1 | <cstdlib> in the layer F0_floor | -
-include/foundation/Platform.h | layer-header | 1 | <cstring> in the layer F0_floor | -
-include/foundation/Platform.h | layer-header | 1 | <fcntl.h> in the layer F0_floor | -
-include/foundation/Platform.h | layer-header | 1 | <unistd.h> in the layer F0_floor | -
-include/foundation/Platform.h | layer-header | 1 | <version> in the layer F0_floor | -
-include/foundation/Saturate.h | layer-header | 1 | <numeric> in the layer F0_primitives | -
-include/foundation/Simd.h | layer-header | 1 | <bit> in the layer F0_primitives | -
-include/foundation/Simd.h | layer-header | 1 | <cstring> in the layer F0_primitives | -
-include/foundation/SwissTableBuffer.h | layer-header | 1 | <bit> in the layer F0_primitives | -
-include/foundation/SwissTableBuffer.h | layer-header | 1 | <cstdlib> in the layer F0_primitives | -
-include/foundation/SwissTableBuffer.h | layer-header | 1 | <span> in the layer F0_primitives | -
-include/foundation/SwissTableBuffer.h | layer-header | 1 | <string_view> in the layer F0_primitives | -
-include/foundation/ThreadLocalRef.h | layer-header | 1 | <string_view> in the layer F0_primitives | -
-include/foundation/algebra/Graded.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/GradedTrait.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/Lattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/Modality.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/Transition.h | layer-header | 1 | <span> in the layer F1_algebra | -
-include/foundation/algebra/Transition.h | layer-header | 1 | <string> in the layer F1_algebra | -
-include/foundation/algebra/Transition.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/Transition.h | layer-header | 1 | <vector> in the layer F1_algebra | -
-include/foundation/algebra/lattices/AffinityLattice.h | layer-header | 1 | <array> in the layer F1_algebra | -
-include/foundation/algebra/lattices/AffinityLattice.h | layer-header | 1 | <cstdlib> in the layer F1_algebra | -
-include/foundation/algebra/lattices/AffinityLattice.h | layer-header | 1 | <limits> in the layer F1_algebra | -
-include/foundation/algebra/lattices/AffinityLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/AllocClassLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/BarrierStrengthLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/BoolLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/ChainLattice.h | layer-header | 1 | <string> in the layer F1_algebra | -
-include/foundation/algebra/lattices/ChainLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/ChainLattice.h | layer-header | 1 | <vector> in the layer F1_algebra | -
-include/foundation/algebra/lattices/CipherTierLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/ClockSourceLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/ConfLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/DetSafeLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/DualLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/EnumValuePins.h | layer-header | 1 | <array> in the layer F1_algebra | -
-include/foundation/algebra/lattices/FractionalLattice.h | layer-header | 1 | <numeric> in the layer F1_algebra | -
-include/foundation/algebra/lattices/FractionalLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/HappensBefore.h | layer-header | 1 | <array> in the layer F1_algebra | -
-include/foundation/algebra/lattices/HappensBefore.h | layer-header | 1 | <expected> in the layer F1_algebra | -
-include/foundation/algebra/lattices/HappensBefore.h | layer-header | 1 | <limits> in the layer F1_algebra | -
-include/foundation/algebra/lattices/HappensBefore.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/HotPathLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/LifetimeLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/MemoryScopeLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
+include/foundation/Platform.h | layer-header | 1 | <bit> | -
+include/foundation/Platform.h | layer-header | 1 | <cstdio> | -
+include/foundation/Platform.h | layer-header | 1 | <cstdlib> | -
+include/foundation/Platform.h | layer-header | 1 | <cstring> | -
+include/foundation/Platform.h | layer-header | 1 | <fcntl.h> | -
+include/foundation/Platform.h | layer-header | 1 | <unistd.h> | -
+include/foundation/Platform.h | layer-header | 1 | <version> | -
+include/foundation/Saturate.h | layer-header | 1 | <numeric> | -
+include/foundation/Simd.h | layer-header | 1 | <bit> | -
+include/foundation/Simd.h | layer-header | 1 | <cstring> | -
+include/foundation/SwissTableBuffer.h | layer-header | 1 | <bit> | -
+include/foundation/SwissTableBuffer.h | layer-header | 1 | <cstdlib> | -
+include/foundation/SwissTableBuffer.h | layer-header | 1 | <span> | -
+include/foundation/SwissTableBuffer.h | layer-header | 1 | <string_view> | -
+include/foundation/ThreadLocalRef.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/Graded.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/GradedTrait.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/Lattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/Modality.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/Transition.h | layer-header | 1 | <span> | -
+include/foundation/algebra/Transition.h | layer-header | 1 | <string> | -
+include/foundation/algebra/Transition.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/Transition.h | layer-header | 1 | <vector> | -
+include/foundation/algebra/lattices/AffinityLattice.h | layer-header | 1 | <array> | -
+include/foundation/algebra/lattices/AffinityLattice.h | layer-header | 1 | <cstdlib> | -
+include/foundation/algebra/lattices/AffinityLattice.h | layer-header | 1 | <limits> | -
+include/foundation/algebra/lattices/AffinityLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/AllocClassLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/BarrierStrengthLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/BoolLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/ChainLattice.h | layer-header | 1 | <string> | -
+include/foundation/algebra/lattices/ChainLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/ChainLattice.h | layer-header | 1 | <vector> | -
+include/foundation/algebra/lattices/CipherTierLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/ClockSourceLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/ConfLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/DetSafeLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/DualLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/EnumValuePins.h | layer-header | 1 | <array> | -
+include/foundation/algebra/lattices/FractionalLattice.h | layer-header | 1 | <numeric> | -
+include/foundation/algebra/lattices/FractionalLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/HappensBefore.h | layer-header | 1 | <array> | -
+include/foundation/algebra/lattices/HappensBefore.h | layer-header | 1 | <expected> | -
+include/foundation/algebra/lattices/HappensBefore.h | layer-header | 1 | <limits> | -
+include/foundation/algebra/lattices/HappensBefore.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/HotPathLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/LifetimeLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/MemoryScopeLattice.h | layer-header | 1 | <string_view> | -
 include/foundation/algebra/lattices/MonotoneLattice.h | door-header | 1 | <contracts> has the door src/foundation/ContractHandler.cpp | -
-include/foundation/algebra/lattices/MonotoneLattice.h | layer-header | 1 | <functional> in the layer F1_algebra | -
-include/foundation/algebra/lattices/MonotoneLattice.h | layer-header | 1 | <limits> in the layer F1_algebra | -
-include/foundation/algebra/lattices/MonotoneLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/NumaNodeLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/PinningRequirementLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/ProductLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/QttSemiring.h | layer-header | 1 | <string> in the layer F1_algebra | -
-include/foundation/algebra/lattices/QttSemiring.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/RecipeFamilyLattice.h | layer-header | 1 | <cstdlib> in the layer F1_algebra | -
-include/foundation/algebra/lattices/RecipeFamilyLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/ResidencyHeatLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/SchedulerPolicyLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/SeqPrefixLattice.h | layer-header | 1 | <limits> in the layer F1_algebra | -
-include/foundation/algebra/lattices/SeqPrefixLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/StalenessSemiring.h | layer-header | 1 | <limits> in the layer F1_algebra | -
-include/foundation/algebra/lattices/StalenessSemiring.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/StrongCounterLattice.h | layer-header | 1 | <array> in the layer F1_algebra | -
-include/foundation/algebra/lattices/StrongCounterLattice.h | layer-header | 1 | <cstdlib> in the layer F1_algebra | -
-include/foundation/algebra/lattices/StrongCounterLattice.h | layer-header | 1 | <expected> in the layer F1_algebra | -
-include/foundation/algebra/lattices/StrongCounterLattice.h | layer-header | 1 | <limits> in the layer F1_algebra | -
-include/foundation/algebra/lattices/StrongCounterLattice.h | layer-header | 1 | <string> in the layer F1_algebra | -
-include/foundation/algebra/lattices/StrongCounterLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/SuspendBehaviorLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/ToleranceLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/TrustLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/VendorLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/algebra/lattices/WaitLattice.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/contracts/ArmedRoster.h | layer-header | 1 | <span> in the layer F0_core | -
-include/foundation/contracts/ArmedRoster.h | layer-header | 1 | <string_view> in the layer F0_core | -
-include/foundation/contracts/ArmedRoster.h | layer-header | 1 | <vector> in the layer F0_core | -
-include/foundation/contracts/Decide.h | layer-header | 1 | <span> in the layer F0_core | -
-include/foundation/contracts/Decide.h | upward-include | 1 | include/foundation/effects/Row.h (the layer F1_algebra) from the layer F0_core | -
+include/foundation/algebra/lattices/MonotoneLattice.h | layer-header | 1 | <functional> | -
+include/foundation/algebra/lattices/MonotoneLattice.h | layer-header | 1 | <limits> | -
+include/foundation/algebra/lattices/MonotoneLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/NumaNodeLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/PinningRequirementLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/ProductLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/QttSemiring.h | layer-header | 1 | <string> | -
+include/foundation/algebra/lattices/QttSemiring.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/RecipeFamilyLattice.h | layer-header | 1 | <cstdlib> | -
+include/foundation/algebra/lattices/RecipeFamilyLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/ResidencyHeatLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/SchedulerPolicyLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/SeqPrefixLattice.h | layer-header | 1 | <limits> | -
+include/foundation/algebra/lattices/SeqPrefixLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/StalenessSemiring.h | layer-header | 1 | <limits> | -
+include/foundation/algebra/lattices/StalenessSemiring.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/StrongCounterLattice.h | layer-header | 1 | <array> | -
+include/foundation/algebra/lattices/StrongCounterLattice.h | layer-header | 1 | <cstdlib> | -
+include/foundation/algebra/lattices/StrongCounterLattice.h | layer-header | 1 | <expected> | -
+include/foundation/algebra/lattices/StrongCounterLattice.h | layer-header | 1 | <limits> | -
+include/foundation/algebra/lattices/StrongCounterLattice.h | layer-header | 1 | <string> | -
+include/foundation/algebra/lattices/StrongCounterLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/SuspendBehaviorLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/ToleranceLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/TrustLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/VendorLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/algebra/lattices/WaitLattice.h | layer-header | 1 | <string_view> | -
+include/foundation/contracts/ArmedRoster.h | layer-header | 1 | <span> | -
+include/foundation/contracts/ArmedRoster.h | layer-header | 1 | <string_view> | -
+include/foundation/contracts/ArmedRoster.h | layer-header | 1 | <vector> | -
+include/foundation/contracts/Decide.h | layer-header | 1 | <span> | -
+include/foundation/contracts/Decide.h | upward-include | 1 | include/foundation/effects/Row.h | -
 include/foundation/core/Ref.h | replace-pending:std::nothrow | 1 | std::nothrow | -
-include/foundation/diag/Catalog.h | layer-header | 1 | <array> in the layer F1_algebra | -
-include/foundation/diag/Catalog.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/diag/Catalog.h | layer-header | 1 | <tuple> in the layer F1_algebra | -
-include/foundation/diag/Catalog.h | layer-header | 1 | <vector> in the layer F1_algebra | -
-include/foundation/diag/FailClosed.h | layer-header | 1 | <array> in the layer F0_core | -
-include/foundation/diag/FailClosed.h | layer-header | 1 | <span> in the layer F0_core | -
-include/foundation/diag/FailClosed.h | layer-header | 1 | <string> in the layer F0_core | -
-include/foundation/diag/FailClosed.h | layer-header | 1 | <string_view> in the layer F0_core | -
-include/foundation/diag/FailClosed.h | layer-header | 1 | <vector> in the layer F0_core | -
-include/foundation/diag/Insights.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/diag/Insights.h | layer-header | 1 | <tuple> in the layer F1_algebra | -
-include/foundation/diag/JsonEmitter.h | layer-header | 1 | <array> in the layer F1_algebra | -
-include/foundation/diag/JsonEmitter.h | layer-header | 1 | <charconv> in the layer F1_algebra | -
-include/foundation/diag/JsonEmitter.h | layer-header | 1 | <cstdio> in the layer F1_algebra | -
-include/foundation/diag/JsonEmitter.h | layer-header | 1 | <limits> in the layer F1_algebra | -
-include/foundation/diag/JsonEmitter.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/diag/JsonEmitter.h | layer-header | 1 | <system_error> in the layer F1_algebra | -
-include/foundation/diag/JsonEmitter.h | layer-header | 1 | <vector> in the layer F1_algebra | -
-include/foundation/diag/RowHash.h | layer-header | 1 | <array> in the layer F1_algebra | -
-include/foundation/diag/RowMismatch.h | layer-header | 1 | <array> in the layer F1_algebra | -
-include/foundation/diag/RowMismatch.h | layer-header | 1 | <source_location> in the layer F1_algebra | -
-include/foundation/diag/RowMismatch.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/diag/Runtime.h | layer-header | 1 | <source_location> in the layer F1_algebra | -
-include/foundation/diag/Runtime.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/effects/Capability.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/effects/Capability.h | layer-header | 1 | <vector> in the layer F1_algebra | -
-include/foundation/effects/Computation.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/effects/Concurrent.h | layer-header | 1 | <array> in the layer F1_algebra | -
-include/foundation/effects/Concurrent.h | layer-header | 1 | <vector> in the layer F1_algebra | -
-include/foundation/effects/Ctx.h | layer-header | 1 | <array> in the layer F1_algebra | -
-include/foundation/effects/Ctx.h | layer-header | 1 | <atomic> in the layer F1_algebra | -
-include/foundation/effects/Ctx.h | layer-header | 1 | <bit> in the layer F1_algebra | -
-include/foundation/effects/Ctx.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/effects/Ctx.h | layer-header | 1 | <vector> in the layer F1_algebra | -
-include/foundation/effects/Effect.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/effects/Lift.h | layer-header | 1 | <vector> in the layer F1_algebra | -
-include/foundation/effects/Resources.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/effects/Resources.h | layer-header | 1 | <vector> in the layer F1_algebra | -
-include/foundation/effects/Row.h | layer-header | 1 | <array> in the layer F1_algebra | -
-include/foundation/effects/Row.h | layer-header | 1 | <bit> in the layer F1_algebra | -
-include/foundation/effects/Row.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/permissions/ForkTasks.h | layer-header | 1 | <span> in the layer F1_algebra | -
-include/foundation/permissions/PermSet.h | layer-header | 1 | <array> in the layer F1_algebra | -
-include/foundation/permissions/PermSet.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/permissions/PermSet.h | layer-header | 1 | <vector> in the layer F1_algebra | -
-include/foundation/permissions/Permission.h | layer-header | 1 | <atomic> in the layer F1_algebra | -
-include/foundation/permissions/Permission.h | layer-header | 1 | <cstdio> in the layer F1_algebra | -
-include/foundation/permissions/Permission.h | layer-header | 1 | <cstdlib> in the layer F1_algebra | -
-include/foundation/permissions/Permission.h | layer-header | 1 | <optional> in the layer F1_algebra | -
-include/foundation/permissions/Permission.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/permissions/Permission.h | layer-header | 1 | <tuple> in the layer F1_algebra | -
-include/foundation/permissions/Permission.h | layer-header | 1 | <vector> in the layer F1_algebra | -
-include/foundation/permissions/PermissionFork.h | layer-header | 1 | <array> in the layer F1_algebra | -
-include/foundation/permissions/PermissionFork.h | layer-header | 1 | <string_view> in the layer F1_algebra | -
-include/foundation/permissions/PermissionFork.h | layer-header | 1 | <tuple> in the layer F1_algebra | -
-include/foundation/permissions/PermissionFork.h | layer-header | 1 | <vector> in the layer F1_algebra | -
-include/foundation/reflect/EnumName.h | layer-header | 1 | <array> in the layer F0_core | -
-include/foundation/reflect/EnumName.h | layer-header | 1 | <bit> in the layer F0_core | -
-include/foundation/reflect/EnumName.h | layer-header | 1 | <cstdlib> in the layer F0_core | -
-include/foundation/reflect/EnumName.h | layer-header | 1 | <string> in the layer F0_core | -
-include/foundation/reflect/EnumName.h | layer-header | 1 | <string_view> in the layer F0_core | -
-include/foundation/reflect/EnumName.h | layer-header | 1 | <vector> in the layer F0_core | -
-include/foundation/reflect/EnumPins.h | layer-header | 1 | <array> in the layer F0_core | -
-include/foundation/reflect/EnumPins.h | layer-header | 1 | <string_view> in the layer F0_core | -
-include/foundation/reflect/EnumPins.h | layer-header | 1 | <vector> in the layer F0_core | -
-include/foundation/reflect/Enumerate.h | layer-header | 1 | <cstdlib> in the layer F0_core | -
-include/foundation/reflect/Enumerate.h | layer-header | 1 | <cstring> in the layer F0_core | -
-include/foundation/reflect/Enumerate.h | layer-header | 1 | <string_view> in the layer F0_core | -
-include/foundation/reflect/Hash.h | layer-header | 1 | <array> in the layer F0_core | -
-include/foundation/reflect/Hash.h | layer-header | 1 | <bit> in the layer F0_core | -
-include/foundation/reflect/Hash.h | layer-header | 1 | <string> in the layer F0_core | -
-include/foundation/reflect/Hash.h | layer-header | 1 | <string_view> in the layer F0_core | -
-include/foundation/reflect/Hash.h | layer-header | 1 | <tuple> in the layer F0_core | -
-include/foundation/reflect/Instance.h | layer-header | 1 | <string_view> in the layer F0_core | -
-include/foundation/reflect/RawEscape.h | layer-header | 1 | <span> in the layer F0_core | -
-include/foundation/reflect/RawEscape.h | layer-header | 1 | <string> in the layer F0_core | -
-include/foundation/reflect/RawEscape.h | layer-header | 1 | <string_view> in the layer F0_core | -
-include/foundation/reflect/RawEscape.h | layer-header | 1 | <vector> in the layer F0_core | -
-include/foundation/reflect/Signature.h | layer-header | 1 | <vector> in the layer F0_core | -
-include/foundation/reflect/TypeComponents.h | layer-header | 1 | <vector> in the layer F0_core | -
+include/foundation/diag/Catalog.h | layer-header | 1 | <array> | -
+include/foundation/diag/Catalog.h | layer-header | 1 | <string_view> | -
+include/foundation/diag/Catalog.h | layer-header | 1 | <tuple> | -
+include/foundation/diag/Catalog.h | layer-header | 1 | <vector> | -
+include/foundation/diag/FailClosed.h | layer-header | 1 | <array> | -
+include/foundation/diag/FailClosed.h | layer-header | 1 | <span> | -
+include/foundation/diag/FailClosed.h | layer-header | 1 | <string> | -
+include/foundation/diag/FailClosed.h | layer-header | 1 | <string_view> | -
+include/foundation/diag/FailClosed.h | layer-header | 1 | <vector> | -
+include/foundation/diag/Insights.h | layer-header | 1 | <string_view> | -
+include/foundation/diag/Insights.h | layer-header | 1 | <tuple> | -
+include/foundation/diag/JsonEmitter.h | layer-header | 1 | <array> | -
+include/foundation/diag/JsonEmitter.h | layer-header | 1 | <charconv> | -
+include/foundation/diag/JsonEmitter.h | layer-header | 1 | <cstdio> | -
+include/foundation/diag/JsonEmitter.h | layer-header | 1 | <limits> | -
+include/foundation/diag/JsonEmitter.h | layer-header | 1 | <string_view> | -
+include/foundation/diag/JsonEmitter.h | layer-header | 1 | <system_error> | -
+include/foundation/diag/JsonEmitter.h | layer-header | 1 | <vector> | -
+include/foundation/diag/RowHash.h | layer-header | 1 | <array> | -
+include/foundation/diag/RowMismatch.h | layer-header | 1 | <array> | -
+include/foundation/diag/RowMismatch.h | layer-header | 1 | <source_location> | -
+include/foundation/diag/RowMismatch.h | layer-header | 1 | <string_view> | -
+include/foundation/diag/Runtime.h | layer-header | 1 | <source_location> | -
+include/foundation/diag/Runtime.h | layer-header | 1 | <string_view> | -
+include/foundation/effects/Capability.h | layer-header | 1 | <string_view> | -
+include/foundation/effects/Capability.h | layer-header | 1 | <vector> | -
+include/foundation/effects/Computation.h | layer-header | 1 | <string_view> | -
+include/foundation/effects/Concurrent.h | layer-header | 1 | <array> | -
+include/foundation/effects/Concurrent.h | layer-header | 1 | <vector> | -
+include/foundation/effects/Ctx.h | layer-header | 1 | <array> | -
+include/foundation/effects/Ctx.h | layer-header | 1 | <atomic> | -
+include/foundation/effects/Ctx.h | layer-header | 1 | <bit> | -
+include/foundation/effects/Ctx.h | layer-header | 1 | <string_view> | -
+include/foundation/effects/Ctx.h | layer-header | 1 | <vector> | -
+include/foundation/effects/Effect.h | layer-header | 1 | <string_view> | -
+include/foundation/effects/Lift.h | layer-header | 1 | <vector> | -
+include/foundation/effects/Resources.h | layer-header | 1 | <string_view> | -
+include/foundation/effects/Resources.h | layer-header | 1 | <vector> | -
+include/foundation/effects/Row.h | layer-header | 1 | <array> | -
+include/foundation/effects/Row.h | layer-header | 1 | <bit> | -
+include/foundation/effects/Row.h | layer-header | 1 | <string_view> | -
+include/foundation/permissions/ForkTasks.h | layer-header | 1 | <span> | -
+include/foundation/permissions/PermSet.h | layer-header | 1 | <array> | -
+include/foundation/permissions/PermSet.h | layer-header | 1 | <string_view> | -
+include/foundation/permissions/PermSet.h | layer-header | 1 | <vector> | -
+include/foundation/permissions/Permission.h | layer-header | 1 | <atomic> | -
+include/foundation/permissions/Permission.h | layer-header | 1 | <cstdio> | -
+include/foundation/permissions/Permission.h | layer-header | 1 | <cstdlib> | -
+include/foundation/permissions/Permission.h | layer-header | 1 | <optional> | -
+include/foundation/permissions/Permission.h | layer-header | 1 | <string_view> | -
+include/foundation/permissions/Permission.h | layer-header | 1 | <tuple> | -
+include/foundation/permissions/Permission.h | layer-header | 1 | <vector> | -
+include/foundation/permissions/PermissionFork.h | layer-header | 1 | <array> | -
+include/foundation/permissions/PermissionFork.h | layer-header | 1 | <string_view> | -
+include/foundation/permissions/PermissionFork.h | layer-header | 1 | <tuple> | -
+include/foundation/permissions/PermissionFork.h | layer-header | 1 | <vector> | -
+include/foundation/reflect/EnumName.h | layer-header | 1 | <array> | -
+include/foundation/reflect/EnumName.h | layer-header | 1 | <bit> | -
+include/foundation/reflect/EnumName.h | layer-header | 1 | <cstdlib> | -
+include/foundation/reflect/EnumName.h | layer-header | 1 | <string> | -
+include/foundation/reflect/EnumName.h | layer-header | 1 | <string_view> | -
+include/foundation/reflect/EnumName.h | layer-header | 1 | <vector> | -
+include/foundation/reflect/EnumPins.h | layer-header | 1 | <array> | -
+include/foundation/reflect/EnumPins.h | layer-header | 1 | <string_view> | -
+include/foundation/reflect/EnumPins.h | layer-header | 1 | <vector> | -
+include/foundation/reflect/Enumerate.h | layer-header | 1 | <cstdlib> | -
+include/foundation/reflect/Enumerate.h | layer-header | 1 | <cstring> | -
+include/foundation/reflect/Enumerate.h | layer-header | 1 | <string_view> | -
+include/foundation/reflect/Hash.h | layer-header | 1 | <array> | -
+include/foundation/reflect/Hash.h | layer-header | 1 | <bit> | -
+include/foundation/reflect/Hash.h | layer-header | 1 | <string> | -
+include/foundation/reflect/Hash.h | layer-header | 1 | <string_view> | -
+include/foundation/reflect/Hash.h | layer-header | 1 | <tuple> | -
+include/foundation/reflect/Instance.h | layer-header | 1 | <string_view> | -
+include/foundation/reflect/RawEscape.h | layer-header | 1 | <span> | -
+include/foundation/reflect/RawEscape.h | layer-header | 1 | <string> | -
+include/foundation/reflect/RawEscape.h | layer-header | 1 | <string_view> | -
+include/foundation/reflect/RawEscape.h | layer-header | 1 | <vector> | -
+include/foundation/reflect/Signature.h | layer-header | 1 | <vector> | -
+include/foundation/reflect/TypeComponents.h | layer-header | 1 | <vector> | -
 src/BackgroundThread.cpp | c-array-object | 5 | - | -
 src/BackgroundThread.cpp | c-library-call | 4 | memcpy | -
 src/BackgroundThread.cpp | c-library-call | 4 | memset | -
@@ -2450,36 +2450,36 @@ src/cog/SrIov.cpp | std-entity | 1 | std::expected::has_value | -
 src/cog/SrIov.cpp | std-entity | 11 | std::unexpected | -
 src/cog/SrIov.cpp | std-object | 8 | std::expected | -
 src/cog/SrIov.cpp | std-object | 2 | std::span | -
-src/fixy/concurrent/Topology.cpp | layer-header | 1 | <algorithm> in the layer X4_concurrent | -
-src/fixy/concurrent/Topology.cpp | layer-header | 1 | <charconv> in the layer X4_concurrent | -
-src/fixy/concurrent/Topology.cpp | layer-header | 1 | <cstdio> in the layer X4_concurrent | -
-src/fixy/concurrent/Topology.cpp | layer-header | 1 | <filesystem> in the layer X4_concurrent | -
-src/fixy/concurrent/Topology.cpp | layer-header | 1 | <fstream> in the layer X4_concurrent | -
-src/fixy/concurrent/Topology.cpp | layer-header | 1 | <sched.h> in the layer X4_concurrent | -
-src/fixy/concurrent/Topology.cpp | layer-header | 1 | <set> in the layer X4_concurrent | -
-src/fixy/concurrent/Topology.cpp | layer-header | 1 | <string> in the layer X4_concurrent | -
-src/fixy/concurrent/Topology.cpp | layer-header | 1 | <string_view> in the layer X4_concurrent | -
-src/fixy/concurrent/Topology.cpp | layer-header | 1 | <thread> in the layer X4_concurrent | -
-src/fixy/concurrent/Topology.cpp | layer-header | 1 | <unistd.h> in the layer X4_concurrent | -
-src/fixy/concurrent/Topology.cpp | layer-header | 1 | <vector> in the layer X4_concurrent | -
-src/fixy/os/ThreadTasks.cpp | layer-header | 1 | <span> in the layer X3_os | -
+src/fixy/concurrent/Topology.cpp | layer-header | 1 | <algorithm> | -
+src/fixy/concurrent/Topology.cpp | layer-header | 1 | <charconv> | -
+src/fixy/concurrent/Topology.cpp | layer-header | 1 | <cstdio> | -
+src/fixy/concurrent/Topology.cpp | layer-header | 1 | <filesystem> | -
+src/fixy/concurrent/Topology.cpp | layer-header | 1 | <fstream> | -
+src/fixy/concurrent/Topology.cpp | layer-header | 1 | <sched.h> | -
+src/fixy/concurrent/Topology.cpp | layer-header | 1 | <set> | -
+src/fixy/concurrent/Topology.cpp | layer-header | 1 | <string> | -
+src/fixy/concurrent/Topology.cpp | layer-header | 1 | <string_view> | -
+src/fixy/concurrent/Topology.cpp | layer-header | 1 | <thread> | -
+src/fixy/concurrent/Topology.cpp | layer-header | 1 | <unistd.h> | -
+src/fixy/concurrent/Topology.cpp | layer-header | 1 | <vector> | -
+src/fixy/os/ThreadTasks.cpp | layer-header | 1 | <span> | -
 src/forge/recipes/Network.cpp | std-object | 3 | std::basic_string_view | -
-src/foundation/ContractHandler.cpp | layer-header | 1 | <array> in the layer F1_algebra | -
-src/foundation/ContractHandler.cpp | layer-header | 1 | <cerrno> in the layer F1_algebra | -
-src/foundation/ContractHandler.cpp | layer-header | 1 | <csignal> in the layer F1_algebra | -
-src/foundation/ContractHandler.cpp | layer-header | 1 | <cstdlib> in the layer F1_algebra | -
-src/foundation/ContractHandler.cpp | layer-header | 1 | <string_view> in the layer F1_algebra | -
-src/foundation/ContractHandler.cpp | layer-header | 1 | <unistd.h> in the layer F1_algebra | -
-src/foundation/DiagRuntime.cpp | layer-header | 1 | <atomic> in the layer F1_algebra | -
-src/foundation/DiagRuntime.cpp | layer-header | 1 | <cstdio> in the layer F1_algebra | -
-src/foundation/DiagRuntime.cpp | layer-header | 1 | <cstdlib> in the layer F1_algebra | -
-src/foundation/DiagRuntime.cpp | layer-header | 1 | <cstring> in the layer F1_algebra | -
-src/foundation/Permission.cpp | layer-header | 1 | <cstdio> in the layer F1_algebra | -
-src/foundation/Permission.cpp | layer-header | 1 | <cstdlib> in the layer F1_algebra | -
-src/foundation/PermissionFork.cpp | layer-header | 1 | <cstdlib> in the layer F1_algebra | -
-src/foundation/PermissionFork.cpp | layer-header | 1 | <span> in the layer F1_algebra | -
-src/foundation/PermissionFork.cpp | layer-header | 1 | <thread> in the layer F1_algebra | -
-src/foundation/PermissionFork.cpp | layer-header | 1 | <vector> in the layer F1_algebra | -
+src/foundation/ContractHandler.cpp | layer-header | 1 | <array> | -
+src/foundation/ContractHandler.cpp | layer-header | 1 | <cerrno> | -
+src/foundation/ContractHandler.cpp | layer-header | 1 | <csignal> | -
+src/foundation/ContractHandler.cpp | layer-header | 1 | <cstdlib> | -
+src/foundation/ContractHandler.cpp | layer-header | 1 | <string_view> | -
+src/foundation/ContractHandler.cpp | layer-header | 1 | <unistd.h> | -
+src/foundation/DiagRuntime.cpp | layer-header | 1 | <atomic> | -
+src/foundation/DiagRuntime.cpp | layer-header | 1 | <cstdio> | -
+src/foundation/DiagRuntime.cpp | layer-header | 1 | <cstdlib> | -
+src/foundation/DiagRuntime.cpp | layer-header | 1 | <cstring> | -
+src/foundation/Permission.cpp | layer-header | 1 | <cstdio> | -
+src/foundation/Permission.cpp | layer-header | 1 | <cstdlib> | -
+src/foundation/PermissionFork.cpp | layer-header | 1 | <cstdlib> | -
+src/foundation/PermissionFork.cpp | layer-header | 1 | <span> | -
+src/foundation/PermissionFork.cpp | layer-header | 1 | <thread> | -
+src/foundation/PermissionFork.cpp | layer-header | 1 | <vector> | -
 src/perf/LockContention.cpp | c-array-object | 1 | - | -
 src/perf/LockContention.cpp | c-library-call | 1 | lock_contention_bpf_bytecode (C linkage) | -
 src/perf/LockContention.cpp | c-library-call | 1 | lock_contention_bpf_bytecode_len (C linkage) | -

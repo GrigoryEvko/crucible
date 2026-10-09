@@ -60,9 +60,10 @@ THE FINDINGS
       utils/scripts/quarantine-ledger.txt.  The rows hold the counts of format
       4, so the commit of the move compares row by row, and the rules of the
       formats, the configurations and the moves stay.  Each version reads with
-      the kind names of this time (current_key()).  The change of the names to
-      format 2 of the report then gives no finding.  The first count of the
-      kind region gives no finding too.
+      the kind names and the include keys of this time (current_key()).  The
+      change of the names to format 2 of the report then gives no finding.  The
+      change of an include key to a key with no layer gives no finding too.
+      The first count of the kind region gives no finding.
     * A commit that raised a threshold, and whose body holds no measurement of
       the rule, gives an error, of the kind of its field.
     A rise in the working tree gives a warning only, and the error comes when
@@ -130,6 +131,7 @@ from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.guard.engines.meta.runner import MetaContext, NotApplicable
+from assay.guard.engines.plugin.quarantine import include_key
 
 RULE = "history"
 REGISTRY = rule_registry.REGISTRY_PATH
@@ -717,15 +719,20 @@ def current_kind(kind: str) -> str:
 
 
 def current_key(file: str, kind: str, entity: str) -> RowKey:
-    """Return one count key with the kind names of this time, also the inner kind of an opted-out entity.
+    """Return one count key with the kind names and the include keys of this time, also in an opted-out entity.
 
     The entity of an opted-out count is "REASON | KIND ENTITY", and the inner kind and its entity hold no separator.
+    An include entity of an earlier version also holds the layers of its file.  include_key() of the rule quarantine
+    removes them.  A version before the change of the key then compares with a version after it.
     """
     kind = current_kind(kind)
     reason, separator, rest = entity.rpartition(REASON_SEPARATOR)
     if kind == OPTED_OUT and separator:
         inner, space, inner_entity = rest.partition(" ")
-        entity = f"{reason}{separator}{current_kind(inner)}{space}{inner_entity}"
+        inner = current_kind(inner)
+        entity = f"{reason}{separator}{inner}{space}{include_key(inner, inner_entity)}"
+    else:
+        entity = include_key(kind, entity)
     return file, kind, entity
 
 

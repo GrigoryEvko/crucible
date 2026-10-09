@@ -33,14 +33,22 @@ THE ENTITY
         entity.  Their text is a type of the code.  An alias in a different
         file can change that text in a file that no change touched
       * raw-new-delete: the operator without the type of the expression
+      * `layer-header`: the header that the include names, for example
+        <vector>, without the layer of the file
+      * `upward-include`: the file that the include names, without the two
+        layers
       * opted-out: "REASON | KIND ENTITY", the reason of the region, and the
         kind and the entity of the finding in it
       * region: the reason of the region
       * each other kind: the full text, for example std::span::operator[],
-        memcpy, or the header of an include
+        memcpy, or the header of a `door-header` include
     The entity holds no line, and a change that only moves code keeps each
     row.  A change that removes std::vector from a file and adds std::map to
     it increases the count of std::map, and the rule refuses that change.
+    The layer of a file is a fact of its path, and the row keys by the path.
+    A row of an include then holds no layer.  A file that git moves to a
+    different layer keeps the rows of its includes.  The message of each
+    finding keeps the full text, with the layers.
 
 THE LEDGER
     utils/ledgers/quarantine.txt holds the count of each file, kind and
@@ -175,6 +183,10 @@ NAME_KINDS = frozenset(("std-object", "c-library-object"))
 # The kinds with an entity that is a type of the code: a row has no entity.
 TYPE_KINDS = frozenset(("raw-pointer-object", "raw-function-pointer", "c-array-object"))
 NEW_DELETE_KIND = "raw-new-delete"
+# The kinds of an include.  Each kind gives the text after the header or the target in its entity, and the start of
+# that text that the key keeps.  The plugin writes "<HEADER> in ALLOWANCE" and "TARGET (LAYER) from the layer LAYER"
+# (utils/tools/quarantine/include.cpp).
+INCLUDE_KIND_ENDS = {"layer-header": ("> in ", ">"), "upward-include": (" (", "")}
 # The separator between the reason of a region and the finding in it, in the entity of an opted-out row.
 REASON_SEPARATOR = " | "
 # The operators of a new-expression, the longest first.  The type after the operator is not part of the entity.
@@ -201,12 +213,28 @@ def joined(*fields: str) -> str:
     return " ".join(fields).rstrip(" ")
 
 
+def include_key(kind: str, entity: str) -> str:
+    """Return the entity of the row of an include: the header or the target with no layer.  Each other kind keeps it.
+
+    The function keeps an entity that holds no layer.  A row that it wrote then reads back as the same key.  The rule
+    history reads each earlier version of the ledger through it.
+    """
+    end = INCLUDE_KIND_ENDS.get(kind)
+    if end is None:
+        return entity
+    after, kept = end
+    head, separator, _ = entity.partition(after)
+    return f"{head}{kept}" if separator else entity
+
+
 def entity_key(kind: str, entity: str) -> str:
     """Return the entity of the row of one finding: the part of its entity that names what the plugin refuses.
 
     THE ENTITY in the head comment gives the rule for each kind.  The text has one space between its words.
     """
     text = " ".join(entity.split())
+    if kind in INCLUDE_KIND_ENDS:
+        return include_key(kind, text)
     if kind in NAME_KINDS:
         return text.split(" (", 1)[0]
     if kind in TYPE_KINDS:

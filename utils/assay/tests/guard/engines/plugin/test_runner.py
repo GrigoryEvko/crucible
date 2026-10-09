@@ -15,6 +15,7 @@ THE CASES
       * The configurations and their difference rows
       * A build that the ledger does not hold, and the rows for an import
       * A file that git moves, and a file that the tree does not hold
+      * A base header that git moves to a different layer
       * The directory warnings and the problems of the objects
       * Each mode of the write.
     The cases of the rule contract-specifier hold its errors and the problems
@@ -362,6 +363,18 @@ def unit_cases(expect: testing.Expect) -> None:
                 ("std-entity", "std::array::operator[]"),
                 ("c-library-call", "memcpy"),
                 ("layer-header", "<vector>  in the layer X1"),
+                (
+                    "layer-header",
+                    "<atomic> in the layer F0_core, a file of the language with the allowance of the layer F0_primitives",
+                ),
+                ("layer-header", "<vector>"),
+                (
+                    "upward-include",
+                    "include/fixy/concurrent/ParallelismRule.h (the layer X4_concurrent) from the layer X3_os",
+                ),
+                ("upward-include", "include/crucible/Arena.h (no layer) from the layer X1_wrappers"),
+                ("upward-include", "include/crucible/X.h"),
+                ("door-header", "<pthread.h> has the door src/fixy/os/Thread.cpp"),
                 ("replace-pending:std::bit_cast", "std::bit_cast"),
             )
         ]
@@ -377,9 +390,20 @@ def unit_cases(expect: testing.Expect) -> None:
             "declaration of operator new",
             "std::array::operator[]",
             "memcpy",
-            "<vector> in the layer X1",
+            "<vector>",
+            "<atomic>",
+            "<vector>",
+            "include/fixy/concurrent/ParallelismRule.h",
+            "include/crucible/Arena.h",
+            "include/crucible/X.h",
+            "<pthread.h> has the door src/fixy/os/Thread.cpp",
             "std::bit_cast",
         ],
+    )
+    expect(
+        "an include in an opt-out region keys its inner entity with no layer too",
+        quarantine.opted_out_key("C-HEADER: a struct", "layer-header <vector> in the layer X3_os")
+        == "C-HEADER: a struct | layer-header <vector>",
     )
     expect(
         "the entity of an opted-out row holds the reason of its region, and the inner kind and entity",
@@ -760,6 +784,49 @@ def file_cases(expect: testing.Expect, scratch: Scratch) -> None:
     )
 
 
+def layer_move_cases(expect: testing.Expect) -> None:
+    """Move a base header to a different layer: its include keeps its row, and a new include increases a count."""
+    with tempfile.TemporaryDirectory(prefix="plugin-layer-move-") as scratch_text:
+        scratch = Scratch(Path(scratch_text) / "tree")
+        old, new = "include/fixy/os/Spawn.h", "include/fixy/concurrent/Spawn.h"
+        (scratch.root / old).parent.mkdir(parents=True)
+        (scratch.root / old).write_text(f"// {old}\n", encoding="utf-8")
+        scratch.git("add", "--", old)
+        scratch.git("commit", "-q", "-m", "Add a planted base header")
+        scratch.add("e", [f"quarantine layer-header {old}:5:1 <tuple> in the layer X3_os"])
+        status, _ = scratch.write(add_configuration=True)
+        expect(
+            "the row of an include holds the header and no layer",
+            status == 0 and scratch.base().get((old, "layer-header", "<tuple>")) == 1,
+        )
+        (scratch.root / new).parent.mkdir(parents=True)
+        scratch.git("mv", old, new)
+        scratch.add("e", [f"quarantine layer-header {new}:5:1 <tuple> in the layer X4_concurrent"])
+        expect(
+            "a header moved to a different layer fails until the ledger is written again", len(scratch.errors()) == 2
+        )
+        status, _ = scratch.write()
+        expect(
+            "the write gives the moved header the row of its include, and the build then gives no error",
+            status == 0
+            and scratch.base().get((new, "layer-header", "<tuple>")) == 1
+            and (old, "layer-header", "<tuple>") not in scratch.base()
+            and scratch.run()[0] == 0,
+        )
+        scratch.add(
+            "e",
+            [
+                f"quarantine layer-header {new}:5:1 <tuple> in the layer X4_concurrent",
+                f"quarantine layer-header {new}:6:1 <vector> in the layer X4_concurrent",
+            ],
+        )
+        status, text = scratch.write()
+        expect(
+            "a new include of the moved header increases a count: the run fails and the write refuses it",
+            len(scratch.errors()) == 1 and status == 1 and "rises from 0" in text,
+        )
+
+
 def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
     """Hold a second configuration, its difference rows, a different tier, a gone file and a file of the build."""
     scratch.configure(RELEASE_NAME, "Release", "-O1 -march=native -DNDEBUG")
@@ -1073,4 +1140,8 @@ def contract_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (unit_cases, census_cases, ledger_cases, contract_cases))
+    return testing.run(
+        __name__.removeprefix("assay."),
+        argv,
+        (unit_cases, census_cases, ledger_cases, layer_move_cases, contract_cases),
+    )
