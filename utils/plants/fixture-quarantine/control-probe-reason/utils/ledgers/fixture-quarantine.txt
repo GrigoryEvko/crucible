@@ -1,0 +1,9 @@
+# A planted ledger of the rule fixture-quarantine.
+format 1
+rule fixture-quarantine
+configuration planted kind planted
+configuration planted tier planted
+test/fixy/neg/neg_alpha.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture probes a witness of a detail namespace
+test/fixy/neg/neg_alpha.cpp | door-use | 1 | crucible::BackgroundOwner | the fixture probes a second definition of a door owner
+test/fixy/neg/neg_alpha.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture probes a forged lifetime
+test/fixy/neg/neg_alpha.cpp | unchecked-use | 1 | probe(): std::meta::access_context::unchecked | the fixture probes an unchecked walk

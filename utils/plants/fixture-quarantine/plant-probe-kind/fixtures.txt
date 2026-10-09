@@ -1,0 +1,4 @@
+# A fixture with a finding of a kind of a probe, and the ledger holds no row of that kind.  The rule counts the kind.
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | 0123abcd | 0123abcd
+finding neg_alpha | std-object | 5 | std::vector
+finding neg_alpha | detail-use | 8 | main(): foundation::effects::detail

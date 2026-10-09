@@ -7,13 +7,30 @@ THE CENSUS
     plugin (assay.loop.fixture.store, The quarantine plugin).  The rule reads
     the fixtures of the build (assay.readers.census.fixtures_of) and the
     record of each one (assay.core.record).  It counts the findings of the
-    kinds of the rule quarantine of the registry, each finding one time.  The
-    entity of a row is the entity of the rule quarantine (THE ENTITY of
+    kinds of THE SCOPE, each finding one time.  The entity of a row is the
+    entity of the rule quarantine (THE ENTITY of
     assay.guard.engines.plugin.quarantine).  The census holds each region of
     the source, with its first line and its reason.  The region of an
     opted-out finding is the region with the last first line at or before its
     line.  The row of the finding holds the reason of that region, as in the
     rule quarantine (THE OPT-OUT REGIONS of that module).
+
+THE SCOPE
+    The rule counts each kind of the rule quarantine of the registry, and the
+    four kinds of PROBE_KINDS: `detail-use`, `lifetime-start`,
+    `unchecked-use` and `door-use`.  For its probe, a fixture can use a
+    private namespace of the base, or a lifetime that
+    `std::start_lifetime_as` starts.  It can also use an unchecked access,
+    or a second definition of a door owner.  Each row of such a kind gives
+    its reason, which tells what the fixture probes.  A row of such a kind
+    with no reason is an error.  A difference row of a key with a base row
+    has the reason of the base row.  The rule counts no other kind of the
+    census.  Test code can use the testing door, and the rule
+    ctx-testing-boundary does not read test/.  The rule does not count
+    `testing-use` for that reason.  It does not count the kinds of the rules
+    mint-pattern, permission-storage and proof-routes, or the kind
+    `outside-home`.  A fixture with such a finding probes the rule of that
+    kind.
 
 THE PROBLEMS
     A fixture with a compile command that loads no quarantine plugin has no
@@ -101,8 +118,16 @@ from assay.readers import census as build_census
 from assay.readers import compdb
 
 RULE = "fixture-quarantine"
-# The rule with the kinds that the census counts.
+# The rule with the kinds that the census counts (THE SCOPE).
 COUNTED_RULE = quarantine.RULE
+# The kinds of the census that the rule counts, and that the rule quarantine does not give (THE SCOPE).  Each row of
+# such a kind has its reason.  The value is the rule of the registry that gives the kind.
+PROBE_KINDS = {
+    "detail-use": "detail-namespace",
+    "lifetime-start": "start-lifetime",
+    "unchecked-use": "no-unchecked-access",
+    "door-use": "ctx-init-door",
+}
 # The census stamp of a planted fixture with no record (THE PLANTS).
 MISSING = "missing"
 # The file of the planted fixtures of a plant, and the configuration of a planted build (THE PLANTS).
@@ -187,11 +212,9 @@ class FixtureContext(plugin_runner.PluginContext):
         if self._found is None:
             fixtures = self._fixtures if self._fixtures is not None else read_fixtures(self.root, self.build_dir)
             try:
-                kinds = frozenset(rule_registry.load().rules[COUNTED_RULE].kinds)
+                kinds = counted_kinds(rule_registry.load())
             except (OSError, rows_grammar.RowsError, KeyError) as problem:
-                raise plugin_runner.BuildError(
-                    f"the kinds of the rule {COUNTED_RULE} cannot be read: {problem}"
-                ) from None
+                raise plugin_runner.BuildError(f"the kinds of THE SCOPE cannot be read: {problem}") from None
             self._found = census_of(fixtures, kinds, self.build_shown())
         return self._found
 
@@ -211,6 +234,18 @@ class FixtureContext(plugin_runner.PluginContext):
 
 
 # ── The census ─────────────────────────────────────────────────────
+
+
+def counted_kinds(registry: rule_registry.Registry) -> frozenset[str]:
+    """Return the kinds that the rule counts: each kind of the rule quarantine and each kind of PROBE_KINDS (THE SCOPE).
+
+    Raises:
+        KeyError: If the registry has no rule quarantine, or a rule of PROBE_KINDS does not give its kind
+    """
+    for kind, rule_id in PROBE_KINDS.items():
+        if kind not in registry.rules[rule_id].kinds:
+            raise KeyError(f"the rule {rule_id} of the registry gives no kind {kind}")
+    return frozenset((*registry.rules[COUNTED_RULE].kinds, *PROBE_KINDS))
 
 
 def read_fixtures(root: Path, build_dir: Path | None) -> tuple[FixtureFacts, ...]:
@@ -361,6 +396,29 @@ def load_inputs(root: Path) -> None:
     """Read no input: the verdict reads only the counts and the ledger."""
 
 
+def reason_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
+    """Give one error for each row of a kind of PROBE_KINDS with no reason (THE SCOPE).
+
+    A difference row of a key with a base row has the reason of the base row.  Complexity: linear in the rows of the
+    ledger.
+    """
+    shown = rule_ledger.shown_path(RULE)
+    unheld = (entry for table in ledger.deltas.values() for entry in table.values() if entry.key not in ledger.base)
+    entries = [*ledger.base.values(), *unheld]
+    return [
+        check_report.Finding(
+            "error",
+            shown,
+            entry.line,
+            RULE,
+            f"the row of {entry.key.path} with {counted.described(entry.key.kind, entry.key.entity)} gives no "
+            f"reason.  The REASON cell of a row of a kind of a probe tells what the fixture probes",
+        )
+        for entry in entries
+        if entry.key.kind in PROBE_KINDS and not entry.reason
+    ]
+
+
 def directory_of(path: str) -> str:
     """Return the directory of a fixture source, for the warning of its directory."""
     return path.rsplit("/", 1)[0] if "/" in path else "."
@@ -377,7 +435,7 @@ def evaluate(
 
     Complexity: O(k log k) for k counts of the build and rows of the ledger.
     """
-    found: list[check_report.Finding] = []
+    found = reason_problems(ledger)
     expected = ledger.expected(name)
     held = {key.path for key in expected}
     failed: set[str] = set()

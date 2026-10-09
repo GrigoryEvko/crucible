@@ -1,0 +1,6 @@
+# A fixture with a finding of each kind of a probe, and each row in the ledger gives the reason of its probe.
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | 0123abcd | 0123abcd
+finding neg_alpha | detail-use | 8 | main(): foundation::effects::detail
+finding neg_alpha | lifetime-start | 9 | main(): std::start_lifetime_as
+finding neg_alpha | unchecked-use | 10 | probe(): std::meta::access_context::unchecked
+finding neg_alpha | door-use | 11 | crucible::BackgroundOwner

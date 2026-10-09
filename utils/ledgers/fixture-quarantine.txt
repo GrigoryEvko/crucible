@@ -5,7 +5,8 @@
 # utils/assay/guard/engines/buildsys/fixture_quarantine.py writes each row through utils/assay/core/ledger.py.  Do
 # not edit a row by hand.  The fixture driver keeps the plugin in the compile of each fixture, and the record of each
 # run holds the findings of the plugin in the source of the fixture.  The rule counts each finding of a kind of the
-# rule quarantine one time.  A count above its row fails the rule, and a fixture that the ledger does not hold and
+# rule quarantine one time, and each finding of the kinds detail-use, lifetime-start, unchecked-use and door-use
+# (THE SCOPE of the module).  A count above its row fails the rule, and a fixture that the ledger does not hold and
 # that has a finding fails too: a new fixture has no finding.  A count below its row also fails, until the same
 # commit writes the rows again, after a run of each fixture:
 #     python3 utils/bin/guard write --rule fixture-quarantine --build-dir build
@@ -14,13 +15,15 @@
 # THE ROWS (the rows grammar of utils/assay/core/rows.py)
 #   configuration NAME KEY VALUE   A build that counts, as in utils/ledgers/quarantine.txt.  The first
 #                                  configuration is the base.
-#   FILE | KIND | COUNT | ENTITY | -
+#   FILE | KIND | COUNT | ENTITY | REASON
 #                                  The number of findings of the kind KIND and the entity ENTITY in
 #                                  the source FILE of a fixture, in the base configuration.  THE
 #                                  ENTITY of utils/assay/guard/engines/plugin/quarantine.py gives the
 #                                  entity of each kind.  An opted-out row holds the reason of its
 #                                  region, and the kind and the entity of the finding in it, as in
 #                                  utils/ledgers/quarantine.txt.  A kind with no entity has the cell "-".
+#                                  A row of a kind of a probe tells what the fixture probes in REASON.
+#                                  Each other row has the cell "-" there.
 #   @NAME | FILE | KIND | DELTA | ENTITY | -
 #                                  The count of the configuration NAME, as a difference from the
 #                                  base count (+N or -N).
@@ -74,6 +77,7 @@ test/cipher_neg/neg_cipher_obj_path_bare_string_assign.cpp | std-entity | 1 | st
 test/cipher_neg/neg_cipher_obj_path_bare_string_assign.cpp | std-entity | 1 | std::vector::begin | -
 test/cipher_neg/neg_cipher_obj_path_bare_string_assign.cpp | std-entity | 1 | std::vector::end | -
 test/cipher_neg/neg_cipher_obj_path_bare_string_assign.cpp | std-object | 1 | std::basic_string | -
+test/cipher_neg/neg_cipher_obj_path_bare_string_assign.cpp | unchecked-use | 1 | obj_path_return_type(): std::meta::access_context::unchecked | the fixture reads the type of a private member of the Cipher with an unchecked walk, for the type of its probe
 test/cipher_neg/neg_cipher_obj_path_cross_source.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator | -
 test/cipher_neg/neg_cipher_obj_path_cross_source.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator::operator* | -
 test/cipher_neg/neg_cipher_obj_path_cross_source.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator::operator++ | -
@@ -84,6 +88,7 @@ test/cipher_neg/neg_cipher_obj_path_cross_source.cpp | std-entity | 1 | std::vec
 test/cipher_neg/neg_cipher_obj_path_cross_source.cpp | std-entity | 1 | std::vector::begin | -
 test/cipher_neg/neg_cipher_obj_path_cross_source.cpp | std-entity | 1 | std::vector::end | -
 test/cipher_neg/neg_cipher_obj_path_cross_source.cpp | std-object | 2 | std::basic_string | -
+test/cipher_neg/neg_cipher_obj_path_cross_source.cpp | unchecked-use | 1 | obj_path_return_type(): std::meta::access_context::unchecked | the fixture reads the type of a private member of the Cipher with an unchecked walk, for the type of its probe
 test/cipher_neg/neg_cipher_open_ctx_without_block.cpp | std-entity | 1 | std::filesystem::path | -
 test/cipher_neg/neg_cipher_open_non_context.cpp | std-entity | 1 | std::filesystem::path | -
 test/cipher_neg/neg_cipher_open_rejects_sanitized_input.cpp | std-entity | 1 | std::filesystem::path | -
@@ -219,12 +224,17 @@ test/dataplane_neg/neg_xdp_map_oversized_value.cpp | std-entity | 1 | std::expec
 test/dataplane_neg/neg_xdp_map_oversized_value.cpp | std-object | 1 | std::array | -
 test/dataplane_neg/neg_xdp_mint_bg_ctx.cpp | std-entity | 2 | std::expected::value | -
 test/dataplane_neg/neg_xdp_mint_not_exec_ctx.cpp | std-entity | 2 | std::expected::value | -
+test/fixy/neg/neg_atom_ladder_enumerator_claimed_twice.cpp | detail-use | 1 | main(): fixy::atom::detail | the fixture calls a private check directly, and its probe shows that the check refuses its input
 test/fixy/neg/neg_atom_ladder_enumerator_claimed_twice.cpp | std-entity | 1 | std::tuple | -
 test/fixy/neg/neg_atom_refined_with_vacuous_predicate.cpp | raw-pointer-object | 1 | - | -
+test/fixy/neg/neg_atom_roster_declared_not_joined.cpp | detail-use | 5 | namespace-scope: fixy::atom::detail | the fixture adds a roster to the private namespace of the atoms, and its probe shows that the roster check refuses it
 test/fixy/neg/neg_atom_roster_declared_not_joined.cpp | std-entity | 2 | std::tuple | -
+test/fixy/neg/neg_atom_roster_sample_set_joined.cpp | detail-use | 5 | namespace-scope: fixy::atom::detail | the fixture adds a roster to the private namespace of the atoms, and its probe shows that the roster check refuses it
 test/fixy/neg/neg_atom_roster_sample_set_joined.cpp | std-entity | 2 | std::tuple | -
+test/fixy/neg/neg_atom_verdict_forged.cpp | detail-use | 2 | namespace-scope: fixy::atom::detail | the fixture writes a private record of a check again, and its probe shows that the check refuses the forged record
 test/fixy/neg/neg_bands_braces_without_door.cpp | c-library-call | 1 | rand | -
 test/fixy/neg/neg_bands_peek_mut_rewrites_tier.cpp | c-library-call | 1 | rand | -
+test/fixy/neg/neg_bands_tier_without_an_alias.cpp | detail-use | 1 | main(): fixy::detail | the fixture calls a private check directly, and its probe shows that the check refuses its input
 test/fixy/neg/neg_borrowed_branded_from_pointer_and_count.cpp | c-array-object | 1 | - | -
 test/fixy/neg/neg_borrowed_from_a_temporary.cpp | std-entity | 1 | std::vector | -
 test/fixy/neg/neg_borrowed_rebrand.cpp | c-array-object | 1 | - | -
@@ -390,6 +400,7 @@ test/fixy/neg/neg_os_ptp_device_door_is_private.cpp | std-object | 1 | std::expe
 test/fixy/neg/neg_os_socket_door_is_private.cpp | std-object | 1 | std::expected | -
 test/fixy/neg/neg_os_thread_named_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/fixy/neg/neg_os_thread_named_start_as_array.cpp | c-array-object | 1 | - | -
+test/fixy/neg/neg_os_tsc_reader_recogniser_specialized.cpp | detail-use | 1 | namespace-scope: fixy::time::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
 test/fixy/neg/neg_owned_file_forged_stream.cpp | c-library-call | 1 | stdin | -
 test/fixy/neg/neg_owned_file_forged_through_mint_linear.cpp | c-library-call | 1 | stdin | -
 test/fixy/neg/neg_owned_file_release_from_an_lvalue.cpp | c-library-object | 1 | _IO_FILE | -
@@ -398,13 +409,18 @@ test/fixy/neg/neg_owned_file_release_without_leak_atom.cpp | c-library-object | 
 test/fixy/neg/neg_owned_file_release_without_leak_atom.cpp | raw-pointer-object | 1 | - | -
 test/fixy/neg/neg_owned_mmap_forged_address.cpp | c-array-object | 1 | - | -
 test/fixy/neg/neg_owned_mmap_forged_through_mint_linear.cpp | c-array-object | 1 | - | -
+test/fixy/neg/neg_owned_mmap_view_proof_element.cpp | detail-use | 1 | main(): foundation::lifetime::detail | the fixture names a private proof type as an element, and its probe shows that the view refuses it
 test/fixy/neg/neg_owned_region_does_not_erase_its_brand.cpp | c-array-object | 1 | - | -
 test/fixy/neg/neg_path_forge_sanitized_tag.cpp | std-entity | 1 | std::filesystem::path | -
 test/fixy/neg/neg_path_forge_sanitized_tag.cpp | std-entity | 1 | std::filesystem::path::empty | -
 test/fixy/neg/neg_path_forge_sanitized_tag.cpp | std-object | 1 | std::filesystem::path | -
 test/fixy/neg/neg_path_sanitize_unadmitted_source.cpp | std-entity | 1 | std::filesystem::path | -
 test/fixy/neg/neg_path_sanitize_unadmitted_source.cpp | std-object | 1 | std::filesystem::path | -
+test/fixy/neg/neg_permission_fork_pack_does_not_partition.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_permission_fork_threads_body_address.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_permission_fork_threads_body_address.cpp | raw-function-pointer | 1 | - | -
+test/fixy/neg/neg_permission_fork_threads_body_is_private.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_permission_fork_without_bg.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_pipeline_copied.cpp | std-object | 1 | std::optional | -
 test/fixy/neg/neg_pipeline_dag_cyclic_graph.cpp | std-object | 1 | std::optional | -
 test/fixy/neg/neg_pipeline_dag_mint_ctx_starts_no_threads.cpp | std-object | 1 | std::optional | -
@@ -429,6 +445,10 @@ test/fixy/neg/neg_recording_endpoint_wrong_log_type.cpp | std-entity | 2 | std::
 test/fixy/neg/neg_recording_endpoint_wrong_log_type.cpp | std-entity | 1 | std::pair | -
 test/fixy/neg/neg_recording_endpoint_wrong_log_type.cpp | std-object | 1 | std::pair | -
 test/fixy/neg/neg_refined_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
+test/fixy/neg/neg_refined_class_in_the_relation.cpp | detail-use | 1 | namespace-scope: fixy::detail | the fixture calls the private walk of the refinement relation, and its probe shows that the walk refuses the relation
+test/fixy/neg/neg_refined_implication_cycle_edges.cpp | detail-use | 1 | namespace-scope: fixy::detail | the fixture calls the private walk of the refinement relation, and its probe shows that the walk refuses the relation
+test/fixy/neg/neg_refined_implication_cycle_ring.cpp | detail-use | 1 | namespace-scope: fixy::detail | the fixture calls the private walk of the refinement relation, and its probe shows that the walk refuses the relation
+test/fixy/neg/neg_refined_rule_of_the_wrong_type.cpp | detail-use | 1 | namespace-scope: fixy::detail | the fixture calls the private walk of the refinement relation, and its probe shows that the walk refuses the relation
 test/fixy/neg/neg_refined_start_as_array.cpp | c-array-object | 1 | - | -
 test/fixy/neg/neg_ring_value_owns_a_resource.cpp | raw-new-delete | 1 | delete | -
 test/fixy/neg/neg_ring_value_owns_a_resource.cpp | raw-pointer-object | 1 | - | -
@@ -444,71 +464,162 @@ test/fixy/neg/neg_secret_length_policy_releases_payload.cpp | std-object | 2 | s
 test/fixy/neg/neg_secret_pointer_offset.cpp | c-array-object | 1 | - | -
 test/fixy/neg/neg_secret_pointer_offset.cpp | raw-pointer-object | 1 | - | -
 test/fixy/neg/neg_secret_size_without_policy.cpp | std-object | 1 | std::array | -
+test/fixy/neg/neg_security_class_specialized_trait.cpp | detail-use | 2 | namespace-scope: fixy::atom::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
+test/fixy/neg/neg_security_grade_without_class.cpp | detail-use | 1 | main(): fixy::collision::detail | the fixture calls a private check directly, and its probe shows that the check refuses its input
+test/fixy/neg/neg_sess_agreeing_members_specialized.cpp | detail-use | 1 | namespace-scope: fixy::session::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
+test/fixy/neg/neg_sess_async_channel_capacity_too_small.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_async_channel_peer_drops_the_exit.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_async_channel_row_outside_ctx.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_async_channel_row_outside_ctx.cpp | std-entity | 1 | std::optional | -
+test/fixy/neg/neg_sess_async_channel_self_drops_the_exit.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_async_channel_without_capacity.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_atomic_cell_not_pinned.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_atomic_cell_not_pinned.cpp | std-object | 1 | std::memory_order | -
+test/fixy/neg/neg_sess_atomic_ctx_row_refused.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_atomic_ctx_row_refused.cpp | std-entity | 1 | std::atomic::load | -
 test/fixy/neg/neg_sess_atomic_ctx_row_refused.cpp | std-object | 1 | std::atomic | -
 test/fixy/neg/neg_sess_atomic_ctx_row_refused.cpp | std-object | 1 | std::memory_order | -
+test/fixy/neg/neg_sess_atomic_ill_formed.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_atomic_ill_formed.cpp | std-entity | 1 | std::atomic::load | -
 test/fixy/neg/neg_sess_atomic_ill_formed.cpp | std-object | 1 | std::atomic | -
 test/fixy/neg/neg_sess_atomic_ill_formed.cpp | std-object | 1 | std::memory_order | -
+test/fixy/neg/neg_sess_atomic_not_a_cell.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_bounded_specialized.cpp | detail-use | 1 | namespace-scope: fixy::session::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
+test/fixy/neg/neg_sess_channel_ends_disagree_on_priority.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_checkpoint_both_choose.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_checkpoint_ctx_row_refused.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_checkpoint_delegation_owned_handle.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_checkpoint_delegation_owned_handle.cpp | std-entity | 4 | std::unique_ptr | -
+test/fixy/neg/neg_sess_checkpoint_delegation_payload.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_checkpoint_door_states_the_gate.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_checkpoint_door_states_the_gate.cpp | replace-pending:std::source_location | 1 | std::source_location | -
+test/fixy/neg/neg_sess_checkpoint_labels_disagree.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_checkpoint_local_roll.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_checkpoint_permission_payload.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_checkpoint_roll_to_imposed.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_after_end.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_bare_recv_unreliable.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_between_keyed_label_and_value.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_between_label_and_payload.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_branch_blocking_poll.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_branch_for_reliable.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_cell_temporary.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_ctx_row_refused.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_delegation_behind_pointer.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_crash_delegation_behind_pointer.cpp | raw-pointer-object | 1 | - | -
+test/fixy/neg/neg_sess_crash_delegation_by_handle.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_crash_delegation_declared_class.cpp | raw-pointer-object | 1 | - | -
+test/fixy/neg/neg_sess_crash_delegation_in_a_member.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_delegation_opaque_pointer.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_door_states_the_gate.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_crash_door_states_the_gate.cpp | replace-pending:std::source_location | 1 | std::source_location | -
+test/fixy/neg/neg_sess_crash_hidden_in_delegation.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_hidden_in_loop.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_keyed_sender_unwatched.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_keyed_target_unwatched.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_recorded_between_label_and_payload.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_recorded_send_transport_result.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_recorded_token_send_without_refusal.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_crash_recorded_token_send_without_refusal.cpp | std-entity | 2 | std::get | -
 test/fixy/neg/neg_sess_crash_recorded_token_send_without_refusal.cpp | std-entity | 1 | std::pair | -
 test/fixy/neg/neg_sess_crash_recorded_token_send_without_refusal.cpp | std-object | 1 | std::optional | -
 test/fixy/neg/neg_sess_crash_recorded_token_send_without_refusal.cpp | std-object | 1 | std::pair | -
+test/fixy/neg/neg_sess_crash_recv_blocking_read.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_crash_recv_blocking_read.cpp | std-entity | 2 | std::get | -
 test/fixy/neg/neg_sess_crash_recv_blocking_read.cpp | std-entity | 1 | std::pair | -
 test/fixy/neg/neg_sess_crash_recv_blocking_read.cpp | std-object | 1 | std::pair | -
+test/fixy/neg/neg_sess_crash_reliable_role_crashes.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_crash_reporter_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/fixy/neg/neg_sess_crash_reporter_by_bit_cast.cpp | std-object | 1 | std::array | -
 test/fixy/neg/neg_sess_crash_reporter_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
+test/fixy/neg/neg_sess_crash_reporter_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/neg_sess_crash_reporter_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
 test/fixy/neg/neg_sess_crash_reporter_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
+test/fixy/neg/neg_sess_crash_send_transport_result.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_token_not_held.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_crash_token_send_without_refusal.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_crash_token_send_without_refusal.cpp | std-entity | 2 | std::get | -
 test/fixy/neg/neg_sess_crash_token_send_without_refusal.cpp | std-entity | 1 | std::pair | -
 test/fixy/neg/neg_sess_crash_token_send_without_refusal.cpp | std-object | 1 | std::optional | -
 test/fixy/neg/neg_sess_crash_token_send_without_refusal.cpp | std-object | 1 | std::pair | -
+test/fixy/neg/neg_sess_crash_watched_friend_specialized.cpp | detail-use | 1 | namespace-scope: fixy::session::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
+test/fixy/neg/neg_sess_ctx_with_session_copies_resource.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_ctx_with_session_foreign_end.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_ctx_with_session_keeps_handle.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_ctx_with_session_returns_open_handle.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_delegatable_handle_specialized.cpp | detail-use | 1 | namespace-scope: fixy::session::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
 test/fixy/neg/neg_sess_delegated_session_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/fixy/neg/neg_sess_delegated_session_forged_by_bit_cast.cpp | std-object | 1 | std::array | -
 test/fixy/neg/neg_sess_delegated_session_forged_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
+test/fixy/neg/neg_sess_delegated_session_forged_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/neg_sess_delegated_session_forged_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
 test/fixy/neg/neg_sess_delegated_session_forged_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
+test/fixy/neg/neg_sess_delegation_branded_handle.cpp | detail-use | 2 | namespace-scope: fixy::session::detail | the fixture names a private type of the session layer for the type of its probe
 test/fixy/neg/neg_sess_delegation_foreign_hold.cpp | std-entity | 2 | std::get | -
 test/fixy/neg/neg_sess_delegation_foreign_hold.cpp | std-entity | 1 | std::pair | -
 test/fixy/neg/neg_sess_delegation_foreign_hold.cpp | std-object | 1 | std::pair | -
 test/fixy/neg/neg_sess_delegation_without_hold.cpp | std-entity | 2 | std::get | -
 test/fixy/neg/neg_sess_delegation_without_hold.cpp | std-entity | 1 | std::pair | -
 test/fixy/neg/neg_sess_delegation_without_hold.cpp | std-object | 1 | std::pair | -
+test/fixy/neg/neg_sess_empty_choice_of_specialized.cpp | detail-use | 1 | namespace-scope: fixy::session::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
 test/fixy/neg/neg_sess_event_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/fixy/neg/neg_sess_event_forged_by_bit_cast.cpp | std-object | 1 | std::array | -
 test/fixy/neg/neg_sess_event_forged_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
+test/fixy/neg/neg_sess_event_forged_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/neg_sess_event_forged_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
 test/fixy/neg/neg_sess_event_forged_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
+test/fixy/neg/neg_sess_forked_channel_row_outside_ctx.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_forked_channel_row_outside_ctx.cpp | std-entity | 1 | std::optional | -
+test/fixy/neg/neg_sess_forked_channel_without_bg.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_forked_channel_without_bg.cpp | std-entity | 1 | std::optional | -
 test/fixy/neg/neg_sess_global_node_specialized.cpp | raw-pointer-object | 1 | - | -
+test/fixy/neg/neg_sess_handle_factory_called_outside.cpp | detail-use | 1 | main(): fixy::session::detail | the fixture calls the private factory of the handles from a file that is not of the session layer, and its probe shows that the factory refuses the call
 test/fixy/neg/neg_sess_handle_make_unique.cpp | std-entity | 1 | std::make_unique | -
 test/fixy/neg/neg_sess_handle_make_unique.cpp | std-entity | 1 | std::unique_ptr::operator* | -
 test/fixy/neg/neg_sess_handle_make_unique.cpp | std-object | 1 | std::unique_ptr | -
 test/fixy/neg/neg_sess_hold_friend_specialized.cpp | std-entity | 1 | std::get | -
+test/fixy/neg/neg_sess_loop_iteration_sends_permission.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_machine_bridge_state_args.cpp | raw-pointer-object | 2 | - | -
+test/fixy/neg/neg_sess_machine_view_ctx_row_refused.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_marker_not_plain.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_mint_door_states_the_gate.cpp | replace-pending:std::source_location | 1 | std::source_location | -
+test/fixy/neg/neg_sess_mint_session_delegated_region_outside_ctx.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_mint_session_delivered_region_without_row.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_mint_session_flow_open.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_mint_session_pointer_resource.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_mint_session_receives_region_outside_ctx.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_payload_hand_off_behind_pointer.cpp | std-entity | 1 | std::unique_ptr | -
+test/fixy/neg/neg_sess_perm_set_is_empty_specialized.cpp | detail-use | 1 | namespace-scope: fixy::session::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
+test/fixy/neg/neg_sess_permission_flow_closes_specialized.cpp | detail-use | 1 | namespace-scope: fixy::session::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
+test/fixy/neg/neg_sess_permission_rows_of_set_specialized.cpp | detail-use | 1 | namespace-scope: fixy::session::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
+test/fixy/neg/neg_sess_permissioned_session_flow_open.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_permissioned_session_no_tokens.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_permissioned_session_row_refused.cpp | detail-use | 2 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_permissioned_session_token_kept.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_recover_admits_specialized.cpp | detail-use | 1 | namespace-scope: fixy::session::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
+test/fixy/neg/neg_sess_recover_label_branch.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_recover_permission_held.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_recover_permission_held.cpp | std-entity | 2 | std::get | -
 test/fixy/neg/neg_sess_recover_permission_held.cpp | std-entity | 1 | std::pair | -
 test/fixy/neg/neg_sess_recover_permission_held.cpp | std-object | 1 | std::pair | -
 test/fixy/neg/neg_sess_resource_copy_reaches_channel.cpp | raw-pointer-object | 1 | - | -
+test/fixy/neg/neg_sess_seal_handle_admits_recv.cpp | detail-use | 8 | namespace-scope: fixy::session::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
+test/fixy/neg/neg_sess_seal_handle_admits_send.cpp | detail-use | 6 | namespace-scope: fixy::session::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
+test/fixy/neg/neg_sess_seal_perm_set_admits_close.cpp | detail-use | 3 | namespace-scope: fixy::session::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
+test/fixy/neg/neg_sess_seal_plain_tag.cpp | detail-use | 6 | namespace-scope: fixy::session::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
+test/fixy/neg/neg_sess_select_no_label_on_a_channel.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_select_no_label_on_a_channel.cpp | raw-pointer-object | 2 | - | -
 test/fixy/neg/neg_sess_select_no_label_on_a_channel.cpp | std-entity | 2 | std::get | -
 test/fixy/neg/neg_sess_select_no_label_on_a_channel.cpp | std-entity | 1 | std::pair | -
 test/fixy/neg/neg_sess_select_no_label_on_a_channel.cpp | std-object | 1 | std::pair | -
 test/fixy/neg/neg_sess_session_open_key_door_defined_elsewhere.cpp | replace-pending:std::source_location | 1 | std::source_location::current | -
+test/fixy/neg/neg_sess_sync_verdict_specialized.cpp | detail-use | 1 | namespace-scope: fixy::session::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
+test/fixy/neg/neg_sess_test_channel_row_outside_ctx.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_unselected_arm_leaves_loan_open.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_vigil_bridge_lookalike_cell.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_sess_vigil_bridge_lookalike_cell.cpp | std-object | 1 | std::memory_order | -
+test/fixy/neg/neg_sess_vigil_bridge_wrong_cell.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/fixy/neg/neg_sess_well_formed_of_specialized.cpp | detail-use | 1 | namespace-scope: fixy::session::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
 test/fixy/neg/neg_session_borrowed_proof_of_another_region.cpp | std-object | 1 | std::pair | -
 test/fixy/neg/neg_session_ctpayload_equality.cpp | c-array-object | 1 | - | -
 test/fixy/neg/neg_session_declassify_unadmitted_policy.cpp | c-array-object | 1 | - | -
@@ -537,6 +648,7 @@ test/fixy/neg/neg_shared_read_of_another_region.cpp | std-object | 1 | std::opti
 test/fixy/neg/neg_shared_read_on_the_erased_brand.cpp | c-array-object | 1 | - | -
 test/fixy/neg/neg_shared_read_on_the_erased_brand.cpp | std-object | 1 | std::optional | -
 test/fixy/neg/neg_shared_read_without_a_share.cpp | c-array-object | 1 | - | -
+test/fixy/neg/neg_spawn_fits_specialized.cpp | detail-use | 1 | namespace-scope: fixy::spawn::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
 test/fixy/neg/neg_spawn_mint_parallel_for_body_not_copyable.cpp | std-entity | 1 | std::array::data | -
 test/fixy/neg/neg_spawn_mint_parallel_for_body_not_copyable.cpp | std-entity | 1 | std::array::size | -
 test/fixy/neg/neg_spawn_mint_parallel_for_body_not_copyable.cpp | std-object | 1 | std::array | -
@@ -552,6 +664,7 @@ test/fixy/neg/neg_spawn_mint_parallel_for_one_shard_ctx_lacks_bg.cpp | std-objec
 test/fixy/neg/neg_spawn_mint_parallel_for_zero_shards.cpp | std-entity | 1 | std::array::data | -
 test/fixy/neg/neg_spawn_mint_parallel_for_zero_shards.cpp | std-entity | 1 | std::array::size | -
 test/fixy/neg/neg_spawn_mint_parallel_for_zero_shards.cpp | std-object | 1 | std::array | -
+test/fixy/neg/neg_spawn_parallel_for_runner_is_private.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/fixy/neg/neg_spawn_parallel_for_runner_is_private.cpp | std-object | 1 | std::tuple | -
 test/fixy/neg/neg_stable_id_of_a_closure_invoker_value.cpp | raw-function-pointer | 1 | - | -
 test/fixy/neg/neg_stage_copied.cpp | std-object | 1 | std::optional | -
@@ -594,35 +707,50 @@ test/fixy/neg/neg_weak_ref_of_a_reference.cpp | raw-pointer-object | 1 | - | -
 test/fixy/neg/neg_weak_ref_value_of_a_span.cpp | std-entity | 1 | std::span | -
 test/fixy/neg/neg_witness_algebra_grade_key_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_algebra_graded_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_algebra_graded_direct_construction.cpp | detail-use | 1 | main(): foundation::algebra::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_algebra_lattices_happensbeforelattice_element_type_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_algebra_lattices_happensbeforelattice_element_type_direct_construction.cpp | std-entity | 1 | std::array | -
 test/fixy/neg/neg_witness_algebra_lattices_strongcounterlattice_element_type_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_appendonly_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_atomicmonotonic_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_borrowed_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_borrowed_direct_construction.cpp | detail-use | 1 | main(): fixy::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_borrowed_direct_construction.cpp | std-entity | 1 | std::span | -
 test/fixy/neg/neg_witness_borrowedref_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_borrowedref_direct_construction.cpp | detail-use | 1 | main(): fixy::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_boundedmonotonic_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_budgetauthority_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_budgetstamp_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_cipher_durable_cipherdurablehandle_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_clocksource_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_concurrent_endpoint_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_concurrent_endpoint_direct_construction.cpp | detail-use | 6 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_concurrent_endpointdoor_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_concurrent_mpmcstage_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_concurrent_mpmcstage_direct_construction.cpp | detail-use | 7 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_concurrent_mpmcstage_direct_construction.cpp | std-object | 1 | std::tuple | -
 test/fixy/neg/neg_witness_concurrent_permissionedmpscchannel_consumerhandle_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_concurrent_permissionedmpscchannel_consumerhandle_direct_construction.cpp | detail-use | 6 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_concurrent_permissionedmpscchannel_producerhandle_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_concurrent_permissionedmpscchannel_producerhandle_direct_construction.cpp | detail-use | 6 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_concurrent_permissionedspscchannel_consumerhandle_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_concurrent_permissionedspscchannel_consumerhandle_direct_construction.cpp | detail-use | 6 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_concurrent_permissionedspscchannel_producerhandle_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_concurrent_permissionedspscchannel_producerhandle_direct_construction.cpp | detail-use | 6 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_concurrent_permissionforkthreads_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_concurrent_pipeline_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_concurrent_pipeline_direct_construction.cpp | detail-use | 2 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_concurrent_pipelinedag_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_concurrent_pipelinedag_direct_construction.cpp | detail-use | 4 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_concurrent_stage_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_concurrent_stage_direct_construction.cpp | detail-use | 3 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_concurrent_stageendpointdoor_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_concurrent_swmr_session_swmrsession_readerhandle_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_concurrent_swmr_session_swmrsession_readerhandle_direct_construction.cpp | detail-use | 10 | main(): fixy::concurrent::swmr_session::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_concurrent_swmr_session_swmrsession_writerhandle_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_concurrent_swmr_session_swmrsession_writerhandle_direct_construction.cpp | detail-use | 10 | main(): fixy::concurrent::swmr_session::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_concurrent_swmrstage_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_concurrent_swmrstage_direct_construction.cpp | detail-use | 3 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_core_box_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_core_ctext_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_core_optioncursor_direct_construction.cpp | c-library-call | 2 | abort | -
@@ -631,21 +759,28 @@ test/fixy/neg/neg_witness_core_view_direct_construction.cpp | c-library-call | 2
 test/fixy/neg/neg_witness_core_viewcursor_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_cpupinned_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_disjoint_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_disjoint_direct_construction.cpp | detail-use | 1 | main(): fixy::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_effects_bg_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_effects_cap_mint_key_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_effects_capability_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_effects_ctx_cap_brandedfg_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_effects_ctx_cap_fg_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_effects_detail_contextbase_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_effects_detail_contextbase_direct_construction.cpp | detail-use | 2 | main(): foundation::effects::detail | the fixture builds a context from the private base of the contexts, and its probe shows that the mint refuses it
 test/fixy/neg/neg_witness_effects_detail_ctx_mint_bg_key_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_effects_detail_ctx_mint_bg_key_direct_construction.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture forges or builds a key of a context, and its probe shows that only the door can make the key
 test/fixy/neg/neg_witness_effects_detail_ctx_mint_fg_key_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_effects_detail_ctx_mint_fg_key_direct_construction.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture forges or builds a key of a context, and its probe shows that only the door can make the key
 test/fixy/neg/neg_witness_effects_detail_ctx_mint_init_key_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_effects_detail_ctx_mint_init_key_direct_construction.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture forges or builds a key of a context, and its probe shows that only the door can make the key
 test/fixy/neg/neg_witness_effects_detail_ctx_mint_test_key_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_effects_detail_ctx_mint_test_key_direct_construction.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture forges or builds a key of a context, and its probe shows that only the door can make the key
 test/fixy/neg/neg_witness_effects_execctx_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_effects_host_producerclaim_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_effects_init_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_effects_test_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_fail_closed_detail_relation_cells_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_fail_closed_detail_relation_cells_direct_construction.cpp | detail-use | 1 | main(): foundation::fail_closed::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_fn_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_fs_dirfd_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_fs_filedoor_direct_construction.cpp | c-library-call | 2 | abort | -
@@ -655,6 +790,7 @@ test/fixy/neg/neg_witness_machine_direct_construction.cpp | c-library-call | 2 |
 test/fixy/neg/neg_witness_monotonic_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_net_socketdoor_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_numaplacement_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_numaplacement_direct_construction.cpp | detail-use | 2 | main(): fixy::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_orderedappendonly_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_ownedfile_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_ownedfile_direct_construction.cpp | c-library-call | 1 | stdout | -
@@ -662,6 +798,7 @@ test/fixy/neg/neg_witness_ownedfiledoor_direct_construction.cpp | c-library-call
 test/fixy/neg/neg_witness_ownedmmap_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_ownedregion_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_permissions_detail_row_cell_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_permissions_detail_row_cell_direct_construction.cpp | detail-use | 1 | main(): foundation::permissions::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_permissions_erase_brand_key_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_permissions_federation_admission_key_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_permissions_lentpermission_direct_construction.cpp | c-library-call | 2 | abort | -
@@ -692,11 +829,13 @@ test/fixy/neg/neg_witness_session_delegatedsession_direct_construction.cpp | c-l
 test/fixy/neg/neg_witness_session_delegationdoor_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_session_delegationkey_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_session_detail_handle_core_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_session_detail_handle_core_direct_construction.cpp | detail-use | 1 | main(): fixy::session::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_session_detail_handle_core_direct_construction.cpp | replace-pending:std::source_location | 1 | std::source_location | -
 test/fixy/neg/neg_witness_session_handlefactory_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_session_handlekey_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_session_holdfactory_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_session_permhold_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_session_permhold_direct_construction.cpp | detail-use | 1 | main(): fixy::session::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_session_recorded_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_session_recordingdoor_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_session_sessionevent_direct_construction.cpp | c-library-call | 2 | abort | -
@@ -706,6 +845,7 @@ test/fixy/neg/neg_witness_session_sessionhandle_direct_construction.cpp | replac
 test/fixy/neg/neg_witness_session_sessionmintdoor_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_session_sessionopenkey_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_sharedread_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_sharedread_direct_construction.cpp | detail-use | 1 | main(): fixy::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_sharedread_direct_construction.cpp | std-entity | 1 | std::span | -
 test/fixy/neg/neg_witness_sharedregion_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_spawn_parallelforrunner_direct_construction.cpp | c-library-call | 2 | abort | -
@@ -719,6 +859,7 @@ test/fixy/neg/neg_witness_time_tscreader_direct_construction.cpp | c-library-cal
 test/fixy/neg/neg_witness_versionsource_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_versionstamp_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_witnessed_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_witnessed_direct_construction.cpp | detail-use | 1 | main(): fixy::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_writeonce_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_writeoncenonnull_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witnessed_at_from_a_temporary_handle.cpp | c-array-object | 1 | - | -
@@ -729,14 +870,20 @@ test/fixy/neg/neg_witnessed_deref_without_a_handle.cpp | c-array-object | 1 | - 
 test/fixy/neg/neg_witnessed_under_a_tag_with_no_row.cpp | c-array-object | 1 | - | -
 test/foundation/neg/neg_bg_context_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_bg_context_forged_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
+test/foundation/neg/neg_bg_context_forged_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/neg_bg_context_forged_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
 test/foundation/neg/neg_bg_context_forged_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
+test/foundation/neg/neg_bg_door_forged_outside_owner.cpp | detail-use | 1 | forge::mint_background_context(): foundation::effects::detail | the fixture opens a context door in a file that is not its owner, and its probe shows that the build refuses the door
 test/foundation/neg/neg_bg_exec_ctx_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_bg_exec_ctx_forged_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
+test/foundation/neg/neg_bg_exec_ctx_forged_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/neg_bg_exec_ctx_forged_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
 test/foundation/neg/neg_bg_exec_ctx_forged_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
+test/foundation/neg/neg_bg_key_forged_by_bit_cast.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture forges or builds a key of a context, and its probe shows that only the door can make the key
 test/foundation/neg/neg_bg_key_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_bg_key_forged_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
+test/foundation/neg/neg_bg_key_forged_by_start_lifetime_as.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture forges or builds a key of a context, and its probe shows that only the door can make the key
+test/foundation/neg/neg_bg_key_forged_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/neg_bg_key_forged_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
 test/foundation/neg/neg_bg_key_forged_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
 test/foundation/neg/neg_brand_combine_children_of_two_regions.cpp | std-object | 2 | std::pair | -
@@ -748,12 +895,15 @@ test/foundation/neg/neg_branded_foreground_ctx_bit_cast.cpp | std-entity | 1 | s
 test/foundation/neg/neg_branded_foreground_ctx_start_as_array.cpp | c-array-object | 1 | - | -
 test/foundation/neg/neg_cap_mint_key_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_cap_mint_key_forged_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
+test/foundation/neg/neg_cap_mint_key_forged_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/neg_cap_mint_key_forged_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
 test/foundation/neg/neg_cap_mint_key_forged_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
 test/foundation/neg/neg_capability_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_capability_forged_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
+test/foundation/neg/neg_capability_forged_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/neg_capability_forged_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
 test/foundation/neg/neg_capability_forged_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
+test/foundation/neg/neg_computation_graded_view_of_a_context.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/foundation/neg/neg_core_c_text_no_terminating_zero.cpp | c-array-object | 1 | - | -
 test/foundation/neg/neg_core_decode_pointer_member.cpp | raw-pointer-object | 1 | - | -
 test/foundation/neg/neg_core_text_view_from_pointer.cpp | raw-pointer-object | 1 | - | -
@@ -763,43 +913,77 @@ test/foundation/neg/neg_counter_tag_without_orientation.cpp | std-object | 1 | s
 test/foundation/neg/neg_diag_accessor_refuses_a_non_tag.cpp | std-entity | 1 | std::basic_string_view::size | -
 test/foundation/neg/neg_diag_accessor_refuses_a_non_tag.cpp | std-object | 1 | std::basic_string_view | -
 test/foundation/neg/neg_diag_category_of_refuses_an_unregistered_tag.cpp | std-object | 3 | std::basic_string_view | -
+test/foundation/neg/neg_exec_ctx_cap_from_a_narrower_row.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/foundation/neg/neg_exec_ctx_cap_from_init_without_block.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/foundation/neg/neg_exec_ctx_in_row_widens_the_drain_row.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/foundation/neg/neg_exec_ctx_in_row_widens_the_init_row.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/foundation/neg/neg_fail_closed_cells_forged_by_copy.cpp | detail-use | 3 | namespace-scope: foundation::fail_closed::detail | the fixture writes a private record of a check again, and its probe shows that the check refuses the forged record
+test/foundation/neg/neg_fail_closed_state_forged_by_copy.cpp | detail-use | 3 | namespace-scope: foundation::fail_closed::detail | the fixture writes a private record of a check again, and its probe shows that the check refuses the forged record
+test/foundation/neg/neg_fail_closed_state_views_other_cells.cpp | detail-use | 4 | namespace-scope: foundation::fail_closed::detail | the fixture writes a private record of a check again, and its probe shows that the check refuses the forged record
 test/foundation/neg/neg_foreground_ctx_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_foreground_ctx_start_as_array.cpp | c-array-object | 1 | - | -
+test/foundation/neg/neg_foreground_key_bit_cast.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture forges or builds a key of a context, and its probe shows that only the door can make the key
 test/foundation/neg/neg_foreground_key_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
+test/foundation/neg/neg_foreground_key_built.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture forges or builds a key of a context, and its probe shows that only the door can make the key
 test/foundation/neg/neg_foreground_key_start_as_array.cpp | c-array-object | 1 | - | -
+test/foundation/neg/neg_foreground_key_start_as_array.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture forges or builds a key of a context, and its probe shows that only the door can make the key
+test/foundation/neg/neg_graded_default_value_claims_bytes.cpp | detail-use | 1 | namespace-scope: foundation::algebra::detail | the fixture takes a test lattice from the private namespace of the algebra for its probe
+test/foundation/neg/neg_graded_element_grade_outside_the_order.cpp | detail-use | 1 | namespace-scope: foundation::algebra::detail | the fixture takes a test lattice from the private namespace of the algebra for its probe
+test/foundation/neg/neg_graded_grade_without_key.cpp | detail-use | 2 | namespace-scope: foundation::algebra::detail | the fixture takes a test lattice from the private namespace of the algebra for its probe
+test/foundation/neg/neg_graded_key_outside_its_authority.cpp | detail-use | 2 | namespace-scope: foundation::algebra::detail | the fixture takes a test lattice from the private namespace of the algebra for its probe
+test/foundation/neg/neg_graded_peek_mut_without_key.cpp | detail-use | 3 | namespace-scope: foundation::algebra::detail | the fixture takes a test lattice from the private namespace of the algebra for its probe
+test/foundation/neg/neg_graded_stored_grade_outside_the_order.cpp | detail-use | 3 | namespace-scope: foundation::algebra::detail | the fixture takes a test lattice from the private namespace of the algebra for its probe
+test/foundation/neg/neg_graded_weaken_below_current_grade.cpp | detail-use | 3 | namespace-scope: foundation::algebra::detail | the fixture takes a test lattice from the private namespace of the algebra for its probe
 test/foundation/neg/neg_happens_before_bit_cast.cpp | std-entity | 1 | std::array | -
 test/foundation/neg/neg_happens_before_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_happens_before_clock_is_private.cpp | std-entity | 1 | std::array::operator[] | -
 test/foundation/neg/neg_happens_before_image_without_source_path.cpp | std-object | 1 | std::array | -
+test/foundation/neg/neg_host_background_owner_defined_again.cpp | door-use | 1 | namespace-scope: foundation::effects::host::BackgroundOwner | the fixture defines a door owner again, and its probe shows that the build refuses the second definition
+test/foundation/neg/neg_host_init_owner_defined_again.cpp | door-use | 1 | namespace-scope: foundation::effects::host::InitOwner | the fixture defines a door owner again, and its probe shows that the build refuses the second definition
 test/foundation/neg/neg_init_context_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_init_context_forged_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
+test/foundation/neg/neg_init_context_forged_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/neg_init_context_forged_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
 test/foundation/neg/neg_init_context_forged_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
+test/foundation/neg/neg_init_door_forged_outside_owner.cpp | detail-use | 1 | forge::mint_init_context(): foundation::effects::detail | the fixture opens a context door in a file that is not its owner, and its probe shows that the build refuses the door
+test/foundation/neg/neg_init_key_forged_by_bit_cast.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture forges or builds a key of a context, and its probe shows that only the door can make the key
 test/foundation/neg/neg_init_key_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_init_key_forged_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
+test/foundation/neg/neg_init_key_forged_by_start_lifetime_as.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture forges or builds a key of a context, and its probe shows that only the door can make the key
+test/foundation/neg/neg_init_key_forged_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/neg_init_key_forged_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
 test/foundation/neg/neg_init_key_forged_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
+test/foundation/neg/neg_lattice_bottom_above_top.cpp | detail-use | 1 | namespace-scope: foundation::algebra::detail | the fixture takes a test lattice from the private namespace of the algebra for its probe
+test/foundation/neg/neg_lattice_order_against_join.cpp | detail-use | 1 | namespace-scope: foundation::algebra::detail | the fixture takes a test lattice from the private namespace of the algebra for its probe
 test/foundation/neg/neg_lent_permission_does_not_rebrand.cpp | std-object | 1 | std::pair | -
 test/foundation/neg/neg_lent_permission_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_lent_permission_forged_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
+test/foundation/neg/neg_lent_permission_forged_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/neg_lent_permission_forged_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
 test/foundation/neg/neg_lent_permission_forged_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
 test/foundation/neg/neg_lifetime_start_as_array_proof_holder.cpp | c-array-object | 1 | - | -
 test/foundation/neg/neg_lifetime_start_as_capturing_closure.cpp | c-array-object | 1 | - | -
 test/foundation/neg/neg_lifetime_start_as_proof_array.cpp | c-array-object | 1 | - | -
+test/foundation/neg/neg_lift_in_ctx_without_the_effect.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/foundation/neg/neg_loan_end_with_the_loan_of_another_region.cpp | std-entity | 4 | std::get | -
 test/foundation/neg/neg_loan_end_with_the_loan_of_another_region.cpp | std-entity | 2 | std::pair | -
 test/foundation/neg/neg_loan_end_with_the_loan_of_another_region.cpp | std-object | 2 | std::pair | -
 test/foundation/neg/neg_loan_end_with_the_loan_of_another_tag.cpp | std-object | 2 | std::pair | -
 test/foundation/neg/neg_mint_context_lookalike_context.cpp | c-library-call | 1 | abort | -
+test/foundation/neg/neg_mint_context_lookalike_context.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds a context from the private base of the contexts, and its probe shows that the mint refuses it
+test/foundation/neg/neg_mint_context_lookalike_context.cpp | detail-use | 2 | namespace-scope: foundation::effects::detail | the fixture builds a context from the private base of the contexts, and its probe shows that the mint refuses it
 test/foundation/neg/neg_mint_context_wrong_key.cpp | c-library-call | 1 | abort | -
+test/foundation/neg/neg_mint_context_wrong_key.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture forges or builds a key of a context, and its probe shows that only the door can make the key
+test/foundation/neg/neg_mint_from_ctx_atom_outside_the_row.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/foundation/neg/neg_mint_key_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
+test/foundation/neg/neg_permission_brands_agree_specialized.cpp | detail-use | 1 | namespace-scope: foundation::permissions::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
 test/foundation/neg/neg_permission_brands_agree_specialized.cpp | std-entity | 1 | std::initializer_list | -
 test/foundation/neg/neg_permission_combine_child_row_undeclared.cpp | std-object | 1 | std::pair | -
 test/foundation/neg/neg_permission_combine_ctx_refuses_row.cpp | std-object | 1 | std::pair | -
 test/foundation/neg/neg_permission_combine_n_children_of_two_regions.cpp | std-entity | 4 | std::get | -
 test/foundation/neg/neg_permission_combine_n_children_of_two_regions.cpp | std-entity | 2 | std::tuple | -
 test/foundation/neg/neg_permission_combine_n_children_of_two_regions.cpp | std-object | 2 | std::tuple | -
+test/foundation/neg/neg_permission_combine_n_facts_specialized.cpp | detail-use | 2 | namespace-scope: foundation::permissions::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
 test/foundation/neg/neg_permission_combine_n_lvalue_token.cpp | std-entity | 2 | std::get | -
 test/foundation/neg/neg_permission_combine_n_lvalue_token.cpp | std-object | 1 | std::tuple | -
 test/foundation/neg/neg_permission_combine_n_parent_row_undeclared.cpp | std-entity | 2 | std::get | -
@@ -817,18 +1001,32 @@ test/foundation/neg/neg_permission_combine_n_witness_missing.cpp | std-object | 
 test/foundation/neg/neg_permission_combine_undeclared_parent.cpp | std-object | 1 | std::pair | -
 test/foundation/neg/neg_permission_combine_without_ctx_refuses_row.cpp | std-object | 1 | std::pair | -
 test/foundation/neg/neg_permission_combine_witness_missing.cpp | std-object | 1 | std::pair | -
+test/foundation/neg/neg_permission_ctx_admits_each_tag_of_specialized.cpp | detail-use | 1 | namespace-scope: foundation::permissions::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
 test/foundation/neg/neg_permission_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_permission_forged_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
+test/foundation/neg/neg_permission_forged_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/neg_permission_forged_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
 test/foundation/neg/neg_permission_forged_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
+test/foundation/neg/neg_permission_fork_body_keeps_its_view.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/foundation/neg/neg_permission_fork_body_may_throw.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/foundation/neg/neg_permission_fork_body_of_another_region.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/foundation/neg/neg_permission_fork_body_takes_the_token.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/foundation/neg/neg_permission_fork_body_takes_the_token.cpp | std-entity | 1 | std::optional | -
 test/foundation/neg/neg_permission_fork_body_takes_the_token.cpp | std-entity | 1 | std::optional::emplace | -
 test/foundation/neg/neg_permission_fork_body_takes_the_token.cpp | std-object | 1 | std::optional | -
+test/foundation/neg/neg_permission_fork_child_row_not_admitted.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/foundation/neg/neg_permission_fork_duplicate_child_names_the_fork.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/foundation/neg/neg_permission_fork_each_body_specialized.cpp | detail-use | 1 | namespace-scope: foundation::permissions::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
+test/foundation/neg/neg_permission_fork_parent_row_not_admitted.cpp | detail-use | 2 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/foundation/neg/neg_permission_fork_split_witness_missing.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/foundation/neg/neg_permission_make_unique.cpp | std-entity | 1 | std::make_unique | -
 test/foundation/neg/neg_permission_make_unique.cpp | std-entity | 1 | std::unique_ptr::release | -
 test/foundation/neg/neg_permission_make_unique.cpp | std-object | 1 | std::unique_ptr | -
+test/foundation/neg/neg_permission_mint_args_shaped_specialized.cpp | detail-use | 1 | namespace-scope: foundation::permissions::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
 test/foundation/neg/neg_permission_mint_args_shaped_specialized.cpp | std-entity | 1 | std::initializer_list | -
+test/foundation/neg/neg_permission_row_cell_forged_by_copy.cpp | detail-use | 3 | namespace-scope: foundation::permissions::detail | the fixture writes a private record of a check again, and its probe shows that the check refuses the forged record
 test/foundation/neg/neg_permission_row_cell_forged_by_copy.cpp | std-entity | 2 | std::vector::size | -
+test/foundation/neg/neg_permission_row_cell_of_another_tag.cpp | detail-use | 3 | namespace-scope: foundation::permissions::detail | the fixture writes a private record of a check again, and its probe shows that the check refuses the forged record
 test/foundation/neg/neg_permission_row_cell_of_another_tag.cpp | std-entity | 2 | std::vector::size | -
 test/foundation/neg/neg_permission_split_child_row_undeclared.cpp | std-object | 1 | std::pair | -
 test/foundation/neg/neg_permission_split_duplicate_child.cpp | std-object | 1 | std::pair | -
@@ -841,10 +1039,13 @@ test/foundation/neg/neg_permission_split_undeclared_subregion.cpp | std-object |
 test/foundation/neg/neg_permission_split_without_ctx_refuses_row.cpp | std-object | 1 | std::pair | -
 test/foundation/neg/neg_permission_split_witness_missing.cpp | std-object | 1 | std::pair | -
 test/foundation/neg/neg_permission_tags_are_distinct_specialized.cpp | std-entity | 1 | std::initializer_list | -
+test/foundation/neg/neg_raw_escape_refusal_specialized.cpp | detail-use | 1 | namespace-scope: foundation::reflect::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
 test/foundation/neg/neg_raw_escape_refusal_specialized.cpp | std-entity | 1 | std::basic_string_view | -
 test/foundation/neg/neg_read_loan_copied.cpp | std-object | 1 | std::pair | -
+test/foundation/neg/neg_read_loan_effectful_row_without_ctx.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/foundation/neg/neg_read_loan_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_read_loan_forged_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
+test/foundation/neg/neg_read_loan_forged_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/neg_read_loan_forged_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
 test/foundation/neg/neg_read_loan_forged_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
 test/foundation/neg/neg_read_view_body_returns_a_type_erased_callable.cpp | std-entity | 1 | std::function | -
@@ -852,10 +1053,13 @@ test/foundation/neg/neg_read_view_body_returns_a_type_erased_callable.cpp | std-
 test/foundation/neg/neg_read_view_body_returns_a_type_erased_callable.cpp | std-object | 1 | std::pair | -
 test/foundation/neg/neg_read_view_body_returns_an_untyped_pointer.cpp | raw-pointer-object | 1 | - | -
 test/foundation/neg/neg_read_view_body_returns_an_untyped_pointer.cpp | std-object | 1 | std::pair | -
+test/foundation/neg/neg_read_view_effectful_row_without_ctx.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/foundation/neg/neg_read_view_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_read_view_forged_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
+test/foundation/neg/neg_read_view_forged_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/neg_read_view_forged_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
 test/foundation/neg/neg_read_view_forged_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
+test/foundation/neg/neg_read_view_named_effectful_source_refused.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/foundation/neg/neg_read_view_returned_from_the_body.cpp | raw-pointer-object | 1 | - | -
 test/foundation/neg/neg_read_view_returned_from_the_body.cpp | std-object | 1 | std::pair | -
 test/foundation/neg/neg_read_view_stored_past_the_callback.cpp | std-entity | 1 | std::optional | -
@@ -864,24 +1068,33 @@ test/foundation/neg/neg_read_view_stored_past_the_callback.cpp | std-object | 1 
 test/foundation/neg/neg_resource_tag_refuses_a_forged_kind.cpp | std-object | 1 | std::basic_string_view | -
 test/foundation/neg/neg_resource_tag_refuses_a_lookalike.cpp | std-object | 1 | std::basic_string_view | -
 test/foundation/neg/neg_row_mismatch_tag_not_a_tag.cpp | raw-pointer-object | 1 | - | -
+test/foundation/neg/neg_semiring_subtraction_for_add.cpp | detail-use | 1 | namespace-scope: foundation::algebra::detail | the fixture takes a test lattice from the private namespace of the algebra for its probe
 test/foundation/neg/neg_share_pool_lend_without_ctx_refuses_row.cpp | std-object | 1 | std::optional | -
 test/foundation/neg/neg_share_pool_upgrade_without_ctx_refuses_row.cpp | std-object | 1 | std::optional | -
 test/foundation/neg/neg_shared_permission_guard_heap_new.cpp | std-object | 1 | std::optional | -
+test/foundation/neg/neg_shared_read_shaped_specialized.cpp | detail-use | 1 | namespace-scope: foundation::permissions::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
 test/foundation/neg/neg_shared_read_shaped_specialized.cpp | std-entity | 1 | std::initializer_list | -
 test/foundation/neg/neg_stable_id_refuses_a_nan_value.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_stable_id_refuses_an_address_inside_a_class_value.cpp | raw-pointer-object | 1 | - | -
+test/foundation/neg/neg_stable_identity_verdict_forged.cpp | detail-use | 2 | namespace-scope: foundation::reflect::detail | the fixture writes a private record of a check again, and its probe shows that the check refuses the forged record
 test/foundation/neg/neg_strong_counter_bit_cast_retag.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_strong_counter_start_as_array.cpp | c-array-object | 1 | - | -
 test/foundation/neg/neg_swiss_table_buffer_overaligned_slot.cpp | c-array-object | 1 | - | -
 test/foundation/neg/neg_test_context_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_test_context_forged_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
+test/foundation/neg/neg_test_context_forged_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/neg_test_context_forged_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
 test/foundation/neg/neg_test_context_forged_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
+test/foundation/neg/neg_test_key_forged_by_bit_cast.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture forges or builds a key of a context, and its probe shows that only the door can make the key
 test/foundation/neg/neg_test_key_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_test_key_forged_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
+test/foundation/neg/neg_test_key_forged_by_start_lifetime_as.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture forges or builds a key of a context, and its probe shows that only the door can make the key
+test/foundation/neg/neg_test_key_forged_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/neg_test_key_forged_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
 test/foundation/neg/neg_test_key_forged_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
 test/foundation/neg/neg_thread_local_ref_store_of_another_type.cpp | raw-pointer-object | 1 | - | -
+test/foundation/neg/neg_with_write_view_named_token.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
+test/foundation/neg/neg_with_write_view_row_not_admitted.cpp | detail-use | 2 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/graph_neg/neg_expr_pool_make_cross_tag.cpp | raw-pointer-object | 1 | - | -
 test/graph_neg/neg_expr_pool_make_raw_expr.cpp | raw-pointer-object | 1 | - | -
 test/graph_neg/neg_lower_trace_graph_alloc_only_row.cpp | raw-pointer-object | 1 | - | -
