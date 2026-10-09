@@ -4988,8 +4988,10 @@ set_tests_properties(selftest_mutation PROPERTIES LABELS "ci_guard" SKIP_RETURN_
 # block reads the tests of the directory, so it stays after the last guard
 # test that reads the trees.  The rule test-registration refuses a test that
 # runs a rule whose module reads the parse trees, when the test does not
-# require the fixture.  These tests read the trees and their registrations
-# give no label ast, so they get the label here.
+# require the fixture.  It also refuses a guard test that requires the fixture
+# and reads no tree of the tree, such as a witness, which reads only its
+# plants.  These tests read the trees and their registrations give no label
+# ast, so they get the label here.
 set_property(TEST guard_plugin APPEND PROPERTY LABELS ast)
 crucible_tsast_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} 8)
 get_property(crucible_directory_tests DIRECTORY PROPERTY TESTS)
@@ -5062,8 +5064,10 @@ crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} TREES admitted-audit dec
 # compile database of this build (cmake/Guards.cmake).  The test modules of
 # the runner of the engine and of its three rules build planted libraries and
 # probe units with the compiler of this build.  The test of codegen-shapes
-# also compiles the probe unit of this build with a planted header.
-crucible_elf_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR})
+# also compiles the probe unit of this build with a planted header.  Of the
+# elf rules, only codegen-shapes reads the parse trees, so only its test
+# waits for the fill of the tree cache.
+crucible_elf_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} TREES codegen-shapes)
 foreach(_assay_test guard.engines.elf.test_runner guard.engines.elf.test_artifact_symbols
         guard.engines.elf.test_codegen_shapes guard.engines.elf.test_static_tls)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")

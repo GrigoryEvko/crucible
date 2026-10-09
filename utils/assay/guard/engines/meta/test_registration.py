@@ -30,6 +30,10 @@ THE RULE
                     trees when its import closure in the package holds assay.readers.tsast.  With no fixture, the test
                     can read a cold tree cache under load.  A test that sets up the fixture fills the cache, and the
                     rule does not read it
+      unread-fixture  a test with FIXTURES_REQUIRED tsast_trees that reads no tree of the tree: a test of `guard
+                    check` with no rule that has a module that reads the parse trees, or a test of `guard witness`.
+                    A witness copies each plant to a scratch repository and reads only the plant.  Such a test waits
+                    for the eight parts of the fill with no use
 
 Complexity: O(t * a) for t tests of a arguments, and linear in the size of the modules of the package.
 """
@@ -151,8 +155,17 @@ def implementing_module(rule: rule_registry.Rule, root: Path) -> str | None:
     return module_name_of(rule, root)
 
 
+def unread_fixture(test: ctest_reader.TestEntry, path: str, line: int, why: str) -> check_report.Finding:
+    """Return the error of a test with FIXTURES_REQUIRED tsast_trees that reads no tree of the tree (THE RULE)."""
+    return check_report.Finding(
+        "error", path, line, RULE, f"the test {test.name} requires the fixture {TREE_FIXTURE}, and {why}.  It waits "
+        f"for the fill of the tree cache with no use.  Remove FIXTURES_REQUIRED {TREE_FIXTURE}", "unread-fixture",
+        test.name)
+
+
 def findings(context: MetaContext) -> list[check_report.Finding]:
-    """Give each test with a master and no label, each unknown rule, each rule with no test and each missing fixture."""
+    """Give each test with a master and no label, each unknown rule, each rule with no test, and each missing or unread
+    fixture."""
     if context.build_dir is None:
         raise NotApplicable("the rule reads the tests of a build directory.  Give --build-dir DIR")
     try:
@@ -191,20 +204,26 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
                     f"such rule", "unknown-rule", name))
                 continue
             run_rules.append(rule)
+        requires_trees = TREE_FIXTURE in test.words_of("FIXTURES_REQUIRED")
+        if words[0] == "witness" and requires_trees:
+            found.append(unread_fixture(test, path, line, "it runs `guard witness`, which reads only the plants"))
         if words[0] != "check" or "--self-test" in words:
             continue
+        reads_any = False
         for rule in [*run_rules, *engine_rules(words, registry)]:
             rule_id = rule.id
             if LABEL in labels:
                 covered.add(rule_id)
             module = implementing_module(rule, root)
-            if (module is not None and reads_trees(root, module, tree_cache)
-                    and TREE_FIXTURE not in test.words_of("FIXTURES_REQUIRED")
-                    and TREE_FIXTURE not in test.words_of("FIXTURES_SETUP")):
+            reads = module is not None and reads_trees(root, module, tree_cache)
+            reads_any = reads_any or reads
+            if reads and not requires_trees and TREE_FIXTURE not in test.words_of("FIXTURES_SETUP"):
                 found.append(check_report.Finding(
                     "error", path, line, RULE, f"the test {name} runs the rule {rule_id}, whose module {module} reads "
                     f"the parse trees, and it does not require the fixture {TREE_FIXTURE}.  Give it "
                     f"FIXTURES_REQUIRED {TREE_FIXTURE}", "fixture", name))
+        if requires_trees and not reads_any:
+            found.append(unread_fixture(test, path, line, "no module of its rules reads the parse trees"))
     if masters == 0:
         raise NotApplicable(f"{context.build_dir} registers no test that runs a master of {root}/utils/bin.  The build "
                             f"directory or the root is wrong")

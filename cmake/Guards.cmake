@@ -86,22 +86,27 @@ function(crucible_meta_rule_tests warnings_dir)
   endforeach()
 endfunction()
 
-# crucible_elf_rule_tests(<warnings-dir>)
+# crucible_elf_rule_tests(<warnings-dir> [TREES <rule>...])
 #
 # Register the tests of each rule of the engine elf that has a module of its own: a row with no field
 # legacy.  guard_ID runs the rule on the objects and the compile database of this build directory, and
 # guard_ID_witness builds each plant and control of utils/plants/ID/ with the compiler of this build
 # (assay.guard.engines.elf.runner, THE PLANTS).  A rule of the engine can read the parse trees, as the
-# census of the rule codegen-shapes does, so each guard_ID requires the fixture tsast_trees.  Exit 77 is a
-# skip: the rule does not apply, for example on a host of another architecture.
+# census of the rule codegen-shapes does.  The guard_ID of each rule of TREES requires the fixture
+# tsast_trees, and no other test waits for the fill.  The rule test-registration refuses a rule that reads
+# the trees and is not in TREES, and a rule of TREES that reads no tree.  Exit 77 is a skip: the rule does
+# not apply, for example on a host of another architecture.
 function(crucible_elf_rule_tests warnings_dir)
+  cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "TREES")
   crucible_rule_rows("^rule[ \t]+[a-z0-9-]+[ \t]+(.*[ \t])?engine=elf[ \t]" rows)
+  set(elf_rules "")
   foreach(row IN LISTS rows)
     if(row MATCHES "[ \t]legacy=")
       continue()
     endif()
     string(REGEX MATCH "^rule[ \t]+([a-z0-9-]+)" match "${row}")
     set(rule "${CMAKE_MATCH_1}")
+    list(APPEND elf_rules "${rule}")
     string(REPLACE "-" "_" test_name "guard_${rule}")
     crucible_script_test(NAME ${test_name}
       COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ${rule} --build-dir ${CMAKE_BINARY_DIR}
@@ -109,8 +114,16 @@ function(crucible_elf_rule_tests warnings_dir)
     crucible_script_test(NAME ${test_name}_witness
       COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard witness --rule ${rule})
     set_tests_properties(${test_name} ${test_name}_witness PROPERTIES LABELS "ci_guard;elf" SKIP_RETURN_CODE 77)
-    set_tests_properties(${test_name} PROPERTIES FIXTURES_REQUIRED tsast_trees)
+    if(rule IN_LIST arg_TREES)
+      set_tests_properties(${test_name} PROPERTIES FIXTURES_REQUIRED tsast_trees)
+    endif()
     set_tests_properties(${test_name}_witness PROPERTIES ENVIRONMENT "ASSAY_TEST_CXX=${CRUCIBLE_REAL_CXX}")
+  endforeach()
+  foreach(rule IN LISTS arg_TREES)
+    if(NOT rule IN_LIST elf_rules)
+      message(FATAL_ERROR "crucible_elf_rule_tests: the rule ${rule} of TREES is no rule of the engine elf with a "
+                          "module in utils/registry.txt.  Remove it from TREES, or correct its name.")
+    endif()
   endforeach()
 endfunction()
 
@@ -120,9 +133,10 @@ endfunction()
 # legacy.  guard_ID runs the rule on the tree, and guard_ID_witness runs it on each plant and control of
 # utils/plants/ID/.  The rule parse-clean fills the tree cache, so it runs in <parts> parts,
 # guard_parse_clean_K for K from 1, and these tests are the setup of the fixture tsast_trees.  Each
-# other test of a rule requires the fixture, so it starts on a full tree cache.  Exit 77 is a skip: the
-# rule does not apply, for example because the pinned kit is not installed
-# (`python3 utils/bin/setup install tree-sitter`).
+# other guard_ID requires the fixture, so it starts on a full tree cache.  A witness copies each plant
+# to a scratch repository and parses only the plant (assay.guard.engines.tsast.runner), so it does not
+# wait for the fill.  Exit 77 is a skip: the rule does not apply, for example because the pinned kit is
+# not installed (`python3 utils/bin/setup install tree-sitter`).
 function(crucible_tsast_rule_tests warnings_dir parts)
   crucible_rule_rows("^rule[ \t]+[a-z0-9-]+[ \t]+(.*[ \t])?engine=tsast[ \t]" rows)
   foreach(row IN LISTS rows)
@@ -149,8 +163,7 @@ function(crucible_tsast_rule_tests warnings_dir parts)
     endif()
     crucible_script_test(NAME ${test_name}_witness
       COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard witness --rule ${rule})
-    set_tests_properties(${test_name}_witness PROPERTIES
-      LABELS "ci_guard;tsast" FIXTURES_REQUIRED tsast_trees SKIP_RETURN_CODE 77)
+    set_tests_properties(${test_name}_witness PROPERTIES LABELS "ci_guard;tsast" SKIP_RETURN_CODE 77)
   endforeach()
 endfunction()
 

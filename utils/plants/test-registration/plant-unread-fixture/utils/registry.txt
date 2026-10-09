@@ -1,0 +1,4 @@
+# a planted registry: a test of a rule that reads no tree and a witness each require the trees with no use
+format 1
+rule stray-rule engine=meta scope=tracked ledger=none doc=XV | a planted refusal | fix the planted file
+rule tree-rule engine=tsast scope=base ledger=none doc=XV | a planted refusal that reads the trees | fix the planted file
