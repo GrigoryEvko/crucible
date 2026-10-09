@@ -1,0 +1,7 @@
+# a planted ledger
+format 1
+rule quarantine
+configuration default machine x86_64
+test/a.cpp | opted-out | 2 | PROBE: a raw probe of the alignment \| std-object std::vector | -
+test/a.cpp | region | 2 | PROBE: a raw probe of the alignment | -
+test/a.cpp | std-object | 2 | std::span | -

@@ -545,13 +545,49 @@ def quarantine_cases(expect: Expect, scratch: Path) -> None:
     expect("the first version that counts the findings of each region raises no count",
            status == 0 and not errors_of(found) and not standing_of(found))
     covered.write(QUARANTINE_LEDGER, entity_text(span, 4, {("test/a.cpp", "PROBE: a region | std_object std::map"): 3}))
-    admitted = covered.commit("Admit a region that covers more", "The probe needs one more object.")
+    admitted = covered.commit("Admit a region that covers more", "The region PROBE: a region needs one more object.")
     status, found = covered.run()
-    expect("a region that covers more is no error, and its row gives a warning that names the commit",
+    expect("a region that covers more, with its reason in the message, is no error, and its row gives a warning",
            status == 0 and not errors_of(found) and any(admitted[:9] in item.message and history.OPTED_OUT
                                                         in item.message for item in standing_of(found)))
     kind_quarantine_cases(expect, scratch)
+    reason_quarantine_cases(expect, scratch)
     move_quarantine_cases(expect, scratch)
+
+
+def reason_quarantine_cases(expect: Expect, scratch: Path) -> None:
+    """Raise a count of the kind region or opted-out with no reason of its region in the message (THE ADMITTED COUNTS)."""
+    span = ("test/a.cpp", "std::span")
+    counted = (rows_text({span: 2}).replace("| std_object |", "| std-object |")
+               + "test/a.cpp | opted-out | 1 | PROBE: a raw probe \\| std-object std::map | -\n"
+               + "test/a.cpp | region | 1 | PROBE: a raw probe | -\n")
+    bare = Scratch(scratch / "quarantine-region-reason")
+    bare.write(QUARANTINE_LEDGER, counted)
+    bare.commit("Count each region", "The first counts.")
+    bare.write(QUARANTINE_LEDGER, counted.replace("| region | 1 |", "| region | 2 |"))
+    unreasoned = bare.commit("Admit a second region", "A probe needs a second region.")
+    status, found = bare.run()
+    expect("a new region with no reason in the message is an error of the kind region-reason that names the commit",
+           status == 1 and any(item.kind == history.REASON_KIND and item.entity == unreasoned[:9]
+                               and "'PROBE: a raw probe'" in item.message for item in errors_of(found)))
+    grown = Scratch(scratch / "quarantine-opted-out-reason")
+    grown.write(QUARANTINE_LEDGER, counted)
+    grown.commit("Count each region", "The first counts.")
+    grown.write(QUARANTINE_LEDGER, counted.replace("| opted-out | 1 |", "| opted-out | 2 |"))
+    covering = grown.commit("Admit a region that covers more", "The class PROBE: and a reason of a different region.")
+    status, found = grown.run()
+    expect("a region that covers more with only its class in the message is an error of the kind region-reason",
+           status == 1 and any(item.kind == history.REASON_KIND and item.entity == covering[:9]
+                               for item in errors_of(found)))
+    plugin = Scratch(scratch / "quarantine-region-plugin")
+    plugin.write(QUARANTINE_LEDGER, counted)
+    plugin.commit("Count each region", "The first counts.")
+    plugin.write("utils/tools/quarantine/plugin.cpp", "// a new kind in a region\n")
+    plugin.write(QUARANTINE_LEDGER, counted.replace("| opted-out | 1 |", "| opted-out | 2 |"))
+    plugin.commit("Report a new kind in the plugin", "The plugin finds one more object in the region.")
+    status, found = plugin.run()
+    expect("a region count that a change of the plugin raises needs no reason in the message",
+           status == 0 and not errors_of(found))
 
 
 def kind_quarantine_cases(expect: Expect, scratch: Path) -> None:
@@ -574,9 +610,9 @@ def kind_quarantine_cases(expect: Expect, scratch: Path) -> None:
            status == 0 and not errors_of(found) and not standing_of(found))
     two_regions = regions.replace("| region | 1 |", "| region | 2 |")
     named.write(QUARANTINE_LEDGER, two_regions)
-    added = named.commit("Admit a second region", "A probe needs a second region.")
+    added = named.commit("Admit a second region", "A probe needs a second region:\nPROBE:   a\nregion.")
     status, found = named.run()
-    expect("a new region is no error, and its row gives a warning that names the commit",
+    expect("a new region with its reason in the message, also over a line break, is no error, and gives a warning",
            status == 0 and not errors_of(found)
            and any(added[:9] in item.message and history.REGION in item.message for item in standing_of(found)))
     named.write(history.RULE_TABLE, "quarantine test/\n")

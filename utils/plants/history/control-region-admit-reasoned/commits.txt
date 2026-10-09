@@ -1,0 +1,4 @@
+# A commit raises a count of the kind region and a count of the kind opted-out of the quarantine ledger, as
+# `guard write --admit` writes them, and its message gives the reason of the region with its class.
+commit 1 | Count each file and region | The first counts.
+commit 2 | Admit a larger region | The region "PROBE: a raw probe of the alignment" covers the second probe, which must read the raw alignment.

@@ -28,7 +28,8 @@ WHAT THE RULE READS
       `utils/registry.txt | COLUMN | admit | COMMIT RULE | REASON` admits the
       rise of the warn or error threshold of RULE, and a row
       `utils/ledgers/quarantine.txt | raise | admit | COMMIT | REASON` admits
-      a raise of the quarantine ledger.  A row
+      a raise of the quarantine ledger.  A row with the kind region-reason
+      admits an admitted count with no reason (THE ADMITTED COUNTS).  A row
       `utils/ledgers/RULE.txt | rebase | admit | COMMIT | REASON` starts the
       lowest count of a ledger again at a commit that changed its key or its
       format (THE REBASE).  COMMIT is the hash in 9 characters.
@@ -52,9 +53,10 @@ THE FINDINGS
       neither the plugin of utils/tools/quarantine/ nor the rule table
       utils/rule-table.txt, gives an error, of the kind raise.  The rule table
       was utils/scripts/layer-rules.txt before it moved.  A raised count of
-      the kind opted-out or region gives no error, because only `guard write
-      --rule quarantine --admit` writes it.  Each raised count that stays above
-      its count before the commit gives a warning on each run.
+      the kind opted-out or region is no error of the kind raise.  Only
+      `guard write --rule quarantine --admit` writes it (THE ADMITTED COUNTS).
+      Each raised count that stays above its count before the commit gives a
+      warning on each run.
       read_quarantine_version() reads each version: the rows of
       assay.core.ledger, and the formats 1 to 4 of the earlier file
       utils/scripts/quarantine-ledger.txt.  The rows hold the counts of format
@@ -68,6 +70,20 @@ THE FINDINGS
       the rule, gives an error, of the kind of its field.
     A rise in the working tree gives a warning only, and the error comes when
     the rise lands without a measurement.
+
+THE ADMITTED COUNTS
+    An opt-out region covers the smallest span that its reason makes
+    necessary (CLAUDE.md section XXII, R7).  A region that covers more raises
+    a count of the kind opted-out, and a new region raises a count of the kind
+    region.  Only `guard write --rule quarantine --admit` writes such a count.
+    A commit that raised one gives an error of the kind region-reason.  The
+    error does not come when its subject or its body holds the reason of the
+    region, as the region spells it.  The reason starts with its class.  The message then gives the
+    class and the reason.  The white space between the words of the message
+    can be different.  A commit that changes the plugin or the rule table
+    gives no such error, because the plugin can then find more in a region.
+    A row `utils/ledgers/quarantine.txt | region-reason | admit | COMMIT |
+    REASON` admits the error of one commit.
 
 THE REBASE
     A change of the key or the format of a ledger changes its row count, and
@@ -194,6 +210,7 @@ EARLIER_FILES = {
 EARLIER_PATHS = {rule_ledger.shown_path(rule_id): paths for rule_id, paths in EARLIER_FILES.items()}
 OWN_LEDGER = rule_ledger.shown_path(RULE)
 RAISE_KIND = "raise"
+REASON_KIND = "region-reason"
 REBASE_KIND = "rebase"
 ROW_KIND = "row"
 # A commit that changes a path of the code of the guards can change the keys of a ledger (THE REBASE).
@@ -694,7 +711,9 @@ EARLIER_FORMATS = (FILE_FORMAT, ENTITY_FORMAT, OPTED_OUT_FORMAT)
 DIRECTORY_CONFIGURATION = "default"
 OPTED_OUT = "opted-out"
 REGION = "region"
-# The kinds of a raised count that gives no error: only `guard write --rule quarantine --admit` writes such a count.
+# The kinds of a raised count that only `guard write --rule quarantine --admit` writes.  Such a raise is no error of
+# the kind raise.  A commit gives an error of the kind region-reason when its message does not give the reason of
+# the region (THE ADMITTED COUNTS).
 ADMITTED_KINDS = frozenset({OPTED_OUT, REGION})
 # The kind names of the plugin before format 2 of its report, and the names of this time.
 EARLIER_KINDS = {
@@ -1032,6 +1051,25 @@ def changes_machinery(paths: frozenset[str]) -> bool:
     return any(path == item or path.startswith(item) for path in paths for item in QUARANTINE_MACHINERY)
 
 
+def region_reason(rise: LedgerRise) -> str:
+    """Return the reason of the region of a raised count of the kind opted-out or region, with one space between words.
+
+    The entity of a region count is the reason, and the entity of an opted-out count is "REASON | KIND ENTITY".
+    """
+    reason = rise.entity if rise.kind == REGION else rise.entity.rpartition(REASON_SEPARATOR)[0]
+    return " ".join(reason.split())
+
+
+def gives_reason(commit: git.Commit, reason: str) -> bool:
+    """Tell if the subject or the body of a commit holds the reason of a region.  The white space can be different.
+
+    The reason starts with its class (CLAUDE.md section XXII, R7).  The message then gives the class too.
+    Complexity: linear in the length of the message.
+    """
+    message = " ".join(f"{commit.subject}\n{commit.body}".split())
+    return bool(reason) and reason in message
+
+
 def quarantine_findings(history: History) -> list[check_report.Finding]:
     """Read each raise of the quarantine ledger in the history and in the working tree.
 
@@ -1094,21 +1132,36 @@ def quarantine_findings(history: History) -> list[check_report.Finding]:
         later = {name for name in after.configurations if name != after.base}
         written = {name for name in later if before is None or after.deltas.get(name) != before.deltas.get(name)
                    or after.configurations[name] != before.configurations.get(name)}
-        blocking = [rise for rise in rises if rise.kind not in ADMITTED_KINDS
-                    and (rise.configuration not in stale or rise.configuration == after.base)]
+        judged = [rise for rise in rises if rise.configuration not in stale or rise.configuration == after.base]
+        blocking = [rise for rise in judged if rise.kind not in ADMITTED_KINDS]
+        unreasoned = [rise for rise in judged
+                      if rise.kind in ADMITTED_KINDS and not gives_reason(commit, region_reason(rise))]
         stale = (stale - written) | (later - written if changes_machinery(paths) else set())
         known = later
-        if not blocking or changes_machinery(paths):
+        if changes_machinery(paths):
             continue
-        shown = "; ".join(rise.described() for rise in blocking[:SHOWN_RISES])
-        more = f"; and {len(blocking) - SHOWN_RISES} more" if len(blocking) > SHOWN_RISES else ""
-        findings.append(check_report.Finding(
-            "error", QUARANTINE_LEDGER, 0, RULE,
-            f"the commit {commit.short} ({commit.subject}) raised {len(blocking)} counts of {QUARANTINE_LEDGER}, and "
-            f"it changes neither the plugin of utils/tools/quarantine/ nor the rule table "
-            f"{RULE_TABLE}: {shown}{more}.  A change can only lower a count.  Remove the new findings, "
-            f"or add a row to {rule_ledger.shown_path(RULE)} that gives the commit and the reason", RAISE_KIND,
-            commit.short))
+        if blocking:
+            shown = "; ".join(rise.described() for rise in blocking[:SHOWN_RISES])
+            more = f"; and {len(blocking) - SHOWN_RISES} more" if len(blocking) > SHOWN_RISES else ""
+            findings.append(check_report.Finding(
+                "error", QUARANTINE_LEDGER, 0, RULE,
+                f"the commit {commit.short} ({commit.subject}) raised {len(blocking)} counts of {QUARANTINE_LEDGER}, "
+                f"and it changes neither the plugin of utils/tools/quarantine/ nor the rule table "
+                f"{RULE_TABLE}: {shown}{more}.  A change can only lower a count.  Remove the new findings, "
+                f"or add a row to {rule_ledger.shown_path(RULE)} that gives the commit and the reason", RAISE_KIND,
+                commit.short))
+        if unreasoned:
+            reasons = sorted({region_reason(rise) for rise in unreasoned})
+            shown = "; ".join(rise.described() for rise in unreasoned[:SHOWN_RISES])
+            more = f"; and {len(unreasoned) - SHOWN_RISES} more" if len(unreasoned) > SHOWN_RISES else ""
+            findings.append(check_report.Finding(
+                "error", QUARANTINE_LEDGER, 0, RULE,
+                f"the commit {commit.short} ({commit.subject}) raised {len(unreasoned)} counts of opted-out or "
+                f"region of {QUARANTINE_LEDGER} through `guard write --admit`, and its message does not give the "
+                f"reason of the region: {shown}{more}.  A region only shrinks.  Give each reason in the message, "
+                f"with its class, as the region spells it ({'; '.join(repr(reason) for reason in reasons)}), or "
+                f"add a row to {rule_ledger.shown_path(RULE)} that gives the commit and the reason", REASON_KIND,
+                commit.short))
     current = parse(history.text("working", "", path), QUARANTINE_LEDGER)
     if current is None or last is None or not comparable(last, current):
         return findings
@@ -1157,15 +1210,17 @@ def admission_findings(ledger: rule_ledger.Ledger | None) -> list[check_report.F
         commit = words[0] if words else ""
         is_commit = len(commit) == 9 and set(commit) <= HEX_DIGITS
         is_threshold = key.path == REGISTRY and key.kind in COLUMNS and len(words) == 2 and is_commit
-        is_raise = key.path == QUARANTINE_LEDGER and key.kind == RAISE_KIND and len(words) == 1 and is_commit
+        is_raise = (key.path == QUARANTINE_LEDGER and key.kind in (RAISE_KIND, REASON_KIND) and len(words) == 1
+                    and is_commit)
         is_rebase = (key.kind == REBASE_KIND and key.path.startswith(f"{LEDGER_DIRECTORY}/")
                      and key.path.endswith(".txt") and len(words) == 1 and is_commit)
         if not (is_threshold or is_raise or is_rebase):
             found.append(check_report.Finding(
                 "error", OWN_LEDGER, entry.line, RULE,
                 f"a row is '{REGISTRY} | warn|error | admit | COMMIT RULE | REASON', '{QUARANTINE_LEDGER} | "
-                f"{RAISE_KIND} | admit | COMMIT | REASON' or '{LEDGER_DIRECTORY}/RULE.txt | {REBASE_KIND} | admit | "
-                f"COMMIT | REASON', with a commit of 9 hexadecimal characters", ROW_KIND, str(entry.line)))
+                f"{RAISE_KIND}|{REASON_KIND} | admit | COMMIT | REASON' or '{LEDGER_DIRECTORY}/RULE.txt | "
+                f"{REBASE_KIND} | admit | COMMIT | REASON', with a commit of 9 hexadecimal characters", ROW_KIND,
+                str(entry.line)))
     return found
 
 

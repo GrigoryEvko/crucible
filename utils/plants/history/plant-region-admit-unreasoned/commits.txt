@@ -1,0 +1,4 @@
+# A commit raises a count of the kind region and a count of the kind opted-out of the quarantine ledger, as
+# `guard write --admit` writes them, and its message does not give the reason of the region.
+commit 1 | Count each file and region | The first counts.
+commit 2 | Admit a larger region | The probe needs more code in the region.

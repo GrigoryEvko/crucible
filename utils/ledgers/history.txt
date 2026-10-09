@@ -3,7 +3,9 @@
 # A row PATH | KIND | admit | ENTITY | REASON admits one error of the rule.  The row
 # utils/registry.txt | warn|error | admit | COMMIT RULE | REASON admits the rise of a threshold, and
 # the row utils/ledgers/quarantine.txt | raise | admit | COMMIT | REASON admits a raise of the
-# quarantine ledger.  REASON gives the measurement that the commit did not give.  The row
+# quarantine ledger.  The row utils/ledgers/quarantine.txt | region-reason | admit | COMMIT | REASON
+# admits a raised count of opted-out or region whose commit does not give the reason of its region.
+# REASON gives the measurement or the reason that the commit did not give.  The row
 # utils/ledgers/RULE.txt | rebase | admit | COMMIT | REASON starts the lowest count of a ledger again
 # at a commit that changed its key or its format, and REASON tells the change.  COMMIT is the hash in
 # 9 characters.  A row that admits no finding is an error.  `python3 utils/bin/guard explain history`

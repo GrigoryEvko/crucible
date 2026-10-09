@@ -123,8 +123,11 @@ WRITE THE LEDGER
     * --admit writes a count of opted-out or of region more than its row, and
       no other count.  Use it only for a region of a reason class of CLAUDE.md
       section XXII.  Such a region must cover more, or it is a new region.
-      Give the reason in the commit.  The rule history gives a warning for
-      each such count on each run.
+      Give the reason of the region, with its class, in the message of the
+      commit.  The rule history refuses the commit when its message does not
+      hold that reason (THE ADMITTED COUNTS of
+      assay.guard.engines.meta.history).  It also gives a warning for each
+      such count on each run.
     * --reason TEXT gives the reason cell of each new row.
     * A file that git reports as moved takes the rows of its earlier path in
       each configuration.  Git reports a move after `git mv` or `git add`,
